@@ -1,0 +1,94 @@
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: ac_frontend
+    ports:
+      - "4200:4200"
+    volumes:
+      - ./frontend:/app         
+      - /app/node_modules       
+    environment:
+      - CHOKIDAR_USEPOLLING=true
+
+  backend:
+    build: ./backend
+    container_name: ac_backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - media_volume:/app/media
+    environment:
+      - DB_HOST=db
+      - DB_NAME=crisis_db
+      - DB_USER=admin
+      - DB_PASS=secret
+      - MQTT_BROKER=mosquitto
+      - EMAIL_HOST=mailhog      # Use MailHog in dev
+      - EMAIL_PORT=1025
+    # For Hardware USB Access (uncomment on VM/Host with antenna)
+    # devices:
+    #   - "/dev/ttyACM0:/dev/ttyACM0"
+    depends_on:
+      - db
+      - mosquitto
+      - mailhog
+
+  db:
+    image: postgis/postgis:15-3.3
+    container_name: ac_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=crisis_db
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=secret
+
+  mosquitto:
+    image: eclipse-mosquitto
+    container_name: ac_mqtt
+    ports:
+      - "1883:1883" # TCP listener
+      - "9001:9001" # Websocket listener
+    volumes:
+      - ./mosquitto/config:/mosquitto/config
+      - ./mosquitto/data:/mosquitto/data
+
+  grafana:
+    image: grafana/grafana
+    container_name: ac_stats
+    ports:
+      - "3000:3000"
+    depends_on:
+      - db
+
+  mailhog:
+    image: mailhog/mailhog
+    container_name: ac_mailer
+    ports:
+      - "1025:1025" # SMTP port
+      - "8025:8025" # Web UI
+
+  tileserver:
+    image: maptiler/tileserver-gl
+    container_name: ac_maps
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./tileserver:/data
+
+  proxy:
+    build: ./proxy
+    container_name: ac_proxy
+    ports:
+      - "80:80"
+    depends_on:
+      - frontend
+      - backend
+      - tileserver
+
+volumes:
+  postgres_data:
+  media_volume:
