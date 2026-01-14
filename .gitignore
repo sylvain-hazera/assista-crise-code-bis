@@ -1,0 +1,41 @@
+# ==========================================
+# 1. GÉNÉRAL & SÉCURITÉ
+# ==========================================
+.env
+.env.*
+!.env.example
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+
+# ==========================================
+# 2. BACKEND PYTHON
+# ==========================================
+backend/__pycache__/
+backend/*.py[cod]
+backend/*$py.class
+backend/.pytest_cache/
+backend/.mypy_cache/
+backend/.venv/
+venv/
+ENV/
+backend/db.sqlite3
+
+# ==========================================
+# 3. FRONTEND ANGULAR
+# ==========================================
+frontend/node_modules/
+frontend/.angular/
+frontend/dist/
+frontend/.editorconfig
+frontend/.vscode/
+frontend/npm-debug.log*
+frontend/yarn-error.log*
+
+# ==========================================
+# 4. DOCKER & INFRA
+# ==========================================
+.docker/
+proxy/nginx.log
+tileserver/data/
