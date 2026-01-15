@@ -22,9 +22,9 @@ services:
       - media_volume:/app/media
     environment:
       - DB_HOST=db
-      - DB_NAME=crisis_db
+      - DB_NAME=assista-db
       - DB_USER=admin
-      - DB_PASS=secret
+      - DB_PASS=admin
       - MQTT_BROKER=mosquitto
       - EMAIL_HOST=mailhog      # Use MailHog in dev
       - EMAIL_PORT=1025
@@ -42,9 +42,9 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     environment:
-      - POSTGRES_DB=crisis_db
+      - POSTGRES_DB=assista-db
       - POSTGRES_USER=admin
-      - POSTGRES_PASSWORD=secret
+      - POSTGRES_PASSWORD=admin
 
   mosquitto:
     image: eclipse-mosquitto
@@ -76,8 +76,8 @@ services:
     container_name: ac_maps
     ports:
       - "8080:8080"
-    volumes:
-      - ./tileserver:/data
+    # volumes:
+    #   - ./tileserver:/data
 
   proxy:
     build: ./proxy

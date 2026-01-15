@@ -1,0 +1,13 @@
+{
+  "options": {
+    "paths": {
+      "root": "/data"
+    }
+  }
+  ,
+  "data": {
+    "bordeaux": {
+      "mbtiles": "bordeaux.mbtiles"
+    }
+  }
+}
