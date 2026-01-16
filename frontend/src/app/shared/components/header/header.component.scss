@@ -1,0 +1,82 @@
+.header {
+  background-color: white;
+  border-bottom: 2px solid #e0e0e0;
+  padding: 1rem 0;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+
+  .container {
+    margin: 0 auto;
+    padding: 0 2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+
+    .logo-icon {
+      font-size: 2rem;
+      font-weight: bold;
+      color: #333;
+    }
+
+    .logo-text {
+      font-size: 1.5rem;
+      font-weight: 600;
+      margin: 0;
+      color: #333;
+    }
+  }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 2.5rem; 
+  
+    .navigation {
+      display: flex;
+      gap: 2rem;
+      align-items: center;
+
+      a {
+        text-decoration: none;
+        color: #666;
+        font-weight: 500;
+        padding: 0.5rem 1rem;
+        border-radius: 4px;
+        transition: all 0.3s ease;
+
+        &:hover {
+          color: #333;
+          text-decoration: underline;
+        }
+
+        &.active {
+          color: #4CAF50;
+        }
+      }
+    }
+
+    .user-menu {
+      .user-button {
+        background: none;
+        border: none;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: all 0.3s ease;
+      }
+    }
+  }
+}
+
+@media (max-width: 768px) {
+  .navigation {
+    display: none; // À remplacer par un menu hamburger
+  }
+}

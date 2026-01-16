@@ -1,0 +1,31 @@
+<header class="header">
+  <div class="container">
+    <div class="logo">
+      <span class="logo-icon">&#64;</span>
+      <h1 class="logo-text">Assista crise</h1>
+    </div>
+
+    <div class="header-right">
+      <nav class="navigation">
+      <a routerLink="/accueil" routerLinkActive="active">Accueil</a>
+      <a routerLink="/guide" routerLinkActive="active">Guide</a>
+      <a routerLink="/carte" routerLinkActive="active">Carte</a>
+      <a routerLink="/risques" routerLinkActive="active">Risques</a>
+      <a routerLink="/info" routerLinkActive="active">Info</a>
+    </nav>
+
+      <div class="user-menu">
+          @if(userName) {
+            <span class="user-name">{{ userName }}</span>
+          }
+          
+          <button class="user-button"  (click)="handleUserAction()">
+            <span class="material-symbols-outlined" style="font-size: 2.5rem;">
+              account_circle
+            </span>
+          </button>
+      </div>
+    </div>
+    
+  </div>
+</header>
