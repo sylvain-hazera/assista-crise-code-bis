@@ -3,3 +3,8 @@ djangorestframework
 psycopg2-binary
 meshtastic
 paho-mqtt
+psycopg2-binary>=2.9
+django-cors-headers>=4.3.1
+pillow
+drf-spectacular
+django-filter
