@@ -4,13 +4,13 @@
       <h3>Nous soutenir</h3>
       <div class="social-links">
         <button (click)="openSocialMedia('facebook')" class="social-icon" title="Facebook">
-          <span>📘</span>
+          <span class="material-icons" style="font-size: 2rem;">facebook</span>
         </button>
         <button (click)="openSocialMedia('instagram')" class="social-icon" title="Instagram">
-          <span>📷</span>
+            <!-- <span class="material-icons" style="font-size: 2rem;">instagram</span> -->
         </button>
-        <button (click)="openSocialMedia('youtube')" class="social-icon" title="YouTube">
-          <span>📺</span>
+        <button (click)="openSocialMedia('youtube')" class="social-icon" title="Email">
+          <span class="material-icons" style="font-size: 2rem;">email</span>
         </button>
       </div>
     </div>
@@ -18,12 +18,12 @@
     <div class="footer-section partners">
       <h3>Nos partenaires</h3>
       <div class="partner-icons">
-        <a *ngFor="let partner of partners" 
+        <!-- <a *ngFor="let partner of partners" 
            [href]="partner.link" 
            class="partner-icon"
            [title]="partner.name">
           <span>{{ partner.icon }}</span>
-        </a>
+        </a> -->
       </div>
     </div>
 
@@ -53,7 +53,7 @@
   </div>
 
   <div class="footer-bottom">
-    <p class="copyright">Accueil grand public</p>
+    <!-- <p class="copyright">Accueil grand public</p> -->
     <p>&copy; {{ currentYear }} Assista Crise. Tous droits réservés.</p>
   </div>
 </footer>
