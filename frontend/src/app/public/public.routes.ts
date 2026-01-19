@@ -2,8 +2,8 @@ import { Routes } from '@angular/router';
 import { HomeComponent } from './home/home.component';
 import { GuideComponent } from './guide/guide.component';
 import { AboutComponent } from './about/about.component';
-import { RiskComponent } from './risk/risk.component';
 import { GlobalMapComponent } from './global-map/global-map.component';
+import { CrisisComponent } from './crisis/crisis.component';
 
 
 export const PUBLIC_ROUTES: Routes = [
@@ -11,7 +11,7 @@ export const PUBLIC_ROUTES: Routes = [
       { path: 'accueil', component: HomeComponent },
       {path: 'guide', component: GuideComponent},
       {path: 'carte', component: GlobalMapComponent},
-      {path: 'risques', component: RiskComponent},
+      {path: 'crises', component: CrisisComponent},
       {path: 'info', component: AboutComponent},
       // {
       //   path: 'login',
