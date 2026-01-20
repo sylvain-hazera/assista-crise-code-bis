@@ -1,6 +1,6 @@
 import { Component } from '@angular/core';
 import { Router, RouterModule } from '@angular/router';
-import { AuthService } from '../../../auth/auth.service';
+import { AuthService, User } from '../../../auth/auth.service';
 
 @Component({
   selector: 'app-header',
@@ -11,19 +11,24 @@ import { AuthService } from '../../../auth/auth.service';
   styleUrl: './header.component.scss'
 })
 export class HeaderComponent {
-  constructor(public authService: AuthService, private router: Router) {}
+  private connectedUser: User | null = null;
+  constructor(public authService: AuthService, private router: Router) {
+    this.authService.currentUser$.subscribe(user => {
+      this.connectedUser = user;
+    });
+  }
 
   get userName(): string | null {
-    return this.authService.userName;
+    return this.connectedUser? this.connectedUser['pseudo'] || this.connectedUser['firstName'] || null : null;
   }
 
   get isAdmin(): boolean {
-    return this.authService.isAdmin;
+    return this.connectedUser ? this.connectedUser['userType'] !== 'individual' : true;
   }
 
   handleUserAction() {
-    if (this.authService.isConnected) {
-      if(this.authService.isAdmin) {
+    if (this.authService.isLoggedIn()) {
+      if(this.isAdmin) {
         this.router.navigate(['/admin/dashboard']);
       } else {
         this.router.navigate(['/account', this.userName]);

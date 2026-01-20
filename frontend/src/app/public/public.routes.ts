@@ -13,11 +13,16 @@ export const PUBLIC_ROUTES: Routes = [
       {path: 'carte', component: GlobalMapComponent},
       {path: 'crises', component: CrisisComponent},
       {path: 'info', component: AboutComponent},
-      // {
-      //   path: 'login',
-      //   // loadComponent: () => import('./auth/login/login.component')
-      //   //   .then(m => m.LoginComponent)
-      // },
+      {
+        path: 'login',
+        loadComponent: () => import('../auth/component/login/login.component')
+          .then(m => m.LoginComponent)
+      },
+      {
+        path: 'register',
+        loadComponent: () => import('../auth/component/register/register.component')
+          .then(m => m.RegisterComponent)
+      },
       {
         path: 'help-proposal',
         loadComponent: () => import('./forms/propose-help-form/propose-help-form.component')
