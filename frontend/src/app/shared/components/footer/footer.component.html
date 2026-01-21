@@ -1,0 +1,59 @@
+<footer class="footer">
+  <div class="footer-content">
+    <div class="footer-section">
+      <h3>Nous soutenir</h3>
+      <div class="social-links">
+        <button (click)="openSocialMedia('facebook')" class="social-icon" title="Facebook">
+          <span class="material-icons" style="font-size: 2rem;">facebook</span>
+        </button>
+        <button (click)="openSocialMedia('instagram')" class="social-icon" title="Instagram">
+            <!-- <span class="material-icons" style="font-size: 2rem;">instagram</span> -->
+        </button>
+        <button (click)="openSocialMedia('youtube')" class="social-icon" title="Email">
+          <span class="material-icons" style="font-size: 2rem;">email</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="footer-section partners">
+      <h3>Nos partenaires</h3>
+      <div class="partner-icons">
+        <!-- <a *ngFor="let partner of partners" 
+           [href]="partner.link" 
+           class="partner-icon"
+           [title]="partner.name">
+          <span>{{ partner.icon }}</span>
+        </a> -->
+      </div>
+    </div>
+
+    <div class="footer-section">
+      <h3>Nous contacter</h3>
+      <div class="contact-links">
+        <button (click)="openEmail('contact')" class="contact-icon" title="Email">
+          <span>✉️</span>
+        </button>
+        <button class="contact-icon" title="Téléphone">
+          <span>📞</span>
+        </button>
+        <button (click)="openSocialMedia('facebook')" class="contact-icon" title="Messenger">
+          <span>💬</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="footer-section legal">
+      <ul class="legal-links">
+        <li><a routerLink="/mentions-legales">Mentions légales</a></li>
+        <li><a routerLink="/cgu">CGU</a></li>
+        <li><a routerLink="/rgpd">RGPD</a></li>
+        <li><a routerLink="/credits">Crédits</a></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="footer-bottom">
+    <!-- <p class="copyright">Accueil grand public</p> -->
+    <p>&copy; {{ currentYear }} Assista Crise. Tous droits réservés.</p>
+  </div>
+</footer>

@@ -1,0 +1,112 @@
+<div class="login-container">
+  <div class="login-wrapper">
+    
+    <div class="login-header">
+      <h1 class="login-title">Connexion</h1>
+      <hr class="title-divider">
+    </div>
+
+    <!-- Message d'erreur -->
+     @if(errorMessage) {
+      <div class="alert alert-error">
+        {{ errorMessage }}
+      </div>
+    }
+
+    <!-- Comptes de test -->
+    <!-- <div class="test-accounts">
+      <p class="test-title">🧪 Comptes de test disponibles :</p>
+      <div class="test-account">
+        <strong>Particulier:</strong><br>
+        Email: jean@example.com<br>
+        Mot de passe: Password123!
+      </div>
+      <div class="test-account">
+        <strong>Organisation:</strong><br>
+        Email: contact@croixrouge.fr<br>
+        Mot de passe: SecurePass456!
+      </div>
+    </div> -->
+
+    <form [formGroup]="loginForm" (ngSubmit)="onSubmit()">
+      
+      <!-- Email -->
+      <div class="form-group">
+        <label for="email" class="form-label">
+          Email <span class="required">*</span>
+        </label>
+        <input 
+          type="email" 
+          id="email" 
+          formControlName="email"
+          class="form-input"
+          placeholder="votre.email@exemple.fr"
+          [class.invalid]="isFieldInvalid('email')">
+        <div class="error-message" *ngIf="isFieldInvalid('email')">
+          Email requis et valide
+        </div>
+      </div>
+
+      <!-- Mot de passe -->
+      <div class="form-group">
+        <label for="password" class="form-label">
+          Mot de passe <span class="required">*</span>
+        </label>
+        <div class="password-wrapper">
+          <span class="material-symbols-outlined password-icon">lock</span>
+          <input 
+            [type]="showPassword ? 'text' : 'password'" 
+            id="password" 
+            formControlName="password"
+            class="form-input password-input"
+            placeholder="••••••••"
+            [class.invalid]="isFieldInvalid('password')">
+          <button 
+            type="button" 
+            class="material-symbols-outlined toggle-password"
+            (click)="togglePasswordVisibility()">
+            {{ showPassword ? 'visibility' : 'visibility_off' }}
+          </button>
+        </div>
+        <div class="error-message" *ngIf="isFieldInvalid('password')">
+          Mot de passe requis
+        </div>
+      </div>
+
+      <!-- Se souvenir de moi -->
+      <div class="form-group checkbox-group">
+        <label class="checkbox-label">
+          <input 
+            type="checkbox" 
+            formControlName="rememberMe"
+            class="form-checkbox">
+          <span class="checkbox-text">Se souvenir de moi</span>
+        </label>
+      </div>
+
+      <!-- Bouton de connexion -->
+      <div class="form-actions">
+        <button 
+          type="submit" 
+          class="btn-submit"
+          [disabled]="loginForm.invalid || isSubmitting">
+          <span *ngIf="!isSubmitting">Se connecter</span>
+          <span *ngIf="isSubmitting">Connexion...</span>
+        </button>
+      </div>
+
+      <!-- Mot de passe oublié -->
+      <div class="forgot-password">
+        <a routerLink="/forgot-password">Mot de passe oublié ?</a>
+      </div>
+
+    </form>
+
+    <!-- Lien vers l'inscription -->
+    <div class="login-link">
+      <p>Vous n'avez pas de compte ?</p>
+      <a routerLink="/register" class="btn-link">Créer un compte</a>
+    </div>
+
+  </div>
+</div>

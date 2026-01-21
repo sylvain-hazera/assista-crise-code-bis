@@ -1,0 +1,47 @@
+<div class="home-container">
+  <div class="action-bar">
+    <div class="search-box">
+      <span class="material-symbols-outlined">search</span>
+      <input 
+        type="text" 
+        placeholder="Rechercher" 
+        [(ngModel)]="searchQuery"
+        (keyup.enter)="onSearch()">
+    </div>
+
+    <div class="action-buttons">
+      <button class="btn btn-success" (click)="navigateTo('/help-proposal')">
+        Proposer mon aide
+      </button>
+      <button class="btn btn-danger" (click)="navigateTo('/help-request')">
+        Demander de l'aide
+      </button>
+      <button class="btn btn-primary" (click)="navigateTo('safe-declaration')">
+        Se déclarer sauf
+      </button>
+    </div>
+  </div>
+
+  <div class="content-grid">
+    <div class="map-section">
+      <app-map></app-map>
+    </div>
+
+    <div class="info-section">
+      <div class="info-card">
+        <p>
+          Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nulla 
+          quam velit, vulputate eu pharetra nec, mattis ac neque. Duis 
+          vulputate commodo lectus, ac blandit elit tincidunt id. Integer 
+          rhoncus, tortor sed eleifend tristique, tortor mauris molestie 
+          elit, et lacinia ipsum mauris nec dui. Quisque nec mauris sit amet 
+          elit iaculis pretium sit amet quis magna.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <button class="btn btn-warning" (click)="navigateTo('crisis-declaration')">
+    Déclarer une crise
+  </button>
+</div>

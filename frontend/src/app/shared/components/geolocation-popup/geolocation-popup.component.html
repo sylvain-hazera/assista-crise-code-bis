@@ -1,0 +1,37 @@
+<div class="popup-overlay">
+  <div class="popup-container">
+    <div class="popup-icon">📍</div>
+    
+    <h2 class="popup-title">Autorisation de géolocalisation</h2>
+    
+    <p class="popup-message">
+      Pour vous proposer les alertes et ressources les plus pertinentes,
+      nous avons besoin d'accéder à votre position lors de la navigation.
+    </p>
+
+    <div *ngIf="error" class="error-message">
+      {{ error }}
+    </div>
+
+    <div class="popup-actions">
+      <button 
+        class="btn btn-primary" 
+        (click)="allowGeolocation()"
+        [disabled]="loading">
+        <span *ngIf="!loading">Autoriser</span>
+        <span *ngIf="loading">Chargement...</span>
+      </button>
+      
+      <button 
+        class="btn btn-secondary" 
+        (click)="denyGeolocation()"
+        [disabled]="loading">
+        Plus tard
+      </button>
+    </div>
+
+    <p class="popup-note">
+      Vous pouvez modifier ce choix à tout moment dans les paramètres de votre navigateur.
+    </p>
+  </div>
+</div>

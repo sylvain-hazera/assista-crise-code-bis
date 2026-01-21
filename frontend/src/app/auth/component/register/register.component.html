@@ -1,0 +1,224 @@
+<div class="register-container">
+  <div class="register-wrapper">
+    
+    <div class="register-header">
+        <!-- <span class="line"></span> -->
+         <h1 class="register-title">Créer mon compte</h1>
+        <!-- <span class="line"></span> -->
+      <hr class="title-divider">
+    </div>
+
+    <!-- Message d'erreur global -->
+     @if(errorMessage) {
+      <div class="alert alert-error">
+        {{ errorMessage }}
+      </div>
+    }
+
+    <form [formGroup]="registerForm" (ngSubmit)="onSubmit()">
+      
+      <!-- Je suis -->
+      <div class="form-group">
+        <label for="userType" class="form-label">
+          Je suis <span class="required">*</span>
+        </label>
+        <div class="select-wrapper">
+          <select 
+            id="userType" 
+            formControlName="userType"
+            class="form-select"
+            [class.invalid]="isFieldInvalid('userType')">
+            <option *ngFor="let option of userTypeOptions" [value]="option.value">
+              {{ option.label }}
+            </option>
+          </select>
+          <span class="material-symbols-outlined select-arrow">arrow_drop_down</span>
+        </div>
+        <div class="error-message" *ngIf="isFieldInvalid('userType')">
+          {{ getFieldError('userType') }}
+        </div>
+      </div>
+
+      <!-- Nom -->
+      <div class="form-group">
+        <label for="lastName" class="form-label">
+          Nom <span class="required">*</span>
+        </label>
+        <input 
+          type="text" 
+          id="lastName" 
+          formControlName="lastName"
+          class="form-input"
+          placeholder="Placeholder"
+          [class.invalid]="isFieldInvalid('lastName')">
+        <div class="error-message" *ngIf="isFieldInvalid('lastName')">
+          {{ getFieldError('lastName') }}
+        </div>
+      </div>
+
+      <!-- Prénom (masqué pour les institutions) -->
+       @if(isIndividual) {
+        <div class="form-group">
+            <label for="firstName" class="form-label">Prénom</label>
+            <input 
+            type="text" 
+            id="firstName" 
+            formControlName="firstName"
+            class="form-input"
+            placeholder="Placeholder"
+            [class.invalid]="isFieldInvalid('firstName')">
+            <div class="error-message" *ngIf="isFieldInvalid('firstName')">
+            {{ getFieldError('firstName') }}
+            </div>
+        </div>
+        }
+
+      <!-- Pseudo (masqué pour les institutions) -->
+       @if(isIndividual) {
+        <div class="form-group">
+            <label for="pseudo" class="form-label">Pseudo</label>
+            <input 
+            type="text" 
+            id="pseudo" 
+            formControlName="pseudo"
+            class="form-input"
+            placeholder="Placeholder"
+            [class.invalid]="isFieldInvalid('pseudo')">
+            <div class="error-message" *ngIf="isFieldInvalid('pseudo')">
+            {{ getFieldError('pseudo') }}
+            </div>
+        </div>
+        }
+
+      <!-- Mot de passe -->
+      <div class="form-group">
+        <label for="password" class="form-label">
+          Mot de passe <span class="required">*</span>
+        </label>
+        <div class="password-wrapper">
+          <span class="material-symbols-outlined password-icon">lock</span>
+          <input 
+            [type]="showPassword ? 'text' : 'password'" 
+            id="password" 
+            formControlName="password"
+            class="form-input password-input"
+            placeholder="Password"
+            [class.invalid]="isFieldInvalid('password')">
+          <button 
+            type="button" 
+            class="material-symbols-outlined toggle-password"
+            (click)="togglePasswordVisibility()">
+            {{ showPassword ? 'visibility' : 'visibility_off' }}
+          </button>
+        </div>
+        <div class="error-message" *ngIf="isFieldInvalid('password')">
+          {{ getFieldError('password') }}
+        </div>
+        
+        <!-- Indicateur de force du mot de passe -->
+         @if(registerForm.get('password')?.value) {
+            <div class="password-strength" *ngIf="registerForm.get('password')?.value">
+            <div class="strength-bar">
+                <div 
+                class="strength-fill"
+                [class.weak]="registerForm.get('password')?.errors?.['passwordStrength']"
+                [class.strong]="!registerForm.get('password')?.errors?.['passwordStrength']">
+                </div>
+            </div>
+            <p class="strength-text">
+                {{ registerForm.get('password')?.errors?.['passwordStrength'] ? 'Faible' : 'Fort' }}
+            </p>
+            </div>
+         }
+      </div>
+
+      <!-- Téléphone -->
+      <div class="form-group">
+        <label for="phone" class="form-label">
+          Téléphone <span class="required">*</span>
+        </label>
+        <input 
+          type="tel" 
+          id="phone" 
+          formControlName="phone"
+          class="form-input"
+          placeholder="Placeholder"
+          [class.invalid]="isFieldInvalid('phone')">
+        <div class="error-message" *ngIf="isFieldInvalid('phone')">
+          {{ getFieldError('phone') }}
+        </div>
+      </div>
+
+      <!-- Mail -->
+      <div class="form-group">
+        <label for="email" class="form-label">
+          Mail <span class="required">*</span>
+        </label>
+        <input 
+          type="email" 
+          id="email" 
+          formControlName="email"
+          class="form-input"
+          placeholder="Placeholder"
+          [class.invalid]="isFieldInvalid('email')">
+        <div class="error-message" *ngIf="isFieldInvalid('email')">
+          {{ getFieldError('email') }}
+        </div>
+      </div>
+
+      <!-- Code postal -->
+      <div class="form-group">
+        <label for="postalCode" class="form-label">Code postal</label>
+        <input 
+          type="text" 
+          id="postalCode" 
+          formControlName="postalCode"
+          class="form-input"
+          placeholder="Placeholder"
+          maxlength="5"
+          [class.invalid]="isFieldInvalid('postalCode')">
+        <div class="error-message" *ngIf="isFieldInvalid('postalCode')">
+          {{ getFieldError('postalCode') }}
+        </div>
+      </div>
+
+      <!-- Accepter les conditions -->
+      <div class="form-group checkbox-group">
+        <label class="checkbox-label">
+          <input 
+            type="checkbox" 
+            formControlName="acceptTerms"
+            class="form-checkbox"
+            [class.invalid]="isFieldInvalid('acceptTerms')">
+          <span class="checkbox-text">
+            J'accepte les 
+            <a href="/cgu" target="_blank" class="link">conditions générales d'utilisation</a>
+            <span class="required">*</span>
+          </span>
+        </label>
+        <div class="error-message" *ngIf="isFieldInvalid('acceptTerms')">
+          Vous devez accepter les conditions générales
+        </div>
+      </div>
+
+      <!-- Bouton de soumission -->
+      <div class="form-actions">
+        <button 
+          type="submit" 
+          class="btn-submit"
+          [disabled]="registerForm.invalid || isSubmitting">
+          <span *ngIf="!isSubmitting">Créer le compte</span>
+          <span *ngIf="isSubmitting">Création en cours...</span>
+        </button>
+      </div>
+
+    </form>
+
+    <!-- Lien vers la connexion -->
+    <div class="login-link">
+      <p>Vous avez déjà un compte ?</p>
+      <a routerLink="/login" class="btn-link">Se connecter</a>
+    </div>
+
+  </div>
+</div>

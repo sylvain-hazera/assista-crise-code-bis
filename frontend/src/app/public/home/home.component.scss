@@ -1,0 +1,144 @@
+.home-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 50vh;
+  margin-bottom: 5rem;
+}
+
+.action-bar {
+  margin: 2rem;
+  padding: 0 2rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+
+  .search-box {
+    display: flex;
+    align-items: center;
+    background: white;
+    border: 2px solid #e0e0e0;
+    border-radius: 25px;
+    padding: 0.5rem 1rem;
+    margin-bottom: 1rem;
+    max-width: 300px;
+    gap: 0.5rem;
+
+    .search-icon {
+      margin-right: 0.5rem;
+      color: #999;
+    }
+
+    input {
+      border: none;
+      outline: none;
+      flex: 1;
+      font-size: 1rem;
+      background: transparent;
+
+      &::placeholder {
+        color: #999;
+      }
+    }
+  }
+
+  .action-buttons {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+}
+
+.btn {
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-size: 1rem;
+
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+  }
+
+  &.btn-success {
+    background-color: #4CAF50;
+    color: white;
+
+    &:hover {
+      background-color: #45a049;
+    }
+  }
+
+  &.btn-danger {
+    background-color: #f44336;
+    color: white;
+
+    &:hover {
+      background-color: #da190b;
+    }
+  }
+
+  &.btn-warning {
+    margin-top: 2rem;
+    width: 25%;
+    background-color: #ffd54f;
+    color: #333;
+    align-self: center;
+
+    &:hover {
+      background-color: #ffca28;
+    }
+  }
+
+  &.btn-primary {
+    background-color: #007bff;
+    color: white;
+
+    &:hover {
+      background-color: #1976d2;
+    }
+  }
+}
+
+.content-grid {
+  margin: 2rem auto;
+  width: 75%;
+  display: grid;
+  // place-items: center;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+
+  .map-section {
+    background: #f0f0f0;
+    border-radius: 8px;
+    overflow: hidden;
+    min-height: 400px;
+  }
+
+  .info-section {
+    .info-card {
+      background: white;
+      padding: 1.5rem;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      line-height: 1.6;
+      color: #666;
+    }
+  }
+}
+
+@media (max-width: 768px) {
+  .content-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .action-buttons {
+    flex-direction: column;
+
+    .btn {
+      width: 100%;
+    }
+  }
+}
