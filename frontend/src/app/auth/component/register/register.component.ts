@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, Validators, ReactiveFormsModule, AbstractControl, ValidationErrors } from '@angular/forms';
 import { Router, RouterModule } from '@angular/router';
 import { Subject, takeUntil } from 'rxjs';
-import { AuthService } from '../../auth.service';
+import { AuthService, UserType } from '../../auth.service';
 
 @Component({
   selector: 'app-register',
@@ -25,12 +25,14 @@ export class RegisterComponent implements OnInit, OnDestroy {
   private destroy$ = new Subject<void>();
 
   userTypeOptions = [
-    { value: 'individual', label: 'Particulier' },
-    { value: 'organization', label: 'Institution' }
+    { value: 'Individual', label: 'Particulier' },
+    { value: 'Organization', label: 'Institution' },
+    { value: 'Rescue', label: 'Secours organisés' },
+    { value: 'Admin', label: 'Admin' }
   ];
 
   constructor(
-    private fb: FormBuilder,
+    private formBuilder: FormBuilder,
     private authService: AuthService,
     private router: Router
   ) {}
@@ -46,7 +48,7 @@ export class RegisterComponent implements OnInit, OnDestroy {
   }
 
   private initForm(): void {
-    this.registerForm = this.fb.group({
+    this.registerForm = this.formBuilder.group({
       userType: ['individual', Validators.required],
       lastName: ['', [Validators.required, Validators.minLength(2), Validators.maxLength(50)]],
       firstName: ['', [Validators.required, Validators.minLength(2), Validators.maxLength(50)]],
@@ -75,17 +77,8 @@ export class RegisterComponent implements OnInit, OnDestroy {
     const firstNameControl = this.registerForm.get('firstName');
     const pseudoControl = this.registerForm.get('pseudo');
 
-    if (userType === 'organization') {
-      // Désactiver et réinitialiser les champs pour les institutions
-      firstNameControl?.clearValidators();
-      firstNameControl?.setValue('');
-      firstNameControl?.disable();
-
-      pseudoControl?.clearValidators();
-      pseudoControl?.setValue('');
-      pseudoControl?.disable();
-    } else {
-      // Activer les champs pour les particuliers
+    if (userType === UserType.Individual) {
+       // Activer les champs pour les particuliers
       firstNameControl?.setValidators([
         Validators.required,
         Validators.minLength(2),
@@ -99,6 +92,15 @@ export class RegisterComponent implements OnInit, OnDestroy {
         Validators.maxLength(30)
       ]);
       pseudoControl?.enable();
+    } else {
+      // Désactiver et réinitialiser les champs pour les institutions
+      firstNameControl?.clearValidators();
+      firstNameControl?.setValue('');
+      firstNameControl?.disable();
+
+      pseudoControl?.clearValidators();
+      pseudoControl?.setValue('');
+      pseudoControl?.disable();
     }
 
     firstNameControl?.updateValueAndValidity();
@@ -219,9 +221,9 @@ export class RegisterComponent implements OnInit, OnDestroy {
     return 'Champ invalide';
   }
 
-  get isOrganization(): boolean {
-    return this.registerForm.get('userType')?.value === 'organization';
-  }
+  // get isOrganization(): boolean {
+  //   return this.registerForm.get('userType')?.value === 'organization';
+  // }
 
   get isIndividual(): boolean {
     return this.registerForm.get('userType')?.value === 'individual';

@@ -3,6 +3,7 @@ import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, Validators, ReactiveFormsModule } from '@angular/forms';
 import { Router, RouterModule, ActivatedRoute } from '@angular/router';
+import { AuthService } from '../../auth.service';
 // import { AuthMockService } from '../../shared/services/auth-mock.service';
 
 @Component({
@@ -20,8 +21,9 @@ export class LoginComponent implements OnInit {
   returnUrl = '/accueil';
 
   constructor(
-    private fb: FormBuilder,
+    private formBuilder: FormBuilder,
     // private authService: AuthMockService,
+    private authService: AuthService,
     private router: Router,
     private route: ActivatedRoute
   ) {}
@@ -31,15 +33,15 @@ export class LoginComponent implements OnInit {
     this.returnUrl = this.route.snapshot.queryParams['returnUrl'] || '/accueil';
 
     // Rediriger si déjà connecté
-    // if (this.authService.isLoggedIn()) {
-    //   this.router.navigate([this.returnUrl]);
-    // }
+    if (this.authService.isLoggedIn()) {
+      this.router.navigate([this.returnUrl]);
+    }
 
     this.initForm();
   }
 
   private initForm(): void {
-    this.loginForm = this.fb.group({
+    this.loginForm = this.formBuilder.group({
       email: ['', [Validators.required, Validators.email]],
       password: ['', [Validators.required]],
       rememberMe: [false]
@@ -61,19 +63,19 @@ export class LoginComponent implements OnInit {
 
     const { email, password } = this.loginForm.value;
 
-    // this.authService.login({ email, password }).subscribe({
-    //   next: (response) => {
-    //     console.log('✅ Connexion réussie:', response);
-    //     this.router.navigate([this.returnUrl]);
-    //   },
-    //   error: (error) => {
-    //     this.errorMessage = error.message || 'Email ou mot de passe incorrect';
-    //     this.isSubmitting = false;
-    //   },
-    //   complete: () => {
-    //     this.isSubmitting = false;
-    //   }
-    // });
+    this.authService.login({ email, password }).subscribe({
+      next: (response) => {
+        console.log('✅ Connexion réussie:', response);
+        this.router.navigate([this.returnUrl]);
+      },
+      error: (error) => {
+        this.errorMessage = error.message || 'Email ou mot de passe incorrect';
+        this.isSubmitting = false;
+      },
+      complete: () => {
+        this.isSubmitting = false;
+      }
+    });
   }
 
   private markFormAsTouched(): void {
