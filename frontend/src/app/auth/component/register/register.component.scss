@@ -1,0 +1,389 @@
+.register-container {
+  min-height: 100vh;
+//   background-color: #f8f9fa;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 2rem 1rem;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.register-wrapper {
+  max-width: 600px;
+  width: 100%;
+//   background: white;
+  padding: 2.5rem;
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+// form {
+//   min-width: 400px;
+//   width: 40%;
+//   margin: 0 auto;
+// }
+
+.register-header {
+  margin-bottom: 2rem;
+//   display: flex;
+//   align-items: center; 
+//   text-align: center;
+  width: 100%;
+//   gap: 0.5rem;
+
+  .register-title {
+    text-align: center;
+    font-size: 1.8rem;
+    font-weight: 700;
+    color: #333;
+    margin-bottom: 1rem;
+  }
+
+  .title-divider {
+    border: none;
+    border-top: 2px solid #e0e0e0;
+    margin: 1rem 0;
+  }
+
+  .line {
+    flex: 1;           
+    height: 3px;       
+    background: #222222;  
+  }
+}
+
+.alert {
+  padding: 1rem;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+
+  &.alert-error {
+    background-color: #ffebee;
+    color: #c62828;
+    border: 1px solid #ef5350;
+  }
+
+  .alert-icon {
+    font-size: 1.5rem;
+  }
+}
+
+.form-group {
+  margin-bottom: 1.5rem;
+
+  .form-label {
+    display: block;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 0.5rem;
+
+    .required {
+      color: #dc3545;
+      margin-left: 2px;
+    }
+  }
+
+  // ✅ STYLE DE BASE POUR TOUS LES INPUTS
+  .form-input,
+  .form-select {
+    width: 100%;
+    padding: 0.875rem 1rem;  // ← Même padding pour tous
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    font-size: 1rem;
+    transition: all 0.3s ease;
+    box-sizing: border-box;  // ← IMPORTANT pour inclure padding dans width
+
+    &::placeholder {
+      color: #999;
+    }
+
+    &:focus {
+      outline: none;
+      border-color: #667eea;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+
+    &.invalid {
+      border-color: #dc3545;
+
+      &:focus {
+        box-shadow: 0 0 0 3px rgba(220, 53, 69, 0.1);
+      }
+    }
+  }
+
+  .select-wrapper {
+    position: relative;
+
+    .form-select {
+      // Padding spécifique pour le select (pour laisser de la place à la flèche)
+      padding-right: 2.5rem;  // ← Plus d'espace à droite pour la flèche
+      background-color: white;
+      appearance: none;
+      cursor: pointer;
+    }
+
+    .select-arrow {
+      position: absolute;
+      right: 1rem;
+      top: 50%;
+      transform: translateY(-50%);
+      pointer-events: none;
+      color: #666;
+    }
+  }
+
+  .password-wrapper {
+    position: relative;
+
+    .password-icon {
+      position: absolute;
+      left: 1rem;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 1.2rem;
+      z-index: 1;
+    }
+
+    .password-input {
+      // Padding spécifique pour le champ password (icônes à gauche et droite)
+      padding-left: 3rem;   // ← Espace pour l'icône de gauche
+      padding-right: 3rem;  // ← Espace pour le bouton toggle à droite
+    }
+
+    .toggle-password {
+      position: absolute;
+      right: 1rem;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 1.2rem;
+      padding: 0.25rem;
+      transition: opacity 0.3s ease;
+      z-index: 1;
+
+      &:hover {
+        opacity: 0.7;
+      }
+    }
+  }
+
+  .password-strength {
+    margin-top: 0.5rem;
+
+    .strength-bar {
+      width: 100%;
+      height: 4px;
+      background-color: #e0e0e0;
+      border-radius: 2px;
+      overflow: hidden;
+
+      .strength-fill {
+        height: 100%;
+        transition: all 0.3s ease;
+
+        &.weak {
+          width: 50%;
+          background-color: #ff6b6b;
+        }
+
+        &.strong {
+          width: 100%;
+          background-color: #4CAF50;
+        }
+      }
+    }
+
+    .strength-text {
+      font-size: 0.85rem;
+      margin-top: 0.25rem;
+      color: #666;
+    }
+  }
+
+  .error-message {
+    color: #dc3545;
+    font-size: 0.85rem;
+    margin-top: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+
+    &::before {
+      content: '⚠';
+    }
+  }
+}
+
+// ✅ INPUT WITH PREFIX (pour le username avec @)
+.input-with-prefix {
+  position: relative;
+  display: flex;
+  align-items: center;
+
+  .input-prefix {
+    position: absolute;
+    left: 1rem;
+    color: #667eea;
+    font-weight: 600;
+    font-size: 1.1rem;
+    z-index: 1;
+  }
+
+  .form-input {
+    padding-left: 2.5rem;  // ← Espace pour le préfixe @
+
+    &.checking {
+      border-color: #ffc107;
+      background-image: linear-gradient(45deg, transparent 25%, rgba(255, 193, 7, 0.1) 25%, rgba(255, 193, 7, 0.1) 50%, transparent 50%, transparent 75%, rgba(255, 193, 7, 0.1) 75%);
+      background-size: 30px 30px;
+      animation: checking 1s linear infinite;
+    }
+  }
+}
+
+.input-hint {
+  font-size: 0.85rem;
+  color: #999;
+  margin-top: 0.25rem;
+  font-style: italic;
+}
+
+.checking-message {
+  color: #ffc107;
+  font-size: 0.85rem;
+  margin-top: 0.25rem;
+}
+
+.success-message {
+  color: #4CAF50;
+  font-size: 0.85rem;
+  margin-top: 0.25rem;
+  font-weight: 600;
+}
+
+@keyframes checking {
+  0% { background-position: 0 0; }
+  100% { background-position: 30px 30px; }
+}
+
+.checkbox-group {
+  .checkbox-label {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    cursor: pointer;
+
+    .form-checkbox {
+      width: 20px;
+      height: 20px;
+      margin-top: 0.2rem;
+      cursor: pointer;
+      accent-color: #667eea;
+      flex-shrink: 0;
+
+      &.invalid {
+        outline: 2px solid #dc3545;
+        outline-offset: 2px;
+      }
+    }
+
+    .checkbox-text {
+      font-size: 0.95rem;
+      color: #333;
+      line-height: 1.5;
+
+      .link {
+        color: #667eea;
+        text-decoration: underline;
+        transition: color 0.3s ease;
+
+        &:hover {
+          color: #764ba2;
+        }
+      }
+
+      .required {
+        color: #dc3545;
+      }
+    }
+  }
+}
+
+.form-actions {
+  margin-top: 2rem;
+
+  .btn-submit {
+    width: 100%;
+    padding: 1rem;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 1.1rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.3s ease;
+
+    &:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
+    }
+
+    &:active:not(:disabled) {
+      transform: translateY(0);
+    }
+
+    &:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+  }
+}
+
+.login-link {
+  margin-top: 2rem;
+  text-align: center;
+
+  p {
+    color: #666;
+    margin-bottom: 0.5rem;
+    font-size: 0.95rem;
+  }
+
+  .btn-link {
+    display: inline-block;
+    color: #667eea;
+    text-decoration: none;
+    font-weight: 600;
+    transition: color 0.3s ease;
+
+    &:hover {
+      color: #764ba2;
+      text-decoration: underline;
+    }
+  }
+}
+
+@media (max-width: 576px) {
+  .register-wrapper {
+    padding: 1.5rem;
+  }
+
+  .register-title {
+    font-size: 1.5rem;
+  }
+
+  form {
+    min-width: 100%;
+    width: 100%;
+  }
+}
