@@ -3,7 +3,8 @@ import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, Validators, ReactiveFormsModule, AbstractControl, ValidationErrors } from '@angular/forms';
 import { Router, RouterModule } from '@angular/router';
 import { Subject, takeUntil } from 'rxjs';
-import { AuthService, UserType } from '../../auth.service';
+import { AuthService } from '../../services/auth.service';
+import { UserRole } from '../../../shared/models/user.model';
 
 @Component({
   selector: 'app-register',
@@ -77,7 +78,7 @@ export class RegisterComponent implements OnInit, OnDestroy {
     const firstNameControl = this.registerForm.get('firstName');
     const pseudoControl = this.registerForm.get('pseudo');
 
-    if (userType === UserType.Individual) {
+    if (userType === UserRole.Individual) {
        // Activer les champs pour les particuliers
       firstNameControl?.setValidators([
         Validators.required,

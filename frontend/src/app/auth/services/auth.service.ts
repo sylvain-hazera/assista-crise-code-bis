@@ -2,41 +2,11 @@ import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Injectable } from '@angular/core';
 import { Router } from '@angular/router';
 import { BehaviorSubject, catchError, Observable, tap, throwError } from 'rxjs';
-import { environment } from '../../environments/environment';
+import { environment } from '../../../environments/environment';
+import { User, UserRole } from '../../shared/models/user.model';
 
-export enum UserType {
-  Individual = 'individual',
-  Organization = 'organization',
-  Rescue = 'rescue',
-  Admin = 'admin'
-}
-
-export enum status {
-  UNPROCESSED,
-  PROCESSING,
-  PROCESSED,
-  AVAILABLE,
-  UNAVAILABLE
-}
-
-export interface User {
-  id?: number;
-  userType: UserType;
-  lastName: string;
-  firstName?: string;
-  pseudo?: string;
-  email: string;
-  phone: string;
-  postalCode: string;
-  avatar?: string;
-  createdAt?: Date;
-  updatedAt?: Date;
-  status?: status;
-  token?: string;
-}
-
-export interface RegisterRequest {
-  userType: UserType;
+interface RegisterRequest {
+  userType: UserRole;
   lastName: string;
   firstName?: string;
   pseudo?: string;
@@ -46,12 +16,12 @@ export interface RegisterRequest {
   postalCode: string;
 }
 
-export interface LoginRequest {
+interface LoginRequest {
   email: string;
   password: string;
 }
 
-export interface AuthResponse {
+interface AuthResponse {
   user: User;
   token: string;
   message?: string;

@@ -1,9 +1,9 @@
 import { Component, OnInit } from '@angular/core';
-import { GeolocationService } from '../../shared/service/geolocation.service';
-import { MapComponent } from "../../shared/components/map/map.component";
+import { MapComponent } from "../../shared/components/common/map/map.component";
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
+import { GeolocationService } from '../../services/geolocation.service';
 
 @Component({
   selector: 'app-home',

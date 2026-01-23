@@ -1,3 +1,10 @@
+<!-- Popup de géolocalisation -->
+ @if(showGeolocationPopup) {
+    <app-geolocation-popup 
+        (close)="closePopup()">
+    </app-geolocation-popup>
+ }
+ 
 <div class="public-layout">
   <app-header></app-header>
   
@@ -7,3 +14,4 @@
   
   <app-footer></app-footer>
 </div>
+
