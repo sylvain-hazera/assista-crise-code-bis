@@ -1,0 +1,126 @@
+<div class="admin-layout" [class.sidebar-collapsed]="sidebarCollapsed">
+  
+  <!-- Header -->
+  <header class="admin-header">
+    <div class="header-left">
+      <div class="logo">
+        <span class="logo-icon">&#64;</span>
+        <span class="logo-text">Assista crise</span>
+      </div>
+    </div>
+
+    <div class="header-right">
+      <!-- Notifications -->
+      <div class="notification-wrapper">
+        <button class="icon-button" (click)="toggleNotifications()">
+          <span class="material-icons">notifications</span>
+          <span class="notification-badge">3</span>
+        </button>
+
+        @if (showNotifications) {
+          <div class="notification-dropdown">
+            <div class="dropdown-header">
+              <h3>Notifications</h3>
+              <button class="close-btn" (click)="showNotifications = false">
+                <span class="material-icons">close</span>
+              </button>
+            </div>
+            <div class="notification-list">
+              <div class="notification-item">
+                <span class="material-icons">warning</span>
+                <div class="notification-content">
+                  <p class="notification-title">Nouvelle crise signalée</p>
+                  <p class="notification-time">Il y a 5 minutes</p>
+                </div>
+              </div>
+              <div class="notification-item">
+                <span class="material-icons">info</span>
+                <div class="notification-content">
+                  <p class="notification-title">Mise à jour du système</p>
+                  <p class="notification-time">Il y a 1 heure</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        }
+      </div>
+
+      <!-- User Menu -->
+      <div class="user-wrapper">
+        <button class="user-button" (click)="toggleUserMenu()">
+          <span class="company-name">{{ companyName }}</span>
+          <span class="material-icons user-icon">account_circle</span>
+        </button>
+
+        @if (showUserMenu) {
+          <div class="user-dropdown">
+            <div class="dropdown-header">
+              <span class="material-icons large-icon">account_circle</span>
+              <div class="user-info">
+                <p class="user-name">{{ currentUser?.lastName }}</p>
+                <p class="user-email">{{ currentUser?.email }}</p>
+              </div>
+            </div>
+            <div class="dropdown-divider"></div>
+            <button class="dropdown-item" (click)="goToSettings()">
+              <span class="material-icons">settings</span>
+              Paramètres
+            </button>
+            <div class="dropdown-divider"></div>
+            <button class="dropdown-item logout" (click)="logout()">
+              <span class="material-icons">logout</span>
+              Déconnexion
+            </button>
+          </div>
+        }
+      </div>
+    </div>
+  </header>
+
+  <!-- Sidebar -->
+  <aside class="admin-sidebar">
+    <button class="menu-toggle" (click)="toggleSidebar()">
+      <span class="material-icons">menu</span>
+    </button>
+
+    <nav class="sidebar-nav">
+      @for (item of navItems; track item.route) {
+        <a 
+          [routerLink]="item.route" 
+          routerLinkActive="active"
+          class="nav-item"
+          [title]="item.label">
+          <span class="material-icons">{{ item.icon }}</span>
+          <span class="nav-label">{{ item.label }}</span>
+        </a>
+      }
+    </nav>
+
+    <div class="sidebar-footer">
+      <a 
+        routerLink="/settings" 
+        routerLinkActive="active"
+        class="nav-item"
+        title="Paramètres">
+        <span class="material-icons">settings</span>
+        <span class="nav-label">Paramètres</span>
+      </a>
+      
+      <button class="nav-item logout-btn" (click)="logout()" title="Déconnexion">
+        <span class="material-icons">logout</span>
+        <span class="nav-label">Déconnexion</span>
+      </button>
+    </div>
+  </aside>
+
+  <!-- Main Content -->
+  <main class="admin-content">
+    <router-outlet></router-outlet>
+  </main>
+
+</div>
+
+<!-- Overlay pour fermer les dropdowns -->
+@if (showNotifications || showUserMenu) {
+  <div class="overlay" (click)="showNotifications = false; showUserMenu = false"></div>
+}
