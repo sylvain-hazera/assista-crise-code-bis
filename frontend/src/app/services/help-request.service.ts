@@ -1,13 +1,13 @@
-// src/app/shared/services/help-request.service.ts
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { environment } from '../../../environments/environment';
 
 export interface HelpRequest {
   id?: number;
   eventType: string;
-  needType: string;
-  description: string;
+  needType: string[];
+  description: string[];
   streetNumber: string;
   postalCode: string;
   addressVisible: boolean;
@@ -19,7 +19,7 @@ export interface HelpRequest {
   providedIn: 'root'
 })
 export class HelpRequestService {
-  private apiUrl = 'http://localhost:8000/api/help-requests';
+  private apiUrl = `${environment.apiUrl}/help-requests`;
 
   constructor(private http: HttpClient) {}
 
@@ -27,10 +27,18 @@ export class HelpRequestService {
     return this.http.post<HelpRequest>(this.apiUrl, formData);
   }
 
-  getRequests(): Observable<HelpRequest[]> {
-    return this.http.get<HelpRequest[]>(this.apiUrl);
+  // getRequests(): Observable<HelpRequest[]> {
+  //   return this.http.get<HelpRequest[]>(this.apiUrl);
+  // }
+
+  getRequests(params?: any): Observable<HelpRequest[]> {
+    return this.http.get<HelpRequest[]>(`${this.apiUrl}/`, { params });
   }
 
+  getMyRequests(): Observable<HelpRequest[]> {
+    return this.http.get<HelpRequest[]>(`${this.apiUrl}/my_requests/`);
+  }
+  
   getRequest(id: number): Observable<HelpRequest> {
     return this.http.get<HelpRequest>(`${this.apiUrl}/${id}`);
   }

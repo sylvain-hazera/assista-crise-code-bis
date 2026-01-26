@@ -1,6 +1,6 @@
 import { Component, EventEmitter, Output } from '@angular/core';
-import { GeolocationService } from '../../service/geolocation.service'
 import { CommonModule } from '@angular/common';
+import { GeolocationService } from '../../../../services/geolocation.service';
 
 @Component({
   selector: 'app-geolocation-popup',

@@ -2,22 +2,11 @@ import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Injectable } from '@angular/core';
 import { Router } from '@angular/router';
 import { BehaviorSubject, catchError, Observable, tap, throwError } from 'rxjs';
+import { environment } from '../../../environments/environment';
+import { User, UserRole } from '../../shared/models/user.model';
 
-export interface User {
-  id?: number;
-  userType: 'individual' | 'organization';
-  lastName: string;
-  firstName?: string;
-  pseudo?: string;
-  email: string;
-  phone: string;
-  postalCode: string;
-  acceptTerms: boolean;
-  token?: string;
-}
-
-export interface RegisterRequest {
-  userType: string;
+interface RegisterRequest {
+  userType: UserRole;
   lastName: string;
   firstName?: string;
   pseudo?: string;
@@ -25,15 +14,14 @@ export interface RegisterRequest {
   email: string;
   phone: string;
   postalCode: string;
-  acceptTerms: boolean;
 }
 
-export interface LoginRequest {
+interface LoginRequest {
   email: string;
   password: string;
 }
 
-export interface AuthResponse {
+interface AuthResponse {
   user: User;
   token: string;
   message?: string;
@@ -43,7 +31,7 @@ export interface AuthResponse {
   providedIn: 'root'
 })
 export class AuthService {
-  private apiUrl = 'http://localhost:8000/api/auth';
+  private apiUrl = `${environment.apiUrl}/auth`;
   
   private currentUserSubject = new BehaviorSubject<User | null>(null);
   public currentUser$ = this.currentUserSubject.asObservable();
