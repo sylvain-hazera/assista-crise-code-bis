@@ -2,12 +2,12 @@ from django.shortcuts import render
 from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticatedOrReadOnly
 from .models import (
-    Utilisateur, Crise, Demande, Offre, Information, Materiel,
+    Utilisateur, Crise, Demande, Offre, Information,
     TypeDemande, TypeOffre, TypeInformation
 )
 from .serializers import (
     UtilisateurSerializer, CriseSerializer, DemandeSerializer,
-    OffreSerializer, InformationSerializer, MaterielSerializer,
+    OffreSerializer, InformationSerializer,
     TypeDemandeSerializer, TypeOffreSerializer, TypeInformationSerializer
 )
 
@@ -34,10 +34,6 @@ class InformationViewSet(viewsets.ModelViewSet):
     queryset = Information.objects.all()
     serializer_class = InformationSerializer
     permission_classes = [IsAuthenticatedOrReadOnly]
-
-class MaterielViewSet(viewsets.ModelViewSet):
-    queryset = Materiel.objects.all()
-    serializer_class = MaterielSerializer
 
 # --- VIEWSETS SIMPLES POUR LES TYPES ---
 class TypeDemandeViewSet(viewsets.ModelViewSet):

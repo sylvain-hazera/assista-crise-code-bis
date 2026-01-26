@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from .models import (
-    Utilisateur, Crise, Demande, Offre, Information, Materiel,
+    Utilisateur, Crise, Demande, Offre, Information,
     TypeDemande, TypeOffre, TypeInformation
 )
 
@@ -49,9 +49,4 @@ class OffreSerializer(serializers.ModelSerializer):
 class InformationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Information
-        fields = '__all__'
-
-class MaterielSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Materiel
         fields = '__all__'

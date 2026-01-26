@@ -2,7 +2,7 @@ from django.contrib import admin
 
 from django.contrib.gis.admin import GISModelAdmin
 from .models import (
-    Utilisateur, Crise, Demande, Offre, Information, Materiel,
+    Utilisateur, Crise, Demande, Offre, Information,
     TypeDemande, TypeOffre, TypeInformation
 )
 
@@ -26,9 +26,6 @@ class OffreAdmin(GISModelAdmin):
 class InformationAdmin(GISModelAdmin):
     list_display = ('titre', 'statut', 'type_information')
 
-@admin.register(Materiel)
-class MaterielAdmin(GISModelAdmin):
-    list_display = ('__str__', 'est_emprunte')
 
 @admin.register(Utilisateur)
 class UtilisateurAdmin(admin.ModelAdmin):

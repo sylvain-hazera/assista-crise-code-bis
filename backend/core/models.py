@@ -54,13 +54,6 @@ class Utilisateur(AbstractUser):
         related_name="utilisateurs_consultant"
     )
 
-    consulte_materiel = models.ManyToManyField(
-        "Materiel",
-        blank=True,
-        related_name="utilisateurs_consultant"
-    )
-    
-
     def __str__(self) -> str:  # pragma: no cover - display helper
         return self.username
 
@@ -180,22 +173,7 @@ class TypeOffre(models.Model):
         return self.type
 
 
-class Materiel(models.Model):
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    photo = models.ImageField(upload_to="photos/materiel/", null=True, blank=True)
-    localisation = gis_models.PointField(srid=4326)
-    est_emprunte = models.BooleanField(default=False)
-    date_emprunt = models.DateTimeField(null=True, blank=True)
-    date_rendu = models.DateTimeField(null=True, blank=True)
 
-
-    crise = models.ForeignKey(
-        "Crise", on_delete=models.SET_NULL, null=True, blank=True, related_name="materiels"
-    )
-    
-
-    def __str__(self) -> str:  # pragma: no cover - display helper
-        return f"Materiel {self.id}"
 
 
 class Offre(models.Model):
@@ -221,13 +199,7 @@ class Offre(models.Model):
     crise = models.ForeignKey(
         "Crise", on_delete=models.SET_NULL, null=True, blank=True, related_name="offres"
     )
-    materiel = models.OneToOneField(
-        "Materiel",
-        on_delete=models.CASCADE,
-        null=True,
-        blank=True,
-        related_name="offre",
-    )
+
     auteur = models.ForeignKey(
         Utilisateur,
         on_delete=models.SET_NULL,
