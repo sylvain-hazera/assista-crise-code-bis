@@ -1,5 +1,6 @@
 import { Injectable } from '@angular/core';
 import { BehaviorSubject, Observable } from 'rxjs';
+import { HttpClient } from '@angular/common/http';
 
 export interface Coordinates {
   latitude: number;
@@ -15,8 +16,15 @@ export class GeolocationService {
 
   private permissionGranted = false;
 
-  constructor() {
+  private banApiUrl = 'https://api-adresse.data.gouv.fr/search/';
+
+  constructor(private http: HttpClient) {
     this.checkStoredLocation();
+  }
+
+  getCoordinates(addressQuery: string): Observable<any> {
+    const url = `${this.banApiUrl}?q=${encodeURIComponent(addressQuery)}&limit=1`;
+    return this.http.get<any>(url);
   }
 
   private checkStoredLocation(): void {

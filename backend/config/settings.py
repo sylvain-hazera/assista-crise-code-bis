@@ -27,6 +27,9 @@ DEBUG = True
 
 ALLOWED_HOSTS = ["*"]
 
+# Custom user model
+AUTH_USER_MODEL = 'core.Utilisateur'
+
 
 # Application definition
 
@@ -127,10 +130,17 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 
+# MEDIA files (uploads)
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
+
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:4200",
     "http://127.0.0.1:4200",
+    "http://frontend:4200",  # Pour Docker
 ]
+
+CORS_ALLOW_CREDENTIALS = True
 
 REST_FRAMEWORK = {
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
