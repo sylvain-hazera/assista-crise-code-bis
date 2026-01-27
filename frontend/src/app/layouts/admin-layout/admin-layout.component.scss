@@ -1,3 +1,132 @@
+// .admin-layout {
+//   display: grid;
+//   grid-template-areas:
+//     "header header"
+//     "sidebar main";
+//   grid-template-columns: 250px 1fr;  // ← Augmenté de 200px à 250px
+//   grid-template-rows: 70px 1fr;
+//   min-height: 100vh;
+//   background-color: #f5f7fa;
+//   transition: grid-template-columns 0.3s ease;
+
+//   &.sidebar-collapsed {
+//     grid-template-columns: 70px 1fr;  // ← Ajusté pour les icônes
+
+//     .admin-sidebar {
+//       .nav-label {
+//         opacity: 0;
+//         width: 0;
+//         overflow: hidden;
+//       }
+
+//       .nav-item {
+//         justify-content: center;
+//         padding: 1rem;
+//       }
+//     }
+//   }
+// }
+
+// .admin-content {
+//   grid-area: main;
+//   padding: 2rem;
+//   overflow-y: auto;
+//   animation: fadeIn 0.3s ease;
+// }
+
+// // Animations
+// @keyframes fadeIn {
+//   from {
+//     opacity: 0;
+//     transform: translateY(10px);
+//   }
+//   to {
+//     opacity: 1;
+//     transform: translateY(0);
+//   }
+// }
+
+// @keyframes slideDown {
+//   from {
+//     opacity: 0;
+//     transform: translateY(-10px);
+//   }
+//   to {
+//     opacity: 1;
+//     transform: translateY(0);
+//   }
+// }
+
+// // Responsive
+// @media (max-width: 768px) {
+//   .admin-layout {
+//     grid-template-areas:
+//       "header"
+//       "main";
+//     grid-template-columns: 1fr;
+//     grid-template-rows: 70px 1fr;
+
+//     &.sidebar-collapsed {
+//       grid-template-columns: 1fr;
+//     }
+//   }
+
+//   .admin-sidebar {
+//     position: fixed;
+//     left: -250px;
+//     top: 70px;
+//     bottom: 0;
+//     width: 250px;
+//     z-index: 200;
+//     transition: left 0.3s ease;
+//     box-shadow: 2px 0 8px rgba(0, 0, 0, 0.1);
+
+//     &:not(.sidebar-collapsed) {
+//       left: 0;
+//     }
+//   }
+
+//   .admin-content {
+//     padding: 1rem;
+//   }
+
+//   .header-right .company-name {
+//     display: none;
+//   }
+// }
+
+// // admin-layout.component.scss
+// .sidebar-overlay {
+//   display: none;
+  
+//   @media (max-width: 768px) {
+//     display: block;
+//     position: fixed;
+//     top: 70px;
+//     left: 0;
+//     right: 0;
+//     bottom: 0;
+//     background: rgba(0, 0, 0, 0.5);
+//     z-index: 199;
+//     animation: fadeIn 0.2s ease;
+//   }
+// }
+
+// // Très petits écrans
+// @media (max-width: 480px) {
+//   .admin-content {
+//     padding: 0.5rem;
+//   }
+
+//   .admin-header {
+//     padding: 0 1rem;
+
+//     .logo-text {
+//       display: none;
+//     }
+//   }
+// }
+
 .admin-layout {
   display: grid;
   grid-template-areas:

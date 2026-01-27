@@ -1,3 +1,4 @@
+<!-- admin/dashboard/dashboard.component.html -->
 <div class="dashboard">
   
   <!-- Header -->
@@ -5,10 +6,38 @@
     <div class="header-title">
       <h1>ESPACE ADMIN</h1>
     </div>
-    <button class="filter-button">
-      <span class="material-icons">tune</span>
-    </button>
+    <div class="header-actions">
+      <button class="icon-btn refresh-btn" (click)="refreshData()" [disabled]="isLoading">
+        <span class="material-icons" [class.spinning]="isLoading">refresh</span>
+      </button>
+      <div class="filter-container">
+        <button class="filter-button" (click)="toggleDropdown()">
+          <span class="material-icons">tune</span>
+        </button>
+
+        <div class="dropdown-menu" [class.show]="isDropdownOpen">
+          <ul>
+            @for(option of filterOptions; track option.label) {
+              <li (click)="selectFilter(option)" [class.active]="currentFilter === option.action">
+                {{option.label}}
+              </li>
+            }
+          </ul>
+        </div>
+      </div>
+    </div>
   </div>
+
+  <!-- Error Message -->
+  @if (errorMessage) {
+    <div class="alert alert-error">
+      <span class="material-icons">error</span>
+      {{ errorMessage }}
+      <button (click)="errorMessage = ''" class="close-btn">
+        <span class="material-icons">close</span>
+      </button>
+    </div>
+  }
 
   <!-- Stats Cards -->
   <div class="stats-grid">
@@ -17,8 +46,15 @@
         <div class="stat-header">
           <div class="stat-info">
             <h3>{{ stat.title }}</h3>
-            <p class="stat-value">{{ stat.value }}</p>
-            <span class="stat-change">{{ stat.change }}</span>
+            @if (stat.loading) {
+              <div class="skeleton skeleton-text"></div>
+              <div class="skeleton skeleton-text-small"></div>
+            } @else {
+              <p class="stat-value">{{ stat.value }}</p>
+              <span class="stat-change" [class.positive]="stat.change.startsWith('+')">
+                {{ stat.change }}
+              </span>
+            }
           </div>
           <div class="stat-icon">
             <span class="material-icons">{{ stat.icon }}</span>
@@ -33,80 +69,74 @@
     <!-- Line Chart -->
     <div class="chart-card">
       <div class="chart-header">
-        <h2>Résumé</h2>
+        <h2>Évolution temporelle</h2>
         <div class="chart-actions">
-          <button class="icon-btn">
-            <span class="material-icons">unfold_more</span>
+          <button class="icon-btn" (click)="toggleLineChartScreen()">
+            <span class="material-icons">{{isLineChartFullScreen ? 'fullscreen_exit' : 'fullscreen'}}</span>
           </button>
-          <button class="icon-btn">
+          <button class="icon-btn" (click)="downloadLineChart()">
             <span class="material-icons">download</span>
           </button>
         </div>
       </div>
       <div class="chart-legend">
         <span class="legend-item">
-          <span class="legend-dot series-1"></span>
-          Series 1
+          <span class="legend-dot red"></span>
+          Crises
         </span>
         <span class="legend-item">
-          <span class="legend-dot series-2"></span>
-          Series 2
+          <span class="legend-dot green"></span>
+          Ressources
         </span>
         <span class="legend-item">
-          <span class="legend-dot series-3"></span>
-          Series 3
+          <span class="legend-dot blue"></span>
+          Besoins
         </span>
       </div>
       <div class="chart-placeholder">
-        <!-- Placeholder pour le graphique -->
-        <svg viewBox="0 0 400 200" class="line-chart">
-          <polyline points="20,150 80,120 140,90 200,110 260,80 320,100 380,70" 
-                    fill="none" stroke="#4285f4" stroke-width="2"/>
-          <polyline points="20,140 80,160 140,130 200,150 260,120 320,140 380,110" 
-                    fill="none" stroke="#ea4335" stroke-width="2"/>
-          <polyline points="20,170 80,140 140,160 200,130 260,150 320,120 380,140" 
-                    fill="none" stroke="#34a853" stroke-width="2"/>
-        </svg>
+        @if (isLoading) {
+          <div class="skeleton skeleton-chart"></div>
+        } @else if (lineChartData.series.length > 0) {
+          <!-- Intégrez ici votre bibliothèque de graphiques (Chart.js, ApexCharts, etc.) -->
+          <svg viewBox="0 0 400 200" class="line-chart">
+            <!-- SVG généré dynamiquement -->
+          </svg>
+        } @else {
+          <div class="empty-state">
+            <span class="material-icons">show_chart</span>
+            <p>Aucune donnée disponible</p>
+          </div>
+        }
       </div>
     </div>
 
     <!-- Pie Chart -->
     <div class="chart-card chart-card-sm">
       <div class="chart-header">
-        <h2>Résumé</h2>
+        <h2>Répartition</h2>
         <div class="chart-actions">
-          <button class="icon-btn">
-            <span class="material-icons">unfold_more</span>
+          <button class="icon-btn" (click)="togglePieChartScreen()">
+            <span class="material-icons">{{isPieChartFullScreen ? 'fullscreen_exit' : 'fullscreen'}}</span>
           </button>
-          <button class="icon-btn">
+          <button class="icon-btn" (click)="downloadPieChart()">
             <span class="material-icons">download</span>
           </button>
         </div>
       </div>
-      <div class="chart-legend">
-        <span class="legend-item">
-          <span class="legend-dot series-1"></span>
-          S...
-        </span>
-        <span class="legend-item">
-          <span class="legend-dot series-2"></span>
-          S...
-        </span>
-        <span class="legend-item">
-          <span class="legend-dot series-3"></span>
-          S...
-        </span>
-      </div>
       <div class="chart-placeholder pie-chart">
-        <!-- Placeholder pour le pie chart -->
-        <svg viewBox="0 0 200 200" class="pie">
-          <circle cx="100" cy="100" r="80" fill="#4285f4" 
-                  stroke="#fff" stroke-width="2"/>
-          <path d="M 100 100 L 100 20 A 80 80 0 0 1 180 100 Z" 
-                fill="#ea4335" stroke="#fff" stroke-width="2"/>
-          <path d="M 100 100 L 180 100 A 80 80 0 0 1 140 170 Z" 
-                fill="#34a853" stroke="#fff" stroke-width="2"/>
-        </svg>
+        @if (isLoading) {
+          <div class="skeleton skeleton-pie"></div>
+        } @else if (pieChartData.series.length > 0) {
+          <!-- SVG du pie chart -->
+          <svg viewBox="0 0 200 200" class="pie">
+            <!-- SVG généré dynamiquement -->
+          </svg>
+        } @else {
+          <div class="empty-state">
+            <span class="material-icons">pie_chart</span>
+            <p>Aucune donnée disponible</p>
+          </div>
+        }
       </div>
     </div>
   </div>
@@ -114,42 +144,55 @@
   <!-- Recent Announcements -->
   <div class="table-card">
     <div class="table-header">
-      <h2>Annonces récentes</h2>
+      <h2>Crises récentes</h2>
       <button class="icon-btn">
         <span class="material-icons">download</span>
       </button>
     </div>
     <div class="table-wrapper">
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>Titre</th>
-            <th>Date</th>
-            <th>Statut</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (announcement of recentAnnouncements; track announcement.id) {
-            <tr>
-              <td>{{ announcement.id }}</td>
-              <td>{{ announcement.title }}</td>
-              <td>{{ announcement.date }}</td>
-              <td>
-                <span class="status-badge" [class]="'status-' + announcement.status">
-                  {{ announcement.status }}
-                </span>
-              </td>
-              <td>
-                <button class="action-btn">
-                  <span class="material-icons">more_vert</span>
-                </button>
-              </td>
-            </tr>
+      @if (isLoading) {
+        <div class="skeleton-table">
+          @for (i of [1,2,3]; track i) {
+            <div class="skeleton skeleton-row"></div>
           }
-        </tbody>
-      </table>
+        </div>
+      } @else if (recentAnnouncements.length > 0) {
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Titre</th>
+              <th>Date</th>
+              <th>Statut</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (announcement of recentAnnouncements; track announcement.id) {
+              <tr>
+                <td>#{{ announcement.id }}</td>
+                <td>{{ announcement.title }}</td>
+                <td>{{ announcement.date }}</td>
+                <td>
+                  <span class="status-badge" [class]="'status-' + announcement.status">
+                    {{ announcement.status }}
+                  </span>
+                </td>
+                <td>
+                  <button class="action-btn" [routerLink]="['/admin/crises', announcement.id]">
+                    <span class="material-icons">visibility</span>
+                  </button>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      } @else {
+        <div class="empty-state">
+          <span class="material-icons">inbox</span>
+          <p>Aucune crise récente</p>
+        </div>
+      }
     </div>
   </div>
 
