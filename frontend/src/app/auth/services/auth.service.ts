@@ -205,11 +205,11 @@ export class AuthService {
     this.http.post(`${this.apiUrl}/logout`, {}).subscribe({
       next: () => {
         this.clearAuthData();
-        this.router.navigate(['/login']);
+        this.router.navigate(['/accueil']);
       },
       error: () => {
         this.clearAuthData();
-        this.router.navigate(['/login']);
+        this.router.navigate(['/accueil']);
       }
     });
   }
@@ -221,7 +221,7 @@ export class AuthService {
 
   isAdmin(): boolean {
     const user = this.currentUserSubject.value;
-    return user ? user.userType !== 'individual' : false;
+    return user ? user.userType !== UserRole.Individual : false;
   }
   // Obtenir l'utilisateur actuel
   getCurrentUser(): User | null {

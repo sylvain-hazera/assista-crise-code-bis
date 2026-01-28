@@ -14,18 +14,46 @@
       <a routerLink="/info" routerLinkActive="active">Info</a>
     </nav>
 
-      <div class="user-menu">
-          @if(userName) {
-            <span class="user-name">{{ userName }}</span>
-          }
-          
-          <button class="user-button"  (click)="handleUserAction()">
-            <span class="material-symbols-outlined" style="font-size: 2.5rem;">
-              account_circle
-            </span>
-          </button>
+      <div class="user-wrapper">
+        <button class="user-button" (click)="handleUserAction()">
+          <span class="material-icons">
+            account_circle
+          </span>
+        </button>
+
+        @if(showUserMenu) {
+          <div class="user-dropdown">
+            <div class="dropdown-header">
+              <span class="material-icons large-icon">account_circle</span>
+              <div class="user-info">
+                <p class="user-name">{{ currentUser?.lastName }}</p>
+                <p class="user-email">{{ currentUser?.email }}</p>
+              </div>
+            </div>
+            @if(isAdmin) {
+              <div class="dropdown-divider"></div>
+                <button class="dropdown-item" (click)="goToProfile()">
+                  <span class="material-icons">settings_account_box</span>
+                  Mon compte
+                </button>
+              <div class="dropdown-divider"></div>
+            }
+            <button class="dropdown-item" (click)="goToSettings()">
+              <span class="material-icons">settings</span>
+              Paramètres
+            </button>
+            <div class="dropdown-divider"></div>
+            <button class="dropdown-item logout" (click)="logout()">
+              <span class="material-icons">logout</span>
+              Déconnexion
+            </button>
+          </div>
+        }
       </div>
     </div>
-    
   </div>
 </header>
+
+@if(showUserMenu) {
+  <div class="overlay" (click)="showUserMenu=false"></div>
+}
