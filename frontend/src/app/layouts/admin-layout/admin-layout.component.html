@@ -14,35 +14,41 @@
       <div class="notification-wrapper">
         <button class="icon-button" (click)="toggleNotifications()">
           <span class="material-icons">notifications</span>
-          <span class="notification-badge">2</span>
+          <span class="notification-badge">{{notifications.length}}</span>
         </button>
 
         @if (showNotifications) {
-          <div class="notification-dropdown">
-            <div class="dropdown-header">
-              <h3>Notifications</h3>
-              <button class="close-btn" (click)="showNotifications = false">
-                <span class="material-icons">close</span>
-              </button>
-            </div>
-            <div class="notification-list">
-              <div class="notification-item">
-                <span class="material-icons">warning</span>
-                <div class="notification-content">
-                  <p class="notification-title">Nouvelle crise signalée</p>
-                  <p class="notification-time">Il y a 5 minutes</p>
-                </div>
-              </div>
-              <div class="notification-item">
-                <span class="material-icons">info</span>
-                <div class="notification-content">
-                  <p class="notification-title">Mise à jour du système</p>
-                  <p class="notification-time">Il y a 1 heure</p>
-                </div>
-              </div>
-            </div>
+        <div class="notification-dropdown">
+          <div class="dropdown-header">
+            <h3>Notifications</h3>
+            <button 
+              class="close-btn" 
+              (click)="showNotifications = false"
+              aria-label="Fermer les notifications">
+              <span class="material-icons">close</span>
+            </button>
           </div>
-        }
+          
+          <div class="notification-list">
+            @for (notification of notifications; track $index) {
+              <div class="notification-item" (click)="showNotifications = false">
+                <span class="material-icons" [class]="notification.type">
+                  {{ notification.icon }}
+                </span>
+                <div class="notification-content">
+                  <p class="notification-title">{{ notification.title }}</p>
+                  <p class="notification-time">{{ notification.time }}</p>
+                </div>
+              </div>
+            } @empty {
+              <div class="notification-empty">
+                <span class="material-icons">notifications_none</span>
+                <p>Aucune notification</p>
+              </div>
+            }
+          </div>
+        </div>
+      }
       </div>
 
       <!-- User Menu -->
@@ -85,14 +91,16 @@
 
     <nav class="sidebar-nav">
       @for (item of navItems; track item.route) {
-        <a 
-          [routerLink]="item.route" 
-          routerLinkActive="active"
-          class="nav-item"
-          [title]="item.label">
-          <span class="material-icons">{{ item.icon }}</span>
-          <span class="nav-label">{{ item.label }}</span>
-        </a>
+        <!-- @if (!(item.label === 'utilisateurs' && currentUser?.userType !== UserRole.Admin)) { -->
+          <a 
+            [routerLink]="item.route" 
+            routerLinkActive="active"
+            class="nav-item"
+            [title]="item.label">
+            <span class="material-icons">{{ item.icon }}</span>
+            <span class="nav-label">{{ item.label }}</span>
+          </a>
+        <!-- } -->
       }
     </nav>
 
