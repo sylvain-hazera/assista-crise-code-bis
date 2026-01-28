@@ -6,14 +6,13 @@ import { environment } from '../../../environments/environment';
 import { User, UserRole } from '../../shared/models/user.model';
 
 interface RegisterRequest {
-  userType: UserRole;
-  lastName: string;
-  firstName?: string;
-  pseudo?: string;
-  password: string;
+  username: string;
   email: string;
-  phone: string;
-  postalCode: string;
+  password: string;
+  type: string;  // RoleUtilisateur
+  telephone_utilisateur: string;
+  last_name: string;
+  first_name?: string;
 }
 
 interface LoginRequest {
@@ -31,7 +30,7 @@ interface AuthResponse {
   providedIn: 'root'
 })
 export class AuthService {
-  private apiUrl = `${environment.apiUrl}/auth`;
+  private apiUrl = `${environment.apiUrl}/users`;  // Utilise /api/users pour register/login
   
   private currentUserSubject = new BehaviorSubject<User | null>(null);
   public currentUser$ = this.currentUserSubject.asObservable();
@@ -73,7 +72,7 @@ export class AuthService {
 
   // Enregistrer un nouvel utilisateur
   register(data: RegisterRequest): Observable<AuthResponse> {
-    return this.http.post<AuthResponse>(`${this.apiUrl}/register`, data)
+    return this.http.post<AuthResponse>(`${this.apiUrl}/register/`, data)
       .pipe(
         tap(response => this.handleAuthSuccess(response)),
         catchError(this.handleError)
@@ -82,7 +81,7 @@ export class AuthService {
 
   // Connexion
   login(credentials: LoginRequest): Observable<AuthResponse> {
-    return this.http.post<AuthResponse>(`${this.apiUrl}/login`, credentials)
+    return this.http.post<AuthResponse>(`${this.apiUrl}/login/`, credentials)
       .pipe(
         tap(response => this.handleAuthSuccess(response)),
         catchError(this.handleError)
@@ -105,7 +104,7 @@ export class AuthService {
 
 // Déconnexion
   logout(): void {
-    this.http.post(`${this.apiUrl}/logout`, {}).subscribe({
+    this.http.post(`${this.apiUrl}/logout/`, {}).subscribe({
       next: () => {
         this.clearAuthData();
         this.router.navigate(['/login']);

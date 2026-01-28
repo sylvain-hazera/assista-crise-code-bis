@@ -50,10 +50,9 @@ export class RegisterComponent implements OnInit, OnDestroy {
 
   private initForm(): void {
     this.registerForm = this.formBuilder.group({
-      userType: ['individual', Validators.required],
+      userType: ['', Validators.required],  // Pas de valeur par défaut
       lastName: ['', [Validators.required, Validators.minLength(2), Validators.maxLength(50)]],
-      firstName: ['', [Validators.required, Validators.minLength(2), Validators.maxLength(50)]],
-      pseudo: ['', [Validators.required, Validators.minLength(3), Validators.maxLength(30)]],
+      firstName: [''],  // Optionnel, requis seulement si particulier
       password: ['', [
         Validators.required,
         Validators.minLength(8),
@@ -75,37 +74,27 @@ export class RegisterComponent implements OnInit, OnDestroy {
   }
 
   private toggleFieldsBasedOnUserType(userType: string): void {
+    console.log('Toggle fields for userType:', userType);
     const firstNameControl = this.registerForm.get('firstName');
-    const pseudoControl = this.registerForm.get('pseudo');
 
-    if (userType === UserRole.Individual) {
-       // Activer les champs pour les particuliers
+    if (userType === 'Individual' || userType === 'individual') {  // Gérer les deux cas
+       // Activer firstName pour les particuliers
+      console.log('Activating firstName for individual');
       firstNameControl?.setValidators([
         Validators.required,
         Validators.minLength(2),
         Validators.maxLength(50)
       ]);
       firstNameControl?.enable();
-
-      pseudoControl?.setValidators([
-        Validators.required,
-        Validators.minLength(3),
-        Validators.maxLength(30)
-      ]);
-      pseudoControl?.enable();
     } else {
-      // Désactiver et réinitialiser les champs pour les institutions
+      // Désactiver firstName pour les organisations/secours
+      console.log('Disabling firstName for non-individual');
       firstNameControl?.clearValidators();
       firstNameControl?.setValue('');
       firstNameControl?.disable();
-
-      pseudoControl?.clearValidators();
-      pseudoControl?.setValue('');
-      pseudoControl?.disable();
     }
 
     firstNameControl?.updateValueAndValidity();
-    pseudoControl?.updateValueAndValidity();
   }
 
   // Validateur personnalisé pour la force du mot de passe
@@ -143,23 +132,19 @@ export class RegisterComponent implements OnInit, OnDestroy {
     this.isSubmitting = true;
     this.errorMessage = '';
 
-    // Préparer les données en excluant les champs désactivés
+    // Préparer les données pour Django
     const formValue = this.registerForm.getRawValue();
     const registerData: any = {
-      userType: formValue.userType,
-      lastName: formValue.lastName,
-      password: formValue.password,
+      username: formValue.email.split('@')[0],  // Utiliser email comme base pour username
       email: formValue.email,
-      phone: formValue.phone,
-      postalCode: formValue.postalCode,
-      acceptTerms: formValue.acceptTerms
+      password: formValue.password,
+      type: this.mapUserTypeToBackend(formValue.userType),  // Convertir en valeur Django
+      telephone_utilisateur: formValue.phone,
+      last_name: formValue.lastName,
+      first_name: formValue.firstName || '',  // Optionnel
     };
-
-    // Ajouter firstName et pseudo uniquement pour les particuliers
-    if (formValue.userType === 'individual') {
-      registerData.firstName = formValue.firstName;
-      registerData.pseudo = formValue.pseudo;
-    }
+    
+    console.log('Données envoyées:', registerData);
 
     this.authService.register(registerData)
       .pipe(takeUntil(this.destroy$))
@@ -227,6 +212,24 @@ export class RegisterComponent implements OnInit, OnDestroy {
   // }
 
   get isIndividual(): boolean {
-    return this.registerForm.get('userType')?.value === 'individual';
+    const userType = this.registerForm.get('userType')?.value;
+    return userType === 'Individual' || userType === 'individual';
+  }
+
+  /**
+   * Convertit les valeurs UserRole du frontend vers les valeurs RoleUtilisateur de Django
+   */
+  private mapUserTypeToBackend(userType: string): string {
+    const mapping: { [key: string]: string } = {
+      'Individual': 'UTIL_SIMPLE',
+      'individual': 'UTIL_SIMPLE',
+      'Organization': 'AUT_LOCALE',
+      'organization': 'AUT_LOCALE',
+      'Rescue': 'SECOURS',
+      'rescue': 'SECOURS',
+      'Admin': 'ADMIN',
+      'admin': 'ADMIN'
+    };
+    return mapping[userType] || 'UTIL_SIMPLE';
   }
 }

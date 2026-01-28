@@ -56,7 +56,7 @@
         </div>
       </div>
 
-      <!-- Prénom (masqué pour les institutions) -->
+      <!-- Prénom (uniquement pour les particuliers) -->
        @if(isIndividual) {
         <div class="form-group">
             <label for="firstName" class="form-label">Prénom</label>
@@ -65,27 +65,10 @@
             id="firstName" 
             formControlName="firstName"
             class="form-input"
-            placeholder="Placeholder"
+            placeholder="Votre prénom"
             [class.invalid]="isFieldInvalid('firstName')">
             <div class="error-message" *ngIf="isFieldInvalid('firstName')">
             {{ getFieldError('firstName') }}
-            </div>
-        </div>
-        }
-
-      <!-- Pseudo (masqué pour les institutions) -->
-       @if(isIndividual) {
-        <div class="form-group">
-            <label for="pseudo" class="form-label">Pseudo</label>
-            <input 
-            type="text" 
-            id="pseudo" 
-            formControlName="pseudo"
-            class="form-input"
-            placeholder="Placeholder"
-            [class.invalid]="isFieldInvalid('pseudo')">
-            <div class="error-message" *ngIf="isFieldInvalid('pseudo')">
-            {{ getFieldError('pseudo') }}
             </div>
         </div>
         }

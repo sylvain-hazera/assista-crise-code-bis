@@ -134,7 +134,6 @@ export class RequestHelpFormComponent implements OnInit {
   }
 
   onSubmit(): void {
-    alert('onSubmit appelé !');
     console.log('=== DEBUG SUBMIT ===');
     console.log('requestForm valid:', this.requestForm.valid);
     console.log('requestForm errors:', this.requestForm.errors);
