@@ -1,4 +1,3 @@
-<!-- admin/dashboard/dashboard.component.html -->
 <div class="dashboard">
   
   <!-- Header -->
@@ -15,7 +14,8 @@
           <span class="material-icons">tune</span>
         </button>
 
-        <div class="dropdown-menu" [class.show]="isDropdownOpen">
+        @if(isDropdownOpen) {
+          <div class="dropdown-menu">
           <ul>
             @for(option of filterOptions; track option.label) {
               <li (click)="selectFilter(option)" [class.active]="currentFilter === option.action">
@@ -24,6 +24,7 @@
             }
           </ul>
         </div>
+        }
       </div>
     </div>
   </div>
@@ -67,7 +68,7 @@
   <!-- Charts Section -->
   <div class="charts-grid">
     <!-- Line Chart -->
-    <div class="chart-card">
+    <div class="chart-card"  [class.fullscreen]="isLineChartFullScreen">
       <div class="chart-header">
         <h2>Évolution temporelle</h2>
         <div class="chart-actions">
@@ -111,7 +112,7 @@
     </div>
 
     <!-- Pie Chart -->
-    <div class="chart-card chart-card-sm">
+    <div class="chart-card chart-card-sm" [class.fullscreen]="isPieChartFullScreen">
       <div class="chart-header">
         <h2>Répartition</h2>
         <div class="chart-actions">
@@ -195,5 +196,10 @@
       }
     </div>
   </div>
-
 </div>
+
+
+<!-- Overlay pour fermer les dropdowns -->
+@if (isDropdownOpen) {
+  <div class="overlay" (click)="isDropdownOpen = false"></div>
+}

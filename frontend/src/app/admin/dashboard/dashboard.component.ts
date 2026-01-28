@@ -1,5 +1,4 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
-import { CommonModule } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
 import { forkJoin, Subject, takeUntil } from 'rxjs';
 import { CrisisService } from '../../services/crisis.service';
