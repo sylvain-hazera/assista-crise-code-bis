@@ -7,6 +7,12 @@ export interface HelpPropose {
   id?: number;
   resourceType: string[];
   description: string;
+  // localisation: {
+  //   type: 'Point';
+  //   coordinates: [number, number]; // [longitude, latitude]
+  // };
+  latitude: number;
+  longitude: number;
   availability: string;
   createdAt?: Date;
 }
@@ -15,7 +21,7 @@ export interface HelpPropose {
   providedIn: 'root'
 })
 export class HelpProposeService {
-  private apiUrl = `${environment.apiUrl}/help-proposes`;
+  private apiUrl = `${environment.apiUrl}/offres`;
 
   constructor(private http: HttpClient) {}
 

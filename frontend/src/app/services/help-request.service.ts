@@ -9,10 +9,12 @@ export interface HelpRequest {
   prenom: string;
   nom: string;
   email: string;
-  localisation: {
-    type: 'Point';
-    coordinates: [number, number]; // [longitude, latitude]
-  };
+  // localisation: {
+  //   type: 'Point';
+  //   coordinates: [number, number]; // [longitude, latitude]
+  // };
+  latitude: number;
+  longitude: number;
   photo?: string; // URL ou File pour upload
   date_creation?: string;
   date_expiration?: string;

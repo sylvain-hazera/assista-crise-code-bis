@@ -44,19 +44,46 @@ class UtilisateurSerializer(serializers.ModelSerializer):
         return user
 
 class CriseSerializer(serializers.ModelSerializer):
+    
+    latitude = serializers.SerializerMethodField()
+    longitude = serializers.SerializerMethodField()
+    
     class Meta:
         model = Crise
         fields = '__all__'
 
+    def get_latitude(self, obj):
+        return obj.localisation.y if obj.localisation else None
+    def get_longitude(self, obj):
+        return obj.localisation.x if obj.localisation else None
+
 class DemandeSerializer(serializers.ModelSerializer):
+
+    latitude = serializers.SerializerMethodField()
+    longitude = serializers.SerializerMethodField()
+
     class Meta:
         model = Demande
         fields = '__all__'
 
+    def get_latitude(self, obj):
+        return obj.localisation.y if obj.localisation else None
+    def get_longitude(self, obj):
+        return obj.localisation.x if obj.localisation else None
+
 class OffreSerializer(serializers.ModelSerializer):
+
+    latitude = serializers.SerializerMethodField()
+    longitude = serializers.SerializerMethodField()
+
     class Meta:
         model = Offre
         fields = '__all__'
+
+    def get_latitude(self, obj):
+        return obj.localisation.y if obj.localisation else None
+    def get_longitude(self, obj):
+        return obj.localisation.x if obj.localisation else None
 
 class InformationSerializer(serializers.ModelSerializer):
     class Meta:

@@ -7,10 +7,13 @@ export interface Crisis {
   id?: number;
   type: string;
   severity: string;
+  name: string;
   location: string;
   description: string;
   status: string;
   createdAt?: Date;
+  latitude: number;
+  longitude: number;
 }
 
 @Injectable({
