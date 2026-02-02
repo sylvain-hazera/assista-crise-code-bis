@@ -13,7 +13,7 @@ export const routes: Routes = [
     path: 'admin',
     component: AdminLayoutComponent,
     loadChildren: () => import('./admin/admin.routes').then(m => m.ADMIN_ROUTES),
-    //  canActivate: [adminGuard]
+     canActivate: [adminGuard]
   },
   { path: '**', redirectTo: '' }
 ];

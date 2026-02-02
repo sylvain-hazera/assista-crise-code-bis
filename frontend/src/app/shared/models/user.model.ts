@@ -1,5 +1,7 @@
 export interface User {
   id?: number;
+  login?: string;
+  hashPassword: string;
   userType: UserRole;
   lastName: string;
   firstName?: string;
@@ -7,6 +9,8 @@ export interface User {
   email: string;
   phone: string;
   postalCode: string;
+  emailVerified?: boolean;
+  enable?: boolean;
   avatar?: string;
   createdAt?: Date;
   updatedAt?: Date;

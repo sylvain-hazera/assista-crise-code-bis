@@ -1,0 +1,43 @@
+<aside class="admin-sidebar" [class.collapsed]="collapsed">
+  <button 
+    class="menu-toggle" 
+    (click)="toggleSidebar()"
+    [attr.aria-label]="collapsed ? 'Ouvrir le menu' : 'Fermer le menu'"
+    [attr.aria-expanded]="!collapsed">
+    <span class="material-icons">
+      {{ collapsed ? 'menu' : 'menu_open' }}
+    </span>
+  </button>
+
+  <nav class="sidebar-nav">
+    @for (item of navItems; track item.route) {
+      <a 
+        [routerLink]="item.route" 
+        routerLinkActive="active"
+        class="nav-item"
+        [title]="item.label">
+        <span class="material-icons">{{ item.icon }}</span>
+        <span class="nav-label">{{ item.label }}</span>
+      </a>
+    }
+  </nav>
+
+  <div class="sidebar-footer">
+    <a 
+      routerLink="/admin/settings" 
+      routerLinkActive="active"
+      class="nav-item"
+      title="Paramètres">
+      <span class="material-icons">settings</span>
+      <span class="nav-label">Paramètres</span>
+    </a>
+    
+    <button 
+      class="nav-item logout-btn" 
+      (click)="logout()" 
+      title="Déconnexion">
+      <span class="material-icons">logout</span>
+      <span class="nav-label">Déconnexion</span>
+    </button>
+  </div>
+</aside>
