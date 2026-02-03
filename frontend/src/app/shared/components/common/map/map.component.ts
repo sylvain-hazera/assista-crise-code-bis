@@ -34,9 +34,9 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
 
   ngOnInit(): void {
     // Si pas de données en entrée, on charge depuis le service
-    if (this.crises.length === 0) {
-      this.loadCrises();
-    }
+    // if (this.crises.length === 0) {
+    //   this.loadCrises();
+    // }
     if (this.helpRequests.length === 0) {
       this.loadHelpRequests();
     }
@@ -54,18 +54,18 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     if (this.map) this.map.remove();
   }
 
-  loadCrises() {
-    this.subscription = this.crisisService.getAllCrises().subscribe({
-      next: (crises) => {
-        console.log('Données de crises reçues:', crises);
-        this.crises = crises;
-        if (this.map) {
-          this.addCrisisMarkers();
-        }
-      },
-      error: (error) => console.error('Erreur API:', error)
-    });
-  }
+  // loadCrises() {
+  //   this.subscription = this.crisisService.getAllCrises().subscribe({
+  //     next: (crises) => {
+  //       console.log('Données de crises reçues:', crises);
+  //       this.crises = crises;
+  //       if (this.map) {
+  //         this.addCrisisMarkers();
+  //       }
+  //     },
+  //     error: (error) => console.error('Erreur API:', error)
+  //   });
+  // }
 
   loadHelpRequests() {
     this.subscription = this.helpRequestService.getAllRequests().subscribe({
@@ -107,9 +107,9 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
 
     this.map.on('load', () => {
       // Si on a déjà des données (reçues avant le chargement de la carte), on affiche
-      if (this.crises.length > 0) {
-        this.addCrisisMarkers();
-      }
+      // if (this.crises.length > 0) {
+      //   this.addCrisisRadius();
+      // }
       if (this.helpRequests.length > 0) {
         this.addHelpRequestMarkers();
       }
@@ -119,41 +119,14 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     });
   }
 
-  private addCrisisMarkers(): void {
-    if (!this.map) return;
-
-    // Nettoyage
-    this.markers.forEach(marker => marker.remove());
-    this.markers = [];
-
-    this.crises.forEach(crisis => {
-      // MapLibre attend : [Longitude, Latitude]
-      if (crisis.latitude && crisis.longitude) {
+  // private addCrisisRadius(): void {
+  //   if (!this.map) return;
+  //   this.crises.forEach(crisis => {
+  //     if (crisis.longitude && crisis.latitude) {
         
-        // Création du Popup HTML
-        const popupContent = `
-          <div style="color: black; font-family: sans-serif;">
-            <h3 style="margin: 0 0 5px 0;">${crisis.name}</h3>
-            <p style="margin: 0;">${crisis.description || 'Pas de description'}</p>
-            <br>
-            <small>Créé le : ${new Date(crisis.createdAt || Date.now()).toLocaleDateString()}</small>
-          </div>
-        `;
-
-        const popup = new maplibregl.Popup({ offset: 25 })
-          .setHTML(popupContent);
-
-        // Création du Marker
-        const marker = new maplibregl.Marker({ color: this.getSeverityColor(crisis.severity || 'LOW') })
-          .setLngLat([crisis.longitude, crisis.latitude])
-          .setPopup(popup)
-          .addTo(this.map!);
-
-        this.markers.push(marker);
-      }
-    });
-  }
-
+  //     }
+  //   });
+  // }
   private addHelpRequestMarkers(): void {
     if (!this.map) return;
 
