@@ -1,19 +1,18 @@
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Injectable } from '@angular/core';
 import { Router } from '@angular/router';
-import { BehaviorSubject, catchError, Observable, tap, throwError } from 'rxjs';
+import { BehaviorSubject, catchError, delay, Observable, of, tap, throwError } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import { User, UserRole } from '../../shared/models/user.model';
 
 interface RegisterRequest {
-  userType: UserRole;
-  lastName: string;
-  firstName?: string;
-  pseudo?: string;
-  password: string;
+  username: string;
   email: string;
-  phone: string;
-  postalCode: string;
+  password: string;
+  type: string;  // RoleUtilisateur
+  telephone_utilisateur: string;
+  last_name: string;
+  first_name?: string;
 }
 
 interface LoginRequest {
@@ -31,7 +30,7 @@ interface AuthResponse {
   providedIn: 'root'
 })
 export class AuthService {
-  private apiUrl = `${environment.apiUrl}/auth`;
+  private apiUrl = `${environment.apiUrl}/users`;  // Utilise /api/users pour register/login
   
   private currentUserSubject = new BehaviorSubject<User | null>(null);
   public currentUser$ = this.currentUserSubject.asObservable();
@@ -39,14 +38,73 @@ export class AuthService {
   private isAuthenticatedSubject = new BehaviorSubject<boolean>(false);
   public isAuthenticated$ = this.isAuthenticatedSubject.asObservable();
 
-  // constructor() {
-  //   const token = localStorage.getItem('token');
-  //   if (token) {
-  //     this.isConnectedSubject.next(true);
-  //     // Simuler la récupération du nom et du rôle
-  //     // this.userName = "Utilisateur"; 
+  // Utilisateurs de test
+  // private mockUsers: User[] = [
+  //   {
+  //     id: 1,
+  //     userType: UserRole.Admin,
+  //     lastName: 'Croix-Rouge Française',
+  //     firstName: '',
+  //     email: 'admin@croixrouge.fr',
+  //     phone: '+33123456789',
+  //     postalCode: '75001',
+  //     avatar: '🏥',
+  //     createdAt: new Date('2024-01-01'),
+  //     updatedAt: new Date()
+  //   },
+  //   {
+  //     id: 2,
+  //     userType: UserRole.Organization,
+  //     lastName: 'Secours Populaire',
+  //     firstName: '',
+  //     email: 'contact@secourspopulaire.fr',
+  //     phone: '+33198765432',
+  //     postalCode: '69001',
+  //     avatar: '🆘',
+  //     createdAt: new Date('2024-01-15'),
+  //     updatedAt: new Date()
+  //   },
+  //   {
+  //     id: 3,
+  //     userType: UserRole.Rescue,
+  //     lastName: 'Pompiers du Rhône',
+  //     firstName: '',
+  //     email: 'pompiers@sdis69.fr',
+  //     phone: '+33412345678',
+  //     postalCode: '69100',
+  //     avatar: '🚒',
+  //     createdAt: new Date('2024-02-01'),
+  //     updatedAt: new Date()
+  //   },
+  //   {
+  //     id: 4,
+  //     userType: UserRole.Individual,
+  //     lastName: 'Martin',
+  //     firstName: 'Sophie',
+  //     pseudo: 'sophie_m',
+  //     email: 'sophie.martin@email.fr',
+  //     phone: '+33656781234',
+  //     postalCode: '38000',
+  //     avatar: '👤',
+  //     createdAt: new Date('2024-03-01'),
+  //     updatedAt: new Date()
+  //   },
+  //   {
+  //     id: 5,
+  //     userType: UserRole.Individual,
+  //     lastName: 'Dubois',
+  //     firstName: 'Pierre',
+  //     pseudo: 'pierre_d',
+  //     email: 'pierre.dubois@email.fr',
+  //     phone: '+33687654321',
+  //     postalCode: '38100',
+  //     createdAt: new Date('2024-03-15'),
+  //     updatedAt: new Date()
   //   }
-  // }
+  // ];
+
+  // Mots de passe de test (tous : "password123")
+  private readonly TEST_PASSWORD = 'password123';
 
   constructor(
     private http: HttpClient,
@@ -73,7 +131,7 @@ export class AuthService {
 
   // Enregistrer un nouvel utilisateur
   register(data: RegisterRequest): Observable<AuthResponse> {
-    return this.http.post<AuthResponse>(`${this.apiUrl}/register`, data)
+    return this.http.post<AuthResponse>(`${this.apiUrl}/register/`, data)
       .pipe(
         tap(response => this.handleAuthSuccess(response)),
         catchError(this.handleError)
@@ -82,18 +140,56 @@ export class AuthService {
 
   // Connexion
   login(credentials: LoginRequest): Observable<AuthResponse> {
-    return this.http.post<AuthResponse>(`${this.apiUrl}/login`, credentials)
+    return this.http.post<AuthResponse>(`${this.apiUrl}/login/`, credentials)
       .pipe(
         tap(response => this.handleAuthSuccess(response)),
         catchError(this.handleError)
       );
   }
+
+  // Connexion (simulée)
+  // login(credentials: LoginRequest): Observable<AuthResponse> {
+  //   console.log('🔐 Tentative de connexion:', credentials.email);
+
+  //   // Simuler un délai réseau
+  //   return of(null).pipe(
+  //     delay(500),
+  //     (source) => {
+  //       const user = this.mockUsers.find(u => u.email === credentials.email);
+
+  //       if (!user) {
+  //         console.error('❌ Utilisateur non trouvé');
+  //         return throwError(() => new Error('Email ou mot de passe incorrect'));
+  //       }
+
+  //       if (credentials.password !== this.TEST_PASSWORD) {
+  //         console.error('❌ Mot de passe incorrect');
+  //         return throwError(() => new Error('Email ou mot de passe incorrect'));
+  //       }
+
+  //       // Générer un faux token
+  //       // const token = this.generateMockToken(user);
+  //       const token = 'votre_jwt_ici';
+        
+  //       const response: AuthResponse = {
+  //         user,
+  //         token,
+  //         message: 'Connexion réussie'
+  //       };
+
+  //       console.log('✅ Connexion réussie:', user.email);
+  //       this.handleAuthSuccess(response);
+
+  //       return of(response);
+  //     }
+  //   );
+  // }
+
   // login(credentials: any) {
-    // Simuler un appel API
-    // this.isConnectedSubject.next(true);
-    // this.userRole = 'admin'; // Pour le test
-    // this.userName = 'Jean Dupont';
-    // localStorage.setItem('token', 'votre_jwt_ici');
+  //   // Simuler un appel API
+  //   this.isAuthenticatedSubject.next(true);
+  //   this.currentUser$.next 
+  //   localStorage.setItem('token', 'votre_jwt_ici');
   // }
 
   // logout() {
@@ -105,14 +201,14 @@ export class AuthService {
 
 // Déconnexion
   logout(): void {
-    this.http.post(`${this.apiUrl}/logout`, {}).subscribe({
+    this.http.post(`${this.apiUrl}/logout/`, {}).subscribe({
       next: () => {
         this.clearAuthData();
-        this.router.navigate(['/login']);
+        this.router.navigate(['/accueil']);
       },
       error: () => {
         this.clearAuthData();
-        this.router.navigate(['/login']);
+        this.router.navigate(['/accueil']);
       }
     });
   }
@@ -124,7 +220,7 @@ export class AuthService {
 
   isAdmin(): boolean {
     const user = this.currentUserSubject.value;
-    return user ? user.userType !== 'individual' : false;
+    return user ? user.userType !== UserRole.Individual : false;
   }
   // Obtenir l'utilisateur actuel
   getCurrentUser(): User | null {

@@ -16,10 +16,10 @@
       </div>
     </div>
 
-    <form [formGroup]="requestForm">
+    @if(state === 1) {
+      <form [formGroup]="requestForm">
       
         <!-- Étape 1 : Détails de la demande -->
-        @if(state === 1) {
           <!-- Pour l'événement -->
             <div class="form-group">
                 <label for="eventType" class="form-label">
@@ -69,15 +69,15 @@
                     </div>
                 }
                 <div class="form-group">
-                    <label for="needType" class="form-label">
+                    <label [for]="'needType' + i" class="form-label">
                         De quoi avez-vous besoin ? <span class="required">*</span>
                     </label>
                     <div class="select-wrapper">
                     <select 
-                        id="needType" 
-                        formControlName="needType"
+                        [id]="'needType' + i" 
+                        [formControl]="$any(needsType.at(i))"
                         class="form-select"
-                        [class.invalid]="requestForm.get('needType')?.invalid && requestForm.get('needType')?.touched">
+                        [class.invalid]="needsType.at(i).invalid && needsType.at(i).touched">
                         <option value="">Choisissez votre besoin</option>
                         @for(option of needTypeOptions.slice(1); track option.value) {
                             <option [value]="option.value">
@@ -87,7 +87,7 @@
                     </select>
                     <span class="material-symbols-outlined select-arrow">arrow_drop_down</span>
                     </div>
-                    @if(requestForm.get('needType')?.invalid && requestForm.get('needType')?.touched) {
+                    @if(needsType.at(i).invalid && needsType.at(i).touched) {
                         <div class="error-message">
                             Veuillez sélectionner un type de besoin
                         </div>
@@ -96,18 +96,18 @@
 
                 <!-- Description -->
                 <div class="form-group">
-                    <label for="description" class="form-label">Description</label>
+                    <label [for]="'description' + i" class="form-label">Description</label>
                     <textarea 
-                    id="description" 
-                    formControlName="description"
+                    [id]="'description' + i" 
+                    [formControl]="$any(descriptions.at(i))"
                     class="form-textarea"
                     placeholder="Soyez précis"
                     rows="4"
-                    [class.invalid]="requestForm.get('description')?.invalid && requestForm.get('description')?.touched">
+                    [class.invalid]="descriptions.at(i).invalid && descriptions.at(i).touched">
                     </textarea>
-                    @if(requestForm.get('description')?.invalid && requestForm.get('description')?.touched) {
+                    @if(descriptions.at(i).invalid && descriptions.at(i).touched) {
                         <div class="error-message">
-                            Veuillez entrer une description
+                            Veuillez entrer une description (minimum 10 caractères)
                         </div>
                     }
                 </div>
@@ -192,7 +192,19 @@
                     class="file-input">
                 </div>
             </div>
+
+      <!-- Bouton Submit -->
+      <div class="form-actions">
+          <button 
+            type="button" 
+            class="btn-submit"
+            (click)="onContinue()">
+            Suivant >
+          </button>
+      </div>
+      </form>
         } @else if(state === 2) {
+      <form [formGroup]="informationForm">
           <!-- Étape 2 : Informations personnelles -->
             <div class="form-group">
                 <label for="personType" class="form-label">
@@ -203,7 +215,7 @@
                     id="personType" 
                     formControlName="personType"
                     class="form-select"
-                    [class.invalid]="requestForm.get('personType')?.invalid && requestForm.get('personType')?.touched">
+                    [class.invalid]="informationForm.get('personType')?.invalid && informationForm.get('personType')?.touched">
                     <option value="">Qui êtes-vous ?</option>
                     @for(option of personTypeOptions.slice(1); track option.value) {
                     <option [value]="option.value">
@@ -213,7 +225,7 @@
                 </select>
                 <span class="material-symbols-outlined select-arrow">arrow_drop_down</span>
                 </div>
-                @if(requestForm.get('personType')?.invalid && requestForm.get('personType')?.touched) {
+                @if(informationForm.get('personType')?.invalid && informationForm.get('personType')?.touched) {
                     <div class="error-message">
                         Veuillez sélectionner un type e personne
                     </div>
@@ -232,8 +244,8 @@
                     formControlName="lastName"
                     class="form-input"
                     placeholder="Votre nom"
-                    [class.invalid]="requestForm.get('lastName')?.invalid && requestForm.get('lastName')?.touched">
-                    @if(requestForm.get('lastName')?.invalid && requestForm.get('lastName')?.touched) {
+                    [class.invalid]="informationForm.get('lastName')?.invalid && informationForm.get('lastName')?.touched">
+                    @if(informationForm.get('lastName')?.invalid && informationForm.get('lastName')?.touched) {
                         <div class="error-message">
                             Veuillez entrer un numéro et une voie
                         </div>
@@ -251,8 +263,8 @@
                     formControlName="firstName"
                     class="form-input"
                     placeholder="Votre prénom"
-                    [class.invalid]="requestForm.get('firstName')?.invalid && requestForm.get('firstName')?.touched">
-                    @if(requestForm.get('firstName')?.invalid && requestForm.get('firstName')?.touched) {
+                    [class.invalid]="informationForm.get('firstName')?.invalid && informationForm.get('firstName')?.touched">
+                    @if(informationForm.get('firstName')?.invalid && informationForm.get('firstName')?.touched) {
                         <div class="error-message">
                             Veuillez entrer un numéro et une voie
                         </div>
@@ -269,8 +281,8 @@
                     formControlName="email"
                     class="form-input"
                     placeholder="Placeholder"
-                    [class.invalid]="requestForm.get('email')?.invalid && requestForm.get('email')?.touched">
-                    @if(requestForm.get('email')?.invalid && requestForm.get('email')?.touched) {
+                    [class.invalid]="informationForm.get('email')?.invalid && informationForm.get('email')?.touched">
+                    @if(informationForm.get('email')?.invalid && informationForm.get('email')?.touched) {
                         <div class="error-message">
                             Veuillez entrer une adresse email valide
                         </div>
@@ -287,36 +299,27 @@
                     formControlName="phoneNumber"
                     class="form-input"
                     placeholder="Placeholder"
-                    [class.invalid]="requestForm.get('phoneNumber')?.invalid && requestForm.get('phoneNumber')?.touched">
-                    @if(requestForm.get('phoneNumber')?.invalid && requestForm.get('phoneNumber')?.touched) {
+                    [class.invalid]="informationForm.get('phoneNumber')?.invalid && informationForm.get('phoneNumber')?.touched">
+                    @if(informationForm.get('phoneNumber')?.invalid && informationForm.get('phoneNumber')?.touched) {
                         <div class="error-message">
                             Veuillez entrer un numéro de téléphone valide
                         </div>
-                    } 
+                    }
                 </div>
             </div>
-        }
 
       <!-- Bouton Submit -->
       <div class="form-actions">
-        @if(state === 1) {
-          <button 
-            type="button" 
-            class="btn-submit"
-            (click)="onContinue()">
-            Suivant >
-          </button>
-        } @else if(state === 2) {
           <button 
             type="submit" 
             class="btn-submit"
-            [disabled]="requestForm.invalid"
+            [disabled]="informationForm.invalid"
             (click)="onSubmit()">
             Soumettre
           </button>
-        }
       </div>
+      </form>
+        }
 
-    </form>
   </div>
 </div>

@@ -8,11 +8,14 @@ import { Subscription } from 'rxjs';
 
 @Component({
   selector: 'app-map',
-  imports: [],
+  standalone: true,
+  imports: [CommonModule],
   templateUrl: './map.component.html',
   styleUrl: './map.component.scss'
 })
-export class MapComponent {
+export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
+  // Référence directe à la div HTML
+  @ViewChild('mapContainer') mapContainer!: ElementRef;
 
   @Input() crises: Crisis[] = [];
   @Input() helpRequests: HelpRequest[] = [];
@@ -30,7 +33,6 @@ export class MapComponent {
   constructor(private crisisService: CrisisService,
               private helpRequestService: HelpRequestService,
               private helpProposalService: HelpProposeService) {}
-              
   ngOnInit(): void {
     // Si pas de données en entrée, on charge depuis le service
     if (this.crises.length === 0) {

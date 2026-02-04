@@ -1,11 +1,16 @@
 import { Component, OnInit } from '@angular/core';
 import { FormGroup, FormBuilder, Validators, ReactiveFormsModule, FormArray } from '@angular/forms';
 import { Router } from '@angular/router';
+import { HelpRequestService } from '../../../services/help-request.service';
+import { GeolocationService } from '../../../services/geolocation.service';
+import { ApiService } from '../../../services/api.service';
+import { CommonModule } from '@angular/common';
 // import { NgSelectModule } from '@ng-select/ng-select';
 
 @Component({
   selector: 'app-request-help-form',
-  imports: [ReactiveFormsModule],
+  standalone: true,
+  imports: [ReactiveFormsModule, CommonModule],
   templateUrl: './request-help-form.component.html',
   styleUrl: './request-help-form.component.scss'
 })
@@ -16,7 +21,11 @@ export class RequestHelpFormComponent implements OnInit {
   fileName: string = 'Select';
   state: number = 1;
 
+  latitude: number | null = null;
+  longitude: number | null = null;
+
   requestData: FormData = new FormData();
+  typesDemandeMap: Map<string, string> = new Map(); // eventType -> UUID
 
   eventTypeOptions: { value: string; label: string }[] = [
     { value: '', label: 'Dropdown' },
@@ -48,11 +57,29 @@ export class RequestHelpFormComponent implements OnInit {
 
   constructor(
     private formBuilder: FormBuilder,
-    private router: Router
+    private router: Router,
+    private helpRequestService: HelpRequestService,
+    private geolocationService: GeolocationService,
+    private apiService: ApiService
   ) {}
 
   ngOnInit(): void {
     this.initForm();
+    this.loadTypesDemande();
+  }
+
+  loadTypesDemande(): void {
+    this.apiService.getTypesDemande().subscribe({
+      next: (types) => {
+        // Mapper les valeurs du formulaire aux UUIDs des types
+        types.forEach(t => {
+          const normalizedType = t.type.toLowerCase().replace(/\s+/g, '-');
+          this.typesDemandeMap.set(normalizedType, t.id!);
+        });
+        console.log('Types chargés:', this.typesDemandeMap);
+      },
+      error: (err) => console.error('Erreur chargement types:', err)
+    });
   }
 
   initForm(): void {
@@ -60,8 +87,8 @@ export class RequestHelpFormComponent implements OnInit {
       eventType: ['', Validators.required],
       // needType: ['', Validators.required],
       // description: ['', [Validators.required, Validators.minLength(10)]],
-      needsType: new FormArray([], Validators.required),
-      descriptions: new FormArray([], [Validators.required, Validators.minLength(10)]),
+      needsType: new FormArray([]),
+      descriptions: new FormArray([]),
       streetNumber: ['', Validators.required],
       postalCode: ['', [Validators.required, Validators.pattern(/^\d{5}$/)]],
       addressVisible: [false],
@@ -107,54 +134,128 @@ export class RequestHelpFormComponent implements OnInit {
   }
 
   onSubmit(): void {
-    if (this.informationForm.valid) {
+    console.log('=== DEBUG SUBMIT ===');
+    console.log('requestForm valid:', this.requestForm.valid);
+    console.log('requestForm errors:', this.requestForm.errors);
+    console.log('requestForm value:', this.requestForm.value);
+    console.log('informationForm valid:', this.informationForm.valid);
+    console.log('informationForm errors:', this.informationForm.errors);
+    console.log('informationForm value:', this.informationForm.value);
+    console.log('Latitude:', this.latitude, 'Longitude:', this.longitude);
+    console.log('needsType controls:', this.needsType.controls.map((c, i) => ({index: i, valid: c.valid, value: c.value})));
+    console.log('descriptions controls:', this.descriptions.controls.map((c, i) => ({index: i, valid: c.valid, value: c.value})));
+    
+    if (this.informationForm.valid && this.latitude && this.longitude) {
       console.log('Formulaire valide:', this.informationForm.value);
 
+      // Préparer les données pour Django
       const formData = new FormData();
-      formData.append('personType', this.informationForm.get('personType')?.value);
-      formData.append('firstName', this.informationForm.get('firstName')?.value);
-      formData.append('lastName', this.informationForm.get('lastName')?.value);
-      formData.append('email', this.informationForm.get('email')?.value);
-      formData.append('phoneNumber', this.informationForm.get('phoneNumber')?.value);
+      
+      // Champs du modèle Demande Django
+      formData.append('prenom_demande', this.informationForm.get('firstName')?.value);
+      formData.append('nom_demande', this.informationForm.get('lastName')?.value);
+      formData.append('email_demande', this.informationForm.get('email')?.value);
+      formData.append('telephone_demande', this.informationForm.get('phoneNumber')?.value);
+      
+      // Titre basé sur le type d'événement
+      const eventType = this.requestForm.get('eventType')?.value;
+      const titre = `Demande ${this.eventTypeOptions.find(e => e.value === eventType)?.label || 'aide'}`;
+      formData.append('titre', titre);
+      
+      // Localisation au format GeoJSON Point
+      const localisation = {
+        type: 'Point',
+        coordinates: [this.longitude, this.latitude]
+      };
+      formData.append('localisation', JSON.stringify(localisation));
+      
+      // Type demande - UUID récupéré depuis la map
+      const typeDemandeId = this.typesDemandeMap.get(eventType);
+      if (!typeDemandeId) {
+        alert('Type de demande non trouvé. Veuillez réessayer ou contacter le support.');
+        return;
+      }
+      formData.append('type_demande', typeDemandeId);
+      
+      formData.append('statut', 'NON_TRAITEE');
+      
+      // Photo si présente
+      if (this.selectedFile) {
+        formData.append('photo', this.selectedFile);
+      }
 
-      // Combiner les deux FormData
-      formData.forEach((value, key) => {
-        this.requestData.append(key, value);
+      // Envoyer au backend Django
+      this.helpRequestService.createRequest(formData).subscribe({
+        next: (response) => {
+          console.log('Demande créée:', response);
+          alert('Votre demande a été enregistrée avec succès !');
+          this.router.navigate(['/accueil']);
+        },
+        error: (err) => {
+          console.error('Erreur création demande:', err);
+          alert('Erreur lors de l\'enregistrement. Veuillez réessayer.');
+        }
       });
 
-      // TODO: Envoyer au backend
-      // this.helpService.createRequest(formData).subscribe(...)
-
     } else {
-      // Marquer tous les champs comme touchés pour afficher les erreurs
       Object.keys(this.informationForm.controls).forEach(key => {
         this.informationForm.get(key)?.markAsTouched();
       });
-      alert('Veuillez remplir tous les champs obligatoires');
+      
+      if (!this.latitude || !this.longitude) {
+        alert('Erreur de géolocalisation. Veuillez vérifier l\'adresse.');
+      } else {
+        alert('Veuillez remplir tous les champs obligatoires');
+      }
     }
   }
 
   onContinue(): void {
     if (this.requestForm.valid) {
-      // Créer FormData pour l'envoi avec image
-      this.requestData.append('eventType', this.requestForm.get('eventType')?.value);
-      for (const needType of this.requestForm.get('needsType')?.value) {
-        this.requestData.append('needType', needType);
-      }
-      for (const description of this.requestForm.get('descriptions')?.value) {
-        this.requestData.append('description', description);
-      }
-      // this.requestData.append('needType', this.requestForm.get('needType')?.value);
-      // this.requestData.append('description', this.requestForm.get('description')?.value);
-      this.requestData.append('streetNumber', this.requestForm.get('streetNumber')?.value);
-      this.requestData.append('postalCode', this.requestForm.get('postalCode')?.value);
-      this.requestData.append('addressVisible', this.requestForm.get('addressVisible')?.value);
 
-      if (this.selectedFile) {
-        this.requestData.append('image', this.selectedFile);
-      }
+      const street = this.requestForm.get('streetNumber')?.value;
+      const zip = this.requestForm.get('postalCode')?.value;
+      const query = `${street} ${zip}`;
 
-      this.state = 2;
+      console.log('Recherche GPS pour :', query);
+
+      this.geolocationService.getCoordinates(query).subscribe({
+        next: (response) => {
+          if (response.features && response.features.length > 0) {
+            const coords = response.features[0].geometry.coordinates;
+            this.longitude = coords[0];
+            this.latitude = coords[1];
+            
+            console.log(`Trouvé : ${this.latitude}, ${this.longitude}`);
+            this.state = 2;
+          } else {
+            alert("Adresse introuvable. Vérifiez le numéro et le code postal.");
+          }
+        },
+        error: (err) => {
+          console.error(err);
+          alert("Erreur de connexion au service d'adresse.");
+        }
+      });
+
+      // this.requestData.append('eventType', this.requestForm.get('eventType')?.value);
+      // for (const needType of this.requestForm.get('needsType')?.value) {
+      //   this.requestData.append('needType', needType);
+      // }
+      // for (const description of this.requestForm.get('descriptions')?.value) {
+      //   this.requestData.append('description', description);
+      // }
+      // // this.requestData.append('needType', this.requestForm.get('needType')?.value);
+      // // this.requestData.append('description', this.requestForm.get('description')?.value);
+      // this.requestData.append('streetNumber', this.requestForm.get('streetNumber')?.value);
+      // this.requestData.append('postalCode', this.requestForm.get('postalCode')?.value);
+      // this.requestData.append('addressVisible', this.requestForm.get('addressVisible')?.value);
+
+      // if (this.selectedFile) {
+      //   this.requestData.append('image', this.selectedFile);
+      // }
+
+      // this.state = 2;
   } else {
       // Marquer tous les champs comme touchés pour afficher les erreurs
       Object.keys(this.requestForm.controls).forEach(key => {
