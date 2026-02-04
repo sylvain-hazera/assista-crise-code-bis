@@ -4,13 +4,13 @@ import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
 import { Offer } from '../shared/models/offer.model';
 
-export interface HelpPropose {
-  id?: number;
-  resourceType: string[];
-  description: string;
-  availability: string;
-  createdAt?: Date;
-}
+// export interface Offer {
+//   id?: number;
+//   resourceType: string[];
+//   description: string;
+//   availability: string;
+//   createdAt?: Date;
+// }
 
 @Injectable({
   providedIn: 'root'
@@ -20,18 +20,18 @@ export class HelpProposeService {
 
   constructor(private http: HttpClient) {}
 
-  getAllOffers(): Observable<HelpPropose[]> {
-    return this.http.get<HelpPropose[]>(this.apiUrl);
+  getAllOffers(): Observable<Offer[]> {
+    return this.http.get<Offer[]>(this.apiUrl);
   }
 
-  getOffers(params?: any): Observable<HelpPropose[]> {
+  getOffers(params?: any): Observable<Offer[]> {
     let httpParams = new HttpParams();
     if (params) {
       Object.keys(params).forEach(key => {
         httpParams = httpParams.set(key, params[key]);
       });
     }
-    return this.http.get<HelpPropose[]>(this.apiUrl, { params: httpParams });
+    return this.http.get<Offer[]>(this.apiUrl, { params: httpParams });
   }
 
   getOfferStats(filter?: any): Observable<any> {

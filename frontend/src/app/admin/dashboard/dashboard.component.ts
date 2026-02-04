@@ -134,7 +134,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
     // Charger toutes les données en parallèle
     forkJoin({
       crisisStats: this.crisisService.getCrisisStats(filterParams),
-      proposeStats: this.helpProposeService.getProposeStats(filterParams),
+      // proposeStats: this.helpProposeService.getProposeStats(filterParams),
       requestStats: this.helpRequestService.getRequestStats(filterParams),
       recentCrises: this.crisisService.getRecentCrisis(5)
     })
