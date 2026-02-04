@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
+import { Offer } from '../shared/models/offer.model';
 
 export interface HelpPropose {
   id?: number;
@@ -15,15 +16,15 @@ export interface HelpPropose {
   providedIn: 'root'
 })
 export class HelpProposeService {
-  private apiUrl = `${environment.apiUrl}/help-proposes`;
+  private apiUrl = `${environment.apiUrl}/offres`;
 
   constructor(private http: HttpClient) {}
 
-  getAllProposes(): Observable<HelpPropose[]> {
+  getAllOffers(): Observable<HelpPropose[]> {
     return this.http.get<HelpPropose[]>(this.apiUrl);
   }
 
-  getProposes(params?: any): Observable<HelpPropose[]> {
+  getOffers(params?: any): Observable<HelpPropose[]> {
     let httpParams = new HttpParams();
     if (params) {
       Object.keys(params).forEach(key => {
@@ -33,7 +34,7 @@ export class HelpProposeService {
     return this.http.get<HelpPropose[]>(this.apiUrl, { params: httpParams });
   }
 
-  getProposeStats(filter?: any): Observable<any> {
+  getOfferStats(filter?: any): Observable<any> {
     let httpParams = new HttpParams();
     if (filter) {
       Object.keys(filter).forEach(key => {
@@ -41,5 +42,25 @@ export class HelpProposeService {
       });
     }
     return this.http.get<any>(`${this.apiUrl}/stats`, { params: httpParams });
+  }
+
+  // getOffers(params?: any): Observable<Offer[]> {
+  //   return this.http.get<Offer[]>(`${this.apiUrl}/offres/`, { params });
+  // }
+
+  getOffer(id: string): Observable<Offer> {
+    return this.http.get<Offer>(`${this.apiUrl}/offres/${id}/`);
+  }
+
+  createOffer(data: Partial<Offer> | FormData): Observable<Offer> {
+    return this.http.post<Offer>(`${this.apiUrl}/offres/`, data);
+  }
+
+  updateOffer(id: string, data: Partial<Offer> | FormData): Observable<Offer> {
+    return this.http.put<Offer>(`${this.apiUrl}/offres/${id}/`, data);
+  }
+
+  deleteOffer(id: string): Observable<void> {
+    return this.http.delete<void>(`${this.apiUrl}/offres/${id}/`);
   }
 }
