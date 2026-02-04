@@ -1,9 +1,9 @@
 import { Component, OnInit } from '@angular/core';
 import { FormGroup, FormBuilder, Validators, ReactiveFormsModule, FormArray } from '@angular/forms';
 import { Router } from '@angular/router';
-import { HelpRequestService } from '../../../services/help-request.service';
 import { GeolocationService } from '../../../services/geolocation.service';
 import { CommonModule } from '@angular/common';
+import { RequestService } from '../../../services/request.service';
 // import { NgSelectModule } from '@ng-select/ng-select';
 
 @Component({
@@ -58,7 +58,7 @@ export class RequestHelpFormComponent implements OnInit {
   constructor(
     private formBuilder: FormBuilder,
     private router: Router,
-    private helpRequestService: HelpRequestService,
+    private helpRequestService: RequestService,
     private geolocationService: GeolocationService,
     // private apiService: ApiService
   ) {}

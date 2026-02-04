@@ -1,16 +1,17 @@
 import { Component, OnInit, OnDestroy, AfterViewInit, Input, ViewChild, ElementRef } from '@angular/core';
-import { CommonModule } from '@angular/common';
 import maplibregl from 'maplibre-gl';
-import { CrisisService, Crisis } from '../../../../services/crisis.service';
-import { HelpRequestService, HelpRequest } from '../../../../services/help-request.service';
-import { HelpProposeService, HelpPropose } from '../../../../services/help-propose.service';
+import { CrisisService } from '../../../../services/crisis.service';
 import { Subscription } from 'rxjs';
-// import { Crisis } from '../../../models/crisis.model';
+import { Crisis } from '../../../models/crisis.model';
+import { OfferService } from '../../../../services/offer.service';
+import { Offer } from '../../../models/offer.model';
+import { RequestService } from '../../../../services/request.service';
+import { Request } from '../../../models/request.model';
 
 @Component({
   selector: 'app-map',
   standalone: true,
-  imports: [CommonModule],
+  imports: [],
   templateUrl: './map.component.html',
   styleUrl: './map.component.scss'
 })
@@ -19,8 +20,8 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   @ViewChild('mapContainer') mapContainer!: ElementRef;
 
   @Input() crises: Crisis[] = [];
-  @Input() helpRequests: HelpRequest[] = [];
-  @Input() helpProposals: HelpPropose[] = [];
+  @Input() requests: Request[] = [];
+  @Input() offers: Offer[] = [];
   // Centre de la France par défaut
   @Input() center: [number, number] = [2.2137, 46.2276]; 
   @Input() zoom: number = 5;
@@ -30,18 +31,18 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   private subscription: Subscription | null = null;
 
   constructor(private crisisService: CrisisService,
-              private helpRequestService: HelpRequestService,
-              private helpProposalService: HelpProposeService) {}
+              private requestService: RequestService,
+              private offerService: OfferService) {}
 
   ngOnInit(): void {
     // Si pas de données en entrée, on charge depuis le service
     if (this.crises.length === 0) {
-      // this.loadCrises();
+      this.loadCrises();
     }
-    if (this.helpRequests.length === 0) {
+    if (this.requests.length === 0) {
       this.loadHelpRequests();
     }
-    if (this.helpProposals.length === 0) {
+    if (this.offers.length === 0) {
       this.loadHelpProposals();
     }
   }
@@ -55,24 +56,24 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     if (this.map) this.map.remove();
   }
 
-  // loadCrises() {
-  //   this.subscription = this.crisisService.getAllCrises().subscribe({
-  //     next: (crises) => {
-  //       console.log('Données de crises reçues:', crises);
-  //       this.crises = crises;
-  //       if (this.map) {
-  //         this.addCrisisMarkers();
-  //       }
-  //     },
-  //     error: (error) => console.error('Erreur API:', error)
-  //   });
-  // }
+  loadCrises() {
+    this.subscription = this.crisisService.getAllCrisis().subscribe({
+      next: (crises) => {
+        console.log('Données de crises reçues:', crises);
+        this.crises = crises;
+        if (this.map) {
+          this.addCrisisMarkers();
+        }
+      },
+      error: (error) => console.error('Erreur API:', error)
+    });
+  }
 
   loadHelpRequests() {
-    this.subscription = this.helpRequestService.getAllRequests().subscribe({
-      next: (helpRequests) => {
-        console.log('Données de demandes d\'aide reçues:', helpRequests);
-        this.helpRequests = helpRequests;
+    this.subscription = this.requestService.getAllRequests().subscribe({
+      next: (requests) => {
+        console.log('Données de demandes d\'aide reçues:', requests);
+        this.requests = requests;
         if (this.map) {
             this.addHelpRequestMarkers();
         }
@@ -82,10 +83,10 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   loadHelpProposals() {
-    this.subscription = this.helpProposalService.getAllProposes().subscribe({
-      next: (helpProposals) => {
-        console.log('Données de propositions d\'aide reçues:', helpProposals);
-        this.helpProposals = helpProposals;
+    this.subscription = this.offerService.getAllOffers().subscribe({
+      next: (offers) => {
+        console.log('Données de propositions d\'aide reçues:', offers);
+        this.offers = offers;
         if (this.map) {
             this.addHelpProposalMarkers();
         }
@@ -93,8 +94,6 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
       error: (error) => console.error('Erreur API:', error)
     });
   }
-
-
 
   private initializeMap(): void {
     this.map = new maplibregl.Map({
@@ -109,51 +108,51 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     this.map.on('load', () => {
       // Si on a déjà des données (reçues avant le chargement de la carte), on affiche
       if (this.crises.length > 0) {
-        // this.addCrisisMarkers();
+        this.addCrisisMarkers();
       }
-      if (this.helpRequests.length > 0) {
+      if (this.requests.length > 0) {
         this.addHelpRequestMarkers();
       }
-      if (this.helpProposals.length > 0) {
+      if (this.offers.length > 0) {
         this.addHelpProposalMarkers();
       }
     });
   }
 
-  // private addCrisisMarkers(): void {
-  //   if (!this.map) return;
+  private addCrisisMarkers(): void {
+    if (!this.map) return;
 
-  //   // Nettoyage
-  //   this.markers.forEach(marker => marker.remove());
-  //   this.markers = [];
+    // Nettoyage
+    this.markers.forEach(marker => marker.remove());
+    this.markers = [];
 
-  //   this.crises.forEach(crisis => {
-  //     // MapLibre attend : [Longitude, Latitude]
-  //     if (crisis.latitude && crisis.longitude) {
+    this.crises.forEach(crisis => {
+      // MapLibre attend : [Longitude, Latitude]
+      if (crisis.latitude && crisis.longitude) {
         
-  //       // Création du Popup HTML
-  //       const popupContent = `
-  //         <div style="color: black; font-family: sans-serif;">
-  //           <h3 style="margin: 0 0 5px 0;">${crisis.name}</h3>
-  //           <p style="margin: 0;">${crisis.description || 'Pas de description'}</p>
-  //           <br>
-  //           <small>Créé le : ${new Date(crisis.createdAt || Date.now()).toLocaleDateString()}</small>
-  //         </div>
-  //       `;
+        // Création du Popup HTML
+        const popupContent = `
+          <div style="color: black; font-family: sans-serif;">
+            <h3 style="margin: 0 0 5px 0;">${crisis.name}</h3>
+            <p style="margin: 0;">${crisis.description || 'Pas de description'}</p>
+            <br>
+            <small>Créé le : ${new Date(crisis.createdAt || Date.now()).toLocaleDateString()}</small>
+          </div>
+        `;
 
-  //       const popup = new maplibregl.Popup({ offset: 25 })
-  //         .setHTML(popupContent);
+        const popup = new maplibregl.Popup({ offset: 25 })
+          .setHTML(popupContent);
 
-  //       // Création du Marker
-  //       const marker = new maplibregl.Marker({ color: this.getSeverityColor(crisis.severity || 'LOW') })
-  //         .setLngLat([crisis.longitude, crisis.latitude])
-  //         .setPopup(popup)
-  //         .addTo(this.map!);
+        // Création du Marker
+        const marker = new maplibregl.Marker({ color: this.getSeverityColor(crisis.severity || 'LOW') })
+          .setLngLat([crisis.longitude, crisis.latitude])
+          .setPopup(popup)
+          .addTo(this.map!);
 
-  //       this.markers.push(marker);
-  //     }
-  //   });
-  // }
+        this.markers.push(marker);
+      }
+    });
+  }
 
   private addHelpRequestMarkers(): void {
     if (!this.map) return;
@@ -162,7 +161,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     this.markers.forEach(marker => marker.remove());
     this.markers = [];
 
-    this.helpRequests.forEach(request => {
+    this.requests.forEach(request => {
       // MapLibre attend : [Longitude, Latitude]
       if (request.longitude && request.latitude) {
         // Création du Popup HTML
@@ -196,7 +195,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     this.markers.forEach(marker => marker.remove());
     this.markers = [];
 
-    this.helpProposals.forEach(proposal => {
+    this.offers.forEach(proposal => {
       // MapLibre attend : [Longitude, Latitude]
       if (proposal.longitude && proposal.latitude) {
         // Création du Popup HTML

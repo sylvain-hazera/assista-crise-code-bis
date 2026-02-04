@@ -2,8 +2,8 @@ import { Component, OnInit, OnDestroy } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { forkJoin, Subject, takeUntil } from 'rxjs';
 import { CrisisService } from '../../services/crisis.service';
-import { HelpProposeService } from '../../services/offer.service';
-import { HelpRequestService } from '../../services/help-request.service';
+import { OfferService } from '../../services/offer.service';
+import { RequestService } from '../../services/request.service';
 
 interface StatCard {
   title: string;
@@ -110,8 +110,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
   recentAnnouncements: any[] = [];
 
   constructor(
-    private helpRequestService: HelpRequestService,
-    private helpProposeService: HelpProposeService,
+    private helpRequestService: RequestService,
+    private helpProposeService: OfferService,
     private crisisService: CrisisService,
     private router: Router
   ) {}

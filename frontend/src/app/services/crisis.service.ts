@@ -2,17 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
-// import { Crisis } from '../shared/models/crisis.model';
-
-export interface Crisis {
-  id?: number;
-  type: string;
-  severity: string;
-  location: string;
-  description: string;
-  status: string;
-  createdAt?: Date;
-}
+import { Crisis } from '../shared/models/crisis.model';
 
 @Injectable({
   providedIn: 'root'

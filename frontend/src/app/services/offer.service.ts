@@ -4,18 +4,10 @@ import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
 import { Offer } from '../shared/models/offer.model';
 
-// export interface Offer {
-//   id?: number;
-//   resourceType: string[];
-//   description: string;
-//   availability: string;
-//   createdAt?: Date;
-// }
-
 @Injectable({
   providedIn: 'root'
 })
-export class HelpProposeService {
+export class OfferService {
   private apiUrl = `${environment.apiUrl}/offres`;
 
   constructor(private http: HttpClient) {}

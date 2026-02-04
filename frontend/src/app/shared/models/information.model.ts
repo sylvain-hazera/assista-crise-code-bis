@@ -1,6 +1,6 @@
 import { Status } from "./status.model";
 
-export interface TypeInformation {
+export interface InformationType {
   id?: string;
   type: string;
   description: string;
@@ -13,11 +13,13 @@ export interface Information {
   prenom: string;
   nom: string;
   email: string;
-  localisation: { type: 'Point'; coordinates: [number, number] };
+  // localisation: { type: 'Point'; coordinates: [number, number] };
+  latitude: number;
+  longitude: number;
   date_creation?: string;
   date_expiration?: string;
   statut: Status;
-  type_information: string; // UUID
+  type_information: string[]; // UUID
   crise?: string; // UUID
   auteur?: string; // UUID
 }
