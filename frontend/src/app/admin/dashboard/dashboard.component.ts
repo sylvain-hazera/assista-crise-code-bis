@@ -2,7 +2,7 @@ import { Component, OnInit, OnDestroy } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { forkJoin, Subject, takeUntil } from 'rxjs';
 import { CrisisService } from '../../services/crisis.service';
-import { HelpProposeService } from '../../services/help-propose.service';
+import { HelpProposeService } from '../../services/offer.service';
 import { HelpRequestService } from '../../services/help-request.service';
 
 interface StatCard {
@@ -136,7 +136,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
       crisisStats: this.crisisService.getCrisisStats(filterParams),
       proposeStats: this.helpProposeService.getProposeStats(filterParams),
       requestStats: this.helpRequestService.getRequestStats(filterParams),
-      recentCrises: this.crisisService.getRecentCrises(5)
+      recentCrises: this.crisisService.getRecentCrisis(5)
     })
       .pipe(takeUntil(this.destroy$))
       .subscribe({

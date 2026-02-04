@@ -130,8 +130,8 @@ export class AdminLayoutComponent implements OnInit {
   }
 
   get companyName(): string {
-    return this.currentUser?.userType === 'organization' 
-      ? this.currentUser.lastName 
+    return this.currentUser?.userType !== UserRole.Individual
+      ? this.currentUser!.lastName 
       : 'Nom de la compagnie';
   }
 }

@@ -1,9 +1,8 @@
-import { Component, OnInit } from '@angular/core';
+import { Component } from '@angular/core';
 import { MapComponent } from "../../shared/components/common/map/map.component";
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
-import { GeolocationService } from '../../services/geolocation.service';
 
 @Component({
   selector: 'app-home',
@@ -15,11 +14,10 @@ import { GeolocationService } from '../../services/geolocation.service';
     MapComponent,
   ],
   providers: [
-    GeolocationService
   ]
 })
 export class HomeComponent  {
-  constructor(private geolocationService: GeolocationService, private router: Router){}
+  constructor(private router: Router){}
 
   searchQuery = '';
 

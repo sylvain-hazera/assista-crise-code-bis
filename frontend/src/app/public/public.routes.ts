@@ -34,9 +34,9 @@ export const PUBLIC_ROUTES: Routes = [
           .then(m => m.RequestHelpFormComponent)
       },
       {
-        path: 'safe-declaration',
-        loadComponent: () => import('./forms/declare-safe-form/declare-safe-form.component')
-          .then(m => m.DeclareSafeFormComponent)
+        path: 'other-declaration',
+        loadComponent: () => import('./forms/other-declaration-form/other-declaration-form.component')
+          .then(m => m.OtherDeclarationFormComponent)
       },
       {
         path: 'crisis-declaration',

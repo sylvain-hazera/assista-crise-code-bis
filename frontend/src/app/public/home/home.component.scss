@@ -1,144 +1,459 @@
 .home-container {
   display: flex;
   flex-direction: column;
-  min-height: 50vh;
-  margin-bottom: 5rem;
-}
+  min-height: calc(100vh - 200px);
+  padding-bottom: 2rem;
 
-.action-bar {
-  margin: 2rem;
-  padding: 0 2rem;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-
-  .search-box {
+  // ============================================
+  // ACTION BAR
+  // ============================================
+  .action-bar {
+    width: 100%;
+    max-width: 1400px;
+    margin: 2rem auto;
+    padding: 0 2rem;
     display: flex;
+    justify-content: space-between;
     align-items: center;
-    background: white;
-    border: 2px solid #e0e0e0;
-    border-radius: 25px;
-    padding: 0.5rem 1rem;
-    margin-bottom: 1rem;
-    max-width: 300px;
-    gap: 0.5rem;
+    gap: 2rem;
+    flex-wrap: wrap;
 
-    .search-icon {
-      margin-right: 0.5rem;
-      color: #999;
+    // Search Box
+    .search-box {
+      display: flex;
+      align-items: center;
+      background: white;
+      border: 2px solid #e0e0e0;
+      border-radius: 25px;
+      padding: 0.75rem 1.25rem;
+      min-width: 250px;
+      flex: 1;
+      max-width: 400px;
+      gap: 0.75rem;
+      transition: border-color 0.3s;
+
+      &:focus-within {
+        border-color: #4caf50;
+      }
+
+      .material-symbols-outlined {
+        color: #999;
+        font-size: 24px;
+      }
+
+      input {
+        border: none;
+        outline: none;
+        flex: 1;
+        font-size: 1rem;
+        background: transparent;
+        color: #333;
+
+        &::placeholder {
+          color: #999;
+        }
+      }
     }
 
-    input {
-      border: none;
-      outline: none;
-      flex: 1;
-      font-size: 1rem;
-      background: transparent;
+    // Action Buttons
+    .action-buttons {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+  }
 
-      &::placeholder {
-        color: #999;
+  // ============================================
+  // BUTTONS
+  // ============================================
+  .btn {
+    padding: 0.875rem 1.75rem;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    font-size: 1rem;
+    white-space: nowrap;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+
+    &:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+    }
+
+    &:active {
+      transform: translateY(0);
+    }
+
+    &.btn-success {
+      background-color: #4caf50;
+      color: white;
+
+      &:hover {
+        background-color: #45a049;
+      }
+    }
+
+    &.btn-danger {
+      background-color: #f44336;
+      color: white;
+
+      &:hover {
+        background-color: #da190b;
+      }
+    }
+
+    &.btn-primary {
+      background-color: #2196f3;
+      color: white;
+
+      &:hover {
+        background-color: #1976d2;
+      }
+    }
+
+    &.btn-warning {
+      margin: 2rem auto 0;
+      max-width: 500px;
+      width: 100%;
+      background-color: #ffc107;
+      color: #333;
+      font-size: 1.1rem;
+      padding: 1rem 2rem;
+
+      &:hover {
+        background-color: #ffb300;
       }
     }
   }
 
-  .action-buttons {
-    display: flex;
-    gap: 1rem;
-    flex-wrap: wrap;
-  }
-}
-
-.btn {
-  padding: 0.75rem 1.5rem;
-  border: none;
-  border-radius: 6px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  font-size: 1rem;
-
-  &:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-  }
-
-  &.btn-success {
-    background-color: #4CAF50;
-    color: white;
-
-    &:hover {
-      background-color: #45a049;
-    }
-  }
-
-  &.btn-danger {
-    background-color: #f44336;
-    color: white;
-
-    &:hover {
-      background-color: #da190b;
-    }
-  }
-
-  &.btn-warning {
-    margin-top: 2rem;
-    width: 25%;
-    background-color: #ffd54f;
-    color: #333;
-    align-self: center;
-
-    &:hover {
-      background-color: #ffca28;
-    }
-  }
-
-  &.btn-primary {
-    background-color: #007bff;
-    color: white;
-
-    &:hover {
-      background-color: #1976d2;
-    }
-  }
-}
-
-.content-grid {
-  margin: 2rem auto;
-  width: 75%;
-  display: grid;
-  // place-items: center;
-  grid-template-columns: 1fr 1fr;
-  gap: 2rem;
-
-  .map-section {
-    background: #f0f0f0;
-    border-radius: 8px;
-    overflow: hidden;
-    min-height: 400px;
-  }
-
-  .info-section {
-    .info-card {
-      background: white;
-      padding: 1.5rem;
-      border-radius: 8px;
-      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-      line-height: 1.6;
-      color: #666;
-    }
-  }
-}
-
-@media (max-width: 768px) {
+  // ============================================
+  // CONTENT GRID
+  // ============================================
   .content-grid {
-    grid-template-columns: 1fr;
-  }
+    width: 90%;
+    max-width: 1400px;
+    margin: 2rem auto;
+    display: grid;
+    grid-template-columns: 1.5fr 1fr;
+    gap: 2rem;
+    align-items: start;
 
-  .action-buttons {
-    flex-direction: column;
+    // Map Section
+    .map-section {
+      background: #f8f9fa;
+      border-radius: 12px;
+      overflow: hidden;
+      min-height: 500px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      position: relative;
+
+      // Si la carte n'a pas de hauteur définie
+      app-map {
+        display: block;
+        width: 100%;
+        height: 100%;
+        min-height: 500px;
+      }
+    }
+
+    // Info Section
+    .info-section {
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+
+      .info-card {
+        background: white;
+        padding: 2rem;
+        border-radius: 12px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+        line-height: 1.8;
+        color: #555;
+        font-size: 1rem;
+
+        p {
+          margin: 0;
+        }
+
+        h3 {
+          margin-top: 0;
+          color: #333;
+          font-size: 1.5rem;
+          margin-bottom: 1rem;
+        }
+      }
+    }
+  }
+}
+
+// ============================================
+// RESPONSIVE BREAKPOINTS
+// ============================================
+
+// Large Desktop (> 1400px)
+@media (min-width: 1400px) {
+  .home-container {
+    .content-grid {
+      width: 85%;
+    }
+
+    .btn.btn-warning {
+      max-width: 600px;
+    }
+  }
+}
+
+// Desktop (1024px - 1400px)
+@media (max-width: 1200px) {
+  .home-container {
+    .content-grid {
+      width: 95%;
+      grid-template-columns: 1.2fr 1fr;
+    }
+  }
+}
+
+// Tablette (768px - 1024px)
+@media (max-width: 1024px) {
+  .home-container {
+    .action-bar {
+      padding: 0 1.5rem;
+      gap: 1.5rem;
+
+      .search-box {
+        min-width: 200px;
+        max-width: 300px;
+      }
+
+      .action-buttons {
+        width: 100%;
+        justify-content: center;
+
+        .btn {
+          flex: 1;
+          min-width: 150px;
+        }
+      }
+    }
+
+    .content-grid {
+      grid-template-columns: 1fr;
+      gap: 1.5rem;
+
+      .map-section {
+        min-height: 400px;
+
+        app-map {
+          min-height: 400px;
+        }
+      }
+
+      .info-section {
+        order: -1; // Placer l'info avant la carte sur tablette
+      }
+    }
+
+    .btn.btn-warning {
+      width: 80%;
+      max-width: 400px;
+    }
+  }
+}
+
+// Mobile (< 768px)
+@media (max-width: 768px) {
+  .home-container {
+    padding-bottom: 1rem;
+
+    .action-bar {
+      margin: 1rem auto;
+      padding: 0 1rem;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 1rem;
+
+      .search-box {
+        width: 90%;
+        max-width: none;
+        min-width: auto;
+      }
+
+      .action-buttons {
+        flex-direction: column;
+        gap: 0.75rem;
+
+        .btn {
+          width: 100%;
+          min-width: auto;
+        }
+      }
+    }
+
+    .content-grid {
+      width: 95%;
+      margin: 1rem auto;
+      gap: 1rem;
+
+      .map-section {
+        min-height: 350px;
+
+        app-map {
+          min-height: 350px;
+        }
+      }
+
+      .info-section {
+        .info-card {
+          padding: 1.5rem;
+          font-size: 0.95rem;
+          line-height: 1.6;
+
+          h3 {
+            font-size: 1.25rem;
+          }
+        }
+      }
+    }
 
     .btn {
+      font-size: 0.95rem;
+      padding: 0.75rem 1.25rem;
+
+      &.btn-warning {
+        width: 90%;
+        font-size: 1rem;
+      }
+    }
+  }
+}
+
+// Petit Mobile (< 480px)
+@media (max-width: 480px) {
+  .home-container {
+    .action-bar {
+      margin: 0.75rem auto;
+      padding: 0 0.75rem;
+
+      .search-box {
+        padding: 0.625rem 1rem;
+
+        .material-symbols-outlined {
+          font-size: 20px;
+        }
+
+        input {
+          font-size: 0.9rem;
+        }
+      }
+
+      .action-buttons {
+        gap: 0.5rem;
+
+        .btn {
+          padding: 0.625rem 1rem;
+          font-size: 0.875rem;
+        }
+      }
+    }
+
+    .content-grid {
       width: 100%;
+      margin: 0.75rem auto;
+      padding: 0 0.75rem;
+      gap: 0.75rem;
+
+      .map-section {
+        min-height: 300px;
+        border-radius: 8px;
+
+        app-map {
+          min-height: 300px;
+        }
+      }
+
+      .info-section {
+        .info-card {
+          padding: 1rem;
+          border-radius: 8px;
+          font-size: 0.875rem;
+
+          h3 {
+            font-size: 1.1rem;
+            margin-bottom: 0.75rem;
+          }
+        }
+      }
+    }
+
+    .btn.btn-warning {
+      width: 95%;
+      margin-top: 1rem;
+      padding: 0.875rem 1.5rem;
+      font-size: 0.95rem;
+    }
+  }
+}
+
+// Mode paysage mobile
+@media (max-height: 600px) and (orientation: landscape) {
+  .home-container {
+    .action-bar {
+      margin: 0.5rem auto;
+
+      .action-buttons {
+        flex-direction: row;
+        justify-content: center;
+        flex-wrap: wrap;
+
+        .btn {
+          width: auto;
+          min-width: 120px;
+        }
+      }
+    }
+
+    .content-grid {
+      .map-section {
+        min-height: 250px;
+
+        app-map {
+          min-height: 250px;
+        }
+      }
+
+      .info-section .info-card {
+        padding: 1rem;
+      }
+    }
+  }
+}
+
+// Très grand écran (> 1800px)
+@media (min-width: 1800px) {
+  .home-container {
+    .action-bar {
+      max-width: 1600px;
+    }
+
+    .content-grid {
+      max-width: 1600px;
+      gap: 3rem;
+
+      .map-section {
+        min-height: 600px;
+
+        app-map {
+          min-height: 600px;
+        }
+      }
+
+      .info-section .info-card {
+        padding: 2.5rem;
+        font-size: 1.1rem;
+      }
     }
   }
 }

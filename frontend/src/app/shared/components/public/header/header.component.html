@@ -1,27 +1,34 @@
 <header class="header">
   <div class="container">
-    <div class="logo">
+    <!-- Logo -->
+    <div class="logo" (click)="navigateTo('/')">
       <span class="logo-icon">&#64;</span>
-      <h1 class="logo-text">Assista crise</h1>
+      <h1 class="logo-text">Assista Crise</h1>
     </div>
 
     <div class="header-right">
-      <nav class="navigation">
-      <a routerLink="/accueil" routerLinkActive="active">Accueil</a>
-      <a routerLink="/guide" routerLinkActive="active">Guide</a>
-      <a routerLink="/carte" routerLinkActive="active">Carte</a>
-      <a routerLink="/crises" routerLinkActive="active">Crises</a>
-      <a routerLink="/info" routerLinkActive="active">Info</a>
+      <!-- Navigation Desktop -->
+    <nav class="navigation desktop-nav">
+      <a routerLink="/accueil" routerLinkActive="active" (click)="closeAllMenus()">Accueil</a>
+      <a routerLink="/guide" routerLinkActive="active" (click)="closeAllMenus()">Guide</a>
+      <a routerLink="/carte" routerLinkActive="active" (click)="closeAllMenus()">Carte</a>
+      <a routerLink="/crises" routerLinkActive="active" (click)="closeAllMenus()">Crises</a>
+      <a routerLink="/info" routerLinkActive="active" (click)="closeAllMenus()">Info</a>
     </nav>
 
+    <!-- Actions (User + Hamburger) -->
+    <div class="header-actions">
+      <!-- User Button -->
       <div class="user-wrapper">
-        <button class="user-button" (click)="handleUserAction()">
-          <span class="material-icons">
-            account_circle
-          </span>
+        <button 
+          class="user-button" 
+          (click)="handleUserAction()"
+          [attr.aria-label]="authService.isLoggedIn() ? 'Menu utilisateur' : 'Se connecter'">
+          <span class="material-icons">account_circle</span>
         </button>
 
-        @if(showUserMenu) {
+        <!-- User Dropdown -->
+        @if (showUserMenu && authService.isLoggedIn()) {
           <div class="user-dropdown">
             <div class="dropdown-header">
               <span class="material-icons large-icon">account_circle</span>
@@ -30,19 +37,24 @@
                 <p class="user-email">{{ currentUser?.email }}</p>
               </div>
             </div>
+
             <div class="dropdown-divider"></div>
-            @if(isAdmin) {
-                <button class="dropdown-item" (click)="goToProfile()">
-                  <span class="material-icons">account_box</span>
-                  Mon compte
-                </button>
+
+            @if (isAdmin) {
+              <button class="dropdown-item" (click)="goToProfile()">
+                <span class="material-icons">account_box</span>
+                Mon compte
+              </button>
               <div class="dropdown-divider"></div>
             }
+
             <button class="dropdown-item" (click)="goToSettings()">
               <span class="material-icons">settings</span>
               Paramètres
             </button>
+
             <div class="dropdown-divider"></div>
+
             <button class="dropdown-item logout" (click)="logout()">
               <span class="material-icons">logout</span>
               Déconnexion
@@ -50,10 +62,62 @@
           </div>
         }
       </div>
+
+      <!-- Hamburger Menu Button (Mobile) -->
+      <button 
+        class="hamburger-button" 
+        (click)="toggleMobileMenu()"
+        [class.active]="showMobileMenu"
+        aria-label="Menu de navigation">
+        <span class="hamburger-line"></span>
+        <span class="hamburger-line"></span>
+        <span class="hamburger-line"></span>
+      </button>
+    </div>
     </div>
   </div>
+
+  <!-- Mobile Navigation -->
+  <nav class="mobile-nav" [class.show]="showMobileMenu">
+    <a 
+      routerLink="/accueil" 
+      routerLinkActive="active" 
+      (click)="closeAllMenus()">
+      <span class="material-icons">home</span>
+      Accueil
+    </a>
+    <a 
+      routerLink="/guide" 
+      routerLinkActive="active" 
+      (click)="closeAllMenus()">
+      <span class="material-icons">help</span>
+      Guide
+    </a>
+    <a 
+      routerLink="/carte" 
+      routerLinkActive="active" 
+      (click)="closeAllMenus()">
+      <span class="material-icons">map</span>
+      Carte
+    </a>
+    <a 
+      routerLink="/crises" 
+      routerLinkActive="active" 
+      (click)="closeAllMenus()">
+      <span class="material-icons">warning</span>
+      Crises
+    </a>
+    <a 
+      routerLink="/info" 
+      routerLinkActive="active" 
+      (click)="closeAllMenus()">
+      <span class="material-icons">info</span>
+      Info
+    </a>
+  </nav>
 </header>
 
-@if(showUserMenu) {
-  <div class="overlay" (click)="showUserMenu=false"></div>
+<!-- Overlay -->
+@if (showUserMenu) {
+  <div class="overlay" (click)="closeAllMenus()"></div>
 }
