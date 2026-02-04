@@ -4,7 +4,6 @@ import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, Validators, ReactiveFormsModule } from '@angular/forms';
 import { Router, RouterModule, ActivatedRoute } from '@angular/router';
 import { AuthService } from '../../services/auth.service';
-// import { AuthMockService } from '../../shared/services/auth-mock.service';
 
 @Component({
   selector: 'app-login',
@@ -22,7 +21,6 @@ export class LoginComponent implements OnInit {
 
   constructor(
     private formBuilder: FormBuilder,
-    // private authService: AuthMockService,
     private authService: AuthService,
     private router: Router,
     private route: ActivatedRoute
@@ -65,7 +63,7 @@ export class LoginComponent implements OnInit {
 
     this.authService.login({ email, password }).subscribe({
       next: (response) => {
-        console.log('✅ Connexion réussie:', response);
+        console.log('Connexion réussie:', response);
         this.router.navigate([this.returnUrl]);
       },
       error: (error) => {

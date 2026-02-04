@@ -1,0 +1,55 @@
+.map-container {
+  width: 100%;
+  height: 100%;
+  min-height: 400px;
+  position: relative;
+}
+
+.map-frame {
+    width: 100%;
+    height: 100%;
+}
+
+/* Styles pour les popups des crises */
+:host ::ng-deep .maplibregl-popup-content {
+  padding: 15px;
+  border-radius: 8px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+:host ::ng-deep .crisis-popup h3 {
+  margin: 0 0 10px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+}
+
+:host ::ng-deep .crisis-popup p {
+  margin: 5px 0;
+  font-size: 14px;
+  color: #666;
+}
+
+:host ::ng-deep .crisis-popup strong {
+  color: #333;
+}
+
+/* Animation pour les marqueurs */
+.crisis-marker {
+  transition: transform 0.2s ease;
+}
+
+.crisis-marker:hover {
+  transform: scale(1.2);
+}
+
+/* Contrôles de la carte */
+:host ::ng-deep .maplibregl-ctrl-group {
+  border-radius: 4px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+:host ::ng-deep .maplibregl-ctrl button {
+  width: 30px;
+  height: 30px;
+}

@@ -1,0 +1,181 @@
+// admin-sidebar.component.scss
+
+.admin-sidebar {
+  grid-area: sidebar;
+  background: white;
+  border-right: 1px solid #e0e0e0;
+  display: flex;
+  flex-direction: column;
+  overflow-x: hidden;
+  transition: all 0.3s ease;
+
+  // Par défaut (desktop), la sidebar est ouverte
+  .nav-label {
+    opacity: 1;
+    width: auto;
+  }
+
+  .menu-toggle {
+    display: none; // Caché par défaut sur desktop
+    align-items: center;
+    justify-content: flex-start;
+    padding: 1rem 1.5rem;
+    background: none;
+    border: none;
+    border-bottom: 1px solid #e0e0e0;
+    cursor: pointer;
+    transition: background-color 0.2s;
+
+    &:hover {
+      background-color: #f5f5f5;
+    }
+
+    .material-icons {
+      font-size: 24px;
+      color: #666;
+    }
+  }
+
+  // Uniquement quand explicitement collapsed
+  &.collapsed {
+    .nav-label {
+      opacity: 0;
+      width: 0;
+      overflow: hidden;
+    }
+
+    .nav-item {
+      justify-content: center;
+      padding: 1rem;
+    }
+
+    .menu-toggle {
+      justify-content: center;
+    }
+  }
+
+  .sidebar-nav {
+    flex: 1;
+    padding: 1rem 0;
+    overflow-y: auto;
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 1rem 1.5rem;
+      color: #666;
+      text-decoration: none;
+      transition: all 0.2s;
+      cursor: pointer;
+      border-left: 3px solid transparent;
+
+      .material-icons {
+        font-size: 24px;
+        min-width: 24px;
+        transition: color 0.2s;
+      }
+
+      .nav-label {
+        white-space: nowrap;
+        transition: opacity 0.3s, width 0.3s;
+        font-weight: 500;
+      }
+
+      &:hover {
+        background-color: #f5f5f5;
+        color: #333;
+
+        .material-icons {
+          color: #333;
+        }
+      }
+
+      &.active {
+        background-color: #e8f0fe;
+        color: #667eea;
+        border-left-color: #667eea;
+
+        .material-icons {
+          color: #667eea;
+        }
+      }
+    }
+  }
+
+  .sidebar-footer {
+    padding: 1rem 0;
+    border-top: 1px solid #e0e0e0;
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 1rem 1.5rem;
+      color: #666;
+      text-decoration: none;
+      transition: all 0.2s;
+      cursor: pointer;
+      background: none;
+      border: none;
+      width: 100%;
+      text-align: left;
+      border-left: 3px solid transparent;
+
+      .material-icons {
+        font-size: 24px;
+        min-width: 24px;
+      }
+
+      .nav-label {
+        white-space: nowrap;
+        transition: opacity 0.3s, width 0.3s;
+        font-weight: 500;
+      }
+
+      &:hover {
+        background-color: #f5f5f5;
+      }
+
+      &.active {
+        background-color: #e8f0fe;
+        color: #667eea;
+        border-left-color: #667eea;
+      }
+
+      &.logout-btn {
+        color: #f44336;
+
+        .material-icons {
+          color: #f44336;
+        }
+
+        &:hover {
+          background-color: #ffebee;
+        }
+      }
+    }
+  }
+}
+
+// Responsive - Mobile uniquement
+@media (max-width: 768px) {
+  .admin-sidebar {
+    position: fixed;
+    left: 0;
+    top: 70px;
+    bottom: 0;
+    width: 250px;
+    z-index: 200;
+    transform: translateX(-100%);
+    box-shadow: 2px 0 8px rgba(0, 0, 0, 0.1);
+
+    .menu-toggle {
+      display: flex; // Visible uniquement sur mobile
+    }
+
+    &:not(.collapsed) {
+      transform: translateX(0);
+    }
+  }
+}

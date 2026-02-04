@@ -26,10 +26,10 @@ export class RegisterComponent implements OnInit, OnDestroy {
   private destroy$ = new Subject<void>();
 
   userTypeOptions = [
-    { value: 'Individual', label: 'Particulier' },
-    { value: 'Organization', label: 'Institution' },
-    { value: 'Rescue', label: 'Secours organisés' },
-    { value: 'Admin', label: 'Admin' }
+    { value: UserRole.Individual, label: 'Particulier' },
+    { value: UserRole.Organization, label: 'Institution' },
+    { value: UserRole.Rescue, label: 'Secours organisés' },
+    { value: UserRole.Admin, label: 'Admin' }
   ];
 
   constructor(
