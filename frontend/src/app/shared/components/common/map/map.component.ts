@@ -1,11 +1,9 @@
-import { Component, Input } from '@angular/core';
+import { Component, OnInit, OnDestroy, AfterViewInit, Input, ViewChild, ElementRef } from '@angular/core';
+import { CommonModule } from '@angular/common';
 import maplibregl from 'maplibre-gl';
-import { Crisis } from '../../../models/crisis.model';
-import { HelpRequest } from '../../../models/help-request.model';
-import { HelpPropose } from '../../../models/help-propose.model';
-import { CrisisService } from '../../../services/crisis.service';
-import { HelpRequestService } from '../../../services/help-request.service';
-import { HelpProposeService } from '../../../services/help-propose.service';
+import { CrisisService, Crisis } from '../../../../services/crisis.service';
+import { HelpRequestService, HelpRequest } from '../../../../services/help-request.service';
+import { HelpProposeService, HelpPropose } from '../../../../services/help-propose.service';
 import { Subscription } from 'rxjs';
 
 @Component({
