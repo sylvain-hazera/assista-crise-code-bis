@@ -17,5 +17,24 @@ else:
 EOF
 
 
+echo "Creating default Request Types..."
+python manage.py shell <<EOF
+from core.models import TypeDemande, TypeOffre, TypeInformation 
+
+types_evenements = [
+    'Incendie', 
+    'Inondation', 
+    'Accident', 
+    'Catastrophe naturelle', 
+    'Urgence médicale', 
+    'Autre'
+]
+
+print("Creating Event Types...")
+for t in types_evenements:
+    TypeDemande.objects.get_or_create(type=t)
+
+EOF
+
 echo "Starting server..."
 exec "$@"
