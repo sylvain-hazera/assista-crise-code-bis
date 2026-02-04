@@ -187,6 +187,25 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
                 'circle-stroke-color': '#fff'
             }
         });
+
+        this.map!.on('click', 'unclustered-point', (e) => {
+            if (!e.features || e.features.length === 0) return;
+            const geometry = e.features[0].geometry as GeoJSON.Point;
+            const coordinates = geometry.coordinates.slice() as [number, number];
+            const statut = e.features[0].properties['statut'] || 'N/A';
+            const nom = e.features[0].properties['nom_demande'] || 'N/A';
+            
+            while (Math.abs(e.lngLat.lng - coordinates[0]) > 180) {
+                coordinates[0] += e.lngLat.lng > coordinates[0] ? 360 : -360;
+            }
+
+            new maplibregl.Popup()
+                .setLngLat(coordinates)
+                .setHTML(
+                    `Nom de la demande: ${nom}<br>Statut de la demande: ${statut}`
+                )
+                .addTo(this.map!);
+        });
     });
   }
 
@@ -251,84 +270,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
         this.CrisisMarkers.push(marker);
       }
     });
-    
-    /*this.map.addLayer({
-        id: 'clusters',
-        type: 'circle',
-        source: this.CrisisMarkers,
-        filter: ['has', 'point_count'],
-        paint: {
-          'circle-color': '#51bbd6',
-          'circle-radius': ['step', ['get', 'point_count'], 20, 100, 30, 750, 40]
-        }
-      });*/
   }
-
-  /*private addHelpRequestMarkers(): void {
-    if (!this.map) return;
-
-    // Nettoyage
-    //this.HelpRequestMarkers.forEach(marker => marker.remove());
-    //this.HelpRequestMarkers = [];
-
-    this.helpRequests.forEach(request => {
-      // MapLibre attend : [Longitude, Latitude]
-      if (request.longitude && request.latitude) {
-        // Création du Popup HTML
-        const popupContent = `
-          <div style="color: black; font-family: sans-serif;">
-            <h3 style="margin: 0 0 5px 0;">Demande d'aide</h3>
-            <p style="margin: 0;">Type : ${request.type_demande}</p>
-            <br>
-            <small>Créée le : ${new Date(request.date_creation || Date.now()).toLocaleDateString()}</small>
-          </div>
-        `;
-
-        const popup = new maplibregl.Popup({ offset: 25 })
-          .setHTML(popupContent);
-
-        // Création du Marker
-        const marker = new maplibregl.Marker({ color: '#d63200' }) // Couleur orange pour les demandes
-          .setLngLat([request.longitude, request.latitude])
-          .setPopup(popup)
-          .addTo(this.map!);
-
-        this.HelpRequestMarkers.push(marker);
-      }
-    });
-  }*/
-
-  /*private addHelpProposalMarkers(): void {
-    if (!this.map) return;
-
-    // Nettoyage
-    this.HelpProposalMarkers.forEach(marker => marker.remove());
-    this.HelpProposalMarkers = [];
-
-    this.helpProposals.forEach(proposal => {
-      // MapLibre attend : [Longitude, Latitude]
-      if (proposal.longitude && proposal.latitude) {
-        // Création du Popup HTML
-        const popupContent = `
-          <div style="color: black; font-family: sans-serif;">
-            <h3 style="margin: 0 0 5px 0;">Proposition d'aide</h3>
-            <br>
-            <small>Créée le : ${new Date(proposal.createdAt || Date.now()).toLocaleDateString()}</small>
-          </div>
-        `;
-
-        const popup = new maplibregl.Popup({ offset: 25 })
-          .setHTML(popupContent);
-        // Création du Marker
-        const marker = new maplibregl.Marker({ color: '#0e1c8b' })
-          .setLngLat([proposal.longitude, proposal.latitude])
-          .setPopup(popup)
-          .addTo(this.map!);
-
-        this.HelpProposalMarkers.push(marker);
-      }
-    });
-  }*/
 
   private getSeverityColor(severity: string): string {
     const colors: { [key: string]: string } = {
