@@ -8,6 +8,12 @@ stages:
   - deploy
 
 variables:
+  
+  DOCKER_HOST: tcp://docker:2376
+  DOCKER_TLS_VERIFY: 1
+  DOCKER_TLS_CERTDIR: "/certs"
+  DOCKER_CERT_PATH: "$DOCKER_TLS_CERTDIR/client"
+
   # Define image names explicitly
   IMAGE_BACKEND: $HARBOR_URL/$HARBOR_PROJECT/backend:latest
   IMAGE_FRONTEND: $HARBOR_URL/$HARBOR_PROJECT/frontend:latest
