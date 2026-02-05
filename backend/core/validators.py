@@ -4,7 +4,7 @@ from PIL import Image
 def validate_image_file(file):
     limit_mb = 5
     if file.size > limit_mb * 1024 * 1024:
-        raise ValidationError(f"File too large. Size should not exceed {limit_mb} MB.")
+        raise ValidationError(f"Fichier trop volumineux. La taille ne doit pas dépasser {limit_mb} Mo.")
 
     try:
         img = Image.open(file)
@@ -12,7 +12,7 @@ def validate_image_file(file):
 
         allowed_formats = ['JPEG', 'PNG', 'WEBP', 'GIF']
         if img.format not in allowed_formats:
-            raise ValidationError(f"Unsupported image format: {img.format}. Allowed: {allowed_formats}")
+            raise ValidationError(f"Format d'image non supporté : {img.format}. Formats autorisés : {allowed_formats}")
             
     except Exception:
-        raise ValidationError("Invalid image file. The file is corrupted or not an image.")
+        raise ValidationError("Fichier image invalide. Le fichier est corrompu ou n'est pas une image.")
