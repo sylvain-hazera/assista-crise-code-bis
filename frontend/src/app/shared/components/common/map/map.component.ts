@@ -1,10 +1,12 @@
 import { Component, OnInit, OnDestroy, AfterViewInit, Input, ViewChild, ElementRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import maplibregl from 'maplibre-gl';
+import * as turf from '@turf/turf';
 import { CrisisService, Crisis } from '../../../../services/crisis.service';
 import { HelpRequestService, HelpRequest } from '../../../../services/help-request.service';
 import { HelpProposeService, HelpPropose } from '../../../../services/help-propose.service';
-import { Subscription } from 'rxjs';
+import { of, Subscription } from 'rxjs';
+import { FeatureCollection, Geometry, Polygon } from 'geojson';
 
 @Component({
   selector: 'app-map',
@@ -26,6 +28,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   
   private map: maplibregl.Map | null = null;
   private CrisisMarkers: maplibregl.Marker[] = [];
+  private crisisCircle: any[] = [];
   private requestGeoJSON: any = null;
   private proposalGeoJSON: any = null;
   private subscription: Subscription | null = null;
@@ -100,7 +103,6 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
           this.requestGeoJSON = this.jsonToGeoJSON(helpRequests);
           console.log('Help Requests GeoJSON:', this.requestGeoJSON);
           this.addSourceAndLayers();
-          //this.addHelpRequestMarkers();
         }
       },
       error: (error) => console.error('Erreur API:', error)
@@ -114,7 +116,6 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
         this.helpProposals = helpProposals;
         if (this.map) {
           this.proposalGeoJSON = this.jsonToGeoJSON(helpProposals);
-          //this.addHelpProposalMarkers();
         }
       },
       error: (error) => console.error('Erreur API:', error)
@@ -123,14 +124,18 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
 
   private addSourceAndLayers(): void {
     if (!this.map) return;
-    const GeoJSON =  this.requestGeoJSON; //geojsonMerge.merge([this.requestGeoJSON, this.proposalGeoJSON]);
-    console.log('Merged GeoJSON:', GeoJSON, this.requestGeoJSON);
+    const geoJsonList = [this.requestGeoJSON, this.proposalGeoJSON];
+    const mergedGeoJSON: FeatureCollection<Geometry> = {
+        type: 'FeatureCollection',
+        features: geoJsonList.flatMap(geoJson => geoJson ? geoJson.features : [])
+        };
+    console.log('Merged GeoJSON:', mergedGeoJSON);
     this.map.on('load', () => {
       // Ajout de la source pour les demandes d'aide
-      if (GeoJSON) {
+      if (mergedGeoJSON) {
         this.map!.addSource('clusters', {
           type: 'geojson',
-          data: GeoJSON,
+          data: mergedGeoJSON,
           cluster: true,
           clusterMaxZoom: 14, // Max zoom to cluster points on
           clusterRadius: 50 // Radius of each cluster when clustering points (defaults to 50)
@@ -145,11 +150,13 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
                 'circle-color': [
                     'step',
                     ['get', 'point_count'],
-                    '#53d651',
+                    '#4CAF50',
                     2,
-                    '#f1f075',
+                    '#FF9800',
                     7,
-                    '#f28cb1'
+                    '#F44336',
+                    15,
+                    '#B71C1C'
                 ],
                 'circle-radius': [
                     'step',
@@ -191,10 +198,19 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
         this.map!.on('click', 'unclustered-point', (e) => {
             if (!e.features || e.features.length === 0) return;
             const geometry = e.features[0].geometry as GeoJSON.Point;
+            let offerRequest: string;
             const coordinates = geometry.coordinates.slice() as [number, number];
             const statut = e.features[0].properties['statut'] || 'N/A';
-            const nom = e.features[0].properties['nom_demande'] || 'N/A';
-            
+            const titre = e.features[0].properties['titre'] || 'N/A';
+            let name: string;
+            if ('nom_demande' in e.features[0].properties) {
+              offerRequest = 'la demande';
+              name = e.features[0].properties['nom_demande'] || 'N/A';
+            }
+            else {
+              offerRequest = 'l\'offre';
+              name = e.features[0].properties['nom_offre'] || 'N/A';
+            }
             while (Math.abs(e.lngLat.lng - coordinates[0]) > 180) {
                 coordinates[0] += e.lngLat.lng > coordinates[0] ? 360 : -360;
             }
@@ -202,10 +218,33 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
             new maplibregl.Popup()
                 .setLngLat(coordinates)
                 .setHTML(
-                    `Nom de la demande: ${nom}<br>Statut de la demande: ${statut}`
+                    `Nom de ${offerRequest}: ${name}<br>Statut de ${offerRequest}: ${statut}`
                 )
                 .addTo(this.map!);
         });
+        
+        /*this.map!.on('click', 'clusters', async (e) => {
+            const features = this.map!.queryRenderedFeatures(e.point, {
+                layers: ['clusters']
+            });
+            const clusterId = features[0].properties['cluster_id'];
+            const source = this.map!.getSource('clusters') as maplibregl.GeoJSONSource;
+            const zoom = await source.getClusterExpansionZoom(clusterId);
+            const geometry = features[0].geometry as GeoJSON.Point;
+            this.map!.easeTo({
+                center: geometry.coordinates as [number, number],
+                zoom
+            });
+        });
+
+        this.map!.on('mouseenter', 'clusters', () => {
+            console.log('mouseenter cluster');
+            this.map!.getCanvas().style.cursor = 'pointer';
+        });
+        this.map!.on('mouseleave', 'clusters', () => {
+            console.log('mouseleave cluster');
+            this.map!.getCanvas().style.cursor = '';
+        });*/
     });
   }
 
@@ -225,13 +264,29 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
       // Si on a déjà des données (reçues avant le chargement de la carte), on affiche
       if (this.crises.length > 0) {
         this.addCrisisMarkers();
+        const circleGeojson: FeatureCollection<Polygon> = {
+        type: 'FeatureCollection',
+        features: this.crisisCircle
+        };
+        this.map!.addSource('location-radius', {
+          type: 'geojson',
+          data: circleGeojson
+        });
+
+        this.map!.addLayer({
+          id: 'location-radius',
+          type: 'fill',
+          source: 'location-radius',
+          paint: {
+            'fill-color': '#8CCFFF',
+            'fill-opacity': 0.5
+          }
+        });
       }
       if (this.helpRequests.length > 0) {
-        //this.addHelpRequestMarkers();
         this.requestGeoJSON = this.jsonToGeoJSON(this.helpRequests);
       }
       if (this.helpProposals.length > 0) {
-        //this.addHelpProposalMarkers();
         this.proposalGeoJSON = this.jsonToGeoJSON(this.helpProposals);
       }
     });
@@ -243,6 +298,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     // Nettoyage
     this.CrisisMarkers.forEach(marker => marker.remove());
     this.CrisisMarkers = [];
+    this.crisisCircle = [];
 
     this.crises.forEach(crisis => {
       // MapLibre attend : [Longitude, Latitude]
@@ -262,24 +318,16 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
           .setHTML(popupContent);
 
         // Création du Marker
-        const marker = new maplibregl.Marker({ color: this.getSeverityColor(crisis.severity || 'LOW') })
+        const marker = new maplibregl.Marker({ color: 'red' })
           .setLngLat([crisis.longitude, crisis.latitude])
           .setPopup(popup)
           .addTo(this.map!);
 
         this.CrisisMarkers.push(marker);
+        const radiusCenter = [crisis.longitude, crisis.latitude] as [number, number];
+        const radius = 10; // kilometer
+        this.crisisCircle.push(turf.circle(radiusCenter, radius, {steps: 64, units: 'kilometers'}));
       }
     });
-  }
-
-  private getSeverityColor(severity: string): string {
-    const colors: { [key: string]: string } = {
-      'LOW': '#4CAF50',       // Vert
-      'MEDIUM': '#FF9800',    // Orange
-      'HIGH': '#F44336',      // Rouge
-      'CRITICAL': '#B71C1C'   // Rouge foncé
-    };
-    // Retourne la couleur correspondante ou Bleu par défaut
-    return colors[severity?.toUpperCase()] || '#2196F3';
   }
 }
