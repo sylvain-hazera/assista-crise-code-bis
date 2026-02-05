@@ -1,0 +1,73 @@
+image: docker:latest
+
+services:
+  - docker:dind
+
+stages:
+  - build
+  - deploy
+
+variables:
+  # Define image names explicitly
+  IMAGE_BACKEND: $HARBOR_URL/$HARBOR_PROJECT/backend:latest
+  IMAGE_FRONTEND: $HARBOR_URL/$HARBOR_PROJECT/frontend:latest
+  IMAGE_PROXY: $HARBOR_URL/$HARBOR_PROJECT/proxy:latest
+
+build_push_harbor:
+  stage: build
+  only:
+    - prod
+  before_script:
+    - docker login -u "$HARBOR_USER" -p "$HARBOR_PASSWORD" "$HARBOR_URL"
+  script:
+    - echo "Building and pushing Backend..."
+    - docker build -t $IMAGE_BACKEND ./backend
+    - docker push $IMAGE_BACKEND
+
+    - echo "Building and pushing Frontend..."
+    - docker build -t $IMAGE_FRONTEND -f ./frontend/Dockerfile.prod ./frontend
+    - docker push $IMAGE_FRONTEND
+    
+    - echo "Building and pushing Proxy..."
+    - docker build -t $IMAGE_PROXY ./proxy
+    - docker push $IMAGE_PROXY
+
+deploy_vm:
+  stage: deploy
+  image: alpine:latest
+  only:
+    - prod
+  before_script:
+    - apk add --no-cache openssh-client
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    
+    # Decode Base64 private key
+    - echo "$SSH_PRIVATE_KEY" | base64 -d > ~/.ssh/id_ed25519
+    
+    - chmod 600 ~/.ssh/id_ed25519
+    - ssh-keyscan -H $SSH_HOST >> ~/.ssh/known_hosts
+  script:
+    - echo "Updating docker-compose.prod.yml on VM..."
+    - export REMOTE_DIR="/home/$SSH_USER/assista-crise"
+    
+    # Copy the latest docker-compose file to the VM
+    - scp -i ~/.ssh/id_ed25519 docker-compose.prod.yml $SSH_USER@$SSH_HOST:$REMOTE_DIR/docker-compose.prod.yml
+
+    - echo "Deploying on VM..."
+    - ssh -i ~/.ssh/id_ed25519 $SSH_USER@$SSH_HOST "
+        set -e &&
+        cd $REMOTE_DIR &&
+        
+        echo 'Logging into Harbor...' &&
+        docker login -u '$HARBOR_USER' -p '$HARBOR_PASSWORD' '$HARBOR_URL' &&
+        
+        echo 'Pulling new images...' &&
+        docker compose -f docker-compose.prod.yml pull &&
+        
+        echo 'Restarting containers...' &&
+        docker compose -f docker-compose.prod.yml up -d --force-recreate &&
+        
+        echo 'Cleaning up...' &&
+        docker image prune -f
+      "
