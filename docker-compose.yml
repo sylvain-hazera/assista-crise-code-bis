@@ -80,6 +80,8 @@ services:
     ports:
       - "1025:1025" # SMTP port
       - "8025:8025" # Web UI
+    networks:
+      - default
 
   tileserver:
     image: maptiler/tileserver-gl
