@@ -8,11 +8,13 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  z-index: 2000;
   animation: fadeIn 0.3s ease;
 }
 
 .popup-container {
+  max-height: calc(100vh - 2rem); 
+  overflow-y: auto;
   background: #fffbdb;
   border-radius: 12px;
   padding: 2rem;
@@ -29,7 +31,7 @@
 
   .popup-title {
     font-size: 1.5rem;
-    font-weight: 600;
+    font-weight: 600px;
     color: #333;
     margin-bottom: 1rem;
   }
@@ -117,3 +119,13 @@
     opacity: 1;
   }
 }
+
+@media (max-width: 768px) {
+  .popup-container {
+    padding: 1rem auto;
+    margin: 1rem;
+    .popup-icon { font-size: 3rem; }
+    .popup-title { font-size: 1.5rem; }
+  }
+}
+  

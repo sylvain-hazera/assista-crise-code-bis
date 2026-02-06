@@ -1,10 +1,9 @@
 import { Component, OnInit } from '@angular/core';
 import { FormGroup, FormBuilder, Validators, ReactiveFormsModule, FormArray } from '@angular/forms';
 import { Router } from '@angular/router';
-import { HelpRequestService } from '../../../services/help-request.service';
 import { GeolocationService } from '../../../services/geolocation.service';
-import { ApiService } from '../../../services/api.service';
 import { CommonModule } from '@angular/common';
+import { RequestService } from '../../../services/request.service';
 // import { NgSelectModule } from '@ng-select/ng-select';
 
 @Component({
@@ -24,7 +23,6 @@ export class RequestHelpFormComponent implements OnInit {
   latitude: number | null = null;
   longitude: number | null = null;
 
-  requestData: FormData = new FormData();
   typesDemandeMap: Map<string, string> = new Map(); // eventType -> UUID
 
   eventTypeOptions: { value: string; label: string }[] = [
@@ -52,41 +50,40 @@ export class RequestHelpFormComponent implements OnInit {
   personTypeOptions: { value: string; label: string }[] = [
     { value: '', label: 'Dropdown' },
     { value: 'individual', label: 'Particulier' },
-    { value: 'organization', label: 'Organisation' }
+    { value: 'organization', label: 'Organisation' },
+    { value: 'rescue', label: 'Secours organisés' },
   ];
 
   constructor(
     private formBuilder: FormBuilder,
     private router: Router,
-    private helpRequestService: HelpRequestService,
+    private helpRequestService: RequestService,
     private geolocationService: GeolocationService,
-    private apiService: ApiService
+    // private apiService: ApiService
   ) {}
 
   ngOnInit(): void {
     this.initForm();
-    this.loadTypesDemande();
+    // this.loadTypesDemande();
   }
 
-  loadTypesDemande(): void {
-    this.apiService.getTypesDemande().subscribe({
-      next: (types) => {
-        // Mapper les valeurs du formulaire aux UUIDs des types
-        types.forEach(t => {
-          const normalizedType = t.type.toLowerCase().replace(/\s+/g, '-');
-          this.typesDemandeMap.set(normalizedType, t.id!);
-        });
-        console.log('Types chargés:', this.typesDemandeMap);
-      },
-      error: (err) => console.error('Erreur chargement types:', err)
-    });
-  }
+  // loadTypesDemande(): void {
+  //   this.apiService.getTypesDemande().subscribe({
+  //     next: (types) => {
+  //       // Mapper les valeurs du formulaire aux UUIDs des types
+  //       types.forEach(t => {
+  //         const normalizedType = t.type.toLowerCase().replace(/\s+/g, '-');
+  //         this.typesDemandeMap.set(normalizedType, t.id!);
+  //       });
+  //       console.log('Types chargés:', this.typesDemandeMap);
+  //     },
+  //     error: (err) => console.error('Erreur chargement types:', err)
+  //   });
+  // }
 
   initForm(): void {
     this.requestForm = this.formBuilder.group({
       eventType: ['', Validators.required],
-      // needType: ['', Validators.required],
-      // description: ['', [Validators.required, Validators.minLength(10)]],
       needsType: new FormArray([]),
       descriptions: new FormArray([]),
       streetNumber: ['', Validators.required],
@@ -133,18 +130,7 @@ export class RequestHelpFormComponent implements OnInit {
     }
   }
 
-  onSubmit(): void {
-    console.log('=== DEBUG SUBMIT ===');
-    console.log('requestForm valid:', this.requestForm.valid);
-    console.log('requestForm errors:', this.requestForm.errors);
-    console.log('requestForm value:', this.requestForm.value);
-    console.log('informationForm valid:', this.informationForm.valid);
-    console.log('informationForm errors:', this.informationForm.errors);
-    console.log('informationForm value:', this.informationForm.value);
-    console.log('Latitude:', this.latitude, 'Longitude:', this.longitude);
-    console.log('needsType controls:', this.needsType.controls.map((c, i) => ({index: i, valid: c.valid, value: c.value})));
-    console.log('descriptions controls:', this.descriptions.controls.map((c, i) => ({index: i, valid: c.valid, value: c.value})));
-    
+  onSubmit(): void {    
     if (this.informationForm.valid && this.latitude && this.longitude) {
       console.log('Formulaire valide:', this.informationForm.value);
 
@@ -227,8 +213,6 @@ export class RequestHelpFormComponent implements OnInit {
       const zip = this.requestForm.get('postalCode')?.value;
       const query = `${street} ${zip}`;
 
-      console.log('Recherche GPS pour :', query);
-
       this.geolocationService.getCoordinates(query).subscribe({
         next: (response) => {
           if (response.features && response.features.length > 0) {
@@ -236,7 +220,6 @@ export class RequestHelpFormComponent implements OnInit {
             this.longitude = coords[0];
             this.latitude = coords[1];
             
-            console.log(`Trouvé : ${this.latitude}, ${this.longitude}`);
             this.state = 2;
           } else {
             alert("Adresse introuvable. Vérifiez le numéro et le code postal.");
@@ -247,25 +230,6 @@ export class RequestHelpFormComponent implements OnInit {
           alert("Erreur de connexion au service d'adresse.");
         }
       });
-
-      // this.requestData.append('eventType', this.requestForm.get('eventType')?.value);
-      // for (const needType of this.requestForm.get('needsType')?.value) {
-      //   this.requestData.append('needType', needType);
-      // }
-      // for (const description of this.requestForm.get('descriptions')?.value) {
-      //   this.requestData.append('description', description);
-      // }
-      // // this.requestData.append('needType', this.requestForm.get('needType')?.value);
-      // // this.requestData.append('description', this.requestForm.get('description')?.value);
-      // this.requestData.append('streetNumber', this.requestForm.get('streetNumber')?.value);
-      // this.requestData.append('postalCode', this.requestForm.get('postalCode')?.value);
-      // this.requestData.append('addressVisible', this.requestForm.get('addressVisible')?.value);
-
-      // if (this.selectedFile) {
-      //   this.requestData.append('image', this.selectedFile);
-      // }
-
-      // this.state = 2;
   } else {
       // Marquer tous les champs comme touchés pour afficher les erreurs
       Object.keys(this.requestForm.controls).forEach(key => {

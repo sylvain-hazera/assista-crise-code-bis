@@ -1,5 +1,4 @@
 import { Component, OnInit, OnDestroy, AfterViewInit, Input, ViewChild, ElementRef } from '@angular/core';
-import { CommonModule } from '@angular/common';
 import maplibregl from 'maplibre-gl';
 import * as turf from '@turf/turf';
 import { CrisisService, Crisis } from '../../../../services/crisis.service';
@@ -11,7 +10,7 @@ import { FeatureCollection, Geometry, Polygon } from 'geojson';
 @Component({
   selector: 'app-map',
   standalone: true,
-  imports: [CommonModule],
+  imports: [],
   templateUrl: './map.component.html',
   styleUrl: './map.component.scss'
 })
@@ -20,8 +19,8 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   @ViewChild('mapContainer') mapContainer!: ElementRef;
 
   @Input() crises: Crisis[] = [];
-  @Input() helpRequests: HelpRequest[] = [];
-  @Input() helpProposals: HelpPropose[] = [];
+  @Input() requests: Request[] = [];
+  @Input() offers: Offer[] = [];
   // Centre de la France par défaut
   @Input() center: [number, number] = [2.2137, 46.2276]; 
   @Input() zoom: number = 5;
@@ -38,13 +37,13 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
               private helpProposalService: HelpProposeService) {}
   ngOnInit(): void {
     // Si pas de données en entrée, on charge depuis le service
-    // if (this.crises.length === 0) {
-    //   this.loadCrises();
-    // }
+    if (this.crises.length === 0) {
+      this.loadCrises();
+    }
     if (this.helpRequests.length === 0) {
       this.loadHelpRequests();
     }
-    if (this.helpProposals.length === 0) {
+    if (this.offers.length === 0) {
       this.loadHelpProposals();
     }
   }
@@ -59,7 +58,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   loadCrises() {
-    this.subscription = this.crisisService.getAllCrises().subscribe({
+    this.subscription = this.crisisService.getAllCrisis().subscribe({
       next: (crises) => {
         console.log('Données de crises reçues:', crises);
         this.crises = crises;
@@ -95,10 +94,10 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
 }
 
   loadHelpRequests() {
-    this.subscription = this.helpRequestService.getAllRequests().subscribe({
-      next: (helpRequests) => {
-        console.log('Données de demandes d\'aide reçues:', helpRequests);
-        this.helpRequests = helpRequests;
+    this.subscription = this.requestService.getAllRequests().subscribe({
+      next: (requests) => {
+        console.log('Données de demandes d\'aide reçues:', requests);
+        this.requests = requests;
         if (this.map) {
           this.requestGeoJSON = this.jsonToGeoJSON(helpRequests);
           console.log('Help Requests GeoJSON:', this.requestGeoJSON);
@@ -110,10 +109,10 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   loadHelpProposals() {
-    this.subscription = this.helpProposalService.getAllProposes().subscribe({
-      next: (helpProposals) => {
-        console.log('Données de propositions d\'aide reçues:', helpProposals);
-        this.helpProposals = helpProposals;
+    this.subscription = this.offerService.getAllOffers().subscribe({
+      next: (offers) => {
+        console.log('Données de propositions d\'aide reçues:', offers);
+        this.offers = offers;
         if (this.map) {
           this.proposalGeoJSON = this.jsonToGeoJSON(helpProposals);
         }
