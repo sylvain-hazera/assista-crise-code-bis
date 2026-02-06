@@ -1,10 +1,13 @@
 import { Component, OnInit, OnDestroy, AfterViewInit, Input, ViewChild, ElementRef } from '@angular/core';
 import maplibregl from 'maplibre-gl';
 import * as turf from '@turf/turf';
-import { CrisisService, Crisis } from '../../../../services/crisis.service';
-import { HelpRequestService, HelpRequest } from '../../../../services/help-request.service';
-import { HelpProposeService, HelpPropose } from '../../../../services/help-propose.service';
-import { of, Subscription } from 'rxjs';
+import { CrisisService } from '../../../../services/crisis.service';
+import { Crisis } from '../../../models/crisis.model';
+import { RequestService } from '../../../../services/request.service';
+import { Request } from '../../../models/request.model';
+import { OfferService } from '../../../../services/offer.service';
+import { Offer } from '../../../models/offer.model';
+import { Subscription } from 'rxjs';
 import { FeatureCollection, Geometry, Polygon } from 'geojson';
 
 @Component({
@@ -33,18 +36,18 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   private subscription: Subscription | null = null;
 
   constructor(private crisisService: CrisisService,
-              private helpRequestService: HelpRequestService,
-              private helpProposalService: HelpProposeService) {}
+              private requestService: RequestService,
+              private offerService: OfferService) {}
   ngOnInit(): void {
     // Si pas de données en entrée, on charge depuis le service
     if (this.crises.length === 0) {
       this.loadCrises();
     }
-    if (this.helpRequests.length === 0) {
-      this.loadHelpRequests();
+    if (this.requests.length === 0) {
+      this.loadRequests();
     }
     if (this.offers.length === 0) {
-      this.loadHelpProposals();
+      this.loadOffers();
     }
   }
 
@@ -93,13 +96,13 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   };
 }
 
-  loadHelpRequests() {
+  loadRequests() {
     this.subscription = this.requestService.getAllRequests().subscribe({
       next: (requests) => {
         console.log('Données de demandes d\'aide reçues:', requests);
         this.requests = requests;
         if (this.map) {
-          this.requestGeoJSON = this.jsonToGeoJSON(helpRequests);
+          this.requestGeoJSON = this.jsonToGeoJSON(requests);
           console.log('Help Requests GeoJSON:', this.requestGeoJSON);
           this.addSourceAndLayers();
         }
@@ -108,13 +111,13 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     });
   }
 
-  loadHelpProposals() {
+  loadOffers() {
     this.subscription = this.offerService.getAllOffers().subscribe({
       next: (offers) => {
         console.log('Données de propositions d\'aide reçues:', offers);
         this.offers = offers;
         if (this.map) {
-          this.proposalGeoJSON = this.jsonToGeoJSON(helpProposals);
+          this.proposalGeoJSON = this.jsonToGeoJSON(offers);
         }
       },
       error: (error) => console.error('Erreur API:', error)
@@ -280,11 +283,11 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
           }
         });
       }
-      if (this.helpRequests.length > 0) {
-        this.requestGeoJSON = this.jsonToGeoJSON(this.helpRequests);
+      if (this.requests.length > 0) {
+        this.requestGeoJSON = this.jsonToGeoJSON(this.requests);
       }
-      if (this.helpProposals.length > 0) {
-        this.proposalGeoJSON = this.jsonToGeoJSON(this.helpProposals);
+      if (this.offers.length > 0) {
+        this.proposalGeoJSON = this.jsonToGeoJSON(this.offers);
       }
     });
   }
