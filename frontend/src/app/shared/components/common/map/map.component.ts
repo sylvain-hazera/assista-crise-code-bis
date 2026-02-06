@@ -5,7 +5,7 @@ import * as turf from '@turf/turf';
 import { CrisisService, Crisis } from '../../../../services/crisis.service';
 import { HelpRequestService, HelpRequest } from '../../../../services/help-request.service';
 import { HelpProposeService, HelpPropose } from '../../../../services/help-propose.service';
-import { of, Subscription } from 'rxjs';
+import { forkJoin, Subscription } from 'rxjs';
 import { FeatureCollection, Geometry, Polygon } from 'geojson';
 
 @Component({
@@ -41,11 +41,8 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     if (this.crises.length === 0) {
       this.loadCrises();
     }
-    if (this.helpRequests.length === 0) {
-      this.loadHelpRequests();
-    }
-    if (this.helpProposals.length === 0) {
-      this.loadHelpProposals();
+    if (this.helpRequests.length === 0 && this.helpProposals.length === 0) {
+      this.loadHelpData();
     }
   }
 
@@ -94,33 +91,29 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   };
 }
 
-  loadHelpRequests() {
-    this.subscription = this.helpRequestService.getAllRequests().subscribe({
-      next: (helpRequests) => {
-        console.log('Données de demandes d\'aide reçues:', helpRequests);
-        this.helpRequests = helpRequests;
-        if (this.map) {
-          this.requestGeoJSON = this.jsonToGeoJSON(helpRequests);
-          console.log('Help Requests GeoJSON:', this.requestGeoJSON);
-          this.addSourceAndLayers();
-        }
-      },
-      error: (error) => console.error('Erreur API:', error)
-    });
-  }
+  loadHelpData() {
+  this.subscription = forkJoin({
+    requests: this.helpRequestService.getAllRequests(),
+    proposals: this.helpProposalService.getAllProposes()
+  }).subscribe({
+    next: ({ requests, proposals }) => {
 
-  loadHelpProposals() {
-    this.subscription = this.helpProposalService.getAllProposes().subscribe({
-      next: (helpProposals) => {
-        console.log('Données de propositions d\'aide reçues:', helpProposals);
-        this.helpProposals = helpProposals;
-        if (this.map) {
-          this.proposalGeoJSON = this.jsonToGeoJSON(helpProposals);
-        }
-      },
-      error: (error) => console.error('Erreur API:', error)
-    });
-  }
+      console.log('Requests:', requests);
+      console.log('Proposals:', proposals);
+
+      this.helpRequests = requests;
+      this.helpProposals = proposals;
+
+      this.requestGeoJSON = this.jsonToGeoJSON(requests);
+      this.proposalGeoJSON = this.jsonToGeoJSON(proposals);
+
+      if (this.map) {
+        this.addSourceAndLayers();
+      }
+    },
+    error: (err) => console.error('Erreur API:', err)
+  });
+}
 
   private addSourceAndLayers(): void {
     if (!this.map) return;
@@ -243,11 +236,9 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
         });
 
         this.map!.on('mouseenter', 'clusters-layer', () => {
-            console.log('mouseenter cluster');
             this.map!.getCanvas().style.cursor = 'pointer';
         });
         this.map!.on('mouseleave', 'clusters-layer', () => {
-            console.log('mouseleave cluster');
             this.map!.getCanvas().style.cursor = '';
         });
     });
