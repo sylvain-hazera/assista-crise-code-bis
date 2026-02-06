@@ -1,9 +1,12 @@
 services:
+  # --- ZONE VERTE (Réseau Public) ---
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile.dev
     container_name: ac_frontend
+    # En prod, on n'expose pas le port 4200, c'est le proxy qui gère.
+    # En dev, on le garde pour le debug si besoin.
     ports:
       - "4200:4200"
     volumes:
@@ -11,10 +14,38 @@ services:
       - /app/node_modules       
     environment:
       - CHOKIDAR_USEPOLLING=true
+    networks:
+      - reseau_public
 
+  tileserver:
+    image: maptiler/tileserver-gl
+    container_name: ac_maps
+    # Idem, en architecture stricte, seul le proxy lui parle sur le réseau interne docker
+    ports:
+      - "8080:8080"
+    networks:
+      - reseau_public
+
+  # --- LA PASSERELLE (Le Proxy) ---
+  proxy:
+    build: ./proxy
+    container_name: ac_proxy
+    ports:
+      - "80:80"
+    depends_on:
+      - frontend
+      - backend
+      - tileserver
+    networks:
+      - reseau_public  # Pour parler au Frontend et au TileServer
+      - reseau_prive   # Pour parler au Backend
+
+  # --- ZONE ROSE (Réseau Privé) ---
   backend:
     build: ./backend
     container_name: ac_backend
+    # Le port 8000 ne devrait pas être exposé directement sur internet
+    # Seul le proxy (via reseau_prive) doit pouvoir lui parler.
     ports:
       - "8000:8000"
     volumes:
@@ -26,11 +57,8 @@ services:
       - DB_USER=admin
       - DB_PASS=admin
       - MQTT_BROKER=mosquitto
-      - EMAIL_HOST=mailhog      # Use MailHog in dev
+      - EMAIL_HOST=mailhog
       - EMAIL_PORT=1025
-    # For Hardware USB Access (uncomment on VM/Host with antenna)
-    # devices:
-    #   - "/dev/ttyACM0:/dev/ttyACM0"
     depends_on:
       db:
         condition: service_healthy
@@ -38,6 +66,8 @@ services:
         condition: service_started
       mailhog:
         condition: service_started
+    networks:
+      - reseau_prive
 
   db:
     image: postgis/postgis:15-3.3
@@ -48,24 +78,34 @@ services:
       - POSTGRES_DB=assista-db
       - POSTGRES_USER=admin
       - POSTGRES_PASSWORD=admin
-    ports: # !!! REMOVE FOR PRODUCTION !!!
+    # SECURITÉ : La BDD ne doit jamais être accessible de l'extérieur
+    # Je laisse le port mappé pour vos outils de dev (PgAdmin/DBeaver) 
+    # mais en prod il faut le retirer.
+    ports:
       - "5432:5432"    
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U admin -d assista-db"]
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - reseau_prive
 
   mosquitto:
-    image: eclipse-mosquitto
-    container_name: ac_mqtt
+    image: eclipse-mosquitto:latest
+    container_name: assista_mosquitto
+    restart: unless-stopped
     ports:
-      - "1883:1883" # TCP listener
-      - "9001:9001" # Websocket listener
+      - "1883:1883"  # Doit rester exposé pour les noeuds Meshtastic physiques
+      - "9001:9001"
     volumes:
       - ./mosquitto/config:/mosquitto/config
       - ./mosquitto/data:/mosquitto/data
+      - ./mosquitto/log:/mosquitto/log
+    networks:
+      - reseau_prive
 
+  # Services utilitaires (internes au réseau privé)
   grafana:
     image: grafana/grafana
     container_name: ac_stats
@@ -73,32 +113,25 @@ services:
       - "3000:3000"
     depends_on:
       - db
+    networks:
+      - reseau_prive
 
   mailhog:
     image: mailhog/mailhog
     container_name: ac_mailer
     ports:
-      - "1025:1025" # SMTP port
-      - "8025:8025" # Web UI
-
-  tileserver:
-    image: maptiler/tileserver-gl
-    container_name: ac_maps
-    ports:
-      - "8080:8080"
-    # volumes:
-    #   - ./tileserver:/data
-
-  proxy:
-    build: ./proxy
-    container_name: ac_proxy
-    ports:
-      - "80:80"
-    depends_on:
-      - frontend
-      - backend
-      - tileserver
+      - "1025:1025"
+      - "8025:8025"
+    networks:
+      - reseau_prive
 
 volumes:
   postgres_data:
   media_volume:
+
+# DÉFINITION DES RÉSEAUX
+networks:
+  reseau_public:
+    driver: bridge
+  reseau_prive:
+    driver: bridge
