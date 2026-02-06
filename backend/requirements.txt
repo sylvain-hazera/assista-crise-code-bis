@@ -6,6 +6,9 @@ meshtastic
 paho-mqtt
 psycopg2-binary>=2.9
 django-cors-headers>=4.3.1
-Pillow
+Pillow>=10.2.0
 drf-spectacular
 django-filter
+django-cleanup>=8.0.0
+celery>=5.3.0
+redis>=5.0.0
