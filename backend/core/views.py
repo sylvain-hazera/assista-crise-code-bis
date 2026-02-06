@@ -5,6 +5,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticatedOrReadOnly, AllowAny
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
+from django.core.mail import send_mail
 from .models import (
     Utilisateur, Crise, Demande, Offre, Information,
     TypeDemande, TypeOffre, TypeInformation
@@ -82,6 +83,30 @@ class DemandeViewSet(viewsets.ModelViewSet):
     queryset = Demande.objects.all()
     serializer_class = DemandeSerializer
     permission_classes = [AllowAny]
+
+
+    def perform_create(self, serializer):
+        demande = serializer.save()
+        try:
+            print(f"Tentative d'envoi de mail à {demande.email_demande}...")
+            
+            send_mail(
+                subject=f"Confirmation : Votre demande '{demande.titre}' a bien été reçue",
+                message=(
+                    f"Bonjour {demande.prenom_demande},\n\n"
+                    f"Nous accusons réception de votre demande d'aide : {demande.titre}.\n"
+                    "Elle est actuellement en attente de traitement par nos services.\n\n"
+                    "Cordialement,\n"
+                    "L'équipe Assista-Crise"
+                ),
+                from_email=None,  # Utilise DEFAULT_FROM_EMAIL défini dans settings.py
+                recipient_list=[demande.email_demande],
+                fail_silently=False,
+            )
+            print("Succès : Email de confirmation envoyé.")
+            
+        except Exception as e:
+            print(f"Erreur critique : L'envoi de l'email a échoué. Détails : {e}")
 
 class OffreViewSet(viewsets.ModelViewSet):
     queryset = Offre.objects.all()
