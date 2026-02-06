@@ -1,10 +1,12 @@
 import { Component, OnInit, OnDestroy, AfterViewInit, Input, ViewChild, ElementRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import maplibregl from 'maplibre-gl';
+import * as turf from '@turf/turf';
 import { CrisisService, Crisis } from '../../../../services/crisis.service';
 import { HelpRequestService, HelpRequest } from '../../../../services/help-request.service';
 import { HelpProposeService, HelpPropose } from '../../../../services/help-propose.service';
-import { Subscription } from 'rxjs';
+import { of, Subscription } from 'rxjs';
+import { FeatureCollection, Geometry, Polygon } from 'geojson';
 
 @Component({
   selector: 'app-map',
@@ -25,13 +27,15 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   @Input() zoom: number = 5;
   
   private map: maplibregl.Map | null = null;
-  private markers: maplibregl.Marker[] = [];
+  private CrisisMarkers: maplibregl.Marker[] = [];
+  private crisisCircle: any[] = [];
+  private requestGeoJSON: any = null;
+  private proposalGeoJSON: any = null;
   private subscription: Subscription | null = null;
 
   constructor(private crisisService: CrisisService,
               private helpRequestService: HelpRequestService,
               private helpProposalService: HelpProposeService) {}
-
   ngOnInit(): void {
     // Si pas de données en entrée, on charge depuis le service
     // if (this.crises.length === 0) {
@@ -54,18 +58,41 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     if (this.map) this.map.remove();
   }
 
-  // loadCrises() {
-  //   this.subscription = this.crisisService.getAllCrises().subscribe({
-  //     next: (crises) => {
-  //       console.log('Données de crises reçues:', crises);
-  //       this.crises = crises;
-  //       if (this.map) {
-  //         this.addCrisisMarkers();
-  //       }
-  //     },
-  //     error: (error) => console.error('Erreur API:', error)
-  //   });
-  // }
+  loadCrises() {
+    this.subscription = this.crisisService.getAllCrises().subscribe({
+      next: (crises) => {
+        console.log('Données de crises reçues:', crises);
+        this.crises = crises;
+        if (this.map) {
+          this.addCrisisMarkers();
+        }
+      },
+      error: (error) => console.error('Erreur API:', error)
+    });
+  }
+
+  jsonToGeoJSON(data: any[]) {
+  return {
+    type: 'FeatureCollection',
+
+    features: data
+      .filter(d => d.latitude && d.longitude)
+      .map(d => ({
+        type: 'Feature',
+
+        geometry: {
+          type: 'Point',
+          coordinates: [
+            Number(d.longitude),
+            Number(d.latitude)
+          ]
+        },
+        properties: {
+          ...d
+        }
+      }))
+  };
+}
 
   loadHelpRequests() {
     this.subscription = this.helpRequestService.getAllRequests().subscribe({
@@ -73,7 +100,9 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
         console.log('Données de demandes d\'aide reçues:', helpRequests);
         this.helpRequests = helpRequests;
         if (this.map) {
-            this.addHelpRequestMarkers();
+          this.requestGeoJSON = this.jsonToGeoJSON(helpRequests);
+          console.log('Help Requests GeoJSON:', this.requestGeoJSON);
+          this.addSourceAndLayers();
         }
       },
       error: (error) => console.error('Erreur API:', error)
@@ -86,14 +115,138 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
         console.log('Données de propositions d\'aide reçues:', helpProposals);
         this.helpProposals = helpProposals;
         if (this.map) {
-            this.addHelpProposalMarkers();
+          this.proposalGeoJSON = this.jsonToGeoJSON(helpProposals);
         }
       },
       error: (error) => console.error('Erreur API:', error)
     });
   }
 
+  private addSourceAndLayers(): void {
+    if (!this.map) return;
+    const geoJsonList = [this.requestGeoJSON, this.proposalGeoJSON];
+    const mergedGeoJSON: FeatureCollection<Geometry> = {
+        type: 'FeatureCollection',
+        features: geoJsonList.flatMap(geoJson => geoJson ? geoJson.features : [])
+        };
+    console.log('Merged GeoJSON:', mergedGeoJSON);
+    this.map.on('load', () => {
+      // Ajout de la source pour les demandes d'aide
+      if (mergedGeoJSON) {
+        this.map!.addSource('clusters', {
+          type: 'geojson',
+          data: mergedGeoJSON,
+          cluster: true,
+          clusterMaxZoom: 14, // Max zoom to cluster points on
+          clusterRadius: 50 // Radius of each cluster when clustering points (defaults to 50)
+        });
+      }
+      this.map!.addLayer({
+        id: 'clusters-layer',
+        type: 'circle',
+        source: 'clusters',
+        filter: ['has', 'point_count'],
+        paint: {
+                'circle-color': [
+                    'step',
+                    ['get', 'point_count'],
+                    '#4CAF50',
+                    2,
+                    '#FF9800',
+                    7,
+                    '#F44336',
+                    15,
+                    '#B71C1C'
+                ],
+                'circle-radius': [
+                    'step',
+                    ['get', 'point_count'],
+                    20,
+                    100,
+                    30,
+                    750,
+                    40
+                ]
+            }
+        });
 
+        this.map!.addLayer({
+            id: 'cluster-count',
+            type: 'symbol',
+            source: 'clusters',
+            filter: ['has', 'point_count'],
+            layout: {
+                'text-field': '{point_count_abbreviated}',
+                'text-font': ['Noto Sans Regular'],
+                'text-size': 12
+            }
+        });
+
+        this.map!.addLayer({
+            id: 'unclustered-point',
+            type: 'circle',
+            source: 'clusters',
+            filter: ['!', ['has', 'point_count']],
+            paint: {
+                'circle-color': '#11b4da',
+                'circle-radius': 5,
+                'circle-stroke-width': 1,
+                'circle-stroke-color': '#fff'
+            }
+        });
+
+        this.map!.on('click', 'unclustered-point', (e) => {
+            if (!e.features || e.features.length === 0) return;
+            const geometry = e.features[0].geometry as GeoJSON.Point;
+            let offerRequest: string;
+            const coordinates = geometry.coordinates.slice() as [number, number];
+            const statut = e.features[0].properties['statut'] || 'N/A';
+            const titre = e.features[0].properties['titre'] || 'N/A';
+            let name: string;
+            if ('nom_demande' in e.features[0].properties) {
+              offerRequest = 'la demande';
+              name = e.features[0].properties['nom_demande'] || 'N/A';
+            }
+            else {
+              offerRequest = 'l\'offre';
+              name = e.features[0].properties['nom_offre'] || 'N/A';
+            }
+            while (Math.abs(e.lngLat.lng - coordinates[0]) > 180) {
+                coordinates[0] += e.lngLat.lng > coordinates[0] ? 360 : -360;
+            }
+
+            new maplibregl.Popup()
+                .setLngLat(coordinates)
+                .setHTML(
+                    `Nom de ${offerRequest}: ${name}<br>Statut de ${offerRequest}: ${statut}`
+                )
+                .addTo(this.map!);
+        });
+        
+        this.map!.on('click', 'clusters-layer', async (e) => {
+            const features = this.map!.queryRenderedFeatures(e.point, {
+                layers: ['clusters-layer']
+            });
+            const clusterId = features[0].properties['cluster_id'];
+            const source = this.map!.getSource('clusters') as maplibregl.GeoJSONSource;
+            const zoom = await source.getClusterExpansionZoom(clusterId);
+            const geometry = features[0].geometry as GeoJSON.Point;
+            this.map!.easeTo({
+                center: geometry.coordinates as [number, number],
+                zoom
+            });
+        });
+
+        this.map!.on('mouseenter', 'clusters-layer', () => {
+            console.log('mouseenter cluster');
+            this.map!.getCanvas().style.cursor = 'pointer';
+        });
+        this.map!.on('mouseleave', 'clusters-layer', () => {
+            console.log('mouseleave cluster');
+            this.map!.getCanvas().style.cursor = '';
+        });
+    });
+  }
 
   private initializeMap(): void {
     this.map = new maplibregl.Map({
@@ -107,44 +260,55 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
 
     this.map.on('load', () => {
       // Si on a déjà des données (reçues avant le chargement de la carte), on affiche
-      // if (this.crises.length > 0) {
-      //   this.addCrisisRadius();
-      // }
+      if (this.crises.length > 0) {
+        this.addCrisisMarkers();
+        const circleGeojson: FeatureCollection<Polygon> = {
+        type: 'FeatureCollection',
+        features: this.crisisCircle
+        };
+        this.map!.addSource('location-radius', {
+          type: 'geojson',
+          data: circleGeojson
+        });
+
+        this.map!.addLayer({
+          id: 'location-radius',
+          type: 'fill',
+          source: 'location-radius',
+          paint: {
+            'fill-color': '#8CCFFF',
+            'fill-opacity': 0.5
+          }
+        });
+      }
       if (this.helpRequests.length > 0) {
-        this.addHelpRequestMarkers();
+        this.requestGeoJSON = this.jsonToGeoJSON(this.helpRequests);
       }
       if (this.helpProposals.length > 0) {
-        this.addHelpProposalMarkers();
+        this.proposalGeoJSON = this.jsonToGeoJSON(this.helpProposals);
       }
     });
   }
 
-  // private addCrisisRadius(): void {
-  //   if (!this.map) return;
-  //   this.crises.forEach(crisis => {
-  //     if (crisis.longitude && crisis.latitude) {
+  private addCrisisMarkers(): void {
+    if (!this.map) return;
+
+    // Nettoyage
+    this.CrisisMarkers.forEach(marker => marker.remove());
+    this.CrisisMarkers = [];
+    this.crisisCircle = [];
+
+    this.crises.forEach(crisis => {
+      // MapLibre attend : [Longitude, Latitude]
+      if (crisis.latitude && crisis.longitude) {
         
-  //     }
-  //   });
-  // }
-  private addHelpRequestMarkers(): void {
-    if (!this.map) return;
-
-    // Nettoyage
-    this.markers.forEach(marker => marker.remove());
-    this.markers = [];
-
-    this.helpRequests.forEach(request => {
-      // MapLibre attend : [Longitude, Latitude]
-      if (request.longitude && request.latitude) {
         // Création du Popup HTML
         const popupContent = `
           <div style="color: black; font-family: sans-serif;">
-            <h3 style="margin: 0 0 5px 0;">Demande d'aide</h3>
-            <p style="margin: 5px 0;">Titre : ${request.titre || 'N/A'}</p>
-            // <p style="margin: 0;">Type : ${request.type_demande}</p>
+            <h3 style="margin: 0 0 5px 0;">${crisis.name}</h3>
+            <p style="margin: 0;">${crisis.description || 'Pas de description'}</p>
             <br>
-            <small>Créée le : ${new Date(request.date_creation || Date.now()).toLocaleDateString()}</small>
+            <small>Créé le : ${new Date(crisis.createdAt || Date.now()).toLocaleDateString()}</small>
           </div>
         `;
 
@@ -152,56 +316,16 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
           .setHTML(popupContent);
 
         // Création du Marker
-        const marker = new maplibregl.Marker({ color: '#d63200' }) // Couleur orange pour les demandes
-          .setLngLat([request.longitude, request.latitude])
+        const marker = new maplibregl.Marker({ color: 'red' })
+          .setLngLat([crisis.longitude, crisis.latitude])
           .setPopup(popup)
           .addTo(this.map!);
 
-        this.markers.push(marker);
+        this.CrisisMarkers.push(marker);
+        const radiusCenter = [crisis.longitude, crisis.latitude] as [number, number];
+        const radius = 10; // kilometer
+        this.crisisCircle.push(turf.circle(radiusCenter, radius, {steps: 64, units: 'kilometers'}));
       }
     });
-  }
-
-  private addHelpProposalMarkers(): void {
-    if (!this.map) return;
-
-    // Nettoyage
-    this.markers.forEach(marker => marker.remove());
-    this.markers = [];
-
-    this.helpProposals.forEach(proposal => {
-      // MapLibre attend : [Longitude, Latitude]
-      if (proposal.longitude && proposal.latitude) {
-        // Création du Popup HTML
-        const popupContent = `
-          <div style="color: black; font-family: sans-serif;">
-            <h3 style="margin: 0 0 5px 0;">Proposition d'aide</h3>
-            <br>
-            <small>Créée le : ${new Date(proposal.createdAt || Date.now()).toLocaleDateString()}</small>
-          </div>
-        `;
-
-        const popup = new maplibregl.Popup({ offset: 25 })
-          .setHTML(popupContent);
-        // Création du Marker
-        const marker = new maplibregl.Marker({ color: '#0e1c8b' })
-          .setLngLat([proposal.longitude, proposal.latitude])
-          .setPopup(popup)
-          .addTo(this.map!);
-
-        this.markers.push(marker);
-      }
-    });
-  }
-
-  private getSeverityColor(severity: string): string {
-    const colors: { [key: string]: string } = {
-      'LOW': '#4CAF50',       // Vert
-      'MEDIUM': '#FF9800',    // Orange
-      'HIGH': '#F44336',      // Rouge
-      'CRITICAL': '#B71C1C'   // Rouge foncé
-    };
-    // Retourne la couleur correspondante ou Bleu par défaut
-    return colors[severity?.toUpperCase()] || '#2196F3';
   }
 }
