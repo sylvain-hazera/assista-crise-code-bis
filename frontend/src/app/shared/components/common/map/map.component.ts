@@ -182,19 +182,6 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
             }
         });
 
-        this.map!.addLayer({
-            id: 'unclustered-point',
-            type: 'circle',
-            source: 'clusters',
-            filter: ['!', ['has', 'point_count']],
-            paint: {
-                'circle-color': '#11b4da',
-                'circle-radius': 5,
-                'circle-stroke-width': 1,
-                'circle-stroke-color': '#fff'
-            }
-        });
-
         this.map!.on('click', 'unclustered-point', (e) => {
             if (!e.features || e.features.length === 0) return;
             const geometry = e.features[0].geometry as GeoJSON.Point;
@@ -223,6 +210,24 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
                 .addTo(this.map!);
         });
         
+          this.map!.addLayer({
+            id: 'unclustered-point',
+            type: 'circle',
+            source: 'clusters',
+            filter: ['!', ['has', 'point_count']],
+            paint: {
+                'circle-color': [
+                'case',
+                ['has', 'nom_demande'],
+                '#ff0000',
+                '#11b4da'
+                ],
+                'circle-radius': 5,
+                'circle-stroke-width': 1,
+                'circle-stroke-color': '#fff'
+            }
+        });
+
         this.map!.on('click', 'clusters-layer', async (e) => {
             const features = this.map!.queryRenderedFeatures(e.point, {
                 layers: ['clusters-layer']
