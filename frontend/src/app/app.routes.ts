@@ -8,6 +8,7 @@ export const routes: Routes = [
     path: '',
     component: PublicLayoutComponent,
     loadChildren: () => import('./public/public.routes').then(m => m.PUBLIC_ROUTES)
+    // loadChildren: () => import('./public/public.routes')
   },
   {
     path: 'admin',

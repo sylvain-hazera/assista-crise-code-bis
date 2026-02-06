@@ -23,7 +23,6 @@ export class RequestHelpFormComponent implements OnInit {
   latitude: number | null = null;
   longitude: number | null = null;
 
-  requestData: FormData = new FormData();
   typesDemandeMap: Map<string, string> = new Map(); // eventType -> UUID
 
   eventTypeOptions: { value: string; label: string }[] = [

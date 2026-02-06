@@ -48,8 +48,12 @@ export class CrisisService {
     return this.http.get<Crisis>(`${this.apiUrl}/${id}/`);
   }
   
-  createCrisis(data: Partial<Crisis>): Observable<Crisis> {
-    return this.http.post<Crisis>(`${this.apiUrl}/`, data);
+  // createCrisis(data: Partial<Crisis>): Observable<Crisis> {
+  //   return this.http.post<Crisis>(`${this.apiUrl}/`, data);
+  // }
+
+  createCrisis(formData: FormData): Observable<Request> {
+    return this.http.post<Request>(`${this.apiUrl}/`, formData);
   }
   
   updateCrisis(id: string, data: Partial<Crisis>): Observable<Crisis> {
