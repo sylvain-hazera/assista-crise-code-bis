@@ -288,7 +288,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
         this.proposalGeoJSON = this.jsonToGeoJSON(this.helpProposals);
       }
     });
-  }
+  } 
 
   private addCrisisMarkers(): void {
     if (!this.map) return;
