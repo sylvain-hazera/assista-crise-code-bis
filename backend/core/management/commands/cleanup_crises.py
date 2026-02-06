@@ -25,6 +25,7 @@ class Command(BaseCommand):
 
         self.stdout.write(f"Trouvé {count_crises} crise(s) à purger.")
 
+
         # Suppression manuelle (à cause du SET_NULL)
         with transaction.atomic():
             total_demandes = 0
