@@ -223,9 +223,9 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
                 .addTo(this.map!);
         });
         
-        /*this.map!.on('click', 'clusters', async (e) => {
+        this.map!.on('click', 'clusters-layer', async (e) => {
             const features = this.map!.queryRenderedFeatures(e.point, {
-                layers: ['clusters']
+                layers: ['clusters-layer']
             });
             const clusterId = features[0].properties['cluster_id'];
             const source = this.map!.getSource('clusters') as maplibregl.GeoJSONSource;
@@ -237,18 +237,16 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
             });
         });
 
-        this.map!.on('mouseenter', 'clusters', () => {
+        this.map!.on('mouseenter', 'clusters-layer', () => {
             console.log('mouseenter cluster');
             this.map!.getCanvas().style.cursor = 'pointer';
         });
-        this.map!.on('mouseleave', 'clusters', () => {
+        this.map!.on('mouseleave', 'clusters-layer', () => {
             console.log('mouseleave cluster');
             this.map!.getCanvas().style.cursor = '';
-        });*/
+        });
     });
   }
-
-
 
   private initializeMap(): void {
     this.map = new maplibregl.Map({
