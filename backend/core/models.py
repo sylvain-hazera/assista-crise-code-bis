@@ -2,7 +2,7 @@ import uuid
 from django.contrib.auth.models import AbstractUser, Group, Permission
 from django.contrib.gis.db import models as gis_models
 from django.db import models
-
+from core.validators import validate_image_file
 
 class RoleUtilisateur(models.TextChoices):
     ADMINISTRATEUR = "ADMIN", "Administrateur"
@@ -22,7 +22,7 @@ class Statut(models.TextChoices):
 class Utilisateur(AbstractUser):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     telephone_utilisateur = models.CharField(max_length=20, null=True, blank=True)
-    photo = models.ImageField(upload_to="photos/", null=True, blank=True)
+    photo = models.ImageField(upload_to="photos/", null=True, blank=True, validators=[validate_image_file])
     type = models.CharField(
         max_length=20,
         choices=RoleUtilisateur.choices,
@@ -88,7 +88,7 @@ class TypeDemande(models.Model):
 class Demande(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     titre = models.CharField(max_length=150)
-    photo = models.ImageField(upload_to="photos/demandes/", null=True, blank=True)
+    photo = models.ImageField(upload_to="photos/demandes/", null=True, blank=True, validators=[validate_image_file])
     localisation = gis_models.PointField(srid=4326)
     prenom_demande = models.CharField(max_length=60)
     nom_demande = models.CharField(max_length=80)
@@ -132,7 +132,7 @@ class TypeInformation(models.Model):
 class Information(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     titre = models.CharField(max_length=150)
-    photo = models.ImageField(upload_to="photos/informations/", null=True, blank=True)
+    photo = models.ImageField(upload_to="photos/informations/", null=True, blank=True, validators=[validate_image_file])
     prenom_information = models.CharField(max_length=60)
     nom_information = models.CharField(max_length=80)
     email_information = models.EmailField()
@@ -179,7 +179,7 @@ class TypeOffre(models.Model):
 class Offre(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     titre = models.CharField(max_length=150)
-    photo = models.ImageField(upload_to="photos/offres/", null=True, blank=True)
+    photo = models.ImageField(upload_to="photos/offres/", null=True, blank=True, validators=[validate_image_file])
     localisation = gis_models.PointField(srid=4326)
     prenom_offre = models.CharField(max_length=60)
     nom_offre = models.CharField(max_length=80)

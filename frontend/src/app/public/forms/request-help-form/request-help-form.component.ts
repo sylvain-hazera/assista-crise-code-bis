@@ -193,7 +193,17 @@ export class RequestHelpFormComponent implements OnInit {
         },
         error: (err) => {
           console.error('Erreur création demande:', err);
-          alert('Erreur lors de l\'enregistrement. Veuillez réessayer.');
+          if (err.status === 400) {
+            if (err.error && err.error.photo) {
+              alert("ERREUR PHOTO : " + err.error.photo[0]);
+            } else {
+              alert("Erreur de validation : Vérifiez les champs du formulaire.");
+            }
+          } 
+          else {
+            alert("Une erreur technique est survenue. Veuillez réessayer.");
+          }
+          
         }
       });
 

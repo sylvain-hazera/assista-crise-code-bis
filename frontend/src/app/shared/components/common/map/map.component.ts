@@ -141,7 +141,8 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
         const popupContent = `
           <div style="color: black; font-family: sans-serif;">
             <h3 style="margin: 0 0 5px 0;">Demande d'aide</h3>
-            <p style="margin: 0;">Type : ${request.type_demande}</p>
+            <p style="margin: 5px 0;">Titre : ${request.titre || 'N/A'}</p>
+            // <p style="margin: 0;">Type : ${request.type_demande}</p>
             <br>
             <small>Créée le : ${new Date(request.date_creation || Date.now()).toLocaleDateString()}</small>
           </div>
