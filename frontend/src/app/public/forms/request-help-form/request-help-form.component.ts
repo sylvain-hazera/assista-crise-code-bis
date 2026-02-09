@@ -1,15 +1,17 @@
 import { Component, OnInit } from '@angular/core';
 import { FormGroup, FormBuilder, Validators, ReactiveFormsModule, FormArray } from '@angular/forms';
+import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { GeolocationService } from '../../../services/geolocation.service';
 import { CommonModule } from '@angular/common';
 import { RequestService } from '../../../services/request.service';
+import { LocationService, Department, Commune } from '../../../services/location.service';
 // import { NgSelectModule } from '@ng-select/ng-select';
 
 @Component({
   selector: 'app-request-help-form',
   standalone: true,
-  imports: [ReactiveFormsModule, CommonModule],
+  imports: [ReactiveFormsModule, CommonModule, FormsModule],
   templateUrl: './request-help-form.component.html',
   styleUrl: './request-help-form.component.scss'
 })
@@ -23,7 +25,16 @@ export class RequestHelpFormComponent implements OnInit {
   latitude: number | null = null;
   longitude: number | null = null;
 
-  typesDemandeMap: Map<string, string> = new Map(); // eventType -> UUID
+  typesDemandeMap: Map<string, string> = new Map();
+
+  departments: Department[] = [];
+  filteredDepartments: Department[] = [];
+  communes: Commune[] = [];
+  filteredCommunes: Commune[] = [];
+  departmentSearch: string = '';
+  communeSearch: string = '';
+  showDepartmentDropdown: boolean = false;
+  showCommuneDropdown: boolean = false;
 
   eventTypeOptions: { value: string; label: string }[] = [
     { value: '', label: 'Dropdown' },
@@ -59,12 +70,23 @@ export class RequestHelpFormComponent implements OnInit {
     private router: Router,
     private helpRequestService: RequestService,
     private geolocationService: GeolocationService,
-    // private apiService: ApiService
+    private locationService: LocationService
   ) {}
 
   ngOnInit(): void {
     this.initForm();
     this.loadTypesDemande();
+    this.loadDepartments();
+  }
+
+  loadDepartments(): void {
+    this.locationService.getDepartments().subscribe({
+      next: (deps) => {
+        this.departments = deps;
+        this.filteredDepartments = deps;
+      },
+      error: (err) => console.error('Erreur chargement départements:', err)
+    });
   }
 
   loadTypesDemande(): void {
@@ -87,7 +109,8 @@ export class RequestHelpFormComponent implements OnInit {
       needsType: new FormArray([]),
       descriptions: new FormArray([]),
       streetNumber: ['', Validators.required],
-      postalCode: ['', [Validators.required, Validators.pattern(/^\d{5}$/)]],
+      department: ['', Validators.required],
+      commune: ['', Validators.required],
       addressVisible: [false],
       image: [null],
     });
@@ -213,12 +236,56 @@ export class RequestHelpFormComponent implements OnInit {
     }
   }
 
+  onDepartmentSearchChange(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    this.departmentSearch = input.value;
+    this.filteredDepartments = this.locationService.searchDepartments(
+      this.departmentSearch,
+      this.departments
+    );
+    this.showDepartmentDropdown = true;
+  }
+
+  selectDepartment(department: Department): void {
+    this.departmentSearch = department.nom;
+    this.requestForm.patchValue({ department: department.code });
+    this.showDepartmentDropdown = false;
+    
+    this.locationService.getCommunesByDepartment(department.code).subscribe({
+      next: (communes) => {
+        this.communes = communes;
+        this.filteredCommunes = communes;
+        this.communeSearch = '';
+        this.requestForm.patchValue({ commune: '' });
+      },
+      error: (err) => console.error('Erreur chargement communes:', err)
+    });
+  }
+
+  onCommuneSearchChange(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    this.communeSearch = input.value;
+    this.filteredCommunes = this.locationService.searchCommunes(
+      this.communeSearch,
+      this.communes
+    );
+    this.showCommuneDropdown = true;
+  }
+
+  selectCommune(commune: Commune): void {
+    this.communeSearch = commune.nom;
+    this.requestForm.patchValue({ commune: commune.code });
+    this.showCommuneDropdown = false;
+  }
+
   onContinue(): void {
     if (this.requestForm.valid) {
 
       const street = this.requestForm.get('streetNumber')?.value;
-      const zip = this.requestForm.get('postalCode')?.value;
-      const query = `${street} ${zip}`;
+      const communeCode = this.requestForm.get('commune')?.value;
+      const commune = this.communes.find(c => c.code === communeCode);
+      const postalCode = commune?.codesPostaux[0] || '';
+      const query = `${street} ${postalCode}`;
 
       this.geolocationService.getCoordinates(query).subscribe({
         next: (response) => {

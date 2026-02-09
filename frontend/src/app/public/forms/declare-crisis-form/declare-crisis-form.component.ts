@@ -1,14 +1,17 @@
 import { Component, OnInit } from '@angular/core';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { FormsModule } from '@angular/forms';
 import { CrisisService } from '../../../services/crisis.service';
 import { Router } from '@angular/router';
 import { GeolocationService } from '../../../services/geolocation.service';
 import { Status } from '../../../shared/models/status.model';
+import { LocationService, Department, Commune } from '../../../services/location.service';
+import { CommonModule } from '@angular/common';
 
 @Component({
   selector: 'app-declare-crisis-form',
   standalone: true,
-  imports: [ReactiveFormsModule],
+  imports: [ReactiveFormsModule, FormsModule, CommonModule],
   templateUrl: './declare-crisis-form.component.html',
   styleUrl: './declare-crisis-form.component.scss'
 })
@@ -19,6 +22,15 @@ export class DeclareCrisisFormComponent implements OnInit{
   
   latitude: number | null = null;
   longitude: number | null = null;
+
+  departments: Department[] = [];
+  filteredDepartments: Department[] = [];
+  communes: Commune[] = [];
+  filteredCommunes: Commune[] = [];
+  departmentSearch: string = '';
+  communeSearch: string = '';
+  showDepartmentDropdown: boolean = false;
+  showCommuneDropdown: boolean = false;
 
     eventTypeOptions: { value: string; label: string }[] = [
     { value: '', label: 'Dropdown' },
@@ -35,10 +47,22 @@ export class DeclareCrisisFormComponent implements OnInit{
     private router: Router,
     private crisisService: CrisisService,
     private geolocationService: GeolocationService,
+    private locationService: LocationService
   ) {}
 
   ngOnInit() {
     this.initForm();
+    this.loadDepartments();
+  }
+
+  loadDepartments(): void {
+    this.locationService.getDepartments().subscribe({
+      next: (deps) => {
+        this.departments = deps;
+        this.filteredDepartments = deps;
+      },
+      error: (err) => console.error('Erreur chargement départements:', err)
+    });
   }
 
   initForm(): void {
@@ -47,7 +71,8 @@ export class DeclareCrisisFormComponent implements OnInit{
       title: ['', Validators.required],
       description: ['', [Validators.required, Validators.minLength(10)]],
       streetNumber: ['', Validators.required],
-      postalCode: ['', [Validators.required, Validators.pattern(/^\d{5}$/)]],
+      department: ['', Validators.required],
+      commune: ['', Validators.required],
       addressVisible: [false],
       image: [null],
     });
@@ -81,6 +106,48 @@ export class DeclareCrisisFormComponent implements OnInit{
     }
   }
 
+  onDepartmentSearchChange(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    this.departmentSearch = input.value;
+    this.filteredDepartments = this.locationService.searchDepartments(
+      this.departmentSearch,
+      this.departments
+    );
+    this.showDepartmentDropdown = true;
+  }
+
+  selectDepartment(department: Department): void {
+    this.departmentSearch = department.nom;
+    this.crisisForm.patchValue({ department: department.code });
+    this.showDepartmentDropdown = false;
+    
+    this.locationService.getCommunesByDepartment(department.code).subscribe({
+      next: (communes) => {
+        this.communes = communes;
+        this.filteredCommunes = communes;
+        this.communeSearch = '';
+        this.crisisForm.patchValue({ commune: '' });
+      },
+      error: (err) => console.error('Erreur chargement communes:', err)
+    });
+  }
+
+  onCommuneSearchChange(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    this.communeSearch = input.value;
+    this.filteredCommunes = this.locationService.searchCommunes(
+      this.communeSearch,
+      this.communes
+    );
+    this.showCommuneDropdown = true;
+  }
+
+  selectCommune(commune: Commune): void {
+    this.communeSearch = commune.nom;
+    this.crisisForm.patchValue({ commune: commune.code });
+    this.showCommuneDropdown = false;
+  }
+
   onSubmit(): void {
     if(this.crisisForm.valid) {
       const formData = new FormData();
@@ -90,8 +157,10 @@ export class DeclareCrisisFormComponent implements OnInit{
       formData.append('description', this.crisisForm.get('description')?.value);
 
       const street = this.crisisForm.get('streetNumber')?.value;
-      const zip = this.crisisForm.get('postalCode')?.value;
-      const query = `${street} ${zip}`;
+      const communeCode = this.crisisForm.get('commune')?.value;
+      const commune = this.communes.find(c => c.code === communeCode);
+      const postalCode = commune?.codesPostaux[0] || '';
+      const query = `${street} ${postalCode}`;
       this.geolocationService.getCoordinates(query).subscribe({
         next: (response) => {
           if (response.features && response.features.length > 0) {

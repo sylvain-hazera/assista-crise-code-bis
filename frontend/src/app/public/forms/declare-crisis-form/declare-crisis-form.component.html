@@ -106,22 +106,71 @@
                 </div>
                 
 
-                <!-- Code postal -->
+                <!-- Département -->
                 <div class="form-group">
-                <label for="postalCode" class="form-label">Code postal</label>
-                <input 
-                    type="text" 
-                    id="postalCode" 
-                    formControlName="postalCode"
-                    class="form-input"
-                    placeholder="Votre code postal"
-                    maxlength="5"
-                    [class.invalid]="crisisForm.get('postalCode')?.invalid && crisisForm.get('postalCode')?.touched">
-                    @if(crisisForm.get('postalCode')?.invalid && crisisForm.get('postalCode')?.touched) {
-                        <div class="error-message">
-                            Veuillez entrer un code postal valide
-                        </div>
+                  <label for="department" class="form-label">Département</label>
+                  <div class="autocomplete-wrapper">
+                    <input 
+                      type="text" 
+                      id="department" 
+                      [(ngModel)]="departmentSearch"
+                      [ngModelOptions]="{standalone: true}"
+                      (input)="onDepartmentSearchChange($event)"
+                      (focus)="showDepartmentDropdown = true"
+                      class="form-input"
+                      placeholder="Rechercher un département"
+                      [class.invalid]="crisisForm.get('department')?.invalid && crisisForm.get('department')?.touched"
+                      autocomplete="off">
+                    
+                    @if(showDepartmentDropdown && filteredDepartments.length > 0) {
+                      <div class="autocomplete-dropdown">
+                        @for(dept of filteredDepartments; track dept.code) {
+                          <div class="autocomplete-item" (click)="selectDepartment(dept)">
+                            {{ dept.code }} - {{ dept.nom }}
+                          </div>
+                        }
+                      </div>
                     }
+                  </div>
+                  @if(crisisForm.get('department')?.invalid && crisisForm.get('department')?.touched) {
+                    <div class="error-message">
+                      Veuillez sélectionner un département
+                    </div>
+                  }
+                </div>
+
+                <!-- Commune -->
+                <div class="form-group">
+                  <label for="commune" class="form-label">Commune</label>
+                  <div class="autocomplete-wrapper">
+                    <input 
+                      type="text" 
+                      id="commune" 
+                      [(ngModel)]="communeSearch"
+                      [ngModelOptions]="{standalone: true}"
+                      (input)="onCommuneSearchChange($event)"
+                      (focus)="showCommuneDropdown = true"
+                      class="form-input"
+                      placeholder="Rechercher une commune"
+                      [class.invalid]="crisisForm.get('commune')?.invalid && crisisForm.get('commune')?.touched"
+                      [disabled]="!crisisForm.get('department')?.value"
+                      autocomplete="off">
+                    
+                    @if(showCommuneDropdown && filteredCommunes.length > 0) {
+                      <div class="autocomplete-dropdown">
+                        @for(commune of filteredCommunes; track commune.code) {
+                          <div class="autocomplete-item" (click)="selectCommune(commune)">
+                            {{ commune.nom }} @if(commune.codesPostaux.length > 0) { ({{ commune.codesPostaux[0] }}) }
+                          </div>
+                        }
+                      </div>
+                    }
+                  </div>
+                  @if(crisisForm.get('commune')?.invalid && crisisForm.get('commune')?.touched) {
+                    <div class="error-message">
+                      Veuillez sélectionner une commune
+                    </div>
+                  }
                 </div>
 
                 <!-- Checkbox adresse visible -->
