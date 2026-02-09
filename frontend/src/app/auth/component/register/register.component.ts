@@ -212,8 +212,8 @@ export class RegisterComponent implements OnInit, OnDestroy {
   // }
 
   get isIndividual(): boolean {
-    const userType = this.registerForm.get('userType')?.value;
-    return userType === 'Individual' || userType === 'individual';
+    return this.registerForm.get('userType')?.value === UserRole.Individual;
+
   }
 
   /**

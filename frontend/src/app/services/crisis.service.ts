@@ -2,19 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
-
-export interface Crisis {
-  id?: number;
-  type: string;
-  severity: string;
-  name: string;
-  location: string;
-  description: string;
-  status: string;
-  createdAt?: Date;
-  latitude: number;
-  longitude: number;
-}
+import { Crisis } from '../shared/models/crisis.model';
 
 @Injectable({
   providedIn: 'root'
@@ -24,11 +12,11 @@ export class CrisisService {
 
   constructor(private http: HttpClient) {}
 
-  getAllCrises(): Observable<Crisis[]> {
+  getAllCrisis(): Observable<Crisis[]> {
     return this.http.get<Crisis[]>(this.apiUrl);
   }
 
-  getCrises(params?: any): Observable<Crisis[]> {
+  getParamCrisis(params?: any): Observable<Crisis[]> {
     let httpParams = new HttpParams();
     if (params) {
       Object.keys(params).forEach(key => {
@@ -48,7 +36,32 @@ export class CrisisService {
     return this.http.get<any>(`${this.apiUrl}/stats`, { params: httpParams });
   }
 
-  getRecentCrises(limit: number = 10): Observable<Crisis[]> {
+  getRecentCrisis(limit: number = 10): Observable<Crisis[]> {
     return this.http.get<Crisis[]>(`${this.apiUrl}/recent?limit=${limit}`);
   }
+
+  // getCrisis(params?: any): Observable<Crisis[]> {
+  //   return this.http.get<Crisis[]>(`${this.apiUrl}/`, { params });
+  // }
+  
+  getCrisis(id: string): Observable<Crisis> {
+    return this.http.get<Crisis>(`${this.apiUrl}/${id}/`);
+  }
+  
+  // createCrisis(data: Partial<Crisis>): Observable<Crisis> {
+  //   return this.http.post<Crisis>(`${this.apiUrl}/`, data);
+  // }
+
+  createCrisis(formData: FormData): Observable<Request> {
+    return this.http.post<Request>(`${this.apiUrl}/`, formData);
+  }
+  
+  updateCrisis(id: string, data: Partial<Crisis>): Observable<Crisis> {
+    return this.http.put<Crisis>(`${this.apiUrl}/${id}/`, data);
+  }
+  
+  deleteCrisis(id: string): Observable<void> {
+    return this.http.delete<void>(`${this.apiUrl}/${id}/`);
+  }
+  
 }

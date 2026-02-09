@@ -18,9 +18,6 @@
 }
 
 .form-header {
-//   margin: 2rem auto;
-//   width: 75%;
-
   .back-link {
     display: inline-flex;
     align-items: center;
@@ -150,6 +147,7 @@
     font-size: 1rem;
     resize: vertical;
     font-family: inherit;
+    
     transition: border-color 0.3s ease;
 
     &::placeholder {
@@ -213,7 +211,6 @@
 
 .remove-service {
   margin: 0.5rem 0;
-//   text-align: center;
 
   .remove-service-link {
     color: #ff0015;
@@ -259,8 +256,12 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    width: 100%;
-    padding: 0.75rem 1rem;
+    
+    width: 100%;             
+    box-sizing: border-box;  
+    
+    padding: 0.75rem 1rem 0.75rem 0.75rem; 
+    
     border: 1px solid #ddd;
     border-radius: 4px;
     background-color: white;
@@ -318,15 +319,18 @@
   }
 }
 
-// form {
-//     width: 50%;
-//     margin: 0 auto;
-// }
-
 hr {
     margin: 20px 0;
     border: none;
     border-top: 1px solid #ddd;
+}
+
+/* 1. Force all form elements to include padding/border in the width calculation */
+input,
+select, 
+textarea {
+  width: 100%;
+  box-sizing: border-box;
 }
 
 @media (max-width: 768px) {
