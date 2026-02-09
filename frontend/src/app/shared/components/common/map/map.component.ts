@@ -170,7 +170,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
                     40
                 ]
             }
-        });
+        }); 
 
         this.map!.addLayer({
             id: 'cluster-count',
