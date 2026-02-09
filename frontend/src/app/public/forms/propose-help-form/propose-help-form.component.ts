@@ -64,22 +64,22 @@ export class ProposeHelpFormComponent implements OnInit {
 
   ngOnInit(): void {
     this.initForm();
-    // this.loadTypesDemande();
+    this.loadTypesDemande();
   }
 
-  // loadTypesDemande(): void {
-  //   this.apiService.getTypesDemande().subscribe({
-  //     next: (types) => {
-  //       // Mapper les valeurs du formulaire aux UUIDs des types
-  //       types.forEach(t => {
-  //         const normalizedType = t.type.toLowerCase().replace(/\s+/g, '-');
-  //         this.typesDemandeMap.set(normalizedType, t.id!);
-  //       });
-  //       console.log('Types chargés:', this.typesDemandeMap);
-  //     },
-  //     error: (err) => console.error('Erreur chargement types:', err)
-  //   });
-  // }
+  loadTypesDemande(): void {
+    this.helpRequestService.getTypesDemande().subscribe({
+      next: (types: any[]) => {
+        // Mapper les valeurs du formulaire aux UUIDs des types
+        types.forEach((t: any) => {
+          const normalizedType = t.type.toLowerCase().replace(/\s+/g, '-');
+          this.typesDemandeMap.set(normalizedType, t.id!);
+        });
+        console.log('Types chargés:', this.typesDemandeMap);
+      },
+      error: (err: any) => console.error('Erreur chargement types:', err)
+    });
+  }
 
   initForm(): void {
     this.requestForm = this.formBuilder.group({
