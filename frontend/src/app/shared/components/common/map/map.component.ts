@@ -7,6 +7,7 @@ import { RequestService } from '../../../../services/request.service';
 import { Request } from '../../../models/request.model';
 import { OfferService } from '../../../../services/offer.service';
 import { Offer } from '../../../models/offer.model';
+import { GeolocationService } from '../../../../services/geolocation.service';
 import { Subscription } from 'rxjs';
 import { FeatureCollection, Geometry, Polygon } from 'geojson';
 
@@ -37,8 +38,12 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
 
   constructor(private crisisService: CrisisService,
               private requestService: RequestService,
-              private offerService: OfferService) {}
+              private offerService: OfferService,
+              private geolocationService: GeolocationService) {}
   ngOnInit(): void {
+    // Charger la géolocalisation si disponible
+    this.loadUserLocation();
+    
     // Si pas de données en entrée, on charge depuis le service
     if (this.crises.length === 0) {
       this.loadCrises();
@@ -48,6 +53,48 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     }
     if (this.offers.length === 0) {
       this.loadOffers();
+    }
+  }
+
+  private loadUserLocation(): void {
+    // Vérifier si une position est déjà stockée
+    const storedLocation = this.geolocationService.location$;
+    storedLocation.subscribe(location => {
+      if (location) {
+        // Centrer la carte sur la position de l'utilisateur avec un zoom adapté
+        this.center = [location.longitude, location.latitude];
+        this.zoom = 9; // Zoom sur la région (ville/département)
+        
+        // Si la carte est déjà initialisée, la recentrer
+        if (this.map) {
+          this.map.flyTo({
+            center: this.center,
+            zoom: this.zoom,
+            duration: 2000 // animation de 2 secondes
+          });
+        }
+      }
+    });
+
+    // Si pas de position stockée, demander la géolocalisation
+    if (!this.geolocationService.hasPermission()) {
+      this.geolocationService.requestLocation()
+        .then(coords => {
+          this.center = [coords.longitude, coords.latitude];
+          this.zoom = 11;
+          
+          if (this.map) {
+            this.map.flyTo({
+              center: this.center,
+              zoom: this.zoom,
+              duration: 2000
+            });
+          }
+        })
+        .catch(error => {
+          console.log('Géolocalisation non disponible:', error.message);
+          // Garder le centre par défaut (France)
+        });
     }
   }
 
