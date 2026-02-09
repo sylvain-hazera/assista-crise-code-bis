@@ -130,7 +130,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
           type: 'geojson',
           data: mergedGeoJSON,
           cluster: true,
-          clusterMaxZoom: 14, // Max zoom to cluster points on
+          clusterMaxZoom: 8, // Max zoom to cluster points on
           clusterRadius: 50 // Radius of each cluster when clustering points (defaults to 50)
         });
       }
@@ -241,6 +241,82 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
         this.map!.on('mouseleave', 'clusters-layer', () => {
             this.map!.getCanvas().style.cursor = '';
         });
+        this.addHullLayer();
+        this.addHoverEffect();
+    });
+  }
+
+  private addHullLayer() {
+
+    this.map!.addSource('cluster-hull', {
+      type: 'geojson',
+      data: {
+        type: 'FeatureCollection',
+        features: []
+      }
+    });
+
+    this.map!.addLayer({
+      id: 'cluster-hull-fill',
+      type: 'fill',
+      source: 'cluster-hull',
+      paint: {
+        'fill-color': '#0099ff',
+        'fill-opacity': 0.25
+      }
+    });
+
+    this.map!.addLayer({
+      id: 'cluster-hull-line',
+      type: 'line',
+      source: 'cluster-hull',
+      paint: {
+        'line-color': '#0066cc',
+        'line-width': 2
+      }
+    });
+  }
+
+private addHoverEffect() {
+
+    const source = this.map!.getSource('clusters') as maplibregl.GeoJSONSource;
+
+    this.map!.on('mouseenter', 'clusters-layer', async (e) => {
+
+      this.map!.getCanvas().style.cursor = 'pointer';
+
+      const feature = e.features?.[0];
+      if (!feature) return;
+
+      const clusterId = feature.properties!['cluster_id'];
+
+      try {
+        const points = await source.getClusterLeaves(clusterId, 1000, 0);
+
+        if (!points || !points.length) return;
+
+        const fc = turf.featureCollection(points as any[]);
+
+        const hull = turf.convex(fc);
+
+        if (!hull) return;
+
+        const hullSource = this.map!.getSource('cluster-hull') as maplibregl.GeoJSONSource;
+        hullSource.setData(hull);
+      } catch (err) {
+        console.error('Error getting cluster leaves:', err);
+      }
+    });
+
+    this.map!.on('mouseleave', 'clusters-layer', () => {
+
+      this.map!.getCanvas().style.cursor = '';
+
+      const hullSource = this.map!.getSource('cluster-hull') as maplibregl.GeoJSONSource;
+      hullSource?.setData({
+        type: 'FeatureCollection',
+        features: []
+      });
     });
   }
 
