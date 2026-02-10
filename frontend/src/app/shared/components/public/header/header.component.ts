@@ -37,7 +37,8 @@ export class HeaderComponent {
   }
 
   get isAdmin(): boolean {
-    return this.currentUser?.userType !== UserRole.Individual;
+    // return this.currentUser?.userType !== UserRole.Individual;
+    return this.authService.isAdmin();
   }
 
   handleUserAction() {
@@ -49,11 +50,7 @@ export class HeaderComponent {
   }
 
   goToSettings() {
-    if(this.isAdmin) {
-      this.router.navigate(['/admin/settings']);
-    } else {
-      this.router.navigate(['/settings']);
-    }
+    this.router.navigate(['/settings']);
     this.closeAllMenus();
   }
 

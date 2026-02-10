@@ -30,7 +30,7 @@
               {{ option.label }}
             </option>
           </select>
-          <span class="material-symbols-outlined select-arrow">arrow_drop_down</span>
+          <span class="material-icons select-arrow">arrow_drop_down</span>
         </div>
         <div class="error-message" *ngIf="isFieldInvalid('userType')">
           {{ getFieldError('userType') }}
@@ -77,7 +77,7 @@
           Mot de passe <span class="required">*</span>
         </label>
         <div class="password-wrapper">
-          <span class="material-symbols-outlined password-icon">lock</span>
+          <span class="material-icons password-icon">lock</span>
           <input 
             [type]="showPassword ? 'text' : 'password'" 
             id="password" 
@@ -87,7 +87,7 @@
             [class.invalid]="isFieldInvalid('password')">
           <button 
             type="button" 
-            class="material-symbols-outlined toggle-password"
+            class="material-icons toggle-password"
             (click)="togglePasswordVisibility()">
             {{ showPassword ? 'visibility' : 'visibility_off' }}
           </button>

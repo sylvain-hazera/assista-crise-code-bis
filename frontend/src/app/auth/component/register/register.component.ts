@@ -135,13 +135,13 @@ export class RegisterComponent implements OnInit, OnDestroy {
     // Préparer les données pour Django
     const formValue = this.registerForm.getRawValue();
     const registerData: any = {
-      username: formValue.email.split('@')[0],  // Utiliser email comme base pour username
+      username: formValue.pseudo || formValue.email.split('@')[0],  
       email: formValue.email,
       password: formValue.password,
       type: this.mapUserTypeToBackend(formValue.userType),  // Convertir en valeur Django
       telephone_utilisateur: formValue.phone,
       last_name: formValue.lastName,
-      first_name: formValue.firstName || '',  // Optionnel
+      first_name: formValue.firstName || '',  
     };
     
     console.log('Données envoyées:', registerData);
@@ -151,7 +151,6 @@ export class RegisterComponent implements OnInit, OnDestroy {
       .subscribe({
         next: (response) => {
           console.log('Inscription réussie:', response);
-          // Rediriger vers le tableau de bord ou la page d'accueil
           this.router.navigate(['/accueil']);
         },
         error: (error) => {

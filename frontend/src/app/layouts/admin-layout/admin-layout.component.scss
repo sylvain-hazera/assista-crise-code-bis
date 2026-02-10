@@ -1,162 +1,42 @@
-// .admin-layout {
-//   display: grid;
-//   grid-template-areas:
-//     "header header"
-//     "sidebar main";
-//   grid-template-columns: 250px 1fr;  // ← Augmenté de 200px à 250px
-//   grid-template-rows: 70px 1fr;
-//   min-height: 100vh;
-//   background-color: #f5f7fa;
-//   transition: grid-template-columns 0.3s ease;
-
-//   &.sidebar-collapsed {
-//     grid-template-columns: 70px 1fr;  // ← Ajusté pour les icônes
-
-//     .admin-sidebar {
-//       .nav-label {
-//         opacity: 0;
-//         width: 0;
-//         overflow: hidden;
-//       }
-
-//       .nav-item {
-//         justify-content: center;
-//         padding: 1rem;
-//       }
-//     }
-//   }
-// }
-
-// .admin-content {
-//   grid-area: main;
-//   padding: 2rem;
-//   overflow-y: auto;
-//   animation: fadeIn 0.3s ease;
-// }
-
-// // Animations
-// @keyframes fadeIn {
-//   from {
-//     opacity: 0;
-//     transform: translateY(10px);
-//   }
-//   to {
-//     opacity: 1;
-//     transform: translateY(0);
-//   }
-// }
-
-// @keyframes slideDown {
-//   from {
-//     opacity: 0;
-//     transform: translateY(-10px);
-//   }
-//   to {
-//     opacity: 1;
-//     transform: translateY(0);
-//   }
-// }
-
-// // Responsive
-// @media (max-width: 768px) {
-//   .admin-layout {
-//     grid-template-areas:
-//       "header"
-//       "main";
-//     grid-template-columns: 1fr;
-//     grid-template-rows: 70px 1fr;
-
-//     &.sidebar-collapsed {
-//       grid-template-columns: 1fr;
-//     }
-//   }
-
-//   .admin-sidebar {
-//     position: fixed;
-//     left: -250px;
-//     top: 70px;
-//     bottom: 0;
-//     width: 250px;
-//     z-index: 200;
-//     transition: left 0.3s ease;
-//     box-shadow: 2px 0 8px rgba(0, 0, 0, 0.1);
-
-//     &:not(.sidebar-collapsed) {
-//       left: 0;
-//     }
-//   }
-
-//   .admin-content {
-//     padding: 1rem;
-//   }
-
-//   .header-right .company-name {
-//     display: none;
-//   }
-// }
-
-// // admin-layout.component.scss
-// .sidebar-overlay {
-//   display: none;
-  
-//   @media (max-width: 768px) {
-//     display: block;
-//     position: fixed;
-//     top: 70px;
-//     left: 0;
-//     right: 0;
-//     bottom: 0;
-//     background: rgba(0, 0, 0, 0.5);
-//     z-index: 199;
-//     animation: fadeIn 0.2s ease;
-//   }
-// }
-
-// // Très petits écrans
-// @media (max-width: 480px) {
-//   .admin-content {
-//     padding: 0.5rem;
-//   }
-
-//   .admin-header {
-//     padding: 0 1rem;
-
-//     .logo-text {
-//       display: none;
-//     }
-//   }
-// }
-
 .admin-layout {
   display: grid;
   grid-template-areas:
     "header header"
     "sidebar main";
-  grid-template-columns: 200px 1fr;
+  grid-template-columns: 250px 1fr;
   grid-template-rows: 70px 1fr;
   min-height: 100vh;
   background-color: #f5f7fa;
   transition: grid-template-columns 0.3s ease;
 
+  // ==================== SIDEBAR COLLAPSED (DESKTOP) ====================
   &.sidebar-collapsed {
-    grid-template-columns: 60px 1fr;
-
-    .sidebar-nav .nav-label,
-    .sidebar-footer .nav-label {
-      opacity: 0;
-      width: 0;
-    }
+    grid-template-columns: 70px 1fr;
 
     .admin-sidebar {
+      .nav-label {
+        opacity: 0;
+        width: 0;
+        overflow: hidden;
+      }
+
       .nav-item {
         justify-content: center;
         padding: 1rem;
       }
     }
   }
+
+  // ==================== SIDEBAR OPEN (MOBILE) ====================
+  &.sidebar-open {
+    .admin-sidebar {
+      left: 0;
+      box-shadow: 4px 0 12px rgba(0, 0, 0, 0.15);
+    }
+  }
 }
 
-// Header
+// ==================== HEADER ====================
 .admin-header {
   grid-area: header;
   background: white;
@@ -164,11 +44,36 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0 2rem;
+  padding: 0 1.5rem;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
   z-index: 999;
+  position: sticky;
+  top: 0;
 
   .header-left {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+
+    .mobile-menu-toggle {
+      display: none;
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 0.5rem;
+      border-radius: 4px;
+      transition: background-color 0.3s;
+
+      &:hover {
+        background-color: #f5f5f5;
+      }
+
+      .material-icons {
+        font-size: 24px;
+        color: #333;
+      }
+    }
+
     .logo {
       display: flex;
       align-items: center;
@@ -178,6 +83,11 @@
 
       .logo-icon {
         font-size: 2rem;
+        color: #667eea;
+      }
+
+      .logo-text {
+        color: #333;
       }
     }
   }
@@ -185,7 +95,25 @@
   .header-right {
     display: flex;
     align-items: center;
-    gap: 1.5rem;
+    gap: 1rem;
+
+    .desktop-toggle {
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 0.5rem;
+      border-radius: 4px;
+      transition: background-color 0.3s;
+
+      &:hover {
+        background-color: #f5f5f5;
+      }
+
+      .material-icons {
+        font-size: 24px;
+        color: #666;
+      }
+    }
 
     .icon-button {
       position: relative;
@@ -207,14 +135,16 @@
 
       .notification-badge {
         position: absolute;
-        top: 0;
-        right: 0;
+        top: 2px;
+        right: 2px;
         background: #f44336;
         color: white;
         border-radius: 10px;
         padding: 2px 6px;
         font-size: 0.7rem;
         font-weight: 600;
+        min-width: 18px;
+        text-align: center;
       }
     }
 
@@ -240,19 +170,18 @@
 
       .company-name {
         font-weight: 500;
-        font-style: italic;
-        color: #666;
+        color: #333;
       }
 
       .user-icon {
         font-size: 32px;
-        color: #666;
+        color: #667eea;
       }
     }
   }
 }
 
-// Dropdowns
+// ==================== DROPDOWNS ====================
 .notification-dropdown,
 .user-dropdown {
   position: absolute;
@@ -262,7 +191,7 @@
   border-radius: 12px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
   min-width: 320px;
-  z-index: 1000;
+  z-index: 1001;
   animation: slideDown 0.2s ease;
 }
 
@@ -319,7 +248,7 @@
 }
 
 .notification-list {
-  max-height: 300px;
+  max-height: 400px;
   overflow-y: auto;
 
   .notification-item {
@@ -342,6 +271,14 @@
     .material-icons {
       color: #667eea;
       font-size: 24px;
+
+      &.warning {
+        color: #ff9800;
+      }
+
+      &.info {
+        color: #2196f3;
+      }
     }
 
     .notification-content {
@@ -358,6 +295,22 @@
         color: #999;
         font-size: 0.8rem;
       }
+    }
+  }
+
+  .notification-empty {
+    text-align: center;
+    padding: 2rem;
+    color: #999;
+
+    .material-icons {
+      font-size: 48px;
+      margin-bottom: 0.5rem;
+      opacity: 0.5;
+    }
+
+    p {
+      margin: 0;
     }
   }
 }
@@ -403,7 +356,7 @@
   }
 }
 
-// Sidebar
+// ==================== SIDEBAR ====================
 .admin-sidebar {
   grid-area: sidebar;
   background: white;
@@ -411,23 +364,7 @@
   display: flex;
   flex-direction: column;
   overflow-x: hidden;
-
-  .menu-toggle {
-    display: none;
-    padding: 1rem;
-    background: none;
-    border: none;
-    cursor: pointer;
-    align-self: flex-start;
-
-    &:hover {
-      background-color: #f5f5f5;
-    }
-
-    .material-icons {
-      font-size: 24px;
-    }
-  }
+  overflow-y: auto;
 
   .sidebar-nav {
     flex: 1;
@@ -520,26 +457,32 @@
   }
 }
 
-// Main Content
+// ==================== MAIN CONTENT ====================
 .admin-content {
   grid-area: main;
-  padding: 2rem;
+  padding: 1.5rem;
   overflow-y: auto;
+  background-color: #f5f7fa;
 }
 
-// Overlay
-.overlay {
+// ==================== OVERLAYS ====================
+.dropdown-overlay,
+.sidebar-overlay {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
   background: rgba(0, 0, 0, 0.3);
-  z-index: 999;
+  z-index: 99;
   animation: fadeIn 0.2s ease;
 }
 
-// Animations
+.sidebar-overlay {
+  z-index: 100;
+}
+
+// ==================== ANIMATIONS ====================
 @keyframes slideDown {
   from {
     opacity: 0;
@@ -560,40 +503,149 @@
   }
 }
 
-// Responsive
+// ==================== RESPONSIVE ====================
+@media (max-width: 1024px) {
+  .admin-layout {
+    grid-template-columns: 200px 1fr;
+
+    &.sidebar-collapsed {
+      grid-template-columns: 60px 1fr;
+    }
+  }
+
+  .admin-content {
+    padding: 1rem;
+  }
+}
+
 @media (max-width: 768px) {
   .admin-layout {
     grid-template-areas:
       "header header"
       "main main";
     grid-template-columns: 1fr;
+    grid-template-rows: 60px 1fr;
 
     &.sidebar-collapsed {
       grid-template-columns: 1fr;
     }
   }
 
-  .admin-sidebar {
-    position: fixed;
-    left: -200px;
-    top: 70px;
-    bottom: 0;
-    width: 200px;
-    z-index: 200;
-    transition: left 0.3s ease;
+  .admin-header {
+    padding: 0 1rem;
 
-    .menu-toggle {
-      display: block;
+    .header-left {
+      .mobile-menu-toggle {
+        display: block;
+      }
+
+      .logo {
+        font-size: 1.2rem;
+
+        .logo-icon {
+          font-size: 1.5rem;
+        }
+
+        .logo-text {
+          display: none;
+        }
+      }
     }
 
-    &.open {
-      left: 0;
+    .header-right {
+      .desktop-toggle {
+        display: none;
+      }
+
+      .company-name {
+        display: none;
+      }
     }
   }
 
-  .header-right {
-    .company-name {
-      display: none;
+  .admin-sidebar {
+    position: fixed;
+    left: -250px;
+    top: 60px;
+    bottom: 0;
+    width: 250px;
+    z-index: 999;
+    transition: left 0.3s ease;
+    box-shadow: none;
+
+    &.open {
+      left: 0;
+      box-shadow: 4px 0 12px rgba(0, 0, 0, 0.15);
+    }
+  }
+
+  .admin-content {
+    padding: 0.75rem;
+  }
+
+  // Dropdowns responsive
+  .notification-dropdown,
+  .user-dropdown {
+    position: fixed;
+    top: 70px;
+    right: 0.5rem;
+    left: 0.5rem;
+    min-width: auto;
+    max-width: 400px;
+    margin: 0 auto;
+  }
+
+  .notification-list {
+    max-height: 300px;
+  }
+}
+
+@media (max-width: 480px) {
+  .admin-header {
+    grid-template-rows: 55px 1fr;
+
+    .header-right {
+      gap: 0.5rem;
+
+      .user-button {
+        padding: 0.5rem;
+      }
+    }
+  }
+
+  .admin-sidebar {
+    width: 220px;
+    left: -220px;
+  }
+
+  .admin-content {
+    padding: 0.5rem;
+  }
+
+  .notification-dropdown,
+  .user-dropdown {
+    min-width: auto;
+    max-width: calc(100vw - 1rem);
+  }
+}
+
+// ==================== SCROLL CUSTOMIZATION ====================
+.admin-content,
+.notification-list {
+  &::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: #f1f1f1;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 4px;
+
+    &:hover {
+      background: #555;
     }
   }
 }

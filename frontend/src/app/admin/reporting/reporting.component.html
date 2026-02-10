@@ -1,0 +1,286 @@
+<div class="reporting-page">
+  
+  <!-- Header -->
+  <div class="page-header">
+    <h1>Gestion des Signalements</h1>
+    <button class="btn btn-export" (click)="exportReports()">
+      <span class="material-icons">download</span>
+      <span class="btn-text">Exporter</span>
+    </button>
+  </div>
+
+  <!-- Stats Cards -->
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-icon total">
+        <span class="material-icons">list_alt</span>
+      </div>
+      <div class="stat-info">
+        <p class="stat-label">Total</p>
+        <p class="stat-value">{{ stats.total }}</p>
+      </div>
+    </div>
+
+    <div class="stat-card">
+      <div class="stat-icon new">
+        <span class="material-icons">fiber_new</span>
+      </div>
+      <div class="stat-info">
+        <p class="stat-label">Nouveau</p>
+        <p class="stat-value">{{ stats.nouveau }}</p>
+      </div>
+    </div>
+
+    <div class="stat-card">
+      <div class="stat-icon progress">
+        <span class="material-icons">pending</span>
+      </div>
+      <div class="stat-info">
+        <p class="stat-label">En cours</p>
+        <p class="stat-value">{{ stats.en_cours }}</p>
+      </div>
+    </div>
+
+    <div class="stat-card">
+      <div class="stat-icon done">
+        <span class="material-icons">check_circle</span>
+      </div>
+      <div class="stat-info">
+        <p class="stat-label">Traité</p>
+        <!-- <p class="stat-value">{{ stats.traité }}</p> -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <div class="filters-section">
+    <div class="search-bar">
+      <span class="material-icons">search</span>
+      <input 
+        type="text" 
+        placeholder="Rechercher un signalement..." 
+        [(ngModel)]="searchTerm"
+        (ngModelChange)="applyFilters()">
+    </div>
+
+    <div class="filters-group">
+      <select [(ngModel)]="filterType" (ngModelChange)="applyFilters()" class="filter-select">
+        <option value="tous">Tous les types</option>
+        <option value="crise">Crise</option>
+        <option value="besoin">Besoin</option>
+        <option value="offre">Offre</option>
+        <option value="information">Information</option>
+      </select>
+
+      <select [(ngModel)]="filterStatus" (ngModelChange)="applyFilters()" class="filter-select">
+        <option value="tous">Tous les statuts</option>
+        <option value="nouveau">Nouveau</option>
+        <option value="en_cours">En cours</option>
+        <option value="traité">Traité</option>
+        <option value="rejeté">Rejeté</option>
+      </select>
+
+      <select [(ngModel)]="filterPriority" (ngModelChange)="applyFilters()" class="filter-select">
+        <option value="tous">Toutes les priorités</option>
+        <option value="basse">Basse</option>
+        <option value="moyenne">Moyenne</option>
+        <option value="haute">Haute</option>
+        <option value="urgente">Urgente</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- Reports Grid/List -->
+  @if (isLoading) {
+    <div class="loading-state">
+      <div class="spinner"></div>
+      <p>Chargement des signalements...</p>
+    </div>
+  } @else if (filteredReports.length === 0) {
+    <div class="empty-state">
+      <span class="material-icons">inbox</span>
+      <p>Aucun signalement trouvé</p>
+    </div>
+  } @else {
+    <div class="reports-container">
+      <!-- Desktop: Table View -->
+      <div class="desktop-view">
+        <table class="reports-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Type</th>
+              <th>Titre</th>
+              <th>Localisation</th>
+              <th>Priorité</th>
+              <th>Statut</th>
+              <th>Date</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (report of filteredReports; track report.id) {
+              <tr>
+                <td class="id-cell">{{ report.id }}</td>
+                <td>
+                  <div class="type-badge">
+                    <span class="material-icons">{{ getTypeIcon(report.type) }}</span>
+                    <span>{{ report.type }}</span>
+                  </div>
+                </td>
+                <td class="title-cell">{{ report.title }}</td>
+                <td class="location-cell">{{ report.location }}</td>
+                <td>
+                  <span class="priority-badge" [ngClass]="getPriorityClass(report.priority)">
+                    {{ report.priority }}
+                  </span>
+                </td>
+                <td>
+                  <select 
+                    class="status-select" 
+                    [ngClass]="getStatusClass(report.status)"
+                    [(ngModel)]="report.status"
+                    (ngModelChange)="updateStatus(report, $event)">
+                    <option value="nouveau">Nouveau</option>
+                    <option value="en_cours">En cours</option>
+                    <option value="traité">Traité</option>
+                    <option value="rejeté">Rejeté</option>
+                  </select>
+                </td>
+                <td>{{ report.createdAt | date:'dd/MM/yyyy HH:mm' }}</td>
+                <td class="actions-cell">
+                  <button class="icon-btn" (click)="viewDetails(report)" title="Voir les détails">
+                    <span class="material-icons">visibility</span>
+                  </button>
+                  <button class="icon-btn delete" (click)="deleteReport(report)" title="Supprimer">
+                    <span class="material-icons">delete</span>
+                  </button>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Mobile: Card View -->
+      <div class="mobile-view">
+        @for (report of filteredReports; track report.id) {
+          <div class="report-card" (click)="viewDetails(report)">
+            <div class="card-header">
+              <div class="type-icon" [ngClass]="report.type">
+                <span class="material-icons">{{ getTypeIcon(report.type) }}</span>
+              </div>
+              <div class="card-title">
+                <h3>{{ report.title }}</h3>
+                <p class="report-id">{{ report.id }}</p>
+              </div>
+              <span class="priority-badge" [ngClass]="getPriorityClass(report.priority)">
+                {{ report.priority }}
+              </span>
+            </div>
+            
+            <div class="card-body">
+              <div class="info-row">
+                <span class="material-icons">location_on</span>
+                <span>{{ report.location }}</span>
+              </div>
+              <div class="info-row">
+                <span class="material-icons">person</span>
+                <span>{{ report.reporter }}</span>
+              </div>
+              <div class="info-row">
+                <span class="material-icons">schedule</span>
+                <span>{{ report.createdAt | date:'dd/MM/yyyy HH:mm' }}</span>
+              </div>
+            </div>
+            
+            <div class="card-footer">
+              <span class="status-badge" [ngClass]="getStatusClass(report.status)">
+                {{ report.status }}
+              </span>
+              <div class="card-actions">
+                <button class="icon-btn" (click)="viewDetails(report); $event.stopPropagation()">
+                  <span class="material-icons">visibility</span>
+                </button>
+                <button class="icon-btn delete" (click)="deleteReport(report); $event.stopPropagation()">
+                  <span class="material-icons">delete</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        }
+      </div>
+    </div>
+  }
+
+  <!-- Detail Modal -->
+  @if (showDetailModal && selectedReport) {
+    <div class="modal-overlay" (click)="showDetailModal = false">
+      <div class="modal-content" (click)="$event.stopPropagation()">
+        <div class="modal-header">
+          <h2>Détails du signalement</h2>
+          <button class="close-btn" (click)="showDetailModal = false">
+            <span class="material-icons">close</span>
+          </button>
+        </div>
+        
+        <div class="modal-body">
+          <div class="detail-row">
+            <label>ID:</label>
+            <span>{{ selectedReport.id }}</span>
+          </div>
+          <div class="detail-row">
+            <label>Type:</label>
+            <span class="type-badge">
+              <span class="material-icons">{{ getTypeIcon(selectedReport.type) }}</span>
+              {{ selectedReport.type }}
+            </span>
+          </div>
+          <div class="detail-row">
+            <label>Titre:</label>
+            <span>{{ selectedReport.title }}</span>
+          </div>
+          <div class="detail-row">
+            <label>Description:</label>
+            <p>{{ selectedReport.description }}</p>
+          </div>
+          <div class="detail-row">
+            <label>Localisation:</label>
+            <span>{{ selectedReport.location }}</span>
+          </div>
+          <div class="detail-row">
+            <label>Signalé par:</label>
+            <span>{{ selectedReport.reporter }}</span>
+          </div>
+          <div class="detail-row">
+            <label>Date:</label>
+            <span>{{ selectedReport.createdAt | date:'dd/MM/yyyy à HH:mm' }}</span>
+          </div>
+          <div class="detail-row">
+            <label>Priorité:</label>
+            <span class="priority-badge" [ngClass]="getPriorityClass(selectedReport.priority)">
+              {{ selectedReport.priority }}
+            </span>
+          </div>
+          <div class="detail-row">
+            <label>Statut:</label>
+            <span class="status-badge" [ngClass]="getStatusClass(selectedReport.status)">
+              {{ selectedReport.status }}
+            </span>
+          </div>
+          @if (selectedReport.assignedTo) {
+            <div class="detail-row">
+              <label>Assigné à:</label>
+              <span>{{ selectedReport.assignedTo }}</span>
+            </div>
+          }
+        </div>
+        
+        <div class="modal-footer">
+          <button class="btn btn-secondary" (click)="showDetailModal = false">Fermer</button>
+          <button class="btn btn-primary" (click)="showDetailModal = false">Modifier</button>
+        </div>
+      </div>
+    </div>
+  }
+</div>
