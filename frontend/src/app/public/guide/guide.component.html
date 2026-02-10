@@ -1,1 +1,126 @@
-<p>guide works!</p>
+<div class="guide-container">
+  <div class="guide-header">
+    <h1>Guide des Risques Majeurs</h1>
+    <p class="subtitle">Consultez les risques majeurs de votre commune</p>
+  </div>
+
+  <div class="search-section">
+    <div class="form-group">
+      <label for="departement">Département</label>
+      <div class="autocomplete-container">
+        <input
+          type="text"
+          id="departement"
+          [(ngModel)]="departementSearchTerm"
+          (input)="onDepartementSearchChange()"
+          (focus)="onDepartementSearchChange()"
+          [disabled]="isLoading"
+          placeholder="Rechercher un département (ex: Gironde, 33)"
+          class="form-input"
+          autocomplete="off">
+        
+        @if (showDepartementDropdown && filteredDepartements.length > 0) {
+          <div class="autocomplete-dropdown">
+            <div class="dropdown-header">
+              {{ filteredDepartements.length }} département(s) trouvé(s)
+            </div>
+            @for (dept of filteredDepartements; track dept.code) {
+              <div 
+                class="autocomplete-item"
+                (click)="selectDepartement(dept)">
+                <strong>{{ dept.code }}</strong> - {{ dept.nom }}
+              </div>
+            }
+          </div>
+        }
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label for="commune">Commune</label>
+      <div class="autocomplete-container">
+        <input
+          type="text"
+          id="commune"
+          [(ngModel)]="communeSearchTerm"
+          (input)="onCommuneSearchChange()"
+          (focus)="onCommuneSearchChange()"
+          [disabled]="isLoading || !selectedDepartement"
+          placeholder="Rechercher une commune (ex: Bordeaux)"
+          class="form-input"
+          autocomplete="off">
+        
+        @if (showCommuneDropdown && filteredCommunes.length > 0) {
+          <div class="autocomplete-dropdown">
+            <div class="dropdown-header">
+              {{ filteredCommunes.length }} commune(s) trouvée(s)
+            </div>
+            @for (commune of filteredCommunes; track commune.code) {
+              <div 
+                class="autocomplete-item"
+                (click)="selectCommune(commune)">
+                <strong>{{ commune.nom }}</strong>
+                @if (commune.codesPostaux.length > 0) {
+                  <span class="postal-code">({{ commune.codesPostaux[0] }})</span>
+                }
+              </div>
+            }
+          </div>
+        }
+      </div>
+    </div>
+
+    @if (isLoading) {
+      <div class="loading-spinner">
+        <div class="spinner"></div>
+        <p>Chargement en cours...</p>
+      </div>
+    }
+
+    @if (errorMessage) {
+      <div class="alert alert-error">
+        <i class="icon-warning"></i>
+        {{ errorMessage }}
+      </div>
+    }
+  </div>
+
+  @if (risqueData) {
+    <div class="results-section">
+      <h2>Informations pour {{ risqueData.libelle_commune }}</h2>
+
+      <div class="unified-info-card">
+        <div class="risk-summary-main">
+          <div class="risk-info">
+            <h3>
+              <strong>{{ risqueData.risques_detail.length || 0 }}</strong> 
+              {{ (risqueData.risques_detail.length || 0) > 1 ? 'risques identifiés' : 'risque identifié' }}
+            </h3>
+            <p class="subtitle">Consultez le rapport complet pour connaître les risques et les recommandations de sécurité</p>
+          </div>
+        </div>
+
+        <div class="action-section-center">
+          <button class="btn-georisques" (click)="openGeorisquesPage()">
+            <span class="logo-georisques"></span>
+            <span class="btn-text">
+              <strong>Consulter sur GéoRisques</strong>
+              <small>Risques, documents communaux et consignes de sécurité</small>
+            </span>
+          </button>
+        </div>
+      </div>
+
+      <div class="info-footer">
+        <p>
+          <strong>Source :</strong> GéoRisques - Ministère de la Transition Écologique
+        </p>
+        <p class="disclaimer">
+          Ces informations sont fournies à titre indicatif. 
+          Pour plus de détails, consultez votre mairie ou le site 
+          <a href="https://www.georisques.gouv.fr" target="_blank" rel="noopener">georisques.gouv.fr</a>
+        </p>
+      </div>
+    </div>
+  }
+</div>
