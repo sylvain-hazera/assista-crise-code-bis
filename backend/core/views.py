@@ -26,6 +26,63 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(data=request.data)
         if serializer.is_valid():
             user = serializer.save()
+            
+            # Si le compte nécessite validation (Institution, Secours, Admin)
+            if not user.enable:
+                # Envoyer email à l'utilisateur
+                try:
+                    send_mail(
+                        subject="Compte créé - En attente de validation",
+                        message=(
+                            f"Bonjour {user.first_name} {user.last_name},\n\n"
+                            f"Votre compte ({user.get_type_display()}) a bien été créé.\n"
+                            "Cependant, il est en attente de validation par un administrateur.\n"
+                            "Vous recevrez un email dès que votre compte sera validé.\n\n"
+                            "Cordialement,\n"
+                            "L'équipe Assista-Crise"
+                        ),
+                        from_email=None,
+                        recipient_list=[user.email],
+                        fail_silently=False,
+                    )
+                except Exception as e:
+                    print(f"Erreur envoi email utilisateur : {e}")
+                
+                # Notifier les administrateurs
+                admin_emails = Utilisateur.objects.filter(
+                    type='ADMIN', 
+                    is_active=True
+                ).values_list('email', flat=True)
+                
+                if admin_emails:
+                    try:
+                        send_mail(
+                            subject=f"Nouvelle demande de validation - {user.get_type_display()}",
+                            message=(
+                                f"Un nouveau compte nécessite votre validation :\n\n"
+                                f"- Nom : {user.first_name} {user.last_name}\n"
+                                f"- Email : {user.email}\n"
+                                f"- Type : {user.get_type_display()}\n"
+                                f"- Code postal : {user.code_postal or 'Non renseigné'}\n\n"
+                                f"Connectez-vous au dashboard pour valider ou rejeter ce compte.\n\n"
+                                "Cordialement,\n"
+                                "Système Assista-Crise"
+                            ),
+                            from_email=None,
+                            recipient_list=list(admin_emails),
+                            fail_silently=False,
+                        )
+                    except Exception as e:
+                        print(f"Erreur envoi email admins : {e}")
+                
+                # NE PAS retourner de token si le compte nécessite validation
+                return Response({
+                    'user': UtilisateurSerializer(user).data,
+                    'message': 'Compte créé, en attente de validation par un administrateur',
+                    'requires_validation': True
+                }, status=status.HTTP_201_CREATED)
+            
+            # Le compte est validé, retourner le token
             refresh = RefreshToken.for_user(user)
             return Response({
                 'user': UtilisateurSerializer(user).data,
@@ -50,6 +107,20 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
         # Authentifier par email
         try:
             user = Utilisateur.objects.get(email=email)
+            
+            # Vérifier que le compte est actif ET validé
+            if not user.is_active:
+                return Response(
+                    {'error': 'Ce compte a été désactivé'},
+                    status=status.HTTP_401_UNAUTHORIZED
+                )
+            
+            if not user.enable:
+                return Response(
+                    {'error': 'Votre compte est en attente de validation par un administrateur'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            
             if user.check_password(password):
                 refresh = RefreshToken.for_user(user)
                 return Response({
@@ -73,6 +144,128 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
     def logout(self, request):
         """Déconnexion (côté client, le token sera supprimé)"""
         return Response({'message': 'Déconnexion réussie'}, status=status.HTTP_200_OK)
+    
+    @action(detail=False, methods=['get'])
+    def pending_validations(self, request):
+        """Liste des comptes en attente de validation"""
+        user = request.user
+        
+        # Seuls les admins et institutions peuvent voir les validations
+        if user.type not in ['ADMIN', 'AUT_LOCALE']:
+            return Response(
+                {'error': 'Permissions insuffisantes'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Les admins voient tout, les institutions voient leur code postal
+        if user.type == 'ADMIN':
+            pending_users = Utilisateur.objects.filter(enable=False, is_active=True)
+        else:
+            pending_users = Utilisateur.objects.filter(
+                enable=False, 
+                is_active=True,
+                code_postal=user.code_postal
+            )
+        
+        serializer = self.get_serializer(pending_users, many=True)
+        return Response(serializer.data)
+    
+    @action(detail=True, methods=['post'])
+    def approve_account(self, request, pk=None):
+        """Approuver un compte en attente"""
+        user_to_approve = self.get_object()
+        validator = request.user
+        
+        # Vérifier les permissions
+        if validator.type not in ['ADMIN', 'AUT_LOCALE']:
+            return Response(
+                {'error': 'Permissions insuffisantes'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Les institutions ne peuvent valider que leur code postal
+        if validator.type == 'AUT_LOCALE' and validator.code_postal != user_to_approve.code_postal:
+            return Response(
+                {'error': 'Vous ne pouvez valider que les comptes de votre territoire'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Activer le compte
+        user_to_approve.enable = True
+        user_to_approve.save()
+        
+        # Envoyer email de confirmation
+        try:
+            send_mail(
+                subject="Votre compte a été validé !",
+                message=(
+                    f"Bonjour {user_to_approve.first_name} {user_to_approve.last_name},\n\n"
+                    f"Bonne nouvelle ! Votre compte ({user_to_approve.get_type_display()}) a été validé.\n"
+                    "Vous pouvez maintenant vous connecter et accéder à toutes les fonctionnalités.\n\n"
+                    "Cordialement,\n"
+                    "L'équipe Assista-Crise"
+                ),
+                from_email=None,
+                recipient_list=[user_to_approve.email],
+                fail_silently=False,
+            )
+        except Exception as e:
+            print(f"Erreur envoi email validation : {e}")
+        
+        return Response({
+            'message': 'Compte validé avec succès',
+            'user': UtilisateurSerializer(user_to_approve).data
+        })
+    
+    @action(detail=True, methods=['post'])
+    def reject_account(self, request, pk=None):
+        """Rejeter un compte en attente"""
+        user_to_reject = self.get_object()
+        validator = request.user
+        reason = request.data.get('reason', 'Non spécifiée')
+        
+        # Vérifier les permissions
+        if validator.type not in ['ADMIN', 'AUT_LOCALE']:
+            return Response(
+                {'error': 'Permissions insuffisantes'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Les institutions ne peuvent rejeter que leur code postal
+        if validator.type == 'AUT_LOCALE' and validator.code_postal != user_to_reject.code_postal:
+            return Response(
+                {'error': 'Vous ne pouvez rejeter que les comptes de votre territoire'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Envoyer email de rejet
+        try:
+            send_mail(
+                subject="Votre demande de compte a été refusée",
+                message=(
+                    f"Bonjour {user_to_reject.first_name} {user_to_reject.last_name},\n\n"
+                    f"Nous sommes désolés de vous informer que votre demande de compte "
+                    f"({user_to_reject.get_type_display()}) n'a pas été acceptée.\n\n"
+                    f"Raison : {reason}\n\n"
+                    "Pour plus d'informations, vous pouvez nous contacter.\n\n"
+                    "Cordialement,\n"
+                    "L'équipe Assista-Crise"
+                ),
+                from_email=None,
+                recipient_list=[user_to_reject.email],
+                fail_silently=False,
+            )
+        except Exception as e:
+            print(f"Erreur envoi email rejet : {e}")
+        
+        # Désactiver le compte (ou le supprimer)
+        user_to_reject.is_active = False
+        user_to_reject.save()
+        
+        return Response({
+            'message': 'Compte rejeté',
+            'user': UtilisateurSerializer(user_to_reject).data
+        })
 
 class CriseViewSet(viewsets.ModelViewSet):
     queryset = Crise.objects.all()

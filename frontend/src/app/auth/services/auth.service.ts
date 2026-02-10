@@ -22,8 +22,10 @@ interface LoginRequest {
 
 interface AuthResponse {
   user: User;
-  token: string;
+  token?: string;  // Optionnel - absent si le compte nécessite validation
+  refresh?: string;
   message?: string;
+  requires_validation?: boolean;  // Indique si le compte est en attente de validation
 }
 
 @Injectable({
@@ -140,11 +142,15 @@ export class AuthService {
 
   // Gérer le succès de l'authentification
   private handleAuthSuccess(response: AuthResponse): void {
+    // Ne stocker le token que si le compte est validé (token présent)
     if (response.token && response.user) {
       localStorage.setItem('auth_token', response.token);
       localStorage.setItem('current_user', JSON.stringify(response.user));
       this.currentUserSubject.next(response.user);
       this.isAuthenticatedSubject.next(true);
+    } else if (response.user && !response.token) {
+      // Compte créé mais en attente de validation - ne pas authentifier
+      console.log('Compte créé en attente de validation - pas de token fourni');
     }
   }
 
@@ -165,7 +171,28 @@ export class AuthService {
       errorMessage = `Erreur: ${error.error.message}`;
     } else {
       // Erreur côté serveur
-      errorMessage = error.error?.message || `Code d'erreur: ${error.status}`;
+      if (error.error?.message) {
+        errorMessage = error.error.message;
+      } else if (error.error?.error) {
+        errorMessage = error.error.error;
+      } else if (typeof error.error === 'object') {
+        // Erreurs de validation Django (format: {"field": ["error message"]})
+        const validationErrors: string[] = [];
+        for (const field in error.error) {
+          if (Array.isArray(error.error[field])) {
+            validationErrors.push(...error.error[field]);
+          } else if (typeof error.error[field] === 'string') {
+            validationErrors.push(error.error[field]);
+          }
+        }
+        if (validationErrors.length > 0) {
+          errorMessage = validationErrors.join(', ');
+        } else {
+          errorMessage = `Code d'erreur: ${error.status}`;
+        }
+      } else {
+        errorMessage = `Code d'erreur: ${error.status}`;
+      }
     }
     
     console.error(errorMessage);

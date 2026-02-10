@@ -26,13 +26,15 @@ class UtilisateurSerializer(serializers.ModelSerializer):
     class Meta:
         model = Utilisateur
         fields = ['id', 'username', 'email', 'first_name', 'last_name', 'type', 
-                  'photo', 'telephone_utilisateur', 'password']
+                  'photo', 'telephone_utilisateur', 'password', 'code_postal', 'enable']
         extra_kwargs = {
             'password': {'write_only': True},
             'first_name': {'required': False},
             'last_name': {'required': False},
             'telephone_utilisateur': {'required': False},
             'photo': {'required': False},
+            'code_postal': {'required': False},
+            'enable': {'required': False},
         }
 
     def create(self, validated_data):

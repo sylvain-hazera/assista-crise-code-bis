@@ -28,6 +28,8 @@ class Utilisateur(AbstractUser):
         choices=RoleUtilisateur.choices,
         default=RoleUtilisateur.UTILISATEUR_SIMPLE,
     )
+    code_postal = models.CharField(max_length=5, null=True, blank=True)
+    enable = models.BooleanField(default=True)  # Pour la validation des comptes
     
 
     crise_touchee = models.ForeignKey(
