@@ -342,7 +342,7 @@ private addHoverEffect() {
           type: 'geojson',
           data: circleGeojson
         });
-
+        console.log('Circle GeoJSON:', circleGeojson);
         this.map!.addLayer({
           id: 'location-radius',
           type: 'fill',
@@ -351,6 +351,22 @@ private addHoverEffect() {
             'fill-color': '#8CCFFF',
             'fill-opacity': 0.5
           }
+        });
+
+        this.map!.on('click', 'location-radius', (e) => {
+        const properties = e.features?.[0]?.properties || {};
+        console.log('Crisis properties:', properties);
+        new maplibregl.Popup()
+        .setHTML(`
+          <div style="color: black; font-family: sans-serif;">
+            <h3 style="margin: 0 0 5px 0;">${properties?.['nom'] || 'Nom inconnu'}</h3>
+            <p style="margin: 0;">${properties?.['description'] || 'Pas de description'}</p>
+            <br>
+            <small>Créé le : ${new Date(properties?.['date_debut'] || Date.now()).toLocaleDateString()}</small>
+          </div>
+        `)
+        .setLngLat(e.lngLat)
+        .addTo(this.map!);
         });
       }
       if (this.helpRequests.length > 0) {
@@ -373,30 +389,12 @@ private addHoverEffect() {
     this.crises.forEach(crisis => {
       // MapLibre attend : [Longitude, Latitude]
       if (crisis.latitude && crisis.longitude) {
-        
-        // Création du Popup HTML
-        const popupContent = `
-          <div style="color: black; font-family: sans-serif;">
-            <h3 style="margin: 0 0 5px 0;">${crisis.name}</h3>
-            <p style="margin: 0;">${crisis.description || 'Pas de description'}</p>
-            <br>
-            <small>Créé le : ${new Date(crisis.createdAt || Date.now()).toLocaleDateString()}</small>
-          </div>
-        `;
-
-        const popup = new maplibregl.Popup({ offset: 25 })
-          .setHTML(popupContent);
-
-        // Création du Marker
-        const marker = new maplibregl.Marker({ color: 'red' })
-          .setLngLat([crisis.longitude, crisis.latitude])
-          .setPopup(popup)
-          .addTo(this.map!);
-
-        this.CrisisMarkers.push(marker);
+        console.log('Ajout de la crise sur la carte:', crisis);
         const radiusCenter = [crisis.longitude, crisis.latitude] as [number, number];
         const radius = 10; // kilometer
-        this.crisisCircle.push(turf.circle(radiusCenter, radius, {steps: 64, units: 'kilometers'}));
+        const circle = turf.circle(radiusCenter, radius, {steps: 64, units: 'kilometers'})
+        circle.properties = {center: radiusCenter, radius: radius, nom: crisis['nom'], description: crisis['description'], date_debut: crisis['date_debut']};
+        this.crisisCircle.push(circle);
       }
     });
   }

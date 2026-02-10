@@ -6,14 +6,16 @@ import { environment } from '../../environments/environment';
 export interface Crisis {
   id?: number;
   type: string;
-  severity: string;
-  name: string;
+  //severity: string;
+  nom: string;
   location: string;
   description: string;
   status: string;
-  createdAt?: Date;
+  date_debut?: Date;
+  date_fin?: Date;
   latitude: number;
   longitude: number;
+  validateur?: string;
 }
 
 @Injectable({
