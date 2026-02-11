@@ -196,7 +196,7 @@ export class GuideComponent implements OnInit, OnDestroy {
     this.dicrimData = null;
     this.timData = null;
     this.errorMessage = '';
-    this.isLoading = true;
+    this.isLoading = true; 
 
     // Construire et afficher l'URL de l'API
     this.apiUrl = `https://georisques.gouv.fr/api/v1/gaspar/risques?code_insee=${codeInsee}`;
