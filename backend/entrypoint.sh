@@ -3,6 +3,7 @@
 set -e
 
 echo "Applying database migrations..."
+python manage.py makemigrations --noinput
 python manage.py migrate --noinput
 
 echo "Creating superuser 'admin' if it does not exist..."
