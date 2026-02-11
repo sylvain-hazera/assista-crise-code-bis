@@ -221,24 +221,24 @@ export class GuideComponent implements OnInit, OnDestroy {
           // Risques
           if (results.risques.data && results.risques.data.length > 0) {
             this.risqueData = results.risques.data[0];
-            console.log('✅ Risques - Commune:', this.risqueData.libelle_commune);
-            console.log('✅ Risques - Nombre:', this.risqueData.risques_detail?.length || 0);
+            console.log('Risques - Commune:', this.risqueData.libelle_commune);
+            console.log('Risques - Nombre:', this.risqueData.risques_detail?.length || 0);
           }
 
           // DICRIM
           this.dicrimData = results.dicrim;
           if (results.dicrim.data && results.dicrim.data.length > 0) {
-            console.log('✅ DICRIM trouvé - Année:', results.dicrim.data[0].annee_publication);
+            console.log('DICRIM trouvé - Année:', results.dicrim.data[0].annee_publication);
           } else {
-            console.log('❌ Pas de DICRIM disponible');
+            console.log('Pas de DICRIM disponible');
           }
 
           // TIM (PCS)
           this.timData = results.tim;
           if (results.tim.data && results.tim.data.length > 0) {
-            console.log('✅ TIM (PCS) trouvé - Date:', results.tim.data[0].date_transmission);
+            console.log('TIM (PCS) trouvé - Date:', results.tim.data[0].date_transmission);
           } else {
-            console.log('❌ Pas de TIM (PCS) disponible');
+            console.log('Pas de TIM (PCS) disponible');
           }
 
           if (!this.risqueData) {
