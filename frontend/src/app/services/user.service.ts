@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { User } from '../shared/models/user.model';
+import { Utilisateur } from '../shared/models/user.model';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
@@ -13,20 +13,20 @@ export class UserService {
 
   constructor(private http: HttpClient) { }
 
-  getUsers(params?: any): Observable<User[]> {
-    return this.http.get<User[]>(`${this.apiUrl}/users/`, { params });
+  getUsers(params?: any): Observable<Utilisateur[]> {
+    return this.http.get<Utilisateur[]>(`${this.apiUrl}/users/`, { params });
   }
   
-  getUser(id: string): Observable<User> {
-    return this.http.get<User>(`${this.apiUrl}/users/${id}/`);
+  getUser(id: string): Observable<Utilisateur> {
+    return this.http.get<Utilisateur>(`${this.apiUrl}/users/${id}/`);
   }
   
-  createUser(data: Partial<User>): Observable<User> {
-    return this.http.post<User>(`${this.apiUrl}/users/`, data);
+  createUser(data: Partial<Utilisateur>): Observable<Utilisateur> {
+    return this.http.post<Utilisateur>(`${this.apiUrl}/users/`, data);
   }
   
-  updateUser(id: string, data: Partial<User>): Observable<User> {
-    return this.http.put<User>(`${this.apiUrl}/users/${id}/`, data);
+  updateUser(id: string, data: Partial<Utilisateur>): Observable<Utilisateur> {
+    return this.http.put<Utilisateur>(`${this.apiUrl}/users/${id}/`, data);
   }
   
   deleteUser(id: string): Observable<void> {

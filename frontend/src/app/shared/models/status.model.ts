@@ -5,3 +5,11 @@ export enum Status {
     DISPONIBLE = 'DISPONIBLE',
     INDISPONIBLE = 'INDISPONIBLE'
 }
+
+export enum Statut {
+    NON_TRAITEE = 'NON_TRAITEE',
+    EN_COURS = 'EN_COURS',
+    TRAITEE = 'TRAITEE',
+    DISPONIBLE = 'DISPONIBLE',
+    INDISPONIBLE = 'INDISPONIBLE'
+}

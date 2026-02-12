@@ -4,7 +4,7 @@ import { FormBuilder, FormGroup, Validators, ReactiveFormsModule, AbstractContro
 import { Router, RouterModule } from '@angular/router';
 import { Subject, takeUntil } from 'rxjs';
 import { AuthService } from '../../services/auth.service';
-import { UserRole } from '../../../shared/models/user.model';
+import { RoleUtilisateur } from '../../../shared/models/user.model';
 
 @Component({
   selector: 'app-register',
@@ -26,10 +26,10 @@ export class RegisterComponent implements OnInit, OnDestroy {
   private destroy$ = new Subject<void>();
 
   userTypeOptions = [
-    { value: UserRole.Individual, label: 'Particulier' },
-    { value: UserRole.Organization, label: 'Institution' },
-    { value: UserRole.Rescue, label: 'Secours organisés' },
-    { value: UserRole.Admin, label: 'Admin' }
+    { value: RoleUtilisateur.UTIL_SIMPLE, label: 'Particulier' },
+    { value: RoleUtilisateur.AUT_LOCALE, label: 'Institution' },
+    { value: RoleUtilisateur.SECOURS, label: 'Secours organisés' },
+    { value: RoleUtilisateur.ADMIN, label: 'Admin' }
   ];
 
   constructor(
@@ -138,7 +138,9 @@ export class RegisterComponent implements OnInit, OnDestroy {
       username: formValue.pseudo || formValue.email.split('@')[0],  
       email: formValue.email,
       password: formValue.password,
-      type: this.mapUserTypeToBackend(formValue.userType),  // Convertir en valeur Django
+      // type: this.mapUserTypeToBackend(formValue.userType),  // Convertir en valeur Django
+      type: formValue.userType,
+      postal_code: formValue.postalCode,
       telephone_utilisateur: formValue.phone,
       last_name: formValue.lastName,
       first_name: formValue.firstName || '',  
@@ -211,24 +213,24 @@ export class RegisterComponent implements OnInit, OnDestroy {
   // }
 
   get isIndividual(): boolean {
-    return this.registerForm.get('userType')?.value === UserRole.Individual;
+    return this.registerForm.get('userType')?.value === RoleUtilisateur.UTIL_SIMPLE;
 
   }
 
   /**
-   * Convertit les valeurs UserRole du frontend vers les valeurs RoleUtilisateur de Django
+   * Convertit les valeurs RoleUtilisateur du frontend vers les valeurs RoleUtilisateur de Django
    */
-  private mapUserTypeToBackend(userType: string): string {
-    const mapping: { [key: string]: string } = {
-      'Individual': 'UTIL_SIMPLE',
-      'individual': 'UTIL_SIMPLE',
-      'Organization': 'AUT_LOCALE',
-      'organization': 'AUT_LOCALE',
-      'Rescue': 'SECOURS',
-      'rescue': 'SECOURS',
-      'Admin': 'ADMIN',
-      'admin': 'ADMIN'
-    };
-    return mapping[userType] || 'UTIL_SIMPLE';
-  }
+  // private mapUserTypeToBackend(userType: string): string {
+  //   const mapping: { [key: string]: string } = {
+  //     'Individual': 'UTIL_SIMPLE',
+  //     'individual': 'UTIL_SIMPLE',
+  //     'Organization': 'AUT_LOCALE',
+  //     'organization': 'AUT_LOCALE',
+  //     'Rescue': 'SECOURS',
+  //     'rescue': 'SECOURS',
+  //     'Admin': 'ADMIN',
+  //     'admin': 'ADMIN'
+  //   };
+  //   return mapping[userType] || 'UTIL_SIMPLE';
+  // }
 }

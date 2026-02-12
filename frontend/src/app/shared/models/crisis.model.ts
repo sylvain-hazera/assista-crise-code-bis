@@ -1,29 +1,48 @@
 // export interface Crisis {
-//   id?: string;
-//   nom: string;
-//   localisation: { type: 'Point'; coordinates: [number, number] };
-//   date_debut?: string;
-//   date_fin?: string;
+//   id?: number;
+//   type: string;
+//   severity: string;
+//   name: string;
+//   location: string;
+//   description: string;
+//   status: string;
+//   createdAt?: Date;
+//   latitude: number;
+//   longitude: number;
 // }
 
-export interface Crisis {
-  id?: number;
-  type: string;
-  severity: string;
-  name: string;
-  location: string;
-  description: string;
-  status: string;
-  createdAt?: Date;
-  latitude: number;
-  longitude: number;
+
+// export enum statusCrisis {
+//   UNPROCESSED,
+//   PROCESSING,
+//   PROCESSED,
+//   AVAILABLE,
+//   UNAVAILABLE
+// }
+
+// Format GeoJSON retourné par GeoDjango (PointField)
+export interface GeoPoint {
+  type: 'Point';
+  coordinates: [number, number];        // [longitude, latitude]
 }
 
+export interface Crise {
+  id: string;                           // UUID
+  nom: string;
+  localisation: GeoPoint;              // Django retourne toujours ce format
+  // Pratique côté Angular (extraits de localisation)
+  latitude?: number;
+  longitude?: number;
+  date_debut: string;                   // auto_now_add → read-only
+  date_fin: string | null;
+  validateur: string | null;           // UUID de l'Utilisateur (FK)
+}
 
-export enum statusCrisis {
-  UNPROCESSED,
-  PROCESSING,
-  PROCESSED,
-  AVAILABLE,
-  UNAVAILABLE
+// Payload envoyé pour créer/modifier une crise
+export interface CrisePayload {
+  nom: string;
+  latitude: number;                     // Angular envoie séparément…
+  longitude: number;                    // …le service construit le GeoJSON
+  date_fin?: string | null;
+  validateur?: string | null;
 }

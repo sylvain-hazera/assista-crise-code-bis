@@ -2,14 +2,15 @@ import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, Validators, ReactiveFormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
-import { User } from '../../shared/models/user.model';
+import { Utilisateur } from '../../shared/models/user.model';
 import { AuthService } from '../../auth/services/auth.service';
 import { RequestService } from '../../services/request.service';
 import { OfferService } from '../../services/offer.service';
 import { CrisisService } from '../../services/crisis.service';
-import { Request } from '../../shared/models/request.model';
-import { Offer } from '../../shared/models/offer.model';
-import { Crisis } from '../../shared/models/crisis.model';
+import { Demande } from '../../shared/models/request.model';
+import { Offre } from '../../shared/models/offer.model';
+import { Crise } from '../../shared/models/crisis.model';
+import { Statut } from '../../shared/models/status.model';
 
 @Component({
   selector: 'app-settings',
@@ -18,323 +19,226 @@ import { Crisis } from '../../shared/models/crisis.model';
   templateUrl: './settings.component.html',
   styleUrls: ['./settings.component.scss']
 })
+
 export class SettingsComponent implements OnInit {
-  currentUser: User | null = null;
+  currentUser: Utilisateur | null = null;
   profileForm!: FormGroup;
   passwordForm!: FormGroup;
-  
+
   isUpdatingProfile = false;
   isChangingPassword = false;
-  
   successMessage = '';
   errorMessage = '';
 
   activeTab: 'profile' | 'password' | 'offer' | 'need' | 'crisis' = 'profile';
 
-  // Data arrays
-  allCrises: Crisis[] = [];
-  allOffers: Offer[] = [];
-  allNeeds: Request[] = [];
-
-  // Filtered arrays
-  filteredCrises: Crisis[] = [];
-  filteredOffers: Offer[] = [];
-  filteredNeeds: Request[] = [];
-
-  // Loading states
-  isLoadingCrises = false;
-  isLoadingOffers = false;
-  isLoadingNeeds = false;
+  allCrises:  Crise[]   = [];  filteredCrises:  Crise[]   = [];  isLoadingCrises  = false;
+  allOffres:  Offre[]   = [];  filteredOffres:  Offre[]   = [];  isLoadingOffres  = false;
+  allDemandes: Demande[] = []; filteredDemandes: Demande[] = []; isLoadingDemandes = false;
 
   constructor(
     private fb: FormBuilder,
-    private authService: AuthService,
-    private requestService: RequestService,
-    private offerService: OfferService,
-    private crisisService: CrisisService,
+    private authService:    AuthService,
+    private criseService:   CrisisService,
+    private demandeService: RequestService,
+    private offreService:   OfferService,
     private router: Router
   ) {}
 
   ngOnInit(): void {
     this.currentUser = this.authService.getCurrentUser();
-
-    if (!this.currentUser) {
-      this.router.navigate(['/login']);
-      return;
-    }
-
+    if (!this.currentUser) { this.router.navigate(['/login']); return; }
     this.initForms();
-    this.loadUserData();
+    this.loadAll();
   }
 
   private initForms(): void {
-    // Formulaire de profil
     this.profileForm = this.fb.group({
-      lastName: [this.currentUser?.lastName, [Validators.required, Validators.minLength(2)]],
-      firstName: [this.currentUser?.firstName || ''],
-      pseudo: [this.currentUser?.pseudo || ''],
-      email: [this.currentUser?.email, [Validators.required, Validators.email]],
-      phone: [this.currentUser?.phone, [Validators.required]],
-      postalCode: [this.currentUser?.postalCode, [Validators.required, Validators.pattern(/^\d{5}$/)]]
+      // Champs Django : first_name, last_name, email, telephone_utilisateur
+      last_name:               [this.currentUser?.last_name,  [Validators.required, Validators.minLength(2)]],
+      first_name:              [this.currentUser?.first_name  ?? ''],
+      email:                   [this.currentUser?.email,       [Validators.required, Validators.email]],
+      telephone_utilisateur:   [this.currentUser?.telephone_utilisateur ?? '']
     });
 
-    // Désactiver les champs selon le type d'utilisateur
-    if (this.authService.isAdmin()) {
-      this.profileForm.get('firstName')?.disable();
-      this.profileForm.get('pseudo')?.disable();
-    }
-
-    // Formulaire de changement de mot de passe
     this.passwordForm = this.fb.group({
-      oldPassword: ['', Validators.required],
-      newPassword: ['', [Validators.required, Validators.minLength(8)]],
-      confirmPassword: ['', Validators.required]
-    }, {
-      validators: this.passwordMatchValidator
-    });
+      oldPassword:      ['', Validators.required],
+      newPassword:      ['', [Validators.required, Validators.minLength(8)]],
+      confirmPassword:  ['', Validators.required]
+    }, { validators: this.passwordMatchValidator });
   }
 
-  private passwordMatchValidator(group: FormGroup): any {
-    const newPassword = group.get('newPassword')?.value;
-    const confirmPassword = group.get('confirmPassword')?.value;
-    return newPassword === confirmPassword ? null : { passwordMismatch: true };
+  private passwordMatchValidator(g: FormGroup) {
+    return g.get('newPassword')?.value === g.get('confirmPassword')?.value
+      ? null : { passwordMismatch: true };
   }
 
-  private loadUserData(): void {
-    // Load data based on active tab to avoid unnecessary requests
+  private loadAll(): void {
+    // Toutes les données de l'utilisateur connecté
     this.loadCrises();
-    this.loadOffers();
-    this.loadNeeds();
+    this.loadOffres();
+    this.loadDemandes();
   }
 
   private loadCrises(): void {
     this.isLoadingCrises = true;
-    this.crisisService.getMyCrisis(this.currentUser!.id!).subscribe({
-      next: (crises) => {
-        this.allCrises = crises;
-        this.filteredCrises = crises;
+    // Django filtre par validateur (UUID de l'utilisateur)
+    this.criseService.getMines(this.currentUser!.id).subscribe({
+      next: list => {
+        this.allCrises = this.filteredCrises = list;
         this.isLoadingCrises = false;
       },
-      error: (error) => {
-        console.error('Error loading crises:', error);
-        this.isLoadingCrises = false;
-      }
+      error: () => (this.isLoadingCrises = false)
     });
   }
 
-  private loadOffers(): void {
-    this.isLoadingOffers = true;
-    this.offerService.getOffers().subscribe({
-      next: (offers) => {
-        this.allOffers = offers;
-        this.filteredOffers = offers;
-        this.isLoadingOffers = false;
+  private loadOffres(): void {
+    this.isLoadingOffres = true;
+    // Django filtre via JWT → my_offres
+    this.offreService.getMines().subscribe({
+      next: list => {
+        this.allOffres = this.filteredOffres = list;
+        this.isLoadingOffres = false;
       },
-      error: (error) => {
-        console.error('Error loading offers:', error);
-        this.isLoadingOffers = false;
-      }
+      error: () => (this.isLoadingOffres = false)
     });
   }
 
-  private loadNeeds(): void {
-    this.isLoadingNeeds = true;
-    this.requestService.getRequests().subscribe({
-      next: (needs) => {
-        this.allNeeds = needs;
-        this.filteredNeeds = needs;
-        this.isLoadingNeeds = false;
+  private loadDemandes(): void {
+    this.isLoadingDemandes = true;
+    // Django filtre via JWT → my_requests
+    this.demandeService.getMines().subscribe({
+      next: list => {
+        this.allDemandes = this.filteredDemandes = list;
+        this.isLoadingDemandes = false;
       },
-      error: (error) => {
-        console.error('Error loading needs:', error);
-        this.isLoadingNeeds = false;
-      }
+      error: () => (this.isLoadingDemandes = false)
     });
   }
 
-  setActiveTab(tab: 'profile' | 'password' | 'offer' | 'need' | 'crisis'): void {
+  setActiveTab(tab: typeof this.activeTab): void {
     this.activeTab = tab;
     this.clearMessages();
   }
 
   updateProfile(): void {
-    if (this.profileForm.invalid) {
-      return;
-    }
-
+    if (this.profileForm.invalid) return;
     this.isUpdatingProfile = true;
     this.clearMessages();
 
-    const formData = this.profileForm.getRawValue();
-
-    this.authService.updateProfile(formData).subscribe({
-      next: (user) => {
+    // On mappe les champs Angular → champs Django
+    this.authService.updateProfile(this.profileForm.getRawValue()).subscribe({
+      next: user => {
         this.currentUser = user;
         this.successMessage = 'Profil mis à jour avec succès';
         this.isUpdatingProfile = false;
       },
-      error: (error) => {
-        this.errorMessage = error.message || 'Erreur lors de la mise à jour';
+      error: err => {
+        this.errorMessage = err.error?.detail ?? 'Erreur lors de la mise à jour';
         this.isUpdatingProfile = false;
       }
     });
   }
 
   changePassword(): void {
-    if (this.passwordForm.invalid) {
-      return;
-    }
-
+    if (this.passwordForm.invalid) return;
     this.isChangingPassword = true;
     this.clearMessages();
 
     const { oldPassword, newPassword } = this.passwordForm.value;
-
+    // Noms de champs Django : old_password / new_password
     this.authService.changePassword(oldPassword, newPassword).subscribe({
       next: () => {
         this.successMessage = 'Mot de passe changé avec succès';
         this.passwordForm.reset();
         this.isChangingPassword = false;
       },
-      error: (error) => {
-        this.errorMessage = error.message || 'Erreur lors du changement de mot de passe';
+      error: err => {
+        this.errorMessage = err.error?.detail ?? 'Erreur lors du changement';
         this.isChangingPassword = false;
       }
     });
   }
 
-  // Filter methods
+  // ── Filtres ──────────────────────────────────────────────────
+
   onFilterCrisis(event: Event): void {
-    const searchTerm = (event.target as HTMLInputElement).value.toLowerCase();
-    this.filteredCrises = this.allCrises.filter(crisis =>
-      crisis.name.toLowerCase().includes(searchTerm) ||
-      crisis.status.toLowerCase().includes(searchTerm) ||
-      crisis.location.toLowerCase().includes(searchTerm)
+    const term = (event.target as HTMLInputElement).value.toLowerCase();
+    this.filteredCrises = this.allCrises.filter(c =>
+      c.nom.toLowerCase().includes(term)
     );
   }
 
   onFilterOffer(event: Event): void {
-    const searchTerm = (event.target as HTMLInputElement).value.toLowerCase();
-    this.filteredOffers = this.allOffers.filter(offer =>
-      offer.titre.toLowerCase().includes(searchTerm) 
-      // offer.statut.toLowerCase().includes(searchTerm)
+    const term = (event.target as HTMLInputElement).value.toLowerCase();
+    this.filteredOffres = this.allOffres.filter(o =>
+      o.titre.toLowerCase().includes(term) ||
+      o.statut.toLowerCase().includes(term)
     );
   }
 
   onFilterNeed(event: Event): void {
-    const searchTerm = (event.target as HTMLInputElement).value.toLowerCase();
-    this.filteredNeeds = this.allNeeds.filter(need =>
-      need.titre.toLowerCase().includes(searchTerm) 
-      // need.statut.toLowerCase().includes(searchTerm)
+    const term = (event.target as HTMLInputElement).value.toLowerCase();
+    this.filteredDemandes = this.allDemandes.filter(d =>
+      d.titre.toLowerCase().includes(term) ||
+      d.statut.toLowerCase().includes(term)
     );
   }
 
-  // Edit methods
-  editCrisis(crisis: Crisis): void {
-    // Navigate to edit page or open modal
-    this.router.navigate(['/user/crisis/edit', crisis.id]);
-  }
+  // ── Suppression ──────────────────────────────────────────────
 
-  editOffer(offer: Offer): void {
-    this.router.navigate(['/user/offer/edit', offer.id]);
-  }
-
-  editNeed(need: Request): void {
-    this.router.navigate(['/user/request/edit', need.id]);
-  }
-
-  // Delete methods
-  deleteCrisis(crisis: Crisis): void {
-    if (!confirm(`Êtes-vous sûr de vouloir supprimer la crise "${crisis.name}" ?`)) {
-      return;
-    }
-
-    this.crisisService.deleteCrisis(crisis.id?.toString()!).subscribe({
-      next: () => {
-        this.successMessage = 'Crise supprimée avec succès';
-        this.loadCrises();
-      },
-      error: (error) => {
-        this.errorMessage = error.message || 'Erreur lors de la suppression';
-      }
+  deleteCrise(crise: Crise): void {
+    if (!confirm(`Supprimer "${crise.nom}" ?`)) return;
+    this.criseService.delete(crise.id).subscribe({
+      next:  () => { this.successMessage = 'Crise supprimée'; this.loadCrises(); },
+      error: err => (this.errorMessage = err.error?.detail ?? 'Erreur')
     });
   }
 
-  deleteOffer(offer: Offer): void {
-    if (!confirm(`Êtes-vous sûr de vouloir supprimer l'offre "${offer.titre}" ?`)) {
-      return;
-    }
-
-    this.offerService.deleteOffer(offer.id!).subscribe({
-      next: () => {
-        this.successMessage = 'Offre supprimée avec succès';
-        this.loadOffers();
-      },
-      error: (error) => {
-        this.errorMessage = error.message || 'Erreur lors de la suppression';
-      }
+  deleteOffre(offre: Offre): void {
+    if (!confirm(`Supprimer "${offre.titre}" ?`)) return;
+    this.offreService.delete(offre.id).subscribe({
+      next:  () => { this.successMessage = 'Offre supprimée'; this.loadOffres(); },
+      error: err => (this.errorMessage = err.error?.detail ?? 'Erreur')
     });
   }
 
-  deleteNeed(need: Request): void {
-    if (!confirm(`Êtes-vous sûr de vouloir supprimer le besoin "${need.titre}" ?`)) {
-      return;
-    }
-
-    this.requestService.deleteRequest(need.id!).subscribe({
-      next: () => {
-        this.successMessage = 'Besoin supprimé avec succès';
-        this.loadNeeds();
-      },
-      error: (error) => {
-        this.errorMessage = error.message || 'Erreur lors de la suppression';
-      }
+  deleteDemande(demande: Demande): void {
+    if (!confirm(`Supprimer "${demande.titre}" ?`)) return;
+    this.demandeService.delete(demande.id).subscribe({
+      next:  () => { this.successMessage = 'Demande supprimée'; this.loadDemandes(); },
+      error: err => (this.errorMessage = err.error?.detail ?? 'Erreur')
     });
   }
 
-  deleteAccount(): void {
-    if (!confirm('Êtes-vous sûr de vouloir supprimer votre compte ? Cette action est irréversible.')) {
-      return;
-    }
+  // ── Édition ──────────────────────────────────────────────────
 
-    // this.authService.deleteAccount().subscribe({
-    //   next: () => {
-    //     alert('Compte supprimé avec succès');
-    //     this.router.navigate(['/']);
-    //   },
-    //   error: (error) => {
-    //     this.errorMessage = error.message || 'Erreur lors de la suppression du compte';
-    //   }
-    // });
-  }
+  editCrise(c: Crise):     void { this.router.navigate(['/user/crise/edit',   c.id]); }
+  editOffre(o: Offre):     void { this.router.navigate(['/user/offre/edit',   o.id]); }
+  editDemande(d: Demande): void { this.router.navigate(['/user/demande/edit', d.id]); }
 
-  private clearMessages(): void {
-    this.successMessage = '';
-    this.errorMessage = '';
-  }
+  // ── Helpers ──────────────────────────────────────────────────
 
-  get isAdmin(): boolean {
-    return this.authService.isAdmin();
-  }
-
-  get isIndividual(): boolean {
-    return this.currentUser?.userType === 'individual';
-  }
-
-  // Helper method to get status label
-  getStatusLabel(status: string): string {
-    const statusMap: { [key: string]: string } = {
-      'NON_TRAITEE': 'Non traitée',
-      'EN_COURS': 'En cours',
-      'TRAITEE': 'Traitée',
-      'DISPONIBLE': 'Disponible',
-      'INDISPONIBLE': 'Indisponible'
+  /** Libellé lisible pour les statuts Django */
+  getStatusLabel(statut: string): string {
+    const labels: Record<string, string> = {
+      [Statut.NON_TRAITEE]:  'Non traitée',
+      [Statut.EN_COURS]:     'En cours',
+      [Statut.TRAITEE]:      'Traitée',
+      [Statut.DISPONIBLE]:   'Disponible',
+      [Statut.INDISPONIBLE]: 'Indisponible'
     };
-    return statusMap[status] || status;
+    return labels[statut] ?? statut;
   }
 
-  // Helper method to format location
-  getLocation(lat: number, lng: number): string {
+  /** Affiche les coordonnées extraites depuis le GeoPoint Django */
+  getLocation(lat?: number, lng?: number): string {
+    if (lat == null || lng == null) return '—';
     return `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
   }
+
+  get isAdmin(): boolean { return this.authService.isAdmin(); }
+  get isIndividual(): boolean { return this.currentUser?.type === 'UTIL_SIMPLE'; }
+
+  private clearMessages(): void { this.successMessage = ''; this.errorMessage = ''; }
 }
