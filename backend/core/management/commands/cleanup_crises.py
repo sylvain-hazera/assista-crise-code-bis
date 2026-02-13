@@ -24,9 +24,9 @@ class Command(BaseCommand):
         
         with open(csv_path, 'a', newline='', encoding='utf-8') as csvfile:
             fieldnames = [
-                'date_suppression', 'crise_id', 'crise_nom', 
-                'crise_localisation_lat', 'crise_localisation_lon',
-                'date_debut', 'date_fin', 'validateur_username',
+                'date_suppression', 'crise_id', 'crise_name', 
+                'crise_location_lat', 'crise_location_lon',
+                'start_date', 'end_date', 'validator_username',
                 'nb_demandes', 'nb_offres', 'nb_informations',
                 'demandes_details', 'offres_details', 'informations_details'
             ]
@@ -59,12 +59,12 @@ class Command(BaseCommand):
             writer.writerow({
                 'date_suppression': timezone.now().isoformat(),
                 'crise_id': str(crise.id),
-                'crise_nom': crise.nom,
-                'crise_localisation_lat': crise.localisation.y if crise.localisation else '',
-                'crise_localisation_lon': crise.localisation.x if crise.localisation else '',
-                'date_debut': crise.date_debut.isoformat() if crise.date_debut else '',
-                'date_fin': crise.date_fin.isoformat() if crise.date_fin else '',
-                'validateur_username': crise.validateur.username if crise.validateur else 'N/A',
+                'crise_name': crise.name,
+                'crise_location_lat': crise.location.y if crise.location else '',
+                'crise_location_lon': crise.location.x if crise.location else '',
+                'start_date': crise.start_date.isoformat() if crise.start_date else '',
+                'end_date': crise.end_date.isoformat() if crise.end_date else '',
+                'validator_username': crise.validator.username if crise.validator else 'N/A',
                 'nb_demandes': len(demandes_list),
                 'nb_offres': len(offres_list),
                 'nb_informations': len(infos_list),

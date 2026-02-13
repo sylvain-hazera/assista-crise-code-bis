@@ -193,7 +193,7 @@ export class DeclareCrisisFormComponent implements OnInit{
     const formData = new FormData();
 
     formData.append('type_evenement', this.crisisForm.get('eventType')?.value);
-    formData.append('nom', this.crisisForm.get('title')?.value);
+    formData.append('name', this.crisisForm.get('title')?.value);
     formData.append('description', this.crisisForm.get('description')?.value);
 
     const localisation = {

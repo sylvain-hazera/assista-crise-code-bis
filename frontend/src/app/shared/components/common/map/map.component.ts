@@ -439,7 +439,7 @@ private addHoverEffect() {
         const radiusCenter = [crisis.longitude, crisis.latitude] as [number, number];
         const radius = 10; // kilometer
         const circle = turf.circle(radiusCenter, radius, {steps: 64, units: 'kilometers'})
-        circle.properties = {center: radiusCenter, radius: radius, nom: crisis.nom, description: crisis.description, date_debut: crisis.date_debut};
+        circle.properties = {center: radiusCenter, radius: radius, name: crisis.name, description: crisis.description, start_date: crisis.start_date};
         this.crisisCircle.push(circle);
       }
     });

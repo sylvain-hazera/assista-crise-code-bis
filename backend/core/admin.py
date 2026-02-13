@@ -9,8 +9,8 @@ from .models import (
 
 @admin.register(Crise)
 class CriseAdmin(GISModelAdmin):
-    list_display = ('nom', 'date_debut', 'validateur')
-    search_fields = ('nom',)
+    list_display = ('name', 'start_date', 'validator')
+    search_fields = ('name',)
 
 @admin.register(Demande)
 class DemandeAdmin(GISModelAdmin):

@@ -62,14 +62,14 @@ class Utilisateur(AbstractUser):
 
 class Crise(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    nom = models.CharField(max_length=100)
-    localisation = gis_models.PointField(srid=4326)
-    date_debut = models.DateTimeField(auto_now_add=True)
-    date_fin = models.DateTimeField(null=True, blank=True)
+    name = models.CharField(max_length=100)
+    location = gis_models.PointField(srid=4326)
+    start_date = models.DateTimeField(auto_now_add=True)
+    end_date = models.DateTimeField(null=True, blank=True)
     description = models.CharField(max_length=150, null=True, blank=True)
 
 
-    validateur = models.ForeignKey(
+    validator = models.ForeignKey(
         'Utilisateur',
         on_delete=models.SET_NULL,
         null=True, blank=True,
@@ -77,7 +77,7 @@ class Crise(models.Model):
     )
 
     def __str__(self) -> str:  # pragma: no cover - display helper
-        return self.nom
+        return self.name
 
 
 class TypeDemande(models.Model):
