@@ -446,6 +446,7 @@ private addHoverEffect() {
             radiusCenter = [(radiusCenter[0] + crisisCircles.properties.center[0])/2, (radiusCenter[1] + crisisCircles.properties.center[1])/2];
             radius = Math.max(radius, crisisCircles.properties.radius) * 2;
             circle = turf.circle(radiusCenter, radius, {steps: 64, units: 'kilometers'});
+            circle.properties = {center: radiusCenter, radius: radius, nom: crisis['nom'], description: crisis['description'], date_debut: crisis['date_debut']};
           }
         }
         this.crisisCircle.push(circle);
