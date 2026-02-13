@@ -2,8 +2,8 @@ import { Component, OnInit, OnDestroy } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { forkJoin, Subject, takeUntil } from 'rxjs';
 import { CrisisService } from '../../services/crisis.service';
-import { HelpProposeService } from '../../services/help-propose.service';
-import { HelpRequestService } from '../../services/help-request.service';
+import { OfferService } from '../../services/offer.service';
+import { RequestService } from '../../services/request.service';
 
 interface StatCard {
   title: string;
@@ -110,8 +110,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
   recentAnnouncements: any[] = [];
 
   constructor(
-    private helpRequestService: HelpRequestService,
-    private helpProposeService: HelpProposeService,
+    private helpRequestService: RequestService,
+    private helpProposeService: OfferService,
     private crisisService: CrisisService,
     private router: Router
   ) {}
@@ -134,9 +134,9 @@ export class DashboardComponent implements OnInit, OnDestroy {
     // Charger toutes les données en parallèle
     forkJoin({
       crisisStats: this.crisisService.getCrisisStats(filterParams),
-      proposeStats: this.helpProposeService.getProposeStats(filterParams),
+      // proposeStats: this.helpProposeService.getProposeStats(filterParams),
       requestStats: this.helpRequestService.getRequestStats(filterParams),
-      recentCrises: this.crisisService.getRecentCrises(5)
+      recentCrises: this.crisisService.getRecentCrisis(5)
     })
       .pipe(takeUntil(this.destroy$))
       .subscribe({
@@ -256,8 +256,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
   private updateRecentAnnouncements(crises: any[]): void {
     this.recentAnnouncements = crises.map(crisis => ({
       id: crisis.id,
-      title: crisis.type || 'Crise sans titre',
-      date: this.formatDate(crisis.createdAt),
+      title: crisis.nom || 'Crise sans nom',
+      date: this.formatDate(crisis.date_debut),
       status: this.mapCrisisStatus(crisis.status)
     }));
   }

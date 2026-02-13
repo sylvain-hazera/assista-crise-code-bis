@@ -1,10 +1,11 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FormBuilder, FormGroup, Validators, ReactiveFormsModule, AbstractControl, ValidationErrors } from '@angular/forms';
+import { FormBuilder, FormGroup, Validators, ReactiveFormsModule, AbstractControl, ValidationErrors, FormsModule } from '@angular/forms';
 import { Router, RouterModule } from '@angular/router';
 import { Subject, takeUntil } from 'rxjs';
 import { AuthService } from '../../services/auth.service';
 import { UserRole } from '../../../shared/models/user.model';
+import { LocationService, Department, Commune } from '../../../services/location.service';
 
 @Component({
   selector: 'app-register',
@@ -12,6 +13,7 @@ import { UserRole } from '../../../shared/models/user.model';
   imports: [
     CommonModule,
     ReactiveFormsModule,
+    FormsModule,
     RouterModule
   ],
   templateUrl: './register.component.html',
@@ -25,22 +27,44 @@ export class RegisterComponent implements OnInit, OnDestroy {
   
   private destroy$ = new Subject<void>();
 
+  // Départements et communes
+  departments: Department[] = [];
+  filteredDepartments: Department[] = [];
+  communes: Commune[] = [];
+  filteredCommunes: Commune[] = [];
+  departmentSearch: string = '';
+  communeSearch: string = '';
+  showDepartmentDropdown: boolean = false;
+  showCommuneDropdown: boolean = false;
+
   userTypeOptions = [
     { value: UserRole.Individual, label: 'Particulier' },
-    { value: UserRole.Organization, label: 'Institution' },
-    { value: UserRole.Rescue, label: 'Secours organisés' },
-    { value: UserRole.Admin, label: 'Admin' }
+    { value: UserRole.Organization, label: 'Authorité locale' },
+    { value: UserRole.Rescue, label: 'Secours organisés (AASC)' },
+    // { value: UserRole.Admin, label: 'Admin' }
   ];
 
   constructor(
     private formBuilder: FormBuilder,
     private authService: AuthService,
-    private router: Router
+    private router: Router,
+    private locationService: LocationService
   ) {}
 
   ngOnInit(): void {
     this.initForm();
     this.setupUserTypeListener();
+    this.loadDepartments();
+  }
+
+  private loadDepartments(): void {
+    this.locationService.getDepartments().subscribe({
+      next: (deps) => {
+        this.departments = deps;
+        this.filteredDepartments = deps;
+      },
+      error: (err) => console.error('Erreur chargement départements:', err)
+    });
   }
 
   ngOnDestroy(): void {
@@ -50,9 +74,9 @@ export class RegisterComponent implements OnInit, OnDestroy {
 
   private initForm(): void {
     this.registerForm = this.formBuilder.group({
-      userType: ['', Validators.required],  // Pas de valeur par défaut
+      userType: ['', Validators.required],
       lastName: ['', [Validators.required, Validators.minLength(2), Validators.maxLength(50)]],
-      firstName: [''],  // Optionnel, requis seulement si particulier
+      firstName: [''],
       password: ['', [
         Validators.required,
         Validators.minLength(8),
@@ -60,7 +84,8 @@ export class RegisterComponent implements OnInit, OnDestroy {
       ]],
       phone: ['', [Validators.required, Validators.pattern(/^(?:(?:\+|00)33|0)\s*[1-9](?:[\s.-]*\d{2}){4}$/)]],
       email: ['', [Validators.required, Validators.email]],
-      postalCode: ['', [Validators.required, Validators.pattern(/^\d{5}$/)]],
+      department: ['', Validators.required],
+      commune: ['', Validators.required],
       acceptTerms: [false, Validators.requiredTrue]
     });
   }
@@ -123,6 +148,48 @@ export class RegisterComponent implements OnInit, OnDestroy {
     this.showPassword = !this.showPassword;
   }
 
+  onDepartmentSearchChange(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    this.departmentSearch = input.value;
+    this.filteredDepartments = this.locationService.searchDepartments(
+      this.departmentSearch,
+      this.departments
+    );
+    this.showDepartmentDropdown = true;
+  }
+
+  selectDepartment(department: Department): void {
+    this.departmentSearch = department.nom;
+    this.registerForm.patchValue({ department: department.code });
+    this.showDepartmentDropdown = false;
+    
+    this.locationService.getCommunesByDepartment(department.code).subscribe({
+      next: (communes) => {
+        this.communes = communes;
+        this.filteredCommunes = communes;
+        this.communeSearch = '';
+        this.registerForm.patchValue({ commune: '' });
+      },
+      error: (err) => console.error('Erreur chargement communes:', err)
+    });
+  }
+
+  onCommuneSearchChange(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    this.communeSearch = input.value;
+    this.filteredCommunes = this.locationService.searchCommunes(
+      this.communeSearch,
+      this.communes
+    );
+    this.showCommuneDropdown = true;
+  }
+
+  selectCommune(commune: Commune): void {
+    this.communeSearch = commune.nom;
+    this.registerForm.patchValue({ commune: commune.code });
+    this.showCommuneDropdown = false;
+  }
+
   onSubmit(): void {
     if (this.registerForm.invalid) {
       this.markFormAsTouched();
@@ -132,16 +199,26 @@ export class RegisterComponent implements OnInit, OnDestroy {
     this.isSubmitting = true;
     this.errorMessage = '';
 
-    // Préparer les données pour Django
     const formValue = this.registerForm.getRawValue();
+    const userType = formValue.userType;
+    const communeCode = formValue.commune;
+    const commune = this.communes.find(c => c.code === communeCode);
+    const postalCode = commune?.codesPostaux[0] || '';
+    
+    // Vérifier si le compte nécessite une validation
+    const requiresValidation = userType !== UserRole.Individual;
+    
     const registerData: any = {
-      username: formValue.email.split('@')[0],  // Utiliser email comme base pour username
+      username: formValue.email,  // Utiliser l'email complet comme username (unique)
       email: formValue.email,
       password: formValue.password,
-      type: this.mapUserTypeToBackend(formValue.userType),  // Convertir en valeur Django
+      type: this.mapUserTypeToBackend(formValue.userType),
       telephone_utilisateur: formValue.phone,
       last_name: formValue.lastName,
-      first_name: formValue.firstName || '',  // Optionnel
+      first_name: formValue.firstName || '',
+      code_postal: postalCode,
+      // Marquer le compte comme non validé si c'est Institution/Secours/Admin
+      enable: !requiresValidation
     };
     
     console.log('Données envoyées:', registerData);
@@ -151,8 +228,17 @@ export class RegisterComponent implements OnInit, OnDestroy {
       .subscribe({
         next: (response) => {
           console.log('Inscription réussie:', response);
-          // Rediriger vers le tableau de bord ou la page d'accueil
-          this.router.navigate(['/accueil']);
+          
+          // Vérifier si le compte nécessite validation (basé sur la réponse du serveur)
+          if (response.requires_validation || !response.token) {
+            // Afficher un message indiquant que le compte est en attente de validation
+            alert(response.message || 'Votre compte a été créé avec succès ! Un administrateur doit valider votre compte avant que vous puissiez vous connecter. Vous recevrez un email de confirmation.');
+            this.router.navigate(['/login']);
+          } else {
+            // Compte validé directement (token présent)
+            alert(response.message || 'Inscription réussie !');
+            this.router.navigate(['/accueil']);
+          }
         },
         error: (error) => {
           this.errorMessage = error.message || 'Une erreur est survenue lors de l\'inscription';
@@ -191,7 +277,6 @@ export class RegisterComponent implements OnInit, OnDestroy {
       return `Maximum ${field.errors['maxlength'].requiredLength} caractères`;
     }
     if (field.errors['pattern']) {
-      if (fieldName === 'postalCode') return 'Code postal invalide (5 chiffres)';
       if (fieldName === 'phone') return 'Numéro de téléphone invalide';
     }
     if (field.errors['passwordStrength']) {
@@ -212,8 +297,8 @@ export class RegisterComponent implements OnInit, OnDestroy {
   // }
 
   get isIndividual(): boolean {
-    const userType = this.registerForm.get('userType')?.value;
-    return userType === 'Individual' || userType === 'individual';
+    return this.registerForm.get('userType')?.value === UserRole.Individual;
+
   }
 
   /**

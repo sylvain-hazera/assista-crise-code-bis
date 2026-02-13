@@ -3,7 +3,7 @@ import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/rou
 import { AdminHeaderComponent } from "../../shared/components/admin/admin-header/admin-header.component";
 import { AdminSidebarComponent } from "../../shared/components/admin/admin-sidebar/admin-sidebar.component";
 import { AuthService } from '../../auth/services/auth.service';
-import { User } from '../../shared/models/user.model';
+import { User, UserRole } from '../../shared/models/user.model';
 
 // @Component({
 //   selector: 'app-admin-layout',
@@ -91,7 +91,7 @@ export class AdminLayoutComponent implements OnInit {
     { icon: 'check_circle', label: 'Résultats', route: '/admin/resultats' },
     { icon: 'group', label: 'utilisateurs', route: '/admin/utilisateurs' }
   ];
-UserRole: any;
+// UserRole: UserRole;
 
   constructor(
     private authService: AuthService,
@@ -100,6 +100,10 @@ UserRole: any;
 
   ngOnInit(): void {
     this.currentUser = this.authService.getCurrentUser();
+  }
+
+  isAdmin(): boolean {
+    return this.currentUser?.userType !== UserRole.Individual;
   }
 
   toggleSidebar(): void {
@@ -126,8 +130,8 @@ UserRole: any;
   }
 
   get companyName(): string {
-    return this.currentUser?.userType === 'organization' 
-      ? this.currentUser.lastName 
+    return this.currentUser?.userType !== UserRole.Individual
+      ? this.currentUser!.lastName 
       : 'Nom de la compagnie';
   }
 }

@@ -1,16 +1,17 @@
 import { Component, OnInit } from '@angular/core';
 import { FormGroup, FormBuilder, Validators, ReactiveFormsModule, FormArray } from '@angular/forms';
+import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
-import { HelpRequestService } from '../../../services/help-request.service';
 import { GeolocationService } from '../../../services/geolocation.service';
-import { ApiService } from '../../../services/api.service';
 import { CommonModule } from '@angular/common';
+import { RequestService } from '../../../services/request.service';
+import { LocationService, Department, Commune } from '../../../services/location.service';
 // import { NgSelectModule } from '@ng-select/ng-select';
 
 @Component({
   selector: 'app-request-help-form',
   standalone: true,
-  imports: [ReactiveFormsModule, CommonModule],
+  imports: [ReactiveFormsModule, CommonModule, FormsModule],
   templateUrl: './request-help-form.component.html',
   styleUrl: './request-help-form.component.scss'
 })
@@ -24,8 +25,16 @@ export class RequestHelpFormComponent implements OnInit {
   latitude: number | null = null;
   longitude: number | null = null;
 
-  requestData: FormData = new FormData();
-  typesDemandeMap: Map<string, string> = new Map(); // eventType -> UUID
+  typesDemandeMap: Map<string, string> = new Map();
+
+  departments: Department[] = [];
+  filteredDepartments: Department[] = [];
+  communes: Commune[] = [];
+  filteredCommunes: Commune[] = [];
+  departmentSearch: string = '';
+  communeSearch: string = '';
+  showDepartmentDropdown: boolean = false;
+  showCommuneDropdown: boolean = false;
 
   eventTypeOptions: { value: string; label: string }[] = [
     { value: '', label: 'Dropdown' },
@@ -52,45 +61,56 @@ export class RequestHelpFormComponent implements OnInit {
   personTypeOptions: { value: string; label: string }[] = [
     { value: '', label: 'Dropdown' },
     { value: 'individual', label: 'Particulier' },
-    { value: 'organization', label: 'Organisation' }
+    { value: 'organization', label: 'Organisation' },
+    { value: 'rescue', label: 'Secours organisés' },
   ];
 
   constructor(
     private formBuilder: FormBuilder,
     private router: Router,
-    private helpRequestService: HelpRequestService,
+    private helpRequestService: RequestService,
     private geolocationService: GeolocationService,
-    private apiService: ApiService
+    private locationService: LocationService
   ) {}
 
   ngOnInit(): void {
     this.initForm();
     this.loadTypesDemande();
+    this.loadDepartments();
+  }
+
+  loadDepartments(): void {
+    this.locationService.getDepartments().subscribe({
+      next: (deps) => {
+        this.departments = deps;
+        this.filteredDepartments = deps;
+      },
+      error: (err) => console.error('Erreur chargement départements:', err)
+    });
   }
 
   loadTypesDemande(): void {
-    this.apiService.getTypesDemande().subscribe({
-      next: (types) => {
+    this.helpRequestService.getTypesDemande().subscribe({
+      next: (types: any[]) => {
         // Mapper les valeurs du formulaire aux UUIDs des types
-        types.forEach(t => {
+        types.forEach((t: any) => {
           const normalizedType = t.type.toLowerCase().replace(/\s+/g, '-');
           this.typesDemandeMap.set(normalizedType, t.id!);
         });
         console.log('Types chargés:', this.typesDemandeMap);
       },
-      error: (err) => console.error('Erreur chargement types:', err)
+      error: (err: any) => console.error('Erreur chargement types:', err)
     });
   }
 
   initForm(): void {
     this.requestForm = this.formBuilder.group({
       eventType: ['', Validators.required],
-      // needType: ['', Validators.required],
-      // description: ['', [Validators.required, Validators.minLength(10)]],
       needsType: new FormArray([]),
       descriptions: new FormArray([]),
       streetNumber: ['', Validators.required],
-      postalCode: ['', [Validators.required, Validators.pattern(/^\d{5}$/)]],
+      department: ['', Validators.required],
+      commune: ['', Validators.required],
       addressVisible: [false],
       image: [null],
     });
@@ -133,18 +153,7 @@ export class RequestHelpFormComponent implements OnInit {
     }
   }
 
-  onSubmit(): void {
-    console.log('=== DEBUG SUBMIT ===');
-    console.log('requestForm valid:', this.requestForm.valid);
-    console.log('requestForm errors:', this.requestForm.errors);
-    console.log('requestForm value:', this.requestForm.value);
-    console.log('informationForm valid:', this.informationForm.valid);
-    console.log('informationForm errors:', this.informationForm.errors);
-    console.log('informationForm value:', this.informationForm.value);
-    console.log('Latitude:', this.latitude, 'Longitude:', this.longitude);
-    console.log('needsType controls:', this.needsType.controls.map((c, i) => ({index: i, valid: c.valid, value: c.value})));
-    console.log('descriptions controls:', this.descriptions.controls.map((c, i) => ({index: i, valid: c.valid, value: c.value})));
-    
+  onSubmit(): void {    
     if (this.informationForm.valid && this.latitude && this.longitude) {
       console.log('Formulaire valide:', this.informationForm.value);
 
@@ -159,6 +168,13 @@ export class RequestHelpFormComponent implements OnInit {
       
       // Titre basé sur le type d'événement
       const eventType = this.requestForm.get('eventType')?.value;
+
+      console.log('--- DEBUG TYPE DEMANDE ---');
+      
+      console.log('1. Valeur sélectionnée (Dropdown) :', eventType);
+      console.log('2. Clés disponibles dans la Map :', Array.from(this.typesDemandeMap.keys()));
+      
+
       const titre = `Demande ${this.eventTypeOptions.find(e => e.value === eventType)?.label || 'aide'}`;
       formData.append('titre', titre);
       
@@ -193,7 +209,17 @@ export class RequestHelpFormComponent implements OnInit {
         },
         error: (err) => {
           console.error('Erreur création demande:', err);
-          alert('Erreur lors de l\'enregistrement. Veuillez réessayer.');
+          if (err.status === 400) {
+            if (err.error && err.error.photo) {
+              alert("ERREUR PHOTO : " + err.error.photo[0]);
+            } else {
+              alert("Erreur de validation : Vérifiez les champs du formulaire.");
+            }
+          } 
+          else {
+            alert("Une erreur technique est survenue. Veuillez réessayer.");
+          }
+          
         }
       });
 
@@ -210,14 +236,56 @@ export class RequestHelpFormComponent implements OnInit {
     }
   }
 
+  onDepartmentSearchChange(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    this.departmentSearch = input.value;
+    this.filteredDepartments = this.locationService.searchDepartments(
+      this.departmentSearch,
+      this.departments
+    );
+    this.showDepartmentDropdown = true;
+  }
+
+  selectDepartment(department: Department): void {
+    this.departmentSearch = department.nom;
+    this.requestForm.patchValue({ department: department.code });
+    this.showDepartmentDropdown = false;
+    
+    this.locationService.getCommunesByDepartment(department.code).subscribe({
+      next: (communes) => {
+        this.communes = communes;
+        this.filteredCommunes = communes;
+        this.communeSearch = '';
+        this.requestForm.patchValue({ commune: '' });
+      },
+      error: (err) => console.error('Erreur chargement communes:', err)
+    });
+  }
+
+  onCommuneSearchChange(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    this.communeSearch = input.value;
+    this.filteredCommunes = this.locationService.searchCommunes(
+      this.communeSearch,
+      this.communes
+    );
+    this.showCommuneDropdown = true;
+  }
+
+  selectCommune(commune: Commune): void {
+    this.communeSearch = commune.nom;
+    this.requestForm.patchValue({ commune: commune.code });
+    this.showCommuneDropdown = false;
+  }
+
   onContinue(): void {
     if (this.requestForm.valid) {
 
       const street = this.requestForm.get('streetNumber')?.value;
-      const zip = this.requestForm.get('postalCode')?.value;
-      const query = `${street} ${zip}`;
-
-      console.log('Recherche GPS pour :', query);
+      const communeCode = this.requestForm.get('commune')?.value;
+      const commune = this.communes.find(c => c.code === communeCode);
+      const postalCode = commune?.codesPostaux[0] || '';
+      const query = `${street} ${postalCode}`;
 
       this.geolocationService.getCoordinates(query).subscribe({
         next: (response) => {
@@ -226,7 +294,6 @@ export class RequestHelpFormComponent implements OnInit {
             this.longitude = coords[0];
             this.latitude = coords[1];
             
-            console.log(`Trouvé : ${this.latitude}, ${this.longitude}`);
             this.state = 2;
           } else {
             alert("Adresse introuvable. Vérifiez le numéro et le code postal.");
@@ -237,25 +304,6 @@ export class RequestHelpFormComponent implements OnInit {
           alert("Erreur de connexion au service d'adresse.");
         }
       });
-
-      // this.requestData.append('eventType', this.requestForm.get('eventType')?.value);
-      // for (const needType of this.requestForm.get('needsType')?.value) {
-      //   this.requestData.append('needType', needType);
-      // }
-      // for (const description of this.requestForm.get('descriptions')?.value) {
-      //   this.requestData.append('description', description);
-      // }
-      // // this.requestData.append('needType', this.requestForm.get('needType')?.value);
-      // // this.requestData.append('description', this.requestForm.get('description')?.value);
-      // this.requestData.append('streetNumber', this.requestForm.get('streetNumber')?.value);
-      // this.requestData.append('postalCode', this.requestForm.get('postalCode')?.value);
-      // this.requestData.append('addressVisible', this.requestForm.get('addressVisible')?.value);
-
-      // if (this.selectedFile) {
-      //   this.requestData.append('image', this.selectedFile);
-      // }
-
-      // this.state = 2;
   } else {
       // Marquer tous les champs comme touchés pour afficher les erreurs
       Object.keys(this.requestForm.controls).forEach(key => {

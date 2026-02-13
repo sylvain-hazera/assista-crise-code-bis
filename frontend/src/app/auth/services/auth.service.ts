@@ -22,8 +22,10 @@ interface LoginRequest {
 
 interface AuthResponse {
   user: User;
-  token: string;
+  token?: string;  // Optionnel - absent si le compte nécessite validation
+  refresh?: string;
   message?: string;
+  requires_validation?: boolean;  // Indique si le compte est en attente de validation
 }
 
 @Injectable({
@@ -37,74 +39,6 @@ export class AuthService {
 
   private isAuthenticatedSubject = new BehaviorSubject<boolean>(false);
   public isAuthenticated$ = this.isAuthenticatedSubject.asObservable();
-
-  // Utilisateurs de test
-  // private mockUsers: User[] = [
-  //   {
-  //     id: 1,
-  //     userType: UserRole.Admin,
-  //     lastName: 'Croix-Rouge Française',
-  //     firstName: '',
-  //     email: 'admin@croixrouge.fr',
-  //     phone: '+33123456789',
-  //     postalCode: '75001',
-  //     avatar: '🏥',
-  //     createdAt: new Date('2024-01-01'),
-  //     updatedAt: new Date()
-  //   },
-  //   {
-  //     id: 2,
-  //     userType: UserRole.Organization,
-  //     lastName: 'Secours Populaire',
-  //     firstName: '',
-  //     email: 'contact@secourspopulaire.fr',
-  //     phone: '+33198765432',
-  //     postalCode: '69001',
-  //     avatar: '🆘',
-  //     createdAt: new Date('2024-01-15'),
-  //     updatedAt: new Date()
-  //   },
-  //   {
-  //     id: 3,
-  //     userType: UserRole.Rescue,
-  //     lastName: 'Pompiers du Rhône',
-  //     firstName: '',
-  //     email: 'pompiers@sdis69.fr',
-  //     phone: '+33412345678',
-  //     postalCode: '69100',
-  //     avatar: '🚒',
-  //     createdAt: new Date('2024-02-01'),
-  //     updatedAt: new Date()
-  //   },
-  //   {
-  //     id: 4,
-  //     userType: UserRole.Individual,
-  //     lastName: 'Martin',
-  //     firstName: 'Sophie',
-  //     pseudo: 'sophie_m',
-  //     email: 'sophie.martin@email.fr',
-  //     phone: '+33656781234',
-  //     postalCode: '38000',
-  //     avatar: '👤',
-  //     createdAt: new Date('2024-03-01'),
-  //     updatedAt: new Date()
-  //   },
-  //   {
-  //     id: 5,
-  //     userType: UserRole.Individual,
-  //     lastName: 'Dubois',
-  //     firstName: 'Pierre',
-  //     pseudo: 'pierre_d',
-  //     email: 'pierre.dubois@email.fr',
-  //     phone: '+33687654321',
-  //     postalCode: '38100',
-  //     createdAt: new Date('2024-03-15'),
-  //     updatedAt: new Date()
-  //   }
-  // ];
-
-  // Mots de passe de test (tous : "password123")
-  private readonly TEST_PASSWORD = 'password123';
 
   constructor(
     private http: HttpClient,
@@ -146,58 +80,6 @@ export class AuthService {
         catchError(this.handleError)
       );
   }
-
-  // Connexion (simulée)
-  // login(credentials: LoginRequest): Observable<AuthResponse> {
-  //   console.log('🔐 Tentative de connexion:', credentials.email);
-
-  //   // Simuler un délai réseau
-  //   return of(null).pipe(
-  //     delay(500),
-  //     (source) => {
-  //       const user = this.mockUsers.find(u => u.email === credentials.email);
-
-  //       if (!user) {
-  //         console.error('❌ Utilisateur non trouvé');
-  //         return throwError(() => new Error('Email ou mot de passe incorrect'));
-  //       }
-
-  //       if (credentials.password !== this.TEST_PASSWORD) {
-  //         console.error('❌ Mot de passe incorrect');
-  //         return throwError(() => new Error('Email ou mot de passe incorrect'));
-  //       }
-
-  //       // Générer un faux token
-  //       // const token = this.generateMockToken(user);
-  //       const token = 'votre_jwt_ici';
-        
-  //       const response: AuthResponse = {
-  //         user,
-  //         token,
-  //         message: 'Connexion réussie'
-  //       };
-
-  //       console.log('✅ Connexion réussie:', user.email);
-  //       this.handleAuthSuccess(response);
-
-  //       return of(response);
-  //     }
-  //   );
-  // }
-
-  // login(credentials: any) {
-  //   // Simuler un appel API
-  //   this.isAuthenticatedSubject.next(true);
-  //   this.currentUser$.next 
-  //   localStorage.setItem('token', 'votre_jwt_ici');
-  // }
-
-  // logout() {
-  //   this.isConnectedSubject.next(false);
-  //   this.userRole = null;
-  //   this.userName = null;
-  //   localStorage.removeItem('token');
-  // }
 
 // Déconnexion
   logout(): void {
@@ -260,11 +142,15 @@ export class AuthService {
 
   // Gérer le succès de l'authentification
   private handleAuthSuccess(response: AuthResponse): void {
+    // Ne stocker le token que si le compte est validé (token présent)
     if (response.token && response.user) {
       localStorage.setItem('auth_token', response.token);
       localStorage.setItem('current_user', JSON.stringify(response.user));
       this.currentUserSubject.next(response.user);
       this.isAuthenticatedSubject.next(true);
+    } else if (response.user && !response.token) {
+      // Compte créé mais en attente de validation - ne pas authentifier
+      console.log('Compte créé en attente de validation - pas de token fourni');
     }
   }
 
@@ -285,7 +171,28 @@ export class AuthService {
       errorMessage = `Erreur: ${error.error.message}`;
     } else {
       // Erreur côté serveur
-      errorMessage = error.error?.message || `Code d'erreur: ${error.status}`;
+      if (error.error?.message) {
+        errorMessage = error.error.message;
+      } else if (error.error?.error) {
+        errorMessage = error.error.error;
+      } else if (typeof error.error === 'object') {
+        // Erreurs de validation Django (format: {"field": ["error message"]})
+        const validationErrors: string[] = [];
+        for (const field in error.error) {
+          if (Array.isArray(error.error[field])) {
+            validationErrors.push(...error.error[field]);
+          } else if (typeof error.error[field] === 'string') {
+            validationErrors.push(error.error[field]);
+          }
+        }
+        if (validationErrors.length > 0) {
+          errorMessage = validationErrors.join(', ');
+        } else {
+          errorMessage = `Code d'erreur: ${error.status}`;
+        }
+      } else {
+        errorMessage = `Code d'erreur: ${error.status}`;
+      }
     }
     
     console.error(errorMessage);

@@ -17,6 +17,15 @@ export interface User {
   token?: string;
 }
 
+// export interface Utilisateur {
+//   id?: string;
+//   username: string;
+//   email: string;
+//   type: 'ADMIN' | 'AUT_LOCALE' | 'SECOURS' | 'UTIL_SIMPLE';
+//   photo?: string;
+//   telephone_utilisateur?: string;
+// }
+
 export enum UserRole {
   Individual = 'individual',
   Organization = 'organization',

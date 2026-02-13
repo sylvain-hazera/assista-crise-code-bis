@@ -25,7 +25,7 @@ SECRET_KEY = 'django-insecure-#8)$+%o@q2+uej29dn7$-dtscvjf6g1r420@7u8$2jp73ebrah
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ["*"]
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'assista-crise.duckdns.org']
 
 # Custom user model
 AUTH_USER_MODEL = 'core.Utilisateur'
@@ -191,3 +191,12 @@ SIMPLE_JWT = {
 }
 
 AUTH_USER_MODEL = 'core.Utilisateur'
+
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+
+EMAIL_HOST = 'mailhog'  
+EMAIL_PORT = 1025
+EMAIL_USE_TLS = False
+EMAIL_USE_SSL = False
+
+DEFAULT_FROM_EMAIL = 'ne-pas-repondre@assista-crise.fr'

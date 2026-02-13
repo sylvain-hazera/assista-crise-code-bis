@@ -91,7 +91,7 @@
 
     <nav class="sidebar-nav">
       @for (item of navItems; track item.route) {
-        <!-- @if (!(item.label === 'utilisateurs' && currentUser?.userType !== UserRole.Admin)) { -->
+        @if (!(item.label === 'utilisateurs' && isAdmin())) {
           <a 
             [routerLink]="item.route" 
             routerLinkActive="active"
@@ -100,7 +100,7 @@
             <span class="material-icons">{{ item.icon }}</span>
             <span class="nav-label">{{ item.label }}</span>
           </a>
-        <!-- } -->
+        }
       }
     </nav>
 
