@@ -198,7 +198,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
             new maplibregl.Popup()
                 .setLngLat(coordinates)
                 .setHTML(
-                    `Nom de ${offerRequest}: ${name}<br>Statut de ${offerRequest}: ${statut}`
+                    `Nom de ${offerRequest}: ${titre}<br>Statut de ${offerRequest}: ${statut}`
                 )
                 .addTo(this.map!);
         });
@@ -390,10 +390,18 @@ private addHoverEffect() {
       // MapLibre attend : [Longitude, Latitude]
       if (crisis.latitude && crisis.longitude) {
         console.log('Ajout de la crise sur la carte:', crisis);
-        const radiusCenter = [crisis.longitude, crisis.latitude] as [number, number];
-        const radius = 10; // kilometer
-        const circle = turf.circle(radiusCenter, radius, {steps: 64, units: 'kilometers'})
+        let radiusCenter = [crisis.longitude, crisis.latitude] as [number, number];
+        let radius = crisis.radius || 10;
+        let circle = turf.circle(radiusCenter, radius, {steps: 64, units: 'kilometers'})
         circle.properties = {center: radiusCenter, radius: radius, nom: crisis['nom'], description: crisis['description'], date_debut: crisis['date_debut']};
+        console.log('Fusion de cercles pour la crise:', this.crisisCircle,circle);
+        for (const crisisCircles of this.crisisCircle) {
+          if(turf.booleanIntersects(crisisCircles, circle)) {
+            radiusCenter = [(radiusCenter[0] + crisisCircles.properties.center[0])/2, (radiusCenter[1] + crisisCircles.properties.center[1])/2];
+            radius = Math.max(radius, crisisCircles.properties.radius) * 2;
+            circle = turf.circle(radiusCenter, radius, {steps: 64, units: 'kilometers'});
+          }
+        }
         this.crisisCircle.push(circle);
       }
     });

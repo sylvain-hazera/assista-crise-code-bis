@@ -9,6 +9,7 @@ export interface Crisis {
   //severity: string;
   nom: string;
   location: string;
+  radius: number; // in kilometers
   description: string;
   status: string;
   date_debut?: Date;
