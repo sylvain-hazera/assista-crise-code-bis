@@ -7,13 +7,10 @@
 // }
 
 export interface Crisis {
-  id?: number;
-  type: string;
-  //severity: string;
+  id?: string;
   nom: string;
-  location: string;
-  description: string;
-  status: string;
+  description?: string;
+  localisation?: { type: 'Point'; coordinates: [number, number] };
   date_debut?: Date;
   date_fin?: Date;
   latitude: number;

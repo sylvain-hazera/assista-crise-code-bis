@@ -69,7 +69,7 @@ export class DeclareCrisisFormComponent implements OnInit{
     this.crisisForm = this.formBuilder.group({
       eventType: ['', Validators.required],
       title: ['', Validators.required],
-      description: ['', [Validators.required, Validators.minLength(10)]],
+      description: [''],
       streetNumber: ['', Validators.required],
       department: ['', Validators.required],
       commune: ['', Validators.required],
@@ -150,17 +150,13 @@ export class DeclareCrisisFormComponent implements OnInit{
 
   onSubmit(): void {
     if(this.crisisForm.valid) {
-      const formData = new FormData();
-
-      formData.append('type_evenement', this.crisisForm.get('eventType')?.value);
-      formData.append('titre', this.crisisForm.get('title')?.value);
-      formData.append('description', this.crisisForm.get('description')?.value);
-
       const street = this.crisisForm.get('streetNumber')?.value;
       const communeCode = this.crisisForm.get('commune')?.value;
       const commune = this.communes.find(c => c.code === communeCode);
       const postalCode = commune?.codesPostaux[0] || '';
       const query = `${street} ${postalCode}`;
+      
+      // D'abord récupérer les coordonnées, PUIS créer la crise
       this.geolocationService.getCoordinates(query).subscribe({
         next: (response) => {
           if (response.features && response.features.length > 0) {
@@ -168,6 +164,8 @@ export class DeclareCrisisFormComponent implements OnInit{
             this.longitude = coords[0];
             this.latitude = coords[1];
             
+            // Maintenant qu'on a les coordonnées, on peut créer la crise
+            this.createCrisis();
           } else {
             alert("Adresse introuvable. Vérifiez le numéro et le code postal.");
           }
@@ -175,29 +173,6 @@ export class DeclareCrisisFormComponent implements OnInit{
         error: (err) => {
           console.error(err);
           alert("Erreur de connexion au service d'adresse.");
-        }
-      });
-
-      const localisation = {
-        type: 'Point',
-        coordinates: [this.longitude, this.latitude]
-      };
-      formData.append('localisation', JSON.stringify(localisation));
-      if (this.selectedFile) {
-        formData.append('photo', this.selectedFile);
-      }
-      formData.append('statut', 'NON_TRAITEE');
-      // formData.append('statut', Status.NON_TRAITEE.toString());
-
-      this.crisisService.createCrisis(formData).subscribe({
-        next: (response) => {
-          console.log('Crisis créée:', response);
-          alert('Votre crisis a été enregistrée avec succès !');
-          this.router.navigate(['/accueil']);
-        },
-        error: (err) => {
-          console.error('Erreur création crisis:', err);
-          alert('Erreur lors de l\'enregistrement. Veuillez réessayer.');
         }
       });
 
@@ -212,6 +187,51 @@ export class DeclareCrisisFormComponent implements OnInit{
         alert('Veuillez remplir tous les champs obligatoires');
       }
     }
+  }
+
+  private createCrisis(): void {
+    const formData = new FormData();
+
+    formData.append('type_evenement', this.crisisForm.get('eventType')?.value);
+    formData.append('nom', this.crisisForm.get('title')?.value);
+    formData.append('description', this.crisisForm.get('description')?.value);
+
+    const localisation = {
+      type: 'Point',
+      coordinates: [this.longitude, this.latitude]
+    };
+    formData.append('localisation', JSON.stringify(localisation));
+    
+    if (this.selectedFile) {
+      formData.append('photo', this.selectedFile);
+    }
+    formData.append('statut', 'NON_TRAITEE');
+
+    this.crisisService.createCrisis(formData).subscribe({
+      next: (response) => {
+        console.log('Crisis créée:', response);
+        alert('Votre crise a été enregistrée avec succès !');
+        this.router.navigate(['/accueil']);
+      },
+      error: (err) => {
+        console.error('Erreur création crisis:', err);
+        console.error('Détails:', err.error);
+        
+        let errorMessage = 'Erreur lors de l\'enregistrement. Veuillez réessayer.';
+        
+        if (err.status === 401) {
+          errorMessage = 'Vous devez être connecté en tant qu\'administrateur ou autorité locale pour déclarer une crise.';
+        } else if (err.status === 403) {
+          errorMessage = 'Vous n\'avez pas les permissions nécessaires pour déclarer une crise.';
+        } else if (err.status === 400 && err.error) {
+          // Afficher les erreurs de validation spécifiques
+          const details = Object.values(err.error).flat().join(' ');
+          errorMessage = `Erreur de validation : ${details}`;
+        }
+        
+        alert(errorMessage);
+      }
+    });
   }
 
   goBack(): void {
