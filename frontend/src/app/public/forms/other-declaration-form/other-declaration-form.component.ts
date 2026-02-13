@@ -9,7 +9,7 @@ import { LocationService, Department, Commune } from '../../../services/location
 enum StateForm {
   DeclareSafe,
   OtherDeclaration
-}
+} 
 
 @Component({
   selector: 'app-other-declaration-form',
