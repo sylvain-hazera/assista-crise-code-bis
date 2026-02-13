@@ -64,7 +64,7 @@ export class DeclareCrisisFormComponent implements OnInit{
       error: (err) => console.error('Erreur chargement départements:', err)
     });
   }
-
+ 
   initForm(): void {
     this.crisisForm = this.formBuilder.group({
       eventType: ['', Validators.required],
