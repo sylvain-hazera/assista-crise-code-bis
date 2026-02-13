@@ -66,6 +66,7 @@ class Crise(models.Model):
     localisation = gis_models.PointField(srid=4326)
     date_debut = models.DateTimeField(auto_now_add=True)
     date_fin = models.DateTimeField(null=True, blank=True)
+    description = models.CharField(max_length=150, null=True, blank=True)
 
 
     validateur = models.ForeignKey(
