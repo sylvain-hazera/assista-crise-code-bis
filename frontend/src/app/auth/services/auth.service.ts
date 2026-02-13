@@ -32,6 +32,9 @@ interface AuthResponse {
   providedIn: 'root'
 })
 export class AuthService {
+  deleteAccount() {
+    throw new Error('Method not implemented.');
+  }
   private apiUrl = `${environment.apiUrl}/users`;  // Utilise /api/users pour register/login
   
   private currentUserSubject = new BehaviorSubject<User | null>(null);
@@ -102,8 +105,19 @@ export class AuthService {
 
   isAdmin(): boolean {
     const user = this.currentUserSubject.value;
-    return user ? user.userType !== UserRole.Individual : false;
+    if (!user) return false;
+    
+    return user.userType === UserRole.Admin || 
+          user.userType === UserRole.Rescue || 
+          user.userType === UserRole.Organization;
   }
+
+  isSysAdmin(): boolean {
+    const user = this.currentUserSubject.value;
+    return user ? user.userType === UserRole.Admin : false;
+  }
+
+
   // Obtenir l'utilisateur actuel
   getCurrentUser(): User | null {
     return this.currentUserSubject.value;
@@ -141,17 +155,53 @@ export class AuthService {
   }
 
   // Gérer le succès de l'authentification
+  // private handleAuthSuccess(response: AuthResponse): void {
+  //   if (response.token && response.user) {
+  //     localStorage.setItem('auth_token', response.token);
+  //     localStorage.setItem('current_user', JSON.stringify(response.user));
+  //     this.currentUserSubject.next(response.user);
+  //     this.isAuthenticatedSubject.next(true);
+  //   }
+  // }
+
   private handleAuthSuccess(response: AuthResponse): void {
     // Ne stocker le token que si le compte est validé (token présent)
     if (response.token && response.user) {
+      // 1. On récupère l'utilisateur "brut" du serveur (type any pour manipuler les champs snake_case)
+      const rawUser = response.user as any;
+
+      // 2. On crée un objet propre qui respecte l'interface User (camelCase)
+      const mappedUser: User = {
+        ...rawUser, // Garde les champs déjà corrects (id, email, etc.)
+        pseudo: rawUser.username || rawUser.pseudo,
+        lastName: rawUser.last_name || rawUser.lastName,
+        firstName: rawUser.first_name || rawUser.firstName,
+        phone: rawUser.telephone_utilisateur || rawUser.phone,
+        postalCode: rawUser.postal_code || rawUser.postalCode,
+        // Utilisation du mapper de rôle que nous avons vu précédemment
+        userType: this.mapBackendRoleToEnum(rawUser.type || rawUser.userType)
+      };
+
       localStorage.setItem('auth_token', response.token);
-      localStorage.setItem('current_user', JSON.stringify(response.user));
-      this.currentUserSubject.next(response.user);
+      localStorage.setItem('current_user', JSON.stringify(mappedUser));
+      
+      this.currentUserSubject.next(mappedUser);
       this.isAuthenticatedSubject.next(true);
     } else if (response.user && !response.token) {
       // Compte créé mais en attente de validation - ne pas authentifier
       console.log('Compte créé en attente de validation - pas de token fourni');
     }
+  }
+
+  // Ajoute cette petite fonction helper dans AuthService pour le rôle
+  private mapBackendRoleToEnum(backendRole: string): UserRole {
+    const mapping: Record<string, UserRole> = {
+      'UTIL_SIMPLE': UserRole.Individual,
+      'AUT_LOCALE': UserRole.Organization,
+      'SECOURS': UserRole.Rescue,
+      'ADMIN': UserRole.Admin
+    };
+    return mapping[backendRole] || UserRole.Individual;
   }
 
   // Nettoyer les données d'authentification

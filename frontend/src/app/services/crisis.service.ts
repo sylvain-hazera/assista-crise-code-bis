@@ -44,7 +44,19 @@ export class CrisisService {
   //   return this.http.get<Crisis[]>(`${this.apiUrl}/`, { params });
   // }
   
-  getCrisis(id: string): Observable<Crisis> {
+  /**
+ * Récupère toutes les crises créées par un utilisateur spécifique
+ * @param userId L'ID de l'utilisateur (issu de l'objet User)
+ */
+  getMyCrisis(userId: number | string): Observable<Crisis[]> {
+    // On passe l'ID en paramètre (ex: /api/crises/?user_id=1)
+    // Assure-toi que ton backend Django filtre bien sur ce paramètre
+    const params = new HttpParams().set('user_id', userId.toString());
+    
+    return this.http.get<Crisis[]>(this.apiUrl, { params });
+  }
+
+  getCrisis(id: string | number): Observable<Crisis> {
     return this.http.get<Crisis>(`${this.apiUrl}/${id}/`);
   }
   

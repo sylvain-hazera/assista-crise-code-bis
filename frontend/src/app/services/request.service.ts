@@ -47,7 +47,8 @@ export class RequestService {
   getMyRequests(): Observable<Request[]> {
     return this.http.get<Request[]>(`${this.apiUrl}/my_requests/`);
   }
-  
+
+
   getRequest(id: string): Observable<Request> {
     return this.http.get<Request>(`${this.apiUrl}/${id}/`);
   }

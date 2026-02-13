@@ -1,21 +1,14 @@
-// export interface Crisis {
-//   id?: string;
-//   nom: string;
-//   localisation: { type: 'Point'; coordinates: [number, number] };
-//   date_debut?: string;
-//   date_fin?: string;
-// }
-
 export interface Crisis {
   id?: string;
-  nom: string;
+  name: string;
   description?: string;
-  localisation?: { type: 'Point'; coordinates: [number, number] };
-  date_debut?: Date;
-  date_fin?: Date;
+  location?: { type: 'Point'; coordinates: [number, number] };
+  start_date?: Date;
+  end_date?: Date;
   latitude: number;
   longitude: number;
-  validateur?: string;
+  validator?: string;
+  status?: string;
 }
 
 

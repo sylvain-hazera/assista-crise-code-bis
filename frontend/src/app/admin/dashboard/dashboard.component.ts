@@ -256,8 +256,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
   private updateRecentAnnouncements(crises: any[]): void {
     this.recentAnnouncements = crises.map(crisis => ({
       id: crisis.id,
-      title: crisis.nom || 'Crise sans nom',
-      date: this.formatDate(crisis.date_debut),
+      title: crisis.name || 'Crise sans nom',
+      date: this.formatDate(crisis.start_date),
       status: this.mapCrisisStatus(crisis.status)
     }));
   }

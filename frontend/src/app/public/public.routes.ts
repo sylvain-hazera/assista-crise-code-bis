@@ -4,6 +4,7 @@ import { GuideComponent } from './guide/guide.component';
 import { AboutComponent } from './about/about.component';
 import { GlobalMapComponent } from './global-map/global-map.component';
 import { CrisisComponent } from './crisis/crisis.component';
+import { authGuard } from '../core/guards/auth.guard';
 
 
 export const PUBLIC_ROUTES: Routes = [
@@ -22,6 +23,12 @@ export const PUBLIC_ROUTES: Routes = [
         path: 'register',
         loadComponent: () => import('../auth/component/register/register.component')
           .then(m => m.RegisterComponent)
+      },
+      {
+        path: 'settings',
+        canActivate: [authGuard],
+        loadComponent: () => import('./settings/settings.component')
+          .then(m => m.SettingsComponent)
       },
       {
         path: 'help-proposal',
