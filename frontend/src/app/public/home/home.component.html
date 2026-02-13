@@ -52,7 +52,9 @@
     </div>
   </div>
 
-  <button class="btn btn-warning" (click)="navigateTo('crisis-declaration')">
-    Déclarer une crise
-  </button>
+  @if (canDeclareCrisis) {
+    <button class="btn btn-warning" (click)="navigateTo('crisis-declaration')">
+      Déclarer une crise
+    </button>
+  }
 </div>
