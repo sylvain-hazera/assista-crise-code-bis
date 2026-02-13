@@ -8,7 +8,7 @@ import { Request } from '../../../models/request.model';
 import { OfferService } from '../../../../services/offer.service';
 import { Offer } from '../../../models/offer.model';
 import { GeolocationService } from '../../../../services/geolocation.service';
-import { Subscription } from 'rxjs';
+import { forkJoin, Subscription } from 'rxjs';
 import { FeatureCollection, Geometry, Polygon } from 'geojson';
 
 @Component({
@@ -48,11 +48,8 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     if (this.crises.length === 0) {
       this.loadCrises();
     }
-    if (this.requests.length === 0) {
-      this.loadRequests();
-    }
-    if (this.offers.length === 0) {
-      this.loadOffers();
+    if (this.requests.length === 0 || this.offers.length === 0) {
+      this.loadHelpData();
     }
   }
 
@@ -121,53 +118,46 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   jsonToGeoJSON(data: any[]) {
-  return {
-    type: 'FeatureCollection',
+    return {
+      type: 'FeatureCollection',
+      features: data
+        .filter(d => d.latitude && d.longitude)
+        .map(d => ({
+          type: 'Feature',
+          geometry: {
+            type: 'Point',
+            coordinates: [
+              Number(d.longitude),
+              Number(d.latitude)
+            ]
+          },
+          properties: {
+            ...d
+          }
+        }))
+    };
+  }
 
-    features: data
-      .filter(d => d.latitude && d.longitude)
-      .map(d => ({
-        type: 'Feature',
+  loadHelpData() {
+    this.subscription = forkJoin({
+      requests: this.requestService.getAllRequests(),
+      proposals: this.offerService.getAllOffers()
+    }).subscribe({
+      next: ({ requests, proposals }) => {
+        console.log('Requests:', requests);
+        console.log('Proposals:', proposals);
 
-        geometry: {
-          type: 'Point',
-          coordinates: [
-            Number(d.longitude),
-            Number(d.latitude)
-          ]
-        },
-        properties: {
-          ...d
-        }
-      }))
-  };
-}
-
-  loadRequests() {
-    this.subscription = this.requestService.getAllRequests().subscribe({
-      next: (requests) => {
-        console.log('Données de demandes d\'aide reçues:', requests);
         this.requests = requests;
+        this.offers = proposals;
+
+        this.requestGeoJSON = this.jsonToGeoJSON(requests);
+        this.proposalGeoJSON = this.jsonToGeoJSON(proposals);
+
         if (this.map) {
-          this.requestGeoJSON = this.jsonToGeoJSON(requests);
-          console.log('Help Requests GeoJSON:', this.requestGeoJSON);
           this.addSourceAndLayers();
         }
       },
-      error: (error) => console.error('Erreur API:', error)
-    });
-  }
-
-  loadOffers() {
-    this.subscription = this.offerService.getAllOffers().subscribe({
-      next: (offers) => {
-        console.log('Données de propositions d\'aide reçues:', offers);
-        this.offers = offers;
-        if (this.map) {
-          this.proposalGeoJSON = this.jsonToGeoJSON(offers);
-        }
-      },
-      error: (error) => console.error('Erreur API:', error)
+      error: (err) => console.error('Erreur API:', err)
     });
   }
 
@@ -186,7 +176,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
           type: 'geojson',
           data: mergedGeoJSON,
           cluster: true,
-          clusterMaxZoom: 14, // Max zoom to cluster points on
+          clusterMaxZoom: 8, // Max zoom to cluster points on
           clusterRadius: 50 // Radius of each cluster when clustering points (defaults to 50)
         });
       }
@@ -231,19 +221,6 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
             }
         });
 
-        this.map!.addLayer({
-            id: 'unclustered-point',
-            type: 'circle',
-            source: 'clusters',
-            filter: ['!', ['has', 'point_count']],
-            paint: {
-                'circle-color': '#11b4da',
-                'circle-radius': 5,
-                'circle-stroke-width': 1,
-                'circle-stroke-color': '#fff'
-            }
-        });
-
         this.map!.on('click', 'unclustered-point', (e) => {
             if (!e.features || e.features.length === 0) return;
             const geometry = e.features[0].geometry as GeoJSON.Point;
@@ -272,6 +249,24 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
                 .addTo(this.map!);
         });
         
+          this.map!.addLayer({
+            id: 'unclustered-point',
+            type: 'circle',
+            source: 'clusters',
+            filter: ['!', ['has', 'point_count']],
+            paint: {
+                'circle-color': [
+                'case',
+                ['has', 'nom_demande'],
+                '#ff0000',
+                '#11b4da'
+                ],
+                'circle-radius': 5,
+                'circle-stroke-width': 1,
+                'circle-stroke-color': '#fff'
+            }
+        });
+
         this.map!.on('click', 'clusters-layer', async (e) => {
             const features = this.map!.queryRenderedFeatures(e.point, {
                 layers: ['clusters-layer']
@@ -287,13 +282,87 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
         });
 
         this.map!.on('mouseenter', 'clusters-layer', () => {
-            console.log('mouseenter cluster');
             this.map!.getCanvas().style.cursor = 'pointer';
         });
         this.map!.on('mouseleave', 'clusters-layer', () => {
-            console.log('mouseleave cluster');
             this.map!.getCanvas().style.cursor = '';
         });
+        this.addHullLayer();
+        this.addHoverEffect();
+    });
+  }
+
+  private addHullLayer() {
+
+    this.map!.addSource('cluster-hull', {
+      type: 'geojson',
+      data: {
+        type: 'FeatureCollection',
+        features: []
+      }
+    });
+
+    this.map!.addLayer({
+      id: 'cluster-hull-fill',
+      type: 'fill',
+      source: 'cluster-hull',
+      paint: {
+        'fill-color': '#0099ff',
+        'fill-opacity': 0.25
+      }
+    });
+
+    this.map!.addLayer({
+      id: 'cluster-hull-line',
+      type: 'line',
+      source: 'cluster-hull',
+      paint: {
+        'line-color': '#0066cc',
+        'line-width': 2
+      }
+    });
+  }
+
+private addHoverEffect() {
+
+    const source = this.map!.getSource('clusters') as maplibregl.GeoJSONSource;
+
+    this.map!.on('mouseenter', 'clusters-layer', async (e) => {
+
+      this.map!.getCanvas().style.cursor = 'pointer';
+
+      const feature = e.features?.[0];
+      if (!feature) return;
+
+      const clusterId = feature.properties!['cluster_id'];
+
+      try {
+        const points = await source.getClusterLeaves(clusterId, 1000, 0);
+
+        if (!points || !points.length) return;
+
+        const fc = turf.featureCollection(points as any[]);
+
+        const hull = turf.convex(fc);
+
+        if (!hull) return;
+
+        const hullSource = this.map!.getSource('cluster-hull') as maplibregl.GeoJSONSource;
+        hullSource.setData(hull);
+      } catch (err) {
+        console.error('Error getting cluster leaves:', err);
+      }
+    });
+
+    this.map!.on('mouseleave', 'clusters-layer', () => {
+
+      this.map!.getCanvas().style.cursor = '';
+
+      const hullSource = this.map!.getSource('cluster-hull') as maplibregl.GeoJSONSource;
+      hullSource?.setData({
+        type: 'FeatureCollection',
+        features: []
+      });
     });
   }
 
@@ -319,7 +388,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
           type: 'geojson',
           data: circleGeojson
         });
-
+        console.log('Circle GeoJSON:', circleGeojson);
         this.map!.addLayer({
           id: 'location-radius',
           type: 'fill',
@@ -328,6 +397,22 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
             'fill-color': '#8CCFFF',
             'fill-opacity': 0.5
           }
+        });
+
+        this.map!.on('click', 'location-radius', (e) => {
+        const properties = e.features?.[0]?.properties || {};
+        console.log('Crisis properties:', properties);
+        new maplibregl.Popup()
+        .setHTML(`
+          <div style="color: black; font-family: sans-serif;">
+            <h3 style="margin: 0 0 5px 0;">${properties?.['nom'] || 'Nom inconnu'}</h3>
+            <p style="margin: 0;">${properties?.['description'] || 'Pas de description'}</p>
+            <br>
+            <small>Créé le : ${new Date(properties?.['date_debut'] || Date.now()).toLocaleDateString()}</small>
+          </div>
+        `)
+        .setLngLat(e.lngLat)
+        .addTo(this.map!);
         });
       }
       if (this.requests.length > 0) {
@@ -350,30 +435,12 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     this.crises.forEach(crisis => {
       // MapLibre attend : [Longitude, Latitude]
       if (crisis.latitude && crisis.longitude) {
-        
-        // Création du Popup HTML
-        const popupContent = `
-          <div style="color: black; font-family: sans-serif;">
-            <h3 style="margin: 0 0 5px 0;">${crisis.name}</h3>
-            <p style="margin: 0;">${crisis.description || 'Pas de description'}</p>
-            <br>
-            <small>Créé le : ${new Date(crisis.createdAt || Date.now()).toLocaleDateString()}</small>
-          </div>
-        `;
-
-        const popup = new maplibregl.Popup({ offset: 25 })
-          .setHTML(popupContent);
-
-        // Création du Marker
-        const marker = new maplibregl.Marker({ color: 'red' })
-          .setLngLat([crisis.longitude, crisis.latitude])
-          .setPopup(popup)
-          .addTo(this.map!);
-
-        this.CrisisMarkers.push(marker);
+        console.log('Ajout de la crise sur la carte:', crisis);
         const radiusCenter = [crisis.longitude, crisis.latitude] as [number, number];
         const radius = 10; // kilometer
-        this.crisisCircle.push(turf.circle(radiusCenter, radius, {steps: 64, units: 'kilometers'}));
+        const circle = turf.circle(radiusCenter, radius, {steps: 64, units: 'kilometers'})
+        circle.properties = {center: radiusCenter, radius: radius, nom: crisis.nom, description: crisis.description, date_debut: crisis.date_debut};
+        this.crisisCircle.push(circle);
       }
     });
   }
