@@ -1,0 +1,84 @@
+<div class="teams-page">
+  <div class="page-header">
+    <h1>Gestion des Équipes</h1>
+    <button class="btn btn-primary" (click)="openCreateModal()">
+      <span class="material-icons">add</span>
+      <span class="btn-text">Nouvelle équipe</span>
+    </button>
+  </div>
+
+  <!-- Teams Grid -->
+  <div class="teams-grid">
+    @for (team of teams; track team.id) {
+      <div class="team-card" (click)="viewTeamDetails(team)">
+        <div class="card-header">
+          <h3>{{ team.name }}</h3>
+          <span class="team-id">{{ team.id }}</span>
+        </div>
+        <p class="team-description">{{ team.description }}</p>
+        
+        <div class="team-stats">
+          <div class="stat-item">
+            <span class="material-icons">groups</span>
+            <span>{{ getMemberCount(team) }} membres</span>
+          </div>
+          <div class="stat-item">
+            <span class="material-icons">task_alt</span>
+            <span>{{ team.activeMissions }} missions</span>
+          </div>
+        </div>
+        
+        <div class="team-footer">
+          <div class="team-leader">
+            <span class="material-icons">person</span>
+            <span>{{ team.leader }}</span>
+          </div>
+        </div>
+      </div>
+    } @empty {
+      <div class="empty-state">
+        <span class="material-icons">group_off</span>
+        <p>Aucune équipe créée</p>
+        <button class="btn btn-secondary" (click)="openCreateModal()">Créer une équipe</button>
+      </div>
+    }
+  </div>
+
+  <!-- Team Detail Modal -->
+  @if (showTeamDetailModal && selectedTeam) {
+    <div class="modal-overlay" (click)="showTeamDetailModal = false">
+      <div class="modal-content" (click)="$event.stopPropagation()">
+        <div class="modal-header">
+          <h2>{{ selectedTeam.name }}</h2>
+          <button class="close-btn" (click)="showTeamDetailModal = false">
+            <span class="material-icons">close</span>
+          </button>
+        </div>
+        
+        <div class="modal-body">
+          <p class="team-description">{{ selectedTeam.description }}</p>
+          
+          <div class="members-section">
+            <h3>Membres de l'équipe</h3>
+            <div class="members-list">
+              @for (member of selectedTeam.members; track member.id) {
+                <div class="member-item">
+                  <div class="member-info">
+                    <span class="material-icons">account_circle</span>
+                    <div>
+                      <p class="member-name">{{ member.name }}</p>
+                      <p class="member-role">{{ member.role }}</p>
+                    </div>
+                  </div>
+                  <span class="status-badge" [ngClass]="getStatusClass(member.status)">
+                    {{ member.status }}
+                  </span>
+                </div>
+              }
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  }
+</div>

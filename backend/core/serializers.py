@@ -55,9 +55,9 @@ class CriseSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
     def get_latitude(self, obj):
-        return obj.localisation.y if obj.localisation else None
+        return obj.location.y if obj.location else None
     def get_longitude(self, obj):
-        return obj.localisation.x if obj.localisation else None
+        return obj.location.x if obj.location else None
 
 class DemandeSerializer(serializers.ModelSerializer):
 
