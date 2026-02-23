@@ -59,10 +59,23 @@ class Utilisateur(AbstractUser):
     def __str__(self) -> str:  # pragma: no cover - display helper
         return self.username
 
+class TypeCrise(models.TextChoices):
+    
+    INCEDIE = "INCEDIE", "Incendie"
+    INONDATION = "INONDATION", "Inondation"
+    ACCIDENT = "ACCIDENT", "Accident"
+    CATASTROPHE_NATURELLE = "CATASTROPHE_NATURELLE", "Catastrophe naturelle"
+    URGENCE_MEDICALE = "URGENCE_MEDICALE", "Urgence médicale"
+    AUTRE = "AUTRE", "Autre"
 
 class Crise(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=100)
+    type = models.CharField(
+        max_length=50,
+        choices=TypeCrise.choices,
+        default=TypeCrise.AUTRE,
+    )
     location = gis_models.PointField(srid=4326)
     radius = models.IntegerField(default=10)
     start_date = models.DateTimeField(auto_now_add=True)

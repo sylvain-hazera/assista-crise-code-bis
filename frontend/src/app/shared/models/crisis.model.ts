@@ -1,6 +1,7 @@
 export interface Crisis {
   id?: string;
   name: string;
+  type: string;
   description?: string;
   location?: { type: 'Point'; coordinates: [number, number] };
   radius?: number;

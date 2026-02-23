@@ -168,7 +168,6 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
         type: 'FeatureCollection',
         features: geoJsonList.flatMap(geoJson => geoJson ? geoJson.features : [])
         };
-    console.log('Merged GeoJSON:', mergedGeoJSON);
     this.map.on('load', () => {
       // Ajout de la source pour les demandes d'aide
       if (mergedGeoJSON) {
@@ -388,7 +387,6 @@ private addHoverEffect() {
           type: 'geojson',
           data: circleGeojson
         });
-        console.log('Circle GeoJSON:', circleGeojson);
         this.map!.addLayer({
           id: 'location-radius',
           type: 'fill',
@@ -401,14 +399,14 @@ private addHoverEffect() {
 
         this.map!.on('click', 'location-radius', (e) => {
         const properties = e.features?.[0]?.properties || {};
-        console.log('Crisis properties:', properties);
         new maplibregl.Popup()
         .setHTML(`
           <div style="color: black; font-family: sans-serif;">
-            <h3 style="margin: 0 0 5px 0;">${properties?.['nom'] || 'Nom inconnu'}</h3>
+            <h3 style="margin: 0 0 5px 0;">${properties?.['name'] || 'Nom inconnu'}</h3>
             <p style="margin: 0;">${properties?.['description'] || 'Pas de description'}</p>
+            <p style="margin: 0;"><strong>Type:</strong> ${properties?.['type'] || 'Type inconnu'}</p>
             <br>
-            <small>Créé le : ${new Date(properties?.['date_debut'] || Date.now()).toLocaleDateString()}</small>
+            <small>Créé le : ${new Date(properties?.['start_date'] || Date.now()).toLocaleDateString()}</small>
           </div>
         `)
         .setLngLat(e.lngLat)
@@ -435,18 +433,17 @@ private addHoverEffect() {
     this.crises.forEach(crisis => {
       // MapLibre attend : [Longitude, Latitude]
       if (crisis.latitude && crisis.longitude) {
-        console.log('Ajout de la crise sur la carte:', crisis);
         let radiusCenter = [crisis.longitude, crisis.latitude] as [number, number];
         let radius = crisis.radius || 10;
         let circle = turf.circle(radiusCenter, radius, {steps: 64, units: 'kilometers'})
-        circle.properties = {center: radiusCenter, radius: radius, nom: crisis['nom'], description: crisis['description'], date_debut: crisis['date_debut']};
-        console.log('Fusion de cercles pour la crise:', this.crisisCircle,circle);
+        circle.properties = {center: radiusCenter, radius: radius, name: crisis['name'], description: crisis['description'], start_date: crisis['start_date'], type: crisis['type']};
         for (const crisisCircles of this.crisisCircle) {
-          if(turf.booleanIntersects(crisisCircles, circle)) {
+          if(turf.booleanIntersects(crisisCircles, circle) && crisisCircles.properties.type == crisis['type']) {
+            this.crisisCircle = this.crisisCircle.filter(c => c !== crisisCircles);
             radiusCenter = [(radiusCenter[0] + crisisCircles.properties.center[0])/2, (radiusCenter[1] + crisisCircles.properties.center[1])/2];
-            radius = Math.max(radius, crisisCircles.properties.radius) * 2;
+            radius = Math.max(turf.distance(crisisCircles.properties.center, radiusCenter, {units: 'kilometers'}) + crisisCircles.properties.radius, turf.distance(circle.properties['center'], radiusCenter, {units: 'kilometers'}) + circle.properties['radius']);
             circle = turf.circle(radiusCenter, radius, {steps: 64, units: 'kilometers'});
-            circle.properties = {center: radiusCenter, radius: radius, nom: crisis['nom'], description: crisis['description'], date_debut: crisis['date_debut']};
+            circle.properties = {center: radiusCenter, radius: radius, name: crisis['name'], description: crisis['description'], start_date: crisis['start_date'], type: crisis['type']};
           }
         }
         this.crisisCircle.push(circle);
