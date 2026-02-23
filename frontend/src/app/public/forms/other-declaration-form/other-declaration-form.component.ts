@@ -263,7 +263,7 @@ export class OtherDeclarationFormComponent implements OnInit {
   private submitDeclareSafeForm(): void {
     const formData = new FormData();
 
-    formData.append('type_evenement', this.declareSafeForm.get('eventType')?.value);
+    formData.append('titre', 'Je suis en sécurité');
     formData.append('prenom_information', this.declareSafeForm.get('firstName')?.value);
     formData.append('nom_information', this.declareSafeForm.get('lastName')?.value);
     formData.append('email_information', this.declareSafeForm.get('email')?.value);
@@ -279,7 +279,12 @@ export class OtherDeclarationFormComponent implements OnInit {
       formData.append('photo', this.selectedFile);
     }
 
-    formData.append('statut', 'NON_TRAITEE');
+    formData.append('statut', 'DISPONIBLE');
+    
+    // Utiliser le TypeInformation par défaut (TODO: récupérer dynamiquement)
+    formData.append('type_information', 'c755bec1-4ae1-407e-b487-160300491cf7');
+
+    console.log('FormData envoyé (DeclareSafe):', Array.from(formData.entries()));
 
     this.informationService.createInformation(formData).subscribe({
       next: (response) => {
@@ -289,6 +294,7 @@ export class OtherDeclarationFormComponent implements OnInit {
       },
       error: (err) => {
         console.error('Erreur création information:', err);
+        console.error('Détails erreur:', err.error);
         alert('Erreur lors de l\'enregistrement. Veuillez réessayer.');
       }
     });
@@ -297,10 +303,11 @@ export class OtherDeclarationFormComponent implements OnInit {
   private submitOtherInformationForm(): void {
     const formData = new FormData();
 
-    formData.append('type_evenement', this.otherInformationForm.get('eventType')?.value);
-    formData.append('type_information', this.otherInformationForm.get('informationType')?.value);
-    formData.append('description', this.otherInformationForm.get('description')?.value);
-    formData.append('addressVisible', this.otherInformationForm.get('addressVisible')?.value);
+    formData.append('titre', this.otherInformationForm.get('description')?.value.substring(0, 100)); // Titre = début de la description
+    formData.append('prenom_information', 'Anonyme'); // Information n'a pas de prénom dans ce form
+    formData.append('nom_information', 'Anonyme'); // Information n'a pas de nom dans ce form
+    formData.append('email_information', 'anonyme@example.com'); // Email requis mais pas dans le form
+    formData.append('telephone_information', '0000000000'); // Téléphone requis mais pas dans le form
 
     const localisation = {
       type: 'Point',
@@ -312,7 +319,12 @@ export class OtherDeclarationFormComponent implements OnInit {
       formData.append('photo', this.selectedFile);
     }
 
-    formData.append('statut', 'NON_TRAITEE');
+    formData.append('statut', 'DISPONIBLE');
+    
+    // Utiliser le TypeInformation par défaut (TODO: récupérer dynamiquement)
+    formData.append('type_information', 'c755bec1-4ae1-407e-b487-160300491cf7');
+
+    console.log('FormData envoyé (OtherInformation):', Array.from(formData.entries()));
 
     this.informationService.createInformation(formData).subscribe({
       next: (response) => {
@@ -322,6 +334,7 @@ export class OtherDeclarationFormComponent implements OnInit {
       },
       error: (err) => {
         console.error('Erreur création information:', err);
+        console.error('Détails erreur:', err.error);
         alert('Erreur lors de l\'enregistrement. Veuillez réessayer.');
       }
     });
