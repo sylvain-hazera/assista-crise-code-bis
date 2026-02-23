@@ -379,6 +379,9 @@ private addHoverEffect() {
       // Si on a déjà des données (reçues avant le chargement de la carte), on affiche
       if (this.crises.length > 0) {
         this.addCrisisMarkers();
+        this.crisisCircle.sort(
+          (b, a) => a.properties.radius - b.properties.radius
+        );
         const circleGeojson: FeatureCollection<Polygon> = {
         type: 'FeatureCollection',
         features: this.crisisCircle
