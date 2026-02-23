@@ -8,26 +8,26 @@ import { Observable } from 'rxjs';
   providedIn: 'root'
 })
 export class InformationService {
-  private apiUrl = `${environment.apiUrl}/informations/`;
+  private apiUrl = `${environment.apiUrl}/informations`;
   constructor(private http: HttpClient) { }
 
   getInformations(params?: any): Observable<Information[]> {
-    return this.http.get<Information[]>(`${this.apiUrl}/informations/`, { params });
+    return this.http.get<Information[]>(`${this.apiUrl}/`, { params });
   }
 
   getInformation(id: string): Observable<Information> {
-    return this.http.get<Information>(`${this.apiUrl}/informations/${id}/`);
+    return this.http.get<Information>(`${this.apiUrl}/${id}/`);
   }
 
   createInformation(data: Partial<Information> | FormData): Observable<Information> {
-    return this.http.post<Information>(`${this.apiUrl}/informations/`, data);
+    return this.http.post<Information>(`${this.apiUrl}/`, data);
   }
 
   updateInformation(id: string, data: Partial<Information> | FormData): Observable<Information> {
-    return this.http.put<Information>(`${this.apiUrl}/informations/${id}/`, data);
+    return this.http.put<Information>(`${this.apiUrl}/${id}/`, data);
   }
 
   deleteInformation(id: string): Observable<void> {
-    return this.http.delete<void>(`${this.apiUrl}/informations/${id}/`);
+    return this.http.delete<void>(`${this.apiUrl}/${id}/`);
   }
 }
