@@ -110,28 +110,36 @@ export class RequestService {
     );
   }
 
-  // ── ÉCRITURE ─────────────────────────────────────────────────
-
-  /**
-   * POST /api/demandes/
-   * Le service construit le GeoJSON depuis latitude/longitude.
-   * L'auteur est injecté par Django via perform_create() → request.user.
-   */
-  create(payload: DemandePayload): Observable<Demande> {
-    return this.http
-      .post<Demande>(`${this.url}/`, this.toFormData(payload))
-      .pipe(map(this.normalize));
+  create(formData: FormData): Observable<Demande> {
+    return this.http.post<Demande>(`${this.url}/`, formData);
   }
 
-  /**
-   * PATCH /api/demandes/<id>/
-   * Mise à jour partielle — on n'envoie que les champs modifiés.
-   */
-  update(id: string, payload: Partial<DemandePayload>): Observable<Demande> {
-    return this.http
-      .patch<Demande>(`${this.url}/${id}/`, this.toFormData(payload))
-      .pipe(map(this.normalize));
+  update(id: string, formData: FormData): Observable<Demande> {
+    return this.http.put<Demande>(`${this.url}/${id}/`, formData);
   }
+
+  // // ── ÉCRITURE ─────────────────────────────────────────────────
+
+  // /**
+  //  * POST /api/demandes/
+  //  * Le service construit le GeoJSON depuis latitude/longitude.
+  //  * L'auteur est injecté par Django via perform_create() → request.user.
+  //  */
+  // create(payload: DemandePayload): Observable<Demande> {
+  //   return this.http
+  //     .post<Demande>(`${this.url}/`, this.toFormData(payload))
+  //     .pipe(map(this.normalize));
+  // }
+
+  // /**
+  //  * PATCH /api/demandes/<id>/
+  //  * Mise à jour partielle — on n'envoie que les champs modifiés.
+  //  */
+  // update(id: string, payload: Partial<DemandePayload>): Observable<Demande> {
+  //   return this.http
+  //     .patch<Demande>(`${this.url}/${id}/`, this.toFormData(payload))
+  //     .pipe(map(this.normalize));
+  // }
 
   /** DELETE /api/demandes/<id>/ */
   delete(id: string): Observable<void> {

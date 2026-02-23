@@ -5,6 +5,7 @@ import { environment } from '../../environments/environment';
 import { Crise, CrisePayload } from '../shared/models/crisis.model';
 import { StatsResponse } from '../shared/models/api.model';
 import { geoPointToLatLng, latLngToGeoJson } from '../shared/models/geopoint.model';
+import { GeolocationService } from './geolocation.service';
 
 @Injectable({
   providedIn: 'root'
@@ -12,7 +13,7 @@ import { geoPointToLatLng, latLngToGeoJson } from '../shared/models/geopoint.mod
 export class CrisisService {
   private apiUrl = `${environment.apiUrl}/crises`;
 
-  constructor(private http: HttpClient) {}
+  constructor(private http: HttpClient, private geolocationService: GeolocationService) {}
 
 //   getAllCrisis(): Observable<Crise[]> {
 //     return this.http.get<Crise[]>(this.apiUrl);
@@ -126,25 +127,33 @@ export class CrisisService {
 
   // ── ÉCRITURE ─────────────────────────────────────────────────
 
-  /**
-   * POST /api/crises/
-   * Envoi via FormData pour gérer le champ photo éventuel.
-   */
-  create(payload: CrisePayload): Observable<Crise> {
-    return this.http
-      .post<Crise>(`${this.apiUrl}/`, this.toFormData(payload))
-      .pipe(map(this.normalize));
+  create(formData: FormData): Observable<Request> {
+    return this.http.post<Request>(`${this.apiUrl}/`, formData);
+  }
+  
+  update(id: string, data: Partial<Crise>): Observable<Crise> {
+    return this.http.put<Crise>(`${this.apiUrl}/${id}/`, data);
   }
 
-  /**
-   * PATCH /api/crises/<id>/
-   * PATCH (partiel) plutôt que PUT (complet).
-   */
-  update(id: string, payload: Partial<CrisePayload>): Observable<Crise> {
-    return this.http
-      .patch<Crise>(`${this.apiUrl}/${id}/`, this.toFormData(payload))
-      .pipe(map(this.normalize));
-  }
+  // /**
+  //  * POST /api/crises/
+  //  * Envoi via FormData pour gérer le champ photo éventuel.
+  //  */
+  // create(payload: CrisePayload): Observable<Crise> {
+  //   return this.http
+  //     .post<Crise>(`${this.apiUrl}/`, this.toFormData(payload))
+  //     .pipe(map(this.normalize));
+  // }
+
+  // /**
+  //  * PATCH /api/crises/<id>/
+  //  * PATCH (partiel) plutôt que PUT (complet).
+  //  */
+  // update(id: string, payload: Partial<CrisePayload>): Observable<Crise> {
+  //   return this.http
+  //     .patch<Crise>(`${this.apiUrl}/${id}/`, this.toFormData(payload))
+  //     .pipe(map(this.normalize));
+  // }
 
   /** DELETE /api/crises/<id>/ */
   delete(id: string): Observable<void> {
@@ -174,6 +183,7 @@ export class CrisisService {
     if (payload.latitude != null && payload.longitude != null) {
       fd.append('localisation', latLngToGeoJson(payload.latitude, payload.longitude));
     }
+    
     return fd;
   }
 
@@ -187,4 +197,34 @@ export class CrisisService {
     return p;
   }
   
+    buildFormData(payload: CrisePayload, file?: File): FormData {
+      const fd = new FormData();
+      
+      fd.append('nom', payload.nom);
+      // fd.append('type_evenement', payload.type_evenement);
+      // fd.append('description', payload.description || '');
+      
+      if (payload.date_fin) {
+        fd.append('date_fin', payload.date_fin);
+      }
+      
+      if (payload.validateur) {
+        fd.append('validateur', payload.validateur);
+      }
+      
+      if (payload.latitude != null && payload.longitude != null) {
+        fd.append('localisation', JSON.stringify({
+          type: 'Point',
+          coordinates: [payload.longitude, payload.longitude]
+        }));
+      }
+      
+      if (file) {
+        fd.append('photo', file);
+      }
+      
+      fd.append('statut', 'NON_TRAITEE');
+      
+      return fd;
+    }
 }

@@ -39,7 +39,7 @@
         <span class="material-icons">volunteer_activism</span> 
         <span class="tab-text">Offres</span>
       </button>
-      <button class="tab-button" [class.active]="activeTab === 'need'" (click)="setActiveTab('need')">
+      <button class="tab-button" [class.active]="activeTab === 'request'" (click)="setActiveTab('request')">
         <span class="material-icons">emergency</span> 
         <span class="tab-text">Besoins</span>
       </button>
@@ -62,7 +62,7 @@
               <input
                 type="text"
                 id="lastName"
-                formControlName="lastName"
+                formControlName="last_name"
                 class="form-input">
             </div>
             
@@ -71,7 +71,7 @@
               <input
                 type="text"
                 id="firstName"
-                formControlName="firstName"
+                formControlName="first_name"
                 class="form-input">
             </div>
             
@@ -80,7 +80,7 @@
               <input
                 type="text"
                 id="pseudo"
-                formControlName="pseudo"
+                formControlName="username"
                 class="form-input">
             </div>
             
@@ -102,7 +102,7 @@
               <input
                 type="tel"
                 id="phone"
-                formControlName="phone"
+                formControlName="telephone_utilisateur"
                 class="form-input">
             </div>
             
@@ -226,8 +226,8 @@
         </div>
       }
 
-      <!-- NEEDS TAB -->
-      @if (activeTab === 'need') {
+      <!-- REQUEST TAB -->
+      @if (activeTab === 'request') {
         <div class="tab-panel">
           <div class="table-actions">
             <div class="search-bar">
@@ -236,7 +236,7 @@
             </div>
           </div>
 
-          @if (isLoadingNeeds) {
+          @if (isLoadingRequests) {
             <div class="loading">Chargement des besoins...</div>
           } @else {
             <div class="table-responsive">
@@ -251,7 +251,7 @@
                   </tr>
                 </thead>
                 <tbody>
-                  @for (need of filteredNeeds; track need.id) {
+                  @for (need of filteredRequests; track need.id) {
                     <tr>
                       <td>
                         <span class="status-badge" [attr.data-status]="need.statut">
@@ -262,10 +262,10 @@
                       <td>{{ getLocation(need.latitude, need.longitude) }}</td>
                       <td>{{ need.date_creation | date:'dd/MM/yyyy' }}</td>
                       <td class="actions">
-                        <button class="icon-btn" title="Modifier" (click)="editNeed(need)">
+                        <button class="icon-btn" title="Modifier" (click)="editRequest(need)">
                           <span class="material-icons">edit</span>
                         </button>
-                        <button class="icon-btn delete" title="Supprimer" (click)="deleteNeed(need)">
+                        <button class="icon-btn delete" title="Supprimer" (click)="deleteRequest(need)">
                           <span class="material-icons">delete</span>
                         </button>
                       </td>
@@ -292,7 +292,7 @@
             </div>
           </div>
 
-          @if (isLoadingCrises) {
+          @if (isLoadingCrisis) {
             <div class="loading">Chargement des crises...</div>
           } @else {
             <div class="table-responsive">
@@ -308,17 +308,17 @@
                   </tr>
                 </thead>
                 <tbody>
-                  @for (crisis of filteredCrises; track crisis.id) {
+                  @for (crisis of filteredCrisis; track crisis.id) {
                     <tr>
                       <td>
-                        <span class="status-badge" [attr.data-status]="crisis.status">
-                          {{ crisis.status }}
+                        <span class="status-badge" [attr.data-status]="crisis.statut">
+                          {{ crisis.statut }}
                         </span>
                       </td>
-                      <td><strong>{{ crisis.name }}</strong></td>
+                      <td><strong>{{ crisis.nom }}</strong></td>
                       <td>{{ crisis.type }}</td>
-                      <td>{{ crisis.location }}</td>
-                      <td>{{ crisis.createdAt | date:'dd/MM/yyyy' }}</td>
+                      <td>{{ crisis.localisation }}</td>
+                      <td>{{ crisis.date_debut | date:'dd/MM/yyyy' }}</td>
                       <td class="actions">
                         <button class="icon-btn" title="Modifier" (click)="editCrisis(crisis)">
                           <span class="material-icons">edit</span>

@@ -51,17 +51,25 @@ export class InformationService {
       .pipe(map(this.normalize));
   }
 
-  create(payload: InformationPayload): Observable<Information> {
-    return this.http
-      .post<Information>(`${this.url}/`, this.toFormData(payload))
-      .pipe(map(this.normalize));
+  create(data: Partial<Information> | FormData): Observable<Information> {
+    return this.http.post<Information>(`${this.url}/informations/`, data);
   }
 
-  update(id: string, payload: Partial<InformationPayload>): Observable<Information> {
-    return this.http
-      .patch<Information>(`${this.url}/${id}/`, this.toFormData(payload))
-      .pipe(map(this.normalize));
+  update(id: string, data: Partial<Information> | FormData): Observable<Information> {
+    return this.http.put<Information>(`${this.url}/informations/${id}/`, data);
   }
+
+  // create(payload: InformationPayload): Observable<Information> {
+  //   return this.http
+  //     .post<Information>(`${this.url}/`, this.toFormData(payload))
+  //     .pipe(map(this.normalize));
+  // }
+
+  // update(id: string, payload: Partial<InformationPayload>): Observable<Information> {
+  //   return this.http
+  //     .patch<Information>(`${this.url}/${id}/`, this.toFormData(payload))
+  //     .pipe(map(this.normalize));
+  // }
 
   delete(id: string): Observable<void> {
     return this.http.delete<void>(`${this.url}/${id}/`);

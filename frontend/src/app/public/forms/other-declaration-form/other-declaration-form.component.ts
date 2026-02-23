@@ -199,7 +199,7 @@ export class OtherDeclarationFormComponent implements OnInit {
 
     formData.append('statut', 'NON_TRAITEE');
 
-    this.informationService.createInformation(formData).subscribe({
+    this.informationService.create(formData).subscribe({
       next: (response) => {
         console.log('Information créée:', response);
         alert('Votre information a été enregistrée avec succès !');
@@ -232,7 +232,7 @@ export class OtherDeclarationFormComponent implements OnInit {
 
     formData.append('statut', 'NON_TRAITEE');
 
-    this.informationService.createInformation(formData).subscribe({
+    this.informationService.create(formData).subscribe({
       next: (response) => {
         console.log('Information créée:', response);
         alert('Votre information a été enregistrée avec succès !');

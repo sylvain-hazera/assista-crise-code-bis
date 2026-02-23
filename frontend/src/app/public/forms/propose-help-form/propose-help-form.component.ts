@@ -3,7 +3,7 @@ import { FormGroup, FormBuilder, Validators, ReactiveFormsModule, FormArray } fr
 import { Router } from '@angular/router';
 import { GeolocationService } from '../../../services/geolocation.service';
 import { CommonModule } from '@angular/common';
-import { RequestService } from '../../../services/request.service';
+import { OfferService } from '../../../services/offer.service';
 // import { NgSelectModule } from '@ng-select/ng-select';
 
 @Component({
@@ -57,29 +57,29 @@ export class ProposeHelpFormComponent implements OnInit {
   constructor(
     private formBuilder: FormBuilder,
     private router: Router,
-    private helpRequestService: RequestService,
+    private offerService: OfferService,
     private geolocationService: GeolocationService,
     // private apiService: ApiService
   ) {}
 
   ngOnInit(): void {
     this.initForm();
-    // this.loadTypesDemande();
+    this.loadTypesDemande();
   }
 
-  // loadTypesDemande(): void {
-  //   this.apiService.getTypesDemande().subscribe({
-  //     next: (types) => {
-  //       // Mapper les valeurs du formulaire aux UUIDs des types
-  //       types.forEach(t => {
-  //         const normalizedType = t.type.toLowerCase().replace(/\s+/g, '-');
-  //         this.typesDemandeMap.set(normalizedType, t.id!);
-  //       });
-  //       console.log('Types chargés:', this.typesDemandeMap);
-  //     },
-  //     error: (err) => console.error('Erreur chargement types:', err)
-  //   });
-  // }
+  loadTypesDemande(): void {
+    this.offerService.getTypes().subscribe({
+      next: (types) => {
+        // Mapper les valeurs du formulaire aux UUIDs des types
+        types.forEach(t => {
+          const normalizedType = t.type.toLowerCase().replace(/\s+/g, '-');
+          this.typesDemandeMap.set(normalizedType, t.id!);
+        });
+        console.log('Types chargés:', this.typesDemandeMap);
+      },
+      error: (err) => console.error('Erreur chargement types:', err)
+    });
+  }
 
   initForm(): void {
     this.requestForm = this.formBuilder.group({
@@ -171,7 +171,7 @@ export class ProposeHelpFormComponent implements OnInit {
       }
 
       // Envoyer au backend Django
-      this.helpRequestService.createRequest(formData).subscribe({
+      this.offerService.create(formData).subscribe({
         next: (response) => {
           console.log('Demande créée:', response);
           alert('Votre demande a été enregistrée avec succès !');
@@ -247,7 +247,7 @@ export class ProposeHelpFormComponent implements OnInit {
 
   addOffer(): void {
     this.offersType.push(this.formBuilder.control('', Validators.required));
-    this.descriptions.push(this.formBuilder.control('', [Validators.required, Validators.minLength(10)]));
+    this.descriptions.push(this.formBuilder.control('', [Validators.minLength(10)]));
   }
 
   removeOffer(index: number): void {

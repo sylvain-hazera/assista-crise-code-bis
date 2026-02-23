@@ -60,7 +60,7 @@ export class RegisterComponent implements OnInit, OnDestroy {
       ]],
       phone: ['', [Validators.required, Validators.pattern(/^(?:(?:\+|00)33|0)\s*[1-9](?:[\s.-]*\d{2}){4}$/)]],
       email: ['', [Validators.required, Validators.email]],
-      postalCode: ['', [Validators.required, Validators.pattern(/^\d{5}$/)]],
+      postalCode: ['', [Validators.pattern(/^\d{5}$/)]],
       acceptTerms: [false, Validators.requiredTrue]
     });
   }
@@ -138,7 +138,6 @@ export class RegisterComponent implements OnInit, OnDestroy {
       username: formValue.pseudo || formValue.email.split('@')[0],  
       email: formValue.email,
       password: formValue.password,
-      // type: this.mapUserTypeToBackend(formValue.userType),  // Convertir en valeur Django
       type: formValue.userType,
       postal_code: formValue.postalCode,
       telephone_utilisateur: formValue.phone,
@@ -207,10 +206,6 @@ export class RegisterComponent implements OnInit, OnDestroy {
 
     return 'Champ invalide';
   }
-
-  // get isOrganization(): boolean {
-  //   return this.registerForm.get('userType')?.value === 'organization';
-  // }
 
   get isIndividual(): boolean {
     return this.registerForm.get('userType')?.value === RoleUtilisateur.UTIL_SIMPLE;

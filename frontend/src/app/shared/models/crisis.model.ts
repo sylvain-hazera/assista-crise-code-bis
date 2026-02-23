@@ -29,6 +29,9 @@ export interface GeoPoint {
 export interface Crise {
   id: string;                           // UUID
   nom: string;
+  type: string;
+  description?: string | null;
+  statut?: string;
   localisation: GeoPoint;              // Django retourne toujours ce format
   // Pratique côté Angular (extraits de localisation)
   latitude?: number;
@@ -36,11 +39,15 @@ export interface Crise {
   date_debut: string;                   // auto_now_add → read-only
   date_fin: string | null;
   validateur: string | null;           // UUID de l'Utilisateur (FK)
+  severite: string | null;              
 }
 
 // Payload envoyé pour créer/modifier une crise
 export interface CrisePayload {
   nom: string;
+  type: string;
+  description?: string | null;
+  statut?: string;
   latitude: number;                     // Angular envoie séparément…
   longitude: number;                    // …le service construit le GeoJSON
   date_fin?: string | null;

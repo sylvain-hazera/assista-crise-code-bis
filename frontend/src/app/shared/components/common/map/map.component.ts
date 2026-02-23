@@ -2,11 +2,11 @@ import { Component, OnInit, OnDestroy, AfterViewInit, Input, ViewChild, ElementR
 import maplibregl from 'maplibre-gl';
 import { CrisisService } from '../../../../services/crisis.service';
 import { Subscription } from 'rxjs';
-import { Crisis } from '../../../models/crisis.model';
+import { Crise } from '../../../models/crisis.model';
 import { OfferService } from '../../../../services/offer.service';
-import { Offer } from '../../../models/offer.model';
+import { Offre } from '../../../models/offer.model';
 import { RequestService } from '../../../../services/request.service';
-import { Request } from '../../../models/request.model';
+import { Demande } from '../../../models/request.model';
 
 @Component({
   selector: 'app-map',
@@ -19,9 +19,9 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   // Référence directe à la div HTML
   @ViewChild('mapContainer') mapContainer!: ElementRef;
 
-  @Input() crises: Crisis[] = [];
-  @Input() requests: Request[] = [];
-  @Input() offers: Offer[] = [];
+  @Input() crises: Crise[] = [];
+  @Input() requests: Demande[] = [];
+  @Input() offers: Offre[] = [];
   // Centre de la France par défaut
   @Input() center: [number, number] = [2.2137, 46.2276]; 
   @Input() zoom: number = 5;
@@ -57,7 +57,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   loadCrises() {
-    this.subscription = this.crisisService.getAllCrisis().subscribe({
+    this.subscription = this.crisisService.getAll().subscribe({
       next: (crises) => {
         console.log('Données de crises reçues:', crises);
         this.crises = crises;
@@ -70,7 +70,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   loadHelpRequests() {
-    this.subscription = this.requestService.getAllRequests().subscribe({
+    this.subscription = this.requestService.getAll().subscribe({
       next: (requests) => {
         console.log('Données de demandes d\'aide reçues:', requests);
         this.requests = requests;
@@ -83,7 +83,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   loadHelpProposals() {
-    this.subscription = this.offerService.getAllOffers().subscribe({
+    this.subscription = this.offerService.getAll().subscribe({
       next: (offers) => {
         console.log('Données de propositions d\'aide reçues:', offers);
         this.offers = offers;
@@ -133,10 +133,10 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
         // Création du Popup HTML
         const popupContent = `
           <div style="color: black; font-family: sans-serif;">
-            <h3 style="margin: 0 0 5px 0;">${crisis.name}</h3>
+            <h3 style="margin: 0 0 5px 0;">${crisis.nom}</h3>
             <p style="margin: 0;">${crisis.description || 'Pas de description'}</p>
             <br>
-            <small>Créé le : ${new Date(crisis.createdAt || Date.now()).toLocaleDateString()}</small>
+            <small>Créé le : ${new Date(crisis.date_debut || Date.now()).toLocaleDateString()}</small>
           </div>
         `;
 
@@ -144,7 +144,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
           .setHTML(popupContent);
 
         // Création du Marker
-        const marker = new maplibregl.Marker({ color: this.getSeverityColor(crisis.severity || 'LOW') })
+        const marker = new maplibregl.Marker({ color: this.getSeverityColor(crisis.severite || 'LOW') })
           .setLngLat([crisis.longitude, crisis.latitude])
           .setPopup(popup)
           .addTo(this.map!);
@@ -203,7 +203,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
           <div style="color: black; font-family: sans-serif;">
             <h3 style="margin: 0 0 5px 0;">Proposition d'aide</h3>
             <br>
-            <small>Créée le : ${new Date(proposal.createdAt || Date.now()).toLocaleDateString()}</small>
+            <small>Créée le : ${new Date(proposal.date_creation || Date.now()).toLocaleDateString()}</small>
           </div>
         `;
 

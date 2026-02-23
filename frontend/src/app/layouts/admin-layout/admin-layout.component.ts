@@ -127,7 +127,7 @@ export class AdminLayoutComponent implements OnInit {
   }
 
   goToSettings(): void {
-    this.router.navigate(['/user/settings']);
+    this.router.navigate(['/settings']);
     this.closeAllMenus();
   }
 

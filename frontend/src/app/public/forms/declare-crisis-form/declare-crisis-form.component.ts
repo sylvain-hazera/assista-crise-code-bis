@@ -4,6 +4,8 @@ import { CrisisService } from '../../../services/crisis.service';
 import { Router } from '@angular/router';
 import { GeolocationService } from '../../../services/geolocation.service';
 import { Status } from '../../../shared/models/status.model';
+import { CrisePayload } from '../../../shared/models/crisis.model';
+import { map, Observable } from 'rxjs';
 
 @Component({
   selector: 'app-declare-crisis-form',
@@ -45,7 +47,7 @@ export class DeclareCrisisFormComponent implements OnInit{
     this.crisisForm = this.formBuilder.group({
       eventType: ['', Validators.required],
       title: ['', Validators.required],
-      description: ['', [Validators.required, Validators.minLength(10)]],
+      description: ['', [Validators.minLength(10)]],
       streetNumber: ['', Validators.required],
       postalCode: ['', [Validators.required, Validators.pattern(/^\d{5}$/)]],
       addressVisible: [false],
@@ -81,57 +83,114 @@ export class DeclareCrisisFormComponent implements OnInit{
     }
   }
 
-  onSubmit(): void {
-    if(this.crisisForm.valid) {
-      const formData = new FormData();
+  // onSubmit(): void {
+  //   if(this.crisisForm.valid) {
+  //     const formData = new FormData();
 
-      formData.append('type_evenement', this.crisisForm.get('eventType')?.value);
-      formData.append('titre', this.crisisForm.get('title')?.value);
-      formData.append('description', this.crisisForm.get('description')?.value);
+  //     formData.append('type_evenement', this.crisisForm.get('eventType')?.value);
+  //     formData.append('titre', this.crisisForm.get('title')?.value);
+  //     formData.append('description', this.crisisForm.get('description')?.value);
 
-      const street = this.crisisForm.get('streetNumber')?.value;
-      const zip = this.crisisForm.get('postalCode')?.value;
-      const query = `${street} ${zip}`;
-      this.geolocationService.getCoordinates(query).subscribe({
-        next: (response) => {
-          if (response.features && response.features.length > 0) {
-            const coords = response.features[0].geometry.coordinates;
-            this.longitude = coords[0];
-            this.latitude = coords[1];
+  //     const street = this.crisisForm.get('streetNumber')?.value;
+  //     const zip = this.crisisForm.get('postalCode')?.value;
+  //     const query = `${street} ${zip}`;
+  //     this.geolocationService.getCoordinates(query).subscribe({
+  //       next: (response) => {
+  //         if (response.features && response.features.length > 0) {
+  //           const coords = response.features[0].geometry.coordinates;
+  //           this.longitude = coords[0];
+  //           this.latitude = coords[1];
             
-          } else {
-            alert("Adresse introuvable. Vérifiez le numéro et le code postal.");
-          }
+  //         } else {
+  //           alert("Adresse introuvable. Vérifiez le numéro et le code postal.");
+  //         }
+  //       },
+  //       error: (err) => {
+  //         console.error(err);
+  //         alert("Erreur de connexion au service d'adresse.");
+  //       }
+  //     });
+
+  //     const localisation = {
+  //       type: 'Point',
+  //       coordinates: [this.longitude, this.latitude]
+  //     };
+  //     formData.append('localisation', JSON.stringify(localisation));
+  //     if (this.selectedFile) {
+  //       formData.append('photo', this.selectedFile);
+  //     }
+  //     formData.append('statut', 'NON_TRAITEE');
+  //     // formData.append('statut', Status.NON_TRAITEE.toString());
+
+  //     this.crisisService.create(formData).subscribe({
+  //       next: (response) => {
+  //         console.log('Crisis créée:', response);
+  //         alert('Votre crisis a été enregistrée avec succès !');
+  //         this.router.navigate(['/accueil']);
+  //       },
+  //       error: (err) => {
+  //         console.error('Erreur création crisis:', err);
+  //         alert('Erreur lors de l\'enregistrement. Veuillez réessayer.');
+  //       }
+  //     });
+
+  //   } else {
+  //     Object.keys(this.crisisForm.controls).forEach(key => {
+  //       this.crisisForm.get(key)?.markAsTouched();
+  //     });
+      
+  //     if (!this.latitude || !this.longitude) {
+  //       alert('Erreur de géolocalisation. Veuillez vérifier l\'adresse.');
+  //     } else {
+  //       alert('Veuillez remplir tous les champs obligatoires');
+  //     }
+  //   }
+  // }
+
+  onSubmit(): void {
+    if (this.crisisForm.valid) {
+      const formValue = this.crisisForm.value;
+    
+      // 1. D'abord obtenir les coordonnées
+      const street = formValue.streetNumber;
+      const zip = formValue.postalCode;
+      
+      this.getCoordinatesFromAddress(street, zip).subscribe({
+        next: (coords) => {
+          // 2. Construire le payload
+          const payload: CrisePayload = {
+            nom: formValue.title,
+            type: formValue.eventType,
+            description: formValue.description,
+            latitude: coords.lat,
+            longitude: coords.lng,
+            statut: 'NON_TRAITEE'
+          };
+          
+          // 3. Créer le FormData via le service
+          const formData = this.crisisService.buildFormData(
+            payload, 
+            this.selectedFile!
+          );
+          
+          // 4. Envoyer la requête
+          this.crisisService.create(formData).subscribe({
+            next: (response) => {
+              console.log('Crisis créée:', response);
+              alert('Votre crise a été enregistrée avec succès !');
+              this.router.navigate(['/accueil']);
+            },
+            error: (err) => {
+              console.error('Erreur création crise:', err);
+              alert("Erreur lors de l'enregistrement. Veuillez réessayer.");
+            }
+          });
         },
         error: (err) => {
           console.error(err);
-          alert("Erreur de connexion au service d'adresse.");
+          alert("Adresse introuvable. Vérifiez le numéro et le code postal.");
         }
       });
-
-      const localisation = {
-        type: 'Point',
-        coordinates: [this.longitude, this.latitude]
-      };
-      formData.append('localisation', JSON.stringify(localisation));
-      if (this.selectedFile) {
-        formData.append('photo', this.selectedFile);
-      }
-      formData.append('statut', 'NON_TRAITEE');
-      // formData.append('statut', Status.NON_TRAITEE.toString());
-
-      this.crisisService.createCrisis(formData).subscribe({
-        next: (response) => {
-          console.log('Crisis créée:', response);
-          alert('Votre crisis a été enregistrée avec succès !');
-          this.router.navigate(['/accueil']);
-        },
-        error: (err) => {
-          console.error('Erreur création crisis:', err);
-          alert('Erreur lors de l\'enregistrement. Veuillez réessayer.');
-        }
-      });
-
     } else {
       Object.keys(this.crisisForm.controls).forEach(key => {
         this.crisisForm.get(key)?.markAsTouched();
@@ -147,5 +206,18 @@ export class DeclareCrisisFormComponent implements OnInit{
 
   goBack(): void {
     this.router.navigate(['/accueil']);
+  }
+
+  private getCoordinatesFromAddress(street: string, zip: string): Observable<{lat: number, lng: number}> {
+    const query = `${street} ${zip}`;
+    return this.geolocationService.getCoordinates(query).pipe(
+      map(response => {
+        if (response.features && response.features.length > 0) {
+          const coords = response.features[0].geometry.coordinates;
+          return { lng: coords[0], lat: coords[1] };
+        }
+        throw new Error('Adresse introuvable');
+      })
+    );
   }
 }

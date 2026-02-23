@@ -1,9 +1,12 @@
 from django.shortcuts import render
-from rest_framework import viewsets, status
+from rest_framework import viewsets, status, generics, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticatedOrReadOnly, AllowAny
 from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from .serializers import MyTokenObtainPairSerializer  # if you've defined it in serializers
 from django.contrib.auth import authenticate
 from .models import (
     Utilisateur, Crise, Demande, Offre, Information,
@@ -105,3 +108,35 @@ class TypeOffreViewSet(viewsets.ModelViewSet):
 class TypeInformationViewSet(viewsets.ModelViewSet):
     queryset = TypeInformation.objects.all()
     serializer_class = TypeInformationSerializer
+
+    #  --------------------------- add by Laura ------------------------------------
+
+class MyTokenObtainPairView(TokenObtainPairView):
+    serializer_class = MyTokenObtainPairSerializer
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = []
+
+class RegisterView(generics.CreateAPIView):
+    queryset = Utilisateur.objects.all()
+    serializer_class = UtilisateurSerializer # Ajoute la logique de mot de passe dans le serializer
+    permission_classes = [permissions.AllowAny]
+
+class UserMeView(generics.RetrieveUpdateAPIView):
+    serializer_class = UtilisateurSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_object(self):
+        return self.request.user
+
+class ChangePasswordView(generics.UpdateAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        user = request.user
+        old_password = request.data.get("old_password")
+        new_password = request.data.get("new_password")
+        if not user.check_password(old_password):
+            return Response({"error": "Ancien mot de passe incorrect"}, status=status.HTTP_400_BAD_REQUEST)
+        user.set_password(new_password)
+        user.save()
+        return Response(status=status.HTTP_204_NO_CONTENT)

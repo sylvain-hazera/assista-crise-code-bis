@@ -29,6 +29,10 @@ class Utilisateur(AbstractUser):
         default=RoleUtilisateur.UTILISATEUR_SIMPLE,
     )
     
+    USERNAME_FIELD = 'email'          # ← add this
+    REQUIRED_FIELDS = ['username']    # ← add this (username still needed but not the login field)
+    
+    email = models.EmailField(unique=True)  # ← must be unique for login to work
 
     crise_touchee = models.ForeignKey(
         "Crise",

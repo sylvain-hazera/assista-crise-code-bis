@@ -4,6 +4,8 @@ import { Router } from '@angular/router';
 import { GeolocationService } from '../../../services/geolocation.service';
 import { CommonModule } from '@angular/common';
 import { RequestService } from '../../../services/request.service';
+import { Utilisateur } from '../../../shared/models/user.model';
+import { AuthService } from '../../../auth/services/auth.service';
 // import { NgSelectModule } from '@ng-select/ng-select';
 
 @Component({
@@ -14,6 +16,7 @@ import { RequestService } from '../../../services/request.service';
   styleUrl: './request-help-form.component.scss'
 })
 export class RequestHelpFormComponent implements OnInit {
+  currentUser: Utilisateur | null = null;
   requestForm!: FormGroup;
   informationForm!: FormGroup;
   selectedFile: File | null = null;
@@ -59,27 +62,29 @@ export class RequestHelpFormComponent implements OnInit {
     private router: Router,
     private helpRequestService: RequestService,
     private geolocationService: GeolocationService,
+    private authService: AuthService,
     // private apiService: ApiService
   ) {}
 
   ngOnInit(): void {
     this.initForm();
-    // this.loadTypesDemande();
+    this.currentUser = this.authService.getCurrentUser();
+    this.loadTypesDemande();
   }
 
-  // loadTypesDemande(): void {
-  //   this.apiService.getTypesDemande().subscribe({
-  //     next: (types) => {
-  //       // Mapper les valeurs du formulaire aux UUIDs des types
-  //       types.forEach(t => {
-  //         const normalizedType = t.type.toLowerCase().replace(/\s+/g, '-');
-  //         this.typesDemandeMap.set(normalizedType, t.id!);
-  //       });
-  //       console.log('Types chargés:', this.typesDemandeMap);
-  //     },
-  //     error: (err) => console.error('Erreur chargement types:', err)
-  //   });
-  // }
+  loadTypesDemande(): void {
+    this.helpRequestService.getTypes().subscribe({
+      next: (types) => {
+        // Mapper les valeurs du formulaire aux UUIDs des types
+        types.forEach(t => {
+          const normalizedType = t.type.toLowerCase().replace(/\s+/g, '-');
+          this.typesDemandeMap.set(normalizedType, t.id!);
+        });
+        console.log('Types chargés:', this.typesDemandeMap);
+      },
+      error: (err) => console.error('Erreur chargement types:', err)
+    });
+  }
 
   initForm(): void {
     this.requestForm = this.formBuilder.group({
@@ -96,10 +101,10 @@ export class RequestHelpFormComponent implements OnInit {
 
     this.informationForm = this.formBuilder.group({
       personType: ['individual', Validators.required],
-      lastName: ['', Validators.required],
-      firstName: ['', Validators.required],
-      email: ['', [Validators.required, Validators.email]],
-      phoneNumber: ['', [Validators.required, Validators.pattern(/^\+?\d{10,15}$/)]]
+      lastName: [this.currentUser?.last_name, Validators.required],
+      firstName: [this.currentUser?.first_name, Validators.required],
+      email: [this.currentUser?.email, [Validators.required, Validators.email]],
+      phoneNumber: [this.currentUser?.telephone_utilisateur, [Validators.required, Validators.pattern(/^\+?\d{10,15}$/)]]
     });
   }
 
@@ -171,7 +176,7 @@ export class RequestHelpFormComponent implements OnInit {
       }
 
       // Envoyer au backend Django
-      this.helpRequestService.createRequest(formData).subscribe({
+      this.helpRequestService.create(formData).subscribe({
         next: (response) => {
           console.log('Demande créée:', response);
           alert('Votre demande a été enregistrée avec succès !');
@@ -247,7 +252,7 @@ export class RequestHelpFormComponent implements OnInit {
 
   addNeed(): void {
     this.needsType.push(this.formBuilder.control('', Validators.required));
-    this.descriptions.push(this.formBuilder.control('', [Validators.required, Validators.minLength(10)]));
+    this.descriptions.push(this.formBuilder.control('', [Validators.minLength(10)]));
   }
 
   removeNeed(index: number): void {

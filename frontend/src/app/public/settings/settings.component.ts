@@ -30,11 +30,12 @@ export class SettingsComponent implements OnInit {
   successMessage = '';
   errorMessage = '';
 
-  activeTab: 'profile' | 'password' | 'offer' | 'need' | 'crisis' = 'profile';
+  activeTab: 'profile' | 'password' | 'offer' | 'request' | 'crisis' = 'profile';
 
-  allCrises:  Crise[]   = [];  filteredCrises:  Crise[]   = [];  isLoadingCrises  = false;
-  allOffres:  Offre[]   = [];  filteredOffres:  Offre[]   = [];  isLoadingOffres  = false;
-  allDemandes: Demande[] = []; filteredDemandes: Demande[] = []; isLoadingDemandes = false;
+  allCrisis:  Crise[]   = [];  filteredCrisis:  Crise[]   = [];  isLoadingCrisis  = false;
+  allOffers:  Offre[]   = [];  filteredOffers:  Offre[]   = [];  isLoadingOffers  = false;
+  allRequests: Demande[] = []; filteredRequests: Demande[] = []; isLoadingRequests = false;
+  // allNeeds: Demande[] = []; filteredNeeds: Demande[] = []; isLoadingNeeds = false;
 
   constructor(
     private fb: FormBuilder,
@@ -55,6 +56,7 @@ export class SettingsComponent implements OnInit {
   private initForms(): void {
     this.profileForm = this.fb.group({
       // Champs Django : first_name, last_name, email, telephone_utilisateur
+      username:                [this.currentUser?.username,  [Validators.required, Validators.minLength(2)]],
       last_name:               [this.currentUser?.last_name,  [Validators.required, Validators.minLength(2)]],
       first_name:              [this.currentUser?.first_name  ?? ''],
       email:                   [this.currentUser?.email,       [Validators.required, Validators.email]],
@@ -81,38 +83,38 @@ export class SettingsComponent implements OnInit {
   }
 
   private loadCrises(): void {
-    this.isLoadingCrises = true;
+    this.isLoadingCrisis = true;
     // Django filtre par validateur (UUID de l'utilisateur)
     this.criseService.getMines(this.currentUser!.id).subscribe({
       next: list => {
-        this.allCrises = this.filteredCrises = list;
-        this.isLoadingCrises = false;
+        this.allCrisis = this.filteredCrisis = list;
+        this.isLoadingCrisis = false;
       },
-      error: () => (this.isLoadingCrises = false)
+      error: () => (this.isLoadingCrisis = false)
     });
   }
 
   private loadOffres(): void {
-    this.isLoadingOffres = true;
+    this.isLoadingOffers = true;
     // Django filtre via JWT → my_offres
     this.offreService.getMines().subscribe({
       next: list => {
-        this.allOffres = this.filteredOffres = list;
-        this.isLoadingOffres = false;
+        this.allOffers = this.filteredOffers = list;
+        this.isLoadingOffers = false;
       },
-      error: () => (this.isLoadingOffres = false)
+      error: () => (this.isLoadingOffers = false)
     });
   }
 
   private loadDemandes(): void {
-    this.isLoadingDemandes = true;
+    this.isLoadingRequests = true;
     // Django filtre via JWT → my_requests
     this.demandeService.getMines().subscribe({
       next: list => {
-        this.allDemandes = this.filteredDemandes = list;
-        this.isLoadingDemandes = false;
+        this.allRequests = this.filteredRequests = list;
+        this.isLoadingRequests = false;
       },
-      error: () => (this.isLoadingDemandes = false)
+      error: () => (this.isLoadingRequests = false)
     });
   }
 
@@ -160,18 +162,22 @@ export class SettingsComponent implements OnInit {
     });
   }
 
+  deleteAccount() {
+    throw new Error('Method not implemented.');
+  }
+
   // ── Filtres ──────────────────────────────────────────────────
 
   onFilterCrisis(event: Event): void {
     const term = (event.target as HTMLInputElement).value.toLowerCase();
-    this.filteredCrises = this.allCrises.filter(c =>
+    this.filteredCrisis = this.allCrisis.filter(c =>
       c.nom.toLowerCase().includes(term)
     );
   }
 
   onFilterOffer(event: Event): void {
     const term = (event.target as HTMLInputElement).value.toLowerCase();
-    this.filteredOffres = this.allOffres.filter(o =>
+    this.filteredOffers = this.allOffers.filter(o =>
       o.titre.toLowerCase().includes(term) ||
       o.statut.toLowerCase().includes(term)
     );
@@ -179,7 +185,7 @@ export class SettingsComponent implements OnInit {
 
   onFilterNeed(event: Event): void {
     const term = (event.target as HTMLInputElement).value.toLowerCase();
-    this.filteredDemandes = this.allDemandes.filter(d =>
+    this.filteredRequests = this.allRequests.filter(d =>
       d.titre.toLowerCase().includes(term) ||
       d.statut.toLowerCase().includes(term)
     );
@@ -187,7 +193,7 @@ export class SettingsComponent implements OnInit {
 
   // ── Suppression ──────────────────────────────────────────────
 
-  deleteCrise(crise: Crise): void {
+  deleteCrisis(crise: Crise): void {
     if (!confirm(`Supprimer "${crise.nom}" ?`)) return;
     this.criseService.delete(crise.id).subscribe({
       next:  () => { this.successMessage = 'Crise supprimée'; this.loadCrises(); },
@@ -195,7 +201,7 @@ export class SettingsComponent implements OnInit {
     });
   }
 
-  deleteOffre(offre: Offre): void {
+  deleteOffer(offre: Offre): void {
     if (!confirm(`Supprimer "${offre.titre}" ?`)) return;
     this.offreService.delete(offre.id).subscribe({
       next:  () => { this.successMessage = 'Offre supprimée'; this.loadOffres(); },
@@ -203,7 +209,7 @@ export class SettingsComponent implements OnInit {
     });
   }
 
-  deleteDemande(demande: Demande): void {
+  deleteRequest(demande: Demande): void {
     if (!confirm(`Supprimer "${demande.titre}" ?`)) return;
     this.demandeService.delete(demande.id).subscribe({
       next:  () => { this.successMessage = 'Demande supprimée'; this.loadDemandes(); },
@@ -213,9 +219,9 @@ export class SettingsComponent implements OnInit {
 
   // ── Édition ──────────────────────────────────────────────────
 
-  editCrise(c: Crise):     void { this.router.navigate(['/user/crise/edit',   c.id]); }
-  editOffre(o: Offre):     void { this.router.navigate(['/user/offre/edit',   o.id]); }
-  editDemande(d: Demande): void { this.router.navigate(['/user/demande/edit', d.id]); }
+  editCrisis(c: Crise):     void { this.router.navigate(['/user/crise/edit',   c.id]); }
+  editOffer(o: Offre):     void { this.router.navigate(['/user/offre/edit',   o.id]); }
+  editRequest(d: Demande): void { this.router.navigate(['/user/demande/edit', d.id]); }
 
   // ── Helpers ──────────────────────────────────────────────────
 

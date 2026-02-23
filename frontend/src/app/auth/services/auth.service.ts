@@ -234,7 +234,9 @@ interface LoginResponse extends TokenResponse {
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
-  private readonly url = `${environment.apiUrl}/auth`;
+  private readonly url = `${environment.apiUrl}`;
+  // private readonly url = `${environment.apiUrl}/auth`;
+  // private readonly url = `${environment.apiUrl}/users`;
 
   constructor(private http: HttpClient) {}
 

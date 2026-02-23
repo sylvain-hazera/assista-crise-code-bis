@@ -93,18 +93,26 @@ export class OfferService {
       { params: this.toParams(filter) }
     );
   }
-    
-  create(payload: OffrePayload): Observable<Offre> {
-    return this.http
-      .post<Offre>(`${this.url}/`, this.toFormData(payload))
-      .pipe(map(this.normalize));
+  
+  create(data: Partial<Offre> | FormData): Observable<Offre> {
+    return this.http.post<Offre>(`${this.url}/offres/`, data);
   }
 
-  update(id: string, payload: Partial<OffrePayload>): Observable<Offre> {
-    return this.http
-      .patch<Offre>(`${this.url}/${id}/`, this.toFormData(payload))
-      .pipe(map(this.normalize));
+  update(id: string, data: Partial<Offre> | FormData): Observable<Offre> {
+    return this.http.put<Offre>(`${this.url}/offres/${id}/`, data);
   }
+  
+  // create(payload: OffrePayload): Observable<Offre> {
+  //   return this.http
+  //     .post<Offre>(`${this.url}/`, this.toFormData(payload))
+  //     .pipe(map(this.normalize));
+  // }
+
+  // update(id: string, payload: Partial<OffrePayload>): Observable<Offre> {
+  //   return this.http
+  //     .patch<Offre>(`${this.url}/${id}/`, this.toFormData(payload))
+  //     .pipe(map(this.normalize));
+  // }
 
   delete(id: string): Observable<void> {
     return this.http.delete<void>(`${this.url}/${id}/`);
