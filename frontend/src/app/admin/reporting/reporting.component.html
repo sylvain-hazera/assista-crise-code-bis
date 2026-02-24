@@ -47,7 +47,7 @@
       </div>
       <div class="stat-info">
         <p class="stat-label">Traité</p>
-        <!-- <p class="stat-value">{{ stats.traité }}</p> -->
+        <p class="stat-value">{{ stats.traite }}</p>
       </div>
     </div>
   </div>
@@ -76,7 +76,7 @@
         <option value="tous">Tous les statuts</option>
         <option value="nouveau">Nouveau</option>
         <option value="en_cours">En cours</option>
-        <option value="traité">Traité</option>
+        <option value="traite">Traité</option>
         <option value="rejeté">Rejeté</option>
       </select>
 
@@ -143,7 +143,7 @@
                     (ngModelChange)="updateStatus(report, $event)">
                     <option value="nouveau">Nouveau</option>
                     <option value="en_cours">En cours</option>
-                    <option value="traité">Traité</option>
+                    <option value="traite">Traité</option>
                     <option value="rejeté">Rejeté</option>
                   </select>
                 </td>
@@ -253,15 +253,15 @@
             <span>{{ selectedReport.reporter }}</span>
           </div>
           <div class="detail-row">
-            <label>Date:</label>
+            <label>Date de début:</label>
             <span>{{ selectedReport.createdAt | date:'dd/MM/yyyy à HH:mm' }}</span>
           </div>
-          <div class="detail-row">
+          <!-- <div class="detail-row">
             <label>Priorité:</label>
             <span class="priority-badge" [ngClass]="getPriorityClass(selectedReport.priority)">
               {{ selectedReport.priority }}
             </span>
-          </div>
+          </div> -->
           <div class="detail-row">
             <label>Statut:</label>
             <span class="status-badge" [ngClass]="getStatusClass(selectedReport.status)">
@@ -276,10 +276,10 @@
           }
         </div>
         
-        <div class="modal-footer">
+        <!-- <div class="modal-footer">
           <button class="btn btn-secondary" (click)="showDetailModal = false">Fermer</button>
           <button class="btn btn-primary" (click)="showDetailModal = false">Modifier</button>
-        </div>
+        </div> -->
       </div>
     </div>
   }

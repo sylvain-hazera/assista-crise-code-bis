@@ -71,10 +71,8 @@ export class OfferService {
   }
 
   /** GET /api/offres/my_offres/ */
-  getMines(): Observable<Offre[]> {
-    return this.http
-      .get<Offre[]>(`${this.url}/my_offres/`)
-      .pipe(map(list => list.map(this.normalize)));
+  getMines(userId: string): Observable<Offre[]> {
+      return this.getAll({ validateur: userId });
   }
 
   getById(id: string): Observable<Offre> {

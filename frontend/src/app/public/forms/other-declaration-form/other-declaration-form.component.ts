@@ -4,6 +4,7 @@ import { CommonModule } from '@angular/common';
 import { InformationService } from '../../../services/information.service';
 import { Router } from '@angular/router';
 import { GeolocationService } from '../../../services/geolocation.service';
+import { AuthService } from '../../../auth/services/auth.service';
 
 enum StateForm {
   DeclareSafe,
@@ -51,7 +52,8 @@ export class OtherDeclarationFormComponent implements OnInit {
     private formBuilder: FormBuilder,
     private router: Router,
     private informationService: InformationService,
-    private geolocationService: GeolocationService
+    private geolocationService: GeolocationService,
+    private authService: AuthService,
   ) {}
 
   ngOnInit(): void {
@@ -198,6 +200,7 @@ export class OtherDeclarationFormComponent implements OnInit {
     }
 
     formData.append('statut', 'NON_TRAITEE');
+    formData.append('auteur', this.authService.getCurrentUser()?.id!);
 
     this.informationService.create(formData).subscribe({
       next: (response) => {

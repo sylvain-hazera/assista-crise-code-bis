@@ -29,6 +29,7 @@ import { Status, Statut } from "./status.model";
 export interface TypeOffre {
   id: string;
   type: string;
+  description: string;
 }
 
 export interface Offre {

@@ -28,6 +28,7 @@ import { Statut } from "./status.model";
 export interface TypeDemande {
   id: string;                           // UUID
   type: string;                         // Unique
+  description: string;
 }
 
 export interface Demande {

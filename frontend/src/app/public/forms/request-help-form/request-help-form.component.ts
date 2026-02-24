@@ -6,7 +6,6 @@ import { CommonModule } from '@angular/common';
 import { RequestService } from '../../../services/request.service';
 import { Utilisateur } from '../../../shared/models/user.model';
 import { AuthService } from '../../../auth/services/auth.service';
-// import { NgSelectModule } from '@ng-select/ng-select';
 
 @Component({
   selector: 'app-request-help-form',
@@ -63,7 +62,6 @@ export class RequestHelpFormComponent implements OnInit {
     private helpRequestService: RequestService,
     private geolocationService: GeolocationService,
     private authService: AuthService,
-    // private apiService: ApiService
   ) {}
 
   ngOnInit(): void {
@@ -169,6 +167,7 @@ export class RequestHelpFormComponent implements OnInit {
       formData.append('type_demande', typeDemandeId);
       
       formData.append('statut', 'NON_TRAITEE');
+      formData.append('auteur', this.currentUser?.id!);
       
       // Photo si présente
       if (this.selectedFile) {

@@ -27,15 +27,40 @@ export class SettingsComponent implements OnInit {
 
   isUpdatingProfile = false;
   isChangingPassword = false;
-  successMessage = '';
-  errorMessage = '';
+
+  _successMessage = '';
+  _errorMessage = '';
+
+  set successMessage(value: string) {
+    this._successMessage = value;
+    if (value) {
+      setTimeout(() => this._successMessage = '', 1000);
+    }
+  }
+
+  get successMessage(): string {
+    return this._successMessage;
+  }
+
+  set errorMessage(value: string) {
+    this._errorMessage = value;
+    if (value) {
+      setTimeout(() => this._successMessage = '', 3000);
+    }
+  }
+
+  get errorMessage(): string {
+    return this._errorMessage;
+  }
 
   activeTab: 'profile' | 'password' | 'offer' | 'request' | 'crisis' = 'profile';
 
   allCrisis:  Crise[]   = [];  filteredCrisis:  Crise[]   = [];  isLoadingCrisis  = false;
   allOffers:  Offre[]   = [];  filteredOffers:  Offre[]   = [];  isLoadingOffers  = false;
   allRequests: Demande[] = []; filteredRequests: Demande[] = []; isLoadingRequests = false;
-  // allNeeds: Demande[] = []; filteredNeeds: Demande[] = []; isLoadingNeeds = false;
+
+  showDetailCrisis = false;  showDetailOffer  = false;  showDetailRequest = false;
+  selectedReport: Crise | Offre | Demande | null = null;
 
   constructor(
     private fb: FormBuilder,
@@ -96,8 +121,7 @@ export class SettingsComponent implements OnInit {
 
   private loadOffres(): void {
     this.isLoadingOffers = true;
-    // Django filtre via JWT → my_offres
-    this.offreService.getMines().subscribe({
+    this.offreService.getMines(this.currentUser!.id).subscribe({
       next: list => {
         this.allOffers = this.filteredOffers = list;
         this.isLoadingOffers = false;
@@ -108,8 +132,7 @@ export class SettingsComponent implements OnInit {
 
   private loadDemandes(): void {
     this.isLoadingRequests = true;
-    // Django filtre via JWT → my_requests
-    this.demandeService.getMines().subscribe({
+    this.demandeService.getMines(this.currentUser!.id).subscribe({
       next: list => {
         this.allRequests = this.filteredRequests = list;
         this.isLoadingRequests = false;
@@ -220,8 +243,59 @@ export class SettingsComponent implements OnInit {
   // ── Édition ──────────────────────────────────────────────────
 
   editCrisis(c: Crise):     void { this.router.navigate(['/user/crise/edit',   c.id]); }
-  editOffer(o: Offre):     void { this.router.navigate(['/user/offre/edit',   o.id]); }
-  editRequest(d: Demande): void { this.router.navigate(['/user/demande/edit', d.id]); }
+
+  editOffer(offer: Offre): void { 
+    if(offer.statut == Statut.DISPONIBLE) {
+      offer.statut = Statut.INDISPONIBLE;
+    } else {
+      offer.statut = Statut.DISPONIBLE;
+    }
+    offer.statut = Statut.INDISPONIBLE;
+    this.offreService.update(offer.id, offer).subscribe({
+      next:  () => { this.successMessage = 'Offre mise à jour'; this.loadOffres(); },
+      error: err => (this.errorMessage = err.error?.detail ?? 'Erreur')
+    })
+    // this.router.navigate(['/user/offre/edit',   o.id]); 
+  }
+
+  editRequest(demande: Demande): void { 
+    if(demande.statut == Statut.TRAITEE) {
+      demande.statut = Statut.NON_TRAITEE;
+    } else {
+      demande.statut = Statut.TRAITEE;
+    }
+    this.demandeService.update(demande.id, demande).subscribe({
+      next:  () => { this.successMessage = 'Demande mise à jour'; this.loadDemandes(); },
+      error: err => (this.errorMessage = err.error?.detail ?? 'Erreur')
+    });
+    // this.router.navigate(['/user/demande/edit', d.id]); 
+  }
+
+  // ----- View ----------------------------------------------------------------
+  viewCrisis(crisis: Crise): void {
+    this.selectedReport = crisis;
+
+    this.showDetailCrisis = true;
+    this.showDetailOffer = false;
+    this.showDetailRequest = false;
+  }
+
+  viewOffer(offre: Offre): void {
+    this.selectedReport = offre;
+
+    this.showDetailOffer = true;
+    this.showDetailCrisis = false;
+    this.showDetailRequest = false;
+  }
+
+  viewRequest(demande: Demande): void {
+    this.selectedReport = demande;
+
+    this.showDetailRequest = true;
+    this.showDetailOffer = false;
+    this.showDetailCrisis = false;
+  }
+
 
   // ── Helpers ──────────────────────────────────────────────────
 
@@ -243,6 +317,24 @@ export class SettingsComponent implements OnInit {
     return `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
   }
 
+  closeDetail(): void {
+    this.showDetailCrisis = false;
+    this.showDetailOffer = false;
+    this.showDetailRequest = false;
+    this.selectedReport = null;
+  }
+
+  isCrise(r: Crise | Offre | Demande): r is Crise {
+    return 'nom' in r && 'validateur' in r;
+  }
+
+  isOffre(r: Crise | Offre | Demande): r is Offre {
+    return 'prenom_offre' in r;
+  }
+
+  isDemande(r: Crise | Offre | Demande): r is Demande {
+    return 'prenom_demande' in r;
+  }
   get isAdmin(): boolean { return this.authService.isAdmin(); }
   get isIndividual(): boolean { return this.currentUser?.type === 'UTIL_SIMPLE'; }
 

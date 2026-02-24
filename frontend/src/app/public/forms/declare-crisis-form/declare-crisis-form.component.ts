@@ -6,6 +6,7 @@ import { GeolocationService } from '../../../services/geolocation.service';
 import { Status } from '../../../shared/models/status.model';
 import { CrisePayload } from '../../../shared/models/crisis.model';
 import { map, Observable } from 'rxjs';
+import { AuthService } from '../../../auth/services/auth.service';
 
 @Component({
   selector: 'app-declare-crisis-form',
@@ -37,6 +38,7 @@ export class DeclareCrisisFormComponent implements OnInit{
     private router: Router,
     private crisisService: CrisisService,
     private geolocationService: GeolocationService,
+    private authService: AuthService,
   ) {}
 
   ngOnInit() {
@@ -164,6 +166,7 @@ export class DeclareCrisisFormComponent implements OnInit{
             description: formValue.description,
             latitude: coords.lat,
             longitude: coords.lng,
+            auteur: this.authService.getCurrentUser()?.id,
             statut: 'NON_TRAITEE'
           };
           

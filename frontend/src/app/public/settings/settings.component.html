@@ -198,16 +198,22 @@
                   @for (offer of filteredOffers; track offer.id) {
                     <tr>
                       <td>
-                        <span class="status-badge" [attr.data-status]="offer.statut">
+                        <!-- <span class="status-badge" [attr.data-status]="offer.statut">
                           {{ getStatusLabel(offer.statut.toString()) }}
-                        </span>
+                        </span> -->
+                      <button class="status-badge" (click)="editOffer(offer)">
+                        {{ getStatusLabel(offer.statut.toString()) }}
+                      </button>                  
                       </td>
                       <td><strong>{{ offer.titre }}</strong></td>
                       <td>{{ getLocation(offer.latitude, offer.longitude) }}</td>
                       <td>{{ offer.date_creation | date:'dd/MM/yyyy' }}</td>
                       <td class="actions">
-                        <button class="icon-btn" title="Modifier" (click)="editOffer(offer)">
+                        <!-- <button class="icon-btn" title="Modifier" (click)="editOffer(offer)">
                           <span class="material-icons">edit</span>
+                        </button> -->
+                        <button class="icon-btn" (click)="viewOffer(offer); $event.stopPropagation()">
+                          <span class="material-icons">visibility</span>
                         </button>
                         <button class="icon-btn delete" title="Supprimer" (click)="deleteOffer(offer)">
                           <span class="material-icons">delete</span>
@@ -251,21 +257,27 @@
                   </tr>
                 </thead>
                 <tbody>
-                  @for (need of filteredRequests; track need.id) {
+                  @for (request of filteredRequests; track request.id) {
                     <tr>
                       <td>
-                        <span class="status-badge" [attr.data-status]="need.statut">
-                          {{ getStatusLabel(need.statut.toString()) }}
-                        </span>
-                      </td>
-                      <td><strong>{{ need.titre }}</strong></td>
-                      <td>{{ getLocation(need.latitude, need.longitude) }}</td>
-                      <td>{{ need.date_creation | date:'dd/MM/yyyy' }}</td>
-                      <td class="actions">
-                        <button class="icon-btn" title="Modifier" (click)="editRequest(need)">
-                          <span class="material-icons">edit</span>
+                        <!-- <span class="status-badge" [attr.data-status]="request.statut">
+                          {{ getStatusLabel(request.statut.toString()) }}
+                        </span> -->
+                        <button class="status-badge" (click)="editRequest(request)">
+                          {{ getStatusLabel(request.statut.toString()) }}
                         </button>
-                        <button class="icon-btn delete" title="Supprimer" (click)="deleteRequest(need)">
+                      </td>
+                      <td><strong>{{ request.titre }}</strong></td>
+                      <td>{{ getLocation(request.latitude, request.longitude) }}</td>
+                      <td>{{ request.date_creation | date:'dd/MM/yyyy' }}</td>
+                      <td class="actions">
+                        <!-- <button class="icon-btn" title="Modifier" (click)="editRequest(request)">
+                          <span class="material-icons">edit</span>
+                        </button> -->
+                        <button class="icon-btn" (click)="viewRequest(request); $event.stopPropagation()">
+                          <span class="material-icons">visibility</span>
+                        </button>
+                        <button class="icon-btn delete" title="Supprimer" (click)="deleteRequest(request)">
                           <span class="material-icons">delete</span>
                         </button>
                       </td>
@@ -303,7 +315,7 @@
                     <th>Nom</th>
                     <th>Type</th>
                     <th>Localisation</th>
-                    <th>Date</th>
+                    <th>Date de debut</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
@@ -312,7 +324,7 @@
                     <tr>
                       <td>
                         <span class="status-badge" [attr.data-status]="crisis.statut">
-                          {{ crisis.statut }}
+                            {{crisis.validateur ? 'Validé' : 'En attente'}}
                         </span>
                       </td>
                       <td><strong>{{ crisis.nom }}</strong></td>
@@ -320,8 +332,11 @@
                       <td>{{ crisis.localisation }}</td>
                       <td>{{ crisis.date_debut | date:'dd/MM/yyyy' }}</td>
                       <td class="actions">
-                        <button class="icon-btn" title="Modifier" (click)="editCrisis(crisis)">
+                        <!-- <button class="icon-btn" title="Modifier" (click)="editCrisis(crisis)">
                           <span class="material-icons">edit</span>
+                        </button> -->
+                        <button class="icon-btn" (click)="viewCrisis(crisis); $event.stopPropagation()">
+                          <span class="material-icons">visibility</span>
                         </button>
                         <button class="icon-btn delete" title="Supprimer" (click)="deleteCrisis(crisis)">
                           <span class="material-icons">delete</span>
@@ -340,7 +355,123 @@
         </div>
       }
     </div>
+    
+    <!-- DETAIL MODAL -->
+    @if ((showDetailRequest || showDetailOffer || showDetailCrisis ) && selectedReport) {
+      <div class="modal-overlay" (click)="closeDetail()">
+        <div class="modal-content" (click)="$event.stopPropagation()">
+          <div class="modal-header">
+            <h2>
+              @if (showDetailCrisis) { Détails de la crise }
+              @else if (showDetailOffer) { Détails de l'offre }
+              @else { Détails de la demande }
+            </h2>
+            <button class="close-btn" (click)="closeDetail()">
+              <span class="material-icons">close</span>
+            </button>
+          </div>
+          
+          <div class="modal-body">
+          @if (isCrise(selectedReport!)) {
+            <div class="detail-row">
+              <label>Nom :</label>
+              <span>{{ selectedReport!.nom }}</span>
+            </div>
+            <div class="detail-row">
+              <label>Type :</label>
+              <span>{{ selectedReport!.type }}</span>
+            </div>
+            <div class="detail-row">
+              <label>Description :</label>
+              <p>{{ selectedReport!.description ?? '—' }}</p>
+            </div>
+            <div class="detail-row">
+              <label>Localisation :</label>
+              <span>{{ getLocation(selectedReport!.latitude, selectedReport!.longitude) }}</span>
+            </div>
+            <div class="detail-row">
+              <label>Date de début :</label>
+              <span>{{ selectedReport!.date_debut | date:'dd/MM/yyyy à HH:mm' }}</span>
+            </div>
+            <div class="detail-row">
+              <label>Date de fin :</label>
+              <span>{{ selectedReport!.date_fin ? (selectedReport!.date_fin | date:'dd/MM/yyyy') : '—' }}</span>
+            </div>
+            <div class="detail-row">
+              <label>Statut :</label>
+              <span class="status-badge">{{ selectedReport!.validateur ? 'Validé' : 'En attente' }}</span>
+            </div>
+          }
 
+          @if (isOffre(selectedReport!)) {
+            <div class="detail-row">
+              <label>Titre :</label>
+              <span>{{ selectedReport!.titre }}</span>
+            </div>
+            <div class="detail-row">
+              <label>Proposé par :</label>
+              <span>{{ selectedReport!.prenom_offre }} {{ selectedReport!.nom_offre }}</span>
+            </div>
+            <div class="detail-row">
+              <label>Email :</label>
+              <span>{{ selectedReport!.email_offre }}</span>
+            </div>
+            <div class="detail-row">
+              <label>Localisation :</label>
+              <span>{{ getLocation(selectedReport!.latitude, selectedReport!.longitude) }}</span>
+            </div>
+            <div class="detail-row">
+              <label>Date de création :</label>
+              <span>{{ selectedReport!.date_creation | date:'dd/MM/yyyy à HH:mm' }}</span>
+            </div>
+            <div class="detail-row">
+              <label>Date d'expiration :</label>
+              <span>{{ selectedReport!.date_expiration ? (selectedReport!.date_expiration | date:'dd/MM/yyyy') : '—' }}</span>
+            </div>
+            <div class="detail-row">
+              <label>Statut :</label>
+              <span class="status-badge">{{ getStatusLabel(selectedReport!.statut) }}</span>
+            </div>
+          }
+
+          @if (isDemande(selectedReport!)) {
+            <div class="detail-row">
+              <label>Titre :</label>
+              <span>{{ selectedReport!.titre }}</span>
+            </div>
+            <div class="detail-row">
+              <label>Demandé par :</label>
+              <span>{{ selectedReport!.prenom_demande }} {{ selectedReport!.nom_demande }}</span>
+            </div>
+            <div class="detail-row">
+              <label>Email :</label>
+              <span>{{ selectedReport!.email_demande }}</span>
+            </div>
+            <div class="detail-row">
+              <label>Téléphone :</label>
+              <span>{{ selectedReport!.telephone_demande }}</span>
+            </div>
+            <div class="detail-row">
+              <label>Localisation :</label>
+              <span>{{ getLocation(selectedReport!.latitude, selectedReport!.longitude) }}</span>
+            </div>
+            <div class="detail-row">
+              <label>Date de création :</label>
+              <span>{{ selectedReport!.date_creation | date:'dd/MM/yyyy à HH:mm' }}</span>
+            </div>
+            <div class="detail-row">
+              <label>Date d'expiration :</label>
+              <span>{{ selectedReport!.date_expiration ? (selectedReport!.date_expiration | date:'dd/MM/yyyy') : '—' }}</span>
+            </div>
+            <div class="detail-row">
+              <label>Statut :</label>
+              <span class="status-badge">{{ getStatusLabel(selectedReport!.statut) }}</span>
+            </div>
+          }
+        </div>
+        </div>
+      </div>
+    }
     <div class="danger-zone">
       <h3><span class="material-icons">report_problem</span> Zone de danger</h3>
       <p>La suppression de votre compte est irréversible.</p>

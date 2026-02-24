@@ -4,7 +4,8 @@ import { Router } from '@angular/router';
 import { GeolocationService } from '../../../services/geolocation.service';
 import { CommonModule } from '@angular/common';
 import { OfferService } from '../../../services/offer.service';
-// import { NgSelectModule } from '@ng-select/ng-select';
+import { AuthService } from '../../../auth/services/auth.service';
+import { Utilisateur } from '../../../shared/models/user.model';
 
 @Component({
   selector: 'app-request-help-form',
@@ -14,6 +15,7 @@ import { OfferService } from '../../../services/offer.service';
   styleUrl: './propose-help-form.component.scss'
 })
 export class ProposeHelpFormComponent implements OnInit {
+  currentUser : Utilisateur | null = null;
   requestForm!: FormGroup;
   informationForm!: FormGroup;
   selectedFile: File | null = null;
@@ -59,11 +61,12 @@ export class ProposeHelpFormComponent implements OnInit {
     private router: Router,
     private offerService: OfferService,
     private geolocationService: GeolocationService,
-    // private apiService: ApiService
+    private authService: AuthService,
   ) {}
 
   ngOnInit(): void {
     this.initForm();
+    this.currentUser = this.authService.getCurrentUser();
     this.loadTypesDemande();
   }
 
@@ -163,7 +166,9 @@ export class ProposeHelpFormComponent implements OnInit {
       }
       formData.append('type_demande', typeDemandeId);
       
-      formData.append('statut', 'NON_TRAITEE');
+      formData.append('statut', 'DISPONIBLE');
+      formData.append('auteur', this.currentUser?.id!);
+
       
       // Photo si présente
       if (this.selectedFile) {

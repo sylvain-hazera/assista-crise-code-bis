@@ -211,6 +211,10 @@ export class CrisisService {
       if (payload.validateur) {
         fd.append('validateur', payload.validateur);
       }
+
+      if (payload.auteur) {
+        fd.append('validateur', payload.auteur);
+      }
       
       if (payload.latitude != null && payload.longitude != null) {
         fd.append('localisation', JSON.stringify({

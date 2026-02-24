@@ -9,7 +9,7 @@ interface Report {
   title: string;
   description: string;
   location: string;
-  status: 'nouveau' | 'en_cours' | 'traité' | 'rejeté';
+  status: 'nouveau' | 'en_cours' | 'traite' | 'rejeté';
   priority: 'basse' | 'moyenne' | 'haute' | 'urgente';
   createdAt: Date;
   reporter: string;
@@ -41,7 +41,7 @@ export class ReportingComponent implements OnInit {
     total: 0,
     nouveau: 0,
     en_cours: 0,
-    traité: 0
+    traite: 0
   };
 
   ngOnInit(): void {
@@ -83,7 +83,7 @@ export class ReportingComponent implements OnInit {
           title: 'Hébergement disponible',
           description: '3 chambres disponibles pour familles',
           location: '42 Avenue Victor Hugo',
-          status: 'traité',
+          status: 'traite',
           priority: 'moyenne',
           createdAt: new Date('2025-02-09T14:20:00'),
           reporter: 'Pierre Dubois'
@@ -100,7 +100,7 @@ export class ReportingComponent implements OnInit {
     this.stats.total = this.reports.length;
     this.stats.nouveau = this.reports.filter(r => r.status === 'nouveau').length;
     this.stats.en_cours = this.reports.filter(r => r.status === 'en_cours').length;
-    this.stats.traité = this.reports.filter(r => r.status === 'traité').length;
+    this.stats.traite = this.reports.filter(r => r.status === 'traite').length;
   }
 
   applyFilters(): void {
@@ -151,7 +151,7 @@ export class ReportingComponent implements OnInit {
     const classes: { [key: string]: string } = {
       'nouveau': 'status-new',
       'en_cours': 'status-progress',
-      'traité': 'status-done',
+      'traite': 'status-done',
       'rejeté': 'status-rejected'
     };
     return classes[status] || '';

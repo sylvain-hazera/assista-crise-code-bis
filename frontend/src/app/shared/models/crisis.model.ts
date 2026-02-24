@@ -11,6 +11,8 @@
 //   longitude: number;
 // }
 
+import { Statut } from "./status.model";
+
 
 // export enum statusCrisis {
 //   UNPROCESSED,
@@ -31,7 +33,7 @@ export interface Crise {
   nom: string;
   type: string;
   description?: string | null;
-  statut?: string;
+  statut?:  Statut;
   localisation: GeoPoint;              // Django retourne toujours ce format
   // Pratique côté Angular (extraits de localisation)
   latitude?: number;
@@ -39,6 +41,7 @@ export interface Crise {
   date_debut: string;                   // auto_now_add → read-only
   date_fin: string | null;
   validateur: string | null;           // UUID de l'Utilisateur (FK)
+  auteur: string | null;           
   severite: string | null;              
 }
 
@@ -52,4 +55,5 @@ export interface CrisePayload {
   longitude: number;                    // …le service construit le GeoJSON
   date_fin?: string | null;
   validateur?: string | null;
+  auteur?: string | null;
 }
