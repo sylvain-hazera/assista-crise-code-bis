@@ -6,6 +6,8 @@ import { GeolocationService } from '../../../services/geolocation.service';
 import { CommonModule } from '@angular/common';
 import { RequestService } from '../../../services/request.service';
 import { LocationService, Department, Commune } from '../../../services/location.service';
+import { CrisisService } from '../../../services/crisis.service';
+import { Crisis } from '../../../shared/models/crisis.model';
 // import { NgSelectModule } from '@ng-select/ng-select';
 
 @Component({
@@ -36,26 +38,13 @@ export class RequestHelpFormComponent implements OnInit {
   showDepartmentDropdown: boolean = false;
   showCommuneDropdown: boolean = false;
 
-  eventTypeOptions: { value: string; label: string }[] = [
-    { value: '', label: 'Dropdown' },
-    { value: 'incendie', label: 'Incendie' },
-    { value: 'inondation', label: 'Inondation' },
-    { value: 'accident', label: 'Accident' },
-    { value: 'catastrophe-naturelle', label: 'Catastrophe naturelle' },
-    { value: 'urgence-medicale', label: 'Urgence médicale' },
-    { value: 'autre', label: 'Autre' }
-  ];
+  crisisOptions: { value: string; label: string }[] = [];
+  filteredCrisisOptions: { value: string; label: string }[] = [];
+  crisisSearch: string = 'Aucune crise en rapport';
+  showCrisisDropdown: boolean = false;
 
   needTypeOptions: { value: string; label: string }[] = [
-    { value: '', label: 'Dropdown' },
-    { value: 'assistance-immediate', label: 'Assistance immédiate' },
-    { value: 'hebergement', label: 'Hébergement' },
-    { value: 'nourriture', label: 'Nourriture et eau' },
-    { value: 'soins-medicaux', label: 'Soins médicaux' },
-    { value: 'transport', label: 'Transport' },
-    { value: 'materiel', label: 'Matériel' },
-    { value: 'soutien-psychologique', label: 'Soutien psychologique' },
-    { value: 'autre', label: 'Autre' }
+    { value: '', label: 'Dropdown' }
   ];
 
   personTypeOptions: { value: string; label: string }[] = [
@@ -70,13 +59,15 @@ export class RequestHelpFormComponent implements OnInit {
     private router: Router,
     private helpRequestService: RequestService,
     private geolocationService: GeolocationService,
-    private locationService: LocationService
+    private locationService: LocationService,
+    private crisisService: CrisisService
   ) {}
 
   ngOnInit(): void {
     this.initForm();
     this.loadTypesDemande();
     this.loadDepartments();
+    this.loadActiveCrises();
   }
 
   loadDepartments(): void {
@@ -89,6 +80,30 @@ export class RequestHelpFormComponent implements OnInit {
     });
   }
 
+  loadActiveCrises(): void {
+    this.crisisService.getAllCrisis().subscribe({
+      next: (crises: Crisis[]) => {
+        // Option par défaut
+        this.crisisOptions.push({
+          value: '',
+          label: 'Aucune crise en rapport'
+        });
+        
+        // Ajouter toutes les crises (actives ou récentes)
+        crises.forEach(crisis => {
+          this.crisisOptions.push({
+            value: crisis.id!,
+            label: crisis.name
+          });
+        });
+        
+        this.filteredCrisisOptions = [...this.crisisOptions];
+        console.log('Crises chargées:', this.crisisOptions);
+      },
+      error: (err) => console.error('Erreur chargement crises:', err)
+    });
+  }
+
   loadTypesDemande(): void {
     this.helpRequestService.getTypesDemande().subscribe({
       next: (types: any[]) => {
@@ -96,6 +111,11 @@ export class RequestHelpFormComponent implements OnInit {
         types.forEach((t: any) => {
           const normalizedType = t.type.toLowerCase().replace(/\s+/g, '-');
           this.typesDemandeMap.set(normalizedType, t.id!);
+          // Ajouter aux options du dropdown
+          this.needTypeOptions.push({
+            value: normalizedType,
+            label: t.type
+          });
         });
         console.log('Types chargés:', this.typesDemandeMap);
       },
@@ -105,7 +125,7 @@ export class RequestHelpFormComponent implements OnInit {
 
   initForm(): void {
     this.requestForm = this.formBuilder.group({
-      eventType: ['', Validators.required],
+      crisisId: [''],
       needsType: new FormArray([]),
       descriptions: new FormArray([]),
       streetNumber: ['', Validators.required],
@@ -166,16 +186,10 @@ export class RequestHelpFormComponent implements OnInit {
       formData.append('email_demande', this.informationForm.get('email')?.value);
       formData.append('telephone_demande', this.informationForm.get('phoneNumber')?.value);
       
-      // Titre basé sur le type d'événement
-      const eventType = this.requestForm.get('eventType')?.value;
-
-      console.log('--- DEBUG TYPE DEMANDE ---');
-      
-      console.log('1. Valeur sélectionnée (Dropdown) :', eventType);
-      console.log('2. Clés disponibles dans la Map :', Array.from(this.typesDemandeMap.keys()));
-      
-
-      const titre = `Demande ${this.eventTypeOptions.find(e => e.value === eventType)?.label || 'aide'}`;
+      // Titre basé sur la crise sélectionnée
+      const crisisId = this.requestForm.get('crisisId')?.value;
+      const crisisLabel = this.crisisOptions.find(c => c.value === crisisId)?.label || 'non liée à une crise';
+      const titre = `Demande d'aide - ${crisisLabel}`;
       formData.append('titre', titre);
       
       // Localisation au format GeoJSON Point
@@ -185,13 +199,18 @@ export class RequestHelpFormComponent implements OnInit {
       };
       formData.append('localisation', JSON.stringify(localisation));
       
-      // Type demande - UUID récupéré depuis la map
-      const typeDemandeId = this.typesDemandeMap.get(eventType);
-      if (!typeDemandeId) {
+      // Type demande - Utiliser le premier type disponible (les besoins sont spécifiés séparément)
+      const firstTypeId = Array.from(this.typesDemandeMap.values())[0];
+      if (!firstTypeId) {
         alert('Type de demande non trouvé. Veuillez réessayer ou contacter le support.');
         return;
       }
-      formData.append('type_demande', typeDemandeId);
+      formData.append('type_demande', firstTypeId);
+      
+      // Crise (nullable)
+      if (crisisId) {
+        formData.append('crise', crisisId);
+      }
       
       formData.append('statut', 'NON_TRAITEE');
       
@@ -276,6 +295,21 @@ export class RequestHelpFormComponent implements OnInit {
     this.communeSearch = commune.nom;
     this.requestForm.patchValue({ commune: commune.code });
     this.showCommuneDropdown = false;
+  }
+
+  onCrisisSearchChange(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    this.crisisSearch = input.value;
+    this.filteredCrisisOptions = this.crisisOptions.filter(crisis =>
+      crisis.label.toLowerCase().includes(this.crisisSearch.toLowerCase())
+    );
+    this.showCrisisDropdown = true;
+  }
+
+  selectCrisis(crisis: { value: string; label: string }): void {
+    this.crisisSearch = crisis.label;
+    this.requestForm.patchValue({ crisisId: crisis.value });
+    this.showCrisisDropdown = false;
   }
 
   onContinue(): void {

@@ -405,7 +405,7 @@ private addHoverEffect() {
         new maplibregl.Popup()
         .setHTML(`
           <div style="color: black; font-family: sans-serif;">
-            <h3 style="margin: 0 0 5px 0;">${properties?.['nom'] || 'Nom inconnu'}</h3>
+            <h3 style="margin: 0 0 5px 0;">${properties?.['name'] || 'Nom inconnu'}</h3>
             <p style="margin: 0;">${properties?.['description'] || 'Pas de description'}</p>
             <br>
             <small>Créé le : ${new Date(properties?.['date_debut'] || Date.now()).toLocaleDateString()}</small>

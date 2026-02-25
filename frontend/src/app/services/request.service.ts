@@ -74,4 +74,8 @@ export class RequestService {
   getTypesDemande(): Observable<RequestType[]> {
     return this.http.get<RequestType[]>(`${environment.apiUrl}/types-demande`);
   }
+
+  getTypesOffre(): Observable<any[]> {
+    return this.http.get<any[]>(`${environment.apiUrl}/types-offre`);
+  }
 }

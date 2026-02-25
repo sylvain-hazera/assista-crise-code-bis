@@ -30,4 +30,8 @@ export class InformationService {
   deleteInformation(id: string): Observable<void> {
     return this.http.delete<void>(`${this.apiUrl}/${id}/`);
   }
+
+  getTypesInformation(): Observable<any[]> {
+    return this.http.get<any[]>(`${environment.apiUrl}/types-information`);
+  }
 }

@@ -20,45 +20,36 @@
       <form [formGroup]="requestForm">
       
         <!-- Étape 1 : Détails de la demande -->
-          <!-- Pour l'événement -->
+          <!-- Pour la crise -->
             <div class="form-group">
-                <label for="eventType" class="form-label">
-                Pour l'événement <span class="required">*</span>
+                <label for="crisisSearch" class="form-label">
+                Pour la crise
                 </label>
-                <div class="select-wrapper">
-                <select 
-                    id="eventType" 
-                    formControlName="eventType"
-                    class="form-select"
-                    [class.invalid]="requestForm.get('eventType')?.invalid && requestForm.get('eventType')?.touched">
-                    <option value="">Choisissez un évènement</option>
-                    @for(option of eventTypeOptions.slice(1); track option.value) {
-                    <option [value]="option.value">
-                        {{ option.label }}
-                    </option>
-                    }
-                </select>
-
-                <!-- tentavive ng-select -->
-                <!-- <ng-select 
-                    [items]="eventTypeOptions.slice(1)"
-                    bindLabel="label"
-                    bindValue="value"
-                    placeholder="Choisissez un évènement"
-                    [virtualScroll]="true"
-                    formControlName="eventType"
-                    [class.invalid]="requestForm.get('eventType')?.invalid && requestForm.get('eventType')?.touched">
-                </ng-select> -->
-                <span class="material-icons select-arrow">arrow_drop_down</span>
-                </div>
-                @if(requestForm.get('eventType')?.invalid && requestForm.get('eventType')?.touched) {
-                    <div class="error-message">
-                        Veuillez sélectionner un type d'événement
+                <div class="autocomplete-wrapper">
+                  <input
+                    type="text"
+                    id="crisisSearch"
+                    [(ngModel)]="crisisSearch"
+                    [ngModelOptions]="{standalone: true}"
+                    (input)="onCrisisSearchChange($event)"
+                    (focus)="showCrisisDropdown = true"
+                    placeholder="Rechercher une crise..."
+                    class="form-input"
+                    autocomplete="off"
+                  />
+                  @if(showCrisisDropdown && filteredCrisisOptions.length > 0) {
+                    <div class="autocomplete-dropdown">
+                      @for(crisis of filteredCrisisOptions; track crisis.value) {
+                        <div class="autocomplete-item" (click)="selectCrisis(crisis)">
+                          {{ crisis.label }}
+                        </div>
+                      }
                     </div>
-                }
+                  }
+                </div>
             </div>
 
-            <!-- De quoi avez-vous offre -->
+            <!-- Quelle aide proposez-vous -->
              @for(offerType of offersType.controls; track offerType; let i = $index) {
                 @if(i > 0){
                     <hr>
@@ -70,7 +61,7 @@
                 }
                 <div class="form-group">
                     <label [for]="'offerType' + i" class="form-label">
-                        De quoi avez-vous offre ? <span class="required">*</span>
+                        Quelle aide proposez-vous ? <span class="required">*</span>
                     </label>
                     <div class="select-wrapper">
                     <select 

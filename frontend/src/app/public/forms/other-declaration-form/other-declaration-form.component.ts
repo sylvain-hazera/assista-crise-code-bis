@@ -5,6 +5,8 @@ import { InformationService } from '../../../services/information.service';
 import { Router } from '@angular/router';
 import { GeolocationService } from '../../../services/geolocation.service';
 import { LocationService, Department, Commune } from '../../../services/location.service';
+import { CrisisService } from '../../../services/crisis.service';
+import { Crisis } from '../../../shared/models/crisis.model';
 
 enum StateForm {
   DeclareSafe,
@@ -29,6 +31,8 @@ export class OtherDeclarationFormComponent implements OnInit {
   latitude: number | null = null;
   longitude: number | null = null;
 
+  typesInformationMap: Map<string, string> = new Map(); // informationType -> UUID
+
   // Department and commune selection
   departments: Department[] = [];
   filteredDepartments: Department[] = [];
@@ -39,23 +43,13 @@ export class OtherDeclarationFormComponent implements OnInit {
   showDepartmentDropdown: boolean = false;
   showCommuneDropdown: boolean = false;
 
-  eventTypeOptions: { value: string; label: string }[] = [
-    { value: '', label: 'Dropdown' },
-    { value: 'incendie', label: 'Incendie' },
-    { value: 'inondation', label: 'Inondation' },
-    { value: 'accident', label: 'Accident' },
-    { value: 'catastrophe-naturelle', label: 'Catastrophe naturelle' },
-    { value: 'urgence-medicale', label: 'Urgence médicale' },
-    { value: 'autre', label: 'Autre' }
-  ];
+  crisisOptions: { value: string; label: string }[] = [];
+  filteredCrisisOptions: { value: string; label: string }[] = [];
+  crisisSearch: string = 'Aucune crise en rapport';
+  showCrisisDropdown: boolean = false;
 
   informationTypeOptions: { value: string; label: string }[] = [
-    { value: '', label: 'Dropdown' },
-    { value: 'urgence_medicale', label: 'Urgence médicale' },
-    { value: 'danger_imminent', label: 'Danger imminent' },
-    { value: 'besoin_aide', label: 'Besoin d\'aide' },
-    { value: 'information_utile', label: 'Information utile' },
-    { value: 'autre', label: 'Autre' }
+    { value: '', label: 'Dropdown' }
   ];
 
   constructor(
@@ -63,12 +57,15 @@ export class OtherDeclarationFormComponent implements OnInit {
     private router: Router,
     private informationService: InformationService,
     private geolocationService: GeolocationService,
-    private locationService: LocationService
+    private locationService: LocationService,
+    private crisisService: CrisisService
   ) {}
 
   ngOnInit(): void {
     this.initForm();
     this.loadDepartments();
+    this.loadTypesInformation();
+    this.loadActiveCrises();
   }
 
   loadDepartments(): void {
@@ -81,9 +78,48 @@ export class OtherDeclarationFormComponent implements OnInit {
     });
   }
 
+  loadTypesInformation(): void {
+    this.informationService.getTypesInformation().subscribe({
+      next: (types: any[]) => {
+        types.forEach((t: any) => {
+          const normalizedType = t.type.toLowerCase().replace(/\s+/g, '-');
+          this.typesInformationMap.set(normalizedType, t.id!);
+          this.informationTypeOptions.push({
+            value: normalizedType,
+            label: t.type
+          });
+        });
+        console.log('Types information chargés:', this.informationTypeOptions);
+      },
+      error: (err: any) => console.error('Erreur chargement types information:', err)
+    });
+  }
+
+  loadActiveCrises(): void {
+    this.crisisService.getAllCrisis().subscribe({
+      next: (crises: Crisis[]) => {
+        this.crisisOptions.push({
+          value: '',
+          label: 'Aucune crise en rapport'
+        });
+        
+        crises.forEach(crisis => {
+          this.crisisOptions.push({
+            value: crisis.id!,
+            label: crisis.name
+          });
+        });
+        
+        this.filteredCrisisOptions = [...this.crisisOptions];
+        console.log('Crises chargées:', this.crisisOptions);
+      },
+      error: (err) => console.error('Erreur chargement crises:', err)
+    });
+  }
+
   initForm(): void {
     this.declareSafeForm = this.formBuilder.group({
-      eventType: ['', Validators.required],
+      crisisId: [''],
       lastName: ['', Validators.required],
       firstName: ['', Validators.required],
       phoneNumber: ['', [Validators.required, Validators.pattern(/^\+?\d{10,15}$/)]],
@@ -96,7 +132,7 @@ export class OtherDeclarationFormComponent implements OnInit {
     });
 
     this.otherInformationForm = this.formBuilder.group({
-      eventType: ['', Validators.required],
+      crisisId: [''],
       informationType: ['', Validators.required],
       description: ['', [Validators.required, Validators.minLength(10)]],
       streetNumber: ['', Validators.required],
@@ -201,6 +237,22 @@ export class OtherDeclarationFormComponent implements OnInit {
     this.showCommuneDropdown = false;
   }
 
+  onCrisisSearchChange(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    this.crisisSearch = input.value;
+    this.filteredCrisisOptions = this.crisisOptions.filter(crisis =>
+      crisis.label.toLowerCase().includes(this.crisisSearch.toLowerCase())
+    );
+    this.showCrisisDropdown = true;
+  }
+
+  selectCrisis(crisis: { value: string; label: string }): void {
+    this.crisisSearch = crisis.label;
+    const form = this.state === StateForm.DeclareSafe ? this.declareSafeForm : this.otherInformationForm;
+    form.patchValue({ crisisId: crisis.value });
+    this.showCrisisDropdown = false;
+  }
+
   onSubmit(): void {
     if (this.state === StateForm.DeclareSafe && this.declareSafeForm.valid) {
       const street = this.declareSafeForm.get('streetNumber')?.value;
@@ -281,8 +333,19 @@ export class OtherDeclarationFormComponent implements OnInit {
 
     formData.append('statut', 'DISPONIBLE');
     
-    // Utiliser le TypeInformation par défaut (TODO: récupérer dynamiquement)
-    formData.append('type_information', 'c755bec1-4ae1-407e-b487-160300491cf7');
+    // Utiliser le premier TypeInformation disponible
+    const firstTypeId = Array.from(this.typesInformationMap.values())[0];
+    if (!firstTypeId) {
+      alert('Type d\'information non trouvé. Veuillez réessayer ou contacter le support.');
+      return;
+    }
+    formData.append('type_information', firstTypeId);
+
+    // Crise (nullable)
+    const crisisId = this.declareSafeForm.get('crisisId')?.value;
+    if (crisisId) {
+      formData.append('crise', crisisId);
+    }
 
     console.log('FormData envoyé (DeclareSafe):', Array.from(formData.entries()));
 
@@ -321,8 +384,19 @@ export class OtherDeclarationFormComponent implements OnInit {
 
     formData.append('statut', 'DISPONIBLE');
     
-    // Utiliser le TypeInformation par défaut (TODO: récupérer dynamiquement)
-    formData.append('type_information', 'c755bec1-4ae1-407e-b487-160300491cf7');
+    // Utiliser le premier TypeInformation disponible
+    const firstTypeId = Array.from(this.typesInformationMap.values())[0];
+    if (!firstTypeId) {
+      alert('Type d\'information non trouvé. Veuillez réessayer ou contacter le support.');
+      return;
+    }
+    formData.append('type_information', firstTypeId);
+
+    // Crise (nullable)
+    const crisisId = this.otherInformationForm.get('crisisId')?.value;
+    if (crisisId) {
+      formData.append('crise', crisisId);
+    }
 
     console.log('FormData envoyé (OtherInformation):', Array.from(formData.entries()));
 

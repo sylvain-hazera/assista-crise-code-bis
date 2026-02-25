@@ -41,18 +41,22 @@ export class OfferService {
   // }
 
   getOffer(id: string): Observable<Offer> {
-    return this.http.get<Offer>(`${this.apiUrl}/offres/${id}/`);
+    return this.http.get<Offer>(`${this.apiUrl}/${id}/`);
   }
 
   createOffer(data: Partial<Offer> | FormData): Observable<Offer> {
-    return this.http.post<Offer>(`${this.apiUrl}/offres/`, data);
+    return this.http.post<Offer>(`${this.apiUrl}/`, data);
   }
 
   updateOffer(id: string, data: Partial<Offer> | FormData): Observable<Offer> {
-    return this.http.put<Offer>(`${this.apiUrl}/offres/${id}/`, data);
+    return this.http.put<Offer>(`${this.apiUrl}/${id}/`, data);
   }
 
   deleteOffer(id: string): Observable<void> {
-    return this.http.delete<void>(`${this.apiUrl}/offres/${id}/`);
+    return this.http.delete<void>(`${this.apiUrl}/${id}/`);
+  }
+
+  getTypesOffre(): Observable<any[]> {
+    return this.http.get<any[]>(`${environment.apiUrl}/types-offre`);
   }
 }

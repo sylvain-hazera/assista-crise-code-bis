@@ -22,18 +22,48 @@ echo "Creating default Request Types..."
 python manage.py shell <<EOF
 from core.models import TypeDemande, TypeOffre, TypeInformation 
 
-types_evenements = [
-    'Incendie', 
-    'Inondation', 
-    'Accident', 
-    'Catastrophe naturelle', 
-    'Urgence médicale', 
+types_demandes = [
+    'Assistance immédiate',
+    'Hébergement',
+    'Nourriture et eau',
+    'Soins médicaux',
+    'Transport',
+    'Matériel',
+    'Soutien psychologique',
     'Autre'
 ]
 
-print("Creating Event Types...")
-for t in types_evenements:
+types_offres = [
+    'Assistance immédiate',
+    'Hébergement',
+    'Nourriture et eau',
+    'Soins médicaux',
+    'Transport',
+    'Matériel',
+    'Soutien psychologique',
+    'Autre'
+]
+
+types_informations = [
+    'Information utile',
+    'Danger imminent',
+    'Autre'
+]
+
+print("Creating TypeDemande...")
+for t in types_demandes:
     TypeDemande.objects.get_or_create(type=t)
+    print(f"  - {t}")
+
+print("Creating TypeOffre...")
+for t in types_offres:
+    TypeOffre.objects.get_or_create(type=t)
+    print(f"  - {t}")
+
+print("Creating TypeInformation...")
+for t in types_informations:
+    TypeInformation.objects.get_or_create(type=t)
+    print(f"  - {t}")
 
 EOF
 

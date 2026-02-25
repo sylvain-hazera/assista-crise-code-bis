@@ -304,12 +304,12 @@ class DemandeViewSet(viewsets.ModelViewSet):
 class OffreViewSet(viewsets.ModelViewSet):
     queryset = Offre.objects.all()
     serializer_class = OffreSerializer
-    permission_classes = [IsAuthenticatedOrReadOnly]
+    permission_classes = [AllowAny]
 
 class InformationViewSet(viewsets.ModelViewSet):
     queryset = Information.objects.all()
     serializer_class = InformationSerializer
-    permission_classes = [IsAuthenticatedOrReadOnly]
+    permission_classes = [AllowAny]
 
 # --- VIEWSETS SIMPLES POUR LES TYPES ---
 class TypeDemandeViewSet(viewsets.ModelViewSet):
