@@ -65,8 +65,8 @@ export class RequestHelpFormComponent implements OnInit {
   ) {}
 
   ngOnInit(): void {
-    this.initForm();
     this.currentUser = this.authService.getCurrentUser();
+    this.initForm();
     this.loadTypesDemande();
   }
 

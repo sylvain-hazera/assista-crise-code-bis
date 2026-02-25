@@ -29,7 +29,6 @@ export class RegisterComponent implements OnInit, OnDestroy {
     { value: RoleUtilisateur.UTIL_SIMPLE, label: 'Particulier' },
     { value: RoleUtilisateur.AUT_LOCALE, label: 'Institution' },
     { value: RoleUtilisateur.SECOURS, label: 'Secours organisés' },
-    { value: RoleUtilisateur.ADMIN, label: 'Admin' }
   ];
 
   constructor(
@@ -77,7 +76,7 @@ export class RegisterComponent implements OnInit, OnDestroy {
     console.log('Toggle fields for userType:', userType);
     const firstNameControl = this.registerForm.get('firstName');
 
-    if (userType === 'Individual' || userType === 'individual') {  // Gérer les deux cas
+    if (userType === RoleUtilisateur.UTIL_SIMPLE) {  
        // Activer firstName pour les particuliers
       console.log('Activating firstName for individual');
       firstNameControl?.setValidators([

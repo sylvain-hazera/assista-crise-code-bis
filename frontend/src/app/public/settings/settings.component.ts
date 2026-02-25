@@ -73,7 +73,7 @@ export class SettingsComponent implements OnInit {
 
   ngOnInit(): void {
     this.currentUser = this.authService.getCurrentUser();
-    if (!this.currentUser) { this.router.navigate(['/login']); return; }
+    // if (!this.currentUser) { this.router.navigate(['/login']); return; }
     this.initForms();
     this.loadAll();
   }
@@ -110,7 +110,7 @@ export class SettingsComponent implements OnInit {
   private loadCrises(): void {
     this.isLoadingCrisis = true;
     // Django filtre par validateur (UUID de l'utilisateur)
-    this.criseService.getMines(this.currentUser!.id).subscribe({
+    this.criseService.getMines(this.currentUser!.email).subscribe({
       next: list => {
         this.allCrisis = this.filteredCrisis = list;
         this.isLoadingCrisis = false;
@@ -121,7 +121,7 @@ export class SettingsComponent implements OnInit {
 
   private loadOffres(): void {
     this.isLoadingOffers = true;
-    this.offreService.getMines(this.currentUser!.id).subscribe({
+    this.offreService.getMines(this.currentUser!.email).subscribe({
       next: list => {
         this.allOffers = this.filteredOffers = list;
         this.isLoadingOffers = false;
@@ -132,7 +132,7 @@ export class SettingsComponent implements OnInit {
 
   private loadDemandes(): void {
     this.isLoadingRequests = true;
-    this.demandeService.getMines(this.currentUser!.id).subscribe({
+    this.demandeService.getMines(this.currentUser!.email).subscribe({
       next: list => {
         this.allRequests = this.filteredRequests = list;
         this.isLoadingRequests = false;

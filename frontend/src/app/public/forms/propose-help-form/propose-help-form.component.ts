@@ -5,7 +5,7 @@ import { GeolocationService } from '../../../services/geolocation.service';
 import { CommonModule } from '@angular/common';
 import { OfferService } from '../../../services/offer.service';
 import { AuthService } from '../../../auth/services/auth.service';
-import { Utilisateur } from '../../../shared/models/user.model';
+import { RoleUtilisateur, Utilisateur } from '../../../shared/models/user.model';
 
 @Component({
   selector: 'app-request-help-form',
@@ -51,9 +51,9 @@ export class ProposeHelpFormComponent implements OnInit {
 
   personTypeOptions: { value: string; label: string }[] = [
     { value: '', label: 'Dropdown' },
-    { value: 'individual', label: 'Particulier' },
-    { value: 'organization', label: 'Organisation' },
-    { value: 'rescue', label: 'Secours organisés' },
+    { value: RoleUtilisateur.UTIL_SIMPLE, label: 'Particulier' },
+    { value: RoleUtilisateur.AUT_LOCALE , label: 'Organisation' },
+    { value: RoleUtilisateur.SECOURS , label: 'Secours organisés' },
   ];
 
   constructor(
@@ -65,8 +65,8 @@ export class ProposeHelpFormComponent implements OnInit {
   ) {}
 
   ngOnInit(): void {
-    this.initForm();
     this.currentUser = this.authService.getCurrentUser();
+    this.initForm();
     this.loadTypesDemande();
   }
 
@@ -98,11 +98,11 @@ export class ProposeHelpFormComponent implements OnInit {
     this.addOffer(); // Ajouter un besoin initial  
 
     this.informationForm = this.formBuilder.group({
-      personType: ['individual', Validators.required],
-      lastName: ['', Validators.required],
-      firstName: ['', Validators.required],
-      email: ['', [Validators.required, Validators.email]],
-      phoneNumber: ['', [Validators.required, Validators.pattern(/^\+?\d{10,15}$/)]]
+      personType: [this.currentUser?.type, Validators.required],
+      lastName: [this.currentUser?.last_name, Validators.required],
+      firstName: [this.currentUser?.first_name, Validators.required],
+      email: [this.currentUser?.email, [Validators.required, Validators.email]],
+      phoneNumber: [this.currentUser?.telephone_utilisateur, [Validators.required, Validators.pattern(/^\+?\d{10,15}$/)]]
     });
   }
 

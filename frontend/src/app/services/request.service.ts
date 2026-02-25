@@ -86,11 +86,12 @@ export class RequestService {
    * Django : @action(detail=False, url_path='my_requests')
    * L'authentification JWT identifie automatiquement l'utilisateur.
    */
-  getMines(userId: string): Observable<Demande[]> {
+  getMines(email: string): Observable<Demande[]> {
     // return this.http
     //   .get<Demande[]>(`${this.url}/my_requests/`)
     //   .pipe(map(list => list.map(this.normalize)));
-    return this.getAll({ auteur: userId });
+    // return this.getAll({ auteur: userId });
+    return this.getAll({ auteur_email: email });
   }
 
   /** GET /api/demandes/<id>/ */

@@ -93,8 +93,9 @@ export class CrisisService {
    * Django filtre via : ?validateur=<userId>
    * GET /api/crises/?validateur=<uuid>
    */
-  getMines(userId: string): Observable<Crise[]> {
-    return this.getAll({ validateur: userId });
+  getMines(email: string): Observable<Crise[]> {
+    // return this.getAll({ auteur: userId });
+    return this.getAll({ auteur_email: email });
   }
 
   /**

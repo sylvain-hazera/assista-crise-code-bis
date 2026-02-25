@@ -8,6 +8,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from .serializers import MyTokenObtainPairSerializer  # if you've defined it in serializers
 from django.contrib.auth import authenticate
+from django_filters import rest_framework as filters
 from .models import (
     Utilisateur, Crise, Demande, Offre, Information,
     TypeDemande, TypeOffre, TypeInformation
@@ -17,6 +18,9 @@ from .serializers import (
     OffreSerializer, InformationSerializer,
     TypeDemandeSerializer, TypeOffreSerializer, TypeInformationSerializer
 )
+
+class AuteurEmailFilter(filters.FilterSet):
+    auteur_email = filters.CharFilter(field_name='auteur__email', lookup_expr='iexact')
 
 class UtilisateurViewSet(viewsets.ModelViewSet):
     queryset = Utilisateur.objects.all()
@@ -80,16 +84,19 @@ class CriseViewSet(viewsets.ModelViewSet):
     queryset = Crise.objects.all()
     serializer_class = CriseSerializer
     permission_classes = [IsAuthenticatedOrReadOnly]
+    filterset_class = AuteurEmailFilter
 
 class DemandeViewSet(viewsets.ModelViewSet):
     queryset = Demande.objects.all()
     serializer_class = DemandeSerializer
     permission_classes = [AllowAny]
+    filterset_class = AuteurEmailFilter
 
 class OffreViewSet(viewsets.ModelViewSet):
     queryset = Offre.objects.all()
     serializer_class = OffreSerializer
     permission_classes = [IsAuthenticatedOrReadOnly]
+    filterset_class = AuteurEmailFilter
 
 class InformationViewSet(viewsets.ModelViewSet):
     queryset = Information.objects.all()

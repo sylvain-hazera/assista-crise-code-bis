@@ -65,20 +65,20 @@ class Utilisateur(AbstractUser):
 class Crise(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     nom = models.CharField(max_length=100)
-    # type = models.CharField(max_length=100)
-    # description = models.TextField()
-    # photo = models.ImageField(upload_to="photos/crises/", null=True, blank=True)
+    type = models.CharField(max_length=100, null=True, blank=True)
+    description = models.TextField(null=True, blank=True)
+    photo = models.ImageField(upload_to="photos/crises/", null=True, blank=True)
     localisation = gis_models.PointField(srid=4326)
     date_debut = models.DateTimeField(auto_now_add=True)
     date_fin = models.DateTimeField(null=True, blank=True)
 
-    # auteur = models.ForeignKey(
-    #     Utilisateur,
-    #     on_delete=models.SET_NULL,
-    #     null=True,
-    #     blank=True,
-    #     related_name="crises_déclarées",
-    # )
+    auteur = models.ForeignKey(
+        Utilisateur,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="crises_déclarées",
+    )
 
     validateur = models.ForeignKey(
         'Utilisateur',
@@ -93,8 +93,8 @@ class Crise(models.Model):
 
 class TypeDemande(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    type = models.CharField(max_length=100, unique=True)
-    # description = models.TextField()
+    type = models.CharField(max_length=100, unique=True, null=True, blank=True)
+    description = models.TextField(null=True, blank=True)
 
     def __str__(self) -> str:  # pragma: no cover - display helper
         return self.type
@@ -138,9 +138,8 @@ class Demande(models.Model):
 
 class TypeInformation(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    type = models.CharField(max_length=100, unique=True)
-    # description = models.TextField()
-
+    type = models.CharField(max_length=100, unique=True, null=True, blank=True)
+    description = models.TextField(null=True, blank=True)
 
     def __str__(self) -> str:  # pragma: no cover - display helper
         return self.type
@@ -184,8 +183,8 @@ class Information(models.Model):
 
 class TypeOffre(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    type = models.CharField(max_length=100, unique=True)
-    # description = models.TextField()
+    type = models.CharField(max_length=100, unique=True, null=True, blank=True)
+    description = models.TextField(null=True, blank=True)
 
 
 

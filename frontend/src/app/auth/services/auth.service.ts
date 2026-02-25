@@ -327,7 +327,9 @@ export class AuthService {
   }
 
   isAdmin(): boolean {
-    return this.getCurrentUser()?.type === RoleUtilisateur.ADMIN;
+    return this.getCurrentUser()?.type === RoleUtilisateur.SECOURS || 
+      this.getCurrentUser()?.type === RoleUtilisateur.AUT_LOCALE|| 
+      this.getCurrentUser()?.type === RoleUtilisateur.ADMIN;
   }
 
   isSysAdmin(): boolean {

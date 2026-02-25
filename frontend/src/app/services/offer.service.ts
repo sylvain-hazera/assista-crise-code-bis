@@ -71,8 +71,9 @@ export class OfferService {
   }
 
   /** GET /api/offres/my_offres/ */
-  getMines(userId: string): Observable<Offre[]> {
-      return this.getAll({ validateur: userId });
+  getMines(email: string): Observable<Offre[]> {
+      // return this.getAll({ auteur: userId });
+      return this.getAll({ auteur_email: email });
   }
 
   getById(id: string): Observable<Offre> {
