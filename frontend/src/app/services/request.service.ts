@@ -16,51 +16,6 @@ export class RequestService {
 
   constructor(private http: HttpClient) {}
 
-  // createRequest(formData: FormData): Observable<Demande> {
-  //   return this.http.post<Demande>(`${this.apiUrl}/`, formData);
-  // }
-
-  // getAllRequests(): Observable<Demande[]> {
-  //   return this.http.get<Demande[]>(this.apiUrl);
-  // }
-
-  // getRequests(params?: any): Observable<Demande[]> {
-  //   let httpParams = new HttpParams();
-  //   if (params) {
-  //     Object.keys(params).forEach(key => {
-  //       httpParams = httpParams.set(key, params[key]);
-  //     });
-  //   }
-  //   return this.http.get<Demande[]>(this.apiUrl, { params: httpParams });
-  // }
-
-  // getMyRequests(): Observable<Demande[]> {
-  //   return this.http.get<Demande[]>(`${this.apiUrl}/my_requests/`);
-  // }
-
-
-  // getRequest(id: string): Observable<Demande> {
-  //   return this.http.get<Demande>(`${this.apiUrl}/${id}/`);
-  // }
-
-  // updateRequest(id: string, formData: FormData): Observable<Demande> {
-  //   return this.http.put<Demande>(`${this.apiUrl}/${id}/`, formData);
-  // }
-
-  // deleteRequest(id: string): Observable<void> {
-  //   return this.http.delete<void>(`${this.apiUrl}/${id}/`);
-  // }
-
-  // getRequestStats(filter?: any): Observable<any> {
-  //   let httpParams = new HttpParams();
-  //   if (filter) {
-  //     Object.keys(filter).forEach(key => {
-  //       httpParams = httpParams.set(key, filter[key]);
-  //     });
-  //   }
-  //   return this.http.get<any>(`${this.apiUrl}/stats`, { params: httpParams });
-  // }
-
   // ── TYPES ────────────────────────────────────────────────────
 
   /**
@@ -120,28 +75,6 @@ export class RequestService {
     return this.http.put<Demande>(`${this.url}/${id}/`, data);
   }
 
-  // // ── ÉCRITURE ─────────────────────────────────────────────────
-
-  // /**
-  //  * POST /api/demandes/
-  //  * Le service construit le GeoJSON depuis latitude/longitude.
-  //  * L'auteur est injecté par Django via perform_create() → request.user.
-  //  */
-  // create(payload: DemandePayload): Observable<Demande> {
-  //   return this.http
-  //     .post<Demande>(`${this.url}/`, this.toFormData(payload))
-  //     .pipe(map(this.normalize));
-  // }
-
-  // /**
-  //  * PATCH /api/demandes/<id>/
-  //  * Mise à jour partielle — on n'envoie que les champs modifiés.
-  //  */
-  // update(id: string, payload: Partial<DemandePayload>): Observable<Demande> {
-  //   return this.http
-  //     .patch<Demande>(`${this.url}/${id}/`, this.toFormData(payload))
-  //     .pipe(map(this.normalize));
-  // }
 
   /** DELETE /api/demandes/<id>/ */
   delete(id: string): Observable<void> {

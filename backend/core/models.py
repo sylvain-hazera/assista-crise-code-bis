@@ -28,7 +28,8 @@ class Utilisateur(AbstractUser):
         choices=RoleUtilisateur.choices,
         default=RoleUtilisateur.UTILISATEUR_SIMPLE,
     )
-    
+    enable = models.BooleanField(default=True)
+
     USERNAME_FIELD = 'email'          # ← add this
     REQUIRED_FIELDS = ['username']    # ← add this (username still needed but not the login field)
     
@@ -56,6 +57,13 @@ class Utilisateur(AbstractUser):
         "Offre",
         blank=True,
         related_name="utilisateurs_consultant"
+    )
+
+    validateur = models.ForeignKey(
+        'Utilisateur',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="utilisateur_validé"
     )
 
     def __str__(self) -> str:  # pragma: no cover - display helper

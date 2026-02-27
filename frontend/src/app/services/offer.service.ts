@@ -16,50 +16,6 @@ export class OfferService {
 
   constructor(private http: HttpClient) {}
 
-  // getAllOffers(): Observable<Offre[]> {
-  //   return this.http.get<Offre[]>(this.apiUrl);
-  // }
-
-  // getOffers(params?: any): Observable<Offre[]> {
-  //   let httpParams = new HttpParams();
-  //   if (params) {
-  //     Object.keys(params).forEach(key => {
-  //       httpParams = httpParams.set(key, params[key]);
-  //     });
-  //   }
-  //   return this.http.get<Offre[]>(this.apiUrl, { params: httpParams });
-  // }
-
-  // getOfferStats(filter?: any): Observable<any> {
-  //   let httpParams = new HttpParams();
-  //   if (filter) {
-  //     Object.keys(filter).forEach(key => {
-  //       httpParams = httpParams.set(key, filter[key]);
-  //     });
-  //   }
-  //   return this.http.get<any>(`${this.apiUrl}/stats`, { params: httpParams });
-  // }
-
-  // // getOffers(params?: any): Observable<Offre[]> {
-  // //   return this.http.get<Offre[]>(`${this.apiUrl}/offres/`, { params });
-  // // }
-
-  // getOffer(id: string): Observable<Offre> {
-  //   return this.http.get<Offre>(`${this.apiUrl}/offres/${id}/`);
-  // }
-
-  // createOffer(data: Partial<Offre> | FormData): Observable<Offre> {
-  //   return this.http.post<Offre>(`${this.apiUrl}/offres/`, data);
-  // }
-
-  // updateOffer(id: string, data: Partial<Offre> | FormData): Observable<Offre> {
-  //   return this.http.put<Offre>(`${this.apiUrl}/offres/${id}/`, data);
-  // }
-
-  // deleteOffer(id: string): Observable<void> {
-  //   return this.http.delete<void>(`${this.apiUrl}/offres/${id}/`);
-  // }
-
   getTypes(): Observable<TypeOffre[]> {
     return this.http.get<TypeOffre[]>(`${this.typeUrl}/`);
   }

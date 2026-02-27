@@ -143,6 +143,12 @@ export class RegisterComponent implements OnInit, OnDestroy {
       last_name: formValue.lastName,
       first_name: formValue.firstName || '',  
     };
+
+    if(formValue.userType === RoleUtilisateur.UTIL_SIMPLE) {
+      registerData.enable = true;
+    } else {
+      registerData.enable = false;
+    }
     
     console.log('Données envoyées:', registerData);
 
@@ -210,21 +216,4 @@ export class RegisterComponent implements OnInit, OnDestroy {
     return this.registerForm.get('userType')?.value === RoleUtilisateur.UTIL_SIMPLE;
 
   }
-
-  /**
-   * Convertit les valeurs RoleUtilisateur du frontend vers les valeurs RoleUtilisateur de Django
-   */
-  // private mapUserTypeToBackend(userType: string): string {
-  //   const mapping: { [key: string]: string } = {
-  //     'Individual': 'UTIL_SIMPLE',
-  //     'individual': 'UTIL_SIMPLE',
-  //     'Organization': 'AUT_LOCALE',
-  //     'organization': 'AUT_LOCALE',
-  //     'Rescue': 'SECOURS',
-  //     'rescue': 'SECOURS',
-  //     'Admin': 'ADMIN',
-  //     'admin': 'ADMIN'
-  //   };
-  //   return mapping[userType] || 'UTIL_SIMPLE';
-  // }
 }

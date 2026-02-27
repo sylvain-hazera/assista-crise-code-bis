@@ -340,6 +340,10 @@ export class AuthService {
     return !!this.getToken();
   }
 
+  isEnable(): boolean {
+    return this.getCurrentUser()?.enable === true;
+  }
+
   private profileToFormData(payload: UtilisateurPayload): FormData {
     const fd = new FormData();
     if (payload.username)              fd.append('username', payload.username);

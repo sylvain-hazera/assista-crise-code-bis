@@ -1,29 +1,3 @@
-// export interface User {
-//   id?: number;
-//   login?: string;
-//   hashPassword: string;
-//   userType: UserRole;
-//   lastName: string;
-//   firstName?: string;
-//   pseudo?: string;
-//   email: string;
-//   phone: string;
-//   postalCode: string;
-//   emailVerified?: boolean;
-//   enable?: boolean;
-//   avatar?: string;
-//   createdAt?: Date;
-//   updatedAt?: Date;
-//   token?: string;
-// }
-
-// export enum UserRole {
-//   Individual = 'individual',
-//   Organization = 'organization',
-//   Rescue = 'rescue',
-//   Admin = 'admin'
-// }
-
 export enum RoleUtilisateur {
   ADMIN       = 'ADMIN',
   AUT_LOCALE  = 'AUT_LOCALE',
@@ -41,8 +15,10 @@ export interface Utilisateur {
   telephone_utilisateur: string | null;
   photo: string | null;                 // URL relative (ex: /media/photos/xxx.jpg)
   type: RoleUtilisateur;
+  enable: boolean;
   crise_touchee: string | null;         // UUID de la Crise (FK)
   // M2M — listes d'UUID, non éditables directement
+  validateur?: string[];
   consulte_demande?: string[];
   consulte_information?: string[];
   consulte_offre?: string[];
