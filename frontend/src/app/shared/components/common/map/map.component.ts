@@ -10,6 +10,7 @@ import { Offer } from '../../../models/offer.model';
 import { GeolocationService } from '../../../../services/geolocation.service';
 import { forkJoin, Subscription } from 'rxjs';
 import { FeatureCollection, Geometry, Polygon } from 'geojson';
+import { AuthService } from '../../../../auth/services/auth.service';
 
 @Component({
   selector: 'app-map',
@@ -39,7 +40,8 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   constructor(private crisisService: CrisisService,
               private requestService: RequestService,
               private offerService: OfferService,
-              private geolocationService: GeolocationService) {}
+              private geolocationService: GeolocationService,
+              private authService: AuthService) {}
   ngOnInit(): void {
     // Charger la géolocalisation si disponible
     this.loadUserLocation();
@@ -163,20 +165,30 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
 
   private addSourceAndLayers(): void {
     if (!this.map) return;
+    const isAdmin = this.authService.isAdmin();
     const geoJsonList = [this.requestGeoJSON, this.proposalGeoJSON];
     const mergedGeoJSON: FeatureCollection<Geometry> = {
         type: 'FeatureCollection',
         features: geoJsonList.flatMap(geoJson => geoJson ? geoJson.features : [])
         };
+    if (!isAdmin) {
+      mergedGeoJSON.features.forEach(feature => {
+        const geometry = feature.geometry as GeoJSON.Point;
+        const originalCoords = geometry.coordinates as [number, number];
+        geometry.coordinates = [
+          originalCoords[0] + (Math.random() - 0.5) * 0.01,
+          originalCoords[1] + (Math.random() - 0.5) * 0.01,
+        ];
+      });
+    }
     this.map.on('load', () => {
-      // Ajout de la source pour les demandes d'aide
       if (mergedGeoJSON) {
         this.map!.addSource('clusters', {
           type: 'geojson',
           data: mergedGeoJSON,
           cluster: true,
-          clusterMaxZoom: 8, // Max zoom to cluster points on
-          clusterRadius: 50 // Radius of each cluster when clustering points (defaults to 50)
+          clusterMaxZoom: 8,
+          clusterRadius: 50
         });
       }
       this.map!.addLayer({
@@ -227,6 +239,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
             const coordinates = geometry.coordinates.slice() as [number, number];
             const statut = e.features[0].properties['statut'] || 'N/A';
             const titre = e.features[0].properties['titre'] || 'N/A';
+            const description = e.features[0].properties['description'] || 'Pas de description';
             let name: string;
             if ('nom_demande' in e.features[0].properties) {
               offerRequest = 'la demande';
@@ -243,7 +256,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
             new maplibregl.Popup()
                 .setLngLat(coordinates)
                 .setHTML(
-                    `Nom de ${offerRequest}: ${titre}<br>Statut de ${offerRequest}: ${statut}`
+                    `Nom de ${offerRequest}: ${titre}<br>Statut de ${offerRequest}: ${statut}<br>Description: ${description}`
                 )
                 .addTo(this.map!);
         });
