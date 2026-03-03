@@ -2,15 +2,15 @@ import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, Validators, ReactiveFormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
-import { Utilisateur } from '../../shared/models/user.model';
+import { User } from '../../shared/models/user.model';
 import { AuthService } from '../../auth/services/auth.service';
 import { RequestService } from '../../services/request.service';
 import { OfferService } from '../../services/offer.service';
 import { CrisisService } from '../../services/crisis.service';
-import { Demande } from '../../shared/models/request.model';
-import { Offre } from '../../shared/models/offer.model';
-import { Crise } from '../../shared/models/crisis.model';
-import { Statut } from '../../shared/models/status.model';
+import { Request } from '../../shared/models/request.model';
+import { Offer } from '../../shared/models/offer.model';
+import { Crisis } from '../../shared/models/crisis.model';
+import { Status } from '../../shared/models/status.model';
 
 @Component({
   selector: 'app-settings',
@@ -21,7 +21,7 @@ import { Statut } from '../../shared/models/status.model';
 })
 
 export class SettingsComponent implements OnInit {
-  currentUser: Utilisateur | null = null;
+  currentUser: User | null = null;
   profileForm!: FormGroup;
   passwordForm!: FormGroup;
 
@@ -55,12 +55,12 @@ export class SettingsComponent implements OnInit {
 
   activeTab: 'profile' | 'password' | 'offer' | 'request' | 'crisis' = 'profile';
 
-  allCrisis:  Crise[]   = [];  filteredCrisis:  Crise[]   = [];  isLoadingCrisis  = false;
-  allOffers:  Offre[]   = [];  filteredOffers:  Offre[]   = [];  isLoadingOffers  = false;
-  allRequests: Demande[] = []; filteredRequests: Demande[] = []; isLoadingRequests = false;
+  allCrisis:  Crisis[]   = [];  filteredCrisis:  Crisis[]   = [];  isLoadingCrisis  = false;
+  allOffers:  Offer[]   = [];  filteredOffers:  Offer[]   = [];  isLoadingOffers  = false;
+  allRequests: Request[] = []; filteredRequests: Request[] = []; isLoadingRequests = false;
 
   showDetailCrisis = false;  showDetailOffer  = false;  showDetailRequest = false;
-  selectedReport: Crise | Offre | Demande | null = null;
+  selectedReport: Crisis | Offer | Request | null = null;
 
   constructor(
     private fb: FormBuilder,
@@ -85,7 +85,7 @@ export class SettingsComponent implements OnInit {
       last_name:               [this.currentUser?.last_name,  [Validators.required, Validators.minLength(2)]],
       first_name:              [this.currentUser?.first_name  ?? ''],
       email:                   [this.currentUser?.email,       [Validators.required, Validators.email]],
-      telephone_utilisateur:   [this.currentUser?.telephone_utilisateur ?? '']
+      telephone_utilisateur:   [this.currentUser?.phone_number ?? '']
     });
 
     this.passwordForm = this.fb.group({
@@ -194,7 +194,7 @@ export class SettingsComponent implements OnInit {
   onFilterCrisis(event: Event): void {
     const term = (event.target as HTMLInputElement).value.toLowerCase();
     this.filteredCrisis = this.allCrisis.filter(c =>
-      c.nom.toLowerCase().includes(term) ||
+      c.name.toLowerCase().includes(term) ||
       c.description?.toLowerCase().includes(term)
     );
   }
@@ -202,39 +202,39 @@ export class SettingsComponent implements OnInit {
   onFilterOffer(event: Event): void {
     const term = (event.target as HTMLInputElement).value.toLowerCase();
     this.filteredOffers = this.allOffers.filter(o =>
-      o.titre.toLowerCase().includes(term) ||
-      o.statut.toLowerCase().includes(term)
+      o.title.toLowerCase().includes(term) ||
+      o.status.toLowerCase().includes(term)
     );
   }
 
   onFilterNeed(event: Event): void {
     const term = (event.target as HTMLInputElement).value.toLowerCase();
     this.filteredRequests = this.allRequests.filter(d =>
-      d.titre.toLowerCase().includes(term) ||
-      d.statut.toLowerCase().includes(term)
+      d.title.toLowerCase().includes(term) ||
+      d.status.toLowerCase().includes(term)
     );
   }
 
   // ── Suppression ──────────────────────────────────────────────
 
-  deleteCrisis(crise: Crise): void {
-    if (!confirm(`Supprimer "${crise.nom}" ?`)) return;
+  deleteCrisis(crise: Crisis): void {
+    if (!confirm(`Supprimer "${crise.name}" ?`)) return;
     this.criseService.delete(crise.id).subscribe({
       next:  () => { this.successMessage = 'Crise supprimée'; this.loadCrises(); },
       error: err => (this.errorMessage = err.error?.detail ?? 'Erreur')
     });
   }
 
-  deleteOffer(offre: Offre): void {
-    if (!confirm(`Supprimer "${offre.titre}" ?`)) return;
+  deleteOffer(offre: Offer): void {
+    if (!confirm(`Supprimer "${offre.title}" ?`)) return;
     this.offreService.delete(offre.id).subscribe({
       next:  () => { this.successMessage = 'Offre supprimée'; this.loadOffres(); },
       error: err => (this.errorMessage = err.error?.detail ?? 'Erreur')
     });
   }
 
-  deleteRequest(demande: Demande): void {
-    if (!confirm(`Supprimer "${demande.titre}" ?`)) return;
+  deleteRequest(demande: Request): void {
+    if (!confirm(`Supprimer "${demande.title}" ?`)) return;
     this.demandeService.delete(demande.id).subscribe({
       next:  () => { this.successMessage = 'Demande supprimée'; this.loadDemandes(); },
       error: err => (this.errorMessage = err.error?.detail ?? 'Erreur')
@@ -243,15 +243,15 @@ export class SettingsComponent implements OnInit {
 
   // ── Édition ──────────────────────────────────────────────────
 
-  editCrisis(c: Crise):     void { this.router.navigate(['/user/crise/edit',   c.id]); }
+  editCrisis(c: Crisis):     void { this.router.navigate(['/user/crise/edit',   c.id]); }
 
-  editOffer(offer: Offre): void { 
-    if(offer.statut == Statut.DISPONIBLE) {
-      offer.statut = Statut.INDISPONIBLE;
+  editOffer(offer: Offer): void { 
+    if(offer.status == Status.AVAILABLE) {
+      offer.status = Status.UNAVAILABLE;
     } else {
-      offer.statut = Statut.DISPONIBLE;
+      offer.status = Status.AVAILABLE;
     }
-    offer.statut = Statut.INDISPONIBLE;
+    offer.status = Status.UNAVAILABLE;
     this.offreService.update(offer.id, offer).subscribe({
       next:  () => { this.successMessage = 'Offre mise à jour'; this.loadOffres(); },
       error: err => (this.errorMessage = err.error?.detail ?? 'Erreur')
@@ -259,11 +259,11 @@ export class SettingsComponent implements OnInit {
     // this.router.navigate(['/user/offre/edit',   o.id]); 
   }
 
-  editRequest(demande: Demande): void { 
-    if(demande.statut == Statut.TRAITEE) {
-      demande.statut = Statut.NON_TRAITEE;
+  editRequest(demande: Request): void { 
+    if(demande.status == Status.PROCESSED) {
+      demande.status = Status.UNPROCESSED;
     } else {
-      demande.statut = Statut.TRAITEE;
+      demande.status = Status.PROCESSED;
     }
     this.demandeService.update(demande.id, demande).subscribe({
       next:  () => { this.successMessage = 'Demande mise à jour'; this.loadDemandes(); },
@@ -273,7 +273,7 @@ export class SettingsComponent implements OnInit {
   }
 
   // ----- View ----------------------------------------------------------------
-  viewCrisis(crisis: Crise): void {
+  viewCrisis(crisis: Crisis): void {
     this.selectedReport = crisis;
 
     this.showDetailCrisis = true;
@@ -281,7 +281,7 @@ export class SettingsComponent implements OnInit {
     this.showDetailRequest = false;
   }
 
-  viewOffer(offre: Offre): void {
+  viewOffer(offre: Offer): void {
     this.selectedReport = offre;
 
     this.showDetailOffer = true;
@@ -289,7 +289,7 @@ export class SettingsComponent implements OnInit {
     this.showDetailRequest = false;
   }
 
-  viewRequest(demande: Demande): void {
+  viewRequest(demande: Request): void {
     this.selectedReport = demande;
 
     this.showDetailRequest = true;
@@ -303,11 +303,11 @@ export class SettingsComponent implements OnInit {
   /** Libellé lisible pour les statuts Django */
   getStatusLabel(statut: string): string {
     const labels: Record<string, string> = {
-      [Statut.NON_TRAITEE]:  'Non traitée',
-      [Statut.EN_COURS]:     'En cours',
-      [Statut.TRAITEE]:      'Traitée',
-      [Statut.DISPONIBLE]:   'Disponible',
-      [Statut.INDISPONIBLE]: 'Indisponible'
+      [Status.UNPROCESSED]:  'Non traitée',
+      [Status.IN_PROGRESS]:     'En cours',
+      [Status.PROCESSED]:      'Traitée',
+      [Status.AVAILABLE]:   'Disponible',
+      [Status.UNAVAILABLE]: 'Indisponible'
     };
     return labels[statut] ?? statut;
   }
@@ -325,16 +325,16 @@ export class SettingsComponent implements OnInit {
     this.selectedReport = null;
   }
 
-  isCrise(r: Crise | Offre | Demande): r is Crise {
-    return 'nom' in r && 'validateur' in r;
+  isCrise(r: Crisis | Offer | Request): r is Crisis {
+    return 'name' in r && 'validator' in r;
   }
 
-  isOffre(r: Crise | Offre | Demande): r is Offre {
-    return 'prenom_offre' in r;
+  isOffre(r: Crisis | Offer | Request): r is Offer {
+    return 'first_name_offer' in r;
   }
 
-  isDemande(r: Crise | Offre | Demande): r is Demande {
-    return 'prenom_demande' in r;
+  isDemande(r: Crisis | Offer | Request): r is Request {
+    return 'first_name_request' in r;
   }
   get isAdmin(): boolean { return this.authService.isAdmin(); }
   get isIndividual(): boolean { return this.currentUser?.type === 'UTIL_SIMPLE'; }

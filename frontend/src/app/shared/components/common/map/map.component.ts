@@ -3,11 +3,11 @@ import maplibregl from 'maplibre-gl';
 import * as turf from '@turf/turf';
 import { CrisisService } from '../../../../services/crisis.service';
 import { forkJoin, Subscription } from 'rxjs';
-import { Crise } from '../../../models/crisis.model';
+import { Crisis } from '../../../models/crisis.model';
 import { OfferService } from '../../../../services/offer.service';
-import { Offre } from '../../../models/offer.model';
+import { Offer } from '../../../models/offer.model';
 import { RequestService } from '../../../../services/request.service';
-import { Demande } from '../../../models/request.model';
+import { Request } from '../../../models/request.model';
 import { GeolocationService } from '../../../../services/geolocation.service';
 import { AuthService } from '../../../../auth/services/auth.service';
 import type { FeatureCollection, Geometry, Polygon } from 'geojson';
@@ -23,9 +23,9 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   // Référence directe à la div HTML
   @ViewChild('mapContainer') mapContainer!: ElementRef;
 
-  @Input() crises: Crise[] = [];
-  @Input() requests: Demande[] = [];
-  @Input() offers: Offre[] = [];
+  @Input() crises: Crisis[] = [];
+  @Input() requests: Request[] = [];
+  @Input() offers: Offer[] = [];
   // Centre de la France par défaut
   @Input() center: [number, number] = [2.2137, 46.2276]; 
   @Input() zoom: number = 5;
@@ -239,17 +239,17 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
             const geometry = e.features[0].geometry as GeoJSON.Point;
             let offerRequest: string;
             const coordinates = geometry.coordinates.slice() as [number, number];
-            const statut = e.features[0].properties['statut'] || 'N/A';
-            const titre = e.features[0].properties['titre'] || 'N/A';
+            const statut = e.features[0].properties['status'] || 'N/A';
+            const titre = e.features[0].properties['title'] || 'N/A';
             const description = e.features[0].properties['description'] || 'Pas de description';
             let name: string;
-            if ('nom_demande' in e.features[0].properties) {
+            if ('last_name_request' in e.features[0].properties) {
               offerRequest = 'la demande';
-              name = e.features[0].properties['nom_demande'] || 'N/A';
+              name = e.features[0].properties['last_name_request'] || 'N/A';
             }
             else {
               offerRequest = 'l\'offre';
-              name = e.features[0].properties['nom_offre'] || 'N/A';
+              name = e.features[0].properties['last_name_offer'] || 'N/A';
             }
             while (Math.abs(e.lngLat.lng - coordinates[0]) > 180) {
                 coordinates[0] += e.lngLat.lng > coordinates[0] ? 360 : -360;
@@ -271,7 +271,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
             paint: {
                 'circle-color': [
                 'case',
-                ['has', 'nom_demande'],
+                ['has', 'last_name_request'],
                 '#ff0000',
                 '#11b4da'
                 ],
@@ -457,7 +457,7 @@ private addHoverEffect() {
         let radiusCenter = [crisis.longitude, crisis.latitude] as [number, number];
         let radius = 10; // Rayon par défaut 10km
         let circle = turf.circle(radiusCenter, radius, {steps: 64, units: 'kilometers'})
-        circle.properties = {center: radiusCenter, radius: radius, name: crisis.nom, description: crisis.description, start_date: crisis.date_debut, type: crisis.type};
+        circle.properties = {center: radiusCenter, radius: radius, name: crisis.name, description: crisis.description, start_date: crisis.start_date, type: crisis.type};
         
         // Fusionner les cercles du même type qui se chevauchent
         for (const crisisCircles of this.crisisCircle) {
@@ -466,7 +466,7 @@ private addHoverEffect() {
             radiusCenter = [(radiusCenter[0] + crisisCircles.properties.center[0])/2, (radiusCenter[1] + crisisCircles.properties.center[1])/2];
             radius = Math.max(turf.distance(crisisCircles.properties.center, radiusCenter, {units: 'kilometers'}) + crisisCircles.properties.radius, turf.distance(circle.properties['center'], radiusCenter, {units: 'kilometers'}) + circle.properties['radius']);
             circle = turf.circle(radiusCenter, radius, {steps: 64, units: 'kilometers'});
-            circle.properties = {center: radiusCenter, radius: radius, name: crisis.nom, description: crisis.description, start_date: crisis.date_debut, type: crisis.type};
+            circle.properties = {center: radiusCenter, radius: radius, name: crisis.name, description: crisis.description, start_date: crisis.start_date, type: crisis.type};
           }
         }
         this.crisisCircle.push(circle);

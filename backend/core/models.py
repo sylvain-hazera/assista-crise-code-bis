@@ -4,234 +4,239 @@ from django.contrib.gis.db import models as gis_models
 from django.db import models
 from core.validators import validate_image_file
 
-class RoleUtilisateur(models.TextChoices):
-    ADMINISTRATEUR = "ADMIN", "Administrateur"
-    AUTORITE_LOCALE = "AUT_LOCALE", "Autorité locale"
-    SECOURS_ORGANISES = "SECOURS", "Secours organisés"
-    UTILISATEUR_SIMPLE = "UTIL_SIMPLE", "Utilisateur"
+class UserRole(models.TextChoices):
+    """Rôles des utilisateurs"""
+    ADMINISTRATOR = "ADMIN", "Administrateur"
+    LOCAL_AUTHORITY = "AUT_LOCALE", "Autorité locale"
+    ORGANIZED_RESCUE = "SECOURS", "Secours organisés"
+    SIMPLE_USER = "UTIL_SIMPLE", "Utilisateur"
 
 
-class Statut(models.TextChoices):
-    NON_TRAITEE = "NON_TRAITEE", "Non traitée"
-    EN_COURS_DE_TRAITEMENT = "EN_COURS", "En cours de traitement"
-    TRAITEE = "TRAITEE", "Traitée"
-    DISPONIBLE = "DISPONIBLE", "Disponible"
-    INDISPONIBLE = "INDISPONIBLE", "Indisponible"
+class Status(models.TextChoices):
+    """Statuts des demandes, offres et informations"""
+    UNPROCESSED = "NON_TRAITEE", "Non traitée"
+    IN_PROGRESS = "EN_COURS", "En cours de traitement"
+    PROCESSED = "TRAITEE", "Traitée"
+    AVAILABLE = "DISPONIBLE", "Disponible"
+    UNAVAILABLE = "INDISPONIBLE", "Indisponible"
 
 
-class Utilisateur(AbstractUser):
+class User(AbstractUser):
+    """Modèle utilisateur personnalisé"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    telephone_utilisateur = models.CharField(max_length=20, null=True, blank=True)
+    phone_number = models.CharField(max_length=20, null=True, blank=True)
     photo = models.ImageField(upload_to="photos/", null=True, blank=True, validators=[validate_image_file])
     type = models.CharField(
         max_length=20,
-        choices=RoleUtilisateur.choices,
-        default=RoleUtilisateur.UTILISATEUR_SIMPLE,
+        choices=UserRole.choices,
+        default=UserRole.SIMPLE_USER,
     )
-    code_postal = models.CharField(max_length=5, null=True, blank=True)
-    enable = models.BooleanField(default=True)
+    postal_code = models.CharField(max_length=5, null=True, blank=True)
+    enabled = models.BooleanField(default=True)
 
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = ['username']
     
-    email = models.EmailField(unique=True)  # ← must be unique for login to work
+    email = models.EmailField(unique=True)
 
-    crise_touchee = models.ForeignKey(
-        "Crise",
+    affected_crisis = models.ForeignKey(
+        "Crisis",
         on_delete=models.SET_NULL,
         null=True, blank=True,
-        related_name="victimes"
+        related_name="victims"
     )
-    consulte_demande = models.ManyToManyField(
-        "Demande",
+    viewed_requests = models.ManyToManyField(
+        "Request",
         blank=True,
-        related_name="utilisateurs_consultant"
+        related_name="viewing_users"
     )
 
-    consulte_information = models.ManyToManyField(
+    viewed_informations = models.ManyToManyField(
         "Information",
         blank=True,
-        related_name="utilisateurs_consultant"
+        related_name="viewing_users"
     )
 
-    consulte_offre = models.ManyToManyField(
-        "Offre",
+    viewed_offers = models.ManyToManyField(
+        "Offer",
         blank=True,
-        related_name="utilisateurs_consultant"
+        related_name="viewing_users"
     )
 
-    validateur = models.ForeignKey(
-        'Utilisateur',
+    validator = models.ForeignKey(
+        'User',
         on_delete=models.SET_NULL,
         null=True, blank=True,
-        related_name="utilisateur_validé"
+        related_name="validated_users"
     )
 
-    def __str__(self) -> str:  # pragma: no cover - display helper
+    def __str__(self) -> str:
         return self.username
 
 
-class Crise(models.Model):
+class Crisis(models.Model):
+    """Modèle représentant une crise"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=100)
     type = models.CharField(max_length=100, null=True, blank=True)
     description = models.TextField(null=True, blank=True)
     photo = models.ImageField(upload_to="photos/crises/", null=True, blank=True)
-    localisation = gis_models.PointField(srid=4326)
+    location = gis_models.PointField(srid=4326)
     start_date = models.DateTimeField(auto_now_add=True)
     end_date = models.DateTimeField(null=True, blank=True)
 
-    auteur = models.ForeignKey(
-        Utilisateur,
+    author = models.ForeignKey(
+        User,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name="crises_déclarées",
+        related_name="declared_crises",
     )
 
     validator = models.ForeignKey(
-        'Utilisateur',
+        'User',
         on_delete=models.SET_NULL,
         null=True, blank=True,
-        related_name="crises_validees"
+        related_name="validated_crises"
     )
 
-    def __str__(self) -> str:  # pragma: no cover - display helper
+    def __str__(self) -> str:
         return self.name
 
 
-class TypeDemande(models.Model):
+class RequestType(models.Model):
+    """Types de demandes d'aide"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     type = models.CharField(max_length=100, unique=True, null=True, blank=True)
     description = models.TextField(null=True, blank=True)
 
-    def __str__(self) -> str:  # pragma: no cover - display helper
+    def __str__(self) -> str:
         return self.type
 
 
-class Demande(models.Model):
+class Request(models.Model):
+    """Demandes d'aide"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    titre = models.CharField(max_length=150)
+    title = models.CharField(max_length=150)
     photo = models.ImageField(upload_to="photos/demandes/", null=True, blank=True, validators=[validate_image_file])
-    localisation = gis_models.PointField(srid=4326)
-    prenom_demande = models.CharField(max_length=60)
-    nom_demande = models.CharField(max_length=80)
-    email_demande = models.EmailField()
-    telephone_demande = models.CharField(max_length=20)
-    date_creation = models.DateTimeField(auto_now_add=True)
-    date_expiration = models.DateTimeField(null=True, blank=True)
-    statut = models.CharField(
+    location = gis_models.PointField(srid=4326)
+    first_name_request = models.CharField(max_length=60)
+    last_name_request = models.CharField(max_length=80)
+    email_request = models.EmailField()
+    phone_request = models.CharField(max_length=20)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(null=True, blank=True)
+    status = models.CharField(
         max_length=20,
-        choices=Statut.choices,
-        default=Statut.NON_TRAITEE,
+        choices=Status.choices,
+        default=Status.UNPROCESSED,
     )
 
-
-    type_demande = models.ForeignKey(
-        TypeDemande, on_delete=models.PROTECT, related_name="demandes"
+    request_type = models.ForeignKey(
+        RequestType, on_delete=models.PROTECT, related_name="requests"
     )
-    crise = models.ForeignKey(
-        "Crise", on_delete=models.SET_NULL, null=True, blank=True, related_name="demandes"
+    crisis = models.ForeignKey(
+        "Crisis", on_delete=models.SET_NULL, null=True, blank=True, related_name="requests"
     )
-    auteur = models.ForeignKey(
-        Utilisateur,
+    author = models.ForeignKey(
+        User,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name="demandes_saisies",
+        related_name="submitted_requests",
     )
 
-    def __str__(self) -> str:  # pragma: no cover - display helper
-        return self.titre
+    def __str__(self) -> str:
+        return self.title
 
 
-class TypeInformation(models.Model):
+class InformationType(models.Model):
+    """Types d'informations"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     type = models.CharField(max_length=100, unique=True, null=True, blank=True)
     description = models.TextField(null=True, blank=True)
 
-    def __str__(self) -> str:  # pragma: no cover - display helper
+    def __str__(self) -> str:
         return self.type
 
 
 class Information(models.Model):
+    """Informations partagées"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    titre = models.CharField(max_length=150)
+    title = models.CharField(max_length=150)
     photo = models.ImageField(upload_to="photos/informations/", null=True, blank=True, validators=[validate_image_file])
-    prenom_information = models.CharField(max_length=60)
-    nom_information = models.CharField(max_length=80)
+    first_name_information = models.CharField(max_length=60)
+    last_name_information = models.CharField(max_length=80)
     email_information = models.EmailField()
-    telephone_information = models.CharField(max_length=20)
-    localisation = gis_models.PointField(srid=4326)
-    date_creation = models.DateTimeField(auto_now_add=True)
-    date_expiration = models.DateTimeField(null=True, blank=True)
-    statut = models.CharField(
+    phone_information = models.CharField(max_length=20)
+    location = gis_models.PointField(srid=4326)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(null=True, blank=True)
+    status = models.CharField(
         max_length=20,
-        choices=Statut.choices,
-        default=Statut.DISPONIBLE,
+        choices=Status.choices,
+        default=Status.AVAILABLE,
     )
 
-
-    type_information = models.ForeignKey(
-        TypeInformation, on_delete=models.PROTECT, related_name="informations"
+    information_type = models.ForeignKey(
+        InformationType, on_delete=models.PROTECT, related_name="informations"
     )
-    crise = models.ForeignKey(
-        "Crise", on_delete=models.SET_NULL, null=True, blank=True, related_name="informations"
+    crisis = models.ForeignKey(
+        "Crisis", on_delete=models.SET_NULL, null=True, blank=True, related_name="informations"
     )
-    auteur = models.ForeignKey(
-        Utilisateur,
+    author = models.ForeignKey(
+        User,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name="informations_saisies",
+        related_name="submitted_informations",
     )
 
-    def __str__(self) -> str:  # pragma: no cover - display helper
-        return self.titre
+    def __str__(self) -> str:
+        return self.title
 
 
-class TypeOffre(models.Model):
+class OfferType(models.Model):
+    """Types d'offres d'aide"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     type = models.CharField(max_length=100, unique=True, null=True, blank=True)
     description = models.TextField(null=True, blank=True)
 
-
-
-    def __str__(self) -> str:  # pragma: no cover - display helper
+    def __str__(self) -> str:
         return self.type
 
 
-class Offre(models.Model):
+class Offer(models.Model):
+    """Offres d'aide"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    titre = models.CharField(max_length=150)
+    title = models.CharField(max_length=150)
     photo = models.ImageField(upload_to="photos/offres/", null=True, blank=True, validators=[validate_image_file])
-    localisation = gis_models.PointField(srid=4326)
-    prenom_offre = models.CharField(max_length=60)
-    nom_offre = models.CharField(max_length=80)
-    email_offre = models.EmailField()
-    date_creation = models.DateTimeField(auto_now_add=True)
-    date_expiration = models.DateTimeField(null=True, blank=True)
-    statut = models.CharField(
+    location = gis_models.PointField(srid=4326)
+    first_name_offer = models.CharField(max_length=60)
+    last_name_offer = models.CharField(max_length=80)
+    email_offer = models.EmailField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(null=True, blank=True)
+    status = models.CharField(
         max_length=20,
-        choices=Statut.choices,
-        default=Statut.DISPONIBLE,
+        choices=Status.choices,
+        default=Status.AVAILABLE,
     )
 
-
-    type_offre = models.ForeignKey(
-        TypeOffre, on_delete=models.PROTECT, related_name="offres"
+    offer_type = models.ForeignKey(
+        OfferType, on_delete=models.PROTECT, related_name="offers"
     )
-    crise = models.ForeignKey(
-        "Crise", on_delete=models.SET_NULL, null=True, blank=True, related_name="offres"
+    crisis = models.ForeignKey(
+        "Crisis", on_delete=models.SET_NULL, null=True, blank=True, related_name="offers"
     )
 
-    auteur = models.ForeignKey(
-        Utilisateur,
+    author = models.ForeignKey(
+        User,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name="offres_saisies",
+        related_name="submitted_offers",
     )
 
-    def __str__(self) -> str:  # pragma: no cover - display helper
-        return self.titre
+    def __str__(self) -> str:
+        return self.title

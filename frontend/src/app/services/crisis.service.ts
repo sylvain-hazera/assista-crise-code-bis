@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { map, Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
-import { Crise, CrisePayload } from '../shared/models/crisis.model';
+import { Crisis, CrisisPayload } from '../shared/models/crisis.model';
 import { StatsResponse } from '../shared/models/api.model';
 import { geoPointToLatLng, latLngToGeoJson } from '../shared/models/geopoint.model';
 import { GeolocationService } from './geolocation.service';
@@ -18,9 +18,9 @@ export class CrisisService {
   // ── LECTURE ──────────────────────────────────────────────────
 
   /** GET /api/crises/ */
-  getAll(params?: Record<string, string>): Observable<Crise[]> {
+  getAll(params?: Record<string, string>): Observable<Crisis[]> {
     return this.http
-      .get<Crise[]>(`${this.apiUrl}/`, { params: this.toParams(params) })
+      .get<Crisis[]>(`${this.apiUrl}/`, { params: this.toParams(params) })
       .pipe(map(list => list.map(this.normalize)));
   }
 
@@ -29,7 +29,7 @@ export class CrisisService {
    * Django filtre via : ?validateur=<userId>
    * GET /api/crises/?validateur=<uuid>
    */
-  getMines(email: string): Observable<Crise[]> {
+  getMines(email: string): Observable<Crisis[]> {
     // return this.getAll({ auteur: userId });
     return this.getAll({ auteur_email: email });
   }
@@ -39,14 +39,14 @@ export class CrisisService {
    * GET /api/crises/?ordering=-date_debut&limit=<n>
    * Nécessite LimitOffsetPagination ou un filtre custom côté Django.
    */
-  getRecent(limit = 5): Observable<Crise[]> {
+  getRecent(limit = 5): Observable<Crisis[]> {
     return this.getAll({ ordering: '-date_debut', limit: String(limit) });
   }
 
   /** GET /api/crises/<id>/ */
-  getById(id: string): Observable<Crise> {
+  getById(id: string): Observable<Crisis> {
     return this.http
-      .get<Crise>(`${this.apiUrl}/${id}/`)
+      .get<Crisis>(`${this.apiUrl}/${id}/`)
       .pipe(map(this.normalize));
   }
 
@@ -68,17 +68,17 @@ export class CrisisService {
     return this.http.post<Request>(`${this.apiUrl}/`, formData);
   }
   
-  update(id: string, data: Partial<Crise>): Observable<Crise> {
-    return this.http.put<Crise>(`${this.apiUrl}/${id}/`, data);
+  update(id: string, data: Partial<Crisis>): Observable<Crisis> {
+    return this.http.put<Crisis>(`${this.apiUrl}/${id}/`, data);
   }
 
   // /**
   //  * POST /api/crises/
   //  * Envoi via FormData pour gérer le champ photo éventuel.
   //  */
-  // create(payload: CrisePayload): Observable<Crise> {
+  // create(payload: CrisisPayload): Observable<Crisis> {
   //   return this.http
-  //     .post<Crise>(`${this.apiUrl}/`, this.toFormData(payload))
+  //     .post<Crisis>(`${this.apiUrl}/`, this.toFormData(payload))
   //     .pipe(map(this.normalize));
   // }
 
@@ -86,9 +86,9 @@ export class CrisisService {
   //  * PATCH /api/crises/<id>/
   //  * PATCH (partiel) plutôt que PUT (complet).
   //  */
-  // update(id: string, payload: Partial<CrisePayload>): Observable<Crise> {
+  // update(id: string, payload: Partial<CrisePayload>): Observable<Crisis> {
   //   return this.http
-  //     .patch<Crise>(`${this.apiUrl}/${id}/`, this.toFormData(payload))
+  //     .patch<Crisis>(`${this.apiUrl}/${id}/`, this.toFormData(payload))
   //     .pipe(map(this.normalize));
   // }
 
@@ -103,22 +103,22 @@ export class CrisisService {
    * Django retourne { localisation: { type: "Point", coordinates: [lng, lat] } }
    * On extrait latitude/longitude pour un usage pratique dans les templates.
    */
-  private normalize = (c: any): Crise => {
-    if (c.localisation?.coordinates) {
-      return { ...c, ...geoPointToLatLng(c.localisation) };
+  private normalize = (c: any): Crisis => {
+    if (c.location?.coordinates) {
+      return { ...c, ...geoPointToLatLng(c.location) };
     }
     return c;
   };
 
-  /** Construit un FormData depuis un CrisePayload */
-  private toFormData(payload: Partial<CrisePayload>): FormData {
+  /** Construit un FormData depuis un CrisisPayload */
+  private toFormData(payload: Partial<CrisisPayload>): FormData {
     const fd = new FormData();
-    if (payload.nom)       fd.append('nom', payload.nom);
-    if (payload.date_fin)  fd.append('date_fin', payload.date_fin);
-    if (payload.validateur) fd.append('validateur', payload.validateur);
+    if (payload.name)       fd.append('name', payload.name);
+    if (payload.end_date)  fd.append('end_date', payload.end_date);
+    if (payload.validator) fd.append('validator', payload.validator);
 
     if (payload.latitude != null && payload.longitude != null) {
-      fd.append('localisation', latLngToGeoJson(payload.latitude, payload.longitude));
+      fd.append('location', latLngToGeoJson(payload.latitude, payload.longitude));
     }
     
     return fd;
@@ -134,27 +134,27 @@ export class CrisisService {
     return p;
   }
   
-    buildFormData(payload: CrisePayload, file?: File): FormData {
+    buildFormData(payload: CrisisPayload, file?: File): FormData {
       const fd = new FormData();
       
-      fd.append('nom', payload.nom);
+      fd.append('name', payload.name);
       // fd.append('type_evenement', payload.type_evenement);
       // fd.append('description', payload.description || '');
       
-      if (payload.date_fin) {
-        fd.append('date_fin', payload.date_fin);
+      if (payload.end_date) {
+        fd.append('end_date', payload.end_date);
       }
       
-      if (payload.validateur) {
-        fd.append('validateur', payload.validateur);
+      if (payload.validator) {
+        fd.append('validator', payload.validator);
       }
 
-      if (payload.auteur) {
-        fd.append('validateur', payload.auteur);
+      if (payload.author) {
+        fd.append('validator', payload.author);
       }
       
       if (payload.latitude != null && payload.longitude != null) {
-        fd.append('localisation', JSON.stringify({
+        fd.append('location', JSON.stringify({
           type: 'Point',
           coordinates: [payload.longitude, payload.longitude]
         }));
@@ -164,7 +164,7 @@ export class CrisisService {
         fd.append('photo', file);
       }
       
-      fd.append('statut', 'NON_TRAITEE');
+      fd.append('status', 'NON_TRAITEE');
       
       return fd;
     }

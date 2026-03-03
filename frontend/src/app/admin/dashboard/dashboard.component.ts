@@ -5,9 +5,9 @@ import { forkJoin, Subject, takeUntil } from 'rxjs';
 import { CrisisService } from '../../services/crisis.service';
 import { OfferService } from '../../services/offer.service';
 import { RequestService } from '../../services/request.service';
-import { Crise } from '../../shared/models/crisis.model';
-import { Offre } from '../../shared/models/offer.model';
-import { Demande } from '../../shared/models/request.model';
+import { Crisis } from '../../shared/models/crisis.model';
+import { Offer } from '../../shared/models/offer.model';
+import { Request } from '../../shared/models/request.model';
 
 // ── Types internes ────────────────────────────────────────────────────────────
 
@@ -77,9 +77,9 @@ export class DashboardComponent implements OnInit, OnDestroy {
   pieFullscreen    = false;
 
   // ── Raw data ───────────────────────────────────────────────
-  rawCrises:   Crise[]   = [];
-  rawOffres:   Offre[]   = [];
-  rawDemandes: Demande[] = [];
+  rawCrises:   Crisis[]   = [];
+  rawOffers:   Offer[]   = [];
+  rawRequests: Request[] = [];
 
   // ── Processed data ─────────────────────────────────────────
   stats:              StatCard[]    = this.emptyStats();
@@ -132,8 +132,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
     .subscribe({
       next: ({ crises, offres, demandes }) => {
         this.rawCrises   = crises;
-        this.rawOffres   = offres;
-        this.rawDemandes = demandes;
+        this.rawOffers   = offres;
+        this.rawRequests = demandes;
         this.process();
         this.isLoading = false;
       },
@@ -159,16 +159,16 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
   // ── Filter ────────────────────────────────────────────────
 
-  private filtered(): { crises: Crise[]; offres: Offre[]; demandes: Demande[] } {
+  private filtered(): { crises: Crisis[]; offres: Offer[]; demandes: Request[] } {
     if (this.currentFilter === FilterAction.All) {
-      return { crises: this.rawCrises, offres: this.rawOffres, demandes: this.rawDemandes };
+      return { crises: this.rawCrises, offres: this.rawOffers, demandes: this.rawRequests };
     }
     const start = this.filterStart();
     const now   = new Date();
     return {
-      crises:   this.byDate(this.rawCrises,   start, now, 'date_debut'),
-      offres:   this.byDate(this.rawOffres,   start, now, 'date_creation'),
-      demandes: this.byDate(this.rawDemandes, start, now, 'date_creation'),
+      crises:   this.byDate(this.rawCrises,   start, now, 'start_date'),
+      offres:   this.byDate(this.rawOffers,   start, now, 'created_at'),
+      demandes: this.byDate(this.rawRequests, start, now, 'created_at'),
     };
   }
 
@@ -193,7 +193,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
   // ── Stats cards ───────────────────────────────────────────
 
-  private buildStats(crises: Crise[], offres: Offre[], demandes: Demande[]): void {
+  private buildStats(crises: Crisis[], offres: Offer[], demandes: Request[]): void {
     const prev  = this.previousPeriod();
     const delta = (cur: number, old: number): string => {
       if (old === 0) return cur > 0 ? '+100%' : '0%';
@@ -231,24 +231,24 @@ export class DashboardComponent implements OnInit, OnDestroy {
     const prevEnd  = new Date(curStart.getTime() - 1);
     const prevStart= new Date(prevEnd.getTime() - dur);
     return {
-      crises:   this.byDate(this.rawCrises,   prevStart, prevEnd, 'date_debut').length,
-      offres:   this.byDate(this.rawOffres,   prevStart, prevEnd, 'date_creation').length,
-      demandes: this.byDate(this.rawDemandes, prevStart, prevEnd, 'date_creation').length,
+      crises:   this.byDate(this.rawCrises,   prevStart, prevEnd, 'start_date').length,
+      offres:   this.byDate(this.rawOffers,   prevStart, prevEnd, 'created_at').length,
+      demandes: this.byDate(this.rawRequests, prevStart, prevEnd, 'created_at').length,
     };
   }
 
   // ── Line chart ────────────────────────────────────────────
 
-  private buildLineChart(crises: Crise[], offres: Offre[], demandes: Demande[]): void {
+  private buildLineChart(crises: Crisis[], offres: Offer[], demandes: Request[]): void {
     const days: DayPoint[] = [];
     for (let i = 29; i >= 0; i--) {
       const d = new Date();
       d.setDate(d.getDate() - i);
       days.push({
         label:    d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }),
-        crises:   this.countOnDay(crises,   d, 'date_debut'),
-        offres:   this.countOnDay(offres,   d, 'date_creation'),
-        demandes: this.countOnDay(demandes, d, 'date_creation'),
+        crises:   this.countOnDay(crises,   d, 'start_date'),
+        offres:   this.countOnDay(offres,   d, 'created_at'),
+        demandes: this.countOnDay(demandes, d, 'created_at'),
       });
     }
     this.dayPoints = days;
@@ -300,7 +300,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
   // ── Pie chart ─────────────────────────────────────────────
 
-  private buildPieChart(crises: Crise[]): void {
+  private buildPieChart(crises: Crisis[]): void {
     const counts = new Map<string, number>();
     crises.forEach(c => {
       const t = c.type?.trim() || 'Non spécifié';
@@ -345,11 +345,11 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
   // ── Recent items ──────────────────────────────────────────
 
-  private buildRecentItems(crises: Crise[], offres: Offre[], demandes: Demande[]): void {
+  private buildRecentItems(crises: Crisis[], offres: Offer[], demandes: Request[]): void {
     const all: RecentItem[] = [
-      ...crises.map(c => this.toItem(c.id, c.nom, 'Crise', c.date_debut, c.statut ?? 'NON_TRAITEE')),
-      ...offres.map(o => this.toItem(o.id, o.titre, 'Ressource', o.date_creation, o.statut)),
-      ...demandes.map(d => this.toItem(d.id, d.titre, 'Besoin', d.date_creation, d.statut)),
+      ...crises.map(c => this.toItem(c.id, c.name, 'Crise', c.start_date, c.status ?? 'NON_TRAITEE')),
+      ...offres.map(o => this.toItem(o.id, o.title, 'Ressource', o.created_at, o.status)),
+      ...demandes.map(d => this.toItem(d.id, d.title, 'Besoin', d.created_at, d.status)),
     ];
     this.recentItems = all
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
@@ -432,6 +432,6 @@ export class DashboardComponent implements OnInit, OnDestroy {
   }
 
   get totalItems(): number {
-    return this.rawCrises.length + this.rawOffres.length + this.rawDemandes.length;
+    return this.rawCrises.length + this.rawOffers.length + this.rawRequests.length;
   }
 }

@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { environment } from '../../environments/environment';
 import { HttpClient, HttpParams } from '@angular/common/http';
-import { Information, InformationPayload, TypeInformation } from '../shared/models/information.model';
+import { Information, InformationPayload, InformationType } from '../shared/models/information.model';
 import { map, Observable } from 'rxjs';
 import { geoPointToLatLng, latLngToGeoJson } from '../shared/models/geopoint.model';
 
@@ -14,8 +14,8 @@ export class InformationService {
 
   constructor(private http: HttpClient) { }
 
-  getTypes(): Observable<TypeInformation[]> {
-    return this.http.get<TypeInformation[]>(`${this.typeUrl}/`);
+  getTypes(): Observable<InformationType[]> {
+    return this.http.get<InformationType[]>(`${this.typeUrl}/`);
   }
 
   getAll(params?: Record<string, string>): Observable<Information[]> {
@@ -43,8 +43,8 @@ export class InformationService {
   }
 
   private normalize = (i: any): Information => {
-    if (i.localisation?.coordinates) {
-      return { ...i, ...geoPointToLatLng(i.localisation) };
+    if (i.location?.coordinates) {
+      return { ...i, ...geoPointToLatLng(i.location) };
     }
     return i;
   };
@@ -52,18 +52,18 @@ export class InformationService {
   private toFormData(p: Partial<InformationPayload>): FormData {
     const fd = new FormData();
     const textFields: (keyof InformationPayload)[] = [
-      'titre', 'prenom_information', 'nom_information',
-      'email_information', 'telephone_information',
-      'type_information', 'crise', 'date_expiration'
+      'title', 'first_name_information', 'last_name_information',
+      'email_information', 'phone_information',
+      'information_type', 'crisis', 'expires_at'
     ];
     textFields.forEach(f => {
       if (p[f] != null) fd.append(f, String(p[f]));
     });
 
-    fd.append('statut', p.statut ?? 'DISPONIBLE');
+    fd.append('status', p.status ?? 'DISPONIBLE');
 
     if (p.latitude != null && p.longitude != null) {
-      fd.append('localisation', latLngToGeoJson(p.latitude, p.longitude));
+      fd.append('location', latLngToGeoJson(p.latitude, p.longitude));
     }
     if (p.photo) fd.append('photo', p.photo);
 

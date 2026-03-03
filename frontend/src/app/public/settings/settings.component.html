@@ -198,16 +198,16 @@
                   @for (offer of filteredOffers; track offer.id) {
                     <tr>
                       <td>
-                        <!-- <span class="status-badge" [attr.data-status]="offer.statut">
-                          {{ getStatusLabel(offer.statut.toString()) }}
+                        <!-- <span class="status-badge" [attr.data-status]="offer.status">
+                          {{ getStatusLabel(offer.status.toString()) }}
                         </span> -->
                       <button class="status-badge" (click)="editOffer(offer)">
-                        {{ getStatusLabel(offer.statut.toString()) }}
+                        {{ getStatusLabel(offer.status.toString()) }}
                       </button>                  
                       </td>
-                      <td><strong>{{ offer.titre }}</strong></td>
+                      <td><strong>{{ offer.title }}</strong></td>
                       <td>{{ getLocation(offer.latitude, offer.longitude) }}</td>
-                      <td>{{ offer.date_creation | date:'dd/MM/yyyy' }}</td>
+                      <td>{{ offer.created_at | date:'dd/MM/yyyy' }}</td>
                       <td class="actions">
                         <!-- <button class="icon-btn" title="Modifier" (click)="editOffer(offer)">
                           <span class="material-icons">edit</span>
@@ -260,16 +260,16 @@
                   @for (request of filteredRequests; track request.id) {
                     <tr>
                       <td>
-                        <!-- <span class="status-badge" [attr.data-status]="request.statut">
-                          {{ getStatusLabel(request.statut.toString()) }}
+                        <!-- <span class="status-badge" [attr.data-status]="request.status">
+                          {{ getStatusLabel(request.status.toString()) }}
                         </span> -->
                         <button class="status-badge" (click)="editRequest(request)">
-                          {{ getStatusLabel(request.statut.toString()) }}
+                          {{ getStatusLabel(request.status.toString()) }}
                         </button>
                       </td>
-                      <td><strong>{{ request.titre }}</strong></td>
+                      <td><strong>{{ request.title }}</strong></td>
                       <td>{{ getLocation(request.latitude, request.longitude) }}</td>
-                      <td>{{ request.date_creation | date:'dd/MM/yyyy' }}</td>
+                      <td>{{ request.created_at | date:'dd/MM/yyyy' }}</td>
                       <td class="actions">
                         <!-- <button class="icon-btn" title="Modifier" (click)="editRequest(request)">
                           <span class="material-icons">edit</span>
@@ -322,14 +322,14 @@
                   @for (crisis of filteredCrisis; track crisis.id) {
                     <tr>
                       <td>
-                        <span class="status-badge" [attr.data-status]="crisis.statut">
-                            {{crisis.validateur ? 'Validé' : 'En attente'}}
+                        <span class="status-badge" [attr.data-status]="crisis.status">
+                            {{crisis.validator ? 'Validé' : 'En attente'}}
                         </span>
                       </td>
-                      <td><strong>{{ crisis.nom }}</strong></td>
+                      <td><strong>{{ crisis.name }}</strong></td>
                       <td>{{ crisis.type }}</td>
                       <td>{{ crisis.description || 'N/A' }}</td>
-                      <td>{{ crisis.date_debut | date:'dd/MM/yyyy' }}</td>
+                      <td>{{ crisis.start_date | date:'dd/MM/yyyy' }}</td>
                       <td class="actions">
                         <!-- <button class="icon-btn" title="Modifier" (click)="editCrisis(crisis)">
                           <span class="material-icons">edit</span>
@@ -374,7 +374,7 @@
           @if (isCrise(selectedReport!)) {
             <div class="detail-row">
               <label>Nom :</label>
-              <span>{{ selectedReport!.nom }}</span>
+              <span>{{ selectedReport!.name }}</span>
             </div>
             <div class="detail-row">
               <label>Type :</label>
@@ -390,30 +390,30 @@
             </div>
             <div class="detail-row">
               <label>Date de début :</label>
-              <span>{{ selectedReport!.date_debut | date:'dd/MM/yyyy à HH:mm' }}</span>
+              <span>{{ selectedReport!.start_date | date:'dd/MM/yyyy à HH:mm' }}</span>
             </div>
             <div class="detail-row">
               <label>Date de fin :</label>
-              <span>{{ selectedReport!.date_fin ? (selectedReport!.date_fin | date:'dd/MM/yyyy') : '—' }}</span>
+              <span>{{ selectedReport!.end_date ? (selectedReport!.end_date | date:'dd/MM/yyyy') : '—' }}</span>
             </div>
             <div class="detail-row">
               <label>Statut :</label>
-              <span class="status-badge">{{ selectedReport!.validateur ? 'Validé' : 'En attente' }}</span>
+              <span class="status-badge">{{ selectedReport!.validator ? 'Validé' : 'En attente' }}</span>
             </div>
           }
 
           @if (isOffre(selectedReport!)) {
             <div class="detail-row">
               <label>Titre :</label>
-              <span>{{ selectedReport!.titre }}</span>
+              <span>{{ selectedReport!.title }}</span>
             </div>
             <div class="detail-row">
               <label>Proposé par :</label>
-              <span>{{ selectedReport!.prenom_offre }} {{ selectedReport!.nom_offre }}</span>
+              <span>{{ selectedReport!.first_name_offer }} {{ selectedReport!.last_name_offer }}</span>
             </div>
             <div class="detail-row">
               <label>Email :</label>
-              <span>{{ selectedReport!.email_offre }}</span>
+              <span>{{ selectedReport!.email_offer }}</span>
             </div>
             <div class="detail-row">
               <label>Localisation :</label>
@@ -421,34 +421,34 @@
             </div>
             <div class="detail-row">
               <label>Date de création :</label>
-              <span>{{ selectedReport!.date_creation | date:'dd/MM/yyyy à HH:mm' }}</span>
+              <span>{{ selectedReport!.created_at | date:'dd/MM/yyyy à HH:mm' }}</span>
             </div>
             <div class="detail-row">
               <label>Date d'expiration :</label>
-              <span>{{ selectedReport!.date_expiration ? (selectedReport!.date_expiration | date:'dd/MM/yyyy') : '—' }}</span>
+              <span>{{ selectedReport!.expires_at ? (selectedReport!.expires_at | date:'dd/MM/yyyy') : '—' }}</span>
             </div>
             <div class="detail-row">
               <label>Statut :</label>
-              <span class="status-badge">{{ getStatusLabel(selectedReport!.statut) }}</span>
+              <span class="status-badge">{{ getStatusLabel(selectedReport!.status) }}</span>
             </div>
           }
 
           @if (isDemande(selectedReport!)) {
             <div class="detail-row">
               <label>Titre :</label>
-              <span>{{ selectedReport!.titre }}</span>
+              <span>{{ selectedReport!.title }}</span>
             </div>
             <div class="detail-row">
               <label>Demandé par :</label>
-              <span>{{ selectedReport!.prenom_demande }} {{ selectedReport!.nom_demande }}</span>
+              <span>{{ selectedReport!.first_name_request }} {{ selectedReport!.last_name_request }}</span>
             </div>
             <div class="detail-row">
               <label>Email :</label>
-              <span>{{ selectedReport!.email_demande }}</span>
+              <span>{{ selectedReport!.email_request }}</span>
             </div>
             <div class="detail-row">
               <label>Téléphone :</label>
-              <span>{{ selectedReport!.telephone_demande }}</span>
+              <span>{{ selectedReport!.phone_request }}</span>
             </div>
             <div class="detail-row">
               <label>Localisation :</label>
@@ -456,15 +456,15 @@
             </div>
             <div class="detail-row">
               <label>Date de création :</label>
-              <span>{{ selectedReport!.date_creation | date:'dd/MM/yyyy à HH:mm' }}</span>
+              <span>{{ selectedReport!.created_at | date:'dd/MM/yyyy à HH:mm' }}</span>
             </div>
             <div class="detail-row">
               <label>Date d'expiration :</label>
-              <span>{{ selectedReport!.date_expiration ? (selectedReport!.date_expiration | date:'dd/MM/yyyy') : '—' }}</span>
+              <span>{{ selectedReport!.expires_at ? (selectedReport!.expires_at | date:'dd/MM/yyyy') : '—' }}</span>
             </div>
             <div class="detail-row">
               <label>Statut :</label>
-              <span class="status-badge">{{ getStatusLabel(selectedReport!.statut) }}</span>
+              <span class="status-badge">{{ getStatusLabel(selectedReport!.status) }}</span>
             </div>
           }
         </div>

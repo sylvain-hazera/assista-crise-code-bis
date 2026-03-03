@@ -7,8 +7,8 @@ import { CommonModule } from '@angular/common';
 import { RequestService } from '../../../services/request.service';
 import { LocationService, Department, Commune } from '../../../services/location.service';
 import { CrisisService } from '../../../services/crisis.service';
-import { Crise } from '../../../shared/models/crisis.model';
-import { Utilisateur } from '../../../shared/models/user.model';
+import { Crisis } from '../../../shared/models/crisis.model';
+import { User } from '../../../shared/models/user.model';
 import { AuthService } from '../../../auth/services/auth.service';
 
 @Component({
@@ -19,7 +19,7 @@ import { AuthService } from '../../../auth/services/auth.service';
   styleUrl: './request-help-form.component.scss'
 })
 export class RequestHelpFormComponent implements OnInit {
-  currentUser: Utilisateur | null = null;
+  currentUser: User | null = null;
   requestForm!: FormGroup;
   informationForm!: FormGroup;
   selectedFile: File | null = null;
@@ -86,13 +86,13 @@ export class RequestHelpFormComponent implements OnInit {
 
   loadActiveCrises(): void {
     this.crisisService.getAll().subscribe({
-      next: (crises: Crise[]) => {
-        const activeCrises = crises.filter(c => c.statut !== 'TRAITEE');
+      next: (crises: Crisis[]) => {
+        const activeCrises = crises.filter(c => c.status !== 'TRAITEE');
         this.crisisOptions = [
           { value: '', label: 'Aucune crise en rapport' },
           ...activeCrises.map(c => ({
             value: c.id,
-            label: `${c.nom} - ${c.type}`
+            label: `${c.name} - ${c.type}`
           }))
         ];
         this.filteredCrisisOptions = [...this.crisisOptions];
@@ -135,7 +135,7 @@ export class RequestHelpFormComponent implements OnInit {
       lastName: [this.currentUser?.last_name, Validators.required],
       firstName: [this.currentUser?.first_name, Validators.required],
       email: [this.currentUser?.email, [Validators.required, Validators.email]],
-      phoneNumber: [this.currentUser?.telephone_utilisateur, [Validators.required, Validators.pattern(/^\+?\d{10,15}$/)]]
+      phoneNumber: [this.currentUser?.phone_number, [Validators.required, Validators.pattern(/^\+?\d{10,15}$/)]]
     });
   }
 
@@ -174,23 +174,23 @@ export class RequestHelpFormComponent implements OnInit {
       const formData = new FormData();
       
       // Champs du modèle Demande Django
-      formData.append('prenom_demande', this.informationForm.get('firstName')?.value);
-      formData.append('nom_demande', this.informationForm.get('lastName')?.value);
-      formData.append('email_demande', this.informationForm.get('email')?.value);
-      formData.append('telephone_demande', this.informationForm.get('phoneNumber')?.value);
+      formData.append('first_name_request', this.informationForm.get('firstName')?.value);
+      formData.append('last_name_request', this.informationForm.get('lastName')?.value);
+      formData.append('email_request', this.informationForm.get('email')?.value);
+      formData.append('phone_request', this.informationForm.get('phoneNumber')?.value);
       
       // Titre basé sur la crise sélectionnée
       const crisisId = this.requestForm.get('crisisId')?.value;
       const crisisLabel = this.crisisOptions.find(c => c.value === crisisId)?.label || 'non liée à une crise';
       const titre = `Demande d'aide - ${crisisLabel}`;
-      formData.append('titre', titre);
+      formData.append('title', titre);
       
       // Localisation au format GeoJSON Point
       const localisation = {
         type: 'Point',
         coordinates: [this.longitude, this.latitude]
       };
-      formData.append('localisation', JSON.stringify(localisation));
+      formData.append('location', JSON.stringify(localisation));
       
       // Type demande - Utiliser le premier type disponible (les besoins sont spécifiés séparément)
       const firstTypeId = Array.from(this.typesDemandeMap.values())[0];
@@ -198,15 +198,15 @@ export class RequestHelpFormComponent implements OnInit {
         alert('Type de demande non trouvé. Veuillez réessayer ou contacter le support.');
         return;
       }
-      formData.append('type_demande', firstTypeId);
+      formData.append('request_type', firstTypeId);
       
       // Crise (nullable)
       if (crisisId) {
-        formData.append('crise', crisisId);
+        formData.append('crisis', crisisId);
       }
       
-      formData.append('statut', 'NON_TRAITEE');
-      formData.append('auteur', this.currentUser?.id!);
+      formData.append('status', 'NON_TRAITEE');
+      formData.append('author', this.currentUser?.id!);
       
       // Photo si présente
       if (this.selectedFile) {
@@ -260,7 +260,7 @@ export class RequestHelpFormComponent implements OnInit {
   }
 
   selectDepartment(department: Department): void {
-    this.departmentSearch = department.nom;
+    this.departmentSearch = department.name;
     this.requestForm.patchValue({ department: department.code });
     this.showDepartmentDropdown = false;
     
@@ -286,7 +286,7 @@ export class RequestHelpFormComponent implements OnInit {
   }
 
   selectCommune(commune: Commune): void {
-    this.communeSearch = commune.nom;
+    this.communeSearch = commune.name;
     this.requestForm.patchValue({ commune: commune.code });
     this.showCommuneDropdown = false;
   }

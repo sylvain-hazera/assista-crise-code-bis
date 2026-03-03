@@ -28,7 +28,7 @@ DEBUG = True
 ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'assista-crise.duckdns.org']
 
 # Custom user model
-AUTH_USER_MODEL = 'core.Utilisateur'
+AUTH_USER_MODEL = 'core.User'
 
 
 # Application definition
@@ -171,7 +171,8 @@ REST_FRAMEWORK = {
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
     'DEFAULT_PERMISSION_CLASSES': (
-        'rest_framework.permissions.IsAuthenticated',
+        'rest_framework.permissions.AllowAny',
+        # 'rest_framework.permissions.IsAuthenticated',
         # 'rest_framework.permissions.IsAuthenticatedOrReadOnly',
     ),
     'DEFAULT_FILTER_BACKENDS': [
@@ -194,7 +195,7 @@ SIMPLE_JWT = {
     'USER_ID_CLAIM': 'user_id',
 }
 
-AUTH_USER_MODEL = 'core.Utilisateur'
+AUTH_USER_MODEL = 'core.User'
 
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 

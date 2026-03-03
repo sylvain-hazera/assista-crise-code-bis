@@ -2,20 +2,21 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenRefreshView
 from .views import (
-    ChangePasswordView, MyTokenObtainPairView, RegisterView, UserMeView, UtilisateurViewSet, CriseViewSet, DemandeViewSet, 
-    OffreViewSet, InformationViewSet,
-    TypeDemandeViewSet, TypeOffreViewSet, TypeInformationViewSet
+    ChangePasswordView, MyTokenObtainPairView, RegisterView, UserMeView, 
+    UserViewSet, CrisisViewSet, RequestViewSet, 
+    OfferViewSet, InformationViewSet,
+    RequestTypeViewSet, OfferTypeViewSet, InformationTypeViewSet
 )
 
 router = DefaultRouter()
-router.register(r'users', UtilisateurViewSet)
-router.register(r'crises', CriseViewSet)
-router.register(r'demandes', DemandeViewSet)
-router.register(r'offres', OffreViewSet)
+router.register(r'users', UserViewSet)
+router.register(r'crises', CrisisViewSet)
+router.register(r'demandes', RequestViewSet)
+router.register(r'offres', OfferViewSet)
 router.register(r'informations', InformationViewSet)
-router.register(r'types-demande', TypeDemandeViewSet)
-router.register(r'types-offre', TypeOffreViewSet)
-router.register(r'types-information', TypeInformationViewSet)
+router.register(r'types-demande', RequestTypeViewSet)
+router.register(r'types-offre', OfferTypeViewSet)
+router.register(r'types-information', InformationTypeViewSet)
 
 urlpatterns = [
     path('', include(router.urls)),

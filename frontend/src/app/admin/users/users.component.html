@@ -137,9 +137,9 @@
                   <span class="material-icons small">email</span>
                   {{ user.email }}
                 </span>
-                <span class="contact-item" *ngIf="user.telephone_utilisateur">
+                <span class="contact-item" *ngIf="user.phone_number">
                   <span class="material-icons small">phone</span>
-                  {{ user.telephone_utilisateur }}
+                  {{ user.phone_number }}
                 </span>
               </div>
             </td>
@@ -174,11 +174,11 @@
                 <!-- Activation/Désactivation -->
                 <!-- <button 
                   class="action-btn toggle-btn" 
-                  [class.active]="user.enable"
+                  [class.active]="user.enabled"
                   (click)="toggleUserStatus(user)"
-                  [title]="user.enable ? 'Désactiver' : 'Activer'"
+                  [title]="user.enabled ? 'Désactiver' : 'Activer'"
                 >
-                  <span class="material-icons">{{ user.enable ? 'toggle_on' : 'toggle_off' }}</span>
+                  <span class="material-icons">{{ user.enabled ? 'toggle_on' : 'toggle_off' }}</span>
                 </button> -->
 
                 <!-- Suppression -->

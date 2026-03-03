@@ -35,7 +35,7 @@ export interface Demande {
   auteur?: string; // UUID
 }
 
-// export interface TypeInformation {
+// export interface InformationType {
 //   id?: string;
 //   type: string;
 //   description: string;
@@ -112,16 +112,16 @@ export class ApiService {
   //   return this.http.get<Demande[]>(`${this.apiUrl}/demandes/`, { params });
   // }
 
-  // getDemande(id: string): Observable<Demande> {
-  //   return this.http.get<Demande>(`${this.apiUrl}/demandes/${id}/`);
+  // getDemande(id: string): Observable<Request> {
+  //   return this.http.get<Request>(`${this.apiUrl}/demandes/${id}/`);
   // }
 
-  // createDemande(data: Partial<Demande> | FormData): Observable<Demande> {
-  //   return this.http.post<Demande>(`${this.apiUrl}/demandes/`, data);
+  // createDemande(data: Partial<Request> | FormData): Observable<Request> {
+  //   return this.http.post<Request>(`${this.apiUrl}/demandes/`, data);
   // }
 
-  // updateDemande(id: string, data: Partial<Demande> | FormData): Observable<Demande> {
-  //   return this.http.put<Demande>(`${this.apiUrl}/demandes/${id}/`, data);
+  // updateDemande(id: string, data: Partial<Request> | FormData): Observable<Request> {
+  //   return this.http.put<Request>(`${this.apiUrl}/demandes/${id}/`, data);
   // }
 
   // deleteDemande(id: string): Observable<void> {
@@ -129,8 +129,8 @@ export class ApiService {
   // }
 
   // Types Information
-  // getTypesInformation(params?: any): Observable<TypeInformation[]> {
-  //   return this.http.get<TypeInformation[]>(`${this.apiUrl}/types-information/`, { params });
+  // getTypesInformation(params?: any): Observable<InformationType[]> {
+  //   return this.http.get<InformationType[]>(`${this.apiUrl}/types-information/`, { params });
   // }
 
   // Informations
@@ -164,16 +164,16 @@ export class ApiService {
   //   return this.http.get<Offre[]>(`${this.apiUrl}/offres/`, { params });
   // }
 
-  // getOffre(id: string): Observable<Offre> {
-  //   return this.http.get<Offre>(`${this.apiUrl}/offres/${id}/`);
+  // getOffre(id: string): Observable<Offer> {
+  //   return this.http.get<Offer>(`${this.apiUrl}/offres/${id}/`);
   // }
 
-  // createOffre(data: Partial<Offre> | FormData): Observable<Offre> {
-  //   return this.http.post<Offre>(`${this.apiUrl}/offres/`, data);
+  // createOffre(data: Partial<Offer> | FormData): Observable<Offer> {
+  //   return this.http.post<Offer>(`${this.apiUrl}/offres/`, data);
   // }
 
-  // updateOffre(id: string, data: Partial<Offre> | FormData): Observable<Offre> {
-  //   return this.http.put<Offre>(`${this.apiUrl}/offres/${id}/`, data);
+  // updateOffre(id: string, data: Partial<Offer> | FormData): Observable<Offer> {
+  //   return this.http.put<Offer>(`${this.apiUrl}/offres/${id}/`, data);
   // }
 
   // deleteOffre(id: string): Observable<void> {

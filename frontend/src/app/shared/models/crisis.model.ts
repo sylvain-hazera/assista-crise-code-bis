@@ -1,4 +1,4 @@
-import { Statut } from "./status.model";
+import { Status } from "./status.model";
 
 // Format GeoJSON retourné par GeoDjango (PointField)
 export interface GeoPoint {
@@ -6,31 +6,31 @@ export interface GeoPoint {
   coordinates: [number, number];        
 }
 
-export interface Crise {
+export interface Crisis {
   id: string;                           
-  nom: string;
+  name: string;
   type: string;
   description?: string | null;
-  statut?:  Statut;
-  localisation: GeoPoint;              
+  status?:  Status;
+  location: GeoPoint;              
   latitude?: number;
   longitude?: number;
-  date_debut: string;                   
-  date_fin: string | null;
-  validateur: string | null;           
-  auteur: string | null;           
+  start_date: string;                   
+  end_date: string | null;
+  validator: string | null;           
+  author: string | null;           
   photo: string | null;   
-  severite: string | null;           
+  severity: string | null;           
 }
 
-export interface CrisePayload {
-  nom: string;
+export interface CrisisPayload {
+  name: string;
   type: string;
   description?: string | null;
-  statut?: string;
+  status?: string;
   latitude: number;                     
   longitude: number;                    
-  date_fin?: string | null;
-  validateur?: string | null;
-  auteur?: string | null;
+  end_date?: string | null;
+  validator?: string | null;
+  author?: string | null;
 }

@@ -1,7 +1,7 @@
 import { Component, HostListener } from '@angular/core';
 import { Router, RouterModule } from '@angular/router';
 import { AuthService } from '../../../../auth/services/auth.service';
-import { Utilisateur, RoleUtilisateur } from '../../../models/user.model';
+import { User, UserRole } from '../../../models/user.model';
 
 @Component({
   selector: 'app-header',
@@ -13,7 +13,7 @@ import { Utilisateur, RoleUtilisateur } from '../../../models/user.model';
 })
 
 export class HeaderComponent {
-  currentUser: Utilisateur | null = null;
+  currentUser: User | null = null;
   showUserMenu = false;
   showMobileMenu = false;
   isMobile = false;
@@ -37,7 +37,7 @@ export class HeaderComponent {
   }
 
   get isAdmin(): boolean {
-    // return this.currentUser?.userType !== RoleUtilisateur.Individual;
+    // return this.currentUser?.userType !== UserRole.Individual;
     return this.authService.isAdmin();
   }
 
