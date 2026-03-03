@@ -2,13 +2,14 @@ import { Component, OnInit, OnDestroy, AfterViewInit, Input, ViewChild, ElementR
 import maplibregl from 'maplibre-gl';
 import * as turf from '@turf/turf';
 import { CrisisService } from '../../../../services/crisis.service';
-import { Subscription } from 'rxjs';
+import { forkJoin, Subscription } from 'rxjs';
 import { Crise } from '../../../models/crisis.model';
 import { OfferService } from '../../../../services/offer.service';
 import { Offre } from '../../../models/offer.model';
 import { RequestService } from '../../../../services/request.service';
 import { Demande } from '../../../models/request.model';
 import { GeolocationService } from '../../../../services/geolocation.service';
+import { AuthService } from '../../../../auth/services/auth.service';
 import type { FeatureCollection, Geometry, Polygon } from 'geojson';
 
 @Component({
@@ -31,7 +32,6 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   
   private map: maplibregl.Map | null = null;
   private CrisisMarkers: maplibregl.Marker[] = [];
-  private markers: maplibregl.Marker[] = [];
   private crisisCircle: any[] = [];
   private requestGeoJSON: any = null;
   private proposalGeoJSON: any = null;
@@ -40,7 +40,8 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   constructor(private crisisService: CrisisService,
               private requestService: RequestService,
               private offerService: OfferService,
-              private geolocationService: GeolocationService) {}
+              private geolocationService: GeolocationService,
+              private authService: AuthService) {}
   ngOnInit(): void {
     // Charger la géolocalisation si disponible
     this.loadUserLocation();
@@ -50,8 +51,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
       this.loadCrises();
     }
     if (this.requests.length === 0 || this.offers.length === 0) {
-      this.loadHelpRequests();
-      this.loadHelpProposals();
+      this.loadHelpData();
     }
   }
 
@@ -140,38 +140,47 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     };
   }
 
-  loadHelpRequests() {
-    this.subscription = this.requestService.getAll().subscribe({
-      next: (requests) => {
-        console.log('Données de demandes d\'aide reçues:', requests);
+  loadHelpData() {
+    this.subscription = forkJoin({
+      requests: this.requestService.getAll(),
+      proposals: this.offerService.getAll()
+    }).subscribe({
+      next: ({ requests, proposals }) => {
+        console.log('Requests:', requests);
+        console.log('Proposals:', proposals);
+
         this.requests = requests;
+        this.offers = proposals;
+
+        this.requestGeoJSON = this.jsonToGeoJSON(requests);
+        this.proposalGeoJSON = this.jsonToGeoJSON(proposals);
+
         if (this.map) {
-            this.addHelpRequestMarkers();
+          this.addSourceAndLayers();
         }
       },
       error: (err) => console.error('Erreur API:', err)
     });
   }
-
-  loadHelpProposals() {
-    this.subscription = this.offerService.getAll().subscribe({
-      next: (offers) => {
-        console.log('Données de propositions d\'aide reçues:', offers);
-        this.offers = offers;
-        if (this.map) {
-            this.addHelpProposalMarkers();
-        }
-      },
-      error: (error) => console.error('Erreur API:', error)
-    });
-  }
   private addSourceAndLayers(): void {
     if (!this.map) return;
+    const isAdmin = this.authService.isAdmin();
     const geoJsonList = [this.requestGeoJSON, this.proposalGeoJSON];
     const mergedGeoJSON: FeatureCollection<Geometry> = {
         type: 'FeatureCollection',
         features: geoJsonList.flatMap(geoJson => geoJson ? geoJson.features : [])
         };
+    // Floutage des coordonnées pour les non-admin (protection vie privée)
+    if (!isAdmin) {
+      mergedGeoJSON.features.forEach(feature => {
+        const geometry = feature.geometry as GeoJSON.Point;
+        const originalCoords = geometry.coordinates as [number, number];
+        geometry.coordinates = [
+          originalCoords[0] + (Math.random() - 0.5) * 0.01,
+          originalCoords[1] + (Math.random() - 0.5) * 0.01,
+        ];
+      });
+    }
     console.log('Merged GeoJSON:', mergedGeoJSON);
     this.map.on('load', () => {
       // Ajout de la source pour les demandes d'aide
@@ -232,6 +241,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
             const coordinates = geometry.coordinates.slice() as [number, number];
             const statut = e.features[0].properties['statut'] || 'N/A';
             const titre = e.features[0].properties['titre'] || 'N/A';
+            const description = e.features[0].properties['description'] || 'Pas de description';
             let name: string;
             if ('nom_demande' in e.features[0].properties) {
               offerRequest = 'la demande';
@@ -248,7 +258,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
             new maplibregl.Popup()
                 .setLngLat(coordinates)
                 .setHTML(
-                    `Nom de ${offerRequest}: ${name}<br>Statut de ${offerRequest}: ${statut}`
+                    `Nom de ${offerRequest}: ${titre}<br>Statut de ${offerRequest}: ${statut}<br>Description: ${description}`
                 )
                 .addTo(this.map!);
         });
@@ -384,6 +394,10 @@ private addHoverEffect() {
       // Si on a déjà des données (reçues avant le chargement de la carte), on affiche
       if (this.crises.length > 0) {
         this.addCrisisMarkers();
+        // Trier les cercles par taille décroissante (grands en arrière-plan)
+        this.crisisCircle.sort(
+          (b, a) => a.properties.radius - b.properties.radius
+        );
         const circleGeojson: FeatureCollection<Polygon> = {
         type: 'FeatureCollection',
         features: this.crisisCircle
@@ -411,8 +425,9 @@ private addHoverEffect() {
           <div style="color: black; font-family: sans-serif;">
             <h3 style="margin: 0 0 5px 0;">${properties?.['name'] || 'Nom inconnu'}</h3>
             <p style="margin: 0;">${properties?.['description'] || 'Pas de description'}</p>
+            <p style="margin: 0;"><strong>Type:</strong> ${properties?.['type'] || 'Type inconnu'}</p>
             <br>
-            <small>Créé le : ${new Date(properties?.['date_debut'] || Date.now()).toLocaleDateString()}</small>
+            <small>Créé le : ${new Date(properties?.['start_date'] || Date.now()).toLocaleDateString()}</small>
           </div>
         `)
         .setLngLat(e.lngLat)
@@ -439,104 +454,23 @@ private addHoverEffect() {
     this.crises.forEach(crisis => {
       // MapLibre attend : [Longitude, Latitude]
       if (crisis.latitude && crisis.longitude) {
-        // Création du Popup HTML
-        const popupContent = `
-          <div style="color: black; font-family: sans-serif;">
-            <h3 style="margin: 0 0 5px 0;">${crisis.nom}</h3>
-            <p style="margin: 0;">${crisis.description || 'Pas de description'}</p>
-            <br>
-            <small>Créé le : ${new Date(crisis.date_debut || Date.now()).toLocaleDateString()}</small>
-          </div>
-        `;
-
-        const popup = new maplibregl.Popup({ offset: 25 })
-          .setHTML(popupContent);
-
-        // Création du Marker
-        const marker = new maplibregl.Marker({ color: this.getSeverityColor(crisis.severite || 'LOW') })
-          .setLngLat([crisis.longitude, crisis.latitude])
-          .setPopup(popup)
-          .addTo(this.map!);
-
-        this.markers.push(marker);
+        let radiusCenter = [crisis.longitude, crisis.latitude] as [number, number];
+        let radius = 10; // Rayon par défaut 10km
+        let circle = turf.circle(radiusCenter, radius, {steps: 64, units: 'kilometers'})
+        circle.properties = {center: radiusCenter, radius: radius, name: crisis.nom, description: crisis.description, start_date: crisis.date_debut, type: crisis.type};
+        
+        // Fusionner les cercles du même type qui se chevauchent
+        for (const crisisCircles of this.crisisCircle) {
+          if(turf.booleanIntersects(crisisCircles, circle) && crisisCircles.properties.type == crisis.type) {
+            this.crisisCircle = this.crisisCircle.filter(c => c !== crisisCircles);
+            radiusCenter = [(radiusCenter[0] + crisisCircles.properties.center[0])/2, (radiusCenter[1] + crisisCircles.properties.center[1])/2];
+            radius = Math.max(turf.distance(crisisCircles.properties.center, radiusCenter, {units: 'kilometers'}) + crisisCircles.properties.radius, turf.distance(circle.properties['center'], radiusCenter, {units: 'kilometers'}) + circle.properties['radius']);
+            circle = turf.circle(radiusCenter, radius, {steps: 64, units: 'kilometers'});
+            circle.properties = {center: radiusCenter, radius: radius, name: crisis.nom, description: crisis.description, start_date: crisis.date_debut, type: crisis.type};
+          }
+        }
+        this.crisisCircle.push(circle);
       }
     });
-  }
-
-  private addHelpRequestMarkers(): void {
-    if (!this.map) return;
-
-    // Nettoyage
-    this.markers.forEach((marker: maplibregl.Marker) => marker.remove());
-    this.markers = [];
-
-    this.requests.forEach(request => {
-      // MapLibre attend : [Longitude, Latitude]
-      if (request.longitude && request.latitude) {
-        // Création du Popup HTML
-        const popupContent = `
-          <div style="color: black; font-family: sans-serif;">
-            <h3 style="margin: 0 0 5px 0;">Demande d'aide</h3>
-            <p style="margin: 0;">Type : ${request.type_demande}</p>
-            <br>
-            <small>Créée le : ${new Date(request.date_creation || Date.now()).toLocaleDateString()}</small>
-          </div>
-        `;
-
-        const popup = new maplibregl.Popup({ offset: 25 })
-          .setHTML(popupContent);
-
-        // Création du Marker
-        const marker = new maplibregl.Marker({ color: '#d63200' }) // Couleur orange pour les demandes
-          .setLngLat([request.longitude, request.latitude])
-          .setPopup(popup)
-          .addTo(this.map!);
-
-        this.markers.push(marker);
-      }
-    });
-  }
-
-  private addHelpProposalMarkers(): void {
-    if (!this.map) return;
-
-    // Nettoyage
-    this.markers.forEach((marker: maplibregl.Marker) => marker.remove());
-    this.markers = [];
-
-    this.offers.forEach(proposal => {
-      // MapLibre attend : [Longitude, Latitude]
-      if (proposal.longitude && proposal.latitude) {
-        // Création du Popup HTML
-        const popupContent = `
-          <div style="color: black; font-family: sans-serif;">
-            <h3 style="margin: 0 0 5px 0;">Proposition d'aide</h3>
-            <br>
-            <small>Créée le : ${new Date(proposal.date_creation || Date.now()).toLocaleDateString()}</small>
-          </div>
-        `;
-
-        const popup = new maplibregl.Popup({ offset: 25 })
-          .setHTML(popupContent);
-        // Création du Marker
-        const marker = new maplibregl.Marker({ color: '#0e1c8b' })
-          .setLngLat([proposal.longitude, proposal.latitude])
-          .setPopup(popup)
-          .addTo(this.map!);
-
-        this.markers.push(marker);
-      }
-    });
-  }
-
-  private getSeverityColor(severity: string): string {
-    const colors: { [key: string]: string } = {
-      'LOW': '#4CAF50',       // Vert
-      'MEDIUM': '#FF9800',    // Orange
-      'HIGH': '#F44336',      // Rouge
-      'CRITICAL': '#B71C1C'   // Rouge foncé
-    };
-    // Retourne la couleur correspondante ou Bleu par défaut
-    return colors[severity?.toUpperCase()] || '#2196F3';
   }
 }

@@ -89,11 +89,11 @@ export class ProposeHelpFormComponent implements OnInit {
     this.offerService.getTypes().subscribe({
       next: (types: any[]) => {
         types.forEach(type => {
-          this.typesOffreMap.set(type.nom, type.id);
+          this.typesOffreMap.set(type.type, type.id);
         });
         this.offerTypeOptions = [
           { value: '', label: 'Dropdown' },
-          ...types.map(t => ({ value: t.nom, label: t.nom }))
+          ...types.map(t => ({ value: t.type, label: t.type }))
         ];
       },
       error: (err: any) => console.error('Erreur chargement types offre:', err)

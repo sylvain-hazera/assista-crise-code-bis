@@ -3,35 +3,33 @@ import { Statut } from "./status.model";
 // Format GeoJSON retourné par GeoDjango (PointField)
 export interface GeoPoint {
   type: 'Point';
-  coordinates: [number, number];        // [longitude, latitude]
+  coordinates: [number, number];        
 }
 
 export interface Crise {
-  id: string;                           // UUID
+  id: string;                           
   nom: string;
   type: string;
   description?: string | null;
   statut?:  Statut;
-  localisation: GeoPoint;              // Django retourne toujours ce format
-  // Pratique côté Angular (extraits de localisation)
+  localisation: GeoPoint;              
   latitude?: number;
   longitude?: number;
-  date_debut: string;                   // auto_now_add → read-only
+  date_debut: string;                   
   date_fin: string | null;
-  validateur: string | null;           // UUID de l'Utilisateur (FK)
+  validateur: string | null;           
   auteur: string | null;           
   photo: string | null;   
   severite: string | null;           
 }
 
-// Payload envoyé pour créer/modifier une crise
 export interface CrisePayload {
   nom: string;
   type: string;
   description?: string | null;
   statut?: string;
-  latitude: number;                     // Angular envoie séparément…
-  longitude: number;                    // …le service construit le GeoJSON
+  latitude: number;                     
+  longitude: number;                    
   date_fin?: string | null;
   validateur?: string | null;
   auteur?: string | null;

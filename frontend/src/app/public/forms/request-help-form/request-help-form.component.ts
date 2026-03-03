@@ -105,11 +105,11 @@ export class RequestHelpFormComponent implements OnInit {
     this.helpRequestService.getTypes().subscribe({
       next: (types: any[]) => {
         types.forEach(type => {
-          this.typesDemandeMap.set(type.nom, type.id);
+          this.typesDemandeMap.set(type.type, type.id);
         });
         this.needTypeOptions = [
           { value: '', label: 'Dropdown' },
-          ...types.map(t => ({ value: t.nom, label: t.nom }))
+          ...types.map(t => ({ value: t.type, label: t.type }))
         ];
       },
       error: (err: any) => console.error('Erreur chargement types:', err)
