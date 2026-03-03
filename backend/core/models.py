@@ -73,15 +73,28 @@ class User(AbstractUser):
     def __str__(self) -> str:
         return self.username
 
+class TypeCrise(models.TextChoices):
+    
+    INCEDIE = "INCEDIE", "Incendie"
+    INONDATION = "INONDATION", "Inondation"
+    ACCIDENT = "ACCIDENT", "Accident"
+    CATASTROPHE_NATURELLE = "CATASTROPHE_NATURELLE", "Catastrophe naturelle"
+    URGENCE_MEDICALE = "URGENCE_MEDICALE", "Urgence médicale"
+    AUTRE = "AUTRE", "Autre"
 
 class Crisis(models.Model):
     """Modèle représentant une crise"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=100)
-    type = models.CharField(max_length=100, null=True, blank=True)
+    type = models.CharField(
+        max_length=50,
+        choices=TypeCrise.choices,
+        default=TypeCrise.AUTRE,
+    )
     description = models.TextField(null=True, blank=True)
     photo = models.ImageField(upload_to="photos/crises/", null=True, blank=True)
     location = gis_models.PointField(srid=4326)
+    radius = models.IntegerField(default=10)
     start_date = models.DateTimeField(auto_now_add=True)
     end_date = models.DateTimeField(null=True, blank=True)
 
@@ -99,6 +112,9 @@ class Crisis(models.Model):
         null=True, blank=True,
         related_name="validated_crises"
     )
+
+    class Meta:
+        verbose_name_plural = "Crisis"
 
     def __str__(self) -> str:
         return self.name

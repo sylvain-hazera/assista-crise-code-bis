@@ -15,6 +15,7 @@ export interface Crisis {
   location: GeoPoint;              
   latitude?: number;
   longitude?: number;
+  radius?: number;
   start_date: string;                   
   end_date: string | null;
   validator: string | null;           
