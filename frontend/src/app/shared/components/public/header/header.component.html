@@ -24,7 +24,18 @@
           class="user-button" 
           (click)="handleUserAction()"
           [attr.aria-label]="authService.isLoggedIn() ? 'Menu utilisateur' : 'Se connecter'">
-          <span class="material-icons">account_circle</span>
+          @if(!authService.isLoggedIn()) {
+            <span class="material-icons">account_circle</span>
+          } @else {
+            <!-- <span class="material-icons">account_circle</span> -->
+            @if(currentUser?.photo) {
+              <img [src]="currentUser?.photo" alt="Avatar">
+            } @else {
+              <span class="avatar-placeholder">
+                {{ currentUser?.first_name?.charAt(0) || ''}}{{ currentUser?.last_name?.charAt(0) || ''}}
+              </span>
+            }
+          }
         </button>
 
         <!-- User Dropdown -->
@@ -33,7 +44,7 @@
             <div class="dropdown-header">
               <span class="material-icons large-icon">account_circle</span>
               <div class="user-info">
-                <p class="user-name">{{ currentUser?.lastName }}</p>
+                <p class="user-name">{{ currentUser?.last_name }}</p>
                 <p class="user-email">{{ currentUser?.email }}</p>
               </div>
             </div>

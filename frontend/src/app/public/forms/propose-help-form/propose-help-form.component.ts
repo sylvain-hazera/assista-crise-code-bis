@@ -7,8 +7,9 @@ import { CommonModule } from '@angular/common';
 import { OfferService } from '../../../services/offer.service';
 import { LocationService, Department, Commune } from '../../../services/location.service';
 import { CrisisService } from '../../../services/crisis.service';
-import { Crisis } from '../../../shared/models/crisis.model';
-// import { NgSelectModule } from '@ng-select/ng-select';
+import { Crise } from '../../../shared/models/crisis.model';
+import { AuthService } from '../../../auth/services/auth.service';
+import { RoleUtilisateur, Utilisateur } from '../../../shared/models/user.model';
 
 @Component({
   selector: 'app-request-help-form',
@@ -18,6 +19,7 @@ import { Crisis } from '../../../shared/models/crisis.model';
   styleUrl: './propose-help-form.component.scss'
 })
 export class ProposeHelpFormComponent implements OnInit {
+  currentUser : Utilisateur | null = null;
   requestForm!: FormGroup;
   informationForm!: FormGroup;
   selectedFile: File | null = null;
@@ -50,9 +52,9 @@ export class ProposeHelpFormComponent implements OnInit {
 
   personTypeOptions: { value: string; label: string }[] = [
     { value: '', label: 'Dropdown' },
-    { value: 'individual', label: 'Particulier' },
-    { value: 'organization', label: 'Organisation' },
-    { value: 'rescue', label: 'Secours organisés' },
+    { value: RoleUtilisateur.UTIL_SIMPLE, label: 'Particulier' },
+    { value: RoleUtilisateur.AUT_LOCALE , label: 'Organisation' },
+    { value: RoleUtilisateur.SECOURS , label: 'Secours organisés' },
   ];
 
   constructor(
@@ -61,10 +63,12 @@ export class ProposeHelpFormComponent implements OnInit {
     private offerService: OfferService,
     private geolocationService: GeolocationService,
     private locationService: LocationService,
-    private crisisService: CrisisService
+    private crisisService: CrisisService,
+    private authService: AuthService
   ) {}
 
   ngOnInit(): void {
+    this.currentUser = this.authService.getCurrentUser();
     this.initForm();
     this.loadTypesOffre();
     this.loadDepartments();
@@ -82,39 +86,32 @@ export class ProposeHelpFormComponent implements OnInit {
   }
 
   loadTypesOffre(): void {
-    this.offerService.getTypesOffre().subscribe({
+    this.offerService.getTypes().subscribe({
       next: (types: any[]) => {
-        types.forEach((t: any) => {
-          const normalizedType = t.type.toLowerCase().replace(/\s+/g, '-');
-          this.typesOffreMap.set(normalizedType, t.id!);
-          this.offerTypeOptions.push({
-            value: normalizedType,
-            label: t.type
-          });
+        types.forEach(type => {
+          this.typesOffreMap.set(type.nom, type.id);
         });
-        console.log('Types offre chargés:', this.offerTypeOptions);
+        this.offerTypeOptions = [
+          { value: '', label: 'Dropdown' },
+          ...types.map(t => ({ value: t.nom, label: t.nom }))
+        ];
       },
       error: (err: any) => console.error('Erreur chargement types offre:', err)
     });
   }
 
   loadActiveCrises(): void {
-    this.crisisService.getAllCrisis().subscribe({
-      next: (crises: Crisis[]) => {
-        this.crisisOptions.push({
-          value: '',
-          label: 'Aucune crise en rapport'
-        });
-        
-        crises.forEach(crisis => {
-          this.crisisOptions.push({
-            value: crisis.id!,
-            label: crisis.name
-          });
-        });
-        
+    this.crisisService.getAll().subscribe({
+      next: (crises: Crise[]) => {
+        const activeCrises = crises.filter(c => c.statut !== 'TRAITEE');
+        this.crisisOptions = [
+          { value: '', label: 'Aucune crise en rapport' },
+          ...activeCrises.map(c => ({
+            value: c.id,
+            label: `${c.nom} - ${c.type}`
+          }))
+        ];
         this.filteredCrisisOptions = [...this.crisisOptions];
-        console.log('Crises chargées:', this.crisisOptions);
       },
       error: (err) => console.error('Erreur chargement crises:', err)
     });
@@ -135,11 +132,11 @@ export class ProposeHelpFormComponent implements OnInit {
     this.addOffer(); // Ajouter un besoin initial  
 
     this.informationForm = this.formBuilder.group({
-      personType: ['individual', Validators.required],
-      lastName: ['', Validators.required],
-      firstName: ['', Validators.required],
-      email: ['', [Validators.required, Validators.email]],
-      phoneNumber: ['', [Validators.required, Validators.pattern(/^\+?\d{10,15}$/)]]
+      personType: [this.currentUser?.type, Validators.required],
+      lastName: [this.currentUser?.last_name, Validators.required],
+      firstName: [this.currentUser?.first_name, Validators.required],
+      email: [this.currentUser?.email, [Validators.required, Validators.email]],
+      phoneNumber: [this.currentUser?.telephone_utilisateur, [Validators.required, Validators.pattern(/^\+?\d{10,15}$/)]]
     });
   }
 
@@ -209,7 +206,9 @@ export class ProposeHelpFormComponent implements OnInit {
         formData.append('crise', crisisId);
       }
       
-      formData.append('statut', 'NON_TRAITEE');
+      formData.append('statut', 'DISPONIBLE');
+      formData.append('auteur', this.currentUser?.id!);
+
       
       // Photo si présente
       if (this.selectedFile) {
@@ -217,7 +216,7 @@ export class ProposeHelpFormComponent implements OnInit {
       }
 
       // Envoyer au backend Django
-      this.offerService.createOffer(formData).subscribe({
+      this.offerService.create(formData).subscribe({
         next: (response) => {
           console.log('Demande créée:', response);
           alert('Votre demande a été enregistrée avec succès !');
@@ -361,7 +360,7 @@ export class ProposeHelpFormComponent implements OnInit {
 
   addOffer(): void {
     this.offersType.push(this.formBuilder.control('', Validators.required));
-    this.descriptions.push(this.formBuilder.control('', [Validators.required, Validators.minLength(10)]));
+    this.descriptions.push(this.formBuilder.control('', [Validators.minLength(10)]));
   }
 
   removeOffer(index: number): void {

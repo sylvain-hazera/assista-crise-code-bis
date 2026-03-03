@@ -1,62 +1,100 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { map, Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
-import { Offer } from '../shared/models/offer.model';
+import { Offre, OffrePayload, TypeOffre } from '../shared/models/offer.model';
+import { geoPointToLatLng, latLngToGeoJson } from '../shared/models/geopoint.model';
+import { StatsResponse } from '../shared/models/api.model';
 
 @Injectable({
   providedIn: 'root'
 })
 export class OfferService {
-  private apiUrl = `${environment.apiUrl}/offres`;
+  // private apiUrl = `${environment.apiUrl}/offres`;
+  private readonly url     = `${environment.apiUrl}/offres`;
+  private readonly typeUrl = `${environment.apiUrl}/types-offre`;
 
   constructor(private http: HttpClient) {}
 
-  getAllOffers(): Observable<Offer[]> {
-    return this.http.get<Offer[]>(this.apiUrl);
+  getTypes(): Observable<TypeOffre[]> {
+    return this.http.get<TypeOffre[]>(`${this.typeUrl}/`);
   }
 
-  getOffers(params?: any): Observable<Offer[]> {
-    let httpParams = new HttpParams();
-    if (params) {
-      Object.keys(params).forEach(key => {
-        httpParams = httpParams.set(key, params[key]);
-      });
+  getAll(params?: Record<string, string>): Observable<Offre[]> {
+    return this.http
+      .get<Offre[]>(`${this.url}/`, { params: this.toParams(params) })
+      .pipe(map(list => list.map(this.normalize)));
+  }
+
+  /** GET /api/offres/my_offres/ */
+  getMines(email: string): Observable<Offre[]> {
+      // return this.getAll({ auteur: userId });
+      return this.getAll({ auteur_email: email });
+  }
+
+  getById(id: string): Observable<Offre> {
+    return this.http
+      .get<Offre>(`${this.url}/${id}/`)
+      .pipe(map(this.normalize));
+  }
+
+    /**
+     * Statistiques.
+     * GET /api/offres/stats/?[params]
+     */
+  getStats(filter?: Record<string, string>): Observable<StatsResponse> {
+    return this.http.get<StatsResponse>(
+      `${this.url}/stats/`,
+      { params: this.toParams(filter) }
+    );
+  }
+  
+  create(data: Partial<Offre> | FormData): Observable<Offre> {
+    return this.http.post<Offre>(`${this.url}/`, data);
+  }
+
+  update(id: string, data: Partial<Offre> | FormData): Observable<Offre> {
+    return this.http.put<Offre>(`${this.url}/${id}/`, data);
+  }
+
+  delete(id: string): Observable<void> {
+    return this.http.delete<void>(`${this.url}/${id}/`);
+  }
+
+  private normalize = (o: any): Offre => {
+    if (o.localisation?.coordinates) {
+      return { ...o, ...geoPointToLatLng(o.localisation) };
     }
-    return this.http.get<Offer[]>(this.apiUrl, { params: httpParams });
-  }
+    return o;
+  };
 
-  getOfferStats(filter?: any): Observable<any> {
-    let httpParams = new HttpParams();
-    if (filter) {
-      Object.keys(filter).forEach(key => {
-        httpParams = httpParams.set(key, filter[key]);
-      });
+  private toFormData(p: Partial<OffrePayload>): FormData {
+    const fd = new FormData();
+    const textFields: (keyof OffrePayload)[] = [
+      'titre', 'prenom_offre', 'nom_offre',
+      'email_offre', 'type_offre', 'crise', 'date_expiration'
+    ];
+    textFields.forEach(f => {
+      if (p[f] != null) fd.append(f, String(p[f]));
+    });
+
+    fd.append('statut', p.statut ?? 'DISPONIBLE');
+
+    if (p.latitude != null && p.longitude != null) {
+      fd.append('localisation', latLngToGeoJson(p.latitude, p.longitude));
     }
-    return this.http.get<any>(`${this.apiUrl}/stats`, { params: httpParams });
+    if (p.photo) fd.append('photo', p.photo);
+
+    return fd;
   }
 
-  // getOffers(params?: any): Observable<Offer[]> {
-  //   return this.http.get<Offer[]>(`${this.apiUrl}/offres/`, { params });
-  // }
-
-  getOffer(id: string): Observable<Offer> {
-    return this.http.get<Offer>(`${this.apiUrl}/${id}/`);
-  }
-
-  createOffer(data: Partial<Offer> | FormData): Observable<Offer> {
-    return this.http.post<Offer>(`${this.apiUrl}/`, data);
-  }
-
-  updateOffer(id: string, data: Partial<Offer> | FormData): Observable<Offer> {
-    return this.http.put<Offer>(`${this.apiUrl}/${id}/`, data);
-  }
-
-  deleteOffer(id: string): Observable<void> {
-    return this.http.delete<void>(`${this.apiUrl}/${id}/`);
-  }
-
-  getTypesOffre(): Observable<any[]> {
-    return this.http.get<any[]>(`${environment.apiUrl}/types-offre`);
+  private toParams(obj?: Record<string, string>): HttpParams {
+    let p = new HttpParams();
+    if (obj) {
+      Object.entries(obj)
+        .filter(([, v]) => v != null && v !== '')
+        .forEach(([k, v]) => (p = p.set(k, v)));
+    }
+    return p;
   }
 }

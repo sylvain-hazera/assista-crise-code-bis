@@ -29,8 +29,12 @@ class Utilisateur(AbstractUser):
         default=RoleUtilisateur.UTILISATEUR_SIMPLE,
     )
     code_postal = models.CharField(max_length=5, null=True, blank=True)
-    enable = models.BooleanField(default=True)  # Pour la validation des comptes
+    enable = models.BooleanField(default=True)
+
+    USERNAME_FIELD = 'email'
+    REQUIRED_FIELDS = ['username']
     
+    email = models.EmailField(unique=True)  # ← must be unique for login to work
 
     crise_touchee = models.ForeignKey(
         "Crise",
@@ -56,6 +60,13 @@ class Utilisateur(AbstractUser):
         related_name="utilisateurs_consultant"
     )
 
+    validateur = models.ForeignKey(
+        'Utilisateur',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="utilisateur_validé"
+    )
+
     def __str__(self) -> str:  # pragma: no cover - display helper
         return self.username
 
@@ -63,11 +74,20 @@ class Utilisateur(AbstractUser):
 class Crise(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=100)
-    location = gis_models.PointField(srid=4326)
+    type = models.CharField(max_length=100, null=True, blank=True)
+    description = models.TextField(null=True, blank=True)
+    photo = models.ImageField(upload_to="photos/crises/", null=True, blank=True)
+    localisation = gis_models.PointField(srid=4326)
     start_date = models.DateTimeField(auto_now_add=True)
     end_date = models.DateTimeField(null=True, blank=True)
-    description = models.CharField(max_length=150, null=True, blank=True)
 
+    auteur = models.ForeignKey(
+        Utilisateur,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="crises_déclarées",
+    )
 
     validator = models.ForeignKey(
         'Utilisateur',
@@ -82,7 +102,8 @@ class Crise(models.Model):
 
 class TypeDemande(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    type = models.CharField(max_length=100, unique=True)
+    type = models.CharField(max_length=100, unique=True, null=True, blank=True)
+    description = models.TextField(null=True, blank=True)
 
     def __str__(self) -> str:  # pragma: no cover - display helper
         return self.type
@@ -126,7 +147,8 @@ class Demande(models.Model):
 
 class TypeInformation(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    type = models.CharField(max_length=100, unique=True)
+    type = models.CharField(max_length=100, unique=True, null=True, blank=True)
+    description = models.TextField(null=True, blank=True)
 
     def __str__(self) -> str:  # pragma: no cover - display helper
         return self.type
@@ -170,13 +192,13 @@ class Information(models.Model):
 
 class TypeOffre(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    type = models.CharField(max_length=100, unique=True)
+    type = models.CharField(max_length=100, unique=True, null=True, blank=True)
+    description = models.TextField(null=True, blank=True)
+
+
 
     def __str__(self) -> str:  # pragma: no cover - display helper
         return self.type
-
-
-
 
 
 class Offre(models.Model):

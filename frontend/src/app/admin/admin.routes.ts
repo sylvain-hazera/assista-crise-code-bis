@@ -5,6 +5,7 @@ import { TeamsComponent } from './teams/teams.component';
 import { MapComponent } from '../shared/components/common/map/map.component';
 import { ResultsComponent } from './results/results.component';
 import { UsersComponent } from './users/users.component';
+import { sysAdminGuard } from '../core/guards/admin.guard';
 
 export const ADMIN_ROUTES: Routes = [
   { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
@@ -13,5 +14,5 @@ export const ADMIN_ROUTES: Routes = [
   { path: 'equipes', component: TeamsComponent }, 
   { path: 'carte', component: MapComponent },
   { path: 'resultats', component: ResultsComponent },
-  { path: 'users', component: UsersComponent } 
+  { path: 'utilisateurs', component: UsersComponent, canActivate: [sysAdminGuard] },
 ];

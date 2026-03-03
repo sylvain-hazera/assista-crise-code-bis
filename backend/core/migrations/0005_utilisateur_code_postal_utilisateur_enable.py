@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('core', '0003_alter_demande_photo_alter_information_photo_and_more'),
+        ("core", "0004_merge"),
     ]
 
     operations = [

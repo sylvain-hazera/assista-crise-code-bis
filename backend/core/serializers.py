@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from .models import (
     Utilisateur, Crise, Demande, Offre, Information,
     TypeDemande, TypeOffre, TypeInformation
@@ -91,3 +92,13 @@ class InformationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Information
         fields = '__all__'
+
+class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
+    sername_field = 'email'  
+
+    def validate(self, attrs):
+        data = super().validate(attrs)
+        # On ajoute l'utilisateur sérialisé à la réponse
+        data['user'] = UtilisateurSerializer(self.user).data
+        return data
+    

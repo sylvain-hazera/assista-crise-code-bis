@@ -1,205 +1,236 @@
-<div class="dashboard">
-  
-  <!-- Header -->
-  <div class="dashboard-header">
-    <div class="header-title">
-      <h1>ESPACE ADMIN</h1>
-    </div>
-    <div class="header-actions">
-      <button class="icon-btn refresh-btn" (click)="refreshData()" [disabled]="isLoading">
-        <span class="material-icons" [class.spinning]="isLoading">refresh</span>
-      </button>
-      <div class="filter-container">
-        <button class="filter-button" (click)="toggleDropdown()">
-          <span class="material-icons">tune</span>
-        </button>
+<div class="dash">
 
-        @if(isDropdownOpen) {
-          <div class="dropdown-menu">
-          <ul>
-            @for(option of filterOptions; track option.label) {
-              <li (click)="selectFilter(option)" [class.active]="currentFilter === option.action">
-                {{option.label}}
+  <!-- ══ HEADER ══════════════════════════════════════════════════════════ -->
+  <header class="dash-header">
+    <div class="dash-title">
+      <span class="material-icons title-icon">dashboard</span>
+      <h1>Tableau de bord</h1>
+      @if (!isLoading) {
+        <span class="badge-total">{{ totalItems }} entités</span>
+      }
+    </div>
+
+    <div class="dash-actions">
+      <button class="btn-icon" (click)="loadAll()" [disabled]="isLoading" title="Rafraîchir">
+        <span class="material-icons" [class.spin]="isLoading">refresh</span>
+      </button>
+
+      <div class="filter-wrap">
+        <button class="btn-filter" (click)="isDropdownOpen = !isDropdownOpen">
+          <span class="material-icons">tune</span>
+          <span>{{ currentFilterLabel() }}</span>
+          <span class="material-icons caret">expand_more</span>
+        </button>
+        @if (isDropdownOpen) {
+          <ul class="dropdown">
+            @for (opt of filterOptions; track opt.action) {
+              <li [class.active]="currentFilter === opt.action" (click)="selectFilter(opt.action)">
+                {{ opt.label }}
               </li>
             }
           </ul>
-        </div>
         }
       </div>
     </div>
-  </div>
+  </header>
 
-  <!-- Error Message -->
+  <!-- ══ ERROR ════════════════════════════════════════════════════════════ -->
   @if (errorMessage) {
-    <div class="alert alert-error">
-      <span class="material-icons">error</span>
+    <div class="alert-error">
+      <span class="material-icons">error_outline</span>
       {{ errorMessage }}
-      <button (click)="errorMessage = ''" class="close-btn">
-        <span class="material-icons">close</span>
-      </button>
+      <button (click)="errorMessage = ''" class="btn-icon sm"><span class="material-icons">close</span></button>
     </div>
   }
 
-  <!-- Stats Cards -->
-  <div class="stats-grid">
-    @for (stat of stats; track stat.title) {
-      <div [class]="getCardClass(stat.color)">
-        <div class="stat-header">
-          <div class="stat-info">
-            <h3>{{ stat.title }}</h3>
-            @if (stat.loading) {
-              <div class="skeleton skeleton-text"></div>
-              <div class="skeleton skeleton-text-small"></div>
-            } @else {
-              <p class="stat-value">{{ stat.value }}</p>
-              <span class="stat-change" [class.positive]="stat.change.startsWith('+')">
-                {{ stat.change }}
-              </span>
-            }
-          </div>
-          <div class="stat-icon">
-            <span class="material-icons">{{ stat.icon }}</span>
-          </div>
+  <!-- ══ STAT CARDS ═══════════════════════════════════════════════════════ -->
+  <section class="stats-row">
+    @for (s of stats; track s.title) {
+      <div class="stat-card stat-{{ s.color }}">
+        <div class="stat-body">
+          <p class="stat-label">{{ s.title }}</p>
+          @if (s.loading) {
+            <div class="skel skel-val"></div>
+            <div class="skel skel-chg"></div>
+          } @else {
+            <p class="stat-val">{{ s.value }}</p>
+            <span class="stat-chg" [class.pos]="s.changePositive" [class.neg]="!s.changePositive">
+              {{ s.change }}
+            </span>
+          }
         </div>
+        <span class="stat-icon material-icons">{{ s.icon }}</span>
       </div>
     }
-  </div>
+  </section>
 
-  <!-- Charts Section -->
-  <div class="charts-grid">
-    <!-- Line Chart -->
-    <div class="chart-card"  [class.fullscreen]="isLineChartFullScreen">
-      <div class="chart-header">
-        <h2>Évolution temporelle</h2>
-        <div class="chart-actions">
-          <button class="icon-btn" (click)="toggleLineChartScreen()">
-            <span class="material-icons">{{isLineChartFullScreen ? 'fullscreen_exit' : 'fullscreen'}}</span>
-          </button>
-          <button class="icon-btn" (click)="downloadLineChart()">
+  <!-- ══ CHARTS ═══════════════════════════════════════════════════════════ -->
+  <section class="charts-row">
+
+    <!-- Line chart -->
+    <div class="chart-card chart-line" [class.fullscreen]="lineFullscreen">
+      <div class="chart-head">
+        <h2>Évolution – 30 derniers jours</h2>
+        <div class="chart-acts">
+          <div class="legend-row">
+            <span class="leg crisis"></span>Crises
+            <span class="leg offer"></span>Ressources
+            <span class="leg request"></span>Besoins
+          </div>
+          <button class="btn-icon sm" (click)="downloadLine()" title="Exporter CSV">
             <span class="material-icons">download</span>
+          </button>
+          <button class="btn-icon sm" (click)="lineFullscreen = !lineFullscreen" title="Plein écran">
+            <span class="material-icons">{{ lineFullscreen ? 'fullscreen_exit' : 'fullscreen' }}</span>
           </button>
         </div>
       </div>
-      <div class="chart-legend">
-        <span class="legend-item">
-          <span class="legend-dot red"></span>
-          Crises
-        </span>
-        <span class="legend-item">
-          <span class="legend-dot green"></span>
-          Ressources
-        </span>
-        <span class="legend-item">
-          <span class="legend-dot blue"></span>
-          Besoins
-        </span>
-      </div>
-      <div class="chart-placeholder">
+
+      <div class="chart-body">
         @if (isLoading) {
-          <div class="skeleton skeleton-chart"></div>
-        } @else if (lineChartData.series.length > 0) {
-          <!-- Intégrez ici votre bibliothèque de graphiques (Chart.js, ApexCharts, etc.) -->
-          <svg viewBox="0 0 400 200" class="line-chart">
-            <!-- SVG généré dynamiquement -->
+          <div class="skel skel-chart"></div>
+        } @else if (dayPoints.length) {
+          <!-- SVG line chart -->
+          <svg [attr.viewBox]="'0 0 ' + (CHART_W + CHART_X0 + 20) + ' ' + (CHART_H + CHART_Y0 + 30)"
+               class="line-svg" preserveAspectRatio="none">
+
+            <!-- Y gridlines + labels -->
+            @for (gl of yLines; track gl.y) {
+              <line [attr.x1]="CHART_X0" [attr.y1]="gl.y"
+                    [attr.x2]="CHART_W + CHART_X0" [attr.y2]="gl.y"
+                    class="grid-line"/>
+              <text [attr.x]="CHART_X0 - 6" [attr.y]="gl.y + 4" class="axis-text" text-anchor="end">
+                {{ gl.label }}
+              </text>
+            }
+
+            <!-- X labels -->
+            @for (xl of xLabels; track xl.x) {
+              <text [attr.x]="xl.x" [attr.y]="CHART_Y0 + CHART_H + 18" class="axis-text" text-anchor="middle">
+                {{ xl.label }}
+              </text>
+            }
+
+            <!-- Series lines -->
+            <polyline [attr.points]="linePoints('crises')"   class="line-crisis"  fill="none"/>
+            <polyline [attr.points]="linePoints('offres')"   class="line-offer"   fill="none"/>
+            <polyline [attr.points]="linePoints('demandes')" class="line-request" fill="none"/>
           </svg>
         } @else {
           <div class="empty-state">
             <span class="material-icons">show_chart</span>
-            <p>Aucune donnée disponible</p>
+            <p>Aucune donnée sur cette période</p>
           </div>
         }
       </div>
     </div>
 
-    <!-- Pie Chart -->
-    <div class="chart-card chart-card-sm" [class.fullscreen]="isPieChartFullScreen">
-      <div class="chart-header">
-        <h2>Répartition</h2>
-        <div class="chart-actions">
-          <button class="icon-btn" (click)="togglePieChartScreen()">
-            <span class="material-icons">{{isPieChartFullScreen ? 'fullscreen_exit' : 'fullscreen'}}</span>
-          </button>
-          <button class="icon-btn" (click)="downloadPieChart()">
+    <!-- Pie chart -->
+    <div class="chart-card chart-pie" [class.fullscreen]="pieFullscreen">
+      <div class="chart-head">
+        <h2>Crises par type</h2>
+        <div class="chart-acts">
+          <button class="btn-icon sm" (click)="downloadPie()" title="Exporter CSV">
             <span class="material-icons">download</span>
           </button>
+          <button class="btn-icon sm" (click)="pieFullscreen = !pieFullscreen" title="Plein écran">
+            <span class="material-icons">{{ pieFullscreen ? 'fullscreen_exit' : 'fullscreen' }}</span>
+          </button>
         </div>
       </div>
-      <div class="chart-placeholder pie-chart">
+
+      <div class="chart-body pie-body">
         @if (isLoading) {
-          <div class="skeleton skeleton-pie"></div>
-        } @else if (pieChartData.series.length > 0) {
-          <!-- SVG du pie chart -->
-          <svg viewBox="0 0 200 200" class="pie">
-            <!-- SVG généré dynamiquement -->
+          <div class="skel skel-pie"></div>
+        } @else if (pieSlices.length) {
+          <svg viewBox="0 0 200 200" class="pie-svg">
+            @for (sl of pieSlices; track sl.label) {
+              <path [attr.d]="sl.path" [attr.fill]="sl.color" stroke="white" stroke-width="1.5">
+                <title>{{ sl.label }} — {{ sl.count }} ({{ sl.percent }}%)</title>
+              </path>
+            }
+            <!-- Donut hole -->
+            <circle cx="100" cy="100" r="38" fill="white"/>
+            <text x="100" y="95"  class="donut-num" text-anchor="middle">{{ rawCrises.length }}</text>
+            <text x="100" y="112" class="donut-lbl" text-anchor="middle">crises</text>
           </svg>
+
+          <ul class="pie-legend">
+            @for (sl of pieSlices; track sl.label) {
+              <li>
+                <span class="dot" [style.background]="sl.color"></span>
+                <span class="pie-name">{{ sl.label }}</span>
+                <span class="pie-pct">{{ sl.percent }}%</span>
+              </li>
+            }
+          </ul>
         } @else {
           <div class="empty-state">
-            <span class="material-icons">pie_chart</span>
-            <p>Aucune donnée disponible</p>
+            <span class="material-icons">donut_large</span>
+            <p>Aucune crise enregistrée</p>
           </div>
         }
       </div>
     </div>
-  </div>
 
-  <!-- Recent Announcements -->
-  <div class="table-card">
-    <div class="table-header">
-      <h2>Crises récentes</h2>
-      <button class="icon-btn">
-        <span class="material-icons">download</span>
-      </button>
+  </section>
+
+  <!-- ══ RECENT TABLE ══════════════════════════════════════════════════════ -->
+  <section class="table-card">
+    <div class="table-head">
+      <h2>Activités récentes</h2>
+      <span class="badge-total">{{ recentItems.length }}</span>
     </div>
-    <div class="table-wrapper">
-      @if (isLoading) {
-        <div class="skeleton-table">
-          @for (i of [1,2,3]; track i) {
-            <div class="skeleton skeleton-row"></div>
-          }
-        </div>
-      } @else if (recentAnnouncements.length > 0) {
-        <table class="data-table">
+
+    @if (isLoading) {
+      <div class="skel-rows">
+        @for (i of [1,2,3,4,5]; track i) { <div class="skel skel-row"></div> }
+      </div>
+    } @else if (recentItems.length) {
+      <div class="table-wrap">
+        <table>
           <thead>
             <tr>
-              <th>ID</th>
+              <th>Type</th>
               <th>Titre</th>
               <th>Date</th>
               <th>Statut</th>
-              <th>Actions</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
-            @for (announcement of recentAnnouncements; track announcement.id) {
+            @for (item of recentItems; track item.id) {
               <tr>
-                <td>#{{ announcement.id }}</td>
-                <td>{{ announcement.title }}</td>
-                <td>{{ announcement.date }}</td>
                 <td>
-                  <span class="status-badge" [class]="'status-' + announcement.status">
-                    {{ announcement.status }}
+                  <span class="type-tag" [class]="typeClass(item.type)">
+                    <span class="material-icons">{{ typeIcon(item.type) }}</span>
+                    {{ item.type }}
                   </span>
                 </td>
+                <td class="title-cell">{{ item.title }}</td>
+                <td class="date-cell">{{ item.date }}</td>
+                <td><span class="status-chip" [class]="item.statusClass">{{ item.status }}</span></td>
                 <td>
-                  <button class="action-btn" [routerLink]="['/admin/crises', announcement.id]">
-                    <span class="material-icons">visibility</span>
+                  <button class="btn-icon sm" [routerLink]="['/details', item.id]" title="Voir">
+                    <span class="material-icons">arrow_forward</span>
                   </button>
                 </td>
               </tr>
             }
           </tbody>
         </table>
-      } @else {
-        <div class="empty-state">
-          <span class="material-icons">inbox</span>
-          <p>Aucune crise récente</p>
-        </div>
-      }
-    </div>
-  </div>
+      </div>
+    } @else {
+      <div class="empty-state">
+        <span class="material-icons">inbox</span>
+        <p>Aucune activité récente</p>
+      </div>
+    }
+  </section>
+
 </div>
 
-
-<!-- Overlay pour fermer les dropdowns -->
+<!-- close dropdown on outside click -->
 @if (isDropdownOpen) {
   <div class="overlay" (click)="isDropdownOpen = false"></div>
 }

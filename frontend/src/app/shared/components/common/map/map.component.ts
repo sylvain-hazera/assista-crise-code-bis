@@ -2,14 +2,14 @@ import { Component, OnInit, OnDestroy, AfterViewInit, Input, ViewChild, ElementR
 import maplibregl from 'maplibre-gl';
 import * as turf from '@turf/turf';
 import { CrisisService } from '../../../../services/crisis.service';
-import { Crisis } from '../../../models/crisis.model';
-import { RequestService } from '../../../../services/request.service';
-import { Request } from '../../../models/request.model';
+import { Subscription } from 'rxjs';
+import { Crise } from '../../../models/crisis.model';
 import { OfferService } from '../../../../services/offer.service';
-import { Offer } from '../../../models/offer.model';
+import { Offre } from '../../../models/offer.model';
+import { RequestService } from '../../../../services/request.service';
+import { Demande } from '../../../models/request.model';
 import { GeolocationService } from '../../../../services/geolocation.service';
-import { forkJoin, Subscription } from 'rxjs';
-import { FeatureCollection, Geometry, Polygon } from 'geojson';
+import type { FeatureCollection, Geometry, Polygon } from 'geojson';
 
 @Component({
   selector: 'app-map',
@@ -22,15 +22,16 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   // Référence directe à la div HTML
   @ViewChild('mapContainer') mapContainer!: ElementRef;
 
-  @Input() crises: Crisis[] = [];
-  @Input() requests: Request[] = [];
-  @Input() offers: Offer[] = [];
+  @Input() crises: Crise[] = [];
+  @Input() requests: Demande[] = [];
+  @Input() offers: Offre[] = [];
   // Centre de la France par défaut
   @Input() center: [number, number] = [2.2137, 46.2276]; 
   @Input() zoom: number = 5;
   
   private map: maplibregl.Map | null = null;
   private CrisisMarkers: maplibregl.Marker[] = [];
+  private markers: maplibregl.Marker[] = [];
   private crisisCircle: any[] = [];
   private requestGeoJSON: any = null;
   private proposalGeoJSON: any = null;
@@ -49,14 +50,15 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
       this.loadCrises();
     }
     if (this.requests.length === 0 || this.offers.length === 0) {
-      this.loadHelpData();
+      this.loadHelpRequests();
+      this.loadHelpProposals();
     }
   }
 
   private loadUserLocation(): void {
     // Vérifier si une position est déjà stockée
     const storedLocation = this.geolocationService.location$;
-    storedLocation.subscribe(location => {
+    storedLocation.subscribe((location: any) => {
       if (location) {
         // Centrer la carte sur la position de l'utilisateur avec un zoom adapté
         this.center = [location.longitude, location.latitude];
@@ -76,7 +78,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     // Si pas de position stockée, demander la géolocalisation
     if (!this.geolocationService.hasPermission()) {
       this.geolocationService.requestLocation()
-        .then(coords => {
+        .then((coords: any) => {
           this.center = [coords.longitude, coords.latitude];
           this.zoom = 11;
           
@@ -88,7 +90,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
             });
           }
         })
-        .catch(error => {
+        .catch((error: any) => {
           console.log('Géolocalisation non disponible:', error.message);
           // Garder le centre par défaut (France)
         });
@@ -105,7 +107,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   loadCrises() {
-    this.subscription = this.crisisService.getAllCrisis().subscribe({
+    this.subscription = this.crisisService.getAll().subscribe({
       next: (crises) => {
         console.log('Données de crises reçues:', crises);
         this.crises = crises;
@@ -138,29 +140,31 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     };
   }
 
-  loadHelpData() {
-    this.subscription = forkJoin({
-      requests: this.requestService.getAllRequests(),
-      proposals: this.offerService.getAllOffers()
-    }).subscribe({
-      next: ({ requests, proposals }) => {
-        console.log('Requests:', requests);
-        console.log('Proposals:', proposals);
-
+  loadHelpRequests() {
+    this.subscription = this.requestService.getAll().subscribe({
+      next: (requests) => {
+        console.log('Données de demandes d\'aide reçues:', requests);
         this.requests = requests;
-        this.offers = proposals;
-
-        this.requestGeoJSON = this.jsonToGeoJSON(requests);
-        this.proposalGeoJSON = this.jsonToGeoJSON(proposals);
-
         if (this.map) {
-          this.addSourceAndLayers();
+            this.addHelpRequestMarkers();
         }
       },
       error: (err) => console.error('Erreur API:', err)
     });
   }
 
+  loadHelpProposals() {
+    this.subscription = this.offerService.getAll().subscribe({
+      next: (offers) => {
+        console.log('Données de propositions d\'aide reçues:', offers);
+        this.offers = offers;
+        if (this.map) {
+            this.addHelpProposalMarkers();
+        }
+      },
+      error: (error) => console.error('Erreur API:', error)
+    });
+  }
   private addSourceAndLayers(): void {
     if (!this.map) return;
     const geoJsonList = [this.requestGeoJSON, this.proposalGeoJSON];
@@ -435,13 +439,104 @@ private addHoverEffect() {
     this.crises.forEach(crisis => {
       // MapLibre attend : [Longitude, Latitude]
       if (crisis.latitude && crisis.longitude) {
-        console.log('Ajout de la crise sur la carte:', crisis);
-        const radiusCenter = [crisis.longitude, crisis.latitude] as [number, number];
-        const radius = 10; // kilometer
-        const circle = turf.circle(radiusCenter, radius, {steps: 64, units: 'kilometers'})
-        circle.properties = {center: radiusCenter, radius: radius, name: crisis.name, description: crisis.description, start_date: crisis.start_date};
-        this.crisisCircle.push(circle);
+        // Création du Popup HTML
+        const popupContent = `
+          <div style="color: black; font-family: sans-serif;">
+            <h3 style="margin: 0 0 5px 0;">${crisis.nom}</h3>
+            <p style="margin: 0;">${crisis.description || 'Pas de description'}</p>
+            <br>
+            <small>Créé le : ${new Date(crisis.date_debut || Date.now()).toLocaleDateString()}</small>
+          </div>
+        `;
+
+        const popup = new maplibregl.Popup({ offset: 25 })
+          .setHTML(popupContent);
+
+        // Création du Marker
+        const marker = new maplibregl.Marker({ color: this.getSeverityColor(crisis.severite || 'LOW') })
+          .setLngLat([crisis.longitude, crisis.latitude])
+          .setPopup(popup)
+          .addTo(this.map!);
+
+        this.markers.push(marker);
       }
     });
+  }
+
+  private addHelpRequestMarkers(): void {
+    if (!this.map) return;
+
+    // Nettoyage
+    this.markers.forEach((marker: maplibregl.Marker) => marker.remove());
+    this.markers = [];
+
+    this.requests.forEach(request => {
+      // MapLibre attend : [Longitude, Latitude]
+      if (request.longitude && request.latitude) {
+        // Création du Popup HTML
+        const popupContent = `
+          <div style="color: black; font-family: sans-serif;">
+            <h3 style="margin: 0 0 5px 0;">Demande d'aide</h3>
+            <p style="margin: 0;">Type : ${request.type_demande}</p>
+            <br>
+            <small>Créée le : ${new Date(request.date_creation || Date.now()).toLocaleDateString()}</small>
+          </div>
+        `;
+
+        const popup = new maplibregl.Popup({ offset: 25 })
+          .setHTML(popupContent);
+
+        // Création du Marker
+        const marker = new maplibregl.Marker({ color: '#d63200' }) // Couleur orange pour les demandes
+          .setLngLat([request.longitude, request.latitude])
+          .setPopup(popup)
+          .addTo(this.map!);
+
+        this.markers.push(marker);
+      }
+    });
+  }
+
+  private addHelpProposalMarkers(): void {
+    if (!this.map) return;
+
+    // Nettoyage
+    this.markers.forEach((marker: maplibregl.Marker) => marker.remove());
+    this.markers = [];
+
+    this.offers.forEach(proposal => {
+      // MapLibre attend : [Longitude, Latitude]
+      if (proposal.longitude && proposal.latitude) {
+        // Création du Popup HTML
+        const popupContent = `
+          <div style="color: black; font-family: sans-serif;">
+            <h3 style="margin: 0 0 5px 0;">Proposition d'aide</h3>
+            <br>
+            <small>Créée le : ${new Date(proposal.date_creation || Date.now()).toLocaleDateString()}</small>
+          </div>
+        `;
+
+        const popup = new maplibregl.Popup({ offset: 25 })
+          .setHTML(popupContent);
+        // Création du Marker
+        const marker = new maplibregl.Marker({ color: '#0e1c8b' })
+          .setLngLat([proposal.longitude, proposal.latitude])
+          .setPopup(popup)
+          .addTo(this.map!);
+
+        this.markers.push(marker);
+      }
+    });
+  }
+
+  private getSeverityColor(severity: string): string {
+    const colors: { [key: string]: string } = {
+      'LOW': '#4CAF50',       // Vert
+      'MEDIUM': '#FF9800',    // Orange
+      'HIGH': '#F44336',      // Rouge
+      'CRITICAL': '#B71C1C'   // Rouge foncé
+    };
+    // Retourne la couleur correspondante ou Bleu par défaut
+    return colors[severity?.toUpperCase()] || '#2196F3';
   }
 }

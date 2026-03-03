@@ -6,7 +6,8 @@ import { Router } from '@angular/router';
 import { GeolocationService } from '../../../services/geolocation.service';
 import { LocationService, Department, Commune } from '../../../services/location.service';
 import { CrisisService } from '../../../services/crisis.service';
-import { Crisis } from '../../../shared/models/crisis.model';
+import { Crise } from '../../../shared/models/crisis.model';
+import { AuthService } from '../../../auth/services/auth.service';
 
 enum StateForm {
   DeclareSafe,
@@ -58,7 +59,8 @@ export class OtherDeclarationFormComponent implements OnInit {
     private informationService: InformationService,
     private geolocationService: GeolocationService,
     private locationService: LocationService,
-    private crisisService: CrisisService
+    private crisisService: CrisisService,
+    private authService: AuthService
   ) {}
 
   ngOnInit(): void {
@@ -79,7 +81,7 @@ export class OtherDeclarationFormComponent implements OnInit {
   }
 
   loadTypesInformation(): void {
-    this.informationService.getTypesInformation().subscribe({
+    this.informationService.getTypes().subscribe({
       next: (types: any[]) => {
         types.forEach((t: any) => {
           const normalizedType = t.type.toLowerCase().replace(/\s+/g, '-');
@@ -96,8 +98,8 @@ export class OtherDeclarationFormComponent implements OnInit {
   }
 
   loadActiveCrises(): void {
-    this.crisisService.getAllCrisis().subscribe({
-      next: (crises: Crisis[]) => {
+    this.crisisService.getAll().subscribe({
+      next: (crises: Crise[]) => {
         this.crisisOptions.push({
           value: '',
           label: 'Aucune crise en rapport'
@@ -106,7 +108,7 @@ export class OtherDeclarationFormComponent implements OnInit {
         crises.forEach(crisis => {
           this.crisisOptions.push({
             value: crisis.id!,
-            label: crisis.name
+            label: crisis.nom
           });
         });
         
@@ -332,6 +334,7 @@ export class OtherDeclarationFormComponent implements OnInit {
     }
 
     formData.append('statut', 'DISPONIBLE');
+    formData.append('auteur', this.authService.getCurrentUser()?.id!);
     
     // Utiliser le premier TypeInformation disponible
     const firstTypeId = Array.from(this.typesInformationMap.values())[0];
@@ -347,9 +350,7 @@ export class OtherDeclarationFormComponent implements OnInit {
       formData.append('crise', crisisId);
     }
 
-    console.log('FormData envoyé (DeclareSafe):', Array.from(formData.entries()));
-
-    this.informationService.createInformation(formData).subscribe({
+    this.informationService.create(formData).subscribe({
       next: (response) => {
         console.log('Information créée:', response);
         alert('Votre information a été enregistrée avec succès !');
@@ -400,7 +401,7 @@ export class OtherDeclarationFormComponent implements OnInit {
 
     console.log('FormData envoyé (OtherInformation):', Array.from(formData.entries()));
 
-    this.informationService.createInformation(formData).subscribe({
+    this.informationService.create(formData).subscribe({
       next: (response) => {
         console.log('Information créée:', response);
         alert('Votre information a été enregistrée avec succès !');

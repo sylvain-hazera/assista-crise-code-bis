@@ -2,7 +2,7 @@ import { Component, HostListener, OnInit } from '@angular/core';
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { AuthService } from '../../auth/services/auth.service';
-import { User, UserRole } from '../../shared/models/user.model';
+import { Utilisateur, RoleUtilisateur } from '../../shared/models/user.model';
 
 interface NavItem {
   icon: string;
@@ -19,7 +19,7 @@ interface NavItem {
   styleUrls: ['./admin-layout.component.scss']
 })
 export class AdminLayoutComponent implements OnInit {
-  currentUser: User | null = null;
+  currentUser: Utilisateur | null = null;
   sidebarCollapsed = false;
   sidebarOpen = false; // Pour mobile
   showNotifications = false;
@@ -127,7 +127,7 @@ export class AdminLayoutComponent implements OnInit {
   }
 
   goToSettings(): void {
-    this.router.navigate(['/user/settings']);
+    this.router.navigate(['/settings']);
     this.closeAllMenus();
   }
 
@@ -148,8 +148,8 @@ export class AdminLayoutComponent implements OnInit {
   }
 
   get companyName(): string {
-    return this.currentUser?.userType !== UserRole.Individual
-      ? this.currentUser!.lastName 
+    return this.currentUser?.type !== RoleUtilisateur.UTIL_SIMPLE
+      ? this.currentUser!.last_name 
       : 'Admin';
   }
 

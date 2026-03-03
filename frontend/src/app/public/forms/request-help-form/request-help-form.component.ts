@@ -7,8 +7,9 @@ import { CommonModule } from '@angular/common';
 import { RequestService } from '../../../services/request.service';
 import { LocationService, Department, Commune } from '../../../services/location.service';
 import { CrisisService } from '../../../services/crisis.service';
-import { Crisis } from '../../../shared/models/crisis.model';
-// import { NgSelectModule } from '@ng-select/ng-select';
+import { Crise } from '../../../shared/models/crisis.model';
+import { Utilisateur } from '../../../shared/models/user.model';
+import { AuthService } from '../../../auth/services/auth.service';
 
 @Component({
   selector: 'app-request-help-form',
@@ -18,6 +19,7 @@ import { Crisis } from '../../../shared/models/crisis.model';
   styleUrl: './request-help-form.component.scss'
 })
 export class RequestHelpFormComponent implements OnInit {
+  currentUser: Utilisateur | null = null;
   requestForm!: FormGroup;
   informationForm!: FormGroup;
   selectedFile: File | null = null;
@@ -60,10 +62,12 @@ export class RequestHelpFormComponent implements OnInit {
     private helpRequestService: RequestService,
     private geolocationService: GeolocationService,
     private locationService: LocationService,
-    private crisisService: CrisisService
+    private crisisService: CrisisService,
+    private authService: AuthService
   ) {}
 
   ngOnInit(): void {
+    this.currentUser = this.authService.getCurrentUser();
     this.initForm();
     this.loadTypesDemande();
     this.loadDepartments();
@@ -81,43 +85,32 @@ export class RequestHelpFormComponent implements OnInit {
   }
 
   loadActiveCrises(): void {
-    this.crisisService.getAllCrisis().subscribe({
-      next: (crises: Crisis[]) => {
-        // Option par défaut
-        this.crisisOptions.push({
-          value: '',
-          label: 'Aucune crise en rapport'
-        });
-        
-        // Ajouter toutes les crises (actives ou récentes)
-        crises.forEach(crisis => {
-          this.crisisOptions.push({
-            value: crisis.id!,
-            label: crisis.name
-          });
-        });
-        
+    this.crisisService.getAll().subscribe({
+      next: (crises: Crise[]) => {
+        const activeCrises = crises.filter(c => c.statut !== 'TRAITEE');
+        this.crisisOptions = [
+          { value: '', label: 'Aucune crise en rapport' },
+          ...activeCrises.map(c => ({
+            value: c.id,
+            label: `${c.nom} - ${c.type}`
+          }))
+        ];
         this.filteredCrisisOptions = [...this.crisisOptions];
-        console.log('Crises chargées:', this.crisisOptions);
       },
       error: (err) => console.error('Erreur chargement crises:', err)
     });
   }
 
   loadTypesDemande(): void {
-    this.helpRequestService.getTypesDemande().subscribe({
+    this.helpRequestService.getTypes().subscribe({
       next: (types: any[]) => {
-        // Mapper les valeurs du formulaire aux UUIDs des types
-        types.forEach((t: any) => {
-          const normalizedType = t.type.toLowerCase().replace(/\s+/g, '-');
-          this.typesDemandeMap.set(normalizedType, t.id!);
-          // Ajouter aux options du dropdown
-          this.needTypeOptions.push({
-            value: normalizedType,
-            label: t.type
-          });
+        types.forEach(type => {
+          this.typesDemandeMap.set(type.nom, type.id);
         });
-        console.log('Types chargés:', this.typesDemandeMap);
+        this.needTypeOptions = [
+          { value: '', label: 'Dropdown' },
+          ...types.map(t => ({ value: t.nom, label: t.nom }))
+        ];
       },
       error: (err: any) => console.error('Erreur chargement types:', err)
     });
@@ -139,10 +132,10 @@ export class RequestHelpFormComponent implements OnInit {
 
     this.informationForm = this.formBuilder.group({
       personType: ['individual', Validators.required],
-      lastName: ['', Validators.required],
-      firstName: ['', Validators.required],
-      email: ['', [Validators.required, Validators.email]],
-      phoneNumber: ['', [Validators.required, Validators.pattern(/^\+?\d{10,15}$/)]]
+      lastName: [this.currentUser?.last_name, Validators.required],
+      firstName: [this.currentUser?.first_name, Validators.required],
+      email: [this.currentUser?.email, [Validators.required, Validators.email]],
+      phoneNumber: [this.currentUser?.telephone_utilisateur, [Validators.required, Validators.pattern(/^\+?\d{10,15}$/)]]
     });
   }
 
@@ -213,6 +206,7 @@ export class RequestHelpFormComponent implements OnInit {
       }
       
       formData.append('statut', 'NON_TRAITEE');
+      formData.append('auteur', this.currentUser?.id!);
       
       // Photo si présente
       if (this.selectedFile) {
@@ -220,7 +214,7 @@ export class RequestHelpFormComponent implements OnInit {
       }
 
       // Envoyer au backend Django
-      this.helpRequestService.createRequest(formData).subscribe({
+      this.helpRequestService.create(formData).subscribe({
         next: (response) => {
           console.log('Demande créée:', response);
           alert('Votre demande a été enregistrée avec succès !');
@@ -365,7 +359,7 @@ export class RequestHelpFormComponent implements OnInit {
 
   addNeed(): void {
     this.needsType.push(this.formBuilder.control('', Validators.required));
-    this.descriptions.push(this.formBuilder.control('', [Validators.required, Validators.minLength(10)]));
+    this.descriptions.push(this.formBuilder.control('', [Validators.minLength(10)]));
   }
 
   removeNeed(index: number): void {
