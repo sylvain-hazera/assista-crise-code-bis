@@ -55,3 +55,10 @@ tileserver/data/
 # --- OS ---
 .DS_Store
 Thumbs.db
+
+# ====================================
+# 5. Mosquitto
+# ====================================
+mosquitto/data/
+mosquitto/log/
+mosquitto/config/pwfile
