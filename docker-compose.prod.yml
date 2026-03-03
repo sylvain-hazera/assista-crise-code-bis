@@ -1,0 +1,95 @@
+services:
+  frontend:
+    image: im2ag-harbor.univ-grenoble-alpes.fr/assista-crise/frontend:latest
+    container_name: ac_frontend
+    restart: always
+
+  backend:
+    image: im2ag-harbor.univ-grenoble-alpes.fr/assista-crise/backend:latest
+    container_name: ac_backend
+    volumes:
+      - media_volume:/app/media
+    environment:
+      - DB_HOST=db
+      - DB_NAME=assista-db
+      - DB_USER=admin
+      - DB_PASS=admin
+      - MQTT_BROKER=mosquitto
+      - EMAIL_HOST=smtp.ionos.fr      # Use Ionos in prod
+      - EMAIL_PORT=465
+      - EMAIL_USE_TLS=False
+      - EMAIL_USE_SSL=True
+      - DEFAULT_FROM_EMAIL=no-reply@assista-crise.fr
+      - EMAIL_HOST_USER=no-reply@assista-crise.fr
+      - EMAIL_HOST_PASSWORD=${EMAIL_PASSWORD}
+    # For Hardware USB Access (uncomment on VM/Host with antenna)
+    # devices:
+    #   - "/dev/ttyACM0:/dev/ttyACM0"
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+      mosquitto:
+        condition: service_started
+
+  db:
+    image: postgis/postgis:15-3.3
+    container_name: ac_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=assista-db
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=admin
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d assista-db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: always
+
+  mosquitto:
+    image: eclipse-mosquitto
+    container_name: ac_mqtt
+    ports:
+      - "1883:1883" # TCP listener
+      - "9001:9001" # Websocket listener
+    volumes:
+      - ./mosquitto/config:/mosquitto/config
+      - ./mosquitto/data:/mosquitto/data
+
+  grafana:
+    image: grafana/grafana
+    container_name: ac_stats
+    ports:
+      - "3000:3000"
+    depends_on:
+      - db
+
+
+
+  tileserver:
+    image: maptiler/tileserver-gl
+    container_name: ac_maps
+    ports:
+      - "8080:8080"
+    # volumes:
+    #   - ./tileserver:/data
+
+  proxy:
+    image: im2ag-harbor.univ-grenoble-alpes.fr/assista-crise/proxy:latest
+    container_name: ac_proxy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    restart: always
+    depends_on:
+      - frontend
+      - backend
+      - tileserver
+
+volumes:
+  postgres_data:
+  media_volume:

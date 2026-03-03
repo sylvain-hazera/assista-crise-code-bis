@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from .models import (
     Utilisateur, Crise, Demande, Offre, Information,
     TypeDemande, TypeOffre, TypeInformation
@@ -26,13 +27,15 @@ class UtilisateurSerializer(serializers.ModelSerializer):
     class Meta:
         model = Utilisateur
         fields = ['id', 'username', 'email', 'first_name', 'last_name', 'type', 
-                  'photo', 'telephone_utilisateur', 'password']
+                  'photo', 'telephone_utilisateur', 'password', 'code_postal', 'enable']
         extra_kwargs = {
             'password': {'write_only': True},
             'first_name': {'required': False},
             'last_name': {'required': False},
             'telephone_utilisateur': {'required': False},
             'photo': {'required': False},
+            'code_postal': {'required': False},
+            'enable': {'required': False},
         }
 
     def create(self, validated_data):
@@ -53,9 +56,9 @@ class CriseSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
     def get_latitude(self, obj):
-        return obj.localisation.y if obj.localisation else None
+        return obj.location.y if obj.location else None
     def get_longitude(self, obj):
-        return obj.localisation.x if obj.localisation else None
+        return obj.location.x if obj.location else None
 
 class DemandeSerializer(serializers.ModelSerializer):
 
@@ -89,3 +92,13 @@ class InformationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Information
         fields = '__all__'
+
+class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
+    sername_field = 'email'  
+
+    def validate(self, attrs):
+        data = super().validate(attrs)
+        # On ajoute l'utilisateur sérialisé à la réponse
+        data['user'] = UtilisateurSerializer(self.user).data
+        return data
+    

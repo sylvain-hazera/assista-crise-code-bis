@@ -1,17 +1,8 @@
 import { Component, HostListener, OnInit } from '@angular/core';
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
-import { AdminHeaderComponent } from "../../shared/components/admin/admin-header/admin-header.component";
-import { AdminSidebarComponent } from "../../shared/components/admin/admin-sidebar/admin-sidebar.component";
+import { CommonModule } from '@angular/common';
 import { AuthService } from '../../auth/services/auth.service';
-import { User } from '../../shared/models/user.model';
-
-// @Component({
-//   selector: 'app-admin-layout',
-//   standalone: true,
-//   imports: [RouterOutlet, AdminHeaderComponent, AdminSidebarComponent],
-//   templateUrl: './admin-layout.component.html',
-//   styleUrls: ['./admin-layout.component.scss']
-// })
+import { Utilisateur, RoleUtilisateur } from '../../shared/models/user.model';
 
 interface NavItem {
   icon: string;
@@ -23,51 +14,18 @@ interface NavItem {
 @Component({
   selector: 'app-admin-layout',
   standalone: true,
-  imports: [RouterOutlet, RouterLink, RouterLinkActive],
+  imports: [CommonModule, RouterOutlet, RouterLink, RouterLinkActive],
   templateUrl: './admin-layout.component.html',
   styleUrls: ['./admin-layout.component.scss']
 })
-
-
-// export class AdminLayoutComponent implements OnInit {
-//   sidebarCollapsed = false;
-//   isMobile = false;
-
-//   ngOnInit(): void {
-//     this.checkScreenSize();
-//   }
-
-//   @HostListener('window:resize')
-//   onResize(): void {
-//     this.checkScreenSize();
-//   }
-
-//   private checkScreenSize(): void {
-//     this.isMobile = window.innerWidth <= 768;
-//     // Sur mobile, la sidebar est fermée par défaut
-//     if (this.isMobile) {
-//       this.sidebarCollapsed = true;
-//     } else {
-//       // Sur desktop, la sidebar est ouverte par défaut
-//       this.sidebarCollapsed = false;
-//     }
-//   }
-
-
-//   onSidebarToggle(collapsed: boolean): void {
-//     this.sidebarCollapsed = collapsed;
-//   }
-// }
-
 export class AdminLayoutComponent implements OnInit {
-  currentUser: User | null = null;
+  currentUser: Utilisateur | null = null;
   sidebarCollapsed = false;
+  sidebarOpen = false; // Pour mobile
   showNotifications = false;
   showUserMenu = false;
-
-  notificationCount = 2;
-
-  // Mock notifications - à remplacer par un service
+  isMobile = false;
+  
   notifications = [
     {
       icon: 'warning',
@@ -89,9 +47,8 @@ export class AdminLayoutComponent implements OnInit {
     { icon: 'groups', label: 'Equipes', route: '/admin/equipes' },
     { icon: 'map', label: 'Carte', route: '/admin/carte' },
     { icon: 'check_circle', label: 'Résultats', route: '/admin/resultats' },
-    { icon: 'group', label: 'utilisateurs', route: '/admin/utilisateurs' }
+    { icon: 'group', label: 'Utilisateurs', route: '/admin/utilisateurs' }
   ];
-UserRole: any;
 
   constructor(
     private authService: AuthService,
@@ -100,34 +57,103 @@ UserRole: any;
 
   ngOnInit(): void {
     this.currentUser = this.authService.getCurrentUser();
+    this.checkScreenSize();
+  }
+
+  @HostListener('window:resize')
+  onResize(): void {
+    this.checkScreenSize();
+  }
+
+  private checkScreenSize(): void {
+    this.isMobile = window.innerWidth <= 768;
+    
+    // Sur mobile, fermer les menus
+    if (this.isMobile) {
+      this.sidebarOpen = false;
+      this.sidebarCollapsed = false;
+    } else {
+      // Sur desktop, la sidebar est visible
+      this.sidebarOpen = false;
+    }
+  }
+
+  isSysAdmin(): boolean {
+    return this.authService.isSysAdmin();
   }
 
   toggleSidebar(): void {
-    this.sidebarCollapsed = !this.sidebarCollapsed;
+    if (this.isMobile) {
+      // Sur mobile, toggle open/close
+      this.sidebarOpen = !this.sidebarOpen;
+    } else {
+      // Sur desktop, toggle collapsed
+      this.sidebarCollapsed = !this.sidebarCollapsed;
+    }
+  }
+
+  closeSidebar(): void {
+    if (this.isMobile) {
+      this.sidebarOpen = false;
+    }
   }
 
   toggleNotifications(): void {
     this.showNotifications = !this.showNotifications;
     this.showUserMenu = false;
+    
+    // Fermer la sidebar mobile si ouverte
+    if (this.isMobile) {
+      this.sidebarOpen = false;
+    }
   }
 
   toggleUserMenu(): void {
     this.showUserMenu = !this.showUserMenu;
     this.showNotifications = false;
+    
+    // Fermer la sidebar mobile si ouverte
+    if (this.isMobile) {
+      this.sidebarOpen = false;
+    }
+  }
+
+  closeAllMenus(): void {
+    this.showNotifications = false;
+    this.showUserMenu = false;
+    if (this.isMobile) {
+      this.sidebarOpen = false;
+    }
   }
 
   goToSettings(): void {
     this.router.navigate(['/settings']);
-    this.showUserMenu = false;
+    this.closeAllMenus();
+  }
+
+  goToHome(): void {
+    this.router.navigate(['/accueil']);
+    this.closeAllMenus();
   }
 
   logout(): void {
     this.authService.logout();
   }
 
+  onNavItemClick(): void {
+    // Fermer la sidebar sur mobile après navigation
+    if (this.isMobile) {
+      this.closeSidebar();
+    }
+  }
+
   get companyName(): string {
-    return this.currentUser?.userType === 'organization' 
-      ? this.currentUser.lastName 
-      : 'Nom de la compagnie';
+    return this.currentUser?.type !== RoleUtilisateur.UTIL_SIMPLE
+      ? this.currentUser!.last_name 
+      : 'Admin';
+  }
+
+  get notificationCount(): number {
+    return this.notifications.length;
   }
 }

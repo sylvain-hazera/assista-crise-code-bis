@@ -55,3 +55,6 @@ tileserver/data/
 # --- OS ---
 .DS_Store
 Thumbs.db
+
+# Mosquitto data
+mosquitto/data/

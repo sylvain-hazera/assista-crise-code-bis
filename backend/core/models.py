@@ -2,7 +2,7 @@ import uuid
 from django.contrib.auth.models import AbstractUser, Group, Permission
 from django.contrib.gis.db import models as gis_models
 from django.db import models
-
+from core.validators import validate_image_file
 
 class RoleUtilisateur(models.TextChoices):
     ADMINISTRATEUR = "ADMIN", "Administrateur"
@@ -22,13 +22,19 @@ class Statut(models.TextChoices):
 class Utilisateur(AbstractUser):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     telephone_utilisateur = models.CharField(max_length=20, null=True, blank=True)
-    photo = models.ImageField(upload_to="photos/", null=True, blank=True)
+    photo = models.ImageField(upload_to="photos/", null=True, blank=True, validators=[validate_image_file])
     type = models.CharField(
         max_length=20,
         choices=RoleUtilisateur.choices,
         default=RoleUtilisateur.UTILISATEUR_SIMPLE,
     )
+    code_postal = models.CharField(max_length=5, null=True, blank=True)
+    enable = models.BooleanField(default=True)
+
+    USERNAME_FIELD = 'email'
+    REQUIRED_FIELDS = ['username']
     
+    email = models.EmailField(unique=True)  # ← must be unique for login to work
 
     crise_touchee = models.ForeignKey(
         "Crise",
@@ -54,19 +60,36 @@ class Utilisateur(AbstractUser):
         related_name="utilisateurs_consultant"
     )
 
+    validateur = models.ForeignKey(
+        'Utilisateur',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="utilisateur_validé"
+    )
+
     def __str__(self) -> str:  # pragma: no cover - display helper
         return self.username
 
 
 class Crise(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    nom = models.CharField(max_length=100)
+    name = models.CharField(max_length=100)
+    type = models.CharField(max_length=100, null=True, blank=True)
+    description = models.TextField(null=True, blank=True)
+    photo = models.ImageField(upload_to="photos/crises/", null=True, blank=True)
     localisation = gis_models.PointField(srid=4326)
-    date_debut = models.DateTimeField(auto_now_add=True)
-    date_fin = models.DateTimeField(null=True, blank=True)
+    start_date = models.DateTimeField(auto_now_add=True)
+    end_date = models.DateTimeField(null=True, blank=True)
 
+    auteur = models.ForeignKey(
+        Utilisateur,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="crises_déclarées",
+    )
 
-    validateur = models.ForeignKey(
+    validator = models.ForeignKey(
         'Utilisateur',
         on_delete=models.SET_NULL,
         null=True, blank=True,
@@ -74,12 +97,13 @@ class Crise(models.Model):
     )
 
     def __str__(self) -> str:  # pragma: no cover - display helper
-        return self.nom
+        return self.name
 
 
 class TypeDemande(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    type = models.CharField(max_length=100, unique=True)
+    type = models.CharField(max_length=100, unique=True, null=True, blank=True)
+    description = models.TextField(null=True, blank=True)
 
     def __str__(self) -> str:  # pragma: no cover - display helper
         return self.type
@@ -88,7 +112,7 @@ class TypeDemande(models.Model):
 class Demande(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     titre = models.CharField(max_length=150)
-    photo = models.ImageField(upload_to="photos/demandes/", null=True, blank=True)
+    photo = models.ImageField(upload_to="photos/demandes/", null=True, blank=True, validators=[validate_image_file])
     localisation = gis_models.PointField(srid=4326)
     prenom_demande = models.CharField(max_length=60)
     nom_demande = models.CharField(max_length=80)
@@ -123,7 +147,8 @@ class Demande(models.Model):
 
 class TypeInformation(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    type = models.CharField(max_length=100, unique=True)
+    type = models.CharField(max_length=100, unique=True, null=True, blank=True)
+    description = models.TextField(null=True, blank=True)
 
     def __str__(self) -> str:  # pragma: no cover - display helper
         return self.type
@@ -132,7 +157,7 @@ class TypeInformation(models.Model):
 class Information(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     titre = models.CharField(max_length=150)
-    photo = models.ImageField(upload_to="photos/informations/", null=True, blank=True)
+    photo = models.ImageField(upload_to="photos/informations/", null=True, blank=True, validators=[validate_image_file])
     prenom_information = models.CharField(max_length=60)
     nom_information = models.CharField(max_length=80)
     email_information = models.EmailField()
@@ -167,19 +192,19 @@ class Information(models.Model):
 
 class TypeOffre(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    type = models.CharField(max_length=100, unique=True)
+    type = models.CharField(max_length=100, unique=True, null=True, blank=True)
+    description = models.TextField(null=True, blank=True)
+
+
 
     def __str__(self) -> str:  # pragma: no cover - display helper
         return self.type
 
 
-
-
-
 class Offre(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     titre = models.CharField(max_length=150)
-    photo = models.ImageField(upload_to="photos/offres/", null=True, blank=True)
+    photo = models.ImageField(upload_to="photos/offres/", null=True, blank=True, validators=[validate_image_file])
     localisation = gis_models.PointField(srid=4326)
     prenom_offre = models.CharField(max_length=60)
     nom_offre = models.CharField(max_length=80)
