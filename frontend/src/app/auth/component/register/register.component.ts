@@ -38,10 +38,9 @@ export class RegisterComponent implements OnInit, OnDestroy {
   showCommuneDropdown: boolean = false;
 
   userTypeOptions = [
-    { value: UserRole.Individual, label: 'Particulier' },
-    { value: UserRole.Organization, label: 'Authorité locale' },
-    { value: UserRole.Rescue, label: 'Secours organisés (AASC)' },
-    // { value: UserRole.Admin, label: 'Admin' }
+    { value: UserRole.SIMPLE_USER, label: 'Particulier' },
+    { value: UserRole.LOCAL_AUTH, label: 'Institution' },
+    { value: UserRole.RESCUE, label: 'Secours organisés' },
   ];
 
   constructor(
@@ -102,7 +101,7 @@ export class RegisterComponent implements OnInit, OnDestroy {
     console.log('Toggle fields for userType:', userType);
     const firstNameControl = this.registerForm.get('firstName');
 
-    if (userType === 'Individual' || userType === 'individual') {  // Gérer les deux cas
+    if (userType === UserRole.SIMPLE_USER) {  
        // Activer firstName pour les particuliers
       console.log('Activating firstName for individual');
       firstNameControl?.setValidators([
@@ -159,7 +158,7 @@ export class RegisterComponent implements OnInit, OnDestroy {
   }
 
   selectDepartment(department: Department): void {
-    this.departmentSearch = department.nom;
+    this.departmentSearch = department.name;
     this.registerForm.patchValue({ department: department.code });
     this.showDepartmentDropdown = false;
     
@@ -185,7 +184,7 @@ export class RegisterComponent implements OnInit, OnDestroy {
   }
 
   selectCommune(commune: Commune): void {
-    this.communeSearch = commune.nom;
+    this.communeSearch = commune.name;
     this.registerForm.patchValue({ commune: commune.code });
     this.showCommuneDropdown = false;
   }
@@ -206,13 +205,13 @@ export class RegisterComponent implements OnInit, OnDestroy {
     const postalCode = commune?.codesPostaux[0] || '';
     
     // Vérifier si le compte nécessite une validation
-    const requiresValidation = userType !== UserRole.Individual;
+    const requiresValidation = userType !== UserRole.SIMPLE_USER;
     
     const registerData: any = {
       username: formValue.email,  // Utiliser l'email complet comme username (unique)
       email: formValue.email,
       password: formValue.password,
-      type: this.mapUserTypeToBackend(formValue.userType),
+      type: formValue.userType,
       telephone_utilisateur: formValue.phone,
       last_name: formValue.lastName,
       first_name: formValue.firstName || '',
@@ -220,13 +219,19 @@ export class RegisterComponent implements OnInit, OnDestroy {
       // Marquer le compte comme non validé si c'est Institution/Secours/Admin
       enable: !requiresValidation
     };
+
+    if(formValue.userType === UserRole.SIMPLE_USER) {
+      registerData.enabled = true;
+    } else {
+      registerData.enabled = false;
+    }
     
     console.log('Données envoyées:', registerData);
 
     this.authService.register(registerData)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
-        next: (response) => {
+        next: (response: any) => {
           console.log('Inscription réussie:', response);
           
           // Vérifier si le compte nécessite validation (basé sur la réponse du serveur)
@@ -292,29 +297,8 @@ export class RegisterComponent implements OnInit, OnDestroy {
     return 'Champ invalide';
   }
 
-  // get isOrganization(): boolean {
-  //   return this.registerForm.get('userType')?.value === 'organization';
-  // }
-
   get isIndividual(): boolean {
-    return this.registerForm.get('userType')?.value === UserRole.Individual;
+    return this.registerForm.get('userType')?.value === UserRole.SIMPLE_USER;
 
-  }
-
-  /**
-   * Convertit les valeurs UserRole du frontend vers les valeurs RoleUtilisateur de Django
-   */
-  private mapUserTypeToBackend(userType: string): string {
-    const mapping: { [key: string]: string } = {
-      'Individual': 'UTIL_SIMPLE',
-      'individual': 'UTIL_SIMPLE',
-      'Organization': 'AUT_LOCALE',
-      'organization': 'AUT_LOCALE',
-      'Rescue': 'SECOURS',
-      'rescue': 'SECOURS',
-      'Admin': 'ADMIN',
-      'admin': 'ADMIN'
-    };
-    return mapping[userType] || 'UTIL_SIMPLE';
   }
 }

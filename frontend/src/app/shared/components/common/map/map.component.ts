@@ -2,14 +2,14 @@ import { Component, OnInit, OnDestroy, AfterViewInit, Input, ViewChild, ElementR
 import maplibregl from 'maplibre-gl';
 import * as turf from '@turf/turf';
 import { CrisisService } from '../../../../services/crisis.service';
+import { forkJoin, Subscription } from 'rxjs';
 import { Crisis } from '../../../models/crisis.model';
-import { RequestService } from '../../../../services/request.service';
-import { Request } from '../../../models/request.model';
 import { OfferService } from '../../../../services/offer.service';
 import { Offer } from '../../../models/offer.model';
+import { RequestService } from '../../../../services/request.service';
+import { Request } from '../../../models/request.model';
 import { GeolocationService } from '../../../../services/geolocation.service';
-import { forkJoin, Subscription } from 'rxjs';
-import { FeatureCollection, Geometry, Polygon } from 'geojson';
+import type { FeatureCollection, Geometry, Polygon } from 'geojson';
 import { AuthService } from '../../../../auth/services/auth.service';
 import { InformationService } from '../../../../services/information.service';
 
@@ -61,7 +61,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   private loadUserLocation(): void {
     // Verify if there's a stored location in the GeolocationService and center the map on it if available
     const storedLocation = this.geolocationService.location$;
-    storedLocation.subscribe(location => {
+    storedLocation.subscribe((location: any) => {
       if (location) {
         // Center the map on the stored location
         this.center = [location.longitude, location.latitude];
@@ -81,7 +81,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     // If no stored location, request geolocation permission and get current position
     if (!this.geolocationService.hasPermission()) {
       this.geolocationService.requestLocation()
-        .then(coords => {
+        .then((coords: any) => {
           this.center = [coords.longitude, coords.latitude];
           this.zoom = 11;
           
@@ -93,7 +93,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
             });
           }
         })
-        .catch(error => {
+        .catch((error: any) => {
           console.log('Géolocalisation non disponible:', error.message);
           // Keep default center and zoom if geolocation fails or is denied
         });
@@ -109,8 +109,8 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     if (this.map) this.map.remove();
   }
 
-  loadCrises() { // Load crises from API and add them to the map
-    this.subscription = this.crisisService.getAllCrisis().subscribe({
+  loadCrises() { // Charger les crises depuis l'API et les ajouter à la carte
+    this.subscription = this.crisisService.getAll().subscribe({
       next: (crises) => {
         console.log('Données de crises reçues:', crises);
         this.crises = crises;
@@ -145,22 +145,22 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
 
   loadHelpData() { // Load both requests and offers in parallel and process them together to add to the map
     this.subscription = forkJoin({
-      requests: this.requestService.getAllRequests(),
-      proposals: this.offerService.getAllOffers(),
-      informations: this.informationService.getInformations()
+      requests: this.requestService.getAll(),
+      proposals: this.offerService.getAll(),
+      //informations: this.informationService.getAll()
     }).subscribe({
-      next: ({ requests, proposals, informations }) => {
+      next: ({ requests, proposals, /*informations */}) => {
         console.log('Requests:', requests);
         console.log('Proposals:', proposals);
-        console.log('Informations:', informations);
+        //console.log('Informations:', informations);
 
         this.requests = requests;
         this.offers = proposals;
-        this.informations = informations;
+        //this.informations = informations;
 
         this.requestGeoJSON = this.jsonToGeoJSON(requests);
         this.proposalGeoJSON = this.jsonToGeoJSON(proposals);
-        this.informationsGeoJSON = this.jsonToGeoJSON(informations);
+        //this.informationsGeoJSON = this.jsonToGeoJSON(informations);
 
         if (this.map) {
           this.addSourceAndLayers();
@@ -169,7 +169,6 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
       error: (err) => console.error('Erreur API:', err)
     });
   }
-
   private addSourceAndLayers(): void {
     if (!this.map) return;
     const isAdmin = this.authService.isAdmin();
@@ -244,26 +243,26 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
             const geometry = e.features[0].geometry as GeoJSON.Point;
             let offerRequest: string;
             const coordinates = geometry.coordinates.slice() as [number, number];
-            const statut = e.features[0].properties['statut'] || 'N/A';
-            const title = e.features[0].properties['titre'] || 'N/A';
+            const statut = e.features[0].properties['status'] || 'N/A';
+            const title = e.features[0].properties['title'] || 'N/A';
             const description = e.features[0].properties['description'] || 'Pas de description';
-            let name: string= '';
+            let name: string = '';
             let first_name: string = '';
-            if ('nom_demande' in e.features[0].properties) {
+            if ('last_name_request' in e.features[0].properties) {
               offerRequest = 'la demande';
               if (isAdmin){ // Only show requester/offerer names to admins
-                    name = e.features[0].properties['nom_demande'] || 'N/A';
+                    name = e.features[0].properties['last_name_request'] || 'N/A';
                     name = `<br>Nom demandeur: ${name}`
-                    first_name = e.features[0].properties['prenom_demande'] || 'N/A';
+                    first_name = e.features[0].properties['first_name_request'] || 'N/A';
                     first_name = `<br>Prénom demandeur: ${first_name}`
               }
             }
             else {
               offerRequest = 'l\'offre';
               if (isAdmin){
-                    name = e.features[0].properties['nom_offre'] || 'N/A';
+                    name = e.features[0].properties['last_name_offer'] || 'N/A';
                     name = `<br>Nom offreur: ${name}`
-                    first_name = e.features[0].properties['prenom_offre'] || 'N/A';
+                    first_name = e.features[0].properties['first_name_offer'] || 'N/A';
                     first_name = `<br>Prénom offreur: ${first_name}`
                     }
             }
@@ -287,7 +286,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
             paint: {
                 'circle-color': [
                 'case',
-                ['has', 'nom_demande'],
+                ['has', 'last_name_request'],
                 '#ff0000', // If it's a request
                 '#11b4da' // If it's an offer
                 ],
@@ -404,7 +403,8 @@ private addHoverEffect() { // Show convex hull around clusters on hover
       // If crises, requests, or offers were already loaded before the map was ready, add them to the map now
       if (this.crises.length > 0) {
         this.addCrisisMarkers();
-        this.crisisCircle.sort( // Sort circles by radius to ensure smaller circles are drawn on top of larger ones
+        // Trier les cercles par rayon pour que les petits cercles soient visibles par-dessus les grands
+        this.crisisCircle.sort(
           (b, a) => a.properties.radius - b.properties.radius
         );
         const circleGeojson: FeatureCollection<Polygon> = {
@@ -460,21 +460,18 @@ private addHoverEffect() { // Show convex hull around clusters on hover
       // Create a circle for each crisis
       if (crisis.latitude && crisis.longitude) {
         let radiusCenter = [crisis.longitude, crisis.latitude] as [number, number];
-        let radius = crisis.radius || 10; // Default radius of 10 km if not specified
-        let circle = turf.circle(radiusCenter, radius, {steps: 64, units: 'kilometers'}) // Create a circle polygon using Turf.js for the crisis area
-        // Store crisis properties in the circle for later use in popups and merging overlapping circles
-        circle.properties = {center: radiusCenter, radius: radius, name: crisis['name'], description: crisis['description'], start_date: crisis['start_date'], type: crisis['type']};
+        let radius = crisis.radius || 10; // Utiliser le rayon de la crise ou 10km par défaut
+        let circle = turf.circle(radiusCenter, radius, {steps: 64, units: 'kilometers'})
+        circle.properties = {center: radiusCenter, radius: radius, name: crisis.name, description: crisis.description, start_date: crisis.start_date, type: crisis.type};
+        
+        // Fusionner les cercles du même type qui se chevauchent
         for (const crisisCircles of this.crisisCircle) {
-          // If the new circle intersects with an existing circle of the same crisis type, merge them into a single larger circle
-          if(turf.booleanIntersects(crisisCircles, circle) && crisisCircles.properties.type == crisis['type']) {
-            this.crisisCircle = this.crisisCircle.filter(c => c !== crisisCircles); // Remove the existing circle that intersects with the new one
-            // Calculate the new center in the middle of the two circles
+          if(turf.booleanIntersects(crisisCircles, circle) && crisisCircles.properties.type == crisis.type) {
+            this.crisisCircle = this.crisisCircle.filter(c => c !== crisisCircles);
             radiusCenter = [(radiusCenter[0] + crisisCircles.properties.center[0])/2, (radiusCenter[1] + crisisCircles.properties.center[1])/2];
-            // Calculate the new radius to encompass both circles
             radius = Math.max(turf.distance(crisisCircles.properties.center, radiusCenter, {units: 'kilometers'}) + crisisCircles.properties.radius, turf.distance(circle.properties['center'], radiusCenter, {units: 'kilometers'}) + circle.properties['radius']);
-            circle = turf.circle(radiusCenter, radius, {steps: 64, units: 'kilometers'}); // Create a new circle
-            // Store the merged circle properties
-            circle.properties = {center: radiusCenter, radius: radius, name: crisis['name'] + ' || ' + crisisCircles.properties.name, description: crisis['description'], start_date: crisis['start_date'], type: crisis['type']};
+            circle = turf.circle(radiusCenter, radius, {steps: 64, units: 'kilometers'});
+            circle.properties = {center: radiusCenter, radius: radius, name: crisis.name + ' || ' + crisisCircles.properties.name, description: crisis.description, start_date: crisis.start_date, type: crisis.type};
           }
         }
         this.crisisCircle.push(circle);

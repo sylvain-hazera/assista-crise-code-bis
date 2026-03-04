@@ -1,23 +1,37 @@
-export interface Crisis {
-  id?: string;
-  name: string;
-  type: string;
-  description?: string;
-  location?: { type: 'Point'; coordinates: [number, number] };
-  radius?: number;
-  start_date?: Date;
-  end_date?: Date;
-  latitude: number;
-  longitude: number;
-  validator?: string;
-  status?: string;
+import { Status } from "./status.model";
+
+// Format GeoJSON retourné par GeoDjango (PointField)
+export interface GeoPoint {
+  type: 'Point';
+  coordinates: [number, number];        
 }
 
+export interface Crisis {
+  id: string;                           
+  name: string;
+  type: string;
+  description?: string | null;
+  status?:  Status;
+  location: GeoPoint;              
+  latitude?: number;
+  longitude?: number;
+  radius?: number;
+  start_date: string;                   
+  end_date: string | null;
+  validator: string | null;           
+  author: string | null;           
+  photo: string | null;   
+  severity: string | null;           
+}
 
-export enum statusCrisis {
-  UNPROCESSED,
-  PROCESSING,
-  PROCESSED,
-  AVAILABLE,
-  UNAVAILABLE
+export interface CrisisPayload {
+  name: string;
+  type: string;
+  description?: string | null;
+  status?: string;
+  latitude: number;                     
+  longitude: number;                    
+  end_date?: string | null;
+  validator?: string | null;
+  author?: string | null;
 }

@@ -1,364 +1,437 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
-import { Router, RouterLink } from '@angular/router';
+import { RouterLink } from '@angular/router';
+import { CommonModule } from '@angular/common';
 import { forkJoin, Subject, takeUntil } from 'rxjs';
 import { CrisisService } from '../../services/crisis.service';
 import { OfferService } from '../../services/offer.service';
 import { RequestService } from '../../services/request.service';
+import { Crisis } from '../../shared/models/crisis.model';
+import { Offer } from '../../shared/models/offer.model';
+import { Request } from '../../shared/models/request.model';
+
+// ── Types internes ────────────────────────────────────────────────────────────
 
 interface StatCard {
   title: string;
   value: string;
   change: string;
+  changePositive: boolean;
   icon: string;
-  color: 'primary' | 'secondary' | 'danger';
-  loading?: boolean;
+  color: 'crisis' | 'offer' | 'request';
+  loading: boolean;
 }
 
-interface ChartData {
-  series: { name: string; data: number[] }[];
-  categories: string[];
+interface DayPoint {
+  label: string;       // "01/02"
+  crises: number;
+  offres: number;
+  demandes: number;
+}
+
+interface PieSlice {
+  label: string;
+  count: number;
+  percent: number;
+  color: string;
+  // SVG arc path
+  path: string;
+}
+
+interface RecentItem {
+  id: string;
+  title: string;
+  type: 'Crise' | 'Ressource' | 'Besoin';
+  date: string;
+  status: string;
+  statusClass: string;
 }
 
 enum FilterAction {
-  All = 'all',
-  Around = 'around',
-  Week = 'week',
-  Month = 'month',
-  Quarter = 'quarter',
+  All      = 'all',
+  Week     = 'week',
+  Month    = 'month',
+  Quarter  = 'quarter',
   HalfYear = 'half_year',
-  Year = 'year'
+  Year     = 'year',
 }
 
-interface FilterOptions {
-  label: string;
-  action: FilterAction;
-}
-
-interface DashboardStats {
-  totalCrises: number;
-  totalResources: number;
-  totalNeeds: number;
-  crisisChange: number;
-  resourceChange: number;
-  needChange: number;
-}
+// ── Composant ─────────────────────────────────────────────────────────────────
 
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [RouterLink],
+  imports: [RouterLink, CommonModule],
   templateUrl: './dashboard.component.html',
-  styleUrls: ['./dashboard.component.scss']
+  styleUrls: ['./dashboard.component.scss'],
 })
 export class DashboardComponent implements OnInit, OnDestroy {
   private destroy$ = new Subject<void>();
-  
-  currentFilter: FilterAction = FilterAction.Around;
-  isDropdownOpen = false;
-  isLineChartFullScreen = false;
-  isPieChartFullScreen = false;
-  isLoading = true;
-  errorMessage = '';
+  protected readonly Math = Math;
 
-  filterOptions: FilterOptions[] = [
-    { label: 'Tout', action: FilterAction.All },
-    { label: 'À proximité', action: FilterAction.Around },
-    { label: 'Cette semaine', action: FilterAction.Week },
-    { label: 'Ce mois', action: FilterAction.Month },
-    { label: 'Ce trimestre', action: FilterAction.Quarter },
-    { label: 'Ce semestre', action: FilterAction.HalfYear },
-    { label: 'Cette année', action: FilterAction.Year }
+  // ── State ──────────────────────────────────────────────────
+  isLoading        = true;
+  errorMessage     = '';
+  isDropdownOpen   = false;
+  currentFilter    = FilterAction.All;
+  lineFullscreen   = false;
+  pieFullscreen    = false;
+
+  // ── Raw data ───────────────────────────────────────────────
+  rawCrises:   Crisis[]   = [];
+  rawOffers:   Offer[]   = [];
+  rawRequests: Request[] = [];
+
+  // ── Processed data ─────────────────────────────────────────
+  stats:              StatCard[]    = this.emptyStats();
+  dayPoints:          DayPoint[]    = [];
+  pieSlices:          PieSlice[]    = [];
+  recentItems:        RecentItem[]  = [];
+  lineMax             = 1;
+
+  // ── Config ─────────────────────────────────────────────────
+  readonly filterOptions = [
+    { label: 'Tout',         action: FilterAction.All      },
+    { label: 'Cette semaine',action: FilterAction.Week     },
+    { label: 'Ce mois',      action: FilterAction.Month    },
+    { label: 'Ce trimestre', action: FilterAction.Quarter  },
+    { label: 'Ce semestre',  action: FilterAction.HalfYear },
+    { label: 'Cette année',  action: FilterAction.Year     },
   ];
 
-  stats: StatCard[] = [
-    {
-      title: 'Total crises',
-      value: '0',
-      change: '+0',
-      icon: 'local_fire_department',
-      color: 'primary',
-      loading: true
-    },
-    {
-      title: 'Total ressources',
-      value: '0',
-      change: '+0',
-      icon: 'groups',
-      color: 'secondary',
-      loading: true
-    },
-    {
-      title: 'Total besoins',
-      value: '0',
-      change: '+0',
-      icon: 'error',
-      color: 'danger',
-      loading: true
-    }
-  ];
+  readonly PIE_COLORS = ['#ef4444','#f97316','#eab308','#22c55e','#3b82f6','#8b5cf6'];
 
-  lineChartData: ChartData = {
-    series: [],
-    categories: []
-  };
-
-  pieChartData: any = {
-    series: [],
-    labels: []
-  };
-
-  recentAnnouncements: any[] = [];
+  // SVG chart dimensions
+  readonly CHART_W  = 700;
+  readonly CHART_H  = 160;
+  readonly CHART_X0 = 40;
+  readonly CHART_Y0 = 10;
 
   constructor(
-    private helpRequestService: RequestService,
-    private helpProposeService: OfferService,
-    private crisisService: CrisisService,
-    private router: Router
+    private crisisService:  CrisisService,
+    private offerService:   OfferService,
+    private requestService: RequestService,
   ) {}
 
-  ngOnInit(): void {
-    this.loadDashboardData();
-  }
+  ngOnInit(): void  { this.loadAll(); }
+  ngOnDestroy(): void { this.destroy$.next(); this.destroy$.complete(); }
 
-  ngOnDestroy(): void {
-    this.destroy$.next();
-    this.destroy$.complete();
-  }
+  // ────────────────────────────────────────────────────────────────────────────
+  // DATA LOADING
+  // ────────────────────────────────────────────────────────────────────────────
 
-  loadDashboardData(): void {
-    this.isLoading = true;
+  loadAll(): void {
+    this.isLoading    = true;
     this.errorMessage = '';
 
-    const filterParams = this.getFilterParams();
-
-    // Charger toutes les données en parallèle
     forkJoin({
-      crisisStats: this.crisisService.getCrisisStats(filterParams),
-      // proposeStats: this.helpProposeService.getProposeStats(filterParams),
-      requestStats: this.helpRequestService.getRequestStats(filterParams),
-      recentCrises: this.crisisService.getRecentCrisis(5)
+      crises:   this.crisisService.getAll(),
+      offres:   this.offerService.getAll(),
+      demandes: this.requestService.getAll(),
     })
-      .pipe(takeUntil(this.destroy$))
-      .subscribe({
-        next: (data) => {
-          this.updateStats(data);
-          this.updateCharts(data);
-          this.updateRecentAnnouncements(data.recentCrises);
-          this.isLoading = false;
-        },
-        error: (error) => {
-          console.error('Erreur lors du chargement des données:', error);
-          this.errorMessage = 'Impossible de charger les données du tableau de bord';
-          this.isLoading = false;
-          
-          // Utiliser des données de secours
-          this.useFallbackData();
-        }
-      });
+    .pipe(takeUntil(this.destroy$))
+    .subscribe({
+      next: ({ crises, offres, demandes }) => {
+        this.rawCrises   = crises;
+        this.rawOffers   = offres;
+        this.rawRequests = demandes;
+        this.process();
+        this.isLoading = false;
+      },
+      error: () => {
+        this.errorMessage = 'Impossible de charger les données du tableau de bord.';
+        this.isLoading    = false;
+        this.stats        = this.emptyStats(false);
+      },
+    });
   }
 
-  private getFilterParams(): any {
-    const now = new Date();
-    let startDate: Date;
+  // ────────────────────────────────────────────────────────────────────────────
+  // PROCESSING  (called on load + filter change)
+  // ────────────────────────────────────────────────────────────────────────────
 
-    switch (this.currentFilter) {
-      case FilterAction.Week:
-        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-        break;
-      case FilterAction.Month:
-        startDate = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
-        break;
-      case FilterAction.Quarter:
-        startDate = new Date(now.getFullYear(), now.getMonth() - 3, now.getDate());
-        break;
-      case FilterAction.HalfYear:
-        startDate = new Date(now.getFullYear(), now.getMonth() - 6, now.getDate());
-        break;
-      case FilterAction.Year:
-        startDate = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
-        break;
-      case FilterAction.Around:
-        return { radius: 50 }; // 50km de rayon
-      case FilterAction.All:
-      default:
-        return {};
+  private process(): void {
+    const { crises, offres, demandes } = this.filtered();
+    this.buildStats(crises, offres, demandes);
+    this.buildLineChart(crises, offres, demandes);
+    this.buildPieChart(crises);
+    this.buildRecentItems(crises, offres, demandes);
+  }
+
+  // ── Filter ────────────────────────────────────────────────
+
+  private filtered(): { crises: Crisis[]; offres: Offer[]; demandes: Request[] } {
+    if (this.currentFilter === FilterAction.All) {
+      return { crises: this.rawCrises, offres: this.rawOffers, demandes: this.rawRequests };
     }
-
+    const start = this.filterStart();
+    const now   = new Date();
     return {
-      start_date: startDate.toISOString(),
-      end_date: now.toISOString()
+      crises:   this.byDate(this.rawCrises,   start, now, 'start_date'),
+      offres:   this.byDate(this.rawOffers,   start, now, 'created_at'),
+      demandes: this.byDate(this.rawRequests, start, now, 'created_at'),
     };
   }
 
-  private updateStats(data: any): void {
-    // Mise à jour des statistiques de crises
-    this.stats[0] = {
-      title: 'Total crises',
-      value: this.formatNumber(data.crisisStats.total || 0),
-      change: this.formatChange(data.crisisStats.change || 0),
-      icon: 'local_fire_department',
-      color: 'primary',
-      loading: false
-    };
-
-    // Mise à jour des statistiques de ressources
-    this.stats[1] = {
-      title: 'Total ressources',
-      value: this.formatNumber(data.proposeStats.total || 0),
-      change: this.formatChange(data.proposeStats.change || 0),
-      icon: 'groups',
-      color: 'secondary',
-      loading: false
-    };
-
-    // Mise à jour des statistiques de besoins
-    this.stats[2] = {
-      title: 'Total besoins',
-      value: this.formatNumber(data.requestStats.total || 0),
-      change: this.formatChange(data.requestStats.change || 0),
-      icon: 'error',
-      color: 'danger',
-      loading: false
-    };
-  }
-
-  private updateCharts(data: any): void {
-    // Graphique linéaire - évolution dans le temps
-    if (data.crisisStats.timeline) {
-      this.lineChartData = {
-        series: [
-          {
-            name: 'Crises',
-            data: data.crisisStats.timeline.map((item: any) => item.count)
-          },
-          {
-            name: 'Ressources',
-            data: data.proposeStats.timeline.map((item: any) => item.count)
-          },
-          {
-            name: 'Besoins',
-            data: data.requestStats.timeline.map((item: any) => item.count)
-          }
-        ],
-        categories: data.crisisStats.timeline.map((item: any) => item.date)
-      };
-    }
-
-    // Graphique circulaire - répartition par type
-    if (data.crisisStats.byType) {
-      this.pieChartData = {
-        series: data.crisisStats.byType.map((item: any) => item.count),
-        labels: data.crisisStats.byType.map((item: any) => item.type)
-      };
+  private filterStart(): Date {
+    const now = new Date();
+    switch (this.currentFilter) {
+      case FilterAction.Week:     return new Date(now.getTime() - 7  * 86400000);
+      case FilterAction.Month:    return new Date(now.getFullYear(), now.getMonth() - 1,  now.getDate());
+      case FilterAction.Quarter:  return new Date(now.getFullYear(), now.getMonth() - 3,  now.getDate());
+      case FilterAction.HalfYear: return new Date(now.getFullYear(), now.getMonth() - 6,  now.getDate());
+      case FilterAction.Year:     return new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
+      default:                    return new Date(0);
     }
   }
 
-  private updateRecentAnnouncements(crises: any[]): void {
-    this.recentAnnouncements = crises.map(crisis => ({
-      id: crisis.id,
-      title: crisis.name || 'Crise sans nom',
-      date: this.formatDate(crisis.start_date),
-      status: this.mapCrisisStatus(crisis.status)
-    }));
+  private byDate<T>(items: T[], start: Date, end: Date, field: keyof T): T[] {
+    return items.filter(item => {
+      const d = new Date((item[field] as unknown) as string);
+      return !isNaN(d.getTime()) && d >= start && d <= end;
+    });
   }
 
-  private useFallbackData(): void {
-    // Données par défaut en cas d'erreur
+  // ── Stats cards ───────────────────────────────────────────
+
+  private buildStats(crises: Crisis[], offres: Offer[], demandes: Request[]): void {
+    const prev  = this.previousPeriod();
+    const delta = (cur: number, old: number): string => {
+      if (old === 0) return cur > 0 ? '+100%' : '0%';
+      const p = ((cur - old) / old) * 100;
+      return `${p >= 0 ? '+' : ''}${p.toFixed(0)}%`;
+    };
+
     this.stats = [
       {
-        title: 'Total crises',
-        value: '0',
-        change: '+0',
-        icon: 'local_fire_department',
-        color: 'primary',
-        loading: false
+        title: 'Crises',           value: this.fmt(crises.length),
+        change: delta(crises.length,   prev.crises),
+        changePositive: crises.length   <= prev.crises,   // fewer crises = good
+        icon: 'local_fire_department', color: 'crisis',   loading: false,
       },
       {
-        title: 'Total ressources',
-        value: '0',
-        change: '+0',
-        icon: 'groups',
-        color: 'secondary',
-        loading: false
+        title: 'Ressources',       value: this.fmt(offres.length),
+        change: delta(offres.length,   prev.offres),
+        changePositive: offres.length   >= prev.offres,
+        icon: 'volunteer_activism',    color: 'offer',    loading: false,
       },
       {
-        title: 'Total besoins',
-        value: '0',
-        change: '+0',
-        icon: 'error',
-        color: 'danger',
-        loading: false
-      }
+        title: 'Besoins',          value: this.fmt(demandes.length),
+        change: delta(demandes.length, prev.demandes),
+        changePositive: demandes.length >= prev.demandes,
+        icon: 'emergency',             color: 'request',  loading: false,
+      },
     ];
-
-    this.recentAnnouncements = [];
   }
 
-  private formatNumber(num: number): string {
-    if (num >= 1000000) {
-      return (num / 1000000).toFixed(1) + 'M';
-    } else if (num >= 1000) {
-      return (num / 1000).toFixed(1) + 'K';
-    }
-    return num.toString();
-  }
-
-  private formatChange(change: number): string {
-    const sign = change >= 0 ? '+' : '';
-    return `${sign}${this.formatNumber(Math.abs(change))}`;
-  }
-
-  private formatDate(date: any): string {
-    if (!date) return 'Date inconnue';
-    const d = new Date(date);
-    return d.toLocaleDateString('fr-FR');
-  }
-
-  private mapCrisisStatus(status: string): string {
-    const statusMap: { [key: string]: string } = {
-      'new': 'urgent',
-      'in_progress': 'en cours',
-      'resolved': 'résolu',
-      'closed': 'résolu'
+  private previousPeriod(): { crises: number; offres: number; demandes: number } {
+    if (this.currentFilter === FilterAction.All) return { crises: 0, offres: 0, demandes: 0 };
+    const now     = new Date();
+    const curStart = this.filterStart();
+    const dur     = now.getTime() - curStart.getTime();
+    const prevEnd  = new Date(curStart.getTime() - 1);
+    const prevStart= new Date(prevEnd.getTime() - dur);
+    return {
+      crises:   this.byDate(this.rawCrises,   prevStart, prevEnd, 'start_date').length,
+      offres:   this.byDate(this.rawOffers,   prevStart, prevEnd, 'created_at').length,
+      demandes: this.byDate(this.rawRequests, prevStart, prevEnd, 'created_at').length,
     };
-    return statusMap[status] || status;
   }
 
-  getCardClass(color: string): string {
-    return `stat-card stat-card-${color}`;
+  // ── Line chart ────────────────────────────────────────────
+
+  private buildLineChart(crises: Crisis[], offres: Offer[], demandes: Request[]): void {
+    const days: DayPoint[] = [];
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      days.push({
+        label:    d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }),
+        crises:   this.countOnDay(crises,   d, 'start_date'),
+        offres:   this.countOnDay(offres,   d, 'created_at'),
+        demandes: this.countOnDay(demandes, d, 'created_at'),
+      });
+    }
+    this.dayPoints = days;
+    this.lineMax   = Math.max(1, ...days.map(d => Math.max(d.crises, d.offres, d.demandes)));
   }
 
-  toggleDropdown(): void {
-    this.isDropdownOpen = !this.isDropdownOpen;
+  private countOnDay<T>(items: T[], day: Date, field: keyof T): number {
+    const key = day.toDateString();
+    return items.filter(i => new Date((i[field] as unknown) as string).toDateString() === key).length;
   }
 
-  toggleLineChartScreen(): void {
-    this.isLineChartFullScreen = !this.isLineChartFullScreen;
-    this.isPieChartFullScreen = false;
+  /** Returns SVG polyline points string for a given series */
+  linePoints(series: 'crises' | 'offres' | 'demandes'): string {
+    if (!this.dayPoints.length) return '';
+    const n  = this.dayPoints.length;
+    const W  = this.CHART_W;
+    const H  = this.CHART_H;
+    const x0 = this.CHART_X0;
+    const y0 = this.CHART_Y0;
+    return this.dayPoints.map((d, i) => {
+      const x = x0 + (i / (n - 1)) * W;
+      const y = y0 + H - (d[series] / this.lineMax) * H;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(' ');
   }
 
-  togglePieChartScreen(): void {
-    this.isPieChartFullScreen = !this.isPieChartFullScreen;
-    this.isLineChartFullScreen = false;
+  /** X-axis label positions (show every 5 days) */
+  get xLabels(): { x: number; label: string }[] {
+    return this.dayPoints
+      .map((d, i) => ({
+        x: this.CHART_X0 + (i / (this.dayPoints.length - 1)) * this.CHART_W,
+        label: d.label,
+        show: i % 5 === 0 || i === this.dayPoints.length - 1,
+      }))
+      .filter(l => l.show);
   }
 
-  selectFilter(option: FilterOptions): void {
-    this.currentFilter = option.action;
+  /** Y-axis gridlines */
+  get yLines(): { y: number; label: number }[] {
+    const steps = 4;
+    return Array.from({ length: steps + 1 }, (_, i) => {
+      const frac = i / steps;
+      return {
+        y:     this.CHART_Y0 + this.CHART_H - frac * this.CHART_H,
+        label: Math.round(frac * this.lineMax),
+      };
+    });
+  }
+
+  // ── Pie chart ─────────────────────────────────────────────
+
+  private buildPieChart(crises: Crisis[]): void {
+    const counts = new Map<string, number>();
+    crises.forEach(c => {
+      const t = c.type?.trim() || 'Non spécifié';
+      counts.set(t, (counts.get(t) ?? 0) + 1);
+    });
+
+    const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6);
+    const total  = sorted.reduce((s, [, n]) => s + n, 0) || 1;
+
+    // Build SVG arc paths (cx=100, cy=100, r=80)
+    let angle = -90; // start at top
+    this.pieSlices = sorted.map(([label, count], i) => {
+      const pct      = count / total;
+      const sweep    = pct * 360;
+      const endAngle = angle + sweep;
+      const path     = this.arcPath(100, 100, 75, angle, endAngle, pct > 0.999);
+      angle = endAngle;
+      return {
+        label,
+        count,
+        percent: Math.round(pct * 100),
+        color:   this.PIE_COLORS[i % this.PIE_COLORS.length],
+        path,
+      };
+    });
+  }
+
+  private arcPath(cx: number, cy: number, r: number, startDeg: number, endDeg: number, full: boolean): string {
+    if (full) {
+      // Full circle: two half arcs
+      return `M ${cx},${cy - r} A ${r},${r} 0 1,1 ${cx - 0.001},${cy - r} Z`;
+    }
+    const s  = (startDeg * Math.PI) / 180;
+    const e  = (endDeg   * Math.PI) / 180;
+    const x1 = cx + r * Math.cos(s);
+    const y1 = cy + r * Math.sin(s);
+    const x2 = cx + r * Math.cos(e);
+    const y2 = cy + r * Math.sin(e);
+    const la = endDeg - startDeg > 180 ? 1 : 0;
+    return `M ${cx},${cy} L ${x1.toFixed(2)},${y1.toFixed(2)} A ${r},${r} 0 ${la},1 ${x2.toFixed(2)},${y2.toFixed(2)} Z`;
+  }
+
+  // ── Recent items ──────────────────────────────────────────
+
+  private buildRecentItems(crises: Crisis[], offres: Offer[], demandes: Request[]): void {
+    const all: RecentItem[] = [
+      ...crises.map(c => this.toItem(c.id, c.name, 'Crise', c.start_date, c.status ?? 'NON_TRAITEE')),
+      ...offres.map(o => this.toItem(o.id, o.title, 'Ressource', o.created_at, o.status)),
+      ...demandes.map(d => this.toItem(d.id, d.title, 'Besoin', d.created_at, d.status)),
+    ];
+    this.recentItems = all
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      .slice(0, 8);
+  }
+
+  private toItem(id: string, title: string, type: RecentItem['type'], date: string, status: string): RecentItem {
+    const statusMap: Record<string, { label: string; cls: string }> = {
+      NON_TRAITEE:  { label: 'Urgent',      cls: 'status-urgent'   },
+      EN_COURS:     { label: 'En cours',    cls: 'status-encours'  },
+      TRAITEE:      { label: 'Traitée',     cls: 'status-traitee'  },
+      DISPONIBLE:   { label: 'Disponible',  cls: 'status-dispo'    },
+      INDISPONIBLE: { label: 'Indisponible',cls: 'status-indispo'  },
+    };
+    const s = statusMap[status] ?? { label: status, cls: '' };
+    return {
+      id, title, type, status: s.label, statusClass: s.cls,
+      date: new Date(date).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+    };
+  }
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // TEMPLATE HELPERS
+  // ────────────────────────────────────────────────────────────────────────────
+
+  selectFilter(action: FilterAction): void {
+    this.currentFilter  = action;
     this.isDropdownOpen = false;
-    this.loadDashboardData();
+    this.process();
   }
 
-  downloadLineChart(): void {
-    // TODO: Implémenter le téléchargement du graphique
-    console.log('Téléchargement du graphique linéaire');
+  currentFilterLabel(): string {
+    return this.filterOptions.find(o => o.action === this.currentFilter)?.label ?? 'Tout';
   }
 
-  downloadPieChart(): void {
-    // TODO: Implémenter le téléchargement du graphique
-    console.log('Téléchargement du graphique circulaire');
+  typeIcon(type: RecentItem['type']): string {
+    return { Crise: 'local_fire_department', Ressource: 'volunteer_activism', Besoin: 'emergency' }[type];
   }
 
-  refreshData(): void {
-    this.loadDashboardData();
+  typeClass(type: RecentItem['type']): string {
+    return { Crise: 'tag-crisis', Ressource: 'tag-offer', Besoin: 'tag-request' }[type];
+  }
+
+  // ── CSV export ────────────────────────────────────────────
+
+  downloadLine(): void {
+    const rows = ['Date,Crises,Ressources,Besoins',
+      ...this.dayPoints.map(d => `${d.label},${d.crises},${d.offres},${d.demandes}`)];
+    this.dl(rows.join('\n'), 'evolution.csv');
+  }
+
+  downloadPie(): void {
+    const rows = ['Type,Nombre,Pourcentage',
+      ...this.pieSlices.map(s => `${s.label},${s.count},${s.percent}%`)];
+    this.dl(rows.join('\n'), 'types_crises.csv');
+  }
+
+  private dl(content: string, name: string): void {
+    const a  = document.createElement('a');
+    a.href   = URL.createObjectURL(new Blob([content], { type: 'text/csv' }));
+    a.download = name;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  // ── Utils ─────────────────────────────────────────────────
+
+  private fmt(n: number): string {
+    if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+    if (n >= 1_000)     return (n / 1_000).toFixed(1) + 'K';
+    return n.toString();
+  }
+
+  private emptyStats(loading = true): StatCard[] {
+    return [
+      { title: 'Crises',     value: '—', change: '', changePositive: false, icon: 'local_fire_department', color: 'crisis',   loading },
+      { title: 'Ressources', value: '—', change: '', changePositive: true,  icon: 'volunteer_activism',    color: 'offer',    loading },
+      { title: 'Besoins',    value: '—', change: '', changePositive: true,  icon: 'emergency',             color: 'request',  loading },
+    ];
+  }
+
+  get totalItems(): number {
+    return this.rawCrises.length + this.rawOffers.length + this.rawRequests.length;
   }
 }

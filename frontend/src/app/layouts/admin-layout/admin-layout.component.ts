@@ -127,7 +127,7 @@ export class AdminLayoutComponent implements OnInit {
   }
 
   goToSettings(): void {
-    this.router.navigate(['/user/settings']);
+    this.router.navigate(['/settings']);
     this.closeAllMenus();
   }
 
@@ -148,8 +148,8 @@ export class AdminLayoutComponent implements OnInit {
   }
 
   get companyName(): string {
-    return this.currentUser?.userType !== UserRole.Individual
-      ? this.currentUser!.lastName 
+    return this.currentUser?.type !== UserRole.SIMPLE_USER
+      ? this.currentUser!.last_name 
       : 'Admin';
   }
 

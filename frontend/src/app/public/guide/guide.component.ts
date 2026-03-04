@@ -79,7 +79,7 @@ export class GuideComponent implements OnInit, OnDestroy {
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: (departements) => {
-          this.departements = departements.sort((a, b) => a.nom.localeCompare(b.nom));
+          this.departements = departements.sort((a, b) => a.name.localeCompare(b.name));
           this.isLoading = false;
         },
         error: (error) => {
@@ -104,7 +104,7 @@ export class GuideComponent implements OnInit, OnDestroy {
 
     this.filteredDepartements = this.departements
       .filter(dept => 
-        dept.nom.toLowerCase().includes(term) || 
+        dept.name.toLowerCase().includes(term) || 
         dept.code.includes(term)
       )
       .slice(0, 10); // Limiter à 10 résultats
@@ -117,7 +117,7 @@ export class GuideComponent implements OnInit, OnDestroy {
    */
   selectDepartement(departement: Departement): void {
     this.selectedDepartement = departement;
-    this.departementSearchTerm = `${departement.code} - ${departement.nom}`;
+    this.departementSearchTerm = `${departement.code} - ${departement.name}`;
     this.showDepartementDropdown = false;
     this.filteredDepartements = [];
     
@@ -142,7 +142,7 @@ export class GuideComponent implements OnInit, OnDestroy {
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: (communes) => {
-          this.communes = communes.sort((a, b) => a.nom.localeCompare(b.nom));
+          this.communes = communes.sort((a, b) => a.name.localeCompare(b.name));
           this.isLoading = false;
         },
         error: (error) => {
@@ -167,7 +167,7 @@ export class GuideComponent implements OnInit, OnDestroy {
 
     this.filteredCommunes = this.communes
       .filter(commune => 
-        commune.nom.toLowerCase().includes(term) ||
+        commune.name.toLowerCase().includes(term) ||
         commune.codesPostaux.some(cp => cp.includes(term))
       )
       .slice(0, 10); // Limiter à 10 résultats
@@ -180,7 +180,7 @@ export class GuideComponent implements OnInit, OnDestroy {
    */
   selectCommune(commune: Commune): void {
     this.selectedCommune = commune;
-    this.communeSearchTerm = `${commune.nom} (${commune.codesPostaux[0]})`;
+    this.communeSearchTerm = `${commune.name} (${commune.codesPostaux[0]})`;
     this.showCommuneDropdown = false;
     this.filteredCommunes = [];
     

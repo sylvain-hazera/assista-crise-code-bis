@@ -25,7 +25,7 @@
           class="toggle-btn" 
           [class.active]="state === StateForm.OtherDeclaration"
           (click)="onOtherDeclaration()">
-          Autre urgence
+          Autre information
         </button>
       </div>
     </div>
@@ -33,31 +33,33 @@
     <!-- Form for "Je suis en sécurité" -->
     @if(state === StateForm.DeclareSafe) {
       <form [formGroup]="declareSafeForm" (ngSubmit)="onSubmit()">
-        <!-- Event Type -->
+        <!-- Pour la crise -->
         <div class="form-group">
-          <label for="eventType" class="form-label">
-            Pour l'événement <span class="required">*</span>
+          <label for="crisisSearch" class="form-label">
+            Pour la crise
           </label>
-          <div class="select-wrapper">
-            <select 
-              id="eventType" 
-              formControlName="eventType"
-              class="form-select"
-              [class.invalid]="isFieldInvalid('declareSafe', 'eventType')">
-              <option value="" disabled selected>Dropdown</option>
-              @for(option of eventTypeOptions.slice(1); track option.value) {
-                <option [value]="option.value">
-                  {{ option.label }}
-                </option>
-              }
-            </select>
-            <span class="material-icons select-arrow">arrow_drop_down</span>
+          <div class="autocomplete-wrapper">
+            <input
+              type="text"
+              id="crisisSearch"
+              [(ngModel)]="crisisSearch"
+              [ngModelOptions]="{standalone: true}"
+              (input)="onCrisisSearchChange($event)"
+              (focus)="showCrisisDropdown = true"
+              placeholder="Rechercher une crise..."
+              class="form-input"
+              autocomplete="off"
+            />
+            @if(showCrisisDropdown && filteredCrisisOptions.length > 0) {
+              <div class="autocomplete-dropdown">
+                @for(crisis of filteredCrisisOptions; track crisis.value) {
+                  <div class="autocomplete-item" (click)="selectCrisis(crisis)">
+                    {{ crisis.label }}
+                  </div>
+                }
+              </div>
+            }
           </div>
-          @if(isFieldInvalid('declareSafe', 'eventType')) {
-            <div class="error-message">
-              {{ getErrorMessage('declareSafe', 'eventType') }}
-            </div>
-          }
         </div>
 
         <!-- Last Name -->
@@ -177,7 +179,7 @@
                 <div class="autocomplete-dropdown">
                   @for(dept of filteredDepartments; track dept.code) {
                     <div class="autocomplete-item" (click)="selectDepartment(dept)">
-                      {{ dept.code }} - {{ dept.nom }}
+                      {{ dept.code }} - {{ dept.name }}
                     </div>
                   }
                 </div>
@@ -211,7 +213,7 @@
                 <div class="autocomplete-dropdown">
                   @for(commune of filteredCommunes; track commune.code) {
                     <div class="autocomplete-item" (click)="selectCommune(commune)">
-                      {{ commune.nom }} @if(commune.codesPostaux.length > 0) { ({{ commune.codesPostaux[0] }}) }
+                      {{ commune.name }} @if(commune.codesPostaux.length > 0) { ({{ commune.codesPostaux[0] }}) }
                     </div>
                   }
                 </div>
@@ -269,34 +271,36 @@
       </form>
     }
 
-    <!-- Form for "Autre urgence" -->
+    <!-- Form for "Autre information" -->
     @if(state === StateForm.OtherDeclaration) {
       <form [formGroup]="otherInformationForm" (ngSubmit)="onSubmit()">
-        <!-- Event Type -->
+        <!-- Pour la crise -->
         <div class="form-group">
-          <label for="eventTypeOther" class="form-label">
-            Pour l'événement <span class="required">*</span>
+          <label for="crisisSearchOther" class="form-label">
+            Pour la crise
           </label>
-          <div class="select-wrapper">
-            <select 
-              id="eventTypeOther" 
-              formControlName="eventType"
-              class="form-select"
-              [class.invalid]="isFieldInvalid('otherInformation', 'eventType')">
-              <option value="" disabled selected>Dropdown</option>
-              @for(option of eventTypeOptions.slice(1); track option.value) {
-                <option [value]="option.value">
-                  {{ option.label }}
-                </option>
-              }
-            </select>
-            <span class="material-icons select-arrow">arrow_drop_down</span>
+          <div class="autocomplete-wrapper">
+            <input
+              type="text"
+              id="crisisSearchOther"
+              [(ngModel)]="crisisSearch"
+              [ngModelOptions]="{standalone: true}"
+              (input)="onCrisisSearchChange($event)"
+              (focus)="showCrisisDropdown = true"
+              placeholder="Rechercher une crise..."
+              class="form-input"
+              autocomplete="off"
+            />
+            @if(showCrisisDropdown && filteredCrisisOptions.length > 0) {
+              <div class="autocomplete-dropdown">
+                @for(crisis of filteredCrisisOptions; track crisis.value) {
+                  <div class="autocomplete-item" (click)="selectCrisis(crisis)">
+                    {{ crisis.label }}
+                  </div>
+                }
+              </div>
+            }
           </div>
-          @if(isFieldInvalid('otherInformation', 'eventType')) {
-            <div class="error-message">
-              {{ getErrorMessage('otherInformation', 'eventType') }}
-            </div>
-          }
         </div>
 
         <!-- Information Type -->
@@ -388,7 +392,7 @@
                 <div class="autocomplete-dropdown">
                   @for(dept of filteredDepartments; track dept.code) {
                     <div class="autocomplete-item" (click)="selectDepartment(dept)">
-                      {{ dept.code }} - {{ dept.nom }}
+                      {{ dept.code }} - {{ dept.name }}
                     </div>
                   }
                 </div>
@@ -422,7 +426,7 @@
                 <div class="autocomplete-dropdown">
                   @for(commune of filteredCommunes; track commune.code) {
                     <div class="autocomplete-item" (click)="selectCommune(commune)">
-                      {{ commune.nom }} @if(commune.codesPostaux.length > 0) { ({{ commune.codesPostaux[0] }}) }
+                      {{ commune.name }} @if(commune.codesPostaux.length > 0) { ({{ commune.codesPostaux[0] }}) }
                     </div>
                   }
                 </div>

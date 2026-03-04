@@ -28,7 +28,7 @@
               <div 
                 class="autocomplete-item"
                 (click)="selectDepartement(dept)">
-                <strong>{{ dept.code }}</strong> - {{ dept.nom }}
+                <strong>{{ dept.code }}</strong> - {{ dept.name }}
               </div>
             }
           </div>
@@ -59,7 +59,7 @@
               <div 
                 class="autocomplete-item"
                 (click)="selectCommune(commune)">
-                <strong>{{ commune.nom }}</strong>
+                <strong>{{ commune.name }}</strong>
                 @if (commune.codesPostaux.length > 0) {
                   <span class="postal-code">({{ commune.codesPostaux[0] }})</span>
                 }
