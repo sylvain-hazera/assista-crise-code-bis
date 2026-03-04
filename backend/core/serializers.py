@@ -1,40 +1,45 @@
 from rest_framework import serializers
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from .models import (
-    Utilisateur, Crise, Demande, Offre, Information,
-    TypeDemande, TypeOffre, TypeInformation
+    User, Crisis, Request, Offer, Information,
+    RequestType, OfferType, InformationType
 )
 
-class TypeDemandeSerializer(serializers.ModelSerializer):
+class RequestTypeSerializer(serializers.ModelSerializer):
+    """Serializer pour les types de demandes"""
     class Meta:
-        model = TypeDemande
+        model = RequestType
         fields = '__all__'
 
-class TypeOffreSerializer(serializers.ModelSerializer):
+class OfferTypeSerializer(serializers.ModelSerializer):
+    """Serializer pour les types d'offres"""
     class Meta:
-        model = TypeOffre
+        model = OfferType
         fields = '__all__'
 
-class TypeInformationSerializer(serializers.ModelSerializer):
+class InformationTypeSerializer(serializers.ModelSerializer):
+    """Serializer pour les types d'informations"""
     class Meta:
-        model = TypeInformation
+        model = InformationType
         fields = '__all__'
 
 
-class UtilisateurSerializer(serializers.ModelSerializer):
+class UserSerializer(serializers.ModelSerializer):
+    """Serializer pour les utilisateurs"""
     password = serializers.CharField(write_only=True, required=True)
     
     class Meta:
-        model = Utilisateur
+        model = User
         fields = ['id', 'username', 'email', 'first_name', 'last_name', 'type', 
-                  'photo', 'telephone_utilisateur', 'password', 'code_postal', 'enable']
+                  'photo', 'phone_number', 'password', 'postal_code', 'enabled']
         extra_kwargs = {
             'password': {'write_only': True},
             'first_name': {'required': False},
             'last_name': {'required': False},
-            'telephone_utilisateur': {'required': False},
+            'phone_number': {'required': False},
             'photo': {'required': False},
-            'code_postal': {'required': False},
-            'enable': {'required': False},
+            'postal_code': {'required': False},
+            'enabled': {'required': False},
         }
 
     def create(self, validated_data):
@@ -42,52 +47,75 @@ class UtilisateurSerializer(serializers.ModelSerializer):
         if 'username' not in validated_data:
             validated_data['username'] = validated_data['email']
         
-        user = Utilisateur.objects.create_user(**validated_data)
+        user = User.objects.create_user(**validated_data)
         return user
 
-class CriseSerializer(serializers.ModelSerializer):
-    
+class CrisisSerializer(serializers.ModelSerializer):
+    """Serializer pour les crises"""
     latitude = serializers.SerializerMethodField()
     longitude = serializers.SerializerMethodField()
     
     class Meta:
-        model = Crise
+        model = Crisis
         fields = '__all__'
 
     def get_latitude(self, obj):
         return obj.location.y if obj.location else None
+    
     def get_longitude(self, obj):
         return obj.location.x if obj.location else None
 
-class DemandeSerializer(serializers.ModelSerializer):
-
+class RequestSerializer(serializers.ModelSerializer):
+    """Serializer pour les demandes d'aide"""
     latitude = serializers.SerializerMethodField()
     longitude = serializers.SerializerMethodField()
 
     class Meta:
-        model = Demande
+        model = Request
         fields = '__all__'
 
     def get_latitude(self, obj):
-        return obj.localisation.y if obj.localisation else None
+        return obj.location.y if obj.location else None
+    
     def get_longitude(self, obj):
-        return obj.localisation.x if obj.localisation else None
+        return obj.location.x if obj.location else None
 
-class OffreSerializer(serializers.ModelSerializer):
-
+class OfferSerializer(serializers.ModelSerializer):
+    """Serializer pour les offres d'aide"""
     latitude = serializers.SerializerMethodField()
     longitude = serializers.SerializerMethodField()
 
     class Meta:
-        model = Offre
+        model = Offer
         fields = '__all__'
 
     def get_latitude(self, obj):
-        return obj.localisation.y if obj.localisation else None
+        return obj.location.y if obj.location else None
+    
     def get_longitude(self, obj):
-        return obj.localisation.x if obj.localisation else None
+        return obj.location.x if obj.location else None
 
 class InformationSerializer(serializers.ModelSerializer):
+    """Serializer pour les informations"""
+    latitude = serializers.SerializerMethodField()
+    longitude = serializers.SerializerMethodField()
+    
     class Meta:
         model = Information
         fields = '__all__'
+    
+    def get_latitude(self, obj):
+        return obj.location.y if obj.location else None
+    
+    def get_longitude(self, obj):
+        return obj.location.x if obj.location else None
+
+class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
+    """Serializer personnalisé pour l'authentification JWT"""
+    username_field = 'email'
+
+    def validate(self, attrs):
+        data = super().validate(attrs)
+        # On ajoute l'utilisateur sérialisé à la réponse
+        data['user'] = UserSerializer(self.user).data
+        return data

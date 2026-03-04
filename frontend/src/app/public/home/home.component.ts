@@ -28,17 +28,16 @@ export class HomeComponent implements OnInit {
   ) {}
 
   ngOnInit(): void {
-    this.authService.currentUser$.subscribe(user => {
-      if (user) {
-        const allowedRoles = ['ADMIN', 'AUT_LOCALE', 'SECOURS'];
-        // Le backend envoie 'type' pas 'userType'
-        const userRole = (user as any).type || user.userType;
-        this.canDeclareCrisis = allowedRoles.includes(userRole as string);
-        console.log('User role:', userRole, 'Can declare crisis:', this.canDeclareCrisis);
-      } else {
-        this.canDeclareCrisis = false;
-      }
-    });
+    const user = this.authService.getCurrentUser();
+    if (user) {
+      const allowedRoles = ['ADMIN', 'AUT_LOCALE', 'SECOURS'];
+      // Le backend envoie 'type' pas 'userType'
+      const userRole = (user as any).type;
+      this.canDeclareCrisis = allowedRoles.includes(userRole as string);
+      console.log('User role:', userRole, 'Can declare crisis:', this.canDeclareCrisis);
+    } else {
+      this.canDeclareCrisis = false;
+    }
   }
 
   onSearch(): void {

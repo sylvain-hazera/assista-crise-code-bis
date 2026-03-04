@@ -15,9 +15,13 @@ services:
       - DB_USER=admin
       - DB_PASS=admin
       - MQTT_BROKER=mosquitto
-      - EMAIL_HOST=mailhog      # Use MailHog in dev
-      - EMAIL_PORT=1025
-      - DEBUG=0
+      - EMAIL_HOST=smtp.ionos.fr      # Use Ionos in prod
+      - EMAIL_PORT=465
+      - EMAIL_USE_TLS=False
+      - EMAIL_USE_SSL=True
+      - DEFAULT_FROM_EMAIL=no-reply@assista-crise.fr
+      - EMAIL_HOST_USER=no-reply@assista-crise.fr
+      - EMAIL_HOST_PASSWORD=${EMAIL_PASSWORD}
     # For Hardware USB Access (uncomment on VM/Host with antenna)
     # devices:
     #   - "/dev/ttyACM0:/dev/ttyACM0"
@@ -26,8 +30,6 @@ services:
       db:
         condition: service_healthy
       mosquitto:
-        condition: service_started
-      mailhog:
         condition: service_started
 
   db:
@@ -64,12 +66,7 @@ services:
     depends_on:
       - db
 
-  mailhog:
-    image: mailhog/mailhog
-    container_name: ac_mailer
-    ports:
-      - "1025:1025" # SMTP port
-      - "8025:8025" # Web UI
+
 
   tileserver:
     image: maptiler/tileserver-gl

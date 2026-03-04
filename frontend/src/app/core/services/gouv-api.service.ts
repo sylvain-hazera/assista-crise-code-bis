@@ -1,15 +1,16 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { map } from 'rxjs/operators';
 
 export interface Departement {
   code: string;
-  nom: string;
+  name: string;
 }
 
 export interface Commune {
   code: string;
-  nom: string;
+  name: string;
   codeDepartement: string;
   codesPostaux: string[];
 }
@@ -80,7 +81,8 @@ export class GouvApiService {
    * Récupère la liste de tous les départements français
    */
   getDepartements(): Observable<Departement[]> {
-    return this.http.get<Departement[]>(`${this.GEO_API_URL}/departements`);
+    return this.http.get<any[]>(`${this.GEO_API_URL}/departements`)
+      .pipe(map(deps => deps.map(d => ({ code: d.code, name: d.nom }))));
   }
 
   /**
@@ -88,9 +90,14 @@ export class GouvApiService {
    * @param codeDept Code du département (ex: "33", "75")
    */
   getCommunesByDepartement(codeDept: string): Observable<Commune[]> {
-    return this.http.get<Commune[]>(
+    return this.http.get<any[]>(
       `${this.GEO_API_URL}/departements/${codeDept}/communes`
-    );
+    ).pipe(map(communes => communes.map(c => ({
+      code: c.code,
+      name: c.nom,
+      codeDepartement: c.codeDepartement,
+      codesPostaux: c.codesPostaux
+    }))));
   }
 
   /**

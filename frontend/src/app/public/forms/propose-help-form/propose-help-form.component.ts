@@ -4,9 +4,12 @@ import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { GeolocationService } from '../../../services/geolocation.service';
 import { CommonModule } from '@angular/common';
-import { RequestService } from '../../../services/request.service';
+import { OfferService } from '../../../services/offer.service';
 import { LocationService, Department, Commune } from '../../../services/location.service';
-// import { NgSelectModule } from '@ng-select/ng-select';
+import { CrisisService } from '../../../services/crisis.service';
+import { Crisis } from '../../../shared/models/crisis.model';
+import { AuthService } from '../../../auth/services/auth.service';
+import { UserRole, User } from '../../../shared/models/user.model';
 
 @Component({
   selector: 'app-request-help-form',
@@ -16,6 +19,7 @@ import { LocationService, Department, Commune } from '../../../services/location
   styleUrl: './propose-help-form.component.scss'
 })
 export class ProposeHelpFormComponent implements OnInit {
+  currentUser : User | null = null;
   requestForm!: FormGroup;
   informationForm!: FormGroup;
   selectedFile: File | null = null;
@@ -25,7 +29,7 @@ export class ProposeHelpFormComponent implements OnInit {
   latitude: number | null = null;
   longitude: number | null = null;
 
-  typesDemandeMap: Map<string, string> = new Map(); // eventType -> UUID
+  typesOffreMap: Map<string, string> = new Map(); // offerType -> UUID
 
   // Départements et communes
   departments: Department[] = [];
@@ -37,47 +41,38 @@ export class ProposeHelpFormComponent implements OnInit {
   showDepartmentDropdown: boolean = false;
   showCommuneDropdown: boolean = false;
 
-  eventTypeOptions: { value: string; label: string }[] = [
-    { value: '', label: 'Dropdown' },
-    { value: 'incendie', label: 'Incendie' },
-    { value: 'inondation', label: 'Inondation' },
-    { value: 'accident', label: 'Accident' },
-    { value: 'catastrophe-naturelle', label: 'Catastrophe naturelle' },
-    { value: 'urgence-medicale', label: 'Urgence médicale' },
-    { value: 'autre', label: 'Autre' }
-  ];
+  crisisOptions: { value: string; label: string }[] = [];
+  filteredCrisisOptions: { value: string; label: string }[] = [];
+  crisisSearch: string = 'Aucune crise en rapport';
+  showCrisisDropdown: boolean = false;
 
   offerTypeOptions: { value: string; label: string }[] = [
-    { value: '', label: 'Dropdown' },
-    { value: 'assistance-immediate', label: 'Assistance immédiate' },
-    { value: 'hebergement', label: 'Hébergement' },
-    { value: 'nourriture', label: 'Nourriture et eau' },
-    { value: 'soins-medicaux', label: 'Soins médicaux' },
-    { value: 'transport', label: 'Transport' },
-    { value: 'materiel', label: 'Matériel' },
-    { value: 'soutien-psychologique', label: 'Soutien psychologique' },
-    { value: 'autre', label: 'Autre' }
+    { value: '', label: 'Dropdown' }
   ];
 
   personTypeOptions: { value: string; label: string }[] = [
     { value: '', label: 'Dropdown' },
-    { value: 'individual', label: 'Particulier' },
-    { value: 'organization', label: 'Organisation' },
-    { value: 'rescue', label: 'Secours organisés' },
+    { value: UserRole.SIMPLE_USER, label: 'Particulier' },
+    { value: UserRole.LOCAL_AUTH , label: 'Organisation' },
+    { value: UserRole.RESCUE , label: 'Secours organisés' },
   ];
 
   constructor(
     private formBuilder: FormBuilder,
     private router: Router,
-    private helpRequestService: RequestService,
+    private offerService: OfferService,
     private geolocationService: GeolocationService,
-    private locationService: LocationService
+    private locationService: LocationService,
+    private crisisService: CrisisService,
+    private authService: AuthService
   ) {}
 
   ngOnInit(): void {
+    this.currentUser = this.authService.getCurrentUser();
     this.initForm();
-    this.loadTypesDemande();
+    this.loadTypesOffre();
     this.loadDepartments();
+    this.loadActiveCrises();
   }
 
   loadDepartments(): void {
@@ -90,23 +85,41 @@ export class ProposeHelpFormComponent implements OnInit {
     });
   }
 
-  loadTypesDemande(): void {
-    this.helpRequestService.getTypesDemande().subscribe({
+  loadTypesOffre(): void {
+    this.offerService.getTypes().subscribe({
       next: (types: any[]) => {
-        // Mapper les valeurs du formulaire aux UUIDs des types
-        types.forEach((t: any) => {
-          const normalizedType = t.type.toLowerCase().replace(/\s+/g, '-');
-          this.typesDemandeMap.set(normalizedType, t.id!);
+        types.forEach(type => {
+          this.typesOffreMap.set(type.type, type.id);
         });
-        console.log('Types chargés:', this.typesDemandeMap);
+        this.offerTypeOptions = [
+          { value: '', label: 'Dropdown' },
+          ...types.map(t => ({ value: t.type, label: t.type }))
+        ];
       },
-      error: (err: any) => console.error('Erreur chargement types:', err)
+      error: (err: any) => console.error('Erreur chargement types offre:', err)
+    });
+  }
+
+  loadActiveCrises(): void {
+    this.crisisService.getAll().subscribe({
+      next: (crises: Crisis[]) => {
+        const activeCrises = crises.filter(c => c.status !== 'TRAITEE');
+        this.crisisOptions = [
+          { value: '', label: 'Aucune crise en rapport' },
+          ...activeCrises.map(c => ({
+            value: c.id,
+            label: `${c.name} - ${c.type}`
+          }))
+        ];
+        this.filteredCrisisOptions = [...this.crisisOptions];
+      },
+      error: (err) => console.error('Erreur chargement crises:', err)
     });
   }
 
   initForm(): void {
     this.requestForm = this.formBuilder.group({
-      eventType: ['', Validators.required],
+      crisisId: [''],
       offersType: new FormArray([]),
       descriptions: new FormArray([]),
       streetNumber: ['', Validators.required],
@@ -119,11 +132,11 @@ export class ProposeHelpFormComponent implements OnInit {
     this.addOffer(); // Ajouter un besoin initial  
 
     this.informationForm = this.formBuilder.group({
-      personType: ['individual', Validators.required],
-      lastName: ['', Validators.required],
-      firstName: ['', Validators.required],
-      email: ['', [Validators.required, Validators.email]],
-      phoneNumber: ['', [Validators.required, Validators.pattern(/^\+?\d{10,15}$/)]]
+      personType: [this.currentUser?.type, Validators.required],
+      lastName: [this.currentUser?.last_name, Validators.required],
+      firstName: [this.currentUser?.first_name, Validators.required],
+      email: [this.currentUser?.email, [Validators.required, Validators.email]],
+      phoneNumber: [this.currentUser?.phone_number, [Validators.required, Validators.pattern(/^\+?\d{10,15}$/)]]
     });
   }
 
@@ -161,33 +174,41 @@ export class ProposeHelpFormComponent implements OnInit {
       // Préparer les données pour Django
       const formData = new FormData();
       
-      // Champs du modèle Demande Django
-      formData.append('prenom_demande', this.informationForm.get('firstName')?.value);
-      formData.append('nom_demande', this.informationForm.get('lastName')?.value);
-      formData.append('email_demande', this.informationForm.get('email')?.value);
-      formData.append('telephone_demande', this.informationForm.get('phoneNumber')?.value);
+      // Champs du modèle Offre Django
+      formData.append('first_name_offer', this.informationForm.get('firstName')?.value);
+      formData.append('last_name_offer', this.informationForm.get('lastName')?.value);
+      formData.append('email_offer', this.informationForm.get('email')?.value);
+      formData.append('phone_offer', this.informationForm.get('phoneNumber')?.value);
       
-      // Titre basé sur le type d'événement
-      const eventType = this.requestForm.get('eventType')?.value;
-      const titre = `Demande ${this.eventTypeOptions.find(e => e.value === eventType)?.label || 'aide'}`;
-      formData.append('titre', titre);
+      // Titre basé sur la crise sélectionnée
+      const crisisId = this.requestForm.get('crisisId')?.value;
+      const crisisLabel = this.crisisOptions.find(c => c.value === crisisId)?.label || 'non liée à une crise';
+      const titre = `Offre d'aide - ${crisisLabel}`;
+      formData.append('title', titre);
       
       // Localisation au format GeoJSON Point
       const localisation = {
         type: 'Point',
         coordinates: [this.longitude, this.latitude]
       };
-      formData.append('localisation', JSON.stringify(localisation));
+      formData.append('location', JSON.stringify(localisation));
       
-      // Type demande - UUID récupéré depuis la map
-      const typeDemandeId = this.typesDemandeMap.get(eventType);
-      if (!typeDemandeId) {
-        alert('Type de demande non trouvé. Veuillez réessayer ou contacter le support.');
+      // Type offre - Utiliser le premier type disponible
+      const firstTypeId = Array.from(this.typesOffreMap.values())[0];
+      if (!firstTypeId) {
+        alert('Type d\'offre non trouvé. Veuillez réessayer ou contacter le support.');
         return;
       }
-      formData.append('type_demande', typeDemandeId);
+      formData.append('offer_type', firstTypeId);
       
-      formData.append('statut', 'NON_TRAITEE');
+      // Crise (nullable)
+      if (crisisId) {
+        formData.append('crisis', crisisId);
+      }
+      
+      formData.append('status', 'DISPONIBLE');
+      formData.append('author', this.currentUser?.id!);
+
       
       // Photo si présente
       if (this.selectedFile) {
@@ -195,7 +216,7 @@ export class ProposeHelpFormComponent implements OnInit {
       }
 
       // Envoyer au backend Django
-      this.helpRequestService.createRequest(formData).subscribe({
+      this.offerService.create(formData).subscribe({
         next: (response) => {
           console.log('Demande créée:', response);
           alert('Votre demande a été enregistrée avec succès !');
@@ -203,7 +224,14 @@ export class ProposeHelpFormComponent implements OnInit {
         },
         error: (err) => {
           console.error('Erreur création demande:', err);
-          alert('Erreur lors de l\'enregistrement. Veuillez réessayer.');
+          console.error('Détails erreur:', err.error);
+          if (err.status === 400 && err.error) {
+            console.error('Erreurs de validation:', err.error);
+            const errors = Object.entries(err.error).map(([key, value]) => `${key}: ${value}`).join('\n');
+            alert(`Erreur de validation:\n${errors}`);
+          } else {
+            alert('Erreur lors de l\'enregistrement. Veuillez réessayer.');
+          }
         }
       });
 
@@ -231,7 +259,7 @@ export class ProposeHelpFormComponent implements OnInit {
   }
 
   selectDepartment(department: Department): void {
-    this.departmentSearch = department.nom;
+    this.departmentSearch = department.name;
     this.requestForm.patchValue({ department: department.code });
     this.showDepartmentDropdown = false;
     
@@ -259,9 +287,24 @@ export class ProposeHelpFormComponent implements OnInit {
   }
 
   selectCommune(commune: Commune): void {
-    this.communeSearch = commune.nom;
+    this.communeSearch = commune.name;
     this.requestForm.patchValue({ commune: commune.code });
     this.showCommuneDropdown = false;
+  }
+
+  onCrisisSearchChange(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    this.crisisSearch = input.value;
+    this.filteredCrisisOptions = this.crisisOptions.filter(crisis =>
+      crisis.label.toLowerCase().includes(this.crisisSearch.toLowerCase())
+    );
+    this.showCrisisDropdown = true;
+  }
+
+  selectCrisis(crisis: { value: string; label: string }): void {
+    this.crisisSearch = crisis.label;
+    this.requestForm.patchValue({ crisisId: crisis.value });
+    this.showCrisisDropdown = false;
   }
 
   onContinue(): void {
@@ -317,7 +360,7 @@ export class ProposeHelpFormComponent implements OnInit {
 
   addOffer(): void {
     this.offersType.push(this.formBuilder.control('', Validators.required));
-    this.descriptions.push(this.formBuilder.control('', [Validators.required, Validators.minLength(10)]));
+    this.descriptions.push(this.formBuilder.control('', [Validators.minLength(10)]));
   }
 
   removeOffer(index: number): void {

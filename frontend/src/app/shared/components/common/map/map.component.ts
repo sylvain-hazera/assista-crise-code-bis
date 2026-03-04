@@ -2,14 +2,15 @@ import { Component, OnInit, OnDestroy, AfterViewInit, Input, ViewChild, ElementR
 import maplibregl from 'maplibre-gl';
 import * as turf from '@turf/turf';
 import { CrisisService } from '../../../../services/crisis.service';
+import { forkJoin, Subscription } from 'rxjs';
 import { Crisis } from '../../../models/crisis.model';
-import { RequestService } from '../../../../services/request.service';
-import { Request } from '../../../models/request.model';
 import { OfferService } from '../../../../services/offer.service';
 import { Offer } from '../../../models/offer.model';
+import { RequestService } from '../../../../services/request.service';
+import { Request } from '../../../models/request.model';
 import { GeolocationService } from '../../../../services/geolocation.service';
-import { forkJoin, Subscription } from 'rxjs';
-import { FeatureCollection, Geometry, Polygon } from 'geojson';
+import type { FeatureCollection, Geometry, Polygon } from 'geojson';
+import { AuthService } from '../../../../auth/services/auth.service';
 
 @Component({
   selector: 'app-map',
@@ -19,18 +20,17 @@ import { FeatureCollection, Geometry, Polygon } from 'geojson';
   styleUrl: './map.component.scss'
 })
 export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
-  // Référence directe à la div HTML
+  // Reference to the map container element in the template to initialize MapLibre on it
   @ViewChild('mapContainer') mapContainer!: ElementRef;
 
   @Input() crises: Crisis[] = [];
   @Input() requests: Request[] = [];
   @Input() offers: Offer[] = [];
-  // Centre de la France par défaut
+  // Center of France by default, will be updated to user location if available
   @Input() center: [number, number] = [2.2137, 46.2276]; 
   @Input() zoom: number = 5;
   
   private map: maplibregl.Map | null = null;
-  private CrisisMarkers: maplibregl.Marker[] = [];
   private crisisCircle: any[] = [];
   private requestGeoJSON: any = null;
   private proposalGeoJSON: any = null;
@@ -39,12 +39,13 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   constructor(private crisisService: CrisisService,
               private requestService: RequestService,
               private offerService: OfferService,
-              private geolocationService: GeolocationService) {}
+              private geolocationService: GeolocationService,
+              private authService: AuthService) {}
   ngOnInit(): void {
-    // Charger la géolocalisation si disponible
+    // Load user location and center map on it if available, otherwise keep default center
     this.loadUserLocation();
     
-    // Si pas de données en entrée, on charge depuis le service
+    // If crises, requests, or offers were not passed in as inputs, load them from the API
     if (this.crises.length === 0) {
       this.loadCrises();
     }
@@ -54,29 +55,29 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   private loadUserLocation(): void {
-    // Vérifier si une position est déjà stockée
+    // Verify if there's a stored location in the GeolocationService and center the map on it if available
     const storedLocation = this.geolocationService.location$;
-    storedLocation.subscribe(location => {
+    storedLocation.subscribe((location: any) => {
       if (location) {
-        // Centrer la carte sur la position de l'utilisateur avec un zoom adapté
+        // Center the map on the stored location
         this.center = [location.longitude, location.latitude];
-        this.zoom = 9; // Zoom sur la région (ville/département)
+        this.zoom = 9;
         
-        // Si la carte est déjà initialisée, la recentrer
+        // If the map is already initialized, fly to the new center and zoom
         if (this.map) {
           this.map.flyTo({
             center: this.center,
             zoom: this.zoom,
-            duration: 2000 // animation de 2 secondes
+            duration: 2000
           });
         }
       }
     });
 
-    // Si pas de position stockée, demander la géolocalisation
+    // If no stored location, request geolocation permission and get current position
     if (!this.geolocationService.hasPermission()) {
       this.geolocationService.requestLocation()
-        .then(coords => {
+        .then((coords: any) => {
           this.center = [coords.longitude, coords.latitude];
           this.zoom = 11;
           
@@ -88,24 +89,24 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
             });
           }
         })
-        .catch(error => {
+        .catch((error: any) => {
           console.log('Géolocalisation non disponible:', error.message);
-          // Garder le centre par défaut (France)
+          // Keep default center and zoom if geolocation fails or is denied
         });
     }
   }
 
-  ngAfterViewInit(): void {
+  ngAfterViewInit(): void { // Initialize the map after the view is initialized to ensure the container is available
     this.initializeMap();
   }
 
-  ngOnDestroy(): void {
+  ngOnDestroy(): void { // Clean up subscriptions and map instance to prevent memory leaks
     if (this.subscription) this.subscription.unsubscribe();
     if (this.map) this.map.remove();
   }
 
-  loadCrises() {
-    this.subscription = this.crisisService.getAllCrisis().subscribe({
+  loadCrises() { // Charger les crises depuis l'API et les ajouter à la carte
+    this.subscription = this.crisisService.getAll().subscribe({
       next: (crises) => {
         console.log('Données de crises reçues:', crises);
         this.crises = crises;
@@ -117,7 +118,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     });
   }
 
-  jsonToGeoJSON(data: any[]) {
+  jsonToGeoJSON(data: any[]) { // Convert requests/offers data to GeoJSON format for MapLibre
     return {
       type: 'FeatureCollection',
       features: data
@@ -138,10 +139,10 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     };
   }
 
-  loadHelpData() {
+  loadHelpData() { // Load both requests and offers in parallel and process them together to add to the map
     this.subscription = forkJoin({
-      requests: this.requestService.getAllRequests(),
-      proposals: this.offerService.getAllOffers()
+      requests: this.requestService.getAll(),
+      proposals: this.offerService.getAll()
     }).subscribe({
       next: ({ requests, proposals }) => {
         console.log('Requests:', requests);
@@ -160,33 +161,41 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
       error: (err) => console.error('Erreur API:', err)
     });
   }
-
   private addSourceAndLayers(): void {
     if (!this.map) return;
-    const geoJsonList = [this.requestGeoJSON, this.proposalGeoJSON];
+    const isAdmin = this.authService.isAdmin();
+    const geoJsonList = [this.requestGeoJSON, this.proposalGeoJSON]; // Merge requests and offers into a single GeoJSON
     const mergedGeoJSON: FeatureCollection<Geometry> = {
         type: 'FeatureCollection',
         features: geoJsonList.flatMap(geoJson => geoJson ? geoJson.features : [])
         };
-    console.log('Merged GeoJSON:', mergedGeoJSON);
+    if (!isAdmin) { // If not admin, add random noise to coordinates to prevent exact location identification
+      mergedGeoJSON.features.forEach(feature => {
+        const geometry = feature.geometry as GeoJSON.Point;
+        const originalCoords = geometry.coordinates as [number, number];
+        geometry.coordinates = [
+          originalCoords[0] + (Math.random() - 0.5) * 0.01,
+          originalCoords[1] + (Math.random() - 0.5) * 0.01,
+        ];
+      });
+    }
     this.map.on('load', () => {
-      // Ajout de la source pour les demandes d'aide
       if (mergedGeoJSON) {
-        this.map!.addSource('clusters', {
+        this.map!.addSource('clusters', { // Add cluster source for both requests and offers
           type: 'geojson',
           data: mergedGeoJSON,
           cluster: true,
-          clusterMaxZoom: 8, // Max zoom to cluster points on
-          clusterRadius: 50 // Radius of each cluster when clustering points (defaults to 50)
+          clusterMaxZoom: 8,
+          clusterRadius: 50
         });
       }
-      this.map!.addLayer({
+      this.map!.addLayer({ // Cluster layer to combine both requests and offers into clusters
         id: 'clusters-layer',
         type: 'circle',
         source: 'clusters',
         filter: ['has', 'point_count'],
         paint: {
-                'circle-color': [
+                'circle-color': [ // Different colors based on the number of points in the cluster
                     'step',
                     ['get', 'point_count'],
                     '#4CAF50',
@@ -197,7 +206,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
                     15,
                     '#B71C1C'
                 ],
-                'circle-radius': [
+                'circle-radius': [ // Different radius based on the number of points in the cluster
                     'step',
                     ['get', 'point_count'],
                     20,
@@ -209,7 +218,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
             }
         }); 
 
-        this.map!.addLayer({
+        this.map!.addLayer({ // Cluster count layer to show the number of points in each cluster
             id: 'cluster-count',
             type: 'symbol',
             source: 'clusters',
@@ -221,35 +230,47 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
             }
         });
 
-        this.map!.on('click', 'unclustered-point', (e) => {
+        this.map!.on('click', 'unclustered-point', (e) => { // Shows popup with details when clicking on an individual point (request or offer)
             if (!e.features || e.features.length === 0) return;
             const geometry = e.features[0].geometry as GeoJSON.Point;
             let offerRequest: string;
             const coordinates = geometry.coordinates.slice() as [number, number];
-            const statut = e.features[0].properties['statut'] || 'N/A';
-            const titre = e.features[0].properties['titre'] || 'N/A';
-            let name: string;
-            if ('nom_demande' in e.features[0].properties) {
+            const statut = e.features[0].properties['status'] || 'N/A';
+            const title = e.features[0].properties['title'] || 'N/A';
+            const description = e.features[0].properties['description'] || 'Pas de description';
+            let name: string = '';
+            let first_name: string = '';
+            if ('last_name_request' in e.features[0].properties) {
               offerRequest = 'la demande';
-              name = e.features[0].properties['nom_demande'] || 'N/A';
+              if (isAdmin){ // Only show requester/offerer names to admins
+                    name = e.features[0].properties['last_name_request'] || 'N/A';
+                    name = `<br>Nom demandeur: ${name}`
+                    first_name = e.features[0].properties['first_name_request'] || 'N/A';
+                    first_name = `<br>Prénom demandeur: ${first_name}`
+              }
             }
             else {
               offerRequest = 'l\'offre';
-              name = e.features[0].properties['nom_offre'] || 'N/A';
+              if (isAdmin){
+                    name = e.features[0].properties['last_name_offer'] || 'N/A';
+                    name = `<br>Nom offreur: ${name}`
+                    first_name = e.features[0].properties['first_name_offer'] || 'N/A';
+                    first_name = `<br>Prénom offreur: ${first_name}`
+                    }
             }
             while (Math.abs(e.lngLat.lng - coordinates[0]) > 180) {
                 coordinates[0] += e.lngLat.lng > coordinates[0] ? 360 : -360;
             }
 
-            new maplibregl.Popup()
+            new maplibregl.Popup() // Create a popup with details about the request/offer
                 .setLngLat(coordinates)
                 .setHTML(
-                    `Nom de ${offerRequest}: ${name}<br>Statut de ${offerRequest}: ${statut}`
+                    `Nom de ${offerRequest}: ${title}<br>Statut de ${offerRequest}: ${statut}<br>Description: ${description}${name}${first_name}`
                 )
                 .addTo(this.map!);
         });
         
-          this.map!.addLayer({
+          this.map!.addLayer({ // Layer for individual points (requests and offers) that are not clustered
             id: 'unclustered-point',
             type: 'circle',
             source: 'clusters',
@@ -257,9 +278,9 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
             paint: {
                 'circle-color': [
                 'case',
-                ['has', 'nom_demande'],
-                '#ff0000',
-                '#11b4da'
+                ['has', 'last_name_request'],
+                '#ff0000', // If it's a request
+                '#11b4da' // If it's an offer
                 ],
                 'circle-radius': 5,
                 'circle-stroke-width': 1,
@@ -267,7 +288,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
             }
         });
 
-        this.map!.on('click', 'clusters-layer', async (e) => {
+        this.map!.on('click', 'clusters-layer', async (e) => { // Zoom into cluster on click
             const features = this.map!.queryRenderedFeatures(e.point, {
                 layers: ['clusters-layer']
             });
@@ -281,18 +302,12 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
             });
         });
 
-        this.map!.on('mouseenter', 'clusters-layer', () => {
-            this.map!.getCanvas().style.cursor = 'pointer';
-        });
-        this.map!.on('mouseleave', 'clusters-layer', () => {
-            this.map!.getCanvas().style.cursor = '';
-        });
         this.addHullLayer();
         this.addHoverEffect();
     });
   }
 
-  private addHullLayer() {
+  private addHullLayer() { // Layer to show convex hull around clusters on hover
 
     this.map!.addSource('cluster-hull', {
       type: 'geojson',
@@ -302,7 +317,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
       }
     });
 
-    this.map!.addLayer({
+    this.map!.addLayer({ // Fill layer for the convex hull
       id: 'cluster-hull-fill',
       type: 'fill',
       source: 'cluster-hull',
@@ -312,7 +327,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
       }
     });
 
-    this.map!.addLayer({
+    this.map!.addLayer({ // Outer line layer for the convex hull border
       id: 'cluster-hull-line',
       type: 'line',
       source: 'cluster-hull',
@@ -323,11 +338,11 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     });
   }
 
-private addHoverEffect() {
+private addHoverEffect() { // Show convex hull around clusters on hover
 
     const source = this.map!.getSource('clusters') as maplibregl.GeoJSONSource;
 
-    this.map!.on('mouseenter', 'clusters-layer', async (e) => {
+    this.map!.on('mouseenter', 'clusters-layer', async (e) => { // Change cursor to pointer when hovering over clusters
 
       this.map!.getCanvas().style.cursor = 'pointer';
 
@@ -354,7 +369,7 @@ private addHoverEffect() {
       }
     });
 
-    this.map!.on('mouseleave', 'clusters-layer', () => {
+    this.map!.on('mouseleave', 'clusters-layer', () => { // Reset cursor and clear hull when no longer hovering over clusters
 
       this.map!.getCanvas().style.cursor = '';
 
@@ -366,7 +381,7 @@ private addHoverEffect() {
     });
   }
 
-  private initializeMap(): void {
+  private initializeMap(): void { // Initialisation de la carte MapLibre
     this.map = new maplibregl.Map({
       container: this.mapContainer.nativeElement,
       style: 'https://raw.githubusercontent.com/go2garret/maps/main/src/assets/json/openStreetMap.json', 
@@ -374,22 +389,25 @@ private addHoverEffect() {
       zoom: this.zoom
     });
 
-    this.map.addControl(new maplibregl.NavigationControl(), 'top-right');
+    this.map.addControl(new maplibregl.NavigationControl(), 'top-right'); // Add zoom and rotation controls to the map
 
     this.map.on('load', () => {
-      // Si on a déjà des données (reçues avant le chargement de la carte), on affiche
+      // If crises, requests, or offers were already loaded before the map was ready, add them to the map now
       if (this.crises.length > 0) {
         this.addCrisisMarkers();
+        // Trier les cercles par rayon pour que les petits cercles soient visibles par-dessus les grands
+        this.crisisCircle.sort(
+          (b, a) => a.properties.radius - b.properties.radius
+        );
         const circleGeojson: FeatureCollection<Polygon> = {
         type: 'FeatureCollection',
         features: this.crisisCircle
         };
-        this.map!.addSource('location-radius', {
+        this.map!.addSource('location-radius', { // Add source for crisis circles
           type: 'geojson',
           data: circleGeojson
         });
-        console.log('Circle GeoJSON:', circleGeojson);
-        this.map!.addLayer({
+        this.map!.addLayer({ // Add fill layer for crisis circles
           id: 'location-radius',
           type: 'fill',
           source: 'location-radius',
@@ -399,16 +417,16 @@ private addHoverEffect() {
           }
         });
 
-        this.map!.on('click', 'location-radius', (e) => {
+        this.map!.on('click', 'location-radius', (e) => { // Show popup with crisis details when clicking on a crisis circle
         const properties = e.features?.[0]?.properties || {};
-        console.log('Crisis properties:', properties);
         new maplibregl.Popup()
         .setHTML(`
           <div style="color: black; font-family: sans-serif;">
-            <h3 style="margin: 0 0 5px 0;">${properties?.['nom'] || 'Nom inconnu'}</h3>
+            <h3 style="margin: 0 0 5px 0;">${properties?.['name'] || 'Nom inconnu'}</h3>
             <p style="margin: 0;">${properties?.['description'] || 'Pas de description'}</p>
+            <p style="margin: 0;"><strong>Type:</strong> ${properties?.['type'] || 'Type inconnu'}</p>
             <br>
-            <small>Créé le : ${new Date(properties?.['date_debut'] || Date.now()).toLocaleDateString()}</small>
+            <small>Créé le : ${new Date(properties?.['start_date'] || Date.now()).toLocaleDateString()}</small>
           </div>
         `)
         .setLngLat(e.lngLat)
@@ -427,19 +445,27 @@ private addHoverEffect() {
   private addCrisisMarkers(): void {
     if (!this.map) return;
 
-    // Nettoyage
-    this.CrisisMarkers.forEach(marker => marker.remove());
-    this.CrisisMarkers = [];
+    // Clear existing crisis circles
     this.crisisCircle = [];
 
     this.crises.forEach(crisis => {
-      // MapLibre attend : [Longitude, Latitude]
+      // Create a circle for each crisis
       if (crisis.latitude && crisis.longitude) {
-        console.log('Ajout de la crise sur la carte:', crisis);
-        const radiusCenter = [crisis.longitude, crisis.latitude] as [number, number];
-        const radius = 10; // kilometer
-        const circle = turf.circle(radiusCenter, radius, {steps: 64, units: 'kilometers'})
-        circle.properties = {center: radiusCenter, radius: radius, name: crisis.name, description: crisis.description, start_date: crisis.start_date};
+        let radiusCenter = [crisis.longitude, crisis.latitude] as [number, number];
+        let radius = crisis.radius || 10; // Utiliser le rayon de la crise ou 10km par défaut
+        let circle = turf.circle(radiusCenter, radius, {steps: 64, units: 'kilometers'})
+        circle.properties = {center: radiusCenter, radius: radius, name: crisis.name, description: crisis.description, start_date: crisis.start_date, type: crisis.type};
+        
+        // Fusionner les cercles du même type qui se chevauchent
+        for (const crisisCircles of this.crisisCircle) {
+          if(turf.booleanIntersects(crisisCircles, circle) && crisisCircles.properties.type == crisis.type) {
+            this.crisisCircle = this.crisisCircle.filter(c => c !== crisisCircles);
+            radiusCenter = [(radiusCenter[0] + crisisCircles.properties.center[0])/2, (radiusCenter[1] + crisisCircles.properties.center[1])/2];
+            radius = Math.max(turf.distance(crisisCircles.properties.center, radiusCenter, {units: 'kilometers'}) + crisisCircles.properties.radius, turf.distance(circle.properties['center'], radiusCenter, {units: 'kilometers'}) + circle.properties['radius']);
+            circle = turf.circle(radiusCenter, radius, {steps: 64, units: 'kilometers'});
+            circle.properties = {center: radiusCenter, radius: radius, name: crisis.name + ' || ' + crisisCircles.properties.name, description: crisis.description, start_date: crisis.start_date, type: crisis.type};
+          }
+        }
         this.crisisCircle.push(circle);
       }
     });

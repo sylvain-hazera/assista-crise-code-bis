@@ -90,4 +90,5 @@ export class GeolocationService {
     this.locationSubject.next(null);
     this.permissionGranted = false;
   }
+
 }
