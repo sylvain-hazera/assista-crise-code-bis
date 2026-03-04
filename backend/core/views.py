@@ -10,6 +10,7 @@ from .serializers import MyTokenObtainPairSerializer  # if you've defined it in 
 from django.contrib.auth import authenticate
 from django.core.mail import send_mail
 from django_filters import rest_framework as filters
+import secrets
 from .models import (
     User, Crisis, Request, Offer, Information,
     RequestType, OfferType, InformationType
@@ -296,23 +297,32 @@ class RequestViewSet(viewsets.ModelViewSet):
 
 
     def perform_create(self, serializer):
+        # Générer un token de suppression unique
+        deletion_token = secrets.token_urlsafe(32)
+        
         # Définir l'auteur si authentifié, sinon None
         author = self.request.user if self.request.user.is_authenticated else None
-        demande = serializer.save(author=author)
+        demande = serializer.save(author=author, deletion_token=deletion_token)
+        
+        # Construire l'URL de suppression
+        deletion_url = f"https://assista-crise.duckdns.org/api/delete-request/{deletion_token}"
+        
         try:
-            print(f"Tentative d'envoi de mail à {demande.email_demande}...")
+            print(f"Tentative d'envoi de mail à {demande.email_request}...")
             
             send_mail(
-                subject=f"Confirmation : Votre demande '{demande.titre}' a bien été reçue",
+                subject=f"Confirmation : Votre demande '{demande.title}' a bien été reçue",
                 message=(
-                    f"Bonjour {demande.prenom_demande},\n\n"
-                    f"Nous accusons réception de votre demande d'aide : {demande.titre}.\n"
+                    f"Bonjour {demande.first_name_request},\n\n"
+                    f"Nous accusons réception de votre demande d'aide : {demande.title}.\n"
                     "Elle est actuellement en attente de traitement par nos services.\n\n"
+                    f"Si vous souhaitez annuler cette demande, cliquez sur le lien suivant :\n"
+                    f"{deletion_url}\n\n"
                     "Cordialement,\n"
                     "L'équipe Assista-Crise"
                 ),
                 from_email=None,  # Utilise DEFAULT_FROM_EMAIL défini dans settings.py
-                recipient_list=[demande.email_demande],
+                recipient_list=[demande.email_request],
                 fail_silently=False,
             )
             print("Succès : Email de confirmation envoyé.")
@@ -327,12 +337,41 @@ class OfferViewSet(viewsets.ModelViewSet):
     filterset_class = AuthorEmailFilter
 
     def perform_create(self, serializer):
+        # Générer un token de suppression unique
+        deletion_token = secrets.token_urlsafe(32)
+        
         # Si user authentifié, il est autheur
         if self.request.user.is_authenticated:
-            serializer.save(author=self.request.user)
+            offre = serializer.save(author=self.request.user, deletion_token=deletion_token)
         else:
             # Sinon il est none
-            serializer.save(author=None)
+            offre = serializer.save(author=None, deletion_token=deletion_token)
+        
+        # Construire l'URL de suppression
+        deletion_url = f"https://assista-crise.duckdns.org/api/delete-offer/{deletion_token}"
+        
+        try:
+            print(f"Tentative d'envoi de mail à {offre.email_offer}...")
+            
+            send_mail(
+                subject=f"Confirmation : Votre offre '{offre.title}' a bien été enregistrée",
+                message=(
+                    f"Bonjour {offre.first_name_offer},\n\n"
+                    f"Nous vous remercions pour votre offre d'aide : {offre.title}.\n"
+                    "Elle est maintenant visible et disponible pour les personnes dans le besoin.\n\n"
+                    f"Si vous souhaitez retirer cette offre, cliquez sur le lien suivant :\n"
+                    f"{deletion_url}\n\n"
+                    "Cordialement,\n"
+                    "L'équipe Assista-Crise"
+                ),
+                from_email=None,
+                recipient_list=[offre.email_offer],
+                fail_silently=False,
+            )
+            print("Succès : Email de confirmation envoyé.")
+            
+        except Exception as e:
+            print(f"Erreur critique : L'envoi de l'email a échoué. Détails : {e}")
 
 class InformationViewSet(viewsets.ModelViewSet):
     queryset = Information.objects.all()
@@ -340,12 +379,41 @@ class InformationViewSet(viewsets.ModelViewSet):
     permission_classes = [AllowAny]
 
     def perform_create(self, serializer):
+        # Générer un token de suppression unique
+        deletion_token = secrets.token_urlsafe(32)
+        
         # Si l'utilisateur est authentifié, on l'assigne comme auteur
         if self.request.user.is_authenticated:
-            serializer.save(author=self.request.user)
+            info = serializer.save(author=self.request.user, deletion_token=deletion_token)
         else:
             # Sinon on sauvegarde sans auteur (None)
-            serializer.save(author=None)
+            info = serializer.save(author=None, deletion_token=deletion_token)
+        
+        # Construire l'URL de suppression
+        deletion_url = f"https://assista-crise.duckdns.org/api/delete-information/{deletion_token}"
+        
+        try:
+            print(f"Tentative d'envoi de mail à {info.email_information}...")
+            
+            send_mail(
+                subject=f"Confirmation : Votre information '{info.title}' a bien été partagée",
+                message=(
+                    f"Bonjour {info.first_name_information},\n\n"
+                    f"Nous vous remercions pour le partage de cette information : {info.title}.\n"
+                    "Elle est maintenant visible par la communauté.\n\n"
+                    f"Si vous souhaitez retirer cette information, cliquez sur le lien suivant :\n"
+                    f"{deletion_url}\n\n"
+                    "Cordialement,\n"
+                    "L'équipe Assista-Crise"
+                ),
+                from_email=None,
+                recipient_list=[info.email_information],
+                fail_silently=False,
+            )
+            print("Succès : Email de confirmation envoyé.")
+            
+        except Exception as e:
+            print(f"Erreur critique : L'envoi de l'email a échoué. Détails : {e}")
 
 # --- VIEWSETS SIMPLES POUR LES TYPES ---
 class RequestTypeViewSet(viewsets.ModelViewSet):
@@ -359,6 +427,35 @@ class OfferTypeViewSet(viewsets.ModelViewSet):
 class InformationTypeViewSet(viewsets.ModelViewSet):
     queryset = InformationType.objects.all()
     serializer_class = InformationTypeSerializer
+
+# --- VUES POUR LA SUPPRESSION VIA TOKEN ---
+from django.views import View
+from django.http import HttpResponse
+from django.shortcuts import get_object_or_404
+
+class DeleteRequestView(View):
+    """Vue pour supprimer une demande via token"""
+    def get(self, request, token):
+        demande = get_object_or_404(Request, deletion_token=token)
+        titre = demande.title
+        demande.delete()
+        return HttpResponse(f"<h1>Demande supprimée</h1><p>La demande '{titre}' a bien été supprimée.</p>")
+
+class DeleteOfferView(View):
+    """Vue pour supprimer une offre via token"""
+    def get(self, request, token):
+        offre = get_object_or_404(Offer, deletion_token=token)
+        titre = offre.title
+        offre.delete()
+        return HttpResponse(f"<h1>Offre supprimée</h1><p>L'offre '{titre}' a bien été supprimée.</p>")
+
+class DeleteInformationView(View):
+    """Vue pour supprimer une information via token"""
+    def get(self, request, token):
+        info = get_object_or_404(Information, deletion_token=token)
+        titre = info.title
+        info.delete()
+        return HttpResponse(f"<h1>Information supprimée</h1><p>L'information '{titre}' a bien été supprimée.</p>")
 
     #  --------------------------- add by Laura ------------------------------------
 
