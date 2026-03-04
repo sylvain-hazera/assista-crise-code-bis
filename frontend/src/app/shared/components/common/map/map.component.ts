@@ -11,6 +11,7 @@ import { GeolocationService } from '../../../../services/geolocation.service';
 import { forkJoin, Subscription } from 'rxjs';
 import { FeatureCollection, Geometry, Polygon } from 'geojson';
 import { AuthService } from '../../../../auth/services/auth.service';
+import { InformationService } from '../../../../services/information.service';
 
 @Component({
   selector: 'app-map',
@@ -26,6 +27,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   @Input() crises: Crisis[] = [];
   @Input() requests: Request[] = [];
   @Input() offers: Offer[] = [];
+  @Input() informations: any[] = [];
   // Center of France by default, will be updated to user location if available
   @Input() center: [number, number] = [2.2137, 46.2276]; 
   @Input() zoom: number = 5;
@@ -34,11 +36,13 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   private crisisCircle: any[] = [];
   private requestGeoJSON: any = null;
   private proposalGeoJSON: any = null;
+  private informationsGeoJSON: any = null;
   private subscription: Subscription | null = null;
 
   constructor(private crisisService: CrisisService,
               private requestService: RequestService,
               private offerService: OfferService,
+              private informationService: InformationService,
               private geolocationService: GeolocationService,
               private authService: AuthService) {}
   ngOnInit(): void {
@@ -142,17 +146,21 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   loadHelpData() { // Load both requests and offers in parallel and process them together to add to the map
     this.subscription = forkJoin({
       requests: this.requestService.getAllRequests(),
-      proposals: this.offerService.getAllOffers()
+      proposals: this.offerService.getAllOffers(),
+      informations: this.informationService.getInformations()
     }).subscribe({
-      next: ({ requests, proposals }) => {
+      next: ({ requests, proposals, informations }) => {
         console.log('Requests:', requests);
         console.log('Proposals:', proposals);
+        console.log('Informations:', informations);
 
         this.requests = requests;
         this.offers = proposals;
+        this.informations = informations;
 
         this.requestGeoJSON = this.jsonToGeoJSON(requests);
         this.proposalGeoJSON = this.jsonToGeoJSON(proposals);
+        this.informationsGeoJSON = this.jsonToGeoJSON(informations);
 
         if (this.map) {
           this.addSourceAndLayers();
@@ -165,7 +173,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   private addSourceAndLayers(): void {
     if (!this.map) return;
     const isAdmin = this.authService.isAdmin();
-    const geoJsonList = [this.requestGeoJSON, this.proposalGeoJSON]; // Merge requests and offers into a single GeoJSON
+    const geoJsonList = [this.requestGeoJSON, this.proposalGeoJSON, this.informationsGeoJSON]; // Merge requests, offers and informations into a single GeoJSON
     const mergedGeoJSON: FeatureCollection<Geometry> = {
         type: 'FeatureCollection',
         features: geoJsonList.flatMap(geoJson => geoJson ? geoJson.features : [])
