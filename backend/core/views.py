@@ -304,8 +304,8 @@ class RequestViewSet(viewsets.ModelViewSet):
         author = self.request.user if self.request.user.is_authenticated else None
         demande = serializer.save(author=author, deletion_token=deletion_token)
         
-        # Construire l'URL de suppression
-        deletion_url = f"https://assista-crise.duckdns.org/api/delete-request/{deletion_token}"
+        # Construire l'URL de suppression (automatique selon l'environnement)
+        deletion_url = self.request.build_absolute_uri(f'/api/delete-request/{deletion_token}/')
         
         try:
             print(f"Tentative d'envoi de mail à {demande.email_request}...")
@@ -347,8 +347,8 @@ class OfferViewSet(viewsets.ModelViewSet):
             # Sinon il est none
             offre = serializer.save(author=None, deletion_token=deletion_token)
         
-        # Construire l'URL de suppression
-        deletion_url = f"https://assista-crise.duckdns.org/api/delete-offer/{deletion_token}"
+        # Construire l'URL de suppression (automatique selon l'environnement)
+        deletion_url = self.request.build_absolute_uri(f'/api/delete-offer/{deletion_token}/')
         
         try:
             print(f"Tentative d'envoi de mail à {offre.email_offer}...")
@@ -389,8 +389,8 @@ class InformationViewSet(viewsets.ModelViewSet):
             # Sinon on sauvegarde sans auteur (None)
             info = serializer.save(author=None, deletion_token=deletion_token)
         
-        # Construire l'URL de suppression
-        deletion_url = f"https://assista-crise.duckdns.org/api/delete-information/{deletion_token}"
+        # Construire l'URL de suppression (automatique selon l'environnement)
+        deletion_url = self.request.build_absolute_uri(f'/api/delete-information/{deletion_token}/')
         
         try:
             print(f"Tentative d'envoi de mail à {info.email_information}...")
