@@ -4,7 +4,7 @@ import { FormBuilder, FormGroup, Validators, ReactiveFormsModule, AbstractContro
 import { Router, RouterModule } from '@angular/router';
 import { Subject, takeUntil } from 'rxjs';
 import { AuthService } from '../../services/auth.service';
-import { RoleUtilisateur } from '../../../shared/models/user.model';
+import { UserRole } from '../../../shared/models/user.model';
 import { LocationService, Department, Commune } from '../../../services/location.service';
 
 @Component({
@@ -38,9 +38,9 @@ export class RegisterComponent implements OnInit, OnDestroy {
   showCommuneDropdown: boolean = false;
 
   userTypeOptions = [
-    { value: RoleUtilisateur.UTIL_SIMPLE, label: 'Particulier' },
-    { value: RoleUtilisateur.AUT_LOCALE, label: 'Institution' },
-    { value: RoleUtilisateur.SECOURS, label: 'Secours organisés' },
+    { value: UserRole.SIMPLE_USER, label: 'Particulier' },
+    { value: UserRole.LOCAL_AUTH, label: 'Institution' },
+    { value: UserRole.RESCUE, label: 'Secours organisés' },
   ];
 
   constructor(
@@ -101,7 +101,7 @@ export class RegisterComponent implements OnInit, OnDestroy {
     console.log('Toggle fields for userType:', userType);
     const firstNameControl = this.registerForm.get('firstName');
 
-    if (userType === RoleUtilisateur.UTIL_SIMPLE) {  
+    if (userType === UserRole.SIMPLE_USER) {  
        // Activer firstName pour les particuliers
       console.log('Activating firstName for individual');
       firstNameControl?.setValidators([
@@ -158,7 +158,7 @@ export class RegisterComponent implements OnInit, OnDestroy {
   }
 
   selectDepartment(department: Department): void {
-    this.departmentSearch = department.nom;
+    this.departmentSearch = department.name;
     this.registerForm.patchValue({ department: department.code });
     this.showDepartmentDropdown = false;
     
@@ -184,7 +184,7 @@ export class RegisterComponent implements OnInit, OnDestroy {
   }
 
   selectCommune(commune: Commune): void {
-    this.communeSearch = commune.nom;
+    this.communeSearch = commune.name;
     this.registerForm.patchValue({ commune: commune.code });
     this.showCommuneDropdown = false;
   }
@@ -205,7 +205,7 @@ export class RegisterComponent implements OnInit, OnDestroy {
     const postalCode = commune?.codesPostaux[0] || '';
     
     // Vérifier si le compte nécessite une validation
-    const requiresValidation = userType !== RoleUtilisateur.UTIL_SIMPLE;
+    const requiresValidation = userType !== UserRole.SIMPLE_USER;
     
     const registerData: any = {
       username: formValue.email,  // Utiliser l'email complet comme username (unique)
@@ -220,10 +220,10 @@ export class RegisterComponent implements OnInit, OnDestroy {
       enable: !requiresValidation
     };
 
-    if(formValue.userType === RoleUtilisateur.UTIL_SIMPLE) {
-      registerData.enable = true;
+    if(formValue.userType === UserRole.SIMPLE_USER) {
+      registerData.enabled = true;
     } else {
-      registerData.enable = false;
+      registerData.enabled = false;
     }
     
     console.log('Données envoyées:', registerData);
@@ -298,7 +298,7 @@ export class RegisterComponent implements OnInit, OnDestroy {
   }
 
   get isIndividual(): boolean {
-    return this.registerForm.get('userType')?.value === RoleUtilisateur.UTIL_SIMPLE;
+    return this.registerForm.get('userType')?.value === UserRole.SIMPLE_USER;
 
   }
 }

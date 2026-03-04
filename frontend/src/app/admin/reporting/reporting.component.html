@@ -67,8 +67,8 @@
     </div>
 
     <div class="control-row">
-      <select class="filter-select" [(ngModel)]="filterStatut" (ngModelChange)="currentPage = 1; applyFilters()">
-        @for (opt of statutOptions; track opt.value) {
+      <select class="filter-select" [(ngModel)]="filterStatus" (ngModelChange)="currentPage = 1; applyFilters()">
+        @for (opt of statusOptions; track opt.value) {
           <option [value]="opt.value">{{ opt.label }}</option>
         }
       </select>
@@ -80,7 +80,7 @@
         <option [value]="50">50 / page</option>
       </select>
 
-      @if (searchQuery || filterKind !== 'ALL' || filterStatut !== 'ALL') {
+      @if (searchQuery || filterKind !== 'ALL' || filterStatus !== 'ALL') {
         <button class="btn-ghost sm" (click)="resetFilters()">
           <span class="material-icons">filter_alt_off</span>
           Réinitialiser
@@ -100,7 +100,7 @@
       <div class="empty">
         <span class="material-icons">manage_search</span>
         <p>Aucun signalement trouvé</p>
-        @if (searchQuery || filterKind !== 'ALL' || filterStatut !== 'ALL') {
+        @if (searchQuery || filterKind !== 'ALL' || filterStatus !== 'ALL') {
           <button class="btn-ghost sm" (click)="resetFilters()">Effacer les filtres</button>
         }
       </div>
@@ -110,14 +110,14 @@
           <thead>
             <tr>
               <th class="col-kind">Type</th>
-              <th class="sortable" (click)="setSort('titre')">
-                Titre <span class="material-icons si">{{ sortIcon('titre') }}</span>
+              <th class="sortable" (click)="setSort('title')">
+                Titre <span class="material-icons si">{{ sortIcon('title') }}</span>
               </th>
               <th class="sortable" (click)="setSort('contact')">
                 Contact <span class="material-icons si">{{ sortIcon('contact') }}</span>
               </th>
-              <th class="sortable" (click)="setSort('statut')">
-                Statut <span class="material-icons si">{{ sortIcon('statut') }}</span>
+              <th class="sortable" (click)="setSort('status')">
+                Statut <span class="material-icons si">{{ sortIcon('status') }}</span>
               </th>
               <th class="sortable" (click)="setSort('date')">
                 Date <span class="material-icons si">{{ sortIcon('date') }}</span>
@@ -137,11 +137,11 @@
                 <td class="cell-titre">
                   <div class="titre-wrap">
                     @if (row.photo) {
-                      <img class="thumb" [src]="row.photo" [alt]="row.titre"/>
+                      <img class="thumb" [src]="row.photo" [alt]="row.title"/>
                     }
                     <div>
-                      <span class="titre-text">{{ row.titre }}</span>
-                      @if (row.crise && row.kind !== 'Crise') {
+                      <span class="titre-text">{{ row.title }}</span>
+                      @if (row.crisis && row.kind !== 'Crisis') {
                         <span class="crise-link">
                           <span class="material-icons">link</span> crise liée
                         </span>
@@ -162,11 +162,11 @@
                 <td>
                   <button
                     class="statut-chip clickable"
-                    [class]="statutClass(row.statut)"
+                    [class]="statusClass(row.status)"
                     (click)="openStatusEdit(row, $event)"
                     title="Modifier le statut"
                   >
-                    {{ statutLabel(row.statut) }}
+                    {{ statusLabel(row.status) }}
                     <span class="material-icons edit-ic">edit</span>
                   </button>
                 </td>
@@ -233,7 +233,7 @@
             <span class="material-icons">{{ kindIcon(selectedRow.kind) }}</span>
             {{ selectedRow.kind }}
           </span>
-          <h2>{{ selectedRow.titre }}</h2>
+          <h2>{{ selectedRow.title }}</h2>
         </div>
         <button class="btn-icon-sm" (click)="closeAll()"><span class="material-icons">close</span></button>
       </div>
@@ -242,7 +242,7 @@
         <!-- Photo -->
         @if (selectedRow.photo) {
           <div class="detail-photo">
-            <img [src]="selectedRow.photo" [alt]="selectedRow.titre"/>
+            <img [src]="selectedRow.photo" [alt]="selectedRow.title"/>
           </div>
         }
 
@@ -252,8 +252,8 @@
             <span class="material-icons">flag</span>
             <div>
               <label>Statut</label>
-              <span class="statut-chip" [class]="statutClass(selectedRow.statut)">
-                {{ statutLabel(selectedRow.statut) }}
+              <span class="statut-chip" [class]="statusClass(selectedRow.status)">
+                {{ statusLabel(selectedRow.status) }}
               </span>
             </div>
           </div>
@@ -307,18 +307,18 @@
         }
 
         <!-- Crise liée -->
-        @if (selectedRow.crise && selectedRow.kind !== 'Crise') {
+        @if (selectedRow.crisis && selectedRow.kind !== 'Crisis') {
           <div class="detail-section">
             <h3>Crise liée</h3>
             <div class="detail-item">
               <span class="material-icons">local_fire_department</span>
-              <div><label>UUID</label><span class="uuid">{{ selectedRow.crise }}</span></div>
+              <div><label>UUID</label><span class="uuid">{{ selectedRow.crisis }}</span></div>
             </div>
           </div>
         }
 
         <!-- Specific fields: Crise -->
-        @if (isCrise(selectedRow._raw)) {
+        @if (isCrisis(selectedRow._raw)) {
           @if (selectedRow._raw.description) {
             <div class="detail-section">
               <h3>Description</h3>
@@ -334,10 +334,10 @@
         }
 
         <!-- Auteur -->
-        @if (selectedRow.auteur) {
+        @if (selectedRow.author) {
           <div class="detail-item">
             <span class="material-icons">account_circle</span>
-            <div><label>Auteur (UUID)</label><span class="uuid">{{ selectedRow.auteur }}</span></div>
+            <div><label>Auteur (UUID)</label><span class="uuid">{{ selectedRow.author }}</span></div>
           </div>
         }
       </div>
@@ -370,21 +370,21 @@
           <span class="kind-badge sm" [class]="kindClass(selectedRow.kind)">
             <span class="material-icons">{{ kindIcon(selectedRow.kind) }}</span>
           </span>
-          <strong>{{ selectedRow.titre }}</strong>
+          <strong>{{ selectedRow.title }}</strong>
         </p>
 
         <div class="status-options">
-          @for (opt of editableStatuts; track opt.value) {
-            <label class="status-option" [class.selected]="newStatut === opt.value">
-              <input type="radio" name="statut" [value]="opt.value" [(ngModel)]="newStatut"/>
-              <span class="statut-chip" [class]="statutClass(opt.value)">{{ opt.label }}</span>
+          @for (opt of editableStatuses; track opt.value) {
+            <label class="status-option" [class.selected]="newStatus === opt.value">
+              <input type="radio" name="statut" [value]="opt.value" [(ngModel)]="newStatus"/>
+              <span class="statut-chip" [class]="statusClass(opt.value)">{{ opt.label }}</span>
             </label>
           }
         </div>
       </div>
       <div class="modal-footer">
         <button class="btn-ghost" (click)="closeAll()">Annuler</button>
-        <button class="btn-primary" (click)="submitStatus()" [disabled]="isSaving || !newStatut">
+        <button class="btn-primary" (click)="submitStatus()" [disabled]="isSaving || !newStatus">
           <span class="material-icons">{{ isSaving ? 'hourglass_top' : 'save' }}</span>
           {{ isSaving ? 'Sauvegarde…' : 'Enregistrer' }}
         </button>
@@ -407,7 +407,7 @@
         <span class="delete-icon kind-badge lg" [class]="kindClass(selectedRow.kind)">
           <span class="material-icons">{{ kindIcon(selectedRow.kind) }}</span>
         </span>
-        <p>Supprimer le signalement <strong>{{ selectedRow.titre }}</strong> ?</p>
+        <p>Supprimer le signalement <strong>{{ selectedRow.title }}</strong> ?</p>
         <p class="delete-warn">Cette action est <strong>irréversible</strong>.</p>
       </div>
       <div class="modal-footer">

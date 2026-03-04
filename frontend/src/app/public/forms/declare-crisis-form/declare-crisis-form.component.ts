@@ -7,7 +7,7 @@ import { GeolocationService } from '../../../services/geolocation.service';
 import { Status } from '../../../shared/models/status.model';
 import { LocationService, Department, Commune } from '../../../services/location.service';
 import { CommonModule } from '@angular/common';
-import { CrisePayload } from '../../../shared/models/crisis.model';
+import { CrisisPayload } from '../../../shared/models/crisis.model';
 import { map, Observable } from 'rxjs';
 import { AuthService } from '../../../auth/services/auth.service';
 
@@ -121,7 +121,7 @@ export class DeclareCrisisFormComponent implements OnInit{
   }
 
   selectDepartment(department: Department): void {
-    this.departmentSearch = department.nom;
+    this.departmentSearch = department.name;
     this.crisisForm.patchValue({ department: department.code });
     this.showDepartmentDropdown = false;
     
@@ -147,7 +147,7 @@ export class DeclareCrisisFormComponent implements OnInit{
   }
 
   selectCommune(commune: Commune): void {
-    this.communeSearch = commune.nom;
+    this.communeSearch = commune.name;
     this.crisisForm.patchValue({ commune: commune.code });
     this.showCommuneDropdown = false;
   }
@@ -165,14 +165,14 @@ export class DeclareCrisisFormComponent implements OnInit{
       this.getCoordinatesFromAddress(street, postalCode).subscribe({
         next: (coords) => {
           // 2. Construire le payload
-          const payload: CrisePayload = {
-            nom: formValue.title,
+          const payload: CrisisPayload = {
+            name: formValue.title,
             type: formValue.eventType,
             description: formValue.description,
             latitude: coords.lat,
             longitude: coords.lng,
-            auteur: this.authService.getCurrentUser()?.id,
-            statut: 'NON_TRAITEE'
+            author: this.authService.getCurrentUser()?.id,
+            status: 'NON_TRAITEE'
           };
           
           // 3. Créer le FormData via le service

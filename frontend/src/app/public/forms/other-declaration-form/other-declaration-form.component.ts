@@ -6,7 +6,7 @@ import { Router } from '@angular/router';
 import { GeolocationService } from '../../../services/geolocation.service';
 import { LocationService, Department, Commune } from '../../../services/location.service';
 import { CrisisService } from '../../../services/crisis.service';
-import { Crise } from '../../../shared/models/crisis.model';
+import { Crisis } from '../../../shared/models/crisis.model';
 import { AuthService } from '../../../auth/services/auth.service';
 
 enum StateForm {
@@ -99,7 +99,7 @@ export class OtherDeclarationFormComponent implements OnInit {
 
   loadActiveCrises(): void {
     this.crisisService.getAll().subscribe({
-      next: (crises: Crise[]) => {
+      next: (crises: Crisis[]) => {
         this.crisisOptions.push({
           value: '',
           label: 'Aucune crise en rapport'
@@ -108,7 +108,7 @@ export class OtherDeclarationFormComponent implements OnInit {
         crises.forEach(crisis => {
           this.crisisOptions.push({
             value: crisis.id!,
-            label: crisis.nom
+            label: crisis.name
           });
         });
         
@@ -206,7 +206,7 @@ export class OtherDeclarationFormComponent implements OnInit {
   }
 
   selectDepartment(department: Department): void {
-    this.departmentSearch = department.nom;
+    this.departmentSearch = department.name;
     const form = this.state === StateForm.DeclareSafe ? this.declareSafeForm : this.otherInformationForm;
     form.patchValue({ department: department.code });
     this.showDepartmentDropdown = false;
@@ -233,7 +233,7 @@ export class OtherDeclarationFormComponent implements OnInit {
   }
 
   selectCommune(commune: Commune): void {
-    this.communeSearch = commune.nom;
+    this.communeSearch = commune.name;
     const form = this.state === StateForm.DeclareSafe ? this.declareSafeForm : this.otherInformationForm;
     form.patchValue({ commune: commune.code });
     this.showCommuneDropdown = false;
@@ -317,37 +317,37 @@ export class OtherDeclarationFormComponent implements OnInit {
   private submitDeclareSafeForm(): void {
     const formData = new FormData();
 
-    formData.append('titre', 'Je suis en sécurité');
-    formData.append('prenom_information', this.declareSafeForm.get('firstName')?.value);
-    formData.append('nom_information', this.declareSafeForm.get('lastName')?.value);
+    formData.append('title', 'Je suis en sécurité');
+    formData.append('first_name_information', this.declareSafeForm.get('firstName')?.value);
+    formData.append('last_name_information', this.declareSafeForm.get('lastName')?.value);
     formData.append('email_information', this.declareSafeForm.get('email')?.value);
-    formData.append('telephone_information', this.declareSafeForm.get('phoneNumber')?.value);
+    formData.append('phone_information', this.declareSafeForm.get('phoneNumber')?.value);
 
     const localisation = {
       type: 'Point',
       coordinates: [this.longitude, this.latitude]
     };
-    formData.append('localisation', JSON.stringify(localisation));
+    formData.append('location', JSON.stringify(localisation));
 
     if (this.selectedFile) {
       formData.append('photo', this.selectedFile);
     }
 
-    formData.append('statut', 'DISPONIBLE');
-    formData.append('auteur', this.authService.getCurrentUser()?.id!);
+    formData.append('status', 'DISPONIBLE');
+    formData.append('author', this.authService.getCurrentUser()?.id!);
     
-    // Utiliser le premier TypeInformation disponible
+    // Utiliser le premier InformationType disponible
     const firstTypeId = Array.from(this.typesInformationMap.values())[0];
     if (!firstTypeId) {
       alert('Type d\'information non trouvé. Veuillez réessayer ou contacter le support.');
       return;
     }
-    formData.append('type_information', firstTypeId);
+    formData.append('information_type', firstTypeId);
 
     // Crise (nullable)
     const crisisId = this.declareSafeForm.get('crisisId')?.value;
     if (crisisId) {
-      formData.append('crise', crisisId);
+      formData.append('crisis', crisisId);
     }
 
     this.informationService.create(formData).subscribe({
@@ -367,36 +367,36 @@ export class OtherDeclarationFormComponent implements OnInit {
   private submitOtherInformationForm(): void {
     const formData = new FormData();
 
-    formData.append('titre', this.otherInformationForm.get('description')?.value.substring(0, 100)); // Titre = début de la description
-    formData.append('prenom_information', 'Anonyme'); // Information n'a pas de prénom dans ce form
-    formData.append('nom_information', 'Anonyme'); // Information n'a pas de nom dans ce form
+    formData.append('title', this.otherInformationForm.get('description')?.value.substring(0, 100)); // Titre = début de la description
+    formData.append('first_name_information', 'Anonyme'); // Information n'a pas de prénom dans ce form
+    formData.append('last_name_information', 'Anonyme'); // Information n'a pas de nom dans ce form
     formData.append('email_information', 'anonyme@example.com'); // Email requis mais pas dans le form
-    formData.append('telephone_information', '0000000000'); // Téléphone requis mais pas dans le form
+    formData.append('phone_information', '0000000000'); // Téléphone requis mais pas dans le form
 
     const localisation = {
       type: 'Point',
       coordinates: [this.longitude, this.latitude]
     };
-    formData.append('localisation', JSON.stringify(localisation));
+    formData.append('location', JSON.stringify(localisation));
 
     if (this.selectedFile) {
       formData.append('photo', this.selectedFile);
     }
 
-    formData.append('statut', 'DISPONIBLE');
+    formData.append('status', 'DISPONIBLE');
     
-    // Utiliser le premier TypeInformation disponible
+    // Utiliser le premier InformationType disponible
     const firstTypeId = Array.from(this.typesInformationMap.values())[0];
     if (!firstTypeId) {
       alert('Type d\'information non trouvé. Veuillez réessayer ou contacter le support.');
       return;
     }
-    formData.append('type_information', firstTypeId);
+    formData.append('information_type', firstTypeId);
 
     // Crise (nullable)
     const crisisId = this.otherInformationForm.get('crisisId')?.value;
     if (crisisId) {
-      formData.append('crise', crisisId);
+      formData.append('crisis', crisisId);
     }
 
     console.log('FormData envoyé (OtherInformation):', Array.from(formData.entries()));

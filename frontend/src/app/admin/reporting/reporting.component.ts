@@ -8,40 +8,40 @@ import { OfferService }   from '../../services/offer.service';
 import { RequestService } from '../../services/request.service';
 import { InformationService } from '../../services/information.service';
 
-import { Crise }       from '../../shared/models/crisis.model';
-import { Offre }       from '../../shared/models/offer.model';
-import { Demande }     from '../../shared/models/request.model';
+import { Crisis }       from '../../shared/models/crisis.model';
+import { Offer }       from '../../shared/models/offer.model';
+import { Request }     from '../../shared/models/request.model';
 import { Information } from '../../shared/models/information.model';
-import { Statut }      from '../../shared/models/status.model';
+import { Status }      from '../../shared/models/status.model';
 
 // ── Unified row displayed in the table ───────────────────────────────────────
 
-export type ReportKind = 'Crise' | 'Offre' | 'Demande' | 'Information';
+export type ReportKind = 'Crisis' | 'Offer' | 'Request' | 'Information';
 
 export interface ReportRow {
   id:           string;
   kind:         ReportKind;
-  titre:        string;
-  contact:      string;        // prenom + nom
+  title:        string;
+  contact:      string;        // first_name + last_name
   email:        string;
   telephone:    string | null;
-  statut:       Statut;
-  date:         string;        // date_creation / date_debut
+  status:       Status;
+  date:         string;        // created_at / start_date
   dateExp:      string | null;
-  crise:        string | null; // UUID
-  auteur:       string | null;
+  crisis:        string | null; // UUID
+  author:       string | null;
   latitude:     number | null;
   longitude:    number | null;
   photo:        string | null;
   // raw originals for detail modal
-  _raw:         Crise | Offre | Demande | Information;
+  _raw:         Crisis | Offer | Request | Information;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 
 type FilterKind   = ReportKind | 'ALL';
-type FilterStatut = Statut     | 'ALL';
-type SortField    = 'titre' | 'kind' | 'statut' | 'date' | 'contact';
+type FilterStatus = Status     | 'ALL';
+type SortField    = 'title' | 'kind' | 'status' | 'date' | 'contact';
 
 @Component({
   selector: 'app-reporting',
@@ -54,9 +54,9 @@ export class ReportingComponent implements OnInit, OnDestroy {
   private destroy$ = new Subject<void>();
 
   // ── Raw data ───────────────────────────────────────────────
-  rawCrises:       Crise[]       = [];
-  rawOffres:       Offre[]       = [];
-  rawDemandes:     Demande[]     = [];
+  rawCrises:       Crisis[]       = [];
+  rawOffers:       Offer[]       = [];
+  rawRequests:     Request[]     = [];
   rawInformations: Information[] = [];
 
   // ── Processed rows ─────────────────────────────────────────
@@ -73,7 +73,7 @@ export class ReportingComponent implements OnInit, OnDestroy {
   // ── Filters / sort ─────────────────────────────────────────
   searchQuery   = '';
   filterKind:   FilterKind   = 'ALL';
-  filterStatut: FilterStatut = 'ALL';
+  filterStatus: FilterStatus = 'ALL';
   sortField:    SortField    = 'date';
   sortAsc                    = false;
 
@@ -87,34 +87,34 @@ export class ReportingComponent implements OnInit, OnDestroy {
   showDeleteModal = false;
   showStatusModal = false;
   selectedRow: ReportRow | null = null;
-  newStatut:   Statut | ''      = '';
+  newStatus:   Status | ''      = '';
 
   // ── Exposed enums ──────────────────────────────────────────
-  readonly Statut = Statut;
+  readonly Status = Status;
 
   readonly kindOptions: { label: string; value: FilterKind; icon: string }[] = [
     { label: 'Tout',         value: 'ALL',         icon: 'dashboard'           },
-    { label: 'Crises',       value: 'Crise',        icon: 'local_fire_department'},
-    { label: 'Offres',       value: 'Offre',        icon: 'volunteer_activism'  },
-    { label: 'Demandes',     value: 'Demande',      icon: 'emergency'           },
+    { label: 'Crises',       value: 'Crisis',        icon: 'local_fire_department'},
+    { label: 'Offres',       value: 'Offer',        icon: 'volunteer_activism'  },
+    { label: 'Demandes',     value: 'Request',      icon: 'emergency'           },
     { label: 'Informations', value: 'Information',  icon: 'info'                },
   ];
 
-  readonly statutOptions: { label: string; value: FilterStatut }[] = [
+  readonly statusOptions: { label: string; value: FilterStatus }[] = [
     { label: 'Tous statuts',  value: 'ALL'             },
-    { label: 'Non traitée',   value: Statut.NON_TRAITEE},
-    { label: 'En cours',      value: Statut.EN_COURS   },
-    { label: 'Traitée',       value: Statut.TRAITEE    },
-    { label: 'Disponible',    value: Statut.DISPONIBLE },
-    { label: 'Indisponible',  value: Statut.INDISPONIBLE},
+    { label: 'Non traitée',   value: Status.UNPROCESSED},
+    { label: 'En cours',      value: Status.IN_PROGRESS   },
+    { label: 'Traitée',       value: Status.PROCESSED    },
+    { label: 'Disponible',    value: Status.AVAILABLE },
+    { label: 'Indisponible',  value: Status.UNAVAILABLE},
   ];
 
-  readonly editableStatuts: { label: string; value: Statut }[] = [
-    { label: 'Non traitée',  value: Statut.NON_TRAITEE  },
-    { label: 'En cours',     value: Statut.EN_COURS     },
-    { label: 'Traitée',      value: Statut.TRAITEE      },
-    { label: 'Disponible',   value: Statut.DISPONIBLE   },
-    { label: 'Indisponible', value: Statut.INDISPONIBLE },
+  readonly editableStatuses: { label: string; value: Status }[] = [
+    { label: 'Non traitée',  value: Status.UNPROCESSED  },
+    { label: 'En cours',     value: Status.IN_PROGRESS     },
+    { label: 'Traitée',      value: Status.PROCESSED      },
+    { label: 'Disponible',   value: Status.AVAILABLE   },
+    { label: 'Indisponible', value: Status.UNAVAILABLE },
   ];
 
   constructor(
@@ -143,8 +143,8 @@ export class ReportingComponent implements OnInit, OnDestroy {
     .subscribe({
       next: ({ crises, offres, demandes, informations }) => {
         this.rawCrises       = crises;
-        this.rawOffres       = offres;
-        this.rawDemandes     = demandes;
+        this.rawOffers       = offres;
+        this.rawRequests     = demandes;
         this.rawInformations = informations;
         this.buildRows();
         this.isLoading = false;
@@ -161,54 +161,54 @@ export class ReportingComponent implements OnInit, OnDestroy {
   // ────────────────────────────────────────────────────────────────────────────
 
   private buildRows(): void {
-    const criseRows: ReportRow[] = this.rawCrises.map(c => ({
+    const crisisRows: ReportRow[] = this.rawCrises.map(c => ({
       id:        c.id,
-      kind:      'Crise',
-      titre:     c.nom,
+      kind:      'Crisis',
+      title:     c.name,
       contact:   '—',
       email:     '—',
       telephone: null,
-      statut:    (c.statut ?? Statut.NON_TRAITEE) as Statut,
-      date:      c.date_debut,
-      dateExp:   c.date_fin,
-      crise:     c.id,
-      auteur:    c.auteur,
+      status:    (c.status ?? Status.UNPROCESSED) as Status,
+      date:      c.start_date,
+      dateExp:   c.end_date,
+      crisis:     c.id,
+      author:    c.author,
       latitude:  c.latitude ?? null,
       longitude: c.longitude ?? null,
       photo:     c.photo ?? null,
       _raw:      c,
     }));
 
-    const offreRows: ReportRow[] = this.rawOffres.map(o => ({
+    const offerRows: ReportRow[] = this.rawOffers.map(o => ({
       id:        o.id,
-      kind:      'Offre',
-      titre:     o.titre,
-      contact:   `${o.prenom_offre} ${o.nom_offre}`,
-      email:     o.email_offre,
+      kind:      'Offer',
+      title:     o.title,
+      contact:   `${o.first_name_offer} ${o.last_name_offer}`,
+      email:     o.email_offer,
       telephone: null,
-      statut:    o.statut,
-      date:      o.date_creation,
-      dateExp:   o.date_expiration,
-      crise:     o.crise,
-      auteur:    o.auteur,
+      status:    o.status,
+      date:      o.created_at,
+      dateExp:   o.expires_at,
+      crisis:     o.crisis,
+      author:    o.author,
       latitude:  o.latitude ?? null,
       longitude: o.longitude ?? null,
       photo:     o.photo,
       _raw:      o,
     }));
 
-    const demandeRows: ReportRow[] = this.rawDemandes.map(d => ({
+    const requestRows: ReportRow[] = this.rawRequests.map(d => ({
       id:        d.id,
-      kind:      'Demande',
-      titre:     d.titre,
-      contact:   `${d.prenom_demande} ${d.nom_demande}`,
-      email:     d.email_demande,
-      telephone: d.telephone_demande,
-      statut:    d.statut,
-      date:      d.date_creation,
-      dateExp:   d.date_expiration,
-      crise:     d.crise,
-      auteur:    d.auteur,
+      kind:      'Request',
+      title:     d.title,
+      contact:   `${d.first_name_request} ${d.last_name_request}`,
+      email:     d.email_request,
+      telephone: d.phone_request,
+      status:    d.status,
+      date:      d.created_at,
+      dateExp:   d.expires_at,
+      crisis:     d.crisis,
+      author:    d.author,
       latitude:  d.latitude ?? null,
       longitude: d.longitude ?? null,
       photo:     d.photo,
@@ -218,22 +218,22 @@ export class ReportingComponent implements OnInit, OnDestroy {
     const infoRows: ReportRow[] = this.rawInformations.map(i => ({
       id:        i.id,
       kind:      'Information',
-      titre:     i.titre,
-      contact:   `${i.prenom_information} ${i.nom_information}`,
+      title:     i.title,
+      contact:   `${i.first_name_information} ${i.last_name_information}`,
       email:     i.email_information,
-      telephone: i.telephone_information,
-      statut:    i.statut,
-      date:      i.date_creation,
-      dateExp:   i.date_expiration,
-      crise:     i.crise,
-      auteur:    i.auteur,
+      telephone: i.phone_information,
+      status:    i.status,
+      date:      i.created_at,
+      dateExp:   i.expires_at,
+      crisis:     i.crisis,
+      author:    i.author,
       latitude:  i.latitude ?? null,
       longitude: i.longitude ?? null,
       photo:     i.photo,
       _raw:      i,
     }));
 
-    this.allRows = [...criseRows, ...offreRows, ...demandeRows, ...infoRows];
+    this.allRows = [...crisisRows, ...offerRows, ...requestRows, ...infoRows];
     this.applyFilters();
   }
 
@@ -250,15 +250,15 @@ export class ReportingComponent implements OnInit, OnDestroy {
     }
 
     // Statut filter
-    if (this.filterStatut !== 'ALL') {
-      list = list.filter(r => r.statut === this.filterStatut);
+    if (this.filterStatus !== 'ALL') {
+      list = list.filter(r => r.status === this.filterStatus);
     }
 
     // Search
     const q = this.searchQuery.trim().toLowerCase();
     if (q) {
       list = list.filter(r =>
-        r.titre?.toLowerCase().includes(q)     ||
+        r.title?.toLowerCase().includes(q)     ||
         r.contact?.toLowerCase().includes(q)   ||
         r.email?.toLowerCase().includes(q)     ||
         r.telephone?.toLowerCase().includes(q) ||
@@ -303,7 +303,7 @@ export class ReportingComponent implements OnInit, OnDestroy {
   resetFilters(): void {
     this.searchQuery   = '';
     this.filterKind    = 'ALL';
-    this.filterStatut  = 'ALL';
+    this.filterStatus  = 'ALL';
     this.currentPage   = 1;
     this.applyFilters();
   }
@@ -320,15 +320,15 @@ export class ReportingComponent implements OnInit, OnDestroy {
   openStatusEdit(row: ReportRow, event: Event): void {
     event.stopPropagation();
     this.selectedRow    = row;
-    this.newStatut      = row.statut;
+    this.newStatus      = row.status;
     this.showStatusModal = true;
   }
 
   submitStatus(): void {
-    if (!this.selectedRow || !this.newStatut) return;
+    if (!this.selectedRow || !this.newStatus) return;
     this.isSaving = true;
     const id  = this.selectedRow.id;
-    const obs = this.getUpdateObservable(this.selectedRow.kind, id, { statut: this.newStatut } as any);
+    const obs = this.getUpdateObservable(this.selectedRow.kind, id, { status: this.newStatus } as any);
     if (!obs) { this.isSaving = false; return; }
     obs.subscribe({
       next: () => {
@@ -364,18 +364,18 @@ export class ReportingComponent implements OnInit, OnDestroy {
 
   private getUpdateObservable(kind: ReportKind, id: string, data: any): Observable<any> {
     switch (kind) {
-      case 'Crise':       return this.crisisService.update(id, data);
-      case 'Offre':       return this.offerService.update(id, data);
-      case 'Demande':     return this.requestService.update(id, data);
+      case 'Crisis':       return this.crisisService.update(id, data);
+      case 'Offer':       return this.offerService.update(id, data);
+      case 'Request':     return this.requestService.update(id, data);
       case 'Information': return this.informationService.update(id, data);
     }
   }
 
   private getDeleteObservable(kind: ReportKind, id: string): Observable<any> {
     switch (kind) {
-      case 'Crise':       return this.crisisService.delete(id);
-      case 'Offre':       return this.offerService.delete(id);
-      case 'Demande':     return this.requestService.delete(id);
+      case 'Crisis':       return this.crisisService.delete(id);
+      case 'Offer':       return this.offerService.delete(id);
+      case 'Request':     return this.requestService.delete(id);
       case 'Information': return this.informationService.delete(id);
     }
   }
@@ -388,11 +388,11 @@ export class ReportingComponent implements OnInit, OnDestroy {
     const rows = this.filteredRows;
     const headers = ['ID','Type','Titre','Contact','Email','Téléphone','Statut','Date','Date expiration','Latitude','Longitude','Crise','Auteur'];
     const lines = rows.map(r => [
-      r.id, r.kind, r.titre, r.contact, r.email,
-      r.telephone ?? '', r.statut,
+      r.id, r.kind, r.title, r.contact, r.email,
+      r.telephone ?? '', r.status,
       this.fmtDate(r.date), r.dateExp ? this.fmtDate(r.dateExp) : '',
       r.latitude ?? '', r.longitude ?? '',
-      r.crise ?? '', r.auteur ?? '',
+      r.crisis ?? '', r.author ?? '',
     ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(','));
 
     const csv = [headers.join(','), ...lines].join('\n');
@@ -406,8 +406,8 @@ export class ReportingComponent implements OnInit, OnDestroy {
   exportRow(row: ReportRow, event: Event): void {
     event.stopPropagation();
     const headers = ['ID','Type','Titre','Contact','Email','Téléphone','Statut','Date','Latitude','Longitude'];
-    const values  = [row.id, row.kind, row.titre, row.contact, row.email,
-                     row.telephone ?? '', row.statut, this.fmtDate(row.date),
+    const values  = [row.id, row.kind, row.title, row.contact, row.email,
+                     row.telephone ?? '', row.status, this.fmtDate(row.date),
                      row.latitude ?? '', row.longitude ?? ''];
     const csv = [headers.join(','), values.map(v => `"${v}"`).join(',')].join('\n');
     const a   = document.createElement('a');
@@ -424,36 +424,36 @@ export class ReportingComponent implements OnInit, OnDestroy {
   closeAll(): void {
     this.showDetailModal = this.showDeleteModal = this.showStatusModal = false;
     this.selectedRow = null;
-    this.newStatut   = '';
+    this.newStatus   = '';
   }
 
   kindIcon(kind: ReportKind): string {
-    return ({ Crise: 'local_fire_department', Offre: 'volunteer_activism',
-              Demande: 'emergency', Information: 'info' })[kind];
+    return ({ Crisis: 'local_fire_department', Offer: 'volunteer_activism',
+              Request: 'emergency', Information: 'info' })[kind];
   }
 
   kindClass(kind: ReportKind): string {
-    return ({ Crise: 'kind-crisis', Offre: 'kind-offer',
-              Demande: 'kind-request', Information: 'kind-info' })[kind];
+    return ({ Crisis: 'kind-crisis', Offer: 'kind-offer',
+              Request: 'kind-request', Information: 'kind-info' })[kind];
   }
 
-  statutClass(s: Statut): string {
+  statusClass(s: Status): string {
     return ({
-      [Statut.NON_TRAITEE]:  'stat-urgent',
-      [Statut.EN_COURS]:     'stat-encours',
-      [Statut.TRAITEE]:      'stat-traitee',
-      [Statut.DISPONIBLE]:   'stat-dispo',
-      [Statut.INDISPONIBLE]: 'stat-indispo',
+      [Status.UNPROCESSED]:  'stat-urgent',
+      [Status.IN_PROGRESS]:     'stat-encours',
+      [Status.PROCESSED]:      'stat-traitee',
+      [Status.AVAILABLE]:   'stat-dispo',
+      [Status.UNAVAILABLE]: 'stat-indispo',
     })[s] ?? '';
   }
 
-  statutLabel(s: Statut): string {
+  statusLabel(s: Status): string {
     return ({
-      [Statut.NON_TRAITEE]:  'Non traitée',
-      [Statut.EN_COURS]:     'En cours',
-      [Statut.TRAITEE]:      'Traitée',
-      [Statut.DISPONIBLE]:   'Disponible',
-      [Statut.INDISPONIBLE]: 'Indisponible',
+      [Status.UNPROCESSED]:  'Non traitée',
+      [Status.IN_PROGRESS]:     'En cours',
+      [Status.PROCESSED]:      'Traitée',
+      [Status.AVAILABLE]:   'Disponible',
+      [Status.UNAVAILABLE]: 'Indisponible',
     })[s] ?? s;
   }
 
@@ -480,17 +480,17 @@ export class ReportingComponent implements OnInit, OnDestroy {
   get countByKind(): Record<string, number> {
     return {
       ALL:         this.allRows.length,
-      Crise:       this.rawCrises.length,
-      Offre:       this.rawOffres.length,
-      Demande:     this.rawDemandes.length,
+      Crisis:       this.rawCrises.length,
+      Offer:       this.rawOffers.length,
+      Request:     this.rawRequests.length,
       Information: this.rawInformations.length,
     };
   }
 
-  isCrise(r: ReportRow['_raw']): r is Crise         { return 'nom'              in r; }
-  isOffre(r: ReportRow['_raw']): r is Offre          { return 'prenom_offre'     in r; }
-  isDemande(r: ReportRow['_raw']): r is Demande      { return 'prenom_demande'   in r; }
-  isInfo(r: ReportRow['_raw']): r is Information     { return 'prenom_information' in r; }
+  isCrisis(r: ReportRow['_raw']): r is Crisis         { return 'name'              in r; }
+  isOffer(r: ReportRow['_raw']): r is Offer          { return 'first_name_offer'     in r; }
+  isDemande(r: ReportRow['_raw']): r is Request      { return 'first_name_request'   in r; }
+  isInfo(r: ReportRow['_raw']): r is Information     { return 'first_name_information' in r; }
 
   private showSuccess(msg: string): void {
     this.successMessage = msg;

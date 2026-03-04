@@ -1,40 +1,40 @@
 import { GeoPoint } from "./geopoint.model";
-import { Status, Statut } from "./status.model";
+import { Status } from "./status.model";
 
-export interface TypeOffre {
+export interface OfferType {
   id: string;
   type: string;
   description: string;
 }
 
-export interface Offre {
+export interface Offer {
   id: string;                           // UUID
-  titre: string;
+  title: string;
   photo: string | null;
-  localisation: GeoPoint;
+  location: GeoPoint;
   latitude?: number;
   longitude?: number;
-  prenom_offre: string;
-  nom_offre: string;
-  email_offre: string;
-  date_creation: string;
-  date_expiration: string | null;
-  statut: Statut;
-  type_offre: string;                  // UUID du TypeOffre (FK)
-  crise: string | null;
-  auteur: string | null;
+  first_name_offer: string;
+  last_name_offer: string;
+  email_offer: string;
+  created_at: string;
+  expires_at: string | null;
+  status: Status;
+  offer_type: string;                   // UUID du OfferType (FK)
+  crisis: string | null;
+  author: string | null;
 }
 
-export interface OffrePayload {
-  titre: string;
-  prenom_offre: string;
-  nom_offre: string;
-  email_offre: string;
+export interface OfferPayload {
+  title: string;
+  first_name_offer: string;
+  last_name_offer: string;
+  email_offer: string;
   latitude: number;
   longitude: number;
-  type_offre: string;
-  statut?: Statut;
-  date_expiration?: string | null;
-  crise?: string | null;
+  offer_type: string;
+  status?: Status;
+  expires_at?: string | null;
+  crisis?: string | null;
   photo?: File;
 }

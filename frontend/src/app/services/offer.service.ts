@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { map, Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
-import { Offre, OffrePayload, TypeOffre } from '../shared/models/offer.model';
+import { Offer, OfferPayload, OfferType } from '../shared/models/offer.model';
 import { geoPointToLatLng, latLngToGeoJson } from '../shared/models/geopoint.model';
 import { StatsResponse } from '../shared/models/api.model';
 
@@ -16,25 +16,25 @@ export class OfferService {
 
   constructor(private http: HttpClient) {}
 
-  getTypes(): Observable<TypeOffre[]> {
-    return this.http.get<TypeOffre[]>(`${this.typeUrl}/`);
+  getTypes(): Observable<OfferType[]> {
+    return this.http.get<OfferType[]>(`${this.typeUrl}/`);
   }
 
-  getAll(params?: Record<string, string>): Observable<Offre[]> {
+  getAll(params?: Record<string, string>): Observable<Offer[]> {
     return this.http
-      .get<Offre[]>(`${this.url}/`, { params: this.toParams(params) })
+      .get<Offer[]>(`${this.url}/`, { params: this.toParams(params) })
       .pipe(map(list => list.map(this.normalize)));
   }
 
   /** GET /api/offres/my_offres/ */
-  getMines(email: string): Observable<Offre[]> {
+  getMines(email: string): Observable<Offer[]> {
       // return this.getAll({ auteur: userId });
       return this.getAll({ auteur_email: email });
   }
 
-  getById(id: string): Observable<Offre> {
+  getById(id: string): Observable<Offer> {
     return this.http
-      .get<Offre>(`${this.url}/${id}/`)
+      .get<Offer>(`${this.url}/${id}/`)
       .pipe(map(this.normalize));
   }
 
@@ -49,39 +49,39 @@ export class OfferService {
     );
   }
   
-  create(data: Partial<Offre> | FormData): Observable<Offre> {
-    return this.http.post<Offre>(`${this.url}/`, data);
+  create(data: Partial<Offer> | FormData): Observable<Offer> {
+    return this.http.post<Offer>(`${this.url}/`, data);
   }
 
-  update(id: string, data: Partial<Offre> | FormData): Observable<Offre> {
-    return this.http.put<Offre>(`${this.url}/${id}/`, data);
+  update(id: string, data: Partial<Offer> | FormData): Observable<Offer> {
+    return this.http.put<Offer>(`${this.url}/${id}/`, data);
   }
 
   delete(id: string): Observable<void> {
     return this.http.delete<void>(`${this.url}/${id}/`);
   }
 
-  private normalize = (o: any): Offre => {
-    if (o.localisation?.coordinates) {
-      return { ...o, ...geoPointToLatLng(o.localisation) };
+  private normalize = (o: any): Offer => {
+    if (o.location?.coordinates) {
+      return { ...o, ...geoPointToLatLng(o.location) };
     }
     return o;
   };
 
-  private toFormData(p: Partial<OffrePayload>): FormData {
+  private toFormData(p: Partial<OfferPayload>): FormData {
     const fd = new FormData();
-    const textFields: (keyof OffrePayload)[] = [
-      'titre', 'prenom_offre', 'nom_offre',
-      'email_offre', 'type_offre', 'crise', 'date_expiration'
+    const textFields: (keyof OfferPayload)[] = [
+      'title', 'first_name_offer', 'last_name_offer',
+      'email_offer', 'offer_type', 'crisis', 'expires_at'
     ];
     textFields.forEach(f => {
       if (p[f] != null) fd.append(f, String(p[f]));
     });
 
-    fd.append('statut', p.statut ?? 'DISPONIBLE');
+    fd.append('status', p.status ?? 'DISPONIBLE');
 
     if (p.latitude != null && p.longitude != null) {
-      fd.append('localisation', latLngToGeoJson(p.latitude, p.longitude));
+      fd.append('location', latLngToGeoJson(p.latitude, p.longitude));
     }
     if (p.photo) fd.append('photo', p.photo);
 

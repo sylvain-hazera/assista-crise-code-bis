@@ -3,13 +3,13 @@ import { Injectable } from '@angular/core';
 import { Router } from '@angular/router';
 import { BehaviorSubject, catchError, delay, Observable, of, tap, throwError } from 'rxjs';
 import { environment } from '../../../environments/environment';
-import { Utilisateur, RoleUtilisateur, UtilisateurPayload } from '../../shared/models/user.model';
+import { User, UserRole, UserPayload } from '../../shared/models/user.model';
 
 // interface RegisterRequest {
 //   username: string;
 //   email: string;
 //   password: string;
-//   type: string;  // RoleUtilisateur
+//   type: string;  // UserRole
 //   telephone_utilisateur: string;
 //   last_name: string;
 //   first_name?: string;
@@ -21,7 +21,7 @@ import { Utilisateur, RoleUtilisateur, UtilisateurPayload } from '../../shared/m
 // }
 
 // interface AuthResponse {
-//   user: Utilisateur;
+//   user: User;
 //   token: string;
 //   message?: string;
 // }
@@ -105,19 +105,19 @@ import { Utilisateur, RoleUtilisateur, UtilisateurPayload } from '../../shared/m
 //     const user = this.currentUserSubject.value;
 //     if (!user) return false;
     
-//     return user.userType === RoleUtilisateur.Admin || 
-//           user.userType === RoleUtilisateur.Rescue || 
-//           user.userType === RoleUtilisateur.Organization;
+//     return user.userType === UserRole.Admin || 
+//           user.userType === UserRole.Rescue || 
+//           user.userType === UserRole.Organization;
 //   }
 
 //   isSysAdmin(): boolean {
 //     const user = this.currentUserSubject.value;
-//     return user ? user.userType === RoleUtilisateur.Admin : false;
+//     return user ? user.userType === UserRole.Admin : false;
 //   }
 
 
 //   // Obtenir l'utilisateur actuel
-//   getCurrentUser(): Utilisateur | null {
+//   getCurrentUser(): User | null {
 //     return this.currentUserSubject.value;
 //   }
 
@@ -127,8 +127,8 @@ import { Utilisateur, RoleUtilisateur, UtilisateurPayload } from '../../shared/m
 //   }
 
 //   // Mettre à jour le profil
-//   updateProfile(data: Partial<Utilisateur>): Observable<Utilisateur> {
-//     return this.http.put<Utilisateur>(`${this.apiUrl}/profile`, data)
+//   updateProfile(data: Partial<User>): Observable<User> {
+//     return this.http.put<User>(`${this.apiUrl}/profile`, data)
 //       .pipe(
 //         tap(user => {
 //           this.currentUserSubject.next(user);
@@ -168,12 +168,12 @@ import { Utilisateur, RoleUtilisateur, UtilisateurPayload } from '../../shared/m
 //       const rawUser = response.user as any;
 
 //       // 2. On crée un objet propre qui respecte l'interface Utilisateur (camelCase)
-//       const mappedUser: Utilisateur = {
+//       const mappedUser: User = {
 //         ...rawUser, // Garde les champs déjà corrects (id, email, etc.)
 //         pseudo: rawUser.username || rawUser.pseudo,
 //         lastName: rawUser.last_name || rawUser.lastName,
 //         firstName: rawUser.first_name || rawUser.firstName,
-//         phone: rawUser.telephone_utilisateur || rawUser.phone,
+//         phone: rawUser.phone_number || rawUser.phone,
 //         postalCode: rawUser.postal_code || rawUser.postalCode,
 //         // Utilisation du mapper de rôle que nous avons vu précédemment
 //         userType: this.mapBackendRoleToEnum(rawUser.type || rawUser.userType)
@@ -188,14 +188,14 @@ import { Utilisateur, RoleUtilisateur, UtilisateurPayload } from '../../shared/m
 //   }
 
 //   // Ajoute cette petite fonction helper dans AuthService pour le rôle
-//   private mapBackendRoleToEnum(backendRole: string): RoleUtilisateur {
-//     const mapping: Record<string, RoleUtilisateur> = {
-//       'UTIL_SIMPLE': RoleUtilisateur.Individual,
-//       'AUT_LOCALE': RoleUtilisateur.Organization,
-//       'SECOURS': RoleUtilisateur.Rescue,
-//       'ADMIN': RoleUtilisateur.Admin
+//   private mapBackendRoleToEnum(backendRole: string): UserRole {
+//     const mapping: Record<string, UserRole> = {
+//       'UTIL_SIMPLE': UserRole.Individual,
+//       'AUT_LOCALE': UserRole.Organization,
+//       'SECOURS': UserRole.Rescue,
+//       'ADMIN': UserRole.Admin
 //     };
-//     return mapping[backendRole] || RoleUtilisateur.Individual;
+//     return mapping[backendRole] || UserRole.Individual;
 //   }
 
 //   // Nettoyer les données d'authentification
@@ -229,7 +229,7 @@ interface TokenResponse {
 }
 
 interface LoginResponse extends TokenResponse {
-  user: Utilisateur;
+  user: User;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -271,17 +271,17 @@ export class AuthService {
   /**
    * POST /api/auth/register/
    */
-  register(payload: UtilisateurPayload & { email: string; password: string }): Observable<Utilisateur> {
-    return this.http.post<Utilisateur>(`${this.url}/register/`, payload);
+  register(payload: UserPayload & { email: string; password: string }): Observable<User> {
+    return this.http.post<User>(`${this.url}/register/`, payload);
   }
 
   /**
    * GET /api/auth/me/
    * Récupère le profil de l'utilisateur connecté depuis le backend.
    */
-  fetchMe(): Observable<Utilisateur> {
+  fetchMe(): Observable<User> {
     return this.http
-      .get<Utilisateur>(`${this.url}/me/`)
+      .get<User>(`${this.url}/me/`)
       .pipe(tap(user => localStorage.setItem('current_user', JSON.stringify(user))));
   }
 
@@ -289,14 +289,14 @@ export class AuthService {
    * PATCH /api/auth/me/
    * Met à jour le profil (photo via FormData si besoin).
    */
-  updateProfile(payload: UtilisateurPayload): Observable<Utilisateur> {
+  updateProfile(payload: UserPayload): Observable<User> {
     // Si photo présente → FormData ; sinon JSON
     const body = payload.photo
       ? this.profileToFormData(payload)
       : payload;
 
     return this.http
-      .patch<Utilisateur>(`${this.url}/me/`, body)
+      .patch<User>(`${this.url}/me/`, body)
       .pipe(tap(user => localStorage.setItem('current_user', JSON.stringify(user))));
   }
 
@@ -317,9 +317,9 @@ export class AuthService {
     localStorage.removeItem('current_user');
   }
 
-  getCurrentUser(): Utilisateur | null {
+  getCurrentUser(): User | null {
     const raw = localStorage.getItem('current_user');
-    return raw ? (JSON.parse(raw) as Utilisateur) : null;
+    return raw ? (JSON.parse(raw) as User) : null;
   }
 
   getToken(): string | null {
@@ -327,9 +327,9 @@ export class AuthService {
   }
 
   isAdmin(): boolean {
-    return this.getCurrentUser()?.type === RoleUtilisateur.SECOURS || 
-      this.getCurrentUser()?.type === RoleUtilisateur.AUT_LOCALE|| 
-      this.getCurrentUser()?.type === RoleUtilisateur.ADMIN;
+    return this.getCurrentUser()?.type === UserRole.RESCUE || 
+      this.getCurrentUser()?.type === UserRole.LOCAL_AUTH|| 
+      this.getCurrentUser()?.type === UserRole.ADMIN;
   }
 
   isSysAdmin(): boolean {
@@ -341,16 +341,16 @@ export class AuthService {
   }
 
   isEnable(): boolean {
-    return this.getCurrentUser()?.enable === true;
+    return this.getCurrentUser()?.enabled === true;
   }
 
-  private profileToFormData(payload: UtilisateurPayload): FormData {
+  private profileToFormData(payload: UserPayload): FormData {
     const fd = new FormData();
     if (payload.username)              fd.append('username', payload.username);
     if (payload.email)                 fd.append('email', payload.email);
     if (payload.first_name)            fd.append('first_name', payload.first_name);
     if (payload.last_name)             fd.append('last_name', payload.last_name);
-    if (payload.telephone_utilisateur) fd.append('telephone_utilisateur', payload.telephone_utilisateur);
+    if (payload.phone_number) fd.append('phone_number', payload.phone_number);
     if (payload.photo)                 fd.append('photo', payload.photo);
     return fd;
   }

@@ -7,9 +7,9 @@ import { CommonModule } from '@angular/common';
 import { OfferService } from '../../../services/offer.service';
 import { LocationService, Department, Commune } from '../../../services/location.service';
 import { CrisisService } from '../../../services/crisis.service';
-import { Crise } from '../../../shared/models/crisis.model';
+import { Crisis } from '../../../shared/models/crisis.model';
 import { AuthService } from '../../../auth/services/auth.service';
-import { RoleUtilisateur, Utilisateur } from '../../../shared/models/user.model';
+import { UserRole, User } from '../../../shared/models/user.model';
 
 @Component({
   selector: 'app-request-help-form',
@@ -19,7 +19,7 @@ import { RoleUtilisateur, Utilisateur } from '../../../shared/models/user.model'
   styleUrl: './propose-help-form.component.scss'
 })
 export class ProposeHelpFormComponent implements OnInit {
-  currentUser : Utilisateur | null = null;
+  currentUser : User | null = null;
   requestForm!: FormGroup;
   informationForm!: FormGroup;
   selectedFile: File | null = null;
@@ -52,9 +52,9 @@ export class ProposeHelpFormComponent implements OnInit {
 
   personTypeOptions: { value: string; label: string }[] = [
     { value: '', label: 'Dropdown' },
-    { value: RoleUtilisateur.UTIL_SIMPLE, label: 'Particulier' },
-    { value: RoleUtilisateur.AUT_LOCALE , label: 'Organisation' },
-    { value: RoleUtilisateur.SECOURS , label: 'Secours organisés' },
+    { value: UserRole.SIMPLE_USER, label: 'Particulier' },
+    { value: UserRole.LOCAL_AUTH , label: 'Organisation' },
+    { value: UserRole.RESCUE , label: 'Secours organisés' },
   ];
 
   constructor(
@@ -102,13 +102,13 @@ export class ProposeHelpFormComponent implements OnInit {
 
   loadActiveCrises(): void {
     this.crisisService.getAll().subscribe({
-      next: (crises: Crise[]) => {
-        const activeCrises = crises.filter(c => c.statut !== 'TRAITEE');
+      next: (crises: Crisis[]) => {
+        const activeCrises = crises.filter(c => c.status !== 'TRAITEE');
         this.crisisOptions = [
           { value: '', label: 'Aucune crise en rapport' },
           ...activeCrises.map(c => ({
             value: c.id,
-            label: `${c.nom} - ${c.type}`
+            label: `${c.name} - ${c.type}`
           }))
         ];
         this.filteredCrisisOptions = [...this.crisisOptions];
@@ -136,7 +136,7 @@ export class ProposeHelpFormComponent implements OnInit {
       lastName: [this.currentUser?.last_name, Validators.required],
       firstName: [this.currentUser?.first_name, Validators.required],
       email: [this.currentUser?.email, [Validators.required, Validators.email]],
-      phoneNumber: [this.currentUser?.telephone_utilisateur, [Validators.required, Validators.pattern(/^\+?\d{10,15}$/)]]
+      phoneNumber: [this.currentUser?.phone_number, [Validators.required, Validators.pattern(/^\+?\d{10,15}$/)]]
     });
   }
 
@@ -175,23 +175,23 @@ export class ProposeHelpFormComponent implements OnInit {
       const formData = new FormData();
       
       // Champs du modèle Offre Django
-      formData.append('prenom_offre', this.informationForm.get('firstName')?.value);
-      formData.append('nom_offre', this.informationForm.get('lastName')?.value);
-      formData.append('email_offre', this.informationForm.get('email')?.value);
-      formData.append('telephone_offre', this.informationForm.get('phoneNumber')?.value);
+      formData.append('first_name_offer', this.informationForm.get('firstName')?.value);
+      formData.append('last_name_offer', this.informationForm.get('lastName')?.value);
+      formData.append('email_offer', this.informationForm.get('email')?.value);
+      formData.append('phone_offer', this.informationForm.get('phoneNumber')?.value);
       
       // Titre basé sur la crise sélectionnée
       const crisisId = this.requestForm.get('crisisId')?.value;
       const crisisLabel = this.crisisOptions.find(c => c.value === crisisId)?.label || 'non liée à une crise';
       const titre = `Offre d'aide - ${crisisLabel}`;
-      formData.append('titre', titre);
+      formData.append('title', titre);
       
       // Localisation au format GeoJSON Point
       const localisation = {
         type: 'Point',
         coordinates: [this.longitude, this.latitude]
       };
-      formData.append('localisation', JSON.stringify(localisation));
+      formData.append('location', JSON.stringify(localisation));
       
       // Type offre - Utiliser le premier type disponible
       const firstTypeId = Array.from(this.typesOffreMap.values())[0];
@@ -199,15 +199,15 @@ export class ProposeHelpFormComponent implements OnInit {
         alert('Type d\'offre non trouvé. Veuillez réessayer ou contacter le support.');
         return;
       }
-      formData.append('type_offre', firstTypeId);
+      formData.append('offer_type', firstTypeId);
       
       // Crise (nullable)
       if (crisisId) {
-        formData.append('crise', crisisId);
+        formData.append('crisis', crisisId);
       }
       
-      formData.append('statut', 'DISPONIBLE');
-      formData.append('auteur', this.currentUser?.id!);
+      formData.append('status', 'DISPONIBLE');
+      formData.append('author', this.currentUser?.id!);
 
       
       // Photo si présente
@@ -259,7 +259,7 @@ export class ProposeHelpFormComponent implements OnInit {
   }
 
   selectDepartment(department: Department): void {
-    this.departmentSearch = department.nom;
+    this.departmentSearch = department.name;
     this.requestForm.patchValue({ department: department.code });
     this.showDepartmentDropdown = false;
     
@@ -287,7 +287,7 @@ export class ProposeHelpFormComponent implements OnInit {
   }
 
   selectCommune(commune: Commune): void {
-    this.communeSearch = commune.nom;
+    this.communeSearch = commune.name;
     this.requestForm.patchValue({ commune: commune.code });
     this.showCommuneDropdown = false;
   }

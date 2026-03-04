@@ -4,7 +4,7 @@ import { FormsModule, ReactiveFormsModule, FormBuilder, FormGroup, Validators } 
 import { RouterLink } from '@angular/router';
 import { Subject, takeUntil, debounceTime, distinctUntilChanged } from 'rxjs';
 import { UserService } from '../../services/user.service';
-import { Utilisateur, RoleUtilisateur } from '../../shared/models/user.model';
+import { User, UserRole } from '../../shared/models/user.model';
 import { AuthService } from '../../auth/services/auth.service';
 
 @Component({
@@ -23,13 +23,13 @@ export class UsersComponent implements OnInit, OnDestroy {
   successMessage = '';
   
   // Données
-  users: Utilisateur[] = [];
-  filteredUsers: Utilisateur[] = [];
-  selectedUser: Utilisateur | null = null;
+  users: User[] = [];
+  filteredUsers: User[] = [];
+  selectedUser: User | null = null;
   
   // Filtres
   searchTerm = '';
-  selectedRole: RoleUtilisateur | 'ALL' = 'ALL';
+  selectedRole: UserRole | 'ALL' = 'ALL';
   selectedStatus: 'ALL' | 'ACTIVE' | 'INACTIVE' = 'ALL';
   showFilters = false;
   
@@ -47,10 +47,10 @@ export class UsersComponent implements OnInit, OnDestroy {
   
   // Options pour les selects
   userRoles = [
-    { value: RoleUtilisateur.ADMIN, label: 'Administrateur' },
-    { value: RoleUtilisateur.AUT_LOCALE, label: 'Autorité locale' },
-    { value: RoleUtilisateur.SECOURS, label: 'Secours' },
-    { value: RoleUtilisateur.UTIL_SIMPLE, label: 'Utilisateur simple' }
+    { value: UserRole.ADMIN, label: 'Administrateur' },
+    { value: UserRole.LOCAL_AUTH, label: 'Autorité locale' },
+    { value: UserRole.RESCUE, label: 'Secours' },
+    { value: UserRole.SIMPLE_USER, label: 'Utilisateur simple' }
   ];
 
   constructor(
@@ -81,7 +81,7 @@ export class UsersComponent implements OnInit, OnDestroy {
       first_name: ['', Validators.required],
       last_name: ['', Validators.required],
       telephone_utilisateur: ['', [Validators.pattern('^[0-9+\\s-]{10,}$')]],
-      type: [RoleUtilisateur.UTIL_SIMPLE, Validators.required],
+      type: [UserRole.SIMPLE_USER, Validators.required],
       password: ['', [Validators.minLength(8)]],
       confirmPassword: ['']
     }, { validator: this.passwordMatchValidator });
@@ -146,7 +146,7 @@ export class UsersComponent implements OnInit, OnDestroy {
         user.last_name?.toLowerCase().includes(term) ||
         user.email?.toLowerCase().includes(term) ||
         user.username?.toLowerCase().includes(term) ||
-        user.telephone_utilisateur?.includes(term)
+        user.phone_number?.includes(term)
       );
     }
 
@@ -184,7 +184,7 @@ export class UsersComponent implements OnInit, OnDestroy {
     this.isEditMode = false;
     this.selectedUser = null;
     this.userForm.reset({
-      type: RoleUtilisateur.UTIL_SIMPLE
+      type: UserRole.SIMPLE_USER
     });
     this.previewUrl = null;
     this.selectedFile = null;
@@ -194,7 +194,7 @@ export class UsersComponent implements OnInit, OnDestroy {
   /**
    * Ouvre la modale pour éditer un utilisateur
    */
-  openEditModal(user: Utilisateur): void {
+  openEditModal(user: User): void {
     this.isEditMode = true;
     this.selectedUser = user;
     
@@ -203,7 +203,7 @@ export class UsersComponent implements OnInit, OnDestroy {
       email: user.email,
       first_name: user.first_name,
       last_name: user.last_name,
-      telephone_utilisateur: user.telephone_utilisateur,
+      telephone_utilisateur: user.phone_number,
       type: user.type
     });
     
@@ -276,7 +276,7 @@ export class UsersComponent implements OnInit, OnDestroy {
     if (formValue.email) formData.append('email', formValue.email);
     if (formValue.first_name) formData.append('first_name', formValue.first_name);
     if (formValue.last_name) formData.append('last_name', formValue.last_name);
-    if (formValue.telephone_utilisateur) formData.append('telephone_utilisateur', formValue.telephone_utilisateur);
+    if (formValue.phone_number) formData.append('phone_number', formValue.phone_number);
     if (formValue.type) formData.append('type', formValue.type);
 
     // Ajouter le mot de passe seulement en création ou si modifié
@@ -330,7 +330,7 @@ export class UsersComponent implements OnInit, OnDestroy {
   /**
    * Supprime un utilisateur après confirmation
    */
-  deleteUser(user: Utilisateur): void {
+  deleteUser(user: User): void {
     if (!confirm(`Êtes-vous sûr de vouloir supprimer l'utilisateur ${user.first_name} ${user.last_name} ?`)) {
       return;
     }
@@ -356,9 +356,9 @@ export class UsersComponent implements OnInit, OnDestroy {
   /**
    * Valide un utilisateur (changement de rôle)
    */
-  validateUser(user: Utilisateur): void {
+  validateUser(user: User): void {
     // Cette méthode change le rôle d'UTIL_SIMPLE vers un rôle plus élevé
-    if (user.type !== RoleUtilisateur.UTIL_SIMPLE) {
+    if (user.type !== UserRole.SIMPLE_USER) {
       alert('Cet utilisateur est déjà validé');
       return;
     }
@@ -366,10 +366,10 @@ export class UsersComponent implements OnInit, OnDestroy {
     const newRole = prompt('Choisir le nouveau rôle (ADMIN, AUT_LOCALE, SECOURS):');
     if (!newRole) return;
 
-    const roleMap: { [key: string]: RoleUtilisateur } = {
-      'ADMIN': RoleUtilisateur.ADMIN,
-      'AUT_LOCALE': RoleUtilisateur.AUT_LOCALE,
-      'SECOURS': RoleUtilisateur.SECOURS
+    const roleMap: { [key: string]: UserRole } = {
+      'ADMIN': UserRole.ADMIN,
+      'AUT_LOCALE': UserRole.LOCAL_AUTH,
+      'SECOURS': UserRole.RESCUE
     };
 
     if (!roleMap[newRole]) {
@@ -400,16 +400,16 @@ export class UsersComponent implements OnInit, OnDestroy {
   /**
    * Active/désactive un utilisateur
    */
-  toggleUserStatus(user: Utilisateur): void {
+  toggleUserStatus(user: User): void {
     const formData = new FormData();
-    formData.append('enable', (!user.enable).toString());
-    formData.append('validateur', this.authService.getCurrentUser()!.id.toString());
+    formData.append('enable', (!user.enabled).toString());
+    formData.append('validator', this.authService.getCurrentUser()!.id.toString());
     
     this.userService.update(user.id, formData)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: () => {
-          this.successMessage = `Utilisateur ${user.enable ? 'désactivé' : 'activé'} avec succès`;
+          this.successMessage = `Utilisateur ${user.enabled ? 'désactivé' : 'activé'} avec succès`;
           this.loadUsers();
           setTimeout(() => this.successMessage = '', 3000);
         },
@@ -432,7 +432,7 @@ export class UsersComponent implements OnInit, OnDestroy {
   /**
    * Obtient le libellé d'un rôle
    */
-  getRoleLabel(role: RoleUtilisateur): string {
+  getRoleLabel(role: UserRole): string {
     const roleObj = this.userRoles.find(r => r.value === role);
     return roleObj ? roleObj.label : role;
   }
@@ -440,12 +440,12 @@ export class UsersComponent implements OnInit, OnDestroy {
   /**
    * Obtient la classe CSS pour le badge de rôle
    */
-  getRoleBadgeClass(role: RoleUtilisateur): string {
+  getRoleBadgeClass(role: UserRole): string {
     const classes = {
-      [RoleUtilisateur.ADMIN]: 'badge-admin',
-      [RoleUtilisateur.AUT_LOCALE]: 'badge-local',
-      [RoleUtilisateur.SECOURS]: 'badge-rescue',
-      [RoleUtilisateur.UTIL_SIMPLE]: 'badge-simple'
+      [UserRole.ADMIN]: 'badge-admin',
+      [UserRole.LOCAL_AUTH]: 'badge-local',
+      [UserRole.RESCUE]: 'badge-rescue',
+      [UserRole.SIMPLE_USER]: 'badge-simple'
     };
     return classes[role] || 'badge-default';
   }
@@ -453,7 +453,7 @@ export class UsersComponent implements OnInit, OnDestroy {
   /**
    * Obtient les éléments paginés
    */
-  get paginatedUsers(): Utilisateur[] {
+  get paginatedUsers(): User[] {
     const start = (this.currentPage - 1) * this.itemsPerPage;
     const end = start + this.itemsPerPage;
     return this.filteredUsers.slice(start, end);

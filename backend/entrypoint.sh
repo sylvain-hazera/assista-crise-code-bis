@@ -20,7 +20,7 @@ EOF
 
 echo "Creating default Request Types..."
 python manage.py shell <<EOF
-from core.models import TypeDemande, TypeOffre, TypeInformation 
+from core.models import RequestType, OfferType, InformationType 
 
 types_demandes = [
     'Assistance immédiate',
@@ -50,19 +50,19 @@ types_informations = [
     'Autre'
 ]
 
-print("Creating TypeDemande...")
+print("Creating RequestType...")
 for t in types_demandes:
-    TypeDemande.objects.get_or_create(type=t)
+    RequestType.objects.get_or_create(type=t)
     print(f"  - {t}")
 
-print("Creating TypeOffre...")
+print("Creating OfferType...")
 for t in types_offres:
-    TypeOffre.objects.get_or_create(type=t)
+    OfferType.objects.get_or_create(type=t)
     print(f"  - {t}")
 
-print("Creating TypeInformation...")
+print("Creating InformationType...")
 for t in types_informations:
-    TypeInformation.objects.get_or_create(type=t)
+    InformationType.objects.get_or_create(type=t)
     print(f"  - {t}")
 
 EOF

@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { map, Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
-import { Demande, DemandePayload, TypeDemande } from '../shared/models/request.model';
+import { Request, RequestPayload, RequestType } from '../shared/models/request.model';
 import { StatsResponse } from '../shared/models/api.model';
 import { geoPointToLatLng, latLngToGeoJson } from '../shared/models/geopoint.model';
 
@@ -22,16 +22,16 @@ export class RequestService {
    * Liste des types pour peupler les <select>.
    * GET /api/types-demande/
    */
-  getTypes(): Observable<TypeDemande[]> {
-    return this.http.get<TypeDemande[]>(`${this.typeUrl}/`);
+  getTypes(): Observable<RequestType[]> {
+    return this.http.get<RequestType[]>(`${this.typeUrl}/`);
   }
 
   // ── LECTURE ──────────────────────────────────────────────────
 
   /** GET /api/demandes/?[params] */
-  getAll(params?: Record<string, string>): Observable<Demande[]> {
+  getAll(params?: Record<string, string>): Observable<Request[]> {
     return this.http
-      .get<Demande[]>(`${this.url}/`, { params: this.toParams(params) })
+      .get<Request[]>(`${this.url}/`, { params: this.toParams(params) })
       .pipe(map(list => list.map(this.normalize)));
   }
 
@@ -41,18 +41,18 @@ export class RequestService {
    * Django : @action(detail=False, url_path='my_requests')
    * L'authentification JWT identifie automatiquement l'utilisateur.
    */
-  getMines(email: string): Observable<Demande[]> {
+  getMines(email: string): Observable<Request[]> {
     // return this.http
-    //   .get<Demande[]>(`${this.url}/my_requests/`)
+    //   .get<Request[]>(`${this.url}/my_requests/`)
     //   .pipe(map(list => list.map(this.normalize)));
     // return this.getAll({ auteur: userId });
     return this.getAll({ auteur_email: email });
   }
 
   /** GET /api/demandes/<id>/ */
-  getById(id: string): Observable<Demande> {
+  getById(id: string): Observable<Request> {
     return this.http
-      .get<Demande>(`${this.url}/${id}/`)
+      .get<Request>(`${this.url}/${id}/`)
       .pipe(map(this.normalize));
   }
 
@@ -67,12 +67,12 @@ export class RequestService {
     );
   }
 
-  create(data: Partial<Demande> | FormData): Observable<Demande> {
-    return this.http.post<Demande>(`${this.url}/`, data);
+  create(data: Partial<Request> | FormData): Observable<Request> {
+    return this.http.post<Request>(`${this.url}/`, data);
   }
 
-  update(id: string, data: Partial<Demande> | FormData): Observable<Demande> {
-    return this.http.put<Demande>(`${this.url}/${id}/`, data);
+  update(id: string, data: Partial<Request> | FormData): Observable<Request> {
+    return this.http.put<Request>(`${this.url}/${id}/`, data);
   }
 
 
@@ -83,29 +83,29 @@ export class RequestService {
 
   // ── PRIVÉ ────────────────────────────────────────────────────
 
-  private normalize = (d: any): Demande => {
-    if (d.localisation?.coordinates) {
-      return { ...d, ...geoPointToLatLng(d.localisation) };
+  private normalize = (d: any): Request => {
+    if (d.location?.coordinates) {
+      return { ...d, ...geoPointToLatLng(d.location) };
     }
     return d;
   };
 
-  private toFormData(p: Partial<DemandePayload>): FormData {
+  private toFormData(p: Partial<RequestPayload>): FormData {
     const fd = new FormData();
     // Champs texte — on n'ajoute que ceux définis
-    const textFields: (keyof DemandePayload)[] = [
-      'titre', 'prenom_demande', 'nom_demande',
-      'email_demande', 'telephone_demande',
-      'type_demande', 'crise', 'date_expiration'
+    const textFields: (keyof RequestPayload)[] = [
+      'title', 'first_name_request', 'last_name_request',
+      'email_request', 'phone_request',
+      'request_type', 'crisis', 'expires_at'
     ];
     textFields.forEach(f => {
       if (p[f] != null) fd.append(f, String(p[f]));
     });
 
-    fd.append('statut', p.statut ?? 'NON_TRAITEE');
+    fd.append('status', p.status ?? 'NON_TRAITEE');
 
     if (p.latitude != null && p.longitude != null) {
-      fd.append('localisation', latLngToGeoJson(p.latitude, p.longitude));
+      fd.append('location', latLngToGeoJson(p.latitude, p.longitude));
     }
     if (p.photo) fd.append('photo', p.photo);
 
