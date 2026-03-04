@@ -280,6 +280,14 @@ class CrisisViewSet(viewsets.ModelViewSet):
     permission_classes = [AllowAny]
     filterset_class = AuthorEmailFilter
 
+    def perform_create(self, serializer):
+        # Si l'utilisateur est authentifié, on l'assigne comme auteur
+        if self.request.user.is_authenticated:
+            serializer.save(author=self.request.user)
+        else:
+            # Sinon on sauvegarde sans auteur (None)
+            serializer.save(author=None)
+
 class RequestViewSet(viewsets.ModelViewSet):
     queryset = Request.objects.all()
     serializer_class = RequestSerializer
@@ -288,7 +296,9 @@ class RequestViewSet(viewsets.ModelViewSet):
 
 
     def perform_create(self, serializer):
-        demande = serializer.save()
+        # Définir l'auteur si authentifié, sinon None
+        author = self.request.user if self.request.user.is_authenticated else None
+        demande = serializer.save(author=author)
         try:
             print(f"Tentative d'envoi de mail à {demande.email_demande}...")
             
@@ -316,10 +326,26 @@ class OfferViewSet(viewsets.ModelViewSet):
     permission_classes = [AllowAny]
     filterset_class = AuthorEmailFilter
 
+    def perform_create(self, serializer):
+        # Si user authentifié, il est autheur
+        if self.request.user.is_authenticated:
+            serializer.save(author=self.request.user)
+        else:
+            # Sinon il est none
+            serializer.save(author=None)
+
 class InformationViewSet(viewsets.ModelViewSet):
     queryset = Information.objects.all()
     serializer_class = InformationSerializer
     permission_classes = [AllowAny]
+
+    def perform_create(self, serializer):
+        # Si l'utilisateur est authentifié, on l'assigne comme auteur
+        if self.request.user.is_authenticated:
+            serializer.save(author=self.request.user)
+        else:
+            # Sinon on sauvegarde sans auteur (None)
+            serializer.save(author=None)
 
 # --- VIEWSETS SIMPLES POUR LES TYPES ---
 class RequestTypeViewSet(viewsets.ModelViewSet):
