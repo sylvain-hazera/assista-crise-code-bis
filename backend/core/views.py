@@ -331,7 +331,7 @@ class OfferViewSet(viewsets.ModelViewSet):
         if self.request.user.is_authenticated:
             serializer.save(author=self.request.user)
         else:
-            # Sinon il est none
+        # Sinon il est none
             serializer.save(author=None)
 
 class InformationViewSet(viewsets.ModelViewSet):
