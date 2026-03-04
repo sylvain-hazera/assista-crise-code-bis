@@ -12,12 +12,12 @@ from django.core.mail import send_mail
 from django_filters import rest_framework as filters
 from .models import (
     User, Crisis, Request, Offer, Information,
-    RequestType, OfferType, InformationType
+    RequestType, OfferType, InformationType, Team
 )
 from .serializers import (
     UserSerializer, CrisisSerializer, RequestSerializer,
     OfferSerializer, InformationSerializer,
-    RequestTypeSerializer, OfferTypeSerializer, InformationTypeSerializer
+    RequestTypeSerializer, OfferTypeSerializer, InformationTypeSerializer, TeamSerializer
 )
 
 class AuthorEmailFilter(filters.FilterSet):
@@ -309,6 +309,13 @@ class RequestViewSet(viewsets.ModelViewSet):
             
         except Exception as e:
             print(f"Erreur critique : L'envoi de l'email a échoué. Détails : {e}")
+
+class TeamViewSet(viewsets.ModelViewSet):
+    queryset           = Team.objects.prefetch_related(
+        'members', 'assigned_crises', 'assigned_offers', 'assigned_requests'
+    ).select_related('leader').all()
+    serializer_class   = TeamSerializer
+    permission_classes = [permissions.IsAuthenticated]
 
 class OfferViewSet(viewsets.ModelViewSet):
     queryset = Offer.objects.all()

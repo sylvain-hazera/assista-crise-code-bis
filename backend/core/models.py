@@ -256,3 +256,41 @@ class Offer(models.Model):
 
     def __str__(self) -> str:
         return self.title
+    
+class Team(models.Model):
+    """Équipes de gestion de crise"""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=100)
+    description = models.TextField(null=True, blank=True)
+    color = models.CharField(max_length=7, default='#3b82f6')  # hex color
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    leader = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="led_teams"
+    )
+    members = models.ManyToManyField(
+        User,
+        blank=True,
+        related_name="teams"
+    )
+    assigned_crises = models.ManyToManyField(
+        "Crisis",
+        blank=True,
+        related_name="assigned_teams"
+    )
+    assigned_offers = models.ManyToManyField(
+        "Offer",
+        blank=True,
+        related_name="assigned_teams"
+    )
+    assigned_requests = models.ManyToManyField(
+        "Request",
+        blank=True,
+        related_name="assigned_teams"
+    )
+
+    def __str__(self) -> str:
+        return self.name

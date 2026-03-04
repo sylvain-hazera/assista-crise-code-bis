@@ -46,7 +46,7 @@ export class AdminLayoutComponent implements OnInit {
     { icon: 'flag', label: 'Signalements', route: '/admin/signalements' },
     { icon: 'groups', label: 'Equipes', route: '/admin/equipes' },
     { icon: 'map', label: 'Carte', route: '/admin/carte' },
-    { icon: 'check_circle', label: 'Résultats', route: '/admin/resultats' },
+    // { icon: 'check_circle', label: 'Résultats', route: '/admin/resultats' },
     { icon: 'group', label: 'Utilisateurs', route: '/admin/utilisateurs' }
   ];
 
@@ -138,6 +138,8 @@ export class AdminLayoutComponent implements OnInit {
 
   logout(): void {
     this.authService.logout();
+    this.router.navigate(['/login']);
+    this.closeAllMenus();
   }
 
   onNavItemClick(): void {

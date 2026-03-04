@@ -2,7 +2,7 @@ from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from .models import (
     User, Crisis, Request, Offer, Information,
-    RequestType, OfferType, InformationType
+    RequestType, OfferType, InformationType, Team
 )
 
 class RequestTypeSerializer(serializers.ModelSerializer):
@@ -119,3 +119,29 @@ class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
         # On ajoute l'utilisateur sérialisé à la réponse
         data['user'] = UserSerializer(self.user).data
         return data
+
+class TeamSerializer(serializers.ModelSerializer):
+    member_ids       = serializers.PrimaryKeyRelatedField(
+        many=True, queryset=User.objects.all(), source='members', required=False
+    )
+    assigned_crisis_ids  = serializers.PrimaryKeyRelatedField(
+        many=True, queryset=Crisis.objects.all(), source='assigned_crises', required=False
+    )
+    assigned_offer_ids   = serializers.PrimaryKeyRelatedField(
+        many=True, queryset=Offer.objects.all(), source='assigned_offers', required=False
+    )
+    assigned_request_ids = serializers.PrimaryKeyRelatedField(
+        many=True, queryset=Request.objects.all(), source='assigned_requests', required=False
+    )
+
+    class Meta:
+        model  = Team
+        fields = [
+            'id', 'name', 'description', 'color', 'created_at',
+            'leader',
+            'member_ids',
+            'assigned_crisis_ids',
+            'assigned_offer_ids',
+            'assigned_request_ids',
+        ]
+        read_only_fields = ['id', 'created_at']

@@ -54,7 +54,7 @@ export class OfferService {
   }
 
   update(id: string, data: Partial<Offer> | FormData): Observable<Offer> {
-    return this.http.put<Offer>(`${this.url}/${id}/`, data);
+    return this.http.patch<Offer>(`${this.url}/${id}/`, data);
   }
 
   delete(id: string): Observable<void> {

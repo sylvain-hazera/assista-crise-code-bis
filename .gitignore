@@ -8,6 +8,7 @@
 Thumbs.db
 *.log
 *.tmp
+node_modules
 
 # ==========================================
 # 2. BACKEND PYTHON

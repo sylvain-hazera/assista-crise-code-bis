@@ -27,7 +27,7 @@ export class UserService {
   }
   
   update(id: string, data: Partial<User> | FormData): Observable<User> {
-    return this.http.put<User>(`${this.apiUrl}/users/${id}/`, data);
+    return this.http.patch<User>(`${this.apiUrl}/users/${id}/`, data);
   }
   
   delete(id: string): Observable<void> {

@@ -157,29 +157,29 @@
             <td class="actions-cell">
               <div class="action-buttons">
                 <!-- Validation pour les UTIL_SIMPLE -->
-                <button 
+                <!-- <button 
                   *ngIf="user.type === 'UTIL_SIMPLE'"
                   class="action-btn validate-btn" 
-                  (click)="validateUser(user)"
+                  (click)="upgradeUser(user)"
                   title="Valider l'utilisateur"
                 >
                   <span class="material-icons">verified</span>
-                </button>
+                </button> -->
 
                 <!-- Édition -->
-                <button class="action-btn edit-btn" (click)="openEditModal(user)" title="Modifier">
+                <!-- <button class="action-btn edit-btn" (click)="openEditModal(user)" title="Modifier">
                   <span class="material-icons">edit</span>
-                </button>
+                </button> -->
 
                 <!-- Activation/Désactivation -->
-                <!-- <button 
+                <button 
                   class="action-btn toggle-btn" 
                   [class.active]="user.enabled"
                   (click)="toggleUserStatus(user)"
                   [title]="user.enabled ? 'Désactiver' : 'Activer'"
                 >
                   <span class="material-icons">{{ user.enabled ? 'toggle_on' : 'toggle_off' }}</span>
-                </button> -->
+                </button>
 
                 <!-- Suppression -->
                 <button class="action-btn delete-btn" (click)="deleteUser(user)" title="Supprimer">
