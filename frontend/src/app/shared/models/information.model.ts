@@ -1,0 +1,41 @@
+import { GeoPoint } from "./geopoint.model";
+import { Status } from "./status.model";
+
+export interface InformationType {
+  id: string;
+  type: string;
+}
+
+export interface Information {
+  id: string;                           // UUID
+  title: string;
+  photo: string | null;
+  location: GeoPoint;
+  latitude?: number;
+  longitude?: number;
+  first_name_information: string;
+  last_name_information: string;
+  email_information: string;
+  phone_information: string;
+  created_at: string;
+  expires_at: string | null;
+  status: Status;
+  information_type: string;             // UUID du InformationType (FK)
+  crisis: string | null;
+  author: string | null;
+}
+
+export interface InformationPayload {
+  title: string;
+  first_name_information: string;
+  last_name_information: string;
+  email_information: string;
+  phone_information: string;
+  latitude: number;
+  longitude: number;
+  information_type: string;
+  status?: Status;
+  expires_at?: string | null;
+  crisis?: string | null;
+  photo?: File;
+}

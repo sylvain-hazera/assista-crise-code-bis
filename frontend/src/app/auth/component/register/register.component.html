@@ -30,7 +30,7 @@
               {{ option.label }}
             </option>
           </select>
-          <span class="material-symbols-outlined select-arrow">arrow_drop_down</span>
+          <span class="material-icons select-arrow">arrow_drop_down</span>
         </div>
         <div class="error-message" *ngIf="isFieldInvalid('userType')">
           {{ getFieldError('userType') }}
@@ -77,7 +77,7 @@
           Mot de passe <span class="required">*</span>
         </label>
         <div class="password-wrapper">
-          <span class="material-symbols-outlined password-icon">lock</span>
+          <span class="material-icons password-icon">lock</span>
           <input 
             [type]="showPassword ? 'text' : 'password'" 
             id="password" 
@@ -87,7 +87,7 @@
             [class.invalid]="isFieldInvalid('password')">
           <button 
             type="button" 
-            class="material-symbols-outlined toggle-password"
+            class="material-icons toggle-password"
             (click)="togglePasswordVisibility()">
             {{ showPassword ? 'visibility' : 'visibility_off' }}
           </button>
@@ -147,19 +147,70 @@
         </div>
       </div>
 
-      <!-- Code postal -->
+      <!-- Département -->
       <div class="form-group">
-        <label for="postalCode" class="form-label">Code postal</label>
-        <input 
-          type="text" 
-          id="postalCode" 
-          formControlName="postalCode"
-          class="form-input"
-          placeholder="Placeholder"
-          maxlength="5"
-          [class.invalid]="isFieldInvalid('postalCode')">
-        <div class="error-message" *ngIf="isFieldInvalid('postalCode')">
-          {{ getFieldError('postalCode') }}
+        <label for="department" class="form-label">
+          Département <span class="required">*</span>
+        </label>
+        <div class="autocomplete-wrapper">
+          <input 
+            type="text" 
+            id="department" 
+            [(ngModel)]="departmentSearch"
+            [ngModelOptions]="{standalone: true}"
+            (input)="onDepartmentSearchChange($event)"
+            (focus)="showDepartmentDropdown = true"
+            class="form-input"
+            placeholder="Rechercher un département"
+            [class.invalid]="isFieldInvalid('department')"
+            autocomplete="off">
+          
+          @if(showDepartmentDropdown && filteredDepartments.length > 0) {
+            <div class="autocomplete-dropdown">
+              @for(dept of filteredDepartments; track dept.code) {
+                <div class="autocomplete-item" (click)="selectDepartment(dept)">
+                  {{ dept.code }} - {{ dept.name }}
+                </div>
+              }
+            </div>
+          }
+        </div>
+        <div class="error-message" *ngIf="isFieldInvalid('department')">
+          {{ getFieldError('department') }}
+        </div>
+      </div>
+
+      <!-- Commune -->
+      <div class="form-group">
+        <label for="commune" class="form-label">
+          Commune <span class="required">*</span>
+        </label>
+        <div class="autocomplete-wrapper">
+          <input 
+            type="text" 
+            id="commune" 
+            [(ngModel)]="communeSearch"
+            [ngModelOptions]="{standalone: true}"
+            (input)="onCommuneSearchChange($event)"
+            (focus)="showCommuneDropdown = true"
+            class="form-input"
+            placeholder="Rechercher une commune"
+            [class.invalid]="isFieldInvalid('commune')"
+            [disabled]="!registerForm.get('department')?.value"
+            autocomplete="off">
+          
+          @if(showCommuneDropdown && filteredCommunes.length > 0) {
+            <div class="autocomplete-dropdown">
+              @for(commune of filteredCommunes; track commune.code) {
+                <div class="autocomplete-item" (click)="selectCommune(commune)">
+                  {{ commune.name }} @if(commune.codesPostaux.length > 0) { ({{ commune.codesPostaux[0] }}) }
+                </div>
+              }
+            </div>
+          }
+        </div>
+        <div class="error-message" *ngIf="isFieldInvalid('commune')">
+          {{ getFieldError('commune') }}
         </div>
       </div>
 

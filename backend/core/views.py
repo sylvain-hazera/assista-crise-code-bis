@@ -1,23 +1,31 @@
 from django.shortcuts import render
-from rest_framework import viewsets, status
+from rest_framework import viewsets, status, generics, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticatedOrReadOnly, AllowAny
 from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from .serializers import MyTokenObtainPairSerializer  # if you've defined it in serializers
 from django.contrib.auth import authenticate
+from django.core.mail import send_mail
+from django_filters import rest_framework as filters
 from .models import (
-    Utilisateur, Crise, Demande, Offre, Information,
-    TypeDemande, TypeOffre, TypeInformation
+    User, Crisis, Request, Offer, Information,
+    RequestType, OfferType, InformationType
 )
 from .serializers import (
-    UtilisateurSerializer, CriseSerializer, DemandeSerializer,
-    OffreSerializer, InformationSerializer,
-    TypeDemandeSerializer, TypeOffreSerializer, TypeInformationSerializer
+    UserSerializer, CrisisSerializer, RequestSerializer,
+    OfferSerializer, InformationSerializer,
+    RequestTypeSerializer, OfferTypeSerializer, InformationTypeSerializer
 )
 
-class UtilisateurViewSet(viewsets.ModelViewSet):
-    queryset = Utilisateur.objects.all()
-    serializer_class = UtilisateurSerializer
+class AuthorEmailFilter(filters.FilterSet):
+    author_email = filters.CharFilter(field_name='author__email', lookup_expr='iexact')
+
+class UserViewSet(viewsets.ModelViewSet):
+    queryset = User.objects.all()
+    serializer_class = UserSerializer
     
     @action(detail=False, methods=['post'], permission_classes=[AllowAny])
     def register(self, request):
@@ -25,9 +33,66 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(data=request.data)
         if serializer.is_valid():
             user = serializer.save()
+            
+            # Si le compte nécessite validation (Institution, Secours, Admin)
+            if not user.enabled:
+                # Envoyer email à l'utilisateur
+                try:
+                    send_mail(
+                        subject="Compte créé - En attente de validation",
+                        message=(
+                            f"Bonjour {user.first_name} {user.last_name},\n\n"
+                            f"Votre compte ({user.get_type_display()}) a bien été créé.\n"
+                            "Cependant, il est en attente de validation par un administrateur.\n"
+                            "Vous recevrez un email dès que votre compte sera validé.\n\n"
+                            "Cordialement,\n"
+                            "L'équipe Assista-Crise"
+                        ),
+                        from_email=None,
+                        recipient_list=[user.email],
+                        fail_silently=False,
+                    )
+                except Exception as e:
+                    print(f"Erreur envoi email utilisateur : {e}")
+                
+                # Notifier les administrateurs
+                admin_emails = User.objects.filter(
+                    type='ADMIN', 
+                    is_active=True
+                ).values_list('email', flat=True)
+                
+                if admin_emails:
+                    try:
+                        send_mail(
+                            subject=f"Nouvelle demande de validation - {user.get_type_display()}",
+                            message=(
+                                f"Un nouveau compte nécessite votre validation :\n\n"
+                                f"- Nom : {user.first_name} {user.last_name}\n"
+                                f"- Email : {user.email}\n"
+                                f"- Type : {user.get_type_display()}\n"
+                                f"- Code postal : {user.postal_code or 'Non renseigné'}\n\n"
+                                f"Connectez-vous au dashboard pour valider ou rejeter ce compte.\n\n"
+                                "Cordialement,\n"
+                                "Système Assista-Crise"
+                            ),
+                            from_email=None,
+                            recipient_list=list(admin_emails),
+                            fail_silently=False,
+                        )
+                    except Exception as e:
+                        print(f"Erreur envoi email admins : {e}")
+                
+                # NE PAS retourner de token si le compte nécessite validation
+                return Response({
+                    'user': UserSerializer(user).data,
+                    'message': 'Compte créé, en attente de validation par un administrateur',
+                    'requires_validation': True
+                }, status=status.HTTP_201_CREATED)
+            
+            # Le compte est validé, retourner le token
             refresh = RefreshToken.for_user(user)
             return Response({
-                'user': UtilisateurSerializer(user).data,
+                'user': UserSerializer(user).data,
                 'token': str(refresh.access_token),
                 'refresh': str(refresh),
                 'message': 'Utilisateur créé avec succès'
@@ -48,11 +113,25 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
         
         # Authentifier par email
         try:
-            user = Utilisateur.objects.get(email=email)
+            user = User.objects.get(email=email)
+            
+            # Vérifier que le compte est actif ET validé
+            if not user.is_active:
+                return Response(
+                    {'error': 'Ce compte a été désactivé'},
+                    status=status.HTTP_401_UNAUTHORIZED
+                )
+            
+            if not user.enabled:
+                return Response(
+                    {'error': 'Votre compte est en attente de validation par un administrateur'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            
             if user.check_password(password):
                 refresh = RefreshToken.for_user(user)
                 return Response({
-                    'user': UtilisateurSerializer(user).data,
+                    'user': UserSerializer(user).data,
                     'token': str(refresh.access_token),
                     'refresh': str(refresh),
                     'message': 'Connexion réussie'
@@ -62,7 +141,7 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
                     {'error': 'Identifiants invalides'},
                     status=status.HTTP_401_UNAUTHORIZED
                 )
-        except Utilisateur.DoesNotExist:
+        except User.DoesNotExist:
             return Response(
                 {'error': 'Identifiants invalides'},
                 status=status.HTTP_401_UNAUTHORIZED
@@ -72,36 +151,243 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
     def logout(self, request):
         """Déconnexion (côté client, le token sera supprimé)"""
         return Response({'message': 'Déconnexion réussie'}, status=status.HTTP_200_OK)
+    
+    @action(detail=False, methods=['get'])
+    def pending_validations(self, request):
+        """Liste des comptes en attente de validation"""
+        user = request.user
+        
+        # Seuls les admins et institutions peuvent voir les validations
+        if user.type not in ['ADMIN', 'AUT_LOCALE']:
+            return Response(
+                {'error': 'Permissions insuffisantes'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Les admins voient tout, les institutions voient leur code postal
+        if user.type == 'ADMIN':
+            pending_users = User.objects.filter(enabled=False, is_active=True)
+        else:
+            pending_users = User.objects.filter(
+                enabled=False, 
+                is_active=True,
+                postal_code=user.postal_code
+            )
+        
+        serializer = self.get_serializer(pending_users, many=True)
+        return Response(serializer.data)
+    
+    @action(detail=True, methods=['post'])
+    def approve_account(self, request, pk=None):
+        """Approuver un compte en attente"""
+        user_to_approve = self.get_object()
+        validator = request.user
+        
+        # Vérifier les permissions
+        if validator.type not in ['ADMIN', 'AUT_LOCALE']:
+            return Response(
+                {'error': 'Permissions insuffisantes'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Les institutions ne peuvent valider que leur code postal
+        if validator.type == 'AUT_LOCALE' and validator.postal_code != user_to_approve.postal_code:
+            return Response(
+                {'error': 'Vous ne pouvez valider que les comptes de votre territoire'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Activer le compte
+        user_to_approve.enabled = True
+        user_to_approve.save()
+        
+        # Envoyer email de confirmation
+        try:
+            send_mail(
+                subject="Votre compte a été validé !",
+                message=(
+                    f"Bonjour {user_to_approve.first_name} {user_to_approve.last_name},\n\n"
+                    f"Bonne nouvelle ! Votre compte ({user_to_approve.get_type_display()}) a été validé.\n"
+                    "Vous pouvez maintenant vous connecter et accéder à toutes les fonctionnalités.\n\n"
+                    "Cordialement,\n"
+                    "L'équipe Assista-Crise"
+                ),
+                from_email=None,
+                recipient_list=[user_to_approve.email],
+                fail_silently=False,
+            )
+        except Exception as e:
+            print(f"Erreur envoi email validation : {e}")
+        
+        return Response({
+            'message': 'Compte validé avec succès',
+            'user': UserSerializer(user_to_approve).data
+        })
+    
+    @action(detail=True, methods=['post'])
+    def reject_account(self, request, pk=None):
+        """Rejeter un compte en attente"""
+        user_to_reject = self.get_object()
+        validator = request.user
+        reason = request.data.get('reason', 'Non spécifiée')
+        
+        # Vérifier les permissions
+        if validator.type not in ['ADMIN', 'AUT_LOCALE']:
+            return Response(
+                {'error': 'Permissions insuffisantes'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Les institutions ne peuvent rejeter que leur code postal
+        if validator.type == 'AUT_LOCALE' and validator.postal_code != user_to_reject.postal_code:
+            return Response(
+                {'error': 'Vous ne pouvez rejeter que les comptes de votre territoire'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Envoyer email de rejet
+        try:
+            send_mail(
+                subject="Votre demande de compte a été refusée",
+                message=(
+                    f"Bonjour {user_to_reject.first_name} {user_to_reject.last_name},\n\n"
+                    f"Nous sommes désolés de vous informer que votre demande de compte "
+                    f"({user_to_reject.get_type_display()}) n'a pas été acceptée.\n\n"
+                    f"Raison : {reason}\n\n"
+                    "Pour plus d'informations, vous pouvez nous contacter.\n\n"
+                    "Cordialement,\n"
+                    "L'équipe Assista-Crise"
+                ),
+                from_email=None,
+                recipient_list=[user_to_reject.email],
+                fail_silently=False,
+            )
+        except Exception as e:
+            print(f"Erreur envoi email rejet : {e}")
+        
+        # Désactiver le compte (ou le supprimer)
+        user_to_reject.is_active = False
+        user_to_reject.save()
+        
+        return Response({
+            'message': 'Compte rejeté',
+            'user': UserSerializer(user_to_reject).data
+        })
 
-class CriseViewSet(viewsets.ModelViewSet):
-    queryset = Crise.objects.all()
-    serializer_class = CriseSerializer
-    permission_classes = [IsAuthenticatedOrReadOnly]
-
-class DemandeViewSet(viewsets.ModelViewSet):
-    queryset = Demande.objects.all()
-    serializer_class = DemandeSerializer
+class CrisisViewSet(viewsets.ModelViewSet):
+    queryset = Crisis.objects.all()
+    serializer_class = CrisisSerializer
     permission_classes = [AllowAny]
+    filterset_class = AuthorEmailFilter
 
-class OffreViewSet(viewsets.ModelViewSet):
-    queryset = Offre.objects.all()
-    serializer_class = OffreSerializer
-    permission_classes = [IsAuthenticatedOrReadOnly]
+    def perform_create(self, serializer):
+        # Si l'utilisateur est authentifié, on l'assigne comme auteur
+        if self.request.user.is_authenticated:
+            serializer.save(author=self.request.user)
+        else:
+            # Sinon on sauvegarde sans auteur (None)
+            serializer.save(author=None)
+
+class RequestViewSet(viewsets.ModelViewSet):
+    queryset = Request.objects.all()
+    serializer_class = RequestSerializer
+    permission_classes = [AllowAny]
+    filterset_class = AuthorEmailFilter
+
+
+    def perform_create(self, serializer):
+        # Définir l'auteur si authentifié, sinon None
+        author = self.request.user if self.request.user.is_authenticated else None
+        demande = serializer.save(author=author)
+        try:
+            print(f"Tentative d'envoi de mail à {demande.email_demande}...")
+            
+            send_mail(
+                subject=f"Confirmation : Votre demande '{demande.titre}' a bien été reçue",
+                message=(
+                    f"Bonjour {demande.prenom_demande},\n\n"
+                    f"Nous accusons réception de votre demande d'aide : {demande.titre}.\n"
+                    "Elle est actuellement en attente de traitement par nos services.\n\n"
+                    "Cordialement,\n"
+                    "L'équipe Assista-Crise"
+                ),
+                from_email=None,  # Utilise DEFAULT_FROM_EMAIL défini dans settings.py
+                recipient_list=[demande.email_demande],
+                fail_silently=False,
+            )
+            print("Succès : Email de confirmation envoyé.")
+            
+        except Exception as e:
+            print(f"Erreur critique : L'envoi de l'email a échoué. Détails : {e}")
+
+class OfferViewSet(viewsets.ModelViewSet):
+    queryset = Offer.objects.all()
+    serializer_class = OfferSerializer
+    permission_classes = [AllowAny]
+    filterset_class = AuthorEmailFilter
+
+    def perform_create(self, serializer):
+        # Si user authentifié, il est autheur
+        if self.request.user.is_authenticated:
+            serializer.save(author=self.request.user)
+        else:
+            # Sinon il est none
+            serializer.save(author=None)
 
 class InformationViewSet(viewsets.ModelViewSet):
     queryset = Information.objects.all()
     serializer_class = InformationSerializer
-    permission_classes = [IsAuthenticatedOrReadOnly]
+    permission_classes = [AllowAny]
+
+    def perform_create(self, serializer):
+        # Si l'utilisateur est authentifié, on l'assigne comme auteur
+        if self.request.user.is_authenticated:
+            serializer.save(author=self.request.user)
+        else:
+            # Sinon on sauvegarde sans auteur (None)
+            serializer.save(author=None)
 
 # --- VIEWSETS SIMPLES POUR LES TYPES ---
-class TypeDemandeViewSet(viewsets.ModelViewSet):
-    queryset = TypeDemande.objects.all()
-    serializer_class = TypeDemandeSerializer
+class RequestTypeViewSet(viewsets.ModelViewSet):
+    queryset = RequestType.objects.all()
+    serializer_class = RequestTypeSerializer
 
-class TypeOffreViewSet(viewsets.ModelViewSet):
-    queryset = TypeOffre.objects.all()
-    serializer_class = TypeOffreSerializer
+class OfferTypeViewSet(viewsets.ModelViewSet):
+    queryset = OfferType.objects.all()
+    serializer_class = OfferTypeSerializer
 
-class TypeInformationViewSet(viewsets.ModelViewSet):
-    queryset = TypeInformation.objects.all()
-    serializer_class = TypeInformationSerializer
+class InformationTypeViewSet(viewsets.ModelViewSet):
+    queryset = InformationType.objects.all()
+    serializer_class = InformationTypeSerializer
+
+    #  --------------------------- add by Laura ------------------------------------
+
+class MyTokenObtainPairView(TokenObtainPairView):
+    serializer_class = MyTokenObtainPairSerializer
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = []
+
+class RegisterView(generics.CreateAPIView):
+    queryset = User.objects.all()
+    serializer_class = UserSerializer # Ajoute la logique de mot de passe dans le serializer
+    permission_classes = [permissions.AllowAny]
+
+class UserMeView(generics.RetrieveUpdateAPIView):
+    serializer_class = UserSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_object(self):
+        return self.request.user
+
+class ChangePasswordView(generics.UpdateAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        user = request.user
+        old_password = request.data.get("old_password")
+        new_password = request.data.get("new_password")
+        if not user.check_password(old_password):
+            return Response({"error": "Ancien mot de passe incorrect"}, status=status.HTTP_400_BAD_REQUEST)
+        user.set_password(new_password)
+        user.save()
+        return Response(status=status.HTTP_204_NO_CONTENT)

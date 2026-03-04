@@ -2,37 +2,42 @@ from django.contrib import admin
 
 from django.contrib.gis.admin import GISModelAdmin
 from .models import (
-    Utilisateur, Crise, Demande, Offre, Information,
-    TypeDemande, TypeOffre, TypeInformation
+    User, Crisis, Request, Offer, Information,
+    RequestType, OfferType, InformationType
 )
 
 
-@admin.register(Crise)
-class CriseAdmin(GISModelAdmin):
-    list_display = ('nom', 'date_debut', 'validateur')
-    search_fields = ('nom',)
+@admin.register(Crisis)
+class CrisisAdmin(GISModelAdmin):
+    """Admin pour les crises"""
+    list_display = ('name', 'start_date', 'validator')
+    search_fields = ('name',)
 
-@admin.register(Demande)
-class DemandeAdmin(GISModelAdmin):
-    list_display = ('titre', 'statut', 'type_demande', 'auteur')
-    list_filter = ('statut', 'type_demande')
+@admin.register(Request)
+class RequestAdmin(GISModelAdmin):
+    """Admin pour les demandes d'aide"""
+    list_display = ('title', 'status', 'request_type', 'author')
+    list_filter = ('status', 'request_type')
 
-@admin.register(Offre)
-class OffreAdmin(GISModelAdmin):
-    list_display = ('titre', 'statut', 'type_offre', 'auteur')
-    list_filter = ('statut', 'type_offre')
+@admin.register(Offer)
+class OfferAdmin(GISModelAdmin):
+    """Admin pour les offres d'aide"""
+    list_display = ('title', 'status', 'offer_type', 'author')
+    list_filter = ('status', 'offer_type')
 
 @admin.register(Information)
 class InformationAdmin(GISModelAdmin):
-    list_display = ('titre', 'statut', 'type_information')
+    """Admin pour les informations"""
+    list_display = ('title', 'status', 'information_type')
 
 
-@admin.register(Utilisateur)
-class UtilisateurAdmin(admin.ModelAdmin):
-    list_display = ('username', 'email', 'type', 'crise_touchee')
+@admin.register(User)
+class UserAdmin(admin.ModelAdmin):
+    """Admin pour les utilisateurs"""
+    list_display = ('username', 'email', 'type', 'affected_crisis')
     list_filter = ('type',)
 
 
-admin.site.register(TypeDemande)
-admin.site.register(TypeOffre)
-admin.site.register(TypeInformation)
+admin.site.register(RequestType)
+admin.site.register(OfferType)
+admin.site.register(InformationType)

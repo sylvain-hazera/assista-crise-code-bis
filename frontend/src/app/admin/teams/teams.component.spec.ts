@@ -1,18 +1,18 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
-import { DeclareSafeFormComponent } from './declare-safe-form.component';
+import { TeamsComponent } from './teams.component';
 
-describe('DeclareSafeFormComponent', () => {
-  let component: DeclareSafeFormComponent;
-  let fixture: ComponentFixture<DeclareSafeFormComponent>;
+describe('TeamsComponent', () => {
+  let component: TeamsComponent;
+  let fixture: ComponentFixture<TeamsComponent>;
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [DeclareSafeFormComponent]
+      imports: [TeamsComponent]
     })
     .compileComponents();
 
-    fixture = TestBed.createComponent(DeclareSafeFormComponent);
+    fixture = TestBed.createComponent(TeamsComponent);
     component = fixture.componentInstance;
     fixture.detectChanges();
   });

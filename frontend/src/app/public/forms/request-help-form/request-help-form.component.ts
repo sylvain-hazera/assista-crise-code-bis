@@ -1,20 +1,25 @@
 import { Component, OnInit } from '@angular/core';
 import { FormGroup, FormBuilder, Validators, ReactiveFormsModule, FormArray } from '@angular/forms';
+import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
-import { HelpRequestService } from '../../../services/help-request.service';
 import { GeolocationService } from '../../../services/geolocation.service';
-import { ApiService } from '../../../services/api.service';
 import { CommonModule } from '@angular/common';
-// import { NgSelectModule } from '@ng-select/ng-select';
+import { RequestService } from '../../../services/request.service';
+import { LocationService, Department, Commune } from '../../../services/location.service';
+import { CrisisService } from '../../../services/crisis.service';
+import { Crisis } from '../../../shared/models/crisis.model';
+import { User } from '../../../shared/models/user.model';
+import { AuthService } from '../../../auth/services/auth.service';
 
 @Component({
   selector: 'app-request-help-form',
   standalone: true,
-  imports: [ReactiveFormsModule, CommonModule],
+  imports: [ReactiveFormsModule, CommonModule, FormsModule],
   templateUrl: './request-help-form.component.html',
   styleUrl: './request-help-form.component.scss'
 })
 export class RequestHelpFormComponent implements OnInit {
+  currentUser: User | null = null;
   requestForm!: FormGroup;
   informationForm!: FormGroup;
   selectedFile: File | null = null;
@@ -24,73 +29,101 @@ export class RequestHelpFormComponent implements OnInit {
   latitude: number | null = null;
   longitude: number | null = null;
 
-  requestData: FormData = new FormData();
-  typesDemandeMap: Map<string, string> = new Map(); // eventType -> UUID
+  typesDemandeMap: Map<string, string> = new Map();
 
-  eventTypeOptions: { value: string; label: string }[] = [
-    { value: '', label: 'Dropdown' },
-    { value: 'incendie', label: 'Incendie' },
-    { value: 'inondation', label: 'Inondation' },
-    { value: 'accident', label: 'Accident' },
-    { value: 'catastrophe-naturelle', label: 'Catastrophe naturelle' },
-    { value: 'urgence-medicale', label: 'Urgence médicale' },
-    { value: 'autre', label: 'Autre' }
-  ];
+  departments: Department[] = [];
+  filteredDepartments: Department[] = [];
+  communes: Commune[] = [];
+  filteredCommunes: Commune[] = [];
+  departmentSearch: string = '';
+  communeSearch: string = '';
+  showDepartmentDropdown: boolean = false;
+  showCommuneDropdown: boolean = false;
+
+  crisisOptions: { value: string; label: string }[] = [];
+  filteredCrisisOptions: { value: string; label: string }[] = [];
+  crisisSearch: string = 'Aucune crise en rapport';
+  showCrisisDropdown: boolean = false;
 
   needTypeOptions: { value: string; label: string }[] = [
-    { value: '', label: 'Dropdown' },
-    { value: 'assistance-immediate', label: 'Assistance immédiate' },
-    { value: 'hebergement', label: 'Hébergement' },
-    { value: 'nourriture', label: 'Nourriture et eau' },
-    { value: 'soins-medicaux', label: 'Soins médicaux' },
-    { value: 'transport', label: 'Transport' },
-    { value: 'materiel', label: 'Matériel' },
-    { value: 'soutien-psychologique', label: 'Soutien psychologique' },
-    { value: 'autre', label: 'Autre' }
+    { value: '', label: 'Dropdown' }
   ];
 
   personTypeOptions: { value: string; label: string }[] = [
     { value: '', label: 'Dropdown' },
     { value: 'individual', label: 'Particulier' },
-    { value: 'organization', label: 'Organisation' }
+    { value: 'organization', label: 'Organisation' },
+    { value: 'rescue', label: 'Secours organisés' },
   ];
 
   constructor(
     private formBuilder: FormBuilder,
     private router: Router,
-    private helpRequestService: HelpRequestService,
+    private helpRequestService: RequestService,
     private geolocationService: GeolocationService,
-    private apiService: ApiService
+    private locationService: LocationService,
+    private crisisService: CrisisService,
+    private authService: AuthService
   ) {}
 
   ngOnInit(): void {
+    this.currentUser = this.authService.getCurrentUser();
     this.initForm();
     this.loadTypesDemande();
+    this.loadDepartments();
+    this.loadActiveCrises();
+  }
+
+  loadDepartments(): void {
+    this.locationService.getDepartments().subscribe({
+      next: (deps) => {
+        this.departments = deps;
+        this.filteredDepartments = deps;
+      },
+      error: (err) => console.error('Erreur chargement départements:', err)
+    });
+  }
+
+  loadActiveCrises(): void {
+    this.crisisService.getAll().subscribe({
+      next: (crises: Crisis[]) => {
+        const activeCrises = crises.filter(c => c.status !== 'TRAITEE');
+        this.crisisOptions = [
+          { value: '', label: 'Aucune crise en rapport' },
+          ...activeCrises.map(c => ({
+            value: c.id,
+            label: `${c.name} - ${c.type}`
+          }))
+        ];
+        this.filteredCrisisOptions = [...this.crisisOptions];
+      },
+      error: (err) => console.error('Erreur chargement crises:', err)
+    });
   }
 
   loadTypesDemande(): void {
-    this.apiService.getTypesDemande().subscribe({
-      next: (types) => {
-        // Mapper les valeurs du formulaire aux UUIDs des types
-        types.forEach(t => {
-          const normalizedType = t.type.toLowerCase().replace(/\s+/g, '-');
-          this.typesDemandeMap.set(normalizedType, t.id!);
+    this.helpRequestService.getTypes().subscribe({
+      next: (types: any[]) => {
+        types.forEach(type => {
+          this.typesDemandeMap.set(type.type, type.id);
         });
-        console.log('Types chargés:', this.typesDemandeMap);
+        this.needTypeOptions = [
+          { value: '', label: 'Dropdown' },
+          ...types.map(t => ({ value: t.type, label: t.type }))
+        ];
       },
-      error: (err) => console.error('Erreur chargement types:', err)
+      error: (err: any) => console.error('Erreur chargement types:', err)
     });
   }
 
   initForm(): void {
     this.requestForm = this.formBuilder.group({
-      eventType: ['', Validators.required],
-      // needType: ['', Validators.required],
-      // description: ['', [Validators.required, Validators.minLength(10)]],
+      crisisId: [''],
       needsType: new FormArray([]),
       descriptions: new FormArray([]),
       streetNumber: ['', Validators.required],
-      postalCode: ['', [Validators.required, Validators.pattern(/^\d{5}$/)]],
+      department: ['', Validators.required],
+      commune: ['', Validators.required],
       addressVisible: [false],
       image: [null],
     });
@@ -99,10 +132,10 @@ export class RequestHelpFormComponent implements OnInit {
 
     this.informationForm = this.formBuilder.group({
       personType: ['individual', Validators.required],
-      lastName: ['', Validators.required],
-      firstName: ['', Validators.required],
-      email: ['', [Validators.required, Validators.email]],
-      phoneNumber: ['', [Validators.required, Validators.pattern(/^\+?\d{10,15}$/)]]
+      lastName: [this.currentUser?.last_name, Validators.required],
+      firstName: [this.currentUser?.first_name, Validators.required],
+      email: [this.currentUser?.email, [Validators.required, Validators.email]],
+      phoneNumber: [this.currentUser?.phone_number, [Validators.required, Validators.pattern(/^\+?\d{10,15}$/)]]
     });
   }
 
@@ -133,18 +166,7 @@ export class RequestHelpFormComponent implements OnInit {
     }
   }
 
-  onSubmit(): void {
-    console.log('=== DEBUG SUBMIT ===');
-    console.log('requestForm valid:', this.requestForm.valid);
-    console.log('requestForm errors:', this.requestForm.errors);
-    console.log('requestForm value:', this.requestForm.value);
-    console.log('informationForm valid:', this.informationForm.valid);
-    console.log('informationForm errors:', this.informationForm.errors);
-    console.log('informationForm value:', this.informationForm.value);
-    console.log('Latitude:', this.latitude, 'Longitude:', this.longitude);
-    console.log('needsType controls:', this.needsType.controls.map((c, i) => ({index: i, valid: c.valid, value: c.value})));
-    console.log('descriptions controls:', this.descriptions.controls.map((c, i) => ({index: i, valid: c.valid, value: c.value})));
-    
+  onSubmit(): void {    
     if (this.informationForm.valid && this.latitude && this.longitude) {
       console.log('Formulaire valide:', this.informationForm.value);
 
@@ -152,32 +174,39 @@ export class RequestHelpFormComponent implements OnInit {
       const formData = new FormData();
       
       // Champs du modèle Demande Django
-      formData.append('prenom_demande', this.informationForm.get('firstName')?.value);
-      formData.append('nom_demande', this.informationForm.get('lastName')?.value);
-      formData.append('email_demande', this.informationForm.get('email')?.value);
-      formData.append('telephone_demande', this.informationForm.get('phoneNumber')?.value);
+      formData.append('first_name_request', this.informationForm.get('firstName')?.value);
+      formData.append('last_name_request', this.informationForm.get('lastName')?.value);
+      formData.append('email_request', this.informationForm.get('email')?.value);
+      formData.append('phone_request', this.informationForm.get('phoneNumber')?.value);
       
-      // Titre basé sur le type d'événement
-      const eventType = this.requestForm.get('eventType')?.value;
-      const titre = `Demande ${this.eventTypeOptions.find(e => e.value === eventType)?.label || 'aide'}`;
-      formData.append('titre', titre);
+      // Titre basé sur la crise sélectionnée
+      const crisisId = this.requestForm.get('crisisId')?.value;
+      const crisisLabel = this.crisisOptions.find(c => c.value === crisisId)?.label || 'non liée à une crise';
+      const titre = `Demande d'aide - ${crisisLabel}`;
+      formData.append('title', titre);
       
       // Localisation au format GeoJSON Point
       const localisation = {
         type: 'Point',
         coordinates: [this.longitude, this.latitude]
       };
-      formData.append('localisation', JSON.stringify(localisation));
+      formData.append('location', JSON.stringify(localisation));
       
-      // Type demande - UUID récupéré depuis la map
-      const typeDemandeId = this.typesDemandeMap.get(eventType);
-      if (!typeDemandeId) {
+      // Type demande - Utiliser le premier type disponible (les besoins sont spécifiés séparément)
+      const firstTypeId = Array.from(this.typesDemandeMap.values())[0];
+      if (!firstTypeId) {
         alert('Type de demande non trouvé. Veuillez réessayer ou contacter le support.');
         return;
       }
-      formData.append('type_demande', typeDemandeId);
+      formData.append('request_type', firstTypeId);
       
-      formData.append('statut', 'NON_TRAITEE');
+      // Crise (nullable)
+      if (crisisId) {
+        formData.append('crisis', crisisId);
+      }
+      
+      formData.append('status', 'NON_TRAITEE');
+      formData.append('author', this.currentUser?.id!);
       
       // Photo si présente
       if (this.selectedFile) {
@@ -185,7 +214,7 @@ export class RequestHelpFormComponent implements OnInit {
       }
 
       // Envoyer au backend Django
-      this.helpRequestService.createRequest(formData).subscribe({
+      this.helpRequestService.create(formData).subscribe({
         next: (response) => {
           console.log('Demande créée:', response);
           alert('Votre demande a été enregistrée avec succès !');
@@ -220,14 +249,71 @@ export class RequestHelpFormComponent implements OnInit {
     }
   }
 
+  onDepartmentSearchChange(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    this.departmentSearch = input.value;
+    this.filteredDepartments = this.locationService.searchDepartments(
+      this.departmentSearch,
+      this.departments
+    );
+    this.showDepartmentDropdown = true;
+  }
+
+  selectDepartment(department: Department): void {
+    this.departmentSearch = department.name;
+    this.requestForm.patchValue({ department: department.code });
+    this.showDepartmentDropdown = false;
+    
+    this.locationService.getCommunesByDepartment(department.code).subscribe({
+      next: (communes) => {
+        this.communes = communes;
+        this.filteredCommunes = communes;
+        this.communeSearch = '';
+        this.requestForm.patchValue({ commune: '' });
+      },
+      error: (err) => console.error('Erreur chargement communes:', err)
+    });
+  }
+
+  onCommuneSearchChange(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    this.communeSearch = input.value;
+    this.filteredCommunes = this.locationService.searchCommunes(
+      this.communeSearch,
+      this.communes
+    );
+    this.showCommuneDropdown = true;
+  }
+
+  selectCommune(commune: Commune): void {
+    this.communeSearch = commune.name;
+    this.requestForm.patchValue({ commune: commune.code });
+    this.showCommuneDropdown = false;
+  }
+
+  onCrisisSearchChange(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    this.crisisSearch = input.value;
+    this.filteredCrisisOptions = this.crisisOptions.filter(crisis =>
+      crisis.label.toLowerCase().includes(this.crisisSearch.toLowerCase())
+    );
+    this.showCrisisDropdown = true;
+  }
+
+  selectCrisis(crisis: { value: string; label: string }): void {
+    this.crisisSearch = crisis.label;
+    this.requestForm.patchValue({ crisisId: crisis.value });
+    this.showCrisisDropdown = false;
+  }
+
   onContinue(): void {
     if (this.requestForm.valid) {
 
       const street = this.requestForm.get('streetNumber')?.value;
-      const zip = this.requestForm.get('postalCode')?.value;
-      const query = `${street} ${zip}`;
-
-      console.log('Recherche GPS pour :', query);
+      const communeCode = this.requestForm.get('commune')?.value;
+      const commune = this.communes.find(c => c.code === communeCode);
+      const postalCode = commune?.codesPostaux[0] || '';
+      const query = `${street} ${postalCode}`;
 
       this.geolocationService.getCoordinates(query).subscribe({
         next: (response) => {
@@ -236,7 +322,6 @@ export class RequestHelpFormComponent implements OnInit {
             this.longitude = coords[0];
             this.latitude = coords[1];
             
-            console.log(`Trouvé : ${this.latitude}, ${this.longitude}`);
             this.state = 2;
           } else {
             alert("Adresse introuvable. Vérifiez le numéro et le code postal.");
@@ -247,25 +332,6 @@ export class RequestHelpFormComponent implements OnInit {
           alert("Erreur de connexion au service d'adresse.");
         }
       });
-
-      // this.requestData.append('eventType', this.requestForm.get('eventType')?.value);
-      // for (const needType of this.requestForm.get('needsType')?.value) {
-      //   this.requestData.append('needType', needType);
-      // }
-      // for (const description of this.requestForm.get('descriptions')?.value) {
-      //   this.requestData.append('description', description);
-      // }
-      // // this.requestData.append('needType', this.requestForm.get('needType')?.value);
-      // // this.requestData.append('description', this.requestForm.get('description')?.value);
-      // this.requestData.append('streetNumber', this.requestForm.get('streetNumber')?.value);
-      // this.requestData.append('postalCode', this.requestForm.get('postalCode')?.value);
-      // this.requestData.append('addressVisible', this.requestForm.get('addressVisible')?.value);
-
-      // if (this.selectedFile) {
-      //   this.requestData.append('image', this.selectedFile);
-      // }
-
-      // this.state = 2;
   } else {
       // Marquer tous les champs comme touchés pour afficher les erreurs
       Object.keys(this.requestForm.controls).forEach(key => {
@@ -293,7 +359,7 @@ export class RequestHelpFormComponent implements OnInit {
 
   addNeed(): void {
     this.needsType.push(this.formBuilder.control('', Validators.required));
-    this.descriptions.push(this.formBuilder.control('', [Validators.required, Validators.minLength(10)]));
+    this.descriptions.push(this.formBuilder.control('', [Validators.minLength(10)]));
   }
 
   removeNeed(index: number): void {

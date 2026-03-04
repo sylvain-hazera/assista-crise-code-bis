@@ -1,0 +1,392 @@
+<div class="user-management">
+  
+  <!-- Header -->
+  <div class="page-header">
+    <div class="header-title">
+      <h1>Gestion des utilisateurs</h1>
+      <p class="subtitle" *ngIf="!isLoading && users.length > 0">
+        {{ users.length }} utilisateur(s) au total
+      </p>
+    </div>
+    <div class="header-actions">
+      <button class="btn btn-primary" (click)="openCreateModal()">
+        <span class="material-icons">add</span>
+        Nouvel utilisateur
+      </button>
+    </div>
+  </div>
+
+  <!-- Messages -->
+  <div class="messages">
+    <div class="alert alert-success" *ngIf="successMessage">
+      <span class="material-icons">check_circle</span>
+      {{ successMessage }}
+      <button class="close-btn" (click)="successMessage = ''">
+        <span class="material-icons">close</span>
+      </button>
+    </div>
+
+    <div class="alert alert-error" *ngIf="errorMessage">
+      <span class="material-icons">error</span>
+      {{ errorMessage }}
+      <button class="close-btn" (click)="errorMessage = ''">
+        <span class="material-icons">close</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Filtres et recherche -->
+  <div class="filters-section">
+    <div class="search-bar">
+      <span class="material-icons search-icon">search</span>
+      <input
+        type="text"
+        placeholder="Rechercher par nom, email, téléphone..."
+        [(ngModel)]="searchTerm"
+        (ngModelChange)="applyFilters()"
+        class="search-input"
+      />
+      <button 
+        class="filter-toggle-btn" 
+        [class.active]="showFilters"
+        (click)="showFilters = !showFilters"
+      >
+        <span class="material-icons">filter_list</span>
+        Filtres
+      </button>
+    </div>
+
+    <div class="filters-panel" *ngIf="showFilters">
+      <div class="filter-group">
+        <label>Rôle</label>
+        <select [(ngModel)]="selectedRole" (ngModelChange)="applyFilters()" class="filter-select">
+          <option value="ALL">Tous les rôles</option>
+          <option *ngFor="let role of userRoles" [value]="role.value">
+            {{ role.label }}
+          </option>
+        </select>
+      </div>
+
+      <div class="filter-group">
+        <label>Statut</label>
+        <select [(ngModel)]="selectedStatus" (ngModelChange)="applyFilters()" class="filter-select">
+          <option value="ALL">Tous</option>
+          <option value="ACTIVE">Actif</option>
+          <option value="INACTIVE">Inactif</option>
+        </select>
+      </div>
+
+      <button class="btn btn-secondary btn-sm" (click)="resetFilters()">
+        <span class="material-icons">clear</span>
+        Réinitialiser
+      </button>
+    </div>
+  </div>
+
+  <!-- Tableau des utilisateurs -->
+  <div class="table-container">
+    <div class="loading-state" *ngIf="isLoading">
+      <div class="spinner"></div>
+      <p>Chargement des utilisateurs...</p>
+    </div>
+
+    <div class="empty-state" *ngIf="!isLoading && filteredUsers.length === 0">
+      <span class="material-icons empty-icon">people_outline</span>
+      <h3>Aucun utilisateur trouvé</h3>
+      <p *ngIf="searchTerm || selectedRole !== 'ALL' || selectedStatus !== 'ALL'">
+        Aucun résultat ne correspond à vos critères de recherche.
+      </p>
+      <p *ngIf="!searchTerm && selectedRole === 'ALL' && selectedStatus === 'ALL'">
+        Commencez par créer un nouvel utilisateur.
+      </p>
+      <button class="btn btn-primary" (click)="resetFilters()" *ngIf="searchTerm || selectedRole !== 'ALL' || selectedStatus !== 'ALL'">
+        Réinitialiser les filtres
+      </button>
+    </div>
+
+    <div class="table-wrapper" *ngIf="!isLoading && filteredUsers.length > 0">
+      <table class="user-table">
+        <thead>
+          <tr>
+            <th>Utilisateur</th>
+            <th>Contact</th>
+            <th>Rôle</th>
+            <th>Statut</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let user of paginatedUsers">
+            <td class="user-cell">
+              <div class="user-info">
+                <div class="user-avatar">
+                  <img *ngIf="user.photo" [src]="user.photo" alt="Avatar">
+                  <span *ngIf="!user.photo" class="avatar-placeholder">
+                    {{ user.first_name?.charAt(0) }}{{ user.last_name?.charAt(0) }}
+                  </span>
+                </div>
+                <div class="user-details">
+                  <strong>{{ user.first_name }} {{ user.last_name }}</strong>
+                  <span class="user-username">{{ user.username }}</span>
+                </div>
+              </div>
+            </td>
+            <td class="contact-cell">
+              <div class="contact-info">
+                <span class="contact-item">
+                  <span class="material-icons small">email</span>
+                  {{ user.email }}
+                </span>
+                <span class="contact-item" *ngIf="user.phone_number">
+                  <span class="material-icons small">phone</span>
+                  {{ user.phone_number }}
+                </span>
+              </div>
+            </td>
+            <td class="role-cell">
+              <span class="role-badge" [ngClass]="getRoleBadgeClass(user.type)">
+                {{ getRoleLabel(user.type) }}
+              </span>
+            </td>
+            <td class="status-cell">
+              <!-- À adapter selon votre modèle -->
+              <span class="status-badge status-active">
+                Actif
+              </span>
+            </td>
+            <td class="actions-cell">
+              <div class="action-buttons">
+                <!-- Validation pour les UTIL_SIMPLE -->
+                <button 
+                  *ngIf="user.type === 'UTIL_SIMPLE'"
+                  class="action-btn validate-btn" 
+                  (click)="validateUser(user)"
+                  title="Valider l'utilisateur"
+                >
+                  <span class="material-icons">verified</span>
+                </button>
+
+                <!-- Édition -->
+                <button class="action-btn edit-btn" (click)="openEditModal(user)" title="Modifier">
+                  <span class="material-icons">edit</span>
+                </button>
+
+                <!-- Activation/Désactivation -->
+                <!-- <button 
+                  class="action-btn toggle-btn" 
+                  [class.active]="user.enabled"
+                  (click)="toggleUserStatus(user)"
+                  [title]="user.enabled ? 'Désactiver' : 'Activer'"
+                >
+                  <span class="material-icons">{{ user.enabled ? 'toggle_on' : 'toggle_off' }}</span>
+                </button> -->
+
+                <!-- Suppression -->
+                <button class="action-btn delete-btn" (click)="deleteUser(user)" title="Supprimer">
+                  <span class="material-icons">delete</span>
+                </button>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <!-- Pagination -->
+      <div class="pagination" *ngIf="totalPages > 1">
+        <button 
+          class="pagination-btn" 
+          [disabled]="currentPage === 1"
+          (click)="changePage(currentPage - 1)"
+        >
+          <span class="material-icons">chevron_left</span>
+        </button>
+        
+        <span class="page-info">
+          Page {{ currentPage }} sur {{ totalPages }}
+        </span>
+        
+        <button 
+          class="pagination-btn" 
+          [disabled]="currentPage === totalPages"
+          (click)="changePage(currentPage + 1)"
+        >
+          <span class="material-icons">chevron_right</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Utilisateur -->
+  <div class="modal-overlay" *ngIf="showUserModal" (click)="closeModal()">
+    <div class="modal-content" (click)="$event.stopPropagation()">
+      <div class="modal-header">
+        <h2>{{ isEditMode ? 'Modifier' : 'Créer' }} un utilisateur</h2>
+        <button class="close-btn" (click)="closeModal()">
+          <span class="material-icons">close</span>
+        </button>
+      </div>
+
+      <form [formGroup]="userForm" (ngSubmit)="saveUser()" class="modal-body">
+        <!-- Photo -->
+        <div class="form-group photo-group">
+          <label>Photo de profil</label>
+          <div class="photo-upload">
+            <div class="photo-preview" *ngIf="previewUrl">
+              <img [src]="previewUrl" alt="Preview">
+              <button type="button" class="remove-photo" (click)="removeSelectedFile()">
+                <span class="material-icons">close</span>
+              </button>
+            </div>
+            <div class="photo-placeholder" *ngIf="!previewUrl" (click)="fileInput.click()">
+              <span class="material-icons">add_a_photo</span>
+              <span>Ajouter une photo</span>
+            </div>
+            <input 
+              #fileInput
+              type="file" 
+              accept="image/*"
+              (change)="onFileSelected($event)"
+              style="display: none"
+            >
+          </div>
+        </div>
+
+        <div class="form-row">
+          <!-- Nom d'utilisateur -->
+          <div class="form-group">
+            <label for="username">Nom d'utilisateur *</label>
+            <input 
+              type="text" 
+              id="username"
+              formControlName="username"
+              [class.invalid]="isFieldInvalid('username')"
+              placeholder="johndoe"
+            >
+            <div class="error-message" *ngIf="isFieldInvalid('username')">
+              <span *ngIf="userForm.get('username')?.errors?.['required']">Nom d'utilisateur requis</span>
+              <span *ngIf="userForm.get('username')?.errors?.['minlength']">Minimum 3 caractères</span>
+            </div>
+          </div>
+
+          <!-- Email -->
+          <div class="form-group">
+            <label for="email">Email *</label>
+            <input 
+              type="email" 
+              id="email"
+              formControlName="email"
+              [class.invalid]="isFieldInvalid('email')"
+              placeholder="john@example.com"
+            >
+            <div class="error-message" *ngIf="isFieldInvalid('email')">
+              <span *ngIf="userForm.get('email')?.errors?.['required']">Email requis</span>
+              <span *ngIf="userForm.get('email')?.errors?.['email']">Email invalide</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <!-- Prénom -->
+          <div class="form-group">
+            <label for="first_name">Prénom *</label>
+            <input 
+              type="text" 
+              id="first_name"
+              formControlName="first_name"
+              [class.invalid]="isFieldInvalid('first_name')"
+              placeholder="John"
+            >
+            <div class="error-message" *ngIf="isFieldInvalid('first_name')">
+              Prénom requis
+            </div>
+          </div>
+
+          <!-- Nom -->
+          <div class="form-group">
+            <label for="last_name">Nom *</label>
+            <input 
+              type="text" 
+              id="last_name"
+              formControlName="last_name"
+              [class.invalid]="isFieldInvalid('last_name')"
+              placeholder="Doe"
+            >
+            <div class="error-message" *ngIf="isFieldInvalid('last_name')">
+              Nom requis
+            </div>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <!-- Téléphone -->
+          <div class="form-group">
+            <label for="telephone">Téléphone</label>
+            <input 
+              type="tel" 
+              id="telephone"
+              formControlName="telephone_utilisateur"
+              [class.invalid]="isFieldInvalid('telephone_utilisateur')"
+              placeholder="+33 6 12 34 56 78"
+            >
+            <div class="error-message" *ngIf="isFieldInvalid('telephone_utilisateur')">
+              Format téléphone invalide
+            </div>
+          </div>
+
+          <!-- Rôle -->
+          <div class="form-group">
+            <label for="type">Rôle *</label>
+            <select 
+              id="type"
+              formControlName="type"
+              [class.invalid]="isFieldInvalid('type')"
+            >
+              <option *ngFor="let role of userRoles" [value]="role.value">
+                {{ role.label }}
+              </option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Mot de passe (création seulement) -->
+        <div class="form-row" *ngIf="!isEditMode">
+          <div class="form-group">
+            <label for="password">Mot de passe *</label>
+            <input 
+              type="password" 
+              id="password"
+              formControlName="password"
+              [class.invalid]="isFieldInvalid('password')"
+            >
+            <div class="error-message" *ngIf="isFieldInvalid('password')">
+              <span *ngIf="userForm.get('password')?.errors?.['minlength']">Minimum 8 caractères</span>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="confirmPassword">Confirmer le mot de passe *</label>
+            <input 
+              type="password" 
+              id="confirmPassword"
+              formControlName="confirmPassword"
+              [class.invalid]="userForm.get('confirmPassword')?.errors?.['mismatch']"
+            >
+            <div class="error-message" *ngIf="userForm.get('confirmPassword')?.errors?.['mismatch']">
+              Les mots de passe ne correspondent pas
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" (click)="closeModal()">
+            Annuler
+          </button>
+          <button type="submit" class="btn btn-primary" [disabled]="userForm.invalid || isLoading">
+            <span class="spinner-small" *ngIf="isLoading"></span>
+            {{ isEditMode ? 'Modifier' : 'Créer' }}
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>

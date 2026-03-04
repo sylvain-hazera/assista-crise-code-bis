@@ -7,6 +7,7 @@ import { GeolocationService } from '../../services/geolocation.service';
 
 @Component({
   selector: 'app-public-layout',
+  standalone: true,
   imports: [
     HeaderComponent, 
     GeolocationPopupComponent,

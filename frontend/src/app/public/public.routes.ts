@@ -4,6 +4,7 @@ import { GuideComponent } from './guide/guide.component';
 import { AboutComponent } from './about/about.component';
 import { GlobalMapComponent } from './global-map/global-map.component';
 import { CrisisComponent } from './crisis/crisis.component';
+import { authGuard } from '../core/guards/auth.guard';
 
 
 export const PUBLIC_ROUTES: Routes = [
@@ -24,6 +25,12 @@ export const PUBLIC_ROUTES: Routes = [
           .then(m => m.RegisterComponent)
       },
       {
+        path: 'settings',
+        canActivate: [authGuard],
+        loadComponent: () => import('./settings/settings.component')
+          .then(m => m.SettingsComponent)
+      },
+      {
         path: 'help-proposal',
         loadComponent: () => import('./forms/propose-help-form/propose-help-form.component')
           .then(m => m.ProposeHelpFormComponent)
@@ -34,9 +41,9 @@ export const PUBLIC_ROUTES: Routes = [
           .then(m => m.RequestHelpFormComponent)
       },
       {
-        path: 'safe-declaration',
-        loadComponent: () => import('./forms/declare-safe-form/declare-safe-form.component')
-          .then(m => m.DeclareSafeFormComponent)
+        path: 'other-declaration',
+        loadComponent: () => import('./forms/other-declaration-form/other-declaration-form.component')
+          .then(m => m.OtherDeclarationFormComponent)
       },
       {
         path: 'crisis-declaration',

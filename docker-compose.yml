@@ -113,6 +113,31 @@ services:
     image: mailhog/mailhog
     container_name: ac_mailer
     ports:
+      - "1025:1025" # SMTP port
+      - "8025:8025" # Web UI
+    networks:
+      - default
+    environment:
+      - EMAIL_HOST=mailhog
+      - EMAIL_PORT=1025
+
+  tileserver:
+    image: maptiler/tileserver-gl
+    container_name: ac_maps
+    ports:
+      - "8080:8080"
+    # volumes:
+    #   - ./tileserver:/data
+
+  proxy:
+    build: ./proxy
+    container_name: ac_proxy
+    ports:
+      - "80:80"
+    depends_on:
+      - frontend
+      - backend
+      - tileserver
       - "1025:1025"
       - "8025:8025"
     networks:

@@ -1,0 +1,421 @@
+<div class="reporting-page">
+
+  <!-- ══ HEADER ═══════════════════════════════════════════════════════════════ -->
+  <header class="page-header">
+    <div class="header-left">
+      <h1>
+        <span class="material-icons">summarize</span>
+        Signalements
+      </h1>
+      <p class="subtitle">
+        @if (!isLoading) { {{ filteredRows.length }} résultat{{ filteredRows.length > 1 ? 's' : '' }} sur {{ allRows.length }} total }
+      </p>
+    </div>
+    <div class="header-actions">
+      <button class="btn-ghost" (click)="loadAll()" [disabled]="isLoading" title="Rafraîchir">
+        <span class="material-icons" [class.spin]="isLoading">refresh</span>
+      </button>
+      <button class="btn-primary" (click)="exportCSV()" [disabled]="isLoading || filteredRows.length === 0">
+        <span class="material-icons">download</span>
+        Exporter CSV
+      </button>
+    </div>
+  </header>
+
+  <!-- ══ TOASTS ════════════════════════════════════════════════════════════════ -->
+  @if (successMessage) {
+    <div class="toast toast-ok">
+      <span class="material-icons">check_circle</span> {{ successMessage }}
+    </div>
+  }
+  @if (errorMessage) {
+    <div class="toast toast-err">
+      <span class="material-icons">error_outline</span> {{ errorMessage }}
+    </div>
+  }
+
+  <!-- ══ KIND TABS ═════════════════════════════════════════════════════════════ -->
+  <div class="kind-tabs">
+    @for (opt of kindOptions; track opt.value) {
+      <button
+        class="kind-tab"
+        [class.active]="filterKind === opt.value"
+        (click)="filterKind = opt.value; applyFilters()"
+      >
+        <span class="material-icons">{{ opt.icon }}</span>
+        <span>{{ opt.label }}</span>
+        <span class="tab-count">{{ countByKind[opt.value] ?? 0 }}</span>
+      </button>
+    }
+  </div>
+
+  <!-- ══ CONTROLS ══════════════════════════════════════════════════════════════ -->
+  <div class="controls">
+    <div class="search-box">
+      <span class="material-icons">search</span>
+      <input
+        type="text"
+        placeholder="Rechercher par titre, contact, email…"
+        [(ngModel)]="searchQuery"
+        (ngModelChange)="currentPage = 1; applyFilters()"
+      />
+      @if (searchQuery) {
+        <button class="clear-btn" (click)="searchQuery = ''; applyFilters()">
+          <span class="material-icons">close</span>
+        </button>
+      }
+    </div>
+
+    <div class="control-row">
+      <select class="filter-select" [(ngModel)]="filterStatus" (ngModelChange)="currentPage = 1; applyFilters()">
+        @for (opt of statusOptions; track opt.value) {
+          <option [value]="opt.value">{{ opt.label }}</option>
+        }
+      </select>
+
+      <select class="filter-select" [(ngModel)]="pageSize" (ngModelChange)="currentPage = 1; applyFilters()">
+        <option [value]="10">10 / page</option>
+        <option [value]="15">15 / page</option>
+        <option [value]="25">25 / page</option>
+        <option [value]="50">50 / page</option>
+      </select>
+
+      @if (searchQuery || filterKind !== 'ALL' || filterStatus !== 'ALL') {
+        <button class="btn-ghost sm" (click)="resetFilters()">
+          <span class="material-icons">filter_alt_off</span>
+          Réinitialiser
+        </button>
+      }
+    </div>
+  </div>
+
+  <!-- ══ TABLE ══════════════════════════════════════════════════════════════════ -->
+  <div class="table-card">
+
+    @if (isLoading) {
+      <div class="skel-rows">
+        @for (i of [1,2,3,4,5,6,7,8]; track i) { <div class="skel-row"></div> }
+      </div>
+    } @else if (filteredRows.length === 0) {
+      <div class="empty">
+        <span class="material-icons">manage_search</span>
+        <p>Aucun signalement trouvé</p>
+        @if (searchQuery || filterKind !== 'ALL' || filterStatus !== 'ALL') {
+          <button class="btn-ghost sm" (click)="resetFilters()">Effacer les filtres</button>
+        }
+      </div>
+    } @else {
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th class="col-kind">Type</th>
+              <th class="sortable" (click)="setSort('title')">
+                Titre <span class="material-icons si">{{ sortIcon('title') }}</span>
+              </th>
+              <th class="sortable" (click)="setSort('contact')">
+                Contact <span class="material-icons si">{{ sortIcon('contact') }}</span>
+              </th>
+              <th class="sortable" (click)="setSort('status')">
+                Statut <span class="material-icons si">{{ sortIcon('status') }}</span>
+              </th>
+              <th class="sortable" (click)="setSort('date')">
+                Date <span class="material-icons si">{{ sortIcon('date') }}</span>
+              </th>
+              <th class="col-actions">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of pagedRows; track row.id) {
+              <tr (click)="openDetail(row)">
+                <td class="col-kind">
+                  <span class="kind-badge" [class]="kindClass(row.kind)">
+                    <span class="material-icons">{{ kindIcon(row.kind) }}</span>
+                    {{ row.kind }}
+                  </span>
+                </td>
+                <td class="cell-titre">
+                  <div class="titre-wrap">
+                    @if (row.photo) {
+                      <img class="thumb" [src]="row.photo" [alt]="row.title"/>
+                    }
+                    <div>
+                      <span class="titre-text">{{ row.title }}</span>
+                      @if (row.crisis && row.kind !== 'Crisis') {
+                        <span class="crise-link">
+                          <span class="material-icons">link</span> crise liée
+                        </span>
+                      }
+                    </div>
+                  </div>
+                </td>
+                <td class="cell-contact">
+                  @if (row.contact !== '—') {
+                    <div class="contact-stack">
+                      <span>{{ row.contact }}</span>
+                      <span class="contact-email">{{ row.email }}</span>
+                    </div>
+                  } @else {
+                    <span class="muted">—</span>
+                  }
+                </td>
+                <td>
+                  <button
+                    class="statut-chip clickable"
+                    [class]="statusClass(row.status)"
+                    (click)="openStatusEdit(row, $event)"
+                    title="Modifier le statut"
+                  >
+                    {{ statusLabel(row.status) }}
+                    <span class="material-icons edit-ic">edit</span>
+                  </button>
+                </td>
+                <td class="cell-date">
+                  <span>{{ fmtDate(row.date) }}</span>
+                  @if (row.dateExp) {
+                    <span class="date-exp">exp. {{ fmtDate(row.dateExp) }}</span>
+                  }
+                </td>
+                <td class="col-actions" (click)="$event.stopPropagation()">
+                  <button class="btn-icon-sm" (click)="openDetail(row)" title="Voir">
+                    <span class="material-icons">visibility</span>
+                  </button>
+                  <button class="btn-icon-sm" (click)="exportRow(row, $event)" title="Télécharger">
+                    <span class="material-icons">download</span>
+                  </button>
+                  <button class="btn-icon-sm danger" (click)="openDelete(row, $event)" title="Supprimer">
+                    <span class="material-icons">delete_outline</span>
+                  </button>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+
+      <!-- ── Pagination ──────────────────────────────────────────────────────── -->
+      <div class="pagination">
+        <span class="pag-info">
+          {{ (currentPage - 1) * pageSize + 1 }}–{{ minOf(currentPage * pageSize, filteredRows.length) }}
+          sur {{ filteredRows.length }}
+        </span>
+        <div class="pag-buttons">
+          <button class="pag-btn" [disabled]="currentPage === 1" (click)="changePage(1)">
+            <span class="material-icons">first_page</span>
+          </button>
+          <button class="pag-btn" [disabled]="currentPage === 1" (click)="changePage(currentPage - 1)">
+            <span class="material-icons">chevron_left</span>
+          </button>
+          @for (p of pageNumbers; track p) {
+            <button class="pag-btn" [class.active]="p === currentPage" (click)="changePage(p)">{{ p }}</button>
+          }
+          <button class="pag-btn" [disabled]="currentPage === totalPages" (click)="changePage(currentPage + 1)">
+            <span class="material-icons">chevron_right</span>
+          </button>
+          <button class="pag-btn" [disabled]="currentPage === totalPages" (click)="changePage(totalPages)">
+            <span class="material-icons">last_page</span>
+          </button>
+        </div>
+      </div>
+    }
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- MODAL: DETAIL                                                               -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+@if (showDetailModal && selectedRow) {
+  <div class="modal-overlay" (click)="closeAll()">
+    <div class="modal modal-lg" (click)="$event.stopPropagation()">
+      <div class="modal-header">
+        <div class="modal-title">
+          <span class="kind-badge sm" [class]="kindClass(selectedRow.kind)">
+            <span class="material-icons">{{ kindIcon(selectedRow.kind) }}</span>
+            {{ selectedRow.kind }}
+          </span>
+          <h2>{{ selectedRow.title }}</h2>
+        </div>
+        <button class="btn-icon-sm" (click)="closeAll()"><span class="material-icons">close</span></button>
+      </div>
+
+      <div class="modal-body detail-body">
+        <!-- Photo -->
+        @if (selectedRow.photo) {
+          <div class="detail-photo">
+            <img [src]="selectedRow.photo" [alt]="selectedRow.title"/>
+          </div>
+        }
+
+        <!-- Status + dates -->
+        <div class="detail-row-info">
+          <div class="detail-item">
+            <span class="material-icons">flag</span>
+            <div>
+              <label>Statut</label>
+              <span class="statut-chip" [class]="statusClass(selectedRow.status)">
+                {{ statusLabel(selectedRow.status) }}
+              </span>
+            </div>
+          </div>
+          <div class="detail-item">
+            <span class="material-icons">calendar_today</span>
+            <div><label>Date de création</label><span>{{ fmtDate(selectedRow.date) }}</span></div>
+          </div>
+          @if (selectedRow.dateExp) {
+            <div class="detail-item">
+              <span class="material-icons">event_busy</span>
+              <div><label>Expiration</label><span>{{ fmtDate(selectedRow.dateExp) }}</span></div>
+            </div>
+          }
+        </div>
+
+        <!-- Contact -->
+        @if (selectedRow.contact !== '—') {
+          <div class="detail-section">
+            <h3>Contact</h3>
+            <div class="detail-grid">
+              <div class="detail-item">
+                <span class="material-icons">person</span>
+                <div><label>Nom</label><span>{{ selectedRow.contact }}</span></div>
+              </div>
+              <div class="detail-item">
+                <span class="material-icons">mail</span>
+                <div><label>Email</label><span>{{ selectedRow.email }}</span></div>
+              </div>
+              @if (selectedRow.telephone) {
+                <div class="detail-item">
+                  <span class="material-icons">phone</span>
+                  <div><label>Téléphone</label><span>{{ selectedRow.telephone }}</span></div>
+                </div>
+              }
+            </div>
+          </div>
+        }
+
+        <!-- Location -->
+        @if (selectedRow.latitude !== null) {
+          <div class="detail-section">
+            <h3>Localisation</h3>
+            <div class="detail-item">
+              <span class="material-icons">place</span>
+              <div>
+                <label>Coordonnées</label>
+                <span>{{ selectedRow.latitude?.toFixed(5) }}, {{ selectedRow.longitude?.toFixed(5) }}</span>
+              </div>
+            </div>
+          </div>
+        }
+
+        <!-- Crise liée -->
+        @if (selectedRow.crisis && selectedRow.kind !== 'Crisis') {
+          <div class="detail-section">
+            <h3>Crise liée</h3>
+            <div class="detail-item">
+              <span class="material-icons">local_fire_department</span>
+              <div><label>UUID</label><span class="uuid">{{ selectedRow.crisis }}</span></div>
+            </div>
+          </div>
+        }
+
+        <!-- Specific fields: Crise -->
+        @if (isCrisis(selectedRow._raw)) {
+          @if (selectedRow._raw.description) {
+            <div class="detail-section">
+              <h3>Description</h3>
+              <p class="description-text">{{ selectedRow._raw.description }}</p>
+            </div>
+          }
+          @if (selectedRow._raw.type) {
+            <div class="detail-item">
+              <span class="material-icons">category</span>
+              <div><label>Type de crise</label><span>{{ selectedRow._raw.type }}</span></div>
+            </div>
+          }
+        }
+
+        <!-- Auteur -->
+        @if (selectedRow.author) {
+          <div class="detail-item">
+            <span class="material-icons">account_circle</span>
+            <div><label>Auteur (UUID)</label><span class="uuid">{{ selectedRow.author }}</span></div>
+          </div>
+        }
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn-ghost" (click)="closeAll()">Fermer</button>
+        <button class="btn-secondary" (click)="exportRow(selectedRow, $event)">
+          <span class="material-icons">download</span> Exporter
+        </button>
+        <button class="btn-primary" (click)="openStatusEdit(selectedRow, $event); showDetailModal = false">
+          <span class="material-icons">edit</span> Modifier statut
+        </button>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- MODAL: EDIT STATUS                                                          -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+@if (showStatusModal && selectedRow) {
+  <div class="modal-overlay" (click)="closeAll()">
+    <div class="modal modal-sm" (click)="$event.stopPropagation()">
+      <div class="modal-header">
+        <h2><span class="material-icons">flag</span> Modifier le statut</h2>
+        <button class="btn-icon-sm" (click)="closeAll()"><span class="material-icons">close</span></button>
+      </div>
+      <div class="modal-body">
+        <p class="status-target">
+          <span class="kind-badge sm" [class]="kindClass(selectedRow.kind)">
+            <span class="material-icons">{{ kindIcon(selectedRow.kind) }}</span>
+          </span>
+          <strong>{{ selectedRow.title }}</strong>
+        </p>
+
+        <div class="status-options">
+          @for (opt of editableStatuses; track opt.value) {
+            <label class="status-option" [class.selected]="newStatus === opt.value">
+              <input type="radio" name="statut" [value]="opt.value" [(ngModel)]="newStatus"/>
+              <span class="statut-chip" [class]="statusClass(opt.value)">{{ opt.label }}</span>
+            </label>
+          }
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-ghost" (click)="closeAll()">Annuler</button>
+        <button class="btn-primary" (click)="submitStatus()" [disabled]="isSaving || !newStatus">
+          <span class="material-icons">{{ isSaving ? 'hourglass_top' : 'save' }}</span>
+          {{ isSaving ? 'Sauvegarde…' : 'Enregistrer' }}
+        </button>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- MODAL: DELETE                                                               -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+@if (showDeleteModal && selectedRow) {
+  <div class="modal-overlay" (click)="closeAll()">
+    <div class="modal modal-sm" (click)="$event.stopPropagation()">
+      <div class="modal-header danger">
+        <h2><span class="material-icons">warning</span> Supprimer</h2>
+        <button class="btn-icon-sm" (click)="closeAll()"><span class="material-icons">close</span></button>
+      </div>
+      <div class="modal-body delete-body">
+        <span class="delete-icon kind-badge lg" [class]="kindClass(selectedRow.kind)">
+          <span class="material-icons">{{ kindIcon(selectedRow.kind) }}</span>
+        </span>
+        <p>Supprimer le signalement <strong>{{ selectedRow.title }}</strong> ?</p>
+        <p class="delete-warn">Cette action est <strong>irréversible</strong>.</p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-ghost" (click)="closeAll()">Annuler</button>
+        <button class="btn-danger" (click)="confirmDelete()">
+          <span class="material-icons">delete_forever</span> Supprimer
+        </button>
+      </div>
+    </div>
+  </div>
+}
