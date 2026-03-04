@@ -142,6 +142,7 @@ class Request(models.Model):
     phone_request = models.CharField(max_length=20)
     created_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField(null=True, blank=True)
+    deletion_token = models.CharField(max_length=64, unique=True, null=True, blank=True)
     status = models.CharField(
         max_length=20,
         choices=Status.choices,
@@ -188,6 +189,7 @@ class Information(models.Model):
     location = gis_models.PointField(srid=4326)
     created_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField(null=True, blank=True)
+    deletion_token = models.CharField(max_length=64, unique=True, null=True, blank=True)
     status = models.CharField(
         max_length=20,
         choices=Status.choices,
@@ -233,6 +235,7 @@ class Offer(models.Model):
     email_offer = models.EmailField()
     created_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField(null=True, blank=True)
+    deletion_token = models.CharField(max_length=64, unique=True, null=True, blank=True)
     status = models.CharField(
         max_length=20,
         choices=Status.choices,
