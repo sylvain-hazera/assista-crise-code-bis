@@ -54,6 +54,7 @@ class CrisisSerializer(serializers.ModelSerializer):
     """Serializer pour les crises"""
     latitude = serializers.SerializerMethodField()
     longitude = serializers.SerializerMethodField()
+    author = serializers.PrimaryKeyRelatedField(read_only=True, allow_null=True)
     
     class Meta:
         model = Crisis
@@ -69,6 +70,7 @@ class RequestSerializer(serializers.ModelSerializer):
     """Serializer pour les demandes d'aide"""
     latitude = serializers.SerializerMethodField()
     longitude = serializers.SerializerMethodField()
+    author = serializers.PrimaryKeyRelatedField(read_only=True, allow_null=True)
 
     class Meta:
         model = Request
@@ -84,6 +86,7 @@ class OfferSerializer(serializers.ModelSerializer):
     """Serializer pour les offres d'aide"""
     latitude = serializers.SerializerMethodField()
     longitude = serializers.SerializerMethodField()
+    author = serializers.PrimaryKeyRelatedField(read_only=True, allow_null=True)
 
     class Meta:
         model = Offer
@@ -99,6 +102,7 @@ class InformationSerializer(serializers.ModelSerializer):
     """Serializer pour les informations"""
     latitude = serializers.SerializerMethodField()
     longitude = serializers.SerializerMethodField()
+    author = serializers.PrimaryKeyRelatedField(read_only=True, allow_null=True)
     
     class Meta:
         model = Information
