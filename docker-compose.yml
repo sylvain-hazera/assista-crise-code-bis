@@ -35,6 +35,7 @@ services:
       - ./mosquitto/log:/mosquitto/log
     networks:
       - reseau_public 
+      - reseau_prive 
 
   proxy:
     build: ./proxy
@@ -62,9 +63,13 @@ services:
       - DB_NAME=assista-db
       - DB_USER=admin
       - DB_PASS=admin
-      - MQTT_BROKER=mosquitto
       - EMAIL_HOST=mailhog
       - EMAIL_PORT=1025
+      - MQTT_BROKER=mosquitto
+      - MQTT_PORT=1883
+      - MQTT_USER=backend_user
+      - MQTT_PASSWORD=admin
+      - PYTHONUNBUFFERED=1
     depends_on:
       db:
         condition: service_healthy
