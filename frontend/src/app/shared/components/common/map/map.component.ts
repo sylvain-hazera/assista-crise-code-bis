@@ -147,20 +147,20 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     this.subscription = forkJoin({
       requests: this.requestService.getAll(),
       proposals: this.offerService.getAll(),
-      //informations: this.informationService.getAll()
+      informations: this.informationService.getAll()
     }).subscribe({
-      next: ({ requests, proposals, /*informations */}) => {
+      next: ({ requests, proposals, informations }) => {
         console.log('Requests:', requests);
         console.log('Proposals:', proposals);
-        //console.log('Informations:', informations);
+        console.log('Informations:', informations);
 
         this.requests = requests;
         this.offers = proposals;
-        //this.informations = informations;
+        this.informations = informations;
 
         this.requestGeoJSON = this.jsonToGeoJSON(requests);
         this.proposalGeoJSON = this.jsonToGeoJSON(proposals);
-        //this.informationsGeoJSON = this.jsonToGeoJSON(informations);
+        this.informationsGeoJSON = this.jsonToGeoJSON(informations);
 
         if (this.map) {
           this.addSourceAndLayers();
@@ -257,7 +257,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
                     first_name = `<br>Prénom demandeur: ${first_name}`
               }
             }
-            else {
+            else if ('last_name_offer' in e.features[0].properties) {
               offerRequest = 'l\'offre';
               if (isAdmin){
                     name = e.features[0].properties['last_name_offer'] || 'N/A';
@@ -265,6 +265,15 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
                     first_name = e.features[0].properties['first_name_offer'] || 'N/A';
                     first_name = `<br>Prénom offreur: ${first_name}`
                     }
+            }
+            else {
+              offerRequest = 'l\'information';
+              if (isAdmin){
+                    name = e.features[0].properties['last_name_information'] || 'N/A';
+                    name = `<br>Nom informateur: ${name}`
+                    first_name = e.features[0].properties['first_name_information'] || 'N/A';
+                    first_name = `<br>Prénom informateur: ${first_name}`
+              }
             }
             while (Math.abs(e.lngLat.lng - coordinates[0]) > 180) {
                 coordinates[0] += e.lngLat.lng > coordinates[0] ? 360 : -360;
@@ -288,7 +297,11 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
                 'case',
                 ['has', 'last_name_request'],
                 '#ff0000', // If it's a request
-                '#11b4da' // If it's an offer
+                ['has', 'last_name_offer'],
+                '#11b4da', // If it's an offer
+                ['has', 'last_name_information'],
+                '#00ff00', // If it's an information
+                '#cccccc' // Default color (should not happen)
                 ],
                 'circle-radius': 5,
                 'circle-stroke-width': 1,
