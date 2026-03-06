@@ -246,31 +246,6 @@
         } @else if(state === 2) {
       <form [formGroup]="informationForm">
           <!-- Étape 2 : Informations personnelles -->
-            <div class="form-group">
-                <label for="personType" class="form-label">
-                Je suis <span class="required">*</span>
-                </label>
-                <div class="select-wrapper">
-                <select 
-                    id="personType" 
-                    formControlName="personType"
-                    class="form-select"
-                    [class.invalid]="informationForm.get('personType')?.invalid && informationForm.get('personType')?.touched">
-                    <option value="">Qui êtes-vous ?</option>
-                    @for(option of personTypeOptions.slice(1); track option.value) {
-                    <option [value]="option.value">
-                        {{ option.label }}
-                    </option>
-                    }
-                </select>
-                <span class="material-icons select-arrow">arrow_drop_down</span>
-                </div>
-                @if(informationForm.get('personType')?.invalid && informationForm.get('personType')?.touched) {
-                    <div class="error-message">
-                        Veuillez sélectionner un type e personne
-                    </div>
-                }
-            </div>
 
             <div class="form-section">
                 <!-- Nom -->
