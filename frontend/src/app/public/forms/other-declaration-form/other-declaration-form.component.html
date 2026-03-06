@@ -72,7 +72,7 @@
             id="lastName" 
             formControlName="lastName"
             class="form-input"
-            placeholder="Placeholder"
+            placeholder="Nom"
             [class.invalid]="isFieldInvalid('declareSafe', 'lastName')">
           @if(isFieldInvalid('declareSafe', 'lastName')) {
             <div class="error-message">
@@ -89,7 +89,7 @@
             id="firstName" 
             formControlName="firstName"
             class="form-input"
-            placeholder="Placeholder"
+            placeholder="Prénom"
             [class.invalid]="isFieldInvalid('declareSafe', 'firstName')">
           @if(isFieldInvalid('declareSafe', 'firstName')) {
             <div class="error-message">
@@ -108,7 +108,7 @@
             id="phoneNumber" 
             formControlName="phoneNumber"
             class="form-input"
-            placeholder="Placeholder"
+            placeholder="Téléphone"
             [class.invalid]="isFieldInvalid('declareSafe', 'phoneNumber')">
           @if(isFieldInvalid('declareSafe', 'phoneNumber')) {
             <div class="error-message">
@@ -127,7 +127,7 @@
             id="email" 
             formControlName="email"
             class="form-input"
-            placeholder="Placeholder"
+            placeholder="Mail"
             [class.invalid]="isFieldInvalid('declareSafe', 'email')">
           @if(isFieldInvalid('declareSafe', 'email')) {
             <div class="error-message">
@@ -150,7 +150,7 @@
               id="streetNumber" 
               formControlName="streetNumber"
               class="form-input"
-              placeholder="Placeholder"
+              placeholder="N° et voie"
               [class.invalid]="isFieldInvalid('declareSafe', 'streetNumber')">
             @if(isFieldInvalid('declareSafe', 'streetNumber')) {
               <div class="error-message">
@@ -314,7 +314,7 @@
               formControlName="informationType"
               class="form-select"
               [class.invalid]="isFieldInvalid('otherInformation', 'informationType')">
-              <option value="" disabled selected>Dropdown</option>
+              <option value="" disabled selected>Sélectionnez un type</option>
               @for(option of informationTypeOptions.slice(1); track option.value) {
                 <option [value]="option.value">
                   {{ option.label }}
@@ -363,7 +363,7 @@
               id="streetNumberOther" 
               formControlName="streetNumber"
               class="form-input"
-              placeholder="Placeholder"
+              placeholder="N° et voie"
               [class.invalid]="isFieldInvalid('otherInformation', 'streetNumber')">
             @if(isFieldInvalid('otherInformation', 'streetNumber')) {
               <div class="error-message">

@@ -5,35 +5,43 @@ import { RouterModule } from '@angular/router';
   selector: 'app-footer',
   templateUrl: './footer.component.html',
   styleUrls: ['./footer.component.scss'],
-  imports: [
-    RouterModule
-  ]
+  standalone: true,
+  imports: [RouterModule],
 })
 export class FooterComponent {
   currentYear = new Date().getFullYear();
 
-  partners = [
-    { icon: '🏛️', name: 'Ministère', link: '#' },
-    { icon: '🏠', name: 'Préfecture', link: '#' },
-    { icon: '👥', name: 'Commune', link: '#' },
-    { icon: 'ℹ️', name: 'Information', link: '#' },
-    { icon: '🆘', name: 'Urgences', link: '#' }
+  emergencyLinks = [
+    { label: 'SAMU',             number: '15',  url: 'tel:15'  },
+    { label: 'Pompiers',         number: '18',  url: 'tel:18'  },
+    { label: 'Police',           number: '17',  url: 'tel:17'  },
+    { label: 'Urgence européen', number: '112', url: 'tel:112' },
   ];
 
-  openEmail(type: 'contact' | 'support'): void {
-    const emails = {
-      contact: 'contact@assistacrise.fr',
-      support: 'support@assistacrise.fr'
-    };
-    window.location.href = `mailto:${emails[type]}`;
+  usefulLinks = [
+    { label: 'Géorisques',     url: 'https://www.georisques.gouv.fr'  },
+    { label: 'Météo France',   url: 'https://vigilance.meteofrance.fr' },
+    { label: 'Vigicrues',      url: 'https://www.vigicrues.gouv.fr'   },
+    { label: 'Sécurité civile',url: 'https://www.interieur.gouv.fr/Le-ministere/Securite-civile' },
+  ];
+
+  legalLinks = [
+    { label: 'Mentions légales', route: '/mentions-legales' },
+    { label: 'CGU',              route: '/cgu'              },
+    { label: 'RGPD',             route: '/rgpd'             },
+    { label: 'Crédits',          route: '/credits'          },
+  ];
+
+  contact = {
+    email:   'contact@assista-crise.fr',
+    support: 'support@assista-crise.fr',
+  };
+
+  openEmail(address: string): void {
+    window.location.href = `mailto:${address}`;
   }
 
-  openSocialMedia(platform: string): void {
-    const urls: { [key: string]: string } = {
-      facebook: 'https://facebook.com/assistacrise',
-      instagram: 'https://instagram.com/assistacrise',
-      youtube: 'https://youtube.com/@assistacrise'
-    };
-    window.open(urls[platform], '_blank');
+  openUrl(url: string): void {
+    window.open(url, '_blank', 'noopener noreferrer');
   }
 }

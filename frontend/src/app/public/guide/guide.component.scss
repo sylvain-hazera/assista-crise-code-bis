@@ -415,10 +415,7 @@
     width: 120px;
     height: 24px;
     flex-shrink: 0;
-    // Essayer ces chemins dans l'ordre :
-    // background-image: url('assets/images/georisques-logo.png');
-    // background-image: url('/assets/images/georisques-logo.png');
-    background-image: url('../../../assets/images/georisques-logo.png');
+    background-image: url('/georisques-logo.png');
     background-size: contain;
     background-position: center;
     background-repeat: no-repeat;
