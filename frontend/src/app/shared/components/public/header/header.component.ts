@@ -20,6 +20,7 @@ export class HeaderComponent {
 
   constructor(public authService: AuthService, private router: Router) {
     this.currentUser = this.authService.getCurrentUser();
+    console.log(this.currentUser);
     this.checkScreenSize();
   }
 

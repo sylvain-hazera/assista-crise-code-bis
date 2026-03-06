@@ -24,6 +24,8 @@ export class SettingsComponent implements OnInit {
   currentUser: User | null = null;
   profileForm!: FormGroup;
   passwordForm!: FormGroup;
+  selectedFile: File | null = null;
+  previewUrl: string | null = null;
 
   isUpdatingProfile = false;
   isChangingPassword = false;
@@ -73,7 +75,7 @@ export class SettingsComponent implements OnInit {
 
   ngOnInit(): void {
     this.currentUser = this.authService.getCurrentUser();
-    // if (!this.currentUser) { this.router.navigate(['/login']); return; }
+    this.previewUrl = this.currentUser?.photo ?? null;
     this.initForms();
     this.loadAll();
   }
@@ -185,8 +187,40 @@ export class SettingsComponent implements OnInit {
     });
   }
 
-  deleteAccount() {
-    throw new Error('Method not implemented.');
+  deleteAccount(): void {
+    // this.authService.delete().subscribe({
+    //   next: () => {
+    //     this.successMessage = 'Compte supprimé avec succès';
+    //     this.authService.logout();
+    //     this.router.navigate(['/login']);
+    //   },
+    //   error: err => (this.errorMessage = err.error?.detail ?? 'Erreur')
+    // });
+  }
+
+  /**
+   * Gère la sélection d'un fichier photo
+   */
+  onFileSelected(event: any): void {
+    const file = event.target.files[0];
+    if (file) {
+      this.selectedFile = file;
+      
+      // Créer un aperçu
+      const reader = new FileReader();
+      reader.onload = (e: any) => {
+        this.previewUrl = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+  }
+
+  /**
+   * Supprime la photo sélectionnée
+   */
+  removeSelectedFile(): void {
+    this.selectedFile = null;
+    this.previewUrl = null;
   }
 
   // ── Filtres ──────────────────────────────────────────────────

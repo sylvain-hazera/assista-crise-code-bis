@@ -2,7 +2,10 @@
   <div class="container">
     <!-- Logo -->
     <div class="logo" (click)="navigateTo('/')">
-      <span class="logo-icon">&#64;</span>
+      <!-- <span class="logo-icon">&#64;</span> -->
+      <span class="logo-icon">
+        <img src="logo.png" alt="Logo Assista Crise">
+      </span>
       <h1 class="logo-text">Assista Crise</h1>
     </div>
 
@@ -12,8 +15,8 @@
       <a routerLink="/accueil" routerLinkActive="active" (click)="closeAllMenus()">Accueil</a>
       <a routerLink="/guide" routerLinkActive="active" (click)="closeAllMenus()">Guide</a>
       <a routerLink="/carte" routerLinkActive="active" (click)="closeAllMenus()">Carte</a>
-      <a routerLink="/crises" routerLinkActive="active" (click)="closeAllMenus()">Crises</a>
-      <a routerLink="/info" routerLinkActive="active" (click)="closeAllMenus()">Info</a>
+      <!-- <a routerLink="/crises" routerLinkActive="active" (click)="closeAllMenus()">Crises</a> -->
+      <!-- <a routerLink="/info" routerLinkActive="active" (click)="closeAllMenus()">Info</a> -->
     </nav>
 
     <!-- Actions (User + Hamburger) -->
@@ -29,7 +32,7 @@
           } @else {
             <!-- <span class="material-icons">account_circle</span> -->
             @if(currentUser?.photo) {
-              <img [src]="currentUser?.photo" alt="Avatar">
+              <img [src]="currentUser!.photo" alt="Avatar">
             } @else {
               <span class="avatar-placeholder">
                 {{ currentUser?.first_name?.charAt(0) || ''}}{{ currentUser?.last_name?.charAt(0) || ''}}

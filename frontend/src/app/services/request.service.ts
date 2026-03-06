@@ -72,7 +72,7 @@ export class RequestService {
   }
 
   update(id: string, data: Partial<Request> | FormData): Observable<Request> {
-    return this.http.put<Request>(`${this.url}/${id}/`, data);
+    return this.http.patch<Request>(`${this.url}/${id}/`, data);
   }
 
 

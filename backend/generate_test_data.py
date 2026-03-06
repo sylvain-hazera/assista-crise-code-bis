@@ -95,7 +95,7 @@ def create_admin_user():
     admin_email = 'admin@admin.com'
     try:
         user = User.objects.get(email=admin_email)
-        print(f"✓ Utilisateur admin existant: {admin_email}")
+        print(f"[OK] Utilisateur admin existant: {admin_email}")
     except User.DoesNotExist:
         user = User.objects.create_user(
             username='admin',
@@ -106,7 +106,7 @@ def create_admin_user():
             type='ADMIN',
             enabled=True
         )
-        print(f"✓ Utilisateur admin créé: {admin_email}")
+        print(f"[OK] Utilisateur admin créé: {admin_email}")
     return user
 
 def create_test_users(count=10):
@@ -134,7 +134,7 @@ def create_test_users(count=10):
             )
         users.append(user)
     
-    print(f"✓ {len(users)} utilisateurs disponibles")
+    print(f"[OK] {len(users)} utilisateurs disponibles")
     return users
 
 def create_crises(users, count=15):
@@ -160,14 +160,14 @@ def create_crises(users, count=15):
         )
         crises.append(crisis)
     
-    print(f"✓ {len(crises)} crises créées")
+    print(f"[OK] {len(crises)} crises créées")
     return crises
 
 def create_requests(users, crises, count=50):
     """Crée des demandes d'aide"""
     request_types = list(RequestType.objects.all())
     if not request_types:
-        print("⚠ Aucun type de demande trouvé")
+        print("[WARN] Aucun type de demande trouvé")
         return []
     
     requests = []
@@ -209,14 +209,14 @@ def create_requests(users, crises, count=50):
         )
         requests.append(request)
     
-    print(f"✓ {len(requests)} demandes créées")
+    print(f"[OK] {len(requests)} demandes créées")
     return requests
 
 def create_offers(users, crises, count=50):
     """Crée des offres d'aide"""
     offer_types = list(OfferType.objects.all())
     if not offer_types:
-        print("⚠ Aucun type d'offre trouvé")
+        print("[WARN] Aucun type d'offre trouvé")
         return []
     
     offers = []
@@ -255,14 +255,14 @@ def create_offers(users, crises, count=50):
         )
         offers.append(offer)
     
-    print(f"✓ {len(offers)} offres créées")
+    print(f"[OK] {len(offers)} offres créées")
     return offers
 
 def create_informations(users, crises, count=30):
     """Crée des informations"""
     info_types = list(InformationType.objects.all())
     if not info_types:
-        print("⚠ Aucun type d'information trouvé")
+        print("[WARN] Aucun type d'information trouvé")
         return []
     
     informations = []
@@ -302,7 +302,7 @@ def create_informations(users, crises, count=30):
         )
         informations.append(info)
     
-    print(f"✓ {len(informations)} informations créées")
+    print(f"[OK] {len(informations)} informations créées")
     return informations
 
 def main():
@@ -311,27 +311,27 @@ def main():
     print("="*60 + "\n")
     
     # Créer les utilisateurs
-    print("📝 Création des utilisateurs...")
+    print("[1/5] Création des utilisateurs...")
     users = create_test_users(10)
     
     # Créer les crises
-    print("\n🚨 Création des crises...")
+    print("\n[2/5] Création des crises...")
     crises = create_crises(users, 15)
     
     # Créer les demandes
-    print("\n🆘 Création des demandes d'aide...")
+    print("\n[3/5] Création des demandes d'aide...")
     requests = create_requests(users, crises, 50)
     
     # Créer les offres
-    print("\n🤝 Création des offres d'aide...")
+    print("\n[4/5] Création des offres d'aide...")
     offers = create_offers(users, crises, 50)
     
     # Créer les informations
-    print("\n📢 Création des informations...")
+    print("\n[5/5] Création des informations...")
     informations = create_informations(users, crises, 30)
     
     print("\n" + "="*60)
-    print("✅ GÉNÉRATION TERMINÉE !")
+    print("[SUCCESS] GÉNÉRATION TERMINÉE !")
     print("="*60)
     print(f"\nRésumé:")
     print(f"  • {len(users)} utilisateurs")
@@ -340,8 +340,8 @@ def main():
     print(f"  • {len(offers)} offres")
     print(f"  • {len(informations)} informations")
     print(f"\n  TOTAL: {len(crises) + len(requests) + len(offers) + len(informations)} éléments créés")
-    print("\n🗺️  Les données sont réparties sur toute la France!")
-    print("🌐 Rechargez votre application pour voir les nouvelles données\n")
+    print("\nLes données sont réparties sur toute la France!")
+    print("Rechargez votre application pour voir les nouvelles données\n")
 
 if __name__ == '__main__':
     main()
