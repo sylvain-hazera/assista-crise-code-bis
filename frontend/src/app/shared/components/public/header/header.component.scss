@@ -30,8 +30,14 @@
     }
 
     .logo-icon {
-      font-size: 2rem;
-      font-weight: bold;
+      width: 50px;
+      height: 50px;
+
+      img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
     }
 
     .logo-text {
@@ -114,6 +120,12 @@
         color: #666;
       }
 
+      img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      
       .avatar-placeholder {
         width: 100%;
         height: 100%;
@@ -392,7 +404,8 @@
       }
 
       .logo-icon {
-        font-size: 1.5rem;
+        width: 40px;
+        height: 40px
       }
     }
 
@@ -439,7 +452,8 @@
       }
 
       .logo-icon {
-        font-size: 1.25rem;
+        width: 30px;
+        height: 30px;;
       }
     }
 

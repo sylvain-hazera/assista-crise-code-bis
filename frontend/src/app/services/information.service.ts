@@ -35,7 +35,7 @@ export class InformationService {
   }
 
   update(id: string, data: Partial<Information> | FormData): Observable<Information> {
-    return this.http.put<Information>(`${this.url}/${id}/`, data);
+    return this.http.patch<Information>(`${this.url}/${id}/`, data);
   }
 
   delete(id: string): Observable<void> {

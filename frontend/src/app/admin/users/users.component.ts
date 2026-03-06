@@ -356,7 +356,7 @@ export class UsersComponent implements OnInit, OnDestroy {
   /**
    * Valide un utilisateur (changement de rôle)
    */
-  validateUser(user: User): void {
+  upgradeUser(user: User): void {
     // Cette méthode change le rôle d'UTIL_SIMPLE vers un rôle plus élevé
     if (user.type !== UserRole.SIMPLE_USER) {
       alert('Cet utilisateur est déjà validé');
@@ -400,16 +400,17 @@ export class UsersComponent implements OnInit, OnDestroy {
   /**
    * Active/désactive un utilisateur
    */
-  toggleUserStatus(user: User): void {
-    const formData = new FormData();
-    formData.append('enable', (!user.enabled).toString());
-    formData.append('validator', this.authService.getCurrentUser()!.id.toString());
+  toggleUserStatus(user: User): void {    
+    user.enabled = !user.enabled;
+    user.validator?.push(this.authService.getCurrentUser()!.id.toString());
+    console.log(user);
     
-    this.userService.update(user.id, formData)
+    this.isLoading = true;
+    this.userService.update(user.id, user)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: () => {
-          this.successMessage = `Utilisateur ${user.enabled ? 'désactivé' : 'activé'} avec succès`;
+          this.successMessage = `Utilisateur ${user.enabled ? 'activé' : 'desactivé'} avec succès`;
           this.loadUsers();
           setTimeout(() => this.successMessage = '', 3000);
         },

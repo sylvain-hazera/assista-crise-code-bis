@@ -55,6 +55,28 @@
       @if (activeTab === 'profile') {
         <div class="tab-panel">
           <form [formGroup]="profileForm" (ngSubmit)="updateProfile()">
+            <div class="form-group photo-group">
+              <!-- <label>Photo de profil</label> -->
+              <div class="photo-upload">
+                <div class="photo-preview" *ngIf="previewUrl">
+                  <img [src]="previewUrl" alt="Preview">
+                  <button type="button" class="remove-photo" (click)="removeSelectedFile()">
+                    <span class="material-icons">close</span>
+                  </button>
+                </div>
+                <div class="photo-placeholder" *ngIf="!previewUrl" (click)="fileInput.click()">
+                  <span class="material-icons">add_a_photo</span>
+                  <span>Ajouter une photo</span>
+                </div>
+                <input 
+                  #fileInput
+                  type="file" 
+                  accept="image/*"
+                  (change)="onFileSelected($event)"
+                  style="display: none"
+                >
+              </div>
+            </div>
             <div class="form-group">
               <label for="lastName" class="form-label">
                 Nom <span class="required">*</span>
@@ -471,11 +493,11 @@
         </div>
       </div>
     }
-    <div class="danger-zone">
+    <!-- <div class="danger-zone">
       <h3><span class="material-icons">report_problem</span> Zone de danger</h3>
       <p>La suppression de votre compte est irréversible.</p>
       <button class="btn btn-danger" (click)="deleteAccount()">Supprimer mon compte</button>
-    </div>
+    </div> -->
 
   </div>
 </div>

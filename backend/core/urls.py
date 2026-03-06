@@ -6,7 +6,8 @@ from .views import (
     UserViewSet, CrisisViewSet, RequestViewSet, 
     OfferViewSet, InformationViewSet,
     RequestTypeViewSet, OfferTypeViewSet, InformationTypeViewSet,
-    DeleteRequestView, DeleteOfferView, DeleteInformationView
+    DeleteRequestView, DeleteOfferView, DeleteInformationView,
+    TeamViewSet
 )
 
 router = DefaultRouter()
@@ -18,6 +19,7 @@ router.register(r'informations', InformationViewSet)
 router.register(r'types-demande', RequestTypeViewSet)
 router.register(r'types-offre', OfferTypeViewSet)
 router.register(r'types-information', InformationTypeViewSet)
+router.register(r'teams', TeamViewSet)
 
 urlpatterns = [
     path('', include(router.urls)),
