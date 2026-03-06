@@ -11,10 +11,25 @@ python manage.py shell <<EOF
 from django.contrib.auth import get_user_model
 User = get_user_model()
 if not User.objects.filter(username='admin').exists():
-    User.objects.create_superuser('admin', 'admin@admin.com', 'admin')
-    print("Superuser 'admin' created successfully!")
+    admin = User.objects.create_user(
+        username='admin',
+        email='admin@admin.com',
+        password='admin',
+        type='ADMIN',
+        enabled=True,
+        is_superuser=True,
+        is_staff=True
+    )
+    print("Superuser 'admin' created successfully with type ADMIN!")
 else:
-    print("'admin' superuser already exists.")
+    # Mettre à jour le type si l'utilisateur existe déjà
+    admin = User.objects.get(username='admin')
+    if admin.type != 'ADMIN':
+        admin.type = 'ADMIN'
+        admin.save()
+        print("'admin' superuser type updated to ADMIN.")
+    else:
+        print("'admin' superuser already exists.")
 EOF
 
 
