@@ -132,7 +132,6 @@ export class ProposeHelpFormComponent implements OnInit {
     this.addOffer(); // Ajouter un besoin initial  
 
     this.informationForm = this.formBuilder.group({
-      personType: [this.currentUser?.type, Validators.required],
       lastName: [this.currentUser?.last_name, Validators.required],
       firstName: [this.currentUser?.first_name, Validators.required],
       email: [this.currentUser?.email, [Validators.required, Validators.email]],

@@ -12,7 +12,7 @@ import { AuthService } from '../../../auth/services/auth.service';
 enum StateForm {
   DeclareSafe,
   OtherDeclaration
-}
+} 
 
 @Component({
   selector: 'app-other-declaration-form',

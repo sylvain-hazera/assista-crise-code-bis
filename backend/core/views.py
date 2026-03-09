@@ -278,7 +278,7 @@ class UserViewSet(viewsets.ModelViewSet):
 class CrisisViewSet(viewsets.ModelViewSet):
     queryset = Crisis.objects.all()
     serializer_class = CrisisSerializer
-    permission_classes = [AllowAny]
+    permission_classes = [AllowAny] 
     filterset_class = AuthorEmailFilter
 
     def perform_create(self, serializer):
