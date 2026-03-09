@@ -117,9 +117,6 @@ services:
       - "8025:8025" # Web UI
     networks:
       - reseau_prive
-    environment:
-      - EMAIL_HOST=mailhog
-      - EMAIL_PORT=1025
 
 volumes:
   postgres_data:
