@@ -253,6 +253,21 @@ export class AuthService {
           localStorage.setItem('access_token', res.access);
           localStorage.setItem('refresh_token', res.refresh);
           localStorage.setItem('current_user', JSON.stringify(res.user));
+        }),
+        catchError((error: HttpErrorResponse) => {
+          let errorMessage = 'Une erreur est survenue lors de la connexion';
+          
+          if (error.status === 401) {
+            errorMessage = 'Email ou mot de passe incorrect';
+          } else if (error.status === 403) {
+            errorMessage = error.error?.error || 'Accès refusé';
+          } else if (error.status === 0) {
+            errorMessage = 'Impossible de contacter le serveur. Vérifiez votre connexion.';
+          } else if (error.error?.error) {
+            errorMessage = error.error.error;
+          }
+          
+          return throwError(() => new Error(errorMessage));
         })
       );
   }
