@@ -79,15 +79,11 @@ export class AdminHeaderComponent implements OnInit {
   }
 
   get companyName(): string {
-    return this.currentUser?.userType === 'organization' 
-      ? this.currentUser.lastName 
-      : 'Nom de la compagnie';
+    return this.currentUser?.last_name || 'Nom de la compagnie';
   }
 
   get userName(): string {
     if (!this.currentUser) return '';
-    return this.currentUser.userType === 'organization'
-      ? this.currentUser.lastName
-      : `${this.currentUser.firstName} ${this.currentUser.lastName}`;
+    return `${this.currentUser.first_name} ${this.currentUser.last_name}`;
   }
 }

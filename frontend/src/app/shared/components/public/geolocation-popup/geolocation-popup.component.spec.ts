@@ -1,18 +1,18 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
-import { GeolocalisationPopupComponent } from './geolocation-popup.component';
+import { GeolocationPopupComponent } from './geolocation-popup.component';
 
-describe('GeolocalisationPopupComponent', () => {
-  let component: GeolocalisationPopupComponent;
-  let fixture: ComponentFixture<GeolocalisationPopupComponent>;
+describe('GeolocationPopupComponent', () => {
+  let component: GeolocationPopupComponent;
+  let fixture: ComponentFixture<GeolocationPopupComponent>;
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [GeolocalisationPopupComponent]
+      imports: [GeolocationPopupComponent]
     })
     .compileComponents();
 
-    fixture = TestBed.createComponent(GeolocalisationPopupComponent);
+    fixture = TestBed.createComponent(GeolocationPopupComponent);
     component = fixture.componentInstance;
     fixture.detectChanges();
   });

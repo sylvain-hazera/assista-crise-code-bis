@@ -11,7 +11,6 @@ export const enableGuard: CanActivateFn = (route, state) => {
     return true; // Accès autorisé
   }
 
-  // Afficher un message d'information à l'utilisateur
   alert(
     'Votre compte est en attente de validation par un administrateur.\n\n'
   );
