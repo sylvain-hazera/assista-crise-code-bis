@@ -20,12 +20,26 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-#8)$+%o@q2+uej29dn7$-dtscvjf6g1r420@7u8$2jp73ebrah'
+SECRET_KEY = 'django-insecure-HSLgGBNlaGBJ4kyaracScLRPa3tFJhK6LOEbYQs9ipBu-DaMMQfey725-fB-uq8Dabk'
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'assista-crise.duckdns.org']
+ALLOWED_HOSTS = ['localhost', '172.16.1.113', '127.0.0.1', 'assista-crise.fr', 'www.assista-crise.fr', 'demo.assista-crise.fr', 'assista-crise.duckdns.org']
+
+CSRF_TRUSTED_ORIGINS = [
+    "https://assista-crise.fr",
+    "https://demo.assista-crise.fr",
+    "https://demo.assista-crise.fr:4200",
+    "https://www.assista-crise.fr",
+    "https://assista-crise.duckdns.org",
+
+    "http://172.16.1.113",
+    "http://172.16.1.113:4200",
+
+    "http://localhost",
+    "http://localhost:4200",
+]
 
 # Custom user model
 AUTH_USER_MODEL = 'core.User'
@@ -125,7 +139,6 @@ USE_I18N = True
 
 USE_TZ = True
 
-
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
@@ -136,9 +149,25 @@ MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
 CORS_ALLOWED_ORIGINS = [
+    "http://172.16.1.113:4200",
+    "http://assista-crise.duckdns.org",
+    "http://demo.assista-crise.fr",
     "http://localhost:4200",
     "http://127.0.0.1:4200",
     "http://frontend:4200",  # Pour Docker
+    "https://172.16.1.113:4200",
+    "https://assista-crise.duckdns.org",
+    "https://assista-crise.fr",
+    "https://demo.assista-crise.fr",
+    "https://demo.assista-crise.fr:4200",
+    "https://localhost:4200",
+    "https://127.0.0.1:4200",
+    "https://frontend:4200",  # Pour Docker
+]
+
+CSRF_TRUSTED_ORIGINS = [
+    "http://172.16.1.113",
+    "https://172.16.1.113",
 ]
 
 CORS_ALLOW_CREDENTIALS = True
@@ -171,8 +200,8 @@ REST_FRAMEWORK = {
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
     'DEFAULT_PERMISSION_CLASSES': (
-        'rest_framework.permissions.AllowAny',
-        # 'rest_framework.permissions.IsAuthenticated',
+        'rest_framework.permissions.IsAuthenticated',
+        # 'rest_framework.permissions.AllowAny',
         # 'rest_framework.permissions.IsAuthenticatedOrReadOnly',
     ),
     'DEFAULT_FILTER_BACKENDS': [
@@ -208,4 +237,20 @@ EMAIL_USE_SSL = os.environ.get('EMAIL_USE_SSL', 'False') == 'True'
 EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
 
-DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'ne-pas-repondre@assista-crise.fr')
+DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'no-reply@assista-crise.fr')
+
+SERVER_URL = os.environ.get(
+    "SERVER_URL",
+    "http://172.16.1.113:4200"
+)
+
+# Durée de conservation (en jours) des lignes de la main courante (AuditLog),
+# purgées par `python manage.py purge_audit_logs` (principe de minimisation RGPD).
+AUDIT_LOG_RETENTION_DAYS = int(os.environ.get('AUDIT_LOG_RETENTION_DAYS', 30))
+
+USE_X_FORWARDED_HOST = True
+
+SECURE_PROXY_SSL_HEADER = (
+    ('HTTP_X_FORWARDED_PROTO', 'https')
+)
+

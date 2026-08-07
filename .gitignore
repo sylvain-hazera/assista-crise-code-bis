@@ -59,3 +59,11 @@ Thumbs.db
 
 # Mosquitto data
 mosquitto/data/
+
+# ==========================================
+# 5. ARTEFACTS DE TRAVAIL / DUMPS (jamais versionnés)
+# ==========================================
+*.bak
+backend/core/migrations_backup/
+*.sql
+

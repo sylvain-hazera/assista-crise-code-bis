@@ -3,7 +3,20 @@ from django.contrib import admin
 from django.contrib.gis.admin import GISModelAdmin
 from .models import (
     User, Crisis, Request, Offer, Information,
-    RequestType, OfferType, InformationType
+    RequestType, OfferType, InformationType,
+    InstitutionType,
+    Institution,
+    RoleOperationnel,
+    ContactInstitution,
+    InstitutionDomaine,
+    InstitutionCompetence,
+    AffectationRoleOperationnel,
+    DisponibiliteOperationnelle,
+    DelegationCompetence,
+    PointType,
+    PointOperationnel,
+    AuditAction,
+    AuditLog,
 )
 
 
@@ -37,7 +50,20 @@ class UserAdmin(admin.ModelAdmin):
     list_display = ('username', 'email', 'type', 'affected_crisis')
     list_filter = ('type',)
 
-
 admin.site.register(RequestType)
 admin.site.register(OfferType)
 admin.site.register(InformationType)
+admin.site.register(InstitutionType)
+admin.site.register(Institution)
+admin.site.register(RoleOperationnel)
+admin.site.register(InstitutionCompetence)
+admin.site.register(AffectationRoleOperationnel)
+admin.site.register(DisponibiliteOperationnelle)
+admin.site.register(DelegationCompetence)
+admin.site.register(PointType)
+admin.site.register(PointOperationnel)
+admin.site.register(AuditAction)
+admin.site.register(AuditLog)
+admin.site.register(ContactInstitution)
+admin.site.register(InstitutionDomaine)
+

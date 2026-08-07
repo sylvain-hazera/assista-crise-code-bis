@@ -2,6 +2,9 @@ import pytest
 from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from core.validators import validate_image_file
+from core.auth_validation import InstitutionEmailValidator
+from core.serializers import UserSerializer
+from core.models import User, UserRole
 from io import BytesIO
 from PIL import Image
 
@@ -92,3 +95,86 @@ class TestImageValidator:
             validate_image_file(corrupted_file)
         
         assert "Fichier image invalide" in str(exc_info.value)
+
+
+def test_institutional_email_with_mairie_domain_is_accepted():
+    """Un email de mairie doit être accepté comme domaine institutionnel valide."""
+    valid, message = InstitutionEmailValidator.validate_email_domain("contact@mairie-bordeaux.fr")
+
+    assert valid is True
+    assert message == "Adresse email valide"
+
+
+def test_institutional_email_with_unrelated_domain_is_rejected():
+    """Un email non institutionnel doit être rejeté."""
+    valid, message = InstitutionEmailValidator.validate_email_domain("contact@randommail.com")
+
+    assert valid is False
+    assert "doit correspondre" in message.lower()
+
+
+def test_institutional_email_with_public_authority_domains_is_accepted():
+    """Les emails de collectivités et services publics doivent être acceptés."""
+    accepted_domains = [
+        "contact@prefecture-bordeaux.fr",
+        "contact@police-bordeaux.fr",
+        "contact@gendarmerie.fr",
+        "contact@samu-33.fr",
+        "contact@cc-pays-auron.fr",
+        "contact@collectivites-locales.fr",
+        "contact@ministere.gouv.fr",
+    ]
+
+    for email in accepted_domains:
+        valid, message = InstitutionEmailValidator.validate_email_domain(email)
+        assert valid is True, f"{email} should be accepted: {message}"
+
+
+def test_validate_institution_account_matches_commune_and_institution_type():
+    """La validation institutionnelle doit combiner institution, commune et domaine."""
+    valid, message, details = InstitutionEmailValidator.validate_institution_account(
+        email="contact@mairie-bordeaux.fr",
+        institution_name="Mairie de Bordeaux",
+        institution_type="mairie",
+        commune_name="Bordeaux",
+        commune_code="33063",
+    )
+
+    assert valid is True
+    assert details["commune"]["name"] == "Bordeaux"
+    assert "mairie" in message.lower() or "valide" in message.lower()
+
+
+def test_validate_institution_account_rejects_mismatch_between_type_and_domain():
+    """Un type d'institution incompatible avec le domaine doit être rejeté."""
+    valid, message, _ = InstitutionEmailValidator.validate_institution_account(
+        email="contact@prefecture-bordeaux.fr",
+        institution_name="Mairie de Bordeaux",
+        institution_type="mairie",
+        commune_name="Bordeaux",
+        commune_code="33063",
+    )
+
+    assert valid is False
+    assert "incompatible" in message.lower() or "doit correspondre" in message.lower()
+
+
+@pytest.mark.django_db
+def test_institution_registration_is_rejected_when_validation_fails():
+    """Une inscription institutionnelle invalide doit être refusée, sans créer de compte."""
+    serializer = UserSerializer(data={
+        'username': 'institution-invalid',
+        'email': 'contact@prefecture-bordeaux.fr',
+        'password': 'StrongPass123!',
+        'type': UserRole.LOCAL_AUTHORITY,
+        'first_name': 'Mairie',
+        'last_name': 'Bordeaux',
+        'phone_number': '0123456789',
+        'institution_name': 'Mairie de Bordeaux',
+        'institution_type': 'mairie',
+        'commune_name': 'Bordeaux',
+        'commune_code': '33063',
+    })
+
+    assert serializer.is_valid() is False
+    assert 'email' in serializer.errors or 'non_field_errors' in serializer.errors

@@ -1,9 +1,58 @@
+
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from .auth_validation import InstitutionEmailValidator
 from .models import (
+    UserRole,
+    InstitutionType,
+    Institution,
+    RoleOperationnel,
+    ContactInstitution,
+    InstitutionDomaine,
+    InstitutionCompetence,
+    AffectationRoleOperationnel,
+    DelegationCompetence,
+    DisponibiliteOperationnelle,
+    PointType,
+    PointOperationnel,
     User, Crisis, Request, Offer, Information,
-    RequestType, OfferType, InformationType, Team
+    RecherchePersonneLecture, RecherchePersonneLectureHistorique,
+    Document, RecherchePersonnePhoto, RecherchePersonneCommentairePhoto,
+    DossierCommentaire, RecherchePersonne, RecherchePersonneCommentaire, RecherchePersonneHistorique,
+    DossierHistorique, Besoin, BesoinCompetence,Dossier, RequestType, RequestTypeBesoin, OfferType, InformationType, Team, Competence, AffectationCompetence
 )
+
+class RecherchePersonneCommentairePhotoSerializer(
+    serializers.ModelSerializer
+):
+
+    preview_url = (
+        serializers.SerializerMethodField()
+    )
+
+    def get_preview_url(
+        self,
+        obj
+    ):
+
+        return (
+            f"/api/"
+            f"recherches-personnes-commentaires-photos/"
+            f"{obj.id}/preview/"
+        )
+
+    class Meta:
+
+        model = (
+            RecherchePersonneCommentairePhoto
+        )
+
+        fields = "__all__"
+
+class CompetenceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Competence
+        fields = "__all__"
 
 class RequestTypeSerializer(serializers.ModelSerializer):
     """Serializer pour les types de demandes"""
@@ -23,15 +72,58 @@ class InformationTypeSerializer(serializers.ModelSerializer):
         model = InformationType
         fields = '__all__'
 
+class BesoinSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = Besoin
+        fields = "__all__"
+
+class BesoinCompetenceSerializer(serializers.ModelSerializer):
+
+    besoin_nom = serializers.CharField(
+        source='besoin.nom',
+        read_only=True
+    )
+
+    competence_nom = serializers.CharField(
+        source='competence.nom',
+        read_only=True
+    )
+
+    class Meta:
+        model = BesoinCompetence
+        fields = "__all__"
+
+class RequestTypeBesoinSerializer(serializers.ModelSerializer):
+
+    request_type_nom = serializers.CharField(
+        source='request_type.type',
+        read_only=True
+    )
+
+    besoin_nom = serializers.CharField(
+        source='besoin.nom',
+        read_only=True
+    )
+
+    class Meta:
+        model = RequestTypeBesoin
+        fields = "__all__"
 
 class UserSerializer(serializers.ModelSerializer):
     """Serializer pour les utilisateurs"""
     password = serializers.CharField(write_only=True, required=True)
+    institution_name = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    institution_type = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    commune_name = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    commune_code = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    institution_email_hint = serializers.CharField(write_only=True, required=False, allow_blank=True)
     
     class Meta:
         model = User
         fields = ['id', 'username', 'email', 'first_name', 'last_name', 'type', 
-                  'photo', 'phone_number', 'password', 'postal_code', 'enabled']
+                  'photo', 'phone_number', 'password', 'postal_code', 'enabled',
+                  'institution_name', 'institution_type', 'commune_name', 'commune_code', 'institution_email_hint']
         extra_kwargs = {
             'password': {'write_only': True},
             'first_name': {'required': False},
@@ -42,13 +134,76 @@ class UserSerializer(serializers.ModelSerializer):
             'enabled': {'required': False},
         }
 
+    def validate(self, attrs):
+        email = attrs.get('email')
+        user_type = attrs.get('type')
+
+        if user_type in {UserRole.LOCAL_AUTHORITY, UserRole.ORGANIZED_RESCUE, UserRole.ADMINISTRATOR}:
+            valid, message, _ = InstitutionEmailValidator.validate_institution_account(
+                email=email,
+                institution_name=attrs.get('institution_name', ''),
+                institution_type=attrs.get('institution_type', ''),
+                commune_name=attrs.get('commune_name', ''),
+                commune_code=attrs.get('commune_code', ''),
+            )
+            if not valid:
+                raise serializers.ValidationError({'email': message})
+
+        return attrs
+
     def create(self, validated_data):
-        # Créer username à partir de l'email si non fourni
+        for field in ['institution_name', 'institution_type', 'commune_name', 'commune_code', 'institution_email_hint']:
+            validated_data.pop(field, None)
+
         if 'username' not in validated_data:
             validated_data['username'] = validated_data['email']
-        
+
+        user_type = validated_data.get('type')
+        if user_type == UserRole.LOCAL_AUTHORITY:
+            validated_data['enabled'] = True
+        elif user_type in {UserRole.ORGANIZED_RESCUE, UserRole.ADMINISTRATOR}:
+            validated_data['enabled'] = False
+
         user = User.objects.create_user(**validated_data)
+
+        if user_type == UserRole.LOCAL_AUTHORITY:
+            self._assign_default_institution_role(user)
+
         return user
+
+    def _assign_default_institution_role(self, user):
+        from .models import Institution, InstitutionType, RoleOperationnel, AffectationRoleOperationnel, Competence
+
+        institution_type_code = (user.first_name or '').strip().lower()
+        institution_name = (user.last_name or '').strip()
+        if not institution_name:
+            institution_name = user.email
+
+        institution_type = InstitutionType.objects.filter(code__iexact='autre').first()
+        if not institution_type:
+            institution_type = InstitutionType.objects.create(code='autre', libelle='Autre')
+
+        institution, created = Institution.objects.get_or_create(
+            nom=institution_name,
+            defaults={'type': institution_type, 'email': user.email, 'actif': True}
+        )
+
+        role_code = 'RESPONSABLE' if not institution.affectations_roles.exists() else 'REGULATEUR'
+        role = RoleOperationnel.objects.filter(code=role_code).first()
+        if not role:
+            role = RoleOperationnel.objects.create(code=role_code, libelle=role_code.title())
+
+        competence = Competence.objects.first()
+        if competence is None:
+            competence = Competence.objects.create(nom='Général', description='Compétence par défaut')
+
+        AffectationRoleOperationnel.objects.get_or_create(
+            utilisateur=user,
+            institution=institution,
+            competence=competence,
+            role=role,
+            defaults={'actif': True}
+        )
 
 class CrisisSerializer(serializers.ModelSerializer):
     """Serializer pour les crises"""
@@ -149,3 +304,580 @@ class TeamSerializer(serializers.ModelSerializer):
             'assigned_request_ids',
         ]
         read_only_fields = ['id', 'created_at']
+
+class CompetenceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Competence
+        fields = "__all__"
+
+
+class AffectationCompetenceSerializer(serializers.ModelSerializer):
+
+    crise_nom = serializers.CharField(
+        source='crise.name',
+        read_only=True
+    )
+
+    competence_nom = serializers.CharField(
+        source='competence.nom',
+        read_only=True
+    )
+
+    equipe_nom = serializers.CharField(
+        source='equipe.name',
+        read_only=True
+    )
+
+    class Meta:
+        model = AffectationCompetence
+        fields = "__all__"
+
+class DossierSerializer(serializers.ModelSerializer):
+
+    crise_nom = serializers.CharField(
+        source='crise.name',
+        read_only=True
+    )
+
+    competence_nom = serializers.CharField(
+        source='competence.nom',
+        read_only=True
+    )
+
+    equipe_nom = serializers.CharField(
+        source='equipe.name',
+        read_only=True
+    )
+
+    has_updates = serializers.SerializerMethodField()
+
+    unread_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Dossier
+        fields = "__all__"
+
+    def get_has_updates(self, obj):
+
+        return (
+            self.get_unread_count(obj)
+            > 0
+        )
+
+    def get_unread_count(self, obj):
+
+        request = self.context.get(
+            "request"
+        )
+
+        if (
+            not request
+            or
+            not request.user.is_authenticated
+        ):
+            return 0
+
+        participant = (
+            obj.participants
+            .filter(
+                utilisateur=request.user
+            )
+            .first()
+        )
+
+        if (
+            not participant
+            or
+            not participant.date_derniere_vue
+        ):
+            return 0
+
+        commentaires = (
+            obj.commentaires
+            .filter(
+                date_creation__gt=
+                participant.date_derniere_vue
+            )
+            .count()
+        )
+
+        documents = (
+            obj.documents
+            .filter(
+                date_upload__gt=
+                participant.date_derniere_vue
+            )
+            .count()
+        )
+
+        return (
+            commentaires
+            +
+            documents
+        )
+
+class DocumentSerializer(serializers.ModelSerializer):
+
+    auteur_nom = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Document
+        fields = "__all__"
+
+    def get_auteur_nom(self, obj):
+
+        if not obj.auteur:
+            return "Inconnu"
+
+        return (
+            f"{obj.auteur.first_name} "
+            f"{obj.auteur.last_name}"
+        ).strip() or obj.auteur.username
+
+class DossierCommentaireSerializer(serializers.ModelSerializer):
+
+    auteur_nom = serializers.SerializerMethodField()
+
+    class Meta:
+        model = DossierCommentaire
+        fields = "__all__"
+
+    def get_auteur_nom(self, obj):
+
+        if not obj.auteur:
+            return "Inconnu"
+
+        return (
+            f"{obj.auteur.first_name} "
+            f"{obj.auteur.last_name}"
+        ).strip() or obj.auteur.username
+
+
+class DossierHistoriqueSerializer(serializers.ModelSerializer):
+
+    auteur_nom = serializers.SerializerMethodField()
+
+    class Meta:
+        model = DossierHistorique
+        fields = "__all__"
+
+    def get_auteur_nom(self, obj):
+
+        if not obj.auteur:
+            return "Système"
+
+        return (
+            f"{obj.auteur.first_name} "
+            f"{obj.auteur.last_name}"
+        ).strip() or obj.auteur.username
+
+class RecherchePersonneSerializer(
+    serializers.ModelSerializer
+):
+
+    crise_nom = serializers.CharField(
+       source="crise.name",
+       read_only=True
+    )
+
+
+    dernier_commentaire = serializers.SerializerMethodField()
+
+    nb_photos_dernier_commentaire = (
+        serializers.SerializerMethodField()
+    )
+
+    date_dernier_commentaire = (
+        serializers.SerializerMethodField()
+    )
+
+    etat_utilisateur = (
+        serializers.SerializerMethodField()
+    )
+
+    def get_dernier_commentaire(
+        self,
+        obj
+    ):
+
+        commentaire = (
+            obj.commentaires
+            .order_by("-date_creation")
+            .first()
+        )
+
+        if not commentaire:
+            return ""
+
+        return commentaire.commentaire
+
+    def get_date_dernier_commentaire(
+        self,
+        obj
+    ):
+
+        commentaire = (
+            obj.commentaires
+            .order_by("-date_creation")
+            .first()
+        )
+
+        if not commentaire:
+            return None
+
+        return commentaire.date_creation
+
+
+    def get_nb_photos_dernier_commentaire(
+        self,
+        obj
+    ):
+
+        commentaire = (
+            obj.commentaires
+            .order_by("-date_creation")
+            .first()
+        )
+
+        if not commentaire:
+            return 0
+
+        return commentaire.photos.count()
+
+
+
+
+    def get_etat_utilisateur(
+            self,
+            obj
+        ):
+
+            request = self.context.get(
+                "request"
+            )
+
+            if (
+                not request
+                or not request.user.is_authenticated
+            ):
+                return "NOUVEAU"
+
+            lecture = (
+                RecherchePersonneLecture.objects
+                .filter(
+                    recherche=obj,
+                    utilisateur=request.user
+                )
+                .first()
+            )
+
+            if not lecture:
+                return "NOUVEAU"
+
+            derniere_activite = obj.date_creation
+
+            commentaire = (
+                obj.commentaires
+                .order_by("-date_creation")
+                .first()
+            )
+
+            if commentaire:
+                derniere_activite = max(
+                    derniere_activite,
+                    commentaire.date_creation
+                )
+
+            if (
+                lecture.date_dernier_acquittement
+                and
+                lecture.date_dernier_acquittement
+                >= derniere_activite
+            ):
+                return "ACQUITTE"
+
+            if (
+                lecture.date_derniere_lecture
+                and
+                lecture.date_derniere_lecture
+                >= derniere_activite
+            ):
+                return "VU"
+
+            return "NOUVEAU"
+
+
+    
+    class Meta:
+        model = RecherchePersonne
+
+        fields = [
+            "id",
+            "nom",
+            "prenom",
+            "age",  
+            "photo",
+            "description",
+            "source",
+            "ville",
+            "adresse",
+            "ehpad_nom",
+            "ehpad_adresse",
+            "contact_nom",
+            "contact_email",
+            "contact_telephone",
+            "statut",
+            "date_creation",
+            "date_retrouvee",
+            "createur",
+            "crise",
+            "crise_nom",
+            "dernier_commentaire",
+            "nb_photos_dernier_commentaire",
+            "date_dernier_commentaire",
+            "etat_utilisateur",
+        ]
+
+
+
+        read_only_fields = (
+            "createur",
+            "date_creation",
+            "date_retrouvee",
+        )
+
+
+class RecherchePersonneCommentaireSerializer(
+    serializers.ModelSerializer
+):
+
+    auteur_nom = serializers.SerializerMethodField()
+
+    class Meta:
+        model = RecherchePersonneCommentaire
+        fields = "__all__"
+
+        read_only_fields = (
+        "auteur",
+        "date_creation",
+    )
+
+    def get_auteur_nom(self, obj):
+
+        return (
+            f"{obj.auteur.first_name} "
+            f"{obj.auteur.last_name}"
+        ).strip() or obj.auteur.username
+
+class RecherchePersonneHistoriqueSerializer(
+    serializers.ModelSerializer
+):
+    auteur_nom = serializers.SerializerMethodField()
+
+    class Meta:
+        model = RecherchePersonneHistorique
+        fields = "__all__"
+
+    def get_auteur_nom(self, obj):
+
+        if not obj.auteur:
+            return "Système"
+
+        return (
+            f"{obj.auteur.first_name} "
+            f"{obj.auteur.last_name}"
+        ).strip()
+
+class RecherchePersonnePhotoSerializer(
+    serializers.ModelSerializer
+):
+
+    auteur_nom = serializers.SerializerMethodField()
+
+    preview_url = (
+        serializers.SerializerMethodField()
+    )
+
+    def get_preview_url(
+        self,
+        obj
+    ):
+
+        return (
+            f"/api/"
+            f"recherches-personnes-photos/"
+            f"{obj.id}/preview/"
+        )
+
+    class Meta:
+
+        model = RecherchePersonnePhoto
+
+        fields = [
+            "id",
+            "recherche",
+            "fichier",
+            "auteur",
+            "auteur_nom",
+            "commentaire",
+            "date_creation",
+            "preview_url",
+        ] 
+
+        read_only_fields = (
+            "auteur",
+            "date_creation",
+        )
+
+    def get_auteur_nom(self, obj):
+
+        if not obj.auteur:
+            return "Inconnu"
+
+        return (
+            f"{obj.auteur.first_name} "
+            f"{obj.auteur.last_name}"
+        ).strip() or obj.auteur.username
+
+
+class Meta:
+    model = RecherchePersonneCommentaire
+    fields = "__all__"
+    read_only_fields = (
+        "auteur",
+    )
+
+class RecherchePersonneLectureSerializer(
+    serializers.ModelSerializer
+):
+
+    class Meta:
+
+        model = RecherchePersonneLecture
+
+        fields = "__all__"
+
+
+class RecherchePersonneLectureHistoriqueSerializer(
+    serializers.ModelSerializer
+):
+
+    class Meta:
+
+        model = (
+            RecherchePersonneLectureHistorique
+        )
+
+        fields = "__all__"
+
+class InstitutionTypeSerializer(
+    serializers.ModelSerializer
+):
+
+    class Meta:
+
+        model = InstitutionType
+
+        fields = "__all__"
+class InstitutionSerializer(
+    serializers.ModelSerializer
+):
+
+    type_libelle = serializers.CharField(
+        source="type.libelle",
+        read_only=True,
+        default=None,
+    )
+
+    class Meta:
+
+        model = Institution
+
+        fields = "__all__"
+class RoleOperationnelSerializer(
+    serializers.ModelSerializer
+):
+
+    class Meta:
+
+        model = RoleOperationnel
+
+        fields = "__all__"
+class InstitutionCompetenceSerializer(
+    serializers.ModelSerializer
+):
+
+    class Meta:
+
+        model = InstitutionCompetence
+
+        fields = "__all__"
+class AffectationRoleOperationnelSerializer(
+    serializers.ModelSerializer
+):
+
+    class Meta:
+
+        model = AffectationRoleOperationnel
+
+        fields = "__all__"
+class DelegationCompetenceSerializer(
+    serializers.ModelSerializer
+):
+
+    class Meta:
+
+        model = DelegationCompetence
+
+        fields = "__all__"
+class DisponibiliteOperationnelleSerializer(
+    serializers.ModelSerializer
+):
+
+    class Meta:
+
+        model = DisponibiliteOperationnelle
+
+        fields = "__all__"
+class PointTypeSerializer(
+    serializers.ModelSerializer
+):
+
+    class Meta:
+
+        model = PointType
+
+        fields = "__all__"
+class PointOperationnelSerializer(
+    serializers.ModelSerializer
+):
+
+    class Meta:
+
+        model = PointOperationnel
+
+        fields = "__all__"
+
+
+
+class ContactInstitutionSerializer(
+    serializers.ModelSerializer
+):
+
+    class Meta:
+
+        model = ContactInstitution
+
+        fields = "__all__"
+
+class InstitutionDomaineSerializer(
+    serializers.ModelSerializer
+):
+
+    class Meta:
+
+        model = InstitutionDomaine
+
+        fields = "__all__"
+
+

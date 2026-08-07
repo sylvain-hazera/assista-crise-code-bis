@@ -1,8 +1,10 @@
 import uuid
+import os
 from django.contrib.auth.models import AbstractUser, Group, Permission
 from django.contrib.gis.db import models as gis_models
 from django.db import models
 from core.validators import validate_image_file
+from .validators import validate_image_file
 
 class UserRole(models.TextChoices):
     """Rôles des utilisateurs"""
@@ -33,6 +35,14 @@ class User(AbstractUser):
     )
     postal_code = models.CharField(max_length=5, null=True, blank=True)
     enabled = models.BooleanField(default=True)
+
+    institution = models.ForeignKey(
+        "Institution",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="utilisateurs"
+    )
 
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = ['username']
@@ -72,6 +82,7 @@ class User(AbstractUser):
 
     def __str__(self) -> str:
         return self.username
+
 
 class TypeCrise(models.TextChoices):
     
@@ -260,6 +271,573 @@ class Offer(models.Model):
     def __str__(self) -> str:
         return self.title
     
+class Competence(models.Model):
+    """Compétences mobilisables lors d'une crise"""
+
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False
+    )
+
+    nom = models.CharField(
+        max_length=100,
+        unique=True
+    )
+
+    description = models.TextField(
+        blank=True,
+        null=True
+    )
+
+    active = models.BooleanField(
+        default=True
+    )
+
+    def __str__(self):
+        return self.nom
+
+class Besoin(models.Model):
+
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False
+    )
+
+    nom = models.CharField(
+        max_length=150,
+        unique=True
+    )
+
+    description = models.TextField(
+        blank=True,
+        null=True
+    )
+
+    actif = models.BooleanField(
+        default=True
+    )
+
+    def __str__(self):
+        return self.nom
+
+class BesoinCompetence(models.Model):
+
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False
+    )
+
+    besoin = models.ForeignKey(
+        "Besoin",
+        on_delete=models.CASCADE,
+        related_name="competences"
+    )
+
+
+    competence = models.ForeignKey(
+        "Competence",
+        on_delete=models.PROTECT,
+        related_name="besoins",
+        null=True,
+        blank=True
+    )
+
+    def __str__(self):
+        return f"{self.besoin.nom} -> {self.competence.nom}"
+
+class InstitutionType(models.Model):
+
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False
+    )
+
+    code = models.CharField(
+        max_length=50,
+        unique=True
+    )
+
+    libelle = models.CharField(
+        max_length=255
+    )
+
+    description = models.TextField(
+        blank=True,
+        null=True
+    )
+
+    actif = models.BooleanField(
+        default=True
+    )
+
+    def __str__(self):
+        return self.libelle
+
+
+class Institution(models.Model):
+
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False
+    )
+
+    nom = models.CharField(
+        max_length=255,
+        unique=True
+    )
+
+    type = models.ForeignKey(
+        InstitutionType,
+        on_delete=models.PROTECT,
+        related_name="institutions"
+    )
+
+    description = models.TextField(
+        blank=True,
+        null=True
+    )
+
+    telephone = models.CharField(
+        max_length=30,
+        blank=True,
+        null=True
+    )
+
+    email = models.EmailField(
+        blank=True,
+        null=True
+    )
+
+    adresse = models.TextField(
+        blank=True,
+        null=True
+    )
+
+    actif = models.BooleanField(
+        default=True
+    )
+
+    date_creation = models.DateTimeField(
+        auto_now_add=True
+    )
+
+    def __str__(self):
+        return self.nom
+
+
+class RoleOperationnel(models.Model):
+
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False
+    )
+
+    code = models.CharField(
+        max_length=50,
+        unique=True
+    )
+
+    libelle = models.CharField(
+        max_length=255
+    )
+
+    description = models.TextField(
+        blank=True,
+        null=True
+    )
+
+    actif = models.BooleanField(
+        default=True
+    )
+
+    def __str__(self):
+        return self.libelle
+
+
+class InstitutionCompetence(models.Model):
+
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False
+    )
+
+    institution = models.ForeignKey(
+        Institution,
+        on_delete=models.CASCADE,
+        related_name="competences"
+    )
+
+    competence = models.ForeignKey(
+        Competence,
+        on_delete=models.CASCADE,
+        related_name="institutions"
+    )
+
+    active = models.BooleanField(
+        default=True
+    )
+
+    date_debut = models.DateTimeField(
+        auto_now_add=True
+    )
+
+    date_fin = models.DateTimeField(
+        null=True,
+        blank=True
+    )
+
+    commentaire = models.TextField(
+        blank=True,
+        null=True
+    )
+
+    class Meta:
+
+        constraints = [
+
+            models.UniqueConstraint(
+                fields=[
+                    "institution",
+                    "competence"
+                ],
+                name=
+                "uq_institution_competence"
+            )
+
+        ]
+
+    def __str__(self):
+
+        return (
+            f"{self.institution.nom}"
+            f" - "
+            f"{self.competence.nom}"
+        )
+
+
+
+
+class RequestTypeBesoin(models.Model):
+
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False
+    )
+
+    request_type = models.ForeignKey(
+        RequestType,
+        on_delete=models.CASCADE,
+        related_name="besoins"
+    )
+
+    besoin = models.ForeignKey(
+        Besoin,
+        on_delete=models.CASCADE,
+        related_name="request_types"
+    )
+
+    def __str__(self):
+        return f"{self.request_type} -> {self.besoin}"
+
+class AffectationCompetence(models.Model):
+    """
+    Affecte une compétence à une équipe
+    pour une crise donnée.
+    """
+
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False
+    )
+
+    crise = models.ForeignKey(
+        "Crisis",
+        on_delete=models.CASCADE,
+        related_name="affectations_competences"
+    )
+
+    competence = models.ForeignKey(
+        "Competence",
+        on_delete=models.CASCADE,
+        related_name="affectations"
+    )
+
+    equipe = models.ForeignKey(
+        "Team",
+        on_delete=models.CASCADE,
+        related_name="affectations"
+    )
+
+    active = models.BooleanField(
+        default=True
+    )
+
+    date_debut = models.DateTimeField(
+        auto_now_add=True
+    )
+
+    date_fin = models.DateTimeField(
+        null=True,
+        blank=True
+    )
+
+    commentaire = models.TextField(
+        blank=True,
+        null=True
+    )
+
+    def __str__(self):
+        return (
+            f"{self.crise.name} - "
+            f"{self.competence.nom} - "
+            f"{self.equipe.name}"
+        )
+
+class Dossier(models.Model):
+
+    class Statut(models.TextChoices):
+
+        EN_ATTENTE_DISTRIBUTION = (
+            "EN_ATTENTE_DISTRIBUTION",
+             "En attente de distribution"
+        )
+        NOUVEAU = "NOUVEAU", "Nouveau"
+        EN_ATTENTE_AFFECTATION = (
+            "EN_ATTENTE_AFFECTATION",
+            "En attente d'affectation"
+        )
+        AFFECTE = "AFFECTE", "Affecté"
+        EN_COURS = "EN_COURS", "En cours"
+        RESOLU = "RESOLU", "Résolu"
+        CLOTURE = "CLOTURE", "Clôturé"
+
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False
+    )
+
+    numero = models.CharField(
+        max_length=50,
+        unique=True
+    )
+
+    crise = models.ForeignKey(
+        "Crisis",
+        on_delete=models.CASCADE,
+        related_name="dossiers"
+    )
+
+    competence = models.ForeignKey(
+        "Competence",
+        on_delete=models.PROTECT,
+        related_name="dossiers",
+        null=True,
+        blank=True
+    )
+
+    equipe = models.ForeignKey(
+        "Team",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="dossiers"
+    )
+
+    titre = models.CharField(
+        max_length=255
+    )
+
+    description = models.TextField()
+
+    statut = models.CharField(
+        max_length=50,
+        choices=Statut.choices,
+        default=Statut.NOUVEAU
+    )
+
+    date_creation = models.DateTimeField(
+        auto_now_add=True
+    )
+
+    date_affectation = models.DateTimeField(
+        null=True,
+        blank=True
+    )
+
+    date_resolution = models.DateTimeField(
+        null=True,
+        blank=True
+    )
+
+    date_cloture = models.DateTimeField(
+        null=True,
+        blank=True
+    )
+
+    def __str__(self):
+        return f"{self.numero} - {self.titre}"
+
+class DossierCommentaire(models.Model):
+
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False
+    )
+
+    dossier = models.ForeignKey(
+        Dossier,
+        on_delete=models.CASCADE,
+        related_name="commentaires"
+    )
+
+    auteur = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True
+    )
+
+    commentaire = models.TextField()
+
+    date_creation = models.DateTimeField(
+        auto_now_add=True
+    )
+
+    def __str__(self):
+        return f"{self.dossier.numero}"
+
+class DossierHistorique(models.Model):
+
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False
+    )
+
+    dossier = models.ForeignKey(
+        Dossier,
+        on_delete=models.CASCADE,
+        related_name="historique"
+    )
+
+    auteur = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True
+    )
+
+    evenement = models.CharField(
+        max_length=255
+    )
+
+    commentaire = models.TextField(
+        blank=True,
+        null=True
+    )
+
+    date_creation = models.DateTimeField(
+        auto_now_add=True
+    )
+
+    def __str__(self):
+        return self.evenement
+
+def secure_document_path(instance, filename):
+
+    extension = os.path.splitext(
+        filename
+    )[1].lower()
+
+    return (
+        f"documents/"
+        f"{uuid.uuid4()}"
+        f"{extension}"
+    )
+
+class Document(models.Model):
+
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False
+    )
+
+    fichier = models.FileField(
+        upload_to=secure_document_path,
+        validators=[validate_image_file]
+    )
+
+    auteur = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True
+    )
+
+    date_upload = models.DateTimeField(
+        auto_now_add=True
+    )
+
+    commentaire = models.TextField(
+        blank=True,
+        null=True
+    )
+
+    sha256 = models.CharField(
+        max_length=64,
+        blank=True,
+        null=True
+    )
+
+    metadata_publiques = models.JSONField(
+        default=dict,
+        blank=True
+    )
+
+    metadata_privees = models.JSONField(
+        default=dict,
+        blank=True
+    )
+
+    demande = models.ForeignKey(
+        Request,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="documents"
+    )
+
+    offre = models.ForeignKey(
+        Offer,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="documents"
+    )
+
+    dossier = models.ForeignKey(
+        Dossier,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="documents"
+    )
+
+    def __str__(self):
+        return str(self.id)
+
 class Team(models.Model):
     """Équipes de gestion de crise"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -294,6 +872,933 @@ class Team(models.Model):
         blank=True,
         related_name="assigned_teams"
     )
-
+    
+    competences = models.ManyToManyField(
+        Competence,
+        blank=True,
+        related_name="equipes"
+    )
     def __str__(self) -> str:
         return self.name
+
+class DossierParticipant(models.Model):
+
+    class Role(models.TextChoices):
+        DEMANDEUR = "DEMANDEUR", "Demandeur"
+        OFFRANT = "OFFRANT", "Offrant"
+        REGULATION = "REGULATION", "Régulation"
+        EQUIPE = "EQUIPE", "Équipe"
+        OBSERVATEUR = "OBSERVATEUR", "Observateur"
+
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False
+    )
+
+    dossier = models.ForeignKey(
+        Dossier,
+        on_delete=models.CASCADE,
+        related_name="participants"
+    )
+
+    utilisateur = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="dossiers_participes"
+    )
+
+    role = models.CharField(
+        max_length=30,
+        choices=Role.choices
+    )
+
+    date_ajout = models.DateTimeField(
+        auto_now_add=True
+    )
+
+    date_derniere_vue = models.DateTimeField(
+        null=True,
+        blank=True
+    )
+
+    class Meta:
+        unique_together = (
+            "dossier",
+            "utilisateur",
+            "role"
+        )
+
+class Notification(models.Model):
+
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False
+    )
+
+    utilisateur = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="notifications"
+    )
+
+    dossier = models.ForeignKey(
+        Dossier,
+        on_delete=models.CASCADE,
+        related_name="notifications",
+        null=True,
+        blank=True
+    )
+
+    titre = models.CharField(
+        max_length=255
+    )
+
+    message = models.TextField()
+
+    lu = models.BooleanField(
+        default=False
+    )
+
+    date_creation = models.DateTimeField(
+        auto_now_add=True
+    )
+
+def secure_recherche_photo_path(
+    instance,
+    filename
+):
+
+    extension = os.path.splitext(
+        filename
+    )[1].lower()
+
+    return (
+        f"recherches/"
+        f"{uuid.uuid4()}"
+        f"{extension}"
+    )
+
+class RecherchePersonne(models.Model):
+
+    class Source(models.TextChoices):
+        DOMICILE = "DOMICILE", "Domicile"
+        EHPAD = "EHPAD", "EHPAD"
+
+    class Statut(models.TextChoices):
+        RECHERCHE = "RECHERCHE", "Recherche"
+        RETROUVEE = "RETROUVEE", "Retrouvée"
+        ARCHIVEE = "ARCHIVEE", "Archivée"
+
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False
+    )
+
+    nom = models.CharField(max_length=255)
+
+    prenom = models.CharField(max_length=255)
+
+    age = models.IntegerField()
+
+    photo = models.ImageField(
+        upload_to="recherches/",
+        blank=True,
+        null=True
+    )
+
+    description = models.TextField(
+        blank=True,
+        null=True
+    )
+
+    source = models.CharField(
+        max_length=20,
+        choices=Source.choices
+    )
+
+    ville = models.CharField(
+        max_length=255
+    )
+
+    adresse = models.TextField(
+        blank=True,
+        null=True
+    )
+
+    ehpad_nom = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True
+    )
+
+    ehpad_adresse = models.TextField(
+        blank=True,
+        null=True
+    )
+
+    contact_nom = models.CharField(
+        max_length=255
+    )
+
+    createur = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="recherches_personnes"
+    )
+
+    contact_email = models.EmailField()
+
+    contact_telephone = models.CharField(
+        max_length=50
+    )
+
+    statut = models.CharField(
+        max_length=20,
+        choices=Statut.choices,
+        default=Statut.RECHERCHE
+    )
+
+    date_creation = models.DateTimeField(
+        auto_now_add=True
+    )
+
+    date_retrouvee = models.DateTimeField(
+        null=True,
+        blank=True
+    )
+
+    retrouve_par = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="personnes_retrouvees"
+    )
+
+    commentaire_retrouvee = models.TextField(
+        blank=True,
+        null=True
+    )
+
+    vue_publique = models.BooleanField(
+        default=True
+    )
+
+    crise = models.ForeignKey(
+        Crisis,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="recherches_personnes"
+    )
+
+
+class RecherchePersonneCommentaire(
+    models.Model
+):
+
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False
+    )
+
+    recherche = models.ForeignKey(
+        RecherchePersonne,
+        on_delete=models.CASCADE,
+        related_name="commentaires"
+    )
+
+    auteur = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE
+    )
+
+    commentaire = models.TextField()
+
+    date_creation = models.DateTimeField(
+        auto_now_add=True
+    )
+
+class RecherchePersonneHistorique(models.Model):
+
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False
+    )
+
+    recherche = models.ForeignKey(
+        RecherchePersonne,
+        on_delete=models.CASCADE,
+        related_name="historique"
+    )
+
+    auteur = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True
+    )
+
+    evenement = models.CharField(
+        max_length=255
+    )
+
+    commentaire = models.TextField(
+        blank=True,
+        null=True
+    )
+
+    date_creation = models.DateTimeField(
+        auto_now_add=True
+    )
+
+    def __str__(self):
+        return self.evenement
+
+class RecherchePersonnePhoto(models.Model):
+
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False
+    )
+
+    recherche = models.ForeignKey(
+        RecherchePersonne,
+        on_delete=models.CASCADE,
+        related_name="photos"
+    )
+
+    fichier = models.ImageField(
+        upload_to=secure_recherche_photo_path,
+        validators=[validate_image_file]
+    )
+
+    auteur = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True
+    )
+
+    commentaire = models.CharField(
+        max_length=255,
+        blank=True
+    )
+
+    date_creation = models.DateTimeField(
+        auto_now_add=True
+    )
+
+    def __str__(self):
+
+        return (
+            f"{self.recherche.nom} "
+            f"{self.recherche.prenom}"
+        )
+
+
+class RecherchePersonneCommentairePhoto(
+    models.Model
+):
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False
+    )
+
+    commentaire = models.ForeignKey(
+        RecherchePersonneCommentaire,
+        on_delete=models.CASCADE,
+        related_name="photos"
+    )
+
+    fichier = models.ImageField(
+        upload_to=secure_recherche_photo_path,
+        validators=[validate_image_file]
+    )
+
+    date_creation = models.DateTimeField(
+        auto_now_add=True
+    )
+
+class RecherchePersonneLecture(
+    models.Model
+):
+
+    recherche = models.ForeignKey(
+        RecherchePersonne,
+        on_delete=models.CASCADE,
+        related_name="lectures"
+    )
+
+    utilisateur = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="lectures_recherches"
+    )
+
+    date_derniere_lecture = models.DateTimeField(
+        null=True,
+        blank=True
+    )
+
+    date_dernier_acquittement = models.DateTimeField(
+        null=True,
+        blank=True
+    )
+
+    class Meta:
+        unique_together = (
+            "recherche",
+            "utilisateur"
+        )
+
+class RecherchePersonneLectureHistorique(
+    models.Model
+):
+
+    recherche = models.ForeignKey(
+        RecherchePersonne,
+        on_delete=models.CASCADE,
+        related_name="historique_lectures"
+    )
+
+    utilisateur = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="historique_lectures_recherches"
+    )
+
+    class ActionLecture(
+        models.TextChoices
+    ):
+        LECTURE = "LECTURE", "Lecture"
+        ACQUITTEMENT = "ACQUITTEMENT", "Acquittement"
+
+    action = models.CharField(
+        max_length=20,
+        choices=ActionLecture.choices
+    )
+
+    date_action = models.DateTimeField(
+        auto_now_add=True
+    )
+
+class AffectationRoleOperationnel(models.Model):
+
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False
+    )
+
+    utilisateur = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="affectations_roles"
+    )
+
+    institution = models.ForeignKey(
+        Institution,
+        on_delete=models.CASCADE,
+        related_name="affectations_roles"
+    )
+
+    competence = models.ForeignKey(
+        Competence,
+        on_delete=models.CASCADE,
+        related_name="affectations_roles"
+    )
+
+    role = models.ForeignKey(
+        RoleOperationnel,
+        on_delete=models.PROTECT,
+        related_name="affectations"
+    )
+
+    actif = models.BooleanField(
+        default=True
+    )
+
+    date_debut = models.DateTimeField(
+        auto_now_add=True
+    )
+
+    date_fin = models.DateTimeField(
+        null=True,
+        blank=True
+    )
+
+    commentaire = models.TextField(
+        blank=True,
+        null=True
+    )
+
+    class Meta:
+
+        constraints = [
+
+            models.UniqueConstraint(
+                fields=[
+                    "utilisateur",
+                    "institution",
+                    "competence",
+                    "role"
+                ],
+                name=(
+                    "uq_affectation_role"
+                )
+            )
+
+        ]
+
+    def __str__(self):
+
+        return (
+            f"{self.utilisateur} - "
+            f"{self.role.libelle}"
+        )
+
+class DisponibiliteOperationnelle(
+    models.Model
+):
+
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False
+    )
+
+    affectation = models.ForeignKey(
+        AffectationRoleOperationnel,
+        on_delete=models.CASCADE,
+        related_name="disponibilites"
+    )
+
+    disponible = models.BooleanField(
+        default=True
+    )
+
+    date_debut = models.DateTimeField(
+        auto_now_add=True
+    )
+
+    date_fin = models.DateTimeField(
+        null=True,
+        blank=True
+    )
+
+    commentaire = models.TextField(
+        blank=True,
+        null=True
+    )
+
+    class Meta:
+
+        ordering = [
+            "-date_debut"
+        ]
+
+        constraints = [
+
+            models.UniqueConstraint(
+                fields=[
+                    "affectation"
+                ],
+                condition=models.Q(
+                    date_fin__isnull=True
+                ),
+                name="uq_disponibilite_active"
+            )
+
+        ]
+
+    def __str__(self):
+
+        return (
+            f"{self.affectation} - "
+            f"{'DISPONIBLE' if self.disponible else 'NON_DISPONIBLE'}"
+        )
+
+
+class DelegationCompetence(models.Model):
+
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False
+    )
+
+    institution_source = models.ForeignKey(
+        Institution,
+        on_delete=models.CASCADE,
+        related_name="delegations_emises"
+    )
+
+    institution_cible = models.ForeignKey(
+        Institution,
+        on_delete=models.CASCADE,
+        related_name="delegations_recues"
+    )
+
+    competence = models.ForeignKey(
+        Competence,
+        on_delete=models.CASCADE,
+        related_name="delegations"
+    )
+
+    crise = models.ForeignKey(
+        Crisis,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="delegations_competences"
+    )
+
+    active = models.BooleanField(
+        default=True
+    )
+
+    date_debut = models.DateTimeField(
+        auto_now_add=True
+    )
+
+    date_fin = models.DateTimeField(
+        null=True,
+        blank=True
+    )
+
+    commentaire = models.TextField(
+        blank=True,
+        null=True
+    )
+
+    class Meta:
+
+        constraints = [
+
+            models.UniqueConstraint(
+                fields=[
+                    "institution_source",
+                    "institution_cible",
+                    "competence",
+                    "crise"
+                ],
+                name=(
+                    "uq_delegation_competence"
+                )
+            )
+
+        ]
+
+    def __str__(self):
+
+        if self.crise:
+
+            return (
+                f"{self.institution_source.nom}"
+                f" -> "
+                f"{self.institution_cible.nom}"
+                f" ({self.competence.nom})"
+                f" [{self.crise.name}]"
+            )
+
+        return (
+            f"{self.institution_source.nom}"
+            f" -> "
+            f"{self.institution_cible.nom}"
+            f" ({self.competence.nom})"
+        )
+
+class PointType(models.Model):
+
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False
+    )
+
+    code = models.CharField(
+        max_length=50,
+        unique=True
+    )
+
+    libelle = models.CharField(
+        max_length=255
+    )
+
+    description = models.TextField(
+        blank=True,
+        null=True
+    )
+
+    actif = models.BooleanField(
+        default=True
+    )
+
+    def __str__(self):
+        return self.libelle
+
+class PointOperationnel(models.Model):
+
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False
+    )
+
+    nom = models.CharField(
+        max_length=255
+    )
+
+    type = models.ForeignKey(
+        PointType,
+        on_delete=models.PROTECT,
+        related_name="points"
+    )
+
+    crise = models.ForeignKey(
+        Crisis,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="points_operationnels"
+    )
+
+    adresse = models.TextField(
+        blank=True,
+        null=True
+    )
+
+    location = gis_models.PointField(
+        srid=4326,
+        null=True,
+        blank=True
+    )
+
+    obligatoire = models.BooleanField(
+        default=False
+    )
+
+    actif = models.BooleanField(
+        default=True
+    )
+
+    commentaire = models.TextField(
+        blank=True,
+        null=True
+    )
+
+    def __str__(self):
+        return self.nom
+
+
+class AuditAction(models.Model):
+
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False
+    )
+
+    code = models.CharField(
+        max_length=100,
+        unique=True
+    )
+
+    libelle = models.CharField(
+        max_length=255
+    )
+
+    description = models.TextField(
+        blank=True,
+        null=True
+    )
+
+    actif = models.BooleanField(
+        default=True
+    )
+
+    def __str__(self):
+        return self.libelle
+
+class AuditLog(models.Model):
+
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False
+    )
+
+    date_action = models.DateTimeField(
+        auto_now_add=True
+    )
+
+    utilisateur = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="audit_logs"
+    )
+
+    institution = models.ForeignKey(
+        Institution,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="audit_logs"
+    )
+
+    adresse_ip = models.GenericIPAddressField(
+        null=True,
+        blank=True
+    )
+
+    user_agent = models.TextField(
+        blank=True,
+        null=True
+    )
+
+    action = models.ForeignKey(
+        AuditAction,
+        on_delete=models.PROTECT,
+        related_name="logs"
+    )
+
+
+    objet_type = models.CharField(
+        max_length=100
+    )
+
+    objet_id = models.UUIDField(
+        null=True,
+        blank=True
+    )
+
+    crise = models.ForeignKey(
+        Crisis,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="audit_logs"
+    )
+
+    ancien_etat = models.JSONField(
+        null=True,
+        blank=True
+    )
+
+    nouvel_etat = models.JSONField(
+        null=True,
+        blank=True
+    )
+
+    commentaire = models.TextField(
+        blank=True,
+        null=True
+    )
+
+    succes = models.BooleanField(
+        default=True
+    )
+
+    couleur = models.CharField(
+        max_length=20,
+        blank=True,
+        null=True
+    )
+
+    icone = models.CharField(
+        max_length=50,
+        blank=True,
+        null=True
+    )
+
+    class Meta:
+
+        ordering = [
+            "-date_action"
+        ]
+
+    def __str__(self):
+
+        return (
+            f"{self.date_action} - "
+            f"{self.action}"
+        )
+
+
+class ContactInstitution(models.Model):
+
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False
+    )
+
+    institution = models.ForeignKey(
+        Institution,
+        on_delete=models.CASCADE,
+        related_name="contacts"
+    )
+
+    utilisateur = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="institutions"
+    )
+
+    fonction = models.CharField(
+        max_length=255,
+        blank=True
+    )
+
+    contact_principal = models.BooleanField(
+        default=False
+    )
+
+    actif = models.BooleanField(
+        default=True
+    )
+
+    date_creation = models.DateTimeField(
+        auto_now_add=True
+    )
+
+    class Meta:
+
+        constraints = [
+
+            models.UniqueConstraint(
+                fields=["institution"],
+                condition=models.Q(
+                    contact_principal=True
+                ),
+                name="uq_contact_principal_institution"
+            )
+
+        ]
+
+class InstitutionDomaine(models.Model):
+
+    institution = models.ForeignKey(
+        Institution,
+        on_delete=models.CASCADE
+    )
+
+    domaine = models.CharField(
+        max_length=255,
+        unique=True
+    )
+
+    valide = models.BooleanField(
+        default=True
+    )
+
