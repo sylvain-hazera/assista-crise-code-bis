@@ -1,0 +1,402 @@
+<div class="institutions-page">
+
+  <header class="page-header">
+    <div class="header-left">
+      <h1><span class="material-icons">apartment</span> Institutions</h1>
+      <p class="subtitle">{{ institutions.length }} institution{{ institutions.length > 1 ? 's' : '' }}</p>
+    </div>
+  </header>
+
+  @if (successMessage) {
+    <div class="toast toast-ok"><span class="material-icons">check_circle</span> {{ successMessage }}</div>
+  }
+  @if (errorMessage) {
+    <div class="toast toast-err"><span class="material-icons">error_outline</span> {{ errorMessage }}</div>
+  }
+
+  <nav class="tabs">
+    <button class="tab" [class.active]="activeTab === 'institutions'" (click)="activeTab = 'institutions'">
+      <span class="material-icons">apartment</span> Institutions
+    </button>
+    <button class="tab" [class.active]="activeTab === 'types'" (click)="activeTab = 'types'">
+      <span class="material-icons">category</span> Types d'institution
+    </button>
+    <button class="tab" [class.active]="activeTab === 'roles'" (click)="activeTab = 'roles'">
+      <span class="material-icons">badge</span> Rôles opérationnels
+    </button>
+  </nav>
+
+  @if (isLoading) {
+    <div class="loading">Chargement...</div>
+  }
+
+  <!-- ══════════════════════ ONGLET INSTITUTIONS ══════════════════════ -->
+  @if (!isLoading && activeTab === 'institutions') {
+
+    <div class="toolbar">
+      <div class="search-box">
+        <span class="material-icons">search</span>
+        <input type="text" placeholder="Rechercher une institution…" [(ngModel)]="searchQuery"/>
+      </div>
+      <button class="btn-primary" (click)="openCreate()">
+        <span class="material-icons">add</span> Nouvelle institution
+      </button>
+    </div>
+
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Nom</th>
+          <th>Type</th>
+          <th>Téléphone</th>
+          <th>Email</th>
+          <th>Statut</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (institution of filteredInstitutions; track institution.id) {
+          <tr (click)="openDetail(institution)">
+            <td>{{ institution.nom }}</td>
+            <td>{{ typeLabel(institution) }}</td>
+            <td>{{ institution.telephone || '—' }}</td>
+            <td>{{ institution.email || '—' }}</td>
+            <td>
+              <span class="badge" [class.badge-ok]="institution.actif" [class.badge-off]="!institution.actif">
+                {{ institution.actif ? 'Active' : 'Inactive' }}
+              </span>
+            </td>
+            <td class="actions" (click)="$event.stopPropagation()">
+              <button class="icon-btn" (click)="openEdit(institution, $event)" title="Modifier">
+                <span class="material-icons">edit</span>
+              </button>
+              <button class="icon-btn danger" (click)="openDelete(institution, $event)" title="Supprimer">
+                <span class="material-icons">delete_outline</span>
+              </button>
+            </td>
+          </tr>
+        } @empty {
+          <tr><td colspan="6" class="empty">Aucune institution.</td></tr>
+        }
+      </tbody>
+    </table>
+  }
+
+  <!-- ══════════════════════ ONGLET TYPES ══════════════════════ -->
+  @if (!isLoading && activeTab === 'types') {
+
+    <div class="toolbar">
+      <span></span>
+      <button class="btn-primary" (click)="openCreateType()">
+        <span class="material-icons">add</span> Nouveau type
+      </button>
+    </div>
+
+    <table class="data-table">
+      <thead>
+        <tr><th>Code</th><th>Libellé</th><th>Description</th><th>Statut</th><th></th></tr>
+      </thead>
+      <tbody>
+        @for (type of types; track type.id) {
+          <tr>
+            <td>{{ type.code }}</td>
+            <td>{{ type.libelle }}</td>
+            <td>{{ type.description || '—' }}</td>
+            <td>
+              <span class="badge" [class.badge-ok]="type.actif" [class.badge-off]="!type.actif">
+                {{ type.actif ? 'Actif' : 'Inactif' }}
+              </span>
+            </td>
+            <td class="actions">
+              <button class="icon-btn" (click)="openEditType(type, $event)" title="Modifier">
+                <span class="material-icons">edit</span>
+              </button>
+              <button class="icon-btn danger" (click)="openDeleteType(type, $event)" title="Supprimer">
+                <span class="material-icons">delete_outline</span>
+              </button>
+            </td>
+          </tr>
+        } @empty {
+          <tr><td colspan="5" class="empty">Aucun type d'institution.</td></tr>
+        }
+      </tbody>
+    </table>
+  }
+
+  <!-- ══════════════════════ ONGLET RÔLES ══════════════════════ -->
+  @if (!isLoading && activeTab === 'roles') {
+
+    <div class="toolbar">
+      <span></span>
+      <button class="btn-primary" (click)="openCreateRole()">
+        <span class="material-icons">add</span> Nouveau rôle
+      </button>
+    </div>
+
+    <table class="data-table">
+      <thead>
+        <tr><th>Code</th><th>Libellé</th><th>Description</th><th>Statut</th><th></th></tr>
+      </thead>
+      <tbody>
+        @for (role of roles; track role.id) {
+          <tr>
+            <td>{{ role.code }}</td>
+            <td>{{ role.libelle }}</td>
+            <td>{{ role.description || '—' }}</td>
+            <td>
+              <span class="badge" [class.badge-ok]="role.actif" [class.badge-off]="!role.actif">
+                {{ role.actif ? 'Actif' : 'Inactif' }}
+              </span>
+            </td>
+            <td class="actions">
+              <button class="icon-btn" (click)="openEditRole(role, $event)" title="Modifier">
+                <span class="material-icons">edit</span>
+              </button>
+              <button class="icon-btn danger" (click)="openDeleteRole(role, $event)" title="Supprimer">
+                <span class="material-icons">delete_outline</span>
+              </button>
+            </td>
+          </tr>
+        } @empty {
+          <tr><td colspan="5" class="empty">Aucun rôle opérationnel.</td></tr>
+        }
+      </tbody>
+    </table>
+  }
+
+  <!-- ══════════════════════ MODAL CREATE/EDIT INSTITUTION ══════════════════════ -->
+  @if (modal === 'create' || modal === 'edit') {
+    <div class="modal-overlay" (click)="closeModal()">
+      <div class="modal" (click)="$event.stopPropagation()">
+        <div class="modal-header">
+          <h2><span class="material-icons">{{ modal === 'create' ? 'add_business' : 'edit' }}</span>
+            {{ modal === 'create' ? 'Nouvelle institution' : "Modifier l'institution" }}</h2>
+          <button class="icon-btn" (click)="closeModal()"><span class="material-icons">close</span></button>
+        </div>
+        <form class="modal-body" [formGroup]="institutionForm" (ngSubmit)="modal === 'create' ? submitCreate() : submitEdit()">
+          <label>Nom
+            <input type="text" formControlName="nom" placeholder="Nom de l'institution"/>
+          </label>
+          <label>Type
+            <select formControlName="type">
+              <option [ngValue]="null">— Sélectionner un type —</option>
+              @for (type of types; track type.id) {
+                <option [ngValue]="type.id">{{ type.libelle }}</option>
+              }
+            </select>
+          </label>
+          <label>Description
+            <textarea formControlName="description" rows="2"></textarea>
+          </label>
+          <label>Téléphone
+            <input type="text" formControlName="telephone"/>
+          </label>
+          <label>Email
+            <input type="email" formControlName="email"/>
+          </label>
+          <label>Adresse
+            <textarea formControlName="adresse" rows="2"></textarea>
+          </label>
+          <label class="checkbox-row">
+            <input type="checkbox" formControlName="actif"/> Institution active
+          </label>
+        </form>
+        <div class="modal-footer">
+          <button class="btn-secondary" (click)="closeModal()">Annuler</button>
+          <button class="btn-primary" [disabled]="isSaving" (click)="modal === 'create' ? submitCreate() : submitEdit()">
+            {{ isSaving ? 'Enregistrement…' : 'Enregistrer' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- ══════════════════════ MODAL DELETE INSTITUTION ══════════════════════ -->
+  @if (modal === 'delete') {
+    <div class="modal-overlay" (click)="closeModal()">
+      <div class="modal modal-sm" (click)="$event.stopPropagation()">
+        <div class="modal-header">
+          <h2><span class="material-icons">warning</span> Supprimer l'institution</h2>
+        </div>
+        <div class="modal-body">
+          <p>Supprimer définitivement <strong>{{ selectedInstitution?.nom }}</strong> ?</p>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-secondary" (click)="closeModal()">Annuler</button>
+          <button class="btn-danger" (click)="confirmDelete()">Supprimer</button>
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- ══════════════════════ MODAL DÉTAIL INSTITUTION (Contacts / Domaines) ══════════════════════ -->
+  @if (modal === 'detail' && selectedInstitution) {
+    <div class="modal-overlay" (click)="closeModal()">
+      <div class="modal modal-lg" (click)="$event.stopPropagation()">
+        <div class="modal-header">
+          <h2><span class="material-icons">apartment</span> {{ selectedInstitution.nom }}</h2>
+          <button class="icon-btn" (click)="closeModal()"><span class="material-icons">close</span></button>
+        </div>
+
+        <nav class="tabs sub-tabs">
+          <button class="tab" [class.active]="detailTab === 'contacts'" (click)="detailTab = 'contacts'">
+            <span class="material-icons">contacts</span> Contacts
+          </button>
+          <button class="tab" [class.active]="detailTab === 'domaines'" (click)="detailTab = 'domaines'">
+            <span class="material-icons">alternate_email</span> Domaines email
+          </button>
+        </nav>
+
+        <div class="modal-body">
+
+          @if (detailTab === 'contacts') {
+            <table class="data-table sm">
+              <thead><tr><th>Utilisateur</th><th>Fonction</th><th>Principal</th><th></th></tr></thead>
+              <tbody>
+                @for (contact of institutionContacts; track contact.id) {
+                  <tr>
+                    <td>{{ userName(contact.utilisateur) }}</td>
+                    <td>{{ contact.fonction || '—' }}</td>
+                    <td>{{ contact.contact_principal ? 'Oui' : 'Non' }}</td>
+                    <td class="actions">
+                      <button class="icon-btn danger" (click)="deleteContact(contact)" title="Supprimer">
+                        <span class="material-icons">delete_outline</span>
+                      </button>
+                    </td>
+                  </tr>
+                } @empty {
+                  <tr><td colspan="4" class="empty">Aucun contact.</td></tr>
+                }
+              </tbody>
+            </table>
+
+            @if (!showContactForm) {
+              <button class="btn-secondary sm" (click)="showContactForm = true">
+                <span class="material-icons">person_add</span> Ajouter un contact
+              </button>
+            } @else {
+              <form class="inline-form" [formGroup]="contactForm" (ngSubmit)="submitContact()">
+                <select formControlName="utilisateur">
+                  <option [ngValue]="null">— Utilisateur —</option>
+                  @for (u of users; track u.id) {
+                    <option [ngValue]="u.id">{{ u.first_name }} {{ u.last_name }} ({{ u.username }})</option>
+                  }
+                </select>
+                <input type="text" formControlName="fonction" placeholder="Fonction"/>
+                <label class="checkbox-row"><input type="checkbox" formControlName="contact_principal"/> Principal</label>
+                <button class="btn-primary sm" type="submit">Ajouter</button>
+                <button class="btn-secondary sm" type="button" (click)="showContactForm = false">Annuler</button>
+              </form>
+            }
+          }
+
+          @if (detailTab === 'domaines') {
+            <table class="data-table sm">
+              <thead><tr><th>Domaine</th><th>Validé</th><th></th></tr></thead>
+              <tbody>
+                @for (domaine of institutionDomaines; track domaine.id) {
+                  <tr>
+                    <td>{{ domaine.domaine }}</td>
+                    <td>{{ domaine.valide ? 'Oui' : 'Non' }}</td>
+                    <td class="actions">
+                      <button class="icon-btn danger" (click)="deleteDomaine(domaine)" title="Supprimer">
+                        <span class="material-icons">delete_outline</span>
+                      </button>
+                    </td>
+                  </tr>
+                } @empty {
+                  <tr><td colspan="3" class="empty">Aucun domaine email.</td></tr>
+                }
+              </tbody>
+            </table>
+
+            @if (!showDomaineForm) {
+              <button class="btn-secondary sm" (click)="showDomaineForm = true">
+                <span class="material-icons">add_link</span> Ajouter un domaine
+              </button>
+            } @else {
+              <form class="inline-form" [formGroup]="domaineForm" (ngSubmit)="submitDomaine()">
+                <input type="text" formControlName="domaine" placeholder="exemple.fr"/>
+                <label class="checkbox-row"><input type="checkbox" formControlName="valide"/> Validé</label>
+                <button class="btn-primary sm" type="submit">Ajouter</button>
+                <button class="btn-secondary sm" type="button" (click)="showDomaineForm = false">Annuler</button>
+              </form>
+            }
+          }
+
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- ══════════════════════ MODAL TYPE D'INSTITUTION ══════════════════════ -->
+  @if (typeModal === 'create' || typeModal === 'edit') {
+    <div class="modal-overlay" (click)="closeTypeModal()">
+      <div class="modal" (click)="$event.stopPropagation()">
+        <div class="modal-header">
+          <h2>{{ typeModal === 'create' ? 'Nouveau type' : 'Modifier le type' }}</h2>
+          <button class="icon-btn" (click)="closeTypeModal()"><span class="material-icons">close</span></button>
+        </div>
+        <form class="modal-body" [formGroup]="typeForm" (ngSubmit)="typeModal === 'create' ? submitCreateType() : submitEditType()">
+          <label>Code<input type="text" formControlName="code"/></label>
+          <label>Libellé<input type="text" formControlName="libelle"/></label>
+          <label>Description<textarea formControlName="description" rows="2"></textarea></label>
+          <label class="checkbox-row"><input type="checkbox" formControlName="actif"/> Actif</label>
+        </form>
+        <div class="modal-footer">
+          <button class="btn-secondary" (click)="closeTypeModal()">Annuler</button>
+          <button class="btn-primary" (click)="typeModal === 'create' ? submitCreateType() : submitEditType()">Enregistrer</button>
+        </div>
+      </div>
+    </div>
+  }
+
+  @if (typeModal === 'delete') {
+    <div class="modal-overlay" (click)="closeTypeModal()">
+      <div class="modal modal-sm" (click)="$event.stopPropagation()">
+        <div class="modal-header"><h2><span class="material-icons">warning</span> Supprimer le type</h2></div>
+        <div class="modal-body"><p>Supprimer définitivement <strong>{{ selectedType?.libelle }}</strong> ?</p></div>
+        <div class="modal-footer">
+          <button class="btn-secondary" (click)="closeTypeModal()">Annuler</button>
+          <button class="btn-danger" (click)="confirmDeleteType()">Supprimer</button>
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- ══════════════════════ MODAL RÔLE OPÉRATIONNEL ══════════════════════ -->
+  @if (roleModal === 'create' || roleModal === 'edit') {
+    <div class="modal-overlay" (click)="closeRoleModal()">
+      <div class="modal" (click)="$event.stopPropagation()">
+        <div class="modal-header">
+          <h2>{{ roleModal === 'create' ? 'Nouveau rôle' : 'Modifier le rôle' }}</h2>
+          <button class="icon-btn" (click)="closeRoleModal()"><span class="material-icons">close</span></button>
+        </div>
+        <form class="modal-body" [formGroup]="roleForm" (ngSubmit)="roleModal === 'create' ? submitCreateRole() : submitEditRole()">
+          <label>Code<input type="text" formControlName="code"/></label>
+          <label>Libellé<input type="text" formControlName="libelle"/></label>
+          <label>Description<textarea formControlName="description" rows="2"></textarea></label>
+          <label class="checkbox-row"><input type="checkbox" formControlName="actif"/> Actif</label>
+        </form>
+        <div class="modal-footer">
+          <button class="btn-secondary" (click)="closeRoleModal()">Annuler</button>
+          <button class="btn-primary" (click)="roleModal === 'create' ? submitCreateRole() : submitEditRole()">Enregistrer</button>
+        </div>
+      </div>
+    </div>
+  }
+
+  @if (roleModal === 'delete') {
+    <div class="modal-overlay" (click)="closeRoleModal()">
+      <div class="modal modal-sm" (click)="$event.stopPropagation()">
+        <div class="modal-header"><h2><span class="material-icons">warning</span> Supprimer le rôle</h2></div>
+        <div class="modal-body"><p>Supprimer définitivement <strong>{{ selectedRole?.libelle }}</strong> ?</p></div>
+        <div class="modal-footer">
+          <button class="btn-secondary" (click)="closeRoleModal()">Annuler</button>
+          <button class="btn-danger" (click)="confirmDeleteRole()">Supprimer</button>
+        </div>
+      </div>
+    </div>
+  }
+
+</div>

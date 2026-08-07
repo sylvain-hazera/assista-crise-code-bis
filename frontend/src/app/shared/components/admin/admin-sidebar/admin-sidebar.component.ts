@@ -24,9 +24,15 @@ export class AdminSidebarComponent {
     { icon: 'dashboard', label: 'Tableau de bord', route: '/admin/dashboard' },
     { icon: 'flag', label: 'Signalements', route: '/admin/signalements' },
     { icon: 'groups', label: 'Équipes', route: '/admin/equipes' },
+    { icon: 'apartment', label: 'Institutions', route: '/admin/institutions' },
     { icon: 'map', label: 'Carte', route: '/admin/carte' },
-    { icon: 'check_circle', label: 'Résultats', route: '/admin/resultats' }
-  ];
+    { icon: 'category', label: 'Compétences', route: '/admin/competences' },
+    { icon: 'playlist_add_check', label: 'Besoins', route: '/admin/besoins' },
+    { icon: 'link', label: 'Correspondances', route: '/admin/correspondances' },
+    { icon: 'check_circle', label: 'Résultats', route: '/admin/resultats' },
+    { icon: 'folder', label: 'Dossiers', route: '/admin/dossiers' },
+    { icon: 'assignment', label: 'Affectations', route: '/admin/affectations'}
+];
 
   constructor(
     private router: Router,
