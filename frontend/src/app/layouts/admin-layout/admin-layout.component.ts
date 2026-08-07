@@ -43,12 +43,35 @@ export class AdminLayoutComponent implements OnInit {
 
   navItems: NavItem[] = [
     { icon: 'home', label: 'Accueil', route: '/admin/dashboard' },
+
     { icon: 'flag', label: 'Signalements', route: '/admin/signalements' },
-    { icon: 'groups', label: 'Equipes', route: '/admin/equipes' },
+
+    { icon: 'groups', label: 'Équipes', route: '/admin/equipes' },
+
+    { icon: 'apartment', label: 'Institutions', route: '/admin/institutions' },
+
+    { icon: 'category', label: 'Compétences', route: '/admin/competences' },
+
+    { icon: 'playlist_add_check', label: 'Besoins', route: '/admin/besoins' },
+
+    { icon: 'link', label: 'Correspondances', route: '/admin/correspondances' },
+
+    { icon: 'assignment', label: 'Affectations', route: '/admin/affectations' },
+
+    { icon: 'folder', label: 'Dossiers', route: '/admin/dossiers' },
+
+    { icon: 'search', label: 'Recherches de personnes', route: '/admin/recherches-personnes'},
+
     { icon: 'map', label: 'Carte', route: '/admin/carte' },
-    // { icon: 'check_circle', label: 'Résultats', route: '/admin/resultats' },
+
+    { icon: 'check_circle', label: 'Résultats', route: '/admin/resultats' },
+
     { icon: 'group', label: 'Utilisateurs', route: '/admin/utilisateurs' }
-  ];
+
+];
+
+
+
 
   constructor(
     private authService: AuthService,
