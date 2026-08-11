@@ -36,6 +36,15 @@ class User(AbstractUser):
     postal_code = models.CharField(max_length=5, null=True, blank=True)
     enabled = models.BooleanField(default=True)
 
+    # Renseignements institutionnels déclarés à l'inscription, conservés jusqu'à la confirmation
+    # de l'email (clic sur le lien d'activation) : le rattachement à une institution ne doit se
+    # faire qu'une fois la possession de la boîte mail prouvée, jamais à la simple soumission
+    # du formulaire d'inscription.
+    pending_institution_name = models.CharField(max_length=255, null=True, blank=True)
+    pending_institution_type = models.CharField(max_length=100, null=True, blank=True)
+    pending_commune_name = models.CharField(max_length=255, null=True, blank=True)
+    pending_commune_code = models.CharField(max_length=20, null=True, blank=True)
+
     institution = models.ForeignKey(
         "Institution",
         on_delete=models.SET_NULL,

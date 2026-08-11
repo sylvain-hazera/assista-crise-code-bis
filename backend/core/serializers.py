@@ -2,7 +2,6 @@
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from .auth_validation import InstitutionEmailValidator
-from .audit import audit_log
 from .models import (
     UserRole,
     InstitutionType,
@@ -140,7 +139,7 @@ class UserSerializer(serializers.ModelSerializer):
         user_type = attrs.get('type')
 
         if user_type in {UserRole.LOCAL_AUTHORITY, UserRole.ORGANIZED_RESCUE, UserRole.ADMINISTRATOR}:
-            valid, message, details = InstitutionEmailValidator.validate_institution_account(
+            valid, message, _details = InstitutionEmailValidator.validate_institution_account(
                 email=email,
                 institution_name=attrs.get('institution_name', ''),
                 institution_type=attrs.get('institution_type', ''),
@@ -150,14 +149,16 @@ class UserSerializer(serializers.ModelSerializer):
             if not valid:
                 raise serializers.ValidationError({'email': message})
 
-            annuaire_match = details.get('annuaire') if details else None
-            if annuaire_match and annuaire_match.get('matched'):
-                attrs['_annuaire_match'] = annuaire_match
-
         return attrs
 
     def create(self, validated_data):
-        annuaire_match = validated_data.pop('_annuaire_match', None)
+        # Conservés pour le rattachement institution après confirmation de l'email (activation) —
+        # voir core/institution_attachment.py. Ne JAMAIS rattacher sur la seule foi d'un email non
+        # vérifié : n'importe qui peut prétendre être "contact@loire.fr" sans posséder cette boîte.
+        pending_institution_name = validated_data.get('institution_name', '')
+        pending_institution_type = validated_data.get('institution_type', '')
+        pending_commune_name = validated_data.get('commune_name', '')
+        pending_commune_code = validated_data.get('commune_code', '')
 
         for field in ['institution_name', 'institution_type', 'commune_name', 'commune_code', 'institution_email_hint']:
             validated_data.pop(field, None)
@@ -166,155 +167,22 @@ class UserSerializer(serializers.ModelSerializer):
             validated_data['username'] = validated_data['email']
 
         user_type = validated_data.get('type')
-        if user_type == UserRole.LOCAL_AUTHORITY:
-            validated_data['enabled'] = True
-        elif user_type in {UserRole.ORGANIZED_RESCUE, UserRole.ADMINISTRATOR}:
+        if user_type in {UserRole.LOCAL_AUTHORITY, UserRole.ORGANIZED_RESCUE, UserRole.ADMINISTRATOR}:
+            # is_active est le champ que Django/SimpleJWT vérifie réellement à la connexion
+            # (/api/token/) : sans lui, enabled=False seul ne bloque rien — le compte reste
+            # utilisable pour se connecter tant que is_active vaut True (valeur par défaut).
             validated_data['enabled'] = False
+            validated_data['is_active'] = False
+
+        if user_type == UserRole.LOCAL_AUTHORITY:
+            validated_data['pending_institution_name'] = pending_institution_name
+            validated_data['pending_institution_type'] = pending_institution_type
+            validated_data['pending_commune_name'] = pending_commune_name
+            validated_data['pending_commune_code'] = pending_commune_code
 
         user = User.objects.create_user(**validated_data)
 
-        matched_institution = None
-        if annuaire_match:
-            matched_institution = self._resolve_or_create_institution_from_annuaire(user, annuaire_match)
-        if matched_institution is None:
-            matched_institution = self._attach_by_known_domain(user)
-
-        if user_type == UserRole.LOCAL_AUTHORITY:
-            self._assign_default_institution_role(user, matched_institution)
-
         return user
-
-    def _resolve_or_create_institution_from_annuaire(self, user, annuaire_match):
-        """Trouve/crée l'institution confirmée par l'annuaire officiel, met en cache son domaine
-        (InstitutionDomaine) et y rattache l'utilisateur, pour que les inscriptions suivantes sur
-        ce domaine profitent du rattachement automatique sans re-solliciter l'API."""
-        from .models import Institution, InstitutionType
-
-        request = self.context.get('request')
-        domain = annuaire_match.get('domain')
-        nom = annuaire_match.get('nom') or domain
-        type_code = (annuaire_match.get('type_service_local') or 'autre').strip().lower() or 'autre'
-
-        institution_type, _ = InstitutionType.objects.get_or_create(
-            code=type_code,
-            defaults={'libelle': type_code.title()},
-        )
-
-        institution, institution_created = Institution.objects.get_or_create(
-            nom=nom,
-            defaults={'type': institution_type, 'email': user.email, 'actif': True},
-        )
-        if institution_created and request is not None:
-            audit_log(
-                request=request,
-                action_code="CREATION",
-                objet_type="Institution",
-                objet_id=institution.id,
-                commentaire=f"Création institution via annuaire officiel : {institution.nom}",
-            )
-
-        if domain:
-            institution_domaine, domaine_created = InstitutionDomaine.objects.get_or_create(
-                institution=institution,
-                domaine=domain,
-                defaults={'valide': True},
-            )
-            if domaine_created and request is not None:
-                audit_log(
-                    request=request,
-                    action_code="CREATION",
-                    objet_type="InstitutionDomaine",
-                    objet_id=institution_domaine.id,
-                    commentaire=f"Domaine '{domain}' confirmé via l'annuaire pour {institution.nom}",
-                )
-
-        contact, contact_created = ContactInstitution.objects.get_or_create(
-            institution=institution,
-            utilisateur=user,
-            defaults={'fonction': 'Membre (validation annuaire)', 'actif': True},
-        )
-        if contact_created and request is not None:
-            audit_log(
-                request=request,
-                action_code="CREATION",
-                objet_type="ContactInstitution",
-                objet_id=contact.id,
-                commentaire=f"Rattachement automatique via annuaire officiel à l'institution {institution.nom}",
-            )
-
-        return institution
-
-    def _attach_by_known_domain(self, user):
-        """Rattache automatiquement l'utilisateur à l'institution propriétaire de son domaine email, si connu."""
-        domain = (user.email or '').rsplit('@', 1)[-1].strip().lower()
-        if not domain:
-            return None
-
-        institution_domaine = InstitutionDomaine.objects.filter(
-            domaine__iexact=domain, valide=True
-        ).select_related('institution').first()
-
-        if not institution_domaine:
-            return None
-
-        institution = institution_domaine.institution
-
-        contact, created = ContactInstitution.objects.get_or_create(
-            institution=institution,
-            utilisateur=user,
-            defaults={'fonction': 'Membre (domaine email reconnu)', 'actif': True},
-        )
-
-        if created:
-            request = self.context.get('request')
-            if request is not None:
-                audit_log(
-                    request=request,
-                    action_code="CREATION",
-                    objet_type="ContactInstitution",
-                    objet_id=contact.id,
-                    commentaire=(
-                        f"Rattachement automatique via domaine email '{domain}' "
-                        f"à l'institution {institution.nom}"
-                    ),
-                )
-
-        return institution
-
-    def _assign_default_institution_role(self, user, institution=None):
-        from .models import Institution, InstitutionType, RoleOperationnel, AffectationRoleOperationnel, Competence
-
-        if institution is None:
-            institution_type_code = (user.first_name or '').strip().lower()
-            institution_name = (user.last_name or '').strip()
-            if not institution_name:
-                institution_name = user.email
-
-            institution_type = InstitutionType.objects.filter(code__iexact='autre').first()
-            if not institution_type:
-                institution_type = InstitutionType.objects.create(code='autre', libelle='Autre')
-
-            institution, created = Institution.objects.get_or_create(
-                nom=institution_name,
-                defaults={'type': institution_type, 'email': user.email, 'actif': True}
-            )
-
-        role_code = 'RESPONSABLE' if not institution.affectations_roles.exists() else 'REGULATEUR'
-        role = RoleOperationnel.objects.filter(code=role_code).first()
-        if not role:
-            role = RoleOperationnel.objects.create(code=role_code, libelle=role_code.title())
-
-        competence = Competence.objects.first()
-        if competence is None:
-            competence = Competence.objects.create(nom='Général', description='Compétence par défaut')
-
-        AffectationRoleOperationnel.objects.get_or_create(
-            utilisateur=user,
-            institution=institution,
-            competence=competence,
-            role=role,
-            defaults={'actif': True}
-        )
 
 class CrisisSerializer(serializers.ModelSerializer):
     """Serializer pour les crises"""

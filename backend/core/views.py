@@ -24,6 +24,7 @@ from PIL import Image
 from PIL.ExifTags import TAGS, GPSTAGS
 
 from .audit import audit_log, get_client_ip
+from .institution_attachment import attach_user_to_institution
 
 
 def extract_exif_metadata(filepath):
@@ -102,10 +103,11 @@ def send_institution_account_email(request, user):
 
     message = (
         "Bonjour,\n\n"
-        "Votre compte institutionnel sur Assista-Crise a été créé et validé automatiquement.\n\n"
-        "Pour finaliser l'accès, vous pouvez utiliser les liens ci-dessous :\n\n"
-        f"- Activation du compte : {activation_link}\n"
-        f"- Connexion sans mot de passe : {login_link}\n\n"
+        "Votre compte institutionnel sur Assista-Crise a été créé.\n\n"
+        "Il est encore inactif : cliquez sur le lien ci-dessous pour confirmer que vous êtes bien "
+        "le propriétaire de cette adresse email et activer votre compte.\n\n"
+        f"- Activation du compte : {activation_link}\n\n"
+        f"Vous pourrez ensuite vous reconnecter à tout moment via : {login_link}\n\n"
         "Ces liens sont valables pendant 7 jours.\n\n"
         "Cordialement,\n"
         "L'équipe Assista-Crise"
@@ -266,18 +268,20 @@ class UserViewSet(viewsets.ModelViewSet):
             )
 
             if getattr(user, 'type', None) == UserRole.LOCAL_AUTHORITY:
+                # Compte créé mais désactivé (enabled=False, posé par UserSerializer.create) tant
+                # que l'email n'est pas confirmé : pas de token ici. Le rattachement à une
+                # institution n'a lieu qu'après le clic sur le lien d'activation
+                # (AccountActivationView) — jamais sur la seule foi d'un email non vérifié.
                 try:
                     send_institution_account_email(request, user)
                 except Exception as e:
                     print(f"Erreur envoi email institution : {e}")
 
-                refresh = RefreshToken.for_user(user)
                 return Response({
                     'user': UserSerializer(user).data,
-                    'token': str(refresh.access_token),
-                    'refresh': str(refresh),
-                    'message': 'Votre compte a été créé. Un email vous a été envoyé avec les liens d’activation et de connexion.',
-                    'requires_validation': False
+                    'message': "Votre compte a été créé. Vérifiez votre boîte mail et cliquez sur le lien d'activation pour finaliser votre inscription.",
+                    'requires_validation': False,
+                    'requires_email_confirmation': True,
                 }, status=status.HTTP_201_CREATED)
 
             # Si le compte nécessite validation (Secours, Admin)
@@ -473,8 +477,10 @@ class UserViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_403_FORBIDDEN
             )
         
-        # Activer le compte
+        # Activer le compte (is_active est le champ réellement vérifié par /api/token/ ;
+        # enabled seul ne suffit pas à bloquer la connexion)
         user_to_approve.enabled = True
+        user_to_approve.is_active = True
         user_to_approve.save()
         
         # Envoyer email de confirmation
@@ -961,13 +967,31 @@ class AccountActivationView(generics.GenericAPIView):
         if not user:
             return Response({'error': 'Lien invalide ou expiré'}, status=status.HTTP_400_BAD_REQUEST)
 
+        already_enabled = user.enabled
+
         user.enabled = True
         user.is_active = True
         user.save(update_fields=['enabled', 'is_active'])
 
+        # Le rattachement à une institution (contact + rôle opérationnel) ne doit se faire qu'ici,
+        # une fois la possession de la boîte mail prouvée par ce clic — jamais à la simple
+        # inscription. Idempotent (get_or_create) : un second clic ne duplique rien.
+        if not already_enabled and getattr(user, 'type', None) == UserRole.LOCAL_AUTHORITY:
+            attach_user_to_institution(user, request)
+            audit_log(
+                request=request,
+                action_code="CONNEXION",
+                objet_type="User",
+                objet_id=user.id,
+                commentaire=f"Activation de compte confirmée par email : {user.email}",
+            )
+
+        refresh = RefreshToken.for_user(user)
         return Response({
+            'user': UserSerializer(user).data,
+            'token': str(refresh.access_token),
+            'refresh': str(refresh),
             'message': 'Compte activé avec succès',
-            'login_url': build_magic_link(request, user, 'magic-login')
         }, status=status.HTTP_200_OK)
 
 
