@@ -19,14 +19,100 @@ class InstitutionEmailValidator:
             return None
 
     @staticmethod
-    def _search_annuaire(institution_name: str, commune_code: str = ""):
-        """Interroge l'API Annuaire de l'administration (api-lannuaire.service-public.gouv.fr)."""
+    def _maybe_parse_json(value):
+        """L'API annuaire renvoie ses champs complexes (site_internet, pivot, adresse...) comme des
+        chaînes contenant du JSON sérialisé, pas comme des objets natifs. On les déserialise ici."""
+        if isinstance(value, str):
+            stripped = value.strip()
+            if stripped.startswith("[") or stripped.startswith("{"):
+                try:
+                    return json.loads(stripped)
+                except (ValueError, TypeError):
+                    return value
+        return value
+
+    @staticmethod
+    def _normalize_text(value: str) -> str:
+        # Volontairement PAS de suppression des accents : "Loire" et "Loiré" (une commune réelle
+        # de Maine-et-Loire) sont deux noms différents, les confondre ferait échouer le repli vers
+        # le niveau département/région pour "Loire" en le faisant matcher à tort sur "Loiré".
+        return (value or "").strip().lower()
+
+    @staticmethod
+    def _best_geo_match(entries, name):
+        """geo.api.gouv.fr classe ses résultats par score de pertinence textuelle, pas par exactitude :
+        une recherche 'Loire' classe 'Loiret' (commune) devant la commune 'Loiré', et aucune des deux
+        n'est ce qui est demandé. On n'accepte qu'un nom strictement identique (accents ignorés) ;
+        sans correspondance exacte à ce niveau, on renvoie None pour laisser l'appelant retomber sur
+        le niveau administratif suivant (commune → département → région) plutôt que de deviner."""
+        if not entries:
+            return None
+        normalized_name = InstitutionEmailValidator._normalize_text(name)
+        for entry in entries:
+            if InstitutionEmailValidator._normalize_text(entry.get("nom", "")) == normalized_name:
+                return entry
+        return None
+
+    @staticmethod
+    def _departement_code_from_postal(code_postal: str):
+        if not code_postal or len(code_postal) < 2:
+            return None
+        if code_postal.startswith(("97", "98")):
+            return code_postal[:3]
+        if code_postal.startswith("20"):
+            return None  # Corse : le code postal seul ne distingue pas 2A/2B
+        return code_postal[:2]
+
+    @staticmethod
+    def _resolve_zone_code(commune_name: str, commune_code: str = ""):
+        """Résout un nom de zone géographique — commune, puis à défaut département, puis région —
+        en code + nom officiels (geo.api.gouv.fr). Contrairement à _resolve_commune_code (qui ne
+        gère que les communes, utilisé par la validation opendata existante), cette méthode couvre
+        aussi les collectivités de niveau département/région (ex: un Conseil départemental)."""
+        if commune_code:
+            return {"level": "commune", "code": commune_code, "nom": commune_name or ""}
+
+        if not commune_name:
+            return None
+
+        commune_data = InstitutionEmailValidator._fetch_json(
+            f"https://geo.api.gouv.fr/communes?nom={urllib.parse.quote(commune_name)}&fields=code,nom"
+        )
+        match = InstitutionEmailValidator._best_geo_match(commune_data if isinstance(commune_data, list) else None, commune_name)
+        if match:
+            return {"level": "commune", "code": str(match.get("code", "")), "nom": match.get("nom", commune_name)}
+
+        departement_data = InstitutionEmailValidator._fetch_json(
+            f"https://geo.api.gouv.fr/departements?nom={urllib.parse.quote(commune_name)}&fields=code,nom"
+        )
+        match = InstitutionEmailValidator._best_geo_match(departement_data if isinstance(departement_data, list) else None, commune_name)
+        if match:
+            return {"level": "departement", "code": str(match.get("code", "")), "nom": match.get("nom", commune_name)}
+
+        region_data = InstitutionEmailValidator._fetch_json(
+            f"https://geo.api.gouv.fr/regions?nom={urllib.parse.quote(commune_name)}&fields=code,nom"
+        )
+        match = InstitutionEmailValidator._best_geo_match(region_data if isinstance(region_data, list) else None, commune_name)
+        if match:
+            return {"level": "region", "code": str(match.get("code", "")), "nom": match.get("nom", commune_name)}
+
+        return None
+
+    @staticmethod
+    def _search_annuaire(institution_name: str, zone=None):
+        """Interroge l'API Annuaire de l'administration (api-lannuaire.service-public.gouv.fr).
+
+        rows=20 (et non 5) : la recherche plein texte de cette API classe par pertinence, pas par
+        exactitude — pour un nom courant ("Conseil départemental de la Loire"), le bon enregistrement
+        peut n'apparaître qu'en position 6-15. Le filtre refine.code_insee_commune n'existe que pour
+        les services communaux (mairies...) : on ne l'applique donc qu'au niveau "commune", jamais
+        pour un département/région (l'appliquer à tort renverrait zéro résultat)."""
         if not institution_name:
             return None
 
-        params = {"dataset": "api-lannuaire-administration", "q": institution_name, "rows": "5"}
-        if commune_code:
-            params["refine.code_insee_commune"] = commune_code
+        params = {"dataset": "api-lannuaire-administration", "q": institution_name, "rows": "20"}
+        if zone and zone.get("level") == "commune" and zone.get("code"):
+            params["refine.code_insee_commune"] = zone["code"]
 
         url = f"{InstitutionEmailValidator.ANNUAIRE_SEARCH_URL}?{urllib.parse.urlencode(params)}"
         data = InstitutionEmailValidator._fetch_json(url)
@@ -40,7 +126,7 @@ class InstitutionEmailValidator:
         fields = (record or {}).get("fields", record) or {}
         candidates = []
 
-        email = fields.get("adresse_courriel")
+        email = InstitutionEmailValidator._maybe_parse_json(fields.get("adresse_courriel"))
         if isinstance(email, list):
             email = email[0] if email else None
         if isinstance(email, dict):
@@ -48,7 +134,7 @@ class InstitutionEmailValidator:
         if isinstance(email, str) and "@" in email:
             candidates.append(email.strip().lower().split("@", 1)[1])
 
-        site = fields.get("site_internet")
+        site = InstitutionEmailValidator._maybe_parse_json(fields.get("site_internet"))
         if isinstance(site, dict):
             site = [site]
         if isinstance(site, list):
@@ -66,8 +152,25 @@ class InstitutionEmailValidator:
         return candidates
 
     @staticmethod
-    def _match_annuaire_domain(domain: str, institution_name: str, commune_code: str = ""):
-        """Confirme (ou non) qu'un domaine email correspond à une institution connue de l'annuaire officiel.
+    def _record_departement_code(fields: dict):
+        """Département déduit de l'adresse de l'enregistrement (best-effort, pour départager
+        plusieurs correspondances de domaine ambiguës — jamais utilisé comme filtre bloquant)."""
+        adresse = InstitutionEmailValidator._maybe_parse_json(fields.get("adresse"))
+        if isinstance(adresse, dict):
+            adresse = [adresse]
+        if not isinstance(adresse, list):
+            return None
+        for entry in adresse:
+            if isinstance(entry, dict):
+                code = InstitutionEmailValidator._departement_code_from_postal(entry.get("code_postal"))
+                if code:
+                    return code
+        return None
+
+    @staticmethod
+    def _match_annuaire_domain(domain: str, institution_name: str, commune_name: str = "", commune_code: str = ""):
+        """Confirme (ou non) qu'un domaine email correspond à une institution connue de l'annuaire officiel,
+        à n'importe quel échelon administratif (commune, département, région).
 
         Vérifie d'abord le cache local (InstitutionDomaine, alimenté par une précédente confirmation
         de l'annuaire) avant d'appeler l'API réelle, pour éviter de la resolliciter à chaque inscription
@@ -90,26 +193,44 @@ class InstitutionEmailValidator:
         if not institution_name:
             return {"matched": False}
 
-        records = InstitutionEmailValidator._search_annuaire(institution_name, commune_code)
+        zone = InstitutionEmailValidator._resolve_zone_code(commune_name, commune_code)
+        records = InstitutionEmailValidator._search_annuaire(institution_name, zone)
         if not records:
             return {"matched": False}
 
+        zone_departement = zone["code"] if zone and zone.get("level") == "departement" else None
+
+        matches = []
         for record in records:
             fields = record.get("fields", record) if isinstance(record, dict) else {}
             for candidate in InstitutionEmailValidator._extract_domain_candidates(record):
                 if domain == candidate or domain.endswith(f".{candidate}"):
-                    pivot = fields.get("pivot")
+                    pivot = InstitutionEmailValidator._maybe_parse_json(fields.get("pivot"))
                     if isinstance(pivot, list):
                         pivot = pivot[0] if pivot else None
                     type_service_local = pivot.get("type_service_local") if isinstance(pivot, dict) else None
-                    return {
+                    matches.append({
                         "matched": True,
                         "domain": candidate,
                         "nom": fields.get("nom") or institution_name,
                         "type_service_local": type_service_local,
-                    }
+                        "_departement": InstitutionEmailValidator._record_departement_code(fields),
+                    })
+                    break  # un domaine correspondant suffit pour cet enregistrement
 
-        return {"matched": False}
+        if not matches:
+            return {"matched": False}
+
+        # Si plusieurs enregistrements distincts correspondent au domaine (rare), on préfère celui
+        # dont le département déclaré correspond à la zone demandée, sans jamais rejeter les autres.
+        if len(matches) > 1 and zone_departement:
+            preferred = [m for m in matches if m.get("_departement") == zone_departement]
+            if preferred:
+                matches = preferred
+
+        result = matches[0]
+        result.pop("_departement", None)
+        return result
 
     @staticmethod
     def _resolve_commune_code(commune_name: str, commune_code: str = ""):
@@ -121,9 +242,8 @@ class InstitutionEmailValidator:
 
         search_url = f"https://geo.api.gouv.fr/communes?nom={urllib.parse.quote(commune_name)}&fields=code,nom"
         data = InstitutionEmailValidator._fetch_json(search_url)
-        if isinstance(data, list) and data:
-            return str(data[0].get("code", ""))
-        return ""
+        match = InstitutionEmailValidator._best_geo_match(data if isinstance(data, list) else None, commune_name)
+        return str(match.get("code", "")) if match else ""
 
     @staticmethod
     def _check_open_data_institution(institution_type: str, commune_code: str):
@@ -259,7 +379,7 @@ class InstitutionEmailValidator:
         # de l'administration l'emporte sur les heuristiques regex ci-dessous (qui ne couvrent pas
         # tous les domaines institutionnels réels, ex: sdis33.fr). Aucune écriture en base ici :
         # cette fonction doit rester pure (aussi utilisée pour une simple pré-vérification).
-        annuaire_match = InstitutionEmailValidator._match_annuaire_domain(domain, institution_name, resolved_code)
+        annuaire_match = InstitutionEmailValidator._match_annuaire_domain(domain, institution_name, commune_name, commune_code)
         if annuaire_match.get("matched"):
             return True, "Validation institutionnelle confirmée via l'annuaire de l'administration", {
                 "institution": {"name": institution_name or "", "type": institution_type or ""},

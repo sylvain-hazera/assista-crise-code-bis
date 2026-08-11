@@ -263,3 +263,122 @@ def test_annuaire_domain_mismatch_does_not_short_circuit(mock_search):
 
     assert details.get("validation_mode") != "annuaire"
     assert valid is False
+
+
+def test_best_geo_match_requires_exact_name_not_top_score():
+    """geo.api.gouv.fr classe par pertinence, pas par exactitude (ex: chercher 'Loire' classe la
+    commune 'Loiret' en tête) : on ne doit accepter qu'un nom rigoureusement identique."""
+    entries = [
+        {"code": "45", "nom": "Loiret", "_score": 0.8},
+        {"code": "42", "nom": "Loire", "_score": 0.6},
+    ]
+    match = InstitutionEmailValidator._best_geo_match(entries, "Loire")
+    assert match["code"] == "42"
+
+
+def test_best_geo_match_returns_none_without_exact_match():
+    """Sans nom strictement identique dans les résultats, on ne devine pas : on renvoie None
+    pour laisser l'appelant retomber sur le niveau administratif suivant."""
+    entries = [{"code": "49178", "nom": "Loiré", "_score": 0.9}]
+    assert InstitutionEmailValidator._best_geo_match(entries, "Loire") is None
+
+
+@patch("core.auth_validation.InstitutionEmailValidator._fetch_json")
+def test_resolve_zone_code_falls_back_to_departement(mock_fetch):
+    """'Loire' n'est le nom exact d'aucune commune (seulement de la commune voisine 'Loiré') :
+    la résolution doit retomber sur le département Loire (42), pas rester bloquée au niveau commune."""
+    def fake_fetch(url):
+        if "/communes" in url:
+            return [{"code": "49178", "nom": "Loiré"}]
+        if "/departements" in url:
+            return [{"code": "42", "nom": "Loire"}]
+        return None
+
+    mock_fetch.side_effect = fake_fetch
+
+    zone = InstitutionEmailValidator._resolve_zone_code("Loire", "")
+    assert zone == {"level": "departement", "code": "42", "nom": "Loire"}
+
+
+@patch("core.auth_validation.InstitutionEmailValidator._fetch_json")
+def test_resolve_zone_code_falls_back_to_region(mock_fetch):
+    """Sans correspondance commune ni département, on tente la région avant d'abandonner."""
+    def fake_fetch(url):
+        if "/regions" in url:
+            return [{"code": "84", "nom": "Auvergne-Rhône-Alpes"}]
+        return []
+
+    mock_fetch.side_effect = fake_fetch
+
+    zone = InstitutionEmailValidator._resolve_zone_code("Auvergne-Rhône-Alpes", "")
+    assert zone == {"level": "region", "code": "84", "nom": "Auvergne-Rhône-Alpes"}
+
+
+def test_extract_domain_candidates_handles_json_encoded_string_fields():
+    """L'API annuaire renvoie site_internet/adresse_courriel comme des CHAÎNES contenant du JSON
+    sérialisé (vérifié en direct), pas comme des objets natifs : ça doit être désérialisé."""
+    record = {
+        "fields": {
+            "nom": "Conseil départemental - Loire",
+            "adresse_courriel": "info@loire.fr",
+            "site_internet": '[{"libelle": "", "valeur": "https://www.loire.fr/"}]',
+        }
+    }
+    candidates = InstitutionEmailValidator._extract_domain_candidates(record)
+    assert "loire.fr" in candidates
+
+
+@pytest.mark.django_db
+def test_match_annuaire_domain_parses_json_encoded_pivot():
+    """Le champ 'pivot' est lui aussi une chaîne JSON sérialisée dans les vraies réponses ;
+    le prendre pour un dict natif faisait planter la correspondance (AttributeError)."""
+    record = {
+        "fields": {
+            "nom": "Mairie - Bordeaux",
+            "adresse_courriel": "contact@mairie-bordeaux.fr",
+            "pivot": '[{"type_service_local": "mairie", "code_insee_commune": ["33063"]}]',
+        }
+    }
+    with patch("core.auth_validation.InstitutionEmailValidator._search_annuaire", return_value=[record]):
+        match = InstitutionEmailValidator._match_annuaire_domain(
+            "mairie-bordeaux.fr", "Mairie de Bordeaux"
+        )
+    assert match["matched"] is True
+    assert match["type_service_local"] == "mairie"
+
+
+@pytest.mark.django_db
+@patch("core.auth_validation.InstitutionEmailValidator._fetch_json")
+def test_departement_level_registration_validates_via_annuaire(mock_fetch):
+    """Bout-en-bout : un Conseil départemental (ex: Loire, loire.fr) doit être validé via
+    l'annuaire même sans code commune, en résolvant 'Loire' comme département plutôt que
+    comme la commune homonyme la plus proche."""
+    conseil_departemental = {
+        "fields": {
+            "nom": "Conseil départemental - Loire",
+            "adresse_courriel": "info@loire.fr",
+            "pivot": '[{"type_service_local": "cg"}]',
+        }
+    }
+
+    def fake_fetch(url):
+        if "/communes" in url:
+            return [{"code": "49178", "nom": "Loiré"}]
+        if "/departements" in url:
+            return [{"code": "42", "nom": "Loire"}]
+        if "api-lannuaire-administration" in url:
+            return {"records": [conseil_departemental]}
+        return None
+
+    mock_fetch.side_effect = fake_fetch
+
+    valid, message, details = InstitutionEmailValidator.validate_institution_account(
+        email="contact@loire.fr",
+        institution_name="Conseil Général de la Loire",
+        institution_type="collectivite",
+        commune_name="Loire",
+    )
+
+    assert valid is True
+    assert details["validation_mode"] == "annuaire"
+    assert details["annuaire"]["domain"] == "loire.fr"
