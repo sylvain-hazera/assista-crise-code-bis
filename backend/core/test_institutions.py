@@ -1,4 +1,5 @@
 import pytest
+from unittest.mock import patch
 from django.urls import reverse
 from rest_framework import status
 
@@ -133,3 +134,70 @@ class TestInstitutionAutoAttachment:
         assert AffectationRoleOperationnel.objects.filter(
             institution=institution, utilisateur_id=response.data["user"]["id"]
         ).exists()
+
+
+ANNUAIRE_SDIS_RECORD = {
+    "fields": {
+        "nom": "SDIS 33",
+        "adresse_courriel": "contact@sdis33.fr",
+        "pivot": {"type_service_local": "sdis"},
+    }
+}
+
+
+@pytest.mark.django_db
+class TestAnnuaireRegistration:
+    """L'annuaire officiel de l'administration doit pouvoir valider ET rattacher un utilisateur
+    à une institution dont le domaine ne serait pas reconnu par la validation regex existante."""
+
+    @patch("core.auth_validation.InstitutionEmailValidator._search_annuaire")
+    def test_registration_via_annuaire_creates_institution_domaine_and_contact(self, mock_search, api_client, user_data):
+        mock_search.return_value = [ANNUAIRE_SDIS_RECORD]
+
+        payload = {
+            **user_data,
+            "email": "agent@sdis33.fr",
+            "username": "agent@sdis33.fr",
+            "type": "AUT_LOCALE",
+            "institution_name": "SDIS 33",
+            "institution_type": "sdis",
+        }
+        response = api_client.post(reverse('user-register'), payload, format='json')
+
+        assert response.status_code == status.HTTP_201_CREATED
+
+        institution = Institution.objects.get(nom="SDIS 33")
+        assert InstitutionDomaine.objects.filter(institution=institution, domaine="sdis33.fr", valide=True).exists()
+        assert ContactInstitution.objects.filter(
+            institution=institution, utilisateur_id=response.data["user"]["id"]
+        ).exists()
+        assert AffectationRoleOperationnel.objects.filter(
+            institution=institution, utilisateur_id=response.data["user"]["id"]
+        ).exists()
+
+    @patch("core.auth_validation.InstitutionEmailValidator._search_annuaire")
+    def test_second_registration_on_cached_domain_skips_annuaire_call(self, mock_search, api_client, user_data):
+        """Un domaine déjà mis en cache (par une précédente confirmation annuaire) doit être
+        reconnu directement, sans re-solliciter l'API gouvernementale — y compris pour une
+        nouvelle inscription institutionnelle sur ce même domaine."""
+        institution_type = InstitutionType.objects.create(code="sdis", libelle="Sdis")
+        institution = Institution.objects.create(nom="SDIS 33", type=institution_type)
+        InstitutionDomaine.objects.create(institution=institution, domaine="sdis33.fr", valide=True)
+
+        mock_search.return_value = None
+
+        payload = {
+            **user_data,
+            "email": "autre-agent@sdis33.fr",
+            "username": "autre-agent@sdis33.fr",
+            "type": "AUT_LOCALE",
+            "institution_name": "SDIS 33",
+            "institution_type": "sdis",
+        }
+        response = api_client.post(reverse('user-register'), payload, format='json')
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert ContactInstitution.objects.filter(
+            institution=institution, utilisateur_id=response.data["user"]["id"]
+        ).exists()
+        mock_search.assert_not_called()

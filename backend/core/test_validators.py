@@ -1,4 +1,5 @@
 import pytest
+from unittest.mock import patch
 from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from core.validators import validate_image_file
@@ -130,6 +131,7 @@ def test_institutional_email_with_public_authority_domains_is_accepted():
         assert valid is True, f"{email} should be accepted: {message}"
 
 
+@pytest.mark.django_db
 def test_validate_institution_account_matches_commune_and_institution_type():
     """La validation institutionnelle doit combiner institution, commune et domaine."""
     valid, message, details = InstitutionEmailValidator.validate_institution_account(
@@ -142,9 +144,12 @@ def test_validate_institution_account_matches_commune_and_institution_type():
 
     assert valid is True
     assert details["commune"]["name"] == "Bordeaux"
-    assert "mairie" in message.lower() or "valide" in message.lower()
+    # La confirmation peut désormais venir soit de l'annuaire officiel (voie prioritaire),
+    # soit des heuristiques existantes (opendata/nom) selon ce que l'annuaire renvoie en direct.
+    assert "mairie" in message.lower() or "valide" in message.lower() or "confirmée" in message.lower()
 
 
+@pytest.mark.django_db
 def test_validate_institution_account_rejects_mismatch_between_type_and_domain():
     """Un type d'institution incompatible avec le domaine doit être rejeté."""
     valid, message, _ = InstitutionEmailValidator.validate_institution_account(
@@ -178,3 +183,83 @@ def test_institution_registration_is_rejected_when_validation_fails():
 
     assert serializer.is_valid() is False
     assert 'email' in serializer.errors or 'non_field_errors' in serializer.errors
+
+
+ANNUAIRE_SDIS_RECORD = {
+    "fields": {
+        "nom": "SDIS 33",
+        "adresse_courriel": "contact@sdis33.fr",
+        "pivot": {"type_service_local": "sdis"},
+    }
+}
+
+ANNUAIRE_MAIRIE_RECORD = {
+    "fields": {
+        "nom": "Mairie - Bordeaux",
+        "site_internet": [{"libelle": "", "valeur": "https://www.bordeaux.fr"}],
+        "pivot": {"type_service_local": "mairie"},
+    }
+}
+
+
+def test_extract_domain_candidates_reads_email_and_website():
+    """Le domaine doit être extrait aussi bien d'un email officiel que d'une URL de site web."""
+    assert "sdis33.fr" in InstitutionEmailValidator._extract_domain_candidates(ANNUAIRE_SDIS_RECORD)
+    assert "bordeaux.fr" in InstitutionEmailValidator._extract_domain_candidates(ANNUAIRE_MAIRIE_RECORD)
+
+
+@pytest.mark.django_db
+@patch("core.auth_validation.InstitutionEmailValidator._search_annuaire")
+def test_annuaire_match_validates_domain_not_covered_by_regex(mock_search):
+    """sdis33.fr n'est reconnu par aucun motif de validate_email_domain : l'annuaire doit
+    quand même confirmer l'inscription quand il connaît le domaine officiel de l'institution."""
+    mock_search.return_value = [ANNUAIRE_SDIS_RECORD]
+
+    assert InstitutionEmailValidator.validate_email_domain("agent@sdis33.fr")[0] is False
+
+    valid, message, details = InstitutionEmailValidator.validate_institution_account(
+        email="agent@sdis33.fr",
+        institution_name="SDIS 33",
+        institution_type="sdis",
+    )
+
+    assert valid is True
+    assert details["validation_mode"] == "annuaire"
+    assert details["annuaire"]["domain"] == "sdis33.fr"
+    mock_search.assert_called_once()
+
+
+@pytest.mark.django_db
+@patch("core.auth_validation.InstitutionEmailValidator._search_annuaire")
+def test_annuaire_unavailable_falls_back_to_regex_validation(mock_search):
+    """Si l'annuaire ne trouve rien (institution absente, API en panne...), la validation
+    existante par regex/heuristiques doit continuer à fonctionner comme avant."""
+    mock_search.return_value = None
+
+    valid, message, details = InstitutionEmailValidator.validate_institution_account(
+        email="contact@mairie-bordeaux.fr",
+        institution_name="Mairie de Bordeaux",
+        institution_type="mairie",
+        commune_name="Bordeaux",
+        commune_code="33063",
+    )
+
+    assert valid is True
+    assert details.get("validation_mode") != "annuaire"
+
+
+@pytest.mark.django_db
+@patch("core.auth_validation.InstitutionEmailValidator._search_annuaire")
+def test_annuaire_domain_mismatch_does_not_short_circuit(mock_search):
+    """Une institution trouvée par l'annuaire mais dont le domaine ne correspond pas à
+    l'email fourni ne doit pas valider à tort : on retombe sur la validation existante."""
+    mock_search.return_value = [ANNUAIRE_MAIRIE_RECORD]
+
+    valid, message, details = InstitutionEmailValidator.validate_institution_account(
+        email="contact@unrelated-domain.com",
+        institution_name="Mairie de Bordeaux",
+        institution_type="mairie",
+    )
+
+    assert details.get("validation_mode") != "annuaire"
+    assert valid is False

@@ -140,7 +140,7 @@ class UserSerializer(serializers.ModelSerializer):
         user_type = attrs.get('type')
 
         if user_type in {UserRole.LOCAL_AUTHORITY, UserRole.ORGANIZED_RESCUE, UserRole.ADMINISTRATOR}:
-            valid, message, _ = InstitutionEmailValidator.validate_institution_account(
+            valid, message, details = InstitutionEmailValidator.validate_institution_account(
                 email=email,
                 institution_name=attrs.get('institution_name', ''),
                 institution_type=attrs.get('institution_type', ''),
@@ -150,9 +150,15 @@ class UserSerializer(serializers.ModelSerializer):
             if not valid:
                 raise serializers.ValidationError({'email': message})
 
+            annuaire_match = details.get('annuaire') if details else None
+            if annuaire_match and annuaire_match.get('matched'):
+                attrs['_annuaire_match'] = annuaire_match
+
         return attrs
 
     def create(self, validated_data):
+        annuaire_match = validated_data.pop('_annuaire_match', None)
+
         for field in ['institution_name', 'institution_type', 'commune_name', 'commune_code', 'institution_email_hint']:
             validated_data.pop(field, None)
 
@@ -167,12 +173,76 @@ class UserSerializer(serializers.ModelSerializer):
 
         user = User.objects.create_user(**validated_data)
 
-        matched_institution = self._attach_by_known_domain(user)
+        matched_institution = None
+        if annuaire_match:
+            matched_institution = self._resolve_or_create_institution_from_annuaire(user, annuaire_match)
+        if matched_institution is None:
+            matched_institution = self._attach_by_known_domain(user)
 
         if user_type == UserRole.LOCAL_AUTHORITY:
             self._assign_default_institution_role(user, matched_institution)
 
         return user
+
+    def _resolve_or_create_institution_from_annuaire(self, user, annuaire_match):
+        """Trouve/crée l'institution confirmée par l'annuaire officiel, met en cache son domaine
+        (InstitutionDomaine) et y rattache l'utilisateur, pour que les inscriptions suivantes sur
+        ce domaine profitent du rattachement automatique sans re-solliciter l'API."""
+        from .models import Institution, InstitutionType
+
+        request = self.context.get('request')
+        domain = annuaire_match.get('domain')
+        nom = annuaire_match.get('nom') or domain
+        type_code = (annuaire_match.get('type_service_local') or 'autre').strip().lower() or 'autre'
+
+        institution_type, _ = InstitutionType.objects.get_or_create(
+            code=type_code,
+            defaults={'libelle': type_code.title()},
+        )
+
+        institution, institution_created = Institution.objects.get_or_create(
+            nom=nom,
+            defaults={'type': institution_type, 'email': user.email, 'actif': True},
+        )
+        if institution_created and request is not None:
+            audit_log(
+                request=request,
+                action_code="CREATION",
+                objet_type="Institution",
+                objet_id=institution.id,
+                commentaire=f"Création institution via annuaire officiel : {institution.nom}",
+            )
+
+        if domain:
+            institution_domaine, domaine_created = InstitutionDomaine.objects.get_or_create(
+                institution=institution,
+                domaine=domain,
+                defaults={'valide': True},
+            )
+            if domaine_created and request is not None:
+                audit_log(
+                    request=request,
+                    action_code="CREATION",
+                    objet_type="InstitutionDomaine",
+                    objet_id=institution_domaine.id,
+                    commentaire=f"Domaine '{domain}' confirmé via l'annuaire pour {institution.nom}",
+                )
+
+        contact, contact_created = ContactInstitution.objects.get_or_create(
+            institution=institution,
+            utilisateur=user,
+            defaults={'fonction': 'Membre (validation annuaire)', 'actif': True},
+        )
+        if contact_created and request is not None:
+            audit_log(
+                request=request,
+                action_code="CREATION",
+                objet_type="ContactInstitution",
+                objet_id=contact.id,
+                commentaire=f"Rattachement automatique via annuaire officiel à l'institution {institution.nom}",
+            )
+
+        return institution
 
     def _attach_by_known_domain(self, user):
         """Rattache automatiquement l'utilisateur à l'institution propriétaire de son domaine email, si connu."""

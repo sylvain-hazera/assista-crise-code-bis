@@ -8,6 +8,8 @@ from typing import Tuple
 class InstitutionEmailValidator:
     """Valide les emails des comptes institutionnels publics et collectivités locales."""
 
+    ANNUAIRE_SEARCH_URL = "https://api-lannuaire.service-public.gouv.fr/api/records/1.0/search/"
+
     @staticmethod
     def _fetch_json(url: str):
         try:
@@ -15,6 +17,99 @@ class InstitutionEmailValidator:
                 return json.loads(response.read().decode("utf-8"))
         except Exception:
             return None
+
+    @staticmethod
+    def _search_annuaire(institution_name: str, commune_code: str = ""):
+        """Interroge l'API Annuaire de l'administration (api-lannuaire.service-public.gouv.fr)."""
+        if not institution_name:
+            return None
+
+        params = {"dataset": "api-lannuaire-administration", "q": institution_name, "rows": "5"}
+        if commune_code:
+            params["refine.code_insee_commune"] = commune_code
+
+        url = f"{InstitutionEmailValidator.ANNUAIRE_SEARCH_URL}?{urllib.parse.urlencode(params)}"
+        data = InstitutionEmailValidator._fetch_json(url)
+        if not isinstance(data, dict):
+            return None
+        return data.get("records")
+
+    @staticmethod
+    def _extract_domain_candidates(record: dict):
+        """Retourne les domaines email plausibles d'un enregistrement annuaire (email officiel, puis site web)."""
+        fields = (record or {}).get("fields", record) or {}
+        candidates = []
+
+        email = fields.get("adresse_courriel")
+        if isinstance(email, list):
+            email = email[0] if email else None
+        if isinstance(email, dict):
+            email = email.get("valeur")
+        if isinstance(email, str) and "@" in email:
+            candidates.append(email.strip().lower().split("@", 1)[1])
+
+        site = fields.get("site_internet")
+        if isinstance(site, dict):
+            site = [site]
+        if isinstance(site, list):
+            for entry in site:
+                url = entry.get("valeur") if isinstance(entry, dict) else entry
+                if not url:
+                    continue
+                try:
+                    hostname = urllib.parse.urlparse(url).hostname
+                except ValueError:
+                    hostname = None
+                if hostname:
+                    candidates.append(hostname.lower().removeprefix("www."))
+
+        return candidates
+
+    @staticmethod
+    def _match_annuaire_domain(domain: str, institution_name: str, commune_code: str = ""):
+        """Confirme (ou non) qu'un domaine email correspond à une institution connue de l'annuaire officiel.
+
+        Vérifie d'abord le cache local (InstitutionDomaine, alimenté par une précédente confirmation
+        de l'annuaire) avant d'appeler l'API réelle, pour éviter de la resolliciter à chaque inscription
+        sur un domaine déjà connu. Lecture seule : aucune écriture n'a lieu ici."""
+        if domain:
+            from .models import InstitutionDomaine
+
+            cached = InstitutionDomaine.objects.filter(
+                domaine__iexact=domain, valide=True
+            ).select_related("institution", "institution__type").first()
+
+            if cached:
+                return {
+                    "matched": True,
+                    "domain": cached.domaine,
+                    "nom": cached.institution.nom,
+                    "type_service_local": cached.institution.type.code if cached.institution.type else None,
+                }
+
+        if not institution_name:
+            return {"matched": False}
+
+        records = InstitutionEmailValidator._search_annuaire(institution_name, commune_code)
+        if not records:
+            return {"matched": False}
+
+        for record in records:
+            fields = record.get("fields", record) if isinstance(record, dict) else {}
+            for candidate in InstitutionEmailValidator._extract_domain_candidates(record):
+                if domain == candidate or domain.endswith(f".{candidate}"):
+                    pivot = fields.get("pivot")
+                    if isinstance(pivot, list):
+                        pivot = pivot[0] if pivot else None
+                    type_service_local = pivot.get("type_service_local") if isinstance(pivot, dict) else None
+                    return {
+                        "matched": True,
+                        "domain": candidate,
+                        "nom": fields.get("nom") or institution_name,
+                        "type_service_local": type_service_local,
+                    }
+
+        return {"matched": False}
 
     @staticmethod
     def _resolve_commune_code(commune_name: str, commune_code: str = ""):
@@ -152,6 +247,27 @@ class InstitutionEmailValidator:
         commune_code: str = "",
     ):
         """Valide un compte institutionnel à partir de l'email, du type d'institution et de la commune."""
+        email = (email or "").strip().lower()
+        if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+            message = "L'adresse email n'est pas au bon format"
+            return False, message, {"email": message}
+
+        domain = email.split("@", 1)[1]
+        resolved_code = InstitutionEmailValidator._resolve_commune_code(commune_name, commune_code)
+
+        # Voie de confiance prioritaire : une correspondance confirmée par l'annuaire officiel
+        # de l'administration l'emporte sur les heuristiques regex ci-dessous (qui ne couvrent pas
+        # tous les domaines institutionnels réels, ex: sdis33.fr). Aucune écriture en base ici :
+        # cette fonction doit rester pure (aussi utilisée pour une simple pré-vérification).
+        annuaire_match = InstitutionEmailValidator._match_annuaire_domain(domain, institution_name, resolved_code)
+        if annuaire_match.get("matched"):
+            return True, "Validation institutionnelle confirmée via l'annuaire de l'administration", {
+                "institution": {"name": institution_name or "", "type": institution_type or ""},
+                "commune": {"name": commune_name or "", "code": resolved_code or commune_code or ""},
+                "annuaire": annuaire_match,
+                "validation_mode": "annuaire",
+            }
+
         email_valid, email_message = InstitutionEmailValidator.validate_email_domain(email)
         if not email_valid:
             return False, email_message, {"email": email_message}
@@ -159,7 +275,6 @@ class InstitutionEmailValidator:
         normalized_type = (institution_type or "").strip().lower()
         normalized_commune = (commune_name or "").strip().lower()
         normalized_name = (institution_name or "").strip().lower()
-        resolved_code = InstitutionEmailValidator._resolve_commune_code(commune_name, commune_code)
 
         details = {
             "institution": {
@@ -172,7 +287,6 @@ class InstitutionEmailValidator:
             },
         }
 
-        domain = email.split("@", 1)[1]
         selected_token = InstitutionEmailValidator.SPECIFIC_TYPE_DOMAIN_TOKENS.get(normalized_type)
         if selected_token:
             domain_tokens = {
