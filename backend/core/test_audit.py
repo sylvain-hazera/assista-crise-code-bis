@@ -27,7 +27,7 @@ class TestAuditLogCreation:
 
         assert response.status_code == status.HTTP_201_CREATED
 
-        log = AuditLog.objects.latest('date_action')
+        log = AuditLog.objects.filter(objet_type="Institution").latest('date_action')
         assert log.action.code == "CREATION"
         assert log.objet_type == "Institution"
         assert str(log.objet_id) == response.data["id"]

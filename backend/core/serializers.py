@@ -2,6 +2,7 @@
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from .auth_validation import InstitutionEmailValidator
+from .audit import audit_log
 from .models import (
     UserRole,
     InstitutionType,
@@ -166,27 +167,67 @@ class UserSerializer(serializers.ModelSerializer):
 
         user = User.objects.create_user(**validated_data)
 
+        matched_institution = self._attach_by_known_domain(user)
+
         if user_type == UserRole.LOCAL_AUTHORITY:
-            self._assign_default_institution_role(user)
+            self._assign_default_institution_role(user, matched_institution)
 
         return user
 
-    def _assign_default_institution_role(self, user):
+    def _attach_by_known_domain(self, user):
+        """Rattache automatiquement l'utilisateur à l'institution propriétaire de son domaine email, si connu."""
+        domain = (user.email or '').rsplit('@', 1)[-1].strip().lower()
+        if not domain:
+            return None
+
+        institution_domaine = InstitutionDomaine.objects.filter(
+            domaine__iexact=domain, valide=True
+        ).select_related('institution').first()
+
+        if not institution_domaine:
+            return None
+
+        institution = institution_domaine.institution
+
+        contact, created = ContactInstitution.objects.get_or_create(
+            institution=institution,
+            utilisateur=user,
+            defaults={'fonction': 'Membre (domaine email reconnu)', 'actif': True},
+        )
+
+        if created:
+            request = self.context.get('request')
+            if request is not None:
+                audit_log(
+                    request=request,
+                    action_code="CREATION",
+                    objet_type="ContactInstitution",
+                    objet_id=contact.id,
+                    commentaire=(
+                        f"Rattachement automatique via domaine email '{domain}' "
+                        f"à l'institution {institution.nom}"
+                    ),
+                )
+
+        return institution
+
+    def _assign_default_institution_role(self, user, institution=None):
         from .models import Institution, InstitutionType, RoleOperationnel, AffectationRoleOperationnel, Competence
 
-        institution_type_code = (user.first_name or '').strip().lower()
-        institution_name = (user.last_name or '').strip()
-        if not institution_name:
-            institution_name = user.email
+        if institution is None:
+            institution_type_code = (user.first_name or '').strip().lower()
+            institution_name = (user.last_name or '').strip()
+            if not institution_name:
+                institution_name = user.email
 
-        institution_type = InstitutionType.objects.filter(code__iexact='autre').first()
-        if not institution_type:
-            institution_type = InstitutionType.objects.create(code='autre', libelle='Autre')
+            institution_type = InstitutionType.objects.filter(code__iexact='autre').first()
+            if not institution_type:
+                institution_type = InstitutionType.objects.create(code='autre', libelle='Autre')
 
-        institution, created = Institution.objects.get_or_create(
-            nom=institution_name,
-            defaults={'type': institution_type, 'email': user.email, 'actif': True}
-        )
+            institution, created = Institution.objects.get_or_create(
+                nom=institution_name,
+                defaults={'type': institution_type, 'email': user.email, 'actif': True}
+            )
 
         role_code = 'RESPONSABLE' if not institution.affectations_roles.exists() else 'REGULATEUR'
         role = RoleOperationnel.objects.filter(code=role_code).first()
