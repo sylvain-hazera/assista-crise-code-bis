@@ -1,0 +1,182 @@
+<div class="crises-page">
+
+  <header class="page-header">
+    <div class="header-left">
+      <h1><span class="material-icons">local_fire_department</span> Crises</h1>
+      <p class="subtitle">{{ crises.length }} crise{{ crises.length > 1 ? 's' : '' }}</p>
+    </div>
+    <a routerLink="/crisis-declaration" class="btn-primary">
+      <span class="material-icons">add_alert</span> Déclarer une crise
+    </a>
+  </header>
+
+  @if (successMessage) {
+    <div class="toast toast-ok"><span class="material-icons">check_circle</span> {{ successMessage }}</div>
+  }
+  @if (errorMessage) {
+    <div class="toast toast-err"><span class="material-icons">error_outline</span> {{ errorMessage }}</div>
+  }
+
+  @if (isLoading) {
+    <div class="loading">Chargement...</div>
+  }
+
+  @if (!isLoading) {
+    <div class="toolbar">
+      <div class="search-box">
+        <span class="material-icons">search</span>
+        <input type="text" placeholder="Rechercher une crise…" [(ngModel)]="searchQuery"/>
+      </div>
+    </div>
+
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Nom</th>
+          <th>Type</th>
+          <th>Début</th>
+          <th>Impliqués</th>
+          <th>Acteurs</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (crisis of filteredCrises; track crisis.id) {
+          <tr (click)="openDetail(crisis)">
+            <td>{{ crisis.name }}</td>
+            <td>{{ crisis.type }}</td>
+            <td>{{ fmtDate(crisis.start_date) }}</td>
+            <td><span class="badge badge-implique">{{ impliquesFor(crisis.id).length }}</span></td>
+            <td><span class="badge badge-acteur">{{ acteursFor(crisis.id).length }}</span></td>
+            <td class="actions">
+              <span class="material-icons">chevron_right</span>
+            </td>
+          </tr>
+        } @empty {
+          <tr><td colspan="6" class="empty">Aucune crise en cours.</td></tr>
+        }
+      </tbody>
+    </table>
+  }
+
+  <!-- ══════════════════════ MODAL DÉTAIL CRISE ══════════════════════ -->
+  @if (modal === 'detail' && selectedCrisis) {
+    <div class="modal-overlay" (click)="closeModal()">
+      <div class="modal modal-lg" (click)="$event.stopPropagation()">
+        <div class="modal-header">
+          <h2><span class="material-icons">local_fire_department</span> {{ selectedCrisis.name }}</h2>
+          <button class="icon-btn" (click)="closeModal()"><span class="material-icons">close</span></button>
+        </div>
+
+        <div class="modal-body">
+
+          <p class="crisis-meta">
+            {{ selectedCrisis.type }} · déclarée le {{ fmtDate(selectedCrisis.start_date) }}
+            @if (selectedCrisis.description) { — {{ selectedCrisis.description }} }
+          </p>
+
+          <!-- Impliqués -->
+          <section class="section-block">
+            <h3><span class="material-icons">flag</span> Institutions impliquées</h3>
+            <table class="data-table sm">
+              <thead><tr><th>Institution</th><th>Commentaire</th><th></th></tr></thead>
+              <tbody>
+                @for (implication of impliquesFor(selectedCrisis.id); track implication.id) {
+                  <tr>
+                    <td>{{ implication.institution_nom || institutionName(implication.institution) }}</td>
+                    <td>{{ implication.commentaire || '—' }}</td>
+                    <td class="actions">
+                      @if (isMine(implication)) {
+                        <button class="icon-btn danger" (click)="retirerImplication(implication)" title="Se retirer">
+                          <span class="material-icons">delete_outline</span>
+                        </button>
+                      }
+                    </td>
+                  </tr>
+                } @empty {
+                  <tr><td colspan="3" class="empty">Aucune institution impliquée pour l'instant.</td></tr>
+                }
+              </tbody>
+            </table>
+
+            @if (myInstitutions.length > 0) {
+              @if (!showImpliqueForm) {
+                <button class="btn-secondary sm" (click)="showImpliqueForm = true">
+                  <span class="material-icons">add</span> Je suis impliqué
+                </button>
+              } @else {
+                <form class="inline-form" [formGroup]="impliqueForm" (ngSubmit)="submitImplique()">
+                  <select formControlName="institution">
+                    <option [ngValue]="null">— Mon institution —</option>
+                    @for (inst of myInstitutions; track inst.id) {
+                      <option [ngValue]="inst.id">{{ inst.nom }}</option>
+                    }
+                  </select>
+                  <input type="text" formControlName="commentaire" placeholder="Commentaire (optionnel)"/>
+                  <button class="btn-primary sm" type="submit">Confirmer</button>
+                  <button class="btn-secondary sm" type="button" (click)="showImpliqueForm = false">Annuler</button>
+                </form>
+              }
+            }
+          </section>
+
+          <!-- Acteurs / points opérationnels -->
+          <section class="section-block">
+            <h3><span class="material-icons">volunteer_activism</span> Acteurs opérationnels</h3>
+            <table class="data-table sm">
+              <thead><tr><th>Point</th><th>Type</th><th>Institution</th><th>Responsable</th><th></th></tr></thead>
+              <tbody>
+                @for (point of pointsFor(selectedCrisis.id); track point.id) {
+                  <tr>
+                    <td>{{ point.nom }}</td>
+                    <td>{{ point.type_libelle || '—' }}</td>
+                    <td>{{ point.adresse || '—' }}</td>
+                    <td>{{ point.responsable_nom || '—' }}</td>
+                    <td class="actions">
+                      @if (isMine(point)) {
+                        <button class="icon-btn danger" (click)="retirerPoint(point)" title="Se retirer">
+                          <span class="material-icons">delete_outline</span>
+                        </button>
+                      }
+                    </td>
+                  </tr>
+                } @empty {
+                  <tr><td colspan="5" class="empty">Aucun point opérationnel déclaré.</td></tr>
+                }
+              </tbody>
+            </table>
+
+            @if (myInstitutions.length > 0) {
+              @if (!showActeurForm) {
+                <button class="btn-secondary sm" (click)="showActeurForm = true">
+                  <span class="material-icons">add_location_alt</span> Je suis acteur
+                </button>
+              } @else {
+                <form class="inline-form" [formGroup]="acteurForm" (ngSubmit)="submitActeur()">
+                  <select formControlName="institution">
+                    <option [ngValue]="null">— Mon institution —</option>
+                    @for (inst of myInstitutions; track inst.id) {
+                      <option [ngValue]="inst.id">{{ inst.nom }}</option>
+                    }
+                  </select>
+                  <select formControlName="type">
+                    <option [ngValue]="null">— Type de point —</option>
+                    @for (pt of pointTypes; track pt.id) {
+                      <option [ngValue]="pt.id">{{ pt.libelle }}</option>
+                    }
+                  </select>
+                  <input type="text" formControlName="nom" placeholder="Nom du point (ex: Gymnase municipal)"/>
+                  <input type="text" formControlName="adresse" placeholder="Adresse (optionnel)"/>
+                  <button class="btn-primary sm" type="submit">Créer</button>
+                  <button class="btn-secondary sm" type="button" (click)="showActeurForm = false">Annuler</button>
+                </form>
+              }
+            }
+          </section>
+
+        </div>
+      </div>
+    </div>
+  }
+
+</div>

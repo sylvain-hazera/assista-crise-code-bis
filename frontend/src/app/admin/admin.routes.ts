@@ -1,4 +1,5 @@
 import { InstitutionsComponent } from './institutions/institutions.component';
+import { CrisesComponent } from './crises/crises.component';
 import { Routes } from '@angular/router';
 import { DashboardComponent } from './dashboard/dashboard.component';
 import { ReportingComponent } from './reporting/reporting.component';
@@ -23,6 +24,7 @@ export const ADMIN_ROUTES: Routes = [
   { path: 'dossiers', component: DossiersComponent },
   { path: 'equipes', component: TeamsComponent }, 
   { path: 'institutions', component: InstitutionsComponent },
+  { path: 'crises', component: CrisesComponent },
   { path: 'carte', component: MapComponent },
   { path: 'resultats', component: ResultsComponent },
   { path: 'utilisateurs', component: UsersComponent, canActivate: [sysAdminGuard] },

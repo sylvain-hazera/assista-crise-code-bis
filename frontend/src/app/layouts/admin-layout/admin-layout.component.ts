@@ -50,6 +50,8 @@ export class AdminLayoutComponent implements OnInit {
 
     { icon: 'apartment', label: 'Institutions', route: '/admin/institutions' },
 
+    { icon: 'local_fire_department', label: 'Crises', route: '/admin/crises' },
+
     { icon: 'category', label: 'Compétences', route: '/admin/competences' },
 
     { icon: 'playlist_add_check', label: 'Besoins', route: '/admin/besoins' },

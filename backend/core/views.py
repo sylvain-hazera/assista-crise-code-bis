@@ -2024,6 +2024,8 @@ class PointOperationnelViewSet(
         PointOperationnelSerializer
     )
 
+    filterset_fields = ["crise"]
+
     def get_permissions(self):
         if self.action == "create":
             return [IsInstitutionalActor()]

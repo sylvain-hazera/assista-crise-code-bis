@@ -5,6 +5,7 @@ import { AboutComponent } from './about/about.component';
 import { GlobalMapComponent } from './global-map/global-map.component';
 import { CrisisComponent } from './crisis/crisis.component';
 import { authGuard } from '../core/guards/auth.guard';
+import { adminGuard } from '../core/guards/admin.guard';
 import { RecherchesPersonnesComponent } from '../pages/recherches-personnes/recherches-personnes.component';
 import { RecherchePersonneCreateComponent } from '../pages/recherche-personne-create/recherche-personne-create.component';
 import { RecherchePersonneDetailComponent } from '../pages/recherche-personne-detail/recherche-personne-detail.component';
@@ -54,6 +55,7 @@ export const PUBLIC_ROUTES: Routes = [
       },
       {
         path: 'crisis-declaration',
+        canActivate: [adminGuard],
         loadComponent: () => import('./forms/declare-crisis-form/declare-crisis-form.component')
           .then(m => m.DeclareCrisisFormComponent)
       },
