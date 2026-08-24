@@ -99,7 +99,6 @@ class TypeCrise(models.TextChoices):
     INONDATION = "INONDATION", "Inondation"
     ACCIDENT = "ACCIDENT", "Accident"
     CATASTROPHE_NATURELLE = "CATASTROPHE_NATURELLE", "Catastrophe naturelle"
-    URGENCE_MEDICALE = "URGENCE_MEDICALE", "Urgence médicale"
     AUTRE = "AUTRE", "Autre"
 
 class Crisis(models.Model):

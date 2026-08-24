@@ -1,6 +1,6 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { FormsModule, ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { forkJoin } from 'rxjs';
 
@@ -53,6 +53,7 @@ export class CrisesComponent implements OnInit {
 
   constructor(
     private fb: FormBuilder,
+    private route: ActivatedRoute,
     private crisisService: CrisisService,
     private implicationService: ImplicationService,
     private pointService: PointOperationnelService,
@@ -99,6 +100,10 @@ export class CrisesComponent implements OnInit {
         const me = this.authService.getCurrentUser();
         this.myContacts = me ? contacts.filter(c => c.utilisateur === me.id && c.actif) : [];
         this.isLoading = false;
+
+        const targetId = this.route.snapshot.queryParamMap.get('id');
+        const target = targetId ? this.crises.find(c => c.id === targetId) : null;
+        if (target) this.openDetail(target);
       },
       error: () => {
         this.errorMessage = 'Impossible de charger les crises.';

@@ -393,6 +393,11 @@ export class DashboardComponent implements OnInit, OnDestroy {
     return { Crise: 'tag-crisis', Ressource: 'tag-offer', Besoin: 'tag-request' }[type];
   }
 
+  /** Route vers la fiche détail de l'item (crise : gestion dédiée ; ressource/besoin : signalements). */
+  detailRoute(type: RecentItem['type']): string[] {
+    return type === 'Crise' ? ['/admin/crises'] : ['/admin/signalements'];
+  }
+
   // ── CSV export ────────────────────────────────────────────
 
   downloadLine(): void {

@@ -1,6 +1,7 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { ActivatedRoute } from '@angular/router';
 import { forkJoin, Observable, Subject, takeUntil } from 'rxjs';
 
 import { CrisisService }  from '../../services/crisis.service';
@@ -118,6 +119,7 @@ export class ReportingComponent implements OnInit, OnDestroy {
   ];
 
   constructor(
+    private route: ActivatedRoute,
     private crisisService:      CrisisService,
     private offerService:       OfferService,
     private requestService:     RequestService,
@@ -235,6 +237,10 @@ export class ReportingComponent implements OnInit, OnDestroy {
 
     this.allRows = [...crisisRows, ...offerRows, ...requestRows, ...infoRows];
     this.applyFilters();
+
+    const targetId = this.route.snapshot.queryParamMap.get('id');
+    const target = targetId ? this.allRows.find(r => r.id === targetId) : null;
+    if (target) this.openDetail(target);
   }
 
   // ────────────────────────────────────────────────────────────────────────────

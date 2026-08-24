@@ -211,7 +211,7 @@
                 <td class="date-cell">{{ item.date }}</td>
                 <td><span class="status-chip" [class]="item.statusClass">{{ item.status }}</span></td>
                 <td>
-                  <button class="btn-icon sm" [routerLink]="['/details', item.id]" title="Voir">
+                  <button class="btn-icon sm" [routerLink]="detailRoute(item.type)" [queryParams]="{id: item.id}" title="Voir">
                     <span class="material-icons">arrow_forward</span>
                   </button>
                 </td>

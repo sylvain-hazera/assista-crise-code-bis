@@ -43,12 +43,11 @@ export class DeclareCrisisFormComponent implements OnInit{
 
     eventTypeOptions: { value: string; label: string }[] = [
     { value: '', label: 'Dropdown' },
-    { value: 'incendie', label: 'Incendie' },
-    { value: 'inondation', label: 'Inondation' },
-    { value: 'accident', label: 'Accident' },
-    { value: 'catastrophe-naturelle', label: 'Catastrophe naturelle' },
-    { value: 'urgence-medicale', label: 'Urgence médicale' },
-    { value: 'autre', label: 'Autre' }
+    { value: 'INCEDIE', label: 'Incendie' },
+    { value: 'INONDATION', label: 'Inondation' },
+    { value: 'ACCIDENT', label: 'Accident' },
+    { value: 'CATASTROPHE_NATURELLE', label: 'Catastrophe naturelle' },
+    { value: 'AUTRE', label: 'Autre' }
   ];
 
   constructor(

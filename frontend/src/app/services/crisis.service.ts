@@ -143,9 +143,11 @@ export class CrisisService {
       const fd = new FormData();
       
       fd.append('name', payload.name);
-      // fd.append('type_evenement', payload.type_evenement);
-      // fd.append('description', payload.description || '');
-      
+      fd.append('type', payload.type);
+      if (payload.description) {
+        fd.append('description', payload.description);
+      }
+
       if (payload.end_date) {
         fd.append('end_date', payload.end_date);
       }
