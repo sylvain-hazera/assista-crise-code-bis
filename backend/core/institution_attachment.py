@@ -16,6 +16,7 @@ from .models import (
     InstitutionDomaine,
     InstitutionType,
     RoleOperationnel,
+    User,
     UserRole,
 )
 
@@ -185,3 +186,73 @@ def attach_user_to_institution(user, request=None):
         ])
 
     return matched_institution
+
+
+def resolve_or_invite_responsable(responsable_id, responsable_email, institution, request=None):
+    """Résout le responsable/régulateur déclaré pour l'implication d'une institution sur une
+    crise : soit un contact déjà rattaché à l'institution (par id), soit une invitation par email
+    (un compte inactif est créé s'il n'existe pas encore).
+
+    Retourne (user, invited) où `invited` indique qu'un nouveau compte vient d'être créé et
+    qu'un email d'activation doit être envoyé par l'appelant — ce module ignore volontairement
+    `request`/`build_magic_link` (définis dans views.py) pour éviter un import circulaire ; il ne
+    s'en sert que pour l'audit, comme le reste du fichier."""
+    if responsable_id:
+        try:
+            user = User.objects.get(pk=responsable_id)
+        except User.DoesNotExist:
+            return None, False
+        if not ContactInstitution.objects.filter(
+            institution=institution, utilisateur=user, actif=True
+        ).exists():
+            return None, False
+        if user.type == UserRole.SIMPLE_USER:
+            user.type = UserRole.REGULATEUR
+            user.save(update_fields=['type'])
+        return user, False
+
+    email = (responsable_email or '').strip().lower()
+    if not email:
+        return None, False
+
+    existing = User.objects.filter(email__iexact=email).first()
+    if existing:
+        if existing.type == UserRole.SIMPLE_USER:
+            existing.type = UserRole.REGULATEUR
+            existing.save(update_fields=['type'])
+        contact, contact_created = ContactInstitution.objects.get_or_create(
+            institution=institution, utilisateur=existing,
+            defaults={'fonction': 'Régulateur de crise', 'actif': True},
+        )
+        if contact_created and request is not None:
+            audit_log(
+                request=request,
+                action_code="CREATION",
+                objet_type="ContactInstitution",
+                objet_id=contact.id,
+                commentaire=f"Rattachement de {existing.email} comme régulateur pour {institution.nom}",
+            )
+        return existing, False
+
+    user = User.objects.create_user(
+        username=email,
+        email=email,
+        password=None,
+        type=UserRole.REGULATEUR,
+        institution=institution,
+        enabled=False,
+        is_active=False,
+    )
+    ContactInstitution.objects.create(
+        institution=institution, utilisateur=user,
+        fonction='Régulateur de crise', actif=True,
+    )
+    if request is not None:
+        audit_log(
+            request=request,
+            action_code="CREATION",
+            objet_type="User",
+            objet_id=user.id,
+            commentaire=f"Invitation de {email} comme régulateur pour {institution.nom}",
+        )
+    return user, True

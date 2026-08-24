@@ -862,6 +862,9 @@ class ImplicationInstitutionSerializer(
     institution_nom = serializers.CharField(source="institution.nom", read_only=True, default=None)
     crise_nom = serializers.CharField(source="crise.name", read_only=True, default=None)
     utilisateur = serializers.PrimaryKeyRelatedField(read_only=True, allow_null=True)
+    responsable_nom = serializers.SerializerMethodField()
+    themes_libelles = serializers.SerializerMethodField()
+    responsable_email = serializers.CharField(write_only=True, required=False, allow_blank=True)
 
     class Meta:
 
@@ -869,17 +872,35 @@ class ImplicationInstitutionSerializer(
 
         fields = "__all__"
 
+    def get_responsable_nom(self, obj):
+        if not obj.responsable:
+            return None
+        full_name = f"{obj.responsable.first_name} {obj.responsable.last_name}".strip()
+        return full_name or obj.responsable.email
+
+    def get_themes_libelles(self, obj):
+        return [t.nom for t in obj.themes.all()]
+
 
 
 class ContactInstitutionSerializer(
     serializers.ModelSerializer
 ):
 
+    utilisateur_nom = serializers.SerializerMethodField()
+    utilisateur_email = serializers.CharField(source="utilisateur.email", read_only=True, default=None)
+
     class Meta:
 
         model = ContactInstitution
 
         fields = "__all__"
+
+    def get_utilisateur_nom(self, obj):
+        if not obj.utilisateur:
+            return None
+        full_name = f"{obj.utilisateur.first_name} {obj.utilisateur.last_name}".strip()
+        return full_name or obj.utilisateur.email
 
 class InstitutionDomaineSerializer(
     serializers.ModelSerializer

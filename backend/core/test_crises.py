@@ -1,9 +1,11 @@
 import pytest
+from django.core import mail
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
 
 from core.models import (
+    Besoin,
     Crisis,
     ContactInstitution,
     ImplicationInstitution,
@@ -13,6 +15,7 @@ from core.models import (
     PointType,
     TypeImplication,
     User,
+    UserRole,
 )
 
 CRISIS_PAYLOAD = {
@@ -197,6 +200,90 @@ class TestImplicationInstitution:
         admin, _ = admin_client
         response = admin.delete(reverse('implicationinstitution-detail', args=[implication.id]))
         assert response.status_code == status.HTTP_204_NO_CONTENT
+
+
+@pytest.mark.django_db
+class TestImplicationThemesEtResponsable:
+
+    def test_declare_acteur_with_existing_responsable_promotes_type(self, local_authority_client, institution, create_user):
+        client, _ = local_authority_client
+        crisis = Crisis.objects.create(**CRISIS_PAYLOAD)
+        besoin = Besoin.objects.create(nom="Hébergement (test)")
+        responsable = create_user(
+            username="future-regulateur@test.fr", email="future-regulateur@test.fr", type="UTIL_SIMPLE"
+        )
+        ContactInstitution.objects.create(institution=institution, utilisateur=responsable, actif=True)
+
+        response = client.post(
+            reverse('implicationinstitution-list'),
+            {
+                "crise": str(crisis.id),
+                "institution": str(institution.id),
+                "type_implication": "ACTEUR",
+                "themes": [str(besoin.id)],
+                "responsable": str(responsable.id),
+            },
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        implication = ImplicationInstitution.objects.get(id=response.data["id"])
+        assert implication.responsable == responsable
+        assert list(implication.themes.all()) == [besoin]
+        assert response.data["themes_libelles"] == ["Hébergement (test)"]
+
+        responsable.refresh_from_db()
+        assert responsable.type == UserRole.REGULATEUR
+
+    def test_declare_acteur_with_responsable_email_invites_new_user(self, local_authority_client, institution):
+        client, _ = local_authority_client
+        crisis = Crisis.objects.create(**CRISIS_PAYLOAD)
+
+        response = client.post(
+            reverse('implicationinstitution-list'),
+            {
+                "crise": str(crisis.id),
+                "institution": str(institution.id),
+                "type_implication": "ACTEUR",
+                "responsable_email": "nouveau-regulateur@test.fr",
+            },
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        invited = User.objects.get(email="nouveau-regulateur@test.fr")
+        assert invited.type == UserRole.REGULATEUR
+        assert invited.is_active is False
+        assert invited.enabled is False
+        assert ContactInstitution.objects.filter(institution=institution, utilisateur=invited, actif=True).exists()
+
+        implication = ImplicationInstitution.objects.get(id=response.data["id"])
+        assert implication.responsable == invited
+
+        assert len(mail.outbox) == 1
+        assert invited.email in mail.outbox[0].to
+
+    def test_responsable_must_be_contact_of_declared_institution(self, local_authority_client, institution, create_user):
+        client, _ = local_authority_client
+        crisis = Crisis.objects.create(**CRISIS_PAYLOAD)
+        outsider = create_user(username="outsider@test.fr", email="outsider@test.fr", type="UTIL_SIMPLE")
+
+        response = client.post(
+            reverse('implicationinstitution-list'),
+            {
+                "crise": str(crisis.id),
+                "institution": str(institution.id),
+                "type_implication": "ACTEUR",
+                "responsable": str(outsider.id),
+            },
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        implication = ImplicationInstitution.objects.get(id=response.data["id"])
+        assert implication.responsable is None
+        outsider.refresh_from_db()
+        assert outsider.type == UserRole.SIMPLE_USER
 
 
 @pytest.mark.django_db

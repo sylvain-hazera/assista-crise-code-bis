@@ -100,11 +100,18 @@
           <section class="section-block">
             <h3><span class="material-icons">flag</span> Institutions impliquées</h3>
             <table class="data-table sm">
-              <thead><tr><th>Institution</th><th>Commentaire</th><th></th></tr></thead>
+              <thead><tr><th>Institution</th><th>Type</th><th>Thèmes</th><th>Responsable</th><th>Commentaire</th><th></th></tr></thead>
               <tbody>
-                @for (implication of impliquesFor(selectedCrisis.id); track implication.id) {
+                @for (implication of implicationsFor(selectedCrisis.id); track implication.id) {
                   <tr>
                     <td>{{ implication.institution_nom || institutionName(implication.institution) }}</td>
+                    <td>
+                      <span class="badge" [class.badge-implique]="implication.type_implication === 'IMPLIQUE'" [class.badge-acteur]="implication.type_implication === 'ACTEUR'">
+                        {{ implication.type_implication === 'IMPLIQUE' ? 'Impliquée' : 'Acteur' }}
+                      </span>
+                    </td>
+                    <td>{{ (implication.themes_libelles || []).join(', ') || '—' }}</td>
+                    <td>{{ implication.responsable_nom || '—' }}</td>
                     <td>{{ implication.commentaire || '—' }}</td>
                     <td class="actions">
                       @if (isMine(implication)) {
@@ -115,7 +122,7 @@
                     </td>
                   </tr>
                 } @empty {
-                  <tr><td colspan="3" class="empty">Aucune institution impliquée pour l'instant.</td></tr>
+                  <tr><td colspan="6" class="empty">Aucune institution impliquée pour l'instant.</td></tr>
                 }
               </tbody>
             </table>

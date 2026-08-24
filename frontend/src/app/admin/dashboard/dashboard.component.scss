@@ -66,6 +66,25 @@
 }
 
 // ── Buttons ───────────────────────────────────────────────────────────────────
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: .5rem .9rem;
+  font-size: .9rem;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background .15s;
+
+  .material-icons { font-size: 20px; }
+
+  &:hover { background: #1d4ed8; }
+}
+
 .btn-icon {
   background: var(--surface);
   border: 1px solid var(--border);

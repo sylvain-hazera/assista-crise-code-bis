@@ -11,6 +11,7 @@ class UserRole(models.TextChoices):
     ADMINISTRATOR = "ADMIN", "Administrateur"
     LOCAL_AUTHORITY = "AUT_LOCALE", "Autorité locale"
     ORGANIZED_RESCUE = "SECOURS", "Secours organisés"
+    REGULATEUR = "REGULATEUR", "Régulateur de crise"
     SIMPLE_USER = "UTIL_SIMPLE", "Utilisateur"
 
 
@@ -182,6 +183,22 @@ class ImplicationInstitution(models.Model):
     actif = models.BooleanField(default=True)
 
     date_creation = models.DateTimeField(auto_now_add=True)
+
+    responsable = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="implications_responsable",
+        help_text="Personne responsable/régulatrice pour l'institution sur cette crise.",
+    )
+
+    themes = models.ManyToManyField(
+        "Besoin",
+        blank=True,
+        related_name="implications_institutions",
+        help_text="Besoins sur lesquels l'institution est à l'écoute pour cette crise.",
+    )
 
     class Meta:
         constraints = [

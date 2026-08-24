@@ -207,6 +207,82 @@
                 </div>
             </div>
 
+            @if (myInstitutions.length > 0) {
+            <div class="form-section">
+                <h2 class="section-title">Votre institution sur cette crise</h2>
+                <p class="section-description">
+                Déclarez sur quels besoins votre institution est à l'écoute pour cette crise,
+                et désignez un responsable/régulateur.
+                </p>
+
+                @if (myInstitutions.length > 1) {
+                <div class="form-group">
+                    <label class="form-label">Institution</label>
+                    <div class="select-wrapper">
+                        <select class="form-select" [ngModel]="selectedInstitutionId"
+                                [ngModelOptions]="{standalone: true}"
+                                (ngModelChange)="onInstitutionChange($event)">
+                            <option [ngValue]="null">— Choisir —</option>
+                            @for (inst of myInstitutions; track inst.id) {
+                                <option [ngValue]="inst.id">{{ inst.nom }}</option>
+                            }
+                        </select>
+                        <span class="material-icons select-arrow">arrow_drop_down</span>
+                    </div>
+                </div>
+                }
+
+                <div class="form-group checkbox-group">
+                    <label class="form-label">Thèmes à l'écoute</label>
+                    @for (besoin of besoins; track besoin.id) {
+                        <label class="checkbox-label">
+                            <input type="checkbox" class="form-checkbox"
+                                   [checked]="selectedThemes.includes(besoin.id)"
+                                   (change)="toggleTheme(besoin.id, $any($event.target).checked)">
+                            <span class="checkbox-text">{{ besoin.nom }}</span>
+                        </label>
+                    }
+                </div>
+
+                <div class="form-group checkbox-group">
+                    <label class="form-label">Responsable / régulateur</label>
+                    <label class="checkbox-label">
+                        <input type="radio" name="responsableMode" class="form-checkbox"
+                               [checked]="responsableMode === 'moi'" (change)="responsableMode = 'moi'">
+                        <span class="checkbox-text">Moi-même</span>
+                    </label>
+                    @if (institutionContacts.length > 0) {
+                        <label class="checkbox-label">
+                            <input type="radio" name="responsableMode" class="form-checkbox"
+                                   [checked]="responsableMode === 'contact'" (change)="responsableMode = 'contact'">
+                            <span class="checkbox-text">Un contact existant de mon institution</span>
+                        </label>
+                    }
+                    <label class="checkbox-label">
+                        <input type="radio" name="responsableMode" class="form-checkbox"
+                               [checked]="responsableMode === 'email'" (change)="responsableMode = 'email'">
+                        <span class="checkbox-text">Inviter par email (pas encore de compte)</span>
+                    </label>
+
+                    @if (responsableMode === 'contact') {
+                        <div class="select-wrapper">
+                            <select class="form-select" [(ngModel)]="responsableContactId" [ngModelOptions]="{standalone: true}">
+                                <option [ngValue]="null">— Choisir un contact —</option>
+                                @for (contact of institutionContacts; track contact.id) {
+                                    <option [ngValue]="contact.utilisateur">{{ contact.utilisateur_nom || contact.utilisateur_email }}</option>
+                                }
+                            </select>
+                            <span class="material-icons select-arrow">arrow_drop_down</span>
+                        </div>
+                    }
+                    @if (responsableMode === 'email') {
+                        <input type="email" class="form-input" placeholder="email@exemple.fr"
+                               [(ngModel)]="responsableEmail" [ngModelOptions]="{standalone: true}">
+                    }
+                </div>
+            </div>
+            }
+
             <div class="form-section">
                 <h2 class="section-title">Zone précise (optionnel)</h2>
                 <p class="section-description">

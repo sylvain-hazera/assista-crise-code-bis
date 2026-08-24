@@ -11,6 +11,10 @@
     </div>
 
     <div class="dash-actions">
+      <a routerLink="/crisis-declaration" class="btn-primary">
+        <span class="material-icons">add_alert</span> Déclarer une crise
+      </a>
+
       <button class="btn-icon" (click)="loadAll()" [disabled]="isLoading" title="Rafraîchir">
         <span class="material-icons" [class.spin]="isLoading">refresh</span>
       </button>

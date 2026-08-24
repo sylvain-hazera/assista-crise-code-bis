@@ -26,7 +26,7 @@ from PIL import Image
 from PIL.ExifTags import TAGS, GPSTAGS
 
 from .audit import audit_log, get_client_ip
-from .institution_attachment import attach_user_to_institution
+from .institution_attachment import attach_user_to_institution, resolve_or_invite_responsable
 from .permissions import IsInstitutionalActor, IsAdministrator
 
 
@@ -127,6 +127,32 @@ def send_institution_account_email(request, user):
 
     send_mail(
         subject="Votre accès institutionnel Assista-Crise",
+        message=message,
+        from_email=None,
+        recipient_list=[user.email],
+        fail_silently=False,
+    )
+
+
+def send_crisis_regulateur_invite_email(request, user, crisis, institution):
+    activation_link = build_magic_link(request, user, "activate-account")
+    login_link = build_magic_link(request, user, "magic-login")
+
+    message = (
+        "Bonjour,\n\n"
+        f"Vous avez été désigné(e) responsable/régulateur par {institution.nom} "
+        f"pour la crise « {crisis.name} » sur Assista-Crise.\n\n"
+        "Votre compte est encore inactif : cliquez sur le lien ci-dessous pour confirmer que "
+        "vous êtes bien le propriétaire de cette adresse email et l'activer.\n\n"
+        f"- Activation du compte : {activation_link}\n\n"
+        f"Vous pourrez ensuite vous reconnecter à tout moment via : {login_link}\n\n"
+        "Ces liens sont valables pendant 7 jours.\n\n"
+        "Cordialement,\n"
+        "L'équipe Assista-Crise"
+    )
+
+    send_mail(
+        subject="Vous avez été désigné responsable d'une crise sur Assista-Crise",
         message=message,
         from_email=None,
         recipient_list=[user.email],
@@ -2094,7 +2120,20 @@ class ImplicationInstitutionViewSet(
                 "Vous ne pouvez déclarer une implication que pour une institution à laquelle vous êtes rattaché."
             )
 
-        implication = serializer.save(utilisateur=self.request.user)
+        responsable_email = serializer.validated_data.pop("responsable_email", "")
+        responsable = serializer.validated_data.get("responsable")
+        responsable_id = responsable.pk if responsable else None
+
+        resolved_responsable, invited = None, False
+        if responsable_id or responsable_email:
+            resolved_responsable, invited = resolve_or_invite_responsable(
+                responsable_id, responsable_email, institution, self.request
+            )
+
+        implication = serializer.save(utilisateur=self.request.user, responsable=resolved_responsable)
+
+        if invited:
+            send_crisis_regulateur_invite_email(self.request, resolved_responsable, implication.crise, institution)
 
         audit_log(
             request=self.request,

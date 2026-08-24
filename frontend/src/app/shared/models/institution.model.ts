@@ -23,6 +23,8 @@ export interface ContactInstitution {
   id?: string;
   institution: string;   // UUID de l'Institution
   utilisateur: string;   // UUID du User
+  utilisateur_nom?: string | null;
+  utilisateur_email?: string | null;
   fonction?: string;
   contact_principal: boolean;
   actif: boolean;

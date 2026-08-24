@@ -8,9 +8,17 @@ import { Status } from '../../../shared/models/status.model';
 import { LocationService, Department, Commune } from '../../../services/location.service';
 import { CommonModule } from '@angular/common';
 import { CrisisPayload } from '../../../shared/models/crisis.model';
-import { map, Observable } from 'rxjs';
+import { forkJoin, map, Observable } from 'rxjs';
 import { AuthService } from '../../../auth/services/auth.service';
 import { ZoneMapComponent } from '../../../shared/components/common/zone-map/zone-map.component';
+import { ContactInstitutionService } from '../../../services/contact-institution.service';
+import { InstitutionService } from '../../../services/institution.service';
+import { BesoinService } from '../../../services/besoin.service';
+import { ImplicationService } from '../../../services/implication.service';
+import { ContactInstitution, Institution } from '../../../shared/models/institution.model';
+import { Besoin } from '../../../shared/models/besoin.model';
+
+type ResponsableMode = 'moi' | 'contact' | 'email';
 
 @Component({
   selector: 'app-declare-crisis-form',
@@ -28,7 +36,33 @@ export class DeclareCrisisFormComponent implements OnInit{
   onZoneChange(wkt: string | null): void {
     this.zoneWkt = wkt;
   }
-  
+
+  // ── Institution déclarante / thèmes / responsable ──────────────
+  myInstitutions: Institution[] = [];
+  private allContacts: ContactInstitution[] = [];
+  institutionContacts: ContactInstitution[] = [];
+  besoins: Besoin[] = [];
+
+  selectedInstitutionId: string | null = null;
+  selectedThemes: string[] = [];
+  responsableMode: ResponsableMode = 'moi';
+  responsableContactId: string | null = null;
+  responsableEmail = '';
+
+  onInstitutionChange(id: string): void {
+    this.selectedInstitutionId = id || null;
+    this.institutionContacts = this.selectedInstitutionId
+      ? this.allContacts.filter(c => c.institution === this.selectedInstitutionId && c.actif)
+      : [];
+    this.responsableContactId = null;
+  }
+
+  toggleTheme(besoinId: string, checked: boolean): void {
+    this.selectedThemes = checked
+      ? [...this.selectedThemes, besoinId]
+      : this.selectedThemes.filter(id => id !== besoinId);
+  }
+
   latitude: number | null = null;
   longitude: number | null = null;
 
@@ -56,12 +90,39 @@ export class DeclareCrisisFormComponent implements OnInit{
     private crisisService: CrisisService,
     private geolocationService: GeolocationService,
     private locationService: LocationService,
-    private authService: AuthService
+    private authService: AuthService,
+    private contactInstitutionService: ContactInstitutionService,
+    private institutionService: InstitutionService,
+    private besoinService: BesoinService,
+    private implicationService: ImplicationService,
   ) {}
 
   ngOnInit() {
     this.initForm();
     this.loadDepartments();
+    this.loadInstitutionContext();
+  }
+
+  private loadInstitutionContext(): void {
+    forkJoin({
+      contacts: this.contactInstitutionService.getAll(),
+      institutions: this.institutionService.getAll(),
+      besoins: this.besoinService.getAll(),
+    }).subscribe({
+      next: ({ contacts, institutions, besoins }) => {
+        this.allContacts = contacts;
+        this.besoins = besoins;
+        const me = this.authService.getCurrentUser();
+        const myInstitutionIds = new Set(
+          contacts.filter(c => c.utilisateur === me?.id && c.actif).map(c => c.institution)
+        );
+        this.myInstitutions = institutions.filter(i => myInstitutionIds.has(i.id!));
+        if (this.myInstitutions.length === 1) {
+          this.onInstitutionChange(this.myInstitutions[0].id!);
+        }
+      },
+      error: (err) => console.error('Erreur chargement contexte institution:', err),
+    });
   }
 
   loadDepartments(): void {
@@ -189,8 +250,9 @@ export class DeclareCrisisFormComponent implements OnInit{
           
           // 4. Envoyer la requête
           this.crisisService.create(formData).subscribe({
-            next: (response) => {
+            next: (response: any) => {
               console.log('Crisis créée:', response);
+              this.declareInstitutionImplication(response.id);
               alert('Votre crise a été enregistrée avec succès !');
               this.router.navigate(['/accueil']);
             },
@@ -227,6 +289,35 @@ export class DeclareCrisisFormComponent implements OnInit{
 
   goBack(): void {
     this.router.navigate(['/accueil']);
+  }
+
+  /** Déclare l'institution du déclarant comme acteur sur la crise qui vient d'être créée,
+   * avec ses thèmes d'écoute et son responsable/régulateur. Un échec ici n'annule pas la
+   * création de la crise (déjà faite) : l'utilisateur peut compléter depuis /admin/crises. */
+  private declareInstitutionImplication(crisisId: string): void {
+    if (!this.selectedInstitutionId) {
+      return;
+    }
+
+    const payload: any = {
+      crise: crisisId,
+      institution: this.selectedInstitutionId,
+      type_implication: 'ACTEUR',
+      themes: this.selectedThemes,
+    };
+
+    const me = this.authService.getCurrentUser();
+    if (this.responsableMode === 'moi' && me) {
+      payload.responsable = me.id;
+    } else if (this.responsableMode === 'contact' && this.responsableContactId) {
+      payload.responsable = this.responsableContactId;
+    } else if (this.responsableMode === 'email' && this.responsableEmail.trim()) {
+      payload.responsable_email = this.responsableEmail.trim();
+    }
+
+    this.implicationService.create(payload).subscribe({
+      error: (err) => console.error("Erreur lors de la déclaration de l'implication :", err),
+    });
   }
 
   private getCoordinatesFromAddress(street: string, zip: string): Observable<{lat: number, lng: number}> {

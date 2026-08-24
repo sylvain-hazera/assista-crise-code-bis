@@ -7,6 +7,7 @@ INSTITUTIONAL_TYPES = {
     UserRole.LOCAL_AUTHORITY,
     UserRole.ORGANIZED_RESCUE,
     UserRole.ADMINISTRATOR,
+    UserRole.REGULATEUR,
 }
 
 

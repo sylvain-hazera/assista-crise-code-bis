@@ -127,6 +127,10 @@ export class CrisesComponent implements OnInit {
     return this.crises.filter(c => c.name.toLowerCase().includes(q));
   }
 
+  implicationsFor(crisisId: string): ImplicationInstitution[] {
+    return this.implications.filter(i => i.crise === crisisId);
+  }
+
   impliquesFor(crisisId: string): ImplicationInstitution[] {
     return this.implications.filter(i => i.crise === crisisId && i.type_implication === 'IMPLIQUE');
   }

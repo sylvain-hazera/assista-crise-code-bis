@@ -11,6 +11,10 @@ export interface ImplicationInstitution {
   commentaire?: string | null;
   actif: boolean;
   date_creation: string;
+  themes?: string[];
+  themes_libelles?: string[];
+  responsable?: string | null;
+  responsable_nom?: string | null;
 }
 
 export interface ImplicationInstitutionPayload {
@@ -18,4 +22,7 @@ export interface ImplicationInstitutionPayload {
   institution: string;
   type_implication: TypeImplication;
   commentaire?: string;
+  themes?: string[];
+  responsable?: string;
+  responsable_email?: string;
 }
