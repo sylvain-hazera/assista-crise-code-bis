@@ -1,0 +1,40 @@
+<div class="activate-container">
+  <div class="activate-wrapper">
+
+    @if (state === 'loading') {
+      <div class="state-block">
+        <div class="spinner"></div>
+        <h1 class="activate-title">Activation de votre compte…</h1>
+        <p class="activate-text">Merci de patienter un instant.</p>
+      </div>
+    }
+
+    @if (state === 'success') {
+      <div class="state-block">
+        <span class="material-icons state-icon success-icon">check_circle</span>
+        <h1 class="activate-title">Compte activé !</h1>
+        <p class="activate-text">{{ successMessage }}</p>
+        <p class="activate-subtext">Vous êtes maintenant connecté.</p>
+        <button type="button" class="btn-submit" (click)="goToDashboard()">
+          Accéder à Assista-Crise
+        </button>
+      </div>
+    }
+
+    @if (state === 'error') {
+      <div class="state-block">
+        <span class="material-icons state-icon error-icon">error_outline</span>
+        <h1 class="activate-title">Activation impossible</h1>
+        <p class="activate-text">{{ errorMessage }}</p>
+        <p class="activate-subtext">
+          Le lien a peut-être déjà été utilisé ou a expiré (validité : 7 jours).
+        </p>
+        <div class="actions">
+          <a routerLink="/register" class="btn-link">Créer un nouveau compte</a>
+          <a routerLink="/login" class="btn-link">Retour à la connexion</a>
+        </div>
+      </div>
+    }
+
+  </div>
+</div>

@@ -5,7 +5,9 @@ import { AboutComponent } from './about/about.component';
 import { GlobalMapComponent } from './global-map/global-map.component';
 import { CrisisComponent } from './crisis/crisis.component';
 import { authGuard } from '../core/guards/auth.guard';
-
+import { RecherchesPersonnesComponent } from '../pages/recherches-personnes/recherches-personnes.component';
+import { RecherchePersonneCreateComponent } from '../pages/recherche-personne-create/recherche-personne-create.component';
+import { RecherchePersonneDetailComponent } from '../pages/recherche-personne-detail/recherche-personne-detail.component';
 
 export const PUBLIC_ROUTES: Routes = [
   { path: '', redirectTo: 'accueil', pathMatch: 'full' },
@@ -23,6 +25,11 @@ export const PUBLIC_ROUTES: Routes = [
         path: 'register',
         loadComponent: () => import('../auth/component/register/register.component')
           .then(m => m.RegisterComponent)
+      },
+      {
+        path: 'activate-account/:uidb64/:token',
+        loadComponent: () => import('../auth/component/activate-account/activate-account.component')
+          .then(m => m.ActivateAccountComponent)
       },
       {
         path: 'settings',
@@ -69,5 +76,20 @@ export const PUBLIC_ROUTES: Routes = [
         path: 'credits',
         loadComponent: () => import('./legal/credits/credits.component')
           .then(m => m.CreditsComponent)
-      }
+      },
+      {
+        path: 'recherches-personnes',
+        canActivate: [authGuard],
+        component: RecherchesPersonnesComponent
+      },
+      {
+        path: 'recherches-personnes/new',
+        canActivate: [authGuard],
+        component: RecherchePersonneCreateComponent
+      },
+      {
+        path: 'recherches-personnes/:id',
+        canActivate: [authGuard],
+        component: RecherchePersonneDetailComponent
+      },
 ];

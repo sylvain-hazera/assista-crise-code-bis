@@ -232,6 +232,13 @@ interface LoginResponse extends TokenResponse {
   user: User;
 }
 
+interface ActivationResponse {
+  user: User;
+  token: string;
+  refresh: string;
+  message: string;
+}
+
 @Injectable({ providedIn: 'root' })
 export class AuthService {
   private readonly url = `${environment.apiUrl}`;
@@ -239,6 +246,16 @@ export class AuthService {
   // private readonly url = `${environment.apiUrl}/users`;
 
   constructor(private http: HttpClient) {}
+
+  /**
+   * Stocke la session (token d'accès, refresh, utilisateur) en localStorage.
+   * Factorisé pour être appelé aussi bien après /token/ qu'après activation de compte.
+   */
+  setSession(accessToken: string, refreshToken: string, user: User): void {
+    localStorage.setItem('access_token', accessToken);
+    localStorage.setItem('refresh_token', refreshToken);
+    localStorage.setItem('current_user', JSON.stringify(user));
+  }
 
   /**
    * POST /api/auth/token/
@@ -249,11 +266,7 @@ export class AuthService {
     return this.http
       .post<LoginResponse>(`${this.url}/token/`, { email, password })
       .pipe(
-        tap(res => {
-          localStorage.setItem('access_token', res.access);
-          localStorage.setItem('refresh_token', res.refresh);
-          localStorage.setItem('current_user', JSON.stringify(res.user));
-        }),
+        tap(res => this.setSession(res.access, res.refresh, res.user)),
         catchError((error: HttpErrorResponse) => {
           let errorMessage = 'Une erreur est survenue lors de la connexion';
           
@@ -267,6 +280,23 @@ export class AuthService {
             errorMessage = error.error.error;
           }
           
+          return throwError(() => new Error(errorMessage));
+        })
+      );
+  }
+
+  /**
+   * GET /api/activate-account/<uidb64>/<token>/
+   * Confirme la possession de l'email (lien reçu à l'inscription) et active le compte.
+   * Réponse : { user, token, refresh, message }
+   */
+  activateAccount(uidb64: string, token: string): Observable<ActivationResponse> {
+    return this.http
+      .get<ActivationResponse>(`${this.url}/activate-account/${uidb64}/${token}/`)
+      .pipe(
+        tap(res => this.setSession(res.token, res.refresh, res.user)),
+        catchError((error: HttpErrorResponse) => {
+          const errorMessage = error.error?.error || "Ce lien d'activation est invalide ou a expiré";
           return throwError(() => new Error(errorMessage));
         })
       );
@@ -288,6 +318,16 @@ export class AuthService {
    */
   register(payload: UserPayload & { email: string; password: string }): Observable<User> {
     return this.http.post<User>(`${this.url}/register/`, payload);
+  }
+
+  validateInstitution(payload: {
+    email: string;
+    institution_name: string;
+    institution_type: string;
+    commune_name: string;
+    commune_code: string;
+  }): Observable<{ valid: boolean; message: string; details: any }> {
+    return this.http.post<{ valid: boolean; message: string; details: any }>(`${this.url}/validate-institution/`, payload);
   }
 
   /**

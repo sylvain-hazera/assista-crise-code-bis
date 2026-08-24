@@ -9,6 +9,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from .serializers import MyTokenObtainPairSerializer  # if you've defined it in serializers
+from django.conf import settings
 from django.contrib.auth import authenticate
 from django.core.mail import send_mail
 from django.core.signing import TimestampSigner, BadSignature, SignatureExpired
@@ -82,6 +83,13 @@ MAGIC_LINK_SIGNER = TimestampSigner(salt=MAGIC_LINK_SALT)
 def build_magic_link(request, user, action: str) -> str:
     uidb64 = urlsafe_base64_encode(force_bytes(str(user.pk)))
     token = MAGIC_LINK_SIGNER.sign(uidb64)
+
+    if action == "activate-account":
+        # Doit pointer vers la page du frontend (qui appelle ensuite l'API elle-même côté
+        # client), jamais directement sur l'API : sinon le clic affiche du JSON brut.
+        frontend_url = settings.SERVER_URL.rstrip('/')
+        return f"{frontend_url}/activate-account/{uidb64}/{token}"
+
     base_url = request.build_absolute_uri('/').rstrip('/')
     return f"{base_url}/api/{action}/{uidb64}/{token}/"
 
