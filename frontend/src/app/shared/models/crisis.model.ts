@@ -1,27 +1,30 @@
 import { Status } from "./status.model";
+import type { Polygon } from "geojson";
 
 // Format GeoJSON retourné par GeoDjango (PointField)
 export interface GeoPoint {
   type: 'Point';
-  coordinates: [number, number];        
+  coordinates: [number, number];
 }
 
 export interface Crisis {
-  id: string;                           
+  id: string;
   name: string;
   type: string;
   description?: string | null;
   status?:  Status;
-  location: GeoPoint;              
+  location: GeoPoint;
   latitude?: number;
   longitude?: number;
   radius?: number;
-  start_date: string;                   
+  zone?: string | null;          // WKT en écriture (ex: "POLYGON ((lng lat, ...))")
+  zone_geojson?: Polygon | null; // GeoJSON natif en lecture, prêt pour l'affichage carte
+  start_date: string;
   end_date: string | null;
-  validator: string | null;           
-  author: string | null;           
-  photo: string | null;   
-  severity: string | null;           
+  validator: string | null;
+  author: string | null;
+  photo: string | null;
+  severity: string | null;
 }
 
 export interface CrisisPayload {
@@ -29,8 +32,9 @@ export interface CrisisPayload {
   type: string;
   description?: string | null;
   status?: string;
-  latitude: number;                     
-  longitude: number;                    
+  latitude: number;
+  longitude: number;
+  zone?: string | null;
   end_date?: string | null;
   validator?: string | null;
   author?: string | null;

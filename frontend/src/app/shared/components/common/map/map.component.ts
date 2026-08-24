@@ -470,6 +470,23 @@ private addHoverEffect() { // Show convex hull around clusters on hover
     this.crisisCircle = [];
 
     this.crises.forEach(crisis => {
+      // Zone précise dessinée (polygone) : utilisée telle quelle, sans fusion ni calcul de cercle
+      if (crisis.zone_geojson) {
+        this.crisisCircle.push({
+          type: 'Feature',
+          geometry: crisis.zone_geojson,
+          properties: {
+            center: [crisis.longitude, crisis.latitude],
+            radius: crisis.radius,
+            name: crisis.name,
+            description: crisis.description,
+            start_date: crisis.start_date,
+            type: crisis.type
+          }
+        });
+        return;
+      }
+
       // Create a circle for each crisis
       if (crisis.latitude && crisis.longitude) {
         let radiusCenter = [crisis.longitude, crisis.latitude] as [number, number];

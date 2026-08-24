@@ -26,6 +26,8 @@
     "@turf/turf": "^7.3.4",
     "maplibre-gl": "^5.16.0",
     "rxjs": "~7.8.0",
+    "terra-draw": "^1.32.3",
+    "terra-draw-maplibre-gl-adapter": "^1.4.1",
     "tslib": "^2.3.0",
     "zone.js": "~0.15.0"
   },

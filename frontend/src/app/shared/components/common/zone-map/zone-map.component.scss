@@ -1,0 +1,41 @@
+.zone-map-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+}
+
+.zone-map-toolbar {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  flex-wrap: wrap;
+
+  .hint {
+    font-size: .8rem;
+    color: #6b7280;
+  }
+}
+
+.btn-secondary {
+  border: none;
+  border-radius: 6px;
+  padding: .55rem 1rem;
+  font-size: .9rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  background: #f3f4f6;
+  color: #374151;
+
+  &.sm { padding: .35rem .75rem; font-size: .8rem; }
+  &:hover { background: #e5e7eb; }
+}
+
+.zone-map-container {
+  width: 100%;
+  height: 320px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #e5e7eb;
+}

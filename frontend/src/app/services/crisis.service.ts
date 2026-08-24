@@ -72,6 +72,11 @@ export class CrisisService {
     return this.http.put<Crisis>(`${this.apiUrl}/${id}/`, data);
   }
 
+  /** PATCH /api/crises/<id>/ — mise à jour partielle (ex: seulement `zone`). */
+  patch(id: string, data: Partial<Crisis>): Observable<Crisis> {
+    return this.http.patch<Crisis>(`${this.apiUrl}/${id}/`, data);
+  }
+
   // /**
   //  * POST /api/crises/
   //  * Envoi via FormData pour gérer le champ photo éventuel.
@@ -156,10 +161,14 @@ export class CrisisService {
       if (payload.latitude != null && payload.longitude != null) {
         fd.append('location', JSON.stringify({
           type: 'Point',
-          coordinates: [payload.longitude, payload.longitude]
+          coordinates: [payload.longitude, payload.latitude]
         }));
       }
-      
+
+      if (payload.zone) {
+        fd.append('zone', payload.zone);
+      }
+
       if (file) {
         fd.append('photo', file);
       }

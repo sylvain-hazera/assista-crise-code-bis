@@ -1,0 +1,14 @@
+<div class="zone-map-wrapper">
+  <div class="zone-map-toolbar">
+    <button type="button" class="btn-secondary sm" (click)="startDrawing()">
+      <span class="material-icons">draw</span> Dessiner la zone
+    </button>
+    @if (hasZone) {
+      <button type="button" class="btn-secondary sm" (click)="clearZone()">
+        <span class="material-icons">delete_outline</span> Effacer
+      </button>
+    }
+    <span class="hint">Cliquez pour placer les sommets du polygone, double-cliquez pour terminer.</span>
+  </div>
+  <div #mapContainer class="zone-map-container"></div>
+</div>

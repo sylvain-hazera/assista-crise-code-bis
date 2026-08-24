@@ -10,11 +10,12 @@ import { CommonModule } from '@angular/common';
 import { CrisisPayload } from '../../../shared/models/crisis.model';
 import { map, Observable } from 'rxjs';
 import { AuthService } from '../../../auth/services/auth.service';
+import { ZoneMapComponent } from '../../../shared/components/common/zone-map/zone-map.component';
 
 @Component({
   selector: 'app-declare-crisis-form',
   standalone: true,
-  imports: [ReactiveFormsModule, FormsModule, CommonModule],
+  imports: [ReactiveFormsModule, FormsModule, CommonModule, ZoneMapComponent],
   templateUrl: './declare-crisis-form.component.html',
   styleUrl: './declare-crisis-form.component.scss'
 })
@@ -22,6 +23,11 @@ export class DeclareCrisisFormComponent implements OnInit{
   crisisForm!: FormGroup;
   selectedFile: File | null = null;
   fileName: string = 'Select';
+  zoneWkt: string | null = null;
+
+  onZoneChange(wkt: string | null): void {
+    this.zoneWkt = wkt;
+  }
   
   latitude: number | null = null;
   longitude: number | null = null;
@@ -171,6 +177,7 @@ export class DeclareCrisisFormComponent implements OnInit{
             description: formValue.description,
             latitude: coords.lat,
             longitude: coords.lng,
+            zone: this.zoneWkt,
             author: this.authService.getCurrentUser()?.id,
             status: 'NON_TRAITEE'
           };

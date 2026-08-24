@@ -207,10 +207,20 @@
                 </div>
             </div>
 
+            <div class="form-section">
+                <h2 class="section-title">Zone précise (optionnel)</h2>
+                <p class="section-description">
+                Par défaut, la crise est représentée par un simple rayon. Vous pouvez
+                dessiner ici une zone précise (utile pour un incendie qui suit une route,
+                une inondation qui suit un cours d'eau...).
+                </p>
+                <app-zone-map (zoneChange)="onZoneChange($event)"></app-zone-map>
+            </div>
+
       <!-- Bouton Submit -->
       <div class="form-actions">
-          <button 
-            type="button" 
+          <button
+            type="button"
             class="btn-submit"
             (click)="onSubmit()">
             Suivant >

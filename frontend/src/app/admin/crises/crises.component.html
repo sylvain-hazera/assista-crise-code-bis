@@ -75,6 +75,27 @@
             @if (selectedCrisis.description) { — {{ selectedCrisis.description }} }
           </p>
 
+          <!-- Zone précise -->
+          <section class="section-block">
+            <h3><span class="material-icons">draw</span> Zone précise</h3>
+            @if (!showZoneEditor) {
+              <p class="crisis-meta">
+                @if (selectedCrisis.zone_geojson) { Une zone précise est définie pour cette crise. }
+                @else { Aucune zone précise : la crise est représentée par le rayon par défaut ({{ selectedCrisis.radius }} km). }
+              </p>
+              <button class="btn-secondary sm" (click)="showZoneEditor = true">
+                <span class="material-icons">edit_location_alt</span>
+                {{ selectedCrisis.zone_geojson ? 'Modifier la zone' : 'Définir la zone' }}
+              </button>
+            } @else {
+              <app-zone-map [initialZone]="selectedCrisis.zone_geojson ?? null" (zoneChange)="onZoneChange($event)"></app-zone-map>
+              <div class="inline-form">
+                <button class="btn-primary sm" (click)="saveZone()">Enregistrer la zone</button>
+                <button class="btn-secondary sm" (click)="showZoneEditor = false">Annuler</button>
+              </div>
+            }
+          </section>
+
           <!-- Impliqués -->
           <section class="section-block">
             <h3><span class="material-icons">flag</span> Institutions impliquées</h3>

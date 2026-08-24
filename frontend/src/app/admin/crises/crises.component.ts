@@ -16,13 +16,14 @@ import { Crisis } from '../../shared/models/crisis.model';
 import { ImplicationInstitution } from '../../shared/models/implication.model';
 import { PointOperationnel, PointType } from '../../shared/models/point-operationnel.model';
 import { ContactInstitution, Institution } from '../../shared/models/institution.model';
+import { ZoneMapComponent } from '../../shared/components/common/zone-map/zone-map.component';
 
 type ModalView = 'none' | 'detail';
 
 @Component({
   selector: 'app-crises',
   standalone: true,
-  imports: [CommonModule, FormsModule, ReactiveFormsModule, RouterLink],
+  imports: [CommonModule, FormsModule, ReactiveFormsModule, RouterLink, ZoneMapComponent],
   templateUrl: './crises.component.html',
   styleUrls: ['./crises.component.scss']
 })
@@ -45,6 +46,8 @@ export class CrisesComponent implements OnInit {
 
   showImpliqueForm = false;
   showActeurForm = false;
+  showZoneEditor = false;
+  pendingZoneWkt: string | null = null;
   impliqueForm!: FormGroup;
   acteurForm!: FormGroup;
 
@@ -136,6 +139,8 @@ export class CrisesComponent implements OnInit {
     this.selectedCrisis = crisis;
     this.showImpliqueForm = false;
     this.showActeurForm = false;
+    this.showZoneEditor = false;
+    this.pendingZoneWkt = crisis.zone ?? null;
     this.impliqueForm.reset({ institution: this.defaultInstitutionId() });
     this.acteurForm.reset({ institution: this.defaultInstitutionId() });
     this.modal = 'detail';
@@ -148,6 +153,25 @@ export class CrisesComponent implements OnInit {
 
   private defaultInstitutionId(): string | null {
     return this.myContacts.length === 1 ? this.myContacts[0].institution : null;
+  }
+
+  // ── Zone précise (polygone) ────────────────────────────────────
+  onZoneChange(wkt: string | null): void {
+    this.pendingZoneWkt = wkt;
+  }
+
+  saveZone(): void {
+    if (!this.selectedCrisis) return;
+    this.crisisService.patch(this.selectedCrisis.id, { zone: this.pendingZoneWkt }).subscribe({
+      next: (updated) => {
+        this.selectedCrisis = updated;
+        const idx = this.crises.findIndex(c => c.id === updated.id);
+        if (idx !== -1) this.crises[idx] = updated;
+        this.showZoneEditor = false;
+        this.showSuccess('Zone enregistrée.');
+      },
+      error: () => this.showError("Impossible d'enregistrer la zone."),
+    });
   }
 
   get myInstitutions(): Institution[] {
