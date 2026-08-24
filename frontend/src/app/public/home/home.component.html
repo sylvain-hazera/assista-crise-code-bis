@@ -1,14 +1,5 @@
 <div class="home-container">
   <div class="action-bar">
-    <div class="search-box">
-      <span class="material-icons">search</span>
-      <input 
-        type="text" 
-        placeholder="Rechercher" 
-        [(ngModel)]="searchQuery"
-        (keyup.enter)="onSearch()">
-    </div>
-
     <div class="action-buttons">
       <button class="btn btn-success" (click)="navigateTo('/help-proposal')">
         Proposer mon aide
@@ -18,6 +9,11 @@
       </button>
       <button class="btn btn-primary" (click)="navigateTo('/other-declaration')">
         Autre déclaration
+      </button>
+      <button
+        class="btn btn-warning"
+        (click)="navigateTo('/recherches-personnes')">
+        🔍 Recherches de personnes
       </button>
     </div>
   </div>
