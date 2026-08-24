@@ -22,6 +22,7 @@ from .views import (
     DisponibiliteOperationnelleViewSet,
     PointTypeViewSet,
     PointOperationnelViewSet,
+    ImplicationInstitutionViewSet,
 )
 
 router = DefaultRouter()
@@ -80,6 +81,11 @@ router.register(
 router.register(
     r'points-operationnels',
     PointOperationnelViewSet
+)
+
+router.register(
+    r'implications-crises',
+    ImplicationInstitutionViewSet
 )
 
 router.register(r'users', UserViewSet)

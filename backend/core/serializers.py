@@ -15,6 +15,7 @@ from .models import (
     DisponibiliteOperationnelle,
     PointType,
     PointOperationnel,
+    ImplicationInstitution,
     User, Crisis, Request, Offer, Information,
     RecherchePersonneLecture, RecherchePersonneLectureHistorique,
     Document, RecherchePersonnePhoto, RecherchePersonneCommentairePhoto,
@@ -831,9 +832,33 @@ class PointOperationnelSerializer(
     serializers.ModelSerializer
 ):
 
+    type_libelle = serializers.CharField(source="type.libelle", read_only=True, default=None)
+    responsable_nom = serializers.SerializerMethodField()
+
     class Meta:
 
         model = PointOperationnel
+
+        fields = "__all__"
+
+    def get_responsable_nom(self, obj):
+        if not obj.responsable:
+            return None
+        full_name = f"{obj.responsable.first_name} {obj.responsable.last_name}".strip()
+        return full_name or obj.responsable.username
+
+
+class ImplicationInstitutionSerializer(
+    serializers.ModelSerializer
+):
+
+    institution_nom = serializers.CharField(source="institution.nom", read_only=True, default=None)
+    crise_nom = serializers.CharField(source="crise.name", read_only=True, default=None)
+    utilisateur = serializers.PrimaryKeyRelatedField(read_only=True, allow_null=True)
+
+    class Meta:
+
+        model = ImplicationInstitution
 
         fields = "__all__"
 

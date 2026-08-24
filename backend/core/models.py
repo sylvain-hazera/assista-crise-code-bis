@@ -140,6 +140,61 @@ class Crisis(models.Model):
         return self.name
 
 
+class TypeImplication(models.TextChoices):
+    IMPLIQUE = "IMPLIQUE", "Impliquée"
+    ACTEUR = "ACTEUR", "Acteur opérationnel"
+
+
+class ImplicationInstitution(models.Model):
+    """Rattachement d'une institution à une crise : impliquée (sa commune est concernée)
+    et/ou acteur opérationnel (elle gère des moyens sur cette crise, ex: un point de
+    collecte). Les deux statuts peuvent coexister pour une même institution/crise."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    crise = models.ForeignKey(
+        Crisis,
+        on_delete=models.CASCADE,
+        related_name="implications"
+    )
+
+    institution = models.ForeignKey(
+        "Institution",
+        on_delete=models.CASCADE,
+        related_name="implications_crises"
+    )
+
+    utilisateur = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="implications_declarees"
+    )
+
+    type_implication = models.CharField(
+        max_length=20,
+        choices=TypeImplication.choices
+    )
+
+    commentaire = models.TextField(blank=True, null=True)
+
+    actif = models.BooleanField(default=True)
+
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["crise", "institution", "type_implication"],
+                name="uq_implication_crise_institution_type"
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.institution} - {self.crise} ({self.type_implication})"
+
+
 class RequestType(models.Model):
     """Types de demandes d'aide"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -1578,6 +1633,14 @@ class PointOperationnel(models.Model):
         null=True,
         blank=True,
         related_name="points_operationnels"
+    )
+
+    responsable = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="points_geres"
     )
 
     adresse = models.TextField(

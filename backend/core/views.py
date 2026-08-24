@@ -2,6 +2,7 @@ from django.shortcuts import render
 from django.http import FileResponse
 from rest_framework.decorators import action
 from rest_framework import viewsets, status, generics, permissions
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticatedOrReadOnly, AllowAny
@@ -26,6 +27,7 @@ from PIL.ExifTags import TAGS, GPSTAGS
 
 from .audit import audit_log, get_client_ip
 from .institution_attachment import attach_user_to_institution
+from .permissions import IsInstitutionalActor, IsAdministrator
 
 
 def extract_exif_metadata(filepath):
@@ -66,6 +68,8 @@ from .models import (
     InstitutionDomaine,
     PointType,
     PointOperationnel,
+    ImplicationInstitution,
+    TypeImplication,
     User, Crisis, Request, Offer, Information,
     RecherchePersonne, RecherchePersonneCommentaire, Besoin, Notification, DossierParticipant,
     RecherchePersonneCommentairePhoto, RecherchePersonneLecture, RecherchePersonneLectureHistorique,
@@ -141,6 +145,7 @@ from .serializers import (
     ContactInstitutionSerializer,
     InstitutionDomaineSerializer,
     PointOperationnelSerializer,
+    ImplicationInstitutionSerializer,
     RecherchePersonnePhotoSerializer,
     DocumentSerializer,
     RecherchePersonneSerializer,
@@ -567,16 +572,28 @@ class UserViewSet(viewsets.ModelViewSet):
 class CrisisViewSet(viewsets.ModelViewSet):
     queryset = Crisis.objects.all()
     serializer_class = CrisisSerializer
-    permission_classes = [AllowAny] 
     filterset_class = AuthorEmailFilter
 
+    def get_permissions(self):
+        # Consultation (liste/détail) : ouverte à tous, transparence publique inchangée.
+        # Création/modification : réservées aux acteurs institutionnels.
+        # Suppression : réservée aux administrateurs.
+        if self.action in ("create", "update", "partial_update"):
+            return [IsInstitutionalActor()]
+        if self.action == "destroy":
+            return [IsAdministrator()]
+        return [AllowAny()]
+
     def perform_create(self, serializer):
-        # Si l'utilisateur est authentifié, on l'assigne comme auteur
-        if self.request.user.is_authenticated:
-            serializer.save(author=self.request.user)
-        else:
-            # Sinon on sauvegarde sans auteur (None)
-            serializer.save(author=None)
+        crise = serializer.save(author=self.request.user)
+        audit_log(
+            request=self.request,
+            action_code="CREATION",
+            objet_type="Crisis",
+            objet_id=crise.id,
+            crise=crise,
+            commentaire=f"Création crise : {crise.name}",
+        )
 
 class RequestViewSet(viewsets.ModelViewSet):
     queryset = Request.objects.all()
@@ -2006,6 +2023,94 @@ class PointOperationnelViewSet(
     serializer_class = (
         PointOperationnelSerializer
     )
+
+    def get_permissions(self):
+        if self.action == "create":
+            return [IsInstitutionalActor()]
+        return [permissions.IsAuthenticated()]
+
+    def perform_create(self, serializer):
+        point = serializer.save(responsable=self.request.user)
+
+        audit_log(
+            request=self.request,
+            action_code="CREATION",
+            objet_type="PointOperationnel",
+            objet_id=point.id,
+            crise=point.crise,
+            commentaire=f"Création point opérationnel : {point.nom}",
+        )
+
+        # Devenir responsable d'un point sur une crise vaut déclaration "acteur" pour
+        # l'institution de l'utilisateur — pas besoin de le déclarer une seconde fois.
+        if point.crise_id:
+            contact = ContactInstitution.objects.filter(
+                utilisateur=self.request.user, actif=True
+            ).select_related("institution").first()
+            if contact:
+                implication, created = ImplicationInstitution.objects.get_or_create(
+                    crise=point.crise,
+                    institution=contact.institution,
+                    type_implication=TypeImplication.ACTEUR,
+                    defaults={"utilisateur": self.request.user, "actif": True},
+                )
+                if created:
+                    audit_log(
+                        request=self.request,
+                        action_code="CREATION",
+                        objet_type="ImplicationInstitution",
+                        objet_id=implication.id,
+                        crise=point.crise,
+                        commentaire=(
+                            f"{contact.institution.nom} déclarée acteur sur la crise "
+                            f"{point.crise.name} (gestion de {point.nom})"
+                        ),
+                    )
+
+class ImplicationInstitutionViewSet(
+    viewsets.ModelViewSet
+):
+    """Rattachement d'une institution à une crise : impliquée et/ou acteur opérationnel."""
+
+    queryset = ImplicationInstitution.objects.select_related("institution", "crise", "utilisateur").all()
+    serializer_class = ImplicationInstitutionSerializer
+    filterset_fields = ["crise", "institution", "type_implication"]
+
+    def get_permissions(self):
+        if self.action == "create":
+            return [IsInstitutionalActor()]
+        return [permissions.IsAuthenticated()]
+
+    def perform_create(self, serializer):
+        institution = serializer.validated_data.get("institution")
+
+        is_own_institution = ContactInstitution.objects.filter(
+            utilisateur=self.request.user, institution=institution, actif=True
+        ).exists()
+        if not is_own_institution and self.request.user.type != UserRole.ADMINISTRATOR:
+            raise PermissionDenied(
+                "Vous ne pouvez déclarer une implication que pour une institution à laquelle vous êtes rattaché."
+            )
+
+        implication = serializer.save(utilisateur=self.request.user)
+
+        audit_log(
+            request=self.request,
+            action_code="CREATION",
+            objet_type="ImplicationInstitution",
+            objet_id=implication.id,
+            crise=implication.crise,
+            commentaire=(
+                f"{implication.institution.nom} déclarée "
+                f"{implication.get_type_implication_display().lower()} sur la crise {implication.crise.name}"
+            ),
+        )
+
+    def perform_destroy(self, instance):
+        is_declarant = instance.utilisateur_id == self.request.user.id
+        if not is_declarant and self.request.user.type != UserRole.ADMINISTRATOR:
+            raise PermissionDenied("Seul l'auteur de cette déclaration ou un administrateur peut la retirer.")
+        instance.delete()
 
 class ContactInstitutionViewSet(
     viewsets.ModelViewSet
