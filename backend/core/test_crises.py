@@ -76,6 +76,27 @@ class TestCrisisCreationRestriction:
         crisis = Crisis.objects.get(id=response.data["id"])
         assert crisis.author == user
 
+    def test_crisis_zone_polygon_round_trips_as_geojson(self, local_authority_client):
+        """zone (WKT en écriture) doit ressortir en zone_geojson (GeoJSON natif) en lecture,
+        sans dépendance de parsing WKT côté frontend."""
+        client, _ = local_authority_client
+        payload = {
+            **CRISIS_PAYLOAD,
+            "zone": "POLYGON ((5.70 45.18, 5.75 45.18, 5.75 45.20, 5.70 45.20, 5.70 45.18))",
+        }
+        response = client.post(reverse('crisis-list'), payload, format='json')
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data["zone_geojson"]["type"] == "Polygon"
+        assert response.data["zone_geojson"]["coordinates"][0][0] == [5.70, 45.18]
+
+    def test_crisis_without_zone_returns_null_geojson(self, local_authority_client):
+        client, _ = local_authority_client
+        response = client.post(reverse('crisis-list'), CRISIS_PAYLOAD, format='json')
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data["zone_geojson"] is None
+
     def test_anonymous_can_still_list_crises(self, api_client, local_authority_client):
         client, _ = local_authority_client
         client.post(reverse('crisis-list'), CRISIS_PAYLOAD, format='json')

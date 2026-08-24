@@ -1,4 +1,5 @@
 
+import json
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from .auth_validation import InstitutionEmailValidator
@@ -189,17 +190,23 @@ class CrisisSerializer(serializers.ModelSerializer):
     """Serializer pour les crises"""
     latitude = serializers.SerializerMethodField()
     longitude = serializers.SerializerMethodField()
+    zone_geojson = serializers.SerializerMethodField()
     author = serializers.PrimaryKeyRelatedField(read_only=True, allow_null=True)
-    
+
     class Meta:
         model = Crisis
         fields = '__all__'
 
     def get_latitude(self, obj):
         return obj.location.y if obj.location else None
-    
+
     def get_longitude(self, obj):
         return obj.location.x if obj.location else None
+
+    def get_zone_geojson(self, obj):
+        # GEOSGeometry.geojson est une propriété native de GeoDjango — pas besoin de
+        # librairie de parsing WKT côté frontend, qui consomme directement ce GeoJSON.
+        return json.loads(obj.zone.geojson) if obj.zone else None
 
 class RequestSerializer(serializers.ModelSerializer):
     """Serializer pour les demandes d'aide"""

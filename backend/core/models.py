@@ -115,6 +115,7 @@ class Crisis(models.Model):
     photo = models.ImageField(upload_to="photos/crises/", null=True, blank=True)
     location = gis_models.PointField(srid=4326)
     radius = models.IntegerField(default=10)
+    zone = gis_models.PolygonField(srid=4326, null=True, blank=True)
     start_date = models.DateTimeField(auto_now_add=True)
     end_date = models.DateTimeField(null=True, blank=True)
 
