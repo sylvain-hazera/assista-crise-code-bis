@@ -1,5 +1,6 @@
 
 import json
+import os
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from .auth_validation import InstitutionEmailValidator
@@ -502,11 +503,16 @@ class DossierSerializer(serializers.ModelSerializer):
 class DocumentSerializer(serializers.ModelSerializer):
 
     auteur_nom = serializers.SerializerMethodField()
+    nom_fichier = serializers.SerializerMethodField()
+    metadata_privees = serializers.SerializerMethodField()
 
     class Meta:
         model = Document
         fields = "__all__"
-        extra_kwargs = {'auteur': {'read_only': True}}
+        extra_kwargs = {
+            'auteur': {'read_only': True},
+            'fichier': {'write_only': True},
+        }
 
     def get_auteur_nom(self, obj):
 
@@ -517,6 +523,22 @@ class DocumentSerializer(serializers.ModelSerializer):
             f"{obj.auteur.first_name} "
             f"{obj.auteur.last_name}"
         ).strip() or obj.auteur.username
+
+    def get_nom_fichier(self, obj):
+        if not obj.fichier:
+            return None
+        return os.path.basename(obj.fichier.name)
+
+    def get_metadata_privees(self, obj):
+        # Métadonnées EXIF sensibles (GPS notamment) : réservées à l'auteur du document
+        # et aux acteurs institutionnels, jamais aux autres participants du dossier.
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        if not user or not user.is_authenticated:
+            return {}
+        if user.id == obj.auteur_id or user.type in INSTITUTIONAL_TYPES:
+            return obj.metadata_privees
+        return {}
 
 class DossierCommentaireSerializer(serializers.ModelSerializer):
 

@@ -321,13 +321,21 @@ export class AuthService {
 
   /**
    * POST /api/auth/token/refresh/
-   * Renouveler l'access token depuis le refresh token.
+   * Renouveler l'access token depuis le refresh token. Avec ROTATE_REFRESH_TOKENS actif
+   * côté serveur, la réponse contient aussi un nouveau refresh token (l'ancien est
+   * blacklisté) — il faut donc aussi le stocker, sinon le prochain rafraîchissement
+   * échouerait avec un refresh token déjà consommé.
    */
   refreshToken(): Observable<TokenResponse> {
     const refresh = localStorage.getItem('refresh_token');
     return this.http
       .post<TokenResponse>(`${this.url}/token/refresh/`, { refresh })
-      .pipe(tap(res => localStorage.setItem('access_token', res.access)));
+      .pipe(tap(res => {
+        localStorage.setItem('access_token', res.access);
+        if (res.refresh) {
+          localStorage.setItem('refresh_token', res.refresh);
+        }
+      }));
   }
 
   /**
@@ -383,7 +391,19 @@ export class AuthService {
     });
   }
 
+  /**
+   * Révoque le refresh token côté serveur (best-effort — ne bloque jamais le nettoyage
+   * local, même si l'appel réseau échoue, ex. hors-ligne ou token déjà expiré) puis
+   * vide la session locale.
+   */
   logout(): void {
+    const refresh = localStorage.getItem('refresh_token');
+    if (refresh) {
+      this.http.post(`${this.url}/token/blacklist/`, { refresh }).subscribe({
+        next: () => {},
+        error: () => {},
+      });
+    }
     localStorage.removeItem('access_token');
     localStorage.removeItem('refresh_token');
     localStorage.removeItem('current_user');

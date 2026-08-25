@@ -32,9 +32,17 @@ from .institution_attachment import attach_user_to_institution, resolve_or_invit
 from .permissions import IsInstitutionalActor, IsAdministrator, INSTITUTIONAL_TYPES
 
 
-def extract_exif_metadata(filepath):
+GPS_IFD_TAG = 0x8825  # PIL.ExifTags.IFD.GPSInfo
 
-    metadata = {}
+
+def extract_exif_metadata(filepath):
+    """Retourne (metadata_publiques, metadata_privees) : les données de localisation GPS
+    embarquées dans la photo (sous-IFD GPSInfo) vont exclusivement dans le second dict,
+    jamais dans le premier — cohérent avec le reste de l'app qui traite la localisation
+    précise comme une donnée sensible (voir _location_visible() sur les serializers)."""
+
+    metadata_publiques = {}
+    metadata_privees = {}
 
     try:
 
@@ -43,18 +51,28 @@ def extract_exif_metadata(filepath):
         exif = image.getexif()
 
         if not exif:
-            return metadata
+            return metadata_publiques, metadata_privees
+
+        gps_ifd = exif.get_ifd(GPS_IFD_TAG)
+
+        if gps_ifd:
+            for tag_id, value in gps_ifd.items():
+                tag = GPSTAGS.get(tag_id, tag_id)
+                metadata_privees[tag] = str(value)
 
         for tag_id, value in exif.items():
 
+            if tag_id == GPS_IFD_TAG:
+                continue
+
             tag = TAGS.get(tag_id, tag_id)
 
-            metadata[tag] = str(value)
+            metadata_publiques[tag] = str(value)
 
     except Exception:
         pass
 
-    return metadata
+    return metadata_publiques, metadata_privees
 
 
 from .models import (
@@ -1352,7 +1370,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
             document.sha256 = sha256
 
-            document.metadata_publiques = (
+            document.metadata_publiques, document.metadata_privees = (
                 extract_exif_metadata(
                     document.fichier.path
                 )

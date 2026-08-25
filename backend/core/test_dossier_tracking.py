@@ -1,12 +1,18 @@
+import tempfile
+from io import BytesIO
+
 import pytest
 from django.core import mail
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
 from django.contrib.auth import get_user_model
+from PIL import Image
 
-from core.models import Crisis, Dossier, DossierParticipant, Request, Team
-from core.views import build_magic_link, resolve_or_invite_demandeur
+from core.models import Crisis, Dossier, DossierParticipant, Document, Request, Team
+from core.serializers import DocumentSerializer
+from core.views import build_magic_link, extract_exif_metadata, resolve_or_invite_demandeur
 
 User = get_user_model()
 
@@ -181,3 +187,87 @@ class TestDossierAccessScoping:
         response = client.get(reverse('dossier-list'))
 
         assert len(response.data) >= 2
+
+
+def _jpeg_with_gps_exif():
+    img = Image.new('RGB', (10, 10), color='blue')
+    exif = img.getexif()
+    exif[0x8825] = {1: 'N', 2: (48.0, 51.0, 24.0), 3: 'E', 4: (2.0, 21.0, 3.0)}
+    exif[0x0110] = 'TestCameraModel'  # Model (non-GPS, doit rester public)
+    buf = BytesIO()
+    img.save(buf, format='JPEG', exif=exif)
+    buf.seek(0)
+    return buf.getvalue()
+
+
+class TestExtractExifMetadata:
+
+    def test_gps_data_goes_only_to_private_metadata(self):
+        jpeg_bytes = _jpeg_with_gps_exif()
+        with tempfile.NamedTemporaryFile(suffix='.jpg') as f:
+            f.write(jpeg_bytes)
+            f.flush()
+
+            public, private = extract_exif_metadata(f.name)
+
+        assert private, "les données GPS devraient être présentes dans le dict privé"
+        assert 'GPSInfo' not in public
+        assert not any('GPS' in str(k) for k in public.keys())
+        assert public.get('Model') == 'TestCameraModel'
+
+
+@pytest.mark.django_db
+class TestDocumentPrivacySerializer:
+
+    def _make_document(self, auteur, dossier=None):
+        fichier = SimpleUploadedFile("photo.jpg", b"fake-bytes", content_type="image/jpeg")
+        return Document.objects.create(
+            fichier=fichier,
+            auteur=auteur,
+            dossier=dossier,
+            metadata_publiques={"Model": "TestCameraModel"},
+            metadata_privees={"GPSLatitude": "48.0"},
+        )
+
+    def _serialize(self, document, viewer):
+        class DummyRequest:
+            user = viewer
+        return DocumentSerializer(document, context={'request': DummyRequest()}).data
+
+    def test_fichier_not_in_representation(self, create_user):
+        auteur = create_user(username="doc-auteur@test.fr", email="doc-auteur@test.fr", type="UTIL_SIMPLE")
+        document = self._make_document(auteur)
+
+        data = self._serialize(document, auteur)
+
+        assert 'fichier' not in data
+        # secure_document_path renomme le fichier stocké en UUID : on vérifie juste
+        # que nom_fichier est bien un nom de fichier .jpg, pas un chemin/URL complet.
+        assert data['nom_fichier'].endswith('.jpg')
+        assert '/' not in data['nom_fichier']
+
+    def test_metadata_privees_visible_to_author(self, create_user):
+        auteur = create_user(username="doc-auteur2@test.fr", email="doc-auteur2@test.fr", type="UTIL_SIMPLE")
+        document = self._make_document(auteur)
+
+        data = self._serialize(document, auteur)
+
+        assert data['metadata_privees'] == {"GPSLatitude": "48.0"}
+
+    def test_metadata_privees_visible_to_institutional_actor(self, create_user):
+        auteur = create_user(username="doc-auteur3@test.fr", email="doc-auteur3@test.fr", type="UTIL_SIMPLE")
+        institutional = create_user(username="doc-institution@test.fr", email="doc-institution@test.fr", type="AUT_LOCALE")
+        document = self._make_document(auteur)
+
+        data = self._serialize(document, institutional)
+
+        assert data['metadata_privees'] == {"GPSLatitude": "48.0"}
+
+    def test_metadata_privees_hidden_from_other_participant(self, create_user):
+        auteur = create_user(username="doc-auteur4@test.fr", email="doc-auteur4@test.fr", type="UTIL_SIMPLE")
+        other = create_user(username="doc-other@test.fr", email="doc-other@test.fr", type="UTIL_SIMPLE")
+        document = self._make_document(auteur)
+
+        data = self._serialize(document, other)
+
+        assert data['metadata_privees'] == {}
