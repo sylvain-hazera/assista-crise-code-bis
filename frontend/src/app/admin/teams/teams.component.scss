@@ -302,6 +302,15 @@ h3 { margin: 0; font-size: .9rem; font-weight: 700; display: flex; align-items: 
   &.mk-crisis  { background: #fef2f2; color: #b91c1c; }
   &.mk-offer   { background: #f0fdf4; color: #15803d; }
   &.mk-request { background: #fff7ed; color: #c2410c; }
+  &.mk-dossier { background: #eff6ff; color: #1d4ed8; }
+}
+
+// ── Disponibilité inline (liste des membres) ───────────────────────
+.up-dispo {
+  display: flex; align-items: center; gap: .25rem;
+  font-size: .72rem; color: #15803d; margin-top: .15rem;
+  .material-icons { font-size: 13px; }
+  &.dispo-none { color: var(--muted); }
 }
 
 // ── Assign modal ──────────────────────────────────────────────────

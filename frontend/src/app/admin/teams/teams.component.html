@@ -251,6 +251,12 @@
                 <div class="up-info">
                   <span class="up-name">{{ u.first_name }} {{ u.last_name || u.username }}</span>
                   <span class="up-role">{{ u.type }}</span>
+                  @if (isMember(u.id)) {
+                    <span class="up-dispo" [class.dispo-none]="!memberAvailability(u.id).hasAny">
+                      <span class="material-icons">event_available</span>
+                      {{ memberAvailability(u.id).label }}
+                    </span>
+                  }
                 </div>
                 @if (u.id === selectedTeam.leader) {
                   <span class="leader-star" title="Chef d'équipe">
@@ -317,6 +323,37 @@
                 </div>
               </div>
             }
+          }
+        </div>
+
+        <!-- ── DOSSIERS ────────────────────────────────────── -->
+        <div class="detail-section">
+          <div class="section-header">
+            <h3>
+              <span class="material-icons">folder_open</span>
+              Dossiers affectés
+              <span class="count-badge">{{ dossiersForSelectedTeam.length }}</span>
+            </h3>
+          </div>
+
+          @if (dossiersForSelectedTeam.length === 0) {
+            <p class="no-missions">Aucun dossier de suivi pour cette équipe.</p>
+          } @else {
+            <div class="mission-list">
+              @for (d of dossiersForSelectedTeam; track d.id) {
+                <div class="mission-row">
+                  <span class="mk-badge mk-dossier">
+                    <span class="material-icons">folder_open</span>
+                  </span>
+                  <div class="mission-info">
+                    <span class="mission-titre">{{ d.numero }} — {{ d.titre }}</span>
+                    <span class="mission-meta">
+                      {{ d.crise_nom || '—' }} · {{ fmtDate(d.date_creation) }} · {{ d.statut }}
+                    </span>
+                  </div>
+                </div>
+              }
+            </div>
           }
         </div>
 

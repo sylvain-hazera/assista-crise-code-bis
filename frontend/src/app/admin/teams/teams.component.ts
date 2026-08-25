@@ -9,6 +9,7 @@ import { CrisisService }     from '../../services/crisis.service';
 import { OfferService }      from '../../services/offer.service';
 import { RequestService }    from '../../services/request.service';
 import { DisponibiliteOffreService } from '../../services/disponibilite-offre.service';
+import { DossierService } from '../../services/dossier.service';
 
 import { Team, TeamMission }  from '../../shared/models/team.model';
 import { User }        from '../../shared/models/user.model';
@@ -17,6 +18,7 @@ import { Offer }              from '../../shared/models/offer.model';
 import { Request }            from '../../shared/models/request.model';
 import { Status }             from '../../shared/models/status.model';
 import { DisponibiliteOffre } from '../../shared/models/disponibilite-offre.model';
+import { Dossier } from '../../shared/models/dossier.model';
 
 type ModalView = 'none' | 'create' | 'detail' | 'edit' | 'delete' | 'assign' | 'planning';
 type AssignTab = 'Crisis' | 'Offer' | 'Request';
@@ -39,6 +41,7 @@ export class TeamsComponent implements OnInit {
   offers:   Offer[]       = [];
   requests: Request[]     = [];
   disponibilites: DisponibiliteOffre[] = [];
+  dossiers: Dossier[] = [];
 
   // ── UI ──────────────────────────────────────────────────────
   isLoading      = true;
@@ -70,6 +73,7 @@ export class TeamsComponent implements OnInit {
     private offerService:   OfferService,
     private requestService: RequestService,
     private disponibiliteOffreService: DisponibiliteOffreService,
+    private dossierService: DossierService,
   ) {}
 
   ngOnInit(): void {
@@ -87,13 +91,15 @@ export class TeamsComponent implements OnInit {
       requests: this.requestService.getAll(),
       teams:    this.teamService.getAll(),       // ← ajouté ici
       disponibilites: this.disponibiliteOffreService.getAll(),
+      dossiers: this.dossierService.getAll(),
     }).subscribe({
-      next: ({ users, crisis, offers, requests, teams, disponibilites }) => {
+      next: ({ users, crisis, offers, requests, teams, disponibilites, dossiers }) => {
         this.users    = users;
         this.crisis   = crisis;
         this.offers   = offers;
         this.requests = requests;
         this.disponibilites = disponibilites;
+        this.dossiers = dossiers;
         this.teams    = teams.map(t => ({ ...t, missions: this.buildMissions(t) }));
         this.isLoading = false;
       },
@@ -336,6 +342,26 @@ export class TeamsComponent implements OnInit {
   get teamMembers(): User[] {
     if (!this.selectedTeam) return [];
     return this.selectedTeam.member_ids.map(id => this.getUserById(id)).filter(Boolean) as User[];
+  }
+
+  /** Dossiers de suivi rattachés à l'équipe (créés automatiquement lors de l'affectation
+   * d'une demande, voir Request.assign_team côté backend). */
+  get dossiersForSelectedTeam(): Dossier[] {
+    if (!this.selectedTeam) return [];
+    return this.dossiers.filter(d => d.equipe === this.selectedTeam!.id);
+  }
+
+  /** Résumé rapide de disponibilité d'un membre, affiché directement dans la liste plutôt que
+   * de devoir ouvrir le planning complet pour savoir qui est là. */
+  memberAvailability(userId: string): { hasAny: boolean; label: string } {
+    const dispos = this.disposForMember(userId);
+    if (dispos.length === 0) {
+      return { hasAny: false, label: 'Aucune disponibilité déclarée' };
+    }
+    const next = [...dispos].sort((a, b) => a.date.localeCompare(b.date))[0];
+    const jourLabel = new Date(next.date).toLocaleDateString('fr-FR', { weekday: 'short', day: '2-digit', month: '2-digit' });
+    const creneauLabel = this.CRENEAUX.find(c => c.creneau === next.creneau)?.label ?? next.creneau;
+    return { hasAny: true, label: `Dispo. ${jourLabel} ${creneauLabel}` };
   }
 
   get leaderName(): string {
