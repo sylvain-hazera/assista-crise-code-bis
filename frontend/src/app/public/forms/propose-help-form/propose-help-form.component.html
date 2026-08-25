@@ -323,10 +323,44 @@
                 </div>
             </div>
 
+            <!-- Disponibilités sur les 8 prochains jours -->
+            <div class="form-section">
+                <h2 class="section-title">Vos disponibilités</h2>
+                <p class="section-description">
+                Indiquez sur quels créneaux vous êtes disponible pour les 8 prochains jours.
+                </p>
+
+                <div class="dispo-table-wrapper">
+                  <table class="dispo-table">
+                    <thead>
+                      <tr>
+                        <th></th>
+                        <th>Matin</th>
+                        <th>Midi</th>
+                        <th>Soir</th>
+                        <th>Nuit</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      @for (jour of joursDispo; track jour.date) {
+                        <tr>
+                          <td class="dispo-jour">{{ jour.label }}</td>
+                          @for (slot of jour.creneaux; track slot.creneau) {
+                            <td class="dispo-cell">
+                              <input type="checkbox" [checked]="slot.checked" (change)="toggleDispo(jour, slot)">
+                            </td>
+                          }
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+            </div>
+
       <!-- Bouton Submit -->
       <div class="form-actions">
-          <button 
-            type="submit" 
+          <button
+            type="submit"
             class="btn-submit"
             [disabled]="informationForm.invalid"
             (click)="onSubmit()">

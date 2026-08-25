@@ -251,6 +251,36 @@
   }
 }
 
+.dispo-table-wrapper {
+  overflow-x: auto;
+}
+
+.dispo-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+
+  th, td {
+    padding: .5rem .6rem;
+    text-align: center;
+    border-bottom: 1px solid #e5e5e5;
+  }
+
+  .dispo-jour {
+    text-align: left;
+    white-space: nowrap;
+    font-weight: 500;
+    color: #333;
+    text-transform: capitalize;
+  }
+
+  input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+  }
+}
+
 .file-upload-wrapper {
   position: relative;
 

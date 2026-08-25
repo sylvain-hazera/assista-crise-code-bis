@@ -27,6 +27,12 @@ export class GeolocationService {
     return this.http.get<any>(url);
   }
 
+  /** Géocodage inverse (coordonnées -> adresse/commune) via la Base Adresse Nationale. */
+  reverseGeocode(lat: number, lng: number): Observable<any> {
+    const url = `https://api-adresse.data.gouv.fr/reverse/?lon=${lng}&lat=${lat}`;
+    return this.http.get<any>(url);
+  }
+
   private checkStoredLocation(): void {
     const stored = localStorage.getItem('userLocation');
     if (stored) {

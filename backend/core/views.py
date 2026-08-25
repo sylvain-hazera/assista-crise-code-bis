@@ -70,7 +70,7 @@ from .models import (
     PointOperationnel,
     ImplicationInstitution,
     TypeImplication,
-    User, Crisis, Request, Offer, Information,
+    User, Crisis, Request, Offer, Information, DisponibiliteOffre,
     RecherchePersonne, RecherchePersonneCommentaire, Besoin, Notification, DossierParticipant,
     RecherchePersonneCommentairePhoto, RecherchePersonneLecture, RecherchePersonneLectureHistorique,
     Document, DossierCommentaire, DossierHistorique, BesoinCompetence, Competence, Dossier,
@@ -186,6 +186,7 @@ from .serializers import (
     RequestTypeBesoinSerializer,
     RequestSerializer,
     OfferSerializer,
+    DisponibiliteOffreSerializer,
     InformationSerializer,
     RequestTypeSerializer,
     OfferTypeSerializer,
@@ -884,6 +885,43 @@ class OfferViewSet(viewsets.ModelViewSet):
             
         except Exception as e:
             print(f"Erreur critique : L'envoi de l'email a échoué. Détails : {e}")
+
+    @action(detail=True, methods=["post"], permission_classes=[IsInstitutionalActor])
+    def assign_dossier(self, request, pk=None):
+        """Affecte l'auteur de l'offre à un dossier (participant OFFRANT). L'offre doit avoir un
+        auteur identifié (compte utilisateur) : une offre anonyme ne peut pas être rattachée."""
+        offer = self.get_object()
+        if not offer.author:
+            return Response(
+                {"error": "Cette offre n'a pas d'auteur identifié : impossible de l'affecter à un dossier."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        dossier = get_object_or_404(Dossier, pk=request.data.get("dossier"))
+        participant, created = DossierParticipant.objects.get_or_create(
+            dossier=dossier, utilisateur=offer.author, role=DossierParticipant.Role.OFFRANT
+        )
+        if created:
+            DossierHistorique.objects.create(
+                dossier=dossier, auteur=offer.author,
+                evenement=f"Offrant ajouté au dossier (offre : {offer.title})",
+            )
+            audit_log(
+                request=request,
+                action_code="CREATION",
+                objet_type="DossierParticipant",
+                objet_id=participant.id,
+                commentaire=f"{offer.author.email} affecté au dossier {dossier.numero} en tant qu'offrant",
+            )
+
+        return Response({"id": str(participant.id), "dossier": str(dossier.id), "created": created})
+
+class DisponibiliteOffreViewSet(viewsets.ModelViewSet):
+    """Créneaux de disponibilité (matin/midi/soir/nuit, 8 jours) déclarés avec une offre d'aide."""
+    queryset = DisponibiliteOffre.objects.all()
+    serializer_class = DisponibiliteOffreSerializer
+    permission_classes = [AllowAny]
+    filterset_fields = ["offer"]
 
 class InformationViewSet(viewsets.ModelViewSet):
     queryset = Information.objects.all()

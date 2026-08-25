@@ -8,6 +8,14 @@ import { CrisisService }  from '../../services/crisis.service';
 import { OfferService }   from '../../services/offer.service';
 import { RequestService } from '../../services/request.service';
 import { InformationService } from '../../services/information.service';
+import { GeolocationService } from '../../services/geolocation.service';
+import { DisponibiliteOffreService } from '../../services/disponibilite-offre.service';
+import { TeamService } from '../../services/team.service';
+import { DossierService } from '../../services/dossier.service';
+
+import { DisponibiliteOffre } from '../../shared/models/disponibilite-offre.model';
+import { Team } from '../../shared/models/team.model';
+import { Dossier } from '../../shared/models/dossier.model';
 
 import { Crisis }       from '../../shared/models/crisis.model';
 import { Offer }       from '../../shared/models/offer.model';
@@ -30,7 +38,9 @@ export interface ReportRow {
   date:         string;        // created_at / start_date
   dateExp:      string | null;
   crisis:        string | null; // UUID
+  crisis_nom:   string | null;
   author:       string | null;
+  author_nom:   string | null;
   latitude:     number | null;
   longitude:    number | null;
   photo:        string | null;
@@ -59,6 +69,13 @@ export class ReportingComponent implements OnInit, OnDestroy {
   rawOffers:       Offer[]       = [];
   rawRequests:     Request[]     = [];
   rawInformations: Information[] = [];
+  teams:           Team[]        = [];
+  dossiers:        Dossier[]     = [];
+
+  // ── Détail offre : disponibilités + affectation ─────────────
+  selectedOfferDispos: DisponibiliteOffre[] = [];
+  assignTeamId:    string | null = null;
+  assignDossierId: string | null = null;
 
   // ── Processed rows ─────────────────────────────────────────
   allRows:      ReportRow[] = [];
@@ -88,6 +105,7 @@ export class ReportingComponent implements OnInit, OnDestroy {
   showDeleteModal = false;
   showStatusModal = false;
   selectedRow: ReportRow | null = null;
+  selectedRowCommune: string | null = null;
   newStatus:   Status | ''      = '';
 
   // ── Exposed enums ──────────────────────────────────────────
@@ -124,6 +142,10 @@ export class ReportingComponent implements OnInit, OnDestroy {
     private offerService:       OfferService,
     private requestService:     RequestService,
     private informationService: InformationService,
+    private geolocationService: GeolocationService,
+    private disponibiliteOffreService: DisponibiliteOffreService,
+    private teamService:        TeamService,
+    private dossierService:     DossierService,
   ) {}
 
   ngOnInit():    void { this.loadAll(); }
@@ -140,10 +162,14 @@ export class ReportingComponent implements OnInit, OnDestroy {
       offres:       this.offerService.getAll(),
       demandes:     this.requestService.getAll(),
       informations: this.informationService.getAll(),
+      teams:        this.teamService.getAll(),
+      dossiers:     this.dossierService.getAll(),
     })
     .pipe(takeUntil(this.destroy$))
     .subscribe({
-      next: ({ crises, offres, demandes, informations }) => {
+      next: ({ crises, offres, demandes, informations, teams, dossiers }) => {
+        this.teams    = teams;
+        this.dossiers = dossiers;
         this.rawCrises       = crises;
         this.rawOffers       = offres;
         this.rawRequests     = demandes;
@@ -174,7 +200,9 @@ export class ReportingComponent implements OnInit, OnDestroy {
       date:      c.start_date,
       dateExp:   c.end_date,
       crisis:     c.id,
+      crisis_nom: null,
       author:    c.author,
+      author_nom: null,
       latitude:  c.latitude ?? null,
       longitude: c.longitude ?? null,
       photo:     c.photo ?? null,
@@ -192,7 +220,9 @@ export class ReportingComponent implements OnInit, OnDestroy {
       date:      o.created_at,
       dateExp:   o.expires_at,
       crisis:     o.crisis,
+      crisis_nom: o.crisis_nom ?? null,
       author:    o.author,
+      author_nom: o.author_nom ?? null,
       latitude:  o.latitude ?? null,
       longitude: o.longitude ?? null,
       photo:     o.photo,
@@ -210,7 +240,9 @@ export class ReportingComponent implements OnInit, OnDestroy {
       date:      d.created_at,
       dateExp:   d.expires_at,
       crisis:     d.crisis,
+      crisis_nom: d.crisis_nom ?? null,
       author:    d.author,
+      author_nom: d.author_nom ?? null,
       latitude:  d.latitude ?? null,
       longitude: d.longitude ?? null,
       photo:     d.photo,
@@ -228,7 +260,9 @@ export class ReportingComponent implements OnInit, OnDestroy {
       date:      i.created_at,
       dateExp:   i.expires_at,
       crisis:     i.crisis,
+      crisis_nom: i.crisis_nom ?? null,
       author:    i.author,
+      author_nom: i.author_nom ?? null,
       latitude:  i.latitude ?? null,
       longitude: i.longitude ?? null,
       photo:     i.photo,
@@ -321,6 +355,86 @@ export class ReportingComponent implements OnInit, OnDestroy {
   openDetail(row: ReportRow): void {
     this.selectedRow    = row;
     this.showDetailModal = true;
+    this.selectedRowCommune = null;
+    this.selectedOfferDispos = [];
+    this.assignTeamId = null;
+    this.assignDossierId = null;
+
+    if (row.latitude != null && row.longitude != null) {
+      this.geolocationService.reverseGeocode(row.latitude, row.longitude).subscribe({
+        next: (res) => {
+          const props = res?.features?.[0]?.properties;
+          this.selectedRowCommune = props ? (props.city || props.label) : null;
+        },
+        error: () => { this.selectedRowCommune = null; },
+      });
+    }
+
+    if (row.kind === 'Offer') {
+      this.disponibiliteOffreService.getByOffer(row.id).subscribe({
+        next: (dispos) => { this.selectedOfferDispos = dispos; },
+        error: () => { this.selectedOfferDispos = []; },
+      });
+    }
+  }
+
+  openImageFullsize(url: string): void {
+    window.open(url, '_blank');
+  }
+
+  private readonly creneauLabels: Record<string, string> = { MATIN: 'Matin', MIDI: 'Midi', SOIR: 'Soir', NUIT: 'Nuit' };
+
+  /** Regroupe les créneaux plats (une ligne par date+créneau) par date, pour l'affichage. */
+  get dispoParJour(): { label: string; creneaux: string[] }[] {
+    const parDate = new Map<string, string[]>();
+    for (const d of this.selectedOfferDispos) {
+      const list = parDate.get(d.date) ?? [];
+      list.push(this.creneauLabels[d.creneau] ?? d.creneau);
+      parDate.set(d.date, list);
+    }
+    return Array.from(parDate.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, creneaux]) => ({
+        label: new Date(date).toLocaleDateString('fr-FR', { weekday: 'short', day: '2-digit', month: '2-digit' }),
+        creneaux,
+      }));
+  }
+
+  /** Dossiers de la même crise que l'offre sélectionnée (une affectation hors-crise n'a pas de sens). */
+  get dossiersForSelectedOffer(): Dossier[] {
+    if (!this.selectedRow?.crisis) return [];
+    return this.dossiers.filter(d => d.crise === this.selectedRow!.crisis);
+  }
+
+  submitAssignTeam(): void {
+    if (!this.selectedRow || !this.assignTeamId) return;
+    const team = this.teams.find(t => t.id === this.assignTeamId);
+    if (!team) return;
+
+    const offerIds = team.assigned_offer_ids.includes(this.selectedRow.id)
+      ? team.assigned_offer_ids
+      : [...team.assigned_offer_ids, this.selectedRow.id];
+
+    this.teamService.patch(team.id!, { assigned_offer_ids: offerIds }).subscribe({
+      next: (updated) => {
+        const idx = this.teams.findIndex(t => t.id === updated.id);
+        if (idx !== -1) this.teams[idx] = updated;
+        this.showSuccess(`Offre affectée à l'équipe ${team.name}.`);
+        this.assignTeamId = null;
+      },
+      error: () => this.showError("Impossible d'affecter cette offre à l'équipe."),
+    });
+  }
+
+  submitAssignDossier(): void {
+    if (!this.selectedRow || !this.assignDossierId) return;
+    this.offerService.assignDossier(this.selectedRow.id, this.assignDossierId).subscribe({
+      next: () => {
+        this.showSuccess('Offre affectée au dossier.');
+        this.assignDossierId = null;
+      },
+      error: (err) => this.showError(err?.error?.error || "Impossible d'affecter cette offre au dossier."),
+    });
   }
 
   openStatusEdit(row: ReportRow, event: Event): void {
@@ -430,6 +544,10 @@ export class ReportingComponent implements OnInit, OnDestroy {
   closeAll(): void {
     this.showDetailModal = this.showDeleteModal = this.showStatusModal = false;
     this.selectedRow = null;
+    this.selectedRowCommune = null;
+    this.selectedOfferDispos = [];
+    this.assignTeamId = null;
+    this.assignDossierId = null;
     this.newStatus   = '';
   }
 
@@ -441,6 +559,11 @@ export class ReportingComponent implements OnInit, OnDestroy {
   kindClass(kind: ReportKind): string {
     return ({ Crisis: 'kind-crisis', Offer: 'kind-offer',
               Request: 'kind-request', Information: 'kind-info' })[kind];
+  }
+
+  kindLabel(kind: ReportKind): string {
+    return ({ Crisis: 'Crise', Offer: 'Offre',
+              Request: 'Demande', Information: 'Information' })[kind];
   }
 
   statusClass(s: Status): string {

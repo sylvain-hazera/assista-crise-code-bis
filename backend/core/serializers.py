@@ -21,7 +21,8 @@ from .models import (
     RecherchePersonneLecture, RecherchePersonneLectureHistorique,
     Document, RecherchePersonnePhoto, RecherchePersonneCommentairePhoto,
     DossierCommentaire, RecherchePersonne, RecherchePersonneCommentaire, RecherchePersonneHistorique,
-    DossierHistorique, Besoin, BesoinCompetence,Dossier, RequestType, RequestTypeBesoin, OfferType, InformationType, Team, Competence, AffectationCompetence
+    DossierHistorique, Besoin, BesoinCompetence,Dossier, RequestType, RequestTypeBesoin, OfferType, InformationType, Team, Competence, AffectationCompetence,
+    DisponibiliteOffre,
 )
 
 class RecherchePersonneCommentairePhotoSerializer(
@@ -213,6 +214,9 @@ class RequestSerializer(serializers.ModelSerializer):
     latitude = serializers.SerializerMethodField()
     longitude = serializers.SerializerMethodField()
     author = serializers.PrimaryKeyRelatedField(read_only=True, allow_null=True)
+    author_nom = serializers.SerializerMethodField()
+    author_email = serializers.CharField(source="author.email", read_only=True, default=None)
+    crisis_nom = serializers.CharField(source="crisis.name", read_only=True, default=None)
 
     class Meta:
         model = Request
@@ -220,15 +224,24 @@ class RequestSerializer(serializers.ModelSerializer):
 
     def get_latitude(self, obj):
         return obj.location.y if obj.location else None
-    
+
     def get_longitude(self, obj):
         return obj.location.x if obj.location else None
+
+    def get_author_nom(self, obj):
+        if not obj.author:
+            return None
+        full_name = f"{obj.author.first_name} {obj.author.last_name}".strip()
+        return full_name or obj.author.email
 
 class OfferSerializer(serializers.ModelSerializer):
     """Serializer pour les offres d'aide"""
     latitude = serializers.SerializerMethodField()
     longitude = serializers.SerializerMethodField()
     author = serializers.PrimaryKeyRelatedField(read_only=True, allow_null=True)
+    author_nom = serializers.SerializerMethodField()
+    author_email = serializers.CharField(source="author.email", read_only=True, default=None)
+    crisis_nom = serializers.CharField(source="crisis.name", read_only=True, default=None)
 
     class Meta:
         model = Offer
@@ -236,25 +249,47 @@ class OfferSerializer(serializers.ModelSerializer):
 
     def get_latitude(self, obj):
         return obj.location.y if obj.location else None
-    
+
     def get_longitude(self, obj):
         return obj.location.x if obj.location else None
+
+    def get_author_nom(self, obj):
+        if not obj.author:
+            return None
+        full_name = f"{obj.author.first_name} {obj.author.last_name}".strip()
+        return full_name or obj.author.email
+
+class DisponibiliteOffreSerializer(serializers.ModelSerializer):
+    """Créneau de disponibilité (jour + matin/midi/soir/nuit) d'un bénévole."""
+
+    class Meta:
+        model = DisponibiliteOffre
+        fields = '__all__'
 
 class InformationSerializer(serializers.ModelSerializer):
     """Serializer pour les informations"""
     latitude = serializers.SerializerMethodField()
     longitude = serializers.SerializerMethodField()
     author = serializers.PrimaryKeyRelatedField(read_only=True, allow_null=True)
-    
+    author_nom = serializers.SerializerMethodField()
+    author_email = serializers.CharField(source="author.email", read_only=True, default=None)
+    crisis_nom = serializers.CharField(source="crisis.name", read_only=True, default=None)
+
     class Meta:
         model = Information
         fields = '__all__'
-    
+
     def get_latitude(self, obj):
         return obj.location.y if obj.location else None
-    
+
     def get_longitude(self, obj):
         return obj.location.x if obj.location else None
+
+    def get_author_nom(self, obj):
+        if not obj.author:
+            return None
+        full_name = f"{obj.author.first_name} {obj.author.last_name}".strip()
+        return full_name or obj.author.email
 
 class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
     """Serializer personnalisé pour l'authentification JWT"""

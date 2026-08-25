@@ -131,7 +131,7 @@
                 <td class="col-kind">
                   <span class="kind-badge" [class]="kindClass(row.kind)">
                     <span class="material-icons">{{ kindIcon(row.kind) }}</span>
-                    {{ row.kind }}
+                    {{ kindLabel(row.kind) }}
                   </span>
                 </td>
                 <td class="cell-titre">
@@ -231,7 +231,7 @@
         <div class="modal-title">
           <span class="kind-badge sm" [class]="kindClass(selectedRow.kind)">
             <span class="material-icons">{{ kindIcon(selectedRow.kind) }}</span>
-            {{ selectedRow.kind }}
+            {{ kindLabel(selectedRow.kind) }}
           </span>
           <h2>{{ selectedRow.title }}</h2>
         </div>
@@ -241,7 +241,7 @@
       <div class="modal-body detail-body">
         <!-- Photo -->
         @if (selectedRow.photo) {
-          <div class="detail-photo">
+          <div class="detail-photo" (click)="openImageFullsize(selectedRow.photo!)" title="Voir en taille réelle">
             <img [src]="selectedRow.photo" [alt]="selectedRow.title"/>
           </div>
         }
@@ -299,8 +299,8 @@
             <div class="detail-item">
               <span class="material-icons">place</span>
               <div>
-                <label>Coordonnées</label>
-                <span>{{ selectedRow.latitude?.toFixed(5) }}, {{ selectedRow.longitude?.toFixed(5) }}</span>
+                <label>Commune</label>
+                <span>{{ selectedRowCommune || (selectedRow.latitude!.toFixed(5) + ', ' + selectedRow.longitude!.toFixed(5)) }}</span>
               </div>
             </div>
           </div>
@@ -312,7 +312,7 @@
             <h3>Crise liée</h3>
             <div class="detail-item">
               <span class="material-icons">local_fire_department</span>
-              <div><label>UUID</label><span class="uuid">{{ selectedRow.crisis }}</span></div>
+              <div><label>Nom</label><span>{{ selectedRow.crisis_nom || selectedRow.crisis }}</span></div>
             </div>
           </div>
         }
@@ -337,7 +337,57 @@
         @if (selectedRow.author) {
           <div class="detail-item">
             <span class="material-icons">account_circle</span>
-            <div><label>Auteur (UUID)</label><span class="uuid">{{ selectedRow.author }}</span></div>
+            <div><label>Auteur</label><span>{{ selectedRow.author_nom || selectedRow.author }}</span></div>
+          </div>
+        }
+
+        <!-- Disponibilités (offres uniquement) -->
+        @if (selectedRow.kind === 'Offer') {
+          <div class="detail-section">
+            <h3>Disponibilités</h3>
+            @if (dispoParJour.length > 0) {
+              <ul class="dispo-list">
+                @for (jour of dispoParJour; track jour.label) {
+                  <li><strong>{{ jour.label }}</strong> : {{ jour.creneaux.join(', ') }}</li>
+                }
+              </ul>
+            } @else {
+              <p class="empty-text">Aucune disponibilité déclarée.</p>
+            }
+          </div>
+
+          <!-- Affectation à une équipe / un dossier -->
+          <div class="detail-section">
+            <h3>Affectation</h3>
+            <div class="assign-row">
+              <select [(ngModel)]="assignTeamId">
+                <option [ngValue]="null">— Choisir une équipe —</option>
+                @for (team of teams; track team.id) {
+                  <option [ngValue]="team.id">{{ team.name }}</option>
+                }
+              </select>
+              <button class="btn-secondary sm" [disabled]="!assignTeamId" (click)="submitAssignTeam()">
+                Affecter à cette équipe
+              </button>
+            </div>
+
+            <div class="assign-row">
+              <select [(ngModel)]="assignDossierId" [disabled]="dossiersForSelectedOffer.length === 0">
+                <option [ngValue]="null">— Choisir un dossier —</option>
+                @for (dossier of dossiersForSelectedOffer; track dossier.id) {
+                  <option [ngValue]="dossier.id">{{ dossier.numero }} — {{ dossier.titre }}</option>
+                }
+              </select>
+              <button class="btn-secondary sm" [disabled]="!assignDossierId || !selectedRow.author" (click)="submitAssignDossier()">
+                Affecter à ce dossier
+              </button>
+            </div>
+            @if (!selectedRow.author) {
+              <p class="empty-text">Offre sans auteur identifié : affectation à un dossier impossible.</p>
+            }
+            @if (selectedRow.crisis && dossiersForSelectedOffer.length === 0) {
+              <p class="empty-text">Aucun dossier existant pour la crise liée.</p>
+            }
           </div>
         }
       </div>

@@ -351,7 +351,45 @@ class Offer(models.Model):
 
     def __str__(self) -> str:
         return self.title
-    
+
+
+class Creneau(models.TextChoices):
+    MATIN = "MATIN", "Matin"
+    MIDI = "MIDI", "Midi"
+    SOIR = "SOIR", "Soir"
+    NUIT = "NUIT", "Nuit"
+
+
+class DisponibiliteOffre(models.Model):
+    """Créneau de disponibilité (jour + matin/midi/soir/nuit) déclaré par un bénévole pour une
+    offre d'aide. Une ligne = un créneau où la personne est disponible ; l'absence de ligne pour
+    un (date, créneau) donné vaut indisponible."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    offer = models.ForeignKey(
+        Offer,
+        on_delete=models.CASCADE,
+        related_name="disponibilites",
+    )
+
+    date = models.DateField()
+
+    creneau = models.CharField(max_length=10, choices=Creneau.choices)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["offer", "date", "creneau"],
+                name="uq_dispo_offre_date_creneau",
+            )
+        ]
+        ordering = ["date", "creneau"]
+
+    def __str__(self) -> str:
+        return f"{self.offer.title} - {self.date} ({self.creneau})"
+
+
 class Competence(models.Model):
     """Compétences mobilisables lors d'une crise"""
 

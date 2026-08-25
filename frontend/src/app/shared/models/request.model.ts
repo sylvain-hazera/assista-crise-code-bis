@@ -23,7 +23,10 @@ export interface Request {
   status: Status;
   request_type: string;                 // UUID du RequestType (FK)
   crisis: string | null;                // UUID de Crisis (FK)
+  crisis_nom?: string | null;
   author: string | null;                // UUID de l'User (FK)
+  author_nom?: string | null;
+  author_email?: string | null;
 }
 
 // Payload pour le formulaire de création

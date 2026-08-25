@@ -22,7 +22,10 @@ export interface Information {
   status: Status;
   information_type: string;             // UUID du InformationType (FK)
   crisis: string | null;
+  crisis_nom?: string | null;
   author: string | null;
+  author_nom?: string | null;
+  author_email?: string | null;
 }
 
 export interface InformationPayload {

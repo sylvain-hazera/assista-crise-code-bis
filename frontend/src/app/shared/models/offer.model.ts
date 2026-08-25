@@ -22,7 +22,10 @@ export interface Offer {
   status: Status;
   offer_type: string;                   // UUID du OfferType (FK)
   crisis: string | null;
+  crisis_nom?: string | null;
   author: string | null;
+  author_nom?: string | null;
+  author_email?: string | null;
 }
 
 export interface OfferPayload {

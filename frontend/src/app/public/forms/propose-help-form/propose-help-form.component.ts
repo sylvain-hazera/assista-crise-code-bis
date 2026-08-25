@@ -5,11 +5,19 @@ import { Router } from '@angular/router';
 import { GeolocationService } from '../../../services/geolocation.service';
 import { CommonModule } from '@angular/common';
 import { OfferService } from '../../../services/offer.service';
+import { DisponibiliteOffreService } from '../../../services/disponibilite-offre.service';
 import { LocationService, Department, Commune } from '../../../services/location.service';
 import { CrisisService } from '../../../services/crisis.service';
 import { Crisis } from '../../../shared/models/crisis.model';
 import { AuthService } from '../../../auth/services/auth.service';
 import { UserRole, User } from '../../../shared/models/user.model';
+import { Creneau } from '../../../shared/models/disponibilite-offre.model';
+
+interface JourDispo {
+  date: string;       // YYYY-MM-DD
+  label: string;       // ex: "lun. 25/08"
+  creneaux: { creneau: Creneau; label: string; checked: boolean }[];
+}
 
 @Component({
   selector: 'app-request-help-form',
@@ -57,10 +65,14 @@ export class ProposeHelpFormComponent implements OnInit {
     { value: UserRole.RESCUE , label: 'Secours organisés' },
   ];
 
+  // ── Disponibilités (8 jours x matin/midi/soir/nuit) ────────────
+  joursDispo: JourDispo[] = [];
+
   constructor(
     private formBuilder: FormBuilder,
     private router: Router,
     private offerService: OfferService,
+    private disponibiliteOffreService: DisponibiliteOffreService,
     private geolocationService: GeolocationService,
     private locationService: LocationService,
     private crisisService: CrisisService,
@@ -73,6 +85,31 @@ export class ProposeHelpFormComponent implements OnInit {
     this.loadTypesOffre();
     this.loadDepartments();
     this.loadActiveCrises();
+    this.buildJoursDispo();
+  }
+
+  private buildJoursDispo(): void {
+    const CRENEAUX: { creneau: Creneau; label: string }[] = [
+      { creneau: 'MATIN', label: 'Matin' },
+      { creneau: 'MIDI', label: 'Midi' },
+      { creneau: 'SOIR', label: 'Soir' },
+      { creneau: 'NUIT', label: 'Nuit' },
+    ];
+    const jours: JourDispo[] = [];
+    for (let i = 0; i < 8; i++) {
+      const d = new Date();
+      d.setDate(d.getDate() + i);
+      jours.push({
+        date: d.toISOString().slice(0, 10),
+        label: d.toLocaleDateString('fr-FR', { weekday: 'short', day: '2-digit', month: '2-digit' }),
+        creneaux: CRENEAUX.map(c => ({ ...c, checked: false })),
+      });
+    }
+    this.joursDispo = jours;
+  }
+
+  toggleDispo(jour: JourDispo, slot: { checked: boolean }): void {
+    slot.checked = !slot.checked;
   }
 
   loadDepartments(): void {
@@ -218,6 +255,7 @@ export class ProposeHelpFormComponent implements OnInit {
       this.offerService.create(formData).subscribe({
         next: (response) => {
           console.log('Demande créée:', response);
+          this.declareDisponibilites(response.id);
           alert('Votre demande a été enregistrée avec succès !');
           this.router.navigate(['/accueil']);
         },
@@ -346,6 +384,22 @@ export class ProposeHelpFormComponent implements OnInit {
       this.router.navigate(['/accueil']);
     } else {
       this.state = 1;
+    }
+  }
+
+  /** Envoie les créneaux de disponibilité cochés, liés à l'offre qui vient d'être créée. Un
+   * échec ici n'annule pas la création de l'offre (déjà faite). */
+  private declareDisponibilites(offerId: string): void {
+    for (const jour of this.joursDispo) {
+      for (const slot of jour.creneaux) {
+        if (slot.checked) {
+          this.disponibiliteOffreService.create({
+            offer: offerId, date: jour.date, creneau: slot.creneau,
+          }).subscribe({
+            error: (err) => console.error('Erreur enregistrement disponibilité:', err),
+          });
+        }
+      }
     }
   }
 
