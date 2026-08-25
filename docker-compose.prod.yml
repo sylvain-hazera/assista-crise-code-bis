@@ -3,6 +3,8 @@ services:
     image: im2ag-harbor.univ-grenoble-alpes.fr/assista-crise/frontend:latest
     container_name: ac_frontend
     restart: always
+    networks:
+      - front
 
   backend:
     image: im2ag-harbor.univ-grenoble-alpes.fr/assista-crise/backend:latest
@@ -10,6 +12,8 @@ services:
     volumes:
       - media_volume:/app/media
     environment:
+      - SECRET_KEY=${SECRET_KEY}
+      - DEBUG=False
       - DB_HOST=db
       - DB_NAME=assista-db
       - DB_USER=admin
@@ -22,6 +26,8 @@ services:
       - DEFAULT_FROM_EMAIL=no-reply@assista-crise.fr
       - EMAIL_HOST_USER=no-reply@assista-crise.fr
       - EMAIL_HOST_PASSWORD=${EMAIL_PASSWORD}
+      - DJANGO_SUPERUSER_EMAIL=${DJANGO_SUPERUSER_EMAIL}
+      - DJANGO_SUPERUSER_PASSWORD=${DJANGO_SUPERUSER_PASSWORD}
     # For Hardware USB Access (uncomment on VM/Host with antenna)
     # devices:
     #   - "/dev/ttyACM0:/dev/ttyACM0"
@@ -31,6 +37,9 @@ services:
         condition: service_healthy
       mosquitto:
         condition: service_started
+    networks:
+      - front
+      - back
 
   db:
     image: postgis/postgis:15-3.3
@@ -47,6 +56,8 @@ services:
       timeout: 5s
       retries: 5
     restart: always
+    networks:
+      - back
 
   mosquitto:
     image: eclipse-mosquitto
@@ -57,6 +68,8 @@ services:
     volumes:
       - ./mosquitto/config:/mosquitto/config
       - ./mosquitto/data:/mosquitto/data
+    networks:
+      - front
 
   grafana:
     image: grafana/grafana
@@ -65,8 +78,8 @@ services:
       - "3000:3000"
     depends_on:
       - db
-
-
+    networks:
+      - back
 
   tileserver:
     image: maptiler/tileserver-gl
@@ -75,6 +88,8 @@ services:
       - "8080:8080"
     # volumes:
     #   - ./tileserver:/data
+    networks:
+      - front
 
   proxy:
     image: im2ag-harbor.univ-grenoble-alpes.fr/assista-crise/proxy:latest
@@ -89,6 +104,12 @@ services:
       - frontend
       - backend
       - tileserver
+    networks:
+      - front
+
+networks:
+  front:
+  back:
 
 volumes:
   postgres_data:

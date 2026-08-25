@@ -14,20 +14,35 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
+import re
+
 from django.conf import settings
-from django.conf.urls.static import static
 from django.contrib import admin
-from django.urls import path, include
+from django.urls import path, re_path, include
+from django.views.static import serve as serve_static
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
-    path('api/', include('core.urls')), 
-    
+    # Sous /django-admin/ (et non /admin/) pour matcher ce que proxy/nginx.conf
+    # proxifie déjà vers le backend, et ne pas entrer en conflit avec le préfixe
+    # /admin utilisé par le SPA Angular côté frontend.
+    path('django-admin/', admin.site.urls),
+    path('api/', include('core.urls')),
+
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
     path('api/docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
 ]
 
-# Serve media files in development
-if settings.DEBUG:
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+# Route média montée inconditionnellement : nginx proxifie /media/ vers le backend
+# plutôt que de servir les fichiers lui-même, donc cette route doit fonctionner même
+# hors DEBUG. Le helper `django.conf.urls.static.static()` ne convient pas ici : il a
+# sa propre garde interne sur `settings.DEBUG` et ne génère aucune route quand DEBUG
+# est faux, quoi qu'on fasse autour de son appel — on enregistre donc directement la
+# vue `django.views.static.serve` sous-jacente.
+urlpatterns += [
+    re_path(
+        r'^%s(?P<path>.*)$' % re.escape(settings.MEDIA_URL.lstrip('/')),
+        serve_static,
+        {'document_root': settings.MEDIA_ROOT},
+    ),
+]

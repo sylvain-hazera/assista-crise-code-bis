@@ -3,33 +3,34 @@
 set -e
 
 echo "Applying database migrations..."
-python manage.py makemigrations --noinput
 python manage.py migrate --noinput
 
-echo "Creating superuser 'admin' if it does not exist..."
+echo "Creating initial superuser from DJANGO_SUPERUSER_EMAIL/DJANGO_SUPERUSER_PASSWORD if provided..."
 python manage.py shell <<EOF
+import os
 from django.contrib.auth import get_user_model
 User = get_user_model()
-if not User.objects.filter(username='admin').exists():
-    admin = User.objects.create_user(
-        username='admin',
-        email='admin@admin.com',
-        password='admin',
+
+email = os.environ.get('DJANGO_SUPERUSER_EMAIL')
+password = os.environ.get('DJANGO_SUPERUSER_PASSWORD')
+
+if not email or not password:
+    print("DJANGO_SUPERUSER_EMAIL/DJANGO_SUPERUSER_PASSWORD non fournis : aucun admin "
+          "par défaut créé. Utilisez 'manage.py createsuperuser' pour créer le premier "
+          "compte administrateur.")
+elif User.objects.filter(email__iexact=email).exists():
+    print(f"Un compte existe déjà pour {email}, aucune création.")
+else:
+    User.objects.create_user(
+        username=email,
+        email=email,
+        password=password,
         type='ADMIN',
         enabled=True,
         is_superuser=True,
         is_staff=True
     )
-    print("Superuser 'admin' created successfully with type ADMIN!")
-else:
-    # Mettre à jour le type si l'utilisateur existe déjà
-    admin = User.objects.get(username='admin')
-    if admin.type != 'ADMIN':
-        admin.type = 'ADMIN'
-        admin.save()
-        print("'admin' superuser type updated to ADMIN.")
-    else:
-        print("'admin' superuser already exists.")
+    print(f"Superuser '{email}' created successfully with type ADMIN!")
 EOF
 
 
@@ -80,6 +81,9 @@ for t in types_informations:
     print(f"  - {t}")
 
 EOF
+
+echo "Collecting static files..."
+python manage.py collectstatic --noinput
 
 echo "Starting server..."
 exec "$@"

@@ -20,21 +20,27 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-HSLgGBNlaGBJ4kyaracScLRPa3tFJhK6LOEbYQs9ipBu-DaMMQfey725-fB-uq8Dabk'
+# La valeur en dur ne sert que de repli pour le dev local sans env configuré ; en
+# production, SECRET_KEY doit toujours être fourni via l'environnement.
+SECRET_KEY = os.environ.get(
+    'SECRET_KEY',
+    'django-insecure-HSLgGBNlaGBJ4kyaracScLRPa3tFJhK6LOEbYQs9ipBu-DaMMQfey725-fB-uq8Dabk',
+)
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 
 ALLOWED_HOSTS = ['localhost', '172.16.1.113', '127.0.0.1', 'assista-crise.fr', 'www.assista-crise.fr', 'demo.assista-crise.fr', 'assista-crise.duckdns.org']
 
 CSRF_TRUSTED_ORIGINS = [
     "https://assista-crise.fr",
+    "https://www.assista-crise.fr",
     "https://demo.assista-crise.fr",
     "https://demo.assista-crise.fr:4200",
-    "https://www.assista-crise.fr",
     "https://assista-crise.duckdns.org",
 
     "http://172.16.1.113",
+    "https://172.16.1.113",
     "http://172.16.1.113:4200",
 
     "http://localhost",
@@ -66,6 +72,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -143,6 +150,7 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 # MEDIA files (uploads)
 MEDIA_URL = '/media/'
@@ -163,11 +171,6 @@ CORS_ALLOWED_ORIGINS = [
     "https://localhost:4200",
     "https://127.0.0.1:4200",
     "https://frontend:4200",  # Pour Docker
-]
-
-CSRF_TRUSTED_ORIGINS = [
-    "http://172.16.1.113",
-    "https://172.16.1.113",
 ]
 
 CORS_ALLOW_CREDENTIALS = True
@@ -253,4 +256,12 @@ USE_X_FORWARDED_HOST = True
 SECURE_PROXY_SSL_HEADER = (
     ('HTTP_X_FORWARDED_PROTO', 'https')
 )
+
+# Activés seulement hors DEBUG pour ne pas casser le dev local en HTTP.
+if not DEBUG:
+    SECURE_HSTS_SECONDS = 31536000
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
 
