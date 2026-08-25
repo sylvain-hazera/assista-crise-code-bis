@@ -10,7 +10,7 @@ from .views import (
     BesoinCompetenceViewSet, RequestTypeBesoinViewSet, RequestTypeViewSet, OfferTypeViewSet, InformationTypeViewSet,
     DeleteRequestView, DeleteOfferView, DeleteInformationView, CompetenceViewSet,
     RecherchePersonneHistoriqueViewSet, AffectationCompetenceViewSet,
-    DossierViewSet, DocumentViewSet, DossierCommentaireViewSet, DossierHistoriqueViewSet, TeamViewSet,
+    DossierViewSet, DocumentViewSet, DossierCommentaireViewSet, DossierHistoriqueViewSet, NotificationViewSet, TeamViewSet,
     InstitutionTypeViewSet,
     InstitutionViewSet,
     ContactInstitutionViewSet,
@@ -107,6 +107,7 @@ router.register(r'request-types-besoins', RequestTypeBesoinViewSet)
 router.register(r'documents', DocumentViewSet)
 router.register(r'dossier-commentaires', DossierCommentaireViewSet)
 router.register(r'dossier-historique', DossierHistoriqueViewSet)
+router.register(r'notifications', NotificationViewSet, basename='notification')
 router.register(r'recherches-personnes', RecherchePersonneViewSet)
 router.register(r'recherches-personnes-commentaires', RecherchePersonneCommentaireViewSet)
 router.register(r'recherches-personnes-historique', RecherchePersonneHistoriqueViewSet),

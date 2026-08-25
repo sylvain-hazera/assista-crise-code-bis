@@ -24,6 +24,7 @@ from .models import (
     DossierCommentaire, RecherchePersonne, RecherchePersonneCommentaire, RecherchePersonneHistorique,
     DossierHistorique, Besoin, BesoinCompetence,Dossier, RequestType, RequestTypeBesoin, OfferType, InformationType, Team, Competence, AffectationCompetence,
     DisponibiliteOffre,
+    Notification,
 )
 
 class RecherchePersonneCommentairePhotoSerializer(
@@ -514,6 +515,15 @@ class DossierHistoriqueSerializer(serializers.ModelSerializer):
             f"{obj.auteur.first_name} "
             f"{obj.auteur.last_name}"
         ).strip() or obj.auteur.username
+
+class NotificationSerializer(serializers.ModelSerializer):
+
+    dossier_numero = serializers.CharField(source="dossier.numero", read_only=True, default=None)
+
+    class Meta:
+        model = Notification
+        fields = "__all__"
+        read_only_fields = ["utilisateur", "dossier", "titre", "message", "date_creation"]
 
 class RecherchePersonneSerializer(
     serializers.ModelSerializer

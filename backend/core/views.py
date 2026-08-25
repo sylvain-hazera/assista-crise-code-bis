@@ -179,6 +179,7 @@ from .serializers import (
     RecherchePersonneCommentairePhotoSerializer,
     DossierCommentaireSerializer,
     DossierHistoriqueSerializer,
+    NotificationSerializer,
     UserSerializer,
     RecherchePersonneLectureSerializer,
     RecherchePersonneLectureHistoriqueSerializer,
@@ -818,6 +819,99 @@ class RequestViewSet(viewsets.ModelViewSet):
         except Exception as e:
             print(f"Erreur critique : L'envoi de l'email a échoué. Détails : {e}")
 
+    @action(detail=True, methods=["post"], permission_classes=[IsInstitutionalActor])
+    def assign_team(self, request, pk=None):
+        """Affecte la demande à une équipe : crée un dossier de suivi, notifie le·s
+        régulateur·s de l'équipe (AffectationRoleOperationnel role=REGULATEUR) et informe le
+        demandeur par email. Ré-affecter à la même équipe est un no-op (pas de doublon)."""
+        demande = self.get_object()
+        team = get_object_or_404(Team, pk=request.data.get("team"))
+
+        if team.assigned_requests.filter(pk=demande.pk).exists():
+            return Response({"already_assigned": True})
+
+        if not demande.crisis:
+            return Response(
+                {"error": "Cette demande n'est liée à aucune crise : impossible de créer un dossier de suivi."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        team.assigned_requests.add(demande)
+
+        dossier = Dossier.objects.create(
+            numero=f"DOS-{uuid.uuid4().hex[:8].upper()}",
+            crise=demande.crisis,
+            equipe=team,
+            demande=demande,
+            titre=demande.title,
+            description=f"Demande affectée à l'équipe {team.name} : {demande.title}",
+            statut=Dossier.Statut.AFFECTE,
+        )
+
+        if demande.author:
+            DossierParticipant.objects.get_or_create(
+                dossier=dossier, utilisateur=demande.author, role=DossierParticipant.Role.DEMANDEUR
+            )
+
+        DossierHistorique.objects.create(
+            dossier=dossier, evenement=f"Équipe affectée : {team.name}",
+        )
+
+        # Régulateur·s de l'équipe : membres ayant un rôle opérationnel REGULATEUR actif pour
+        # l'une des compétences de l'équipe (à défaut, pour n'importe laquelle de leurs
+        # compétences, pour ne pas notifier personne juste parce que l'équipe n'a pas de
+        # compétence déclarée).
+        member_ids = team.members.values_list('id', flat=True)
+        regulateur_affectations = AffectationRoleOperationnel.objects.filter(
+            utilisateur_id__in=member_ids, role__code="REGULATEUR", actif=True,
+        )
+        competence_ids = list(team.competences.values_list('id', flat=True))
+        if competence_ids:
+            regulateur_affectations = regulateur_affectations.filter(competence_id__in=competence_ids)
+        regulateurs = User.objects.filter(
+            id__in=regulateur_affectations.values_list('utilisateur_id', flat=True)
+        ).distinct()
+
+        for regulateur in regulateurs:
+            Notification.objects.create(
+                utilisateur=regulateur,
+                dossier=dossier,
+                titre="Nouvelle demande affectée à votre équipe",
+                message=f"La demande « {demande.title} » a été affectée à l'équipe {team.name} (dossier {dossier.numero}).",
+            )
+            DossierHistorique.objects.create(
+                dossier=dossier, auteur=regulateur,
+                evenement=f"{regulateur.email} notifié en tant que régulateur de l'équipe",
+            )
+
+        try:
+            send_mail(
+                subject=f"Votre demande « {demande.title} » a été prise en charge",
+                message=(
+                    f"Bonjour {demande.first_name_request},\n\n"
+                    f"Votre demande d'aide « {demande.title} » a été affectée à l'équipe {team.name}, "
+                    f"qui va la traiter (dossier {dossier.numero}).\n\n"
+                    "Cordialement,\n"
+                    "L'équipe Assista-Crise"
+                ),
+                from_email=None,
+                recipient_list=[demande.email_request],
+                fail_silently=True,
+            )
+        except Exception as e:
+            print(f"Erreur envoi email affectation demande : {e}")
+
+        audit_log(
+            request=request,
+            action_code="CREATION",
+            objet_type="Dossier",
+            objet_id=dossier.id,
+            crise=demande.crisis,
+            commentaire=f"Dossier {dossier.numero} créé suite à l'affectation de la demande à {team.name}",
+        )
+
+        return Response({"dossier": str(dossier.id), "numero": dossier.numero, "regulateurs_notifies": regulateurs.count()})
+
 class TeamViewSet(viewsets.ModelViewSet):
     queryset           = Team.objects.prefetch_related(
         'members', 'assigned_crises', 'assigned_offers', 'assigned_requests'
@@ -1374,6 +1468,14 @@ class DossierCommentaireViewSet(viewsets.ModelViewSet):
 class DossierHistoriqueViewSet(viewsets.ModelViewSet):
     queryset = DossierHistorique.objects.all()
     serializer_class = DossierHistoriqueSerializer
+
+class NotificationViewSet(viewsets.ModelViewSet):
+    """Notifications de l'utilisateur connecté (ex: régulateur d'équipe averti d'une nouvelle
+    affectation). Chacun ne voit et ne modifie que les siennes."""
+    serializer_class = NotificationSerializer
+
+    def get_queryset(self):
+        return Notification.objects.filter(utilisateur=self.request.user).order_by('-date_creation')
 
 class RecherchePersonneViewSet(
     viewsets.ModelViewSet

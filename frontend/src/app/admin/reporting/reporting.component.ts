@@ -447,6 +447,27 @@ export class ReportingComponent implements OnInit, OnDestroy {
     });
   }
 
+  /** Affectation d'une demande à une équipe : passe par l'action backend dédiée qui crée le
+   * dossier de suivi, notifie le régulateur de l'équipe et informe le demandeur par email —
+   * contrairement aux offres, pas un simple ajout à assigned_request_ids côté client. */
+  submitAssignTeamRequest(): void {
+    if (!this.selectedRow || !this.assignTeamId) return;
+    const team = this.teams.find(t => t.id === this.assignTeamId);
+    if (!team) return;
+
+    this.requestService.assignTeam(this.selectedRow.id, team.id!).subscribe({
+      next: (res) => {
+        if (res.already_assigned) {
+          this.showSuccess('Cette demande était déjà affectée à cette équipe.');
+        } else {
+          this.showSuccess(`Demande affectée à l'équipe ${team.name} — dossier ${res.numero} créé.`);
+        }
+        this.assignTeamId = null;
+      },
+      error: (err) => this.showError(err?.error?.error || "Impossible d'affecter cette demande à l'équipe."),
+    });
+  }
+
   submitAssignDossier(): void {
     if (!this.selectedRow || !this.assignDossierId) return;
     this.offerService.assignDossier(this.selectedRow.id, this.assignDossierId).subscribe({

@@ -810,6 +810,15 @@ class Dossier(models.Model):
         related_name="dossiers"
     )
 
+    demande = models.ForeignKey(
+        "Request",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="dossiers",
+        help_text="Demande d'aide à l'origine de ce dossier, si affecté depuis une demande.",
+    )
+
     titre = models.CharField(
         max_length=255
     )

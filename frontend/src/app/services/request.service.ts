@@ -81,6 +81,14 @@ export class RequestService {
     return this.http.delete<void>(`${this.url}/${id}/`);
   }
 
+  /** POST /api/demandes/<id>/assign_team/ — affecte la demande à une équipe : crée un
+   * dossier de suivi, notifie le régulateur de l'équipe et informe le demandeur par email. */
+  assignTeam(requestId: string, teamId: string): Observable<{ dossier?: string; numero?: string; already_assigned?: boolean }> {
+    return this.http.post<{ dossier?: string; numero?: string; already_assigned?: boolean }>(
+      `${this.url}/${requestId}/assign_team/`, { team: teamId }
+    );
+  }
+
   // ── PRIVÉ ────────────────────────────────────────────────────
 
   private normalize = (d: any): Request => {

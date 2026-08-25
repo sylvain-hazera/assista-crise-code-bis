@@ -2,7 +2,9 @@ import { Component, HostListener, OnInit } from '@angular/core';
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { AuthService } from '../../auth/services/auth.service';
+import { NotificationService } from '../../services/notification.service';
 import { User, UserRole } from '../../shared/models/user.model';
+import { AppNotification } from '../../shared/models/notification.model';
 
 interface NavItem {
   icon: string;
@@ -26,20 +28,7 @@ export class AdminLayoutComponent implements OnInit {
   showUserMenu = false;
   isMobile = false;
   
-  notifications = [
-    {
-      icon: 'warning',
-      title: 'Nouvelle crise signalée',
-      time: 'Il y a 5 minutes',
-      type: 'warning'
-    },
-    {
-      icon: 'info',
-      title: 'Mise à jour du système',
-      time: 'Il y a 1 heure',
-      type: 'info'
-    }
-  ];
+  notifications: AppNotification[] = [];
 
   navItems: NavItem[] = [
     { icon: 'home', label: 'Accueil', route: '/admin/dashboard' },
@@ -77,12 +66,43 @@ export class AdminLayoutComponent implements OnInit {
 
   constructor(
     private authService: AuthService,
+    private notificationService: NotificationService,
     private router: Router
   ) {}
 
   ngOnInit(): void {
     this.currentUser = this.authService.getCurrentUser();
     this.checkScreenSize();
+    this.loadNotifications();
+  }
+
+  private loadNotifications(): void {
+    this.notificationService.getAll().subscribe({
+      next: (list) => this.notifications = list,
+      error: () => {},
+    });
+  }
+
+  onNotificationClick(notification: AppNotification): void {
+    this.showNotifications = false;
+    if (notification.lu) return;
+    this.notificationService.markAsRead(notification.id).subscribe({
+      next: (updated) => {
+        const idx = this.notifications.findIndex(n => n.id === updated.id);
+        if (idx !== -1) this.notifications[idx] = updated;
+      },
+    });
+  }
+
+  notificationTime(dateStr: string): string {
+    const diffMs = Date.now() - new Date(dateStr).getTime();
+    const minutes = Math.floor(diffMs / 60000);
+    if (minutes < 1) return "à l'instant";
+    if (minutes < 60) return `il y a ${minutes} min`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `il y a ${hours} h`;
+    const days = Math.floor(hours / 24);
+    return `il y a ${days} j`;
   }
 
   @HostListener('window:resize')
@@ -181,6 +201,6 @@ export class AdminLayoutComponent implements OnInit {
   }
 
   get notificationCount(): number {
-    return this.notifications.length;
+    return this.notifications.filter(n => !n.lu).length;
   }
 }

@@ -409,6 +409,32 @@
             }
           </div>
         }
+
+        <!-- Affectation à une équipe (demandes uniquement) : crée automatiquement un dossier
+             de suivi, notifie le régulateur de l'équipe et informe le demandeur par email. -->
+        @if (selectedRow.kind === 'Request') {
+          <div class="detail-section">
+            <h3>Affectation</h3>
+            <div class="assign-row">
+              <select [(ngModel)]="assignTeamId">
+                <option [ngValue]="null">— Choisir une équipe —</option>
+                @for (team of teams; track team.id) {
+                  <option [ngValue]="team.id">{{ team.name }}</option>
+                }
+              </select>
+              <button class="btn-secondary sm" [disabled]="!assignTeamId" (click)="submitAssignTeamRequest()">
+                Affecter à cette équipe
+              </button>
+            </div>
+            <p class="empty-text">
+              Un dossier de suivi sera créé automatiquement ; le régulateur de l'équipe sera
+              notifié et le demandeur informé par email.
+            </p>
+            @if (!selectedRow.crisis) {
+              <p class="empty-text">Demande sans crise liée : impossible de créer un dossier de suivi.</p>
+            }
+          </div>
+        }
       </div>
 
       <div class="modal-footer">
