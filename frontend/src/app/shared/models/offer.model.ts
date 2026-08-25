@@ -10,10 +10,12 @@ export interface OfferType {
 export interface Offer {
   id: string;                           // UUID
   title: string;
+  description?: string | null;
   photo: string | null;
-  location: GeoPoint;
-  latitude?: number;
-  longitude?: number;
+  location: GeoPoint | null;            // null si l'offreur n'a pas indiqué d'adresse,
+                                         // ou si l'adresse est masquée pour ce lecteur (public)
+  latitude?: number | null;
+  longitude?: number | null;
   first_name_offer: string;
   last_name_offer: string;
   email_offer: string;
@@ -26,6 +28,12 @@ export interface Offer {
   author: string | null;
   author_nom?: string | null;
   author_email?: string | null;
+  hebergement_duree?: string | null;
+  numero_adeli_rpps?: string | null;
+  transport_type?: string | null;
+  materiel_type?: string | null;
+  soutien_type?: string | null;
+  renouvelable?: boolean;
 }
 
 export interface OfferPayload {

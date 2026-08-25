@@ -311,17 +311,43 @@ class OfferType(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     type = models.CharField(max_length=100, unique=True, null=True, blank=True)
     description = models.TextField(null=True, blank=True)
+    actif = models.BooleanField(default=True)
 
     def __str__(self) -> str:
         return self.type
+
+
+class DureeHebergement(models.TextChoices):
+    TEMPORAIRE = "TEMPORAIRE", "Temporaire"
+    LONGUE_DUREE = "LONGUE_DUREE", "Longue durée"
+
+
+class TypeTransportOffre(models.TextChoices):
+    PERSONNES = "PERSONNES", "Transport de personnes"
+    MATERIEL = "MATERIEL", "Transport de matériel"
+
+
+class TypeMateriel(models.TextChoices):
+    CUVE = "CUVE", "Cuve"
+    POMPE = "POMPE", "Pompe"
+    ETUVE = "ETUVE", "Étuve"
+    CHAMBRE_FROIDE = "CHAMBRE_FROIDE", "Chambre froide"
+    REMORQUE = "REMORQUE", "Remorque"
+    AUTRE = "AUTRE", "Autre"
+
+
+class TypeSoutien(models.TextChoices):
+    PROFESSIONNEL = "PROFESSIONNEL", "Professionnel de santé"
+    SECOURISTE = "SECOURISTE", "Secouriste (y compris santé mentale)"
 
 
 class Offer(models.Model):
     """Offres d'aide"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     title = models.CharField(max_length=150)
+    description = models.TextField(null=True, blank=True)
     photo = models.ImageField(upload_to="photos/offres/", null=True, blank=True, validators=[validate_image_file])
-    location = gis_models.PointField(srid=4326)
+    location = gis_models.PointField(srid=4326, null=True, blank=True)
     first_name_offer = models.CharField(max_length=60)
     last_name_offer = models.CharField(max_length=80)
     email_offer = models.EmailField()
@@ -348,6 +374,18 @@ class Offer(models.Model):
         blank=True,
         related_name="submitted_offers",
     )
+
+    # Précisions spécifiques à certaines catégories (OfferType.type), une seule
+    # s'applique en pratique selon le type choisi — voir propose-help-form.
+    hebergement_duree = models.CharField(max_length=20, choices=DureeHebergement.choices, null=True, blank=True)
+    numero_adeli_rpps = models.CharField(max_length=50, null=True, blank=True)
+    transport_type = models.CharField(max_length=20, choices=TypeTransportOffre.choices, null=True, blank=True)
+    materiel_type = models.CharField(max_length=20, choices=TypeMateriel.choices, null=True, blank=True)
+    soutien_type = models.CharField(max_length=20, choices=TypeSoutien.choices, null=True, blank=True)
+
+    # Vrai si l'offreur peut être resollicité au-delà de cette crise (ex: un agriculteur
+    # qui prête son matériel ponctuellement pour d'autres interventions futures).
+    renouvelable = models.BooleanField(default=False)
 
     def __str__(self) -> str:
         return self.title

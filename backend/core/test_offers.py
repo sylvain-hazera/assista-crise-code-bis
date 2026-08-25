@@ -126,3 +126,53 @@ class TestAssignOfferToDossier:
         )
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+@pytest.mark.django_db
+class TestOfferTypeCatalog:
+
+    def test_offer_type_list_is_public(self, api_client):
+        response = api_client.get(reverse('offertype-list'))
+        assert response.status_code == status.HTTP_200_OK
+
+    def test_offer_type_list_excludes_inactive(self, api_client):
+        OfferType.objects.create(type="Assistance immédiate (test)", actif=False)
+        active = OfferType.objects.create(type="Actif (test)", actif=True)
+
+        response = api_client.get(reverse('offertype-list'))
+        labels = [t['type'] for t in response.data]
+
+        assert "Assistance immédiate (test)" not in labels
+        assert active.type in labels
+
+
+@pytest.mark.django_db
+class TestOfferLocationPrivacy:
+
+    def test_anonymous_cannot_see_offer_location(self, api_client, offer):
+        response = api_client.get(reverse('offer-detail', args=[offer.id]))
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['latitude'] is None
+        assert response.data['longitude'] is None
+        assert response.data['location'] is None
+
+    def test_simple_authenticated_user_cannot_see_offer_location(self, authenticated_client, offer):
+        client, _ = authenticated_client
+        response = client.get(reverse('offer-detail', args=[offer.id]))
+        assert response.data['latitude'] is None
+
+    def test_institutional_actor_can_see_offer_location(self, local_authority_client, offer):
+        client, _ = local_authority_client
+        response = client.get(reverse('offer-detail', args=[offer.id]))
+        assert response.data['latitude'] is not None
+        assert response.data['longitude'] is not None
+        assert response.data['location'] is not None
+
+    def test_offer_creation_without_location_succeeds(self, api_client, offer_type):
+        payload = {**OFFER_PAYLOAD, "email_offer": "sans-adresse@test.fr", "offer_type": str(offer_type.id)}
+        del payload["location"]
+
+        response = api_client.post(reverse('offer-list'), payload, format='json')
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data['latitude'] is None

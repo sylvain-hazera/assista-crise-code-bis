@@ -3,6 +3,7 @@ import json
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from .auth_validation import InstitutionEmailValidator
+from .permissions import INSTITUTIONAL_TYPES
 from .models import (
     UserRole,
     InstitutionType,
@@ -235,7 +236,11 @@ class RequestSerializer(serializers.ModelSerializer):
         return full_name or obj.author.email
 
 class OfferSerializer(serializers.ModelSerializer):
-    """Serializer pour les offres d'aide"""
+    """Serializer pour les offres d'aide.
+
+    La localisation précise (adresse) n'est un renseignement privé que la mairie et les
+    services de secours doivent voir — jamais le grand public. `latitude`/`longitude`/
+    `location` renvoient donc null pour tout consommateur non institutionnel."""
     latitude = serializers.SerializerMethodField()
     longitude = serializers.SerializerMethodField()
     author = serializers.PrimaryKeyRelatedField(read_only=True, allow_null=True)
@@ -247,11 +252,28 @@ class OfferSerializer(serializers.ModelSerializer):
         model = Offer
         fields = '__all__'
 
+    def _location_visible(self) -> bool:
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        return bool(user and user.is_authenticated and user.type in INSTITUTIONAL_TYPES)
+
     def get_latitude(self, obj):
+        if not self._location_visible():
+            return None
         return obj.location.y if obj.location else None
 
     def get_longitude(self, obj):
+        if not self._location_visible():
+            return None
         return obj.location.x if obj.location else None
+
+    def to_representation(self, instance):
+        # `location` reste un champ générique auto-généré (écriture WKT inchangée) : on
+        # masque juste sa valeur en LECTURE, pas la possibilité de l'écrire à la création.
+        data = super().to_representation(instance)
+        if not self._location_visible():
+            data['location'] = None
+        return data
 
     def get_author_nom(self, obj):
         if not obj.author:

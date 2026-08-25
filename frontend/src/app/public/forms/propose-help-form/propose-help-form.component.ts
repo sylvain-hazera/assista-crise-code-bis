@@ -1,7 +1,8 @@
 import { Component, OnInit } from '@angular/core';
-import { FormGroup, FormBuilder, Validators, ReactiveFormsModule, FormArray } from '@angular/forms';
+import { FormGroup, FormBuilder, Validators, ReactiveFormsModule, FormArray, AbstractControl } from '@angular/forms';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
+import { forkJoin, Observable } from 'rxjs';
 import { GeolocationService } from '../../../services/geolocation.service';
 import { CommonModule } from '@angular/common';
 import { OfferService } from '../../../services/offer.service';
@@ -9,6 +10,7 @@ import { DisponibiliteOffreService } from '../../../services/disponibilite-offre
 import { LocationService, Department, Commune } from '../../../services/location.service';
 import { CrisisService } from '../../../services/crisis.service';
 import { Crisis } from '../../../shared/models/crisis.model';
+import { Offer } from '../../../shared/models/offer.model';
 import { AuthService } from '../../../auth/services/auth.service';
 import { UserRole, User } from '../../../shared/models/user.model';
 import { Creneau } from '../../../shared/models/disponibilite-offre.model';
@@ -18,6 +20,15 @@ interface JourDispo {
   label: string;       // ex: "lun. 25/08"
   creneaux: { creneau: Creneau; label: string; checked: boolean }[];
 }
+
+// Labels exacts des OfferType côté backend (backend/entrypoint.sh) — utilisés pour savoir
+// quels champs complémentaires afficher pour une ligne donnée.
+const TYPE_HEBERGEMENT = 'Hébergement';
+const TYPE_SOINS = 'Soins médicaux et paramédicaux';
+const TYPE_TRANSPORT = 'Transport';
+const TYPE_MATERIEL = 'Matériel';
+const TYPE_SOUTIEN = 'Soutien psychologique';
+const TYPE_AUTRE = 'Autre';
 
 @Component({
   selector: 'app-request-help-form',
@@ -37,7 +48,24 @@ export class ProposeHelpFormComponent implements OnInit {
   latitude: number | null = null;
   longitude: number | null = null;
 
-  typesOffreMap: Map<string, string> = new Map(); // offerType -> UUID
+  typesOffreMap: Map<string, string> = new Map(); // offerType (label) -> UUID
+
+  readonly TYPE_HEBERGEMENT = TYPE_HEBERGEMENT;
+  readonly TYPE_SOINS = TYPE_SOINS;
+  readonly TYPE_TRANSPORT = TYPE_TRANSPORT;
+  readonly TYPE_MATERIEL = TYPE_MATERIEL;
+  readonly TYPE_SOUTIEN = TYPE_SOUTIEN;
+  readonly TYPE_AUTRE = TYPE_AUTRE;
+
+  readonly materielTypeOptions: { value: string; label: string }[] = [
+    { value: '', label: '— Choisir —' },
+    { value: 'CUVE', label: 'Cuve' },
+    { value: 'POMPE', label: 'Pompe' },
+    { value: 'ETUVE', label: 'Étuve' },
+    { value: 'CHAMBRE_FROIDE', label: 'Chambre froide' },
+    { value: 'REMORQUE', label: 'Remorque' },
+    { value: 'AUTRE', label: 'Autre' },
+  ];
 
   // Départements et communes
   departments: Department[] = [];
@@ -157,16 +185,15 @@ export class ProposeHelpFormComponent implements OnInit {
   initForm(): void {
     this.requestForm = this.formBuilder.group({
       crisisId: [''],
-      offersType: new FormArray([]),
-      descriptions: new FormArray([]),
-      streetNumber: ['', Validators.required],
-      department: ['', Validators.required],
-      commune: ['', Validators.required],
+      offerRows: new FormArray([]),
+      streetNumber: [''],
+      department: [''],
+      commune: [''],
       addressVisible: [false],
       image: [null],
     });
 
-    this.addOffer(); // Ajouter un besoin initial  
+    this.addOffer(); // Ajouter une ligne d'offre initiale
 
     this.informationForm = this.formBuilder.group({
       lastName: [this.currentUser?.last_name, Validators.required],
@@ -203,86 +230,82 @@ export class ProposeHelpFormComponent implements OnInit {
     }
   }
 
-  onSubmit(): void {    
-    if (this.informationForm.valid && this.latitude && this.longitude) {
-      console.log('Formulaire valide:', this.informationForm.value);
-
-      // Préparer les données pour Django
-      const formData = new FormData();
-      
-      // Champs du modèle Offre Django
-      formData.append('first_name_offer', this.informationForm.get('firstName')?.value);
-      formData.append('last_name_offer', this.informationForm.get('lastName')?.value);
-      formData.append('email_offer', this.informationForm.get('email')?.value);
-      formData.append('phone_offer', this.informationForm.get('phoneNumber')?.value);
-      
-      // Titre basé sur la crise sélectionnée
-      const crisisId = this.requestForm.get('crisisId')?.value;
-      const crisisLabel = this.crisisOptions.find(c => c.value === crisisId)?.label || 'non liée à une crise';
-      const titre = `Offre d'aide - ${crisisLabel}`;
-      formData.append('title', titre);
-      
-      // Localisation au format GeoJSON Point
-      const localisation = {
-        type: 'Point',
-        coordinates: [this.longitude, this.latitude]
-      };
-      formData.append('location', JSON.stringify(localisation));
-      
-      // Type offre - Utiliser le premier type disponible
-      const firstTypeId = Array.from(this.typesOffreMap.values())[0];
-      if (!firstTypeId) {
-        alert('Type d\'offre non trouvé. Veuillez réessayer ou contacter le support.');
-        return;
-      }
-      formData.append('offer_type', firstTypeId);
-      
-      // Crise (nullable)
-      if (crisisId) {
-        formData.append('crisis', crisisId);
-      }
-      
-      formData.append('status', 'DISPONIBLE');
-      formData.append('author', this.currentUser?.id!);
-
-      
-      // Photo si présente
-      if (this.selectedFile) {
-        formData.append('photo', this.selectedFile);
-      }
-
-      // Envoyer au backend Django
-      this.offerService.create(formData).subscribe({
-        next: (response) => {
-          console.log('Demande créée:', response);
-          this.declareDisponibilites(response.id);
-          alert('Votre demande a été enregistrée avec succès !');
-          this.router.navigate(['/accueil']);
-        },
-        error: (err) => {
-          console.error('Erreur création demande:', err);
-          console.error('Détails erreur:', err.error);
-          if (err.status === 400 && err.error) {
-            console.error('Erreurs de validation:', err.error);
-            const errors = Object.entries(err.error).map(([key, value]) => `${key}: ${value}`).join('\n');
-            alert(`Erreur de validation:\n${errors}`);
-          } else {
-            alert('Erreur lors de l\'enregistrement. Veuillez réessayer.');
-          }
-        }
-      });
-
-    } else {
+  onSubmit(): void {
+    if (!this.informationForm.valid) {
       Object.keys(this.informationForm.controls).forEach(key => {
         this.informationForm.get(key)?.markAsTouched();
       });
-      
-      if (!this.latitude || !this.longitude) {
-        alert('Erreur de géolocalisation. Veuillez vérifier l\'adresse.');
-      } else {
-        alert('Veuillez remplir tous les champs obligatoires');
-      }
+      alert('Veuillez remplir tous les champs obligatoires');
+      return;
     }
+    if (this.offerRows.invalid) {
+      this.offerRows.markAllAsTouched();
+      alert('Veuillez compléter les informations sur votre offre.');
+      return;
+    }
+
+    const crisisId = this.requestForm.get('crisisId')?.value;
+    const crisisLabel = this.crisisOptions.find(c => c.value === crisisId)?.label || 'non liée à une crise';
+    const addressVisible = this.requestForm.get('addressVisible')?.value;
+    const hasLocation = !!(addressVisible && this.latitude != null && this.longitude != null);
+
+    const creations: Observable<Offer>[] = this.offerRows.controls.map(row => {
+      const v = row.value;
+      const formData = new FormData();
+
+      formData.append('title', `Offre d'aide - ${crisisLabel} - ${v.type}`);
+      formData.append('first_name_offer', this.informationForm.get('firstName')?.value);
+      formData.append('last_name_offer', this.informationForm.get('lastName')?.value);
+      formData.append('email_offer', this.informationForm.get('email')?.value);
+
+      const typeId = this.typesOffreMap.get(v.type);
+      if (typeId) formData.append('offer_type', typeId);
+      if (crisisId) formData.append('crisis', crisisId);
+
+      if (hasLocation) {
+        formData.append('location', JSON.stringify({
+          type: 'Point', coordinates: [this.longitude, this.latitude],
+        }));
+      }
+
+      formData.append('description', this.buildDescription(v));
+      formData.append('renouvelable', String(!!v.renouvelable));
+      if (v.type === TYPE_HEBERGEMENT && v.hebergementDuree) formData.append('hebergement_duree', v.hebergementDuree);
+      if (v.type === TYPE_SOINS && v.numeroAdeliRpps) formData.append('numero_adeli_rpps', v.numeroAdeliRpps);
+      if (v.type === TYPE_TRANSPORT && v.transportType) formData.append('transport_type', v.transportType);
+      if (v.type === TYPE_MATERIEL && v.materielType) formData.append('materiel_type', v.materielType);
+      if (v.type === TYPE_SOUTIEN && v.soutienType) formData.append('soutien_type', v.soutienType);
+
+      formData.append('status', 'DISPONIBLE');
+      if (this.currentUser?.id) formData.append('author', this.currentUser.id);
+      if (this.selectedFile) formData.append('photo', this.selectedFile);
+
+      return this.offerService.create(formData);
+    });
+
+    forkJoin(creations).subscribe({
+      next: (offers) => {
+        offers.forEach(o => this.declareDisponibilites(o.id));
+        alert('Votre offre a été enregistrée avec succès !');
+        this.router.navigate(['/accueil']);
+      },
+      error: (err) => {
+        console.error('Erreur création offre:', err);
+        if (err.status === 400 && err.error) {
+          const errors = Object.entries(err.error).map(([key, value]) => `${key}: ${value}`).join('\n');
+          alert(`Erreur de validation:\n${errors}`);
+        } else {
+          alert('Erreur lors de l\'enregistrement. Veuillez réessayer.');
+        }
+      }
+    });
+  }
+
+  private buildDescription(rowValue: any): string {
+    if (rowValue.type === TYPE_AUTRE) {
+      return `[Bénévolat] ${rowValue.description || ''}`.trim();
+    }
+    return rowValue.description || '';
   }
 
   onDepartmentSearchChange(event: Event): void {
@@ -299,7 +322,7 @@ export class ProposeHelpFormComponent implements OnInit {
     this.departmentSearch = department.name;
     this.requestForm.patchValue({ department: department.code });
     this.showDepartmentDropdown = false;
-    
+
     // Charger les communes du département
     this.locationService.getCommunesByDepartment(department.code).subscribe({
       next: (communes) => {
@@ -344,40 +367,41 @@ export class ProposeHelpFormComponent implements OnInit {
     this.showCrisisDropdown = false;
   }
 
+  /** L'adresse est optionnelle pour un offreur d'aide : sans numéro de voie saisi, on passe
+   * directement à l'étape 2 sans géocodage (latitude/longitude restent null). */
   onContinue(): void {
-    if (this.requestForm.valid) {
+    const street = this.requestForm.get('streetNumber')?.value?.trim();
 
-      const street = this.requestForm.get('streetNumber')?.value;
-      const communeCode = this.requestForm.get('commune')?.value;
-      const commune = this.communes.find(c => c.code === communeCode);
-      const postalCode = commune?.codesPostaux[0] || '';
-      const query = `${street} ${postalCode}`;
+    if (!street) {
+      this.latitude = null;
+      this.longitude = null;
+      this.state = 2;
+      return;
+    }
 
-      this.geolocationService.getCoordinates(query).subscribe({
-        next: (response) => {
-          if (response.features && response.features.length > 0) {
-            const coords = response.features[0].geometry.coordinates;
-            this.longitude = coords[0];
-            this.latitude = coords[1];
-            
-            this.state = 2;
-          } else {
-            alert("Adresse introuvable. Vérifiez le numéro et le code postal.");
-          }
-        },
-        error: (err) => {
-          console.error(err);
-          alert("Erreur de connexion au service d'adresse.");
+    const communeCode = this.requestForm.get('commune')?.value;
+    const commune = this.communes.find(c => c.code === communeCode);
+    const postalCode = commune?.codesPostaux[0] || '';
+    const query = `${street} ${postalCode}`;
+
+    this.geolocationService.getCoordinates(query).subscribe({
+      next: (response) => {
+        if (response.features && response.features.length > 0) {
+          const coords = response.features[0].geometry.coordinates;
+          this.longitude = coords[0];
+          this.latitude = coords[1];
+
+          this.state = 2;
+        } else {
+          alert("Adresse introuvable. Vérifiez le numéro et le code postal.");
         }
-      });
-  } else {
-      // Marquer tous les champs comme touchés pour afficher les erreurs
-      Object.keys(this.requestForm.controls).forEach(key => {
-        this.requestForm.get(key)?.markAsTouched();
-      });
-      alert('Veuillez remplir tous les champs obligatoires');
+      },
+      error: (err) => {
+        console.error(err);
+        alert("Erreur de connexion au service d'adresse.");
+      }
+    });
   }
-}
 
   goBack(): void {
     if(this.state == 1) {
@@ -403,21 +427,29 @@ export class ProposeHelpFormComponent implements OnInit {
     }
   }
 
-  get offersType(): FormArray {
-    return this.requestForm.get('offersType') as FormArray;
+  // ── Lignes "Quelle aide proposez-vous" ─────────────────────────
+  get offerRows(): FormArray {
+    return this.requestForm.get('offerRows') as FormArray;
   }
 
-  get descriptions(): FormArray {
-    return this.requestForm.get('descriptions') as FormArray;
+  rowGroup(control: AbstractControl): FormGroup {
+    return control as FormGroup;
   }
 
   addOffer(): void {
-    this.offersType.push(this.formBuilder.control('', Validators.required));
-    this.descriptions.push(this.formBuilder.control('', [Validators.minLength(10)]));
+    this.offerRows.push(this.formBuilder.group({
+      type: ['', Validators.required],
+      description: ['', [Validators.minLength(10)]],
+      hebergementDuree: [''],
+      numeroAdeliRpps: [''],
+      transportType: [''],
+      materielType: [''],
+      soutienType: [''],
+      renouvelable: [false],
+    }));
   }
 
   removeOffer(index: number): void {
-    this.offersType.removeAt(index);
-    this.descriptions.removeAt(index);
+    this.offerRows.removeAt(index);
   }
 }

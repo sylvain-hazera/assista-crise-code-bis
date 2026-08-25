@@ -49,10 +49,9 @@ types_demandes = [
 ]
 
 types_offres = [
-    'Assistance immédiate',
     'Hébergement',
     'Nourriture et eau',
-    'Soins médicaux',
+    'Soins médicaux et paramédicaux',
     'Transport',
     'Matériel',
     'Soutien psychologique',

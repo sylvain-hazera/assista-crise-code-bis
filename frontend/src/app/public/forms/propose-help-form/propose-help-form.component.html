@@ -50,7 +50,8 @@
             </div>
 
             <!-- Quelle aide proposez-vous -->
-             @for(offerType of offersType.controls; track offerType; let i = $index) {
+             @for(row of offerRows.controls; track row; let i = $index) {
+                @let rg = rowGroup(row);
                 @if(i > 0){
                     <hr>
                     <div class="remove-service">
@@ -59,48 +60,133 @@
                         </a>
                     </div>
                 }
+                <div [formGroup]="rg">
                 <div class="form-group">
                     <label [for]="'offerType' + i" class="form-label">
                         Quelle aide proposez-vous ? <span class="required">*</span>
                     </label>
                     <div class="select-wrapper">
-                    <select 
-                        [id]="'offerType' + i" 
-                        [formControl]="$any(offersType.at(i))"
+                    <select
+                        [id]="'offerType' + i"
+                        formControlName="type"
                         class="form-select"
-                        [class.invalid]="offersType.at(i).invalid && offersType.at(i).touched">
+                        [class.invalid]="rg.get('type')?.invalid && rg.get('type')?.touched">
                         <option value="">Choisissez votre offre</option>
                         @for(option of offerTypeOptions.slice(1); track option.value) {
                             <option [value]="option.value">
                                 {{ option.label }}
                             </option>
-                        } 
+                        }
                     </select>
                     <span class="material-icons select-arrow">arrow_drop_down</span>
                     </div>
-                    @if(offersType.at(i).invalid && offersType.at(i).touched) {
+                    @if(rg.get('type')?.invalid && rg.get('type')?.touched) {
                         <div class="error-message">
                             Veuillez sélectionner un type d'offre
                         </div>
                     }
                 </div>
 
+                <!-- Hébergement : durée -->
+                @if (rg.get('type')?.value === TYPE_HEBERGEMENT) {
+                    <div class="form-group">
+                        <label class="form-label">Durée de l'hébergement proposé</label>
+                        <label class="radio-label">
+                            <input type="radio" formControlName="hebergementDuree" value="TEMPORAIRE"> Temporaire
+                        </label>
+                        <label class="radio-label">
+                            <input type="radio" formControlName="hebergementDuree" value="LONGUE_DUREE"> Longue durée
+                        </label>
+                    </div>
+                }
+
+                <!-- Soins médicaux et paramédicaux : ADELI/RPPS -->
+                @if (rg.get('type')?.value === TYPE_SOINS) {
+                    <div class="form-group">
+                        <p class="field-hint">
+                        Réservé aux professionnels de santé titulaires d'un numéro ADELI ou RPPS.
+                        Sans numéro, vous serez considéré comme secouriste PSC1.
+                        </p>
+                        <label for="adeliRpps" class="form-label">Numéro ADELI ou RPPS (optionnel)</label>
+                        <input type="text" id="adeliRpps" formControlName="numeroAdeliRpps" class="form-input" placeholder="N° ADELI / RPPS">
+                    </div>
+                }
+
+                <!-- Transport : personnes ou matériel -->
+                @if (rg.get('type')?.value === TYPE_TRANSPORT) {
+                    <div class="form-group">
+                        <label class="form-label">Type de transport proposé</label>
+                        <label class="radio-label">
+                            <input type="radio" formControlName="transportType" value="PERSONNES"> Transport de personnes
+                        </label>
+                        <label class="radio-label">
+                            <input type="radio" formControlName="transportType" value="MATERIEL"> Transport de matériel
+                        </label>
+                    </div>
+                }
+
+                <!-- Matériel : sous-type -->
+                @if (rg.get('type')?.value === TYPE_MATERIEL) {
+                    <div class="form-group">
+                        <label for="materielType" class="form-label">Type de matériel</label>
+                        <div class="select-wrapper">
+                            <select id="materielType" formControlName="materielType" class="form-select">
+                                @for(option of materielTypeOptions; track option.value) {
+                                    <option [value]="option.value">{{ option.label }}</option>
+                                }
+                            </select>
+                            <span class="material-icons select-arrow">arrow_drop_down</span>
+                        </div>
+                    </div>
+                }
+
+                <!-- Soutien psychologique : profil -->
+                @if (rg.get('type')?.value === TYPE_SOUTIEN) {
+                    <div class="form-group">
+                        <label class="form-label">Votre profil</label>
+                        <label class="radio-label">
+                            <input type="radio" formControlName="soutienType" value="PROFESSIONNEL"> Professionnel de santé
+                        </label>
+                        <label class="radio-label">
+                            <input type="radio" formControlName="soutienType" value="SECOURISTE"> Secouriste (y compris secouriste en santé mentale)
+                        </label>
+                    </div>
+                }
+
                 <!-- Description -->
                 <div class="form-group">
-                    <label [for]="'description' + i" class="form-label">Description</label>
-                    <textarea 
-                    [id]="'description' + i" 
-                    [formControl]="$any(descriptions.at(i))"
+                    <label [for]="'description' + i" class="form-label">
+                        {{ rg.get('type')?.value === TYPE_AUTRE ? 'Précisez votre offre' : 'Description' }}
+                    </label>
+                    @if (rg.get('type')?.value === TYPE_AUTRE) {
+                        <p class="field-hint">Il s'agit d'une offre de bénévolat : merci de le préciser dans votre description.</p>
+                    }
+                    <textarea
+                    [id]="'description' + i"
+                    formControlName="description"
                     class="form-textarea"
                     placeholder="Soyez précis"
                     rows="4"
-                    [class.invalid]="descriptions.at(i).invalid && descriptions.at(i).touched">
+                    [class.invalid]="rg.get('description')?.invalid && rg.get('description')?.touched">
                     </textarea>
-                    @if(descriptions.at(i).invalid && descriptions.at(i).touched) {
+                    @if(rg.get('description')?.invalid && rg.get('description')?.touched) {
                         <div class="error-message">
                             Veuillez entrer une description (minimum 10 caractères)
                         </div>
                     }
+                </div>
+
+                <!-- Réutilisable au-delà de cette crise -->
+                <div class="form-group">
+                    <label class="form-label">Cette aide est-elle réservée à cette crise ?</label>
+                    <label class="radio-label">
+                        <input type="radio" formControlName="renouvelable" [value]="false"> Oui, uniquement pour cette crise
+                    </label>
+                    <label class="radio-label">
+                        <input type="radio" formControlName="renouvelable" [value]="true">
+                        Non, je peux la proposer ponctuellement pour d'autres interventions à l'avenir
+                    </label>
+                </div>
                 </div>
              }
 
@@ -113,25 +199,22 @@
 
             <!-- Votre adresse -->
             <div class="form-section">
-                <h2 class="section-title">Votre adresse <span class="required">*</span></h2>
+                <h2 class="section-title">Votre adresse (optionnel)</h2>
+                <p class="section-description">
+                Vous pouvez proposer votre aide sans indiquer d'adresse.
+                </p>
 
                 <!-- N° et voie -->
                 <div class="form-group">
                 <label for="streetNumber" class="form-label">N° et voie</label>
-                <input 
-                    type="text" 
-                    id="streetNumber" 
+                <input
+                    type="text"
+                    id="streetNumber"
                     formControlName="streetNumber"
                     class="form-input"
-                    placeholder="Votre adresse"
-                    [class.invalid]="requestForm.get('streetNumber')?.invalid && requestForm.get('streetNumber')?.touched">
-                    @if(requestForm.get('streetNumber')?.invalid && requestForm.get('streetNumber')?.touched) {
-                        <div class="error-message">
-                            Veuillez entrer un numéro et une voie
-                        </div>
-                    } 
+                    placeholder="Votre adresse">
                 </div>
-                
+
 
                 <!-- Département -->
                 <div class="form-group">
@@ -146,9 +229,8 @@
                       (focus)="showDepartmentDropdown = true"
                       class="form-input"
                       placeholder="Rechercher un département"
-                      [class.invalid]="requestForm.get('department')?.invalid && requestForm.get('department')?.touched"
                       autocomplete="off">
-                    
+
                     @if(showDepartmentDropdown && filteredDepartments.length > 0) {
                       <div class="autocomplete-dropdown">
                         @for(dept of filteredDepartments; track dept.code) {
@@ -159,11 +241,6 @@
                       </div>
                     }
                   </div>
-                  @if(requestForm.get('department')?.invalid && requestForm.get('department')?.touched) {
-                    <div class="error-message">
-                      Veuillez sélectionner un département
-                    </div>
-                  }
                 </div>
 
                 <!-- Commune -->
@@ -179,10 +256,9 @@
                       (focus)="showCommuneDropdown = true"
                       class="form-input"
                       placeholder="Rechercher une commune"
-                      [class.invalid]="requestForm.get('commune')?.invalid && requestForm.get('commune')?.touched"
                       [disabled]="!requestForm.get('department')?.value"
                       autocomplete="off">
-                    
+
                     @if(showCommuneDropdown && filteredCommunes.length > 0) {
                       <div class="autocomplete-dropdown">
                         @for(commune of filteredCommunes; track commune.code) {
@@ -193,21 +269,19 @@
                       </div>
                     }
                   </div>
-                  @if(requestForm.get('commune')?.invalid && requestForm.get('commune')?.touched) {
-                    <div class="error-message">
-                      Veuillez sélectionner une commune
-                    </div>
-                  }
                 </div>
 
                 <!-- Checkbox adresse visible -->
                 <div class="form-group checkbox-group">
                 <label class="checkbox-label">
-                    <input 
-                    type="checkbox" 
+                    <input
+                    type="checkbox"
                     formControlName="addressVisible"
                     class="form-checkbox">
-                    <span class="checkbox-text">J'accepte que mon adresse soit visible</span>
+                    <span class="checkbox-text">
+                      J'accepte que mon adresse soit visible
+                      <br><small>Elle ne sera visible que par votre mairie et les services de secours — jamais par le grand public.</small>
+                    </span>
                 </label>
                 </div>
             </div>
@@ -224,10 +298,11 @@
                     <span class="file-name">{{ fileName }}</span>
                     <span class="material-symbols-outlined">upload</span>
                 </label>
-                <input 
-                    type="file" 
-                    id="fileUpload" 
+                <input
+                    type="file"
+                    id="fileUpload"
                     accept="image/*"
+                    capture="environment"
                     (change)="onFileSelected($event)"
                     class="file-input">
                 </div>

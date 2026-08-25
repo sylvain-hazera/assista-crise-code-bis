@@ -973,6 +973,10 @@ class RequestTypeViewSet(viewsets.ModelViewSet):
 class OfferTypeViewSet(viewsets.ModelViewSet):
     queryset = OfferType.objects.all()
     serializer_class = OfferTypeSerializer
+    permission_classes = [AllowAny]
+
+    def get_queryset(self):
+        return OfferType.objects.filter(actif=True)
 
 class InformationTypeViewSet(viewsets.ModelViewSet):
     queryset = InformationType.objects.all()
