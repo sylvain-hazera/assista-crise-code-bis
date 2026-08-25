@@ -2125,14 +2125,48 @@ class AffectationRoleOperationnelViewSet(
         AffectationRoleOperationnelSerializer
     )
 
+    def get_permissions(self):
+        if self.action in ("create", "update", "partial_update", "destroy"):
+            return [IsInstitutionalActor()]
+        return [permissions.IsAuthenticated()]
+
+    def _check_own_institution(self, institution):
+        is_own_institution = ContactInstitution.objects.filter(
+            utilisateur=self.request.user, institution=institution, actif=True
+        ).exists()
+        if not is_own_institution and self.request.user.type != UserRole.ADMINISTRATOR:
+            raise PermissionDenied(
+                "Vous ne pouvez gérer les affectations que pour une institution à laquelle vous êtes rattaché."
+            )
+
     def perform_create(self, serializer):
+        institution = serializer.validated_data.get("institution")
+        self._check_own_institution(institution)
+
         affectation = serializer.save()
         audit_log(
             request=self.request,
-            action_code="CREATION",
+            action_code="AFFECTATION",
             objet_type="AffectationRoleOperationnel",
             objet_id=affectation.id,
-            commentaire=f"Création affectation rôle opérationnel : {affectation}",
+            commentaire=(
+                f"Affectation de {affectation.utilisateur.email} en tant que "
+                f"{affectation.role.libelle} pour {institution.nom}"
+                + (f" sur le thème {affectation.competence.nom}" if affectation.competence else "")
+            ),
+        )
+
+    def perform_update(self, serializer):
+        institution = serializer.instance.institution
+        self._check_own_institution(institution)
+
+        affectation = serializer.save()
+        audit_log(
+            request=self.request,
+            action_code="MODIFICATION",
+            objet_type="AffectationRoleOperationnel",
+            objet_id=affectation.id,
+            commentaire=f"Modification affectation rôle opérationnel : {affectation}",
         )
 
     @action(

@@ -245,6 +245,9 @@
           <button class="tab" [class.active]="detailTab === 'domaines'" (click)="detailTab = 'domaines'">
             <span class="material-icons">alternate_email</span> Domaines email
           </button>
+          <button class="tab" [class.active]="detailTab === 'regulateurs'" (click)="detailTab = 'regulateurs'">
+            <span class="material-icons">support_agent</span> Régulateurs / thèmes
+          </button>
         </nav>
 
         <div class="modal-body">
@@ -320,6 +323,63 @@
                 <label class="checkbox-row"><input type="checkbox" formControlName="valide"/> Validé</label>
                 <button class="btn-primary sm" type="submit">Ajouter</button>
                 <button class="btn-secondary sm" type="button" (click)="showDomaineForm = false">Annuler</button>
+              </form>
+            }
+          }
+
+          @if (detailTab === 'regulateurs') {
+            <p class="hint">
+              Précise, pour chaque responsable ou régulateur de cette institution,
+              les thèmes (compétences) sur lesquels il opère.
+            </p>
+            <table class="data-table sm">
+              <thead><tr><th>Utilisateur</th><th>Rôle</th><th>Thème</th><th>Actif</th><th></th></tr></thead>
+              <tbody>
+                @for (affectation of institutionAffectationsRoles; track affectation.id) {
+                  <tr>
+                    <td>{{ userName(affectation.utilisateur) }}</td>
+                    <td>{{ roleLabel(affectation.role) }}</td>
+                    <td>{{ competenceLabel(affectation.competence) }}</td>
+                    <td>{{ affectation.actif ? 'Oui' : 'Non' }}</td>
+                    <td class="actions">
+                      <button class="icon-btn danger" (click)="deleteAffectationRole(affectation)" title="Supprimer">
+                        <span class="material-icons">delete_outline</span>
+                      </button>
+                    </td>
+                  </tr>
+                } @empty {
+                  <tr><td colspan="5" class="empty">Aucune affectation.</td></tr>
+                }
+              </tbody>
+            </table>
+
+            @if (!showRegulateurForm) {
+              <button class="btn-secondary sm" (click)="showRegulateurForm = true">
+                <span class="material-icons">add_moderator</span> Ajouter une affectation
+              </button>
+            } @else {
+              <form class="inline-form" [formGroup]="regulateurForm" (ngSubmit)="submitRegulateur()">
+                <select formControlName="utilisateur">
+                  <option [ngValue]="null">— Utilisateur —</option>
+                  @for (u of users; track u.id) {
+                    <option [ngValue]="u.id">{{ u.first_name }} {{ u.last_name }} ({{ u.username }})</option>
+                  }
+                </select>
+                <select formControlName="role">
+                  <option [ngValue]="null">— Rôle —</option>
+                  @for (r of roles; track r.id) {
+                    <option [ngValue]="r.id">{{ r.libelle }}</option>
+                  }
+                </select>
+                <select formControlName="competence">
+                  <option [ngValue]="null">— Thème (optionnel) —</option>
+                  @for (c of competences; track c.id) {
+                    <option [ngValue]="c.id">{{ c.nom }}</option>
+                  }
+                </select>
+                <label class="checkbox-row"><input type="checkbox" formControlName="actif"/> Actif</label>
+                <button class="btn-primary sm" type="submit">Ajouter</button>
+                <button class="btn-secondary sm" type="button" (click)="showRegulateurForm = false">Annuler</button>
               </form>
             }
           }

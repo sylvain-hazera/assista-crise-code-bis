@@ -1480,7 +1480,11 @@ class AffectationRoleOperationnel(models.Model):
     competence = models.ForeignKey(
         Competence,
         on_delete=models.CASCADE,
-        related_name="affectations_roles"
+        related_name="affectations_roles",
+        null=True,
+        blank=True,
+        help_text="Thème sur lequel cette personne opère. Peut rester vide juste après "
+                   "l'activation du compte, avant que les thèmes ne soient précisés.",
     )
 
     role = models.ForeignKey(

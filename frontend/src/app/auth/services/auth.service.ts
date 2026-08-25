@@ -419,9 +419,10 @@ export class AuthService {
   }
 
   isAdmin(): boolean {
-    return this.getCurrentUser()?.type === UserRole.RESCUE || 
-      this.getCurrentUser()?.type === UserRole.LOCAL_AUTH|| 
-      this.getCurrentUser()?.type === UserRole.ADMIN;
+    return this.getCurrentUser()?.type === UserRole.RESCUE ||
+      this.getCurrentUser()?.type === UserRole.LOCAL_AUTH||
+      this.getCurrentUser()?.type === UserRole.ADMIN ||
+      this.getCurrentUser()?.type === UserRole.REGULATEUR;
   }
 
   isSysAdmin(): boolean {

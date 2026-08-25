@@ -9,6 +9,8 @@ import { RoleOperationnelService } from '../../services/role-operationnel.servic
 import { ContactInstitutionService } from '../../services/contact-institution.service';
 import { InstitutionDomaineService } from '../../services/institution-domaine.service';
 import { UserService } from '../../services/user.service';
+import { CompetenceService } from '../../services/competence.service';
+import { AffectationRoleOperationnelService } from '../../services/affectation-role-operationnel.service';
 
 import {
   Institution,
@@ -16,12 +18,15 @@ import {
   RoleOperationnel,
   ContactInstitution,
   InstitutionDomaine,
+  AffectationRoleOperationnel,
 } from '../../shared/models/institution.model';
 import { User } from '../../shared/models/user.model';
+import { Competence } from '../../shared/models/competence.model';
 
 type MainTab = 'institutions' | 'types' | 'roles';
 type ModalView = 'none' | 'create' | 'edit' | 'delete' | 'detail';
 type RefModalView = 'none' | 'create' | 'edit' | 'delete';
+type DetailTab = 'contacts' | 'domaines' | 'regulateurs';
 
 @Component({
   selector: 'app-institutions',
@@ -40,6 +45,8 @@ export class InstitutionsComponent implements OnInit {
   users: User[] = [];
   contacts: ContactInstitution[] = [];
   domaines: InstitutionDomaine[] = [];
+  competences: Competence[] = [];
+  affectationsRoles: AffectationRoleOperationnel[] = [];
 
   isLoading = true;
   isSaving = false;
@@ -52,11 +59,13 @@ export class InstitutionsComponent implements OnInit {
   selectedInstitution: Institution | null = null;
   institutionForm!: FormGroup;
 
-  detailTab: 'contacts' | 'domaines' = 'contacts';
+  detailTab: DetailTab = 'contacts';
   showContactForm = false;
   showDomaineForm = false;
+  showRegulateurForm = false;
   contactForm!: FormGroup;
   domaineForm!: FormGroup;
+  regulateurForm!: FormGroup;
 
   // ── Type d'institution (référentiel) ──
   typeModal: RefModalView = 'none';
@@ -76,6 +85,8 @@ export class InstitutionsComponent implements OnInit {
     private contactService: ContactInstitutionService,
     private domaineService: InstitutionDomaineService,
     private userService: UserService,
+    private competenceService: CompetenceService,
+    private affectationRoleService: AffectationRoleOperationnelService,
   ) {}
 
   ngOnInit(): void {
@@ -118,6 +129,13 @@ export class InstitutionsComponent implements OnInit {
       domaine: ['', Validators.required],
       valide: [true],
     });
+
+    this.regulateurForm = this.fb.group({
+      utilisateur: [null, Validators.required],
+      role: [null, Validators.required],
+      competence: [null],
+      actif: [true],
+    });
   }
 
   private loadAll(): void {
@@ -129,14 +147,18 @@ export class InstitutionsComponent implements OnInit {
       users: this.userService.getAll(),
       contacts: this.contactService.getAll(),
       domaines: this.domaineService.getAll(),
+      competences: this.competenceService.getAll(),
+      affectationsRoles: this.affectationRoleService.getAll(),
     }).subscribe({
-      next: ({ institutions, types, roles, users, contacts, domaines }) => {
+      next: ({ institutions, types, roles, users, contacts, domaines, competences, affectationsRoles }) => {
         this.institutions = institutions;
         this.types = types;
         this.roles = roles;
         this.users = users;
         this.contacts = contacts;
         this.domaines = domaines;
+        this.competences = competences;
+        this.affectationsRoles = affectationsRoles;
         this.isLoading = false;
       },
       error: () => {
@@ -151,6 +173,7 @@ export class InstitutionsComponent implements OnInit {
   reloadRoles(): void { this.roleOperationnelService.getAll().subscribe(data => this.roles = data); }
   reloadContacts(): void { this.contactService.getAll().subscribe(data => this.contacts = data); }
   reloadDomaines(): void { this.domaineService.getAll().subscribe(data => this.domaines = data); }
+  reloadAffectationsRoles(): void { this.affectationRoleService.getAll().subscribe(data => this.affectationsRoles = data); }
 
   // ══ Institutions — CRUD ═══════════════════════════════════════
   openCreate(): void {
@@ -210,8 +233,10 @@ export class InstitutionsComponent implements OnInit {
     this.detailTab = 'contacts';
     this.showContactForm = false;
     this.showDomaineForm = false;
+    this.showRegulateurForm = false;
     this.contactForm.reset({ contact_principal: false });
     this.domaineForm.reset({ valide: true });
+    this.regulateurForm.reset({ actif: true });
     this.modal = 'detail';
   }
 
@@ -279,6 +304,43 @@ export class InstitutionsComponent implements OnInit {
       next: () => { this.reloadDomaines(); this.showSuccess('Domaine supprimé.'); },
       error: () => this.showError('Erreur lors de la suppression du domaine.'),
     });
+  }
+
+  // ══ Régulateurs / responsables — thèmes (détail institution) ═══
+  get institutionAffectationsRoles(): AffectationRoleOperationnel[] {
+    if (!this.selectedInstitution?.id) return [];
+    return this.affectationsRoles.filter(a => a.institution === this.selectedInstitution!.id);
+  }
+
+  submitRegulateur(): void {
+    if (!this.selectedInstitution?.id || this.regulateurForm.invalid) { this.regulateurForm.markAllAsTouched(); return; }
+    const payload = { ...this.regulateurForm.value, institution: this.selectedInstitution.id };
+    this.affectationRoleService.create(payload).subscribe({
+      next: () => {
+        this.reloadAffectationsRoles();
+        this.showSuccess('Affectation ajoutée.');
+        this.regulateurForm.reset({ actif: true });
+        this.showRegulateurForm = false;
+      },
+      error: () => this.showError("Erreur lors de l'affectation."),
+    });
+  }
+
+  deleteAffectationRole(affectation: AffectationRoleOperationnel): void {
+    if (!affectation.id) return;
+    this.affectationRoleService.delete(affectation.id).subscribe({
+      next: () => { this.reloadAffectationsRoles(); this.showSuccess('Affectation supprimée.'); },
+      error: () => this.showError("Erreur lors de la suppression de l'affectation."),
+    });
+  }
+
+  roleLabel(id: string): string {
+    return this.roles.find(r => r.id === id)?.libelle ?? id.slice(0, 8);
+  }
+
+  competenceLabel(id: string | null): string {
+    if (!id) return 'Aucun thème précisé';
+    return this.competences.find(c => c.id === id)?.nom ?? id.slice(0, 8);
   }
 
   // ══ Types d'institution (référentiel) ═════════════════════════

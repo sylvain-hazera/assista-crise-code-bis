@@ -45,3 +45,15 @@ export interface RoleOperationnel {
   description?: string | null;
   actif: boolean;
 }
+
+export interface AffectationRoleOperationnel {
+  id?: string;
+  utilisateur: string;        // UUID du User
+  institution: string;        // UUID de l'Institution
+  competence: string | null;  // UUID de la Competence — peut être vide juste après activation
+  role: string;                // UUID du RoleOperationnel
+  actif: boolean;
+  date_debut?: string;
+  date_fin?: string | null;
+  commentaire?: string | null;
+}

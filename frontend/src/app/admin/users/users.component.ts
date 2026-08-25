@@ -446,7 +446,8 @@ export class UsersComponent implements OnInit, OnDestroy {
       [UserRole.ADMIN]: 'badge-admin',
       [UserRole.LOCAL_AUTH]: 'badge-local',
       [UserRole.RESCUE]: 'badge-rescue',
-      [UserRole.SIMPLE_USER]: 'badge-simple'
+      [UserRole.SIMPLE_USER]: 'badge-simple',
+      [UserRole.REGULATEUR]: 'badge-regulateur'
     };
     return classes[role] || 'badge-default';
   }

@@ -10,7 +10,6 @@ from .audit import audit_log
 from .auth_validation import InstitutionEmailValidator
 from .models import (
     AffectationRoleOperationnel,
-    Competence,
     ContactInstitution,
     Institution,
     InstitutionDomaine,
@@ -118,9 +117,12 @@ def resolve_or_create_institution_from_annuaire(user, annuaire_match, request=No
 
 def assign_default_institution_role(user, institution=None):
     """Affecte l'utilisateur à un rôle opérationnel par défaut au sein de l'institution
-    (RESPONSABLE si elle n'a encore aucune affectation, REGULATEUR sinon). À défaut d'institution
-    déjà résolue, retombe sur l'ancienne heuristique par nom (moins fiable, conservée pour ne pas
-    régresser les cas non couverts par l'annuaire)."""
+    (RESPONSABLE si elle n'a encore aucune affectation, REGULATEUR sinon), sans thème/compétence
+    assigné — le choix d'une compétence arbitraire (le premier objet de la table) induisait en
+    erreur silencieusement. Les thèmes réels sont précisés ensuite via l'écran dédié
+    (AffectationRoleOperationnelViewSet), qui peut compléter ou dupliquer cette affectation avec
+    une vraie compétence. À défaut d'institution déjà résolue, retombe sur l'ancienne heuristique
+    par nom (moins fiable, conservée pour ne pas régresser les cas non couverts par l'annuaire)."""
     if institution is None:
         institution_name = (user.last_name or '').strip() or user.email
 
@@ -138,14 +140,10 @@ def assign_default_institution_role(user, institution=None):
     if not role:
         role = RoleOperationnel.objects.create(code=role_code, libelle=role_code.title())
 
-    competence = Competence.objects.first()
-    if competence is None:
-        competence = Competence.objects.create(nom='Général', description='Compétence par défaut')
-
     AffectationRoleOperationnel.objects.get_or_create(
         utilisateur=user,
         institution=institution,
-        competence=competence,
+        competence=None,
         role=role,
         defaults={'actif': True}
     )

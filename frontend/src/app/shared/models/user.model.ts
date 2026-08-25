@@ -2,7 +2,8 @@ export enum UserRole {
   ADMIN       = 'ADMIN',
   LOCAL_AUTH  = 'AUT_LOCALE',
   RESCUE      = 'SECOURS',
-  SIMPLE_USER = 'UTIL_SIMPLE'
+  SIMPLE_USER = 'UTIL_SIMPLE',
+  REGULATEUR  = 'REGULATEUR'
 }
 
 // Retourné par l'API en lecture

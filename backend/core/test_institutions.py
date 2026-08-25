@@ -181,7 +181,12 @@ class TestInstitutionAutoAttachment:
         user.refresh_from_db()
         assert user.enabled is True
         assert ContactInstitution.objects.filter(institution=institution, utilisateur=user).exists()
-        assert AffectationRoleOperationnel.objects.filter(institution=institution, utilisateur=user).exists()
+        affectation = AffectationRoleOperationnel.objects.get(institution=institution, utilisateur=user)
+        assert affectation.role.code == 'RESPONSABLE'
+        assert affectation.competence is None, (
+            "aucune compétence arbitraire ne doit être posée automatiquement : "
+            "le responsable la précise ensuite via l'écran dédié"
+        )
 
     def test_activation_is_idempotent(self, api_client, user_data):
         """Cliquer deux fois sur le lien d'activation ne doit pas créer de doublons."""
