@@ -221,7 +221,14 @@
               Membres
               <span class="count-badge">{{ selectedTeam.member_ids.length }}</span>
             </h3>
-            <span class="section-hint">Cliquer pour ajouter / retirer</span>
+            <div class="section-header-actions">
+              @if (selectedTeam.member_ids.length > 0) {
+                <button class="btn-secondary sm" (click)="openPlanning()">
+                  <span class="material-icons">event_available</span> Planning disponibilités
+                </button>
+              }
+              <span class="section-hint">Cliquer pour ajouter / retirer</span>
+            </div>
           </div>
 
           <!-- Recherche membres -->
@@ -284,24 +291,32 @@
               </button>
             </div>
           } @else {
-            <div class="mission-list">
-              @for (m of selectedTeam.missions; track m.id) {
-                <div class="mission-row">
-                  <span class="mk-badge" [class]="missionClass(m.kind)">
-                    <span class="material-icons">{{ missionIcon(m.kind) }}</span>
-                  </span>
-                  <div class="mission-info">
-                    <span class="mission-titre">{{ m.titre }}</span>
-                    <span class="mission-meta">{{ m.kind }} · {{ fmtDate(m.date) }}</span>
-                  </div>
-                  <button class="icon-btn danger sm"
-                    (click)="toggleMission(m.id, m.kind, m.titre, m.statut, m.date)"
-                    title="Retirer cette mission">
-                    <span class="material-icons">remove_circle_outline</span>
-                  </button>
+            @for (group of missionsByKind; track group.kind) {
+              <div class="mission-group">
+                <h4 class="mission-group-title">{{ missionKindLabel(group.kind) }} ({{ group.missions.length }})</h4>
+                <div class="mission-list">
+                  @for (m of group.missions; track m.id) {
+                    <div class="mission-row">
+                      <span class="mk-badge" [class]="missionClass(m.kind)">
+                        <span class="material-icons">{{ missionIcon(m.kind) }}</span>
+                      </span>
+                      <div class="mission-info">
+                        <span class="mission-titre">{{ m.titre }}</span>
+                        <span class="mission-meta">
+                          {{ missionContact(m) }} · {{ fmtDate(m.date) }}
+                          @if (m.statut) { · {{ m.statut }} }
+                        </span>
+                      </div>
+                      <button class="icon-btn danger sm"
+                        (click)="toggleMission(m.id, m.kind, m.titre, m.statut, m.date)"
+                        title="Retirer cette mission">
+                        <span class="material-icons">remove_circle_outline</span>
+                      </button>
+                    </div>
+                  }
                 </div>
-              }
-            </div>
+              </div>
+            }
           }
         </div>
 
@@ -495,6 +510,68 @@
         <button class="btn-ghost" (click)="modal = 'detail'">
           <span class="material-icons">arrow_back</span> Retour
         </button>
+        <button class="btn-primary" (click)="closeModal()">Fermer</button>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- MODAL : PLANNING DISPONIBILITÉS                                -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+@if (modal === 'planning' && selectedTeam) {
+  <div class="modal-overlay" (click)="closeModal()">
+    <div class="modal modal-lg" (click)="$event.stopPropagation()">
+      <div class="modal-header">
+        <h2>
+          <span class="material-icons">event_available</span>
+          Planning — {{ selectedTeam.name }}
+        </h2>
+        <button class="icon-btn" (click)="closeModal()"><span class="material-icons">close</span></button>
+      </div>
+
+      <div class="modal-body">
+        @if (planningColonnes.length === 0) {
+          <div class="no-missions">
+            <span class="material-icons">event_busy</span>
+            <p>Aucun membre de l'équipe n'a déclaré de disponibilité.</p>
+          </div>
+        } @else {
+          <div class="planning-wrapper">
+            <table class="planning-table">
+              <thead>
+                <tr class="planning-jours-row">
+                  <th></th>
+                  @for (col of planningColonnes; track col.date + col.creneau) {
+                    @if (col.creneau === 'MATIN') {
+                      <th class="planning-jour-th" colspan="4">{{ col.jourLabel }}</th>
+                    }
+                  }
+                </tr>
+                <tr>
+                  <th class="planning-membre-th">Membre</th>
+                  @for (col of planningColonnes; track col.date + col.creneau) {
+                    <th class="planning-creneau-th">{{ col.label }}</th>
+                  }
+                </tr>
+              </thead>
+              <tbody>
+                @for (membre of teamMembers; track membre.id) {
+                  <tr>
+                    <td class="planning-membre-td">{{ userName(membre.id) }}</td>
+                    @for (col of planningColonnes; track col.date + col.creneau) {
+                      <td class="planning-cell" [class.dispo-ok]="planningDisponible(membre.id, col.date, col.creneau)"></td>
+                    }
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+          <p class="dispo-cal-legend"><span class="dispo-swatch"></span> Disponible</p>
+        }
+      </div>
+
+      <div class="modal-footer">
         <button class="btn-primary" (click)="closeModal()">Fermer</button>
       </div>
     </div>

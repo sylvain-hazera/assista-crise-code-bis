@@ -428,7 +428,15 @@ export class ReportingComponent implements OnInit, OnDestroy {
       ? team.assigned_offer_ids
       : [...team.assigned_offer_ids, this.selectedRow.id];
 
-    this.teamService.patch(team.id!, { assigned_offer_ids: offerIds }).subscribe({
+    // Affecter l'offre à l'équipe y ajoute aussi la personne qui la propose, sinon on affecte
+    // une "mission" sans jamais rattacher le bénévole lui-même à l'équipe.
+    let memberIds = team.member_ids ?? [];
+    const authorId = this.selectedRow.author;
+    if (authorId && !memberIds.includes(authorId)) {
+      memberIds = [...memberIds, authorId];
+    }
+
+    this.teamService.patch(team.id!, { assigned_offer_ids: offerIds, member_ids: memberIds }).subscribe({
       next: (updated) => {
         const idx = this.teams.findIndex(t => t.id === updated.id);
         if (idx !== -1) this.teams[idx] = updated;

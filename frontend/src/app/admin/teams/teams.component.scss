@@ -256,6 +256,7 @@
 .section-header { display: flex; align-items: center; justify-content: space-between;
                   h3 { margin: 0; } }
 .section-hint { font-size: .75rem; color: var(--muted); }
+.section-header-actions { display: flex; align-items: center; gap: .75rem; }
 h3 { margin: 0; font-size: .9rem; font-weight: 700; display: flex; align-items: center; gap: .4rem;
      .material-icons { font-size: 16px; color: var(--muted); } }
 
@@ -278,6 +279,11 @@ h3 { margin: 0; font-size: .9rem; font-weight: 700; display: flex; align-items: 
 .check-ic { margin-left: auto; font-size: 18px; color: var(--primary); }
 
 // ── Mission list ──────────────────────────────────────────────────
+.mission-group { display: flex; flex-direction: column; gap: .4rem; margin-bottom: .9rem; &:last-child { margin-bottom: 0; } }
+.mission-group-title {
+  margin: 0; font-size: .75rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .4px; color: var(--muted);
+}
 .mission-list { display: flex; flex-direction: column; gap: .4rem; }
 .mission-row {
   display: flex; align-items: center; gap: .75rem; padding: .65rem .85rem;
@@ -327,6 +333,27 @@ h3 { margin: 0; font-size: .9rem; font-weight: 700; display: flex; align-items: 
                 .selected & { color: var(--primary); } }
 .assign-count { font-size: .85rem; color: var(--muted); margin-right: auto; }
 .empty-tab { font-size: .87rem; color: var(--muted); text-align: center; padding: 1.5rem; margin: 0; }
+
+// ── Planning disponibilités ───────────────────────────────────────
+.planning-wrapper { overflow-x: auto; }
+.planning-table {
+  width: 100%; border-collapse: collapse; font-size: .82rem;
+
+  th, td { padding: .35rem .5rem; text-align: center; border: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 600; background: #f8fafc; }
+
+  .planning-jour-th { text-transform: capitalize; }
+  .planning-membre-th, .planning-membre-td {
+    text-align: left; white-space: nowrap; font-weight: 600; color: var(--text);
+  }
+  .planning-cell { background: #f8fafc; &.dispo-ok { background: #22c55e; } }
+}
+
+.dispo-cal-legend {
+  display: flex; align-items: center; gap: .4rem;
+  margin: .6rem 0 0; font-size: .8rem; color: var(--muted);
+  .dispo-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; background: #22c55e; }
+}
 
 // ── Delete modal ──────────────────────────────────────────────────
 .delete-body { text-align: center; gap: .75rem;

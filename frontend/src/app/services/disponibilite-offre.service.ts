@@ -14,6 +14,10 @@ export class DisponibiliteOffreService {
     return this.http.get<DisponibiliteOffre[]>(`${this.apiUrl}/`, { params: { offer: offerId } });
   }
 
+  getAll(): Observable<DisponibiliteOffre[]> {
+    return this.http.get<DisponibiliteOffre[]>(`${this.apiUrl}/`);
+  }
+
   create(payload: DisponibiliteOffrePayload): Observable<DisponibiliteOffre> {
     return this.http.post<DisponibiliteOffre>(`${this.apiUrl}/`, payload);
   }

@@ -8,6 +8,7 @@ import { UserService }       from '../../services/user.service';
 import { CrisisService }     from '../../services/crisis.service';
 import { OfferService }      from '../../services/offer.service';
 import { RequestService }    from '../../services/request.service';
+import { DisponibiliteOffreService } from '../../services/disponibilite-offre.service';
 
 import { Team, TeamMission }  from '../../shared/models/team.model';
 import { User }        from '../../shared/models/user.model';
@@ -15,8 +16,9 @@ import { Crisis }              from '../../shared/models/crisis.model';
 import { Offer }              from '../../shared/models/offer.model';
 import { Request }            from '../../shared/models/request.model';
 import { Status }             from '../../shared/models/status.model';
+import { DisponibiliteOffre } from '../../shared/models/disponibilite-offre.model';
 
-type ModalView = 'none' | 'create' | 'detail' | 'edit' | 'delete' | 'assign';
+type ModalView = 'none' | 'create' | 'detail' | 'edit' | 'delete' | 'assign' | 'planning';
 type AssignTab = 'Crisis' | 'Offer' | 'Request';
 
 const COLORS = ['#ef4444','#f97316','#eab308','#22c55e','#06b6d4','#3b82f6','#8b5cf6','#ec4899'];
@@ -36,6 +38,7 @@ export class TeamsComponent implements OnInit {
   crisis:   Crisis[]       = [];
   offers:   Offer[]       = [];
   requests: Request[]     = [];
+  disponibilites: DisponibiliteOffre[] = [];
 
   // ── UI ──────────────────────────────────────────────────────
   isLoading      = true;
@@ -66,6 +69,7 @@ export class TeamsComponent implements OnInit {
     private crisisService:  CrisisService,
     private offerService:   OfferService,
     private requestService: RequestService,
+    private disponibiliteOffreService: DisponibiliteOffreService,
   ) {}
 
   ngOnInit(): void {
@@ -82,12 +86,14 @@ export class TeamsComponent implements OnInit {
       offers:   this.offerService.getAll(),
       requests: this.requestService.getAll(),
       teams:    this.teamService.getAll(),       // ← ajouté ici
+      disponibilites: this.disponibiliteOffreService.getAll(),
     }).subscribe({
-      next: ({ users, crisis, offers, requests, teams }) => {
+      next: ({ users, crisis, offers, requests, teams, disponibilites }) => {
         this.users    = users;
         this.crisis   = crisis;
         this.offers   = offers;
         this.requests = requests;
+        this.disponibilites = disponibilites;
         this.teams    = teams.map(t => ({ ...t, missions: this.buildMissions(t) }));
         this.isLoading = false;
       },
@@ -241,10 +247,21 @@ export class TeamsComponent implements OnInit {
     const offerIds   = missions.filter(m => m.kind === 'Offer').map(m => m.id);
     const requestIds = missions.filter(m => m.kind === 'Request').map(m => m.id);
 
+    // Affecter une offre à l'équipe y ajoute aussi la personne qui la propose : sinon on
+    // affecte une "mission" sans jamais rattacher le bénévole lui-même à l'équipe.
+    let memberIds = team.member_ids ?? [];
+    if (!exists && kind === 'Offer') {
+      const authorId = this.offers.find(o => o.id === id)?.author;
+      if (authorId && !memberIds.includes(authorId)) {
+        memberIds = [...memberIds, authorId];
+      }
+    }
+
     this.teamService.patch(team.id!, {
       assigned_crisis_ids:  crisisIds,
       assigned_offer_ids:   offerIds,
       assigned_request_ids: requestIds,
+      member_ids:           memberIds,
     }).subscribe(updated => {
       this.selectedTeam = { ...updated, missions };
       this.reloadTeams();
@@ -281,6 +298,33 @@ export class TeamsComponent implements OnInit {
     return { Crisis: 'mk-crisis', Offer: 'mk-offer', Request: 'mk-request' }[kind];
   }
 
+  missionKindLabel(kind: TeamMission['kind']): string {
+    return { Crisis: 'Crises', Offer: "Offres d'aide", Request: "Demandes d'aide" }[kind];
+  }
+
+  /** Missions groupées par type (crises / offres / demandes) pour ne pas tout mélanger dans une
+   * même liste plate. */
+  get missionsByKind(): { kind: TeamMission['kind']; missions: TeamMission[] }[] {
+    if (!this.selectedTeam) return [];
+    return (['Crisis', 'Offer', 'Request'] as TeamMission['kind'][])
+      .map(kind => ({ kind, missions: this.selectedTeam!.missions.filter(m => m.kind === kind) }))
+      .filter(g => g.missions.length > 0);
+  }
+
+  /** Résumé rapide sous le titre d'une mission : contact + statut, pour ne pas avoir à ouvrir
+   * l'offre/la demande pour savoir qui l'a déclarée. */
+  missionContact(m: TeamMission): string {
+    if (m.kind === 'Offer') {
+      const o = this.offers.find(o => o.id === m.id);
+      return o ? `${o.first_name_offer} ${o.last_name_offer}` : '—';
+    }
+    if (m.kind === 'Request') {
+      const r = this.requests.find(r => r.id === m.id);
+      return r ? `${r.first_name_request} ${r.last_name_request}` : '—';
+    }
+    return '—';
+  }
+
   get filteredTeams(): Team[] {
     const q = this.searchQuery.trim().toLowerCase();
     if (!q) return this.teams;
@@ -296,6 +340,48 @@ export class TeamsComponent implements OnInit {
 
   get leaderName(): string {
     return this.selectedTeam?.leader ? this.userName(this.selectedTeam.leader) : '—';
+  }
+
+  // ── PLANNING DISPONIBILITÉS ─────────────────────────────────────
+  openPlanning(): void {
+    this.modal = 'planning';
+  }
+
+  private readonly CRENEAUX: { creneau: string; label: string }[] = [
+    { creneau: 'MATIN', label: 'Matin' },
+    { creneau: 'MIDI', label: 'Midi' },
+    { creneau: 'SOIR', label: 'Soir' },
+    { creneau: 'NUIT', label: 'Nuit' },
+  ];
+
+  /** Disponibilités déclarées par un membre : celles de toutes les offres d'aide dont il est
+   * l'auteur (les disponibilités sont rattachées à une offre, pas directement à l'utilisateur). */
+  private disposForMember(userId: string): DisponibiliteOffre[] {
+    const offerIds = new Set(this.offers.filter(o => o.author === userId).map(o => o.id));
+    return this.disponibilites.filter(d => offerIds.has(d.offer));
+  }
+
+  /** Colonnes du planning : une par (date, créneau) réellement déclaré par au moins un membre,
+   * triées par date puis par ordre matin→nuit. */
+  get planningColonnes(): { date: string; creneau: string; label: string; jourLabel: string }[] {
+    if (!this.selectedTeam) return [];
+    const dateSet = new Set<string>();
+    for (const member of this.teamMembers) {
+      for (const d of this.disposForMember(member.id)) dateSet.add(d.date);
+    }
+    const dates = [...dateSet].sort();
+    const colonnes: { date: string; creneau: string; label: string; jourLabel: string }[] = [];
+    for (const date of dates) {
+      const jourLabel = new Date(date).toLocaleDateString('fr-FR', { weekday: 'short', day: '2-digit', month: '2-digit' });
+      for (const c of this.CRENEAUX) {
+        colonnes.push({ date, creneau: c.creneau, label: c.label, jourLabel });
+      }
+    }
+    return colonnes;
+  }
+
+  planningDisponible(memberId: string, date: string, creneau: string): boolean {
+    return this.disposForMember(memberId).some(d => d.date === date && d.creneau === creneau);
   }
   private showSuccess(msg: string): void {
     this.successMessage = msg;
