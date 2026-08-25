@@ -127,16 +127,16 @@
               </tbody>
             </table>
 
-            @if (myInstitutions.length > 0) {
+            @if (selectableInstitutions.length > 0) {
               @if (!showImpliqueForm) {
                 <button class="btn-secondary sm" (click)="showImpliqueForm = true">
-                  <span class="material-icons">add</span> Je suis impliqué
+                  <span class="material-icons">add</span> {{ isAdmin ? 'Déclarer une institution impliquée' : 'Je suis impliqué' }}
                 </button>
               } @else {
                 <form class="inline-form" [formGroup]="impliqueForm" (ngSubmit)="submitImplique()">
                   <select formControlName="institution">
-                    <option [ngValue]="null">— Mon institution —</option>
-                    @for (inst of myInstitutions; track inst.id) {
+                    <option [ngValue]="null">{{ isAdmin ? '— Institution —' : '— Mon institution —' }}</option>
+                    @for (inst of selectableInstitutions; track inst.id) {
                       <option [ngValue]="inst.id">{{ inst.nom }}</option>
                     }
                   </select>
@@ -144,6 +144,81 @@
                   <button class="btn-primary sm" type="submit">Confirmer</button>
                   <button class="btn-secondary sm" type="button" (click)="showImpliqueForm = false">Annuler</button>
                 </form>
+              }
+            }
+
+            @if (selectableInstitutions.length > 0) {
+              @if (!showActeurDirectForm) {
+                <button class="btn-secondary sm" (click)="showActeurDirectForm = true">
+                  <span class="material-icons">group_add</span> Déclarer une institution actrice
+                </button>
+              } @else {
+                <div class="inline-form-block">
+                  <div class="select-wrapper">
+                    <select [ngModel]="acteurDirectInstitutionId" [ngModelOptions]="{standalone: true}"
+                            (ngModelChange)="onActeurDirectInstitutionChange($event)">
+                      <option [ngValue]="null">{{ isAdmin ? '— Institution —' : '— Mon institution —' }}</option>
+                      @for (inst of selectableInstitutions; track inst.id) {
+                        <option [ngValue]="inst.id">{{ inst.nom }}</option>
+                      }
+                    </select>
+                    <span class="material-icons select-arrow">arrow_drop_down</span>
+                  </div>
+
+                  <div class="checkbox-group">
+                    <span class="checkbox-group-label">Thèmes à l'écoute</span>
+                    @for (besoin of besoins; track besoin.id) {
+                      <label class="checkbox-label">
+                        <input type="checkbox"
+                               [checked]="acteurDirectThemes.includes(besoin.id)"
+                               (change)="toggleActeurDirectTheme(besoin.id, $any($event.target).checked)">
+                        <span>{{ besoin.nom }}</span>
+                      </label>
+                    }
+                  </div>
+
+                  <div class="checkbox-group">
+                    <span class="checkbox-group-label">Responsable / régulateur</span>
+                    <label class="checkbox-label">
+                      <input type="radio" name="crisesResponsableMode"
+                             [checked]="responsableMode === 'moi'" (change)="responsableMode = 'moi'">
+                      <span>Moi-même</span>
+                    </label>
+                    @if (acteurDirectContacts.length > 0) {
+                      <label class="checkbox-label">
+                        <input type="radio" name="crisesResponsableMode"
+                               [checked]="responsableMode === 'contact'" (change)="responsableMode = 'contact'">
+                        <span>Un contact existant de l'institution</span>
+                      </label>
+                    }
+                    <label class="checkbox-label">
+                      <input type="radio" name="crisesResponsableMode"
+                             [checked]="responsableMode === 'email'" (change)="responsableMode = 'email'">
+                      <span>Inviter par email</span>
+                    </label>
+
+                    @if (responsableMode === 'contact') {
+                      <div class="select-wrapper">
+                        <select [(ngModel)]="responsableContactId" [ngModelOptions]="{standalone: true}">
+                          <option [ngValue]="null">— Choisir un contact —</option>
+                          @for (contact of acteurDirectContacts; track contact.id) {
+                            <option [ngValue]="contact.utilisateur">{{ contact.utilisateur_nom || contact.utilisateur_email }}</option>
+                          }
+                        </select>
+                        <span class="material-icons select-arrow">arrow_drop_down</span>
+                      </div>
+                    }
+                    @if (responsableMode === 'email') {
+                      <input type="email" placeholder="email@exemple.fr"
+                             [(ngModel)]="responsableEmail" [ngModelOptions]="{standalone: true}">
+                    }
+                  </div>
+
+                  <div class="inline-form">
+                    <button class="btn-primary sm" (click)="submitActeurDirect()" [disabled]="!acteurDirectInstitutionId">Confirmer</button>
+                    <button class="btn-secondary sm" (click)="showActeurDirectForm = false">Annuler</button>
+                  </div>
+                </div>
               }
             }
           </section>
@@ -174,16 +249,16 @@
               </tbody>
             </table>
 
-            @if (myInstitutions.length > 0) {
+            @if (selectableInstitutions.length > 0) {
               @if (!showActeurForm) {
                 <button class="btn-secondary sm" (click)="showActeurForm = true">
-                  <span class="material-icons">add_location_alt</span> Je suis acteur
+                  <span class="material-icons">add_location_alt</span> {{ isAdmin ? 'Déclarer un point opérationnel' : 'Je suis acteur' }}
                 </button>
               } @else {
                 <form class="inline-form" [formGroup]="acteurForm" (ngSubmit)="submitActeur()">
                   <select formControlName="institution">
-                    <option [ngValue]="null">— Mon institution —</option>
-                    @for (inst of myInstitutions; track inst.id) {
+                    <option [ngValue]="null">{{ isAdmin ? '— Institution —' : '— Mon institution —' }}</option>
+                    @for (inst of selectableInstitutions; track inst.id) {
                       <option [ngValue]="inst.id">{{ inst.nom }}</option>
                     }
                   </select>

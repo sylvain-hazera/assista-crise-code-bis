@@ -221,3 +221,55 @@
     font-size: .85rem;
   }
 }
+
+.inline-form-block {
+  display: flex;
+  flex-direction: column;
+  gap: .75rem;
+  padding: .75rem;
+  background: #f9fafb;
+  border-radius: 8px;
+
+  select, input[type="text"], input[type="email"] {
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    padding: .4rem .55rem;
+    font-size: .85rem;
+    width: 100%;
+  }
+}
+
+.select-wrapper {
+  position: relative;
+
+  select { appearance: none; padding-right: 1.75rem !important; }
+
+  .select-arrow {
+    position: absolute;
+    right: .4rem;
+    top: 50%;
+    transform: translateY(-50%);
+    pointer-events: none;
+    color: #6b7280;
+  }
+}
+
+.checkbox-group {
+  display: flex;
+  flex-direction: column;
+  gap: .3rem;
+
+  .checkbox-group-label {
+    font-size: .8rem;
+    font-weight: 600;
+    color: #374151;
+  }
+
+  .checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+    font-size: .85rem;
+    cursor: pointer;
+  }
+}

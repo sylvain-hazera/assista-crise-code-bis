@@ -263,7 +263,12 @@ class TestImplicationThemesEtResponsable:
         assert len(mail.outbox) == 1
         assert invited.email in mail.outbox[0].to
 
-    def test_responsable_must_be_contact_of_declared_institution(self, local_authority_client, institution, create_user):
+    def test_designating_a_non_contact_as_responsable_attaches_and_promotes_them(
+        self, local_authority_client, institution, create_user
+    ):
+        """Désigner un utilisateur existant comme responsable en fait de facto un contact de
+        l'institution, même s'il n'en était pas encore membre (ex: admin désignant quelqu'un
+        pour une institution à laquelle il n'appartient pas lui-même)."""
         client, _ = local_authority_client
         crisis = Crisis.objects.create(**CRISIS_PAYLOAD)
         outsider = create_user(username="outsider@test.fr", email="outsider@test.fr", type="UTIL_SIMPLE")
@@ -281,9 +286,24 @@ class TestImplicationThemesEtResponsable:
 
         assert response.status_code == status.HTTP_201_CREATED
         implication = ImplicationInstitution.objects.get(id=response.data["id"])
-        assert implication.responsable is None
+        assert implication.responsable == outsider
+        assert ContactInstitution.objects.filter(institution=institution, utilisateur=outsider, actif=True).exists()
         outsider.refresh_from_db()
-        assert outsider.type == UserRole.SIMPLE_USER
+        assert outsider.type == UserRole.REGULATEUR
+
+    def test_admin_can_declare_implication_for_a_foreign_institution(self, admin_client, institution):
+        """Un ADMIN (contrairement à un acteur institutionnel classique) peut déclarer
+        l'implication de n'importe quelle institution, pas seulement la sienne."""
+        client, _ = admin_client
+        crisis = Crisis.objects.create(**CRISIS_PAYLOAD)
+
+        response = client.post(
+            reverse('implicationinstitution-list'),
+            {"crise": str(crisis.id), "institution": str(institution.id), "type_implication": "ACTEUR"},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
 
 
 @pytest.mark.django_db
@@ -309,6 +329,29 @@ class TestPointOperationnelActeur:
         point = PointOperationnel.objects.get(id=response.data["id"])
         assert point.responsable == user
 
+        assert ImplicationInstitution.objects.filter(
+            crise=crisis, institution=institution, type_implication=TypeImplication.ACTEUR
+        ).exists()
+
+    def test_admin_can_declare_point_for_a_chosen_institution(self, admin_client, institution):
+        """Un admin n'a pas de rattachement personnel à une institution : l'institution doit être
+        prise depuis le champ explicite du payload, pas devinée depuis ses propres contacts."""
+        client, admin = admin_client
+        crisis = Crisis.objects.create(**CRISIS_PAYLOAD)
+        point_type = PointType.objects.create(code="COLLECTE_TEST2", libelle="Point de collecte (test 2)")
+
+        response = client.post(
+            reverse('pointoperationnel-list'),
+            {
+                "nom": "Collecte gymnase municipal",
+                "type": str(point_type.id),
+                "crise": str(crisis.id),
+                "institution": str(institution.id),
+            },
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
         assert ImplicationInstitution.objects.filter(
             crise=crisis, institution=institution, type_implication=TypeImplication.ACTEUR
         ).exists()

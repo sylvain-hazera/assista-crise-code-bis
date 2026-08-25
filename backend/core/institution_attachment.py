@@ -190,8 +190,13 @@ def attach_user_to_institution(user, request=None):
 
 def resolve_or_invite_responsable(responsable_id, responsable_email, institution, request=None):
     """Résout le responsable/régulateur déclaré pour l'implication d'une institution sur une
-    crise : soit un contact déjà rattaché à l'institution (par id), soit une invitation par email
-    (un compte inactif est créé s'il n'existe pas encore).
+    crise : soit un utilisateur déjà existant désigné par id, soit une invitation par email (un
+    compte inactif est créé s'il n'existe pas encore). Dans les deux cas, le rattachement à
+    `institution` (ContactInstitution) est créé s'il n'existe pas déjà — désigner quelqu'un comme
+    responsable pour l'institution en fait de facto un contact de celle-ci, qu'il en était déjà
+    membre ou non. L'appelant (perform_create de la vue) est déjà responsable de vérifier que le
+    déclarant a le droit d'agir pour `institution` (membre ou administrateur) avant d'appeler
+    cette fonction : elle ne revérifie pas cette appartenance.
 
     Retourne (user, invited) où `invited` indique qu'un nouveau compte vient d'être créé et
     qu'un email d'activation doit être envoyé par l'appelant — ce module ignore volontairement
@@ -202,13 +207,21 @@ def resolve_or_invite_responsable(responsable_id, responsable_email, institution
             user = User.objects.get(pk=responsable_id)
         except User.DoesNotExist:
             return None, False
-        if not ContactInstitution.objects.filter(
-            institution=institution, utilisateur=user, actif=True
-        ).exists():
-            return None, False
         if user.type == UserRole.SIMPLE_USER:
             user.type = UserRole.REGULATEUR
             user.save(update_fields=['type'])
+        contact, contact_created = ContactInstitution.objects.get_or_create(
+            institution=institution, utilisateur=user,
+            defaults={'fonction': 'Régulateur de crise', 'actif': True},
+        )
+        if contact_created and request is not None:
+            audit_log(
+                request=request,
+                action_code="CREATION",
+                objet_type="ContactInstitution",
+                objet_id=contact.id,
+                commentaire=f"Rattachement de {user.email} comme régulateur pour {institution.nom}",
+            )
         return user, False
 
     email = (responsable_email or '').strip().lower()

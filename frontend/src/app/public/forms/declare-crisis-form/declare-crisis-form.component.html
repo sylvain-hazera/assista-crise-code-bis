@@ -207,15 +207,20 @@
                 </div>
             </div>
 
-            @if (myInstitutions.length > 0) {
+            @if (selectableInstitutions.length > 0) {
             <div class="form-section">
-                <h2 class="section-title">Votre institution sur cette crise</h2>
+                <h2 class="section-title">Institution actrice sur cette crise</h2>
                 <p class="section-description">
+                @if (isAdmin) {
+                En tant qu'administrateur, choisissez l'institution concernée, les besoins sur
+                lesquels elle est à l'écoute et son responsable/régulateur.
+                } @else {
                 Déclarez sur quels besoins votre institution est à l'écoute pour cette crise,
                 et désignez un responsable/régulateur.
+                }
                 </p>
 
-                @if (myInstitutions.length > 1) {
+                @if (isAdmin || selectableInstitutions.length > 1) {
                 <div class="form-group">
                     <label class="form-label">Institution</label>
                     <div class="select-wrapper">
@@ -223,7 +228,7 @@
                                 [ngModelOptions]="{standalone: true}"
                                 (ngModelChange)="onInstitutionChange($event)">
                             <option [ngValue]="null">— Choisir —</option>
-                            @for (inst of myInstitutions; track inst.id) {
+                            @for (inst of selectableInstitutions; track inst.id) {
                                 <option [ngValue]="inst.id">{{ inst.nom }}</option>
                             }
                         </select>

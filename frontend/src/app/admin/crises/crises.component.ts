@@ -10,13 +10,18 @@ import { PointOperationnelService } from '../../services/point-operationnel.serv
 import { PointTypeService } from '../../services/point-type.service';
 import { ContactInstitutionService } from '../../services/contact-institution.service';
 import { InstitutionService } from '../../services/institution.service';
+import { BesoinService } from '../../services/besoin.service';
 import { AuthService } from '../../auth/services/auth.service';
 
 import { Crisis } from '../../shared/models/crisis.model';
 import { ImplicationInstitution } from '../../shared/models/implication.model';
 import { PointOperationnel, PointType } from '../../shared/models/point-operationnel.model';
 import { ContactInstitution, Institution } from '../../shared/models/institution.model';
+import { Besoin } from '../../shared/models/besoin.model';
+import { UserRole } from '../../shared/models/user.model';
 import { ZoneMapComponent } from '../../shared/components/common/zone-map/zone-map.component';
+
+type ResponsableMode = 'moi' | 'contact' | 'email';
 
 type ModalView = 'none' | 'detail';
 
@@ -35,6 +40,8 @@ export class CrisesComponent implements OnInit {
   pointTypes: PointType[] = [];
   institutions: Institution[] = [];
   myContacts: ContactInstitution[] = [];
+  allContacts: ContactInstitution[] = [];
+  besoins: Besoin[] = [];
 
   isLoading = true;
   errorMessage = '';
@@ -46,10 +53,19 @@ export class CrisesComponent implements OnInit {
 
   showImpliqueForm = false;
   showActeurForm = false;
+  showActeurDirectForm = false;
   showZoneEditor = false;
   pendingZoneWkt: string | null = null;
   impliqueForm!: FormGroup;
   acteurForm!: FormGroup;
+
+  // ── Déclarer une institution actrice (thèmes + responsable) ────
+  acteurDirectInstitutionId: string | null = null;
+  acteurDirectThemes: string[] = [];
+  acteurDirectContacts: ContactInstitution[] = [];
+  responsableMode: ResponsableMode = 'moi';
+  responsableContactId: string | null = null;
+  responsableEmail = '';
 
   constructor(
     private fb: FormBuilder,
@@ -60,6 +76,7 @@ export class CrisesComponent implements OnInit {
     private pointTypeService: PointTypeService,
     private contactService: ContactInstitutionService,
     private institutionService: InstitutionService,
+    private besoinService: BesoinService,
     private authService: AuthService,
   ) {}
 
@@ -90,13 +107,16 @@ export class CrisesComponent implements OnInit {
       pointTypes: this.pointTypeService.getAll(),
       institutions: this.institutionService.getAll(),
       contacts: this.contactService.getAll(),
+      besoins: this.besoinService.getAll(),
     }).subscribe({
-      next: ({ crises, implications, points, pointTypes, institutions, contacts }) => {
+      next: ({ crises, implications, points, pointTypes, institutions, contacts, besoins }) => {
         this.crises = crises;
         this.implications = implications;
         this.points = points;
         this.pointTypes = pointTypes;
         this.institutions = institutions;
+        this.allContacts = contacts;
+        this.besoins = besoins;
         const me = this.authService.getCurrentUser();
         this.myContacts = me ? contacts.filter(c => c.utilisateur === me.id && c.actif) : [];
         this.isLoading = false;
@@ -148,10 +168,17 @@ export class CrisesComponent implements OnInit {
     this.selectedCrisis = crisis;
     this.showImpliqueForm = false;
     this.showActeurForm = false;
+    this.showActeurDirectForm = false;
     this.showZoneEditor = false;
     this.pendingZoneWkt = crisis.zone ?? null;
     this.impliqueForm.reset({ institution: this.defaultInstitutionId() });
     this.acteurForm.reset({ institution: this.defaultInstitutionId() });
+    this.acteurDirectInstitutionId = null;
+    this.acteurDirectThemes = [];
+    this.acteurDirectContacts = [];
+    this.responsableMode = 'moi';
+    this.responsableContactId = null;
+    this.responsableEmail = '';
     this.modal = 'detail';
   }
 
@@ -188,8 +215,62 @@ export class CrisesComponent implements OnInit {
     return this.institutions.filter(i => ids.has(i.id!));
   }
 
+  get isAdmin(): boolean {
+    return this.authService.getCurrentUser()?.type === UserRole.ADMIN;
+  }
+
+  /** Un admin peut déclarer/désigner un responsable pour n'importe quelle institution ; un
+   * acteur institutionnel reste limité aux siennes. */
+  get selectableInstitutions(): Institution[] {
+    return this.isAdmin ? this.institutions : this.myInstitutions;
+  }
+
   institutionName(id: string): string {
     return this.institutions.find(i => i.id === id)?.nom ?? id.slice(0, 8);
+  }
+
+  // ── Déclarer une institution actrice (thèmes + responsable) ────
+  onActeurDirectInstitutionChange(id: string): void {
+    this.acteurDirectInstitutionId = id || null;
+    this.acteurDirectContacts = this.acteurDirectInstitutionId
+      ? this.allContacts.filter(c => c.institution === this.acteurDirectInstitutionId && c.actif)
+      : [];
+    this.responsableContactId = null;
+  }
+
+  toggleActeurDirectTheme(besoinId: string, checked: boolean): void {
+    this.acteurDirectThemes = checked
+      ? [...this.acteurDirectThemes, besoinId]
+      : this.acteurDirectThemes.filter(id => id !== besoinId);
+  }
+
+  submitActeurDirect(): void {
+    if (!this.selectedCrisis || !this.acteurDirectInstitutionId) return;
+
+    const payload: any = {
+      crise: this.selectedCrisis.id,
+      institution: this.acteurDirectInstitutionId,
+      type_implication: 'ACTEUR',
+      themes: this.acteurDirectThemes,
+    };
+
+    const me = this.authService.getCurrentUser();
+    if (this.responsableMode === 'moi' && me) {
+      payload.responsable = me.id;
+    } else if (this.responsableMode === 'contact' && this.responsableContactId) {
+      payload.responsable = this.responsableContactId;
+    } else if (this.responsableMode === 'email' && this.responsableEmail.trim()) {
+      payload.responsable_email = this.responsableEmail.trim();
+    }
+
+    this.implicationService.create(payload).subscribe({
+      next: () => {
+        this.reloadImplications();
+        this.showSuccess('Institution déclarée actrice.');
+        this.showActeurDirectForm = false;
+      },
+      error: () => this.showError("Impossible d'enregistrer cette déclaration."),
+    });
   }
 
   // ── Je suis impliqué ─────────────────────────────────────────
@@ -227,6 +308,7 @@ export class CrisesComponent implements OnInit {
       type,
       nom,
       adresse: adresse || undefined,
+      institution: institution || undefined,
     }).subscribe({
       next: () => {
         this.reloadPoints();

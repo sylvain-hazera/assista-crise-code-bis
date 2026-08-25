@@ -17,6 +17,7 @@ import { BesoinService } from '../../../services/besoin.service';
 import { ImplicationService } from '../../../services/implication.service';
 import { ContactInstitution, Institution } from '../../../shared/models/institution.model';
 import { Besoin } from '../../../shared/models/besoin.model';
+import { UserRole } from '../../../shared/models/user.model';
 
 type ResponsableMode = 'moi' | 'contact' | 'email';
 
@@ -38,10 +39,18 @@ export class DeclareCrisisFormComponent implements OnInit{
   }
 
   // ── Institution déclarante / thèmes / responsable ──────────────
+  isAdmin = false;
   myInstitutions: Institution[] = [];
+  allInstitutions: Institution[] = [];
   private allContacts: ContactInstitution[] = [];
   institutionContacts: ContactInstitution[] = [];
   besoins: Besoin[] = [];
+
+  /** Un admin (pas rattaché à une institution) peut déclarer pour n'importe laquelle ;
+   * un acteur institutionnel reste limité aux siennes. */
+  get selectableInstitutions(): Institution[] {
+    return this.isAdmin ? this.allInstitutions : this.myInstitutions;
+  }
 
   selectedInstitutionId: string | null = null;
   selectedThemes: string[] = [];
@@ -111,13 +120,15 @@ export class DeclareCrisisFormComponent implements OnInit{
     }).subscribe({
       next: ({ contacts, institutions, besoins }) => {
         this.allContacts = contacts;
+        this.allInstitutions = institutions;
         this.besoins = besoins;
         const me = this.authService.getCurrentUser();
+        this.isAdmin = me?.type === UserRole.ADMIN;
         const myInstitutionIds = new Set(
           contacts.filter(c => c.utilisateur === me?.id && c.actif).map(c => c.institution)
         );
         this.myInstitutions = institutions.filter(i => myInstitutionIds.has(i.id!));
-        if (this.myInstitutions.length === 1) {
+        if (!this.isAdmin && this.myInstitutions.length === 1) {
           this.onInstitutionChange(this.myInstitutions[0].id!);
         }
       },

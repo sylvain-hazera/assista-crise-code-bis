@@ -26,4 +26,5 @@ export interface PointOperationnelPayload {
   crise: string;
   adresse?: string;
   commentaire?: string;
+  institution?: string;
 }

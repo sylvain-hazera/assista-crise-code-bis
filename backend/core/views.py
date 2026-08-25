@@ -2070,15 +2070,32 @@ class PointOperationnelViewSet(
         )
 
         # Devenir responsable d'un point sur une crise vaut déclaration "acteur" pour
-        # l'institution de l'utilisateur — pas besoin de le déclarer une seconde fois.
+        # l'institution — pas besoin de le déclarer une seconde fois. `institution` n'est pas un
+        # champ de PointOperationnel : c'est un choix fait dans le formulaire de création, lu
+        # directement depuis le payload. Si l'utilisateur n'a pas le droit de déclarer pour cette
+        # institution (pas contact, pas admin), on retombe sur l'ancienne heuristique (son propre
+        # rattachement) plutôt que d'échouer silencieusement.
         if point.crise_id:
-            contact = ContactInstitution.objects.filter(
-                utilisateur=self.request.user, actif=True
-            ).select_related("institution").first()
-            if contact:
+            institution = None
+            institution_id = self.request.data.get('institution')
+            if institution_id:
+                candidate = Institution.objects.filter(pk=institution_id).first()
+                is_own = candidate and ContactInstitution.objects.filter(
+                    utilisateur=self.request.user, institution=candidate, actif=True
+                ).exists()
+                if candidate and (is_own or self.request.user.type == UserRole.ADMINISTRATOR):
+                    institution = candidate
+
+            if institution is None:
+                contact = ContactInstitution.objects.filter(
+                    utilisateur=self.request.user, actif=True
+                ).select_related("institution").first()
+                institution = contact.institution if contact else None
+
+            if institution:
                 implication, created = ImplicationInstitution.objects.get_or_create(
                     crise=point.crise,
-                    institution=contact.institution,
+                    institution=institution,
                     type_implication=TypeImplication.ACTEUR,
                     defaults={"utilisateur": self.request.user, "actif": True},
                 )
@@ -2090,7 +2107,7 @@ class PointOperationnelViewSet(
                         objet_id=implication.id,
                         crise=point.crise,
                         commentaire=(
-                            f"{contact.institution.nom} déclarée acteur sur la crise "
+                            f"{institution.nom} déclarée acteur sur la crise "
                             f"{point.crise.name} (gestion de {point.nom})"
                         ),
                     )
