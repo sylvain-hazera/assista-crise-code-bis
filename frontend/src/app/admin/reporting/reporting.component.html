@@ -345,12 +345,31 @@
         @if (selectedRow.kind === 'Offer') {
           <div class="detail-section">
             <h3>Disponibilités</h3>
-            @if (dispoParJour.length > 0) {
-              <ul class="dispo-list">
-                @for (jour of dispoParJour; track jour.label) {
-                  <li><strong>{{ jour.label }}</strong> : {{ jour.creneaux.join(', ') }}</li>
-                }
-              </ul>
+            @if (dispoCalendrier.length > 0) {
+              <div class="dispo-cal-wrapper">
+                <table class="dispo-cal">
+                  <thead>
+                    <tr>
+                      <th></th>
+                      <th>Matin</th>
+                      <th>Midi</th>
+                      <th>Soir</th>
+                      <th>Nuit</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (jour of dispoCalendrier; track jour.label) {
+                      <tr>
+                        <td class="dispo-cal-jour">{{ jour.label }}</td>
+                        @for (slot of jour.creneaux; track slot.creneau) {
+                          <td class="dispo-cal-cell" [class.dispo-ok]="slot.disponible"></td>
+                        }
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+                <p class="dispo-cal-legend"><span class="dispo-swatch"></span> Disponible</p>
+              </div>
             } @else {
               <p class="empty-text">Aucune disponibilité déclarée.</p>
             }

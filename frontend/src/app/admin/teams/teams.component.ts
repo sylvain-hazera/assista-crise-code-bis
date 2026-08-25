@@ -88,7 +88,7 @@ export class TeamsComponent implements OnInit {
         this.crisis   = crisis;
         this.offers   = offers;
         this.requests = requests;
-        this.teams    = teams.map(t => ({ ...t, missions: t.missions ?? [] }));
+        this.teams    = teams.map(t => ({ ...t, missions: this.buildMissions(t) }));
         this.isLoading = false;
       },
       error: () => {
@@ -98,9 +98,29 @@ export class TeamsComponent implements OnInit {
     });
   }
 
+  /** Reconstruit les missions affichées à partir des ids réellement assignés côté backend
+   * (assigned_crisis_ids/assigned_offer_ids/assigned_request_ids) — `missions` n'est jamais
+   * renvoyé tel quel par l'API, c'est une projection locale pour l'affichage. */
+  private buildMissions(team: Team): TeamMission[] {
+    const missions: TeamMission[] = [];
+    for (const id of team.assigned_crisis_ids ?? []) {
+      const c = this.crisis.find(c => c.id === id);
+      if (c) missions.push({ id, kind: 'Crisis', titre: c.name, statut: c.status, date: c.start_date });
+    }
+    for (const id of team.assigned_offer_ids ?? []) {
+      const o = this.offers.find(o => o.id === id);
+      if (o) missions.push({ id, kind: 'Offer', titre: o.title, statut: o.status, date: o.created_at });
+    }
+    for (const id of team.assigned_request_ids ?? []) {
+      const r = this.requests.find(r => r.id === id);
+      if (r) missions.push({ id, kind: 'Request', titre: r.title, statut: r.status, date: r.created_at });
+    }
+    return missions;
+  }
+
   reloadTeams(): void {
     this.teamService.getAll().subscribe(teams => {
-      this.teams = teams.map(t => ({ ...t, missions: t.missions ?? [] }));
+      this.teams = teams.map(t => ({ ...t, missions: this.buildMissions(t) }));
     });
   }
 

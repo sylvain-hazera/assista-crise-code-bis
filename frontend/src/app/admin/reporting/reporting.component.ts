@@ -382,22 +382,35 @@ export class ReportingComponent implements OnInit, OnDestroy {
     window.open(url, '_blank');
   }
 
-  private readonly creneauLabels: Record<string, string> = { MATIN: 'Matin', MIDI: 'Midi', SOIR: 'Soir', NUIT: 'Nuit' };
+  private readonly CRENEAUX: { creneau: string; label: string }[] = [
+    { creneau: 'MATIN', label: 'Matin' },
+    { creneau: 'MIDI', label: 'Midi' },
+    { creneau: 'SOIR', label: 'Soir' },
+    { creneau: 'NUIT', label: 'Nuit' },
+  ];
 
-  /** Regroupe les créneaux plats (une ligne par date+créneau) par date, pour l'affichage. */
-  get dispoParJour(): { label: string; creneaux: string[] }[] {
-    const parDate = new Map<string, string[]>();
-    for (const d of this.selectedOfferDispos) {
-      const list = parDate.get(d.date) ?? [];
-      list.push(this.creneauLabels[d.creneau] ?? d.creneau);
-      parDate.set(d.date, list);
+  /** Calendrier des disponibilités : une ligne par jour (couvrant la plage réellement déclarée),
+   * une colonne par créneau, chaque case indiquant si le bénévole est disponible. */
+  get dispoCalendrier(): { label: string; creneaux: { creneau: string; label: string; disponible: boolean }[] }[] {
+    if (this.selectedOfferDispos.length === 0) return [];
+
+    const dispoSet = new Set(this.selectedOfferDispos.map(d => `${d.date}_${d.creneau}`));
+    const dates = [...new Set(this.selectedOfferDispos.map(d => d.date))].sort();
+    const minDate = new Date(dates[0]);
+    const maxDate = new Date(dates[dates.length - 1]);
+
+    const jours: { label: string; creneaux: { creneau: string; label: string; disponible: boolean }[] }[] = [];
+    for (let d = new Date(minDate); d <= maxDate; d.setDate(d.getDate() + 1)) {
+      const dateStr = d.toISOString().slice(0, 10);
+      jours.push({
+        label: d.toLocaleDateString('fr-FR', { weekday: 'short', day: '2-digit', month: '2-digit' }),
+        creneaux: this.CRENEAUX.map(c => ({
+          ...c,
+          disponible: dispoSet.has(`${dateStr}_${c.creneau}`),
+        })),
+      });
     }
-    return Array.from(parDate.entries())
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([date, creneaux]) => ({
-        label: new Date(date).toLocaleDateString('fr-FR', { weekday: 'short', day: '2-digit', month: '2-digit' }),
-        creneaux,
-      }));
+    return jours;
   }
 
   /** Dossiers de la même crise que l'offre sélectionnée (une affectation hors-crise n'a pas de sens). */

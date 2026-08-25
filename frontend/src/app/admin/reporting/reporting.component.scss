@@ -78,10 +78,47 @@
   &.sm { padding: .45rem .9rem; font-size: .82rem; }
 }
 
-.dispo-list {
-  margin: 0; padding-left: 1.1rem;
-  font-size: .88rem; color: var(--text);
-  li { margin-bottom: .25rem; }
+.dispo-cal-wrapper {
+  overflow-x: auto;
+}
+
+.dispo-cal {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .85rem;
+
+  th, td {
+    padding: .4rem .5rem;
+    text-align: center;
+    border: 1px solid var(--border);
+  }
+
+  th { color: var(--muted); font-weight: 600; }
+
+  .dispo-cal-jour {
+    text-align: left;
+    white-space: nowrap;
+    font-weight: 500;
+    color: var(--text);
+    text-transform: capitalize;
+    border-left: none;
+  }
+
+  .dispo-cal-cell {
+    background: #f8fafc;
+    &.dispo-ok { background: #22c55e; }
+  }
+}
+
+.dispo-cal-legend {
+  display: flex; align-items: center; gap: .4rem;
+  margin: .5rem 0 0;
+  font-size: .8rem; color: var(--muted);
+
+  .dispo-swatch {
+    display: inline-block; width: 12px; height: 12px;
+    border-radius: 3px; background: #22c55e;
+  }
 }
 
 .empty-text {
