@@ -27,6 +27,17 @@ export class GeolocationService {
     return this.http.get<any>(url);
   }
 
+  /** Autocomplétion d'adresse (plusieurs résultats). Si `bias` est fourni (position GPS de
+   * l'utilisateur), la Base Adresse Nationale priorise les adresses proches — sans jamais
+   * présumer que l'utilisateur s'y trouve réellement, juste un tri plus pertinent. */
+  searchAddresses(query: string, bias?: { lat: number; lon: number }): Observable<any> {
+    let url = `${this.banApiUrl}?q=${encodeURIComponent(query)}&limit=5`;
+    if (bias) {
+      url += `&lat=${bias.lat}&lon=${bias.lon}`;
+    }
+    return this.http.get<any>(url);
+  }
+
   /** Géocodage inverse (coordonnées -> adresse/commune) via la Base Adresse Nationale. */
   reverseGeocode(lat: number, lng: number): Observable<any> {
     const url = `https://api-adresse.data.gouv.fr/reverse/?lon=${lng}&lat=${lat}`;

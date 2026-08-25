@@ -2,19 +2,19 @@ import { Component, OnInit } from '@angular/core';
 import { FormGroup, FormBuilder, Validators, ReactiveFormsModule, FormArray } from '@angular/forms';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
-import { GeolocationService } from '../../../services/geolocation.service';
 import { CommonModule } from '@angular/common';
 import { RequestService } from '../../../services/request.service';
-import { LocationService, Department, Commune } from '../../../services/location.service';
 import { CrisisService } from '../../../services/crisis.service';
 import { Crisis } from '../../../shared/models/crisis.model';
 import { User } from '../../../shared/models/user.model';
 import { AuthService } from '../../../auth/services/auth.service';
+import { AddressPickerComponent } from '../../../shared/components/common/address-picker/address-picker.component';
+import { AddressResult } from '../../../shared/models/address-result.model';
 
 @Component({
   selector: 'app-request-help-form',
   standalone: true,
-  imports: [ReactiveFormsModule, CommonModule, FormsModule],
+  imports: [ReactiveFormsModule, CommonModule, FormsModule, AddressPickerComponent],
   templateUrl: './request-help-form.component.html',
   styleUrl: './request-help-form.component.scss'
 })
@@ -31,14 +31,13 @@ export class RequestHelpFormComponent implements OnInit {
 
   typesDemandeMap: Map<string, string> = new Map();
 
-  departments: Department[] = [];
-  filteredDepartments: Department[] = [];
-  communes: Commune[] = [];
-  filteredCommunes: Commune[] = [];
-  departmentSearch: string = '';
-  communeSearch: string = '';
-  showDepartmentDropdown: boolean = false;
-  showCommuneDropdown: boolean = false;
+  selectedAddress: AddressResult | null = null;
+
+  onAddressSelected(addr: AddressResult | null): void {
+    this.selectedAddress = addr;
+    this.latitude = addr?.latitude ?? null;
+    this.longitude = addr?.longitude ?? null;
+  }
 
   crisisOptions: { value: string; label: string }[] = [];
   filteredCrisisOptions: { value: string; label: string }[] = [];
@@ -60,8 +59,6 @@ export class RequestHelpFormComponent implements OnInit {
     private formBuilder: FormBuilder,
     private router: Router,
     private helpRequestService: RequestService,
-    private geolocationService: GeolocationService,
-    private locationService: LocationService,
     private crisisService: CrisisService,
     private authService: AuthService
   ) {}
@@ -70,18 +67,7 @@ export class RequestHelpFormComponent implements OnInit {
     this.currentUser = this.authService.getCurrentUser();
     this.initForm();
     this.loadTypesDemande();
-    this.loadDepartments();
     this.loadActiveCrises();
-  }
-
-  loadDepartments(): void {
-    this.locationService.getDepartments().subscribe({
-      next: (deps) => {
-        this.departments = deps;
-        this.filteredDepartments = deps;
-      },
-      error: (err) => console.error('Erreur chargement départements:', err)
-    });
   }
 
   loadActiveCrises(): void {
@@ -121,9 +107,6 @@ export class RequestHelpFormComponent implements OnInit {
       crisisId: [''],
       needsType: new FormArray([]),
       descriptions: new FormArray([]),
-      streetNumber: ['', Validators.required],
-      department: ['', Validators.required],
-      commune: ['', Validators.required],
       addressVisible: [false],
       image: [null],
     });
@@ -248,48 +231,6 @@ export class RequestHelpFormComponent implements OnInit {
     }
   }
 
-  onDepartmentSearchChange(event: Event): void {
-    const input = event.target as HTMLInputElement;
-    this.departmentSearch = input.value;
-    this.filteredDepartments = this.locationService.searchDepartments(
-      this.departmentSearch,
-      this.departments
-    );
-    this.showDepartmentDropdown = true;
-  }
-
-  selectDepartment(department: Department): void {
-    this.departmentSearch = department.name;
-    this.requestForm.patchValue({ department: department.code });
-    this.showDepartmentDropdown = false;
-    
-    this.locationService.getCommunesByDepartment(department.code).subscribe({
-      next: (communes) => {
-        this.communes = communes;
-        this.filteredCommunes = communes;
-        this.communeSearch = '';
-        this.requestForm.patchValue({ commune: '' });
-      },
-      error: (err) => console.error('Erreur chargement communes:', err)
-    });
-  }
-
-  onCommuneSearchChange(event: Event): void {
-    const input = event.target as HTMLInputElement;
-    this.communeSearch = input.value;
-    this.filteredCommunes = this.locationService.searchCommunes(
-      this.communeSearch,
-      this.communes
-    );
-    this.showCommuneDropdown = true;
-  }
-
-  selectCommune(commune: Commune): void {
-    this.communeSearch = commune.name;
-    this.requestForm.patchValue({ commune: commune.code });
-    this.showCommuneDropdown = false;
-  }
-
   onCrisisSearchChange(event: Event): void {
     const input = event.target as HTMLInputElement;
     this.crisisSearch = input.value;
@@ -306,39 +247,19 @@ export class RequestHelpFormComponent implements OnInit {
   }
 
   onContinue(): void {
-    if (this.requestForm.valid) {
-
-      const street = this.requestForm.get('streetNumber')?.value;
-      const communeCode = this.requestForm.get('commune')?.value;
-      const commune = this.communes.find(c => c.code === communeCode);
-      const postalCode = commune?.codesPostaux[0] || '';
-      const query = `${street} ${postalCode}`;
-
-      this.geolocationService.getCoordinates(query).subscribe({
-        next: (response) => {
-          if (response.features && response.features.length > 0) {
-            const coords = response.features[0].geometry.coordinates;
-            this.longitude = coords[0];
-            this.latitude = coords[1];
-            
-            this.state = 2;
-          } else {
-            alert("Adresse introuvable. Vérifiez le numéro et le code postal.");
-          }
-        },
-        error: (err) => {
-          console.error(err);
-          alert("Erreur de connexion au service d'adresse.");
-        }
-      });
-  } else {
-      // Marquer tous les champs comme touchés pour afficher les erreurs
+    if (this.requestForm.valid && this.selectedAddress) {
+      this.state = 2;
+    } else {
       Object.keys(this.requestForm.controls).forEach(key => {
         this.requestForm.get(key)?.markAsTouched();
       });
-      alert('Veuillez remplir tous les champs obligatoires');
+      if (!this.selectedAddress) {
+        alert('Veuillez sélectionner une adresse dans la liste proposée.');
+      } else {
+        alert('Veuillez remplir tous les champs obligatoires');
+      }
+    }
   }
-}
 
   goBack(): void {
     if(this.state == 1) {

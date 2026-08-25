@@ -1,0 +1,43 @@
+<div class="address-picker">
+  @if (label) {
+    <label class="ap-label">{{ label }} @if (required) { <span class="ap-required">*</span> }</label>
+  }
+
+  <div class="ap-input-row">
+    <div class="ap-input-wrapper">
+      <span class="material-icons ap-icon">search</span>
+      <input
+        type="text"
+        [(ngModel)]="query"
+        (ngModelChange)="onQueryChange()"
+        (focus)="showDropdown = suggestions.length > 0"
+        [placeholder]="placeholder"
+        autocomplete="off"
+        class="ap-input">
+      @if (hasSelection) {
+        <span class="material-icons ap-check" title="Adresse reconnue">check_circle</span>
+      }
+    </div>
+
+    <button type="button" class="ap-locate-btn" (click)="useMyLocation()" [disabled]="isSearching"
+            title="Utiliser ma position actuelle">
+      <span class="material-icons">my_location</span>
+    </button>
+  </div>
+
+  @if (showDropdown && suggestions.length > 0) {
+    <div class="ap-dropdown">
+      @for (addr of suggestions; track addr.label) {
+        <div class="ap-item" (click)="selectSuggestion(addr)">
+          <span class="material-icons">place</span>
+          <span>{{ addr.label }}</span>
+        </div>
+      }
+    </div>
+  }
+
+  <p class="ap-hint">
+    Les adresses proches de votre position sont proposées en priorité — vous pouvez saisir
+    n'importe quelle autre adresse.
+  </p>
+</div>

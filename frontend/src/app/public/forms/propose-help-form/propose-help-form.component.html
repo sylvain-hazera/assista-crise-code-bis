@@ -204,71 +204,12 @@
                 Vous pouvez proposer votre aide sans indiquer d'adresse.
                 </p>
 
-                <!-- N° et voie -->
                 <div class="form-group">
-                <label for="streetNumber" class="form-label">N° et voie</label>
-                <input
-                    type="text"
-                    id="streetNumber"
-                    formControlName="streetNumber"
-                    class="form-input"
-                    placeholder="Votre adresse">
-                </div>
-
-
-                <!-- Département -->
-                <div class="form-group">
-                  <label for="department" class="form-label">Département</label>
-                  <div class="autocomplete-wrapper">
-                    <input 
-                      type="text" 
-                      id="department" 
-                      [(ngModel)]="departmentSearch"
-                      [ngModelOptions]="{standalone: true}"
-                      (input)="onDepartmentSearchChange($event)"
-                      (focus)="showDepartmentDropdown = true"
-                      class="form-input"
-                      placeholder="Rechercher un département"
-                      autocomplete="off">
-
-                    @if(showDepartmentDropdown && filteredDepartments.length > 0) {
-                      <div class="autocomplete-dropdown">
-                        @for(dept of filteredDepartments; track dept.code) {
-                          <div class="autocomplete-item" (click)="selectDepartment(dept)">
-                            {{ dept.code }} - {{ dept.name }}
-                          </div>
-                        }
-                      </div>
-                    }
-                  </div>
-                </div>
-
-                <!-- Commune -->
-                <div class="form-group">
-                  <label for="commune" class="form-label">Commune</label>
-                  <div class="autocomplete-wrapper">
-                    <input 
-                      type="text" 
-                      id="commune" 
-                      [(ngModel)]="communeSearch"
-                      [ngModelOptions]="{standalone: true}"
-                      (input)="onCommuneSearchChange($event)"
-                      (focus)="showCommuneDropdown = true"
-                      class="form-input"
-                      placeholder="Rechercher une commune"
-                      [disabled]="!requestForm.get('department')?.value"
-                      autocomplete="off">
-
-                    @if(showCommuneDropdown && filteredCommunes.length > 0) {
-                      <div class="autocomplete-dropdown">
-                        @for(commune of filteredCommunes; track commune.code) {
-                          <div class="autocomplete-item" (click)="selectCommune(commune)">
-                            {{ commune.name }} @if(commune.codesPostaux.length > 0) { ({{ commune.codesPostaux[0] }}) }
-                          </div>
-                        }
-                      </div>
-                    }
-                  </div>
+                  <app-address-picker
+                    label="Votre adresse"
+                    placeholder="Rechercher une adresse (optionnel)…"
+                    (addressSelected)="onAddressSelected($event)">
+                  </app-address-picker>
                 </div>
 
                 <!-- Checkbox adresse visible -->

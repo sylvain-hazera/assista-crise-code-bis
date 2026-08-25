@@ -15,6 +15,11 @@
         (click)="navigateTo('/recherches-personnes')">
         🔍 Recherches de personnes
       </button>
+      @if (canDeclareCrisis) {
+        <button class="btn btn-warning" (click)="navigateTo('crisis-declaration')">
+          Déclarer une crise
+        </button>
+      }
     </div>
   </div>
 
@@ -47,10 +52,4 @@
       </div>
     </div>
   </div>
-
-  @if (canDeclareCrisis) {
-    <button class="btn btn-warning" (click)="navigateTo('crisis-declaration')">
-      Déclarer une crise
-    </button>
-  }
 </div>

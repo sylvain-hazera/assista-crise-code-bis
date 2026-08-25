@@ -70,8 +70,8 @@
   display: inline-flex;
   align-items: center;
   gap: .4rem;
-  background: #2563eb;
-  color: #fff;
+  background: #ffd54f;
+  color: #333;
   border: none;
   border-radius: 8px;
   padding: .5rem .9rem;
@@ -82,7 +82,7 @@
 
   .material-icons { font-size: 20px; }
 
-  &:hover { background: #1d4ed8; }
+  &:hover { background: #ffca28; }
 }
 
 .btn-icon {

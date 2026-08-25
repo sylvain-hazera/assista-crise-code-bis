@@ -544,11 +544,8 @@
   }
 
   &.btn-warning {
-    margin-top: 2rem;
-    width: 25%;
     background-color: #ffd54f;
     color: #333;
-    align-self: center;
 
     &:hover {
       background-color: #ffca28;
@@ -618,10 +615,6 @@
     .content-grid {
       width: 85%;
     }
-
-    .btn.btn-warning {
-      max-width: 600px;
-    }
   }
 }
 
@@ -673,11 +666,6 @@
       .info-section {
         order: -1; // Placer l'info avant la carte sur tablette
       }
-    }
-
-    .btn.btn-warning {
-      width: 80%;
-      max-width: 400px;
     }
   }
 }
@@ -740,11 +728,6 @@
     .btn {
       font-size: 0.95rem;
       padding: 0.75rem 1.25rem;
-
-      &.btn-warning {
-        width: 90%;
-        font-size: 1rem;
-      }
     }
   }
 }
@@ -807,12 +790,6 @@
       }
     }
 
-    .btn.btn-warning {
-      width: 95%;
-      margin-top: 1rem;
-      padding: 0.875rem 1.5rem;
-      font-size: 0.95rem;
-    }
   }
 }
 

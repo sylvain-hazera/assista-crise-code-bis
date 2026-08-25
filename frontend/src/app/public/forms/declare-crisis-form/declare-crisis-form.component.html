@@ -89,87 +89,15 @@
             <div class="form-section">
                 <h2 class="section-title">Votre adresse <span class="required">*</span></h2>
 
-                <!-- N° et voie -->
                 <div class="form-group">
-                <label for="streetNumber" class="form-label">N° et voie</label>
-                <input 
-                    type="text" 
-                    id="streetNumber" 
-                    formControlName="streetNumber"
-                    class="form-input"
-                    placeholder="Votre adresse"
-                    [class.invalid]="crisisForm.get('streetNumber')?.invalid && crisisForm.get('streetNumber')?.touched">
-                    @if(crisisForm.get('streetNumber')?.invalid && crisisForm.get('streetNumber')?.touched) {
-                        <div class="error-message">
-                            Veuillez entrer un numéro et une voie
-                        </div>
-                    } 
-                </div>
-                
-
-                <!-- Département -->
-                <div class="form-group">
-                  <label for="department" class="form-label">Département</label>
-                  <div class="autocomplete-wrapper">
-                    <input 
-                      type="text" 
-                      id="department" 
-                      [(ngModel)]="departmentSearch"
-                      [ngModelOptions]="{standalone: true}"
-                      (input)="onDepartmentSearchChange($event)"
-                      (focus)="showDepartmentDropdown = true"
-                      class="form-input"
-                      placeholder="Rechercher un département"
-                      [class.invalid]="crisisForm.get('department')?.invalid && crisisForm.get('department')?.touched"
-                      autocomplete="off">
-                    
-                    @if(showDepartmentDropdown && filteredDepartments.length > 0) {
-                      <div class="autocomplete-dropdown">
-                        @for(dept of filteredDepartments; track dept.code) {
-                          <div class="autocomplete-item" (click)="selectDepartment(dept)">
-                            {{ dept.code }} - {{ dept.name }}
-                          </div>
-                        }
-                      </div>
-                    }
-                  </div>
-                  @if(crisisForm.get('department')?.invalid && crisisForm.get('department')?.touched) {
+                  <app-address-picker
+                    label="Adresse de la crise"
+                    [required]="true"
+                    (addressSelected)="onAddressSelected($event)">
+                  </app-address-picker>
+                  @if (crisisForm.touched && !selectedAddress) {
                     <div class="error-message">
-                      Veuillez sélectionner un département
-                    </div>
-                  }
-                </div>
-
-                <!-- Commune -->
-                <div class="form-group">
-                  <label for="commune" class="form-label">Commune</label>
-                  <div class="autocomplete-wrapper">
-                    <input 
-                      type="text" 
-                      id="commune" 
-                      [(ngModel)]="communeSearch"
-                      [ngModelOptions]="{standalone: true}"
-                      (input)="onCommuneSearchChange($event)"
-                      (focus)="showCommuneDropdown = true"
-                      class="form-input"
-                      placeholder="Rechercher une commune"
-                      [class.invalid]="crisisForm.get('commune')?.invalid && crisisForm.get('commune')?.touched"
-                      [disabled]="!crisisForm.get('department')?.value"
-                      autocomplete="off">
-                    
-                    @if(showCommuneDropdown && filteredCommunes.length > 0) {
-                      <div class="autocomplete-dropdown">
-                        @for(commune of filteredCommunes; track commune.code) {
-                          <div class="autocomplete-item" (click)="selectCommune(commune)">
-                            {{ commune.name }} @if(commune.codesPostaux.length > 0) { ({{ commune.codesPostaux[0] }}) }
-                          </div>
-                        }
-                      </div>
-                    }
-                  </div>
-                  @if(crisisForm.get('commune')?.invalid && crisisForm.get('commune')?.touched) {
-                    <div class="error-message">
-                      Veuillez sélectionner une commune
+                      Veuillez sélectionner une adresse dans la liste proposée
                     </div>
                   }
                 </div>
@@ -177,8 +105,8 @@
                 <!-- Checkbox adresse visible -->
                 <div class="form-group checkbox-group">
                 <label class="checkbox-label">
-                    <input 
-                    type="checkbox" 
+                    <input
+                    type="checkbox"
                     formControlName="addressVisible"
                     class="form-checkbox">
                     <span class="checkbox-text">J'accepte que mon adresse soit visible</span>

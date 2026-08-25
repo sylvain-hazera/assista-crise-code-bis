@@ -212,7 +212,11 @@ class CrisisSerializer(serializers.ModelSerializer):
         return json.loads(obj.zone.geojson) if obj.zone else None
 
 class RequestSerializer(serializers.ModelSerializer):
-    """Serializer pour les demandes d'aide"""
+    """Serializer pour les demandes d'aide.
+
+    La localisation précise (adresse) n'est un renseignement privé que la mairie et les
+    services de secours doivent voir — jamais le grand public. `latitude`/`longitude`/
+    `location` renvoient donc null pour tout consommateur non institutionnel."""
     latitude = serializers.SerializerMethodField()
     longitude = serializers.SerializerMethodField()
     author = serializers.PrimaryKeyRelatedField(read_only=True, allow_null=True)
@@ -224,11 +228,26 @@ class RequestSerializer(serializers.ModelSerializer):
         model = Request
         fields = '__all__'
 
+    def _location_visible(self) -> bool:
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        return bool(user and user.is_authenticated and user.type in INSTITUTIONAL_TYPES)
+
     def get_latitude(self, obj):
+        if not self._location_visible():
+            return None
         return obj.location.y if obj.location else None
 
     def get_longitude(self, obj):
+        if not self._location_visible():
+            return None
         return obj.location.x if obj.location else None
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if not self._location_visible():
+            data['location'] = None
+        return data
 
     def get_author_nom(self, obj):
         if not obj.author:
@@ -290,7 +309,11 @@ class DisponibiliteOffreSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 class InformationSerializer(serializers.ModelSerializer):
-    """Serializer pour les informations"""
+    """Serializer pour les informations.
+
+    La localisation précise (adresse) n'est un renseignement privé que la mairie et les
+    services de secours doivent voir — jamais le grand public. `latitude`/`longitude`/
+    `location` renvoient donc null pour tout consommateur non institutionnel."""
     latitude = serializers.SerializerMethodField()
     longitude = serializers.SerializerMethodField()
     author = serializers.PrimaryKeyRelatedField(read_only=True, allow_null=True)
@@ -302,11 +325,26 @@ class InformationSerializer(serializers.ModelSerializer):
         model = Information
         fields = '__all__'
 
+    def _location_visible(self) -> bool:
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        return bool(user and user.is_authenticated and user.type in INSTITUTIONAL_TYPES)
+
     def get_latitude(self, obj):
+        if not self._location_visible():
+            return None
         return obj.location.y if obj.location else None
 
     def get_longitude(self, obj):
+        if not self._location_visible():
+            return None
         return obj.location.x if obj.location else None
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if not self._location_visible():
+            data['location'] = None
+        return data
 
     def get_author_nom(self, obj):
         if not obj.author:

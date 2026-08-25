@@ -3,21 +3,21 @@ import { FormBuilder, FormGroup, ReactiveFormsModule, Validators, FormsModule } 
 import { CommonModule } from '@angular/common';
 import { InformationService } from '../../../services/information.service';
 import { Router } from '@angular/router';
-import { GeolocationService } from '../../../services/geolocation.service';
-import { LocationService, Department, Commune } from '../../../services/location.service';
 import { CrisisService } from '../../../services/crisis.service';
 import { Crisis } from '../../../shared/models/crisis.model';
 import { AuthService } from '../../../auth/services/auth.service';
+import { AddressPickerComponent } from '../../../shared/components/common/address-picker/address-picker.component';
+import { AddressResult } from '../../../shared/models/address-result.model';
 
 enum StateForm {
   DeclareSafe,
   OtherDeclaration
-} 
+}
 
 @Component({
   selector: 'app-other-declaration-form',
   standalone: true,
-  imports: [ReactiveFormsModule, CommonModule, FormsModule],
+  imports: [ReactiveFormsModule, CommonModule, FormsModule, AddressPickerComponent],
   templateUrl: './other-declaration-form.component.html',
   styleUrl: './other-declaration-form.component.scss'
 })
@@ -34,15 +34,16 @@ export class OtherDeclarationFormComponent implements OnInit {
 
   typesInformationMap: Map<string, string> = new Map(); // informationType -> UUID
 
-  // Department and commune selection
-  departments: Department[] = [];
-  filteredDepartments: Department[] = [];
-  communes: Commune[] = [];
-  filteredCommunes: Commune[] = [];
-  departmentSearch: string = '';
-  communeSearch: string = '';
-  showDepartmentDropdown: boolean = false;
-  showCommuneDropdown: boolean = false;
+  selectedAddressSafe: AddressResult | null = null;
+  selectedAddressOther: AddressResult | null = null;
+
+  onAddressSelectedSafe(addr: AddressResult | null): void {
+    this.selectedAddressSafe = addr;
+  }
+
+  onAddressSelectedOther(addr: AddressResult | null): void {
+    this.selectedAddressOther = addr;
+  }
 
   crisisOptions: { value: string; label: string }[] = [];
   filteredCrisisOptions: { value: string; label: string }[] = [];
@@ -57,27 +58,14 @@ export class OtherDeclarationFormComponent implements OnInit {
     private formBuilder: FormBuilder,
     private router: Router,
     private informationService: InformationService,
-    private geolocationService: GeolocationService,
-    private locationService: LocationService,
     private crisisService: CrisisService,
     private authService: AuthService
   ) {}
 
   ngOnInit(): void {
     this.initForm();
-    this.loadDepartments();
     this.loadTypesInformation();
     this.loadActiveCrises();
-  }
-
-  loadDepartments(): void {
-    this.locationService.getDepartments().subscribe({
-      next: (deps) => {
-        this.departments = deps;
-        this.filteredDepartments = deps;
-      },
-      error: (err) => console.error('Erreur chargement départements:', err)
-    });
   }
 
   loadTypesInformation(): void {
@@ -126,9 +114,6 @@ export class OtherDeclarationFormComponent implements OnInit {
       firstName: ['', Validators.required],
       phoneNumber: ['', [Validators.required, Validators.pattern(/^\+?\d{10,15}$/)]],
       email: ['', [Validators.required, Validators.email]],
-      streetNumber: ['', Validators.required],
-      department: ['', Validators.required],
-      commune: ['', Validators.required],
       addressVisible: [false],
       image: [null]
     });
@@ -137,9 +122,6 @@ export class OtherDeclarationFormComponent implements OnInit {
       crisisId: [''],
       informationType: ['', Validators.required],
       description: ['', [Validators.required, Validators.minLength(10)]],
-      streetNumber: ['', Validators.required],
-      department: ['', Validators.required],
-      commune: ['', Validators.required],
       addressVisible: [false],
       image: [null]
     });
@@ -148,19 +130,11 @@ export class OtherDeclarationFormComponent implements OnInit {
   onDeclareSafe(): void {
     this.state = StateForm.DeclareSafe;
     this.fileName = 'Select'; // Reset file selection
-    this.departmentSearch = '';
-    this.communeSearch = '';
-    this.showDepartmentDropdown = false;
-    this.showCommuneDropdown = false;
   }
 
   onOtherDeclaration(): void {
     this.state = StateForm.OtherDeclaration;
     this.fileName = 'Select'; // Reset file selection
-    this.departmentSearch = '';
-    this.communeSearch = '';
-    this.showDepartmentDropdown = false;
-    this.showCommuneDropdown = false;
   }
 
   onFileSelected(event: Event): void {
@@ -194,51 +168,6 @@ export class OtherDeclarationFormComponent implements OnInit {
     }
   }
 
-  // Department and commune selection methods
-  onDepartmentSearchChange(event: Event): void {
-    const input = event.target as HTMLInputElement;
-    this.departmentSearch = input.value;
-    this.filteredDepartments = this.locationService.searchDepartments(
-      this.departmentSearch,
-      this.departments
-    );
-    this.showDepartmentDropdown = true;
-  }
-
-  selectDepartment(department: Department): void {
-    this.departmentSearch = department.name;
-    const form = this.state === StateForm.DeclareSafe ? this.declareSafeForm : this.otherInformationForm;
-    form.patchValue({ department: department.code });
-    this.showDepartmentDropdown = false;
-    
-    this.locationService.getCommunesByDepartment(department.code).subscribe({
-      next: (communes) => {
-        this.communes = communes;
-        this.filteredCommunes = communes;
-        this.communeSearch = '';
-        form.patchValue({ commune: '' });
-      },
-      error: (err) => console.error('Erreur chargement communes:', err)
-    });
-  }
-
-  onCommuneSearchChange(event: Event): void {
-    const input = event.target as HTMLInputElement;
-    this.communeSearch = input.value;
-    this.filteredCommunes = this.locationService.searchCommunes(
-      this.communeSearch,
-      this.communes
-    );
-    this.showCommuneDropdown = true;
-  }
-
-  selectCommune(commune: Commune): void {
-    this.communeSearch = commune.name;
-    const form = this.state === StateForm.DeclareSafe ? this.declareSafeForm : this.otherInformationForm;
-    form.patchValue({ commune: commune.code });
-    this.showCommuneDropdown = false;
-  }
-
   onCrisisSearchChange(event: Event): void {
     const input = event.target as HTMLInputElement;
     this.crisisSearch = input.value;
@@ -256,61 +185,26 @@ export class OtherDeclarationFormComponent implements OnInit {
   }
 
   onSubmit(): void {
-    if (this.state === StateForm.DeclareSafe && this.declareSafeForm.valid) {
-      const street = this.declareSafeForm.get('streetNumber')?.value;
-      const communeCode = this.declareSafeForm.get('commune')?.value;
-      const commune = this.communes.find(c => c.code === communeCode);
-      const postalCode = commune?.codesPostaux[0] || '';
-      const query = `${street} ${postalCode}`;
-
-      this.geolocationService.getCoordinates(query).subscribe({
-        next: (response) => {
-          if (response.features && response.features.length > 0) {
-            const coords = response.features[0].geometry.coordinates;
-            this.longitude = coords[0];
-            this.latitude = coords[1];
-
-            this.submitDeclareSafeForm();
-          } else {
-            alert("Adresse introuvable. Vérifiez le numéro et la commune.");
-          }
-        },
-        error: (err) => {
-          console.error(err);
-          alert("Erreur de connexion au service d'adresse.");
-        }
-      });
-    } else if (this.state === StateForm.OtherDeclaration && this.otherInformationForm.valid) {
-      const street = this.otherInformationForm.get('streetNumber')?.value;
-      const communeCode = this.otherInformationForm.get('commune')?.value;
-      const commune = this.communes.find(c => c.code === communeCode);
-      const postalCode = commune?.codesPostaux[0] || '';
-      const query = `${street} ${postalCode}`;
-
-      this.geolocationService.getCoordinates(query).subscribe({
-        next: (response) => {
-          if (response.features && response.features.length > 0) {
-            const coords = response.features[0].geometry.coordinates;
-            this.longitude = coords[0];
-            this.latitude = coords[1];
-
-            this.submitOtherInformationForm();
-          } else {
-            alert("Adresse introuvable. Vérifiez le numéro et la commune.");
-          }
-        },
-        error: (err) => {
-          console.error(err);
-          alert("Erreur de connexion au service d'adresse.");
-        }
-      });
+    if (this.state === StateForm.DeclareSafe && this.declareSafeForm.valid && this.selectedAddressSafe) {
+      this.latitude = this.selectedAddressSafe.latitude;
+      this.longitude = this.selectedAddressSafe.longitude;
+      this.submitDeclareSafeForm();
+    } else if (this.state === StateForm.OtherDeclaration && this.otherInformationForm.valid && this.selectedAddressOther) {
+      this.latitude = this.selectedAddressOther.latitude;
+      this.longitude = this.selectedAddressOther.longitude;
+      this.submitOtherInformationForm();
     } else {
       // Mark all fields as touched to show validation errors
       const form = this.state === StateForm.DeclareSafe ? this.declareSafeForm : this.otherInformationForm;
       Object.keys(form.controls).forEach(key => {
         form.get(key)?.markAsTouched();
       });
-      alert('Veuillez remplir tous les champs obligatoires');
+      const hasAddress = this.state === StateForm.DeclareSafe ? this.selectedAddressSafe : this.selectedAddressOther;
+      if (!hasAddress) {
+        alert('Veuillez sélectionner une adresse dans la liste proposée.');
+      } else {
+        alert('Veuillez remplir tous les champs obligatoires');
+      }
     }
   }
 

@@ -3,17 +3,17 @@ import { FormGroup, FormBuilder, Validators, ReactiveFormsModule, FormArray, Abs
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { forkJoin, Observable } from 'rxjs';
-import { GeolocationService } from '../../../services/geolocation.service';
 import { CommonModule } from '@angular/common';
 import { OfferService } from '../../../services/offer.service';
 import { DisponibiliteOffreService } from '../../../services/disponibilite-offre.service';
-import { LocationService, Department, Commune } from '../../../services/location.service';
 import { CrisisService } from '../../../services/crisis.service';
 import { Crisis } from '../../../shared/models/crisis.model';
 import { Offer } from '../../../shared/models/offer.model';
 import { AuthService } from '../../../auth/services/auth.service';
 import { UserRole, User } from '../../../shared/models/user.model';
 import { Creneau } from '../../../shared/models/disponibilite-offre.model';
+import { AddressPickerComponent } from '../../../shared/components/common/address-picker/address-picker.component';
+import { AddressResult } from '../../../shared/models/address-result.model';
 
 interface JourDispo {
   date: string;       // YYYY-MM-DD
@@ -33,7 +33,7 @@ const TYPE_AUTRE = 'Autre';
 @Component({
   selector: 'app-request-help-form',
   standalone: true,
-  imports: [ReactiveFormsModule, CommonModule, FormsModule],
+  imports: [ReactiveFormsModule, CommonModule, FormsModule, AddressPickerComponent],
   templateUrl: './propose-help-form.component.html',
   styleUrl: './propose-help-form.component.scss'
 })
@@ -67,15 +67,13 @@ export class ProposeHelpFormComponent implements OnInit {
     { value: 'AUTRE', label: 'Autre' },
   ];
 
-  // Départements et communes
-  departments: Department[] = [];
-  filteredDepartments: Department[] = [];
-  communes: Commune[] = [];
-  filteredCommunes: Commune[] = [];
-  departmentSearch: string = '';
-  communeSearch: string = '';
-  showDepartmentDropdown: boolean = false;
-  showCommuneDropdown: boolean = false;
+  selectedAddress: AddressResult | null = null;
+
+  onAddressSelected(addr: AddressResult | null): void {
+    this.selectedAddress = addr;
+    this.latitude = addr?.latitude ?? null;
+    this.longitude = addr?.longitude ?? null;
+  }
 
   crisisOptions: { value: string; label: string }[] = [];
   filteredCrisisOptions: { value: string; label: string }[] = [];
@@ -101,8 +99,6 @@ export class ProposeHelpFormComponent implements OnInit {
     private router: Router,
     private offerService: OfferService,
     private disponibiliteOffreService: DisponibiliteOffreService,
-    private geolocationService: GeolocationService,
-    private locationService: LocationService,
     private crisisService: CrisisService,
     private authService: AuthService
   ) {}
@@ -111,7 +107,6 @@ export class ProposeHelpFormComponent implements OnInit {
     this.currentUser = this.authService.getCurrentUser();
     this.initForm();
     this.loadTypesOffre();
-    this.loadDepartments();
     this.loadActiveCrises();
     this.buildJoursDispo();
   }
@@ -138,16 +133,6 @@ export class ProposeHelpFormComponent implements OnInit {
 
   toggleDispo(jour: JourDispo, slot: { checked: boolean }): void {
     slot.checked = !slot.checked;
-  }
-
-  loadDepartments(): void {
-    this.locationService.getDepartments().subscribe({
-      next: (deps) => {
-        this.departments = deps;
-        this.filteredDepartments = deps;
-      },
-      error: (err) => console.error('Erreur chargement départements:', err)
-    });
   }
 
   loadTypesOffre(): void {
@@ -186,9 +171,6 @@ export class ProposeHelpFormComponent implements OnInit {
     this.requestForm = this.formBuilder.group({
       crisisId: [''],
       offerRows: new FormArray([]),
-      streetNumber: [''],
-      department: [''],
-      commune: [''],
       addressVisible: [false],
       image: [null],
     });
@@ -308,50 +290,6 @@ export class ProposeHelpFormComponent implements OnInit {
     return rowValue.description || '';
   }
 
-  onDepartmentSearchChange(event: Event): void {
-    const input = event.target as HTMLInputElement;
-    this.departmentSearch = input.value;
-    this.filteredDepartments = this.locationService.searchDepartments(
-      this.departmentSearch,
-      this.departments
-    );
-    this.showDepartmentDropdown = true;
-  }
-
-  selectDepartment(department: Department): void {
-    this.departmentSearch = department.name;
-    this.requestForm.patchValue({ department: department.code });
-    this.showDepartmentDropdown = false;
-
-    // Charger les communes du département
-    this.locationService.getCommunesByDepartment(department.code).subscribe({
-      next: (communes) => {
-        this.communes = communes;
-        this.filteredCommunes = communes;
-        // Réinitialiser la commune sélectionnée
-        this.communeSearch = '';
-        this.requestForm.patchValue({ commune: '' });
-      },
-      error: (err) => console.error('Erreur chargement communes:', err)
-    });
-  }
-
-  onCommuneSearchChange(event: Event): void {
-    const input = event.target as HTMLInputElement;
-    this.communeSearch = input.value;
-    this.filteredCommunes = this.locationService.searchCommunes(
-      this.communeSearch,
-      this.communes
-    );
-    this.showCommuneDropdown = true;
-  }
-
-  selectCommune(commune: Commune): void {
-    this.communeSearch = commune.name;
-    this.requestForm.patchValue({ commune: commune.code });
-    this.showCommuneDropdown = false;
-  }
-
   onCrisisSearchChange(event: Event): void {
     const input = event.target as HTMLInputElement;
     this.crisisSearch = input.value;
@@ -367,40 +305,10 @@ export class ProposeHelpFormComponent implements OnInit {
     this.showCrisisDropdown = false;
   }
 
-  /** L'adresse est optionnelle pour un offreur d'aide : sans numéro de voie saisi, on passe
-   * directement à l'étape 2 sans géocodage (latitude/longitude restent null). */
+  /** L'adresse est optionnelle pour un offreur d'aide : le sélecteur résout déjà les
+   * coordonnées au moment du choix, aucun géocodage à refaire ici. */
   onContinue(): void {
-    const street = this.requestForm.get('streetNumber')?.value?.trim();
-
-    if (!street) {
-      this.latitude = null;
-      this.longitude = null;
-      this.state = 2;
-      return;
-    }
-
-    const communeCode = this.requestForm.get('commune')?.value;
-    const commune = this.communes.find(c => c.code === communeCode);
-    const postalCode = commune?.codesPostaux[0] || '';
-    const query = `${street} ${postalCode}`;
-
-    this.geolocationService.getCoordinates(query).subscribe({
-      next: (response) => {
-        if (response.features && response.features.length > 0) {
-          const coords = response.features[0].geometry.coordinates;
-          this.longitude = coords[0];
-          this.latitude = coords[1];
-
-          this.state = 2;
-        } else {
-          alert("Adresse introuvable. Vérifiez le numéro et le code postal.");
-        }
-      },
-      error: (err) => {
-        console.error(err);
-        alert("Erreur de connexion au service d'adresse.");
-      }
-    });
+    this.state = 2;
   }
 
   goBack(): void {
