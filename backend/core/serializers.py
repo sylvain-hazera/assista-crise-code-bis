@@ -506,6 +506,7 @@ class DocumentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Document
         fields = "__all__"
+        extra_kwargs = {'auteur': {'read_only': True}}
 
     def get_auteur_nom(self, obj):
 
@@ -524,6 +525,7 @@ class DossierCommentaireSerializer(serializers.ModelSerializer):
     class Meta:
         model = DossierCommentaire
         fields = "__all__"
+        extra_kwargs = {'auteur': {'read_only': True}}
 
     def get_auteur_nom(self, obj):
 

@@ -16,7 +16,9 @@ from django.core.mail import send_mail
 from django.core.signing import TimestampSigner, BadSignature, SignatureExpired
 from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
+from urllib.parse import quote
 from django_filters import rest_framework as filters
+from django.db.models import Q
 from django.utils import timezone
 from .auth_validation import InstitutionEmailValidator
 import secrets
@@ -27,7 +29,7 @@ from PIL.ExifTags import TAGS, GPSTAGS
 
 from .audit import audit_log, get_client_ip
 from .institution_attachment import attach_user_to_institution, resolve_or_invite_responsable
-from .permissions import IsInstitutionalActor, IsAdministrator
+from .permissions import IsInstitutionalActor, IsAdministrator, INSTITUTIONAL_TYPES
 
 
 def extract_exif_metadata(filepath):
@@ -84,15 +86,25 @@ MAGIC_LINK_SALT = "assista-crise-magic-link"
 MAGIC_LINK_SIGNER = TimestampSigner(salt=MAGIC_LINK_SALT)
 
 
-def build_magic_link(request, user, action: str) -> str:
+FRONTEND_MAGIC_LINK_PATHS = {
+    "activate-account": "activate-account",
+    "magic-login": "connexion-magique",
+}
+
+
+def build_magic_link(request, user, action: str, next_url: str = None) -> str:
     uidb64 = urlsafe_base64_encode(force_bytes(str(user.pk)))
     token = MAGIC_LINK_SIGNER.sign(uidb64)
 
-    if action == "activate-account":
-        # Doit pointer vers la page du frontend (qui appelle ensuite l'API elle-même côté
+    frontend_path = FRONTEND_MAGIC_LINK_PATHS.get(action)
+    if frontend_path:
+        # Doit pointer vers une page du frontend (qui appelle ensuite l'API elle-même côté
         # client), jamais directement sur l'API : sinon le clic affiche du JSON brut.
         frontend_url = settings.SERVER_URL.rstrip('/')
-        return f"{frontend_url}/activate-account/{uidb64}/{token}"
+        url = f"{frontend_url}/{frontend_path}/{uidb64}/{token}"
+        if next_url:
+            url += f"?next={quote(next_url, safe='')}"
+        return url
 
     base_url = request.build_absolute_uri('/').rstrip('/')
     return f"{base_url}/api/{action}/{uidb64}/{token}/"
@@ -244,6 +256,15 @@ class AffectationCompetenceViewSet(viewsets.ModelViewSet):
 class DossierViewSet(viewsets.ModelViewSet):
     queryset = Dossier.objects.all()
     serializer_class = DossierSerializer
+
+    def get_queryset(self):
+        user = self.request.user
+        if not user.is_authenticated:
+            return Dossier.objects.none()
+        if user.type in INSTITUTIONAL_TYPES:
+            return Dossier.objects.all()
+        return Dossier.objects.filter(participants__utilisateur=user).distinct()
+
     def get_serializer_context(self):
         context = super().get_serializer_context()
         context["request"] = self.request
@@ -623,6 +644,48 @@ class CrisisViewSet(viewsets.ModelViewSet):
             commentaire=f"Création crise : {crise.name}",
         )
 
+def resolve_or_invite_demandeur(demande, request=None):
+    """Résout le compte utilisateur du demandeur d'une aide pour lui permettre de suivre son
+    dossier par lien magique : l'auteur de la demande s'il est authentifié, sinon un compte
+    existant partageant le même email, sinon un nouveau compte créé à la volée à partir des
+    coordonnées saisies dans le formulaire (`email_request`/`first_name_request`/`last_name_request`).
+    Contrairement à `resolve_or_invite_responsable`, ce compte n'a besoin d'aucune étape de
+    définition de mot de passe : il n'est destiné qu'à recevoir des liens de connexion magique,
+    donc `enabled`/`is_active` sont activés directement.
+
+    Retourne (user, created)."""
+    if demande.author:
+        return demande.author, False
+
+    email = (demande.email_request or '').strip().lower()
+    if not email:
+        return None, False
+
+    existing = User.objects.filter(email__iexact=email).first()
+    if existing:
+        return existing, False
+
+    user = User.objects.create_user(
+        username=email,
+        email=email,
+        password=None,
+        type=UserRole.SIMPLE_USER,
+        first_name=demande.first_name_request,
+        last_name=demande.last_name_request,
+        enabled=True,
+        is_active=True,
+    )
+    if request is not None:
+        audit_log(
+            request=request,
+            action_code="CREATION",
+            objet_type="User",
+            objet_id=user.id,
+            commentaire=f"Compte créé pour {email} afin de suivre sa demande d'aide",
+        )
+    return user, True
+
+
 class RequestViewSet(viewsets.ModelViewSet):
     queryset = Request.objects.all()
     serializer_class = RequestSerializer
@@ -848,9 +911,10 @@ class RequestViewSet(viewsets.ModelViewSet):
             statut=Dossier.Statut.AFFECTE,
         )
 
-        if demande.author:
+        demandeur, demandeur_created = resolve_or_invite_demandeur(demande, request=request)
+        if demandeur:
             DossierParticipant.objects.get_or_create(
-                dossier=dossier, utilisateur=demande.author, role=DossierParticipant.Role.DEMANDEUR
+                dossier=dossier, utilisateur=demandeur, role=DossierParticipant.Role.DEMANDEUR
             )
 
         DossierHistorique.objects.create(
@@ -885,12 +949,22 @@ class RequestViewSet(viewsets.ModelViewSet):
             )
 
         try:
+            suivi_paragraph = ""
+            if demandeur:
+                suivi_link = build_magic_link(
+                    request, demandeur, "magic-login", next_url=f"/dossier-suivi/{dossier.id}"
+                )
+                suivi_paragraph = (
+                    f"\nVous pouvez suivre l'avancement de votre dossier, ajouter des "
+                    f"commentaires et des photos ici :\n{suivi_link}\n"
+                )
             send_mail(
                 subject=f"Votre demande « {demande.title} » a été prise en charge",
                 message=(
                     f"Bonjour {demande.first_name_request},\n\n"
                     f"Votre demande d'aide « {demande.title} » a été affectée à l'équipe {team.name}, "
-                    f"qui va la traiter (dossier {dossier.numero}).\n\n"
+                    f"qui va la traiter (dossier {dossier.numero}).\n"
+                    f"{suivi_paragraph}\n"
                     "Cordialement,\n"
                     "L'équipe Assista-Crise"
                 ),
@@ -1242,12 +1316,18 @@ class DocumentViewSet(viewsets.ModelViewSet):
             return Document.objects.all()
 
         return Document.objects.filter(
-            auteur=user
-        )
+            Q(auteur=user) | Q(dossier__participants__utilisateur=user)
+        ).distinct()
 
     def perform_create(self, serializer):
 
-        document = serializer.save()
+        user = self.request.user
+        dossier = serializer.validated_data.get('dossier')
+        if dossier and user.type not in INSTITUTIONAL_TYPES:
+            if not dossier.participants.filter(utilisateur=user).exists():
+                raise PermissionDenied("Vous n'êtes pas participant de ce dossier.")
+
+        document = serializer.save(auteur=user)
 
         audit_log(
             request=self.request,
@@ -1292,26 +1372,28 @@ class DocumentViewSet(viewsets.ModelViewSet):
                 commentaire=document.commentaire or ""
             )
 
-        participants = (
-            document.dossier
-            .participants
-            .all()
-        )
+        if document.dossier:
 
-        for participant in participants:
-
-            if (
-                participant.utilisateur_id ==
-                document.auteur_id
-            ):
-                continue
-
-            Notification.objects.create(
-                utilisateur=participant.utilisateur,
-                dossier=document.dossier,
-                titre="Nouvelle photo",
-                message=document.commentaire or ""
+            participants = (
+                document.dossier
+                .participants
+                .all()
             )
+
+            for participant in participants:
+
+                if (
+                    participant.utilisateur_id ==
+                    document.auteur_id
+                ):
+                    continue
+
+                Notification.objects.create(
+                    utilisateur=participant.utilisateur,
+                    dossier=document.dossier,
+                    titre="Nouvelle photo",
+                    message=document.commentaire or ""
+                )
 
     def check_document_access(
         self,
@@ -1353,6 +1435,9 @@ class DocumentViewSet(viewsets.ModelViewSet):
                 id=user.id
             ).exists():
                 return True
+
+        if dossier.participants.filter(utilisateur=user).exists():
+            return True
 
         return False
 
@@ -1433,9 +1518,25 @@ class DossierCommentaireViewSet(viewsets.ModelViewSet):
     queryset = DossierCommentaire.objects.all()
     serializer_class = DossierCommentaireSerializer
 
+    def get_queryset(self):
+        user = self.request.user
+        if not user.is_authenticated:
+            return DossierCommentaire.objects.none()
+        if user.type in INSTITUTIONAL_TYPES:
+            return DossierCommentaire.objects.all()
+        return DossierCommentaire.objects.filter(
+            dossier__participants__utilisateur=user
+        ).distinct()
+
     def perform_create(self, serializer):
 
-        commentaire = serializer.save()
+        user = self.request.user
+        dossier = serializer.validated_data.get('dossier')
+        if dossier and user.type not in INSTITUTIONAL_TYPES:
+            if not dossier.participants.filter(utilisateur=user).exists():
+                raise PermissionDenied("Vous n'êtes pas participant de ce dossier.")
+
+        commentaire = serializer.save(auteur=user)
 
         DossierHistorique.objects.create(
             dossier=commentaire.dossier,

@@ -303,6 +303,23 @@ export class AuthService {
   }
 
   /**
+   * GET /api/magic-login/<uidb64>/<token>/
+   * Connexion sans mot de passe via lien magique (ex : suivi de dossier envoyé par email).
+   * Réponse : { user, token, refresh, message }
+   */
+  magicLogin(uidb64: string, token: string): Observable<ActivationResponse> {
+    return this.http
+      .get<ActivationResponse>(`${this.url}/magic-login/${uidb64}/${token}/`)
+      .pipe(
+        tap(res => this.setSession(res.token, res.refresh, res.user)),
+        catchError((error: HttpErrorResponse) => {
+          const errorMessage = error.error?.error || 'Ce lien de connexion est invalide ou a expiré';
+          return throwError(() => new Error(errorMessage));
+        })
+      );
+  }
+
+  /**
    * POST /api/auth/token/refresh/
    * Renouveler l'access token depuis le refresh token.
    */

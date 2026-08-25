@@ -1,0 +1,35 @@
+<div class="magic-login-container">
+  <div class="magic-login-wrapper">
+
+    @if (state === 'loading') {
+      <div class="state-block">
+        <div class="spinner"></div>
+        <h1 class="magic-login-title">Connexion en cours…</h1>
+        <p class="magic-login-text">Merci de patienter un instant.</p>
+      </div>
+    }
+
+    @if (state === 'success') {
+      <div class="state-block">
+        <span class="material-icons state-icon success-icon">check_circle</span>
+        <h1 class="magic-login-title">Connecté !</h1>
+        <p class="magic-login-text">Redirection en cours…</p>
+      </div>
+    }
+
+    @if (state === 'error') {
+      <div class="state-block">
+        <span class="material-icons state-icon error-icon">error_outline</span>
+        <h1 class="magic-login-title">Connexion impossible</h1>
+        <p class="magic-login-text">{{ errorMessage }}</p>
+        <p class="magic-login-subtext">
+          Le lien a peut-être déjà été utilisé ou a expiré (validité : 7 jours).
+        </p>
+        <div class="actions">
+          <a routerLink="/login" class="btn-link">Retour à la connexion</a>
+        </div>
+      </div>
+    }
+
+  </div>
+</div>

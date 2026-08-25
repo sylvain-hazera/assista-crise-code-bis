@@ -1,0 +1,116 @@
+<div class="suivi-container">
+  <div class="suivi-wrapper">
+
+    @if (loading) {
+      <div class="state-block">
+        <div class="spinner"></div>
+        <p>Chargement de votre dossier…</p>
+      </div>
+    } @else if (notFound || !dossier) {
+      <div class="state-block">
+        <span class="material-icons state-icon error-icon">error_outline</span>
+        <h1>Dossier introuvable</h1>
+        <p>Ce dossier n'existe pas ou vous n'y avez pas accès.</p>
+      </div>
+    } @else {
+
+      <div class="suivi-header">
+        <div class="numero">{{ dossier.numero }}</div>
+        <span class="statut-badge">{{ statutLabel(dossier.statut) }}</span>
+      </div>
+
+      <h1 class="titre">{{ dossier.titre }}</h1>
+      @if (dossier.description) {
+        <p class="description">{{ dossier.description }}</p>
+      }
+
+      <div class="meta-row" *ngIf="dossier.equipe_nom">
+        <strong>Équipe en charge :</strong> {{ dossier.equipe_nom }}
+      </div>
+
+      <hr>
+
+      <section class="photos-section">
+        <h2>Photos</h2>
+        <p class="section-hint">
+          Ajoutez une photo pour illustrer la situation. La prise de photo sur le vif est
+          privilégiée : préférez l'appareil photo à la galerie.
+        </p>
+
+        <div class="photos-grid">
+          <div class="photo-card" *ngFor="let doc of documents">
+            @if (previews[doc.id]) {
+              <img [src]="previews[doc.id]" alt="Photo du dossier">
+            } @else {
+              <div class="photo-placeholder">
+                <span class="material-icons">image</span>
+              </div>
+            }
+            <small>{{ doc.date_upload | date:'dd/MM/yyyy HH:mm' }}</small>
+          </div>
+        </div>
+
+        @if (uploadError) {
+          <p class="upload-error">{{ uploadError }}</p>
+        }
+
+        <div class="photo-actions">
+          <label class="btn-photo btn-photo-primary" [class.disabled]="uploadingPhoto">
+            <span class="material-icons">photo_camera</span>
+            Prendre une photo
+            <input
+              type="file"
+              accept="image/*"
+              capture="environment"
+              [disabled]="uploadingPhoto"
+              (change)="onCameraPhotoSelected($event)"
+              class="file-input">
+          </label>
+
+          <label class="btn-photo btn-photo-secondary" [class.disabled]="uploadingPhoto">
+            <span class="material-icons">photo_library</span>
+            Choisir depuis la galerie
+            <input
+              type="file"
+              accept="image/*"
+              [disabled]="uploadingPhoto"
+              (change)="onGalleryPhotoSelected($event)"
+              class="file-input">
+          </label>
+        </div>
+      </section>
+
+      <hr>
+
+      <section class="comments-section">
+        <h2>Commentaires</h2>
+
+        <div class="comment-form">
+          <textarea
+            [(ngModel)]="nouveauCommentaire"
+            placeholder="Ajouter un commentaire..."
+            rows="3"></textarea>
+          <button
+            type="button"
+            class="btn-send"
+            [disabled]="!nouveauCommentaire.trim() || sendingCommentaire"
+            (click)="addCommentaire()">
+            Envoyer
+          </button>
+        </div>
+
+        @if (commentaires.length === 0) {
+          <p class="section-hint">Aucun commentaire pour le moment.</p>
+        }
+
+        <div class="commentaire-card" *ngFor="let c of commentaires">
+          <div class="author">{{ c.auteur_nom }}</div>
+          <div class="text">{{ c.commentaire }}</div>
+          <small>{{ c.date_creation | date:'dd/MM/yyyy HH:mm' }}</small>
+        </div>
+      </section>
+
+    }
+
+  </div>
+</div>

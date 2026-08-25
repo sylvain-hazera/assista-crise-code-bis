@@ -33,6 +33,17 @@ export const PUBLIC_ROUTES: Routes = [
           .then(m => m.ActivateAccountComponent)
       },
       {
+        path: 'connexion-magique/:uidb64/:token',
+        loadComponent: () => import('../auth/component/magic-login/magic-login.component')
+          .then(m => m.MagicLoginComponent)
+      },
+      {
+        path: 'dossier-suivi/:id',
+        canActivate: [authGuard],
+        loadComponent: () => import('./dossier-suivi/dossier-suivi.component')
+          .then(m => m.DossierSuiviComponent)
+      },
+      {
         path: 'settings',
         canActivate: [authGuard],
         loadComponent: () => import('./settings/settings.component')
