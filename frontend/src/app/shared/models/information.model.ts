@@ -9,7 +9,7 @@ export interface InformationType {
 export interface Information {
   id: string;                           // UUID
   title: string;
-  photo: string | null;
+  has_photo: boolean;
   location: GeoPoint;
   latitude?: number;
   longitude?: number;

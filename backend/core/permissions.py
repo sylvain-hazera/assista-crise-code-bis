@@ -1,4 +1,5 @@
 """Permissions DRF réutilisables liées au type de compte (User.type)."""
+from django.db.models import Q
 from rest_framework.permissions import BasePermission
 
 from .models import UserRole
@@ -35,3 +36,30 @@ class IsAdministrator(BasePermission):
             and request.user.is_authenticated
             and request.user.type == UserRole.ADMINISTRATOR
         )
+
+
+def user_can_view_photo(user, obj, *, author_field='author', teams_field=None, dossiers_field=None):
+    """Détermine si `user` peut voir la photo d'un objet (Crisis/Offer/Request/
+    Information/RecherchePersonne) : l'auteur, un acteur institutionnel, un membre
+    d'une équipe affectée à l'objet, ou un participant d'un dossier lié à l'objet."""
+    if not user or not user.is_authenticated:
+        return False
+
+    if user.type in INSTITUTIONAL_TYPES:
+        return True
+
+    author = getattr(obj, author_field, None)
+    if author and author == user:
+        return True
+
+    if teams_field and getattr(obj, teams_field).filter(
+        Q(members=user) | Q(leader=user)
+    ).exists():
+        return True
+
+    if dossiers_field and getattr(obj, dossiers_field).filter(
+        participants__utilisateur=user
+    ).exists():
+        return True
+
+    return False

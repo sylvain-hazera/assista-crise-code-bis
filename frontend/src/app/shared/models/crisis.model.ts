@@ -23,7 +23,7 @@ export interface Crisis {
   end_date: string | null;
   validator: string | null;
   author: string | null;
-  photo: string | null;
+  has_photo: boolean;
   severity: string | null;
 }
 

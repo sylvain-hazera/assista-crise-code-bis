@@ -1,0 +1,165 @@
+<div class="recherches-page">
+
+  <header class="page-header">
+    <div class="header-left">
+      <h1>
+        <span class="material-icons">search</span>
+        Recherches de personnes
+      </h1>
+
+      <p class="subtitle">
+        {{ filteredRecherches.length }} résultat(s)
+      </p>
+    </div>
+
+    <div class="header-actions">
+      <button
+        class="btn-primary"
+        routerLink="/recherches-personnes/new"
+      >
+        <span class="material-icons">person_add</span>
+        Nouvelle recherche
+      </button>
+    </div>
+  </header>
+
+  <div class="search-box">
+
+    <span class="material-icons">
+      search
+    </span>
+
+    <input
+      type="text"
+      placeholder="Rechercher une personne ou une ville..."
+      [(ngModel)]="searchTerm"
+    >
+
+  </div>
+
+  <div class="table-card">
+
+    <div
+      *ngIf="recherches.length === 0"
+      class="empty"
+    >
+      <span class="material-icons">
+        manage_search
+      </span>
+
+      <p>
+        Aucune recherche enregistrée
+      </p>
+    </div>
+
+    <div
+      *ngIf="recherches.length > 0"
+      class="cards-grid"
+    >
+
+      <div
+        *ngFor="let r of filteredRecherches"
+        class="person-card"
+      >
+
+        <img
+          *ngIf="photoUrls[r.id]"
+          [src]="photoUrls[r.id]"
+          class="card-photo"
+          alt=""
+        >
+
+        <div class="card-content">
+
+          <h3>
+            {{ r.prenom }}
+            {{ r.nom }}
+          </h3>
+
+          <div
+            class="etat-badge"
+            [ngClass]="r.etat_utilisateur"
+          >
+            {{ r.etat_utilisateur }}
+          </div>
+
+          <div class="info-line">
+            <span class="material-icons">
+              cake
+            </span>
+
+            {{ r.age }} ans
+          </div>
+
+          <div class="info-line">
+            <span class="material-icons">
+              location_on
+            </span>
+
+            {{ r.ville }}
+          </div>
+
+          <div
+            *ngIf="r.ehpad_nom"
+            class="info-line"
+          >
+            <span class="material-icons">
+              home_work
+            </span>
+
+            {{ r.ehpad_nom }}
+          </div>
+
+          <div
+            *ngIf="r.dernier_commentaire"
+            class="last-comment"
+          >
+
+            <strong>Dernière activité :</strong>
+
+            {{ r.dernier_commentaire }}
+
+          </div>
+
+          <div
+            *ngIf="r.nb_photos_dernier_commentaire > 0"
+            class="comment-photo-count"
+          >
+
+            📷
+            {{ r.nb_photos_dernier_commentaire }}
+            photo(s)
+
+          </div>
+
+          <div
+            *ngIf="r.date_dernier_commentaire"
+            class="comment-date"
+          >
+
+            🕒
+
+            {{ r.date_dernier_commentaire | date:'dd/MM/yyyy HH:mm' }}
+
+          </div>
+
+
+          <a
+            class="btn-details"
+            [routerLink]="[
+              '/recherches-personnes',
+              r.id
+            ]"
+          >
+            Voir le dossier
+          </a>
+
+        </div>
+
+      </div>
+
+    </div>
+
+  </div>
+
+</div>

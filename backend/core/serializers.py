@@ -54,6 +54,7 @@ class RecherchePersonneCommentairePhotoSerializer(
         )
 
         fields = "__all__"
+        extra_kwargs = {'fichier': {'write_only': True}}
 
 class CompetenceSerializer(serializers.ModelSerializer):
     class Meta:
@@ -196,10 +197,12 @@ class CrisisSerializer(serializers.ModelSerializer):
     longitude = serializers.SerializerMethodField()
     zone_geojson = serializers.SerializerMethodField()
     author = serializers.PrimaryKeyRelatedField(read_only=True, allow_null=True)
+    has_photo = serializers.SerializerMethodField()
 
     class Meta:
         model = Crisis
         fields = '__all__'
+        extra_kwargs = {'photo': {'write_only': True}}
 
     def get_latitude(self, obj):
         return obj.location.y if obj.location else None
@@ -211,6 +214,9 @@ class CrisisSerializer(serializers.ModelSerializer):
         # GEOSGeometry.geojson est une propriété native de GeoDjango — pas besoin de
         # librairie de parsing WKT côté frontend, qui consomme directement ce GeoJSON.
         return json.loads(obj.zone.geojson) if obj.zone else None
+
+    def get_has_photo(self, obj):
+        return bool(obj.photo)
 
 class RequestSerializer(serializers.ModelSerializer):
     """Serializer pour les demandes d'aide.
@@ -224,10 +230,12 @@ class RequestSerializer(serializers.ModelSerializer):
     author_nom = serializers.SerializerMethodField()
     author_email = serializers.CharField(source="author.email", read_only=True, default=None)
     crisis_nom = serializers.CharField(source="crisis.name", read_only=True, default=None)
+    has_photo = serializers.SerializerMethodField()
 
     class Meta:
         model = Request
         fields = '__all__'
+        extra_kwargs = {'photo': {'write_only': True}}
 
     def _location_visible(self) -> bool:
         request = self.context.get('request')
@@ -256,6 +264,9 @@ class RequestSerializer(serializers.ModelSerializer):
         full_name = f"{obj.author.first_name} {obj.author.last_name}".strip()
         return full_name or obj.author.email
 
+    def get_has_photo(self, obj):
+        return bool(obj.photo)
+
 class OfferSerializer(serializers.ModelSerializer):
     """Serializer pour les offres d'aide.
 
@@ -268,10 +279,12 @@ class OfferSerializer(serializers.ModelSerializer):
     author_nom = serializers.SerializerMethodField()
     author_email = serializers.CharField(source="author.email", read_only=True, default=None)
     crisis_nom = serializers.CharField(source="crisis.name", read_only=True, default=None)
+    has_photo = serializers.SerializerMethodField()
 
     class Meta:
         model = Offer
         fields = '__all__'
+        extra_kwargs = {'photo': {'write_only': True}}
 
     def _location_visible(self) -> bool:
         request = self.context.get('request')
@@ -302,6 +315,9 @@ class OfferSerializer(serializers.ModelSerializer):
         full_name = f"{obj.author.first_name} {obj.author.last_name}".strip()
         return full_name or obj.author.email
 
+    def get_has_photo(self, obj):
+        return bool(obj.photo)
+
 class DisponibiliteOffreSerializer(serializers.ModelSerializer):
     """Créneau de disponibilité (jour + matin/midi/soir/nuit) d'un bénévole."""
 
@@ -321,10 +337,12 @@ class InformationSerializer(serializers.ModelSerializer):
     author_nom = serializers.SerializerMethodField()
     author_email = serializers.CharField(source="author.email", read_only=True, default=None)
     crisis_nom = serializers.CharField(source="crisis.name", read_only=True, default=None)
+    has_photo = serializers.SerializerMethodField()
 
     class Meta:
         model = Information
         fields = '__all__'
+        extra_kwargs = {'photo': {'write_only': True}}
 
     def _location_visible(self) -> bool:
         request = self.context.get('request')
@@ -352,6 +370,9 @@ class InformationSerializer(serializers.ModelSerializer):
             return None
         full_name = f"{obj.author.first_name} {obj.author.last_name}".strip()
         return full_name or obj.author.email
+
+    def get_has_photo(self, obj):
+        return bool(obj.photo)
 
 class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
     """Serializer personnalisé pour l'authentification JWT"""
@@ -611,6 +632,11 @@ class RecherchePersonneSerializer(
         serializers.SerializerMethodField()
     )
 
+    has_photo = serializers.SerializerMethodField()
+
+    def get_has_photo(self, obj):
+        return bool(obj.photo)
+
     def get_dernier_commentaire(
         self,
         obj
@@ -752,6 +778,7 @@ class RecherchePersonneSerializer(
             "nb_photos_dernier_commentaire",
             "date_dernier_commentaire",
             "etat_utilisateur",
+            "has_photo",
         ]
 
 
@@ -761,6 +788,10 @@ class RecherchePersonneSerializer(
             "date_creation",
             "date_retrouvee",
         )
+
+        extra_kwargs = {
+            "photo": {"write_only": True},
+        }
 
 
 class RecherchePersonneCommentaireSerializer(
@@ -844,6 +875,8 @@ class RecherchePersonnePhotoSerializer(
             "auteur",
             "date_creation",
         )
+
+        extra_kwargs = {'fichier': {'write_only': True}}
 
     def get_auteur_nom(self, obj):
 

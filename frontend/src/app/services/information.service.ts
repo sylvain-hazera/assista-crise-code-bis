@@ -30,6 +30,11 @@ export class InformationService {
       .pipe(map(this.normalize));
   }
 
+  /** GET /api/informations/<id>/preview/ — 403 si pas auteur/acteur institutionnel. */
+  preview(id: string): Observable<Blob> {
+    return this.http.get(`${this.url}/${id}/preview/`, { responseType: 'blob' });
+  }
+
   create(data: Partial<Information> | FormData): Observable<Information> {
     return this.http.post<Information>(`${this.url}/`, data);
   }

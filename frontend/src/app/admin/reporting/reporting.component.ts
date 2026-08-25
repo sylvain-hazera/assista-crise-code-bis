@@ -43,7 +43,7 @@ export interface ReportRow {
   author_nom:   string | null;
   latitude:     number | null;
   longitude:    number | null;
-  photo:        string | null;
+  has_photo:    boolean;
   // raw originals for detail modal
   _raw:         Crisis | Offer | Request | Information;
 }
@@ -108,6 +108,9 @@ export class ReportingComponent implements OnInit, OnDestroy {
   selectedRowAddress: string | null = null;
   newStatus:   Status | ''      = '';
 
+  // ── Photos (blob-fetch access-contrôlé, plus d'URL brute côté API) ──────────
+  photoUrls: Record<string, string> = {};
+
   // ── Exposed enums ──────────────────────────────────────────
   readonly Status = Status;
 
@@ -149,7 +152,11 @@ export class ReportingComponent implements OnInit, OnDestroy {
   ) {}
 
   ngOnInit():    void { this.loadAll(); }
-  ngOnDestroy(): void { this.destroy$.next(); this.destroy$.complete(); }
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
+    Object.values(this.photoUrls).forEach(url => URL.revokeObjectURL(url));
+  }
 
   // ────────────────────────────────────────────────────────────────────────────
   // LOAD
@@ -205,7 +212,7 @@ export class ReportingComponent implements OnInit, OnDestroy {
       author_nom: null,
       latitude:  c.latitude ?? null,
       longitude: c.longitude ?? null,
-      photo:     c.photo ?? null,
+      has_photo: !!c.has_photo,
       _raw:      c,
     }));
 
@@ -225,7 +232,7 @@ export class ReportingComponent implements OnInit, OnDestroy {
       author_nom: o.author_nom ?? null,
       latitude:  o.latitude ?? null,
       longitude: o.longitude ?? null,
-      photo:     o.photo,
+      has_photo: !!o.has_photo,
       _raw:      o,
     }));
 
@@ -245,7 +252,7 @@ export class ReportingComponent implements OnInit, OnDestroy {
       author_nom: d.author_nom ?? null,
       latitude:  d.latitude ?? null,
       longitude: d.longitude ?? null,
-      photo:     d.photo,
+      has_photo: !!d.has_photo,
       _raw:      d,
     }));
 
@@ -265,16 +272,35 @@ export class ReportingComponent implements OnInit, OnDestroy {
       author_nom: i.author_nom ?? null,
       latitude:  i.latitude ?? null,
       longitude: i.longitude ?? null,
-      photo:     i.photo,
+      has_photo: !!i.has_photo,
       _raw:      i,
     }));
 
     this.allRows = [...crisisRows, ...offerRows, ...requestRows, ...infoRows];
     this.applyFilters();
 
+    this.allRows.filter(r => r.has_photo).forEach(r => this.loadRowPhoto(r));
+
     const targetId = this.route.snapshot.queryParamMap.get('id');
     const target = targetId ? this.allRows.find(r => r.id === targetId) : null;
     if (target) this.openDetail(target);
+  }
+
+  /** Récupère la photo d'une ligne via l'action /preview/ access-contrôlée du bon
+   * service selon `kind` — 403 silencieux si l'utilisateur n'est pas auteur/acteur
+   * (pas d'erreur affichée, la vignette reste simplement absente). */
+  private loadRowPhoto(row: ReportRow): void {
+    const service = {
+      Crisis: this.crisisService,
+      Offer: this.offerService,
+      Request: this.requestService,
+      Information: this.informationService,
+    }[row.kind];
+
+    service.preview(row.id).subscribe({
+      next: (blob) => { this.photoUrls[row.id] = URL.createObjectURL(blob); },
+      error: () => {},
+    });
   }
 
   // ────────────────────────────────────────────────────────────────────────────

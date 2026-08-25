@@ -136,8 +136,8 @@
                 </td>
                 <td class="cell-titre">
                   <div class="titre-wrap">
-                    @if (row.photo) {
-                      <img class="thumb" [src]="row.photo" [alt]="row.title"/>
+                    @if (photoUrls[row.id]) {
+                      <img class="thumb" [src]="photoUrls[row.id]" [alt]="row.title"/>
                     }
                     <div>
                       <span class="titre-text">{{ row.title }}</span>
@@ -240,9 +240,9 @@
 
       <div class="modal-body detail-body">
         <!-- Photo -->
-        @if (selectedRow.photo) {
-          <div class="detail-photo" (click)="openImageFullsize(selectedRow.photo!)" title="Voir en taille réelle">
-            <img [src]="selectedRow.photo" [alt]="selectedRow.title"/>
+        @if (photoUrls[selectedRow.id]) {
+          <div class="detail-photo" (click)="openImageFullsize(photoUrls[selectedRow.id])" title="Voir en taille réelle">
+            <img [src]="photoUrls[selectedRow.id]" [alt]="selectedRow.title"/>
           </div>
         }
 

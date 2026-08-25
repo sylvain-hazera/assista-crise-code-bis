@@ -11,7 +11,7 @@ export interface Offer {
   id: string;                           // UUID
   title: string;
   description?: string | null;
-  photo: string | null;
+  has_photo: boolean;
   location: GeoPoint | null;            // null si l'offreur n'a pas indiqué d'adresse,
                                          // ou si l'adresse est masquée pour ce lecteur (public)
   latitude?: number | null;

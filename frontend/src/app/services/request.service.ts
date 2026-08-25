@@ -56,6 +56,11 @@ export class RequestService {
       .pipe(map(this.normalize));
   }
 
+  /** GET /api/demandes/<id>/preview/ — 403 si pas auteur/acteur institutionnel/équipe. */
+  preview(id: string): Observable<Blob> {
+    return this.http.get(`${this.url}/${id}/preview/`, { responseType: 'blob' });
+  }
+
   /**
    * Statistiques.
    * GET /api/demandes/stats/?[params]

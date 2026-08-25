@@ -29,7 +29,7 @@ from PIL.ExifTags import TAGS, GPSTAGS
 
 from .audit import audit_log, get_client_ip
 from .institution_attachment import attach_user_to_institution, resolve_or_invite_responsable
-from .permissions import IsInstitutionalActor, IsAdministrator, INSTITUTIONAL_TYPES
+from .permissions import IsInstitutionalActor, IsAdministrator, INSTITUTIONAL_TYPES, user_can_view_photo
 
 
 GPS_IFD_TAG = 0x8825  # PIL.ExifTags.IFD.GPSInfo
@@ -662,6 +662,15 @@ class CrisisViewSet(viewsets.ModelViewSet):
             commentaire=f"Création crise : {crise.name}",
         )
 
+    @action(detail=True, methods=["get"])
+    def preview(self, request, pk=None):
+        crise = self.get_object()
+        if not crise.photo or not user_can_view_photo(
+            request.user, crise, teams_field='assigned_teams', dossiers_field='dossiers'
+        ):
+            return Response(status=403)
+        return FileResponse(open(crise.photo.path, "rb"))
+
 def resolve_or_invite_demandeur(demande, request=None):
     """Résout le compte utilisateur du demandeur d'une aide pour lui permettre de suivre son
     dossier par lien magique : l'auteur de la demande s'il est authentifié, sinon un compte
@@ -1004,6 +1013,15 @@ class RequestViewSet(viewsets.ModelViewSet):
 
         return Response({"dossier": str(dossier.id), "numero": dossier.numero, "regulateurs_notifies": regulateurs.count()})
 
+    @action(detail=True, methods=["get"])
+    def preview(self, request, pk=None):
+        demande = self.get_object()
+        if not demande.photo or not user_can_view_photo(
+            request.user, demande, teams_field='assigned_teams', dossiers_field='dossiers'
+        ):
+            return Response(status=403)
+        return FileResponse(open(demande.photo.path, "rb"))
+
 class TeamViewSet(viewsets.ModelViewSet):
     queryset           = Team.objects.prefetch_related(
         'members', 'assigned_crises', 'assigned_offers', 'assigned_requests'
@@ -1102,6 +1120,15 @@ class OfferViewSet(viewsets.ModelViewSet):
 
         return Response({"id": str(participant.id), "dossier": str(dossier.id), "created": created})
 
+    @action(detail=True, methods=["get"])
+    def preview(self, request, pk=None):
+        offer = self.get_object()
+        if not offer.photo or not user_can_view_photo(
+            request.user, offer, teams_field='assigned_teams'
+        ):
+            return Response(status=403)
+        return FileResponse(open(offer.photo.path, "rb"))
+
 class DisponibiliteOffreViewSet(viewsets.ModelViewSet):
     """Créneaux de disponibilité (matin/midi/soir/nuit, 8 jours) déclarés avec une offre d'aide."""
     queryset = DisponibiliteOffre.objects.all()
@@ -1150,6 +1177,13 @@ class InformationViewSet(viewsets.ModelViewSet):
             
         except Exception as e:
             print(f"Erreur critique : L'envoi de l'email a échoué. Détails : {e}")
+
+    @action(detail=True, methods=["get"])
+    def preview(self, request, pk=None):
+        info = self.get_object()
+        if not info.photo or not user_can_view_photo(request.user, info):
+            return Response(status=403)
+        return FileResponse(open(info.photo.path, "rb"))
 
 # --- VIEWSETS SIMPLES POUR LES TYPES ---
 class RequestTypeViewSet(viewsets.ModelViewSet):
@@ -1821,6 +1855,15 @@ class RecherchePersonneViewSet(
         return Response(
             {"status": "ok"}
         )
+
+    @action(detail=True, methods=["get"])
+    def preview(self, request, pk=None):
+        recherche = self.get_object()
+        if not recherche.photo or not user_can_view_photo(
+            request.user, recherche, author_field='createur'
+        ):
+            return Response(status=403)
+        return FileResponse(open(recherche.photo.path, "rb"))
 
 
 

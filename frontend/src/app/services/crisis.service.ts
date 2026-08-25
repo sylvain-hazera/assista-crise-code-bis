@@ -50,6 +50,11 @@ export class CrisisService {
       .pipe(map(this.normalize));
   }
 
+  /** GET /api/crises/<id>/preview/ — 403 si pas auteur/acteur institutionnel. */
+  preview(id: string): Observable<Blob> {
+    return this.http.get(`${this.apiUrl}/${id}/preview/`, { responseType: 'blob' });
+  }
+
   /**
    * Statistiques pour le dashboard.
    * GET /api/crises/stats/?[params]

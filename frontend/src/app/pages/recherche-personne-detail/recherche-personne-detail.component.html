@@ -1,0 +1,233 @@
+<div
+  *ngIf="recherche"
+  class="detail-page"
+>
+
+  <div class="detail-card">
+
+    <div class="photo-section">
+
+      <img
+        *ngIf="mainPhotoUrl"
+        [src]="mainPhotoUrl"
+        [alt]="recherche.nom"
+        class="person-photo"
+      >
+
+      <div
+        *ngIf="!mainPhotoUrl"
+        class="photo-placeholder"
+      >
+        <span class="material-icons">
+          person
+        </span>
+      </div>
+
+    </div>
+
+    <div class="header-section">
+
+      <h1>
+        {{ recherche.prenom }}
+        {{ recherche.nom }}
+      </h1>
+
+      <span
+        class="status-badge"
+        [ngClass]="{
+          'status-search': recherche.statut === 'RECHERCHE',
+          'status-archive': recherche.statut === 'ARCHIVEE',
+          'status-found': recherche.statut === 'RETROUVEE'
+        }"
+      >
+        {{
+          recherche.statut === 'RETROUVEE'
+            ? 'Retrouvée'
+            : recherche.statut === 'ARCHIVEE'
+              ? 'Archivée'
+              : 'En recherche'
+        }}
+      </span>
+
+      <button
+        class="btn-found"
+        (click)="retrouverRecherche()">
+        Déclarer retrouvée
+      </button>
+      <button
+        *ngIf="
+          currentUser &&
+          (
+            currentUser.id === recherche.createur ||
+            currentUser.type === 'ADMIN'
+          )
+        "
+        class="btn-archive"
+        (click)="archiverRecherche()">
+        Archiver
+      </button>
+
+      <button
+        class="btn-acknowledge"
+        (click)="acquitter()">
+        Acquitter
+      </button>
+    </div>
+
+    <div class="info-grid">
+
+      <div class="info-box">
+        <label>Age</label>
+        <span>{{ recherche.age }} ans</span>
+      </div>
+
+      <div class="info-box">
+        <label>Créée le</label>
+        <span>
+          {{ recherche.date_creation | date:'dd/MM/yyyy HH:mm' }}
+        </span>
+      </div>
+
+      <div class="info-box">
+        <label>Ville</label>
+        <span>{{ recherche.ville }}</span>
+      </div>
+
+      <div class="info-box">
+        <label>Source</label>
+        <span>{{ recherche.source }}</span>
+      </div>
+
+      <div
+        *ngIf="recherche.crise"
+        class="info-box"
+      >
+        <label>Crise</label>
+        <span>{{ recherche.crise_nom }}</span>
+      </div>
+
+    </div>
+
+    <div
+      *ngIf="recherche.description"
+      class="description-card"
+    >
+
+      <h2>
+        Informations de recherche
+      </h2>
+
+      <p>
+        {{ recherche.description }}
+      </p>
+
+    </div>
+
+    <div class="contact-card">
+
+      <h2>
+        Coordonnées du déclarant
+      </h2>
+
+      <div class="info-grid">
+
+        <div class="info-box">
+          <label>Nom</label>
+          <span>{{ recherche.contact_nom }}</span>
+        </div>
+
+        <div class="info-box">
+          <label>Email</label>
+          <span>{{ recherche.contact_email }}</span>
+        </div>
+
+        <div class="info-box">
+          <label>Téléphone</label>
+          <span>{{ recherche.contact_telephone }}</span>
+        </div>
+
+      </div>
+
+    </div>
+
+  </div>
+
+  <div class="comments-card">
+
+    <h2>
+      Commentaires
+    </h2>
+
+    <div
+      *ngFor="let commentaire of commentaires"
+      class="comment-card"
+    >
+
+      <div class="comment-author">
+        {{ commentaire.auteur_nom }}
+      </div>
+
+      <div class="comment-content">
+        {{ commentaire.commentaire }}
+      </div>
+
+      <div
+        class="comment-photos"
+        *ngIf="
+          getPhotosCommentaire(
+            commentaire.id
+          ).length
+        "
+      >
+
+        <img
+          *ngFor="
+            let photo of getPhotosCommentaire(
+              commentaire.id
+            )
+          "
+          [src]="photoUrls[photo.id]"
+          class="comment-photo"
+          (click)="ouvrirPhoto(photoUrls[photo.id])"
+        >
+
+</div>
+
+
+    </div>
+
+    <div
+      *ngIf="commentaires.length === 0"
+      class="empty-comments"
+    >
+      Aucun commentaire pour le moment.
+    </div>
+
+    <div class="comment-form">
+
+      <textarea
+        [(ngModel)]="nouveauCommentaire"
+        rows="5"
+        placeholder="Ajouter un commentaire..."
+      ></textarea>
+
+      <input
+        type="file"
+        multiple
+        accept="image/*"
+        (change)="onPhotosSelected($event)"
+      >
+
+      <button
+        class="btn-primary"
+        (click)="ajouterCommentaire()"
+      >
+        Ajouter un commentaire
+      </button>
+
+    </div>
+
+  </div>
+
+</div>
+
