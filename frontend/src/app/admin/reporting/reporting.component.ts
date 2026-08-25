@@ -105,7 +105,7 @@ export class ReportingComponent implements OnInit, OnDestroy {
   showDeleteModal = false;
   showStatusModal = false;
   selectedRow: ReportRow | null = null;
-  selectedRowCommune: string | null = null;
+  selectedRowAddress: string | null = null;
   newStatus:   Status | ''      = '';
 
   // ── Exposed enums ──────────────────────────────────────────
@@ -355,18 +355,22 @@ export class ReportingComponent implements OnInit, OnDestroy {
   openDetail(row: ReportRow): void {
     this.selectedRow    = row;
     this.showDetailModal = true;
-    this.selectedRowCommune = null;
+    this.selectedRowAddress = null;
     this.selectedOfferDispos = [];
     this.assignTeamId = null;
     this.assignDossierId = null;
 
+    // Ces coordonnées ne sont jamais renvoyées par l'API à un consommateur non institutionnel
+    // (voir _location_visible côté serializers) : quiconque atteint ce code les voit déjà de
+    // plein droit — autant afficher l'adresse la plus précise possible (les services ont
+    // besoin de s'y rendre), pas juste la commune.
     if (row.latitude != null && row.longitude != null) {
       this.geolocationService.reverseGeocode(row.latitude, row.longitude).subscribe({
         next: (res) => {
           const props = res?.features?.[0]?.properties;
-          this.selectedRowCommune = props ? (props.city || props.label) : null;
+          this.selectedRowAddress = props?.label ?? null;
         },
-        error: () => { this.selectedRowCommune = null; },
+        error: () => { this.selectedRowAddress = null; },
       });
     }
 
@@ -586,7 +590,7 @@ export class ReportingComponent implements OnInit, OnDestroy {
   closeAll(): void {
     this.showDetailModal = this.showDeleteModal = this.showStatusModal = false;
     this.selectedRow = null;
-    this.selectedRowCommune = null;
+    this.selectedRowAddress = null;
     this.selectedOfferDispos = [];
     this.assignTeamId = null;
     this.assignDossierId = null;

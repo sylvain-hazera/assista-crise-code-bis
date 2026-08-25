@@ -226,6 +226,7 @@ class Request(models.Model):
     """Demandes d'aide"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     title = models.CharField(max_length=150)
+    description = models.TextField(null=True, blank=True)
     photo = models.ImageField(upload_to="photos/demandes/", null=True, blank=True, validators=[validate_image_file])
     location = gis_models.PointField(srid=4326)
     first_name_request = models.CharField(max_length=60)

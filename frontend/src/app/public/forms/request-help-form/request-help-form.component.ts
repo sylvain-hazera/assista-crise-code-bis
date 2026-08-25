@@ -3,9 +3,11 @@ import { FormGroup, FormBuilder, Validators, ReactiveFormsModule, FormArray } fr
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { CommonModule } from '@angular/common';
+import { forkJoin, Observable } from 'rxjs';
 import { RequestService } from '../../../services/request.service';
 import { CrisisService } from '../../../services/crisis.service';
 import { Crisis } from '../../../shared/models/crisis.model';
+import { Request } from '../../../shared/models/request.model';
 import { User } from '../../../shared/models/user.model';
 import { AuthService } from '../../../auth/services/auth.service';
 import { AddressPickerComponent } from '../../../shared/components/common/address-picker/address-picker.component';
@@ -148,87 +150,70 @@ export class RequestHelpFormComponent implements OnInit {
     }
   }
 
-  onSubmit(): void {    
-    if (this.informationForm.valid && this.latitude && this.longitude) {
-      console.log('Formulaire valide:', this.informationForm.value);
-
-      // Préparer les données pour Django
-      const formData = new FormData();
-      
-      // Champs du modèle Demande Django
-      formData.append('first_name_request', this.informationForm.get('firstName')?.value);
-      formData.append('last_name_request', this.informationForm.get('lastName')?.value);
-      formData.append('email_request', this.informationForm.get('email')?.value);
-      formData.append('phone_request', this.informationForm.get('phoneNumber')?.value);
-      
-      // Titre basé sur la crise sélectionnée
-      const crisisId = this.requestForm.get('crisisId')?.value;
-      const crisisLabel = this.crisisOptions.find(c => c.value === crisisId)?.label || 'non liée à une crise';
-      const titre = `Demande d'aide - ${crisisLabel}`;
-      formData.append('title', titre);
-      
-      // Localisation au format GeoJSON Point
-      const localisation = {
-        type: 'Point',
-        coordinates: [this.longitude, this.latitude]
-      };
-      formData.append('location', JSON.stringify(localisation));
-      
-      // Type demande - Utiliser le premier type disponible (les besoins sont spécifiés séparément)
-      const firstTypeId = Array.from(this.typesDemandeMap.values())[0];
-      if (!firstTypeId) {
-        alert('Type de demande non trouvé. Veuillez réessayer ou contacter le support.');
-        return;
-      }
-      formData.append('request_type', firstTypeId);
-      
-      // Crise (nullable)
-      if (crisisId) {
-        formData.append('crisis', crisisId);
-      }
-      
-      formData.append('status', 'NON_TRAITEE');
-      formData.append('author', this.currentUser?.id!);
-      
-      // Photo si présente
-      if (this.selectedFile) {
-        formData.append('photo', this.selectedFile);
-      }
-
-      // Envoyer au backend Django
-      this.helpRequestService.create(formData).subscribe({
-        next: (response) => {
-          console.log('Demande créée:', response);
-          alert('Votre demande a été enregistrée avec succès !');
-          this.router.navigate(['/accueil']);
-        },
-        error: (err) => {
-          console.error('Erreur création demande:', err);
-          if (err.status === 400) {
-            if (err.error && err.error.photo) {
-              alert("ERREUR PHOTO : " + err.error.photo[0]);
-            } else {
-              alert("Erreur de validation : Vérifiez les champs du formulaire.");
-            }
-          } 
-          else {
-            alert("Une erreur technique est survenue. Veuillez réessayer.");
-          }
-          
-        }
-      });
-
-    } else {
+  onSubmit(): void {
+    if (!this.informationForm.valid || !this.latitude || !this.longitude) {
       Object.keys(this.informationForm.controls).forEach(key => {
         this.informationForm.get(key)?.markAsTouched();
       });
-      
       if (!this.latitude || !this.longitude) {
         alert('Erreur de géolocalisation. Veuillez vérifier l\'adresse.');
       } else {
         alert('Veuillez remplir tous les champs obligatoires');
       }
+      return;
     }
+    if (this.needsType.invalid) {
+      this.needsType.markAllAsTouched();
+      alert('Veuillez préciser chaque besoin.');
+      return;
+    }
+
+    const crisisId = this.requestForm.get('crisisId')?.value;
+    const crisisLabel = this.crisisOptions.find(c => c.value === crisisId)?.label || 'non liée à une crise';
+    const localisation = { type: 'Point', coordinates: [this.longitude, this.latitude] };
+
+    const creations: Observable<Request>[] = this.needsType.controls.map((needControl, i) => {
+      const needType = needControl.value;
+      const description = this.descriptions.at(i).value;
+      const formData = new FormData();
+
+      formData.append('title', `Demande d'aide - ${crisisLabel} - ${needType}`);
+      formData.append('first_name_request', this.informationForm.get('firstName')?.value);
+      formData.append('last_name_request', this.informationForm.get('lastName')?.value);
+      formData.append('email_request', this.informationForm.get('email')?.value);
+      formData.append('phone_request', this.informationForm.get('phoneNumber')?.value);
+      formData.append('location', JSON.stringify(localisation));
+
+      const typeId = this.typesDemandeMap.get(needType);
+      if (typeId) formData.append('request_type', typeId);
+      if (crisisId) formData.append('crisis', crisisId);
+      if (description) formData.append('description', description);
+
+      formData.append('status', 'NON_TRAITEE');
+      if (this.currentUser?.id) formData.append('author', this.currentUser.id);
+      if (this.selectedFile) formData.append('photo', this.selectedFile);
+
+      return this.helpRequestService.create(formData);
+    });
+
+    forkJoin(creations).subscribe({
+      next: () => {
+        alert('Votre demande a été enregistrée avec succès !');
+        this.router.navigate(['/accueil']);
+      },
+      error: (err) => {
+        console.error('Erreur création demande:', err);
+        if (err.status === 400) {
+          if (err.error && err.error.photo) {
+            alert("ERREUR PHOTO : " + err.error.photo[0]);
+          } else {
+            alert("Erreur de validation : Vérifiez les champs du formulaire.");
+          }
+        } else {
+          alert("Une erreur technique est survenue. Veuillez réessayer.");
+        }
+      }
+    });
   }
 
   onCrisisSearchChange(event: Event): void {
