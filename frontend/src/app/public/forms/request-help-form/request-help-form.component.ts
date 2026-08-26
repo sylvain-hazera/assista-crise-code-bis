@@ -183,6 +183,7 @@ export class RequestHelpFormComponent implements OnInit {
       formData.append('email_request', this.informationForm.get('email')?.value);
       formData.append('phone_request', this.informationForm.get('phoneNumber')?.value);
       formData.append('location', JSON.stringify(localisation));
+      if (this.selectedAddress?.citycode) formData.append('commune_code', this.selectedAddress.citycode);
 
       const typeId = this.typesDemandeMap.get(needType);
       if (typeId) formData.append('request_type', typeId);

@@ -305,6 +305,33 @@
           </div>
         </div>
 
+        <!-- ── ZONE D'INTERVENTION ────────────────────────────── -->
+        <div class="detail-section">
+          <div class="section-header">
+            <h3>
+              <span class="material-icons">map</span>
+              Zone d'intervention
+            </h3>
+            <span class="section-hint">Du plus large au plus précis</span>
+          </div>
+
+          <div class="zone-codes-form">
+            <label>
+              Départements (codes séparés par des virgules)
+              <input type="text" [(ngModel)]="departementsInput" placeholder="38, 73"/>
+            </label>
+            <label>
+              Communes (codes INSEE séparés par des virgules)
+              <input type="text" [(ngModel)]="communesInput" placeholder="38185, 73065"/>
+            </label>
+            <button class="btn-secondary sm" (click)="saveZoneCodes()">Enregistrer</button>
+          </div>
+
+          <p class="section-hint">Zone précise (dessinée), optionnelle — la plus fine des trois niveaux :</p>
+          <app-zone-map [initialZone]="selectedTeam.zone_precise_geojson ?? null" (zoneChange)="onZoneChange($event)"></app-zone-map>
+          <button class="btn-secondary sm" (click)="saveZonePrecise()">Enregistrer la zone précise</button>
+        </div>
+
         <!-- ── MISSIONS ────────────────────────────────────── -->
         <div class="detail-section">
           <div class="section-header">

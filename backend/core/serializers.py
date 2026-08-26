@@ -400,6 +400,7 @@ class TeamSerializer(serializers.ModelSerializer):
     competence_ids = serializers.PrimaryKeyRelatedField(
         many=True, queryset=Competence.objects.all(), source='competences', required=False
     )
+    zone_precise_geojson = serializers.SerializerMethodField()
 
     class Meta:
         model  = Team
@@ -411,8 +412,15 @@ class TeamSerializer(serializers.ModelSerializer):
             'assigned_offer_ids',
             'assigned_request_ids',
             'competence_ids',
+            'departements',
+            'communes',
+            'zone_precise',
+            'zone_precise_geojson',
         ]
         read_only_fields = ['id', 'created_at']
+
+    def get_zone_precise_geojson(self, obj):
+        return json.loads(obj.zone_precise.geojson) if obj.zone_precise else None
 
 class CompetenceSerializer(serializers.ModelSerializer):
     class Meta:

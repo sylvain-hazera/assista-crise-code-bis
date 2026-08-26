@@ -229,6 +229,11 @@ class Request(models.Model):
     description = models.TextField(null=True, blank=True)
     photo = models.ImageField(upload_to="photos/demandes/", null=True, blank=True, validators=[validate_image_file])
     location = gis_models.PointField(srid=4326)
+    commune_code = models.CharField(
+        max_length=10, null=True, blank=True,
+        help_text="Code commune INSEE résolu à la saisie de l'adresse (autocomplete), "
+                   "utilisé pour le matching géographique avec les zones d'intervention des équipes.",
+    )
     first_name_request = models.CharField(max_length=60)
     last_name_request = models.CharField(max_length=80)
     email_request = models.EmailField()
@@ -1045,6 +1050,24 @@ class Team(models.Model):
         blank=True,
         related_name="equipes"
     )
+
+    # Zone d'intervention, du plus large au plus précis : une équipe déclare des
+    # départements (niveau de base), peut affiner avec des communes, peut affiner encore
+    # avec un polygone dessiné à la main. Le matching d'une demande utilise le niveau le
+    # plus précis renseigné (voir la logique d'auto-affectation dans RequestViewSet).
+    departements = models.JSONField(
+        default=list, blank=True,
+        help_text="Liste de codes département (ex: ['38', '73']).",
+    )
+    communes = models.JSONField(
+        default=list, blank=True,
+        help_text="Liste de codes commune INSEE (ex: ['38185']), plus précis que le département.",
+    )
+    zone_precise = gis_models.PolygonField(
+        srid=4326, null=True, blank=True,
+        help_text="Zone dessinée à la main, la plus précise des trois niveaux.",
+    )
+
     def __str__(self) -> str:
         return self.name
 

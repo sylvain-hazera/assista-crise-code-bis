@@ -14,6 +14,7 @@ export interface Request {
   location: GeoPoint;
   latitude?: number;                    // Extrait côté Angular
   longitude?: number;
+  commune_code?: string | null;         // Code INSEE résolu par l'autocomplete d'adresse
   first_name_request: string;
   last_name_request: string;
   email_request: string;

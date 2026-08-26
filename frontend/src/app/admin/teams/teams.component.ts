@@ -11,6 +11,7 @@ import { RequestService }    from '../../services/request.service';
 import { DisponibiliteOffreService } from '../../services/disponibilite-offre.service';
 import { DossierService } from '../../services/dossier.service';
 import { CompetenceService } from '../../services/competence.service';
+import { ZoneMapComponent } from '../../shared/components/common/zone-map/zone-map.component';
 
 import { Team, TeamMission }  from '../../shared/models/team.model';
 import { User }        from '../../shared/models/user.model';
@@ -30,7 +31,7 @@ const COLORS = ['#ef4444','#f97316','#eab308','#22c55e','#06b6d4','#3b82f6','#8b
 @Component({
   selector: 'app-teams',
   standalone: true,
-  imports: [CommonModule, FormsModule, ReactiveFormsModule],
+  imports: [CommonModule, FormsModule, ReactiveFormsModule, ZoneMapComponent],
   templateUrl: './teams.component.html',
   styleUrls: ['./teams.component.scss'],
 })
@@ -187,7 +188,44 @@ export class TeamsComponent implements OnInit {
   // ── DETAIL ────────────────────────────────────────────────────
   openDetail(team: Team): void {
     this.selectedTeam = team;
+    this.departementsInput = (team.departements ?? []).join(', ');
+    this.communesInput = (team.communes ?? []).join(', ');
+    this.pendingZoneWkt = team.zone_precise ?? null;
     this.modal = 'detail';
+  }
+
+  // ── ZONE D'INTERVENTION ─────────────────────────────────────────
+  departementsInput = '';
+  communesInput = '';
+  pendingZoneWkt: string | null = null;
+
+  private parseCodeList(raw: string): string[] {
+    return raw.split(',').map(s => s.trim()).filter(Boolean);
+  }
+
+  saveZoneCodes(): void {
+    if (!this.selectedTeam?.id) return;
+    this.teamService.patch(this.selectedTeam.id, {
+      departements: this.parseCodeList(this.departementsInput),
+      communes: this.parseCodeList(this.communesInput),
+    }).subscribe(updated => {
+      this.selectedTeam = { ...updated, missions: this.selectedTeam!.missions };
+      this.reloadTeams();
+      this.showSuccess('Zone (départements/communes) enregistrée.');
+    });
+  }
+
+  onZoneChange(wkt: string | null): void {
+    this.pendingZoneWkt = wkt;
+  }
+
+  saveZonePrecise(): void {
+    if (!this.selectedTeam?.id) return;
+    this.teamService.patch(this.selectedTeam.id, { zone_precise: this.pendingZoneWkt }).subscribe(updated => {
+      this.selectedTeam = { ...updated, missions: this.selectedTeam!.missions };
+      this.reloadTeams();
+      this.showSuccess('Zone précise enregistrée.');
+    });
   }
 
   // ── EDIT ──────────────────────────────────────────────────────

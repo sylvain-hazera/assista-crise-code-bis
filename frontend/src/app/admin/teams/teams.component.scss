@@ -269,6 +269,9 @@ h3 { margin: 0; font-size: .9rem; font-weight: 700; display: flex; align-items: 
   &:hover { background: #f8fafc; }
   &.selected { background: color-mix(in srgb, var(--ac, #3b82f6) 8%, white); border-color: var(--ac, #3b82f6); }
 }
+.zone-codes-form { display: flex; flex-wrap: wrap; gap: .75rem; align-items: flex-end; margin-bottom: .5rem;
+  label { display: flex; flex-direction: column; gap: .25rem; font-size: .78rem; color: var(--muted); }
+  input { padding: .4rem .6rem; border-radius: 6px; border: 1.5px solid var(--border); font-size: .85rem; } }
 .competence-chip-list { display: flex; flex-wrap: wrap; gap: .5rem; }
 .competence-chip {
   padding: .4rem .9rem; border-radius: 999px; border: 1.5px solid var(--border);
