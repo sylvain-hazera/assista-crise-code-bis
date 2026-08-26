@@ -731,6 +731,46 @@ def resolve_or_invite_demandeur(demande, request=None):
     return user, True
 
 
+def department_code_from_commune_code(commune_code):
+    """Extrait le code département d'un code commune INSEE : 3 chiffres pour l'outre-mer
+    (971-976/98x), 2 caractères sinon (dont '2A'/'2B' pour la Corse, déjà sous cette forme
+    dans le code commune)."""
+    if not commune_code:
+        return None
+    code = commune_code.strip().upper()
+    if code[:2] in ('2A', '2B'):
+        return code[:2]
+    if code[:2] in ('97', '98'):
+        return code[:3]
+    return code[:2]
+
+
+def team_zone_specificity(team, demande):
+    """Score de spécificité de la couverture géographique d'une équipe pour une demande :
+    plus le nombre est élevé, plus la correspondance est précise. `None` si l'équipe a
+    déclaré une zone mais qu'elle ne couvre pas la demande — dans ce cas l'équipe est
+    exclue du matching. Une équipe n'ayant déclaré aucune zone (cas de toutes les équipes
+    existantes avant cette fonctionnalité) est considérée disponible partout, pour ne pas
+    régresser le comportement précédent."""
+    if not (team.departements or team.communes or team.zone_precise):
+        return 0
+
+    if team.zone_precise and demande.location and team.zone_precise.contains(demande.location):
+        return 3
+
+    commune_code = (demande.commune_code or '').strip()
+
+    if team.communes and commune_code in team.communes:
+        return 2
+
+    if team.departements:
+        departement = department_code_from_commune_code(commune_code)
+        if departement and departement in team.departements:
+            return 1
+
+    return None
+
+
 class RequestViewSet(viewsets.ModelViewSet):
     queryset = Request.objects.all()
     serializer_class = RequestSerializer
@@ -764,6 +804,7 @@ class RequestViewSet(viewsets.ModelViewSet):
 
             equipe = None
             competence = None
+            mapping_competence = None
 
             # RequestType -> Besoin
             mapping_besoin = RequestTypeBesoin.objects.filter(
@@ -806,19 +847,29 @@ class RequestViewSet(viewsets.ModelViewSet):
 
                 if demande.crisis:
 
-                    affectation = (
+                    # Parmi les équipes affectées à cette compétence sur cette crise, on
+                    # retient celle dont la zone d'intervention déclarée couvre le mieux
+                    # la localisation de la demande (zone précise > commune > département
+                    # > aucune zone déclarée = disponible partout).
+                    affectations = (
                         AffectationCompetence.objects
                         .filter(
                             crise=demande.crisis,
                             competence=competence,
                             active=True
                         )
-                        .first()
+                        .select_related('equipe')
                     )
 
-                    if affectation:
+                    meilleur_score = None
 
-                        equipe = affectation.equipe
+                    for affectation in affectations:
+
+                        score = team_zone_specificity(affectation.equipe, demande)
+
+                        if score is not None and (meilleur_score is None or score > meilleur_score):
+                            meilleur_score = score
+                            equipe = affectation.equipe
 
             if competence:
 
@@ -871,27 +922,34 @@ class RequestViewSet(viewsets.ModelViewSet):
 
             else:
 
-                dossier = Dossier.objects.create(
-                    numero=f"DOS-{uuid.uuid4().hex[:8].upper()}",
-                    crise=demande.crisis,
-                    competence=None,
-                    equipe=None,
-                    titre=demande.title,
-                    description=(
-                        f"Demande créée automatiquement : "
-                        f"{demande.title}"
-                    ),
-                    statut=Dossier.Statut.EN_ATTENTE_AFFECTATION
-                )
+                # Dossier.crise est obligatoire (NOT NULL) : sans crise associée à la
+                # demande, il n'y a de toute façon aucun contexte auquel rattacher un
+                # dossier de suivi automatique — le créer plantait silencieusement
+                # (IntegrityError avalée par le except englobant) pour toute demande
+                # anonyme sans crise dont le type n'a pas de compétence mappée.
+                if demande.crisis:
 
-                DossierHistorique.objects.create(
-                    dossier=dossier,
-                    evenement="Aucune compétence trouvée automatiquement",
-                    commentaire=(
-                        "Le dossier nécessite "
-                        "une affectation manuelle."
+                    dossier = Dossier.objects.create(
+                        numero=f"DOS-{uuid.uuid4().hex[:8].upper()}",
+                        crise=demande.crisis,
+                        competence=None,
+                        equipe=None,
+                        titre=demande.title,
+                        description=(
+                            f"Demande créée automatiquement : "
+                            f"{demande.title}"
+                        ),
+                        statut=Dossier.Statut.EN_ATTENTE_AFFECTATION
                     )
-                )
+
+                    DossierHistorique.objects.create(
+                        dossier=dossier,
+                        evenement="Aucune compétence trouvée automatiquement",
+                        commentaire=(
+                            "Le dossier nécessite "
+                            "une affectation manuelle."
+                        )
+                    )
 
                 print(
                     f"Aucune compétence trouvée pour "
