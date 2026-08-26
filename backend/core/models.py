@@ -2,6 +2,7 @@ import uuid
 import os
 from django.contrib.auth.models import AbstractUser, Group, Permission
 from django.contrib.gis.db import models as gis_models
+from django.core.validators import MinValueValidator, MaxValueValidator
 from django.db import models
 from core.validators import validate_image_file
 from .validators import validate_image_file
@@ -285,6 +286,14 @@ class Information(models.Model):
     email_information = models.EmailField()
     phone_information = models.CharField(max_length=20)
     location = gis_models.PointField(srid=4326)
+    azimuth = models.FloatField(
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(0), MaxValueValidator(360)],
+        help_text="Azimut (0-360°, 0=Nord) capturé par la boussole du téléphone au moment "
+                   "de la photo — direction vers laquelle l'appareil pointait, pour situer "
+                   "ce que montre le signalement (ex: quel côté de la route est inondé).",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField(null=True, blank=True)
     deletion_token = models.CharField(max_length=64, unique=True, null=True, blank=True)

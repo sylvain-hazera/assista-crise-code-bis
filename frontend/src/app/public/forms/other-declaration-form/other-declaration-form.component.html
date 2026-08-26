@@ -237,27 +237,21 @@
 
         <!-- Information Type -->
         <div class="form-group">
-          <label for="informationType" class="form-label">
-            Type d'information <span class="required">*</span>
+          <label class="form-label">
+            Type de signalement <span class="required">*</span>
           </label>
-          <div class="select-wrapper">
-            <select 
-              id="informationType" 
-              formControlName="informationType"
-              class="form-select"
-              [class.invalid]="isFieldInvalid('otherInformation', 'informationType')">
-              <option value="" disabled selected>Sélectionnez un type</option>
-              @for(option of informationTypeOptions.slice(1); track option.value) {
-                <option [value]="option.value">
-                  {{ option.label }}
-                </option>
-              }
-            </select>
-            <span class="material-icons select-arrow">arrow_drop_down</span>
-          </div>
-          @if(isFieldInvalid('otherInformation', 'informationType')) {
+          <app-tag-search-input
+            placeholder="Ex: arbre sur la chaussée, route inondée..."
+            [searchFn]="informationTypeSearchFn"
+            [createFn]="informationTypeCreateFn"
+            (itemSelected)="onInformationTypeSelected($event)">
+          </app-tag-search-input>
+          @if (selectedInformationType) {
+            <p class="selected-type-confirm">Type retenu : {{ selectedInformationType.type }}</p>
+          }
+          @if(otherInformationForm.touched && !selectedInformationType) {
             <div class="error-message">
-              {{ getErrorMessage('otherInformation', 'informationType') }}
+              Merci de sélectionner ou créer un type de signalement.
             </div>
           }
         </div>
@@ -281,22 +275,62 @@
           }
         </div>
 
-        <!-- Address Section -->
+        <!-- Photo + position -->
+        <div class="form-section">
+          <h2 class="section-title">Photo du signalement</h2>
+          <p class="section-description">
+            Prendre la photo directement depuis l'appareil photo capture aussi votre position
+            et la direction visée — ça aide les secours à situer précisément ce que vous
+            signalez (ex: quel côté de la route est inondé).
+          </p>
+
+          <input
+            #cameraInput
+            type="file"
+            id="fileUploadOther"
+            class="file-input"
+            accept="image/*"
+            capture="environment"
+            (change)="onFileSelected($event)">
+
+          <button type="button" class="btn-camera" (click)="capturePhotoWithLocation(cameraInput)">
+            <span class="material-icons">photo_camera</span>
+            Prendre une photo
+          </button>
+
+          @if (selectedFile) {
+            <p class="file-name">{{ fileName }}</p>
+          }
+
+          @if (capturedLatitude != null && capturedLongitude != null) {
+            <p class="location-confirm">
+              Position capturée ✓
+              @if (capturedAzimuth != null) {
+                — azimut {{ capturedAzimuth | number:'1.0-0' }}°
+              }
+            </p>
+          }
+        </div>
+
+        <!-- Address Section (repli si pas de position capturée) -->
         <div class="form-section">
           <h2 class="section-title">
-            Votre adresse actuelle <span class="required">*</span>
+            Adresse @if (!(capturedLatitude != null && capturedLongitude != null)) {<span class="required">*</span>}
           </h2>
+          <p class="section-description">
+            Nécessaire uniquement si vous n'avez pas pris de photo géolocalisée ci-dessus.
+          </p>
 
           <div class="form-group">
             <app-address-picker
               label="Adresse"
               placeholder="Rechercher une adresse, ou utilisez votre position actuelle…"
-              [required]="true"
+              [required]="false"
               (addressSelected)="onAddressSelectedOther($event)">
             </app-address-picker>
-            @if (otherInformationForm.touched && !selectedAddressOther) {
+            @if (otherInformationForm.touched && !hasLocationForOther()) {
               <div class="error-message">
-                Veuillez sélectionner une adresse dans la liste proposée
+                Veuillez sélectionner une adresse, ou prendre une photo géolocalisée ci-dessus.
               </div>
             }
           </div>
@@ -316,33 +350,12 @@
           </div>
         </div>
 
-        <!-- Image Upload Section -->
-        <div class="form-section">
-          <h2 class="section-title">Images liés à l'annonce</h2>
-          <p class="section-description">
-            Ajouter des images pour illustrer la situation d'urgence
-          </p>
-
-          <div class="file-upload-wrapper">
-            <label for="fileUploadOther" class="file-upload-label">
-              <span class="file-name">{{ fileName }}</span>
-              <span class="material-icons">arrow_drop_down</span>
-            </label>
-            <input 
-              type="file" 
-              id="fileUploadOther" 
-              class="file-input" 
-              accept="image/*"
-              (change)="onFileSelected($event)">
-          </div>
-        </div>
-
         <!-- Submit Button -->
         <div class="form-actions">
-          <button 
-            type="submit" 
+          <button
+            type="submit"
             class="btn-submit"
-            [disabled]="!otherInformationForm.valid">
+            [disabled]="!otherInformationForm.valid || !selectedInformationType || !hasLocationForOther()">
             Enregistrer
           </button>
         </div>

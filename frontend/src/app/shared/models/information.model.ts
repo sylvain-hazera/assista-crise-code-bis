@@ -13,6 +13,7 @@ export interface Information {
   location: GeoPoint;
   latitude?: number;
   longitude?: number;
+  azimuth?: number | null;
   first_name_information: string;
   last_name_information: string;
   email_information: string;
@@ -36,6 +37,7 @@ export interface InformationPayload {
   phone_information: string;
   latitude: number;
   longitude: number;
+  azimuth?: number | null;
   information_type: string;
   status?: Status;
   expires_at?: string | null;

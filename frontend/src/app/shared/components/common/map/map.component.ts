@@ -325,7 +325,49 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
 
         this.addHullLayer();
         this.addHoverEffect();
+        this.addDirectionArrowLayer();
     });
+  }
+
+  /** Petite flèche orientée selon l'azimut capturé au moment de la photo (boussole du
+   * téléphone) — uniquement sur les signalements (Information) qui en ont une, superposée
+   * au marqueur point. `icon-rotate` en degrés horaires depuis le haut correspond
+   * exactement à la convention azimut (0 = Nord), pas de conversion nécessaire. */
+  private addDirectionArrowLayer(): void {
+    if (!this.map) return;
+
+    const arrowSvg =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">' +
+      '<path d="M12 2 L18 20 L12 16 L6 20 Z" fill="#1b5e20" stroke="white" stroke-width="1"/>' +
+      '</svg>';
+
+    const img = new Image(24, 24);
+    img.onload = () => {
+      if (!this.map) return;
+      if (!this.map.hasImage('direction-arrow')) {
+        this.map.addImage('direction-arrow', img);
+      }
+      this.map.addLayer({
+        id: 'information-direction-arrow',
+        type: 'symbol',
+        source: 'clusters',
+        filter: [
+          'all',
+          ['!', ['has', 'point_count']],
+          ['has', 'last_name_information'],
+          ['!=', ['get', 'azimuth'], null]
+        ],
+        layout: {
+          'icon-image': 'direction-arrow',
+          'icon-size': 1,
+          'icon-rotate': ['get', 'azimuth'],
+          'icon-rotation-alignment': 'map',
+          'icon-allow-overlap': true,
+          'icon-offset': [0, -12]
+        }
+      });
+    };
+    img.src = 'data:image/svg+xml;base64,' + btoa(arrowSvg);
   }
 
   private addHullLayer() { // Layer to show convex hull around clusters on hover

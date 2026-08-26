@@ -102,6 +102,50 @@ export class GeolocationService {
     return this.permissionGranted;
   }
 
+  /** Azimut (0-360°, 0=Nord) donné par la boussole du téléphone au moment de l'appel — doit
+   * être invoqué depuis un geste utilisateur direct (ex: clic sur "Prendre une photo") car
+   * iOS 13+ exige `DeviceOrientationEvent.requestPermission()` dans ce contexte précis pour
+   * autoriser l'accès aux capteurs. Résout `null` si l'appareil/navigateur ne fournit aucune
+   * lecture exploitable dans le délai imparti (desktop, permission refusée, capteur absent)
+   * — l'azimut reste une donnée best-effort, jamais bloquante pour le signalement lui-même. */
+  async getCurrentAzimuth(timeoutMs = 1500): Promise<number | null> {
+    const DeviceOrientationEventTyped = (window as any).DeviceOrientationEvent;
+
+    if (DeviceOrientationEventTyped?.requestPermission) {
+      try {
+        const permission = await DeviceOrientationEventTyped.requestPermission();
+        if (permission !== 'granted') {
+          return null;
+        }
+      } catch {
+        return null;
+      }
+    }
+
+    return new Promise<number | null>(resolve => {
+      let settled = false;
+      const finish = (value: number | null) => {
+        if (settled) return;
+        settled = true;
+        window.removeEventListener('deviceorientationabsolute', onOrientation as any);
+        window.removeEventListener('deviceorientation', onOrientation as any);
+        resolve(value);
+      };
+
+      const onOrientation = (event: any) => {
+        if (typeof event.webkitCompassHeading === 'number') {
+          finish(event.webkitCompassHeading); // Safari iOS : déjà un cap boussole absolu.
+        } else if (event.absolute && typeof event.alpha === 'number') {
+          finish((360 - event.alpha) % 360); // Android/Chrome : alpha compte depuis le Nord, sens inverse.
+        }
+      };
+
+      window.addEventListener('deviceorientationabsolute', onOrientation as any);
+      window.addEventListener('deviceorientation', onOrientation as any);
+      setTimeout(() => finish(null), timeoutMs);
+    });
+  }
+
   clearLocation(): void {
     localStorage.removeItem('userLocation');
     this.locationSubject.next(null);
