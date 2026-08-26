@@ -191,6 +191,22 @@ class UserSerializer(serializers.ModelSerializer):
 
         return user
 
+def validate_crisis_open_and_monitored(crisis):
+    """Une demande/offre/information ne peut être déposée sur une crise que si elle est
+    encore ouverte (pas de end_date) et qu'un responsable y est activement rattaché — pas
+    de dépôt dans le vide sur une crise abandonnée ou dont personne n'a la charge."""
+    if crisis is None:
+        return
+    if crisis.end_date is not None:
+        raise serializers.ValidationError(
+            {"crisis": "Cette crise est clôturée : il n'est plus possible d'y déposer de demande."}
+        )
+    if not crisis.implications.filter(responsable__isnull=False, actif=True).exists():
+        raise serializers.ValidationError(
+            {"crisis": "Cette crise n'a pas encore de responsable désigné : dépôt impossible pour le moment."}
+        )
+
+
 class CrisisSerializer(serializers.ModelSerializer):
     """Serializer pour les crises"""
     latitude = serializers.SerializerMethodField()
@@ -198,6 +214,8 @@ class CrisisSerializer(serializers.ModelSerializer):
     zone_geojson = serializers.SerializerMethodField()
     author = serializers.PrimaryKeyRelatedField(read_only=True, allow_null=True)
     has_photo = serializers.SerializerMethodField()
+    is_open = serializers.SerializerMethodField()
+    has_responsable_actif = serializers.SerializerMethodField()
 
     class Meta:
         model = Crisis
@@ -217,6 +235,14 @@ class CrisisSerializer(serializers.ModelSerializer):
 
     def get_has_photo(self, obj):
         return bool(obj.photo)
+
+    def get_is_open(self, obj):
+        # Pas de champ de statut dédié : une crise sans date de fin est considérée
+        # ouverte. Évite un second état à synchroniser avec end_date.
+        return obj.end_date is None
+
+    def get_has_responsable_actif(self, obj):
+        return obj.implications.filter(responsable__isnull=False, actif=True).exists()
 
 class RequestSerializer(serializers.ModelSerializer):
     """Serializer pour les demandes d'aide.
@@ -266,6 +292,10 @@ class RequestSerializer(serializers.ModelSerializer):
 
     def get_has_photo(self, obj):
         return bool(obj.photo)
+
+    def validate(self, attrs):
+        validate_crisis_open_and_monitored(attrs.get('crisis'))
+        return attrs
 
 class OfferSerializer(serializers.ModelSerializer):
     """Serializer pour les offres d'aide.
@@ -317,6 +347,10 @@ class OfferSerializer(serializers.ModelSerializer):
 
     def get_has_photo(self, obj):
         return bool(obj.photo)
+
+    def validate(self, attrs):
+        validate_crisis_open_and_monitored(attrs.get('crisis'))
+        return attrs
 
 class DisponibiliteOffreSerializer(serializers.ModelSerializer):
     """Créneau de disponibilité (jour + matin/midi/soir/nuit) d'un bénévole."""
@@ -373,6 +407,10 @@ class InformationSerializer(serializers.ModelSerializer):
 
     def get_has_photo(self, obj):
         return bool(obj.photo)
+
+    def validate(self, attrs):
+        validate_crisis_open_and_monitored(attrs.get('crisis'))
+        return attrs
 
 class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
     """Serializer personnalisé pour l'authentification JWT"""

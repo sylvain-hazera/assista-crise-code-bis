@@ -12,12 +12,26 @@ from core.models import (
     Crisis,
     Dossier,
     DossierParticipant,
+    ImplicationInstitution,
     Institution,
     InstitutionType,
     RequestTypeBesoin,
     RoleOperationnel,
     Team,
 )
+
+
+def _declare_responsable(crisis, create_user):
+    """Rend une crise 'surveillée' (Volet 8) : sans ImplicationInstitution.responsable
+    actif, le dépôt de demande sur cette crise est désormais rejeté par le serializer."""
+    itype = InstitutionType.objects.create(code=f"ITYPE-MONITOR-{crisis.id}", libelle="Mairie")
+    institution = Institution.objects.create(nom=f"Institution monitor {crisis.id}", type=itype)
+    responsable = create_user(username=f"resp-{crisis.id}@test.fr", email=f"resp-{crisis.id}@test.fr", type="AUT_LOCALE")
+    ImplicationInstitution.objects.create(
+        crise=crisis, institution=institution, type_implication="IMPLIQUE",
+        responsable=responsable, actif=True,
+    )
+    return responsable
 
 
 @pytest.fixture
@@ -50,11 +64,12 @@ def _regulateur(create_user, competence, email="regul-unif@test.fr"):
 @pytest.mark.django_db
 class TestAutomaticPathParticipants:
 
-    def test_dossier_linked_to_originating_request(self, request_type):
+    def test_dossier_linked_to_originating_request(self, request_type, create_user):
         """Le dossier auto-créé doit référencer la demande d'origine (Dossier.demande) —
         jusqu'ici seul le chemin manuel (assign_team) le faisait."""
         competence = _setup_competence_chain(request_type)
         crisis = Crisis.objects.create(name="Crise unif 1", type="INCEDIE", location="POINT (5.72 45.18)")
+        _declare_responsable(crisis, create_user)
         team = Team.objects.create(name="Equipe unif 1", description="", color="#3b82f6")
         AffectationCompetence.objects.create(crise=crisis, competence=competence, equipe=team, active=True)
 
@@ -74,12 +89,13 @@ class TestAutomaticPathParticipants:
         dossier = Dossier.objects.get(crise=crisis, competence=competence)
         assert str(dossier.demande_id) == response.data["id"]
 
-    def test_anonymous_demandeur_becomes_participant(self, request_type):
+    def test_anonymous_demandeur_becomes_participant(self, request_type, create_user):
         """Une demande anonyme (sans auteur authentifié) doit tout de même obtenir un
         participant DEMANDEUR via resolve_or_invite_demandeur, pour pouvoir suivre son
         dossier — avant l'unification, seul demande.author (donc jamais l'anonyme) comptait."""
         competence = _setup_competence_chain(request_type)
         crisis = Crisis.objects.create(name="Crise unif 2", type="INCEDIE", location="POINT (5.72 45.18)")
+        _declare_responsable(crisis, create_user)
 
         client = APIClient()
         response = client.post(
@@ -106,6 +122,7 @@ class TestAutomaticPathParticipants:
         maintenant l'être pour tout régulateur notifié sur le chemin automatique."""
         competence = _setup_competence_chain(request_type)
         crisis = Crisis.objects.create(name="Crise unif 3", type="INCEDIE", location="POINT (5.72 45.18)")
+        _declare_responsable(crisis, create_user)
         team = Team.objects.create(name="Equipe unif 3", description="", color="#3b82f6")
         AffectationCompetence.objects.create(crise=crisis, competence=competence, equipe=team, active=True)
         regulateur = _regulateur(create_user, competence, email="regul-unif3@test.fr")
@@ -128,10 +145,11 @@ class TestAutomaticPathParticipants:
             dossier=dossier, utilisateur=regulateur, role=DossierParticipant.Role.REGULATION,
         ).exists()
 
-    def test_no_competence_branch_still_links_demandeur(self, request_type):
+    def test_no_competence_branch_still_links_demandeur(self, request_type, create_user):
         """Même quand aucune compétence n'est trouvée, le dossier de secours doit au moins
         rattacher le demandeur comme participant (avant : zéro participant du tout)."""
         crisis = Crisis.objects.create(name="Crise unif 4", type="INCEDIE", location="POINT (5.72 45.18)")
+        _declare_responsable(crisis, create_user)
 
         client = APIClient()
         response = client.post(

@@ -25,6 +25,8 @@ export interface Crisis {
   author: string | null;
   has_photo: boolean;
   severity: string | null;
+  is_open?: boolean;
+  has_responsable_actif?: boolean;
 }
 
 export interface CrisisPayload {

@@ -11,6 +11,7 @@ from core.models import (
     Competence,
     Crisis,
     Dossier,
+    ImplicationInstitution,
     Institution,
     InstitutionType,
     Notification,
@@ -18,6 +19,19 @@ from core.models import (
     RoleOperationnel,
     Team,
 )
+
+
+def _declare_responsable(crisis, create_user):
+    """Rend une crise 'surveillée' (Volet 8) : sans ImplicationInstitution.responsable
+    actif, le dépôt de demande sur cette crise est désormais rejeté par le serializer."""
+    itype = InstitutionType.objects.create(code=f"ITYPE-MONITOR-{crisis.id}", libelle="Mairie")
+    institution = Institution.objects.create(nom=f"Institution monitor {crisis.id}", type=itype)
+    responsable = create_user(username=f"resp-{crisis.id}@test.fr", email=f"resp-{crisis.id}@test.fr", type="AUT_LOCALE")
+    ImplicationInstitution.objects.create(
+        crise=crisis, institution=institution, type_implication="IMPLIQUE",
+        responsable=responsable, actif=True,
+    )
+    return responsable
 from core.views import department_code_from_commune_code, team_zone_specificity
 
 
@@ -91,9 +105,10 @@ class TestRequestAutoAssignmentGeoMatching:
         BesoinCompetence.objects.create(besoin=besoin, competence=competence)
         return competence
 
-    def test_request_routed_to_team_matching_department(self, request_type):
+    def test_request_routed_to_team_matching_department(self, request_type, create_user):
         competence = self._setup_competence_chain(request_type)
         crisis = Crisis.objects.create(name="Crise geo", type="INCEDIE", location="POINT (5.72 45.18)")
+        _declare_responsable(crisis, create_user)
         team_far = Team.objects.create(name="Equipe loin", description="", color="#3b82f6", departements=["73"])
         team_near = Team.objects.create(name="Equipe proche", description="", color="#3b82f6", departements=["38"])
         AffectationCompetence.objects.create(crise=crisis, competence=competence, equipe=team_far, active=True)
@@ -115,9 +130,10 @@ class TestRequestAutoAssignmentGeoMatching:
         dossier = Dossier.objects.get(crise=crisis, competence=competence)
         assert dossier.equipe == team_near
 
-    def test_request_not_routed_when_no_team_matches_zone(self, request_type):
+    def test_request_not_routed_when_no_team_matches_zone(self, request_type, create_user):
         competence = self._setup_competence_chain(request_type)
         crisis = Crisis.objects.create(name="Crise geo 2", type="INCEDIE", location="POINT (5.72 45.18)")
+        _declare_responsable(crisis, create_user)
         team_far = Team.objects.create(name="Equipe loin 2", description="", color="#3b82f6", departements=["73"])
         AffectationCompetence.objects.create(crise=crisis, competence=competence, equipe=team_far, active=True)
 
@@ -188,6 +204,7 @@ class TestRequestAutoAssignmentGeoMatching:
         rester invisible tant que personne ne parcourait la liste complète."""
         competence = self._setup_competence_chain(request_type)
         crisis = Crisis.objects.create(name="Crise notif", type="INCEDIE", location="POINT (5.72 45.18)")
+        _declare_responsable(crisis, create_user)
         team = Team.objects.create(name="Equipe notif", description="", color="#3b82f6")
         AffectationCompetence.objects.create(crise=crisis, competence=competence, equipe=team, active=True)
 
@@ -215,10 +232,11 @@ class TestRequestAutoAssignmentGeoMatching:
         dossier = Dossier.objects.get(crise=crisis, competence=competence)
         assert Notification.objects.filter(utilisateur=regulateur, dossier=dossier).exists()
 
-    def test_no_notification_when_no_regulateur_on_competence(self, request_type):
+    def test_no_notification_when_no_regulateur_on_competence(self, request_type, create_user):
         """Aucun régulateur affecté sur cette compétence : la création ne doit pas crasher."""
         competence = self._setup_competence_chain(request_type)
         crisis = Crisis.objects.create(name="Crise sans regul", type="INCEDIE", location="POINT (5.72 45.18)")
+        _declare_responsable(crisis, create_user)
 
         client = APIClient()
         response = client.post(

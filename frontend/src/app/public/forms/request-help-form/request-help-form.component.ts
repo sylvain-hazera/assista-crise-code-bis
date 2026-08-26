@@ -75,7 +75,7 @@ export class RequestHelpFormComponent implements OnInit {
   loadActiveCrises(): void {
     this.crisisService.getAll().subscribe({
       next: (crises: Crisis[]) => {
-        const activeCrises = crises.filter(c => c.status !== 'TRAITEE');
+        const activeCrises = crises.filter(c => c.is_open !== false);
         this.crisisOptions = [
           { value: '', label: 'Aucune crise en rapport' },
           ...activeCrises.map(c => ({
