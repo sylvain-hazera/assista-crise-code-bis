@@ -11,6 +11,7 @@ import { InstitutionDomaineService } from '../../services/institution-domaine.se
 import { UserService } from '../../services/user.service';
 import { CompetenceService } from '../../services/competence.service';
 import { AffectationRoleOperationnelService } from '../../services/affectation-role-operationnel.service';
+import { TagSearchInputComponent } from '../../shared/components/common/tag-search-input/tag-search-input.component';
 
 import {
   Institution,
@@ -31,7 +32,7 @@ type DetailTab = 'contacts' | 'domaines' | 'regulateurs';
 @Component({
   selector: 'app-institutions',
   standalone: true,
-  imports: [CommonModule, FormsModule, ReactiveFormsModule],
+  imports: [CommonModule, FormsModule, ReactiveFormsModule, TagSearchInputComponent],
   templateUrl: './institutions.component.html',
   styleUrls: ['./institutions.component.scss'],
 })
@@ -341,6 +342,16 @@ export class InstitutionsComponent implements OnInit {
   competenceLabel(id: string | null): string {
     if (!id) return 'Aucun thème précisé';
     return this.competences.find(c => c.id === id)?.nom ?? id.slice(0, 8);
+  }
+
+  competenceSearchFn = (q: string) => this.competenceService.search(q);
+  competenceCreateFn = (nom: string) => this.competenceService.create({ nom });
+
+  onRegulateurCompetenceSearchSelected(item: Competence): void {
+    if (!this.competences.find(c => c.id === item.id)) {
+      this.competences = [...this.competences, item];
+    }
+    this.regulateurForm.get('competence')?.setValue(item.id);
   }
 
   // ══ Types d'institution (référentiel) ═════════════════════════

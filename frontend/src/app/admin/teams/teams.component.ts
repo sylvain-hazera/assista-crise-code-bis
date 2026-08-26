@@ -12,6 +12,7 @@ import { DisponibiliteOffreService } from '../../services/disponibilite-offre.se
 import { DossierService } from '../../services/dossier.service';
 import { CompetenceService } from '../../services/competence.service';
 import { ZoneMapComponent } from '../../shared/components/common/zone-map/zone-map.component';
+import { TagSearchInputComponent } from '../../shared/components/common/tag-search-input/tag-search-input.component';
 
 import { Team, TeamMission }  from '../../shared/models/team.model';
 import { User }        from '../../shared/models/user.model';
@@ -31,7 +32,7 @@ const COLORS = ['#ef4444','#f97316','#eab308','#22c55e','#06b6d4','#3b82f6','#8b
 @Component({
   selector: 'app-teams',
   standalone: true,
-  imports: [CommonModule, FormsModule, ReactiveFormsModule, ZoneMapComponent],
+  imports: [CommonModule, FormsModule, ReactiveFormsModule, ZoneMapComponent, TagSearchInputComponent],
   templateUrl: './teams.component.html',
   styleUrls: ['./teams.component.scss'],
 })
@@ -290,6 +291,18 @@ export class TeamsComponent implements OnInit {
 
   hasCompetence(competenceId: string): boolean {
     return this.selectedTeam?.competence_ids?.includes(competenceId) ?? false;
+  }
+
+  competenceSearchFn = (q: string) => this.competenceService.search(q);
+  competenceCreateFn = (nom: string) => this.competenceService.create({ nom });
+
+  onCompetenceSearchSelected(item: Competence): void {
+    if (!this.competences.find(c => c.id === item.id)) {
+      this.competences = [...this.competences, item];
+    }
+    if (!this.hasCompetence(item.id)) {
+      this.toggleCompetence(item.id);
+    }
   }
 
   // ── ASSIGN MISSIONS ───────────────────────────────────────────

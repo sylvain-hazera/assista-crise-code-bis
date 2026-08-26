@@ -56,11 +56,6 @@ class RecherchePersonneCommentairePhotoSerializer(
         fields = "__all__"
         extra_kwargs = {'fichier': {'write_only': True}}
 
-class CompetenceSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Competence
-        fields = "__all__"
-
 class RequestTypeSerializer(serializers.ModelSerializer):
     """Serializer pour les types de demandes"""
     class Meta:

@@ -1,0 +1,42 @@
+<div class="tag-search">
+
+  <input
+    type="text"
+    class="tag-search-input"
+    [placeholder]="placeholder"
+    [ngModel]="query"
+    (ngModelChange)="onQueryChange($event)"
+    (focus)="showDropdown = true"
+    (blur)="onBlur()"
+  >
+
+  <div class="tag-search-dropdown" *ngIf="showDropdown && query.trim()">
+
+    <div class="tag-search-loading" *ngIf="loading">Recherche...</div>
+
+    <button
+      type="button"
+      class="tag-search-option"
+      *ngFor="let item of results"
+      (click)="select(item)"
+    >
+      {{ label(item) }}
+    </button>
+
+    <div *ngIf="!loading && results.length === 0" class="tag-search-empty">
+      Aucun thème existant ne correspond.
+    </div>
+
+    <button
+      type="button"
+      class="tag-search-create"
+      *ngIf="!loading && !hasExactMatch()"
+      [disabled]="creating"
+      (click)="createNew()"
+    >
+      + Créer « {{ query.trim() }} » comme nouveau thème
+    </button>
+
+  </div>
+
+</div>

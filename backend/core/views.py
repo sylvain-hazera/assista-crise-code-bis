@@ -253,9 +253,79 @@ class RequestTypeBesoinViewSet(viewsets.ModelViewSet):
     queryset = RequestTypeBesoin.objects.all()
     serializer_class = RequestTypeBesoinSerializer
 
-class CompetenceViewSet(viewsets.ModelViewSet):
+class TagLikeViewSetMixin:
+    """Pour les modèles qui fonctionnent comme des hashtags réutilisables (Competence.nom,
+    InformationType.type) : recherche par mots-clés indépendante de l'ordre (`?q=transport
+    animaux` remonte la même chose que `?q=animaux transport`) et création qui réutilise
+    silencieusement une entrée existante proche (comparaison insensible à la casse) au lieu
+    de dupliquer un thème déjà là sous une casse différente — cohérent avec l'usage attendu
+    d'un tag : n'importe qui doit pouvoir en "créer" un sans jamais fragmenter le vocabulaire
+    partagé par erreur de frappe sur la casse."""
+
+    tag_field = "nom"
+
+    def get_search_queryset(self, queryset, query):
+        tokens = [t for t in query.strip().split() if t]
+        for token in tokens:
+            queryset = queryset.filter(**{f"{self.tag_field}__icontains": token})
+        return queryset
+
+    def list(self, request, *args, **kwargs):
+        query = request.query_params.get("q", "").strip()
+        if not query:
+            return super().list(request, *args, **kwargs)
+
+        queryset = self.get_search_queryset(self.filter_queryset(self.get_queryset()), query)
+        page = self.paginate_queryset(queryset)
+        serializer = self.get_serializer(page if page is not None else queryset, many=True)
+        return (
+            self.get_paginated_response(serializer.data)
+            if page is not None
+            else Response(serializer.data)
+        )
+
+    def create(self, request, *args, **kwargs):
+        raw_value = " ".join(str(request.data.get(self.tag_field) or "").split())
+        if raw_value:
+            existing = self.get_queryset().filter(**{f"{self.tag_field}__iexact": raw_value}).first()
+            if existing:
+                return Response(self.get_serializer(existing).data, status=status.HTTP_200_OK)
+
+            data = request.data.copy()
+            data[self.tag_field] = raw_value
+            serializer = self.get_serializer(data=data)
+            serializer.is_valid(raise_exception=True)
+            self.perform_create(serializer)
+            headers = self.get_success_headers(serializer.data)
+            return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
+        return super().create(request, *args, **kwargs)
+
+
+class CompetenceViewSet(TagLikeViewSetMixin, viewsets.ModelViewSet):
     queryset = Competence.objects.all()
     serializer_class = CompetenceSerializer
+
+    def get_search_queryset(self, queryset, query):
+        # Élargit la recherche par mots-clés aux compétences reliées à un Besoin dont le nom
+        # matche (ex: chercher "animaux" doit aussi remonter une compétence rattachée à un
+        # besoin "Sauvetage animalier", même si "animaux" n'apparaît pas dans son propre nom).
+        base = super().get_search_queryset(queryset, query)
+        tokens = [t for t in query.strip().split() if t]
+        via_besoin = Competence.objects.all()
+        for token in tokens:
+            via_besoin = via_besoin.filter(besoins__besoin__nom__icontains=token)
+        return (base | via_besoin).distinct()
+
+    def perform_create(self, serializer):
+        competence = serializer.save()
+        audit_log(
+            request=self.request,
+            action_code="CREATION",
+            objet_type="Competence",
+            objet_id=competence.id,
+            commentaire=f"Création thème/compétence : {competence.nom}",
+        )
 
 class AffectationCompetenceViewSet(viewsets.ModelViewSet):
     queryset = AffectationCompetence.objects.all()
@@ -1399,9 +1469,25 @@ class OfferTypeViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         return OfferType.objects.filter(actif=True)
 
-class InformationTypeViewSet(viewsets.ModelViewSet):
+class InformationTypeViewSet(TagLikeViewSetMixin, viewsets.ModelViewSet):
+    # AllowAny : la page de signalement (other-declaration-form) est accessible sans compte,
+    # au même titre que les autres formulaires publics (demande/offre/crise) — un passant qui
+    # signale un arbre sur la chaussée ne doit pas avoir à se connecter, y compris pour lister
+    # les types existants ou en proposer un nouveau.
     queryset = InformationType.objects.all()
     serializer_class = InformationTypeSerializer
+    permission_classes = [AllowAny]
+    tag_field = "type"
+
+    def perform_create(self, serializer):
+        information_type = serializer.save()
+        audit_log(
+            request=self.request,
+            action_code="CREATION",
+            objet_type="InformationType",
+            objet_id=information_type.id,
+            commentaire=f"Création type de signalement : {information_type.type}",
+        )
 
 # --- VUES POUR LA SUPPRESSION VIA TOKEN ---
 from django.views import View

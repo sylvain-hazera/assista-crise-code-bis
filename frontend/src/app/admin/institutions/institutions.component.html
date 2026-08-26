@@ -371,6 +371,12 @@
                     <option [ngValue]="r.id">{{ r.libelle }}</option>
                   }
                 </select>
+                <app-tag-search-input
+                  placeholder="Chercher ou créer un thème..."
+                  [searchFn]="competenceSearchFn"
+                  [createFn]="competenceCreateFn"
+                  (itemSelected)="onRegulateurCompetenceSearchSelected($event)">
+                </app-tag-search-input>
                 <select formControlName="competence">
                   <option [ngValue]="null">— Thème (optionnel) —</option>
                   @for (c of competences; track c.id) {

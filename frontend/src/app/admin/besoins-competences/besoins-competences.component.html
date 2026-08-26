@@ -1,0 +1,39 @@
+<h2>Correspondances Besoin → Compétence</h2>
+
+<div class="create-row">
+  <select [(ngModel)]="selectedBesoinId">
+    <option [ngValue]="null">— Besoin —</option>
+    <option *ngFor="let b of besoins" [ngValue]="b.id">{{ b.nom }}</option>
+  </select>
+
+  <app-tag-search-input
+    placeholder="Chercher ou créer une compétence..."
+    [searchFn]="competenceSearchFn"
+    [createFn]="competenceCreateFn"
+    (itemSelected)="onCompetenceSelected($event)">
+  </app-tag-search-input>
+
+  <span *ngIf="selectedCompetence" class="selected-competence">{{ selectedCompetence.nom }}</span>
+
+  <button type="button" [disabled]="!selectedBesoinId || !selectedCompetence" (click)="submit()">
+    Ajouter
+  </button>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th>Besoin</th>
+      <th>Compétence</th>
+      <th></th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr *ngFor="let c of correspondances">
+      <td>{{ c.besoin_nom }}</td>
+      <td>{{ c.competence_nom }}</td>
+      <td><button type="button" (click)="delete(c.id)">Supprimer</button></td>
+    </tr>
+  </tbody>
+</table>

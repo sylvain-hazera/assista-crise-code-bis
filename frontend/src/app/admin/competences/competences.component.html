@@ -1,0 +1,28 @@
+<h2>Compétences / thèmes</h2>
+
+<app-tag-search-input
+  placeholder="Chercher ou créer un thème (ex: transport animaux)..."
+  [searchFn]="searchFn"
+  [createFn]="createFn"
+  (itemSelected)="onCreated($event)">
+</app-tag-search-input>
+
+<table>
+  <thead>
+    <tr>
+      <th>Nom</th>
+      <th>Description</th>
+      <th>Active</th>
+      <th></th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr *ngFor="let c of competences">
+      <td>{{ c.nom }}</td>
+      <td>{{ c.description }}</td>
+      <td>{{ c.active ? 'Oui' : 'Non' }}</td>
+      <td><button type="button" (click)="toggleActive(c)">{{ c.active ? 'Désactiver' : 'Activer' }}</button></td>
+    </tr>
+  </tbody>
+</table>

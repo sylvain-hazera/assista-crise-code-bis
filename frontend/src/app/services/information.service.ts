@@ -18,6 +18,14 @@ export class InformationService {
     return this.http.get<InformationType[]>(`${this.typeUrl}/`);
   }
 
+  searchTypes(query: string): Observable<InformationType[]> {
+    return this.http.get<InformationType[]>(`${this.typeUrl}/`, { params: { q: query } });
+  }
+
+  createType(type: string): Observable<InformationType> {
+    return this.http.post<InformationType>(`${this.typeUrl}/`, { type });
+  }
+
   getAll(params?: Record<string, string>): Observable<Information[]> {
     return this.http
       .get<Information[]>(`${this.url}/`, { params: this.toParams(params) })

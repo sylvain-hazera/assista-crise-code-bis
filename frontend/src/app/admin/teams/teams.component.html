@@ -289,6 +289,13 @@
             <span class="section-hint">Cliquer pour ajouter / retirer</span>
           </div>
 
+          <app-tag-search-input
+            placeholder="Chercher ou créer un thème (ex: transport animaux)..."
+            [searchFn]="competenceSearchFn"
+            [createFn]="competenceCreateFn"
+            (itemSelected)="onCompetenceSearchSelected($event)">
+          </app-tag-search-input>
+
           <div class="competence-chip-list">
             @for (c of competences; track c.id) {
               <button type="button"
