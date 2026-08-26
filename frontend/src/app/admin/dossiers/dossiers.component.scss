@@ -1,0 +1,267 @@
+.dossiers-page {
+  padding: 1.5rem;
+}
+
+.page-header {
+  margin-bottom: 1.5rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+
+  h1 {
+    margin: 0;
+  }
+
+  p {
+    color: #64748b;
+  }
+}
+
+.view-toggle {
+  display: flex;
+  gap: 0.5rem;
+
+  button {
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+    background: white;
+    color: #64748b;
+    cursor: pointer;
+
+    &.active {
+      background: #2563eb;
+      color: white;
+      border-color: #2563eb;
+    }
+  }
+}
+
+.dossiers-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 1rem;
+}
+
+.dossier-card {
+  background: white;
+  border-radius: 14px;
+  border: 1px solid #e2e8f0;
+  padding: 1rem;
+  box-shadow: 0 2px 8px rgba(0,0,0,.05);
+}
+
+.card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.numero {
+  font-weight: 700;
+  color: #2563eb;
+}
+
+.badge {
+  background: #e2e8f0;
+  color: #334155;
+  padding: .3rem .7rem;
+  border-radius: 99px;
+  font-size: .8rem;
+  font-weight: 600;
+}
+
+.meta {
+  margin-top: 1rem;
+}
+
+.meta-row {
+  margin-bottom: .5rem;
+}
+
+.card-actions {
+  margin-top: 1rem;
+}
+
+.card-actions button {
+  width: 100%;
+  border: none;
+  background: #2563eb;
+  color: white;
+  padding: .75rem;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.card-actions button:hover {
+  background: #1d4ed8;
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1rem;
+}
+
+.modal {
+  background: white;
+  width: 100%;
+  max-width: 700px;
+  max-height: 90vh;
+  border-radius: 14px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.2);
+  overflow-y: auto;
+}
+
+.modal-header {
+  position: sticky;
+  top: 0;
+  background: white;
+  z-index: 10;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.modal-header h2 {
+  margin: 0;
+}
+
+.modal-header button {
+  border: none;
+  background: #e2e8f0;
+  padding: .5rem .8rem;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.modal-body {
+  padding: 1rem;
+}
+
+.detail-row {
+  margin-bottom: 1rem;
+  line-height: 1.5;
+}
+.commentaire-card {
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  border-radius: 8px;
+  padding: .75rem;
+  margin-bottom: .75rem;
+}
+
+.commentaire-card small {
+  display: block;
+  margin-top: .5rem;
+  color: #64748b;
+}
+
+.historique-card {
+  border-left: 4px solid #2563eb;
+  background: #eff6ff;
+  padding: .75rem;
+  margin-bottom: .75rem;
+  border-radius: 6px;
+}
+
+.historique-card small {
+  display: block;
+  margin-top: .5rem;
+  color: #64748b;
+}
+
+.document-card {
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  padding: .75rem;
+  margin-bottom: .75rem;
+  border-radius: 8px;
+}
+
+.document-card small {
+  display: block;
+  margin-top: .5rem;
+  color: #64748b;
+}
+
+.update-box {
+  margin-bottom: 1rem;
+}
+
+.update-box textarea {
+  width: 100%;
+  min-height: 100px;
+  margin-bottom: .75rem;
+  padding: .75rem;
+}
+
+.publish-btn {
+  border: none;
+  background: #2563eb;
+  color: white;
+  padding: .75rem 1rem;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.author {
+  font-weight: 600;
+  color: #2563eb;
+  margin-bottom: .5rem;
+}
+
+.document-file {
+  font-family: monospace;
+  margin-top: .5rem;
+}
+
+.document-preview {
+  width: 100%;
+  max-height: 250px;
+  object-fit: cover;
+  border-radius: 10px;
+  margin-bottom: .75rem;
+}
+
+.image-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999;
+}
+
+.image-modal-content {
+  position: relative;
+  max-width: 90vw;
+  max-height: 90vh;
+}
+
+.image-modal-content img {
+  max-width: 90vw;
+  max-height: 90vh;
+  border-radius: 8px;
+}
+
+.close-btn {
+  position: absolute;
+  top: -15px;
+  right: -15px;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 50%;
+  background: white;
+  cursor: pointer;
+  font-size: 18px;
+}

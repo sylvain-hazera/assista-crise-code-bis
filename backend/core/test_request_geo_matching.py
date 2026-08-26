@@ -5,12 +5,17 @@ from rest_framework.test import APIClient
 
 from core.models import (
     AffectationCompetence,
+    AffectationRoleOperationnel,
     Besoin,
     BesoinCompetence,
     Competence,
     Crisis,
     Dossier,
+    Institution,
+    InstitutionType,
+    Notification,
     RequestTypeBesoin,
+    RoleOperationnel,
     Team,
 )
 from core.views import department_code_from_commune_code, team_zone_specificity
@@ -176,3 +181,56 @@ class TestRequestAutoAssignmentGeoMatching:
         # Si la transaction avait été empoisonnée, cette requête suivante échouerait.
         from core.models import Request
         assert Request.objects.get(id=response.data["id"]).title == "Demande sans crise sans mapping"
+
+    def test_regulateur_notified_on_automatic_assignment(self, request_type, create_user):
+        """Contrairement au chemin manuel (`assign_team`), le chemin automatique de
+        `perform_create` ne notifiait jusqu'ici aucun régulateur — un dossier pouvait
+        rester invisible tant que personne ne parcourait la liste complète."""
+        competence = self._setup_competence_chain(request_type)
+        crisis = Crisis.objects.create(name="Crise notif", type="INCEDIE", location="POINT (5.72 45.18)")
+        team = Team.objects.create(name="Equipe notif", description="", color="#3b82f6")
+        AffectationCompetence.objects.create(crise=crisis, competence=competence, equipe=team, active=True)
+
+        regulateur = create_user(username="regul-notif@test.fr", email="regul-notif@test.fr", type="UTIL_SIMPLE")
+        role = RoleOperationnel.objects.create(code="REGULATEUR", libelle="Régulateur")
+        itype = InstitutionType.objects.create(code="MAIRIE_NOTIF_TEST", libelle="Mairie")
+        institution = Institution.objects.create(nom="Mairie notif test", type=itype)
+        AffectationRoleOperationnel.objects.create(
+            utilisateur=regulateur, institution=institution, competence=competence, role=role, actif=True,
+        )
+
+        client = APIClient()
+        response = client.post(
+            reverse('request-list'),
+            {
+                "title": "Demande a notifier", "location": "POINT (5.72 45.18)", "commune_code": "38185",
+                "first_name_request": "A", "last_name_request": "B", "email_request": "notif@test.fr",
+                "phone_request": "0600000000", "status": "NON_TRAITEE",
+                "request_type": str(request_type.id), "crisis": str(crisis.id),
+            },
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        dossier = Dossier.objects.get(crise=crisis, competence=competence)
+        assert Notification.objects.filter(utilisateur=regulateur, dossier=dossier).exists()
+
+    def test_no_notification_when_no_regulateur_on_competence(self, request_type):
+        """Aucun régulateur affecté sur cette compétence : la création ne doit pas crasher."""
+        competence = self._setup_competence_chain(request_type)
+        crisis = Crisis.objects.create(name="Crise sans regul", type="INCEDIE", location="POINT (5.72 45.18)")
+
+        client = APIClient()
+        response = client.post(
+            reverse('request-list'),
+            {
+                "title": "Demande sans regulateur", "location": "POINT (5.72 45.18)",
+                "first_name_request": "A", "last_name_request": "B", "email_request": "sansregul@test.fr",
+                "phone_request": "0600000000", "status": "NON_TRAITEE",
+                "request_type": str(request_type.id), "crisis": str(crisis.id),
+            },
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert not Notification.objects.filter(dossier__crise=crisis).exists()

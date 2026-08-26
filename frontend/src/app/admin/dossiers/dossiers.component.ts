@@ -7,6 +7,7 @@ import { DossierHistoriqueService } from '../../services/dossier-historique.serv
 import { AuthService } from '../../auth/services/auth.service';
 import { DocumentService } from '../../services/document.service';
 import { Dossier } from '../../shared/models/dossier.model';
+import { UserRole } from '../../shared/models/user.model';
 
 @Component({
   selector: 'app-dossiers',
@@ -18,6 +19,9 @@ import { Dossier } from '../../shared/models/dossier.model';
 export class DossiersComponent implements OnInit {
 
   dossiers: Dossier[] = [];
+
+  viewMode: 'ma_file' | 'tous' = 'tous';
+  isRegulateur = false;
 
   selectedDossier: Dossier | null = null;
 
@@ -37,14 +41,24 @@ export class DossiersComponent implements OnInit {
   ) {}
 
   ngOnInit(): void {
+    this.isRegulateur = this.authService.getCurrentUser()?.type === UserRole.REGULATEUR;
+    this.viewMode = this.isRegulateur ? 'ma_file' : 'tous';
+    this.load();
+  }
+
+  setViewMode(mode: 'ma_file' | 'tous'): void {
+    this.viewMode = mode;
     this.load();
   }
 
   load(): void {
-    this.dossierService.getAll()
-      .subscribe(data => {
-        this.dossiers = data;
-      });
+    const source = this.viewMode === 'ma_file'
+      ? this.dossierService.getMaFile()
+      : this.dossierService.getAll();
+
+    source.subscribe(data => {
+      this.dossiers = data;
+    });
   }
   openDossier(dossier: Dossier): void {
 

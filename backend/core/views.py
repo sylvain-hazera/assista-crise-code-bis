@@ -340,7 +340,26 @@ class DossierViewSet(viewsets.ModelViewSet):
             {"status": "ok"}
         )
 
+    @action(detail=False, methods=["get"])
+    def ma_file(self, request):
+        """Dossiers en attente d'affectation sur les compétences (thèmes) du régulateur
+        connecté — contrairement à la liste générale (tous les dossiers pour un compte
+        institutionnel), ici filtrée à ce qui concerne réellement l'utilisateur."""
+        user = request.user
+        if not user.is_authenticated:
+            return Response([])
 
+        competence_ids = AffectationRoleOperationnel.objects.filter(
+            utilisateur=user, role__code="REGULATEUR", actif=True, competence__isnull=False,
+        ).values_list('competence_id', flat=True)
+
+        queryset = Dossier.objects.filter(
+            statut__in=[Dossier.Statut.EN_ATTENTE_DISTRIBUTION, Dossier.Statut.EN_ATTENTE_AFFECTATION],
+            competence_id__in=competence_ids,
+        ).distinct()
+
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
 
 
 class AuthorEmailFilter(filters.FilterSet):
@@ -918,7 +937,29 @@ class RequestViewSet(viewsets.ModelViewSet):
                             evenement="Intervenant ajouté au dossier"
                         )
 
+                # Notifier les régulateurs actifs sur cette compétence : sans ça, un
+                # dossier créé automatiquement n'était visible qu'en parcourant la liste
+                # complète des dossiers — contrairement au chemin manuel (assign_team) qui
+                # notifie déjà. Ils le retrouvent aussi via /dossiers/ma_file/.
+                regulateurs_a_notifier = User.objects.filter(
+                    affectations_roles__competence=competence,
+                    affectations_roles__role__code="REGULATEUR",
+                    affectations_roles__actif=True,
+                ).distinct()
 
+                for regulateur in regulateurs_a_notifier:
+
+                    Notification.objects.create(
+                        utilisateur=regulateur,
+                        dossier=dossier,
+                        titre="Nouveau dossier à affecter",
+                        message=f"Le dossier {dossier.numero} ({dossier.titre}) nécessite une affectation.",
+                    )
+
+                    DossierHistorique.objects.create(
+                        dossier=dossier, auteur=regulateur,
+                        evenement=f"{regulateur.email} notifié en tant que régulateur",
+                    )
 
             else:
 

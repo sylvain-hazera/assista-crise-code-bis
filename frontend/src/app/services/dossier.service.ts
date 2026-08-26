@@ -18,6 +18,10 @@ export class DossierService {
     return this.http.get<Dossier[]>(`${this.url}/`);
   }
 
+  getMaFile(): Observable<Dossier[]> {
+    return this.http.get<Dossier[]>(`${this.url}/ma_file/`);
+  }
+
   getById(id: string): Observable<Dossier> {
     return this.http.get<Dossier>(`${this.url}/${id}/`);
   }

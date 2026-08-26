@@ -1,0 +1,274 @@
+<div class="dossiers-page">
+
+  <div class="page-header">
+    <div>
+      <h1>Dossiers opérationnels</h1>
+      <p>{{ dossiers.length }} dossier(s)</p>
+    </div>
+
+    <div class="view-toggle" *ngIf="isRegulateur">
+      <button
+        [class.active]="viewMode === 'ma_file'"
+        (click)="setViewMode('ma_file')">
+        Ma file
+      </button>
+      <button
+        [class.active]="viewMode === 'tous'"
+        (click)="setViewMode('tous')">
+        Tous les dossiers
+      </button>
+    </div>
+  </div>
+
+  <div class="dossiers-grid">
+
+    <div class="dossier-card" *ngFor="let d of dossiers">
+
+      <div class="card-top">
+
+        <div class="numero">
+
+          {{ d.numero }}
+
+          <span
+            *ngIf="d.unread_count"
+            class="update-badge">
+
+            {{ d.unread_count }}
+
+          </span>
+
+        </div>
+
+        <span class="badge">
+          {{ d.statut }}
+        </span>
+
+      </div>
+
+      <div class="meta">
+
+        <div class="meta-row">
+          <strong>Crise :</strong>
+          {{ d.crise_nom }}
+        </div>
+
+        <div class="meta-row">
+          <strong>Compétence :</strong>
+          {{ d.competence_nom }}
+        </div>
+
+        <div class="meta-row">
+          <strong>Équipe :</strong>
+          {{ d.equipe_nom || 'Non affectée' }}
+        </div>
+
+      </div>
+
+      <div class="card-actions">
+        <button (click)="openDossier(d)">
+          Voir dossier
+        </button>
+      </div>
+
+    </div>
+
+  </div>
+
+</div>
+<div class="modal-overlay"
+     *ngIf="selectedDossier"
+     (click)="closeDossier()">
+
+  <div class="modal"
+       (click)="$event.stopPropagation()">
+
+    <div class="modal-header">
+
+      <h2>
+        {{ selectedDossier.numero }}
+      </h2>
+
+      <button (click)="closeDossier()">
+        Fermer
+      </button>
+
+    </div>
+
+    <div class="modal-body">
+
+      <div class="detail-row">
+        <strong>Crise :</strong>
+        {{ selectedDossier.crise_nom }}
+      </div>
+
+      <div class="detail-row">
+        <strong>Compétence :</strong>
+        {{ selectedDossier.competence_nom }}
+      </div>
+
+      <div class="detail-row">
+        <strong>Équipe :</strong>
+        {{ selectedDossier.equipe_nom || 'Non affectée' }}
+      </div>
+
+      <div class="detail-row">
+        <strong>Statut :</strong>
+        {{ selectedDossier.statut }}
+      </div>
+
+      <div class="detail-row">
+        <strong>Titre :</strong>
+        {{ selectedDossier.titre }}
+      </div>
+
+      <div class="detail-row">
+        <strong>Description :</strong>
+        {{ selectedDossier.description }}
+      </div>
+      <hr>
+
+      <h3>Commentaires</h3>
+
+      <div class="update-box">
+
+        <textarea
+          [(ngModel)]="nouveauCommentaire"
+          placeholder="Ajouter une mise à jour...">
+        </textarea>
+
+        <input
+          type="file"
+          (change)="onFileSelected($event)">
+
+        <button
+          class="publish-btn"
+          (click)="publierMiseAJour()">
+
+          Publier
+
+        </button>
+
+      </div>
+
+
+      <div *ngIf="commentaires.length === 0">
+        Aucun commentaire.
+      </div>
+
+      <div *ngFor="let commentaire of commentaires"
+           class="commentaire-card">
+
+        <div class="author">
+          {{ commentaire.auteur_nom }}
+        </div>
+
+        <div>
+          {{ commentaire.commentaire }}
+        </div>
+
+        <small>
+          {{ commentaire.date_creation | date:'dd/MM/yyyy HH:mm' }}
+        </small>
+
+      </div>
+
+      <hr>
+
+      <h3>Historique</h3>
+
+      <div *ngIf="historique.length === 0">
+        Aucun évènement.
+      </div>
+
+      <div *ngFor="let event of historique"
+           class="historique-card">
+
+        <strong>
+          {{ event.evenement }}
+        </strong>
+
+        <div>
+          <em>
+            {{ event.auteur_nom }}
+          </em>
+        </div>
+
+        <div>
+          {{ event.commentaire }}
+        </div>
+
+        <small>
+          {{ event.date_creation | date:'dd/MM/yyyy HH:mm' }}
+        </small>
+
+      </div>
+
+      <hr>
+
+      <h3>Documents</h3>
+
+      <div *ngIf="documents.length === 0">
+        Aucun document.
+      </div>
+
+	<div *ngFor="let document of documents"
+           class="document-card">
+
+        <div class="author">
+          {{ document.auteur_nom }}
+        </div>
+
+        <div>
+          {{ document.commentaire || 'Sans commentaire' }}
+        </div>
+
+        <div class="document-file">
+          {{ document.nom_fichier }}
+        </div>
+
+
+        <button
+          type="button"
+          (click)="visualiserDocument(document)"
+        >
+          Voir
+        </button>
+        <small>
+          {{ document.date_upload | date:'dd/MM/yyyy HH:mm' }}
+        </small>
+
+      </div>
+
+    </div>
+
+  </div>
+
+</div>
+<div
+  *ngIf="imagePopupUrl"
+  class="image-modal"
+  (click)="fermerImage()"
+>
+
+  <div
+    class="image-modal-content"
+    (click)="$event.stopPropagation()"
+  >
+
+    <button
+      class="close-btn"
+      (click)="fermerImage()"
+    >
+      ✕
+    </button>
+
+    <img
+      [src]="imagePopupUrl"
+      alt="Document"
+    >
+
+  </div>
+
+</div>
+
