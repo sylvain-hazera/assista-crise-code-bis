@@ -1458,8 +1458,13 @@ class InformationViewSet(viewsets.ModelViewSet):
 
 # --- VIEWSETS SIMPLES POUR LES TYPES ---
 class RequestTypeViewSet(viewsets.ModelViewSet):
+    # AllowAny : le formulaire public "demander de l'aide" (request-help-form) n'a pas de
+    # garde d'authentification — sans ça, un visiteur anonyme recevait un 401 en listant les
+    # types, d'où le menu "Choisissez votre besoin" vide (même bug que déjà corrigé sur
+    # InformationTypeViewSet pour le signalement, et déjà bon sur OfferTypeViewSet).
     queryset = RequestType.objects.all()
     serializer_class = RequestTypeSerializer
+    permission_classes = [AllowAny]
 
 class OfferTypeViewSet(viewsets.ModelViewSet):
     queryset = OfferType.objects.all()
