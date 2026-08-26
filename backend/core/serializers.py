@@ -397,6 +397,9 @@ class TeamSerializer(serializers.ModelSerializer):
     assigned_request_ids = serializers.PrimaryKeyRelatedField(
         many=True, queryset=Request.objects.all(), source='assigned_requests', required=False
     )
+    competence_ids = serializers.PrimaryKeyRelatedField(
+        many=True, queryset=Competence.objects.all(), source='competences', required=False
+    )
 
     class Meta:
         model  = Team
@@ -407,6 +410,7 @@ class TeamSerializer(serializers.ModelSerializer):
             'assigned_crisis_ids',
             'assigned_offer_ids',
             'assigned_request_ids',
+            'competence_ids',
         ]
         read_only_fields = ['id', 'created_at']
 

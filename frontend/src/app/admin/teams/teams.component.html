@@ -278,6 +278,33 @@
           </div>
         </div>
 
+        <!-- ── THÈMES D'INTERVENTION ──────────────────────────── -->
+        <div class="detail-section">
+          <div class="section-header">
+            <h3>
+              <span class="material-icons">category</span>
+              Thèmes d'intervention
+              <span class="count-badge">{{ selectedTeam.competence_ids.length }}</span>
+            </h3>
+            <span class="section-hint">Cliquer pour ajouter / retirer</span>
+          </div>
+
+          <div class="competence-chip-list">
+            @for (c of competences; track c.id) {
+              <button type="button"
+                      class="competence-chip"
+                      [class.selected]="hasCompetence(c.id)"
+                      [style.--ac]="selectedTeam.color"
+                      (click)="toggleCompetence(c.id)">
+                {{ c.nom }}
+              </button>
+            }
+            @if (competences.length === 0) {
+              <p class="empty-pick">Aucun thème/compétence défini.</p>
+            }
+          </div>
+        </div>
+
         <!-- ── MISSIONS ────────────────────────────────────── -->
         <div class="detail-section">
           <div class="section-header">

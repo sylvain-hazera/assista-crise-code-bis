@@ -261,14 +261,32 @@ class AffectationCompetenceViewSet(viewsets.ModelViewSet):
     queryset = AffectationCompetence.objects.all()
     serializer_class = AffectationCompetenceSerializer
 
+    def get_permissions(self):
+        if self.action in ("create", "update", "partial_update", "destroy"):
+            return [IsInstitutionalActor()]
+        return [permissions.IsAuthenticated()]
+
     def perform_create(self, serializer):
         affectation = serializer.save()
         audit_log(
             request=self.request,
-            action_code="CREATION",
+            action_code="AFFECTATION",
             objet_type="AffectationCompetence",
             objet_id=affectation.id,
-            commentaire=f"Création affectation compétence : {affectation}",
+            commentaire=(
+                f"Équipe {affectation.equipe.name} affectée à la compétence "
+                f"{affectation.competence.nom} sur la crise {affectation.crise.name}"
+            ),
+        )
+
+    def perform_update(self, serializer):
+        affectation = serializer.save()
+        audit_log(
+            request=self.request,
+            action_code="MODIFICATION",
+            objet_type="AffectationCompetence",
+            objet_id=affectation.id,
+            commentaire=f"Modification affectation compétence : {affectation}",
         )
 
 class DossierViewSet(viewsets.ModelViewSet):

@@ -10,6 +10,7 @@ import { OfferService }      from '../../services/offer.service';
 import { RequestService }    from '../../services/request.service';
 import { DisponibiliteOffreService } from '../../services/disponibilite-offre.service';
 import { DossierService } from '../../services/dossier.service';
+import { CompetenceService } from '../../services/competence.service';
 
 import { Team, TeamMission }  from '../../shared/models/team.model';
 import { User }        from '../../shared/models/user.model';
@@ -19,6 +20,7 @@ import { Request }            from '../../shared/models/request.model';
 import { Status }             from '../../shared/models/status.model';
 import { DisponibiliteOffre } from '../../shared/models/disponibilite-offre.model';
 import { Dossier } from '../../shared/models/dossier.model';
+import { Competence } from '../../shared/models/competence.model';
 
 type ModalView = 'none' | 'create' | 'detail' | 'edit' | 'delete' | 'assign' | 'planning';
 type AssignTab = 'Crisis' | 'Offer' | 'Request';
@@ -42,6 +44,7 @@ export class TeamsComponent implements OnInit {
   requests: Request[]     = [];
   disponibilites: DisponibiliteOffre[] = [];
   dossiers: Dossier[] = [];
+  competences: Competence[] = [];
 
   // ── UI ──────────────────────────────────────────────────────
   isLoading      = true;
@@ -74,6 +77,7 @@ export class TeamsComponent implements OnInit {
     private requestService: RequestService,
     private disponibiliteOffreService: DisponibiliteOffreService,
     private dossierService: DossierService,
+    private competenceService: CompetenceService,
   ) {}
 
   ngOnInit(): void {
@@ -92,14 +96,16 @@ export class TeamsComponent implements OnInit {
       teams:    this.teamService.getAll(),       // ← ajouté ici
       disponibilites: this.disponibiliteOffreService.getAll(),
       dossiers: this.dossierService.getAll(),
+      competences: this.competenceService.getAll(),
     }).subscribe({
-      next: ({ users, crisis, offers, requests, teams, disponibilites, dossiers }) => {
+      next: ({ users, crisis, offers, requests, teams, disponibilites, dossiers, competences }) => {
         this.users    = users;
         this.crisis   = crisis;
         this.offers   = offers;
         this.requests = requests;
         this.disponibilites = disponibilites;
         this.dossiers = dossiers;
+        this.competences = competences;
         this.teams    = teams.map(t => ({ ...t, missions: this.buildMissions(t) }));
         this.isLoading = false;
       },
@@ -169,6 +175,7 @@ export class TeamsComponent implements OnInit {
       assigned_crisis_ids:  [],
       assigned_offer_ids:   [],
       assigned_request_ids: [],
+      competence_ids:       [],
     };
     this.teamService.create(payload).subscribe({
       next: () => { this.reloadTeams(); this.showSuccess('Équipe créée.'); this.closeModal(); },
@@ -230,6 +237,21 @@ export class TeamsComponent implements OnInit {
 
   isMember(userId: string): boolean {
     return this.selectedTeam?.member_ids?.includes(userId) ?? false;
+  }
+
+  // ── THÈMES D'INTERVENTION ─────────────────────────────────────
+  toggleCompetence(competenceId: string): void {
+    if (!this.selectedTeam) return;
+    const ids = this.selectedTeam.competence_ids ?? [];
+    const newIds = ids.includes(competenceId) ? ids.filter(id => id !== competenceId) : [...ids, competenceId];
+    this.teamService.patch(this.selectedTeam.id!, { competence_ids: newIds }).subscribe(updated => {
+      this.selectedTeam = { ...updated, missions: this.selectedTeam!.missions };
+      this.reloadTeams();
+    });
+  }
+
+  hasCompetence(competenceId: string): boolean {
+    return this.selectedTeam?.competence_ids?.includes(competenceId) ?? false;
   }
 
   // ── ASSIGN MISSIONS ───────────────────────────────────────────

@@ -1,0 +1,64 @@
+<div class="affectations-page">
+
+  <div class="page-header">
+    <h2>Affectations équipe ↔ compétence ↔ crise</h2>
+    <button class="btn-primary" (click)="showForm = !showForm">
+      {{ showForm ? 'Annuler' : '+ Nouvelle affectation' }}
+    </button>
+  </div>
+
+  <p *ngIf="errorMessage" class="msg error">{{ errorMessage }}</p>
+  <p *ngIf="successMessage" class="msg success">{{ successMessage }}</p>
+
+  <form *ngIf="showForm" class="inline-form" [formGroup]="form" (ngSubmit)="submit()">
+    <select formControlName="crise">
+      <option [ngValue]="null">— Crise —</option>
+      <option *ngFor="let c of crises" [ngValue]="c.id">{{ c.name }}</option>
+    </select>
+    <select formControlName="competence">
+      <option [ngValue]="null">— Compétence —</option>
+      <option *ngFor="let c of competences" [ngValue]="c.id">{{ c.nom }}</option>
+    </select>
+    <select formControlName="equipe">
+      <option [ngValue]="null">— Équipe —</option>
+      <option *ngFor="let t of teams" [ngValue]="t.id">{{ t.name }}</option>
+    </select>
+    <input type="text" formControlName="commentaire" placeholder="Commentaire (optionnel)"/>
+    <label class="checkbox-row"><input type="checkbox" formControlName="active"/> Active</label>
+    <button class="btn-primary sm" type="submit">Créer</button>
+  </form>
+
+  <table class="data-table" *ngIf="!isLoading">
+    <thead>
+      <tr>
+        <th>Crise</th>
+        <th>Compétence</th>
+        <th>Équipe</th>
+        <th>Active</th>
+        <th>Commentaire</th>
+        <th></th>
+      </tr>
+    </thead>
+
+    <tbody>
+      <tr *ngFor="let a of affectations">
+        <td>{{ a.crise_nom }}</td>
+        <td>{{ a.competence_nom }}</td>
+        <td>{{ a.equipe_nom }}</td>
+        <td>
+          <button class="btn-toggle" [class.on]="a.active" (click)="toggleActive(a)">
+            {{ a.active ? 'Oui' : 'Non' }}
+          </button>
+        </td>
+        <td>{{ a.commentaire || '—' }}</td>
+        <td class="actions">
+          <button class="icon-btn danger" (click)="delete(a)" title="Supprimer">✕</button>
+        </td>
+      </tr>
+      <tr *ngIf="affectations.length === 0">
+        <td colspan="6" class="empty">Aucune affectation.</td>
+      </tr>
+    </tbody>
+  </table>
+
+</div>

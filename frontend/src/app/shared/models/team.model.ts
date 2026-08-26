@@ -16,6 +16,7 @@ export interface Team {
   assigned_crisis_ids:  string[];
   assigned_offer_ids:   string[];
   assigned_request_ids: string[];
+  competence_ids:       string[];
   missions:             TeamMission[];      // calculé localement, non envoyé à l'API
   created_at?:          string;
 }

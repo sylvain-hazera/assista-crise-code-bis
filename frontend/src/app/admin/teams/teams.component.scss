@@ -269,6 +269,13 @@ h3 { margin: 0; font-size: .9rem; font-weight: 700; display: flex; align-items: 
   &:hover { background: #f8fafc; }
   &.selected { background: color-mix(in srgb, var(--ac, #3b82f6) 8%, white); border-color: var(--ac, #3b82f6); }
 }
+.competence-chip-list { display: flex; flex-wrap: wrap; gap: .5rem; }
+.competence-chip {
+  padding: .4rem .9rem; border-radius: 999px; border: 1.5px solid var(--border);
+  background: white; cursor: pointer; font-size: .82rem; font-weight: 600; color: var(--muted);
+  &.selected { background: color-mix(in srgb, var(--ac, #3b82f6) 12%, white); border-color: var(--ac, #3b82f6); color: var(--ac, #3b82f6); }
+}
+
 .up-avatar {
   width: 32px; height: 32px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
