@@ -790,6 +790,90 @@ def team_zone_specificity(team, demande):
     return None
 
 
+def resolve_competence_for_request(demande):
+    """Compétence déduite du type de demande (RequestType -> Besoin -> Competence),
+    utilisée aussi bien pour le matching automatique (perform_create) que pour fiabiliser
+    le rattachement d'un dossier créé manuellement (assign_team)."""
+    mapping_besoin = RequestTypeBesoin.objects.filter(request_type=demande.request_type).first()
+    if not mapping_besoin:
+        return None
+    mapping_competence = BesoinCompetence.objects.filter(besoin=mapping_besoin.besoin).first()
+    return mapping_competence.competence if mapping_competence else None
+
+
+def populate_dossier_participants_and_notify(
+    dossier, demandeur=None, equipe=None,
+    notification_titre="Nouveau dossier à affecter",
+    notification_message=None,
+):
+    """Peuple les DossierParticipant (demandeur, équipe, régulation) et notifie les
+    régulateurs concernés d'un dossier fraîchement créé. Logique partagée entre le chemin
+    automatique (perform_create) et le chemin manuel (assign_team), qui divergeaient
+    jusqu'ici : l'un ajoutait l'équipe comme participants mais ne notifiait jamais de
+    régulateur sur simple base de compétence, l'autre notifiait sans jamais peupler le rôle
+    REGULATION ni ajouter l'équipe comme participants."""
+    if demandeur:
+        DossierParticipant.objects.get_or_create(
+            dossier=dossier, utilisateur=demandeur, role=DossierParticipant.Role.DEMANDEUR,
+        )
+        DossierHistorique.objects.create(
+            dossier=dossier, auteur=demandeur, evenement="Demandeur ajouté au dossier",
+        )
+
+    if equipe:
+        DossierHistorique.objects.create(
+            dossier=dossier, evenement=f"Équipe affectée : {equipe.name}",
+        )
+        for membre in equipe.members.all():
+            DossierParticipant.objects.get_or_create(
+                dossier=dossier, utilisateur=membre, role=DossierParticipant.Role.EQUIPE,
+            )
+            DossierHistorique.objects.create(
+                dossier=dossier, auteur=membre, evenement="Intervenant ajouté au dossier",
+            )
+
+    if dossier.competence:
+        # Régulateur·s affecté·s à cette compétence, indépendamment de leur équipe.
+        regulateurs = User.objects.filter(
+            affectations_roles__competence=dossier.competence,
+            affectations_roles__role__code="REGULATEUR",
+            affectations_roles__actif=True,
+        ).distinct()
+    elif equipe:
+        # Pas de compétence rattachée au dossier (ex: mapping RequestType->Besoin absent) :
+        # à défaut, régulateur·s parmi les membres de l'équipe affectée, sur l'une de ses
+        # compétences déclarées (ou n'importe laquelle des leurs si l'équipe n'en a aucune).
+        member_ids = equipe.members.values_list('id', flat=True)
+        regulateur_affectations = AffectationRoleOperationnel.objects.filter(
+            utilisateur_id__in=member_ids, role__code="REGULATEUR", actif=True,
+        )
+        competence_ids = list(equipe.competences.values_list('id', flat=True))
+        if competence_ids:
+            regulateur_affectations = regulateur_affectations.filter(competence_id__in=competence_ids)
+        regulateurs = User.objects.filter(
+            id__in=regulateur_affectations.values_list('utilisateur_id', flat=True)
+        ).distinct()
+    else:
+        regulateurs = User.objects.none()
+
+    for regulateur in regulateurs:
+        DossierParticipant.objects.get_or_create(
+            dossier=dossier, utilisateur=regulateur, role=DossierParticipant.Role.REGULATION,
+        )
+        Notification.objects.create(
+            utilisateur=regulateur,
+            dossier=dossier,
+            titre=notification_titre,
+            message=notification_message or f"Le dossier {dossier.numero} ({dossier.titre}) nécessite une affectation.",
+        )
+        DossierHistorique.objects.create(
+            dossier=dossier, auteur=regulateur,
+            evenement=f"{regulateur.email} notifié en tant que régulateur",
+        )
+
+    return regulateurs
+
+
 class RequestViewSet(viewsets.ModelViewSet):
     queryset = Request.objects.all()
     serializer_class = RequestSerializer
@@ -822,24 +906,9 @@ class RequestViewSet(viewsets.ModelViewSet):
             statut = Dossier.Statut.EN_ATTENTE_AFFECTATION
 
             equipe = None
-            competence = None
-            mapping_competence = None
+            competence = resolve_competence_for_request(demande)
 
-            # RequestType -> Besoin
-            mapping_besoin = RequestTypeBesoin.objects.filter(
-                request_type=demande.request_type
-            ).first()
-
-            if mapping_besoin:
-
-                # Besoin -> Compétence
-                mapping_competence = BesoinCompetence.objects.filter(
-                    besoin=mapping_besoin.besoin
-                ).first()
-
-            if mapping_competence:
-
-                competence = mapping_competence.competence
+            if competence:
 
                 regulateurs_disponibles = (
                     AffectationRoleOperationnel.objects
@@ -897,69 +966,27 @@ class RequestViewSet(viewsets.ModelViewSet):
                     crise=demande.crisis,
                     competence=competence,
                     equipe=equipe,
+                    demande=demande,
                     titre=demande.title,
                     description=f"Demande créée automatiquement : {demande.title}",
                     statut=statut
                 )
 
-                if demande.author:
-
-                    DossierParticipant.objects.get_or_create(
-                        dossier=dossier,
-                        utilisateur=demande.author,
-                        role=DossierParticipant.Role.DEMANDEUR
-                    )
-
-                    DossierHistorique.objects.create(
-                        dossier=dossier,
-                        auteur=demande.author,
-                        evenement="Demandeur ajouté au dossier"
-                    )
-
-                if equipe:
-
-                    DossierHistorique.objects.create(
-                        dossier=dossier,
-        	        evenement=f"Equipe affectée : {equipe.name}"
-                    )
-
-                    for membre in equipe.members.all():
-
-                        DossierParticipant.objects.get_or_create(
-                            dossier=dossier,
-                            utilisateur=membre,
-                            role=DossierParticipant.Role.EQUIPE
-                        )
-
-                        DossierHistorique.objects.create(
-                            dossier=dossier,
-                            auteur=membre,
-                            evenement="Intervenant ajouté au dossier"
-                        )
-
-                # Notifier les régulateurs actifs sur cette compétence : sans ça, un
+                demandeur, _ = resolve_or_invite_demandeur(demande, request=self.request)
+                # Notifie aussi les régulateurs actifs sur cette compétence : sans ça, un
                 # dossier créé automatiquement n'était visible qu'en parcourant la liste
                 # complète des dossiers — contrairement au chemin manuel (assign_team) qui
                 # notifie déjà. Ils le retrouvent aussi via /dossiers/ma_file/.
-                regulateurs_a_notifier = User.objects.filter(
-                    affectations_roles__competence=competence,
-                    affectations_roles__role__code="REGULATEUR",
-                    affectations_roles__actif=True,
-                ).distinct()
+                populate_dossier_participants_and_notify(dossier, demandeur=demandeur, equipe=equipe)
 
-                for regulateur in regulateurs_a_notifier:
-
-                    Notification.objects.create(
-                        utilisateur=regulateur,
-                        dossier=dossier,
-                        titre="Nouveau dossier à affecter",
-                        message=f"Le dossier {dossier.numero} ({dossier.titre}) nécessite une affectation.",
-                    )
-
-                    DossierHistorique.objects.create(
-                        dossier=dossier, auteur=regulateur,
-                        evenement=f"{regulateur.email} notifié en tant que régulateur",
-                    )
+                audit_log(
+                    request=self.request,
+                    action_code="CREATION",
+                    objet_type="Dossier",
+                    objet_id=dossier.id,
+                    crise=dossier.crise,
+                    commentaire=f"Dossier {dossier.numero} créé automatiquement pour la demande : {demande.title}",
+                )
 
             else:
 
@@ -975,6 +1002,7 @@ class RequestViewSet(viewsets.ModelViewSet):
                         crise=demande.crisis,
                         competence=None,
                         equipe=None,
+                        demande=demande,
                         titre=demande.title,
                         description=(
                             f"Demande créée automatiquement : "
@@ -983,6 +1011,13 @@ class RequestViewSet(viewsets.ModelViewSet):
                         statut=Dossier.Statut.EN_ATTENTE_AFFECTATION
                     )
 
+                    demandeur, _ = resolve_or_invite_demandeur(demande, request=self.request)
+                    # Sans compétence ni équipe identifiée, seul le demandeur peut être
+                    # rattaché ici (aucun régulateur à notifier) — mais c'est déjà mieux que
+                    # zéro participant : sans ça ce dossier restait invisible au demandeur
+                    # (le suivi passe par DossierParticipant, pas seulement par institution).
+                    populate_dossier_participants_and_notify(dossier, demandeur=demandeur)
+
                     DossierHistorique.objects.create(
                         dossier=dossier,
                         evenement="Aucune compétence trouvée automatiquement",
@@ -990,6 +1025,15 @@ class RequestViewSet(viewsets.ModelViewSet):
                             "Le dossier nécessite "
                             "une affectation manuelle."
                         )
+                    )
+
+                    audit_log(
+                        request=self.request,
+                        action_code="CREATION",
+                        objet_type="Dossier",
+                        objet_id=dossier.id,
+                        crise=dossier.crise,
+                        commentaire=f"Dossier {dossier.numero} créé automatiquement (sans compétence) pour la demande : {demande.title}",
                     )
 
                 print(
@@ -1048,6 +1092,7 @@ class RequestViewSet(viewsets.ModelViewSet):
         dossier = Dossier.objects.create(
             numero=f"DOS-{uuid.uuid4().hex[:8].upper()}",
             crise=demande.crisis,
+            competence=resolve_competence_for_request(demande),
             equipe=team,
             demande=demande,
             titre=demande.title,
@@ -1055,42 +1100,17 @@ class RequestViewSet(viewsets.ModelViewSet):
             statut=Dossier.Statut.AFFECTE,
         )
 
-        demandeur, demandeur_created = resolve_or_invite_demandeur(demande, request=request)
-        if demandeur:
-            DossierParticipant.objects.get_or_create(
-                dossier=dossier, utilisateur=demandeur, role=DossierParticipant.Role.DEMANDEUR
-            )
+        demandeur, _ = resolve_or_invite_demandeur(demande, request=request)
 
-        DossierHistorique.objects.create(
-            dossier=dossier, evenement=f"Équipe affectée : {team.name}",
+        # Régulateur·s à notifier : ceux affectés à la compétence du dossier si elle a pu
+        # être déduite, sinon (à défaut) les membres de l'équipe ayant un rôle opérationnel
+        # REGULATEUR actif pour l'une des compétences de l'équipe — pour ne pas notifier
+        # personne juste parce que le mapping RequestType->Besoin est absent.
+        regulateurs = populate_dossier_participants_and_notify(
+            dossier, demandeur=demandeur, equipe=team,
+            notification_titre="Nouvelle demande affectée à votre équipe",
+            notification_message=f"La demande « {demande.title} » a été affectée à l'équipe {team.name} (dossier {dossier.numero}).",
         )
-
-        # Régulateur·s de l'équipe : membres ayant un rôle opérationnel REGULATEUR actif pour
-        # l'une des compétences de l'équipe (à défaut, pour n'importe laquelle de leurs
-        # compétences, pour ne pas notifier personne juste parce que l'équipe n'a pas de
-        # compétence déclarée).
-        member_ids = team.members.values_list('id', flat=True)
-        regulateur_affectations = AffectationRoleOperationnel.objects.filter(
-            utilisateur_id__in=member_ids, role__code="REGULATEUR", actif=True,
-        )
-        competence_ids = list(team.competences.values_list('id', flat=True))
-        if competence_ids:
-            regulateur_affectations = regulateur_affectations.filter(competence_id__in=competence_ids)
-        regulateurs = User.objects.filter(
-            id__in=regulateur_affectations.values_list('utilisateur_id', flat=True)
-        ).distinct()
-
-        for regulateur in regulateurs:
-            Notification.objects.create(
-                utilisateur=regulateur,
-                dossier=dossier,
-                titre="Nouvelle demande affectée à votre équipe",
-                message=f"La demande « {demande.title} » a été affectée à l'équipe {team.name} (dossier {dossier.numero}).",
-            )
-            DossierHistorique.objects.create(
-                dossier=dossier, auteur=regulateur,
-                evenement=f"{regulateur.email} notifié en tant que régulateur de l'équipe",
-            )
 
         try:
             suivi_paragraph = ""
