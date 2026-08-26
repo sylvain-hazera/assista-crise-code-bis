@@ -293,6 +293,16 @@ class DossierViewSet(viewsets.ModelViewSet):
     queryset = Dossier.objects.all()
     serializer_class = DossierSerializer
 
+    def get_permissions(self):
+        # La lecture reste ouverte à tout utilisateur authentifié concerné (filtrée par
+        # get_queryset : participant du dossier, ou compte institutionnel). Modifier ou
+        # supprimer un dossier restait jusqu'ici possible à n'importe quel participant
+        # (ex: un simple demandeur) faute de restriction dédiée — désormais réservé aux
+        # comptes institutionnels, comme pour les autres écritures sensibles de l'app.
+        if self.action in ("update", "partial_update", "destroy"):
+            return [IsInstitutionalActor()]
+        return super().get_permissions()
+
     def get_queryset(self):
         user = self.request.user
         if not user.is_authenticated:
@@ -360,6 +370,60 @@ class DossierViewSet(viewsets.ModelViewSet):
 
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
+
+    @action(detail=True, methods=["post"], permission_classes=[IsInstitutionalActor])
+    def cloturer(self, request, pk=None):
+        """Clôture un dossier (ou le marque résolu, via {"statut": "RESOLU"} dans le corps
+        de la requête). Réservé au régulateur affecté à ce dossier précis (DossierParticipant
+        role=REGULATION), au responsable désigné de l'institution impliquée sur la crise
+        (ImplicationInstitution.responsable), ou à un administrateur — pas open-bar à tout
+        compte institutionnel comme le PATCH générique."""
+        dossier = self.get_object()
+        user = request.user
+
+        est_regulateur_du_dossier = dossier.participants.filter(
+            utilisateur=user, role=DossierParticipant.Role.REGULATION,
+        ).exists()
+        est_responsable_crise = dossier.crise.implications.filter(
+            responsable=user, actif=True,
+        ).exists()
+
+        if not (est_regulateur_du_dossier or est_responsable_crise or user.type == UserRole.ADMINISTRATOR):
+            return Response(
+                {"error": "Seul le régulateur affecté à ce dossier ou le responsable de la crise peut le clôturer."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        nouveau_statut = request.data.get("statut", Dossier.Statut.CLOTURE)
+        if nouveau_statut not in (Dossier.Statut.CLOTURE, Dossier.Statut.RESOLU):
+            return Response({"error": "Statut de clôture invalide."}, status=status.HTTP_400_BAD_REQUEST)
+
+        ancien_statut = dossier.statut
+        dossier.statut = nouveau_statut
+        if nouveau_statut == Dossier.Statut.CLOTURE:
+            dossier.date_cloture = timezone.now()
+        else:
+            dossier.date_resolution = timezone.now()
+        dossier.save()
+
+        DossierHistorique.objects.create(
+            dossier=dossier, auteur=user,
+            evenement=f"Dossier {dossier.get_statut_display().lower()}",
+            commentaire=request.data.get("commentaire"),
+        )
+
+        audit_log(
+            request=request,
+            action_code="CLOTURE",
+            objet_type="Dossier",
+            objet_id=dossier.id,
+            crise=dossier.crise,
+            ancien_etat=ancien_statut,
+            nouvel_etat=nouveau_statut,
+            commentaire=f"Dossier {dossier.numero} {dossier.get_statut_display().lower()} par {user.email}",
+        )
+
+        return Response({"status": "ok", "statut": dossier.statut})
 
 
 class AuthorEmailFilter(filters.FilterSet):

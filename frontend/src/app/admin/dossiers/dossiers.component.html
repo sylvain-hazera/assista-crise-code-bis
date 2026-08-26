@@ -117,6 +117,15 @@
         {{ selectedDossier.statut }}
       </div>
 
+      <div class="detail-row cloture-actions" *ngIf="selectedDossier.statut !== 'CLOTURE'">
+        <button type="button" (click)="cloturerDossier('RESOLU')" *ngIf="selectedDossier.statut !== 'RESOLU'">
+          Marquer résolu
+        </button>
+        <button type="button" (click)="cloturerDossier('CLOTURE')">
+          Clôturer le dossier
+        </button>
+      </div>
+
       <div class="detail-row">
         <strong>Titre :</strong>
         {{ selectedDossier.titre }}

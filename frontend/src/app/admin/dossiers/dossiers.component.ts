@@ -217,7 +217,30 @@ export class DossiersComponent implements OnInit {
   }
 
   closeDossier(): void {
-    this.selectedDossier = null;  
+    this.selectedDossier = null;
+  }
+
+  cloturerDossier(statut: 'CLOTURE' | 'RESOLU'): void {
+    if (!this.selectedDossier) {
+      return;
+    }
+
+    const libelle = statut === 'CLOTURE' ? 'clôturer' : 'marquer résolu';
+    if (!confirm(`Confirmer : ${libelle} ce dossier ?`)) {
+      return;
+    }
+
+    this.dossierService.cloturer(this.selectedDossier.id, statut).subscribe({
+      next: res => {
+        if (this.selectedDossier) {
+          this.selectedDossier.statut = res.statut;
+        }
+        this.load();
+      },
+      error: err => {
+        alert(err.error?.error || 'Impossible de clôturer ce dossier.');
+      }
+    });
   }
 
   telechargerDocument(

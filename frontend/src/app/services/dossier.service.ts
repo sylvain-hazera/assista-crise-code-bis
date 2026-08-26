@@ -29,5 +29,9 @@ export class DossierService {
   markViewed(id: string): Observable<{ status: string }> {
     return this.http.post<{ status: string }>(`${this.url}/${id}/mark_viewed/`, {});
   }
+
+  cloturer(id: string, statut: 'CLOTURE' | 'RESOLU' = 'CLOTURE'): Observable<{ status: string; statut: string }> {
+    return this.http.post<{ status: string; statut: string }>(`${this.url}/${id}/cloturer/`, { statut });
+  }
 }
 
