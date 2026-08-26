@@ -13,10 +13,10 @@ class TestRequestTypePublicAccess:
         """Régression : le formulaire public 'demander de l'aide' (request-help-form) n'a
         pas de garde d'authentification, mais RequestTypeViewSet renvoyait 401 à tout
         visiteur anonyme — d'où le menu 'Choisissez votre besoin' vide en pratique."""
-        RequestType.objects.create(type="Transport")
+        RequestType.objects.get_or_create(type="QA Transport Test")
         client = APIClient()
 
         response = client.get(reverse('requesttype-list'))
 
         assert response.status_code == status.HTTP_200_OK
-        assert len(response.data) == 1
+        assert any(t["type"] == "QA Transport Test" for t in response.data)

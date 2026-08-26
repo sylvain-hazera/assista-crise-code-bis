@@ -64,17 +64,18 @@
                         De quoi avez-vous besoin ? <span class="required">*</span>
                     </label>
                     <div class="select-wrapper">
-                    <select 
-                        [id]="'needType' + i" 
+                    <select
+                        [id]="'needType' + i"
                         [formControl]="$any(needsType.at(i))"
                         class="form-select"
-                        [class.invalid]="needsType.at(i).invalid && needsType.at(i).touched">
+                        [class.invalid]="needsType.at(i).invalid && needsType.at(i).touched"
+                        (change)="onTopLevelTypeChange(i)">
                         <option value="">Choisissez votre besoin</option>
                         @for(option of needTypeOptions.slice(1); track option.value) {
                             <option [value]="option.value">
                                 {{ option.label }}
                             </option>
-                        } 
+                        }
                     </select>
                     <span class="material-icons select-arrow">arrow_drop_down</span>
                     </div>
@@ -84,6 +85,25 @@
                         </div>
                     }
                 </div>
+
+                @if (childrenFor(i).length > 0) {
+                    <div class="form-group">
+                        <label [for]="'needSubType' + i" class="form-label">Précisez (optionnel)</label>
+                        <div class="select-wrapper">
+                        <select
+                            [id]="'needSubType' + i"
+                            class="form-select"
+                            [value]="subCategorySelections[i]"
+                            (change)="onSubCategoryChange(i, $any($event.target).value)">
+                            <option value="">Aucune précision</option>
+                            @for(child of childrenFor(i); track child.value) {
+                                <option [value]="child.value">{{ child.label }}</option>
+                            }
+                        </select>
+                        <span class="material-icons select-arrow">arrow_drop_down</span>
+                        </div>
+                    </div>
+                }
 
                 <!-- Description -->
                 <div class="form-group">

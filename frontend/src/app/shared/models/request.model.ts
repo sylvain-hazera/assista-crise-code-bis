@@ -5,6 +5,7 @@ export interface RequestType {
   id: string;                           // UUID
   type: string;                         // Unique
   description: string;
+  parent: string | null;                // UUID du RequestType parent, si sous-catégorie
 }
 
 export interface Request {

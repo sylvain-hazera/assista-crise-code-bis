@@ -218,6 +218,16 @@ class RequestType(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     type = models.CharField(max_length=100, unique=True, null=True, blank=True)
     description = models.TextField(null=True, blank=True)
+    parent = models.ForeignKey(
+        "self",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="sous_categories",
+        help_text="Catégorie parente si ce type est une précision d'un besoin plus large "
+                   "(ex: 'Groupe électrogène' sous 'Matériel', 'Anglais' sous "
+                   "'Interprétariat / traduction').",
+    )
 
     def __str__(self) -> str:
         return self.type

@@ -95,13 +95,51 @@ export class RequestHelpFormComponent implements OnInit {
         types.forEach(type => {
           this.typesDemandeMap.set(type.type, type.id);
         });
+
+        const byId = new Map(types.map(t => [t.id, t]));
+        const topLevel = types.filter(t => !t.parent);
+
+        this.childrenByParentType.clear();
+        types.filter(t => t.parent).forEach(child => {
+          const parent = byId.get(child.parent);
+          if (!parent) return;
+          const list = this.childrenByParentType.get(parent.type) ?? [];
+          list.push({ value: child.type, label: child.type });
+          this.childrenByParentType.set(parent.type, list);
+        });
+
         this.needTypeOptions = [
           { value: '', label: 'Dropdown' },
-          ...types.map(t => ({ value: t.type, label: t.type }))
+          ...topLevel.map(t => ({ value: t.type, label: t.type }))
         ];
       },
       error: (err: any) => console.error('Erreur chargement types:', err)
     });
+  }
+
+  // Sous-catégorie (précision optionnelle) par index de besoin — ex: "Matériel" >
+  // "Groupe électrogène", "Interprétariat / traduction" > "Anglais".
+  childrenByParentType: Map<string, { value: string; label: string }[]> = new Map();
+  subCategorySelections: string[] = [];
+
+  childrenFor(index: number): { value: string; label: string }[] {
+    const topLevel = this.needsType.at(index)?.value;
+    return topLevel ? (this.childrenByParentType.get(topLevel) ?? []) : [];
+  }
+
+  onTopLevelTypeChange(index: number): void {
+    // Un changement de besoin principal invalide toute précision déjà choisie pour l'ancien.
+    this.subCategorySelections[index] = '';
+  }
+
+  onSubCategoryChange(index: number, value: string): void {
+    this.subCategorySelections[index] = value;
+  }
+
+  /** Type réellement à envoyer pour ce besoin : la précision si choisie, sinon le besoin
+   * principal — cf. usage dans onSubmit(). */
+  private effectiveNeedType(index: number): string {
+    return this.subCategorySelections[index] || this.needsType.at(index).value;
   }
 
   initForm(): void {
@@ -173,7 +211,7 @@ export class RequestHelpFormComponent implements OnInit {
     const localisation = { type: 'Point', coordinates: [this.longitude, this.latitude] };
 
     const creations: Observable<Request>[] = this.needsType.controls.map((needControl, i) => {
-      const needType = needControl.value;
+      const needType = this.effectiveNeedType(i);
       const description = this.descriptions.at(i).value;
       const formData = new FormData();
 
@@ -266,10 +304,12 @@ export class RequestHelpFormComponent implements OnInit {
   addNeed(): void {
     this.needsType.push(this.formBuilder.control('', Validators.required));
     this.descriptions.push(this.formBuilder.control('', [Validators.minLength(10)]));
+    this.subCategorySelections.push('');
   }
 
   removeNeed(index: number): void {
     this.needsType.removeAt(index);
     this.descriptions.removeAt(index);
+    this.subCategorySelections.splice(index, 1);
   }
 }
