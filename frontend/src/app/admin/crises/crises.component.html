@@ -278,6 +278,90 @@
             }
           </section>
 
+          <!-- Délégations de compétence -->
+          <section class="section-block">
+            <h3><span class="material-icons">handshake</span> Délégations de compétence</h3>
+            <table class="data-table sm">
+              <thead><tr><th>De</th><th>Vers</th><th>Compétence</th><th>Secteur</th><th></th></tr></thead>
+              <tbody>
+                @for (delegation of delegationsFor(selectedCrisis.id); track delegation.id) {
+                  <tr>
+                    <td>{{ delegation.institution_source_nom || institutionName(delegation.institution_source) }}</td>
+                    <td>{{ delegation.institution_cible_nom || institutionName(delegation.institution_cible) }}</td>
+                    <td>{{ delegation.competence_libelle || '—' }}</td>
+                    <td>{{ secteurResume(delegation) }}</td>
+                    <td class="actions">
+                      @if (canManageDelegation(delegation)) {
+                        <button class="icon-btn danger" (click)="retirerDelegation(delegation)" title="Retirer">
+                          <span class="material-icons">delete_outline</span>
+                        </button>
+                      }
+                    </td>
+                  </tr>
+                } @empty {
+                  <tr><td colspan="5" class="empty">Aucune délégation de compétence pour l'instant.</td></tr>
+                }
+              </tbody>
+            </table>
+
+            @if (delegableInstitutionsFor(selectedCrisis.id).length > 0 && selectedCrisis.is_open !== false) {
+              @if (!showDelegationForm) {
+                <button class="btn-secondary sm" (click)="showDelegationForm = true">
+                  <span class="material-icons">add</span> Déléguer une compétence
+                </button>
+              } @else {
+                <div class="inline-form-block">
+                  <div class="select-wrapper">
+                    <select [(ngModel)]="delegationSourceId" [ngModelOptions]="{standalone: true}">
+                      <option [ngValue]="null">— Institution qui délègue —</option>
+                      @for (inst of delegableInstitutionsFor(selectedCrisis.id); track inst.id) {
+                        <option [ngValue]="inst.id">{{ inst.nom }}</option>
+                      }
+                    </select>
+                    <span class="material-icons select-arrow">arrow_drop_down</span>
+                  </div>
+
+                  <div class="select-wrapper">
+                    <select [(ngModel)]="delegationCibleId" [ngModelOptions]="{standalone: true}">
+                      <option [ngValue]="null">— Institution bénéficiaire —</option>
+                      @for (inst of institutions; track inst.id) {
+                        <option [ngValue]="inst.id">{{ inst.nom }}</option>
+                      }
+                    </select>
+                    <span class="material-icons select-arrow">arrow_drop_down</span>
+                  </div>
+
+                  <app-tag-search-input
+                    placeholder="Chercher ou créer une compétence..."
+                    [searchFn]="competenceSearchFn"
+                    [createFn]="competenceCreateFn"
+                    (itemSelected)="onDelegationCompetenceSelected($event)">
+                  </app-tag-search-input>
+                  @if (delegationCompetenceLabel) {
+                    <span class="chip">{{ delegationCompetenceLabel }}</span>
+                  }
+
+                  <label class="checkbox-label">
+                    <input type="checkbox" [(ngModel)]="delegationRestreindre" [ngModelOptions]="{standalone: true}">
+                    <span>Restreindre à un secteur (sinon valable sur toute la crise)</span>
+                  </label>
+
+                  @if (delegationRestreindre) {
+                    <input type="text" placeholder="Départements (ex: 38, 73)" [(ngModel)]="delegationDepartements" [ngModelOptions]="{standalone: true}">
+                    <input type="text" placeholder="Communes INSEE (ex: 38185)" [(ngModel)]="delegationCommunes" [ngModelOptions]="{standalone: true}">
+                    <app-zone-map [initialZone]="null" (zoneChange)="onDelegationZoneChange($event)"></app-zone-map>
+                  }
+
+                  <div class="inline-form">
+                    <button class="btn-primary sm" (click)="submitDelegation()"
+                            [disabled]="!delegationSourceId || !delegationCibleId || !delegationCompetenceId">Confirmer</button>
+                    <button class="btn-secondary sm" (click)="resetDelegationForm()">Annuler</button>
+                  </div>
+                </div>
+              }
+            }
+          </section>
+
         </div>
       </div>
     </div>

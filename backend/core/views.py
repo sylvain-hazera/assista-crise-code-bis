@@ -2604,6 +2604,27 @@ class DelegationCompetenceViewSet(
         DelegationCompetenceSerializer
     )
 
+    filterset_fields = ["crise"]
+
+    def get_permissions(self):
+        if self.action in ("create", "update", "partial_update", "destroy"):
+            return [IsInstitutionalActor()]
+        return [permissions.IsAuthenticated()]
+
+    def perform_update(self, serializer):
+        delegation = serializer.save()
+        audit_log(
+            request=self.request,
+            action_code="DELEGATION_COMPETENCE",
+            objet_type="DelegationCompetence",
+            objet_id=delegation.id,
+            crise=delegation.crise,
+            commentaire=(
+                f"Modification délégation {delegation.institution_source} -> {delegation.institution_cible}"
+                f" ({delegation.competence})"
+            )
+        )
+
     def perform_create(
         self,
         serializer
@@ -2616,6 +2637,7 @@ class DelegationCompetenceViewSet(
             action_code="DELEGATION_COMPETENCE",
             objet_type="DelegationCompetence",
             objet_id=delegation.id,
+            crise=delegation.crise,
             commentaire=(
                 f"{delegation.institution_source}"
                 f" -> "

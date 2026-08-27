@@ -11,6 +11,8 @@ import { PointTypeService } from '../../services/point-type.service';
 import { ContactInstitutionService } from '../../services/contact-institution.service';
 import { InstitutionService } from '../../services/institution.service';
 import { BesoinService } from '../../services/besoin.service';
+import { CompetenceService } from '../../services/competence.service';
+import { DelegationCompetenceService } from '../../services/delegation-competence.service';
 import { AuthService } from '../../auth/services/auth.service';
 
 import { Crisis } from '../../shared/models/crisis.model';
@@ -18,8 +20,11 @@ import { ImplicationInstitution } from '../../shared/models/implication.model';
 import { PointOperationnel, PointType } from '../../shared/models/point-operationnel.model';
 import { ContactInstitution, Institution } from '../../shared/models/institution.model';
 import { Besoin } from '../../shared/models/besoin.model';
+import { Competence } from '../../shared/models/competence.model';
+import { DelegationCompetence } from '../../shared/models/delegation-competence.model';
 import { UserRole } from '../../shared/models/user.model';
 import { ZoneMapComponent } from '../../shared/components/common/zone-map/zone-map.component';
+import { TagSearchInputComponent } from '../../shared/components/common/tag-search-input/tag-search-input.component';
 import { PointModalComponent } from './point-modal/point-modal.component';
 
 type ResponsableMode = 'moi' | 'contact' | 'email';
@@ -29,7 +34,7 @@ type ModalView = 'none' | 'detail';
 @Component({
   selector: 'app-crises',
   standalone: true,
-  imports: [CommonModule, FormsModule, ReactiveFormsModule, RouterLink, ZoneMapComponent, PointModalComponent],
+  imports: [CommonModule, FormsModule, ReactiveFormsModule, RouterLink, ZoneMapComponent, TagSearchInputComponent, PointModalComponent],
   templateUrl: './crises.component.html',
   styleUrls: ['./crises.component.scss']
 })
@@ -43,6 +48,7 @@ export class CrisesComponent implements OnInit {
   myContacts: ContactInstitution[] = [];
   allContacts: ContactInstitution[] = [];
   besoins: Besoin[] = [];
+  delegations: DelegationCompetence[] = [];
 
   isLoading = true;
   errorMessage = '';
@@ -69,6 +75,20 @@ export class CrisesComponent implements OnInit {
   responsableContactId: string | null = null;
   responsableEmail = '';
 
+  // ── Délégation de compétence par secteur ───────────────────────
+  showDelegationForm = false;
+  delegationSourceId: string | null = null;
+  delegationCibleId: string | null = null;
+  delegationCompetenceId: string | null = null;
+  delegationCompetenceLabel = '';
+  delegationRestreindre = false;
+  delegationDepartements = '';
+  delegationCommunes = '';
+  delegationZoneWkt: string | null = null;
+
+  competenceSearchFn = (q: string) => this.competenceService.search(q);
+  competenceCreateFn = (nom: string) => this.competenceService.create({ nom });
+
   constructor(
     private fb: FormBuilder,
     private route: ActivatedRoute,
@@ -79,6 +99,8 @@ export class CrisesComponent implements OnInit {
     private contactService: ContactInstitutionService,
     private institutionService: InstitutionService,
     private besoinService: BesoinService,
+    private competenceService: CompetenceService,
+    private delegationService: DelegationCompetenceService,
     private authService: AuthService,
   ) {}
 
@@ -104,8 +126,9 @@ export class CrisesComponent implements OnInit {
       institutions: this.institutionService.getAll(),
       contacts: this.contactService.getAll(),
       besoins: this.besoinService.getAll(),
+      delegations: this.delegationService.getAll(),
     }).subscribe({
-      next: ({ crises, implications, points, pointTypes, institutions, contacts, besoins }) => {
+      next: ({ crises, implications, points, pointTypes, institutions, contacts, besoins, delegations }) => {
         this.crises = crises;
         this.implications = implications;
         this.points = points;
@@ -113,6 +136,7 @@ export class CrisesComponent implements OnInit {
         this.institutions = institutions;
         this.allContacts = contacts;
         this.besoins = besoins;
+        this.delegations = delegations;
         const me = this.authService.getCurrentUser();
         this.myContacts = me ? contacts.filter(c => c.utilisateur === me.id && c.actif) : [];
         this.isLoading = false;
@@ -134,6 +158,10 @@ export class CrisesComponent implements OnInit {
 
   reloadPoints(): void {
     this.pointService.getAll().subscribe(data => this.points = data);
+  }
+
+  reloadDelegations(): void {
+    this.delegationService.getAll().subscribe(data => this.delegations = data);
   }
 
   // ── Liste ────────────────────────────────────────────────────
@@ -159,6 +187,24 @@ export class CrisesComponent implements OnInit {
     return this.points.filter(p => p.crise === crisisId);
   }
 
+  delegationsFor(crisisId: string): DelegationCompetence[] {
+    return this.delegations.filter(d => d.crise === crisisId);
+  }
+
+  /** Une institution ne peut déléguer une compétence que si elle est déjà impliquée
+   * (acteur ou simple impliquée) sur cette crise — cohérent avec la règle backend. */
+  delegableInstitutionsFor(crisisId: string): Institution[] {
+    const ids = new Set(this.implicationsFor(crisisId).map(i => i.institution));
+    return this.institutions.filter(i => ids.has(i.id!));
+  }
+
+  secteurResume(d: DelegationCompetence): string {
+    if (d.departements?.length) return `Départements : ${d.departements.join(', ')}`;
+    if (d.communes?.length) return `Communes : ${d.communes.join(', ')}`;
+    if (d.zone_precise) return 'Secteur dessiné';
+    return 'Toute la crise';
+  }
+
   // ── Détail ───────────────────────────────────────────────────
   openDetail(crisis: Crisis): void {
     this.selectedCrisis = crisis;
@@ -175,6 +221,7 @@ export class CrisesComponent implements OnInit {
     this.responsableMode = 'moi';
     this.responsableContactId = null;
     this.responsableEmail = '';
+    this.resetDelegationForm();
     this.modal = 'detail';
   }
 
@@ -359,6 +406,69 @@ export class CrisesComponent implements OnInit {
   retirerPoint(point: PointOperationnel): void {
     this.pointService.delete(point.id).subscribe({
       next: () => { this.reloadPoints(); this.showSuccess('Point opérationnel retiré.'); },
+      error: () => this.showError('Erreur lors du retrait.'),
+    });
+  }
+
+  // ── Délégation de compétence par secteur ───────────────────────
+  resetDelegationForm(): void {
+    this.showDelegationForm = false;
+    this.delegationSourceId = null;
+    this.delegationCibleId = null;
+    this.delegationCompetenceId = null;
+    this.delegationCompetenceLabel = '';
+    this.delegationRestreindre = false;
+    this.delegationDepartements = '';
+    this.delegationCommunes = '';
+    this.delegationZoneWkt = null;
+  }
+
+  onDelegationCompetenceSelected(item: Competence): void {
+    this.delegationCompetenceId = item.id;
+    this.delegationCompetenceLabel = item.nom;
+  }
+
+  onDelegationZoneChange(wkt: string | null): void {
+    this.delegationZoneWkt = wkt;
+  }
+
+  submitDelegation(): void {
+    if (!this.selectedCrisis || !this.delegationSourceId || !this.delegationCibleId || !this.delegationCompetenceId) return;
+
+    const payload: any = {
+      crise: this.selectedCrisis.id,
+      institution_source: this.delegationSourceId,
+      institution_cible: this.delegationCibleId,
+      competence: this.delegationCompetenceId,
+    };
+
+    if (this.delegationRestreindre) {
+      const departements = this.delegationDepartements.split(',').map(s => s.trim()).filter(Boolean);
+      const communes = this.delegationCommunes.split(',').map(s => s.trim()).filter(Boolean);
+      if (departements.length) payload.departements = departements;
+      if (communes.length) payload.communes = communes;
+      if (this.delegationZoneWkt) payload.zone_precise = this.delegationZoneWkt;
+    }
+
+    this.delegationService.create(payload).subscribe({
+      next: () => {
+        this.reloadDelegations();
+        this.showSuccess('Compétence déléguée.');
+        this.resetDelegationForm();
+      },
+      error: (err) => this.showError(err.error?.institution_source?.[0] || "Impossible d'enregistrer cette délégation."),
+    });
+  }
+
+  canManageDelegation(delegation: DelegationCompetence): boolean {
+    if (this.isAdmin) return true;
+    return this.myInstitutions.some(i => i.id === delegation.institution_source);
+  }
+
+  retirerDelegation(delegation: DelegationCompetence): void {
+    if (!confirm(`Retirer la délégation « ${delegation.competence_libelle} » vers ${delegation.institution_cible_nom} ?`)) return;
+    this.delegationService.delete(delegation.id).subscribe({
+      next: () => { this.reloadDelegations(); this.showSuccess('Délégation retirée.'); },
       error: () => this.showError('Erreur lors du retrait.'),
     });
   }

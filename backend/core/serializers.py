@@ -19,6 +19,7 @@ from .models import (
     PointType,
     PointOperationnel,
     ImplicationInstitution,
+    TypeImplication,
     User, Crisis, Request, Offer, Information,
     RecherchePersonneLecture, RecherchePersonneLectureHistorique,
     Document, RecherchePersonnePhoto, RecherchePersonneCommentairePhoto,
@@ -1081,6 +1082,10 @@ class DelegationCompetenceSerializer(
     serializers.ModelSerializer
 ):
 
+    institution_source_nom = serializers.CharField(source="institution_source.nom", read_only=True)
+    institution_cible_nom = serializers.CharField(source="institution_cible.nom", read_only=True)
+    competence_libelle = serializers.CharField(source="competence.nom", read_only=True)
+
     class Meta:
 
         model = DelegationCompetence
@@ -1093,6 +1098,25 @@ class DelegationCompetenceSerializer(
         # d'un objet lié à une crise fermée, pas seulement à une réaffectation de crise.
         crise = attrs.get('crise') or (self.instance.crise if self.instance else None)
         validate_crisis_open(crise, field_name="crise")
+
+        institution_source = attrs.get('institution_source') or (
+            self.instance.institution_source if self.instance else None
+        )
+        if crise and institution_source:
+            deja_impliquee = ImplicationInstitution.objects.filter(
+                crise=crise,
+                institution=institution_source,
+                type_implication__in=[TypeImplication.ACTEUR, TypeImplication.IMPLIQUE],
+                actif=True,
+            ).exists()
+            if not deja_impliquee:
+                raise serializers.ValidationError({
+                    "institution_source": (
+                        "Cette institution doit déjà être impliquée sur la crise pour"
+                        " pouvoir déléguer une compétence."
+                    )
+                })
+
         return attrs
 class DisponibiliteOperationnelleSerializer(
     serializers.ModelSerializer

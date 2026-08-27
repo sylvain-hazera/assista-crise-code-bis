@@ -1692,6 +1692,23 @@ class DelegationCompetence(models.Model):
         null=True
     )
 
+    # Secteur de la délégation, du plus large au plus précis — même triptyque que Team
+    # (voir plus haut) : la mairie peut déléguer une compétence sur toute la crise (les 3
+    # champs restent vides), ou la restreindre à des départements, des communes, ou un
+    # polygone dessiné à la main.
+    departements = models.JSONField(
+        default=list, blank=True,
+        help_text="Liste de codes département (ex: ['38', '73']).",
+    )
+    communes = models.JSONField(
+        default=list, blank=True,
+        help_text="Liste de codes commune INSEE (ex: ['38185']), plus précis que le département.",
+    )
+    zone_precise = gis_models.PolygonField(
+        srid=4326, null=True, blank=True,
+        help_text="Zone dessinée à la main, la plus précise des trois niveaux.",
+    )
+
     class Meta:
 
         constraints = [
