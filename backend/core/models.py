@@ -456,6 +456,11 @@ class Offer(EnvironmentScopedModel):
     # qui prête son matériel ponctuellement pour d'autres interventions futures).
     renouvelable = models.BooleanField(default=False)
 
+    # Déclarées par le bénévole à la soumission de l'offre (propose-help-form) — permet de
+    # filtrer les candidats lors du recrutement sur un point opérationnel (PointOperationnel.
+    # competences_requises est le pendant côté besoin, celui-ci est côté offre).
+    competences = models.ManyToManyField("Competence", blank=True, related_name="offres")
+
     def __str__(self) -> str:
         return self.title
 

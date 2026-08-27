@@ -19,9 +19,12 @@ from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from urllib.parse import quote
 from django_filters import rest_framework as filters
 from django.db.models import Q
+from django.contrib.gis.db.models.functions import Distance
+from rest_framework.pagination import PageNumberPagination
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from .auth_validation import InstitutionEmailValidator
+import datetime
 import secrets
 import uuid
 import hashlib
@@ -104,7 +107,8 @@ from .models import (
     Document, DossierCommentaire, DossierHistorique, BesoinCompetence, Competence, Dossier,
     AuditLog, AuditAction,
     RecherchePersonneHistorique, RecherchePersonnePhoto,
-    AffectationCompetence, RequestType, RequestTypeBesoin, OfferType, InformationType, Team
+    AffectationCompetence, RequestType, RequestTypeBesoin, OfferType, InformationType, Team,
+    Status,
 )
 
 
@@ -3188,10 +3192,13 @@ class PointOperationnelViewSet(
 
     @action(detail=True, methods=["post"], url_path="inviter-benevole")
     def inviter_benevole(self, request, pk=None):
-        """Recrute un bénévole individuel sur ce point depuis une offre d'aide, et lui envoie
-        un email de confirmation de disponibilité (lien oui/non). Nécessite que le point ait
-        déjà une équipe assignée (le bénévole y est ajouté, condition déjà posée par
-        DisponibilitePointEquipeSerializer.validate pour créer ses créneaux)."""
+        """Recrute un ou plusieurs bénévoles sur ce point depuis des offres d'aide (affectation
+        groupée depuis le tableau de recrutement), et leur envoie à chacun un email de
+        confirmation de disponibilité (lien oui/non). Nécessite que le point ait déjà une
+        équipe assignée (chaque bénévole y est ajouté, condition déjà posée par
+        DisponibilitePointEquipeSerializer.validate pour créer ses créneaux). Les créneaux et
+        le point de transit sont communs à tout le lot (décidés par le régulateur), pas propres
+        à chaque bénévole. Un échec individuel (ex: offre introuvable) n'annule pas les autres."""
         point = self.get_object()
 
         if point.responsable_id != request.user.id and not (
@@ -3209,10 +3216,9 @@ class PointOperationnelViewSet(
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        offer_id = request.data.get("offer_id")
-        offer = get_object_or_404(Offer, pk=offer_id) if offer_id else None
-        if not offer:
-            return Response({"error": "offer_id est requis."}, status=status.HTTP_400_BAD_REQUEST)
+        offer_ids = request.data.get("offer_ids") or []
+        if not offer_ids:
+            return Response({"error": "offer_ids est requis (au moins un identifiant)."}, status=status.HTTP_400_BAD_REQUEST)
 
         date_attendue = parse_datetime(request.data.get("date_attendue") or "")
         if not date_attendue:
@@ -3225,44 +3231,136 @@ class PointOperationnelViewSet(
         if point_transit_id:
             point_transit = get_object_or_404(PointOperationnel, pk=point_transit_id, crise=point.crise)
 
-        benevole, _created = resolve_or_invite_benevole(offer, request)
-        if not benevole:
-            return Response(
-                {"error": "Impossible de déterminer les coordonnées du bénévole depuis cette offre."},
-                status=status.HTTP_400_BAD_REQUEST,
+        creneaux = request.data.get("creneaux", [])
+
+        offers_by_id = {str(o.id): o for o in Offer.objects.filter(pk__in=offer_ids)}
+
+        created = []
+        errors = []
+
+        for offer_id in offer_ids:
+            offer = offers_by_id.get(str(offer_id))
+            if not offer:
+                errors.append({"offer_id": offer_id, "error": "Offre introuvable."})
+                continue
+
+            benevole, _created = resolve_or_invite_benevole(offer, request)
+            if not benevole:
+                errors.append({"offer_id": offer_id, "error": "Impossible de déterminer les coordonnées du bénévole depuis cette offre."})
+                continue
+
+            point.equipe.members.add(benevole)
+
+            affectation = AffectationPointBenevole.objects.create(
+                point=point,
+                benevole=benevole,
+                offer=offer,
+                date_attendue=date_attendue,
+                point_transit=point_transit,
+                token_confirmation=secrets.token_urlsafe(32),
+                affecte_par=request.user,
+                environment=point.environment,
             )
 
-        point.equipe.members.add(benevole)
+            for creneau in creneaux:
+                DisponibilitePointEquipe.objects.get_or_create(
+                    point=point, membre=benevole, date=creneau.get("date"), creneau=creneau.get("creneau"),
+                    defaults={"affectation": affectation, "environment": point.environment},
+                )
 
-        affectation = AffectationPointBenevole.objects.create(
-            point=point,
-            benevole=benevole,
-            offer=offer,
-            date_attendue=date_attendue,
-            point_transit=point_transit,
-            token_confirmation=secrets.token_urlsafe(32),
-            affecte_par=request.user,
-            environment=point.environment,
-        )
+            send_point_volunteer_confirmation_email(request, affectation)
 
-        for creneau in request.data.get("creneaux", []):
-            DisponibilitePointEquipe.objects.get_or_create(
-                point=point, membre=benevole, date=creneau.get("date"), creneau=creneau.get("creneau"),
-                defaults={"affectation": affectation, "environment": point.environment},
+            audit_log(
+                request=request,
+                action_code="CREATION",
+                objet_type="AffectationPointBenevole",
+                objet_id=affectation.id,
+                crise=point.crise,
+                commentaire=f"{benevole.email} invité(e) sur le point {point.nom}",
             )
 
-        send_point_volunteer_confirmation_email(request, affectation)
+            created.append(affectation)
 
-        audit_log(
-            request=request,
-            action_code="CREATION",
-            objet_type="AffectationPointBenevole",
-            objet_id=affectation.id,
-            crise=point.crise,
-            commentaire=f"{benevole.email} invité(e) sur le point {point.nom}",
+        if not created:
+            return Response({"created": [], "errors": errors}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(
+            {"created": AffectationPointBenevoleSerializer(created, many=True).data, "errors": errors},
+            status=status.HTTP_201_CREATED,
         )
 
-        return Response(AffectationPointBenevoleSerializer(affectation).data, status=status.HTTP_201_CREATED)
+    @action(detail=True, methods=["get"], url_path="candidats-benevoles")
+    def candidats_benevoles(self, request, pk=None):
+        """Liste paginée/filtrable/triable des offres d'aide candidates au recrutement sur ce
+        point — alimente le tableau de recrutement (recherche, disponibilité, compétences, tri
+        par distance). Même permission que inviter_benevole (lecture préparatoire à cette
+        action). Ne renvoie que les offres encore disponibles (Status.AVAILABLE)."""
+        point = self.get_object()
+
+        if point.responsable_id != request.user.id and not (
+            point.equipe and point.equipe.leader_id == request.user.id
+        ) and get_effective_role(request) != UserRole.ADMINISTRATOR:
+            raise PermissionDenied(
+                "Seul le responsable ou le leader de l'équipe du point peut consulter les candidats."
+            )
+
+        queryset = Offer.objects.filter(
+            environment=get_active_environment(request), status=Status.AVAILABLE,
+        ).prefetch_related("disponibilites", "competences")
+
+        search = request.query_params.get("search", "").strip()
+        if search:
+            queryset = OfferSearchFilter(queryset=queryset).filter_search(queryset, "search", search)
+
+        creneaux_param = request.query_params.getlist("creneaux")
+        if creneaux_param:
+            creneau_filter = Q()
+            for item in creneaux_param:
+                date_str, _, creneau_str = item.partition(":")
+                if date_str and creneau_str:
+                    creneau_filter |= Q(disponibilites__date=date_str, disponibilites__creneau=creneau_str)
+            if creneau_filter:
+                queryset = queryset.filter(creneau_filter).distinct()
+
+        competences_param = request.query_params.getlist("competences")
+        if competences_param:
+            queryset = queryset.filter(competences__id__in=competences_param).distinct()
+
+        has_location = point.location is not None
+        if has_location:
+            queryset = queryset.annotate(distance=Distance("location", point.location))
+
+        ordering = request.query_params.get("ordering", "distance" if has_location else "nom")
+        if ordering == "distance" and has_location:
+            queryset = queryset.order_by("distance")
+        else:
+            queryset = queryset.order_by("first_name_offer", "last_name_offer")
+
+        paginator = PageNumberPagination()
+        paginator.page_size = int(request.query_params.get("page_size", 25))
+        page = paginator.paginate_queryset(queryset, request, view=self)
+
+        borne_min = timezone.now().date()
+        borne_max = borne_min + datetime.timedelta(days=8)
+
+        results = []
+        for offer in page:
+            results.append({
+                "id": str(offer.id),
+                "first_name_offer": offer.first_name_offer,
+                "last_name_offer": offer.last_name_offer,
+                "email_offer": mask_email(offer.email_offer) if get_active_environment(request) == Environment.DEMO else offer.email_offer,
+                "title": offer.title,
+                "competences_libelles": [c.nom for c in offer.competences.all()],
+                "distance_km": round(offer.distance.km, 1) if has_location and offer.distance is not None else None,
+                "disponibilites": [
+                    {"date": d.date.isoformat(), "creneau": d.creneau}
+                    for d in offer.disponibilites.all()
+                    if borne_min <= d.date < borne_max
+                ],
+            })
+
+        return paginator.get_paginated_response(results)
 
     @action(detail=True, methods=["get"])
     def stocks(self, request, pk=None):

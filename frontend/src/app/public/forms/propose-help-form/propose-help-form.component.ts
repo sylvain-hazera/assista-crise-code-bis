@@ -14,6 +14,9 @@ import { UserRole, User } from '../../../shared/models/user.model';
 import { Creneau } from '../../../shared/models/disponibilite-offre.model';
 import { AddressPickerComponent } from '../../../shared/components/common/address-picker/address-picker.component';
 import { AddressResult } from '../../../shared/models/address-result.model';
+import { TagSearchInputComponent } from '../../../shared/components/common/tag-search-input/tag-search-input.component';
+import { CompetenceService } from '../../../services/competence.service';
+import { Competence } from '../../../shared/models/competence.model';
 
 interface JourDispo {
   date: string;       // YYYY-MM-DD
@@ -33,7 +36,7 @@ const TYPE_AUTRE = 'Autre';
 @Component({
   selector: 'app-request-help-form',
   standalone: true,
-  imports: [ReactiveFormsModule, CommonModule, FormsModule, AddressPickerComponent],
+  imports: [ReactiveFormsModule, CommonModule, FormsModule, AddressPickerComponent, TagSearchInputComponent],
   templateUrl: './propose-help-form.component.html',
   styleUrl: './propose-help-form.component.scss'
 })
@@ -94,14 +97,29 @@ export class ProposeHelpFormComponent implements OnInit {
   // ── Disponibilités (8 jours x matin/midi/soir/nuit) ────────────
   joursDispo: JourDispo[] = [];
 
+  // ── Compétences que le bénévole peut apporter (filtre côté recrutement) ─
+  selectedCompetences: Competence[] = [];
+  competenceSearchFn = (q: string) => this.competenceService.search(q);
+  competenceCreateFn = (nom: string) => this.competenceService.create({ nom });
+
   constructor(
     private formBuilder: FormBuilder,
     private router: Router,
     private offerService: OfferService,
     private disponibiliteOffreService: DisponibiliteOffreService,
     private crisisService: CrisisService,
-    private authService: AuthService
+    private authService: AuthService,
+    private competenceService: CompetenceService
   ) {}
+
+  onCompetenceSelected(item: Competence): void {
+    if (this.selectedCompetences.some(c => c.id === item.id)) return;
+    this.selectedCompetences = [...this.selectedCompetences, item];
+  }
+
+  removeCompetence(id: string): void {
+    this.selectedCompetences = this.selectedCompetences.filter(c => c.id !== id);
+  }
 
   ngOnInit(): void {
     this.currentUser = this.authService.getCurrentUser();
@@ -261,6 +279,7 @@ export class ProposeHelpFormComponent implements OnInit {
       formData.append('status', 'DISPONIBLE');
       if (this.currentUser?.id) formData.append('author', this.currentUser.id);
       if (this.selectedFile) formData.append('photo', this.selectedFile);
+      this.selectedCompetences.forEach(c => formData.append('competences', c.id));
 
       return this.offerService.create(formData);
     });

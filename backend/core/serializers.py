@@ -352,11 +352,15 @@ class OfferSerializer(serializers.ModelSerializer):
     author_email = serializers.CharField(source="author.email", read_only=True, default=None)
     crisis_nom = serializers.CharField(source="crisis.name", read_only=True, default=None)
     has_photo = serializers.SerializerMethodField()
+    competences_libelles = serializers.SerializerMethodField()
 
     class Meta:
         model = Offer
         fields = '__all__'
         extra_kwargs = {'photo': {'write_only': True}}
+
+    def get_competences_libelles(self, obj):
+        return [c.nom for c in obj.competences.all()]
 
     def _location_visible(self) -> bool:
         request = self.context.get('request')

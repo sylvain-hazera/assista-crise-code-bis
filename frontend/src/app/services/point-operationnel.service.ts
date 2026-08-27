@@ -1,9 +1,10 @@
 import { Injectable } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
 import { PointOperationnel, PointOperationnelPayload, PointEquipeResponse } from '../shared/models/point-operationnel.model';
-import { AffectationPointBenevole, InviterBenevolePayload } from '../shared/models/affectation-point-benevole.model';
+import { AffectationPointBenevole, InviterBenevolePayload, InviterBenevoleResponse } from '../shared/models/affectation-point-benevole.model';
+import { CandidatsBenevolesParams, CandidatsBenevolesResponse } from '../shared/models/candidat-benevole.model';
 
 @Injectable({ providedIn: 'root' })
 export class PointOperationnelService {
@@ -41,7 +42,19 @@ export class PointOperationnelService {
     return this.http.get<PointEquipeResponse>(`${this.apiUrl}/${id}/equipe/`);
   }
 
-  inviterBenevole(id: string, payload: InviterBenevolePayload): Observable<AffectationPointBenevole> {
-    return this.http.post<AffectationPointBenevole>(`${this.apiUrl}/${id}/inviter-benevole/`, payload);
+  inviterBenevole(id: string, payload: InviterBenevolePayload): Observable<InviterBenevoleResponse> {
+    return this.http.post<InviterBenevoleResponse>(`${this.apiUrl}/${id}/inviter-benevole/`, payload);
+  }
+
+  getCandidatsBenevoles(id: string, params: CandidatsBenevolesParams): Observable<CandidatsBenevolesResponse> {
+    let httpParams = new HttpParams();
+    if (params.search) httpParams = httpParams.set('search', params.search);
+    if (params.ordering) httpParams = httpParams.set('ordering', params.ordering);
+    if (params.page) httpParams = httpParams.set('page', params.page);
+    if (params.page_size) httpParams = httpParams.set('page_size', params.page_size);
+    (params.creneaux ?? []).forEach(c => httpParams = httpParams.append('creneaux', c));
+    (params.competences ?? []).forEach(c => httpParams = httpParams.append('competences', c));
+
+    return this.http.get<CandidatsBenevolesResponse>(`${this.apiUrl}/${id}/candidats-benevoles/`, { params: httpParams });
   }
 }

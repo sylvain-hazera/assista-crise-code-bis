@@ -18,8 +18,13 @@ export interface AffectationPointBenevole {
 }
 
 export interface InviterBenevolePayload {
-  offer_id: string;
+  offer_ids: string[];
   date_attendue: string;
   point_transit_id?: string | null;
   creneaux: { date: string; creneau: 'MATIN' | 'MIDI' | 'SOIR' | 'NUIT' }[];
+}
+
+export interface InviterBenevoleResponse {
+  created: AffectationPointBenevole[];
+  errors: { offer_id: string; error: string }[];
 }

@@ -339,6 +339,29 @@
                 </div>
             </div>
 
+            <!-- Compétences que le bénévole peut apporter -->
+            <div class="form-section">
+                <h2 class="section-title">Vos compétences</h2>
+                <p class="section-description">
+                Indiquez les compétences que vous pouvez apporter (secourisme, logistique...) —
+                utile pour être recruté sur les besoins qui vous correspondent.
+                </p>
+                <app-tag-search-input
+                  placeholder="Chercher ou créer une compétence..."
+                  [searchFn]="competenceSearchFn"
+                  [createFn]="competenceCreateFn"
+                  (itemSelected)="onCompetenceSelected($event)">
+                </app-tag-search-input>
+                <div class="chip-list">
+                  @for (c of selectedCompetences; track c.id) {
+                    <span class="chip">
+                      {{ c.nom }}
+                      <button type="button" (click)="removeCompetence(c.id)">×</button>
+                    </span>
+                  }
+                </div>
+            </div>
+
             <!-- Disponibilités sur les 8 prochains jours -->
             <div class="form-section">
                 <h2 class="section-title">Vos disponibilités</h2>

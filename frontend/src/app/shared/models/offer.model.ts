@@ -34,6 +34,8 @@ export interface Offer {
   materiel_type?: string | null;
   soutien_type?: string | null;
   renouvelable?: boolean;
+  competences?: string[];
+  competences_libelles?: string[];
 }
 
 export interface OfferPayload {

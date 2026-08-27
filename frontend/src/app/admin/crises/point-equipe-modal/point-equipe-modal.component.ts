@@ -1,18 +1,14 @@
 import { Component, EventEmitter, Input, OnInit, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Subject } from 'rxjs';
-import { debounceTime, distinctUntilChanged, switchMap, catchError } from 'rxjs/operators';
-import { of } from 'rxjs';
 
 import { PointOperationnelService } from '../../../services/point-operationnel.service';
 import { DisponibilitePointEquipeService } from '../../../services/disponibilite-point-equipe.service';
-import { OfferService } from '../../../services/offer.service';
 import { PointOperationnel, PointEquipeMembre, PointType } from '../../../shared/models/point-operationnel.model';
 import { DisponibilitePointEquipe } from '../../../shared/models/disponibilite-point-equipe.model';
 import { Creneau } from '../../../shared/models/disponibilite-offre.model';
-import { Offer } from '../../../shared/models/offer.model';
 import { AffectationPointBenevole, StatutAffectation } from '../../../shared/models/affectation-point-benevole.model';
+import { RecrutementBenevolesModalComponent } from '../recrutement-benevoles-modal/recrutement-benevoles-modal.component';
 
 interface JourDispo {
   date: string;
@@ -42,7 +38,7 @@ const STATUT_LABELS: Record<StatutAffectation, string> = {
 @Component({
   selector: 'app-point-equipe-modal',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, RecrutementBenevolesModalComponent],
   templateUrl: './point-equipe-modal.component.html',
   styleUrl: './point-equipe-modal.component.scss'
 })
@@ -59,45 +55,15 @@ export class PointEquipeModalComponent implements OnInit {
   loading = true;
   private allDisponibilites: DisponibilitePointEquipe[] = [];
 
-  // Recrutement d'un bénévole individuel
-  recruiting = false;
-  searchQuery = '';
-  searchResults: Offer[] = [];
-  searchLoading = false;
-  selectedOffer: Offer | null = null;
-  transitPoints: PointOperationnel[] = [];
-  inviteDateAttendue = '';
-  invitePointTransitId: string | null = null;
-  inviteCreneaux = new Set<string>();
-  inviteError = '';
-  inviting = false;
-
-  private search$ = new Subject<string>();
+  recrutementModalOpen = false;
 
   constructor(
     private pointService: PointOperationnelService,
     private dispoService: DisponibilitePointEquipeService,
-    private offerService: OfferService,
-  ) {
-    this.search$
-      .pipe(
-        debounceTime(250),
-        distinctUntilChanged(),
-        switchMap(q => {
-          if (!q.trim()) return of([]);
-          this.searchLoading = true;
-          return this.offerService.getAll({ search: q }).pipe(catchError(() => of([])));
-        })
-      )
-      .subscribe(results => {
-        this.searchResults = results;
-        this.searchLoading = false;
-      });
-  }
+  ) {}
 
   ngOnInit(): void {
     this.load();
-    this.loadTransitPoints();
   }
 
   private load(): void {
@@ -107,15 +73,6 @@ export class PointEquipeModalComponent implements OnInit {
       this.selectedMembreId = this.selectedMembreId ?? this.membres[0]?.id ?? null;
       this.buildJours(res.disponibilites);
       this.loading = false;
-    });
-  }
-
-  private loadTransitPoints(): void {
-    if (!this.crisisId) return;
-    const transitType = this.pointTypes.find(t => t.code === 'TRANSIT');
-    if (!transitType) return;
-    this.pointService.getByCrise(this.crisisId).subscribe(points => {
-      this.transitPoints = points.filter(p => p.type === transitType.id);
     });
   }
 
@@ -171,96 +128,18 @@ export class PointEquipeModalComponent implements OnInit {
     return { statut: affectation.statut, libelle: STATUT_LABELS[affectation.statut] };
   }
 
-  // --- Recrutement ---
+  // --- Recrutement (mini-outil RH dédié, voir RecrutementBenevolesModalComponent) ---
 
-  toggleRecruiting(): void {
-    this.recruiting = !this.recruiting;
-    if (!this.recruiting) this.resetRecruitForm();
+  openRecrutementModal(): void {
+    this.recrutementModalOpen = true;
   }
 
-  onSearchChange(value: string): void {
-    this.searchQuery = value;
-    this.search$.next(value);
+  closeRecrutementModal(): void {
+    this.recrutementModalOpen = false;
   }
 
-  selectOffer(offer: Offer): void {
-    this.selectedOffer = offer;
-    this.searchResults = [];
-    this.searchQuery = '';
-  }
-
-  offerLabel(offer: Offer): string {
-    const nom = `${offer.first_name_offer} ${offer.last_name_offer}`.trim();
-    return nom ? `${nom} — ${offer.title}` : offer.title;
-  }
-
-  toggleCreneau(date: string, creneau: Creneau): void {
-    const key = `${date}|${creneau}`;
-    if (this.inviteCreneaux.has(key)) {
-      this.inviteCreneaux.delete(key);
-    } else {
-      this.inviteCreneaux.add(key);
-    }
-  }
-
-  isCreneauChecked(date: string, creneau: Creneau): boolean {
-    return this.inviteCreneaux.has(`${date}|${creneau}`);
-  }
-
-  get inviteJours(): { date: string; label: string; creneaux: { creneau: Creneau; label: string }[] }[] {
-    const jours = [];
-    for (let i = 0; i < 8; i++) {
-      const d = new Date();
-      d.setDate(d.getDate() + i);
-      jours.push({
-        date: d.toISOString().slice(0, 10),
-        label: d.toLocaleDateString('fr-FR', { weekday: 'short', day: '2-digit', month: '2-digit' }),
-        creneaux: CRENEAUX,
-      });
-    }
-    return jours;
-  }
-
-  submitInvite(): void {
-    if (!this.selectedOffer || !this.inviteDateAttendue) {
-      this.inviteError = "Sélectionnez une offre et une date/heure attendue.";
-      return;
-    }
-
-    const creneaux = Array.from(this.inviteCreneaux).map(key => {
-      const [date, creneau] = key.split('|');
-      return { date, creneau: creneau as Creneau };
-    });
-
-    this.inviting = true;
-    this.inviteError = '';
-    this.pointService.inviterBenevole(this.point.id, {
-      offer_id: this.selectedOffer.id,
-      date_attendue: new Date(this.inviteDateAttendue).toISOString(),
-      point_transit_id: this.invitePointTransitId || undefined,
-      creneaux,
-    }).subscribe({
-      next: () => {
-        this.inviting = false;
-        this.resetRecruitForm();
-        this.recruiting = false;
-        this.load();
-      },
-      error: (err) => {
-        this.inviting = false;
-        this.inviteError = err.error?.error || err.error?.detail || "Impossible d'inviter ce bénévole.";
-      },
-    });
-  }
-
-  private resetRecruitForm(): void {
-    this.searchQuery = '';
-    this.searchResults = [];
-    this.selectedOffer = null;
-    this.inviteDateAttendue = '';
-    this.invitePointTransitId = null;
-    this.inviteCreneaux.clear();
-    this.inviteError = '';
+  onBenevolesAffected(): void {
+    this.load();
   }
 
   close(): void {
