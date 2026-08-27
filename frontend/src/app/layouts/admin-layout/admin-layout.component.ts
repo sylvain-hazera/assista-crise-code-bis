@@ -76,6 +76,13 @@ export class AdminLayoutComponent implements OnInit {
     this.currentUser = this.authService.getCurrentUser();
     this.checkScreenSize();
     this.loadNotifications();
+    // Rafraîchit le profil depuis l'API : sans ça, un accès démo (ou tout autre changement de
+    // droits) accordé après la connexion resterait invisible tant que l'utilisateur ne se
+    // reconnecte pas, puisque `getCurrentUser()` ne fait que relire le cache local du login.
+    this.authService.fetchMe().subscribe({
+      next: (user) => this.currentUser = user,
+      error: () => {},
+    });
   }
 
   get isDemo(): boolean {
