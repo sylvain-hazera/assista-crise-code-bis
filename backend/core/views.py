@@ -31,7 +31,10 @@ from PIL.ExifTags import TAGS, GPSTAGS
 from .audit import audit_log, get_client_ip
 from .export import build_crisis_export_zip
 from .institution_attachment import attach_user_to_institution, resolve_or_invite_responsable
-from .permissions import IsInstitutionalActor, IsAdministrator, INSTITUTIONAL_TYPES, user_can_view_photo
+from .permissions import (
+    IsInstitutionalActor, IsAdministrator, INSTITUTIONAL_TYPES, user_can_view_photo,
+    get_active_environment, get_effective_role, mask_email, mask_phone,
+)
 
 
 GPS_IFD_TAG = 0x8825  # PIL.ExifTags.IFD.GPSInfo
@@ -78,6 +81,7 @@ def extract_exif_metadata(filepath):
 
 
 from .models import (
+    Environment,
     UserRole,
     InstitutionType,
     Institution,
@@ -294,6 +298,7 @@ class TagLikeViewSetMixin:
             else Response(serializer.data)
         )
 
+
     def create(self, request, *args, **kwargs):
         raw_value = " ".join(str(request.data.get(self.tag_field) or "").split())
         if raw_value:
@@ -310,6 +315,21 @@ class TagLikeViewSetMixin:
             return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
         return super().create(request, *args, **kwargs)
+
+
+class EnvironmentScopedViewSetMixin:
+    """Point de passage unique pour isoler PROD et DEMO sur tout modèle "de contenu"
+    (EnvironmentScopedModel) : filtre automatiquement le queryset sur l'environnement actif de
+    la requête, et tamponne toute création avec ce même environnement. Volontairement un mixin
+    appliqué à chaque ViewSet concerné plutôt qu'un filtrage global implicite, pour rester
+    explicite sur quels modèles sont isolés (voir la répartition contenu/vocabulaire du plan) —
+    même choix de conception que TagLikeViewSetMixin ci-dessus."""
+
+    def get_queryset(self):
+        return super().get_queryset().filter(environment=get_active_environment(self.request))
+
+    def perform_create(self, serializer):
+        serializer.save(environment=get_active_environment(self.request))
 
 
 class CompetenceViewSet(TagLikeViewSetMixin, viewsets.ModelViewSet):
@@ -337,7 +357,7 @@ class CompetenceViewSet(TagLikeViewSetMixin, viewsets.ModelViewSet):
             commentaire=f"Création thème/compétence : {competence.nom}",
         )
 
-class AffectationCompetenceViewSet(viewsets.ModelViewSet):
+class AffectationCompetenceViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     queryset = AffectationCompetence.objects.all()
     serializer_class = AffectationCompetenceSerializer
 
@@ -347,7 +367,7 @@ class AffectationCompetenceViewSet(viewsets.ModelViewSet):
         return [permissions.IsAuthenticated()]
 
     def perform_create(self, serializer):
-        affectation = serializer.save()
+        affectation = serializer.save(environment=get_active_environment(self.request))
         audit_log(
             request=self.request,
             action_code="AFFECTATION",
@@ -369,7 +389,7 @@ class AffectationCompetenceViewSet(viewsets.ModelViewSet):
             commentaire=f"Modification affectation compétence : {affectation}",
         )
 
-class DossierViewSet(viewsets.ModelViewSet):
+class DossierViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     queryset = Dossier.objects.all()
     serializer_class = DossierSerializer
 
@@ -385,11 +405,12 @@ class DossierViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
+        environment = get_active_environment(self.request)
         if not user.is_authenticated:
             return Dossier.objects.none()
-        if user.type in INSTITUTIONAL_TYPES:
-            return Dossier.objects.all()
-        return Dossier.objects.filter(participants__utilisateur=user).distinct()
+        if get_effective_role(self.request) in INSTITUTIONAL_TYPES:
+            return Dossier.objects.filter(environment=environment)
+        return Dossier.objects.filter(participants__utilisateur=user, environment=environment).distinct()
 
     def get_serializer_context(self):
         context = super().get_serializer_context()
@@ -397,7 +418,7 @@ class DossierViewSet(viewsets.ModelViewSet):
         return context
 
     def perform_create(self, serializer):
-        dossier = serializer.save()
+        dossier = serializer.save(environment=get_active_environment(self.request))
         audit_log(
             request=self.request,
             action_code="CREATION",
@@ -468,7 +489,7 @@ class DossierViewSet(viewsets.ModelViewSet):
             responsable=user, actif=True,
         ).exists()
 
-        if not (est_regulateur_du_dossier or est_responsable_crise or user.type == UserRole.ADMINISTRATOR):
+        if not (est_regulateur_du_dossier or est_responsable_crise or get_effective_role(request) == UserRole.ADMINISTRATOR):
             return Response(
                 {"error": "Seul le régulateur affecté à ce dossier ou le responsable de la crise peut le clôturer."},
                 status=status.HTTP_403_FORBIDDEN,
@@ -490,6 +511,7 @@ class DossierViewSet(viewsets.ModelViewSet):
             dossier=dossier, auteur=user,
             evenement=f"Dossier {dossier.get_statut_display().lower()}",
             commentaire=request.data.get("commentaire"),
+            environment=dossier.environment,
         )
 
         audit_log(
@@ -716,16 +738,17 @@ class UserViewSet(viewsets.ModelViewSet):
     def pending_validations(self, request):
         """Liste des comptes en attente de validation"""
         user = request.user
-        
+        role = get_effective_role(request)
+
         # Seuls les admins et institutions peuvent voir les validations
-        if user.type not in ['ADMIN', 'AUT_LOCALE']:
+        if role not in [UserRole.ADMINISTRATOR, UserRole.LOCAL_AUTHORITY]:
             return Response(
                 {'error': 'Permissions insuffisantes'},
                 status=status.HTTP_403_FORBIDDEN
             )
-        
+
         # Les admins voient tout, les institutions voient leur code postal
-        if user.type == 'ADMIN':
+        if role == UserRole.ADMINISTRATOR:
             pending_users = User.objects.filter(enabled=False, is_active=True)
         else:
             pending_users = User.objects.filter(
@@ -742,16 +765,17 @@ class UserViewSet(viewsets.ModelViewSet):
         """Approuver un compte en attente"""
         user_to_approve = self.get_object()
         validator = request.user
-        
+        validator_role = get_effective_role(request)
+
         # Vérifier les permissions
-        if validator.type not in ['ADMIN', 'AUT_LOCALE']:
+        if validator_role not in [UserRole.ADMINISTRATOR, UserRole.LOCAL_AUTHORITY]:
             return Response(
                 {'error': 'Permissions insuffisantes'},
                 status=status.HTTP_403_FORBIDDEN
             )
-        
+
         # Les institutions ne peuvent valider que leur code postal
-        if validator.type == 'AUT_LOCALE' and validator.postal_code != user_to_approve.postal_code:
+        if validator_role == UserRole.LOCAL_AUTHORITY and validator.postal_code != user_to_approve.postal_code:
             return Response(
                 {'error': 'Vous ne pouvez valider que les comptes de votre territoire'},
                 status=status.HTTP_403_FORBIDDEN
@@ -791,17 +815,18 @@ class UserViewSet(viewsets.ModelViewSet):
         """Rejeter un compte en attente"""
         user_to_reject = self.get_object()
         validator = request.user
+        validator_role = get_effective_role(request)
         reason = request.data.get('reason', 'Non spécifiée')
-        
+
         # Vérifier les permissions
-        if validator.type not in ['ADMIN', 'AUT_LOCALE']:
+        if validator_role not in [UserRole.ADMINISTRATOR, UserRole.LOCAL_AUTHORITY]:
             return Response(
                 {'error': 'Permissions insuffisantes'},
                 status=status.HTTP_403_FORBIDDEN
             )
-        
+
         # Les institutions ne peuvent rejeter que leur code postal
-        if validator.type == 'AUT_LOCALE' and validator.postal_code != user_to_reject.postal_code:
+        if validator_role == UserRole.LOCAL_AUTHORITY and validator.postal_code != user_to_reject.postal_code:
             return Response(
                 {'error': 'Vous ne pouvez rejeter que les comptes de votre territoire'},
                 status=status.HTTP_403_FORBIDDEN
@@ -836,7 +861,7 @@ class UserViewSet(viewsets.ModelViewSet):
             'user': UserSerializer(user_to_reject).data
         })
 
-class CrisisViewSet(viewsets.ModelViewSet):
+class CrisisViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     queryset = Crisis.objects.all()
     serializer_class = CrisisSerializer
     filterset_class = AuthorEmailFilter
@@ -864,7 +889,7 @@ class CrisisViewSet(viewsets.ModelViewSet):
         return [AllowAny()]
 
     def perform_create(self, serializer):
-        crise = serializer.save(author=self.request.user)
+        crise = serializer.save(author=self.request.user, environment=get_active_environment(self.request))
         audit_log(
             request=self.request,
             action_code="CREATION",
@@ -878,7 +903,7 @@ class CrisisViewSet(viewsets.ModelViewSet):
     def preview(self, request, pk=None):
         crise = self.get_object()
         if not crise.photo or not user_can_view_photo(
-            request.user, crise, teams_field='assigned_teams', dossiers_field='dossiers'
+            request, crise, teams_field='assigned_teams', dossiers_field='dossiers'
         ):
             return Response(status=403)
         return FileResponse(open(crise.photo.path, "rb"))
@@ -892,7 +917,7 @@ class CrisisViewSet(viewsets.ModelViewSet):
         user = request.user
 
         est_responsable_crise = crise.implications.filter(responsable=user, actif=True).exists()
-        if not (est_responsable_crise or user.type == UserRole.ADMINISTRATOR):
+        if not (est_responsable_crise or get_effective_role(request) == UserRole.ADMINISTRATOR):
             return Response(
                 {"error": "Seul le responsable d'une institution impliquée sur cette crise peut la clôturer."},
                 status=status.HTTP_403_FORBIDDEN,
@@ -951,7 +976,7 @@ class CrisisViewSet(viewsets.ModelViewSet):
         user = request.user
 
         est_responsable_crise = crise.implications.filter(responsable=user, actif=True).exists()
-        if not (est_responsable_crise or user.type == UserRole.ADMINISTRATOR):
+        if not (est_responsable_crise or get_effective_role(request) == UserRole.ADMINISTRATOR):
             return Response(
                 {"error": "Seul le responsable d'une institution impliquée sur cette crise peut exporter sa main courante."},
                 status=status.HTTP_403_FORBIDDEN,
@@ -1205,21 +1230,26 @@ def populate_dossier_participants_and_notify(
     if demandeur:
         DossierParticipant.objects.get_or_create(
             dossier=dossier, utilisateur=demandeur, role=DossierParticipant.Role.DEMANDEUR,
+            defaults={"environment": dossier.environment},
         )
         DossierHistorique.objects.create(
             dossier=dossier, auteur=demandeur, evenement="Demandeur ajouté au dossier",
+            environment=dossier.environment,
         )
 
     if equipe:
         DossierHistorique.objects.create(
             dossier=dossier, evenement=f"Équipe affectée : {equipe.name}",
+            environment=dossier.environment,
         )
         for membre in equipe.members.all():
             DossierParticipant.objects.get_or_create(
                 dossier=dossier, utilisateur=membre, role=DossierParticipant.Role.EQUIPE,
+                defaults={"environment": dossier.environment},
             )
             DossierHistorique.objects.create(
                 dossier=dossier, auteur=membre, evenement="Intervenant ajouté au dossier",
+                environment=dossier.environment,
             )
 
     if dossier.competence:
@@ -1249,22 +1279,25 @@ def populate_dossier_participants_and_notify(
     for regulateur in regulateurs:
         DossierParticipant.objects.get_or_create(
             dossier=dossier, utilisateur=regulateur, role=DossierParticipant.Role.REGULATION,
+            defaults={"environment": dossier.environment},
         )
         Notification.objects.create(
             utilisateur=regulateur,
             dossier=dossier,
             titre=notification_titre,
             message=notification_message or f"Le dossier {dossier.numero} ({dossier.titre}) nécessite une affectation.",
+            environment=dossier.environment,
         )
         DossierHistorique.objects.create(
             dossier=dossier, auteur=regulateur,
             evenement=f"{regulateur.email} notifié en tant que régulateur",
+            environment=dossier.environment,
         )
 
     return regulateurs
 
 
-class RequestViewSet(viewsets.ModelViewSet):
+class RequestViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     queryset = Request.objects.all()
     serializer_class = RequestSerializer
     permission_classes = [AllowAny]
@@ -1277,7 +1310,7 @@ class RequestViewSet(viewsets.ModelViewSet):
         
         # Définir l'auteur si authentifié, sinon None
         author = self.request.user if self.request.user.is_authenticated else None
-        demande = serializer.save(author=author, deletion_token=deletion_token)
+        demande = serializer.save(author=author, deletion_token=deletion_token, environment=get_active_environment(self.request))
         
         audit_log(
             request=self.request,
@@ -1359,7 +1392,8 @@ class RequestViewSet(viewsets.ModelViewSet):
                     demande=demande,
                     titre=demande.title,
                     description=f"Demande créée automatiquement : {demande.title}",
-                    statut=statut
+                    statut=statut,
+                    environment=demande.environment,
                 )
 
                 demandeur, _ = resolve_or_invite_demandeur(demande, request=self.request)
@@ -1398,7 +1432,8 @@ class RequestViewSet(viewsets.ModelViewSet):
                             f"Demande créée automatiquement : "
                             f"{demande.title}"
                         ),
-                        statut=Dossier.Statut.EN_ATTENTE_AFFECTATION
+                        statut=Dossier.Statut.EN_ATTENTE_AFFECTATION,
+                        environment=demande.environment,
                     )
 
                     demandeur, _ = resolve_or_invite_demandeur(demande, request=self.request)
@@ -1414,7 +1449,8 @@ class RequestViewSet(viewsets.ModelViewSet):
                         commentaire=(
                             "Le dossier nécessite "
                             "une affectation manuelle."
-                        )
+                        ),
+                        environment=dossier.environment,
                     )
 
                     audit_log(
@@ -1488,6 +1524,7 @@ class RequestViewSet(viewsets.ModelViewSet):
             titre=demande.title,
             description=f"Demande affectée à l'équipe {team.name} : {demande.title}",
             statut=Dossier.Statut.AFFECTE,
+            environment=demande.environment,
         )
 
         demandeur, _ = resolve_or_invite_demandeur(demande, request=request)
@@ -1544,12 +1581,12 @@ class RequestViewSet(viewsets.ModelViewSet):
     def preview(self, request, pk=None):
         demande = self.get_object()
         if not demande.photo or not user_can_view_photo(
-            request.user, demande, teams_field='assigned_teams', dossiers_field='dossiers'
+            request, demande, teams_field='assigned_teams', dossiers_field='dossiers'
         ):
             return Response(status=403)
         return FileResponse(open(demande.photo.path, "rb"))
 
-class TeamViewSet(viewsets.ModelViewSet):
+class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     queryset           = Team.objects.prefetch_related(
         'members', 'assigned_crises', 'assigned_offers', 'assigned_requests'
     ).select_related('leader').all()
@@ -1557,7 +1594,7 @@ class TeamViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def perform_create(self, serializer):
-        team = serializer.save()
+        team = serializer.save(environment=get_active_environment(self.request))
         audit_log(
             request=self.request,
             action_code="CREATION",
@@ -1566,7 +1603,7 @@ class TeamViewSet(viewsets.ModelViewSet):
             commentaire=f"Création équipe : {team.name}",
         )
 
-class OfferViewSet(viewsets.ModelViewSet):
+class OfferViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     queryset = Offer.objects.all()
     serializer_class = OfferSerializer
     permission_classes = [AllowAny]
@@ -1577,11 +1614,12 @@ class OfferViewSet(viewsets.ModelViewSet):
         deletion_token = secrets.token_urlsafe(32)
         
         # Si user authentifié, il est autheur
+        environment = get_active_environment(self.request)
         if self.request.user.is_authenticated:
-            offre = serializer.save(author=self.request.user, deletion_token=deletion_token)
+            offre = serializer.save(author=self.request.user, deletion_token=deletion_token, environment=environment)
         else:
             # Sinon il est none
-            offre = serializer.save(author=None, deletion_token=deletion_token)
+            offre = serializer.save(author=None, deletion_token=deletion_token, environment=environment)
         
         audit_log(
             request=self.request,
@@ -1628,14 +1666,16 @@ class OfferViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        dossier = get_object_or_404(Dossier, pk=request.data.get("dossier"))
+        dossier = get_object_or_404(Dossier, pk=request.data.get("dossier"), environment=get_active_environment(request))
         participant, created = DossierParticipant.objects.get_or_create(
-            dossier=dossier, utilisateur=offer.author, role=DossierParticipant.Role.OFFRANT
+            dossier=dossier, utilisateur=offer.author, role=DossierParticipant.Role.OFFRANT,
+            defaults={"environment": dossier.environment},
         )
         if created:
             DossierHistorique.objects.create(
                 dossier=dossier, auteur=offer.author,
                 evenement=f"Offrant ajouté au dossier (offre : {offer.title})",
+                environment=dossier.environment,
             )
             audit_log(
                 request=request,
@@ -1651,19 +1691,19 @@ class OfferViewSet(viewsets.ModelViewSet):
     def preview(self, request, pk=None):
         offer = self.get_object()
         if not offer.photo or not user_can_view_photo(
-            request.user, offer, teams_field='assigned_teams'
+            request, offer, teams_field='assigned_teams'
         ):
             return Response(status=403)
         return FileResponse(open(offer.photo.path, "rb"))
 
-class DisponibiliteOffreViewSet(viewsets.ModelViewSet):
+class DisponibiliteOffreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     """Créneaux de disponibilité (matin/midi/soir/nuit, 8 jours) déclarés avec une offre d'aide."""
     queryset = DisponibiliteOffre.objects.all()
     serializer_class = DisponibiliteOffreSerializer
     permission_classes = [AllowAny]
     filterset_fields = ["offer"]
 
-class InformationViewSet(viewsets.ModelViewSet):
+class InformationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     queryset = Information.objects.all()
     serializer_class = InformationSerializer
     permission_classes = [AllowAny]
@@ -1673,11 +1713,12 @@ class InformationViewSet(viewsets.ModelViewSet):
         deletion_token = secrets.token_urlsafe(32)
         
         # Si l'utilisateur est authentifié, on l'assigne comme auteur
+        environment = get_active_environment(self.request)
         if self.request.user.is_authenticated:
-            info = serializer.save(author=self.request.user, deletion_token=deletion_token)
+            info = serializer.save(author=self.request.user, deletion_token=deletion_token, environment=environment)
         else:
             # Sinon on sauvegarde sans auteur (None)
-            info = serializer.save(author=None, deletion_token=deletion_token)
+            info = serializer.save(author=None, deletion_token=deletion_token, environment=environment)
         
         # Construire l'URL de suppression (automatique selon l'environnement)
         deletion_url = self.request.build_absolute_uri(f'/api/delete-information/{deletion_token}/')
@@ -1708,7 +1749,7 @@ class InformationViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["get"])
     def preview(self, request, pk=None):
         info = self.get_object()
-        if not info.photo or not user_can_view_photo(request.user, info):
+        if not info.photo or not user_can_view_photo(request, info):
             return Response(status=403)
         return FileResponse(open(info.photo.path, "rb"))
 
@@ -1936,7 +1977,7 @@ class ChangePasswordView(generics.UpdateAPIView):
         user.save()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
-class DocumentViewSet(viewsets.ModelViewSet):
+class DocumentViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
 
     queryset = Document.objects.all()
     serializer_class = DocumentSerializer
@@ -1944,29 +1985,30 @@ class DocumentViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
 
         user = self.request.user
+        environment = get_active_environment(self.request)
 
         if not user.is_authenticated:
             return Document.objects.none()
 
-        if user.type in [
-            "ADMIN",
-            "AUT_LOCALE"
+        if get_effective_role(self.request) in [
+            UserRole.ADMINISTRATOR,
+            UserRole.LOCAL_AUTHORITY,
         ]:
-            return Document.objects.all()
+            return Document.objects.filter(environment=environment)
 
         return Document.objects.filter(
-            Q(auteur=user) | Q(dossier__participants__utilisateur=user)
+            Q(auteur=user) | Q(dossier__participants__utilisateur=user), environment=environment
         ).distinct()
 
     def perform_create(self, serializer):
 
         user = self.request.user
         dossier = serializer.validated_data.get('dossier')
-        if dossier and user.type not in INSTITUTIONAL_TYPES:
+        if dossier and get_effective_role(self.request) not in INSTITUTIONAL_TYPES:
             if not dossier.participants.filter(utilisateur=user).exists():
                 raise PermissionDenied("Vous n'êtes pas participant de ce dossier.")
 
-        document = serializer.save(auteur=user)
+        document = serializer.save(auteur=user, environment=get_active_environment(self.request))
 
         audit_log(
             request=self.request,
@@ -2008,7 +2050,8 @@ class DocumentViewSet(viewsets.ModelViewSet):
                 dossier=document.dossier,
                 auteur=document.auteur,
                 evenement="Document ajouté",
-                commentaire=document.commentaire or ""
+                commentaire=document.commentaire or "",
+                environment=document.environment,
             )
 
         if document.dossier:
@@ -2031,7 +2074,8 @@ class DocumentViewSet(viewsets.ModelViewSet):
                     utilisateur=participant.utilisateur,
                     dossier=document.dossier,
                     titre="Nouvelle photo",
-                    message=document.commentaire or ""
+                    message=document.commentaire or "",
+                    environment=document.environment,
                 )
 
     def check_document_access(
@@ -2042,18 +2086,12 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
         user = request.user
 
-        print(
-            "DOCUMENT ACCESS :",
-            request.user.username,
-            request.user.type
-        )
-
         if not user.is_authenticated:
             return False
 
-        if user.type in [
-            "ADMIN",
-            "AUT_LOCALE"
+        if get_effective_role(request) in [
+            UserRole.ADMINISTRATOR,
+            UserRole.LOCAL_AUTHORITY,
         ]:
             return True
 
@@ -2152,36 +2190,38 @@ class DocumentViewSet(viewsets.ModelViewSet):
             open(document.fichier.path, "rb")
         )
 
-class DossierCommentaireViewSet(viewsets.ModelViewSet):
+class DossierCommentaireViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
 
     queryset = DossierCommentaire.objects.all()
     serializer_class = DossierCommentaireSerializer
 
     def get_queryset(self):
         user = self.request.user
+        environment = get_active_environment(self.request)
         if not user.is_authenticated:
             return DossierCommentaire.objects.none()
-        if user.type in INSTITUTIONAL_TYPES:
-            return DossierCommentaire.objects.all()
+        if get_effective_role(self.request) in INSTITUTIONAL_TYPES:
+            return DossierCommentaire.objects.filter(environment=environment)
         return DossierCommentaire.objects.filter(
-            dossier__participants__utilisateur=user
+            dossier__participants__utilisateur=user, environment=environment
         ).distinct()
 
     def perform_create(self, serializer):
 
         user = self.request.user
         dossier = serializer.validated_data.get('dossier')
-        if dossier and user.type not in INSTITUTIONAL_TYPES:
+        if dossier and get_effective_role(self.request) not in INSTITUTIONAL_TYPES:
             if not dossier.participants.filter(utilisateur=user).exists():
                 raise PermissionDenied("Vous n'êtes pas participant de ce dossier.")
 
-        commentaire = serializer.save(auteur=user)
+        commentaire = serializer.save(auteur=user, environment=get_active_environment(self.request))
 
         DossierHistorique.objects.create(
             dossier=commentaire.dossier,
             auteur=commentaire.auteur,
             evenement="Commentaire ajouté",
-            commentaire=commentaire.commentaire
+            commentaire=commentaire.commentaire,
+            environment=commentaire.environment,
         )
 
         participants = (
@@ -2202,23 +2242,26 @@ class DossierCommentaireViewSet(viewsets.ModelViewSet):
                 utilisateur=participant.utilisateur,
                 dossier=commentaire.dossier,
                 titre="Nouveau commentaire",
-                message=commentaire.commentaire[:250]
+                message=commentaire.commentaire[:250],
+                environment=commentaire.environment,
             )
 
-class DossierHistoriqueViewSet(viewsets.ModelViewSet):
+class DossierHistoriqueViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     queryset = DossierHistorique.objects.all()
     serializer_class = DossierHistoriqueSerializer
 
-class NotificationViewSet(viewsets.ModelViewSet):
+class NotificationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     """Notifications de l'utilisateur connecté (ex: régulateur d'équipe averti d'une nouvelle
     affectation). Chacun ne voit et ne modifie que les siennes."""
     serializer_class = NotificationSerializer
 
     def get_queryset(self):
-        return Notification.objects.filter(utilisateur=self.request.user).order_by('-date_creation')
+        return Notification.objects.filter(
+            utilisateur=self.request.user, environment=get_active_environment(self.request)
+        ).order_by('-date_creation')
 
 class RecherchePersonneViewSet(
-    viewsets.ModelViewSet
+    EnvironmentScopedViewSetMixin, viewsets.ModelViewSet
 ):
 
     queryset = (
@@ -2238,10 +2281,10 @@ class RecherchePersonneViewSet(
             return RecherchePersonne.objects.none()
         if not self.request.user.enabled:
             return RecherchePersonne.objects.none()
-        return RecherchePersonne.objects.all().order_by(
-            "-date_creation"
-        )
-    
+        return RecherchePersonne.objects.filter(
+            environment=get_active_environment(self.request)
+        ).order_by("-date_creation")
+
     def perform_create(self, serializer):
 
         if not self.request.user.enabled:
@@ -2250,14 +2293,16 @@ class RecherchePersonneViewSet(
             )
 
         recherche = serializer.save(
-            createur=self.request.user
+            createur=self.request.user,
+            environment=get_active_environment(self.request),
         )
 
         RecherchePersonneHistorique.objects.create(
             recherche=recherche,
             auteur=self.request.user,
             evenement="Recherche créée",
-            commentaire="Création de la fiche de recherche."
+            commentaire="Création de la fiche de recherche.",
+            environment=recherche.environment,
         )
 
         audit_log(
@@ -2281,7 +2326,8 @@ class RecherchePersonneViewSet(
             recherche=recherche,
             auteur=request.user,
             evenement="Recherche archivée",
-            commentaire="Recherche masquée."
+            commentaire="Recherche masquée.",
+            environment=recherche.environment,
         )
         audit_log(
             request=request,
@@ -2333,7 +2379,8 @@ class RecherchePersonneViewSet(
             recherche=recherche,
             auteur=request.user,
             evenement="Personne retrouvée",
-            commentaire="La personne a été déclarée retrouvée"
+            commentaire="La personne a été déclarée retrouvée",
+            environment=recherche.environment,
         )
 
         return Response(
@@ -2356,7 +2403,8 @@ class RecherchePersonneViewSet(
             RecherchePersonneLecture.objects
             .get_or_create(
                 recherche=recherche,
-                utilisateur=request.user
+                utilisateur=request.user,
+                defaults={"environment": recherche.environment},
             )
         )
 
@@ -2373,7 +2421,8 @@ class RecherchePersonneViewSet(
                 RecherchePersonneLectureHistorique
                 .ActionLecture
                 .LECTURE
-            )
+            ),
+            environment=recherche.environment,
         )
 
         audit_log(
@@ -2410,7 +2459,8 @@ class RecherchePersonneViewSet(
             RecherchePersonneLecture.objects
             .get_or_create(
                 recherche=recherche,
-                utilisateur=request.user
+                utilisateur=request.user,
+                defaults={"environment": recherche.environment},
             )
         )
 
@@ -2427,7 +2477,8 @@ class RecherchePersonneViewSet(
                 RecherchePersonneLectureHistorique
                 .ActionLecture
                 .ACQUITTEMENT
-            )
+            ),
+            environment=recherche.environment,
         )
 
         audit_log(
@@ -2447,7 +2498,7 @@ class RecherchePersonneViewSet(
     def preview(self, request, pk=None):
         recherche = self.get_object()
         if not recherche.photo or not user_can_view_photo(
-            request.user, recherche, author_field='createur'
+            request, recherche, author_field='createur'
         ):
             return Response(status=403)
         return FileResponse(open(recherche.photo.path, "rb"))
@@ -2455,7 +2506,7 @@ class RecherchePersonneViewSet(
 
 
 class RecherchePersonneCommentaireViewSet(
-    viewsets.ModelViewSet
+    EnvironmentScopedViewSetMixin, viewsets.ModelViewSet
 ):
 
     queryset = (
@@ -2471,7 +2522,8 @@ class RecherchePersonneCommentaireViewSet(
     def perform_create(self, serializer):
 
         commentaire = serializer.save(
-            auteur=self.request.user
+            auteur=self.request.user,
+            environment=get_active_environment(self.request),
         )
 
         recherche = commentaire.recherche
@@ -2495,18 +2547,20 @@ class RecherchePersonneCommentaireViewSet(
                     f"ajouté sur la "
                     f"recherche de "
                     f"{recherche.prenom}"
-                )
+                ),
+                environment=commentaire.environment,
             )
 
         RecherchePersonneHistorique.objects.create(
             recherche=commentaire.recherche,
             auteur=self.request.user,
             evenement="Commentaire ajouté",
-            commentaire=commentaire.commentaire
+            commentaire=commentaire.commentaire,
+            environment=commentaire.environment,
         )
 
 class RecherchePersonneHistoriqueViewSet(
-    viewsets.ModelViewSet
+    EnvironmentScopedViewSetMixin, viewsets.ModelViewSet
 ):
 
     queryset = (
@@ -2521,7 +2575,7 @@ class RecherchePersonneHistoriqueViewSet(
     )
 
 class RecherchePersonnePhotoViewSet(
-    viewsets.ModelViewSet
+    EnvironmentScopedViewSetMixin, viewsets.ModelViewSet
 ):
 
     queryset = (
@@ -2544,7 +2598,8 @@ class RecherchePersonnePhotoViewSet(
     ):
 
         serializer.save(
-            auteur=self.request.user
+            auteur=self.request.user,
+            environment=get_active_environment(self.request),
         )
 
     @action(
@@ -2567,7 +2622,7 @@ class RecherchePersonnePhotoViewSet(
         )
 
 class RecherchePersonneCommentairePhotoViewSet(
-    viewsets.ModelViewSet
+    EnvironmentScopedViewSetMixin, viewsets.ModelViewSet
 ):
 
     queryset = (
@@ -2628,7 +2683,7 @@ class InstitutionTypeViewSet(
         )
 
 class InstitutionViewSet(
-    viewsets.ModelViewSet
+    EnvironmentScopedViewSetMixin, viewsets.ModelViewSet
 ):
 
     queryset = (
@@ -2639,8 +2694,18 @@ class InstitutionViewSet(
         InstitutionSerializer
     )
 
+    def get_queryset(self):
+        """Règle à sens unique (voir plan zone de démo) : les vraies institutions (PROD)
+        restent visibles en DEMO pour permettre de s'appuyer sur les vraies mairies/
+        associations dans une démonstration, mais une institution créée en DEMO ne doit
+        jamais apparaître en PROD."""
+        environment = get_active_environment(self.request)
+        if environment == Environment.DEMO:
+            return Institution.objects.filter(environment__in=[Environment.PROD, Environment.DEMO])
+        return Institution.objects.filter(environment=Environment.PROD)
+
     def perform_create(self, serializer):
-        institution = serializer.save()
+        institution = serializer.save(environment=get_active_environment(self.request))
         audit_log(
             request=self.request,
             action_code="CREATION",
@@ -2657,6 +2722,7 @@ class InstitutionViewSet(
                     "fonction": "Créateur",
                     "contact_principal": True,
                     "actif": True,
+                    "environment": institution.environment,
                 },
             )
             if created:
@@ -2690,7 +2756,7 @@ class RoleOperationnelViewSet(
             commentaire=f"Création rôle opérationnel : {role.libelle}",
         )
 class InstitutionCompetenceViewSet(
-    viewsets.ModelViewSet
+    EnvironmentScopedViewSetMixin, viewsets.ModelViewSet
 ):
 
     queryset = (
@@ -2701,7 +2767,7 @@ class InstitutionCompetenceViewSet(
         InstitutionCompetenceSerializer
     )
 class AffectationRoleOperationnelViewSet(
-    viewsets.ModelViewSet
+    EnvironmentScopedViewSetMixin, viewsets.ModelViewSet
 ):
 
     queryset = (
@@ -2721,7 +2787,7 @@ class AffectationRoleOperationnelViewSet(
         is_own_institution = ContactInstitution.objects.filter(
             utilisateur=self.request.user, institution=institution, actif=True
         ).exists()
-        if not is_own_institution and self.request.user.type != UserRole.ADMINISTRATOR:
+        if not is_own_institution and get_effective_role(self.request) != UserRole.ADMINISTRATOR:
             raise PermissionDenied(
                 "Vous ne pouvez gérer les affectations que pour une institution à laquelle vous êtes rattaché."
             )
@@ -2730,7 +2796,7 @@ class AffectationRoleOperationnelViewSet(
         institution = serializer.validated_data.get("institution")
         self._check_own_institution(institution)
 
-        affectation = serializer.save()
+        affectation = serializer.save(environment=get_active_environment(self.request))
         audit_log(
             request=self.request,
             action_code="AFFECTATION",
@@ -2820,7 +2886,7 @@ class AffectationRoleOperationnelViewSet(
         )
 
 class DelegationCompetenceViewSet(
-    viewsets.ModelViewSet
+    EnvironmentScopedViewSetMixin, viewsets.ModelViewSet
 ):
 
     queryset = (
@@ -2857,7 +2923,7 @@ class DelegationCompetenceViewSet(
         serializer
     ):
 
-        delegation = serializer.save()
+        delegation = serializer.save(environment=get_active_environment(self.request))
 
         audit_log(
             request=self.request,
@@ -2873,7 +2939,7 @@ class DelegationCompetenceViewSet(
         )
 
 class DisponibiliteOperationnelleViewSet(
-    viewsets.ModelViewSet
+    EnvironmentScopedViewSetMixin, viewsets.ModelViewSet
 ):
 
     queryset = (
@@ -2988,7 +3054,7 @@ class PointTypeViewSet(
         PointTypeSerializer
     )
 class PointOperationnelViewSet(
-    viewsets.ModelViewSet
+    EnvironmentScopedViewSetMixin, viewsets.ModelViewSet
 ):
 
     queryset = (
@@ -3032,7 +3098,7 @@ class PointOperationnelViewSet(
         )
 
     def perform_create(self, serializer):
-        point = serializer.save(responsable=self.request.user)
+        point = serializer.save(responsable=self.request.user, environment=get_active_environment(self.request))
 
         audit_log(
             request=self.request,
@@ -3057,7 +3123,7 @@ class PointOperationnelViewSet(
                 is_own = candidate and ContactInstitution.objects.filter(
                     utilisateur=self.request.user, institution=candidate, actif=True
                 ).exists()
-                if candidate and (is_own or self.request.user.type == UserRole.ADMINISTRATOR):
+                if candidate and (is_own or get_effective_role(self.request) == UserRole.ADMINISTRATOR):
                     institution = candidate
 
             if institution is None:
@@ -3071,7 +3137,7 @@ class PointOperationnelViewSet(
                     crise=point.crise,
                     institution=institution,
                     type_implication=TypeImplication.ACTEUR,
-                    defaults={"utilisateur": self.request.user, "actif": True},
+                    defaults={"utilisateur": self.request.user, "actif": True, "environment": point.environment},
                 )
                 if created:
                     audit_log(
@@ -3130,7 +3196,7 @@ class PointOperationnelViewSet(
 
         if point.responsable_id != request.user.id and not (
             point.equipe and point.equipe.leader_id == request.user.id
-        ) and request.user.type != UserRole.ADMINISTRATOR:
+        ) and get_effective_role(request) != UserRole.ADMINISTRATOR:
             raise PermissionDenied(
                 "Seul le responsable ou le leader de l'équipe du point peut recruter un bénévole."
             )
@@ -3176,12 +3242,13 @@ class PointOperationnelViewSet(
             point_transit=point_transit,
             token_confirmation=secrets.token_urlsafe(32),
             affecte_par=request.user,
+            environment=point.environment,
         )
 
         for creneau in request.data.get("creneaux", []):
             DisponibilitePointEquipe.objects.get_or_create(
                 point=point, membre=benevole, date=creneau.get("date"), creneau=creneau.get("creneau"),
-                defaults={"affectation": affectation},
+                defaults={"affectation": affectation, "environment": point.environment},
             )
 
         send_point_volunteer_confirmation_email(request, affectation)
@@ -3232,17 +3299,18 @@ class PointOperationnelViewSet(
         return Response(resultats)
 
 
-class DisponibilitePointEquipeViewSet(viewsets.ModelViewSet):
+class DisponibilitePointEquipeViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     """Planning de disponibilité des membres de l'équipe responsable d'un point opérationnel."""
 
     queryset = DisponibilitePointEquipe.objects.select_related("point", "membre").all()
     serializer_class = DisponibilitePointEquipeSerializer
     filterset_fields = ["point", "membre"]
 
-    def _can_manage(self, user, point, membre):
+    def _can_manage(self, request, point, membre):
         # Le membre lui-même déclare sa propre disponibilité ; le leader de l'équipe ou le
         # responsable du point peuvent la gérer pour toute l'équipe ; un admin, toujours.
-        if user.type == UserRole.ADMINISTRATOR:
+        user = request.user
+        if get_effective_role(request) == UserRole.ADMINISTRATOR:
             return True
         if user.id == membre.id:
             return True
@@ -3255,15 +3323,15 @@ class DisponibilitePointEquipeViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         point = serializer.validated_data.get('point')
         membre = serializer.validated_data.get('membre')
-        if not self._can_manage(self.request.user, point, membre):
+        if not self._can_manage(self.request, point, membre):
             raise PermissionDenied(
                 "Vous ne pouvez déclarer une disponibilité que pour vous-même, ou pour l'équipe "
                 "dont vous êtes le·la leader / le·la responsable du point."
             )
-        serializer.save()
+        serializer.save(environment=get_active_environment(self.request))
 
     def perform_destroy(self, instance):
-        if not self._can_manage(self.request.user, instance.point, instance.membre):
+        if not self._can_manage(self.request, instance.point, instance.membre):
             raise PermissionDenied(
                 "Vous ne pouvez retirer qu'une disponibilité vous concernant, ou celles de "
                 "l'équipe dont vous êtes le·la leader / le·la responsable du point."
@@ -3281,7 +3349,7 @@ class MaterielCatalogueViewSet(TagLikeViewSetMixin, viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
 
-class MaterielPointViewSet(viewsets.ModelViewSet):
+class MaterielPointViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     """État du stock (niveau qualitatif + suivi quantitatif optionnel) d'un item du catalogue
     matériel sur un point opérationnel."""
 
@@ -3289,10 +3357,11 @@ class MaterielPointViewSet(viewsets.ModelViewSet):
     serializer_class = MaterielPointSerializer
     filterset_fields = ["point", "statut", "item"]
 
-    def _can_manage(self, user, point):
+    def _can_manage(self, request, point):
         # Même logique que DisponibilitePointEquipeViewSet._can_manage (pas de notion de
         # "membre" ici — n'importe quel membre de l'équipe peut mettre à jour un stock).
-        if user.type == UserRole.ADMINISTRATOR:
+        user = request.user
+        if get_effective_role(request) == UserRole.ADMINISTRATOR:
             return True
         if point.responsable_id == user.id:
             return True
@@ -3305,12 +3374,12 @@ class MaterielPointViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         point = serializer.validated_data.get('point')
-        if not self._can_manage(self.request.user, point):
+        if not self._can_manage(self.request, point):
             raise PermissionDenied(
                 "Seul le responsable, un membre de l'équipe du point, ou un administrateur "
                 "peut modifier son stock."
             )
-        materiel = serializer.save(responsable=self.request.user)
+        materiel = serializer.save(responsable=self.request.user, environment=get_active_environment(self.request))
         audit_log(
             request=self.request,
             action_code="CREATION",
@@ -3322,7 +3391,7 @@ class MaterielPointViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         point = serializer.instance.point
-        if not self._can_manage(self.request.user, point):
+        if not self._can_manage(self.request, point):
             raise PermissionDenied(
                 "Seul le responsable, un membre de l'équipe du point, ou un administrateur "
                 "peut modifier son stock."
@@ -3338,7 +3407,7 @@ class MaterielPointViewSet(viewsets.ModelViewSet):
         )
 
     def perform_destroy(self, instance):
-        if not self._can_manage(self.request.user, instance.point):
+        if not self._can_manage(self.request, instance.point):
             raise PermissionDenied(
                 "Seul le responsable, un membre de l'équipe du point, ou un administrateur "
                 "peut modifier son stock."
@@ -3346,15 +3415,16 @@ class MaterielPointViewSet(viewsets.ModelViewSet):
         instance.delete()
 
 
-class RegistrePresenceViewSet(viewsets.ModelViewSet):
+class RegistrePresenceViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     """Registre de présence ("secrétariat") d'un point opérationnel."""
 
     queryset = RegistrePresence.objects.select_related("point", "enregistre_par").all()
     serializer_class = RegistrePresenceSerializer
     filterset_fields = ["point", "type_personne"]
 
-    def _can_manage(self, user, point):
-        if user.type == UserRole.ADMINISTRATOR:
+    def _can_manage(self, request, point):
+        user = request.user
+        if get_effective_role(request) == UserRole.ADMINISTRATOR:
             return True
         if point.responsable_id == user.id:
             return True
@@ -3367,12 +3437,12 @@ class RegistrePresenceViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         point = serializer.validated_data.get('point')
-        if not self._can_manage(self.request.user, point):
+        if not self._can_manage(self.request, point):
             raise PermissionDenied(
                 "Seul le responsable, un membre de l'équipe du point, ou un administrateur "
                 "peut enregistrer une arrivée."
             )
-        entree = serializer.save(enregistre_par=self.request.user)
+        entree = serializer.save(enregistre_par=self.request.user, environment=get_active_environment(self.request))
         audit_log(
             request=self.request,
             action_code="CREATION",
@@ -3383,7 +3453,7 @@ class RegistrePresenceViewSet(viewsets.ModelViewSet):
         )
 
     def perform_update(self, serializer):
-        if not self._can_manage(self.request.user, serializer.instance.point):
+        if not self._can_manage(self.request, serializer.instance.point):
             raise PermissionDenied(
                 "Seul le responsable, un membre de l'équipe du point, ou un administrateur "
                 "peut modifier le registre."
@@ -3391,7 +3461,7 @@ class RegistrePresenceViewSet(viewsets.ModelViewSet):
         serializer.save()
 
     def perform_destroy(self, instance):
-        if not self._can_manage(self.request.user, instance.point):
+        if not self._can_manage(self.request, instance.point):
             raise PermissionDenied(
                 "Seul le responsable, un membre de l'équipe du point, ou un administrateur "
                 "peut modifier le registre."
@@ -3403,7 +3473,7 @@ class RegistrePresenceViewSet(viewsets.ModelViewSet):
         """Marque une sortie (date_depart=maintenant) — ne retire pas la ligne, garde la trace
         du passage."""
         entree = self.get_object()
-        if not self._can_manage(request.user, entree.point):
+        if not self._can_manage(request, entree.point):
             raise PermissionDenied(
                 "Seul le responsable, un membre de l'équipe du point, ou un administrateur "
                 "peut enregistrer une sortie."
@@ -3425,7 +3495,7 @@ class RegistrePresenceViewSet(viewsets.ModelViewSet):
 
 
 class ImplicationInstitutionViewSet(
-    viewsets.ModelViewSet
+    EnvironmentScopedViewSetMixin, viewsets.ModelViewSet
 ):
     """Rattachement d'une institution à une crise : impliquée et/ou acteur opérationnel."""
 
@@ -3444,7 +3514,7 @@ class ImplicationInstitutionViewSet(
         is_own_institution = ContactInstitution.objects.filter(
             utilisateur=self.request.user, institution=institution, actif=True
         ).exists()
-        if not is_own_institution and self.request.user.type != UserRole.ADMINISTRATOR:
+        if not is_own_institution and get_effective_role(self.request) != UserRole.ADMINISTRATOR:
             raise PermissionDenied(
                 "Vous ne pouvez déclarer une implication que pour une institution à laquelle vous êtes rattaché."
             )
@@ -3459,7 +3529,10 @@ class ImplicationInstitutionViewSet(
                 responsable_id, responsable_email, institution, self.request
             )
 
-        implication = serializer.save(utilisateur=self.request.user, responsable=resolved_responsable)
+        implication = serializer.save(
+            utilisateur=self.request.user, responsable=resolved_responsable,
+            environment=get_active_environment(self.request),
+        )
 
         if invited:
             send_crisis_regulateur_invite_email(self.request, resolved_responsable, implication.crise, institution)
@@ -3499,7 +3572,7 @@ class ImplicationInstitutionViewSet(
 
     def _can_manage(self, instance: ImplicationInstitution) -> bool:
         user = self.request.user
-        if user.type == UserRole.ADMINISTRATOR:
+        if get_effective_role(self.request) == UserRole.ADMINISTRATOR:
             return True
         if instance.utilisateur_id == user.id:
             return True
@@ -3508,7 +3581,7 @@ class ImplicationInstitutionViewSet(
         ).exists()
 
 class ContactInstitutionViewSet(
-    viewsets.ModelViewSet
+    EnvironmentScopedViewSetMixin, viewsets.ModelViewSet
 ):
 
     queryset = (
@@ -3520,7 +3593,7 @@ class ContactInstitutionViewSet(
     )
 
     def perform_create(self, serializer):
-        contact = serializer.save()
+        contact = serializer.save(environment=get_active_environment(self.request))
         audit_log(
             request=self.request,
             action_code="CREATION",
@@ -3530,7 +3603,7 @@ class ContactInstitutionViewSet(
         )
 
 class InstitutionDomaineViewSet(
-    viewsets.ModelViewSet
+    EnvironmentScopedViewSetMixin, viewsets.ModelViewSet
 ):
 
     queryset = (
@@ -3542,7 +3615,7 @@ class InstitutionDomaineViewSet(
     )
 
     def perform_create(self, serializer):
-        domaine = serializer.save()
+        domaine = serializer.save(environment=get_active_environment(self.request))
         audit_log(
             request=self.request,
             action_code="CREATION",

@@ -10,6 +10,10 @@ function withAuth(req: HttpRequest<unknown>, token: string): HttpRequest<unknown
   return req.clone({ headers: req.headers.set('Authorization', `Bearer ${token}`) });
 }
 
+function withEnvironment(req: HttpRequest<unknown>, authService: AuthService): HttpRequest<unknown> {
+  return req.clone({ headers: req.headers.set('X-Environment', authService.getEnvironment()) });
+}
+
 function isAuthEndpoint(url: string): boolean {
   // /token/, /token/refresh/, /token/blacklist/ : jamais de retry dessus (boucle infinie
   // sinon, ou tentative de rafraîchissement absurde sur un login qui a juste échoué).
@@ -19,7 +23,8 @@ function isAuthEndpoint(url: string): boolean {
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
   const authService = inject(AuthService);
   const token = authService.getToken();
-  const cloned = token ? withAuth(req, token) : req;
+  let cloned = token ? withAuth(req, token) : req;
+  cloned = withEnvironment(cloned, authService);
 
   return next(cloned).pipe(
     catchError((error: HttpErrorResponse) => {
@@ -44,7 +49,7 @@ function handleUnauthorized(
       switchMap(res => {
         isRefreshing = false;
         refreshedTokenSubject.next(res.access);
-        return next(withAuth(req, res.access));
+        return next(withEnvironment(withAuth(req, res.access), authService));
       }),
       catchError(err => {
         isRefreshing = false;
@@ -60,6 +65,6 @@ function handleUnauthorized(
   return refreshedTokenSubject.pipe(
     filter((newToken): newToken is string => newToken !== null),
     take(1),
-    switchMap(newToken => next(withAuth(req, newToken)))
+    switchMap(newToken => next(withEnvironment(withAuth(req, newToken), authService)))
   );
 }

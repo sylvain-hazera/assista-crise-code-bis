@@ -78,6 +78,18 @@ export class AdminLayoutComponent implements OnInit {
     this.loadNotifications();
   }
 
+  get isDemo(): boolean {
+    return this.authService.getEnvironment() === 'DEMO';
+  }
+
+  get canAccessDemo(): boolean {
+    return this.authService.canAccessDemo();
+  }
+
+  toggleEnvironment(): void {
+    this.authService.setEnvironment(this.isDemo ? 'PROD' : 'DEMO');
+  }
+
   private loadNotifications(): void {
     this.notificationService.getAll().subscribe({
       next: (list) => this.notifications = list,

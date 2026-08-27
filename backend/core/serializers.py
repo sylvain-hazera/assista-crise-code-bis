@@ -5,8 +5,9 @@ from django.db.models import Sum
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from .auth_validation import InstitutionEmailValidator
-from .permissions import INSTITUTIONAL_TYPES
+from .permissions import INSTITUTIONAL_TYPES, get_active_environment, effective_role_or_none, mask_email, mask_phone
 from .models import (
+    Environment,
     UserRole,
     InstitutionType,
     Institution,
@@ -130,7 +131,7 @@ class UserSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'type', 
+        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'type', 'demo_role',
                   'photo', 'phone_number', 'password', 'postal_code', 'enabled',
                   'institution_name', 'institution_type', 'commune_name', 'commune_code', 'institution_email_hint']
         extra_kwargs = {
@@ -141,7 +142,24 @@ class UserSerializer(serializers.ModelSerializer):
             'photo': {'required': False},
             'postal_code': {'required': False},
             'enabled': {'required': False},
+            'demo_role': {'required': False},
         }
+
+    def to_representation(self, instance):
+        """En zone DEMO, email/téléphone d'un compte réel ne doivent jamais apparaître à
+        l'écran pendant une démonstration — même si le compte lui-même (utilisateurs communs
+        aux deux zones) est bien réel. Masquage à l'affichage uniquement, jamais en base."""
+        data = super().to_representation(instance)
+        request = self.context.get('request')
+        if request is not None and get_active_environment(request) == Environment.DEMO:
+            data['email'] = mask_email(data.get('email'))
+            data['phone_number'] = mask_phone(data.get('phone_number'))
+        return data
+
+    def validate_demo_role(self, value):
+        # Un formulaire multipart ne peut pas envoyer `null` — une chaîne vide signifie
+        # "retirer l'accès démo" (voir page Utilisateurs, option "Aucun accès démo").
+        return value or None
 
     def validate(self, attrs):
         email = attrs.get('email')
@@ -285,7 +303,7 @@ class RequestSerializer(serializers.ModelSerializer):
     def _location_visible(self) -> bool:
         request = self.context.get('request')
         user = getattr(request, 'user', None)
-        return bool(user and user.is_authenticated and user.type in INSTITUTIONAL_TYPES)
+        return bool(user and user.is_authenticated and request and effective_role_or_none(request) in INSTITUTIONAL_TYPES)
 
     def get_latitude(self, obj):
         if not self._location_visible():
@@ -301,6 +319,11 @@ class RequestSerializer(serializers.ModelSerializer):
         data = super().to_representation(instance)
         if not self._location_visible():
             data['location'] = None
+        request = self.context.get('request')
+        if request is not None and get_active_environment(request) == Environment.DEMO:
+            data['email_request'] = mask_email(data.get('email_request'))
+            data['phone_request'] = mask_phone(data.get('phone_request'))
+            data['author_email'] = mask_email(data.get('author_email'))
         return data
 
     def get_author_nom(self, obj):
@@ -338,7 +361,7 @@ class OfferSerializer(serializers.ModelSerializer):
     def _location_visible(self) -> bool:
         request = self.context.get('request')
         user = getattr(request, 'user', None)
-        return bool(user and user.is_authenticated and user.type in INSTITUTIONAL_TYPES)
+        return bool(user and user.is_authenticated and request and effective_role_or_none(request) in INSTITUTIONAL_TYPES)
 
     def get_latitude(self, obj):
         if not self._location_visible():
@@ -356,6 +379,10 @@ class OfferSerializer(serializers.ModelSerializer):
         data = super().to_representation(instance)
         if not self._location_visible():
             data['location'] = None
+        request = self.context.get('request')
+        if request is not None and get_active_environment(request) == Environment.DEMO:
+            data['email_offer'] = mask_email(data.get('email_offer'))
+            data['author_email'] = mask_email(data.get('author_email'))
         return data
 
     def get_author_nom(self, obj):
@@ -497,7 +524,7 @@ class InformationSerializer(serializers.ModelSerializer):
     def _location_visible(self) -> bool:
         request = self.context.get('request')
         user = getattr(request, 'user', None)
-        return bool(user and user.is_authenticated and user.type in INSTITUTIONAL_TYPES)
+        return bool(user and user.is_authenticated and request and effective_role_or_none(request) in INSTITUTIONAL_TYPES)
 
     def get_latitude(self, obj):
         if not self._location_visible():
@@ -513,6 +540,11 @@ class InformationSerializer(serializers.ModelSerializer):
         data = super().to_representation(instance)
         if not self._location_visible():
             data['location'] = None
+        request = self.context.get('request')
+        if request is not None and get_active_environment(request) == Environment.DEMO:
+            data['email_information'] = mask_email(data.get('email_information'))
+            data['phone_information'] = mask_phone(data.get('phone_information'))
+            data['author_email'] = mask_email(data.get('author_email'))
         return data
 
     def get_author_nom(self, obj):
@@ -723,7 +755,7 @@ class DocumentSerializer(serializers.ModelSerializer):
         user = getattr(request, 'user', None)
         if not user or not user.is_authenticated:
             return {}
-        if user.id == obj.auteur_id or user.type in INSTITUTIONAL_TYPES:
+        if user.id == obj.auteur_id or effective_role_or_none(request) in INSTITUTIONAL_TYPES:
             return obj.metadata_privees
         return {}
 
@@ -914,8 +946,14 @@ class RecherchePersonneSerializer(
 
             return "NOUVEAU"
 
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        request = self.context.get('request')
+        if request is not None and get_active_environment(request) == Environment.DEMO:
+            data['contact_email'] = mask_email(data.get('contact_email'))
+            data['contact_telephone'] = mask_phone(data.get('contact_telephone'))
+        return data
 
-    
     class Meta:
         model = RecherchePersonne
 

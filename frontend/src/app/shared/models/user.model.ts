@@ -16,6 +16,7 @@ export interface User {
   phone_number: string | null;
   photo: string | null;                 // URL relative (ex: /media/photos/xxx.jpg)
   type: UserRole;
+  demo_role: UserRole | null;           // Rôle en zone de démonstration — null = pas d'accès démo
   enabled: boolean;
   affected_crisis: string | null;       // UUID de la Crisis (FK)
   // M2M — listes d'UUID, non éditables directement
@@ -33,4 +34,8 @@ export interface UserPayload {
   last_name?: string;
   phone_number?: string;
   photo?: File;                         // Envoyé via FormData
+  type?: UserRole;
+  demo_role?: UserRole | null;
 }
+
+export type Environment = 'PROD' | 'DEMO';

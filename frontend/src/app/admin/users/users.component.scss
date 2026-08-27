@@ -354,6 +354,12 @@
   text-align: center;
   min-width: 100px;
 
+  &.role-badge-none {
+    background: #f3f4f6;
+    color: #9ca3af;
+    min-width: auto;
+  }
+
   &.badge-admin {
     background: #fee2e2;
     color: #991b1b;

@@ -50,6 +50,7 @@ export class UsersComponent implements OnInit, OnDestroy {
     { value: UserRole.ADMIN, label: 'Administrateur' },
     { value: UserRole.LOCAL_AUTH, label: 'Autorité locale' },
     { value: UserRole.RESCUE, label: 'Secours' },
+    { value: UserRole.REGULATEUR, label: 'Régulateur de crise' },
     { value: UserRole.SIMPLE_USER, label: 'Utilisateur simple' }
   ];
 
@@ -82,6 +83,7 @@ export class UsersComponent implements OnInit, OnDestroy {
       last_name: ['', Validators.required],
       telephone_utilisateur: ['', [Validators.pattern('^[0-9+\\s-]{10,}$')]],
       type: [UserRole.SIMPLE_USER, Validators.required],
+      demo_role: [''],
       password: ['', [Validators.minLength(8)]],
       confirmPassword: ['']
     }, { validator: this.passwordMatchValidator });
@@ -184,7 +186,8 @@ export class UsersComponent implements OnInit, OnDestroy {
     this.isEditMode = false;
     this.selectedUser = null;
     this.userForm.reset({
-      type: UserRole.SIMPLE_USER
+      type: UserRole.SIMPLE_USER,
+      demo_role: ''
     });
     this.previewUrl = null;
     this.selectedFile = null;
@@ -204,7 +207,8 @@ export class UsersComponent implements OnInit, OnDestroy {
       first_name: user.first_name,
       last_name: user.last_name,
       telephone_utilisateur: user.phone_number,
-      type: user.type
+      type: user.type,
+      demo_role: user.demo_role || ''
     });
     
     // Ne pas remplir les champs mot de passe en édition
@@ -278,6 +282,9 @@ export class UsersComponent implements OnInit, OnDestroy {
     if (formValue.last_name) formData.append('last_name', formValue.last_name);
     if (formValue.phone_number) formData.append('phone_number', formValue.phone_number);
     if (formValue.type) formData.append('type', formValue.type);
+    // Toujours envoyé (même vide) : une chaîne vide signifie "retirer l'accès démo" — si on
+    // l'omettait quand elle est vide, un PATCH ne pourrait jamais effacer un accès déjà accordé.
+    formData.append('demo_role', formValue.demo_role || '');
 
     // Ajouter le mot de passe seulement en création ou si modifié
     if (formValue.password && !this.isEditMode) {

@@ -25,6 +25,23 @@ class Status(models.TextChoices):
     UNAVAILABLE = "INDISPONIBLE", "Indisponible"
 
 
+class Environment(models.TextChoices):
+    """Zone de démonstration : PROD et DEMO partagent le même backend/frontend, mais jamais
+    les mêmes crises/offres/demandes/signalements. Le vocabulaire partagé (types, compétences,
+    catalogue matériel...) n'a pas ce champ et reste unique aux deux zones."""
+    PROD = "PROD", "Production"
+    DEMO = "DEMO", "Démonstration"
+
+
+class EnvironmentScopedModel(models.Model):
+    """Base commune à toutes les données "de contenu" isolées entre PROD et DEMO — voir
+    Environment. `EnvironmentScopedViewSetMixin` (views.py) filtre automatiquement dessus."""
+    environment = models.CharField(max_length=4, choices=Environment.choices, default=Environment.PROD)
+
+    class Meta:
+        abstract = True
+
+
 class User(AbstractUser):
     """Modèle utilisateur personnalisé"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -34,6 +51,13 @@ class User(AbstractUser):
         max_length=20,
         choices=UserRole.choices,
         default=UserRole.SIMPLE_USER,
+    )
+    demo_role = models.CharField(
+        max_length=20,
+        choices=UserRole.choices,
+        null=True, blank=True,
+        help_text="Rôle appliqué en zone de démonstration. Null = aucun accès à la démo. "
+                   "Réglé manuellement par un administrateur, jamais hérité de `type`.",
     )
     postal_code = models.CharField(max_length=5, null=True, blank=True)
     enabled = models.BooleanField(default=True)
@@ -103,7 +127,7 @@ class TypeCrise(models.TextChoices):
     CATASTROPHE_NATURELLE = "CATASTROPHE_NATURELLE", "Catastrophe naturelle"
     AUTRE = "AUTRE", "Autre"
 
-class Crisis(models.Model):
+class Crisis(EnvironmentScopedModel):
     """Modèle représentant une crise"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=100)
@@ -167,7 +191,7 @@ class TypeImplication(models.TextChoices):
     ACTEUR = "ACTEUR", "Acteur opérationnel"
 
 
-class ImplicationInstitution(models.Model):
+class ImplicationInstitution(EnvironmentScopedModel):
     """Rattachement d'une institution à une crise : impliquée (sa commune est concernée)
     et/ou acteur opérationnel (elle gère des moyens sur cette crise, ex: un point de
     collecte). Les deux statuts peuvent coexister pour une même institution/crise."""
@@ -253,7 +277,7 @@ class RequestType(models.Model):
         return self.type
 
 
-class Request(models.Model):
+class Request(EnvironmentScopedModel):
     """Demandes d'aide"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     title = models.CharField(max_length=150)
@@ -306,7 +330,7 @@ class InformationType(models.Model):
         return self.type
 
 
-class Information(models.Model):
+class Information(EnvironmentScopedModel):
     """Informations partagées"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     title = models.CharField(max_length=150)
@@ -386,7 +410,7 @@ class TypeSoutien(models.TextChoices):
     SECOURISTE = "SECOURISTE", "Secouriste (y compris santé mentale)"
 
 
-class Offer(models.Model):
+class Offer(EnvironmentScopedModel):
     """Offres d'aide"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     title = models.CharField(max_length=150)
@@ -443,7 +467,7 @@ class Creneau(models.TextChoices):
     NUIT = "NUIT", "Nuit"
 
 
-class DisponibiliteOffre(models.Model):
+class DisponibiliteOffre(EnvironmentScopedModel):
     """Créneau de disponibilité (jour + matin/midi/soir/nuit) déclaré par un bénévole pour une
     offre d'aide. Une ligne = un créneau où la personne est disponible ; l'absence de ligne pour
     un (date, créneau) donné vaut indisponible."""
@@ -580,7 +604,7 @@ class InstitutionType(models.Model):
         return self.libelle
 
 
-class Institution(models.Model):
+class Institution(EnvironmentScopedModel):
 
     id = models.UUIDField(
         primary_key=True,
@@ -662,7 +686,7 @@ class RoleOperationnel(models.Model):
         return self.libelle
 
 
-class InstitutionCompetence(models.Model):
+class InstitutionCompetence(EnvironmentScopedModel):
 
     id = models.UUIDField(
         primary_key=True,
@@ -749,7 +773,7 @@ class RequestTypeBesoin(models.Model):
     def __str__(self):
         return f"{self.request_type} -> {self.besoin}"
 
-class AffectationCompetence(models.Model):
+class AffectationCompetence(EnvironmentScopedModel):
     """
     Affecte une compétence à une équipe
     pour une crise donnée.
@@ -804,7 +828,7 @@ class AffectationCompetence(models.Model):
             f"{self.equipe.name}"
         )
 
-class Dossier(models.Model):
+class Dossier(EnvironmentScopedModel):
 
     class Statut(models.TextChoices):
 
@@ -898,7 +922,7 @@ class Dossier(models.Model):
     def __str__(self):
         return f"{self.numero} - {self.titre}"
 
-class DossierCommentaire(models.Model):
+class DossierCommentaire(EnvironmentScopedModel):
 
     id = models.UUIDField(
         primary_key=True,
@@ -928,7 +952,7 @@ class DossierCommentaire(models.Model):
     def __str__(self):
         return f"{self.dossier.numero}"
 
-class DossierHistorique(models.Model):
+class DossierHistorique(EnvironmentScopedModel):
 
     id = models.UUIDField(
         primary_key=True,
@@ -977,7 +1001,7 @@ def secure_document_path(instance, filename):
         f"{extension}"
     )
 
-class Document(models.Model):
+class Document(EnvironmentScopedModel):
 
     id = models.UUIDField(
         primary_key=True,
@@ -1049,7 +1073,7 @@ class Document(models.Model):
     def __str__(self):
         return str(self.id)
 
-class Team(models.Model):
+class Team(EnvironmentScopedModel):
     """Équipes de gestion de crise"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=100)
@@ -1110,7 +1134,7 @@ class Team(models.Model):
     def __str__(self) -> str:
         return self.name
 
-class DossierParticipant(models.Model):
+class DossierParticipant(EnvironmentScopedModel):
 
     class Role(models.TextChoices):
         DEMANDEUR = "DEMANDEUR", "Demandeur"
@@ -1158,7 +1182,7 @@ class DossierParticipant(models.Model):
             "role"
         )
 
-class Notification(models.Model):
+class Notification(EnvironmentScopedModel):
 
     id = models.UUIDField(
         primary_key=True,
@@ -1209,7 +1233,7 @@ def secure_recherche_photo_path(
         f"{extension}"
     )
 
-class RecherchePersonne(models.Model):
+class RecherchePersonne(EnvironmentScopedModel):
 
     class Source(models.TextChoices):
         DOMICILE = "DOMICILE", "Domicile"
@@ -1326,7 +1350,7 @@ class RecherchePersonne(models.Model):
 
 
 class RecherchePersonneCommentaire(
-    models.Model
+    EnvironmentScopedModel
 ):
 
     id = models.UUIDField(
@@ -1352,7 +1376,7 @@ class RecherchePersonneCommentaire(
         auto_now_add=True
     )
 
-class RecherchePersonneHistorique(models.Model):
+class RecherchePersonneHistorique(EnvironmentScopedModel):
 
     id = models.UUIDField(
         primary_key=True,
@@ -1389,7 +1413,7 @@ class RecherchePersonneHistorique(models.Model):
     def __str__(self):
         return self.evenement
 
-class RecherchePersonnePhoto(models.Model):
+class RecherchePersonnePhoto(EnvironmentScopedModel):
 
     id = models.UUIDField(
         primary_key=True,
@@ -1433,7 +1457,7 @@ class RecherchePersonnePhoto(models.Model):
 
 
 class RecherchePersonneCommentairePhoto(
-    models.Model
+    EnvironmentScopedModel
 ):
     id = models.UUIDField(
         primary_key=True,
@@ -1457,7 +1481,7 @@ class RecherchePersonneCommentairePhoto(
     )
 
 class RecherchePersonneLecture(
-    models.Model
+    EnvironmentScopedModel
 ):
 
     recherche = models.ForeignKey(
@@ -1489,7 +1513,7 @@ class RecherchePersonneLecture(
         )
 
 class RecherchePersonneLectureHistorique(
-    models.Model
+    EnvironmentScopedModel
 ):
 
     recherche = models.ForeignKey(
@@ -1519,7 +1543,7 @@ class RecherchePersonneLectureHistorique(
         auto_now_add=True
     )
 
-class AffectationRoleOperationnel(models.Model):
+class AffectationRoleOperationnel(EnvironmentScopedModel):
 
     id = models.UUIDField(
         primary_key=True,
@@ -1599,7 +1623,7 @@ class AffectationRoleOperationnel(models.Model):
         )
 
 class DisponibiliteOperationnelle(
-    models.Model
+    EnvironmentScopedModel
 ):
 
     id = models.UUIDField(
@@ -1660,7 +1684,7 @@ class DisponibiliteOperationnelle(
         )
 
 
-class DelegationCompetence(models.Model):
+class DelegationCompetence(EnvironmentScopedModel):
 
     id = models.UUIDField(
         primary_key=True,
@@ -1795,7 +1819,7 @@ class PointType(models.Model):
     def __str__(self):
         return self.libelle
 
-class PointOperationnel(models.Model):
+class PointOperationnel(EnvironmentScopedModel):
 
     id = models.UUIDField(
         primary_key=True,
@@ -1889,7 +1913,7 @@ class PointOperationnel(models.Model):
         return self.nom
 
 
-class DisponibilitePointEquipe(models.Model):
+class DisponibilitePointEquipe(EnvironmentScopedModel):
     """Créneau de disponibilité (jour + matin/midi/soir/nuit) d'un membre de l'équipe
     responsable d'un point opérationnel — même principe que DisponibiliteOffre (jour+créneau),
     mais scopé Point×membre plutôt que Offer : DisponibiliteOperationnelle (simple toggle
@@ -1969,7 +1993,7 @@ class NiveauStock(models.TextChoices):
     EN_TROP = "EN_TROP", "En trop"
 
 
-class MaterielPoint(models.Model):
+class MaterielPoint(EnvironmentScopedModel):
     """État du stock d'un item du catalogue sur un point opérationnel — à la fois une jauge
     qualitative (`niveau_stock`, comparable directement entre centres pour organiser une
     navette) et, si besoin, un suivi quantitatif précis d'un objet en transit (`quantite`/
@@ -2032,7 +2056,7 @@ class TypePersonneAccueillie(models.TextChoices):
     AUTRE = "AUTRE", "Autre"
 
 
-class RegistrePresence(models.Model):
+class RegistrePresence(EnvironmentScopedModel):
     """Registre de présence ("secrétariat") d'un point opérationnel : qui est actuellement
     accueilli (personne évacuée, pompier, bénévole d'une autre équipe...) et depuis quand.
     `nombre` permet d'enregistrer un lot en une ligne (ex: une famille de 4) sans multiplier
@@ -2080,7 +2104,7 @@ class StatutAffectation(models.TextChoices):
     DECLINE = "DECLINE", "Décliné"
 
 
-class AffectationPointBenevole(models.Model):
+class AffectationPointBenevole(EnvironmentScopedModel):
     """Recrutement d'un bénévole individuel (pas forcément membre de l'équipe du point) sur un
     point opérationnel, depuis une offre d'aide déposée sur la plateforme — avec confirmation
     par email (lien oui/non, jeton opaque comme Offer.deletion_token, pas de compte requis)."""
@@ -2170,7 +2194,7 @@ class AuditAction(models.Model):
     def __str__(self):
         return self.libelle
 
-class AuditLog(models.Model):
+class AuditLog(EnvironmentScopedModel):
 
     id = models.UUIDField(
         primary_key=True,
@@ -2277,7 +2301,7 @@ class AuditLog(models.Model):
         )
 
 
-class ContactInstitution(models.Model):
+class ContactInstitution(EnvironmentScopedModel):
 
     id = models.UUIDField(
         primary_key=True,
@@ -2328,7 +2352,7 @@ class ContactInstitution(models.Model):
 
         ]
 
-class InstitutionDomaine(models.Model):
+class InstitutionDomaine(EnvironmentScopedModel):
 
     institution = models.ForeignKey(
         Institution,

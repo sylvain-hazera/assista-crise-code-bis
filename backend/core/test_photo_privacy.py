@@ -1,5 +1,6 @@
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import RequestFactory
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
@@ -19,6 +20,14 @@ from core.permissions import user_can_view_photo
 
 def _fake_photo():
     return SimpleUploadedFile("photo.jpg", b"fake-bytes", content_type="image/jpeg")
+
+
+def _req(user):
+    """user_can_view_photo prend une request (pour résoudre l'environnement PROD/DEMO actif) —
+    une RequestFactory nue suffit pour ces tests unitaires hors HTTP réel."""
+    request = RequestFactory().get('/')
+    request.user = user
+    return request
 
 
 @pytest.fixture
@@ -42,18 +51,18 @@ def institutional_client(create_user):
 class TestUserCanViewPhoto:
 
     def test_author_can_view(self, create_user, crisis_with_photo):
-        assert user_can_view_photo(crisis_with_photo.author, crisis_with_photo) is True
+        assert user_can_view_photo(_req(crisis_with_photo.author), crisis_with_photo) is True
 
     def test_institutional_actor_can_view(self, create_user, crisis_with_photo):
         institutional = create_user(username="inst-helper@test.fr", email="inst-helper@test.fr", type="AUT_LOCALE")
-        assert user_can_view_photo(institutional, crisis_with_photo) is True
+        assert user_can_view_photo(_req(institutional), crisis_with_photo) is True
 
     def test_stranger_cannot_view(self, create_user, crisis_with_photo):
         stranger = create_user(username="stranger-photo@test.fr", email="stranger-photo@test.fr", type="UTIL_SIMPLE")
-        assert user_can_view_photo(stranger, crisis_with_photo) is False
+        assert user_can_view_photo(_req(stranger), crisis_with_photo) is False
 
     def test_anonymous_cannot_view(self, crisis_with_photo):
-        assert user_can_view_photo(None, crisis_with_photo) is False
+        assert user_can_view_photo(_req(None), crisis_with_photo) is False
 
     def test_team_member_can_view_via_teams_field(self, create_user, crisis_with_photo):
         member = create_user(username="team-member-photo@test.fr", email="team-member-photo@test.fr", type="UTIL_SIMPLE")
@@ -61,14 +70,14 @@ class TestUserCanViewPhoto:
         team.members.add(member)
         team.assigned_crises.add(crisis_with_photo)
 
-        assert user_can_view_photo(member, crisis_with_photo, teams_field='assigned_teams') is True
+        assert user_can_view_photo(_req(member), crisis_with_photo, teams_field='assigned_teams') is True
 
     def test_dossier_participant_can_view_via_dossiers_field(self, create_user, crisis_with_photo):
         participant = create_user(username="dossier-participant-photo@test.fr", email="dossier-participant-photo@test.fr", type="UTIL_SIMPLE")
         dossier = Dossier.objects.create(numero="DOS-PHOTOTEST", crise=crisis_with_photo, titre="Dossier photo test")
         DossierParticipant.objects.create(dossier=dossier, utilisateur=participant, role=DossierParticipant.Role.DEMANDEUR)
 
-        assert user_can_view_photo(participant, crisis_with_photo, dossiers_field='dossiers') is True
+        assert user_can_view_photo(_req(participant), crisis_with_photo, dossiers_field='dossiers') is True
 
     def test_unrelated_team_or_dossier_does_not_grant_access(self, create_user, crisis_with_photo):
         outsider = create_user(username="outsider-photo@test.fr", email="outsider-photo@test.fr", type="UTIL_SIMPLE")
@@ -77,7 +86,7 @@ class TestUserCanViewPhoto:
         team.members.add(outsider)
         team.assigned_crises.add(other_crisis)
 
-        assert user_can_view_photo(outsider, crisis_with_photo, teams_field='assigned_teams', dossiers_field='dossiers') is False
+        assert user_can_view_photo(_req(outsider), crisis_with_photo, teams_field='assigned_teams', dossiers_field='dossiers') is False
 
 
 @pytest.mark.django_db

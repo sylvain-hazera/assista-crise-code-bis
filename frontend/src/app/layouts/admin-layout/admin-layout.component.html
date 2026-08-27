@@ -3,7 +3,7 @@
      [class.sidebar-open]="sidebarOpen && isMobile">
   
   <!-- Header -->
-  <header class="admin-header">
+  <header class="admin-header" [class.demo-mode]="isDemo">
     <div class="header-left">
       <!-- Mobile menu toggle -->
       <button class="mobile-menu-toggle" (click)="toggleSidebar()" *ngIf="isMobile">
@@ -16,7 +16,25 @@
       </div>
     </div>
 
+    @if (isDemo) {
+      <div class="demo-banner">
+        <span class="material-icons">science</span>
+        ZONE DE DÉMONSTRATION
+      </div>
+    }
+
     <div class="header-right">
+      @if (canAccessDemo) {
+        <button
+          class="env-toggle"
+          [class.demo-mode]="isDemo"
+          (click)="toggleEnvironment()"
+          [title]="isDemo ? 'Repasser en production' : 'Passer en zone de démonstration'">
+          <span class="material-icons">{{ isDemo ? 'science' : 'toggle_off' }}</span>
+          {{ isDemo ? 'Démo' : 'Prod' }}
+        </button>
+      }
+
       <!-- Desktop sidebar toggle -->
       <button class="desktop-toggle" (click)="toggleSidebar()" *ngIf="!isMobile">
         <span class="material-icons">{{ sidebarCollapsed ? 'menu_open' : 'menu' }}</span>

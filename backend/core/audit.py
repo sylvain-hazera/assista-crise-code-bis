@@ -1,6 +1,7 @@
 import logging
 
 from .models import AuditAction, AuditLog
+from .permissions import get_active_environment
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +52,8 @@ def audit_log(
             ancien_etat=ancien_etat,
             nouvel_etat=nouvel_etat,
             commentaire=commentaire,
-            succes=succes
+            succes=succes,
+            environment=get_active_environment(request),
         )
 
     except Exception:

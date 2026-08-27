@@ -3,7 +3,7 @@ import { Injectable } from '@angular/core';
 import { Router } from '@angular/router';
 import { BehaviorSubject, catchError, delay, Observable, of, tap, throwError } from 'rxjs';
 import { environment } from '../../../environments/environment';
-import { User, UserRole, UserPayload } from '../../shared/models/user.model';
+import { User, UserRole, UserPayload, Environment } from '../../shared/models/user.model';
 
 // interface RegisterRequest {
 //   username: string;
@@ -435,6 +435,26 @@ export class AuthService {
 
   isEnable(): boolean {
     return this.getCurrentUser()?.enabled === true;
+  }
+
+  /** Zone active (PROD par défaut) — lue par l'intercepteur pour l'en-tête X-Environment
+   * envoyé à chaque requête, et par le header pour la bannière "ZONE DE DÉMONSTRATION". */
+  getEnvironment(): Environment {
+    return (localStorage.getItem('active_environment') as Environment) || 'PROD';
+  }
+
+  /** Change de zone puis recharge la page entière : le moyen le plus simple de garantir que
+   * toutes les listes/pages déjà chargées se rafraîchissent sous le nouvel environnement, sans
+   * rendre tout AuthService réactif (aujourd'hui 100% synchrone/localStorage). */
+  setEnvironment(env: Environment): void {
+    localStorage.setItem('active_environment', env);
+    window.location.reload();
+  }
+
+  /** La bascule ne doit être visible que pour un utilisateur ayant reçu un accès démo explicite
+   * (demo_role non nul) — réglé manuellement par un admin sur la page Utilisateurs. */
+  canAccessDemo(): boolean {
+    return !!this.getCurrentUser()?.demo_role;
   }
 
   private profileToFormData(payload: UserPayload): FormData {

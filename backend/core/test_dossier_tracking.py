@@ -232,6 +232,7 @@ class TestDocumentPrivacySerializer:
     def _serialize(self, document, viewer):
         class DummyRequest:
             user = viewer
+            META = {}
         return DocumentSerializer(document, context={'request': DummyRequest()}).data
 
     def test_fichier_not_in_representation(self, create_user):

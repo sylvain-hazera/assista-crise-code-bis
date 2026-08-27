@@ -110,7 +110,8 @@
           <tr>
             <th>Utilisateur</th>
             <th>Contact</th>
-            <th>Rôle</th>
+            <th>Rôle prod</th>
+            <th>Rôle démo</th>
             <th>Statut</th>
             <th>Actions</th>
           </tr>
@@ -147,6 +148,15 @@
               <span class="role-badge" [ngClass]="getRoleBadgeClass(user.type)">
                 {{ getRoleLabel(user.type) }}
               </span>
+            </td>
+            <td class="role-cell">
+              @if (user.demo_role) {
+                <span class="role-badge" [ngClass]="getRoleBadgeClass(user.demo_role)">
+                  {{ getRoleLabel(user.demo_role) }}
+                </span>
+              } @else {
+                <span class="role-badge role-badge-none">—</span>
+              }
             </td>
             <td class="status-cell">
               <!-- À adapter selon votre modèle -->
@@ -341,6 +351,22 @@
               formControlName="type"
               [class.invalid]="isFieldInvalid('type')"
             >
+              <option *ngFor="let role of userRoles" [value]="role.value">
+                {{ role.label }}
+              </option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <!-- Rôle en zone de démonstration -->
+          <div class="form-group">
+            <label for="demo_role">Rôle démo</label>
+            <select
+              id="demo_role"
+              formControlName="demo_role"
+            >
+              <option value="">Aucun accès démo</option>
               <option *ngFor="let role of userRoles" [value]="role.value">
                 {{ role.label }}
               </option>
