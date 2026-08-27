@@ -148,6 +148,24 @@
   margin: 0 0 1.25rem;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+}
+
+.crisis-closed-banner {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  background: #fef3c7;
+  color: #92400e;
+  border-radius: 8px;
+  padding: .6rem .9rem;
+  font-size: .85rem;
+  margin: 0 0 1.25rem;
+}
+
 .section-block {
   margin-bottom: 1.75rem;
 

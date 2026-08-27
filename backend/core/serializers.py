@@ -186,16 +186,29 @@ class UserSerializer(serializers.ModelSerializer):
 
         return user
 
-def validate_crisis_open_and_monitored(crisis):
-    """Une demande/offre/information ne peut être déposée sur une crise que si elle est
-    encore ouverte (pas de end_date) et qu'un responsable y est activement rattaché — pas
-    de dépôt dans le vide sur une crise abandonnée ou dont personne n'a la charge."""
+def validate_crisis_open(crisis, field_name="crisis"):
+    """Verrou minimal réutilisé par tout ce qui s'accroche à une crise (implication, point
+    opérationnel, délégation de compétence...) : bloque uniquement sur une crise clôturée. Ne
+    vérifie pas la présence d'un responsable — condition qui n'a pas de sens pour l'acte même
+    qui désigne le premier responsable d'une crise (cf. validate_crisis_open_and_monitored,
+    plus stricte, pour les dépôts de demande/offre/information). `field_name` doit correspondre
+    au nom du champ FK vers Crisis sur le serializer appelant ('crisis' pour Request/Offer/
+    Information, 'crise' pour ImplicationInstitution/PointOperationnel/DelegationCompetence)."""
     if crisis is None:
         return
     if crisis.end_date is not None:
         raise serializers.ValidationError(
-            {"crisis": "Cette crise est clôturée : il n'est plus possible d'y déposer de demande."}
+            {field_name: "Cette crise est clôturée : il n'est plus possible d'y apporter de modification."}
         )
+
+
+def validate_crisis_open_and_monitored(crisis):
+    """Une demande/offre/information ne peut être déposée sur une crise que si elle est
+    encore ouverte (pas de end_date) et qu'un responsable y est activement rattaché — pas
+    de dépôt dans le vide sur une crise abandonnée ou dont personne n'a la charge."""
+    validate_crisis_open(crisis)
+    if crisis is None:
+        return
     if not crisis.implications.filter(responsable__isnull=False, actif=True).exists():
         raise serializers.ValidationError(
             {"crisis": "Cette crise n'a pas encore de responsable désigné : dépôt impossible pour le moment."}
@@ -1024,6 +1037,14 @@ class DelegationCompetenceSerializer(
         model = DelegationCompetence
 
         fields = "__all__"
+
+    def validate(self, attrs):
+        # attrs['crise'] est absent sur un PATCH qui ne touche pas ce champ — retomber sur la
+        # crise déjà rattachée à l'instance pour que le verrou s'applique à TOUTE modification
+        # d'un objet lié à une crise fermée, pas seulement à une réaffectation de crise.
+        crise = attrs.get('crise') or (self.instance.crise if self.instance else None)
+        validate_crisis_open(crise, field_name="crise")
+        return attrs
 class DisponibiliteOperationnelleSerializer(
     serializers.ModelSerializer
 ):
@@ -1061,6 +1082,14 @@ class PointOperationnelSerializer(
         full_name = f"{obj.responsable.first_name} {obj.responsable.last_name}".strip()
         return full_name or obj.responsable.username
 
+    def validate(self, attrs):
+        # attrs['crise'] est absent sur un PATCH qui ne touche pas ce champ — retomber sur la
+        # crise déjà rattachée à l'instance pour que le verrou s'applique à TOUTE modification
+        # d'un objet lié à une crise fermée, pas seulement à une réaffectation de crise.
+        crise = attrs.get('crise') or (self.instance.crise if self.instance else None)
+        validate_crisis_open(crise, field_name="crise")
+        return attrs
+
 
 class ImplicationInstitutionSerializer(
     serializers.ModelSerializer
@@ -1087,6 +1116,14 @@ class ImplicationInstitutionSerializer(
 
     def get_themes_libelles(self, obj):
         return [t.nom for t in obj.themes.all()]
+
+    def validate(self, attrs):
+        # attrs['crise'] est absent sur un PATCH qui ne touche pas ce champ — retomber sur la
+        # crise déjà rattachée à l'instance pour que le verrou s'applique à TOUTE modification
+        # d'un objet lié à une crise fermée, pas seulement à une réaffectation de crise.
+        crise = attrs.get('crise') or (self.instance.crise if self.instance else None)
+        validate_crisis_open(crise, field_name="crise")
+        return attrs
 
 
 

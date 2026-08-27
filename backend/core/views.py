@@ -816,9 +816,17 @@ class CrisisViewSet(viewsets.ModelViewSet):
         # Consultation (liste/détail) : ouverte à tous, transparence publique inchangée.
         # Création/modification : réservées aux acteurs institutionnels.
         # Suppression : réservée aux administrateurs.
+        # Ce get_permissions() étant surchargé au niveau de la classe, les permission_classes
+        # posées sur un @action ne s'appliquent jamais d'elles-mêmes — chaque action custom
+        # doit être explicitement listée ici, sinon elle retombe sur AllowAny (cf. cloturer/
+        # reouvrir, découvert en corrigeant ce bug).
         if self.action in ("create", "update", "partial_update"):
             return [IsInstitutionalActor()]
         if self.action == "destroy":
+            return [IsAdministrator()]
+        if self.action == "cloturer":
+            return [IsInstitutionalActor()]
+        if self.action == "reouvrir":
             return [IsAdministrator()]
         return [AllowAny()]
 
@@ -841,6 +849,64 @@ class CrisisViewSet(viewsets.ModelViewSet):
         ):
             return Response(status=403)
         return FileResponse(open(crise.photo.path, "rb"))
+
+    @action(detail=True, methods=["post"], permission_classes=[IsInstitutionalActor])
+    def cloturer(self, request, pk=None):
+        """Clôture une crise : bloque toute nouvelle implication/point/délégation dessus
+        (cf. validate_crisis_open) sans toucher aux dossiers déjà en cours. Réservé au
+        responsable actif d'une institution impliquée sur cette crise, ou à un administrateur."""
+        crise = self.get_object()
+        user = request.user
+
+        est_responsable_crise = crise.implications.filter(responsable=user, actif=True).exists()
+        if not (est_responsable_crise or user.type == UserRole.ADMINISTRATOR):
+            return Response(
+                {"error": "Seul le responsable d'une institution impliquée sur cette crise peut la clôturer."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        if crise.end_date is not None:
+            return Response({"error": "Cette crise est déjà clôturée."}, status=status.HTTP_400_BAD_REQUEST)
+
+        crise.end_date = timezone.now()
+        crise.save()
+
+        audit_log(
+            request=request,
+            action_code="CLOTURE",
+            objet_type="Crisis",
+            objet_id=crise.id,
+            crise=crise,
+            ancien_etat="OUVERTE",
+            nouvel_etat="CLOTUREE",
+            commentaire=f"Crise {crise.name} clôturée par {user.email}",
+        )
+
+        return Response({"status": "ok", "end_date": crise.end_date})
+
+    @action(detail=True, methods=["post"], permission_classes=[IsAdministrator])
+    def reouvrir(self, request, pk=None):
+        """Réouvre une crise clôturée par erreur — réservé aux administrateurs."""
+        crise = self.get_object()
+
+        if crise.end_date is None:
+            return Response({"error": "Cette crise est déjà ouverte."}, status=status.HTTP_400_BAD_REQUEST)
+
+        crise.end_date = None
+        crise.save()
+
+        audit_log(
+            request=request,
+            action_code="MODIFICATION",
+            objet_type="Crisis",
+            objet_id=crise.id,
+            crise=crise,
+            ancien_etat="CLOTUREE",
+            nouvel_etat="OUVERTE",
+            commentaire=f"Crise {crise.name} réouverte par {request.user.email}",
+        )
+
+        return Response({"status": "ok"})
 
 def resolve_or_invite_demandeur(demande, request=None):
     """Résout le compte utilisateur du demandeur d'une aide pour lui permettre de suivre son

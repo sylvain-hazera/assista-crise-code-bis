@@ -65,7 +65,19 @@
       <div class="modal modal-lg" (click)="$event.stopPropagation()">
         <div class="modal-header">
           <h2><span class="material-icons">local_fire_department</span> {{ selectedCrisis.name }}</h2>
-          <button class="icon-btn" (click)="closeModal()"><span class="material-icons">close</span></button>
+          <div class="header-actions">
+            @if (canCloturerCrisis) {
+              <button class="btn-secondary sm" (click)="cloturerCrisis()">
+                <span class="material-icons">lock</span> Clôturer la crise
+              </button>
+            }
+            @if (isAdmin && selectedCrisis.is_open === false) {
+              <button class="btn-secondary sm" (click)="reouvrirCrisis()">
+                <span class="material-icons">lock_open</span> Réouvrir
+              </button>
+            }
+            <button class="icon-btn" (click)="closeModal()"><span class="material-icons">close</span></button>
+          </div>
         </div>
 
         <div class="modal-body">
@@ -75,6 +87,14 @@
             @if (selectedCrisis.description) { — {{ selectedCrisis.description }} }
           </p>
 
+          @if (selectedCrisis.is_open === false) {
+            <p class="crisis-closed-banner">
+              <span class="material-icons">lock</span>
+              Crise clôturée le {{ fmtDate(selectedCrisis.end_date ?? undefined) }} — plus aucune
+              modification (institution, point, délégation) n'est possible.
+            </p>
+          }
+
           <!-- Zone précise -->
           <section class="section-block">
             <h3><span class="material-icons">draw</span> Zone précise</h3>
@@ -83,10 +103,12 @@
                 @if (selectedCrisis.zone_geojson) { Une zone précise est définie pour cette crise. }
                 @else { Aucune zone précise : la crise est représentée par le rayon par défaut ({{ selectedCrisis.radius }} km). }
               </p>
-              <button class="btn-secondary sm" (click)="showZoneEditor = true">
-                <span class="material-icons">edit_location_alt</span>
-                {{ selectedCrisis.zone_geojson ? 'Modifier la zone' : 'Définir la zone' }}
-              </button>
+              @if (selectedCrisis.is_open !== false) {
+                <button class="btn-secondary sm" (click)="showZoneEditor = true">
+                  <span class="material-icons">edit_location_alt</span>
+                  {{ selectedCrisis.zone_geojson ? 'Modifier la zone' : 'Définir la zone' }}
+                </button>
+              }
             } @else {
               <app-zone-map [initialZone]="selectedCrisis.zone_geojson ?? null" (zoneChange)="onZoneChange($event)"></app-zone-map>
               <div class="inline-form">
@@ -127,7 +149,7 @@
               </tbody>
             </table>
 
-            @if (selectableInstitutions.length > 0) {
+            @if (selectableInstitutions.length > 0 && selectedCrisis.is_open !== false) {
               @if (!showImpliqueForm) {
                 <button class="btn-secondary sm" (click)="showImpliqueForm = true">
                   <span class="material-icons">add</span> {{ isAdmin ? 'Déclarer une institution impliquée' : 'Je suis impliqué' }}
@@ -147,7 +169,7 @@
               }
             }
 
-            @if (selectableInstitutions.length > 0) {
+            @if (selectableInstitutions.length > 0 && selectedCrisis.is_open !== false) {
               @if (!showActeurDirectForm) {
                 <button class="btn-secondary sm" (click)="showActeurDirectForm = true">
                   <span class="material-icons">group_add</span> Déclarer une institution actrice
@@ -249,7 +271,7 @@
               </tbody>
             </table>
 
-            @if (selectableInstitutions.length > 0) {
+            @if (selectableInstitutions.length > 0 && selectedCrisis.is_open !== false) {
               @if (!showActeurForm) {
                 <button class="btn-secondary sm" (click)="showActeurForm = true">
                   <span class="material-icons">add_location_alt</span> {{ isAdmin ? 'Déclarer un point opérationnel' : 'Je suis acteur' }}

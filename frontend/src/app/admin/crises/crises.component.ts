@@ -219,6 +219,48 @@ export class CrisesComponent implements OnInit {
     return this.authService.getCurrentUser()?.type === UserRole.ADMIN;
   }
 
+  // ── Clôture de crise ─────────────────────────────────────────
+  get canCloturerCrisis(): boolean {
+    if (!this.selectedCrisis || this.selectedCrisis.is_open === false) return false;
+    if (this.isAdmin) return true;
+    const me = this.authService.getCurrentUser();
+    if (!me) return false;
+    return this.implicationsFor(this.selectedCrisis.id)
+      .some(i => i.responsable === me.id && i.actif);
+  }
+
+  cloturerCrisis(): void {
+    if (!this.selectedCrisis) return;
+    if (!confirm(`Clôturer la crise « ${this.selectedCrisis.name} » ? Plus aucune institution, point ou délégation ne pourra y être ajouté.`)) {
+      return;
+    }
+    this.crisisService.cloturer(this.selectedCrisis.id).subscribe({
+      next: () => {
+        this.selectedCrisis = { ...this.selectedCrisis!, is_open: false, end_date: new Date().toISOString() };
+        const idx = this.crises.findIndex(c => c.id === this.selectedCrisis!.id);
+        if (idx !== -1) this.crises[idx] = this.selectedCrisis!;
+        this.showSuccess('Crise clôturée.');
+      },
+      error: (err) => this.showError(err.error?.error || 'Impossible de clôturer cette crise.'),
+    });
+  }
+
+  reouvrirCrisis(): void {
+    if (!this.selectedCrisis) return;
+    if (!confirm(`Réouvrir la crise « ${this.selectedCrisis.name} » ?`)) {
+      return;
+    }
+    this.crisisService.reouvrir(this.selectedCrisis.id).subscribe({
+      next: () => {
+        this.selectedCrisis = { ...this.selectedCrisis!, is_open: true, end_date: null };
+        const idx = this.crises.findIndex(c => c.id === this.selectedCrisis!.id);
+        if (idx !== -1) this.crises[idx] = this.selectedCrisis!;
+        this.showSuccess('Crise réouverte.');
+      },
+      error: (err) => this.showError(err.error?.error || 'Impossible de réouvrir cette crise.'),
+    });
+  }
+
   /** Un admin peut déclarer/désigner un responsable pour n'importe quelle institution ; un
    * acteur institutionnel reste limité aux siennes. */
   get selectableInstitutions(): Institution[] {

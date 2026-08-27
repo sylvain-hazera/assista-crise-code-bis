@@ -107,6 +107,16 @@ export class CrisisService {
     return this.http.delete<void>(`${this.apiUrl}/${id}/`);
   }
 
+  /** POST /api/crises/<id>/cloturer/ — réservé au responsable actif ou à un admin. */
+  cloturer(id: string): Observable<{ status: string; end_date: string }> {
+    return this.http.post<{ status: string; end_date: string }>(`${this.apiUrl}/${id}/cloturer/`, {});
+  }
+
+  /** POST /api/crises/<id>/reouvrir/ — réservé aux admins. */
+  reouvrir(id: string): Observable<{ status: string }> {
+    return this.http.post<{ status: string }>(`${this.apiUrl}/${id}/reouvrir/`, {});
+  }
+
   // ── PRIVÉ ────────────────────────────────────────────────────
 
   /**
