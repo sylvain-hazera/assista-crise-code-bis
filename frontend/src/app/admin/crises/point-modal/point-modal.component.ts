@@ -16,6 +16,7 @@ import { TagSearchInputComponent } from '../../../shared/components/common/tag-s
 import { PointEquipeModalComponent } from '../point-equipe-modal/point-equipe-modal.component';
 import { PointInventaireModalComponent } from '../point-inventaire-modal/point-inventaire-modal.component';
 import { StocksComparaisonModalComponent } from '../stocks-comparaison-modal/stocks-comparaison-modal.component';
+import { PointSecretariatModalComponent } from '../point-secretariat-modal/point-secretariat-modal.component';
 
 /**
  * Modale "Créer/éditer un point opérationnel" — remplace l'ancien formulaire inline de
@@ -27,7 +28,7 @@ import { StocksComparaisonModalComponent } from '../stocks-comparaison-modal/sto
 @Component({
   selector: 'app-point-modal',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, AddressPickerComponent, PointPickerComponent, TagSearchInputComponent, PointEquipeModalComponent, PointInventaireModalComponent, StocksComparaisonModalComponent],
+  imports: [CommonModule, ReactiveFormsModule, AddressPickerComponent, PointPickerComponent, TagSearchInputComponent, PointEquipeModalComponent, PointInventaireModalComponent, StocksComparaisonModalComponent, PointSecretariatModalComponent],
   templateUrl: './point-modal.component.html',
   styleUrl: './point-modal.component.scss'
 })
@@ -55,6 +56,7 @@ export class PointModalComponent implements OnChanges {
   equipeModalOpen = false;
   inventaireModalOpen = false;
   comparaisonModalOpen = false;
+  secretariatModalOpen = false;
 
   constructor(
     private fb: FormBuilder,
@@ -137,6 +139,14 @@ export class PointModalComponent implements OnChanges {
 
   closeComparaisonModal(): void {
     this.comparaisonModalOpen = false;
+  }
+
+  openSecretariatModal(): void {
+    this.secretariatModalOpen = true;
+  }
+
+  closeSecretariatModal(): void {
+    this.secretariatModalOpen = false;
   }
 
   onAddressSelected(addr: AddressResult | null): void {

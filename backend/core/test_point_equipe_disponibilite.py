@@ -63,7 +63,7 @@ class TestPointEquipeAction:
         response = client.get(reverse('pointoperationnel-equipe', args=[point.id]))
 
         assert response.status_code == status.HTTP_200_OK
-        assert response.data == {"membres": [], "disponibilites": []}
+        assert response.data == {"membres": [], "disponibilites": [], "affectations": []}
 
 
 @pytest.mark.django_db

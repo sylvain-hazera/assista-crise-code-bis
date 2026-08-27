@@ -85,6 +85,15 @@
 
       @if (isEdit) {
         <div class="form-group">
+          <label>Secrétariat</label>
+          <button type="button" class="btn-secondary sm" (click)="openSecretariatModal()">
+            <span class="material-icons">how_to_reg</span> Registre de présence
+          </button>
+        </div>
+      }
+
+      @if (isEdit) {
+        <div class="form-group">
           <label>Compétences nécessaires</label>
           <app-tag-search-input
             placeholder="Chercher ou créer une compétence..."
@@ -122,7 +131,7 @@
   </div>
 
   @if (equipeModalOpen && point) {
-    <app-point-equipe-modal [point]="point" (closed)="closeEquipeModal()"></app-point-equipe-modal>
+    <app-point-equipe-modal [point]="point" [crisisId]="crisisId" [pointTypes]="pointTypes" (closed)="closeEquipeModal()"></app-point-equipe-modal>
   }
 
   @if (inventaireModalOpen && point) {
@@ -131,6 +140,10 @@
 
   @if (comparaisonModalOpen) {
     <app-stocks-comparaison-modal [crisisId]="crisisId" (closed)="closeComparaisonModal()"></app-stocks-comparaison-modal>
+  }
+
+  @if (secretariatModalOpen && point) {
+    <app-point-secretariat-modal [point]="point" (closed)="closeSecretariatModal()"></app-point-secretariat-modal>
   }
 
 </div>

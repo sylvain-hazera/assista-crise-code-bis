@@ -10,6 +10,7 @@ from .views import (
     BesoinViewSet, RecherchePersonneCommentaireViewSet, RecherchePersonneViewSet,
     BesoinCompetenceViewSet, RequestTypeBesoinViewSet, RequestTypeViewSet, OfferTypeViewSet, InformationTypeViewSet,
     DeleteRequestView, DeleteOfferView, DeleteInformationView, CompetenceViewSet,
+    ConfirmerAffectationBenevoleView,
     RecherchePersonneHistoriqueViewSet, AffectationCompetenceViewSet,
     DossierViewSet, DocumentViewSet, DossierCommentaireViewSet, DossierHistoriqueViewSet, NotificationViewSet, TeamViewSet,
     InstitutionTypeViewSet,
@@ -27,6 +28,7 @@ from .views import (
     DisponibilitePointEquipeViewSet,
     MaterielPointViewSet,
     MaterielCatalogueViewSet,
+    RegistrePresenceViewSet,
 )
 
 router = DefaultRouter()
@@ -100,6 +102,7 @@ router.register(r'disponibilites-offres', DisponibiliteOffreViewSet)
 router.register(r'disponibilites-points-equipe', DisponibilitePointEquipeViewSet)
 router.register(r'materiels-points', MaterielPointViewSet)
 router.register(r'materiels-catalogue', MaterielCatalogueViewSet)
+router.register(r'registre-presences', RegistrePresenceViewSet)
 router.register(r'informations', InformationViewSet)
 router.register(r'types-demande', RequestTypeViewSet)
 router.register(r'types-offre', OfferTypeViewSet)
@@ -140,5 +143,6 @@ urlpatterns = [
     # URLs pour la suppression via token
     path('delete-request/<str:token>/', DeleteRequestView.as_view(), name='delete_request'),
     path('delete-offer/<str:token>/', DeleteOfferView.as_view(), name='delete_offer'),
+    path('confirmer-affectation-benevole/<str:token>/<str:reponse>/', ConfirmerAffectationBenevoleView.as_view(), name='confirmer_affectation_benevole'),
     path('delete-information/<str:token>/', DeleteInformationView.as_view(), name='delete_information'),
 ]

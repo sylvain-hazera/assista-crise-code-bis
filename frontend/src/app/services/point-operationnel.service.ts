@@ -3,6 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
 import { PointOperationnel, PointOperationnelPayload, PointEquipeResponse } from '../shared/models/point-operationnel.model';
+import { AffectationPointBenevole, InviterBenevolePayload } from '../shared/models/affectation-point-benevole.model';
 
 @Injectable({ providedIn: 'root' })
 export class PointOperationnelService {
@@ -32,5 +33,9 @@ export class PointOperationnelService {
 
   getEquipe(id: string): Observable<PointEquipeResponse> {
     return this.http.get<PointEquipeResponse>(`${this.apiUrl}/${id}/equipe/`);
+  }
+
+  inviterBenevole(id: string, payload: InviterBenevolePayload): Observable<AffectationPointBenevole> {
+    return this.http.post<AffectationPointBenevole>(`${this.apiUrl}/${id}/inviter-benevole/`, payload);
   }
 }

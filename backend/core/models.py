@@ -1914,6 +1914,19 @@ class DisponibilitePointEquipe(models.Model):
 
     creneau = models.CharField(max_length=10, choices=Creneau.choices)
 
+    affectation = models.ForeignKey(
+        "AffectationPointBenevole",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="creneaux",
+        help_text=(
+            "Renseigné uniquement pour un créneau créé via le recrutement individuel depuis "
+            "une offre d'aide — permet d'afficher son statut de confirmation. Nul pour un "
+            "créneau auto-déclaré par un membre d'équipe (considéré confirmé d'office)."
+        ),
+    )
+
     class Meta:
         constraints = [
             models.UniqueConstraint(
@@ -2010,6 +2023,122 @@ class MaterielPoint(models.Model):
 
     def __str__(self) -> str:
         return f"{self.item.nom} ({self.point.nom})"
+
+
+class TypePersonneAccueillie(models.TextChoices):
+    EVACUE = "EVACUE", "Personne évacuée"
+    POMPIER = "POMPIER", "Pompier"
+    BENEVOLE_AUTRE_EQUIPE = "BENEVOLE_AUTRE_EQUIPE", "Bénévole d'une autre équipe"
+    AUTRE = "AUTRE", "Autre"
+
+
+class RegistrePresence(models.Model):
+    """Registre de présence ("secrétariat") d'un point opérationnel : qui est actuellement
+    accueilli (personne évacuée, pompier, bénévole d'une autre équipe...) et depuis quand.
+    `nombre` permet d'enregistrer un lot en une ligne (ex: une famille de 4) sans multiplier
+    les entrées. `personnes_presentes` (voir PointOperationnelSerializer) = somme de `nombre`
+    des lignes sans `date_depart`."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    point = models.ForeignKey(
+        PointOperationnel,
+        on_delete=models.CASCADE,
+        related_name="registre_presences",
+    )
+
+    type_personne = models.CharField(max_length=30, choices=TypePersonneAccueillie.choices)
+
+    nom = models.CharField(max_length=255, blank=True)
+
+    nombre = models.PositiveIntegerField(default=1)
+
+    date_arrivee = models.DateTimeField(auto_now_add=True)
+
+    date_depart = models.DateTimeField(null=True, blank=True)
+
+    commentaire = models.TextField(blank=True, null=True)
+
+    enregistre_par = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="registres_presences_enregistres",
+    )
+
+    class Meta:
+        ordering = ["-date_arrivee"]
+
+    def __str__(self) -> str:
+        return f"{self.get_type_personne_display()} ({self.point.nom})"
+
+
+class StatutAffectation(models.TextChoices):
+    EN_ATTENTE = "EN_ATTENTE", "En attente de confirmation"
+    CONFIRME = "CONFIRME", "Confirmé"
+    DECLINE = "DECLINE", "Décliné"
+
+
+class AffectationPointBenevole(models.Model):
+    """Recrutement d'un bénévole individuel (pas forcément membre de l'équipe du point) sur un
+    point opérationnel, depuis une offre d'aide déposée sur la plateforme — avec confirmation
+    par email (lien oui/non, jeton opaque comme Offer.deletion_token, pas de compte requis)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    point = models.ForeignKey(
+        PointOperationnel,
+        on_delete=models.CASCADE,
+        related_name="affectations_benevoles",
+    )
+
+    benevole = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="affectations_points",
+    )
+
+    offer = models.ForeignKey(
+        "Offer",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="affectations_points",
+    )
+
+    statut = models.CharField(max_length=15, choices=StatutAffectation.choices, default=StatutAffectation.EN_ATTENTE)
+
+    date_attendue = models.DateTimeField(help_text="Horaire auquel le bénévole est attendu sur le point.")
+
+    point_transit = models.ForeignKey(
+        PointOperationnel,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="Point de transit obligatoire à indiquer au bénévole (route fermée, contrôle d'accès...).",
+    )
+
+    token_confirmation = models.CharField(max_length=64, unique=True)
+
+    date_reponse = models.DateTimeField(null=True, blank=True)
+
+    affecte_par = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="affectations_creees",
+    )
+
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-date_creation"]
+
+    def __str__(self) -> str:
+        return f"{self.benevole.email} -> {self.point.nom} ({self.get_statut_display()})"
 
 
 class AuditAction(models.Model):

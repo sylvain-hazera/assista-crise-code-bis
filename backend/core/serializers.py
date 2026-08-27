@@ -1,6 +1,7 @@
 
 import json
 import os
+from django.db.models import Sum
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from .auth_validation import InstitutionEmailValidator
@@ -29,6 +30,8 @@ from .models import (
     DisponibilitePointEquipe,
     MaterielPoint,
     MaterielCatalogue,
+    RegistrePresence,
+    AffectationPointBenevole,
     Notification,
 )
 
@@ -379,6 +382,7 @@ class DisponibilitePointEquipeSerializer(serializers.ModelSerializer):
     """Créneau de disponibilité d'un membre de l'équipe responsable d'un point opérationnel."""
 
     membre_nom = serializers.SerializerMethodField()
+    affectation_statut = serializers.CharField(source="affectation.statut", read_only=True, default=None)
 
     class Meta:
         model = DisponibilitePointEquipe
@@ -428,6 +432,48 @@ class MaterielPointSerializer(serializers.ModelSerializer):
         if point:
             validate_crisis_open(point.crise, field_name="crise")
         return attrs
+
+
+class RegistrePresenceSerializer(serializers.ModelSerializer):
+    """Registre de présence ("secrétariat") d'un point opérationnel."""
+
+    type_personne_libelle = serializers.CharField(source="get_type_personne_display", read_only=True)
+    enregistre_par_nom = serializers.SerializerMethodField()
+
+    class Meta:
+        model = RegistrePresence
+        fields = '__all__'
+        read_only_fields = ['date_arrivee']
+
+    def get_enregistre_par_nom(self, obj):
+        if not obj.enregistre_par:
+            return None
+        full_name = f"{obj.enregistre_par.first_name} {obj.enregistre_par.last_name}".strip()
+        return full_name or obj.enregistre_par.email
+
+    def validate(self, attrs):
+        point = attrs.get('point') or (self.instance.point if self.instance else None)
+        if point:
+            validate_crisis_open(point.crise, field_name="crise")
+        return attrs
+
+
+class AffectationPointBenevoleSerializer(serializers.ModelSerializer):
+    """Recrutement d'un bénévole individuel sur un point, depuis une offre d'aide."""
+
+    statut_libelle = serializers.CharField(source="get_statut_display", read_only=True)
+    benevole_nom = serializers.SerializerMethodField()
+    point_transit_nom = serializers.CharField(source="point_transit.nom", read_only=True, default=None)
+
+    class Meta:
+        model = AffectationPointBenevole
+        fields = '__all__'
+        read_only_fields = ['statut', 'token_confirmation', 'date_reponse', 'affecte_par']
+
+    def get_benevole_nom(self, obj):
+        full_name = f"{obj.benevole.first_name} {obj.benevole.last_name}".strip()
+        return full_name or obj.benevole.email
+
 
 class InformationSerializer(serializers.ModelSerializer):
     """Serializer pour les informations.
@@ -1176,6 +1222,7 @@ class PointOperationnelSerializer(
     longitude = serializers.SerializerMethodField()
     competences_requises_libelles = serializers.SerializerMethodField()
     equipe_nom = serializers.CharField(source="equipe.name", read_only=True, default=None)
+    personnes_presentes = serializers.SerializerMethodField()
 
     class Meta:
 
@@ -1191,6 +1238,13 @@ class PointOperationnelSerializer(
 
     def get_competences_requises_libelles(self, obj):
         return [c.nom for c in obj.competences_requises.all()]
+
+    def get_personnes_presentes(self, obj):
+        # Somme de `nombre` sur les lignes encore présentes (date_depart NULL) — affichage
+        # immédiat dans le tableau des points, sans appel séparé au registre.
+        return obj.registre_presences.filter(date_depart__isnull=True).aggregate(
+            total=Sum('nombre')
+        )['total'] or 0
 
     def get_responsable_nom(self, obj):
         if not obj.responsable:

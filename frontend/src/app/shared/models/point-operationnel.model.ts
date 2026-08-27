@@ -1,3 +1,5 @@
+import { AffectationPointBenevole } from './affectation-point-benevole.model';
+
 export interface PointType {
   id: string;
   code: string;
@@ -33,6 +35,7 @@ export interface PointEquipeMembre {
   id: string;
   nom: string;
   email: string;
+  temps_total_heures?: number;
 }
 
 export interface PointEquipeResponse {
@@ -44,7 +47,9 @@ export interface PointEquipeResponse {
     membre_nom: string;
     date: string;
     creneau: 'MATIN' | 'MIDI' | 'SOIR' | 'NUIT';
+    affectation_statut?: string | null;
   }[];
+  affectations: AffectationPointBenevole[];
 }
 
 export interface PointOperationnelPayload {

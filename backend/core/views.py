@@ -20,6 +20,7 @@ from urllib.parse import quote
 from django_filters import rest_framework as filters
 from django.db.models import Q
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from .auth_validation import InstitutionEmailValidator
 import secrets
 import uuid
@@ -92,7 +93,8 @@ from .models import (
     ImplicationInstitution,
     TypeImplication,
     User, Crisis, Request, Offer, Information, DisponibiliteOffre, DisponibilitePointEquipe, MaterielPoint,
-    MaterielCatalogue, NiveauStock,
+    MaterielCatalogue, NiveauStock, RegistrePresence,
+    AffectationPointBenevole, StatutAffectation,
     RecherchePersonne, RecherchePersonneCommentaire, Besoin, Notification, DossierParticipant,
     RecherchePersonneCommentairePhoto, RecherchePersonneLecture, RecherchePersonneLectureHistorique,
     Document, DossierCommentaire, DossierHistorique, BesoinCompetence, Competence, Dossier,
@@ -192,6 +194,7 @@ def send_crisis_regulateur_invite_email(request, user, crisis, institution):
     )
 
 from .serializers import (
+    validate_crisis_open,
     InstitutionTypeSerializer,
     InstitutionSerializer,
     RoleOperationnelSerializer,
@@ -223,6 +226,8 @@ from .serializers import (
     DisponibilitePointEquipeSerializer,
     MaterielPointSerializer,
     MaterielCatalogueSerializer,
+    RegistrePresenceSerializer,
+    AffectationPointBenevoleSerializer,
     InformationSerializer,
     RequestTypeSerializer,
     OfferTypeSerializer,
@@ -503,6 +508,25 @@ class DossierViewSet(viewsets.ModelViewSet):
 
 class AuthorEmailFilter(filters.FilterSet):
     author_email = filters.CharFilter(field_name='author__email', lookup_expr='iexact')
+
+
+class OfferSearchFilter(AuthorEmailFilter):
+    """Recherche texte libre (nom, email, titre) sur toutes les offres du système — utilisée
+    pour recruter un bénévole individuel sur un point (PointOperationnelViewSet.
+    inviter_benevole) : on cherche parmi TOUTES les offres, pas seulement celles de la crise en
+    cours, décision actée avec l'utilisateur."""
+    search = filters.CharFilter(method='filter_search')
+
+    def filter_search(self, queryset, name, value):
+        return queryset.filter(
+            Q(first_name_offer__icontains=value)
+            | Q(last_name_offer__icontains=value)
+            | Q(email_offer__icontains=value)
+            | Q(title__icontains=value)
+            | Q(author__first_name__icontains=value)
+            | Q(author__last_name__icontains=value)
+            | Q(author__email__icontains=value)
+        )
 
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
@@ -1026,6 +1050,96 @@ def resolve_or_invite_demandeur(demande, request=None):
     return user, True
 
 
+def resolve_or_invite_benevole(offer, request=None):
+    """Même principe que resolve_or_invite_demandeur, pour recruter un bénévole individuel sur
+    un point depuis une offre d'aide (Offer.author si authentifié, sinon coordonnées libres
+    first_name_offer/last_name_offer/email_offer). Compte activé directement (pas d'étape de
+    mot de passe) : la confirmation se fait par le jeton opaque de l'affectation, pas par un
+    lien magique lié au compte.
+
+    Retourne (user, created)."""
+    if offer.author:
+        return offer.author, False
+
+    email = (offer.email_offer or '').strip().lower()
+    if not email:
+        return None, False
+
+    existing = User.objects.filter(email__iexact=email).first()
+    if existing:
+        return existing, False
+
+    user = User.objects.create_user(
+        username=email,
+        email=email,
+        password=None,
+        type=UserRole.SIMPLE_USER,
+        first_name=offer.first_name_offer,
+        last_name=offer.last_name_offer,
+        enabled=True,
+        is_active=True,
+    )
+    if request is not None:
+        audit_log(
+            request=request,
+            action_code="CREATION",
+            objet_type="User",
+            objet_id=user.id,
+            commentaire=f"Compte créé pour {email} afin de le recruter comme bénévole sur un point",
+        )
+    return user, True
+
+
+def send_point_volunteer_confirmation_email(request, affectation):
+    """Email envoyé à un bénévole recruté individuellement sur un point (voir
+    PointOperationnelViewSet.inviter_benevole) — jeton opaque, même idiome que
+    Offer.deletion_token, pas besoin de compte/mot de passe pour répondre."""
+    base_url = request.build_absolute_uri('/').rstrip('/')
+    lien_oui = f"{base_url}/api/confirmer-affectation-benevole/{affectation.token_confirmation}/oui/"
+    lien_non = f"{base_url}/api/confirmer-affectation-benevole/{affectation.token_confirmation}/non/"
+
+    point = affectation.point
+    responsable = point.responsable
+
+    lignes = [
+        "Bonjour,",
+        "",
+        f"L'équipe du point « {point.nom} » vous sollicite pour la crise « {point.crise.name} ».",
+        f"Merci de confirmer votre disponibilité :",
+        "",
+        f"- Oui, je confirme : {lien_oui}",
+        f"- Non, je ne suis pas disponible : {lien_non}",
+        "",
+        f"Vous êtes attendu(e) le {affectation.date_attendue.strftime('%d/%m/%Y à %H:%M')}.",
+    ]
+
+    if point.adresse:
+        lignes.append(f"Adresse : {point.adresse}")
+
+    if affectation.point_transit:
+        lignes.append(
+            f"Point de transit obligatoire avant de rejoindre le point (route fermée / "
+            f"contrôle d'accès) : {affectation.point_transit.nom}"
+            + (f" ({affectation.point_transit.adresse})" if affectation.point_transit.adresse else "")
+        )
+
+    if responsable:
+        contact = responsable.email
+        if responsable.phone_number:
+            contact += f" / {responsable.phone_number}"
+        lignes.append(f"Responsable du point : {responsable.first_name} {responsable.last_name} ({contact})".strip())
+
+    lignes += ["", "Cordialement,", "L'équipe Assista-Crise"]
+
+    send_mail(
+        subject=f"Confirmation de disponibilité — {point.nom}",
+        message="\n".join(lignes),
+        from_email=None,
+        recipient_list=[affectation.benevole.email],
+        fail_silently=False,
+    )
+
+
 def department_code_from_commune_code(commune_code):
     """Extrait le code département d'un code commune INSEE : 3 chiffres pour l'outre-mer
     (971-976/98x), 2 caractères sinon (dont '2A'/'2B' pour la Corse, déjà sous cette forme
@@ -1456,7 +1570,7 @@ class OfferViewSet(viewsets.ModelViewSet):
     queryset = Offer.objects.all()
     serializer_class = OfferSerializer
     permission_classes = [AllowAny]
-    filterset_class = AuthorEmailFilter
+    filterset_class = OfferSearchFilter
 
     def perform_create(self, serializer):
         # Générer un token de suppression unique
@@ -1656,6 +1770,45 @@ class DeleteOfferView(View):
         titre = offre.title
         offre.delete()
         return HttpResponse(f"<h1>Offre supprimée</h1><p>L'offre '{titre}' a bien été supprimée.</p>")
+
+class ConfirmerAffectationBenevoleView(View):
+    """Confirmation par lien (oui/non) de l'affectation d'un bénévole individuel sur un point
+    — pas de compte requis, jeton opaque comme les autres liens de désinscription anonymes."""
+    def get(self, request, token, reponse):
+        affectation = get_object_or_404(AffectationPointBenevole, token_confirmation=token)
+
+        if reponse not in ("oui", "non"):
+            return HttpResponse("<h1>Lien invalide</h1>", status=400)
+
+        if affectation.date_reponse is not None:
+            return HttpResponse(
+                f"<h1>Réponse déjà enregistrée</h1>"
+                f"<p>Vous aviez déjà répondu « {affectation.get_statut_display()} » à cette sollicitation.</p>"
+            )
+
+        affectation.statut = StatutAffectation.CONFIRME if reponse == "oui" else StatutAffectation.DECLINE
+        affectation.date_reponse = timezone.now()
+        affectation.save()
+
+        audit_log(
+            request=request,
+            action_code="MODIFICATION",
+            objet_type="AffectationPointBenevole",
+            objet_id=affectation.id,
+            crise=affectation.point.crise,
+            commentaire=f"{affectation.benevole.email} a répondu « {affectation.get_statut_display()} » pour le point {affectation.point.nom}",
+        )
+
+        if reponse == "non":
+            # Les créneaux liés à une affectation déclinée n'ont plus lieu d'être : on les
+            # retire du planning plutôt que de laisser un "confirmé" fantôme visible.
+            affectation.creneaux.all().delete()
+            message = "Votre indisponibilité a bien été enregistrée. Merci de nous avoir prévenus."
+        else:
+            message = "Merci ! Votre disponibilité est confirmée."
+
+        return HttpResponse(f"<h1>{message}</h1>")
+
 
 class DeleteInformationView(View):
     """Vue pour supprimer une information via token"""
@@ -2921,17 +3074,25 @@ class PointOperationnelViewSet(
                         ),
                     )
 
+    HEURES_PAR_CRENEAU = 6  # MATIN/MIDI/SOIR/NUIT ≈ 4 créneaux de 6h sur 24h — approximation
+    # affichée telle quelle (voir décision : affichage seul, pas de blocage automatique).
+
     @action(detail=True, methods=["get"])
     def equipe(self, request, pk=None):
         """Membres de l'équipe responsable de ce point + leurs disponibilités déclarées sur
         ce point précis, en un seul appel (évite un aller-retour Team + Dispo séparé côté
-        frontend)."""
+        frontend). Inclut aussi les affectations de bénévoles individuels recrutés depuis une
+        offre d'aide (avec leur statut de confirmation) et le temps cumulé par membre sur CE
+        point (nombre de créneaux déclarés × durée conventionnelle d'un créneau)."""
         point = self.get_object()
-        if not point.equipe:
-            return Response({"membres": [], "disponibilites": []})
+        disponibilites = DisponibilitePointEquipe.objects.filter(point=point).select_related("membre", "affectation")
+        affectations = point.affectations_benevoles.select_related("benevole", "offer", "point_transit")
 
-        membres = point.equipe.members.all()
-        disponibilites = DisponibilitePointEquipe.objects.filter(point=point)
+        temps_par_membre = {}
+        for d in disponibilites:
+            temps_par_membre[str(d.membre_id)] = temps_par_membre.get(str(d.membre_id), 0) + self.HEURES_PAR_CRENEAU
+
+        membres = point.equipe.members.all() if point.equipe else []
 
         return Response({
             "membres": [
@@ -2939,11 +3100,90 @@ class PointOperationnelViewSet(
                     "id": str(m.id),
                     "nom": f"{m.first_name} {m.last_name}".strip() or m.email,
                     "email": m.email,
+                    "temps_total_heures": temps_par_membre.get(str(m.id), 0),
                 }
                 for m in membres
             ],
             "disponibilites": DisponibilitePointEquipeSerializer(disponibilites, many=True).data,
+            "affectations": AffectationPointBenevoleSerializer(affectations, many=True).data,
         })
+
+    @action(detail=True, methods=["post"], url_path="inviter-benevole")
+    def inviter_benevole(self, request, pk=None):
+        """Recrute un bénévole individuel sur ce point depuis une offre d'aide, et lui envoie
+        un email de confirmation de disponibilité (lien oui/non). Nécessite que le point ait
+        déjà une équipe assignée (le bénévole y est ajouté, condition déjà posée par
+        DisponibilitePointEquipeSerializer.validate pour créer ses créneaux)."""
+        point = self.get_object()
+
+        if point.responsable_id != request.user.id and not (
+            point.equipe and point.equipe.leader_id == request.user.id
+        ) and request.user.type != UserRole.ADMINISTRATOR:
+            raise PermissionDenied(
+                "Seul le responsable ou le leader de l'équipe du point peut recruter un bénévole."
+            )
+
+        validate_crisis_open(point.crise, field_name="crise")
+
+        if not point.equipe:
+            return Response(
+                {"error": "Ce point doit d'abord avoir une équipe assignée pour pouvoir y recruter un bénévole."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        offer_id = request.data.get("offer_id")
+        offer = get_object_or_404(Offer, pk=offer_id) if offer_id else None
+        if not offer:
+            return Response({"error": "offer_id est requis."}, status=status.HTTP_400_BAD_REQUEST)
+
+        date_attendue = parse_datetime(request.data.get("date_attendue") or "")
+        if not date_attendue:
+            return Response({"error": "date_attendue est requis et doit être une date/heure valide (ISO 8601)."}, status=status.HTTP_400_BAD_REQUEST)
+        if timezone.is_naive(date_attendue):
+            date_attendue = timezone.make_aware(date_attendue)
+
+        point_transit = None
+        point_transit_id = request.data.get("point_transit_id")
+        if point_transit_id:
+            point_transit = get_object_or_404(PointOperationnel, pk=point_transit_id, crise=point.crise)
+
+        benevole, _created = resolve_or_invite_benevole(offer, request)
+        if not benevole:
+            return Response(
+                {"error": "Impossible de déterminer les coordonnées du bénévole depuis cette offre."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        point.equipe.members.add(benevole)
+
+        affectation = AffectationPointBenevole.objects.create(
+            point=point,
+            benevole=benevole,
+            offer=offer,
+            date_attendue=date_attendue,
+            point_transit=point_transit,
+            token_confirmation=secrets.token_urlsafe(32),
+            affecte_par=request.user,
+        )
+
+        for creneau in request.data.get("creneaux", []):
+            DisponibilitePointEquipe.objects.get_or_create(
+                point=point, membre=benevole, date=creneau.get("date"), creneau=creneau.get("creneau"),
+                defaults={"affectation": affectation},
+            )
+
+        send_point_volunteer_confirmation_email(request, affectation)
+
+        audit_log(
+            request=request,
+            action_code="CREATION",
+            objet_type="AffectationPointBenevole",
+            objet_id=affectation.id,
+            crise=point.crise,
+            commentaire=f"{benevole.email} invité(e) sur le point {point.nom}",
+        )
+
+        return Response(AffectationPointBenevoleSerializer(affectation).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["get"])
     def stocks(self, request, pk=None):
@@ -3092,6 +3332,84 @@ class MaterielPointViewSet(viewsets.ModelViewSet):
                 "peut modifier son stock."
             )
         instance.delete()
+
+
+class RegistrePresenceViewSet(viewsets.ModelViewSet):
+    """Registre de présence ("secrétariat") d'un point opérationnel."""
+
+    queryset = RegistrePresence.objects.select_related("point", "enregistre_par").all()
+    serializer_class = RegistrePresenceSerializer
+    filterset_fields = ["point", "type_personne"]
+
+    def _can_manage(self, user, point):
+        if user.type == UserRole.ADMINISTRATOR:
+            return True
+        if point.responsable_id == user.id:
+            return True
+        if point.equipe:
+            if point.equipe.leader_id == user.id:
+                return True
+            if point.equipe.members.filter(id=user.id).exists():
+                return True
+        return False
+
+    def perform_create(self, serializer):
+        point = serializer.validated_data.get('point')
+        if not self._can_manage(self.request.user, point):
+            raise PermissionDenied(
+                "Seul le responsable, un membre de l'équipe du point, ou un administrateur "
+                "peut enregistrer une arrivée."
+            )
+        entree = serializer.save(enregistre_par=self.request.user)
+        audit_log(
+            request=self.request,
+            action_code="CREATION",
+            objet_type="RegistrePresence",
+            objet_id=entree.id,
+            crise=entree.point.crise,
+            commentaire=f"Arrivée « {entree.get_type_personne_display()} » ({entree.nombre}) sur le point {entree.point.nom}",
+        )
+
+    def perform_update(self, serializer):
+        if not self._can_manage(self.request.user, serializer.instance.point):
+            raise PermissionDenied(
+                "Seul le responsable, un membre de l'équipe du point, ou un administrateur "
+                "peut modifier le registre."
+            )
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        if not self._can_manage(self.request.user, instance.point):
+            raise PermissionDenied(
+                "Seul le responsable, un membre de l'équipe du point, ou un administrateur "
+                "peut modifier le registre."
+            )
+        instance.delete()
+
+    @action(detail=True, methods=["post"])
+    def sortie(self, request, pk=None):
+        """Marque une sortie (date_depart=maintenant) — ne retire pas la ligne, garde la trace
+        du passage."""
+        entree = self.get_object()
+        if not self._can_manage(request.user, entree.point):
+            raise PermissionDenied(
+                "Seul le responsable, un membre de l'équipe du point, ou un administrateur "
+                "peut enregistrer une sortie."
+            )
+        if entree.date_depart is not None:
+            return Response({"error": "Cette sortie est déjà enregistrée."}, status=status.HTTP_400_BAD_REQUEST)
+
+        entree.date_depart = timezone.now()
+        entree.save()
+        audit_log(
+            request=request,
+            action_code="MODIFICATION",
+            objet_type="RegistrePresence",
+            objet_id=entree.id,
+            crise=entree.point.crise,
+            commentaire=f"Sortie « {entree.get_type_personne_display()} » du point {entree.point.nom}",
+        )
+        return Response(RegistrePresenceSerializer(entree).data)
 
 
 class ImplicationInstitutionViewSet(
