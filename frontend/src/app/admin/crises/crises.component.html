@@ -349,7 +349,7 @@
                   </div>
 
                   <div class="inline-form">
-                    <button class="btn-primary sm" (click)="submitActeurDirect()" [disabled]="!acteurDirectInstitutionId">Confirmer</button>
+                    <button class="btn-primary sm" (click)="submitActeurDirect()">Confirmer</button>
                     <button class="btn-secondary sm" (click)="showActeurDirectForm = false">Annuler</button>
                   </div>
                 </div>
@@ -465,14 +465,44 @@
                   </label>
 
                   @if (delegationRestreindre) {
-                    <input type="text" placeholder="Départements (ex: 38, 73)" [(ngModel)]="delegationDepartements" [ngModelOptions]="{standalone: true}">
-                    <input type="text" placeholder="Communes INSEE (ex: 38185)" [(ngModel)]="delegationCommunes" [ngModelOptions]="{standalone: true}">
+                    <div class="chip-list">
+                      @for (code of delegationDepartements; track code) {
+                        <span class="chip chip-departement">
+                          {{ delegationDepartementNoms[code] || code }}
+                          <button type="button" (click)="removeDelegationDepartement(code)">×</button>
+                        </span>
+                      }
+                      @for (code of delegationCommunes; track code) {
+                        <span class="chip">
+                          {{ delegationCommuneNoms[code] || code }}
+                          <button type="button" (click)="removeDelegationCommune(code)">×</button>
+                        </span>
+                      }
+                      @if (!delegationDepartements.length && !delegationCommunes.length) {
+                        <span class="chip-empty">Aucun département/commune ajouté pour l'instant.</span>
+                      }
+                    </div>
+
+                    <app-tag-search-input
+                      placeholder="Ajouter un département (nom ou numéro)..."
+                      labelField="name"
+                      [searchFn]="departementSearchFn"
+                      emptyMessage="Aucun département ne correspond."
+                      (itemSelected)="addDelegationDepartement($event)">
+                    </app-tag-search-input>
+                    <app-tag-search-input
+                      placeholder="Ajouter une commune (nom, code postal ou code INSEE)..."
+                      labelField="name"
+                      [searchFn]="communeSearchFn"
+                      emptyMessage="Aucune commune ne correspond."
+                      (itemSelected)="addDelegationCommune($event)">
+                    </app-tag-search-input>
+
                     <app-zone-map [initialZone]="null" (zoneChange)="onDelegationZoneChange($event)"></app-zone-map>
                   }
 
                   <div class="inline-form">
-                    <button class="btn-primary sm" (click)="submitDelegation()"
-                            [disabled]="!delegationSourceId || !delegationCibleId || !delegationCompetenceId">Confirmer</button>
+                    <button class="btn-primary sm" (click)="submitDelegation()">Confirmer</button>
                     <button class="btn-secondary sm" (click)="resetDelegationForm()">Annuler</button>
                   </div>
                 </div>

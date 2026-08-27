@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable, map, of } from 'rxjs';
+import { Observable, forkJoin, map, of } from 'rxjs';
 import type { Polygon, MultiPolygon } from 'geojson';
 
 export interface Department {
@@ -82,15 +82,39 @@ export class LocationService {
     );
   }
 
-  /** Recherche de communes par nom sur toute la France (autocomplétion), pour la
-   * composition de zone de crise — pas besoin de connaître le département au préalable. */
+  /** Recherche de communes sur toute la France (autocomplétion) par nom, code postal ou code
+   * INSEE — pas besoin de connaître le département au préalable. Un code à 5 chiffres est
+   * ambigu (ex: "33503" est un code INSEE, "33680" un code postal, tous deux plausibles) : on
+   * interroge les deux en parallèle plutôt que de deviner lequel l'utilisateur a saisi. Code
+   * INSEE de Corse (2A/2B + 3 chiffres) détecté séparément, non numérique. */
   searchCommunesByName(query: string): Observable<Commune[]> {
-    if (!query.trim()) return of([]);
+    const q = query.trim();
+    if (!q) return of([]);
+
+    const fields = 'nom,code,codesPostaux,codeDepartement';
+    const toCommunes = (list: any[]) => (list || []).map(c => ({ ...c, name: c.nom }));
+
+    if (/^\d{5}$/.test(q)) {
+      return forkJoin({
+        parCode: this.http.get<any[]>(`${this.API_GEO}/communes?code=${q}&fields=${fields}`),
+        parCodePostal: this.http.get<any[]>(`${this.API_GEO}/communes?codePostal=${q}&fields=${fields}&boost=population&limit=10`),
+      }).pipe(
+        map(({ parCode, parCodePostal }) => {
+          const merged = [...toCommunes(parCode), ...toCommunes(parCodePostal)];
+          const seen = new Set<string>();
+          return merged.filter(c => (seen.has(c.code) ? false : (seen.add(c.code), true)));
+        })
+      );
+    }
+
+    if (/^2[ab][0-9]{3}$/i.test(q)) {
+      return this.http.get<any[]>(`${this.API_GEO}/communes?code=${q.toUpperCase()}&fields=${fields}`)
+        .pipe(map(toCommunes));
+    }
+
     return this.http.get<any[]>(
-      `${this.API_GEO}/communes?nom=${encodeURIComponent(query)}&fields=nom,code,codesPostaux,codeDepartement&boost=population&limit=10`
-    ).pipe(
-      map(communes => communes.map(c => ({ ...c, name: c.nom })))
-    );
+      `${this.API_GEO}/communes?nom=${encodeURIComponent(q)}&fields=${fields}&boost=population&limit=10`
+    ).pipe(map(toCommunes));
   }
 
   /** Contour officiel (Polygon ou MultiPolygon) d'une commune, pour bufferiser/unioner

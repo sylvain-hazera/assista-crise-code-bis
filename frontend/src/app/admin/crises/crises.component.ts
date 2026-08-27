@@ -86,8 +86,10 @@ export class CrisesComponent implements OnInit {
   delegationCompetenceId: string | null = null;
   delegationCompetenceLabel = '';
   delegationRestreindre = false;
-  delegationDepartements = '';
-  delegationCommunes = '';
+  delegationDepartements: string[] = [];
+  delegationCommunes: string[] = [];
+  delegationDepartementNoms: Record<string, string> = {};
+  delegationCommuneNoms: Record<string, string> = {};
   delegationZoneWkt: string | null = null;
 
   competenceSearchFn = (q: string) => this.competenceService.search(q);
@@ -554,7 +556,8 @@ export class CrisesComponent implements OnInit {
   }
 
   submitActeurDirect(): void {
-    if (!this.selectedCrisis || !this.acteurDirectInstitutionId) return;
+    if (!this.selectedCrisis) return;
+    if (!this.acteurDirectInstitutionId) { this.showError("Choisissez d'abord une institution."); return; }
 
     const payload: any = {
       crise: this.selectedCrisis.id,
@@ -670,8 +673,10 @@ export class CrisesComponent implements OnInit {
     this.delegationCompetenceId = null;
     this.delegationCompetenceLabel = '';
     this.delegationRestreindre = false;
-    this.delegationDepartements = '';
-    this.delegationCommunes = '';
+    this.delegationDepartements = [];
+    this.delegationCommunes = [];
+    this.delegationDepartementNoms = {};
+    this.delegationCommuneNoms = {};
     this.delegationZoneWkt = null;
   }
 
@@ -680,12 +685,35 @@ export class CrisesComponent implements OnInit {
     this.delegationCompetenceLabel = item.nom;
   }
 
+  addDelegationDepartement(dept: { code: string; name: string }): void {
+    if (this.delegationDepartements.includes(dept.code)) return;
+    this.delegationDepartements = [...this.delegationDepartements, dept.code];
+    this.delegationDepartementNoms[dept.code] = dept.name;
+  }
+
+  removeDelegationDepartement(code: string): void {
+    this.delegationDepartements = this.delegationDepartements.filter(c => c !== code);
+  }
+
+  addDelegationCommune(commune: Commune): void {
+    if (this.delegationCommunes.includes(commune.code)) return;
+    this.delegationCommunes = [...this.delegationCommunes, commune.code];
+    this.delegationCommuneNoms[commune.code] = commune.name;
+  }
+
+  removeDelegationCommune(code: string): void {
+    this.delegationCommunes = this.delegationCommunes.filter(c => c !== code);
+  }
+
   onDelegationZoneChange(wkt: string | null): void {
     this.delegationZoneWkt = wkt;
   }
 
   submitDelegation(): void {
-    if (!this.selectedCrisis || !this.delegationSourceId || !this.delegationCibleId || !this.delegationCompetenceId) return;
+    if (!this.selectedCrisis) return;
+    if (!this.delegationSourceId) { this.showError("Choisissez l'institution qui délègue."); return; }
+    if (!this.delegationCibleId) { this.showError("Choisissez l'institution bénéficiaire (acteur sur cette crise)."); return; }
+    if (!this.delegationCompetenceId) { this.showError('Choisissez une compétence à déléguer (dans la liste, ou créez-la).'); return; }
 
     const payload: any = {
       crise: this.selectedCrisis.id,
@@ -695,10 +723,8 @@ export class CrisesComponent implements OnInit {
     };
 
     if (this.delegationRestreindre) {
-      const departements = this.delegationDepartements.split(',').map(s => s.trim()).filter(Boolean);
-      const communes = this.delegationCommunes.split(',').map(s => s.trim()).filter(Boolean);
-      if (departements.length) payload.departements = departements;
-      if (communes.length) payload.communes = communes;
+      if (this.delegationDepartements.length) payload.departements = this.delegationDepartements;
+      if (this.delegationCommunes.length) payload.communes = this.delegationCommunes;
       if (this.delegationZoneWkt) payload.zone_precise = this.delegationZoneWkt;
     }
 
@@ -708,7 +734,10 @@ export class CrisesComponent implements OnInit {
         this.showSuccess('Compétence déléguée.');
         this.resetDelegationForm();
       },
-      error: (err) => this.showError(err.error?.institution_source?.[0] || "Impossible d'enregistrer cette délégation."),
+      error: (err) => this.showError(
+        err.error?.institution_source?.[0] || err.error?.institution_cible?.[0] || err.error?.crise?.[0]
+        || "Impossible d'enregistrer cette délégation."
+      ),
     });
   }
 
