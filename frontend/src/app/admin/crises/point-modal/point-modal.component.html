@@ -76,6 +76,15 @@
 
       @if (isEdit) {
         <div class="form-group">
+          <label>Inventaire matériel</label>
+          <button type="button" class="btn-secondary sm" (click)="openInventaireModal()">
+            <span class="material-icons">inventory_2</span> Gérer l'inventaire
+          </button>
+        </div>
+      }
+
+      @if (isEdit) {
+        <div class="form-group">
           <label>Compétences nécessaires</label>
           <app-tag-search-input
             placeholder="Chercher ou créer une compétence..."
@@ -114,6 +123,10 @@
 
   @if (equipeModalOpen && point) {
     <app-point-equipe-modal [point]="point" (closed)="closeEquipeModal()"></app-point-equipe-modal>
+  }
+
+  @if (inventaireModalOpen && point) {
+    <app-point-inventaire-modal [point]="point" (closed)="closeInventaireModal()"></app-point-inventaire-modal>
   }
 
 </div>

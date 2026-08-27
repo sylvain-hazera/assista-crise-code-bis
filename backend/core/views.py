@@ -90,7 +90,7 @@ from .models import (
     PointOperationnel,
     ImplicationInstitution,
     TypeImplication,
-    User, Crisis, Request, Offer, Information, DisponibiliteOffre, DisponibilitePointEquipe,
+    User, Crisis, Request, Offer, Information, DisponibiliteOffre, DisponibilitePointEquipe, MaterielPoint,
     RecherchePersonne, RecherchePersonneCommentaire, Besoin, Notification, DossierParticipant,
     RecherchePersonneCommentairePhoto, RecherchePersonneLecture, RecherchePersonneLectureHistorique,
     Document, DossierCommentaire, DossierHistorique, BesoinCompetence, Competence, Dossier,
@@ -219,6 +219,7 @@ from .serializers import (
     OfferSerializer,
     DisponibiliteOffreSerializer,
     DisponibilitePointEquipeSerializer,
+    MaterielPointSerializer,
     InformationSerializer,
     RequestTypeSerializer,
     OfferTypeSerializer,
@@ -2886,6 +2887,41 @@ class DisponibilitePointEquipeViewSet(viewsets.ModelViewSet):
                 "l'équipe dont vous êtes le·la leader / le·la responsable du point."
             )
         instance.delete()
+
+
+class MaterielPointViewSet(viewsets.ModelViewSet):
+    """Inventaire de matériel en transit ou présent sur un point opérationnel."""
+
+    queryset = MaterielPoint.objects.select_related("point", "responsable").all()
+    serializer_class = MaterielPointSerializer
+    filterset_fields = ["point", "statut"]
+
+    def get_permissions(self):
+        if self.action in ("create", "update", "partial_update", "destroy"):
+            return [IsInstitutionalActor()]
+        return [permissions.IsAuthenticated()]
+
+    def perform_create(self, serializer):
+        materiel = serializer.save(responsable=self.request.user)
+        audit_log(
+            request=self.request,
+            action_code="CREATION",
+            objet_type="MaterielPoint",
+            objet_id=materiel.id,
+            crise=materiel.point.crise,
+            commentaire=f"Ajout matériel « {materiel.nom} » sur le point {materiel.point.nom}",
+        )
+
+    def perform_update(self, serializer):
+        materiel = serializer.save()
+        audit_log(
+            request=self.request,
+            action_code="MODIFICATION",
+            objet_type="MaterielPoint",
+            objet_id=materiel.id,
+            crise=materiel.point.crise,
+            commentaire=f"Modification matériel « {materiel.nom} » (statut: {materiel.get_statut_display()})",
+        )
 
 
 class ImplicationInstitutionViewSet(

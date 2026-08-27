@@ -26,6 +26,7 @@ from .models import (
     DossierHistorique, Besoin, BesoinCompetence,Dossier, RequestType, RequestTypeBesoin, OfferType, InformationType, Team, Competence, AffectationCompetence,
     DisponibiliteOffre,
     DisponibilitePointEquipe,
+    MaterielPoint,
     Notification,
 )
 
@@ -389,6 +390,29 @@ class DisponibilitePointEquipeSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     {"membre": "Cette personne n'est pas membre de l'équipe responsable de ce point."}
                 )
+            validate_crisis_open(point.crise, field_name="crise")
+        return attrs
+
+class MaterielPointSerializer(serializers.ModelSerializer):
+    """Inventaire de matériel en transit ou présent sur un point opérationnel."""
+
+    type_libelle = serializers.CharField(source="get_type_display", read_only=True)
+    statut_libelle = serializers.CharField(source="get_statut_display", read_only=True)
+    responsable_nom = serializers.SerializerMethodField()
+
+    class Meta:
+        model = MaterielPoint
+        fields = '__all__'
+
+    def get_responsable_nom(self, obj):
+        if not obj.responsable:
+            return None
+        full_name = f"{obj.responsable.first_name} {obj.responsable.last_name}".strip()
+        return full_name or obj.responsable.email
+
+    def validate(self, attrs):
+        point = attrs.get('point') or (self.instance.point if self.instance else None)
+        if point:
             validate_crisis_open(point.crise, field_name="crise")
         return attrs
 

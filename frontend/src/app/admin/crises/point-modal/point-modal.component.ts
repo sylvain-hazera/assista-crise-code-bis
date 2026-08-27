@@ -14,6 +14,7 @@ import { AddressPickerComponent } from '../../../shared/components/common/addres
 import { PointPickerComponent } from '../../../shared/components/common/point-picker/point-picker.component';
 import { TagSearchInputComponent } from '../../../shared/components/common/tag-search-input/tag-search-input.component';
 import { PointEquipeModalComponent } from '../point-equipe-modal/point-equipe-modal.component';
+import { PointInventaireModalComponent } from '../point-inventaire-modal/point-inventaire-modal.component';
 
 /**
  * Modale "Créer/éditer un point opérationnel" — remplace l'ancien formulaire inline de
@@ -25,7 +26,7 @@ import { PointEquipeModalComponent } from '../point-equipe-modal/point-equipe-mo
 @Component({
   selector: 'app-point-modal',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, AddressPickerComponent, PointPickerComponent, TagSearchInputComponent, PointEquipeModalComponent],
+  imports: [CommonModule, ReactiveFormsModule, AddressPickerComponent, PointPickerComponent, TagSearchInputComponent, PointEquipeModalComponent, PointInventaireModalComponent],
   templateUrl: './point-modal.component.html',
   styleUrl: './point-modal.component.scss'
 })
@@ -51,6 +52,7 @@ export class PointModalComponent implements OnChanges {
   selectedCompetences: { id: string; nom: string }[] = [];
   teams: Team[] = [];
   equipeModalOpen = false;
+  inventaireModalOpen = false;
 
   constructor(
     private fb: FormBuilder,
@@ -117,6 +119,14 @@ export class PointModalComponent implements OnChanges {
 
   closeEquipeModal(): void {
     this.equipeModalOpen = false;
+  }
+
+  openInventaireModal(): void {
+    this.inventaireModalOpen = true;
+  }
+
+  closeInventaireModal(): void {
+    this.inventaireModalOpen = false;
   }
 
   onAddressSelected(addr: AddressResult | null): void {

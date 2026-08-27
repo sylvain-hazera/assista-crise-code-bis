@@ -1890,6 +1890,54 @@ class DisponibilitePointEquipe(models.Model):
         return f"{self.point.nom} - {self.membre.email} - {self.date} ({self.creneau})"
 
 
+class StatutMateriel(models.TextChoices):
+    EN_TRANSIT = "EN_TRANSIT", "En transit"
+    SUR_PLACE = "SUR_PLACE", "Sur place"
+    RETIRE = "RETIRE", "Retiré"
+
+
+class MaterielPoint(models.Model):
+    """Inventaire de matériel en transit ou présent sur un point opérationnel. Réutilise
+    TypeMateriel (déjà existant sur Offer.materiel_type) plutôt que d'en recréer un —
+    `nom` sert de précision libre, notamment quand type=AUTRE."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    point = models.ForeignKey(
+        PointOperationnel,
+        on_delete=models.CASCADE,
+        related_name="materiels",
+    )
+
+    type = models.CharField(max_length=20, choices=TypeMateriel.choices)
+
+    nom = models.CharField(max_length=255)
+
+    quantite = models.PositiveIntegerField(default=1)
+
+    unite = models.CharField(max_length=20, default="unité")
+
+    statut = models.CharField(max_length=20, choices=StatutMateriel.choices, default=StatutMateriel.SUR_PLACE)
+
+    responsable = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="materiels_geres",
+    )
+
+    commentaire = models.TextField(blank=True, null=True)
+
+    date_maj = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-date_maj"]
+
+    def __str__(self) -> str:
+        return f"{self.nom} ({self.point.nom})"
+
+
 class AuditAction(models.Model):
 
     id = models.UUIDField(

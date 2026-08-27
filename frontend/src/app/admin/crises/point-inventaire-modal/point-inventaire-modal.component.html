@@ -1,0 +1,74 @@
+<div class="modal-overlay" (click)="close()">
+  <div class="modal" (click)="$event.stopPropagation()">
+
+    <div class="modal-header">
+      <h2>Inventaire — {{ point.nom }}</h2>
+      <button class="icon-btn" (click)="close()"><span class="material-icons">close</span></button>
+    </div>
+
+    <div class="modal-body">
+      @if (loading) {
+        <p>Chargement...</p>
+      } @else {
+
+        <table class="data-table sm">
+          <thead>
+            <tr><th>Matériel</th><th>Type</th><th>Qté</th><th>Statut</th><th></th></tr>
+          </thead>
+          <tbody>
+            @for (m of materiels; track m.id) {
+              <tr>
+                <td>{{ m.nom }}</td>
+                <td>{{ m.type_libelle }}</td>
+                <td>{{ m.quantite }} {{ m.unite }}</td>
+                <td>
+                  <span class="badge" [class]="'statut-' + m.statut">{{ m.statut_libelle }}</span>
+                </td>
+                <td class="actions">
+                  <button class="icon-btn" (click)="edit(m)" title="Modifier">
+                    <span class="material-icons">edit</span>
+                  </button>
+                  <button class="icon-btn danger" (click)="remove(m)" title="Retirer">
+                    <span class="material-icons">delete_outline</span>
+                  </button>
+                </td>
+              </tr>
+            } @empty {
+              <tr><td colspan="5" class="empty">Aucun matériel enregistré pour ce point.</td></tr>
+            }
+          </tbody>
+        </table>
+
+        <form class="inventaire-form" [formGroup]="form" (ngSubmit)="submit()">
+          <h3>{{ editingId ? 'Modifier le matériel' : 'Ajouter du matériel' }}</h3>
+          <div class="form-row">
+            <select formControlName="type">
+              @for (t of types; track t.value) {
+                <option [value]="t.value">{{ t.label }}</option>
+              }
+            </select>
+            <input type="text" formControlName="nom" placeholder="Nom (ex: Groupe électrogène 5kVA)">
+          </div>
+          <div class="form-row">
+            <input type="number" formControlName="quantite" min="1" placeholder="Quantité">
+            <input type="text" formControlName="unite" placeholder="Unité">
+            <select formControlName="statut">
+              @for (s of statuts; track s.value) {
+                <option [value]="s.value">{{ s.label }}</option>
+              }
+            </select>
+          </div>
+          <input type="text" formControlName="commentaire" placeholder="Commentaire (optionnel)">
+          <div class="form-actions">
+            <button type="submit" class="btn-primary sm">{{ editingId ? 'Enregistrer' : 'Ajouter' }}</button>
+            @if (editingId) {
+              <button type="button" class="btn-secondary sm" (click)="cancelEdit()">Annuler</button>
+            }
+          </div>
+        </form>
+
+      }
+    </div>
+
+  </div>
+</div>
