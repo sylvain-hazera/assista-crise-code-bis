@@ -7,6 +7,11 @@ import { AuthService } from '../../services/auth.service';
 import { UserRole } from '../../../shared/models/user.model';
 import { LocationService, Department, Commune } from '../../../services/location.service';
 
+interface InstitutionTypeOption {
+  value: string;
+  label: string;
+}
+
 @Component({
   selector: 'app-register',
   standalone: true,
@@ -23,6 +28,7 @@ export class RegisterComponent implements OnInit, OnDestroy {
   registerForm!: FormGroup;
   isSubmitting = false;
   errorMessage = '';
+  successMessage = '';
   showPassword = false;
   
   private destroy$ = new Subject<void>();
@@ -41,6 +47,24 @@ export class RegisterComponent implements OnInit, OnDestroy {
     { value: UserRole.SIMPLE_USER, label: 'Particulier' },
     { value: UserRole.LOCAL_AUTH, label: 'Institution' },
     { value: UserRole.RESCUE, label: 'Secours organisés' },
+  ];
+
+  institutionTypeOptions: InstitutionTypeOption[] = [
+    { value: 'mairie', label: 'Mairie' },
+    { value: 'prefecture', label: 'Préfecture' },
+    { value: 'sous_prefecture', label: 'Sous-préfecture' },
+    { value: 'police', label: 'Police' },
+    { value: 'police_municipale', label: 'Police municipale' },
+    { value: 'gendarmerie', label: 'Gendarmerie' },
+    { value: 'samu', label: 'SAMU' },
+    { value: 'ars', label: 'ARS (Agence régionale de santé)' },
+    { value: 'chu', label: 'CHU / Hôpital' },
+    { value: 'ministere', label: 'Ministère' },
+    { value: 'collectivite', label: 'Collectivité locale' },
+    { value: 'cc', label: 'Communauté de communes' },
+    { value: 'metropole', label: 'Métropole' },
+    { value: 'conseil_departemental', label: 'Conseil départemental' },
+    { value: 'conseil_regional', label: 'Conseil régional' },
   ];
 
   constructor(
@@ -73,7 +97,7 @@ export class RegisterComponent implements OnInit, OnDestroy {
 
   private initForm(): void {
     this.registerForm = this.formBuilder.group({
-      userType: ['', Validators.required],
+      userType: [UserRole.SIMPLE_USER, Validators.required],
       lastName: ['', [Validators.required, Validators.minLength(2), Validators.maxLength(50)]],
       firstName: [''],
       password: ['', [
@@ -85,6 +109,9 @@ export class RegisterComponent implements OnInit, OnDestroy {
       email: ['', [Validators.required, Validators.email]],
       department: ['', Validators.required],
       commune: ['', Validators.required],
+      institutionName: [''],
+      institutionType: [''],
+      institutionEmailHint: [''],
       acceptTerms: [false, Validators.requiredTrue]
     });
   }
@@ -98,27 +125,43 @@ export class RegisterComponent implements OnInit, OnDestroy {
   }
 
   private toggleFieldsBasedOnUserType(userType: string): void {
-    console.log('Toggle fields for userType:', userType);
     const firstNameControl = this.registerForm.get('firstName');
+    const institutionNameControl = this.registerForm.get('institutionName');
+    const institutionTypeControl = this.registerForm.get('institutionType');
+    const institutionEmailHintControl = this.registerForm.get('institutionEmailHint');
 
-    if (userType === UserRole.SIMPLE_USER) {  
-       // Activer firstName pour les particuliers
-      console.log('Activating firstName for individual');
+    if (userType === UserRole.SIMPLE_USER) {
       firstNameControl?.setValidators([
         Validators.required,
         Validators.minLength(2),
         Validators.maxLength(50)
       ]);
       firstNameControl?.enable();
+      institutionNameControl?.clearValidators();
+      institutionNameControl?.setValue('');
+      institutionNameControl?.disable();
+      institutionTypeControl?.clearValidators();
+      institutionTypeControl?.setValue('');
+      institutionTypeControl?.disable();
+      institutionEmailHintControl?.clearValidators();
+      institutionEmailHintControl?.setValue('');
+      institutionEmailHintControl?.disable();
     } else {
-      // Désactiver firstName pour les organisations/secours
-      console.log('Disabling firstName for non-individual');
       firstNameControl?.clearValidators();
       firstNameControl?.setValue('');
       firstNameControl?.disable();
+      institutionNameControl?.setValidators([Validators.required, Validators.minLength(2)]);
+      institutionNameControl?.enable();
+      institutionTypeControl?.setValidators([Validators.required]);
+      institutionTypeControl?.enable();
+      institutionEmailHintControl?.setValidators([Validators.required]);
+      institutionEmailHintControl?.enable();
     }
 
     firstNameControl?.updateValueAndValidity();
+    institutionNameControl?.updateValueAndValidity();
+    institutionTypeControl?.updateValueAndValidity();
+    institutionEmailHintControl?.updateValueAndValidity();
   }
 
   // Validateur personnalisé pour la force du mot de passe
@@ -197,62 +240,82 @@ export class RegisterComponent implements OnInit, OnDestroy {
 
     this.isSubmitting = true;
     this.errorMessage = '';
+    this.successMessage = '';
 
     const formValue = this.registerForm.getRawValue();
     const userType = formValue.userType;
     const communeCode = formValue.commune;
     const commune = this.communes.find(c => c.code === communeCode);
     const postalCode = commune?.codesPostaux[0] || '';
-    
-    // Vérifier si le compte nécessite une validation
     const requiresValidation = userType !== UserRole.SIMPLE_USER;
-    
+
     const registerData: any = {
-      username: formValue.email,  // Utiliser l'email complet comme username (unique)
+      username: formValue.email,
       email: formValue.email,
       password: formValue.password,
       type: formValue.userType,
-      telephone_utilisateur: formValue.phone,
+      phone_number: formValue.phone,
       last_name: formValue.lastName,
       first_name: formValue.firstName || '',
-      code_postal: postalCode,
-      // Marquer le compte comme non validé si c'est Institution/Secours/Admin
-      enable: !requiresValidation
+      postal_code: postalCode,
+      enabled: !requiresValidation
     };
 
-    if(formValue.userType === UserRole.SIMPLE_USER) {
-      registerData.enabled = true;
-    } else {
-      registerData.enabled = false;
+    if (formValue.userType !== UserRole.SIMPLE_USER) {
+      registerData.institution_name = formValue.institutionName || '';
+      registerData.institution_type = formValue.institutionType || '';
+      registerData.institution_email_hint = formValue.institutionEmailHint || '';
+      registerData.commune_name = commune?.name || '';
+      registerData.commune_code = communeCode;
     }
-    
-    console.log('Données envoyées:', registerData);
 
-    this.authService.register(registerData)
-      .pipe(takeUntil(this.destroy$))
-      .subscribe({
-        next: (response: any) => {
-          console.log('Inscription réussie:', response);
-          
-          // Vérifier si le compte nécessite validation (basé sur la réponse du serveur)
-          if (response.requires_validation || !response.token) {
-            // Afficher un message indiquant que le compte est en attente de validation
-            alert(response.message || 'Votre compte a été créé avec succès ! Un administrateur doit valider votre compte avant que vous puissiez vous connecter. Vous recevrez un email de confirmation.');
-            this.router.navigate(['/login']);
-          } else {
-            // Compte validé directement (token présent)
-            alert(response.message || 'Inscription réussie !');
-            this.router.navigate(['/accueil']);
+    const proceedToRegister = () => {
+      this.authService.register(registerData)
+        .pipe(takeUntil(this.destroy$))
+        .subscribe({
+          next: (response: any) => {
+            if (response.requires_validation || !response.token) {
+              this.successMessage = response.message || 'Votre compte a été créé. Un email vous a été envoyé avec les liens d’activation et de connexion.';
+              this.router.navigate(['/login']);
+            } else {
+              this.successMessage = response.message || 'Inscription réussie !';
+              this.router.navigate(['/accueil']);
+            }
+          },
+          error: (error) => {
+            this.errorMessage = error.message || 'Une erreur est survenue lors de l\'inscription';
+            this.isSubmitting = false;
+          },
+          complete: () => {
+            this.isSubmitting = false;
           }
+        });
+    };
+
+    if (formValue.userType !== UserRole.SIMPLE_USER) {
+      this.authService.validateInstitution({
+        email: formValue.email,
+        institution_name: formValue.institutionName || '',
+        institution_type: formValue.institutionType || '',
+        commune_name: commune?.name || '',
+        commune_code: communeCode
+      }).pipe(takeUntil(this.destroy$)).subscribe({
+        next: (validationResponse) => {
+          if (!validationResponse.valid) {
+            this.errorMessage = validationResponse.message || 'Validation institutionnelle impossible';
+            this.isSubmitting = false;
+            return;
+          }
+          proceedToRegister();
         },
-        error: (error) => {
-          this.errorMessage = error.message || 'Une erreur est survenue lors de l\'inscription';
-          this.isSubmitting = false;
-        },
-        complete: () => {
+        error: () => {
+          this.errorMessage = 'Impossible de valider l’institution. Veuillez vérifier les informations saisies.';
           this.isSubmitting = false;
         }
       });
+    } else {
+      proceedToRegister();
+    }
   }
 
   private markFormAsTouched(): void {
@@ -299,6 +362,5 @@ export class RegisterComponent implements OnInit, OnDestroy {
 
   get isIndividual(): boolean {
     return this.registerForm.get('userType')?.value === UserRole.SIMPLE_USER;
-
   }
 }

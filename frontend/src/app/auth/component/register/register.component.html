@@ -6,10 +6,16 @@
       <hr class="title-divider">
     </div>
 
-    <!-- Message d'erreur global -->
-     @if(errorMessage) {
+    <!-- Messages globaux -->
+    @if(errorMessage) {
       <div class="alert alert-error">
         {{ errorMessage }}
+      </div>
+    }
+
+    @if(successMessage) {
+      <div class="alert alert-success">
+        {{ successMessage }}
       </div>
     }
 
@@ -55,21 +61,72 @@
       </div>
 
       <!-- Prénom (uniquement pour les particuliers) -->
-       @if(isIndividual) {
+      @if(isIndividual) {
         <div class="form-group">
-            <label for="firstName" class="form-label">Prénom</label>
-            <input 
+          <label for="firstName" class="form-label">Prénom</label>
+          <input 
             type="text" 
             id="firstName" 
             formControlName="firstName"
             class="form-input"
             placeholder="Votre prénom"
             [class.invalid]="isFieldInvalid('firstName')">
-            <div class="error-message" *ngIf="isFieldInvalid('firstName')">
+          <div class="error-message" *ngIf="isFieldInvalid('firstName')">
             {{ getFieldError('firstName') }}
-            </div>
+          </div>
         </div>
-        }
+      }
+
+      <!-- Champs institutionnels -->
+      @if(!isIndividual) {
+        <div class="form-group">
+          <label for="institutionName" class="form-label">Nom de l’institution <span class="required">*</span></label>
+          <input 
+            type="text" 
+            id="institutionName" 
+            formControlName="institutionName"
+            class="form-input"
+            placeholder="Ex. Mairie de Bordeaux"
+            [class.invalid]="isFieldInvalid('institutionName')">
+          <div class="error-message" *ngIf="isFieldInvalid('institutionName')">
+            {{ getFieldError('institutionName') }}
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="institutionType" class="form-label">Type d’institution <span class="required">*</span></label>
+          <div class="select-wrapper">
+            <select 
+              id="institutionType" 
+              formControlName="institutionType"
+              class="form-select"
+              [class.invalid]="isFieldInvalid('institutionType')">
+              <option value="">Sélectionner un type</option>
+              <option *ngFor="let option of institutionTypeOptions" [value]="option.value">
+                {{ option.label }}
+              </option>
+            </select>
+            <span class="material-icons select-arrow">arrow_drop_down</span>
+          </div>
+          <div class="error-message" *ngIf="isFieldInvalid('institutionType')">
+            {{ getFieldError('institutionType') }}
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="institutionEmailHint" class="form-label">Email institutionnel <span class="required">*</span></label>
+          <input 
+            type="email" 
+            id="institutionEmailHint" 
+            formControlName="institutionEmailHint"
+            class="form-input"
+            placeholder="contact@mairie-bordeaux.fr"
+            [class.invalid]="isFieldInvalid('institutionEmailHint')">
+          <div class="error-message" *ngIf="isFieldInvalid('institutionEmailHint')">
+            {{ getFieldError('institutionEmailHint') }}
+          </div>
+        </div>
+      }
 
       <!-- Mot de passe -->
       <div class="form-group">
