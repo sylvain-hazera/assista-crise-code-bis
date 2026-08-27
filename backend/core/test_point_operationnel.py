@@ -12,6 +12,7 @@ from core.models import (
     InstitutionType,
     PointOperationnel,
     PointType,
+    Team,
 )
 
 
@@ -176,3 +177,64 @@ class TestPointOperationnelCompetencesRequises:
         )
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+
+@pytest.mark.django_db
+class TestPointOperationnelCriseNom:
+
+    def test_list_includes_crise_nom(self, institutional_client, crisis, point_type):
+        client, _ = institutional_client
+        PointOperationnel.objects.create(nom="Point avec crise", type=point_type, crise=crisis)
+
+        response = client.get(reverse('pointoperationnel-list'))
+
+        assert response.status_code == status.HTTP_200_OK
+        point_data = next(p for p in response.data if p["nom"] == "Point avec crise")
+        assert point_data["crise_nom"] == crisis.name
+
+
+@pytest.mark.django_db
+class TestPointOperationnelMineFilter:
+
+    def test_mine_includes_points_i_am_responsable_of(self, institutional_client, crisis, point_type):
+        client, user = institutional_client
+        mine = PointOperationnel.objects.create(nom="Mon point", type=point_type, crise=crisis, responsable=user)
+        PointOperationnel.objects.create(nom="Point d'un autre", type=point_type, crise=crisis)
+
+        response = client.get(reverse('pointoperationnel-list'), {"mine": "true"})
+
+        assert response.status_code == status.HTTP_200_OK
+        ids = {p["id"] for p in response.data}
+        assert ids == {str(mine.id)}
+
+    def test_mine_includes_points_where_i_am_team_leader(self, institutional_client, crisis, point_type):
+        client, user = institutional_client
+        team = Team.objects.create(name="Equipe leader mine test", leader=user)
+        mine = PointOperationnel.objects.create(nom="Point equipe leader", type=point_type, crise=crisis, equipe=team)
+        PointOperationnel.objects.create(nom="Point d'un autre", type=point_type, crise=crisis)
+
+        response = client.get(reverse('pointoperationnel-list'), {"mine": "true"})
+
+        ids = {p["id"] for p in response.data}
+        assert ids == {str(mine.id)}
+
+    def test_mine_includes_points_where_i_am_team_member(self, institutional_client, crisis, point_type):
+        client, user = institutional_client
+        team = Team.objects.create(name="Equipe membre mine test")
+        team.members.add(user)
+        mine = PointOperationnel.objects.create(nom="Point equipe membre", type=point_type, crise=crisis, equipe=team)
+        PointOperationnel.objects.create(nom="Point d'un autre", type=point_type, crise=crisis)
+
+        response = client.get(reverse('pointoperationnel-list'), {"mine": "true"})
+
+        ids = {p["id"] for p in response.data}
+        assert ids == {str(mine.id)}
+
+    def test_without_mine_returns_all_points(self, institutional_client, crisis, point_type):
+        client, user = institutional_client
+        PointOperationnel.objects.create(nom="Mon point", type=point_type, crise=crisis, responsable=user)
+        PointOperationnel.objects.create(nom="Point d'un autre", type=point_type, crise=crisis)
+
+        response = client.get(reverse('pointoperationnel-list'))
+
+        assert len(response.data) >= 2

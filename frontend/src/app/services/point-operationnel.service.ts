@@ -19,6 +19,12 @@ export class PointOperationnelService {
     return this.http.get<PointOperationnel[]>(`${this.apiUrl}/`, { params: { crise: criseId } });
   }
 
+  /** Points dont je suis responsable, leader d'équipe ou membre — toutes crises confondues
+   * (page "Centres", filtre "Mes centres"). */
+  getMine(): Observable<PointOperationnel[]> {
+    return this.http.get<PointOperationnel[]>(`${this.apiUrl}/`, { params: { mine: 'true' } });
+  }
+
   create(payload: PointOperationnelPayload): Observable<PointOperationnel> {
     return this.http.post<PointOperationnel>(`${this.apiUrl}/`, payload);
   }

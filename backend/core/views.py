@@ -3001,6 +3001,18 @@ class PointOperationnelViewSet(
 
     filterset_fields = ["crise"]
 
+    def get_queryset(self):
+        """`?mine=true` restreint aux points dont l'utilisateur est responsable, leader ou
+        membre de l'équipe — alimente la page "Mes centres" (accès direct, toutes crises
+        confondues, sans repasser par la fiche de chaque crise)."""
+        qs = super().get_queryset()
+        if self.request.query_params.get("mine") == "true":
+            user = self.request.user
+            qs = qs.filter(
+                Q(responsable=user) | Q(equipe__leader=user) | Q(equipe__members=user)
+            ).distinct()
+        return qs
+
     def get_permissions(self):
         # Avant ce correctif, seul `create` était restreint : n'importe quel compte connecté
         # pouvait modifier ou supprimer le point opérationnel d'une institution tierce.

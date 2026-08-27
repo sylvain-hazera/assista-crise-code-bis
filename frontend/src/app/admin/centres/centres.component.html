@@ -1,0 +1,77 @@
+<div class="centres-page">
+
+  <header class="page-header">
+    <div class="header-left">
+      <h1><span class="material-icons">home_work</span> Centres</h1>
+      <p class="subtitle">{{ filteredPoints.length }} centre{{ filteredPoints.length > 1 ? 's' : '' }}</p>
+    </div>
+  </header>
+
+  @if (errorMessage) {
+    <div class="toast toast-err"><span class="material-icons">error_outline</span> {{ errorMessage }}</div>
+  }
+
+  @if (isLoading) {
+    <div class="loading">Chargement...</div>
+  }
+
+  @if (!isLoading) {
+    <div class="toolbar">
+      <div class="scope-toggle">
+        <button type="button" [class.active]="scope === 'mine'" (click)="setScope('mine')">Mes centres</button>
+        <button type="button" [class.active]="scope === 'all'" (click)="setScope('all')">Tous les centres</button>
+      </div>
+      <div class="search-box">
+        <span class="material-icons">search</span>
+        <input type="text" placeholder="Rechercher un centre ou une crise…" [(ngModel)]="searchQuery"/>
+      </div>
+    </div>
+
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Centre</th>
+          <th>Crise</th>
+          <th>Type</th>
+          <th>Responsable</th>
+          <th>Présents</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (point of filteredPoints; track point.id) {
+          <tr (click)="openPointModal(point)">
+            <td>{{ point.nom }}</td>
+            <td>{{ point.crise_nom || '—' }}</td>
+            <td>{{ point.type_libelle || '—' }}</td>
+            <td>{{ point.responsable_nom || '—' }}</td>
+            <td>{{ point.personnes_presentes ?? 0 }}</td>
+            <td class="actions">
+              <span class="material-icons">chevron_right</span>
+            </td>
+          </tr>
+        } @empty {
+          <tr>
+            <td colspan="6" class="empty">
+              {{ scope === 'mine' ? "Vous n'êtes responsable ou membre d'équipe d'aucun centre pour l'instant." : 'Aucun centre déclaré.' }}
+            </td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  }
+
+  @if (pointModalOpen && editingPoint) {
+    <app-point-modal
+      [crisisId]="editingPoint.crise!"
+      [pointTypes]="pointTypes"
+      [selectableInstitutions]="selectableInstitutions"
+      [isAdmin]="isAdmin"
+      [point]="editingPoint"
+      (saved)="onPointSaved()"
+      (closed)="closePointModal()"
+      (pointUpdated)="onPointUpdated($event)">
+    </app-point-modal>
+  }
+
+</div>

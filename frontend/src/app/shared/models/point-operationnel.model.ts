@@ -14,6 +14,7 @@ export interface PointOperationnel {
   type: string;
   type_libelle?: string | null;
   crise: string | null;
+  crise_nom?: string | null;
   responsable: string | null;
   responsable_nom?: string | null;
   adresse?: string | null;
@@ -29,6 +30,7 @@ export interface PointOperationnel {
   competences_requises_libelles?: string[];
   equipe?: string | null;
   equipe_nom?: string | null;
+  personnes_presentes?: number;
 }
 
 export interface PointEquipeMembre {

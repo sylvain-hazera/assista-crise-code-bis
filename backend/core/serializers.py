@@ -1222,6 +1222,7 @@ class PointOperationnelSerializer(
     longitude = serializers.SerializerMethodField()
     competences_requises_libelles = serializers.SerializerMethodField()
     equipe_nom = serializers.CharField(source="equipe.name", read_only=True, default=None)
+    crise_nom = serializers.CharField(source="crise.name", read_only=True, default=None)
     personnes_presentes = serializers.SerializerMethodField()
 
     class Meta:

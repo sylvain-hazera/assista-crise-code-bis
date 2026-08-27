@@ -41,6 +41,8 @@ export class AdminLayoutComponent implements OnInit {
 
     { icon: 'local_fire_department', label: 'Crises', route: '/admin/crises' },
 
+    { icon: 'home_work', label: 'Centres', route: '/admin/centres' },
+
     { icon: 'category', label: 'Compétences', route: '/admin/competences' },
 
     { icon: 'playlist_add_check', label: 'Besoins', route: '/admin/besoins' },
