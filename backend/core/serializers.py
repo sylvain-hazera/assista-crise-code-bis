@@ -1121,6 +1121,24 @@ class DelegationCompetenceSerializer(
                     )
                 })
 
+        institution_cible = attrs.get('institution_cible') or (
+            self.instance.institution_cible if self.instance else None
+        )
+        if crise and institution_cible:
+            cible_actrice = ImplicationInstitution.objects.filter(
+                crise=crise,
+                institution=institution_cible,
+                type_implication=TypeImplication.ACTEUR,
+                actif=True,
+            ).exists()
+            if not cible_actrice:
+                raise serializers.ValidationError({
+                    "institution_cible": (
+                        "Cette institution doit être déclarée acteur opérationnel sur la"
+                        " crise pour pouvoir recevoir une délégation de compétence."
+                    )
+                })
+
         return attrs
 class DisponibiliteOperationnelleSerializer(
     serializers.ModelSerializer

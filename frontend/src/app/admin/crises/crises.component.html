@@ -435,13 +435,19 @@
 
                   <div class="select-wrapper">
                     <select [(ngModel)]="delegationCibleId" [ngModelOptions]="{standalone: true}">
-                      <option [ngValue]="null">— Institution bénéficiaire —</option>
-                      @for (inst of institutions; track inst.id) {
+                      <option [ngValue]="null">— Institution bénéficiaire (acteur sur cette crise) —</option>
+                      @for (inst of acteursInstitutionsFor(selectedCrisis.id); track inst.id) {
                         <option [ngValue]="inst.id">{{ inst.nom }}</option>
                       }
                     </select>
                     <span class="material-icons select-arrow">arrow_drop_down</span>
                   </div>
+                  @if (acteursInstitutionsFor(selectedCrisis.id).length === 0) {
+                    <p class="crisis-meta">
+                      Aucune institution actrice pour l'instant — déclarez-en une (section
+                      "Acteurs opérationnels" ci-dessous) avant de pouvoir lui déléguer une compétence.
+                    </p>
+                  }
 
                   <app-tag-search-input
                     placeholder="Chercher ou créer une compétence..."

@@ -190,6 +190,10 @@ export class CrisesComponent implements OnInit {
     this.delegationService.getAll().subscribe(data => this.delegations = data);
   }
 
+  private reloadInstitutions(): void {
+    this.institutionService.getAll().subscribe(data => this.institutions = data);
+  }
+
   // ── Liste ────────────────────────────────────────────────────
   get filteredCrises(): Crisis[] {
     const q = this.searchQuery.trim().toLowerCase();
@@ -221,6 +225,13 @@ export class CrisesComponent implements OnInit {
    * (acteur ou simple impliquée) sur cette crise — cohérent avec la règle backend. */
   delegableInstitutionsFor(crisisId: string): Institution[] {
     const ids = new Set(this.implicationsFor(crisisId).map(i => i.institution));
+    return this.institutions.filter(i => ids.has(i.id!));
+  }
+
+  /** La bénéficiaire d'une délégation doit être acteur opérationnel sur la crise (ex: une
+   * association déjà mobilisée sur un point) — cohérent avec la règle backend. */
+  acteursInstitutionsFor(crisisId: string): Institution[] {
+    const ids = new Set(this.acteursFor(crisisId).map(i => i.institution));
     return this.institutions.filter(i => ids.has(i.id!));
   }
 
@@ -513,7 +524,7 @@ export class CrisesComponent implements OnInit {
       actif: true,
     }).subscribe({
       next: (created) => {
-        this.institutions = [...this.institutions, created];
+        this.reloadInstitutions();
         this.quickCreateSaving = false;
         this.quickCreateNom = '';
         this.quickCreateTypeId = null;

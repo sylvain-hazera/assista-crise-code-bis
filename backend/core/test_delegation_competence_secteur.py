@@ -25,9 +25,16 @@ def mairie(db):
 
 
 @pytest.fixture
-def association(db):
+def association(db, crisis):
+    # Bénéficiaire d'une délégation : doit être acteur opérationnel sur la crise (règle
+    # ajoutée après coup — une association pas encore mobilisée ne peut plus recevoir de
+    # délégation directement).
     itype = InstitutionType.objects.create(code="ASSO_DELEG_SECTEUR_TEST", libelle="Association")
-    return Institution.objects.create(nom="Association delegation secteur test", type=itype)
+    institution = Institution.objects.create(nom="Association delegation secteur test", type=itype)
+    ImplicationInstitution.objects.create(
+        crise=crisis, institution=institution, type_implication="ACTEUR", actif=True,
+    )
+    return institution
 
 
 @pytest.fixture
@@ -127,6 +134,25 @@ class TestDelegationCompetenceSecteur:
         )
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert "institution_source" in response.data
+
+    def test_institution_cible_not_actrice_is_rejected(self, mairie_client, crisis, mairie, competence):
+        itype = InstitutionType.objects.create(code="ASSO_DELEG_SECTEUR_NON_ACTRICE_TEST", libelle="Association")
+        association_non_actrice = Institution.objects.create(nom="Association pas encore mobilisee", type=itype)
+        ImplicationInstitution.objects.create(
+            crise=crisis, institution=association_non_actrice, type_implication="IMPLIQUE", actif=True,
+        )
+        client, _ = mairie_client
+
+        response = client.post(
+            reverse('delegationcompetence-list'),
+            {
+                "institution_source": str(mairie.id), "institution_cible": str(association_non_actrice.id),
+                "competence": str(competence.id), "crise": str(crisis.id),
+            },
+            format='json',
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "institution_cible" in response.data
 
     def test_non_institutional_user_cannot_create(self, create_user, crisis, mairie, association, competence):
         user = create_user(username="simple-deleg-secteur@test.fr", email="simple-deleg-secteur@test.fr", type="UTIL_SIMPLE")
