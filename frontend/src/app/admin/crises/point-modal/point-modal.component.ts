@@ -4,13 +4,16 @@ import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angula
 
 import { PointOperationnelService } from '../../../services/point-operationnel.service';
 import { CompetenceService } from '../../../services/competence.service';
+import { TeamService } from '../../../services/team.service';
 import { PointOperationnel, PointType } from '../../../shared/models/point-operationnel.model';
 import { Institution } from '../../../shared/models/institution.model';
 import { Competence } from '../../../shared/models/competence.model';
+import { Team } from '../../../shared/models/team.model';
 import { AddressResult } from '../../../shared/models/address-result.model';
 import { AddressPickerComponent } from '../../../shared/components/common/address-picker/address-picker.component';
 import { PointPickerComponent } from '../../../shared/components/common/point-picker/point-picker.component';
 import { TagSearchInputComponent } from '../../../shared/components/common/tag-search-input/tag-search-input.component';
+import { PointEquipeModalComponent } from '../point-equipe-modal/point-equipe-modal.component';
 
 /**
  * Modale "Créer/éditer un point opérationnel" — remplace l'ancien formulaire inline de
@@ -22,7 +25,7 @@ import { TagSearchInputComponent } from '../../../shared/components/common/tag-s
 @Component({
   selector: 'app-point-modal',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, AddressPickerComponent, PointPickerComponent, TagSearchInputComponent],
+  imports: [CommonModule, ReactiveFormsModule, AddressPickerComponent, PointPickerComponent, TagSearchInputComponent, PointEquipeModalComponent],
   templateUrl: './point-modal.component.html',
   styleUrl: './point-modal.component.scss'
 })
@@ -46,13 +49,17 @@ export class PointModalComponent implements OnChanges {
   saving = false;
   errorMessage = '';
   selectedCompetences: { id: string; nom: string }[] = [];
+  teams: Team[] = [];
+  equipeModalOpen = false;
 
   constructor(
     private fb: FormBuilder,
     private pointService: PointOperationnelService,
     private competenceService: CompetenceService,
+    private teamService: TeamService,
   ) {
     this.buildForm();
+    this.teamService.getAll().subscribe(teams => this.teams = teams);
   }
 
   competenceSearchFn = (q: string) => this.competenceService.search(q);
@@ -72,6 +79,7 @@ export class PointModalComponent implements OnChanges {
       description: [this.point?.description ?? ''],
       date_ouverture: [this.toDatetimeLocal(this.point?.date_ouverture)],
       date_fermeture: [this.toDatetimeLocal(this.point?.date_fermeture)],
+      equipe: [this.point?.equipe ?? null],
     });
     this.latitude = this.point?.latitude ?? null;
     this.longitude = this.point?.longitude ?? null;
@@ -103,6 +111,14 @@ export class PointModalComponent implements OnChanges {
     return !!this.point;
   }
 
+  openEquipeModal(): void {
+    this.equipeModalOpen = true;
+  }
+
+  closeEquipeModal(): void {
+    this.equipeModalOpen = false;
+  }
+
   onAddressSelected(addr: AddressResult | null): void {
     if (!addr) return;
     this.latitude = addr.latitude;
@@ -120,12 +136,13 @@ export class PointModalComponent implements OnChanges {
       return;
     }
 
-    const { institution, type, nom, description, date_ouverture, date_fermeture } = this.form.value;
+    const { institution, type, nom, description, date_ouverture, date_fermeture, equipe } = this.form.value;
     const payload: any = {
       type, nom,
       description: description || undefined,
       date_ouverture: date_ouverture || null,
       date_fermeture: date_fermeture || null,
+      equipe: equipe || null,
     };
 
     if (this.latitude != null && this.longitude != null) {

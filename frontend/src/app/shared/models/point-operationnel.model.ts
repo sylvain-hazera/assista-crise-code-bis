@@ -25,6 +25,26 @@ export interface PointOperationnel {
   date_fermeture?: string | null;
   competences_requises?: string[];
   competences_requises_libelles?: string[];
+  equipe?: string | null;
+  equipe_nom?: string | null;
+}
+
+export interface PointEquipeMembre {
+  id: string;
+  nom: string;
+  email: string;
+}
+
+export interface PointEquipeResponse {
+  membres: PointEquipeMembre[];
+  disponibilites: {
+    id: string;
+    point: string;
+    membre: string;
+    membre_nom: string;
+    date: string;
+    creneau: 'MATIN' | 'MIDI' | 'SOIR' | 'NUIT';
+  }[];
 }
 
 export interface PointOperationnelPayload {
@@ -39,4 +59,5 @@ export interface PointOperationnelPayload {
   date_fermeture?: string | null;
   location?: string;
   competences_requises?: string[];
+  equipe?: string | null;
 }

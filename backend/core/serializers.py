@@ -25,6 +25,7 @@ from .models import (
     DossierCommentaire, RecherchePersonne, RecherchePersonneCommentaire, RecherchePersonneHistorique,
     DossierHistorique, Besoin, BesoinCompetence,Dossier, RequestType, RequestTypeBesoin, OfferType, InformationType, Team, Competence, AffectationCompetence,
     DisponibiliteOffre,
+    DisponibilitePointEquipe,
     Notification,
 )
 
@@ -366,6 +367,30 @@ class DisponibiliteOffreSerializer(serializers.ModelSerializer):
     class Meta:
         model = DisponibiliteOffre
         fields = '__all__'
+
+class DisponibilitePointEquipeSerializer(serializers.ModelSerializer):
+    """Créneau de disponibilité d'un membre de l'équipe responsable d'un point opérationnel."""
+
+    membre_nom = serializers.SerializerMethodField()
+
+    class Meta:
+        model = DisponibilitePointEquipe
+        fields = '__all__'
+
+    def get_membre_nom(self, obj):
+        full_name = f"{obj.membre.first_name} {obj.membre.last_name}".strip()
+        return full_name or obj.membre.email
+
+    def validate(self, attrs):
+        point = attrs.get('point') or (self.instance.point if self.instance else None)
+        membre = attrs.get('membre') or (self.instance.membre if self.instance else None)
+        if point and membre:
+            if not point.equipe or not point.equipe.members.filter(pk=membre.pk).exists():
+                raise serializers.ValidationError(
+                    {"membre": "Cette personne n'est pas membre de l'équipe responsable de ce point."}
+                )
+            validate_crisis_open(point.crise, field_name="crise")
+        return attrs
 
 class InformationSerializer(serializers.ModelSerializer):
     """Serializer pour les informations.
@@ -1072,6 +1097,7 @@ class PointOperationnelSerializer(
     latitude = serializers.SerializerMethodField()
     longitude = serializers.SerializerMethodField()
     competences_requises_libelles = serializers.SerializerMethodField()
+    equipe_nom = serializers.CharField(source="equipe.name", read_only=True, default=None)
 
     class Meta:
 

@@ -1,0 +1,58 @@
+<div class="modal-overlay" (click)="close()">
+  <div class="modal" (click)="$event.stopPropagation()">
+
+    <div class="modal-header">
+      <h2>Équipe — {{ point.nom }}</h2>
+      <button class="icon-btn" (click)="close()"><span class="material-icons">close</span></button>
+    </div>
+
+    <div class="modal-body">
+      @if (loading) {
+        <p>Chargement...</p>
+      } @else {
+
+        <div class="membres-list">
+          @for (m of membres; track m.id) {
+            <button
+              type="button"
+              class="membre-chip"
+              [class.active]="m.id === selectedMembreId"
+              (click)="selectMembre(m.id)">
+              {{ m.nom }}
+            </button>
+          } @empty {
+            <p class="empty">Aucun bénévole dans cette équipe.</p>
+          }
+        </div>
+
+        @if (selectedMembreId) {
+          <table class="dispo-table">
+            <thead>
+              <tr>
+                <th></th>
+                <th>Matin</th>
+                <th>Midi</th>
+                <th>Soir</th>
+                <th>Nuit</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (jour of jours; track jour.date) {
+                <tr>
+                  <td class="dispo-jour">{{ jour.label }}</td>
+                  @for (slot of jour.creneaux; track slot.creneau) {
+                    <td class="dispo-cell">
+                      <input type="checkbox" [checked]="slot.checked" (change)="toggleSlot(jour, slot)">
+                    </td>
+                  }
+                </tr>
+              }
+            </tbody>
+          </table>
+        }
+
+      }
+    </div>
+
+  </div>
+</div>

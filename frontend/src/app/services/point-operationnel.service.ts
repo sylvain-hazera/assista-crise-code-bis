@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
-import { PointOperationnel, PointOperationnelPayload } from '../shared/models/point-operationnel.model';
+import { PointOperationnel, PointOperationnelPayload, PointEquipeResponse } from '../shared/models/point-operationnel.model';
 
 @Injectable({ providedIn: 'root' })
 export class PointOperationnelService {
@@ -28,5 +28,9 @@ export class PointOperationnelService {
 
   delete(id: string): Observable<void> {
     return this.http.delete<void>(`${this.apiUrl}/${id}/`);
+  }
+
+  getEquipe(id: string): Observable<PointEquipeResponse> {
+    return this.http.get<PointEquipeResponse>(`${this.apiUrl}/${id}/equipe/`);
   }
 }

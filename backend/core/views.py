@@ -90,7 +90,7 @@ from .models import (
     PointOperationnel,
     ImplicationInstitution,
     TypeImplication,
-    User, Crisis, Request, Offer, Information, DisponibiliteOffre,
+    User, Crisis, Request, Offer, Information, DisponibiliteOffre, DisponibilitePointEquipe,
     RecherchePersonne, RecherchePersonneCommentaire, Besoin, Notification, DossierParticipant,
     RecherchePersonneCommentairePhoto, RecherchePersonneLecture, RecherchePersonneLectureHistorique,
     Document, DossierCommentaire, DossierHistorique, BesoinCompetence, Competence, Dossier,
@@ -218,6 +218,7 @@ from .serializers import (
     RequestSerializer,
     OfferSerializer,
     DisponibiliteOffreSerializer,
+    DisponibilitePointEquipeSerializer,
     InformationSerializer,
     RequestTypeSerializer,
     OfferTypeSerializer,
@@ -2822,6 +2823,70 @@ class PointOperationnelViewSet(
                             f"{point.crise.name} (gestion de {point.nom})"
                         ),
                     )
+
+    @action(detail=True, methods=["get"])
+    def equipe(self, request, pk=None):
+        """Membres de l'équipe responsable de ce point + leurs disponibilités déclarées sur
+        ce point précis, en un seul appel (évite un aller-retour Team + Dispo séparé côté
+        frontend)."""
+        point = self.get_object()
+        if not point.equipe:
+            return Response({"membres": [], "disponibilites": []})
+
+        membres = point.equipe.members.all()
+        disponibilites = DisponibilitePointEquipe.objects.filter(point=point)
+
+        return Response({
+            "membres": [
+                {
+                    "id": str(m.id),
+                    "nom": f"{m.first_name} {m.last_name}".strip() or m.email,
+                    "email": m.email,
+                }
+                for m in membres
+            ],
+            "disponibilites": DisponibilitePointEquipeSerializer(disponibilites, many=True).data,
+        })
+
+
+class DisponibilitePointEquipeViewSet(viewsets.ModelViewSet):
+    """Planning de disponibilité des membres de l'équipe responsable d'un point opérationnel."""
+
+    queryset = DisponibilitePointEquipe.objects.select_related("point", "membre").all()
+    serializer_class = DisponibilitePointEquipeSerializer
+    filterset_fields = ["point", "membre"]
+
+    def _can_manage(self, user, point, membre):
+        # Le membre lui-même déclare sa propre disponibilité ; le leader de l'équipe ou le
+        # responsable du point peuvent la gérer pour toute l'équipe ; un admin, toujours.
+        if user.type == UserRole.ADMINISTRATOR:
+            return True
+        if user.id == membre.id:
+            return True
+        if point.equipe and point.equipe.leader_id == user.id:
+            return True
+        if point.responsable_id == user.id:
+            return True
+        return False
+
+    def perform_create(self, serializer):
+        point = serializer.validated_data.get('point')
+        membre = serializer.validated_data.get('membre')
+        if not self._can_manage(self.request.user, point, membre):
+            raise PermissionDenied(
+                "Vous ne pouvez déclarer une disponibilité que pour vous-même, ou pour l'équipe "
+                "dont vous êtes le·la leader / le·la responsable du point."
+            )
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        if not self._can_manage(self.request.user, instance.point, instance.membre):
+            raise PermissionDenied(
+                "Vous ne pouvez retirer qu'une disponibilité vous concernant, ou celles de "
+                "l'équipe dont vous êtes le·la leader / le·la responsable du point."
+            )
+        instance.delete()
+
 
 class ImplicationInstitutionViewSet(
     viewsets.ModelViewSet

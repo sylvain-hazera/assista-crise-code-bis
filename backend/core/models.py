@@ -1839,8 +1839,55 @@ class PointOperationnel(models.Model):
         help_text="Compétences/thèmes nécessaires pour tenir ce point.",
     )
 
+    equipe = models.ForeignKey(
+        "Team",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="points_operationnels",
+        help_text="Équipe responsable de la tenue de ce point.",
+    )
+
     def __str__(self):
         return self.nom
+
+
+class DisponibilitePointEquipe(models.Model):
+    """Créneau de disponibilité (jour + matin/midi/soir/nuit) d'un membre de l'équipe
+    responsable d'un point opérationnel — même principe que DisponibiliteOffre (jour+créneau),
+    mais scopé Point×membre plutôt que Offer : DisponibiliteOperationnelle (simple toggle
+    scopé Institution+Competence) et DisponibiliteOffre (couplée à une Offer individuelle) ont
+    une sémantique différente et ne sont pas transposables sans les dénaturer."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    point = models.ForeignKey(
+        PointOperationnel,
+        on_delete=models.CASCADE,
+        related_name="disponibilites_equipe",
+    )
+
+    membre = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="disponibilites_points",
+    )
+
+    date = models.DateField()
+
+    creneau = models.CharField(max_length=10, choices=Creneau.choices)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["point", "membre", "date", "creneau"],
+                name="uq_dispo_point_equipe",
+            )
+        ]
+        ordering = ["date", "creneau"]
+
+    def __str__(self) -> str:
+        return f"{self.point.nom} - {self.membre.email} - {self.date} ({self.creneau})"
 
 
 class AuditAction(models.Model):

@@ -24,6 +24,7 @@ from .views import (
     PointTypeViewSet,
     PointOperationnelViewSet,
     ImplicationInstitutionViewSet,
+    DisponibilitePointEquipeViewSet,
 )
 
 router = DefaultRouter()
@@ -94,6 +95,7 @@ router.register(r'crises', CrisisViewSet)
 router.register(r'demandes', RequestViewSet)
 router.register(r'offres', OfferViewSet)
 router.register(r'disponibilites-offres', DisponibiliteOffreViewSet)
+router.register(r'disponibilites-points-equipe', DisponibilitePointEquipeViewSet)
 router.register(r'informations', InformationViewSet)
 router.register(r'types-demande', RequestTypeViewSet)
 router.register(r'types-offre', OfferTypeViewSet)
