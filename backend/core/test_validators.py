@@ -382,3 +382,101 @@ def test_departement_level_registration_validates_via_annuaire(mock_fetch):
     assert valid is True
     assert details["validation_mode"] == "annuaire"
     assert details["annuaire"]["domain"] == "loire.fr"
+
+
+@pytest.mark.django_db
+@patch("core.auth_validation.InstitutionEmailValidator._search_annuaire")
+def test_conseil_departemental_falls_back_to_name_check(mock_search):
+    """Sans correspondance annuaire (mock vide), un conseil départemental doit encore passer
+    la validation via la vérification nom/domaine (comme prefecture/gendarmerie/etc.)."""
+    mock_search.return_value = None
+
+    valid, message, details = InstitutionEmailValidator.validate_institution_account(
+        email="contact@departement-haute-savoie.fr",
+        institution_name="Conseil départemental de la Haute-Savoie",
+        institution_type="conseil_departemental",
+    )
+
+    assert valid is True
+    assert details.get("validation_mode") != "annuaire"
+
+
+@pytest.mark.django_db
+@patch("core.auth_validation.InstitutionEmailValidator._search_annuaire")
+def test_conseil_departemental_rejects_unrelated_name(mock_search):
+    mock_search.return_value = None
+
+    valid, message, details = InstitutionEmailValidator.validate_institution_account(
+        email="contact@randommail.com",
+        institution_name="Boulangerie du coin",
+        institution_type="conseil_departemental",
+    )
+
+    assert valid is False
+
+
+@pytest.mark.django_db
+@patch("core.auth_validation.InstitutionEmailValidator._search_annuaire")
+def test_conseil_regional_falls_back_to_name_check(mock_search):
+    mock_search.return_value = None
+
+    valid, message, details = InstitutionEmailValidator.validate_institution_account(
+        email="contact@region-bretagne.fr",
+        institution_name="Conseil régional de Bretagne",
+        institution_type="conseil_regional",
+    )
+
+    assert valid is True
+
+
+@pytest.mark.django_db
+@patch("core.auth_validation.InstitutionEmailValidator._search_annuaire")
+def test_sous_prefecture_falls_back_to_name_check(mock_search):
+    mock_search.return_value = None
+
+    valid, message, details = InstitutionEmailValidator.validate_institution_account(
+        email="contact@sous-prefecture-thonon.fr",
+        institution_name="Sous-préfecture de Thonon-les-Bains",
+        institution_type="sous_prefecture",
+    )
+
+    assert valid is True
+
+
+@pytest.mark.django_db
+@patch("core.auth_validation.InstitutionEmailValidator._fetch_json")
+@patch("core.auth_validation.InstitutionEmailValidator._search_annuaire")
+def test_communaute_de_communes_validated_via_epci_lookup(mock_search, mock_fetch):
+    """Contrairement aux autres types (dépendants de etablissements-publics.api.gouv.fr,
+    actuellement hors service), les EPCI (cc/métropole) sont vérifiés via geo.api.gouv.fr,
+    qui répond réellement — ce test vérifie ce chemin spécifique."""
+    mock_search.return_value = None
+    mock_fetch.return_value = [{"nom": "CC du Genevois", "code": "200011identifier"}]
+
+    valid, message, details = InstitutionEmailValidator.validate_institution_account(
+        email="contact@cc-genevois.fr",
+        institution_name="CC du Genevois",
+        institution_type="cc",
+        commune_name="Saint-Julien-en-Genevois",
+        commune_code="74258",
+    )
+
+    assert valid is True
+    assert details["validation_mode"] == "opendata"
+
+
+@pytest.mark.django_db
+@patch("core.auth_validation.InstitutionEmailValidator._fetch_json")
+@patch("core.auth_validation.InstitutionEmailValidator._search_annuaire")
+def test_metropole_falls_back_to_name_check_when_epci_lookup_empty(mock_search, mock_fetch):
+    mock_search.return_value = None
+    mock_fetch.return_value = None
+
+    valid, message, details = InstitutionEmailValidator.validate_institution_account(
+        email="contact@metropole-lyon.fr",
+        institution_name="Métropole de Lyon",
+        institution_type="metropole",
+    )
+
+    assert valid is True
+    assert details.get("validation_mode") != "opendata"

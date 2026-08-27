@@ -245,25 +245,62 @@ class InstitutionEmailValidator:
         match = InstitutionEmailValidator._best_geo_match(data if isinstance(data, list) else None, commune_name)
         return str(match.get("code", "")) if match else ""
 
+    EPCI_TYPES = {"cc", "intercommunalite", "intercommunalité", "metropole", "métropole"}
+
     @staticmethod
-    def _check_open_data_institution(institution_type: str, commune_code: str):
+    def _check_epci_institution(institution_name: str, commune_code: str):
+        """Vérifie qu'une communauté de communes/d'agglomération ou une métropole du nom donné
+        existe réellement (geo.api.gouv.fr/epcis), recoupé avec la commune quand elle est connue.
+        Remplace ici la dépendance à etablissements-publics.api.gouv.fr (hors service — cf. note
+        sur requires_open_data_validation) par une source qui répond réellement."""
+        if not institution_name:
+            return None
+
+        matches = InstitutionEmailValidator._fetch_json(
+            f"https://geo.api.gouv.fr/epcis?nom={urllib.parse.quote(institution_name)}&fields=nom,code&boost=population"
+        )
+        if not isinstance(matches, list) or not matches:
+            return None
+
+        if commune_code:
+            commune = InstitutionEmailValidator._fetch_json(
+                f"https://geo.api.gouv.fr/communes/{commune_code}?fields=codeEpci"
+            )
+            code_epci = commune.get("codeEpci") if isinstance(commune, dict) else None
+            if code_epci:
+                return [m for m in matches if m.get("code") == code_epci] or None
+
+        return matches
+
+    @staticmethod
+    def _check_open_data_institution(institution_type: str, commune_code: str, institution_name: str = ""):
+        normalized_type = (institution_type or "").strip().lower()
+
+        if normalized_type in InstitutionEmailValidator.EPCI_TYPES:
+            return InstitutionEmailValidator._check_epci_institution(institution_name, commune_code)
+
         if not commune_code:
             return None
 
-        normalized_type = (institution_type or "").strip().lower()
+        # NOTE : etablissements-publics.api.gouv.fr (mairies/prefectures/polices/gendarmeries/
+        # samu/sdis ci-dessous) est actuellement hors service ("App has been stopped" côté
+        # hébergeur) — constaté en travaillant sur ce fichier, pas une régression de ce commit.
+        # Sans remplacement officiel connu, ces types retombent sur la vérification par nom/
+        # domaine plus bas dans validate_institution_account, en plus de la voie de confiance
+        # prioritaire (annuaire de l'administration), qui elle fonctionne et n'est pas affectée.
         endpoint_map = {
             "commune": f"https://geo.api.gouv.fr/communes/{commune_code}",
             "mairie": f"https://etablissements-publics.api.gouv.fr/v3/communes/{commune_code}/mairies",
             "prefecture": f"https://etablissements-publics.api.gouv.fr/v3/communes/{commune_code}/prefectures",
             "préfecture": f"https://etablissements-publics.api.gouv.fr/v3/communes/{commune_code}/prefectures",
+            "sous_prefecture": f"https://etablissements-publics.api.gouv.fr/v3/communes/{commune_code}/prefectures",
+            "sous-prefecture": f"https://etablissements-publics.api.gouv.fr/v3/communes/{commune_code}/prefectures",
+            "sous préfecture": f"https://etablissements-publics.api.gouv.fr/v3/communes/{commune_code}/prefectures",
             "police": f"https://etablissements-publics.api.gouv.fr/v3/communes/{commune_code}/polices",
             "gendarmerie": f"https://etablissements-publics.api.gouv.fr/v3/communes/{commune_code}/gendarmeries",
             "samu": f"https://etablissements-publics.api.gouv.fr/v3/communes/{commune_code}/samu",
             "collectivite": f"https://geo.api.gouv.fr/communes/{commune_code}",
             "collectivités": f"https://geo.api.gouv.fr/communes/{commune_code}",
-            "cc": f"https://geo.api.gouv.fr/communes/{commune_code}",
-            "intercommunalite": f"https://geo.api.gouv.fr/communes/{commune_code}",
-            "intercommunalité": f"https://geo.api.gouv.fr/communes/{commune_code}",
             "ministere": f"https://etablissements-publics.api.gouv.fr/v3/communes/{commune_code}/prefectures",
             "ministère": f"https://etablissements-publics.api.gouv.fr/v3/communes/{commune_code}/prefectures",
             "sdis": f"https://etablissements-publics.api.gouv.fr/v3/communes/{commune_code}/sdis",
@@ -278,23 +315,30 @@ class InstitutionEmailValidator:
     @staticmethod
     def requires_open_data_validation(institution_type: str) -> bool:
         normalized_type = (institution_type or "").strip().lower()
-        return normalized_type in {
-            "commune",
-            "mairie",
-            "intercommunalite",
-            "intercommunalité",
-            "prefecture",
-            "préfecture",
-            "sdis",
-            "samu",
-            "police",
-            "gendarmerie",
-            "collectivite",
-            "collectivités",
-            "cc",
-            "ministere",
-            "ministère",
-        }
+        return normalized_type in (
+            {
+                "commune",
+                "mairie",
+                "prefecture",
+                "préfecture",
+                "sous_prefecture",
+                "sous-prefecture",
+                "sous préfecture",
+                "conseil_departemental",
+                "conseil departemental",
+                "conseil_regional",
+                "conseil regional",
+                "sdis",
+                "samu",
+                "police",
+                "gendarmerie",
+                "collectivite",
+                "collectivités",
+                "ministere",
+                "ministère",
+            }
+            | InstitutionEmailValidator.EPCI_TYPES
+        )
 
     @staticmethod
     def requires_limited_access(institution_type: str) -> bool:
@@ -420,7 +464,9 @@ class InstitutionEmailValidator:
 
         if InstitutionEmailValidator.requires_open_data_validation(normalized_type):
             if normalized_commune and resolved_code:
-                open_data_result = InstitutionEmailValidator._check_open_data_institution(normalized_type, resolved_code)
+                open_data_result = InstitutionEmailValidator._check_open_data_institution(
+                    normalized_type, resolved_code, institution_name
+                )
                 if open_data_result is not None:
                     if isinstance(open_data_result, dict):
                         features = open_data_result.get("features") or []
@@ -432,8 +478,12 @@ class InstitutionEmailValidator:
                             details["validation_mode"] = "opendata"
                             return True, "Validation institutionnelle valide", details
 
-            if normalized_type in {"mairie", "commune", "collectivite", "collectivité", "communauté de communes", "cc", "intercommunalite", "intercommunalité"}:
-                if "mairie" not in normalized_name and "collectiv" not in normalized_name and "communaute" not in normalized_name and "commune" not in normalized_name and "cc" not in normalized_name and "intercommunal" not in normalized_name:
+            if normalized_type in {"mairie", "commune", "collectivite", "collectivité"}:
+                if "mairie" not in normalized_name and "collectiv" not in normalized_name and "commune" not in normalized_name:
+                    return False, "Le nom de l'institution est incompatible avec le type sélectionné.", details
+
+            if normalized_type in InstitutionEmailValidator.EPCI_TYPES:
+                if "communaute" not in normalized_name and "agglomeration" not in normalized_name and "agglomération" not in normalized_name and "metropole" not in normalized_name and "métropole" not in normalized_name and "cc" not in normalized_name and "intercommunal" not in normalized_name:
                     return False, "Le nom de l'institution est incompatible avec le type sélectionné.", details
 
             if normalized_type == "mairie" and "mairie" not in normalized_name and "mairie" not in email:
@@ -441,6 +491,18 @@ class InstitutionEmailValidator:
 
             if normalized_type in {"prefecture", "préfecture"} and "prefecture" not in email and "prefecture" not in normalized_name:
                 return False, "Le domaine email ne correspond pas au type préfecture sélectionné.", details
+
+            if normalized_type in {"sous_prefecture", "sous-prefecture", "sous préfecture"}:
+                if "prefecture" not in email and "prefecture" not in normalized_name and "sous" not in normalized_name:
+                    return False, "Le domaine email ne correspond pas au type sous-préfecture sélectionné.", details
+
+            if normalized_type in {"conseil_departemental", "conseil departemental"}:
+                if "departement" not in email and "departement" not in normalized_name and "conseil" not in normalized_name and "cg" not in email:
+                    return False, "Le domaine email ne correspond pas au type conseil départemental sélectionné.", details
+
+            if normalized_type in {"conseil_regional", "conseil regional"}:
+                if "region" not in email and "region" not in normalized_name and "conseil" not in normalized_name:
+                    return False, "Le domaine email ne correspond pas au type conseil régional sélectionné.", details
 
             if normalized_type in {"police", "gendarmerie", "samu", "ministere", "ministère", "sdis"}:
                 expected_token = normalized_type.replace("é", "e")
