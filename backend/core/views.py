@@ -2751,9 +2751,22 @@ class PointOperationnelViewSet(
     filterset_fields = ["crise"]
 
     def get_permissions(self):
-        if self.action == "create":
+        # Avant ce correctif, seul `create` était restreint : n'importe quel compte connecté
+        # pouvait modifier ou supprimer le point opérationnel d'une institution tierce.
+        if self.action in ("create", "update", "partial_update", "destroy"):
             return [IsInstitutionalActor()]
         return [permissions.IsAuthenticated()]
+
+    def perform_update(self, serializer):
+        point = serializer.save()
+        audit_log(
+            request=self.request,
+            action_code="MODIFICATION",
+            objet_type="PointOperationnel",
+            objet_id=point.id,
+            crise=point.crise,
+            commentaire=f"Modification point opérationnel : {point.nom}",
+        )
 
     def perform_create(self, serializer):
         point = serializer.save(responsable=self.request.user)

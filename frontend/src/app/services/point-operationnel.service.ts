@@ -22,6 +22,10 @@ export class PointOperationnelService {
     return this.http.post<PointOperationnel>(`${this.apiUrl}/`, payload);
   }
 
+  update(id: string, payload: Partial<PointOperationnelPayload>): Observable<PointOperationnel> {
+    return this.http.patch<PointOperationnel>(`${this.apiUrl}/${id}/`, payload);
+  }
+
   delete(id: string): Observable<void> {
     return this.http.delete<void>(`${this.apiUrl}/${id}/`);
   }

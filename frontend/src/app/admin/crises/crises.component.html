@@ -249,17 +249,17 @@
           <section class="section-block">
             <h3><span class="material-icons">volunteer_activism</span> Acteurs opérationnels</h3>
             <table class="data-table sm">
-              <thead><tr><th>Point</th><th>Type</th><th>Institution</th><th>Responsable</th><th></th></tr></thead>
+              <thead><tr><th>Point</th><th>Type</th><th>Adresse</th><th>Responsable</th><th></th></tr></thead>
               <tbody>
                 @for (point of pointsFor(selectedCrisis.id); track point.id) {
-                  <tr>
+                  <tr (click)="openPointModal(point)" class="clickable-row">
                     <td>{{ point.nom }}</td>
                     <td>{{ point.type_libelle || '—' }}</td>
                     <td>{{ point.adresse || '—' }}</td>
                     <td>{{ point.responsable_nom || '—' }}</td>
                     <td class="actions">
                       @if (isMine(point)) {
-                        <button class="icon-btn danger" (click)="retirerPoint(point)" title="Se retirer">
+                        <button class="icon-btn danger" (click)="$event.stopPropagation(); retirerPoint(point)" title="Se retirer">
                           <span class="material-icons">delete_outline</span>
                         </button>
                       }
@@ -272,36 +272,27 @@
             </table>
 
             @if (selectableInstitutions.length > 0 && selectedCrisis.is_open !== false) {
-              @if (!showActeurForm) {
-                <button class="btn-secondary sm" (click)="showActeurForm = true">
-                  <span class="material-icons">add_location_alt</span> {{ isAdmin ? 'Déclarer un point opérationnel' : 'Je suis acteur' }}
-                </button>
-              } @else {
-                <form class="inline-form" [formGroup]="acteurForm" (ngSubmit)="submitActeur()">
-                  <select formControlName="institution">
-                    <option [ngValue]="null">{{ isAdmin ? '— Institution —' : '— Mon institution —' }}</option>
-                    @for (inst of selectableInstitutions; track inst.id) {
-                      <option [ngValue]="inst.id">{{ inst.nom }}</option>
-                    }
-                  </select>
-                  <select formControlName="type">
-                    <option [ngValue]="null">— Type de point —</option>
-                    @for (pt of pointTypes; track pt.id) {
-                      <option [ngValue]="pt.id">{{ pt.libelle }}</option>
-                    }
-                  </select>
-                  <input type="text" formControlName="nom" placeholder="Nom du point (ex: Gymnase municipal)"/>
-                  <input type="text" formControlName="adresse" placeholder="Adresse (optionnel)"/>
-                  <button class="btn-primary sm" type="submit">Créer</button>
-                  <button class="btn-secondary sm" type="button" (click)="showActeurForm = false">Annuler</button>
-                </form>
-              }
+              <button class="btn-secondary sm" (click)="openPointModal(null)">
+                <span class="material-icons">add_location_alt</span> {{ isAdmin ? 'Déclarer un point opérationnel' : 'Je suis acteur' }}
+              </button>
             }
           </section>
 
         </div>
       </div>
     </div>
+  }
+
+  @if (pointModalOpen && selectedCrisis) {
+    <app-point-modal
+      [crisisId]="selectedCrisis.id"
+      [pointTypes]="pointTypes"
+      [selectableInstitutions]="selectableInstitutions"
+      [isAdmin]="isAdmin"
+      [point]="editingPoint"
+      (saved)="onPointSaved($event)"
+      (closed)="onPointModalClosed()">
+    </app-point-modal>
   }
 
 </div>

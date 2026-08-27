@@ -1,0 +1,19 @@
+.point-picker-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: .4rem;
+}
+
+.hint {
+  font-size: .8rem;
+  color: #6b7280;
+  margin: 0;
+}
+
+.point-picker-container {
+  width: 100%;
+  height: 260px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #e5e7eb;
+}

@@ -20,6 +20,7 @@ import { ContactInstitution, Institution } from '../../shared/models/institution
 import { Besoin } from '../../shared/models/besoin.model';
 import { UserRole } from '../../shared/models/user.model';
 import { ZoneMapComponent } from '../../shared/components/common/zone-map/zone-map.component';
+import { PointModalComponent } from './point-modal/point-modal.component';
 
 type ResponsableMode = 'moi' | 'contact' | 'email';
 
@@ -28,7 +29,7 @@ type ModalView = 'none' | 'detail';
 @Component({
   selector: 'app-crises',
   standalone: true,
-  imports: [CommonModule, FormsModule, ReactiveFormsModule, RouterLink, ZoneMapComponent],
+  imports: [CommonModule, FormsModule, ReactiveFormsModule, RouterLink, ZoneMapComponent, PointModalComponent],
   templateUrl: './crises.component.html',
   styleUrls: ['./crises.component.scss']
 })
@@ -52,12 +53,13 @@ export class CrisesComponent implements OnInit {
   selectedCrisis: Crisis | null = null;
 
   showImpliqueForm = false;
-  showActeurForm = false;
   showActeurDirectForm = false;
   showZoneEditor = false;
   pendingZoneWkt: string | null = null;
   impliqueForm!: FormGroup;
-  acteurForm!: FormGroup;
+
+  pointModalOpen = false;
+  editingPoint: PointOperationnel | null = null;
 
   // ── Déclarer une institution actrice (thèmes + responsable) ────
   acteurDirectInstitutionId: string | null = null;
@@ -89,12 +91,6 @@ export class CrisesComponent implements OnInit {
     this.impliqueForm = this.fb.group({
       institution: [null, Validators.required],
       commentaire: [''],
-    });
-    this.acteurForm = this.fb.group({
-      institution: [null, Validators.required],
-      type: [null, Validators.required],
-      nom: ['', Validators.required],
-      adresse: [''],
     });
   }
 
@@ -167,12 +163,12 @@ export class CrisesComponent implements OnInit {
   openDetail(crisis: Crisis): void {
     this.selectedCrisis = crisis;
     this.showImpliqueForm = false;
-    this.showActeurForm = false;
     this.showActeurDirectForm = false;
     this.showZoneEditor = false;
     this.pendingZoneWkt = crisis.zone ?? null;
     this.impliqueForm.reset({ institution: this.defaultInstitutionId() });
-    this.acteurForm.reset({ institution: this.defaultInstitutionId() });
+    this.pointModalOpen = false;
+    this.editingPoint = null;
     this.acteurDirectInstitutionId = null;
     this.acteurDirectThemes = [];
     this.acteurDirectContacts = [];
@@ -342,24 +338,22 @@ export class CrisesComponent implements OnInit {
   }
 
   // ── Je suis acteur (point opérationnel) ─────────────────────
-  submitActeur(): void {
-    if (!this.selectedCrisis || this.acteurForm.invalid) { this.acteurForm.markAllAsTouched(); return; }
-    const { institution, type, nom, adresse } = this.acteurForm.value;
-    this.pointService.create({
-      crise: this.selectedCrisis.id,
-      type,
-      nom,
-      adresse: adresse || undefined,
-      institution: institution || undefined,
-    }).subscribe({
-      next: () => {
-        this.reloadPoints();
-        this.reloadImplications();
-        this.showSuccess('Point opérationnel créé, institution déclarée acteur.');
-        this.showActeurForm = false;
-      },
-      error: () => this.showError("Impossible de créer ce point opérationnel."),
-    });
+  openPointModal(point: PointOperationnel | null): void {
+    this.editingPoint = point;
+    this.pointModalOpen = true;
+  }
+
+  onPointModalClosed(): void {
+    this.pointModalOpen = false;
+    this.editingPoint = null;
+  }
+
+  onPointSaved(_point: PointOperationnel): void {
+    this.reloadPoints();
+    this.reloadImplications();
+    this.showSuccess(this.editingPoint ? 'Point opérationnel modifié.' : 'Point opérationnel créé, institution déclarée acteur.');
+    this.pointModalOpen = false;
+    this.editingPoint = null;
   }
 
   retirerPoint(point: PointOperationnel): void {

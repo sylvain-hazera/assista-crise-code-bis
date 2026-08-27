@@ -1816,6 +1816,22 @@ class PointOperationnel(models.Model):
         null=True
     )
 
+    description = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Description du point (distincte de `commentaire`, qui reste des notes de suivi)."
+    )
+
+    date_ouverture = models.DateTimeField(
+        null=True,
+        blank=True
+    )
+
+    date_fermeture = models.DateTimeField(
+        null=True,
+        blank=True
+    )
+
     def __str__(self):
         return self.nom
 

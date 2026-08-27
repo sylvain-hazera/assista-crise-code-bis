@@ -1069,12 +1069,20 @@ class PointOperationnelSerializer(
 
     type_libelle = serializers.CharField(source="type.libelle", read_only=True, default=None)
     responsable_nom = serializers.SerializerMethodField()
+    latitude = serializers.SerializerMethodField()
+    longitude = serializers.SerializerMethodField()
 
     class Meta:
 
         model = PointOperationnel
 
         fields = "__all__"
+
+    def get_latitude(self, obj):
+        return obj.location.y if obj.location else None
+
+    def get_longitude(self, obj):
+        return obj.location.x if obj.location else None
 
     def get_responsable_nom(self, obj):
         if not obj.responsable:
