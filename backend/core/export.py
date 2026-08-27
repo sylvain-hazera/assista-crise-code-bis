@@ -89,16 +89,16 @@ def build_crisis_export_zip(crise):
         materiels_rows = []
         dispo_rows = []
         for p in points:
-            for m in p.materiels.select_related("responsable"):
+            for m in p.materiels.select_related("item", "responsable"):
                 materiels_rows.append((
-                    p.nom, m.get_type_display(), m.nom, m.quantite, m.unite,
+                    p.nom, m.item.nom, m.get_niveau_stock_display(), m.nom, m.quantite, m.unite,
                     m.get_statut_display(), m.responsable.email if m.responsable else "", m.date_maj.isoformat(),
                 ))
             for dispo in p.disponibilites_equipe.select_related("membre"):
                 dispo_rows.append((p.nom, dispo.membre.email, dispo.date.isoformat(), dispo.creneau))
         _write_csv(
             zf, "points_inventaire.csv",
-            ["point", "type", "nom", "quantite", "unite", "statut", "responsable", "date_maj"],
+            ["point", "item", "niveau_stock", "precision", "quantite", "unite", "statut", "responsable", "date_maj"],
             materiels_rows,
         )
         _write_csv(zf, "points_disponibilites_equipe.csv", ["point", "membre", "date", "creneau"], dispo_rows)

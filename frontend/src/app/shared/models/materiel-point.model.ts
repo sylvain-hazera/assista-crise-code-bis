@@ -1,28 +1,40 @@
-export type TypeMateriel = 'CUVE' | 'POMPE' | 'ETUVE' | 'CHAMBRE_FROIDE' | 'REMORQUE' | 'AUTRE';
 export type StatutMateriel = 'EN_TRANSIT' | 'SUR_PLACE' | 'RETIRE';
+export type NiveauStock = 'NUL' | 'FAIBLE' | 'OK' | 'EN_TROP';
 
 export interface MaterielPoint {
-  id: string;
+  id: string | null;
   point: string;
-  type: TypeMateriel;
-  type_libelle?: string;
-  nom: string;
+  item: string;
+  item_nom: string;
+  niveau_stock: NiveauStock;
+  niveau_stock_libelle?: string;
+  nom?: string;
   quantite: number;
   unite: string;
-  statut: StatutMateriel;
-  statut_libelle?: string;
+  statut: StatutMateriel | null;
+  statut_libelle?: string | null;
   responsable: string | null;
   responsable_nom?: string | null;
   commentaire?: string | null;
-  date_maj: string;
+  date_maj: string | null;
 }
 
 export interface MaterielPointPayload {
   point: string;
-  type: TypeMateriel;
-  nom: string;
+  item: string;
+  niveau_stock?: NiveauStock;
+  nom?: string;
   quantite?: number;
   unite?: string;
   statut?: StatutMateriel;
   commentaire?: string;
+}
+
+export interface StocksComparaison {
+  points: { id: string; nom: string; type_libelle: string | null }[];
+  items: {
+    item: string;
+    item_nom: string;
+    niveaux: Record<string, { niveau_stock: NiveauStock; niveau_stock_libelle: string }>;
+  }[];
 }

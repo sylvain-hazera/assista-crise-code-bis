@@ -92,6 +92,7 @@ from .models import (
     ImplicationInstitution,
     TypeImplication,
     User, Crisis, Request, Offer, Information, DisponibiliteOffre, DisponibilitePointEquipe, MaterielPoint,
+    MaterielCatalogue, NiveauStock,
     RecherchePersonne, RecherchePersonneCommentaire, Besoin, Notification, DossierParticipant,
     RecherchePersonneCommentairePhoto, RecherchePersonneLecture, RecherchePersonneLectureHistorique,
     Document, DossierCommentaire, DossierHistorique, BesoinCompetence, Competence, Dossier,
@@ -221,6 +222,7 @@ from .serializers import (
     DisponibiliteOffreSerializer,
     DisponibilitePointEquipeSerializer,
     MaterielPointSerializer,
+    MaterielCatalogueSerializer,
     InformationSerializer,
     RequestTypeSerializer,
     OfferTypeSerializer,
@@ -833,6 +835,8 @@ class CrisisViewSet(viewsets.ModelViewSet):
             return [IsAdministrator()]
         if self.action == "export":
             return [permissions.IsAuthenticated()]
+        if self.action == "stocks_comparaison":
+            return [permissions.IsAuthenticated()]
         return [AllowAny()]
 
     def perform_create(self, serializer):
@@ -943,6 +947,42 @@ class CrisisViewSet(viewsets.ModelViewSet):
         response = FileResponse(zip_buffer, content_type="application/zip")
         response["Content-Disposition"] = f'attachment; filename="crise-{crise.id}-main-courante.zip"'
         return response
+
+    @action(detail=True, methods=["get"], url_path="stocks-comparaison")
+    def stocks_comparaison(self, request, pk=None):
+        """Niveau de stock de chaque item du catalogue matériel, pour chaque point de la crise
+        — de quoi construire directement un tableau comparatif côté frontend (lignes = items,
+        colonnes = points) pour organiser une navette entre deux centres."""
+        crise = self.get_object()
+        points = list(crise.points_operationnels.select_related("type").order_by("nom"))
+        materiels = MaterielPoint.objects.filter(point__in=points).select_related("item", "point")
+
+        niveaux = {}
+        for m in materiels:
+            niveaux.setdefault(str(m.item_id), {})[str(m.point_id)] = {
+                "niveau_stock": m.niveau_stock,
+                "niveau_stock_libelle": m.get_niveau_stock_display(),
+            }
+
+        items = []
+        for item in MaterielCatalogue.objects.all().order_by("nom"):
+            par_point = niveaux.get(str(item.id), {})
+            items.append({
+                "item": str(item.id),
+                "item_nom": item.nom,
+                "niveaux": {
+                    str(p.id): par_point.get(str(p.id), {
+                        "niveau_stock": NiveauStock.NUL,
+                        "niveau_stock_libelle": NiveauStock.NUL.label,
+                    })
+                    for p in points
+                },
+            })
+
+        return Response({
+            "points": [{"id": str(p.id), "nom": p.nom, "type_libelle": p.type.libelle if p.type else None} for p in points],
+            "items": items,
+        })
 
 def resolve_or_invite_demandeur(demande, request=None):
     """Résout le compte utilisateur du demandeur d'une aide pour lui permettre de suivre son
@@ -2905,6 +2945,40 @@ class PointOperationnelViewSet(
             "disponibilites": DisponibilitePointEquipeSerializer(disponibilites, many=True).data,
         })
 
+    @action(detail=True, methods=["get"])
+    def stocks(self, request, pk=None):
+        """État du stock de CHAQUE item du catalogue matériel pour ce point, y compris ceux
+        qu'il n'a encore jamais touchés (complétés à la volée avec niveau_stock=NUL, sans rien
+        écrire en base) — c'est ce mécanisme qui fait qu'un item ajouté sur un centre apparaît
+        immédiatement, à niveau nul, dans la liste de tous les autres centres."""
+        point = self.get_object()
+        existants = {m.item_id: m for m in point.materiels.select_related("item", "responsable")}
+
+        resultats = []
+        for item in MaterielCatalogue.objects.all().order_by("nom"):
+            materiel = existants.get(item.id)
+            if materiel:
+                resultats.append(MaterielPointSerializer(materiel).data)
+            else:
+                resultats.append({
+                    "id": None,
+                    "point": str(point.id),
+                    "item": str(item.id),
+                    "item_nom": item.nom,
+                    "niveau_stock": NiveauStock.NUL,
+                    "niveau_stock_libelle": NiveauStock.NUL.label,
+                    "nom": "",
+                    "quantite": 1,
+                    "unite": "unité",
+                    "statut": None,
+                    "statut_libelle": None,
+                    "responsable": None,
+                    "responsable_nom": None,
+                    "commentaire": None,
+                    "date_maj": None,
+                })
+        return Response(resultats)
+
 
 class DisponibilitePointEquipeViewSet(viewsets.ModelViewSet):
     """Planning de disponibilité des membres de l'équipe responsable d'un point opérationnel."""
@@ -2945,19 +3019,45 @@ class DisponibilitePointEquipeViewSet(viewsets.ModelViewSet):
         instance.delete()
 
 
+class MaterielCatalogueViewSet(TagLikeViewSetMixin, viewsets.ModelViewSet):
+    """Vocabulaire partagé des besoins matériel — recherche/création façon hashtag, comme
+    Competence/InformationType : n'importe quel centre peut ajouter un item, immédiatement
+    réutilisable par tous les autres (voir PointOperationnelViewSet.stocks)."""
+
+    queryset = MaterielCatalogue.objects.all()
+    serializer_class = MaterielCatalogueSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+
 class MaterielPointViewSet(viewsets.ModelViewSet):
-    """Inventaire de matériel en transit ou présent sur un point opérationnel."""
+    """État du stock (niveau qualitatif + suivi quantitatif optionnel) d'un item du catalogue
+    matériel sur un point opérationnel."""
 
-    queryset = MaterielPoint.objects.select_related("point", "responsable").all()
+    queryset = MaterielPoint.objects.select_related("point", "item", "responsable").all()
     serializer_class = MaterielPointSerializer
-    filterset_fields = ["point", "statut"]
+    filterset_fields = ["point", "statut", "item"]
 
-    def get_permissions(self):
-        if self.action in ("create", "update", "partial_update", "destroy"):
-            return [IsInstitutionalActor()]
-        return [permissions.IsAuthenticated()]
+    def _can_manage(self, user, point):
+        # Même logique que DisponibilitePointEquipeViewSet._can_manage (pas de notion de
+        # "membre" ici — n'importe quel membre de l'équipe peut mettre à jour un stock).
+        if user.type == UserRole.ADMINISTRATOR:
+            return True
+        if point.responsable_id == user.id:
+            return True
+        if point.equipe:
+            if point.equipe.leader_id == user.id:
+                return True
+            if point.equipe.members.filter(id=user.id).exists():
+                return True
+        return False
 
     def perform_create(self, serializer):
+        point = serializer.validated_data.get('point')
+        if not self._can_manage(self.request.user, point):
+            raise PermissionDenied(
+                "Seul le responsable, un membre de l'équipe du point, ou un administrateur "
+                "peut modifier son stock."
+            )
         materiel = serializer.save(responsable=self.request.user)
         audit_log(
             request=self.request,
@@ -2965,10 +3065,16 @@ class MaterielPointViewSet(viewsets.ModelViewSet):
             objet_type="MaterielPoint",
             objet_id=materiel.id,
             crise=materiel.point.crise,
-            commentaire=f"Ajout matériel « {materiel.nom} » sur le point {materiel.point.nom}",
+            commentaire=f"Stock « {materiel.item.nom} » ({materiel.get_niveau_stock_display()}) sur le point {materiel.point.nom}",
         )
 
     def perform_update(self, serializer):
+        point = serializer.instance.point
+        if not self._can_manage(self.request.user, point):
+            raise PermissionDenied(
+                "Seul le responsable, un membre de l'équipe du point, ou un administrateur "
+                "peut modifier son stock."
+            )
         materiel = serializer.save()
         audit_log(
             request=self.request,
@@ -2976,8 +3082,16 @@ class MaterielPointViewSet(viewsets.ModelViewSet):
             objet_type="MaterielPoint",
             objet_id=materiel.id,
             crise=materiel.point.crise,
-            commentaire=f"Modification matériel « {materiel.nom} » (statut: {materiel.get_statut_display()})",
+            commentaire=f"Stock « {materiel.item.nom} » mis à jour ({materiel.get_niveau_stock_display()})",
         )
+
+    def perform_destroy(self, instance):
+        if not self._can_manage(self.request.user, instance.point):
+            raise PermissionDenied(
+                "Seul le responsable, un membre de l'équipe du point, ou un administrateur "
+                "peut modifier son stock."
+            )
+        instance.delete()
 
 
 class ImplicationInstitutionViewSet(

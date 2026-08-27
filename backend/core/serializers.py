@@ -28,6 +28,7 @@ from .models import (
     DisponibiliteOffre,
     DisponibilitePointEquipe,
     MaterielPoint,
+    MaterielCatalogue,
     Notification,
 )
 
@@ -398,10 +399,17 @@ class DisponibilitePointEquipeSerializer(serializers.ModelSerializer):
             validate_crisis_open(point.crise, field_name="crise")
         return attrs
 
-class MaterielPointSerializer(serializers.ModelSerializer):
-    """Inventaire de matériel en transit ou présent sur un point opérationnel."""
+class MaterielCatalogueSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MaterielCatalogue
+        fields = '__all__'
 
-    type_libelle = serializers.CharField(source="get_type_display", read_only=True)
+
+class MaterielPointSerializer(serializers.ModelSerializer):
+    """État du stock d'un item du catalogue matériel sur un point opérationnel."""
+
+    item_nom = serializers.CharField(source="item.nom", read_only=True)
+    niveau_stock_libelle = serializers.CharField(source="get_niveau_stock_display", read_only=True)
     statut_libelle = serializers.CharField(source="get_statut_display", read_only=True)
     responsable_nom = serializers.SerializerMethodField()
 

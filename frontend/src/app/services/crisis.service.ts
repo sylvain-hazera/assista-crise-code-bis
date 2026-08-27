@@ -4,6 +4,7 @@ import { map, Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
 import { Crisis, CrisisPayload } from '../shared/models/crisis.model';
 import { StatsResponse } from '../shared/models/api.model';
+import { StocksComparaison } from '../shared/models/materiel-point.model';
 import { geoPointToLatLng, latLngToGeoJson } from '../shared/models/geopoint.model';
 import { GeolocationService } from './geolocation.service';
 
@@ -120,6 +121,12 @@ export class CrisisService {
   /** GET /api/crises/<id>/export/ — zip multi-CSV, réservé au responsable actif ou à un admin. */
   export(id: string): Observable<Blob> {
     return this.http.get(`${this.apiUrl}/${id}/export/`, { responseType: 'blob' });
+  }
+
+  /** GET /api/crises/<id>/stocks-comparaison/ — niveau de chaque item du catalogue matériel,
+   * pour chaque point de la crise (tableau comparatif entre centres). */
+  getStocksComparaison(id: string): Observable<StocksComparaison> {
+    return this.http.get<StocksComparaison>(`${this.apiUrl}/${id}/stocks-comparaison/`);
   }
 
   // ── PRIVÉ ────────────────────────────────────────────────────

@@ -1,0 +1,71 @@
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, .45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1300;
+}
+
+.modal {
+  background: #fff;
+  border-radius: 10px;
+  width: 100%;
+  max-width: 900px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid #f0f0f0;
+  position: sticky;
+  top: 0;
+  background: #fff;
+
+  h2 { margin: 0; font-size: 1.1rem; }
+}
+
+.modal-body {
+  padding: 1.25rem;
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+.data-table.sm {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .8rem;
+  white-space: nowrap;
+
+  th, td { text-align: left; padding: .5rem .6rem; border-bottom: 1px solid #f0f0f0; }
+  th { color: #6b7280; font-weight: 600; font-size: .72rem; text-transform: uppercase; }
+}
+
+.badge {
+  padding: .2rem .55rem;
+  border-radius: 999px;
+  font-size: .72rem;
+  font-weight: 600;
+  display: inline-block;
+
+  &.niveau-NUL { background: #f3f4f6; color: #374151; }
+  &.niveau-FAIBLE { background: #fef3c7; color: #92400e; }
+  &.niveau-OK { background: #dcfce7; color: #166534; }
+  &.niveau-EN_TROP { background: #dbeafe; color: #1e40af; }
+}
+
+.empty { color: #9ca3af; }
+
+.icon-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #6b7280;
+}

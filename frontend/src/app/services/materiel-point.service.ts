@@ -14,6 +14,13 @@ export class MaterielPointService {
     return this.http.get<MaterielPoint[]>(`${this.apiUrl}/`, { params: { point: pointId } });
   }
 
+  /** Tous les items du catalogue matériel pour ce point, y compris ceux qu'il n'a jamais
+   * touchés (complétés côté backend avec niveau_stock=NUL, id=null — pas encore de ligne
+   * MaterielPoint réelle tant qu'on n'en modifie pas le niveau). */
+  getStocks(pointId: string): Observable<MaterielPoint[]> {
+    return this.http.get<MaterielPoint[]>(`${environment.apiUrl}/points-operationnels/${pointId}/stocks/`);
+  }
+
   create(payload: MaterielPointPayload): Observable<MaterielPoint> {
     return this.http.post<MaterielPoint>(`${this.apiUrl}/`, payload);
   }

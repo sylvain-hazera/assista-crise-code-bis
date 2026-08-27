@@ -1,0 +1,45 @@
+<div class="modal-overlay" (click)="close()">
+  <div class="modal" (click)="$event.stopPropagation()">
+
+    <div class="modal-header">
+      <h2>Comparaison des stocks entre centres</h2>
+      <button class="icon-btn" (click)="close()"><span class="material-icons">close</span></button>
+    </div>
+
+    <div class="modal-body">
+      @if (loading) {
+        <p>Chargement...</p>
+      } @else if (data && data.points.length > 0) {
+        <div class="table-scroll">
+          <table class="data-table sm">
+            <thead>
+              <tr>
+                <th>Besoin</th>
+                @for (point of data.points; track point.id) {
+                  <th>{{ point.nom }}</th>
+                }
+              </tr>
+            </thead>
+            <tbody>
+              @for (item of data.items; track item.item) {
+                <tr>
+                  <td>{{ item.item_nom }}</td>
+                  @for (point of data.points; track point.id) {
+                    <td>
+                      <span class="badge" [class]="'niveau-' + item.niveaux[point.id].niveau_stock">
+                        {{ item.niveaux[point.id].niveau_stock_libelle }}
+                      </span>
+                    </td>
+                  }
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      } @else {
+        <p class="empty">Aucun autre point opérationnel sur cette crise pour comparer.</p>
+      }
+    </div>
+
+  </div>
+</div>

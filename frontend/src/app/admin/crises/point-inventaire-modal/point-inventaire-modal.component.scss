@@ -12,7 +12,7 @@
   background: #fff;
   border-radius: 10px;
   width: 100%;
-  max-width: 600px;
+  max-width: 700px;
   max-height: 90vh;
   overflow-y: auto;
 }
@@ -28,6 +28,8 @@
   background: #fff;
 
   h2 { margin: 0; font-size: 1.1rem; }
+
+  .header-actions { display: flex; align-items: center; gap: .5rem; }
 }
 
 .modal-body {
@@ -37,64 +39,57 @@
 .data-table.sm {
   width: 100%;
   border-collapse: collapse;
-  margin-bottom: 1.25rem;
+  margin-top: 1rem;
   font-size: .85rem;
 
   th, td { text-align: left; padding: .5rem .6rem; border-bottom: 1px solid #f0f0f0; }
   th { color: #6b7280; font-weight: 600; font-size: .75rem; text-transform: uppercase; }
 
-  td.actions { display: flex; gap: .25rem; }
   .empty { color: #9ca3af; text-align: center; }
 }
 
-.badge {
-  padding: .2rem .55rem;
+.niveau-group {
+  display: inline-flex;
   border-radius: 999px;
+  overflow: hidden;
+  border: 1px solid #e5e7eb;
+}
+
+.niveau-btn {
+  border: none;
+  background: #fff;
+  padding: .3rem .6rem;
   font-size: .75rem;
-  font-weight: 600;
+  cursor: pointer;
+  color: #6b7280;
 
-  &.statut-EN_TRANSIT { background: #fef3c7; color: #92400e; }
-  &.statut-SUR_PLACE { background: #dcfce7; color: #166534; }
-  &.statut-RETIRE { background: #f3f4f6; color: #6b7280; }
+  &:not(:last-child) { border-right: 1px solid #e5e7eb; }
+  &:disabled { opacity: .5; cursor: wait; }
+
+  &.active.niveau-NUL { background: #f3f4f6; color: #374151; font-weight: 600; }
+  &.active.niveau-FAIBLE { background: #fef3c7; color: #92400e; font-weight: 600; }
+  &.active.niveau-OK { background: #dcfce7; color: #166534; font-weight: 600; }
+  &.active.niveau-EN_TROP { background: #dbeafe; color: #1e40af; font-weight: 600; }
 }
 
-.inventaire-form {
-  display: flex;
-  flex-direction: column;
-  gap: .6rem;
-  border-top: 1px solid #f0f0f0;
-  padding-top: 1rem;
-
-  h3 { margin: 0 0 .25rem; font-size: .95rem; }
-
-  .form-row { display: flex; gap: .5rem; }
-
-  input, select {
-    padding: .5rem .6rem;
-    border: 1px solid #e2e8f0;
-    border-radius: 6px;
-    font-size: .85rem;
-    flex: 1;
-  }
-}
-
-.form-actions { display: flex; gap: .5rem; }
-
-.btn-primary.sm, .btn-secondary.sm {
-  padding: .45rem 1rem;
-  font-size: .85rem;
+.btn-secondary.sm {
+  padding: .35rem .75rem;
+  font-size: .8rem;
   border-radius: 6px;
   border: none;
   cursor: pointer;
+  background: #f3f4f6;
+  color: #374151;
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+
+  .material-icons { font-size: 1rem; }
 }
-.btn-primary.sm { background: #2563eb; color: #fff; }
-.btn-secondary.sm { background: #f3f4f6; color: #374151; }
 
 .icon-btn {
   background: none;
   border: none;
   cursor: pointer;
   color: #6b7280;
-
-  &.danger { color: #dc2626; }
 }

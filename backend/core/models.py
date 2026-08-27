@@ -1933,10 +1933,35 @@ class StatutMateriel(models.TextChoices):
     RETIRE = "RETIRE", "Retiré"
 
 
+class MaterielCatalogue(models.Model):
+    """Vocabulaire partagé et extensible des besoins matériel/logistique (lit, nourriture,
+    eau...) — même esprit que Competence/InformationType (voir TagLikeViewSetMixin) : n'importe
+    quel centre peut ajouter une entrée, immédiatement réutilisable par tous les autres.
+    Remplace l'ancien TypeMateriel (TextChoices figé), trop rigide pour ce besoin."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    nom = models.CharField(max_length=100, unique=True)
+
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self) -> str:
+        return self.nom
+
+
+class NiveauStock(models.TextChoices):
+    NUL = "NUL", "Nul"
+    FAIBLE = "FAIBLE", "Faible"
+    OK = "OK", "OK"
+    EN_TROP = "EN_TROP", "En trop"
+
+
 class MaterielPoint(models.Model):
-    """Inventaire de matériel en transit ou présent sur un point opérationnel. Réutilise
-    TypeMateriel (déjà existant sur Offer.materiel_type) plutôt que d'en recréer un —
-    `nom` sert de précision libre, notamment quand type=AUTRE."""
+    """État du stock d'un item du catalogue sur un point opérationnel — à la fois une jauge
+    qualitative (`niveau_stock`, comparable directement entre centres pour organiser une
+    navette) et, si besoin, un suivi quantitatif précis d'un objet en transit (`quantite`/
+    `unite`/`statut`, hérité du modèle initial). Une seule ligne par (point, item) : on met à
+    jour le niveau plutôt que d'empiler des doublons."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
@@ -1946,9 +1971,18 @@ class MaterielPoint(models.Model):
         related_name="materiels",
     )
 
-    type = models.CharField(max_length=20, choices=TypeMateriel.choices)
+    item = models.ForeignKey(
+        MaterielCatalogue,
+        on_delete=models.PROTECT,
+        related_name="stocks",
+    )
 
-    nom = models.CharField(max_length=255)
+    niveau_stock = models.CharField(max_length=10, choices=NiveauStock.choices, default=NiveauStock.NUL)
+
+    nom = models.CharField(
+        max_length=255, blank=True,
+        help_text="Précision libre optionnelle (ex: « 5kVA » pour un groupe électrogène).",
+    )
 
     quantite = models.PositiveIntegerField(default=1)
 
@@ -1970,9 +2004,12 @@ class MaterielPoint(models.Model):
 
     class Meta:
         ordering = ["-date_maj"]
+        constraints = [
+            models.UniqueConstraint(fields=["point", "item"], name="uq_materielpoint_point_item"),
+        ]
 
     def __str__(self) -> str:
-        return f"{self.nom} ({self.point.nom})"
+        return f"{self.item.nom} ({self.point.nom})"
 
 
 class AuditAction(models.Model):

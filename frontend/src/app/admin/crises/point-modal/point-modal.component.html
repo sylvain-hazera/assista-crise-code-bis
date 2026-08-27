@@ -78,7 +78,7 @@
         <div class="form-group">
           <label>Inventaire matériel</label>
           <button type="button" class="btn-secondary sm" (click)="openInventaireModal()">
-            <span class="material-icons">inventory_2</span> Gérer l'inventaire
+            <span class="material-icons">inventory_2</span> Besoins &amp; stocks
           </button>
         </div>
       }
@@ -126,7 +126,11 @@
   }
 
   @if (inventaireModalOpen && point) {
-    <app-point-inventaire-modal [point]="point" (closed)="closeInventaireModal()"></app-point-inventaire-modal>
+    <app-point-inventaire-modal [point]="point" (closed)="closeInventaireModal()" (compareRequested)="openComparaisonModal()"></app-point-inventaire-modal>
+  }
+
+  @if (comparaisonModalOpen) {
+    <app-stocks-comparaison-modal [crisisId]="crisisId" (closed)="closeComparaisonModal()"></app-stocks-comparaison-modal>
   }
 
 </div>
