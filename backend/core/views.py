@@ -3033,10 +3033,35 @@ class ImplicationInstitutionViewSet(
         )
 
     def perform_destroy(self, instance):
-        is_declarant = instance.utilisateur_id == self.request.user.id
-        if not is_declarant and self.request.user.type != UserRole.ADMINISTRATOR:
-            raise PermissionDenied("Seul l'auteur de cette déclaration ou un administrateur peut la retirer.")
+        if not self._can_manage(instance):
+            raise PermissionDenied("Seul l'auteur de cette déclaration, un contact de l'institution ou un administrateur peut la retirer.")
         instance.delete()
+
+    def perform_update(self, serializer):
+        # Avant ce correctif, seul `create` était restreint : n'importe quel compte
+        # authentifié pouvait modifier (thèmes, commentaire, responsable...) l'implication
+        # déclarée par une institution tierce.
+        if not self._can_manage(serializer.instance):
+            raise PermissionDenied("Seul l'auteur de cette déclaration, un contact de l'institution ou un administrateur peut la modifier.")
+        implication = serializer.save()
+        audit_log(
+            request=self.request,
+            action_code="MODIFICATION",
+            objet_type="ImplicationInstitution",
+            objet_id=implication.id,
+            crise=implication.crise,
+            commentaire=f"Modification implication {implication.institution.nom} sur la crise {implication.crise.name}",
+        )
+
+    def _can_manage(self, instance: ImplicationInstitution) -> bool:
+        user = self.request.user
+        if user.type == UserRole.ADMINISTRATOR:
+            return True
+        if instance.utilisateur_id == user.id:
+            return True
+        return ContactInstitution.objects.filter(
+            utilisateur=user, institution=instance.institution, actif=True
+        ).exists()
 
 class ContactInstitutionViewSet(
     viewsets.ModelViewSet

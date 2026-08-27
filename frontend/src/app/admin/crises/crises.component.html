@@ -105,6 +105,28 @@
             </p>
           }
 
+          @if (isAdmin) {
+            <section class="section-block quick-create-institution">
+              @if (!showQuickCreateInstitution) {
+                <button class="btn-secondary sm" (click)="showQuickCreateInstitution = true">
+                  <span class="material-icons">add_business</span> Nouvelle institution
+                </button>
+              } @else {
+                <form class="inline-form" (ngSubmit)="submitQuickCreateInstitution()">
+                  <input type="text" placeholder="Nom de l'institution" [(ngModel)]="quickCreateNom" name="quickCreateNom" required>
+                  <select [(ngModel)]="quickCreateTypeId" name="quickCreateTypeId" required>
+                    <option [ngValue]="null">— Type —</option>
+                    @for (t of institutionTypes; track t.id) {
+                      <option [ngValue]="t.id">{{ t.libelle }}</option>
+                    }
+                  </select>
+                  <button type="submit" class="btn-primary sm" [disabled]="quickCreateSaving || !quickCreateNom.trim() || !quickCreateTypeId">Créer</button>
+                  <button type="button" class="btn-secondary sm" (click)="showQuickCreateInstitution = false">Annuler</button>
+                </form>
+              }
+            </section>
+          }
+
           <!-- Zone précise -->
           <section class="section-block">
             <h3><span class="material-icons">draw</span> Zone précise</h3>
@@ -128,6 +150,69 @@
             }
           </section>
 
+          <!-- Secteurs (communes/départements + rayon) -->
+          <section class="section-block">
+            <h3><span class="material-icons">map</span> Secteurs (communes / départements)</h3>
+            <p class="crisis-meta">
+              Chaque commune ou département ajouté agrandit la zone de son contour officiel,
+              bufferisé du rayon ci-dessous. Indépendant de la zone précise dessinée à la main.
+            </p>
+
+            @if (selectedCrisis.is_open !== false) {
+              <div class="inline-form">
+                <label class="radius-label">
+                  Rayon (km) :
+                  <input type="number" min="1" [ngModel]="selectedCrisis.radius" (change)="updateZoneRadius($any($event.target).valueAsNumber)">
+                </label>
+              </div>
+            }
+
+            <div class="chip-list">
+              @for (code of (selectedCrisis.zone_communes || []); track code) {
+                <span class="chip">
+                  {{ zoneCommuneNoms[code] || code }}
+                  @if (selectedCrisis.is_open !== false) {
+                    <button type="button" (click)="removeZoneCommune(code)">×</button>
+                  }
+                </span>
+              }
+              @for (code of (selectedCrisis.zone_departements || []); track code) {
+                <span class="chip chip-departement">
+                  {{ zoneDepartementNoms[code] || code }}
+                  @if (selectedCrisis.is_open !== false) {
+                    <button type="button" (click)="removeZoneDepartement(code)">×</button>
+                  }
+                </span>
+              }
+              @if (!selectedCrisis.zone_communes?.length && !selectedCrisis.zone_departements?.length) {
+                <span class="chip-empty">Aucun secteur ajouté — la crise reste représentée par son rayon par défaut.</span>
+              }
+            </div>
+
+            @if (zoneSecteursLoading) {
+              <p class="crisis-meta">Mise à jour de la zone en cours…</p>
+            }
+
+            @if (selectedCrisis.is_open !== false) {
+              <div class="secteur-add-row">
+                <app-tag-search-input
+                  placeholder="Ajouter une commune..."
+                  labelField="name"
+                  [searchFn]="communeSearchFn"
+                  emptyMessage="Aucune commune ne correspond."
+                  (itemSelected)="addZoneCommune($event)">
+                </app-tag-search-input>
+                <app-tag-search-input
+                  placeholder="Ajouter un département..."
+                  labelField="name"
+                  [searchFn]="departementSearchFn"
+                  emptyMessage="Aucun département ne correspond."
+                  (itemSelected)="addZoneDepartement($event)">
+                </app-tag-search-input>
+              </div>
+            }
+          </section>
+
           <!-- Impliqués -->
           <section class="section-block">
             <h3><span class="material-icons">flag</span> Institutions impliquées</h3>
@@ -142,11 +227,28 @@
                         {{ implication.type_implication === 'IMPLIQUE' ? 'Impliquée' : 'Acteur' }}
                       </span>
                     </td>
-                    <td>{{ (implication.themes_libelles || []).join(', ') || '—' }}</td>
+                    <td>
+                      {{ (implication.themes_libelles || []).join(', ') || '—' }}
+                      @if (canManageImplication(implication) && selectedCrisis.is_open !== false) {
+                        <details class="theme-editor">
+                          <summary>Modifier</summary>
+                          <div class="checkbox-group">
+                            @for (besoin of besoins; track besoin.id) {
+                              <label class="checkbox-label">
+                                <input type="checkbox"
+                                       [checked]="(implication.themes || []).includes(besoin.id)"
+                                       (change)="toggleImplicationTheme(implication, besoin.id, $any($event.target).checked)">
+                                <span>{{ besoin.nom }}</span>
+                              </label>
+                            }
+                          </div>
+                        </details>
+                      }
+                    </td>
                     <td>{{ implication.responsable_nom || '—' }}</td>
                     <td>{{ implication.commentaire || '—' }}</td>
                     <td class="actions">
-                      @if (isMine(implication)) {
+                      @if (canManageImplication(implication)) {
                         <button class="icon-btn danger" (click)="retirerImplication(implication)" title="Se retirer">
                           <span class="material-icons">delete_outline</span>
                         </button>
@@ -268,7 +370,7 @@
                     <td>{{ point.adresse || '—' }}</td>
                     <td>{{ point.responsable_nom || '—' }}</td>
                     <td class="actions">
-                      @if (isMine(point)) {
+                      @if (canManagePoint(point)) {
                         <button class="icon-btn danger" (click)="$event.stopPropagation(); retirerPoint(point)" title="Se retirer">
                           <span class="material-icons">delete_outline</span>
                         </button>

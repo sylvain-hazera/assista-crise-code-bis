@@ -117,6 +117,26 @@ class Crisis(models.Model):
     location = gis_models.PointField(srid=4326)
     radius = models.IntegerField(default=10)
     zone = gis_models.PolygonField(srid=4326, null=True, blank=True)
+
+    # Zone composée à partir de communes/départements ajoutés un par un : le frontend
+    # récupère le contour officiel de chaque commune/département (geo.api.gouv.fr), le
+    # bufferise du rayon `radius` (km) puis fait l'union du tout — indépendant de `zone`
+    # (le polygone dessiné à la main) pour ne pas complexifier ce mécanisme existant, déjà
+    # utilisé tel quel par Team/DelegationCompetence. `zone_departements`/`zone_communes`
+    # ne servent qu'à mémoriser la composition (recalcul/retrait ultérieur côté frontend) ;
+    # la géométrie effective est `zone_secteurs`.
+    zone_departements = models.JSONField(
+        default=list, blank=True,
+        help_text="Codes département ajoutés à la zone de crise (ex: ['38', '73']).",
+    )
+    zone_communes = models.JSONField(
+        default=list, blank=True,
+        help_text="Codes commune INSEE ajoutés à la zone de crise (ex: ['38185']).",
+    )
+    zone_secteurs = gis_models.MultiPolygonField(
+        srid=4326, null=True, blank=True,
+        help_text="Union des contours de zone_departements/zone_communes, bufferisés de `radius` km.",
+    )
     start_date = models.DateTimeField(auto_now_add=True)
     end_date = models.DateTimeField(null=True, blank=True)
 

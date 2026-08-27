@@ -223,6 +223,7 @@ class CrisisSerializer(serializers.ModelSerializer):
     latitude = serializers.SerializerMethodField()
     longitude = serializers.SerializerMethodField()
     zone_geojson = serializers.SerializerMethodField()
+    zone_secteurs_geojson = serializers.SerializerMethodField()
     author = serializers.PrimaryKeyRelatedField(read_only=True, allow_null=True)
     has_photo = serializers.SerializerMethodField()
     is_open = serializers.SerializerMethodField()
@@ -243,6 +244,9 @@ class CrisisSerializer(serializers.ModelSerializer):
         # GEOSGeometry.geojson est une propriété native de GeoDjango — pas besoin de
         # librairie de parsing WKT côté frontend, qui consomme directement ce GeoJSON.
         return json.loads(obj.zone.geojson) if obj.zone else None
+
+    def get_zone_secteurs_geojson(self, obj):
+        return json.loads(obj.zone_secteurs.geojson) if obj.zone_secteurs else None
 
     def get_has_photo(self, obj):
         return bool(obj.photo)

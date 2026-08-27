@@ -2,7 +2,7 @@ import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { FormsModule, ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
-import { forkJoin } from 'rxjs';
+import { forkJoin, map, of } from 'rxjs';
 
 import { CrisisService } from '../../services/crisis.service';
 import { ImplicationService } from '../../services/implication.service';
@@ -10,15 +10,17 @@ import { PointOperationnelService } from '../../services/point-operationnel.serv
 import { PointTypeService } from '../../services/point-type.service';
 import { ContactInstitutionService } from '../../services/contact-institution.service';
 import { InstitutionService } from '../../services/institution.service';
+import { InstitutionTypeService } from '../../services/institution-type.service';
 import { BesoinService } from '../../services/besoin.service';
 import { CompetenceService } from '../../services/competence.service';
 import { DelegationCompetenceService } from '../../services/delegation-competence.service';
+import { LocationService, Commune, GeoContour } from '../../services/location.service';
 import { AuthService } from '../../auth/services/auth.service';
 
 import { Crisis } from '../../shared/models/crisis.model';
 import { ImplicationInstitution } from '../../shared/models/implication.model';
 import { PointOperationnel, PointType } from '../../shared/models/point-operationnel.model';
-import { ContactInstitution, Institution } from '../../shared/models/institution.model';
+import { ContactInstitution, Institution, InstitutionType } from '../../shared/models/institution.model';
 import { Besoin } from '../../shared/models/besoin.model';
 import { Competence } from '../../shared/models/competence.model';
 import { DelegationCompetence } from '../../shared/models/delegation-competence.model';
@@ -26,6 +28,7 @@ import { UserRole } from '../../shared/models/user.model';
 import { ZoneMapComponent } from '../../shared/components/common/zone-map/zone-map.component';
 import { TagSearchInputComponent } from '../../shared/components/common/tag-search-input/tag-search-input.component';
 import { PointModalComponent } from './point-modal/point-modal.component';
+import { composeZoneSecteurs, toMultiPolygonWkt } from '../../shared/utils/crisis-zone-secteurs.util';
 
 type ResponsableMode = 'moi' | 'contact' | 'email';
 
@@ -49,6 +52,7 @@ export class CrisesComponent implements OnInit {
   allContacts: ContactInstitution[] = [];
   besoins: Besoin[] = [];
   delegations: DelegationCompetence[] = [];
+  institutionTypes: InstitutionType[] = [];
 
   isLoading = true;
   errorMessage = '';
@@ -89,6 +93,24 @@ export class CrisesComponent implements OnInit {
   competenceSearchFn = (q: string) => this.competenceService.search(q);
   competenceCreateFn = (nom: string) => this.competenceService.create({ nom });
 
+  // ── Création rapide d'institution (depuis l'écran crise) ────────
+  showQuickCreateInstitution = false;
+  quickCreateNom = '';
+  quickCreateTypeId: string | null = null;
+  quickCreateSaving = false;
+
+  // ── Zone de crise : secteurs (communes/départements + rayon) ───
+  zoneCommuneNoms: Record<string, string> = {};
+  zoneDepartementNoms: Record<string, string> = {};
+  zoneSecteursLoading = false;
+  communeSearchFn = (q: string) => this.locationService.searchCommunesByName(q);
+  departementSearchFn = (q: string) => {
+    const query = q.trim().toLowerCase();
+    return this.locationService.getDepartments().pipe(
+      map(deps => deps.filter(d => d.name.toLowerCase().includes(query) || d.code === query).slice(0, 10)),
+    );
+  };
+
   constructor(
     private fb: FormBuilder,
     private route: ActivatedRoute,
@@ -98,9 +120,11 @@ export class CrisesComponent implements OnInit {
     private pointTypeService: PointTypeService,
     private contactService: ContactInstitutionService,
     private institutionService: InstitutionService,
+    private institutionTypeService: InstitutionTypeService,
     private besoinService: BesoinService,
     private competenceService: CompetenceService,
     private delegationService: DelegationCompetenceService,
+    private locationService: LocationService,
     private authService: AuthService,
   ) {}
 
@@ -127,8 +151,9 @@ export class CrisesComponent implements OnInit {
       contacts: this.contactService.getAll(),
       besoins: this.besoinService.getAll(),
       delegations: this.delegationService.getAll(),
+      institutionTypes: this.institutionTypeService.getAll(),
     }).subscribe({
-      next: ({ crises, implications, points, pointTypes, institutions, contacts, besoins, delegations }) => {
+      next: ({ crises, implications, points, pointTypes, institutions, contacts, besoins, delegations, institutionTypes }) => {
         this.crises = crises;
         this.implications = implications;
         this.points = points;
@@ -137,6 +162,7 @@ export class CrisesComponent implements OnInit {
         this.allContacts = contacts;
         this.besoins = besoins;
         this.delegations = delegations;
+        this.institutionTypes = institutionTypes;
         const me = this.authService.getCurrentUser();
         this.myContacts = me ? contacts.filter(c => c.utilisateur === me.id && c.actif) : [];
         this.isLoading = false;
@@ -222,7 +248,13 @@ export class CrisesComponent implements OnInit {
     this.responsableContactId = null;
     this.responsableEmail = '';
     this.resetDelegationForm();
+    this.showQuickCreateInstitution = false;
+    this.quickCreateNom = '';
+    this.quickCreateTypeId = null;
+    this.zoneCommuneNoms = {};
+    this.zoneDepartementNoms = {};
     this.modal = 'detail';
+    this.loadZoneSecteurLabels();
   }
 
   closeModal(): void {
@@ -250,6 +282,114 @@ export class CrisesComponent implements OnInit {
         this.showSuccess('Zone enregistrée.');
       },
       error: () => this.showError("Impossible d'enregistrer la zone."),
+    });
+  }
+
+  // ── Zone de crise : secteurs (communes/départements + rayon) ───
+  /** Résout les noms des communes/départements déjà enregistrés sur la crise, pour
+   * l'affichage des chips (le backend ne stocke que des codes). N'écrit rien : appelé au
+   * chargement de l'écran, avant toute modification par l'utilisateur. */
+  private loadZoneSecteurLabels(): void {
+    const crisis = this.selectedCrisis;
+    if (!crisis || (!crisis.zone_communes?.length && !crisis.zone_departements?.length)) return;
+
+    forkJoin({
+      communes: this.fetchContours(crisis.zone_communes ?? [], code => this.locationService.getCommuneContour(code)),
+      departements: this.fetchContours(crisis.zone_departements ?? [], code => this.locationService.getDepartementContour(code)),
+    }).subscribe(({ communes, departements }) => {
+      communes.forEach(c => this.zoneCommuneNoms[c.code] = c.name);
+      departements.forEach(d => this.zoneDepartementNoms[d.code] = d.name);
+    });
+  }
+
+  /** forkJoin([]) ne complète jamais avec une valeur (RxJS) : indispensable de retomber sur
+   * of([]) quand la liste de codes est vide, sinon le forkJoin englobant ne se déclenche
+   * jamais dès qu'une des deux listes (communes/départements) est vide. */
+  private fetchContours(codes: string[], fetchFn: (code: string) => import('rxjs').Observable<GeoContour>) {
+    return codes.length ? forkJoin(codes.map(fetchFn)) : of([] as GeoContour[]);
+  }
+
+  updateZoneRadius(radius: number): void {
+    const crisis = this.selectedCrisis;
+    if (!crisis || !radius || radius === crisis.radius) return;
+    this.crisisService.patch(crisis.id, { radius }).subscribe({
+      next: (updated) => {
+        this.selectedCrisis = updated;
+        const idx = this.crises.findIndex(c => c.id === updated.id);
+        if (idx !== -1) this.crises[idx] = updated;
+        if ((updated.zone_communes?.length || updated.zone_departements?.length)) {
+          this.recomputeAndSaveZoneSecteurs(updated.zone_communes ?? [], updated.zone_departements ?? []);
+        }
+      },
+      error: () => this.showError('Impossible de mettre à jour le rayon.'),
+    });
+  }
+
+  addZoneCommune(commune: Commune): void {
+    const crisis = this.selectedCrisis;
+    if (!crisis || (crisis.zone_communes ?? []).includes(commune.code)) return;
+    this.zoneCommuneNoms[commune.code] = commune.name;
+    const zone_communes = [...(crisis.zone_communes ?? []), commune.code];
+    this.recomputeAndSaveZoneSecteurs(zone_communes, crisis.zone_departements ?? []);
+  }
+
+  removeZoneCommune(code: string): void {
+    const crisis = this.selectedCrisis;
+    if (!crisis) return;
+    const zone_communes = (crisis.zone_communes ?? []).filter(c => c !== code);
+    this.recomputeAndSaveZoneSecteurs(zone_communes, crisis.zone_departements ?? []);
+  }
+
+  addZoneDepartement(dept: { code: string; name: string }): void {
+    const crisis = this.selectedCrisis;
+    if (!crisis || (crisis.zone_departements ?? []).includes(dept.code)) return;
+    this.zoneDepartementNoms[dept.code] = dept.name;
+    const zone_departements = [...(crisis.zone_departements ?? []), dept.code];
+    this.recomputeAndSaveZoneSecteurs(crisis.zone_communes ?? [], zone_departements);
+  }
+
+  removeZoneDepartement(code: string): void {
+    const crisis = this.selectedCrisis;
+    if (!crisis) return;
+    const zone_departements = (crisis.zone_departements ?? []).filter(c => c !== code);
+    this.recomputeAndSaveZoneSecteurs(crisis.zone_communes ?? [], zone_departements);
+  }
+
+  private recomputeAndSaveZoneSecteurs(zone_communes: string[], zone_departements: string[]): void {
+    const crisis = this.selectedCrisis;
+    if (!crisis) return;
+    this.zoneSecteursLoading = true;
+
+    forkJoin({
+      communes: this.fetchContours(zone_communes, code => this.locationService.getCommuneContour(code)),
+      departements: this.fetchContours(zone_departements, code => this.locationService.getDepartementContour(code)),
+    }).subscribe({
+      next: ({ communes, departements }) => {
+        const contours = [...communes, ...departements].map(c => c.contour);
+        const composed = composeZoneSecteurs(contours, crisis.radius ?? 10);
+
+        this.crisisService.patch(crisis.id, {
+          zone_communes,
+          zone_departements,
+          zone_secteurs: composed ? toMultiPolygonWkt(composed) : null,
+        }).subscribe({
+          next: (updated) => {
+            this.selectedCrisis = updated;
+            const idx = this.crises.findIndex(c => c.id === updated.id);
+            if (idx !== -1) this.crises[idx] = updated;
+            this.zoneSecteursLoading = false;
+            this.showSuccess('Zone de crise mise à jour.');
+          },
+          error: () => {
+            this.zoneSecteursLoading = false;
+            this.showError("Impossible d'enregistrer la zone.");
+          },
+        });
+      },
+      error: () => {
+        this.zoneSecteursLoading = false;
+        this.showError("Impossible de récupérer le contour de cette commune/ce département.");
+      },
     });
   }
 
@@ -363,6 +503,30 @@ export class CrisesComponent implements OnInit {
     return this.institutions.find(i => i.id === id)?.nom ?? id.slice(0, 8);
   }
 
+  // ── Création rapide d'institution (depuis l'écran crise) ────────
+  submitQuickCreateInstitution(): void {
+    if (!this.quickCreateNom.trim() || !this.quickCreateTypeId) return;
+    this.quickCreateSaving = true;
+    this.institutionService.create({
+      nom: this.quickCreateNom.trim(),
+      type: this.quickCreateTypeId,
+      actif: true,
+    }).subscribe({
+      next: (created) => {
+        this.institutions = [...this.institutions, created];
+        this.quickCreateSaving = false;
+        this.quickCreateNom = '';
+        this.quickCreateTypeId = null;
+        this.showQuickCreateInstitution = false;
+        this.showSuccess(`Institution « ${created.nom} » créée — sélectionnable dans les listes ci-dessous.`);
+      },
+      error: () => {
+        this.quickCreateSaving = false;
+        this.showError("Impossible de créer cette institution.");
+      },
+    });
+  }
+
   // ── Déclarer une institution actrice (thèmes + responsable) ────
   onActeurDirectInstitutionChange(id: string): void {
     this.acteurDirectInstitutionId = id || null;
@@ -433,6 +597,27 @@ export class CrisesComponent implements OnInit {
     });
   }
 
+  /** Autorisé au déclarant, à un contact de l'institution, ou à un admin — même règle que
+   * le backend (voir ImplicationInstitutionViewSet._can_manage). */
+  canManageImplication(implication: ImplicationInstitution): boolean {
+    if (this.isAdmin) return true;
+    if (this.isMine(implication)) return true;
+    return this.myInstitutions.some(i => i.id === implication.institution);
+  }
+
+  toggleImplicationTheme(implication: ImplicationInstitution, besoinId: string, checked: boolean): void {
+    const current = implication.themes ?? [];
+    const themes = checked ? [...current, besoinId] : current.filter(id => id !== besoinId);
+    this.implicationService.update(implication.id, { themes }).subscribe({
+      next: (updated) => {
+        const idx = this.implications.findIndex(i => i.id === updated.id);
+        if (idx !== -1) this.implications[idx] = updated;
+        this.showSuccess('Thèmes mis à jour.');
+      },
+      error: () => this.showError('Impossible de modifier les thèmes.'),
+    });
+  }
+
   // ── Je suis acteur (point opérationnel) ─────────────────────
   openPointModal(point: PointOperationnel | null): void {
     this.editingPoint = point;
@@ -457,6 +642,13 @@ export class CrisesComponent implements OnInit {
       next: () => { this.reloadPoints(); this.showSuccess('Point opérationnel retiré.'); },
       error: () => this.showError('Erreur lors du retrait.'),
     });
+  }
+
+  /** Le backend autorise tout acteur institutionnel à gérer n'importe quel point (voir
+   * PointOperationnelViewSet) — le frontend n'a donc pas besoin d'être plus restrictif que
+   * "admin ou moi-même" pour afficher le bouton de retrait. */
+  canManagePoint(point: PointOperationnel): boolean {
+    return this.isAdmin || this.isMine(point);
   }
 
   // ── Délégation de compétence par secteur ───────────────────────

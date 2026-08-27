@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable, map } from 'rxjs';
+import { Observable, map, of } from 'rxjs';
+import type { Polygon, MultiPolygon } from 'geojson';
 
 export interface Department {
   code: string;
@@ -12,6 +13,12 @@ export interface Commune {
   name: string;
   codesPostaux: string[];
   codeDepartement: string;
+}
+
+export interface GeoContour {
+  code: string;
+  name: string;
+  contour: Polygon | MultiPolygon;
 }
 
 @Injectable({
@@ -69,9 +76,33 @@ export class LocationService {
   searchCommunes(query: string, communes: Commune[]): Commune[] {
     if (!query) return communes;
     const searchTerm = query.toLowerCase();
-    return communes.filter(commune => 
+    return communes.filter(commune =>
       commune.name.toLowerCase().includes(searchTerm) ||
       commune.codesPostaux.some(cp => cp.includes(searchTerm))
     );
+  }
+
+  /** Recherche de communes par nom sur toute la France (autocomplétion), pour la
+   * composition de zone de crise — pas besoin de connaître le département au préalable. */
+  searchCommunesByName(query: string): Observable<Commune[]> {
+    if (!query.trim()) return of([]);
+    return this.http.get<any[]>(
+      `${this.API_GEO}/communes?nom=${encodeURIComponent(query)}&fields=nom,code,codesPostaux,codeDepartement&boost=population&limit=10`
+    ).pipe(
+      map(communes => communes.map(c => ({ ...c, name: c.nom })))
+    );
+  }
+
+  /** Contour officiel (Polygon ou MultiPolygon) d'une commune, pour bufferiser/unioner
+   * côté frontend (composition de la zone de crise). */
+  getCommuneContour(code: string): Observable<GeoContour> {
+    return this.http.get<any>(`${this.API_GEO}/communes/${code}?fields=nom,code,contour`)
+      .pipe(map(c => ({ code: c.code, name: c.nom, contour: c.contour })));
+  }
+
+  /** Contour officiel d'un département, même usage que getCommuneContour. */
+  getDepartementContour(code: string): Observable<GeoContour> {
+    return this.http.get<any>(`${this.API_GEO}/departements/${code}?fields=nom,code,contour`)
+      .pipe(map(d => ({ code: d.code, name: d.nom, contour: d.contour })));
   }
 }

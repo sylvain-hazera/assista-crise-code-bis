@@ -529,6 +529,24 @@ private addHoverEffect() { // Show convex hull around clusters on hover
         return;
       }
 
+      // Zone composée à partir de communes/départements ajoutés (union bufferisée,
+      // calculée côté frontend au moment de l'ajout — cf. crisis-zone-secteurs.util.ts)
+      if (crisis.zone_secteurs_geojson) {
+        this.crisisCircle.push({
+          type: 'Feature',
+          geometry: crisis.zone_secteurs_geojson,
+          properties: {
+            center: [crisis.longitude, crisis.latitude],
+            radius: crisis.radius,
+            name: crisis.name,
+            description: crisis.description,
+            start_date: crisis.start_date,
+            type: crisis.type
+          }
+        });
+        return;
+      }
+
       // Create a circle for each crisis
       if (crisis.latitude && crisis.longitude) {
         let radiusCenter = [crisis.longitude, crisis.latitude] as [number, number];

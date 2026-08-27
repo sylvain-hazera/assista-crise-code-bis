@@ -1,5 +1,5 @@
 import { Status } from "./status.model";
-import type { Polygon } from "geojson";
+import type { Polygon, MultiPolygon } from "geojson";
 
 // Format GeoJSON retourné par GeoDjango (PointField)
 export interface GeoPoint {
@@ -19,6 +19,10 @@ export interface Crisis {
   radius?: number;
   zone?: string | null;          // WKT en écriture (ex: "POLYGON ((lng lat, ...))")
   zone_geojson?: Polygon | null; // GeoJSON natif en lecture, prêt pour l'affichage carte
+  zone_departements?: string[];
+  zone_communes?: string[];
+  zone_secteurs?: string | null;                    // WKT MultiPolygon en écriture
+  zone_secteurs_geojson?: MultiPolygon | null;       // union bufferisée des communes/départements ajoutés
   start_date: string;
   end_date: string | null;
   validator: string | null;

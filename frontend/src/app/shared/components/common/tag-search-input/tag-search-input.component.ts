@@ -23,9 +23,13 @@ import { of } from 'rxjs';
 export class TagSearchInputComponent<T = any> {
 
   @Input({ required: true }) searchFn!: (query: string) => Observable<T[]>;
-  @Input({ required: true }) createFn!: (value: string) => Observable<T>;
+  /** Optionnel : composants purement "recherche" (ex: commune/département) l'omettent —
+   * le bouton "+ Créer..." ne s'affiche alors jamais. */
+  @Input() createFn?: (value: string) => Observable<T>;
   @Input() labelField = 'nom';
   @Input() placeholder = 'Rechercher ou créer un thème...';
+  @Input() emptyMessage = 'Aucun résultat existant ne correspond.';
+  @Input() createLabelFn: (value: string) => string = (value) => `Créer « ${value} » comme nouveau thème`;
 
   @Output() itemSelected = new EventEmitter<T>();
 
@@ -78,7 +82,7 @@ export class TagSearchInputComponent<T = any> {
 
   createNew(): void {
     const value = this.query.trim();
-    if (!value || this.creating) {
+    if (!value || this.creating || !this.createFn) {
       return;
     }
     this.creating = true;

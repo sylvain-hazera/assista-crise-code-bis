@@ -24,17 +24,17 @@
     </button>
 
     <div *ngIf="!loading && results.length === 0" class="tag-search-empty">
-      Aucun thème existant ne correspond.
+      {{ emptyMessage }}
     </div>
 
     <button
       type="button"
       class="tag-search-create"
-      *ngIf="!loading && !hasExactMatch()"
+      *ngIf="createFn && !loading && !hasExactMatch()"
       [disabled]="creating"
       (click)="createNew()"
     >
-      + Créer « {{ query.trim() }} » comme nouveau thème
+      + {{ createLabelFn(query.trim()) }}
     </button>
 
   </div>

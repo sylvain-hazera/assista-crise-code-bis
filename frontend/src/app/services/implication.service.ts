@@ -22,6 +22,10 @@ export class ImplicationService {
     return this.http.post<ImplicationInstitution>(`${this.apiUrl}/`, payload);
   }
 
+  update(id: string, payload: Partial<ImplicationInstitutionPayload>): Observable<ImplicationInstitution> {
+    return this.http.patch<ImplicationInstitution>(`${this.apiUrl}/${id}/`, payload);
+  }
+
   delete(id: string): Observable<void> {
     return this.http.delete<void>(`${this.apiUrl}/${id}/`);
   }
