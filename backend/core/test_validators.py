@@ -480,3 +480,97 @@ def test_metropole_falls_back_to_name_check_when_epci_lookup_empty(mock_search, 
 
     assert valid is True
     assert details.get("validation_mode") != "opendata"
+
+
+@pytest.mark.django_db
+@patch("core.auth_validation.InstitutionEmailValidator._search_annuaire")
+def test_police_municipale_falls_back_to_name_check(mock_search):
+    mock_search.return_value = None
+
+    valid, message, details = InstitutionEmailValidator.validate_institution_account(
+        email="contact@police-municipale-annecy.fr",
+        institution_name="Police municipale d'Annecy",
+        institution_type="police_municipale",
+    )
+
+    assert valid is True
+
+
+@pytest.mark.django_db
+@patch("core.auth_validation.InstitutionEmailValidator._search_annuaire")
+def test_ars_email_domain_format_accepted(mock_search):
+    """Domaine réel type ars.sante.fr — jeton court volontairement absent du groupe générique
+    (cf. commentaire sur 'ars'/'chu'/'chr' dans validate_email_domain) : vérifie le motif dédié."""
+    mock_search.return_value = None
+
+    valid, message, details = InstitutionEmailValidator.validate_institution_account(
+        email="contact@iledefrance.ars.sante.fr",
+        institution_name="ARS Île-de-France",
+        institution_type="ars",
+    )
+
+    assert valid is True
+
+
+@pytest.mark.django_db
+@patch("core.auth_validation.InstitutionEmailValidator._search_annuaire")
+def test_ars_rejects_unrelated_name(mock_search):
+    mock_search.return_value = None
+
+    valid, message, details = InstitutionEmailValidator.validate_institution_account(
+        email="contact@iledefrance.ars.sante.fr",
+        institution_name="Boulangerie du coin",
+        institution_type="ars",
+    )
+
+    assert valid is False
+
+
+@pytest.mark.django_db
+@patch("core.auth_validation.InstitutionEmailValidator._fetch_json")
+@patch("core.auth_validation.InstitutionEmailValidator._search_annuaire")
+def test_chu_validated_via_recherche_entreprises_public_nature_juridique(mock_search, mock_fetch):
+    """Les hôpitaux publics n'ont pas d'API de recherche FINESS en direct (jeu de données
+    statique uniquement) : vérifiés ici via recherche-entreprises.api.gouv.fr, en ne retenant
+    que les résultats dont la catégorie juridique (nature_juridique) commence par '7'
+    (personne morale de droit public), pour écarter les cliniques privées homonymes."""
+    mock_search.return_value = None
+    mock_fetch.return_value = {
+        "results": [
+            {"nom_complet": "CENTRE HOSPITALIER UNIVERSITAIRE GRENOBLE ALPES", "nature_juridique": "7364"},
+            {"nom_complet": "CLINIQUE PRIVEE HOMONYME", "nature_juridique": "5710"},
+        ]
+    }
+
+    valid, message, details = InstitutionEmailValidator.validate_institution_account(
+        email="contact@chu-grenoble.fr",
+        institution_name="CHU Grenoble Alpes",
+        institution_type="chu",
+        commune_name="Grenoble",
+        commune_code="38185",
+    )
+
+    assert valid is True
+    assert details["validation_mode"] == "opendata"
+
+
+@pytest.mark.django_db
+@patch("core.auth_validation.InstitutionEmailValidator._fetch_json")
+@patch("core.auth_validation.InstitutionEmailValidator._search_annuaire")
+def test_chu_rejected_when_only_private_matches_found(mock_search, mock_fetch):
+    mock_search.return_value = None
+    mock_fetch.return_value = {
+        "results": [
+            {"nom_complet": "CLINIQUE PRIVEE FANTAISISTE", "nature_juridique": "5710"},
+        ]
+    }
+
+    valid, message, details = InstitutionEmailValidator.validate_institution_account(
+        email="contact@chu-fantaisiste.fr",
+        institution_name="Clinique privée fantaisiste",
+        institution_type="chu",
+        commune_name="Grenoble",
+        commune_code="38185",
+    )
+
+    assert valid is False

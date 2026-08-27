@@ -246,6 +246,29 @@ class InstitutionEmailValidator:
         return str(match.get("code", "")) if match else ""
 
     EPCI_TYPES = {"cc", "intercommunalite", "intercommunalité", "metropole", "métropole"}
+    HOPITAL_TYPES = {"hopital", "hôpital", "chu", "chr", "centre hospitalier"}
+
+    @staticmethod
+    def _check_hopital_institution(institution_name: str):
+        """Vérifie qu'un hôpital/CHU du nom donné existe réellement, via l'annuaire des
+        entreprises (recherche-entreprises.api.gouv.fr — API officielle et vivante, alimentée
+        par le répertoire SIRENE) : les établissements publics de santé y apparaissent avec une
+        catégorie juridique (nature_juridique) commençant par '7' (personne morale de droit
+        public), contrairement aux cliniques privées (5xxx/6xxx) ou associations (9xxx). Choisi
+        plutôt que FINESS (le registre officiel dédié aux établissements de santé), qui n'expose
+        qu'un jeu de données statique téléchargeable et pas d'API de recherche en direct."""
+        if not institution_name:
+            return None
+
+        data = InstitutionEmailValidator._fetch_json(
+            f"https://recherche-entreprises.api.gouv.fr/search?q={urllib.parse.quote(institution_name)}&limit=5"
+        )
+        results = data.get("results") if isinstance(data, dict) else None
+        if not results:
+            return None
+
+        public_matches = [r for r in results if str(r.get("nature_juridique") or "").startswith("7")]
+        return public_matches or None
 
     @staticmethod
     def _check_epci_institution(institution_name: str, commune_code: str):
@@ -279,6 +302,9 @@ class InstitutionEmailValidator:
         if normalized_type in InstitutionEmailValidator.EPCI_TYPES:
             return InstitutionEmailValidator._check_epci_institution(institution_name, commune_code)
 
+        if normalized_type in InstitutionEmailValidator.HOPITAL_TYPES:
+            return InstitutionEmailValidator._check_hopital_institution(institution_name)
+
         if not commune_code:
             return None
 
@@ -297,8 +323,10 @@ class InstitutionEmailValidator:
             "sous-prefecture": f"https://etablissements-publics.api.gouv.fr/v3/communes/{commune_code}/prefectures",
             "sous préfecture": f"https://etablissements-publics.api.gouv.fr/v3/communes/{commune_code}/prefectures",
             "police": f"https://etablissements-publics.api.gouv.fr/v3/communes/{commune_code}/polices",
+            "police_municipale": f"https://etablissements-publics.api.gouv.fr/v3/communes/{commune_code}/polices",
             "gendarmerie": f"https://etablissements-publics.api.gouv.fr/v3/communes/{commune_code}/gendarmeries",
             "samu": f"https://etablissements-publics.api.gouv.fr/v3/communes/{commune_code}/samu",
+            "ars": f"https://geo.api.gouv.fr/communes/{commune_code}",
             "collectivite": f"https://geo.api.gouv.fr/communes/{commune_code}",
             "collectivités": f"https://geo.api.gouv.fr/communes/{commune_code}",
             "ministere": f"https://etablissements-publics.api.gouv.fr/v3/communes/{commune_code}/prefectures",
@@ -331,13 +359,16 @@ class InstitutionEmailValidator:
                 "sdis",
                 "samu",
                 "police",
+                "police_municipale",
                 "gendarmerie",
+                "ars",
                 "collectivite",
                 "collectivités",
                 "ministere",
                 "ministère",
             }
             | InstitutionEmailValidator.EPCI_TYPES
+            | InstitutionEmailValidator.HOPITAL_TYPES
         )
 
     @staticmethod
@@ -368,7 +399,7 @@ class InstitutionEmailValidator:
         allowed_patterns = [
             r"^mairie(?:[.-][a-z0-9-]+)*(?:\.fr)?$",
             r"^.*\.mairie(?:[.-][a-z0-9-]+)*(?:\.fr)?$",
-            r"^.*(?:prefecture|gendarmerie|police|samu|collectivite|collectivités|communaute|communes?|commune|intercommunalite|metropole|departement|region)(?:[.-][a-z0-9-]+)*(?:\.fr)?$",
+            r"^.*(?:prefecture|gendarmerie|police|samu|collectivite|collectivités|communaute|communes?|commune|intercommunalite|metropole|departement|region|hopital|hôpital|hospitalier)(?:[.-][a-z0-9-]+)*(?:\.fr)?$",
             r"^prefecture(?:[.-][a-z0-9-]+)*(?:\.fr)?$",
             r"^police(?:[.-][a-z0-9-]+)*(?:\.fr)?$",
             r"^gendarmerie(?:[.-][a-z0-9-]+)*(?:\.fr)?$",
@@ -379,6 +410,13 @@ class InstitutionEmailValidator:
             r"^.*-cc(?:[.-][a-z0-9-]+)*(?:\.fr)?$",
             r"^.*communaut(?:e|es)(?:[.-][a-z0-9-]+)*(?:\.fr)?$",
             r"^.*collectivite(?:s)?(?:[.-][a-z0-9-]+)*(?:\.fr)?$",
+            # "ars"/"chu"/"chr" : jetons courts, non ajoutés au groupe générique ci-dessus
+            # (même logique que "cc" plus haut) pour éviter les faux positifs par sous-chaîne
+            # (ex: "ars" apparaît dans "marseille").
+            r"^ars(?:[.-][a-z0-9-]+)*\.sante\.fr$",
+            r"^.*\.ars(?:[.-][a-z0-9-]+)*\.sante\.fr$",
+            r"^(?:chu|chr)(?:[.-][a-z0-9-]+)*(?:\.fr)?$",
+            r"^.*-(?:chu|chr)(?:[.-][a-z0-9-]+)*(?:\.fr)?$",
         ]
 
         for pattern in allowed_patterns:
@@ -508,6 +546,19 @@ class InstitutionEmailValidator:
                 expected_token = normalized_type.replace("é", "e")
                 if expected_token not in email and expected_token not in normalized_name:
                     return False, f"Le domaine email ne correspond pas au type {institution_type} sélectionné.", details
+
+            if normalized_type == "police_municipale" and "police" not in email and "police" not in normalized_name:
+                return False, "Le domaine email ne correspond pas au type police municipale sélectionné.", details
+
+            if normalized_type == "ars":
+                # Un domaine réel ars.sante.fr contient toujours "ars"/"sante" : vérifier le nom
+                # plutôt que le domaine ici, sinon cette condition ne discrimine jamais rien.
+                if "ars" not in normalized_name and "agence" not in normalized_name and "sante" not in normalized_name and "santé" not in normalized_name:
+                    return False, "Le nom de l'institution est incompatible avec le type ARS sélectionné.", details
+
+            if normalized_type in InstitutionEmailValidator.HOPITAL_TYPES:
+                if "hopital" not in normalized_name and "hôpital" not in normalized_name and "chu" not in normalized_name and "chr" not in normalized_name and "hospitalier" not in normalized_name:
+                    return False, "Le nom de l'institution est incompatible avec le type sélectionné.", details
 
             return True, "Validation institutionnelle valide", details
 

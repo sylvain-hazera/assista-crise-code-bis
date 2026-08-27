@@ -17,3 +17,9 @@ def test_official_verified_types_seeded():
     plutôt que d'en dupliquer de nouvelles."""
     codes = set(InstitutionType.objects.values_list('code', flat=True))
     assert {'gendarmerie', 'prefecture', 'sous_pref', 'cg', 'cr', 'epci'}.issubset(codes)
+
+
+@pytest.mark.django_db
+def test_sante_and_police_municipale_types_seeded():
+    codes = set(InstitutionType.objects.values_list('code', flat=True))
+    assert {'police_municipale', 'ars_antenne', 'chu'}.issubset(codes)
