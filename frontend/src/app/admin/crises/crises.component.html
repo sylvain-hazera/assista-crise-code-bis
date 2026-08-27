@@ -291,6 +291,7 @@
       [isAdmin]="isAdmin"
       [point]="editingPoint"
       (saved)="onPointSaved($event)"
+      (pointUpdated)="reloadPoints()"
       (closed)="onPointModalClosed()">
     </app-point-modal>
   }

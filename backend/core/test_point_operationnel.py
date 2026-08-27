@@ -1,9 +1,11 @@
 import pytest
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient
 
 from core.models import (
+    Competence,
     ContactInstitution,
     Crisis,
     Institution,
@@ -123,3 +125,54 @@ class TestPointOperationnelEditPermissions:
         assert AuditLog.objects.filter(
             objet_id=point.id, action__code="MODIFICATION", objet_type="PointOperationnel",
         ).exists()
+
+
+@pytest.mark.django_db
+class TestPointOperationnelCompetencesRequises:
+
+    def test_patch_adds_competences(self, institutional_client, crisis, point_type):
+        client, _ = institutional_client
+        point = PointOperationnel.objects.create(nom="Point existant", type=point_type, crise=crisis)
+        competence = Competence.objects.create(nom="Premiers secours (point test)")
+
+        response = client.patch(
+            reverse('pointoperationnel-detail', args=[point.id]),
+            {"competences_requises": [str(competence.id)]},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["competences_requises_libelles"] == ["Premiers secours (point test)"]
+        point.refresh_from_db()
+        assert list(point.competences_requises.all()) == [competence]
+
+    def test_patch_removes_competences(self, institutional_client, crisis, point_type):
+        client, _ = institutional_client
+        competence = Competence.objects.create(nom="Logistique (point test)")
+        point = PointOperationnel.objects.create(nom="Point existant", type=point_type, crise=crisis)
+        point.competences_requises.add(competence)
+
+        response = client.patch(
+            reverse('pointoperationnel-detail', args=[point.id]),
+            {"competences_requises": []},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        point.refresh_from_db()
+        assert point.competences_requises.count() == 0
+
+    def test_patch_competences_blocked_on_closed_crisis(self, institutional_client, crisis, point_type):
+        client, _ = institutional_client
+        competence = Competence.objects.create(nom="Secourisme (point test)")
+        point = PointOperationnel.objects.create(nom="Point existant", type=point_type, crise=crisis)
+        crisis.end_date = timezone.now()
+        crisis.save()
+
+        response = client.patch(
+            reverse('pointoperationnel-detail', args=[point.id]),
+            {"competences_requises": [str(competence.id)]},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST

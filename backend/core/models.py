@@ -1832,6 +1832,13 @@ class PointOperationnel(models.Model):
         blank=True
     )
 
+    competences_requises = models.ManyToManyField(
+        "Competence",
+        blank=True,
+        related_name="points_operationnels",
+        help_text="Compétences/thèmes nécessaires pour tenir ce point.",
+    )
+
     def __str__(self):
         return self.nom
 

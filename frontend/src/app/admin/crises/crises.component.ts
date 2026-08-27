@@ -132,7 +132,7 @@ export class CrisesComponent implements OnInit {
     this.implicationService.getAll().subscribe(data => this.implications = data);
   }
 
-  private reloadPoints(): void {
+  reloadPoints(): void {
     this.pointService.getAll().subscribe(data => this.points = data);
   }
 

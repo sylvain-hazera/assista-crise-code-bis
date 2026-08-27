@@ -23,6 +23,8 @@ export interface PointOperationnel {
   description?: string | null;
   date_ouverture?: string | null;
   date_fermeture?: string | null;
+  competences_requises?: string[];
+  competences_requises_libelles?: string[];
 }
 
 export interface PointOperationnelPayload {
@@ -36,4 +38,5 @@ export interface PointOperationnelPayload {
   date_ouverture?: string | null;
   date_fermeture?: string | null;
   location?: string;
+  competences_requises?: string[];
 }

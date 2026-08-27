@@ -3,11 +3,14 @@ import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 
 import { PointOperationnelService } from '../../../services/point-operationnel.service';
+import { CompetenceService } from '../../../services/competence.service';
 import { PointOperationnel, PointType } from '../../../shared/models/point-operationnel.model';
 import { Institution } from '../../../shared/models/institution.model';
+import { Competence } from '../../../shared/models/competence.model';
 import { AddressResult } from '../../../shared/models/address-result.model';
 import { AddressPickerComponent } from '../../../shared/components/common/address-picker/address-picker.component';
 import { PointPickerComponent } from '../../../shared/components/common/point-picker/point-picker.component';
+import { TagSearchInputComponent } from '../../../shared/components/common/tag-search-input/tag-search-input.component';
 
 /**
  * Modale "Créer/éditer un point opérationnel" — remplace l'ancien formulaire inline de
@@ -19,7 +22,7 @@ import { PointPickerComponent } from '../../../shared/components/common/point-pi
 @Component({
   selector: 'app-point-modal',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, AddressPickerComponent, PointPickerComponent],
+  imports: [CommonModule, ReactiveFormsModule, AddressPickerComponent, PointPickerComponent, TagSearchInputComponent],
   templateUrl: './point-modal.component.html',
   styleUrl: './point-modal.component.scss'
 })
@@ -32,16 +35,28 @@ export class PointModalComponent implements OnChanges {
 
   @Output() saved = new EventEmitter<PointOperationnel>();
   @Output() closed = new EventEmitter<void>();
+  /** Mise à jour "silencieuse" (compétences, futures sections équipe/matériel) : le parent
+   * doit rafraîchir sa liste, mais la modale reste ouverte (contrairement à `saved`, qui
+   * suit la soumission du formulaire principal et ferme la modale). */
+  @Output() pointUpdated = new EventEmitter<PointOperationnel>();
 
   form!: FormGroup;
   latitude: number | null = null;
   longitude: number | null = null;
   saving = false;
   errorMessage = '';
+  selectedCompetences: { id: string; nom: string }[] = [];
 
-  constructor(private fb: FormBuilder, private pointService: PointOperationnelService) {
+  constructor(
+    private fb: FormBuilder,
+    private pointService: PointOperationnelService,
+    private competenceService: CompetenceService,
+  ) {
     this.buildForm();
   }
+
+  competenceSearchFn = (q: string) => this.competenceService.search(q);
+  competenceCreateFn = (nom: string) => this.competenceService.create({ nom });
 
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['point']) {
@@ -60,6 +75,28 @@ export class PointModalComponent implements OnChanges {
     });
     this.latitude = this.point?.latitude ?? null;
     this.longitude = this.point?.longitude ?? null;
+
+    const ids = this.point?.competences_requises ?? [];
+    const libelles = this.point?.competences_requises_libelles ?? [];
+    this.selectedCompetences = ids.map((id, i) => ({ id, nom: libelles[i] ?? id }));
+  }
+
+  onCompetenceSelected(item: Competence): void {
+    if (!this.point || this.selectedCompetences.some(c => c.id === item.id)) return;
+    const ids = [...this.selectedCompetences.map(c => c.id), item.id];
+    this.pointService.update(this.point.id, { competences_requises: ids }).subscribe(updated => {
+      this.selectedCompetences = [...this.selectedCompetences, { id: item.id, nom: item.nom }];
+      this.pointUpdated.emit(updated);
+    });
+  }
+
+  removeCompetence(id: string): void {
+    if (!this.point) return;
+    const ids = this.selectedCompetences.filter(c => c.id !== id).map(c => c.id);
+    this.pointService.update(this.point.id, { competences_requises: ids }).subscribe(updated => {
+      this.selectedCompetences = this.selectedCompetences.filter(c => c.id !== id);
+      this.pointUpdated.emit(updated);
+    });
   }
 
   get isEdit(): boolean {

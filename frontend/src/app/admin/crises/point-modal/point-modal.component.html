@@ -59,6 +59,29 @@
         </div>
       </div>
 
+      @if (isEdit) {
+        <div class="form-group">
+          <label>Compétences nécessaires</label>
+          <app-tag-search-input
+            placeholder="Chercher ou créer une compétence..."
+            [searchFn]="competenceSearchFn"
+            [createFn]="competenceCreateFn"
+            (itemSelected)="onCompetenceSelected($event)">
+          </app-tag-search-input>
+          <div class="chip-list">
+            @for (c of selectedCompetences; track c.id) {
+              <span class="chip">
+                {{ c.nom }}
+                <button type="button" (click)="removeCompetence(c.id)">×</button>
+              </span>
+            }
+            @if (selectedCompetences.length === 0) {
+              <span class="chip-empty">Aucune compétence requise pour l'instant.</span>
+            }
+          </div>
+        </div>
+      }
+
       @if (errorMessage) {
         <p class="error-message">{{ errorMessage }}</p>
       }

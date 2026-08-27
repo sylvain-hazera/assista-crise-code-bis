@@ -1071,6 +1071,7 @@ class PointOperationnelSerializer(
     responsable_nom = serializers.SerializerMethodField()
     latitude = serializers.SerializerMethodField()
     longitude = serializers.SerializerMethodField()
+    competences_requises_libelles = serializers.SerializerMethodField()
 
     class Meta:
 
@@ -1083,6 +1084,9 @@ class PointOperationnelSerializer(
 
     def get_longitude(self, obj):
         return obj.location.x if obj.location else None
+
+    def get_competences_requises_libelles(self, obj):
+        return [c.nom for c in obj.competences_requises.all()]
 
     def get_responsable_nom(self, obj):
         if not obj.responsable:
