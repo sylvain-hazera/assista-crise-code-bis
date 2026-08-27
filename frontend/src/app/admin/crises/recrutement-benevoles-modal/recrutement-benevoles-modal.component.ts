@@ -2,7 +2,7 @@ import { Component, EventEmitter, Input, OnInit, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subject, of } from 'rxjs';
-import { debounceTime, distinctUntilChanged, switchMap, catchError } from 'rxjs/operators';
+import { debounceTime, distinctUntilChanged, catchError } from 'rxjs/operators';
 
 import { PointOperationnelService } from '../../../services/point-operationnel.service';
 import { CompetenceService } from '../../../services/competence.service';
@@ -25,6 +25,17 @@ const CRENEAUX: { creneau: Creneau; label: string }[] = [
   { creneau: 'NUIT', label: 'N' },
 ];
 
+// Heure conventionnelle de chaque créneau, pour déduire la date/heure attendue du premier
+// créneau coché — l'utilisateur n'a plus à la saisir séparément, ça n'avait pas de sens
+// puisqu'elle correspond justement à ce premier créneau.
+const HEURE_CRENEAU: Record<Creneau, string> = {
+  MATIN: '08:00',
+  MIDI: '12:00',
+  SOIR: '18:00',
+  NUIT: '22:00',
+};
+const ORDRE_CRENEAU: Creneau[] = ['MATIN', 'MIDI', 'SOIR', 'NUIT'];
+
 function buildJours(): JourCreneaux[] {
   const jours: JourCreneaux[] = [];
   for (let i = 0; i < 8; i++) {
@@ -42,8 +53,10 @@ function buildJours(): JourCreneaux[] {
 /**
  * Mini-outil RH de recrutement de bénévoles sur un point : tableau paginé/filtrable/triable
  * (recherche, disponibilité, compétences, distance), sélection multiple, affectation groupée.
- * Remplace l'ancienne section "Recruter un bénévole" de PointEquipeModalComponent, devenue
- * inadaptée dès qu'il y a des centaines d'offres d'aide à parcourir.
+ * Sélectionner un bénévole coche d'office tous ses créneaux déclarés disponibles dans la
+ * grille "créneaux à couvrir" (décochables ensuite un par un) — le régulateur garde la main
+ * pour ajuster, mais n'a pas à tout cocher à la main. La ligne d'en-tête du tableau affiche en
+ * direct, pour chaque créneau, le nombre de bénévoles déjà présents dans l'équipe.
  */
 @Component({
   selector: 'app-recrutement-benevoles-modal',
@@ -76,19 +89,21 @@ export class RecrutementBenevolesModalComponent implements OnInit {
   selectedCompetences: Competence[] = [];
   competenceSearchFn = (q: string) => this.competenceService.search(q);
 
-  // Sélection multiple (persiste entre les pages)
+  // Sélection multiple (persiste entre les pages) — on garde l'objet complet, pas seulement
+  // l'id, pour pouvoir recalculer les créneaux à couvrir même pour un candidat d'une autre page.
   selectedIds = new Set<string>();
+  private selectedCandidats = new Map<string, CandidatBenevole>();
 
   // Affectation groupée
   transitPoints: PointOperationnel[] = [];
-  batchDateAttendue = '';
   batchPointTransitId: string | null = null;
   batchCreneaux = new Set<string>();
   submitting = false;
   submitError = '';
   submitSummary = '';
 
-  // Compteurs "déjà affecté" par créneau, déduits de la vue équipe existante
+  // Compteurs "déjà affecté" par créneau, déduits de la vue équipe existante — affichés en
+  // haut du tableau, sur la même grille que les disponibilités de chaque bénévole.
   private equipeDisponibilites: { date: string; creneau: Creneau }[] = [];
 
   private search$ = new Subject<string>();
@@ -203,9 +218,15 @@ export class RecrutementBenevolesModalComponent implements OnInit {
     return this.selectedIds.has(id);
   }
 
-  toggleSelect(id: string): void {
-    if (this.selectedIds.has(id)) this.selectedIds.delete(id);
-    else this.selectedIds.add(id);
+  toggleSelect(candidat: CandidatBenevole): void {
+    if (this.selectedIds.has(candidat.id)) {
+      this.selectedIds.delete(candidat.id);
+      this.selectedCandidats.delete(candidat.id);
+    } else {
+      this.selectedIds.add(candidat.id);
+      this.selectedCandidats.set(candidat.id, candidat);
+    }
+    this.recomputeBatchCreneaux();
   }
 
   get allOnPageSelected(): boolean {
@@ -214,14 +235,27 @@ export class RecrutementBenevolesModalComponent implements OnInit {
 
   toggleSelectAllOnPage(): void {
     if (this.allOnPageSelected) {
-      this.candidats.forEach(c => this.selectedIds.delete(c.id));
+      this.candidats.forEach(c => { this.selectedIds.delete(c.id); this.selectedCandidats.delete(c.id); });
     } else {
-      this.candidats.forEach(c => this.selectedIds.add(c.id));
+      this.candidats.forEach(c => { this.selectedIds.add(c.id); this.selectedCandidats.set(c.id, c); });
     }
+    this.recomputeBatchCreneaux();
   }
 
   hasDispo(candidat: CandidatBenevole, date: string, creneau: Creneau): boolean {
     return candidat.disponibilites.some(d => d.date === date && d.creneau === creneau);
+  }
+
+  /** Coché par défaut sur tous les créneaux où AU MOINS UN bénévole sélectionné a déclaré
+   * être disponible — le régulateur décoche ensuite ce dont il n'a pas besoin. */
+  private recomputeBatchCreneaux(): void {
+    const union = new Set<string>();
+    for (const c of this.selectedCandidats.values()) {
+      for (const d of c.disponibilites) {
+        union.add(`${d.date}|${d.creneau}`);
+      }
+    }
+    this.batchCreneaux = union;
   }
 
   // --- Affectation groupée ---
@@ -244,13 +278,39 @@ export class RecrutementBenevolesModalComponent implements OnInit {
     return this.isBatchCreneauChecked(date, creneau) ? this.selectedIds.size : 0;
   }
 
+  /** Date/heure attendue déduite du premier créneau coché (le plus tôt) — plus de champ à
+   * saisir séparément, ça n'avait pas de sens vu que ça correspond exactement à ce créneau. */
+  get premierCreneau(): { date: string; creneau: Creneau; label: string } | null {
+    const entries = Array.from(this.batchCreneaux).map(key => {
+      const [date, creneau] = key.split('|') as [string, Creneau];
+      return { date, creneau };
+    });
+    if (entries.length === 0) return null;
+    entries.sort((a, b) => {
+      if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+      return ORDRE_CRENEAU.indexOf(a.creneau) - ORDRE_CRENEAU.indexOf(b.creneau);
+    });
+    const first = entries[0];
+    const jour = this.jours.find(j => j.date === first.date);
+    const creneauLabel = CRENEAUX.find(c => c.creneau === first.creneau)?.label ?? first.creneau;
+    return { ...first, label: `${jour?.label ?? first.date} ${creneauLabel}` };
+  }
+
+  private computeDateAttendueIso(): string | null {
+    const premier = this.premierCreneau;
+    if (!premier) return null;
+    const heure = HEURE_CRENEAU[premier.creneau];
+    return new Date(`${premier.date}T${heure}:00`).toISOString();
+  }
+
   submitBatch(): void {
     if (this.selectedIds.size === 0) {
       this.submitError = "Sélectionnez au moins un bénévole.";
       return;
     }
-    if (!this.batchDateAttendue) {
-      this.submitError = "Indiquez la date/heure attendue.";
+    const dateAttendue = this.computeDateAttendueIso();
+    if (!dateAttendue) {
+      this.submitError = "Sélectionnez au moins un créneau à couvrir.";
       return;
     }
 
@@ -264,7 +324,7 @@ export class RecrutementBenevolesModalComponent implements OnInit {
     this.submitSummary = '';
     this.pointService.inviterBenevole(this.point.id, {
       offer_ids: Array.from(this.selectedIds),
-      date_attendue: new Date(this.batchDateAttendue).toISOString(),
+      date_attendue: dateAttendue,
       point_transit_id: this.batchPointTransitId || undefined,
       creneaux,
     }).subscribe({
@@ -276,8 +336,8 @@ export class RecrutementBenevolesModalComponent implements OnInit {
           ? `${nbCreated} bénévole(s) affecté(s), ${nbErrors} échec(s).`
           : `${nbCreated} bénévole(s) affecté(s) avec succès.`;
         this.selectedIds.clear();
+        this.selectedCandidats.clear();
         this.batchCreneaux.clear();
-        this.batchDateAttendue = '';
         this.batchPointTransitId = null;
         this.loadEquipeCounts();
         this.affected.emit();

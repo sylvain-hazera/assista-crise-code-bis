@@ -97,9 +97,33 @@
               </tr>
             </thead>
             <tbody>
+              <tr class="headcount-row" [title]="'Bénévoles déjà présents dans l\'équipe par créneau (+ ceux que vous êtes en train d\'ajouter)'">
+                <td class="col-check"></td>
+                <td [attr.colspan]="hasPointLocation ? 4 : 3">Déjà présents dans l'équipe</td>
+                <td class="col-dispo">
+                  <div class="dispo-mini">
+                    @for (jour of jours; track jour.date) {
+                      <div class="dispo-mini-jour" [title]="jour.label">
+                        @for (cr of jour.creneaux; track cr.creneau) {
+                          <label
+                            class="dispo-dot count"
+                            [class.checked]="isBatchCreneauChecked(jour.date, cr.creneau)"
+                            [class.has-count]="dejaAffectes(jour.date, cr.creneau) > 0">
+                            <input type="checkbox" [checked]="isBatchCreneauChecked(jour.date, cr.creneau)" (change)="toggleBatchCreneau(jour.date, cr.creneau)">
+                            <span class="value">{{ dejaAffectes(jour.date, cr.creneau) }}</span>
+                            @if (delta(jour.date, cr.creneau) > 0) {
+                              <span class="delta">+{{ delta(jour.date, cr.creneau) }}</span>
+                            }
+                          </label>
+                        }
+                      </div>
+                    }
+                  </div>
+                </td>
+              </tr>
               @for (c of candidats; track c.id) {
-                <tr [class.selected]="isSelected(c.id)" (click)="toggleSelect(c.id)">
-                  <td class="col-check"><input type="checkbox" [checked]="isSelected(c.id)" (click)="$event.stopPropagation()" (change)="toggleSelect(c.id)"></td>
+                <tr [class.selected]="isSelected(c.id)" (click)="toggleSelect(c)">
+                  <td class="col-check"><input type="checkbox" [checked]="isSelected(c.id)" (click)="$event.stopPropagation()" (change)="toggleSelect(c)"></td>
                   <td>{{ c.first_name_offer }} {{ c.last_name_offer }}</td>
                   <td>{{ c.email_offer }}</td>
                   <td>
@@ -149,52 +173,27 @@
       @if (selectedIds.size > 0) {
         <div class="batch-bar">
           <h3>{{ selectedIds.size }} bénévole(s) sélectionné(s)</h3>
+          <p class="hint">
+            Créneaux à couvrir cochés d'office selon les disponibilités des bénévoles
+            sélectionnés (décochez ce qui n'est pas nécessaire) — case à cocher tout en haut du
+            tableau, sur la ligne "Déjà présents dans l'équipe".
+          </p>
 
-          <div class="form-row">
+          @if (premierCreneau) {
+            <p class="hint">Premier créneau couvert : <strong>{{ premierCreneau.label }}</strong></p>
+          }
+
+          @if (transitPoints.length > 0) {
             <div class="form-group">
-              <label>Date/heure attendue <span class="required">*</span></label>
-              <input type="datetime-local" [(ngModel)]="batchDateAttendue">
-            </div>
-
-            @if (transitPoints.length > 0) {
-              <div class="form-group">
-                <label>Point de transit obligatoire</label>
-                <select [(ngModel)]="batchPointTransitId">
-                  <option [ngValue]="null">— Aucun —</option>
-                  @for (t of transitPoints; track t.id) {
-                    <option [ngValue]="t.id">{{ t.nom }}</option>
-                  }
-                </select>
-              </div>
-            }
-          </div>
-
-          <div class="form-group">
-            <label>Créneaux à couvrir (choisis par vous, indépendamment des dispos individuelles)</label>
-            <table class="creneau-grid batch">
-              <thead>
-                <tr><th></th><th>Matin</th><th>Midi</th><th>Soir</th><th>Nuit</th></tr>
-              </thead>
-              <tbody>
-                @for (jour of jours; track jour.date) {
-                  <tr>
-                    <td class="jour-label">{{ jour.label }}</td>
-                    @for (c of jour.creneaux; track c.creneau) {
-                      <td class="batch-cell">
-                        <input type="checkbox" [checked]="isBatchCreneauChecked(jour.date, c.creneau)" (change)="toggleBatchCreneau(jour.date, c.creneau)">
-                        <span class="counters">
-                          <span class="deja" [title]="'Déjà affectés'">{{ dejaAffectes(jour.date, c.creneau) }}</span>
-                          @if (delta(jour.date, c.creneau) > 0) {
-                            <span class="delta">+{{ delta(jour.date, c.creneau) }}</span>
-                          }
-                        </span>
-                      </td>
-                    }
-                  </tr>
+              <label>Point de transit obligatoire</label>
+              <select [(ngModel)]="batchPointTransitId">
+                <option [ngValue]="null">— Aucun —</option>
+                @for (t of transitPoints; track t.id) {
+                  <option [ngValue]="t.id">{{ t.nom }}</option>
                 }
-              </tbody>
-            </table>
-          </div>
+              </select>
+            </div>
+          }
 
           @if (submitError) {
             <p class="error-message">{{ submitError }}</p>
