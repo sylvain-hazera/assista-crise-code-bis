@@ -117,6 +117,11 @@ export class CrisisService {
     return this.http.post<{ status: string }>(`${this.apiUrl}/${id}/reouvrir/`, {});
   }
 
+  /** GET /api/crises/<id>/export/ — zip multi-CSV, réservé au responsable actif ou à un admin. */
+  export(id: string): Observable<Blob> {
+    return this.http.get(`${this.apiUrl}/${id}/export/`, { responseType: 'blob' });
+  }
+
   // ── PRIVÉ ────────────────────────────────────────────────────
 
   /**

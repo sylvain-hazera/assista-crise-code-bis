@@ -125,7 +125,7 @@
   .material-icons { font-size: 1.15rem; }
 }
 
-.btn-primary, .btn-secondary {
+.btn-primary, .btn-secondary, .btn-danger {
   border: none;
   border-radius: 6px;
   padding: .55rem 1rem;
@@ -141,6 +141,7 @@
 
 .btn-primary   { background: #2563eb; color: #fff; }
 .btn-secondary { background: #f3f4f6; color: #374151; }
+.btn-danger    { background: #fef2f2; color: #b91c1c; }
 
 .crisis-meta {
   color: #6b7280;

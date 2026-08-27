@@ -28,6 +28,7 @@ from PIL import Image
 from PIL.ExifTags import TAGS, GPSTAGS
 
 from .audit import audit_log, get_client_ip
+from .export import build_crisis_export_zip
 from .institution_attachment import attach_user_to_institution, resolve_or_invite_responsable
 from .permissions import IsInstitutionalActor, IsAdministrator, INSTITUTIONAL_TYPES, user_can_view_photo
 
@@ -830,6 +831,8 @@ class CrisisViewSet(viewsets.ModelViewSet):
             return [IsInstitutionalActor()]
         if self.action == "reouvrir":
             return [IsAdministrator()]
+        if self.action == "export":
+            return [permissions.IsAuthenticated()]
         return [AllowAny()]
 
     def perform_create(self, serializer):
@@ -909,6 +912,37 @@ class CrisisViewSet(viewsets.ModelViewSet):
         )
 
         return Response({"status": "ok"})
+
+    @action(detail=True, methods=["get"])
+    def export(self, request, pk=None):
+        """Export de la main courante complète de la crise (zip multi-CSV). Réservé au
+        responsable actif d'une institution impliquée ou à un administrateur — plus strict
+        que IsInstitutionalActor : un acteur institutionnel quelconque n'a pas forcément
+        vocation à voir les données de TOUTES les institutions de la crise."""
+        crise = self.get_object()
+        user = request.user
+
+        est_responsable_crise = crise.implications.filter(responsable=user, actif=True).exists()
+        if not (est_responsable_crise or user.type == UserRole.ADMINISTRATOR):
+            return Response(
+                {"error": "Seul le responsable d'une institution impliquée sur cette crise peut exporter sa main courante."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        zip_buffer = build_crisis_export_zip(crise)
+
+        audit_log(
+            request=request,
+            action_code="EXPORT",
+            objet_type="Crisis",
+            objet_id=crise.id,
+            crise=crise,
+            commentaire=f"Export de la main courante de la crise {crise.name} par {user.email}",
+        )
+
+        response = FileResponse(zip_buffer, content_type="application/zip")
+        response["Content-Disposition"] = f'attachment; filename="crise-{crise.id}-main-courante.zip"'
+        return response
 
 def resolve_or_invite_demandeur(demande, request=None):
     """Résout le compte utilisateur du demandeur d'une aide pour lui permettre de suivre son

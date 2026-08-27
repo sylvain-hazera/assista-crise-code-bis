@@ -66,6 +66,11 @@
         <div class="modal-header">
           <h2><span class="material-icons">local_fire_department</span> {{ selectedCrisis.name }}</h2>
           <div class="header-actions">
+            @if (canExportCrisis) {
+              <button class="btn-secondary sm" (click)="exportCrisis()">
+                <span class="material-icons">download</span> Exporter la main courante
+              </button>
+            }
             @if (canCloturerCrisis) {
               <button class="btn-secondary sm" (click)="cloturerCrisis()">
                 <span class="material-icons">lock</span> Clôturer la crise
@@ -74,6 +79,11 @@
             @if (isAdmin && selectedCrisis.is_open === false) {
               <button class="btn-secondary sm" (click)="reouvrirCrisis()">
                 <span class="material-icons">lock_open</span> Réouvrir
+              </button>
+            }
+            @if (isAdmin) {
+              <button class="btn-danger sm" (click)="supprimerCrisis()">
+                <span class="material-icons">delete_forever</span> Supprimer la crise
               </button>
             }
             <button class="icon-btn" (click)="closeModal()"><span class="material-icons">close</span></button>

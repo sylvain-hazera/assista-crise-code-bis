@@ -272,6 +272,15 @@ export class CrisesComponent implements OnInit {
       .some(i => i.responsable === me.id && i.actif);
   }
 
+  get canExportCrisis(): boolean {
+    if (!this.selectedCrisis) return false;
+    if (this.isAdmin) return true;
+    const me = this.authService.getCurrentUser();
+    if (!me) return false;
+    return this.implicationsFor(this.selectedCrisis.id)
+      .some(i => i.responsable === me.id && i.actif);
+  }
+
   cloturerCrisis(): void {
     if (!this.selectedCrisis) return;
     if (!confirm(`Clôturer la crise « ${this.selectedCrisis.name} » ? Plus aucune institution, point ou délégation ne pourra y être ajouté.`)) {
@@ -288,6 +297,22 @@ export class CrisesComponent implements OnInit {
     });
   }
 
+  exportCrisis(): void {
+    if (!this.selectedCrisis) return;
+    const crisis = this.selectedCrisis;
+    this.crisisService.export(crisis.id).subscribe({
+      next: (blob) => {
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `crise-${crisis.name}-main-courante.zip`;
+        a.click();
+        window.URL.revokeObjectURL(url);
+      },
+      error: () => this.showError("Impossible d'exporter la main courante de cette crise."),
+    });
+  }
+
   reouvrirCrisis(): void {
     if (!this.selectedCrisis) return;
     if (!confirm(`Réouvrir la crise « ${this.selectedCrisis.name} » ?`)) {
@@ -301,6 +326,30 @@ export class CrisesComponent implements OnInit {
         this.showSuccess('Crise réouverte.');
       },
       error: (err) => this.showError(err.error?.error || 'Impossible de réouvrir cette crise.'),
+    });
+  }
+
+  // ── Suppression de crise ────────────────────────────────────
+  supprimerCrisis(): void {
+    if (!this.selectedCrisis) return;
+    const crisis = this.selectedCrisis;
+
+    if (!confirm(`Supprimer définitivement la crise « ${crisis.name} » ? Cette action supprime aussi toutes les institutions, points, délégations et dossiers qui y sont rattachés, et ne peut pas être annulée.`)) {
+      return;
+    }
+    const saisie = prompt(`Pour confirmer, retapez le nom exact de la crise : « ${crisis.name} »`);
+    if (saisie !== crisis.name) {
+      if (saisie !== null) this.showError('Le nom saisi ne correspond pas : suppression annulée.');
+      return;
+    }
+
+    this.crisisService.delete(crisis.id).subscribe({
+      next: () => {
+        this.crises = this.crises.filter(c => c.id !== crisis.id);
+        this.closeModal();
+        this.showSuccess(`Crise « ${crisis.name} » supprimée.`);
+      },
+      error: () => this.showError('Impossible de supprimer cette crise.'),
     });
   }
 
