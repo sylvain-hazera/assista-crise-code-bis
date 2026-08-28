@@ -36,7 +36,7 @@ from .audit import audit_log, get_client_ip
 from .export import build_crisis_export_zip
 from .institution_attachment import attach_user_to_institution, resolve_or_invite_responsable
 from .permissions import (
-    IsInstitutionalActor, IsAdministrator, INSTITUTIONAL_TYPES, user_can_view_photo,
+    IsInstitutionalActor, IsAdministrator, IsOwnDeclarationOrInstitutional, INSTITUTIONAL_TYPES, user_can_view_photo,
     get_active_environment, get_effective_role, mask_email, mask_phone,
 )
 from .geo_lookup import commune_code_from_point
@@ -102,7 +102,7 @@ from .models import (
     ImplicationInstitution,
     TypeImplication,
     User, Crisis, Request, Offer, Information, DisponibiliteOffre, DisponibilitePointEquipe, MaterielPoint,
-    MaterielCatalogue, NiveauStock, RegistrePresence, TypePersonneAccueillie, DeclarationSecurite,
+    MaterielCatalogue, NiveauStock, RegistrePresence, TypePersonneAccueillie, DeclarationSecurite, SituationDeclarant,
     AffectationPointBenevole, StatutAffectation,
     RecherchePersonne, RecherchePersonneCommentaire, Besoin, Notification, DossierParticipant,
     RecherchePersonneCommentairePhoto, RecherchePersonneLecture, RecherchePersonneLectureHistorique,
@@ -3847,7 +3847,29 @@ class DeclarationSecuriteViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
             return [AllowAny()]
         if self.action == 'mes_declarations':
             return [permissions.IsAuthenticated()]
+        if self.action in ('update', 'partial_update'):
+            return [IsOwnDeclarationOrInstitutional()]
         return [IsInstitutionalActor()]
+
+    def _enregistrer_arrivee_centre(self, declaration, centre, enregistre_par):
+        """Crée l'entrée de registre de présence d'un centre et la rattache à la déclaration
+        — factorisé car appelé à la fois à la création et lors d'un changement de situation
+        vers EN_CENTRE (arrivée dans un centre, éventuellement après en avoir quitté un autre)."""
+        commentaire = declaration.commentaire or ''
+        if declaration.regime_alimentaire_specifique:
+            avertissement = "⚠ Régime alimentaire spécifique déclaré — se rapprocher du déclarant."
+            commentaire = f"{commentaire}\n{avertissement}" if commentaire else avertissement
+        registre = RegistrePresence.objects.create(
+            point=centre,
+            type_personne=TypePersonneAccueillie.EVACUE,
+            nom=f"{declaration.prenom_referent} {declaration.nom_referent}".strip(),
+            nombre=declaration.nombre_adultes + declaration.nombre_enfants,
+            commentaire=commentaire or None,
+            enregistre_par=enregistre_par,
+            environment=declaration.environment,
+        )
+        declaration.registre_presence = registre
+        declaration.save(update_fields=['registre_presence'])
 
     def perform_create(self, serializer):
         centre = serializer.validated_data.get('centre_accueil')
@@ -3858,21 +3880,7 @@ class DeclarationSecuriteViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
         )
 
         if centre is not None:
-            commentaire = declaration.commentaire or ''
-            if declaration.regime_alimentaire_specifique:
-                avertissement = "⚠ Régime alimentaire spécifique déclaré — se rapprocher du déclarant."
-                commentaire = f"{commentaire}\n{avertissement}" if commentaire else avertissement
-            registre = RegistrePresence.objects.create(
-                point=centre,
-                type_personne=TypePersonneAccueillie.EVACUE,
-                nom=f"{declaration.prenom_referent} {declaration.nom_referent}".strip(),
-                nombre=declaration.nombre_adultes + declaration.nombre_enfants,
-                commentaire=commentaire or None,
-                enregistre_par=declare_par,
-                environment=declaration.environment,
-            )
-            declaration.registre_presence = registre
-            declaration.save(update_fields=['registre_presence'])
+            self._enregistrer_arrivee_centre(declaration, centre, declare_par)
 
         audit_log(
             request=self.request,
@@ -3883,6 +3891,47 @@ class DeclarationSecuriteViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
             commentaire=(
                 f"Déclaration de sécurité : {declaration.prenom_referent} {declaration.nom_referent}"
                 + (f" — centre {centre.nom}" if centre else " — auto-déclaration")
+            ),
+        )
+
+    def perform_update(self, serializer):
+        """Permet à l'auteur de faire évoluer sa propre situation (arrivée/départ d'un centre
+        d'accueil, relogement, hors zone...) — synchronise le registre de présence du centre
+        en conséquence, exactement comme le ferait un opérateur du secrétariat côté centre."""
+        declaration_avant = serializer.instance
+        ancien_registre = declaration_avant.registre_presence
+        ancien_centre_id = declaration_avant.centre_accueil_id
+
+        declaration = serializer.save()
+
+        nouveau_centre = declaration.centre_accueil
+        quitte_le_centre = (
+            ancien_registre is not None
+            and ancien_registre.date_depart is None
+            and (declaration.situation != SituationDeclarant.EN_CENTRE or declaration.centre_accueil_id != ancien_centre_id)
+        )
+        if quitte_le_centre:
+            ancien_registre.date_depart = timezone.now()
+            ancien_registre.save(update_fields=['date_depart'])
+
+        arrive_en_centre = (
+            declaration.situation == SituationDeclarant.EN_CENTRE
+            and nouveau_centre is not None
+            and (quitte_le_centre or ancien_centre_id != nouveau_centre.id or ancien_registre is None)
+        )
+        if arrive_en_centre:
+            enregistre_par = self.request.user if self.request.user.is_authenticated else declaration.declare_par
+            self._enregistrer_arrivee_centre(declaration, nouveau_centre, enregistre_par)
+
+        audit_log(
+            request=self.request,
+            action_code="MODIFICATION",
+            objet_type="DeclarationSecurite",
+            objet_id=declaration.id,
+            crise=declaration.crise,
+            commentaire=(
+                f"Déclaration de sécurité mise à jour : {declaration.prenom_referent} {declaration.nom_referent}"
+                f" — {declaration.get_situation_display()}"
             ),
         )
 

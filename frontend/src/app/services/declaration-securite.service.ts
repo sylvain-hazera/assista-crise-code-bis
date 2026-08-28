@@ -29,4 +29,10 @@ export class DeclarationSecuriteService {
   mesDeclarations(): Observable<DeclarationSecurite[]> {
     return this.http.get<DeclarationSecurite[]>(`${this.url}/mes_declarations/`);
   }
+
+  /** PATCH /api/declarations-securite/:id/ — l'auteur peut faire évoluer sa propre situation
+   * (arrivée/départ d'un centre d'accueil, relogement...). */
+  update(id: string, data: Partial<DeclarationSecurite>): Observable<DeclarationSecurite> {
+    return this.http.patch<DeclarationSecurite>(`${this.url}/${id}/`, data);
+  }
 }

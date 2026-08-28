@@ -251,6 +251,103 @@ class TestMesDeclarations:
 
 
 @pytest.mark.django_db
+class TestUpdateOwnDeclaration:
+    """L'auteur d'une déclaration peut faire évoluer sa situation (arrivée/départ d'un centre
+    d'accueil, relogement...) — le registre de présence du centre doit rester synchronisé,
+    comme s'il s'agissait d'un opérateur du secrétariat."""
+
+    def _declare(self, client, user, **overrides):
+        payload = {
+            'type_declarant': 'PERSONNE_SEULE', 'nom_referent': 'Test', 'prenom_referent': 'Jean',
+            'contact_referent': 'jean@test.fr', 'nombre_adultes': 1, 'nombre_enfants': 0,
+            'situation': 'HORS_ZONE',
+        }
+        payload.update(overrides)
+        client.force_authenticate(user=user)
+        response = client.post(reverse('declarationsecurite-list'), payload, format='json')
+        assert response.status_code == status.HTTP_201_CREATED
+        return response.data
+
+    def test_owner_arriving_at_a_centre_creates_registre_presence(self, authenticated_client):
+        client, user = authenticated_client
+        point = _make_point()
+        declaration = self._declare(client, user)
+        assert declaration['registre_presence'] is None
+
+        response = client.patch(
+            reverse('declarationsecurite-detail', kwargs={'pk': declaration['id']}),
+            {'situation': 'EN_CENTRE', 'centre_accueil': str(point.id)},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['registre_presence'] is not None
+        registre = RegistrePresence.objects.get(id=response.data['registre_presence'])
+        assert registre.point_id == point.id
+        assert registre.date_depart is None
+
+    def test_owner_leaving_a_centre_sets_date_depart_on_registre(self, authenticated_client):
+        client, user = authenticated_client
+        point = _make_point()
+        declaration = self._declare(client, user, situation='EN_CENTRE', centre_accueil=str(point.id))
+        registre_id = declaration['registre_presence']
+        assert registre_id is not None
+
+        response = client.patch(
+            reverse('declarationsecurite-detail', kwargs={'pk': declaration['id']}),
+            {'situation': 'RELOGE', 'centre_accueil': None},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        registre = RegistrePresence.objects.get(id=registre_id)
+        assert registre.date_depart is not None
+
+    def test_owner_cannot_update_someone_elses_declaration(self, authenticated_client):
+        client, user = authenticated_client
+        other = User.objects.create_user(username='autre2@test.fr', email='autre2@test.fr', password='Test1234!')
+        declaration = self._declare(client, other)
+
+        client.force_authenticate(user=user)
+        response = client.patch(
+            reverse('declarationsecurite-detail', kwargs={'pk': declaration['id']}),
+            {'situation': 'RELOGE'},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_institutional_actor_can_update_any_declaration(self, authenticated_client):
+        client, user = authenticated_client
+        declaration = self._declare(client, user)
+
+        admin = User.objects.create_user(
+            username='admin2@test.fr', email='admin2@test.fr', password='Test1234!', type='ADMIN',
+        )
+        client.force_authenticate(user=admin)
+        response = client.patch(
+            reverse('declarationsecurite-detail', kwargs={'pk': declaration['id']}),
+            {'situation': 'RELOGE'},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+
+    def test_anonymous_cannot_update(self, authenticated_client):
+        client, user = authenticated_client
+        declaration = self._declare(client, user)
+        client.force_authenticate(user=None)
+
+        response = client.patch(
+            reverse('declarationsecurite-detail', kwargs={'pk': declaration['id']}),
+            {'situation': 'RELOGE'},
+            format='json',
+        )
+
+        assert response.status_code in (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN)
+
+
+@pytest.mark.django_db
 class TestCentresAccueilPublic:
     """Endpoint public (formulaire "je suis en sécurité") listant les centres d'accueil
     (PointType HEBERGEMENT) actifs d'une crise, à champs restreints."""

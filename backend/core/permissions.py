@@ -65,6 +65,22 @@ class IsInstitutionalActor(BasePermission):
         )
 
 
+class IsOwnDeclarationOrInstitutional(BasePermission):
+    """Autorise l'auteur d'une déclaration de sécurité ("je suis en sécurité") à modifier sa
+    propre situation (arrivée/départ d'un centre d'accueil, relogement...), en plus des
+    acteurs institutionnels qui peuvent modifier n'importe quelle déclaration."""
+
+    message = "Vous ne pouvez modifier que vos propres déclarations."
+
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.is_authenticated)
+
+    def has_object_permission(self, request, view, obj):
+        if IsInstitutionalActor().has_permission(request, view):
+            return True
+        return obj.declare_par_id == request.user.id
+
+
 class IsAdministrator(BasePermission):
     """Autorise uniquement les comptes administrateur, au sens du rôle effectif de la requête."""
 

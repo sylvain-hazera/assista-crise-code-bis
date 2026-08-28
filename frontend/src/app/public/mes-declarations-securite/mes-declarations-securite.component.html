@@ -35,6 +35,64 @@
               @if (d.centre_accueil_nom) { <span>Centre : {{ d.centre_accueil_nom }}</span> }
               @if (d.regime_alimentaire_specifique) { <span class="regime-badge">Régime alimentaire spécifique signalé</span> }
             </div>
+
+            @if (!isEditing(d)) {
+              <button type="button" class="btn-edit" (click)="startEdit(d)">
+                <span class="material-icons">edit</span> Modifier ma situation
+              </button>
+            } @else {
+              <div class="edit-panel">
+                <div class="type-declarant-options">
+                  @for (option of situationOptions; track option.value) {
+                    <label class="type-declarant-option">
+                      <input
+                        type="radio"
+                        name="editSituation-{{ d.id }}"
+                        [(ngModel)]="editSituation"
+                        [value]="option.value"
+                        (change)="onEditSituationChange(d)"
+                      />
+                      {{ option.label }}
+                    </label>
+                  }
+                </div>
+
+                @if (editSituation === 'EN_CENTRE') {
+                  <div class="form-group">
+                    @if (!d.crise) {
+                      <p class="section-description">Cette déclaration n'est liée à aucune crise : impossible de choisir un centre.</p>
+                    } @else if (editLoadingCentres) {
+                      <p class="section-description">Chargement des centres…</p>
+                    } @else if (editCentres.length === 0) {
+                      <p class="section-description">Aucun centre d'accueil connu pour cette crise pour le moment.</p>
+                    } @else {
+                      <div class="select-wrapper">
+                        <select [(ngModel)]="editCentreId" class="form-select">
+                          <option [ngValue]="null">— Choisir un centre —</option>
+                          @for (centre of editCentres; track centre.id) {
+                            <option [value]="centre.id">{{ centre.nom }}</option>
+                          }
+                        </select>
+                        <span class="material-symbols-outlined select-arrow">arrow_drop_down</span>
+                      </div>
+                    }
+                  </div>
+                }
+
+                @if (editError) {
+                  <p class="error-message">{{ editError }}</p>
+                }
+
+                <div class="edit-actions">
+                  <button type="button" class="btn-submit" [disabled]="editSaving" (click)="saveEdit(d)">
+                    {{ editSaving ? 'Enregistrement…' : 'Enregistrer' }}
+                  </button>
+                  <button type="button" class="btn-cancel" [disabled]="editSaving" (click)="cancelEdit()">
+                    Annuler
+                  </button>
+                </div>
+              </div>
+            }
           </div>
         }
       </div>
