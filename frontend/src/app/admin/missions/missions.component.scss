@@ -1,0 +1,236 @@
+// ── Design tokens ──────────────────────────────────────────────────────────────
+:host {
+  --primary:  #1d4ed8;
+  --danger:   #dc2626;
+  --success:  #16a34a;
+  --bg:       #f1f5f9;
+  --surface:  #ffffff;
+  --border:   #e2e8f0;
+  --text:     #0f172a;
+  --muted:    #64748b;
+  --radius:   14px;
+  --shadow:   0 1px 3px rgba(0,0,0,.06), 0 4px 20px rgba(0,0,0,.07);
+}
+
+.missions-page {
+  display: flex; flex-direction: column; gap: 1.25rem;
+  padding: 1.75rem;
+  background: var(--bg);
+  min-height: 100vh;
+  font-family: 'DM Sans', system-ui, sans-serif;
+  color: var(--text);
+}
+
+.page-header {
+  display: flex; align-items: center; justify-content: space-between;
+  h1 { display: flex; align-items: center; gap: .5rem; font-size: 1.5rem; margin: 0; }
+  .subtitle { color: var(--muted); font-size: .85rem; margin: .2rem 0 0; }
+}
+
+.toast {
+  display: flex; align-items: center; gap: .6rem;
+  padding: .85rem 1.2rem; border-radius: var(--radius);
+  font-size: .9rem; font-weight: 500;
+  .material-icons { font-size: 20px; }
+  &.toast-ok  { background: #f0fdf4; border: 1px solid #86efac; color: #166534; }
+  &.toast-err { background: #fef2f2; border: 1px solid #fca5a5; color: #991b1b; }
+}
+
+.controls {
+  display: flex; gap: .75rem; flex-wrap: wrap;
+}
+
+.search-input, .filter-select {
+  background: var(--surface); border: 1.5px solid var(--border);
+  border-radius: 9px; padding: .55rem .9rem;
+  font-size: .87rem; color: var(--text); outline: none;
+  font-family: inherit;
+}
+.search-input { flex: 1; min-width: 220px; }
+
+.table-card {
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+table {
+  width: 100%; border-collapse: collapse; font-size: .88rem;
+
+  thead {
+    background: #f8fafc;
+    border-bottom: 2px solid var(--border);
+    th {
+      padding: .85rem 1rem; text-align: left;
+      font-size: .74rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .5px; color: var(--muted);
+      white-space: nowrap;
+      &.col-actions { width: 160px; text-align: right; }
+    }
+  }
+
+  tbody tr {
+    border-bottom: 1px solid #f1f5f9; cursor: pointer;
+    transition: background .1s;
+    &:hover { background: #f8fafc; }
+    &:last-child { border-bottom: none; }
+    td { padding: .9rem 1rem; vertical-align: middle; }
+    .col-actions {
+      text-align: right;
+      display: flex; align-items: center; justify-content: flex-end; gap: .35rem;
+    }
+  }
+}
+
+.cell-titre { font-weight: 600; }
+.cell-equipes { display: flex; flex-wrap: wrap; gap: .3rem; }
+.muted { color: #94a3b8; }
+
+.team-chip {
+  display: inline-flex; align-items: center; gap: .25rem;
+  background: #eff6ff; color: var(--primary);
+  padding: .2rem .55rem; border-radius: 99px;
+  font-size: .75rem; font-weight: 600; white-space: nowrap;
+
+  &.removable {
+    cursor: default;
+    .material-icons { font-size: 14px; cursor: pointer; opacity: .7; }
+    .material-icons:hover { opacity: 1; }
+  }
+}
+
+.statut-chip {
+  display: inline-flex; align-items: center;
+  padding: .28rem .75rem; border-radius: 99px;
+  font-size: .76rem; font-weight: 700; white-space: nowrap;
+  &.stat-prep    { background: #f1f5f9; color: #475569; }
+  &.stat-cours   { background: #fff7ed; color: #c2410c; }
+  &.stat-terminee{ background: #f0fdf4; color: #166534; }
+}
+
+// ── Buttons ──────────────────────────────────────────────────────────────────
+.btn-primary {
+  display: inline-flex; align-items: center; gap: .4rem;
+  background: var(--primary); color: #fff;
+  border: none; border-radius: 10px; padding: .65rem 1.2rem;
+  font-size: .9rem; font-weight: 600; cursor: pointer;
+  .material-icons { font-size: 18px; }
+  &:hover:not(:disabled) { background: #1e40af; }
+  &:disabled { opacity: .6; cursor: not-allowed; }
+}
+
+.btn-ghost {
+  display: inline-flex; align-items: center; gap: .4rem;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; padding: .65rem 1.2rem;
+  font-size: .9rem; font-weight: 500; cursor: pointer;
+  color: var(--text);
+  &:hover { background: #f8fafc; }
+}
+
+.btn-danger {
+  display: inline-flex; align-items: center; gap: .4rem;
+  background: var(--danger); color: #fff;
+  border: none; border-radius: 10px; padding: .65rem 1.2rem;
+  font-size: .9rem; font-weight: 600; cursor: pointer;
+  .material-icons { font-size: 18px; }
+  &:hover { background: #b91c1c; }
+}
+
+.btn-icon-sm {
+  background: transparent; border: 1px solid var(--border); border-radius: 8px;
+  padding: .35rem; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  .material-icons { font-size: 16px; color: var(--muted); }
+  &:hover { background: #f1f5f9; }
+  &.danger .material-icons { color: var(--danger); }
+  &.danger:hover { background: #fef2f2; border-color: #fca5a5; }
+}
+
+// ── Empty / skeleton states ────────────────────────────────────────────────────
+.empty {
+  display: flex; flex-direction: column; align-items: center; gap: .5rem;
+  padding: 3rem 1rem; color: var(--muted);
+  .material-icons { font-size: 40px; color: #cbd5e1; }
+}
+.empty-text { color: var(--muted); font-size: .85rem; margin: .25rem 0 1rem; }
+
+.skel-rows { padding: 1rem; display: flex; flex-direction: column; gap: .6rem; }
+.skel-row {
+  height: 44px; border-radius: 8px;
+  background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 37%, #f1f5f9 63%);
+  background-size: 400% 100%;
+  animation: shimmer 1.4s ease infinite;
+}
+@keyframes shimmer { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
+
+// ── Modals ───────────────────────────────────────────────────────────────────
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(15, 23, 42, .5);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 1000; padding: 1rem;
+}
+.modal {
+  background: var(--surface); border-radius: var(--radius);
+  width: 100%; max-width: 480px; max-height: 90vh;
+  display: flex; flex-direction: column; overflow: hidden;
+  box-shadow: var(--shadow);
+  &.modal-lg { max-width: 720px; }
+  &.modal-sm { max-width: 380px; }
+}
+.modal-header {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  padding: 1.2rem 1.5rem; border-bottom: 1px solid var(--border);
+  h2 { margin: 0; font-size: 1.15rem; display: flex; align-items: center; gap: .4rem; }
+  &.danger h2 { color: var(--danger); }
+}
+.modal-body {
+  padding: 1.5rem; overflow-y: auto; flex: 1;
+  h3 { font-size: .9rem; margin: 1.2rem 0 .6rem; color: var(--text); }
+  h3:first-child { margin-top: 0; }
+}
+.modal-footer {
+  display: flex; justify-content: flex-end; gap: .6rem;
+  padding: 1rem 1.5rem; border-top: 1px solid var(--border);
+}
+.description-text { color: var(--text); font-size: .88rem; line-height: 1.5; }
+
+// ── Form fields ────────────────────────────────────────────────────────────────
+.form-field {
+  margin-bottom: 1rem;
+  label { display: block; font-size: .8rem; font-weight: 600; color: var(--muted); margin-bottom: .3rem; }
+  input[type="text"], select, textarea {
+    width: 100%; border: 1px solid var(--border); border-radius: 8px;
+    padding: .55rem .7rem; font-size: .88rem; font-family: inherit;
+  }
+  textarea { resize: vertical; }
+}
+
+.team-search { position: relative; }
+.team-chips { display: flex; flex-wrap: wrap; gap: .35rem; margin-bottom: .4rem; }
+.team-search-results {
+  position: absolute; z-index: 10; left: 0; right: 0;
+  max-height: 180px; overflow-y: auto;
+  margin: 2px 0 0; padding: .25rem 0; list-style: none;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+  box-shadow: 0 4px 10px rgba(0,0,0,.08);
+  li { padding: .4rem .6rem; font-size: .85rem; cursor: pointer; &:hover { background: #f3f4f6; } }
+}
+
+// ── Détail : équipes ──────────────────────────────────────────────────────────
+.team-cards {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: .75rem;
+}
+.team-card {
+  border: 1px solid var(--border); border-radius: 10px; padding: .75rem;
+}
+.team-card-header { display: flex; align-items: center; gap: .4rem; }
+.team-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.team-card-meta { font-size: .78rem; color: var(--muted); margin: .3rem 0 0; }
+
+.data-table {
+  width: 100%; border-collapse: collapse; font-size: .85rem;
+  th { text-align: left; padding: .5rem; color: var(--muted); font-size: .74rem; text-transform: uppercase; border-bottom: 1px solid var(--border); }
+  td { padding: .5rem; border-bottom: 1px solid #f1f5f9; }
+}

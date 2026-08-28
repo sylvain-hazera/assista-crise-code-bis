@@ -12,6 +12,7 @@ import { sysAdminGuard } from '../core/guards/admin.guard';
 import { CompetencesComponent } from './competences/competences.component';
 import { AffectationsComponent } from './affectations/affectations.component';
 import { DossiersComponent } from './dossiers/dossiers.component';
+import { MissionsComponent } from './missions/missions.component';
 import { BesoinsComponent } from './besoins/besoins.component';
 import { BesoinsCompetencesComponent } from './besoins-competences/besoins-competences.component';
 import { RecherchesPersonnesComponent } from '../pages/recherches-personnes/recherches-personnes.component';
@@ -23,7 +24,8 @@ export const ADMIN_ROUTES: Routes = [
   { path: 'dashboard', component: DashboardComponent },
   { path: 'signalements', component: ReportingComponent }, 
   { path: 'dossiers', component: DossiersComponent },
-  { path: 'equipes', component: TeamsComponent }, 
+  { path: 'missions', component: MissionsComponent },
+  { path: 'equipes', component: TeamsComponent },
   { path: 'institutions', component: InstitutionsComponent },
   { path: 'crises', component: CrisesComponent },
   { path: 'centres', component: CentresComponent },

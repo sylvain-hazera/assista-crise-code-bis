@@ -1,0 +1,260 @@
+<div class="missions-page">
+
+  <header class="page-header">
+    <div class="header-left">
+      <h1><span class="material-icons">flag_circle</span> Missions</h1>
+      <p class="subtitle">
+        @if (!isLoading) { {{ filteredMissions.length }} mission{{ filteredMissions.length > 1 ? 's' : '' }} }
+      </p>
+    </div>
+    <button class="btn-primary" (click)="openCreate()">
+      <span class="material-icons">add</span> Nouvelle mission
+    </button>
+  </header>
+
+  @if (successMessage) {
+    <div class="toast toast-ok"><span class="material-icons">check_circle</span> {{ successMessage }}</div>
+  }
+  @if (errorMessage) {
+    <div class="toast toast-err"><span class="material-icons">error_outline</span> {{ errorMessage }}</div>
+  }
+
+  <div class="controls">
+    <input type="text" class="search-input" placeholder="Rechercher une mission…" [(ngModel)]="searchQuery"/>
+    <select class="filter-select" [(ngModel)]="filterCrisis">
+      <option value="ALL">Toutes les crises</option>
+      @for (c of crises; track c.id) {
+        <option [value]="c.id">{{ c.name }}</option>
+      }
+    </select>
+    <select class="filter-select" [(ngModel)]="filterStatut">
+      <option value="ALL">Tous statuts</option>
+      @for (opt of statutOptions; track opt.value) {
+        <option [value]="opt.value">{{ opt.label }}</option>
+      }
+    </select>
+  </div>
+
+  <div class="table-card">
+    @if (isLoading) {
+      <div class="skel-rows">
+        @for (i of [1,2,3,4]; track i) { <div class="skel-row"></div> }
+      </div>
+    } @else if (filteredMissions.length === 0) {
+      <div class="empty">
+        <span class="material-icons">flag_circle</span>
+        <p>Aucune mission</p>
+      </div>
+    } @else {
+      <table>
+        <thead>
+          <tr>
+            <th>Titre</th>
+            <th>Crise</th>
+            <th>Équipes</th>
+            <th>Dossiers</th>
+            <th>Statut</th>
+            <th class="col-actions">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (m of filteredMissions; track m.id) {
+            <tr (click)="openDetail(m)">
+              <td class="cell-titre">{{ m.titre }}</td>
+              <td>{{ m.crise_nom || crisisName(m.crise) }}</td>
+              <td class="cell-equipes">
+                @if (m.equipes_noms && m.equipes_noms.length) {
+                  @for (nom of m.equipes_noms; track nom) {
+                    <span class="team-chip">{{ nom }}</span>
+                  }
+                } @else {
+                  <span class="muted">—</span>
+                }
+              </td>
+              <td>{{ dossiersForMission(m.id!).length }}</td>
+              <td>
+                <span class="statut-chip" [class]="statutClass(m.statut)">{{ statutLabel(m.statut) }}</span>
+              </td>
+              <td class="col-actions" (click)="$event.stopPropagation()">
+                <button class="btn-icon-sm" (click)="openDetail(m)" title="Voir">
+                  <span class="material-icons">visibility</span>
+                </button>
+                <button class="btn-icon-sm" (click)="openEdit(m, $event)" title="Modifier">
+                  <span class="material-icons">edit</span>
+                </button>
+                @if (m.statut !== 'TERMINEE') {
+                  <button class="btn-icon-sm" (click)="cloturerMission(m, $event)" title="Clôturer">
+                    <span class="material-icons">task_alt</span>
+                  </button>
+                }
+                <button class="btn-icon-sm danger" (click)="openDelete(m, $event)" title="Supprimer">
+                  <span class="material-icons">delete_outline</span>
+                </button>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    }
+  </div>
+</div>
+
+<!-- ═══ MODAL CREATE / EDIT ═══ -->
+@if (modal === 'create' || modal === 'edit') {
+  <div class="modal-overlay" (click)="closeModal()">
+    <div class="modal" (click)="$event.stopPropagation()">
+      <div class="modal-header">
+        <h2>{{ modal === 'create' ? 'Nouvelle mission' : 'Modifier la mission' }}</h2>
+        <button class="btn-icon-sm" (click)="closeModal()"><span class="material-icons">close</span></button>
+      </div>
+      <form class="modal-body" [formGroup]="missionForm" (ngSubmit)="modal === 'create' ? submitCreate() : submitEdit()">
+        <div class="form-field">
+          <label>Titre *</label>
+          <input type="text" formControlName="titre" placeholder="Ex: Dégager les routes secteur nord"/>
+        </div>
+
+        <div class="form-field">
+          <label>Description</label>
+          <textarea formControlName="description" rows="2"></textarea>
+        </div>
+
+        <div class="form-field">
+          <label>Crise *</label>
+          <select formControlName="crise">
+            <option [ngValue]="null">— Choisir une crise —</option>
+            @for (c of crises; track c.id) {
+              <option [ngValue]="c.id">{{ c.name }}</option>
+            }
+          </select>
+        </div>
+
+        @if (modal === 'edit') {
+          <div class="form-field">
+            <label>Statut</label>
+            <select formControlName="statut">
+              @for (opt of statutOptions; track opt.value) {
+                <option [value]="opt.value">{{ opt.label }}</option>
+              }
+            </select>
+          </div>
+        }
+
+        <div class="form-field team-search">
+          <label>Équipes affectées</label>
+          <div class="team-chips">
+            @for (id of missionForm.value.equipe_ids; track id) {
+              <span class="team-chip removable">
+                {{ teamName(id) }}
+                <span class="material-icons" (click)="removeTeamFromForm(id)">close</span>
+              </span>
+            }
+          </div>
+          <input type="text" placeholder="Rechercher une équipe à ajouter…" [(ngModel)]="teamSearchQuery" [ngModelOptions]="{standalone: true}"/>
+          @if (filteredTeamsForForm.length) {
+            <ul class="team-search-results">
+              @for (t of filteredTeamsForForm; track t.id) {
+                <li (mousedown)="addTeamToForm(t)">{{ t.name }}</li>
+              }
+            </ul>
+          }
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn-ghost" (click)="closeModal()">Annuler</button>
+          <button type="submit" class="btn-primary" [disabled]="isSaving">
+            <span class="material-icons">{{ isSaving ? 'hourglass_top' : 'save' }}</span>
+            {{ isSaving ? 'Sauvegarde…' : (modal === 'create' ? 'Créer' : 'Enregistrer') }}
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+}
+
+<!-- ═══ MODAL DETAIL ═══ -->
+@if (modal === 'detail' && selectedMission) {
+  <div class="modal-overlay" (click)="closeModal()">
+    <div class="modal modal-lg" (click)="$event.stopPropagation()">
+      <div class="modal-header">
+        <div>
+          <h2>{{ selectedMission.titre }}</h2>
+          <p class="subtitle">{{ selectedMission.crise_nom || crisisName(selectedMission.crise) }}</p>
+        </div>
+        <button class="btn-icon-sm" (click)="closeModal()"><span class="material-icons">close</span></button>
+      </div>
+      <div class="modal-body">
+        @if (selectedMission.description) {
+          <p class="description-text">{{ selectedMission.description }}</p>
+        }
+
+        <h3>Équipes affectées</h3>
+        @if (selectedMission.equipe_ids.length === 0) {
+          <p class="empty-text">Aucune équipe affectée à cette mission.</p>
+        } @else {
+          <div class="team-cards">
+            @for (id of selectedMission.equipe_ids; track id) {
+              @for (team of teams; track team.id) {
+                @if (team.id === id) {
+                  <div class="team-card">
+                    <div class="team-card-header">
+                      <span class="team-dot" [style.background]="team.color"></span>
+                      <strong>{{ team.name }}</strong>
+                    </div>
+                    <p class="team-card-meta">{{ team.member_ids.length }} membre{{ team.member_ids.length > 1 ? 's' : '' }} · {{ teamZoneSummary(team) }}</p>
+                  </div>
+                }
+              }
+            }
+          </div>
+        }
+
+        <h3>Dossiers de cette mission</h3>
+        @if (dossiersForMission(selectedMission.id!).length === 0) {
+          <p class="empty-text">Aucun dossier rattaché pour l'instant.</p>
+        } @else {
+          <table class="data-table sm">
+            <thead><tr><th>Numéro</th><th>Titre</th><th>Équipe</th><th>Statut</th></tr></thead>
+            <tbody>
+              @for (d of dossiersForMission(selectedMission.id!); track d.id) {
+                <tr>
+                  <td>{{ d.numero }}</td>
+                  <td>{{ d.titre }}</td>
+                  <td>{{ d.equipe_nom || '—' }}</td>
+                  <td>{{ d.statut }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        }
+      </div>
+      <div class="modal-footer">
+        <button class="btn-ghost" (click)="closeModal()">Fermer</button>
+        <button class="btn-primary" (click)="closeModal(); openEdit(selectedMission)">
+          <span class="material-icons">edit</span> Modifier
+        </button>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- ═══ MODAL DELETE ═══ -->
+@if (modal === 'delete' && selectedMission) {
+  <div class="modal-overlay" (click)="closeModal()">
+    <div class="modal modal-sm" (click)="$event.stopPropagation()">
+      <div class="modal-header danger">
+        <h2><span class="material-icons">warning</span> Supprimer</h2>
+        <button class="btn-icon-sm" (click)="closeModal()"><span class="material-icons">close</span></button>
+      </div>
+      <div class="modal-body">
+        <p>Supprimer la mission <strong>{{ selectedMission.titre }}</strong> ?</p>
+        <p class="empty-text">Les dossiers rattachés ne seront pas supprimés, seulement détachés de la mission.</p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-ghost" (click)="closeModal()">Annuler</button>
+        <button class="btn-danger" (click)="confirmDelete()">
+          <span class="material-icons">delete_forever</span> Supprimer
+        </button>
+      </div>
+    </div>
+  </div>
+}

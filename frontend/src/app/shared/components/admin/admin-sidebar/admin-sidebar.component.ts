@@ -31,6 +31,7 @@ export class AdminSidebarComponent {
     { icon: 'link', label: 'Correspondances', route: '/admin/correspondances' },
     { icon: 'check_circle', label: 'Résultats', route: '/admin/resultats' },
     { icon: 'folder', label: 'Dossiers', route: '/admin/dossiers' },
+    { icon: 'flag_circle', label: 'Missions', route: '/admin/missions' },
     { icon: 'assignment', label: 'Affectations', route: '/admin/affectations'}
 ];
 
