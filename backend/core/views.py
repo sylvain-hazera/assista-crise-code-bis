@@ -1221,6 +1221,22 @@ def annotate_distance_from_crisis(queryset):
     return queryset.annotate(distance_from_crisis=Distance('location', F('crisis__location')))
 
 
+def _institution_commune_or_400(request):
+    """Code commune de l'institution de l'utilisateur appelant, pour les actions "vue mairie"
+    partagées par RequestViewSet/InformationViewSet. Retourne soit le code (str), soit une
+    Response 400 prête à renvoyer si l'utilisateur n'a pas d'institution ou que celle-ci n'a
+    pas de commune renseignée (ex: institution non-AUT_LOCALE, ou AUT_LOCALE non encore
+    rattachée via l'annuaire) — jamais une liste vide silencieuse qui masquerait la vraie
+    cause."""
+    institution = getattr(request.user, 'institution', None)
+    if institution is None or not institution.commune_code:
+        return Response(
+            {"error": "Aucune commune associée à votre institution : contactez un administrateur."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    return institution.commune_code
+
+
 def resolve_competence_for_request(demande):
     """Compétence déduite du type de demande (RequestType -> Besoin -> Competence),
     utilisée aussi bien pour le matching automatique (perform_create) que pour fiabiliser
@@ -1672,6 +1688,17 @@ class RequestViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             "already_assigned": already_assigned,
         }, status=status.HTTP_201_CREATED)
 
+    @action(detail=False, methods=["get"], permission_classes=[IsInstitutionalActor])
+    def vue_mairie(self, request):
+        """Demandes de la commune de l'institution de l'utilisateur appelant (typiquement une
+        mairie AUT_LOCALE) — 400 explicite si aucune institution ou aucune commune n'est
+        associée au compte, plutôt qu'une liste vide silencieuse."""
+        commune_code = _institution_commune_or_400(request)
+        if isinstance(commune_code, Response):
+            return commune_code
+        queryset = self.get_queryset().filter(commune_code=commune_code)
+        return Response(self.get_serializer(queryset, many=True).data)
+
     @action(detail=True, methods=["get"])
     def preview(self, request, pk=None):
         demande = self.get_object()
@@ -1895,6 +1922,16 @@ class InformationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             
         except Exception as e:
             print(f"Erreur critique : L'envoi de l'email a échoué. Détails : {e}")
+
+    @action(detail=False, methods=["get"], permission_classes=[IsInstitutionalActor])
+    def vue_mairie(self, request):
+        """Signalements de la commune de l'institution de l'utilisateur appelant — même
+        contrat que RequestViewSet.vue_mairie."""
+        commune_code = _institution_commune_or_400(request)
+        if isinstance(commune_code, Response):
+            return commune_code
+        queryset = self.get_queryset().filter(commune_code=commune_code)
+        return Response(self.get_serializer(queryset, many=True).data)
 
     @action(detail=True, methods=["get"])
     def preview(self, request, pk=None):

@@ -13,6 +13,7 @@ import { CompetencesComponent } from './competences/competences.component';
 import { AffectationsComponent } from './affectations/affectations.component';
 import { DossiersComponent } from './dossiers/dossiers.component';
 import { MissionsComponent } from './missions/missions.component';
+import { VueMairieComponent } from './vue-mairie/vue-mairie.component';
 import { BesoinsComponent } from './besoins/besoins.component';
 import { BesoinsCompetencesComponent } from './besoins-competences/besoins-competences.component';
 import { RecherchesPersonnesComponent } from '../pages/recherches-personnes/recherches-personnes.component';
@@ -25,6 +26,7 @@ export const ADMIN_ROUTES: Routes = [
   { path: 'signalements', component: ReportingComponent }, 
   { path: 'dossiers', component: DossiersComponent },
   { path: 'missions', component: MissionsComponent },
+  { path: 'vue-mairie', component: VueMairieComponent },
   { path: 'equipes', component: TeamsComponent },
   { path: 'institutions', component: InstitutionsComponent },
   { path: 'crises', component: CrisesComponent },

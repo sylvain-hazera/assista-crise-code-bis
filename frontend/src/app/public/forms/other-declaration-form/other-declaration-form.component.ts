@@ -274,6 +274,10 @@ export class OtherDeclarationFormComponent implements OnInit {
     };
     formData.append('location', JSON.stringify(localisation));
 
+    if (this.selectedAddressSafe?.citycode) {
+      formData.append('commune_code', this.selectedAddressSafe.citycode);
+    }
+
     if (this.selectedFile) {
       formData.append('photo', this.selectedFile);
     }
@@ -321,6 +325,10 @@ export class OtherDeclarationFormComponent implements OnInit {
       coordinates: [this.longitude, this.latitude]
     };
     formData.append('location', JSON.stringify(localisation));
+
+    if (this.selectedAddressOther?.citycode) {
+      formData.append('commune_code', this.selectedAddressOther.citycode);
+    }
 
     if (this.capturedAzimuth != null) {
       formData.append('azimuth', String(this.capturedAzimuth));

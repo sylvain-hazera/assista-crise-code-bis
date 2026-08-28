@@ -54,6 +54,13 @@ def attach_by_known_domain(user, request=None):
             ),
         )
 
+    # Backfill : cette institution existait déjà (domaine mis en cache par un premier membre)
+    # mais n'avait pas encore de commune renseignée — ce nouveau membre peut la compléter.
+    if not institution.commune_code and user.pending_commune_code:
+        institution.commune_code = user.pending_commune_code
+        institution.commune_nom = user.pending_commune_name or ''
+        institution.save(update_fields=['commune_code', 'commune_nom'])
+
     return institution
 
 
@@ -72,7 +79,11 @@ def resolve_or_create_institution_from_annuaire(user, annuaire_match, request=No
 
     institution, institution_created = Institution.objects.get_or_create(
         nom=nom,
-        defaults={'type': institution_type, 'email': user.email, 'actif': True},
+        defaults={
+            'type': institution_type, 'email': user.email, 'actif': True,
+            'commune_code': user.pending_commune_code or '',
+            'commune_nom': user.pending_commune_name or '',
+        },
     )
     if institution_created and request is not None:
         audit_log(
@@ -82,6 +93,12 @@ def resolve_or_create_institution_from_annuaire(user, annuaire_match, request=No
             objet_id=institution.id,
             commentaire=f"Création institution via annuaire officiel : {institution.nom}",
         )
+    # Backfill pour une institution préexistante (créée avant l'ajout de ces champs, ou par un
+    # premier membre sans commune déclarée) : get_or_create ne pose les defaults qu'à la création.
+    if not institution_created and not institution.commune_code and user.pending_commune_code:
+        institution.commune_code = user.pending_commune_code
+        institution.commune_nom = user.pending_commune_name or ''
+        institution.save(update_fields=['commune_code', 'commune_nom'])
 
     if domain:
         institution_domaine, domaine_created = InstitutionDomaine.objects.get_or_create(
@@ -130,10 +147,18 @@ def assign_default_institution_role(user, institution=None):
         if not institution_type:
             institution_type = InstitutionType.objects.create(code='autre', libelle='Autre')
 
-        institution, _ = Institution.objects.get_or_create(
+        institution, institution_created = Institution.objects.get_or_create(
             nom=institution_name,
-            defaults={'type': institution_type, 'email': user.email, 'actif': True}
+            defaults={
+                'type': institution_type, 'email': user.email, 'actif': True,
+                'commune_code': user.pending_commune_code or '',
+                'commune_nom': user.pending_commune_name or '',
+            }
         )
+        if not institution_created and not institution.commune_code and user.pending_commune_code:
+            institution.commune_code = user.pending_commune_code
+            institution.commune_nom = user.pending_commune_name or ''
+            institution.save(update_fields=['commune_code', 'commune_nom'])
 
     role_code = 'RESPONSABLE' if not institution.affectations_roles.exists() else 'REGULATEUR'
     role = RoleOperationnel.objects.filter(code=role_code).first()

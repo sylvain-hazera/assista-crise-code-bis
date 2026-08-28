@@ -29,6 +29,7 @@ export interface Information {
   author_email?: string | null;
   author_type?: string | null;
   commune?: string | null;
+  commune_code?: string | null;
   distance_from_crisis_km?: number | null;
 }
 

@@ -43,6 +43,14 @@ export class InformationService {
     return this.http.get(`${this.url}/${id}/preview/`, { responseType: 'blob' });
   }
 
+  /** GET /api/informations/vue_mairie/ — signalements de la commune de l'institution de
+   * l'utilisateur appelant (mairie). 400 si aucune commune associée au compte. */
+  vueMairie(): Observable<Information[]> {
+    return this.http
+      .get<Information[]>(`${this.url}/vue_mairie/`)
+      .pipe(map(list => list.map(this.normalize)));
+  }
+
   create(data: Partial<Information> | FormData): Observable<Information> {
     return this.http.post<Information>(`${this.url}/`, data);
   }

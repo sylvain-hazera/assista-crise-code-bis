@@ -15,6 +15,8 @@ export interface Institution {
   telephone?: string | null;
   email?: string | null;
   adresse?: string | null;
+  commune_code?: string | null;
+  commune_nom?: string | null;
   actif: boolean;
   date_creation?: string;
 }

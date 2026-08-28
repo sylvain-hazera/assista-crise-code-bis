@@ -61,6 +61,14 @@ export class RequestService {
     return this.http.get(`${this.url}/${id}/preview/`, { responseType: 'blob' });
   }
 
+  /** GET /api/demandes/vue_mairie/ — demandes de la commune de l'institution de l'utilisateur
+   * appelant (mairie). 400 si aucune commune associée au compte. */
+  vueMairie(): Observable<Request[]> {
+    return this.http
+      .get<Request[]>(`${this.url}/vue_mairie/`)
+      .pipe(map(list => list.map(this.normalize)));
+  }
+
   /**
    * Statistiques.
    * GET /api/demandes/stats/?[params]

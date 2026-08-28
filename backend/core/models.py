@@ -340,6 +340,11 @@ class Information(EnvironmentScopedModel):
     email_information = models.EmailField()
     phone_information = models.CharField(max_length=20)
     location = gis_models.PointField(srid=4326)
+    commune_code = models.CharField(
+        max_length=10, null=True, blank=True,
+        help_text="Code commune INSEE résolu à la saisie de l'adresse (autocomplete), symétrique "
+                   "à Request.commune_code — utilisé pour la vue mairie (filtrage par commune).",
+    )
     azimuth = models.FloatField(
         null=True,
         blank=True,
@@ -648,6 +653,21 @@ class Institution(EnvironmentScopedModel):
     )
 
     adresse = models.TextField(
+        blank=True,
+        null=True
+    )
+
+    # Renseignée à l'attachement d'un utilisateur AUT_LOCALE (voir institution_attachment.py) à
+    # partir des informations d'inscription/annuaire — permet la "vue mairie" scopée par
+    # commune (contrairement à User.pending_commune_*, qui n'est que transitoire).
+    commune_code = models.CharField(
+        max_length=10,
+        blank=True,
+        null=True
+    )
+
+    commune_nom = models.CharField(
+        max_length=255,
         blank=True,
         null=True
     )

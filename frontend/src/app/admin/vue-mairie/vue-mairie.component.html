@@ -1,0 +1,90 @@
+<div class="mairie-page">
+
+  <header class="page-header">
+    <h1><span class="material-icons">apartment</span> Vue Mairie</h1>
+    <p class="subtitle">Demandes et signalements de votre commune</p>
+  </header>
+
+  @if (isLoading) {
+    <div class="skel-rows">
+      @for (i of [1,2,3]; track i) { <div class="skel-row"></div> }
+    </div>
+  } @else if (errorMessage) {
+    <div class="empty-state">
+      <span class="material-icons">info</span>
+      <p>{{ errorMessage }}</p>
+    </div>
+  } @else {
+
+    <section class="block">
+      <h2><span class="material-icons">emergency</span> Demandes d'aide <span class="count-badge">{{ demandes.length }}</span></h2>
+      @if (demandes.length === 0) {
+        <p class="empty-text">Aucune demande dans votre commune pour le moment.</p>
+      } @else {
+        <table class="data-table">
+          <thead><tr><th>Titre</th><th>Contact</th><th>Statut</th><th>Date</th></tr></thead>
+          <tbody>
+            @for (d of demandes; track d.id) {
+              <tr>
+                <td class="cell-titre">{{ d.title }}</td>
+                <td>
+                  <div class="contact-stack">
+                    <span>{{ d.first_name_request }} {{ d.last_name_request }}</span>
+                    <span class="contact-sub">{{ d.email_request }} · {{ d.phone_request }}</span>
+                  </div>
+                </td>
+                <td><span class="statut-chip" [class]="statusClass(d.status)">{{ statusLabel(d.status) }}</span></td>
+                <td>{{ fmtDate(d.created_at) }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      }
+    </section>
+
+    <section class="block">
+      <h2><span class="material-icons">verified_user</span> Je suis en sécurité <span class="count-badge">{{ signalementsJeSuisOk.length }}</span></h2>
+      @if (signalementsJeSuisOk.length === 0) {
+        <p class="empty-text">Aucune déclaration "je suis en sécurité" dans votre commune.</p>
+      } @else {
+        <ul class="safe-list">
+          @for (i of signalementsJeSuisOk; track i.id) {
+            <li>
+              <span class="material-icons">check_circle</span>
+              <div>
+                <strong>{{ i.first_name_information }} {{ i.last_name_information }}</strong>
+                <span class="contact-sub">{{ i.email_information }} · {{ i.phone_information }} · {{ fmtDate(i.created_at) }}</span>
+              </div>
+            </li>
+          }
+        </ul>
+      }
+    </section>
+
+    <section class="block">
+      <h2><span class="material-icons">flag</span> Autres signalements <span class="count-badge">{{ autresSignalements.length }}</span></h2>
+      @if (autresSignalements.length === 0) {
+        <p class="empty-text">Aucun autre signalement dans votre commune.</p>
+      } @else {
+        <table class="data-table">
+          <thead><tr><th>Titre</th><th>Contact</th><th>Statut</th><th>Date</th></tr></thead>
+          <tbody>
+            @for (i of autresSignalements; track i.id) {
+              <tr>
+                <td class="cell-titre">{{ i.title }}</td>
+                <td>
+                  <div class="contact-stack">
+                    <span>{{ i.first_name_information }} {{ i.last_name_information }}</span>
+                    <span class="contact-sub">{{ i.email_information }} · {{ i.phone_information }}</span>
+                  </div>
+                </td>
+                <td><span class="statut-chip" [class]="statusClass(i.status)">{{ statusLabel(i.status) }}</span></td>
+                <td>{{ fmtDate(i.created_at) }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      }
+    </section>
+  }
+</div>
