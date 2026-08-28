@@ -148,14 +148,17 @@ class UserSerializer(serializers.ModelSerializer):
         }
 
     def to_representation(self, instance):
-        """En zone DEMO, email/téléphone d'un compte réel ne doivent jamais apparaître à
-        l'écran pendant une démonstration — même si le compte lui-même (utilisateurs communs
-        aux deux zones) est bien réel. Masquage à l'affichage uniquement, jamais en base."""
+        """En zone DEMO, email/téléphone/username d'un compte réel ne doivent jamais apparaître
+        à l'écran pendant une démonstration — même si le compte lui-même (utilisateurs communs
+        aux deux zones) est bien réel. `username` vaut souvent l'email en clair par convention
+        (compte créé via l'email) : masqué lui aussi, sinon il fuit la même information par un
+        autre champ. Masquage à l'affichage uniquement, jamais en base."""
         data = super().to_representation(instance)
         request = self.context.get('request')
         if request is not None and get_active_environment(request) == Environment.DEMO:
             data['email'] = mask_email(data.get('email'))
             data['phone_number'] = mask_phone(data.get('phone_number'))
+            data['username'] = mask_email(data.get('username'))
         return data
 
     def validate_demo_role(self, value):

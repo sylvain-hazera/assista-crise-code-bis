@@ -75,6 +75,13 @@ export class UsersComponent implements OnInit, OnDestroy {
     return this.isDemo ? '••••••@zone.demo' : user.email;
   }
 
+  /** username vaut souvent l'email en clair pour ces comptes (convention username=email) — la
+   * colonne "utilisateur" (toujours visible, contrairement à "contact" qui peut sortir du
+   * cadre sur mobile) l'affichait donc en clair même en zone démo. Masqué de la même façon. */
+  displayUsername(user: User): string {
+    return this.isDemo ? '••••••' : user.username;
+  }
+
   displayPhone(phone: string | null | undefined): string {
     if (!phone) return '';
     return this.isDemo ? '+33 • •• •• •• ••' : phone;
