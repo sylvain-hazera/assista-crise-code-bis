@@ -2,7 +2,7 @@ from django.shortcuts import render
 from django.http import FileResponse
 from rest_framework.decorators import action
 from rest_framework import viewsets, status, generics, permissions
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticatedOrReadOnly, AllowAny
@@ -18,6 +18,7 @@ from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from urllib.parse import quote
 from django_filters import rest_framework as filters
+from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.contrib.gis.db.models.functions import Distance
 from rest_framework.pagination import PageNumberPagination
@@ -3691,7 +3692,21 @@ class ContactInstitutionViewSet(
     )
 
     def perform_create(self, serializer):
-        contact = serializer.save(environment=get_active_environment(self.request))
+        # "Un seul contact principal par institution" est appliqué par un index unique partiel
+        # en base (voir migration 0060) — pas par le serializer, DRF ne traduisant pas les
+        # UniqueConstraint conditionnelles en validateur. Sans ce try/except, une vraie
+        # tentative de double contact principal remontait en IntegrityError non interceptée
+        # (500 générique) au lieu d'un message exploitable côté frontend.
+        try:
+            # Savepoint dédié : sans lui, l'IntegrityError laisse la transaction de la requête
+            # (ATOMIC_REQUESTS) dans un état cassé — toute requête SQL suivante (y compris celles
+            # de la gestion d'erreur DRF elle-même) échouerait avec TransactionManagementError.
+            with transaction.atomic():
+                contact = serializer.save(environment=get_active_environment(self.request))
+        except IntegrityError:
+            raise ValidationError(
+                {"contact_principal": "Cette institution a déjà un contact principal : décochez « Principal » ou retirez-le d'abord de l'autre contact."}
+            )
         audit_log(
             request=self.request,
             action_code="CREATION",

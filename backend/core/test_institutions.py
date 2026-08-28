@@ -295,6 +295,55 @@ class TestAnnuaireRegistration:
 
 
 @pytest.mark.django_db
+class TestContactInstitutionPrincipalUniqueness:
+    """« Un seul contact principal par institution » est appliqué par un index unique partiel
+    en base (migration 0060 — l'index de la migration 0022 d'origine s'est retrouvé absent de
+    la base de production). Ajouter un contact secondaire (contact_principal=False) doit
+    toujours fonctionner librement ; seule une tentative de second contact PRINCIPAL doit être
+    refusée, et proprement (400 avec message exploitable), pas via une IntegrityError brute
+    remontée en 500."""
+
+    def _institution(self):
+        institution_type = InstitutionType.objects.create(code="MAIRIE", libelle="Mairie")
+        return Institution.objects.create(nom="Mairie de Test", type=institution_type)
+
+    def test_second_principal_contact_is_rejected_cleanly(self, authenticated_client):
+        client, admin = authenticated_client
+        institution = self._institution()
+        first = User.objects.create_user(username="premier@mairie.fr", email="premier@mairie.fr", password="Test1234!")
+        second = User.objects.create_user(username="second@mairie.fr", email="second@mairie.fr", password="Test1234!")
+        ContactInstitution.objects.create(institution=institution, utilisateur=first, contact_principal=True)
+
+        response = client.post(
+            reverse('contactinstitution-list'),
+            {"institution": str(institution.id), "utilisateur": str(second.id), "contact_principal": True, "actif": True},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert 'contact_principal' in response.data
+        assert ContactInstitution.objects.filter(institution=institution, contact_principal=True).count() == 1
+
+    def test_multiple_secondary_contacts_are_allowed(self, authenticated_client):
+        client, admin = authenticated_client
+        institution = self._institution()
+        principal = User.objects.create_user(username="principal@mairie.fr", email="principal@mairie.fr", password="Test1234!")
+        secondaire1 = User.objects.create_user(username="s1@gmail.com", email="s1@gmail.com", password="Test1234!")
+        secondaire2 = User.objects.create_user(username="s2@gmail.com", email="s2@gmail.com", password="Test1234!")
+        ContactInstitution.objects.create(institution=institution, utilisateur=principal, contact_principal=True)
+
+        for u in (secondaire1, secondaire2):
+            response = client.post(
+                reverse('contactinstitution-list'),
+                {"institution": str(institution.id), "utilisateur": str(u.id), "contact_principal": False, "actif": True},
+                format='json',
+            )
+            assert response.status_code == status.HTTP_201_CREATED
+
+        assert ContactInstitution.objects.filter(institution=institution).count() == 3
+
+
+@pytest.mark.django_db
 class TestUserEditDoesNotReRunInstitutionEmailCheck:
     """La vérification d'email institutionnel (UserSerializer.validate) ne doit s'appliquer
     qu'à la création du compte. Avant ce correctif, elle se redéclenchait sur CHAQUE édition

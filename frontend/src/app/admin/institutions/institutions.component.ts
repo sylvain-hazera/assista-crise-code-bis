@@ -187,7 +187,7 @@ export class InstitutionsComponent implements OnInit {
     this.isSaving = true;
     this.institutionService.create(this.institutionForm.value).subscribe({
       next: () => { this.reloadInstitutions(); this.showSuccess('Institution créée.'); this.closeModal(); this.isSaving = false; },
-      error: () => { this.showError('Erreur lors de la création.'); this.isSaving = false; },
+      error: (err) => { this.showError('Erreur lors de la création.', err); this.isSaving = false; },
     });
   }
 
@@ -211,7 +211,7 @@ export class InstitutionsComponent implements OnInit {
     this.isSaving = true;
     this.institutionService.patch(this.selectedInstitution.id, this.institutionForm.value).subscribe({
       next: () => { this.reloadInstitutions(); this.showSuccess('Institution modifiée.'); this.closeModal(); this.isSaving = false; },
-      error: () => { this.showError('Erreur lors de la modification.'); this.isSaving = false; },
+      error: (err) => { this.showError('Erreur lors de la modification.', err); this.isSaving = false; },
     });
   }
 
@@ -225,7 +225,7 @@ export class InstitutionsComponent implements OnInit {
     if (!this.selectedInstitution?.id) return;
     this.institutionService.delete(this.selectedInstitution.id).subscribe({
       next: () => { this.reloadInstitutions(); this.showSuccess('Institution supprimée.'); this.closeModal(); },
-      error: () => this.showError('Erreur lors de la suppression.'),
+      error: (err) => this.showError('Erreur lors de la suppression.', err),
     });
   }
 
@@ -262,7 +262,7 @@ export class InstitutionsComponent implements OnInit {
         this.contactForm.reset({ contact_principal: false });
         this.showContactForm = false;
       },
-      error: () => this.showError("Erreur lors de l'ajout du contact (un seul contact principal par institution)."),
+      error: (err) => this.showError("Erreur lors de l'ajout du contact.", err),
     });
   }
 
@@ -270,7 +270,7 @@ export class InstitutionsComponent implements OnInit {
     if (!contact.id) return;
     this.contactService.delete(contact.id).subscribe({
       next: () => { this.reloadContacts(); this.showSuccess('Contact supprimé.'); },
-      error: () => this.showError('Erreur lors de la suppression du contact.'),
+      error: (err) => this.showError('Erreur lors de la suppression du contact.', err),
     });
   }
 
@@ -295,7 +295,7 @@ export class InstitutionsComponent implements OnInit {
         this.domaineForm.reset({ valide: true });
         this.showDomaineForm = false;
       },
-      error: () => this.showError("Erreur lors de l'ajout du domaine (peut-être déjà utilisé)."),
+      error: (err) => this.showError("Erreur lors de l'ajout du domaine.", err),
     });
   }
 
@@ -303,7 +303,7 @@ export class InstitutionsComponent implements OnInit {
     if (domaine.id === undefined) return;
     this.domaineService.delete(domaine.id).subscribe({
       next: () => { this.reloadDomaines(); this.showSuccess('Domaine supprimé.'); },
-      error: () => this.showError('Erreur lors de la suppression du domaine.'),
+      error: (err) => this.showError('Erreur lors de la suppression du domaine.', err),
     });
   }
 
@@ -323,7 +323,7 @@ export class InstitutionsComponent implements OnInit {
         this.regulateurForm.reset({ actif: true });
         this.showRegulateurForm = false;
       },
-      error: () => this.showError("Erreur lors de l'affectation."),
+      error: (err) => this.showError("Erreur lors de l'affectation.", err),
     });
   }
 
@@ -331,7 +331,7 @@ export class InstitutionsComponent implements OnInit {
     if (!affectation.id) return;
     this.affectationRoleService.delete(affectation.id).subscribe({
       next: () => { this.reloadAffectationsRoles(); this.showSuccess('Affectation supprimée.'); },
-      error: () => this.showError("Erreur lors de la suppression de l'affectation."),
+      error: (err) => this.showError("Erreur lors de la suppression de l'affectation.", err),
     });
   }
 
@@ -364,7 +364,7 @@ export class InstitutionsComponent implements OnInit {
     if (this.typeForm.invalid) { this.typeForm.markAllAsTouched(); return; }
     this.institutionTypeService.create(this.typeForm.value).subscribe({
       next: () => { this.reloadTypes(); this.showSuccess("Type d'institution créé."); this.closeTypeModal(); },
-      error: () => this.showError('Erreur lors de la création.'),
+      error: (err) => this.showError('Erreur lors de la création.', err),
     });
   }
 
@@ -379,7 +379,7 @@ export class InstitutionsComponent implements OnInit {
     if (!this.selectedType?.id || this.typeForm.invalid) { this.typeForm.markAllAsTouched(); return; }
     this.institutionTypeService.update(this.selectedType.id, this.typeForm.value).subscribe({
       next: () => { this.reloadTypes(); this.showSuccess('Type modifié.'); this.closeTypeModal(); },
-      error: () => this.showError('Erreur lors de la modification.'),
+      error: (err) => this.showError('Erreur lors de la modification.', err),
     });
   }
 
@@ -393,7 +393,7 @@ export class InstitutionsComponent implements OnInit {
     if (!this.selectedType?.id) return;
     this.institutionTypeService.delete(this.selectedType.id).subscribe({
       next: () => { this.reloadTypes(); this.showSuccess('Type supprimé.'); this.closeTypeModal(); },
-      error: () => this.showError('Erreur lors de la suppression (probablement encore utilisé par une institution).'),
+      error: (err) => this.showError('Erreur lors de la suppression (probablement encore utilisé par une institution).', err),
     });
   }
 
@@ -409,7 +409,7 @@ export class InstitutionsComponent implements OnInit {
     if (this.roleForm.invalid) { this.roleForm.markAllAsTouched(); return; }
     this.roleOperationnelService.create(this.roleForm.value).subscribe({
       next: () => { this.reloadRoles(); this.showSuccess('Rôle opérationnel créé.'); this.closeRoleModal(); },
-      error: () => this.showError('Erreur lors de la création.'),
+      error: (err) => this.showError('Erreur lors de la création.', err),
     });
   }
 
@@ -424,7 +424,7 @@ export class InstitutionsComponent implements OnInit {
     if (!this.selectedRole?.id || this.roleForm.invalid) { this.roleForm.markAllAsTouched(); return; }
     this.roleOperationnelService.update(this.selectedRole.id, this.roleForm.value).subscribe({
       next: () => { this.reloadRoles(); this.showSuccess('Rôle modifié.'); this.closeRoleModal(); },
-      error: () => this.showError('Erreur lors de la modification.'),
+      error: (err) => this.showError('Erreur lors de la modification.', err),
     });
   }
 
@@ -438,7 +438,7 @@ export class InstitutionsComponent implements OnInit {
     if (!this.selectedRole?.id) return;
     this.roleOperationnelService.delete(this.selectedRole.id).subscribe({
       next: () => { this.reloadRoles(); this.showSuccess('Rôle supprimé.'); this.closeRoleModal(); },
-      error: () => this.showError('Erreur lors de la suppression.'),
+      error: (err) => this.showError('Erreur lors de la suppression.', err),
     });
   }
 
@@ -460,9 +460,24 @@ export class InstitutionsComponent implements OnInit {
     setTimeout(() => this.successMessage = '', 3000);
   }
 
-  private showError(msg: string): void {
-    this.errorMessage = msg;
+  private showError(fallback: string, err?: unknown): void {
+    this.errorMessage = this.extractErrorMessage(err) ?? fallback;
     setTimeout(() => this.errorMessage = '', 5000);
+  }
+
+  // Le backend renvoie le détail exact de la validation (ex: contrainte violée, champ
+  // invalide) — l'afficher plutôt qu'un message générique deviné évite d'induire l'utilisateur
+  // en erreur sur la vraie cause d'un échec (ex: un message toujours affiché en cas d'échec de
+  // création de contact, même quand la cause réelle n'a rien à voir avec le contact principal).
+  private extractErrorMessage(err: unknown): string | null {
+    const body = (err as any)?.error;
+    if (!body) return null;
+    if (typeof body === 'string') return body;
+    if (typeof body.detail === 'string') return body.detail;
+    const messages = Object.values(body)
+      .map(v => Array.isArray(v) ? v.join(' ') : v)
+      .filter((v): v is string => typeof v === 'string' && v.length > 0);
+    return messages.length ? messages.join(' ') : null;
   }
 
   fmtDate(d?: string): string {
