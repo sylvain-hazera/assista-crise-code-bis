@@ -3,6 +3,7 @@ import { FormBuilder, FormGroup, ReactiveFormsModule, Validators, FormsModule } 
 import { CommonModule } from '@angular/common';
 import { InformationService } from '../../../services/information.service';
 import { DeclarationSecuriteService } from '../../../services/declaration-securite.service';
+import { PointOperationnelService } from '../../../services/point-operationnel.service';
 import { Router } from '@angular/router';
 import { CrisisService } from '../../../services/crisis.service';
 import { Crisis } from '../../../shared/models/crisis.model';
@@ -47,6 +48,10 @@ export class OtherDeclarationFormComponent implements OnInit {
   crisisSearch: string = 'Aucune crise en rapport';
   showCrisisDropdown: boolean = false;
 
+  // Centres d'accueil proposés pour "Je suis en sécurité", une fois une crise choisie —
+  // seulement pertinent pour une entrée en centre, pas pour une auto-déclaration générique.
+  centresAccueil: { value: string; label: string }[] = [];
+
   selectedInformationType: InformationType | null = null;
 
   // Position + azimut capturés au moment de la photo (prioritaires sur l'adresse saisie
@@ -62,6 +67,7 @@ export class OtherDeclarationFormComponent implements OnInit {
     private router: Router,
     private informationService: InformationService,
     private declarationSecuriteService: DeclarationSecuriteService,
+    private pointOperationnelService: PointOperationnelService,
     private crisisService: CrisisService,
     private authService: AuthService,
     private geolocationService: GeolocationService
@@ -121,6 +127,8 @@ export class OtherDeclarationFormComponent implements OnInit {
       email: ['', [Validators.required, Validators.email]],
       nombreAdultes: [1, [Validators.required, Validators.min(1)]],
       nombreEnfants: [0, [Validators.required, Validators.min(0)]],
+      centreAccueil: [''],
+      regimeAlimentaire: [false],
     });
 
     this.otherInformationForm = this.formBuilder.group({
@@ -201,6 +209,25 @@ export class OtherDeclarationFormComponent implements OnInit {
     const form = this.state === StateForm.DeclareSafe ? this.declareSafeForm : this.otherInformationForm;
     form.patchValue({ crisisId: crisis.value });
     this.showCrisisDropdown = false;
+
+    if (this.state === StateForm.DeclareSafe) {
+      this.loadCentresAccueil(crisis.value);
+    }
+  }
+
+  /** Centres d'accueil proposés une fois une crise choisie — vide (et champ masqué côté
+   * template) si aucune crise n'est sélectionnée, une entrée en centre n'a pas de sens sans
+   * savoir à quelle crise elle se rattache. */
+  private loadCentresAccueil(crisisId: string): void {
+    this.declareSafeForm.patchValue({ centreAccueil: '' });
+    this.centresAccueil = [];
+    if (!crisisId) return;
+    this.pointOperationnelService.getByCrise(crisisId).subscribe({
+      next: (points) => {
+        this.centresAccueil = points.map(p => ({ value: p.id, label: p.nom }));
+      },
+      error: () => { this.centresAccueil = []; },
+    });
   }
 
   /** Une position captée automatiquement (photo prise via l'appareil) vaut une adresse
@@ -259,6 +286,12 @@ export class OtherDeclarationFormComponent implements OnInit {
     const crisisId = this.declareSafeForm.get('crisisId')?.value;
     if (crisisId) {
       payload.crise = crisisId;
+    }
+
+    const centreAccueil = this.declareSafeForm.get('centreAccueil')?.value;
+    if (centreAccueil) {
+      payload.centre_accueil = centreAccueil;
+      payload.regime_alimentaire_specifique = this.declareSafeForm.get('regimeAlimentaire')?.value;
     }
 
     this.declarationSecuriteService.create(payload).subscribe({

@@ -33,6 +33,7 @@ export class AdminSidebarComponent {
     { icon: 'folder', label: 'Dossiers', route: '/admin/dossiers' },
     { icon: 'flag_circle', label: 'Missions', route: '/admin/missions' },
     { icon: 'apartment', label: 'Vue Mairie', route: '/admin/vue-mairie' },
+    { icon: 'verified_user', label: 'Sécurité', route: '/admin/declarations-securite' },
     { icon: 'assignment', label: 'Affectations', route: '/admin/affectations'}
 ];
 

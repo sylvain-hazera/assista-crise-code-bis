@@ -13,7 +13,6 @@ from core.models import (
     PointOperationnel,
     PointType,
     RegistrePresence,
-    Team,
     User,
 )
 
@@ -70,9 +69,11 @@ class TestDeclarationSecuritePublicSelfDeclare:
         assert response.data['nombre_adultes'] == 2
         assert response.data['nombre_enfants'] == 3
 
-    def test_anonymous_cannot_set_centre_accueil(self, api_client):
-        """Une entrée en centre d'accueil n'est jamais une auto-déclaration anonyme — c'est
-        forcément un recensement fait par l'équipe du centre."""
+    def test_anonymous_can_declare_entry_at_a_centre(self, api_client):
+        """Une personne peut se déclarer elle-même "arrivée" dans un centre d'accueil (ex:
+        depuis son téléphone une fois sur place), sans avoir besoin d'être un membre de
+        l'équipe du centre — ça crée aussi la ligne RegistrePresence associée, comme pour un
+        recensement fait par un opérateur."""
         point = _make_point()
 
         response = api_client.post(
@@ -85,32 +86,20 @@ class TestDeclarationSecuritePublicSelfDeclare:
             format='json',
         )
 
-        assert response.status_code == status.HTTP_403_FORBIDDEN
-        assert not DeclarationSecurite.objects.filter(nom_referent='Dupont').exists()
-
-    def test_authenticated_but_unrelated_user_cannot_set_centre_accueil(self, authenticated_client):
-        """Un simple compte authentifié sans lien avec le centre reste refusé — pas juste
-        l'anonymat qui bloque, l'appartenance à l'équipe/la responsabilité du centre."""
-        client, _ = authenticated_client
-        point = _make_point()
-
-        response = client.post(
-            reverse('declarationsecurite-list'),
-            {
-                'type_declarant': 'PERSONNE_SEULE', 'nom_referent': 'Dupont', 'prenom_referent': 'Jean',
-                'contact_referent': 'jean@test.fr', 'nombre_adultes': 1, 'nombre_enfants': 0,
-                'centre_accueil': str(point.id),
-            },
-            format='json',
-        )
-
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data['declare_par'] is None
+        assert response.data['registre_presence'] is not None
+        registre = RegistrePresence.objects.get(id=response.data['registre_presence'])
+        assert registre.point_id == point.id
+        assert registre.enregistre_par is None
 
 
 @pytest.mark.django_db
 class TestDeclarationSecuriteOperateurCentre:
-    """Recensement à l'entrée d'un centre d'accueil : réservé à l'équipe du centre / un admin,
-    crée aussi une ligne RegistrePresence pour que le secrétariat existant reste cohérent."""
+    """Recensement à l'entrée d'un centre d'accueil par un opérateur authentifié (secrétariat) :
+    crée aussi une ligne RegistrePresence pour que le secrétariat existant reste cohérent, avec
+    enregistre_par posé (contrairement à l'auto-déclaration anonyme, voir
+    TestDeclarationSecuritePublicSelfDeclare.test_anonymous_can_declare_entry_at_a_centre)."""
 
     def test_admin_can_declare_entry_and_registre_presence_is_created(self, authenticated_client):
         client, admin = _make_admin(authenticated_client)
@@ -152,24 +141,6 @@ class TestDeclarationSecuriteOperateurCentre:
 
         registre = RegistrePresence.objects.get(id=response.data['registre_presence'])
         assert 'régime alimentaire' in registre.commentaire.lower()
-
-    def test_team_member_of_point_can_declare_entry(self, authenticated_client):
-        client, user = authenticated_client
-        team = Team.objects.create(name='Equipe centre')
-        team.members.add(user)
-        point = _make_point(equipe=team)
-
-        response = client.post(
-            reverse('declarationsecurite-list'),
-            {
-                'type_declarant': 'PERSONNE_SEULE', 'nom_referent': 'Dupont', 'prenom_referent': 'Jean',
-                'contact_referent': 'jean@test.fr', 'nombre_adultes': 1, 'nombre_enfants': 0,
-                'centre_accueil': str(point.id),
-            },
-            format='json',
-        )
-
-        assert response.status_code == status.HTTP_201_CREATED
 
 
 @pytest.mark.django_db

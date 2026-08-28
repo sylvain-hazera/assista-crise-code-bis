@@ -228,6 +228,20 @@
   > div { flex: 1; }
 }
 
+.warning-text {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: #fffbeb;
+  color: #92400e;
+  padding: 0.6rem 0.85rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  margin: 0.5rem 0 0;
+
+  .material-icons { font-size: 18px; }
+}
+
 .checkbox-group {
   margin-top: 1rem;
 

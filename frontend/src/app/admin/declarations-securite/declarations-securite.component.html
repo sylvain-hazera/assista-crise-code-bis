@@ -1,0 +1,74 @@
+<div class="page">
+
+  <header class="page-header">
+    <div>
+      <h1><span class="material-icons">verified_user</span> Déclarations de sécurité</h1>
+      <p class="subtitle">
+        @if (!isLoading) { {{ filteredDeclarations.length }} déclaration{{ filteredDeclarations.length > 1 ? 's' : '' }} }
+      </p>
+    </div>
+    <button class="btn-ghost" (click)="loadAll()" [disabled]="isLoading" title="Rafraîchir">
+      <span class="material-icons" [class.spin]="isLoading">refresh</span>
+    </button>
+  </header>
+
+  @if (errorMessage) {
+    <div class="toast toast-err"><span class="material-icons">error_outline</span> {{ errorMessage }}</div>
+  }
+
+  <div class="controls">
+    <input type="text" class="search-input" placeholder="Rechercher par nom, contact…" [(ngModel)]="searchQuery"/>
+    <select class="filter-select" [(ngModel)]="filterCentre">
+      <option value="ALL">Toutes</option>
+      <option value="AVEC_CENTRE">Avec centre d'accueil</option>
+      <option value="SANS_CENTRE">Sans centre (auto-déclaration)</option>
+    </select>
+  </div>
+
+  <div class="table-card">
+    @if (isLoading) {
+      <div class="skel-rows">
+        @for (i of [1,2,3,4]; track i) { <div class="skel-row"></div> }
+      </div>
+    } @else if (filteredDeclarations.length === 0) {
+      <div class="empty">
+        <span class="material-icons">verified_user</span>
+        <p>Aucune déclaration</p>
+      </div>
+    } @else {
+      <table>
+        <thead>
+          <tr>
+            <th>Référent</th>
+            <th>Type</th>
+            <th>Contact</th>
+            <th>Personnes</th>
+            <th>Crise</th>
+            <th>Centre d'accueil</th>
+            <th>Déclaré par</th>
+            <th>Date</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (d of filteredDeclarations; track d.id) {
+            <tr>
+              <td class="cell-nom">{{ d.prenom_referent }} {{ d.nom_referent }}</td>
+              <td>{{ d.type_declarant_libelle }}</td>
+              <td>{{ d.contact_referent }}</td>
+              <td>
+                {{ headcount(d) }}
+                @if (d.regime_alimentaire_specifique) {
+                  <span class="regime-badge" title="Régime alimentaire spécifique">régime</span>
+                }
+              </td>
+              <td>{{ d.crise_nom || '—' }}</td>
+              <td>{{ d.centre_accueil_nom || '—' }}</td>
+              <td>{{ d.declare_par_nom || 'Auto-déclaration' }}</td>
+              <td>{{ fmtDate(d.date_declaration) }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    }
+  </div>
+</div>

@@ -171,6 +171,48 @@
           }
         </div>
 
+        <!-- Centre d'accueil (optionnel, une fois une crise choisie) -->
+        <div class="form-group">
+          <label for="centreAccueil" class="form-label">
+            Je suis actuellement dans un centre d'accueil
+          </label>
+          @if (!declareSafeForm.get('crisisId')?.value) {
+            <p class="section-description">Choisissez d'abord une crise ci-dessus pour indiquer un centre.</p>
+          } @else if (centresAccueil.length === 0) {
+            <p class="section-description">Aucun centre d'accueil connu pour cette crise pour le moment.</p>
+          } @else {
+            <div class="select-wrapper">
+              <select id="centreAccueil" formControlName="centreAccueil" class="form-select">
+                <option value="">— Non, aucun centre —</option>
+                @for (centre of centresAccueil; track centre.value) {
+                  <option [value]="centre.value">{{ centre.label }}</option>
+                }
+              </select>
+              <span class="material-symbols-outlined select-arrow">arrow_drop_down</span>
+            </div>
+          }
+        </div>
+
+        @if (declareSafeForm.get('centreAccueil')?.value) {
+          <div class="checkbox-group">
+            <label class="checkbox-label">
+              <input
+                type="checkbox"
+                class="form-checkbox"
+                formControlName="regimeAlimentaire">
+              <span class="checkbox-text">
+                Régime alimentaire spécifique pour au moins une personne
+              </span>
+            </label>
+            @if (declareSafeForm.get('regimeAlimentaire')?.value) {
+              <p class="warning-text">
+                <span class="material-icons">info</span>
+                Merci de vous rapprocher des équipes sur place pour préciser le régime alimentaire concerné.
+              </p>
+            }
+          </div>
+        }
+
         <!-- Submit Button -->
         <div class="form-actions">
           <button

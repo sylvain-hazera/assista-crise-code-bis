@@ -3809,12 +3809,13 @@ class RegistrePresenceViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewS
 
 
 class DeclarationSecuriteViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
-    """"Je suis en sécurité" : création publique ouverte à tous (auto-déclaration, ex: "je ne
-    suis pas sur place, ne me cherchez pas") ou par un opérateur du centre d'accueil concerné
-    (recensement à l'entrée, quand `centre_accueil` est renseigné — dans ce cas seul l'accès
-    ci-dessous, réservé à l'équipe du centre, est autorisé). Lecture/modification/suppression
-    réservées aux acteurs institutionnels : ce sont des coordonnées personnelles, pas un
-    contenu public à lister librement."""
+    """"Je suis en sécurité" : création publique ouverte à tous, avec ou sans centre d'accueil
+    — soit une auto-déclaration générique (ex: "je ne suis pas sur place, ne me cherchez pas"),
+    soit une entrée en centre d'accueil (déclarée par la personne elle-même depuis le centre,
+    ou recensée par un opérateur du secrétariat) : les deux passent par le même formulaire
+    public, sans distinction de permission entre les deux à la création. Lecture/modification/
+    suppression réservées aux acteurs institutionnels : ce sont des coordonnées personnelles,
+    pas un contenu public à lister librement."""
 
     queryset = DeclarationSecurite.objects.select_related('crise', 'centre_accueil', 'declare_par').all()
     serializer_class = DeclarationSecuriteSerializer
@@ -3824,30 +3825,8 @@ class DeclarationSecuriteViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
             return [AllowAny()]
         return [IsInstitutionalActor()]
 
-    def _can_manage_centre(self, request, centre):
-        user = request.user
-        if get_effective_role(request) == UserRole.ADMINISTRATOR:
-            return True
-        if centre.responsable_id == user.id:
-            return True
-        if centre.equipe:
-            if centre.equipe.leader_id == user.id:
-                return True
-            if centre.equipe.members.filter(id=user.id).exists():
-                return True
-        return False
-
     def perform_create(self, serializer):
         centre = serializer.validated_data.get('centre_accueil')
-        if centre is not None:
-            # Une entrée en centre d'accueil n'est jamais une auto-déclaration anonyme : c'est
-            # forcément un recensement fait par l'équipe du centre (ou un admin).
-            if not self.request.user.is_authenticated or not self._can_manage_centre(self.request, centre):
-                raise PermissionDenied(
-                    "Seul le responsable, un membre de l'équipe du centre, ou un administrateur "
-                    "peut enregistrer une entrée en centre d'accueil."
-                )
-
         declare_par = self.request.user if self.request.user.is_authenticated else None
         declaration = serializer.save(
             declare_par=declare_par,
