@@ -19,6 +19,7 @@ export interface Team {
   assigned_crisis_ids:  string[];
   assigned_offer_ids:   string[];
   assigned_request_ids: string[];
+  assigned_information_ids: string[];
   competence_ids:       string[];
   departements:         string[];           // codes département déclarés (ex: ['38', '73'])
   communes:             string[];           // codes commune INSEE déclarés, plus précis

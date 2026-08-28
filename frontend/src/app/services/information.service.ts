@@ -4,6 +4,7 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Information, InformationPayload, InformationType } from '../shared/models/information.model';
 import { map, Observable } from 'rxjs';
 import { geoPointToLatLng, latLngToGeoJson } from '../shared/models/geopoint.model';
+import { Team } from '../shared/models/team.model';
 
 @Injectable({
   providedIn: 'root'
@@ -49,6 +50,14 @@ export class InformationService {
     return this.http
       .get<Information[]>(`${this.url}/vue_mairie/`)
       .pipe(map(list => list.map(this.normalize)));
+  }
+
+  /** POST /api/informations/bulk_assign_team/ — affecte une sélection de signalements à une
+   * équipe existante (pas de dossier créé, juste un rattachement équipe). */
+  bulkAssignTeam(informationIds: string[], teamId: string): Observable<Team> {
+    return this.http.post<Team>(`${this.url}/bulk_assign_team/`, {
+      information_ids: informationIds, team: teamId,
+    });
   }
 
   create(data: Partial<Information> | FormData): Observable<Information> {

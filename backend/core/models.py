@@ -1214,6 +1214,11 @@ class Team(EnvironmentScopedModel):
         blank=True,
         related_name="assigned_teams"
     )
+    assigned_informations = models.ManyToManyField(
+        "Information",
+        blank=True,
+        related_name="assigned_teams"
+    )
     
     competences = models.ManyToManyField(
         Competence,

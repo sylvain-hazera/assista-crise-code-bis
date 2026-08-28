@@ -121,6 +121,12 @@ export class ReportingComponent implements OnInit, OnDestroy {
   // ── Sélection multiple + actions groupées ───────────────────
   selectedOfferIds   = new Set<string>();
   selectedRequestIds = new Set<string>();
+  selectedInformationIds = new Set<string>();
+
+  showBulkInformationModal = false;
+  bulkInformationTeamId: string | null = null;
+  bulkInformationTeamQuery = '';
+  showBulkInformationTeamResults = false;
 
   showBulkOfferModal   = false;
   bulkTeamName          = '';
@@ -196,6 +202,7 @@ export class ReportingComponent implements OnInit, OnDestroy {
     this.isLoading = true;
     this.selectedOfferIds.clear();
     this.selectedRequestIds.clear();
+    this.selectedInformationIds.clear();
     forkJoin({
       crises:       this.crisisService.getAll(),
       offres:       this.offerService.getAll(),
@@ -566,12 +573,13 @@ export class ReportingComponent implements OnInit, OnDestroy {
   // ────────────────────────────────────────────────────────────────────────────
 
   isRowSelectable(row: ReportRow): boolean {
-    return row.kind === 'Offer' || row.kind === 'Request';
+    return row.kind === 'Offer' || row.kind === 'Request' || row.kind === 'Information';
   }
 
   isRowSelected(row: ReportRow): boolean {
     if (row.kind === 'Offer') return this.selectedOfferIds.has(row.id);
     if (row.kind === 'Request') return this.selectedRequestIds.has(row.id);
+    if (row.kind === 'Information') return this.selectedInformationIds.has(row.id);
     return false;
   }
 
@@ -580,11 +588,14 @@ export class ReportingComponent implements OnInit, OnDestroy {
       this.selectedOfferIds.has(row.id) ? this.selectedOfferIds.delete(row.id) : this.selectedOfferIds.add(row.id);
     } else if (row.kind === 'Request') {
       this.selectedRequestIds.has(row.id) ? this.selectedRequestIds.delete(row.id) : this.selectedRequestIds.add(row.id);
+    } else if (row.kind === 'Information') {
+      this.selectedInformationIds.has(row.id) ? this.selectedInformationIds.delete(row.id) : this.selectedInformationIds.add(row.id);
     }
   }
 
   get pagedOfferIds(): string[] { return this.pagedRows.filter(r => r.kind === 'Offer').map(r => r.id); }
   get pagedRequestIds(): string[] { return this.pagedRows.filter(r => r.kind === 'Request').map(r => r.id); }
+  get pagedInformationIds(): string[] { return this.pagedRows.filter(r => r.kind === 'Information').map(r => r.id); }
 
   get allPagedOffersSelected(): boolean {
     const ids = this.pagedOfferIds;
@@ -594,6 +605,11 @@ export class ReportingComponent implements OnInit, OnDestroy {
   get allPagedRequestsSelected(): boolean {
     const ids = this.pagedRequestIds;
     return ids.length > 0 && ids.every(id => this.selectedRequestIds.has(id));
+  }
+
+  get allPagedInformationsSelected(): boolean {
+    const ids = this.pagedInformationIds;
+    return ids.length > 0 && ids.every(id => this.selectedInformationIds.has(id));
   }
 
   toggleSelectAllOffers(): void {
@@ -606,6 +622,12 @@ export class ReportingComponent implements OnInit, OnDestroy {
     const ids = this.pagedRequestIds;
     if (this.allPagedRequestsSelected) ids.forEach(id => this.selectedRequestIds.delete(id));
     else ids.forEach(id => this.selectedRequestIds.add(id));
+  }
+
+  toggleSelectAllInformations(): void {
+    const ids = this.pagedInformationIds;
+    if (this.allPagedInformationsSelected) ids.forEach(id => this.selectedInformationIds.delete(id));
+    else ids.forEach(id => this.selectedInformationIds.add(id));
   }
 
   get selectedRequestRows(): ReportRow[] {
@@ -625,6 +647,47 @@ export class ReportingComponent implements OnInit, OnDestroy {
     if (rows.length === 0 || !this.bulkRequestsShareCrisis) return [];
     const crisisId = rows[0].crisis;
     return this.missions.filter(m => m.crise === crisisId);
+  }
+
+  // ── Barre groupée signalements divers : affecter à une équipe existante ─────
+
+  openBulkInformationModal(): void {
+    this.bulkInformationTeamId = null;
+    this.bulkInformationTeamQuery = '';
+    this.showBulkInformationModal = true;
+  }
+
+  get filteredBulkInformationTeams(): Team[] {
+    const q = this.bulkInformationTeamQuery.trim().toLowerCase();
+    if (!q) return [];
+    return this.teams.filter(t => t.name.toLowerCase().includes(q));
+  }
+
+  selectBulkInformationTeam(t: Team): void {
+    this.bulkInformationTeamId = t.id!;
+    this.bulkInformationTeamQuery = t.name;
+    this.showBulkInformationTeamResults = false;
+  }
+
+  onBulkInformationTeamQueryChange(): void {
+    this.bulkInformationTeamId = null;
+    this.showBulkInformationTeamResults = true;
+  }
+
+  hideBulkInformationTeamResultsDelayed(): void {
+    setTimeout(() => this.showBulkInformationTeamResults = false, 150);
+  }
+
+  submitBulkInformationTeam(): void {
+    if (!this.bulkInformationTeamId || this.selectedInformationIds.size === 0) return;
+    this.informationService.bulkAssignTeam([...this.selectedInformationIds], this.bulkInformationTeamId).subscribe({
+      next: (team) => {
+        this.showSuccess(`${this.selectedInformationIds.size} signalement(s) affecté(s) à l'équipe « ${team.name} ».`);
+        this.selectedInformationIds.clear();
+        this.showBulkInformationModal = false;
+      },
+      error: (err) => this.showError(err?.error?.error || "Impossible d'affecter ces signalements."),
+    });
   }
 
   // ── Barre groupée offres : créer une équipe + assigner un régulateur ────────

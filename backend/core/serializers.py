@@ -668,6 +668,9 @@ class TeamSerializer(serializers.ModelSerializer):
     assigned_request_ids = serializers.PrimaryKeyRelatedField(
         many=True, queryset=Request.objects.all(), source='assigned_requests', required=False
     )
+    assigned_information_ids = serializers.PrimaryKeyRelatedField(
+        many=True, queryset=Information.objects.all(), source='assigned_informations', required=False
+    )
     competence_ids = serializers.PrimaryKeyRelatedField(
         many=True, queryset=Competence.objects.all(), source='competences', required=False
     )
@@ -683,6 +686,7 @@ class TeamSerializer(serializers.ModelSerializer):
             'assigned_crisis_ids',
             'assigned_offer_ids',
             'assigned_request_ids',
+            'assigned_information_ids',
             'competence_ids',
             'departements',
             'communes',

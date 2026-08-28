@@ -3,7 +3,7 @@ from django.contrib.gis.geos import Point
 from django.urls import reverse
 from rest_framework import status
 
-from core.models import Crisis, Dossier, Mission, Offer, Request, Team, User
+from core.models import Crisis, Dossier, Information, Mission, Offer, Request, Team, User
 
 
 def _make_admin(authenticated_client):
@@ -197,6 +197,50 @@ class TestBulkAssignMissionRequests:
         again = client.post(reverse('request-assign-team', args=[r1.id]), {'team': str(team.id)}, format='json')
         assert again.status_code == status.HTTP_200_OK
         assert again.data == {'already_assigned': True}
+
+
+@pytest.mark.django_db
+class TestBulkAssignTeamInformations:
+    """Signalements "divers" (ex: arbre sur la chaussée) affectés en bloc à une équipe
+    existante (ex: voirie) — pas de dossier de suivi ici, juste un rattachement équipe, comme
+    pour l'affectation individuelle d'une offre."""
+
+    def test_bulk_assign_adds_authors_as_members(self, authenticated_client, information_type):
+        client, _ = _make_admin(authenticated_client)
+        author = User.objects.create_user(username='signaleur@test.fr', email='signaleur@test.fr', password='Test1234!')
+        i1 = Information.objects.create(
+            title='Arbre sur la chaussée', location=Point(1, 1, srid=4326),
+            first_name_information='A', last_name_information='B', email_information='a@t.fr',
+            phone_information='0600000000', information_type=information_type, author=author,
+        )
+        i2 = Information.objects.create(
+            title='Autre arbre', location=Point(1, 1, srid=4326),
+            first_name_information='C', last_name_information='D', email_information='c@t.fr',
+            phone_information='0600000000', information_type=information_type,
+        )
+        team = Team.objects.create(name='Voirie')
+
+        response = client.post(
+            reverse('information-bulk-assign-team'),
+            {'information_ids': [str(i1.id), str(i2.id)], 'team': str(team.id)},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert set(response.data['assigned_information_ids']) == {i1.id, i2.id}
+        assert response.data['member_ids'] == [author.id]
+
+    def test_bulk_assign_requires_information_ids(self, authenticated_client):
+        client, _ = _make_admin(authenticated_client)
+        team = Team.objects.create(name='Voirie')
+
+        response = client.post(
+            reverse('information-bulk-assign-team'),
+            {'information_ids': [], 'team': str(team.id)},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
 
 
 @pytest.mark.django_db

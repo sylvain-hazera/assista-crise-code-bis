@@ -1935,6 +1935,37 @@ class InformationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         queryset = self.get_queryset().filter(commune_code=commune_code)
         return Response(self.get_serializer(queryset, many=True).data)
 
+    @action(detail=False, methods=["post"], permission_classes=[IsInstitutionalActor])
+    def bulk_assign_team(self, request):
+        """Affecte une sélection de signalements ("divers" — ex: arbre sur la chaussée) à une
+        équipe existante (ex: voirie), en une fois. Contrairement aux demandes, pas de dossier
+        de suivi ni de notification créés ici : juste un rattachement équipe, comme pour
+        l'affectation individuelle d'une offre. Les auteurs identifiés des signalements
+        rejoignent l'équipe, comme pour les offres."""
+        information_ids = request.data.get("information_ids") or []
+        if not information_ids:
+            return Response({"error": "Aucun signalement sélectionné."}, status=status.HTTP_400_BAD_REQUEST)
+
+        informations = list(Information.objects.filter(pk__in=information_ids))
+        if len(informations) != len(set(information_ids)):
+            return Response({"error": "Un ou plusieurs signalements sont introuvables."}, status=status.HTTP_400_BAD_REQUEST)
+
+        team = get_object_or_404(Team, pk=request.data.get("team"))
+        team.assigned_informations.add(*informations)
+        members = {i.author for i in informations if i.author_id}
+        if members:
+            team.members.add(*members)
+
+        audit_log(
+            request=request,
+            action_code="MODIFICATION",
+            objet_type="Team",
+            objet_id=team.id,
+            commentaire=f"{len(informations)} signalement(s) affecté(s) à l'équipe {team.name}",
+        )
+
+        return Response(TeamSerializer(team).data)
+
     @action(detail=True, methods=["get"])
     def preview(self, request, pk=None):
         info = self.get_object()
