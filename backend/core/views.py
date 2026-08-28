@@ -139,7 +139,7 @@ def build_magic_link(request, user, action: str, next_url: str = None) -> str:
             url += f"?next={quote(next_url, safe='')}"
         return url
 
-    base_url = request.build_absolute_uri('/').rstrip('/')
+    base_url = settings.SERVER_URL.rstrip('/')
     return f"{base_url}/api/{action}/{uidb64}/{token}/"
 
 
@@ -399,6 +399,49 @@ class AffectationCompetenceViewSet(EnvironmentScopedViewSetMixin, viewsets.Model
             commentaire=f"Modification affectation compétence : {affectation}",
         )
 
+def _notify_dossier_closure(dossier, request):
+    """Prévient la personne à l'origine du dossier (demandeur ou signalant) que son dossier
+    vient d'être résolu ou clôturé — jusqu'ici la seule notification qu'elle recevait était la
+    prise en charge initiale (_assign_request_to_team/_assign_information_to_team), plus rien
+    ensuite : elle n'apprenait jamais que sa situation avait été traitée. Silencieux si le
+    dossier n'a pas d'origine identifiable (créé manuellement, sans demande/signalement) ou pas
+    d'email exploitable."""
+    if dossier.demande is not None:
+        destinataire = dossier.demande.email_request
+        prenom = dossier.demande.first_name_request
+        nature = "demande"
+        titre = dossier.demande.title
+    elif dossier.information is not None:
+        destinataire = dossier.information.email_information
+        prenom = dossier.information.first_name_information
+        nature = "signalement"
+        titre = dossier.information.title
+    else:
+        return
+
+    if not destinataire:
+        return
+
+    verbe = "résolue" if dossier.statut == Dossier.Statut.RESOLU else "clôturée"
+    try:
+        send_mail_env_aware(
+            request,
+            subject=f"Votre {nature} « {titre} » a été {verbe}",
+            message=(
+                f"Bonjour {prenom},\n\n"
+                f"Nous vous informons que votre {nature} « {titre} » (dossier {dossier.numero}) "
+                f"a été {verbe} par l'équipe {dossier.equipe.name if dossier.equipe else 'en charge'}.\n\n"
+                "Merci pour votre confiance,\n"
+                "L'équipe Assista-Crise"
+            ),
+            from_email=None,
+            recipient_list=[destinataire],
+            fail_silently=True,
+        )
+    except Exception as e:
+        print(f"Erreur envoi email clôture dossier : {e}")
+
+
 class DossierViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     queryset = Dossier.objects.all()
     serializer_class = DossierSerializer
@@ -534,6 +577,8 @@ class DossierViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             nouvel_etat=nouveau_statut,
             commentaire=f"Dossier {dossier.numero} {dossier.get_statut_display().lower()} par {user.email}",
         )
+
+        _notify_dossier_closure(dossier, request)
 
         return Response({"status": "ok", "statut": dossier.statut})
 
@@ -1129,7 +1174,7 @@ def send_point_volunteer_confirmation_email(request, affectation):
     """Email envoyé à un bénévole recruté individuellement sur un point (voir
     PointOperationnelViewSet.inviter_benevole) — jeton opaque, même idiome que
     Offer.deletion_token, pas besoin de compte/mot de passe pour répondre."""
-    base_url = request.build_absolute_uri('/').rstrip('/')
+    base_url = settings.SERVER_URL.rstrip('/')
     lien_oui = f"{base_url}/api/confirmer-affectation-benevole/{affectation.token_confirmation}/oui/"
     lien_non = f"{base_url}/api/confirmer-affectation-benevole/{affectation.token_confirmation}/non/"
 
@@ -1332,11 +1377,12 @@ def _assign_request_to_team(demande, team, request, mission=None):
 
 
 def _assign_information_to_team(signalement, team, request):
-    """Corps de InformationViewSet.bulk_assign_team : crée le dossier de suivi et notifie les
-    régulateurs de l'équipe — symétrique à _assign_request_to_team, mais sans email au
-    signalant (souvent anonyme/coordonnées de repli, voir other-declaration-form) ni
-    participant DEMANDEUR (rôle qui ne correspond pas à un simple signalement). Retourne
-    (outcome, dossier) où outcome vaut "already_assigned" (no-op), "no_crisis" ou "created"."""
+    """Corps de InformationViewSet.bulk_assign_team : crée le dossier de suivi, notifie les
+    régulateurs de l'équipe et le signalant lui-même — symétrique à _assign_request_to_team.
+    Pas de participant DEMANDEUR (rôle qui ne correspond pas à un simple signalement). Le mail
+    au signalant peut échouer silencieusement (souvent une adresse de repli/anonyme, voir
+    other-declaration-form) : ce n'est jamais bloquant. Retourne (outcome, dossier) où outcome
+    vaut "already_assigned" (no-op), "no_crisis" ou "created"."""
     if team.assigned_informations.filter(pk=signalement.pk).exists():
         return "already_assigned", None
 
@@ -1372,6 +1418,25 @@ def _assign_information_to_team(signalement, team, request):
         crise=signalement.crisis,
         commentaire=f"Dossier {dossier.numero} créé suite à l'affectation du signalement à {team.name}",
     )
+
+    if signalement.email_information:
+        try:
+            send_mail_env_aware(
+                request,
+                subject=f"Votre signalement « {signalement.title} » a été pris en charge",
+                message=(
+                    f"Bonjour {signalement.first_name_information},\n\n"
+                    f"Votre signalement « {signalement.title} » a été affecté à l'équipe "
+                    f"{team.name}, qui va s'en charger (dossier {dossier.numero}).\n\n"
+                    "Merci pour votre vigilance,\n"
+                    "L'équipe Assista-Crise"
+                ),
+                from_email=None,
+                recipient_list=[signalement.email_information],
+                fail_silently=True,
+            )
+        except Exception as e:
+            print(f"Erreur envoi email prise en charge signalement : {e}")
 
     return "created", dossier
 
@@ -1647,7 +1712,7 @@ class RequestViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             print(f"Erreur création dossier automatique : {e}")
 
         # Construire l'URL de suppression (automatique selon l'environnement)
-        deletion_url = self.request.build_absolute_uri(f'/api/delete-request/{deletion_token}/')
+        deletion_url = f"{settings.SERVER_URL.rstrip('/')}/api/delete-request/{deletion_token}/"
         
         try:
             print(f"Tentative d'envoi de mail à {demande.email_request}...")
@@ -1881,7 +1946,7 @@ class OfferViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         )
 
         # Construire l'URL de suppression (automatique selon l'environnement)
-        deletion_url = self.request.build_absolute_uri(f'/api/delete-offer/{deletion_token}/')
+        deletion_url = f"{settings.SERVER_URL.rstrip('/')}/api/delete-offer/{deletion_token}/"
 
         try:
             print(f"Tentative d'envoi de mail à {offre.email_offer}...")
@@ -1936,6 +2001,24 @@ class OfferViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
                 objet_id=participant.id,
                 commentaire=f"{offer.author.email} affecté au dossier {dossier.numero} en tant qu'offrant",
             )
+            try:
+                send_mail_env_aware(
+                    request,
+                    subject=f"Votre offre « {offer.title} » a été affectée à un dossier",
+                    message=(
+                        f"Bonjour {offer.first_name_offer},\n\n"
+                        f"Votre offre d'aide « {offer.title} » a été rattachée au dossier "
+                        f"{dossier.numero}, dont l'équipe {dossier.equipe.name if dossier.equipe else 'en charge'} "
+                        "s'occupe activement.\n\n"
+                        "Merci pour votre aide,\n"
+                        "L'équipe Assista-Crise"
+                    ),
+                    from_email=None,
+                    recipient_list=[offer.email_offer],
+                    fail_silently=True,
+                )
+            except Exception as e:
+                print(f"Erreur envoi email affectation offre à un dossier : {e}")
 
         return Response({"id": str(participant.id), "dossier": str(dossier.id), "created": created})
 
@@ -1976,6 +2059,25 @@ class OfferViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             objet_id=team.id,
             commentaire=f"Équipe {team.name} créée depuis {len(offres)} offre(s) sélectionnée(s)",
         )
+
+        for offre in offres:
+            try:
+                send_mail_env_aware(
+                    request,
+                    subject=f"Votre offre « {offre.title} » a été affectée à l'équipe {team.name}",
+                    message=(
+                        f"Bonjour {offre.first_name_offer},\n\n"
+                        f"Votre offre d'aide « {offre.title} » a été affectée à l'équipe {team.name}, "
+                        "qui va s'en charger.\n\n"
+                        "Merci pour votre aide,\n"
+                        "L'équipe Assista-Crise"
+                    ),
+                    from_email=None,
+                    recipient_list=[offre.email_offer],
+                    fail_silently=True,
+                )
+            except Exception as e:
+                print(f"Erreur envoi email affectation offre à l'équipe : {e}")
 
         return Response(TeamSerializer(team).data, status=status.HTTP_201_CREATED)
 
@@ -2030,7 +2132,7 @@ class InformationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             info = serializer.save(author=None, deletion_token=deletion_token, environment=environment)
         
         # Construire l'URL de suppression (automatique selon l'environnement)
-        deletion_url = self.request.build_absolute_uri(f'/api/delete-information/{deletion_token}/')
+        deletion_url = f"{settings.SERVER_URL.rstrip('/')}/api/delete-information/{deletion_token}/"
         
         try:
             print(f"Tentative d'envoi de mail à {info.email_information}...")

@@ -78,12 +78,18 @@ class TestBuildMagicLink:
         assert link.startswith("https://assista-crise.fr/connexion-magique/")
         assert link.endswith("?next=%2Fdossier-suivi%2Fabc")
 
-    def test_other_actions_still_route_to_api(self, create_user):
+    def test_other_actions_still_route_to_api(self, create_user, settings):
+        # Le lien doit toujours pointer vers l'URL publique canonique configurée
+        # (settings.SERVER_URL), jamais vers le Host de la requête entrante — sinon un accès
+        # via une IP interne ou un domaine alternatif fuiterait dans un email envoyé à un vrai
+        # utilisateur (bug réel corrigé : SERVER_URL n'était même pas positionnée en prod,
+        # valeur par défaut = IP privée).
+        settings.SERVER_URL = "https://www.assista-crise.fr"
         user = create_user(username="apilink@test.fr", email="apilink@test.fr", type="UTIL_SIMPLE")
 
         link = build_magic_link(DummyRequest(), user, "delete-request")
 
-        assert link.startswith("http://testserver/api/delete-request/")
+        assert link.startswith("https://www.assista-crise.fr/api/delete-request/")
 
 
 @pytest.mark.django_db

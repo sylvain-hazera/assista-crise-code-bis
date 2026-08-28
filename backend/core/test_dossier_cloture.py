@@ -1,4 +1,6 @@
 import pytest
+from django.contrib.gis.geos import Point
+from django.core import mail
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
@@ -9,8 +11,10 @@ from core.models import (
     Dossier,
     DossierParticipant,
     ImplicationInstitution,
+    Information,
     Institution,
     InstitutionType,
+    Request,
 )
 
 
@@ -131,6 +135,66 @@ class TestClotureDossier:
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         dossier.refresh_from_db()
         assert dossier.statut == Dossier.Statut.EN_COURS
+
+
+@pytest.mark.django_db
+class TestClotureDossierNotifiesOrigin:
+    """La clôture/résolution d'un dossier était la seule étape du cycle de vie qui ne prévenait
+    jamais la personne à l'origine (demandeur ou signalant) — elle recevait la prise en charge
+    initiale puis plus rien, même quand son cas était réglé."""
+
+    def test_resolution_notifies_demandeur(self, create_user, crisis, request_type):
+        demande = Request.objects.create(
+            title='Besoin urgent', location=Point(5.72, 45.18, srid=4326),
+            first_name_request='Jean', last_name_request='Dupont',
+            email_request='jean.dupont@test.fr', phone_request='0600000000',
+            request_type=request_type, crisis=crisis,
+        )
+        dossier = Dossier.objects.create(
+            numero='DOS-CLOTURE-DEMANDE', crise=crisis, statut=Dossier.Statut.EN_COURS, demande=demande,
+        )
+        admin = create_user(username='admin-notif-demande@test.fr', email='admin-notif-demande@test.fr', type='ADMIN')
+        client = APIClient()
+        client.force_authenticate(user=admin)
+
+        response = client.post(reverse('dossier-cloturer', args=[dossier.id]), {'statut': 'RESOLU'}, format='json')
+
+        assert response.status_code == status.HTTP_200_OK
+        assert len(mail.outbox) == 1
+        assert mail.outbox[0].to == ['jean.dupont@test.fr']
+        assert 'résolue' in mail.outbox[0].subject
+
+    def test_closure_notifies_signalant(self, create_user, crisis, information_type):
+        signalement = Information.objects.create(
+            title='Arbre sur la route', location=Point(5.72, 45.18, srid=4326),
+            first_name_information='Paul', last_name_information='Martin',
+            email_information='paul.martin@test.fr', phone_information='0600000000',
+            information_type=information_type, crisis=crisis,
+        )
+        dossier = Dossier.objects.create(
+            numero='DOS-CLOTURE-INFO', crise=crisis, statut=Dossier.Statut.EN_COURS, information=signalement,
+        )
+        admin = create_user(username='admin-notif-info@test.fr', email='admin-notif-info@test.fr', type='ADMIN')
+        client = APIClient()
+        client.force_authenticate(user=admin)
+
+        response = client.post(reverse('dossier-cloturer', args=[dossier.id]))
+
+        assert response.status_code == status.HTTP_200_OK
+        assert len(mail.outbox) == 1
+        assert mail.outbox[0].to == ['paul.martin@test.fr']
+        assert 'clôturée' in mail.outbox[0].subject
+
+    def test_dossier_without_origin_sends_no_email(self, create_user, dossier):
+        """Dossier créé manuellement, sans demande ni signalement : rien à notifier."""
+        admin = create_user(username='admin-notif-none@test.fr', email='admin-notif-none@test.fr', type='ADMIN')
+        client = APIClient()
+        client.force_authenticate(user=admin)
+
+        response = client.post(reverse('dossier-cloturer', args=[dossier.id]))
+
+        assert response.status_code == status.HTTP_200_OK
+        assert len(mail.outbox) == 0
 
 
 @pytest.mark.django_db

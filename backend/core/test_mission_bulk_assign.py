@@ -1,5 +1,6 @@
 import pytest
 from django.contrib.gis.geos import Point
+from django.core import mail
 from django.urls import reverse
 from rest_framework import status
 
@@ -88,6 +89,27 @@ class TestBulkCreateTeamOffers:
         assert response.data['member_ids'] == [author.id]
         assert set(response.data['assigned_offer_ids']) == {offer1.id, offer2.id}
         assert response.data['regulateur'] == regulateur.id
+
+    def test_bulk_create_team_notifies_each_offer_author(self, authenticated_client, offer_type):
+        client, _ = _make_admin(authenticated_client)
+        offer1 = Offer.objects.create(
+            title='Offre A', first_name_offer='A', last_name_offer='B',
+            email_offer='a@test.fr', offer_type=offer_type,
+        )
+        offer2 = Offer.objects.create(
+            title='Offre B', first_name_offer='C', last_name_offer='D',
+            email_offer='b@test.fr', offer_type=offer_type,
+        )
+
+        response = client.post(
+            reverse('offer-bulk-create-team'),
+            {'offer_ids': [str(offer1.id), str(offer2.id)], 'team_name': 'Equipe notif'},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert len(mail.outbox) == 2
+        assert {m.to[0] for m in mail.outbox} == {'a@test.fr', 'b@test.fr'}
 
     def test_bulk_create_team_requires_name(self, authenticated_client, offer_type):
         client, _ = _make_admin(authenticated_client)
@@ -241,6 +263,7 @@ class TestBulkAssignTeamInformations:
             assert dossier.equipe_id == team.id
             assert dossier.crise_id == crisis.id
             assert dossier.statut == Dossier.Statut.AFFECTE
+        assert {m.to[0] for m in mail.outbox} == {'a@t.fr', 'c@t.fr'}
 
     def test_bulk_assign_is_noop_for_already_assigned_information(self, authenticated_client, information_type):
         client, _ = _make_admin(authenticated_client)

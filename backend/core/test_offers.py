@@ -1,4 +1,5 @@
 import pytest
+from django.core import mail
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
@@ -92,6 +93,8 @@ class TestAssignOfferToDossier:
         assert DossierParticipant.objects.filter(
             dossier=dossier, utilisateur=offer.author, role=DossierParticipant.Role.OFFRANT
         ).exists()
+        assert len(mail.outbox) == 1
+        assert mail.outbox[0].to == [offer.email_offer]
 
     def test_cannot_assign_authorless_offer_to_dossier(self, local_authority_client, offer_type):
         client, _ = local_authority_client

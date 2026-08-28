@@ -246,7 +246,7 @@ DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'no-reply@assista-cris
 
 SERVER_URL = os.environ.get(
     "SERVER_URL",
-    "http://172.16.1.113:4200"
+    "https://www.assista-crise.fr"
 )
 
 # Durée de conservation (en jours) des lignes de la main courante (AuditLog),
