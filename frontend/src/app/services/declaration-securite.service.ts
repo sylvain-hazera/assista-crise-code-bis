@@ -23,4 +23,10 @@ export class DeclarationSecuriteService {
   vueMairie(): Observable<DeclarationSecurite[]> {
     return this.http.get<DeclarationSecurite[]>(`${this.url}/vue_mairie/`);
   }
+
+  /** GET /api/declarations-securite/mes_declarations/ — déclarations de l'utilisateur
+   * connecté lui-même, accessible sans droits institutionnels. */
+  mesDeclarations(): Observable<DeclarationSecurite[]> {
+    return this.http.get<DeclarationSecurite[]>(`${this.url}/mes_declarations/`);
+  }
 }

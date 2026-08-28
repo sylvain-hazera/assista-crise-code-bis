@@ -3845,6 +3845,8 @@ class DeclarationSecuriteViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
     def get_permissions(self):
         if self.action == 'create':
             return [AllowAny()]
+        if self.action == 'mes_declarations':
+            return [permissions.IsAuthenticated()]
         return [IsInstitutionalActor()]
 
     def perform_create(self, serializer):
@@ -3902,6 +3904,16 @@ class DeclarationSecuriteViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
             if d.centre_accueil.location and commune_code_from_point(d.centre_accueil.location) == commune_code
         ]
         declarations = self.get_queryset().filter(id__in=matching_ids)
+        return Response(self.get_serializer(declarations, many=True).data)
+
+    @action(detail=False, methods=["get"], permission_classes=[permissions.IsAuthenticated])
+    def mes_declarations(self, request):
+        """Déclarations enregistrées par l'utilisateur connecté lui-même — accessible à
+        n'importe quel compte authentifié, pas seulement aux acteurs institutionnels
+        (symétrique à Offer/Request/Crisis my_requests-like `?auteur_email=`) : quelqu'un qui
+        remplit le formulaire public doit pouvoir retrouver sa propre déclaration, même sans
+        droits institutionnels pour voir celles des autres."""
+        declarations = self.get_queryset().filter(declare_par=request.user)
         return Response(self.get_serializer(declarations, many=True).data)
 
 

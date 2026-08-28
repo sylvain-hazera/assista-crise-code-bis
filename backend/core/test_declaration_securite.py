@@ -215,6 +215,42 @@ class TestDeclarationSecuriteListPermissions:
 
 
 @pytest.mark.django_db
+class TestMesDeclarations:
+    """Un utilisateur connecté doit pouvoir retrouver ses propres déclarations, même sans
+    droits institutionnels — contrairement à la liste générale (réservée, voir
+    TestDeclarationSecuriteListPermissions) ou à vue_mairie (réservée + filtrée commune)."""
+
+    def test_simple_user_sees_only_their_own_declarations(self, authenticated_client):
+        client, user = authenticated_client
+        other = User.objects.create_user(username='autre@test.fr', email='autre@test.fr', password='Test1234!')
+
+        api = client
+        api.force_authenticate(user=user)
+        r1 = api.post(reverse('declarationsecurite-list'), {
+            'type_declarant': 'PERSONNE_SEULE', 'nom_referent': 'Moi', 'prenom_referent': 'A',
+            'contact_referent': 'a@test.fr', 'nombre_adultes': 1, 'nombre_enfants': 0, 'situation': 'RELOGE',
+        }, format='json')
+        assert r1.status_code == status.HTTP_201_CREATED
+
+        api.force_authenticate(user=other)
+        api.post(reverse('declarationsecurite-list'), {
+            'type_declarant': 'PERSONNE_SEULE', 'nom_referent': 'Autrui', 'prenom_referent': 'B',
+            'contact_referent': 'b@test.fr', 'nombre_adultes': 1, 'nombre_enfants': 0, 'situation': 'RELOGE',
+        }, format='json')
+
+        api.force_authenticate(user=user)
+        response = api.get(reverse('declarationsecurite-mes-declarations'))
+
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data) == 1
+        assert response.data[0]['nom_referent'] == 'Moi'
+
+    def test_requires_authentication(self, api_client):
+        response = api_client.get(reverse('declarationsecurite-mes-declarations'))
+        assert response.status_code in (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN)
+
+
+@pytest.mark.django_db
 class TestCentresAccueilPublic:
     """Endpoint public (formulaire "je suis en sécurité") listant les centres d'accueil
     (PointType HEBERGEMENT) actifs d'une crise, à champs restreints."""

@@ -1,4 +1,5 @@
 export type TypeDeclarant = 'PERSONNE_SEULE' | 'FAMILLE' | 'GROUPE';
+export type SituationDeclarant = 'RELOGE' | 'EN_CENTRE' | 'BESOIN_CENTRE' | 'HORS_ZONE';
 
 export interface DeclarationSecurite {
   id?: string;
@@ -6,6 +7,8 @@ export interface DeclarationSecurite {
   crise_nom?: string | null;
   type_declarant: TypeDeclarant;
   type_declarant_libelle?: string;
+  situation?: SituationDeclarant;
+  situation_libelle?: string;
   nom_referent: string;
   prenom_referent: string;
   contact_referent: string;

@@ -1,0 +1,45 @@
+<div class="page-container">
+  <div class="page-wrapper">
+    <a class="back-link" (click)="goBack()">
+      <span class="material-icons">arrow_back</span> retour
+    </a>
+
+    <div class="divider-header">
+      <span class="line"></span>
+      <h1 class="page-title">Mes déclarations "je suis en sécurité"</h1>
+      <span class="line"></span>
+    </div>
+
+    @if (isLoading) {
+      <p class="section-description">Chargement…</p>
+    } @else if (errorMessage) {
+      <p class="section-description">{{ errorMessage }}</p>
+    } @else if (declarations.length === 0) {
+      <div class="empty-state">
+        <span class="material-icons">verified_user</span>
+        <p>Vous n'avez encore fait aucune déclaration.</p>
+        <button type="button" class="btn-submit" (click)="goToDeclare()">Déclarer que je suis en sécurité</button>
+      </div>
+    } @else {
+      <div class="declaration-list">
+        @for (d of declarations; track d.id) {
+          <div class="declaration-card">
+            <div class="declaration-card-header">
+              <span class="material-icons">check_circle</span>
+              <strong>{{ d.situation_libelle }}</strong>
+              <span class="declaration-date">{{ fmtDate(d.date_declaration) }}</span>
+            </div>
+            <div class="declaration-card-body">
+              <span>{{ d.type_declarant_libelle }} · {{ headcount(d) }} personne(s)</span>
+              @if (d.crise_nom) { <span>Crise : {{ d.crise_nom }}</span> }
+              @if (d.centre_accueil_nom) { <span>Centre : {{ d.centre_accueil_nom }}</span> }
+              @if (d.regime_alimentaire_specifique) { <span class="regime-badge">Régime alimentaire spécifique signalé</span> }
+            </div>
+          </div>
+        }
+      </div>
+
+      <button type="button" class="btn-submit btn-new" (click)="goToDeclare()">Faire une nouvelle déclaration</button>
+    }
+  </div>
+</div>

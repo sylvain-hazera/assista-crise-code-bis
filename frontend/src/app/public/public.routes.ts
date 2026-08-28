@@ -50,6 +50,12 @@ export const PUBLIC_ROUTES: Routes = [
           .then(m => m.SettingsComponent)
       },
       {
+        path: 'mes-declarations-securite',
+        canActivate: [authGuard],
+        loadComponent: () => import('./mes-declarations-securite/mes-declarations-securite.component')
+          .then(m => m.MesDeclarationsSecuriteComponent)
+      },
+      {
         path: 'help-proposal',
         loadComponent: () => import('./forms/propose-help-form/propose-help-form.component')
           .then(m => m.ProposeHelpFormComponent)

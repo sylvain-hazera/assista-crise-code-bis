@@ -55,6 +55,11 @@ export class HeaderComponent {
     this.closeAllMenus();
   }
 
+  goToMesDeclarations() {
+    this.router.navigate(['/mes-declarations-securite']);
+    this.closeAllMenus();
+  }
+
   goToProfile() {
     if(this.isAdmin) {
       this.router.navigate(['/admin/dashboard']);
