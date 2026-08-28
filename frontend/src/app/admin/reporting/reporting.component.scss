@@ -571,6 +571,11 @@ table {
   div { display: flex; flex-direction: column; gap: .1rem; }
   label { font-size: .73rem; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); }
   span  { font-size: .87rem; font-weight: 500; }
+
+  .address-approx {
+    font-size: .8rem; font-weight: 400; color: var(--muted);
+    &.muted { font-style: italic; }
+  }
 }
 
 .description-text {

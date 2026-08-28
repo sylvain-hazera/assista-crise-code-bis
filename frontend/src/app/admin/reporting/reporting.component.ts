@@ -117,6 +117,7 @@ export class ReportingComponent implements OnInit, OnDestroy {
   showStatusModal = false;
   selectedRow: ReportRow | null = null;
   selectedRowAddress: string | null = null;
+  isLoadingAddress = false;
   newStatus:   Status | ''      = '';
 
   // ── Sélection multiple + actions groupées ───────────────────
@@ -451,12 +452,14 @@ export class ReportingComponent implements OnInit, OnDestroy {
     // plein droit — autant afficher l'adresse la plus précise possible (les services ont
     // besoin de s'y rendre), pas juste la commune.
     if (row.latitude != null && row.longitude != null) {
+      this.isLoadingAddress = true;
       this.geolocationService.reverseGeocode(row.latitude, row.longitude).subscribe({
         next: (res) => {
           const props = res?.features?.[0]?.properties;
           this.selectedRowAddress = props?.label ?? null;
+          this.isLoadingAddress = false;
         },
-        error: () => { this.selectedRowAddress = null; },
+        error: () => { this.selectedRowAddress = null; this.isLoadingAddress = false; },
       });
     }
 
@@ -912,6 +915,7 @@ export class ReportingComponent implements OnInit, OnDestroy {
     this.showDetailModal = this.showDeleteModal = this.showStatusModal = false;
     this.selectedRow = null;
     this.selectedRowAddress = null;
+    this.isLoadingAddress = false;
     this.selectedOfferDispos = [];
     this.assignTeamId = null;
     this.assignDossierId = null;

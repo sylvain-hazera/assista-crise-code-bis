@@ -380,10 +380,28 @@
             <div class="detail-item">
               <span class="material-icons">place</span>
               <div>
-                <label>Adresse</label>
-                <span>{{ selectedRowAddress || (selectedRow.latitude!.toFixed(5) + ', ' + selectedRow.longitude!.toFixed(5)) }}</span>
+                <label>Coordonnées GPS</label>
+                <span>{{ selectedRow.latitude!.toFixed(5) }}, {{ selectedRow.longitude!.toFixed(5) }}</span>
+                @if (selectedRowAddress) {
+                  <span class="address-approx">{{ selectedRowAddress }}</span>
+                } @else if (isLoadingAddress) {
+                  <span class="address-approx muted">Recherche de l'adresse approximative…</span>
+                } @else {
+                  <span class="address-approx muted">Adresse approximative indisponible</span>
+                }
               </div>
             </div>
+            <app-minimap
+              [latitude]="selectedRow.latitude!"
+              [longitude]="selectedRow.longitude!"
+              [azimuth]="isInfo(selectedRow._raw) ? (selectedRow._raw.azimuth ?? null) : null"
+            ></app-minimap>
+            @if (isInfo(selectedRow._raw) && selectedRow._raw.azimuth != null) {
+              <p class="minimap-hint">
+                <span class="material-icons">explore</span>
+                Flèche verte : direction visée par l'appareil photo au moment de la prise de vue.
+              </p>
+            }
           </div>
         }
 
@@ -772,7 +790,9 @@
   </div>
 }
 
-<!-- ══ VISIONNEUSE PHOTO PLEIN ÉCRAN + MINIMAP DE LOCALISATION ═══════════════ -->
+<!-- ══ VISIONNEUSE PHOTO PLEIN ÉCRAN ══════════════════════════════════════════
+     (la minimap de localisation est affichée dans la vue de détail elle-même,
+     pas ici, pour être visible sans avoir à cliquer sur la photo) -->
 @if (showImageLightbox && selectedRow) {
   <div class="modal-overlay lightbox-overlay" (click)="closeImageLightbox()">
     <div class="lightbox-content" (click)="$event.stopPropagation()">
@@ -782,22 +802,6 @@
       <div class="lightbox-image-wrap">
         <img [src]="lightboxUrl" [alt]="selectedRow.title" />
       </div>
-      @if (selectedRow.latitude !== null && selectedRow.longitude !== null) {
-        <div class="lightbox-minimap">
-          <h3>Localisation de l'événement</h3>
-          <app-minimap
-            [latitude]="selectedRow.latitude!"
-            [longitude]="selectedRow.longitude!"
-            [azimuth]="isInfo(selectedRow._raw) ? (selectedRow._raw.azimuth ?? null) : null"
-          ></app-minimap>
-          @if (isInfo(selectedRow._raw) && selectedRow._raw.azimuth != null) {
-            <p class="minimap-hint">
-              <span class="material-icons">explore</span>
-              Flèche verte : direction visée par l'appareil photo au moment de la prise de vue.
-            </p>
-          }
-        </div>
-      }
     </div>
   </div>
 }
