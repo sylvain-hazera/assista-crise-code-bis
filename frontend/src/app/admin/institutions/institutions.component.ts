@@ -127,6 +127,10 @@ export class InstitutionsComponent implements OnInit {
       utilisateur: [null, Validators.required],
       fonction: ['', Validators.required],
       contact_principal: [false],
+      // Optionnels : renseignés ici, ils créent en plus une affectation rôle/thème pour
+      // éviter d'avoir à ressaisir le même utilisateur dans l'onglet "Régulateurs / thèmes".
+      role: [null],
+      competence: [null],
     });
 
     this.domaineForm = this.fb.group({
@@ -258,17 +262,40 @@ export class InstitutionsComponent implements OnInit {
 
   submitContact(): void {
     if (!this.selectedInstitution?.id || this.contactForm.invalid) { this.contactForm.markAllAsTouched(); return; }
-    const payload = { ...this.contactForm.value, institution: this.selectedInstitution.id, actif: true };
-    this.contactService.create(payload).subscribe({
+    const institution = this.selectedInstitution.id;
+    const { utilisateur, fonction, contact_principal, role, competence } = this.contactForm.value;
+
+    this.contactService.create({ utilisateur, fonction, contact_principal, institution, actif: true }).subscribe({
       next: () => {
         this.reloadContacts();
-        this.showSuccess('Contact ajouté.');
+
+        // Rôle optionnel : évite de ressaisir le même utilisateur dans l'onglet
+        // "Régulateurs / thèmes" pour lui donner un rôle opérationnel dans la foulée.
+        if (role) {
+          this.affectationRoleService.create({ utilisateur, role, competence, institution, actif: true }).subscribe({
+            next: () => {
+              this.reloadAffectationsRoles();
+              this.showSuccess('Contact et affectation ajoutés.');
+            },
+            error: (err) => this.showError("Contact ajouté, mais l'affectation du rôle a échoué.", err),
+          });
+        } else {
+          this.showSuccess('Contact ajouté.');
+        }
+
         this.contactForm.reset({ contact_principal: false });
         this.contactUserQuery = '';
         this.showContactForm = false;
       },
       error: (err) => this.showError("Erreur lors de l'ajout du contact.", err),
     });
+  }
+
+  onContactCompetenceSearchSelected(item: Competence): void {
+    if (!this.competences.find(c => c.id === item.id)) {
+      this.competences = [...this.competences, item];
+    }
+    this.contactForm.get('competence')?.setValue(item.id);
   }
 
   isContactFieldInvalid(field: string): boolean {

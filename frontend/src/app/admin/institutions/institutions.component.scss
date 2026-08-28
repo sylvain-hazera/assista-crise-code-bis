@@ -269,6 +269,16 @@
     }
   }
 
+  .inline-form-sep {
+    flex-basis: 100%;
+    height: 0;
+  }
+
+  .full-width {
+    flex-basis: 100%;
+    margin: 0;
+  }
+
   .error-message {
     flex-basis: 100%;
     color: #dc2626;

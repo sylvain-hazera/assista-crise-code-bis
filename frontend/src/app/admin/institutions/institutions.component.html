@@ -305,6 +305,28 @@
                   [class.invalid]="isContactFieldInvalid('fonction')"
                 />
                 <label class="checkbox-row"><input type="checkbox" formControlName="contact_principal"/> Principal</label>
+
+                <span class="inline-form-sep"></span>
+
+                <select formControlName="role">
+                  <option [ngValue]="null">— Rôle opérationnel (optionnel) —</option>
+                  @for (r of roles; track r.id) {
+                    <option [ngValue]="r.id">{{ r.libelle }}</option>
+                  }
+                </select>
+                <app-tag-search-input
+                  placeholder="Chercher ou créer un thème..."
+                  [searchFn]="competenceSearchFn"
+                  [createFn]="competenceCreateFn"
+                  (itemSelected)="onContactCompetenceSearchSelected($event)">
+                </app-tag-search-input>
+                <select formControlName="competence">
+                  <option [ngValue]="null">— Thème (optionnel) —</option>
+                  @for (c of competences; track c.id) {
+                    <option [ngValue]="c.id">{{ c.nom }}</option>
+                  }
+                </select>
+
                 <button class="btn-primary sm" type="submit">Ajouter</button>
                 <button class="btn-secondary sm" type="button" (click)="showContactForm = false">Annuler</button>
                 @if (isContactFieldInvalid('fonction')) {
@@ -313,6 +335,7 @@
                 @if (contactForm.get('utilisateur')?.invalid && contactForm.get('utilisateur')?.touched) {
                   <div class="error-message">Sélectionnez un utilisateur dans la liste.</div>
                 }
+                <p class="hint full-width">Rôle et thème sont optionnels : les renseigner crée aussi l'affectation correspondante (visible dans l'onglet "Régulateurs / thèmes"), en un seul ajout.</p>
               </form>
             }
           }
