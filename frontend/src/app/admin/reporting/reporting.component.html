@@ -364,6 +364,15 @@
           </div>
         }
 
+        <!-- Description (signalement divers : pas de champ description séparé, le titre
+             porte l'information complète — le titre de l'en-tête de la modale est tronqué) -->
+        @if (isInfo(selectedRow._raw)) {
+          <div class="detail-section">
+            <h3>Description</h3>
+            <p class="description-text">{{ selectedRow.title }}</p>
+          </div>
+        }
+
         <!-- Location -->
         @if (selectedRow.latitude !== null) {
           <div class="detail-section">
