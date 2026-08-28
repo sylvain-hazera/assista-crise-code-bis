@@ -1,0 +1,26 @@
+import { Injectable } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { Observable } from 'rxjs';
+import { environment } from '../../environments/environment';
+import { DeclarationSecurite } from '../shared/models/declaration-securite.model';
+
+@Injectable({ providedIn: 'root' })
+export class DeclarationSecuriteService {
+  private url = `${environment.apiUrl}/declarations-securite`;
+
+  constructor(private http: HttpClient) {}
+
+  getAll(params?: Record<string, string>): Observable<DeclarationSecurite[]> {
+    return this.http.get<DeclarationSecurite[]>(`${this.url}/`, { params });
+  }
+
+  create(data: Partial<DeclarationSecurite>): Observable<DeclarationSecurite> {
+    return this.http.post<DeclarationSecurite>(`${this.url}/`, data);
+  }
+
+  /** GET /api/declarations-securite/vue_mairie/ — déclarations liées à un centre d'accueil
+   * situé dans la commune de l'institution de l'utilisateur appelant. */
+  vueMairie(): Observable<DeclarationSecurite[]> {
+    return this.http.get<DeclarationSecurite[]>(`${this.url}/vue_mairie/`);
+  }
+}

@@ -199,6 +199,35 @@
   }
 }
 
+.type-declarant-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+
+  .type-declarant-option {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.95rem;
+    color: #333;
+    cursor: pointer;
+
+    input[type="radio"] {
+      width: 18px;
+      height: 18px;
+      accent-color: #4CAF50;
+      cursor: pointer;
+    }
+  }
+}
+
+.headcount-group {
+  display: flex;
+  gap: 1.5rem;
+
+  > div { flex: 1; }
+}
+
 .checkbox-group {
   margin-top: 1rem;
 

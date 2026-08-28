@@ -4,9 +4,11 @@ import { forkJoin } from 'rxjs';
 
 import { RequestService } from '../../services/request.service';
 import { InformationService } from '../../services/information.service';
+import { DeclarationSecuriteService } from '../../services/declaration-securite.service';
 
 import { Request } from '../../shared/models/request.model';
 import { Information } from '../../shared/models/information.model';
+import { DeclarationSecurite } from '../../shared/models/declaration-securite.model';
 import { Status } from '../../shared/models/status.model';
 
 @Component({
@@ -20,6 +22,7 @@ export class VueMairieComponent implements OnInit {
 
   demandes: Request[] = [];
   informations: Information[] = [];
+  declarationsSecurite: DeclarationSecurite[] = [];
 
   isLoading = true;
   errorMessage = '';
@@ -29,6 +32,7 @@ export class VueMairieComponent implements OnInit {
   constructor(
     private requestService: RequestService,
     private informationService: InformationService,
+    private declarationSecuriteService: DeclarationSecuriteService,
   ) {}
 
   ngOnInit(): void {
@@ -41,10 +45,12 @@ export class VueMairieComponent implements OnInit {
     forkJoin({
       demandes: this.requestService.vueMairie(),
       informations: this.informationService.vueMairie(),
+      declarationsSecurite: this.declarationSecuriteService.vueMairie(),
     }).subscribe({
-      next: ({ demandes, informations }) => {
+      next: ({ demandes, informations, declarationsSecurite }) => {
         this.demandes = demandes;
         this.informations = informations;
+        this.declarationsSecurite = declarationsSecurite;
         this.isLoading = false;
       },
       error: (err) => {
@@ -54,16 +60,8 @@ export class VueMairieComponent implements OnInit {
     });
   }
 
-  // Heuristique temporaire : le formulaire public "Je suis en sécurité" pose toujours ce
-  // titre exact (other-declaration-form.component.ts, submitDeclareSafeForm) — pas encore de
-  // champ/type dédié. À remplacer quand le flux "je suis ok" (phase 4) posera une vraie
-  // distinction (ex: un InformationType ou un booléen dédié) au lieu de ce matching sur titre.
-  get signalementsJeSuisOk(): Information[] {
-    return this.informations.filter(i => i.title === 'Je suis en sécurité');
-  }
-
-  get autresSignalements(): Information[] {
-    return this.informations.filter(i => i.title !== 'Je suis en sécurité');
+  headcount(d: DeclarationSecurite): number {
+    return d.nombre_adultes + d.nombre_enfants;
   }
 
   statusLabel(s: Status): string {

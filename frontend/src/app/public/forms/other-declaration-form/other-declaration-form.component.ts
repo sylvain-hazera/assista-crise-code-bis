@@ -2,6 +2,7 @@ import { Component, OnInit } from '@angular/core';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators, FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
 import { InformationService } from '../../../services/information.service';
+import { DeclarationSecuriteService } from '../../../services/declaration-securite.service';
 import { Router } from '@angular/router';
 import { CrisisService } from '../../../services/crisis.service';
 import { Crisis } from '../../../shared/models/crisis.model';
@@ -35,12 +36,7 @@ export class OtherDeclarationFormComponent implements OnInit {
   latitude: number | null = null;
   longitude: number | null = null;
 
-  selectedAddressSafe: AddressResult | null = null;
   selectedAddressOther: AddressResult | null = null;
-
-  onAddressSelectedSafe(addr: AddressResult | null): void {
-    this.selectedAddressSafe = addr;
-  }
 
   onAddressSelectedOther(addr: AddressResult | null): void {
     this.selectedAddressOther = addr;
@@ -65,26 +61,15 @@ export class OtherDeclarationFormComponent implements OnInit {
     private formBuilder: FormBuilder,
     private router: Router,
     private informationService: InformationService,
+    private declarationSecuriteService: DeclarationSecuriteService,
     private crisisService: CrisisService,
     private authService: AuthService,
     private geolocationService: GeolocationService
   ) {}
 
-  /** Type utilisé pour "Je suis en sécurité" — ce flux ne demande pas à l'utilisateur de
-   * choisir un type, contrairement à "Autre déclaration". Résolu par son nom plutôt que par
-   * position dans la liste (l'ordre de retour de l'API n'est pas garanti). */
-  private safeInformationType: InformationType | null = null;
-
   ngOnInit(): void {
     this.initForm();
     this.loadActiveCrises();
-    this.informationService.getTypes().subscribe({
-      next: types => {
-        this.safeInformationType =
-          types.find(t => t.type.toLowerCase() === 'information utile') ?? types[0] ?? null;
-      },
-      error: () => {}
-    });
   }
 
   informationTypeSearchFn = (q: string) => this.informationService.searchTypes(q);
@@ -129,12 +114,13 @@ export class OtherDeclarationFormComponent implements OnInit {
   initForm(): void {
     this.declareSafeForm = this.formBuilder.group({
       crisisId: [''],
+      typeDeclarant: ['PERSONNE_SEULE', Validators.required],
       lastName: ['', Validators.required],
       firstName: ['', Validators.required],
       phoneNumber: ['', [Validators.required, Validators.pattern(/^\+?\d{10,15}$/)]],
       email: ['', [Validators.required, Validators.email]],
-      addressVisible: [false],
-      image: [null]
+      nombreAdultes: [1, [Validators.required, Validators.min(1)]],
+      nombreEnfants: [0, [Validators.required, Validators.min(0)]],
     });
 
     this.otherInformationForm = this.formBuilder.group({
@@ -224,9 +210,7 @@ export class OtherDeclarationFormComponent implements OnInit {
   }
 
   onSubmit(): void {
-    if (this.state === StateForm.DeclareSafe && this.declareSafeForm.valid && this.selectedAddressSafe) {
-      this.latitude = this.selectedAddressSafe.latitude;
-      this.longitude = this.selectedAddressSafe.longitude;
+    if (this.state === StateForm.DeclareSafe && this.declareSafeForm.valid) {
       this.submitDeclareSafeForm();
     } else if (
       this.state === StateForm.OtherDeclaration &&
@@ -248,10 +232,9 @@ export class OtherDeclarationFormComponent implements OnInit {
       Object.keys(form.controls).forEach(key => {
         form.get(key)?.markAsTouched();
       });
-      const hasAddress = this.state === StateForm.DeclareSafe ? this.selectedAddressSafe : this.hasLocationForOther();
       if (this.state === StateForm.OtherDeclaration && !this.selectedInformationType) {
         alert('Merci de sélectionner ou créer un type de signalement.');
-      } else if (!hasAddress) {
+      } else if (this.state === StateForm.OtherDeclaration && !this.hasLocationForOther()) {
         alert('Veuillez sélectionner une adresse dans la liste proposée, ou prendre une photo géolocalisée.');
       } else {
         alert('Veuillez remplir tous les champs obligatoires');
@@ -260,51 +243,32 @@ export class OtherDeclarationFormComponent implements OnInit {
   }
 
   private submitDeclareSafeForm(): void {
-    const formData = new FormData();
-
-    formData.append('title', 'Je suis en sécurité');
-    formData.append('first_name_information', this.declareSafeForm.get('firstName')?.value);
-    formData.append('last_name_information', this.declareSafeForm.get('lastName')?.value);
-    formData.append('email_information', this.declareSafeForm.get('email')?.value);
-    formData.append('phone_information', this.declareSafeForm.get('phoneNumber')?.value);
-
-    const localisation = {
-      type: 'Point',
-      coordinates: [this.longitude, this.latitude]
+    const typeDeclarant = this.declareSafeForm.get('typeDeclarant')?.value;
+    const payload: any = {
+      type_declarant: typeDeclarant,
+      nom_referent: this.declareSafeForm.get('lastName')?.value,
+      prenom_referent: this.declareSafeForm.get('firstName')?.value,
+      // Email et téléphone renseignés tous les deux dans le formulaire : le contact retenu
+      // pour la déclaration privilégie l'email, le téléphone reste dans le commentaire.
+      contact_referent: this.declareSafeForm.get('email')?.value,
+      nombre_adultes: typeDeclarant === 'PERSONNE_SEULE' ? 1 : this.declareSafeForm.get('nombreAdultes')?.value,
+      nombre_enfants: typeDeclarant === 'PERSONNE_SEULE' ? 0 : this.declareSafeForm.get('nombreEnfants')?.value,
+      commentaire: `Téléphone : ${this.declareSafeForm.get('phoneNumber')?.value}`,
     };
-    formData.append('location', JSON.stringify(localisation));
 
-    if (this.selectedAddressSafe?.citycode) {
-      formData.append('commune_code', this.selectedAddressSafe.citycode);
-    }
-
-    if (this.selectedFile) {
-      formData.append('photo', this.selectedFile);
-    }
-
-    formData.append('status', 'DISPONIBLE');
-    formData.append('author', this.authService.getCurrentUser()?.id!);
-
-    if (!this.safeInformationType) {
-      alert('Type d\'information non trouvé. Veuillez réessayer ou contacter le support.');
-      return;
-    }
-    formData.append('information_type', this.safeInformationType.id);
-
-    // Crise (nullable)
     const crisisId = this.declareSafeForm.get('crisisId')?.value;
     if (crisisId) {
-      formData.append('crisis', crisisId);
+      payload.crise = crisisId;
     }
 
-    this.informationService.create(formData).subscribe({
+    this.declarationSecuriteService.create(payload).subscribe({
       next: (response) => {
-        console.log('Information créée:', response);
-        alert('Votre information a été enregistrée avec succès !');
+        console.log('Déclaration de sécurité créée:', response);
+        alert('Votre déclaration a été enregistrée avec succès !');
         this.router.navigate(['/accueil']);
       },
       error: (err) => {
-        console.error('Erreur création information:', err);
+        console.error('Erreur création déclaration:', err);
         console.error('Détails erreur:', err.error);
         alert('Erreur lors de l\'enregistrement. Veuillez réessayer.');
       }

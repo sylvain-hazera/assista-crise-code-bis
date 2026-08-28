@@ -43,17 +43,24 @@
     </section>
 
     <section class="block">
-      <h2><span class="material-icons">verified_user</span> Je suis en sécurité <span class="count-badge">{{ signalementsJeSuisOk.length }}</span></h2>
-      @if (signalementsJeSuisOk.length === 0) {
+      <h2><span class="material-icons">verified_user</span> Je suis en sécurité <span class="count-badge">{{ declarationsSecurite.length }}</span></h2>
+      <p class="empty-text section-note">Déclarations liées à un centre d'accueil de votre commune — les auto-déclarations sans centre ("je ne suis pas sur place") ne peuvent pas être rattachées à une commune.</p>
+      @if (declarationsSecurite.length === 0) {
         <p class="empty-text">Aucune déclaration "je suis en sécurité" dans votre commune.</p>
       } @else {
         <ul class="safe-list">
-          @for (i of signalementsJeSuisOk; track i.id) {
+          @for (d of declarationsSecurite; track d.id) {
             <li>
               <span class="material-icons">check_circle</span>
               <div>
-                <strong>{{ i.first_name_information }} {{ i.last_name_information }}</strong>
-                <span class="contact-sub">{{ i.email_information }} · {{ i.phone_information }} · {{ fmtDate(i.created_at) }}</span>
+                <strong>{{ d.prenom_referent }} {{ d.nom_referent }}</strong>
+                <span class="contact-sub">
+                  {{ d.type_declarant_libelle }} ({{ headcount(d) }} pers.) · {{ d.contact_referent }}
+                  · {{ d.centre_accueil_nom }} · {{ fmtDate(d.date_declaration ?? null) }}
+                </span>
+                @if (d.regime_alimentaire_specifique) {
+                  <span class="regime-badge">Régime alimentaire spécifique</span>
+                }
               </div>
             </li>
           }
@@ -62,14 +69,14 @@
     </section>
 
     <section class="block">
-      <h2><span class="material-icons">flag</span> Autres signalements <span class="count-badge">{{ autresSignalements.length }}</span></h2>
-      @if (autresSignalements.length === 0) {
-        <p class="empty-text">Aucun autre signalement dans votre commune.</p>
+      <h2><span class="material-icons">flag</span> Signalements <span class="count-badge">{{ informations.length }}</span></h2>
+      @if (informations.length === 0) {
+        <p class="empty-text">Aucun signalement dans votre commune.</p>
       } @else {
         <table class="data-table">
           <thead><tr><th>Titre</th><th>Contact</th><th>Statut</th><th>Date</th></tr></thead>
           <tbody>
-            @for (i of autresSignalements; track i.id) {
+            @for (i of informations; track i.id) {
               <tr>
                 <td class="cell-titre">{{ i.title }}</td>
                 <td>

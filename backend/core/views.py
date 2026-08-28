@@ -39,6 +39,7 @@ from .permissions import (
     IsInstitutionalActor, IsAdministrator, INSTITUTIONAL_TYPES, user_can_view_photo,
     get_active_environment, get_effective_role, mask_email, mask_phone,
 )
+from .geo_lookup import commune_code_from_point
 
 
 GPS_IFD_TAG = 0x8825  # PIL.ExifTags.IFD.GPSInfo
@@ -101,7 +102,7 @@ from .models import (
     ImplicationInstitution,
     TypeImplication,
     User, Crisis, Request, Offer, Information, DisponibiliteOffre, DisponibilitePointEquipe, MaterielPoint,
-    MaterielCatalogue, NiveauStock, RegistrePresence,
+    MaterielCatalogue, NiveauStock, RegistrePresence, TypePersonneAccueillie, DeclarationSecurite,
     AffectationPointBenevole, StatutAffectation,
     RecherchePersonne, RecherchePersonneCommentaire, Besoin, Notification, DossierParticipant,
     RecherchePersonneCommentairePhoto, RecherchePersonneLecture, RecherchePersonneLectureHistorique,
@@ -236,6 +237,7 @@ from .serializers import (
     MaterielPointSerializer,
     MaterielCatalogueSerializer,
     RegistrePresenceSerializer,
+    DeclarationSecuriteSerializer,
     AffectationPointBenevoleSerializer,
     InformationSerializer,
     RequestTypeSerializer,
@@ -3773,6 +3775,102 @@ class RegistrePresenceViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewS
             commentaire=f"Sortie « {entree.get_type_personne_display()} » du point {entree.point.nom}",
         )
         return Response(RegistrePresenceSerializer(entree).data)
+
+
+class DeclarationSecuriteViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
+    """"Je suis en sécurité" : création publique ouverte à tous (auto-déclaration, ex: "je ne
+    suis pas sur place, ne me cherchez pas") ou par un opérateur du centre d'accueil concerné
+    (recensement à l'entrée, quand `centre_accueil` est renseigné — dans ce cas seul l'accès
+    ci-dessous, réservé à l'équipe du centre, est autorisé). Lecture/modification/suppression
+    réservées aux acteurs institutionnels : ce sont des coordonnées personnelles, pas un
+    contenu public à lister librement."""
+
+    queryset = DeclarationSecurite.objects.select_related('crise', 'centre_accueil', 'declare_par').all()
+    serializer_class = DeclarationSecuriteSerializer
+
+    def get_permissions(self):
+        if self.action == 'create':
+            return [AllowAny()]
+        return [IsInstitutionalActor()]
+
+    def _can_manage_centre(self, request, centre):
+        user = request.user
+        if get_effective_role(request) == UserRole.ADMINISTRATOR:
+            return True
+        if centre.responsable_id == user.id:
+            return True
+        if centre.equipe:
+            if centre.equipe.leader_id == user.id:
+                return True
+            if centre.equipe.members.filter(id=user.id).exists():
+                return True
+        return False
+
+    def perform_create(self, serializer):
+        centre = serializer.validated_data.get('centre_accueil')
+        if centre is not None:
+            # Une entrée en centre d'accueil n'est jamais une auto-déclaration anonyme : c'est
+            # forcément un recensement fait par l'équipe du centre (ou un admin).
+            if not self.request.user.is_authenticated or not self._can_manage_centre(self.request, centre):
+                raise PermissionDenied(
+                    "Seul le responsable, un membre de l'équipe du centre, ou un administrateur "
+                    "peut enregistrer une entrée en centre d'accueil."
+                )
+
+        declare_par = self.request.user if self.request.user.is_authenticated else None
+        declaration = serializer.save(
+            declare_par=declare_par,
+            environment=get_active_environment(self.request),
+        )
+
+        if centre is not None:
+            commentaire = declaration.commentaire or ''
+            if declaration.regime_alimentaire_specifique:
+                avertissement = "⚠ Régime alimentaire spécifique déclaré — se rapprocher du déclarant."
+                commentaire = f"{commentaire}\n{avertissement}" if commentaire else avertissement
+            registre = RegistrePresence.objects.create(
+                point=centre,
+                type_personne=TypePersonneAccueillie.EVACUE,
+                nom=f"{declaration.prenom_referent} {declaration.nom_referent}".strip(),
+                nombre=declaration.nombre_adultes + declaration.nombre_enfants,
+                commentaire=commentaire or None,
+                enregistre_par=declare_par,
+                environment=declaration.environment,
+            )
+            declaration.registre_presence = registre
+            declaration.save(update_fields=['registre_presence'])
+
+        audit_log(
+            request=self.request,
+            action_code="CREATION",
+            objet_type="DeclarationSecurite",
+            objet_id=declaration.id,
+            crise=declaration.crise,
+            commentaire=(
+                f"Déclaration de sécurité : {declaration.prenom_referent} {declaration.nom_referent}"
+                + (f" — centre {centre.nom}" if centre else " — auto-déclaration")
+            ),
+        )
+
+    @action(detail=False, methods=["get"], permission_classes=[IsInstitutionalActor])
+    def vue_mairie(self, request):
+        """Déclarations "je suis en sécurité" liées à un centre d'accueil situé dans la
+        commune de l'institution de l'utilisateur appelant — les auto-déclarations sans centre
+        (ex: "je ne suis pas sur place") n'ont pas de localisation exploitable et ne peuvent
+        pas être rattachées à une commune, elles sont donc exclues ici plutôt que remontées à
+        tort. Reverse-géocodage mis en cache (voir geo_lookup), un appel par centre distinct
+        au pire, pas par déclaration."""
+        commune_code = _institution_commune_or_400(request)
+        if isinstance(commune_code, Response):
+            return commune_code
+
+        queryset = self.get_queryset().filter(centre_accueil__isnull=False)
+        matching_ids = [
+            d.id for d in queryset
+            if d.centre_accueil.location and commune_code_from_point(d.centre_accueil.location) == commune_code
+        ]
+        declarations = self.get_queryset().filter(id__in=matching_ids)
+        return Response(self.get_serializer(declarations, many=True).data)
 
 
 class ImplicationInstitutionViewSet(

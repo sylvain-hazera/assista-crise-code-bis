@@ -31,26 +31,40 @@ def commune_from_code(commune_code: str) -> str | None:
     return nom
 
 
-def commune_from_point(point) -> str | None:
-    """Reverse-géocode un point (lon/lat) en nom de commune via api-adresse.data.gouv.fr —
-    même API que GeolocationService.reverseGeocode côté frontend (modal détail), déplacée
-    côté serveur pour être appelable en liste sans multiplier les appels client. Clé de cache
-    arrondie à 4 décimales (~11m) : suffisant pour identifier une commune, réduit le taux de
-    cache-miss par rapport aux coordonnées brutes."""
+def _reverse_geocode_point(point) -> dict:
+    """Reverse-géocode un point (lon/lat) via api-adresse.data.gouv.fr — même API que
+    GeolocationService.reverseGeocode côté frontend (modal détail), déplacée côté serveur pour
+    être appelable en liste sans multiplier les appels client. Clé de cache arrondie à 4
+    décimales (~11m) : suffisant pour identifier une commune, réduit le taux de cache-miss par
+    rapport aux coordonnées brutes. Retourne {"nom": ..., "citycode": ...} (valeurs None si
+    non résolu), les deux mis en cache ensemble pour ne faire qu'un seul appel API."""
     if point is None:
-        return None
+        return {"nom": None, "citycode": None}
     lon, lat = round(point.x, 4), round(point.y, 4)
-    cache_key = f"commune_point:{lat}:{lon}"
+    cache_key = f"commune_point_v2:{lat}:{lon}"
     cached = cache.get(cache_key)
     if cached is not None:
-        return cached or None
+        return cached
     url = f"https://api-adresse.data.gouv.fr/reverse/?lon={lon}&lat={lat}"
     data = _fetch_json(url)
-    nom = None
+    result = {"nom": None, "citycode": None}
     if isinstance(data, dict):
         features = data.get("features") or []
         if features:
             props = features[0].get("properties", {})
-            nom = props.get("city") or props.get("label")
-    cache.set(cache_key, nom or "", CACHE_TTL_SECONDS)
-    return nom
+            result["nom"] = props.get("city") or props.get("label")
+            result["citycode"] = props.get("citycode")
+    cache.set(cache_key, result, CACHE_TTL_SECONDS)
+    return result
+
+
+def commune_from_point(point) -> str | None:
+    """Nom de commune résolu par reverse-géocodage — voir _reverse_geocode_point."""
+    return _reverse_geocode_point(point)["nom"]
+
+
+def commune_code_from_point(point) -> str | None:
+    """Code commune INSEE résolu par reverse-géocodage — voir _reverse_geocode_point. Utilisé
+    pour comparer par code exact (ex: filtrage vue mairie) plutôt que par nom, plus fiable
+    (accents, casse, doublons de noms de commune)."""
+    return _reverse_geocode_point(point)["citycode"]

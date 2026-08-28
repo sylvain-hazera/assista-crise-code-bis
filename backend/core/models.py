@@ -2205,6 +2205,84 @@ class RegistrePresence(EnvironmentScopedModel):
         return f"{self.get_type_personne_display()} ({self.point.nom})"
 
 
+class TypeDeclarant(models.TextChoices):
+    PERSONNE_SEULE = "PERSONNE_SEULE", "Personne seule"
+    FAMILLE = "FAMILLE", "Famille"
+    GROUPE = "GROUPE", "Groupe"
+
+
+class DeclarationSecurite(EnvironmentScopedModel):
+    """"Je suis en sécurité" : une personne (ou un référent pour une famille/un groupe) se
+    déclare en sécurité — soit elle-même (formulaire public, ex: en vacances loin du site,
+    "ne me cherchez pas pour l'évacuation"), soit enregistrée par un opérateur (secrétariat
+    d'un centre d'accueil faisant le recensement à l'entrée). Standalone : ne référence pas
+    obligatoirement un avis de recherche (RecherchePersonne) existant, une auto-déclaration
+    n'a le plus souvent aucun avis de recherche associé.
+
+    Aucune donnée de santé : `regime_alimentaire_specifique` est un simple indicateur binaire
+    (peut couvrir un motif médical comme un diabète, ou un choix personnel comme le
+    végétarisme) — jamais un champ décrivant une pathologie ou une allergie. Ne pas ajouter de
+    champ santé/médical ici sans revalider explicitement avec le porteur du produit."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    crise = models.ForeignKey(
+        "Crisis", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="declarations_securite",
+    )
+
+    type_declarant = models.CharField(
+        max_length=20, choices=TypeDeclarant.choices, default=TypeDeclarant.PERSONNE_SEULE,
+    )
+
+    nom_referent = models.CharField(max_length=80)
+    prenom_referent = models.CharField(max_length=60)
+    contact_referent = models.CharField(
+        max_length=255,
+        help_text="Email ou téléphone de la personne qui se présente/déclare — elle-même pour "
+                   "une personne seule, le référent désigné pour une famille ou un groupe.",
+    )
+
+    nombre_adultes = models.PositiveIntegerField(default=1)
+    nombre_enfants = models.PositiveIntegerField(default=0)
+
+    # Rempli seulement si c'est une entrée en centre d'accueil (pas une simple auto-déclaration
+    # "je ne suis pas sur place") — déclenche la création d'une ligne RegistrePresence associée.
+    centre_accueil = models.ForeignKey(
+        "PointOperationnel", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="declarations_securite",
+    )
+
+    regime_alimentaire_specifique = models.BooleanField(
+        default=False,
+        help_text="Au moins une personne du groupe a un régime alimentaire spécifique "
+                   "(diabétique, végétarien...) — jamais une donnée de santé en soi. Se "
+                   "rapprocher des équipes sur place pour le préciser.",
+    )
+
+    commentaire = models.TextField(blank=True, null=True)
+
+    declare_par = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="declarations_securite_enregistrees",
+        help_text="Opérateur ayant enregistré la déclaration (secrétariat du centre) — vide "
+                   "si auto-déclaration publique par la personne elle-même.",
+    )
+
+    registre_presence = models.OneToOneField(
+        RegistrePresence, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="declaration_securite",
+    )
+
+    date_declaration = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-date_declaration"]
+
+    def __str__(self) -> str:
+        return f"{self.prenom_referent} {self.nom_referent} ({self.get_type_declarant_display()})"
+
+
 class StatutAffectation(models.TextChoices):
     EN_ATTENTE = "EN_ATTENTE", "En attente de confirmation"
     CONFIRME = "CONFIRME", "Confirmé"

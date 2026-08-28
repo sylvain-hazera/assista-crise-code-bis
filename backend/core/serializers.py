@@ -33,6 +33,7 @@ from .models import (
     MaterielPoint,
     MaterielCatalogue,
     RegistrePresence,
+    DeclarationSecurite,
     AffectationPointBenevole,
     Notification,
 )
@@ -525,6 +526,33 @@ class RegistrePresenceSerializer(serializers.ModelSerializer):
         point = attrs.get('point') or (self.instance.point if self.instance else None)
         if point:
             validate_crisis_open(point.crise, field_name="crise")
+        return attrs
+
+
+class DeclarationSecuriteSerializer(serializers.ModelSerializer):
+    """"Je suis en sécurité" — auto-déclaration publique ou recensement opérateur (secrétariat
+    d'un centre d'accueil). Aucun champ santé/médical : voir DeclarationSecurite.__doc__."""
+
+    type_declarant_libelle = serializers.CharField(source="get_type_declarant_display", read_only=True)
+    centre_accueil_nom = serializers.CharField(source="centre_accueil.nom", read_only=True, default=None)
+    crise_nom = serializers.CharField(source="crise.name", read_only=True, default=None)
+    declare_par_nom = serializers.SerializerMethodField()
+
+    class Meta:
+        model = DeclarationSecurite
+        fields = '__all__'
+        read_only_fields = ['id', 'date_declaration', 'declare_par', 'registre_presence']
+
+    def get_declare_par_nom(self, obj):
+        if not obj.declare_par:
+            return None
+        full_name = f"{obj.declare_par.first_name} {obj.declare_par.last_name}".strip()
+        return full_name or obj.declare_par.email
+
+    def validate(self, attrs):
+        crise = attrs.get('crise') or (self.instance.crise if self.instance else None)
+        if crise:
+            validate_crisis_open(crise)
         return attrs
 
 

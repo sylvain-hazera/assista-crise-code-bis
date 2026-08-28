@@ -62,6 +62,41 @@
           </div>
         </div>
 
+        <!-- Type de déclarant -->
+        <div class="form-group">
+          <label class="form-label">Vous déclarez pour <span class="required">*</span></label>
+          <div class="type-declarant-options">
+            <label class="type-declarant-option">
+              <input type="radio" formControlName="typeDeclarant" value="PERSONNE_SEULE"/>
+              Une personne seule (moi)
+            </label>
+            <label class="type-declarant-option">
+              <input type="radio" formControlName="typeDeclarant" value="FAMILLE"/>
+              Une famille
+            </label>
+            <label class="type-declarant-option">
+              <input type="radio" formControlName="typeDeclarant" value="GROUPE"/>
+              Un groupe (colonie, association…)
+            </label>
+          </div>
+        </div>
+
+        @if (declareSafeForm.get('typeDeclarant')?.value !== 'PERSONNE_SEULE') {
+          <div class="form-group headcount-group">
+            <div>
+              <label for="nombreAdultes" class="form-label">Nombre d'adultes</label>
+              <input type="number" id="nombreAdultes" formControlName="nombreAdultes" class="form-input" min="1"/>
+            </div>
+            <div>
+              <label for="nombreEnfants" class="form-label">Nombre d'enfants</label>
+              <input type="number" id="nombreEnfants" formControlName="nombreEnfants" class="form-input" min="0"/>
+            </div>
+          </div>
+          <p class="section-description">
+            Merci d'indiquer vos coordonnées ci-dessous en tant que référent de {{ declareSafeForm.get('typeDeclarant')?.value === 'FAMILLE' ? 'la famille' : 'du groupe' }}.
+          </p>
+        }
+
         <!-- Last Name -->
         <div class="form-group">
           <label for="lastName" class="form-label">
@@ -136,65 +171,10 @@
           }
         </div>
 
-        <!-- Address Section -->
-        <div class="form-section">
-          <h2 class="section-title">
-            Votre adresse actuelle <span class="required">*</span>
-          </h2>
-
-          <div class="form-group">
-            <app-address-picker
-              label="Adresse"
-              [required]="true"
-              (addressSelected)="onAddressSelectedSafe($event)">
-            </app-address-picker>
-            @if (declareSafeForm.touched && !selectedAddressSafe) {
-              <div class="error-message">
-                Veuillez sélectionner une adresse dans la liste proposée
-              </div>
-            }
-          </div>
-
-          <!-- Address Visible Checkbox -->
-          <div class="checkbox-group">
-            <label class="checkbox-label">
-              <input
-                type="checkbox"
-                class="form-checkbox"
-                formControlName="addressVisible">
-              <span class="checkbox-text">
-                J'accepte que mon adresse soit visible
-                <br><small>Elle ne sera visible que par votre mairie et les services de secours — jamais par le grand public.</small>
-              </span>
-            </label>
-          </div>
-        </div>
-
-        <!-- Image Upload Section -->
-        <div class="form-section">
-          <h2 class="section-title">Images liés à l'annonce</h2>
-          <p class="section-description">
-            Ajouter des images pour illustrer le fait que vous êtes en sécurité
-          </p>
-
-          <div class="file-upload-wrapper">
-            <label for="fileUpload" class="file-upload-label">
-              <span class="file-name">{{ fileName }}</span>
-              <span class="material-symbols-outlined">arrow_drop_down</span>
-            </label>
-            <input 
-              type="file" 
-              id="fileUpload" 
-              class="file-input" 
-              accept="image/*"
-              (change)="onFileSelected($event)">
-          </div>
-        </div>
-
         <!-- Submit Button -->
         <div class="form-actions">
-          <button 
-            type="submit" 
+          <button
+            type="submit"
             class="btn-submit"
             [disabled]="!declareSafeForm.valid">
             Enregistrer

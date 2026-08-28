@@ -29,6 +29,7 @@ from .views import (
     MaterielPointViewSet,
     MaterielCatalogueViewSet,
     RegistrePresenceViewSet,
+    DeclarationSecuriteViewSet,
 )
 
 router = DefaultRouter()
@@ -103,6 +104,7 @@ router.register(r'disponibilites-points-equipe', DisponibilitePointEquipeViewSet
 router.register(r'materiels-points', MaterielPointViewSet)
 router.register(r'materiels-catalogue', MaterielCatalogueViewSet)
 router.register(r'registre-presences', RegistrePresenceViewSet)
+router.register(r'declarations-securite', DeclarationSecuriteViewSet)
 router.register(r'informations', InformationViewSet)
 router.register(r'types-demande', RequestTypeViewSet)
 router.register(r'types-offre', OfferTypeViewSet)
