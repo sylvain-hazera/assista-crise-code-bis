@@ -89,6 +89,31 @@
     </div>
   </div>
 
+  <!-- ══ BARRES D'ACTION GROUPÉE ══════════════════════════════════════════════════ -->
+  @if (selectedOfferIds.size > 0) {
+    <div class="bulk-bar">
+      <span class="bulk-count">{{ selectedOfferIds.size }} offre{{ selectedOfferIds.size > 1 ? 's' : '' }} sélectionnée{{ selectedOfferIds.size > 1 ? 's' : '' }}</span>
+      <button class="btn-primary sm" (click)="openBulkOfferModal()">
+        <span class="material-icons">group_add</span> Créer une équipe + assigner un régulateur
+      </button>
+      <button class="btn-ghost sm" (click)="selectedOfferIds.clear()">Annuler la sélection</button>
+    </div>
+  }
+  @if (selectedRequestIds.size > 0) {
+    <div class="bulk-bar">
+      <span class="bulk-count">{{ selectedRequestIds.size }} demande{{ selectedRequestIds.size > 1 ? 's' : '' }} sélectionnée{{ selectedRequestIds.size > 1 ? 's' : '' }}</span>
+      <button class="btn-primary sm" (click)="openBulkRequestModal()">
+        <span class="material-icons">assignment_add</span> Affecter à une mission + une équipe
+      </button>
+      <button class="btn-ghost sm" (click)="selectedRequestIds.clear()">Annuler la sélection</button>
+      @if (!bulkRequestsShareCrisis) {
+        <span class="bulk-warning">
+          <span class="material-icons">warning</span> Ces demandes ne partagent pas toutes la même crise
+        </span>
+      }
+    </div>
+  }
+
   <!-- ══ TABLE ══════════════════════════════════════════════════════════════════ -->
   <div class="table-card">
 
@@ -109,12 +134,25 @@
         <table>
           <thead>
             <tr>
+              <th class="col-select">
+                @if (filterKind === 'Offer') {
+                  <input type="checkbox" [checked]="allPagedOffersSelected" (change)="toggleSelectAllOffers()" title="Tout sélectionner"/>
+                } @else if (filterKind === 'Request') {
+                  <input type="checkbox" [checked]="allPagedRequestsSelected" (change)="toggleSelectAllRequests()" title="Tout sélectionner"/>
+                }
+              </th>
               <th class="col-kind">Type</th>
               <th class="sortable" (click)="setSort('title')">
                 Titre <span class="material-icons si">{{ sortIcon('title') }}</span>
               </th>
               <th class="sortable" (click)="setSort('contact')">
                 Contact <span class="material-icons si">{{ sortIcon('contact') }}</span>
+              </th>
+              <th class="sortable" (click)="setSort('commune')">
+                Où <span class="material-icons si">{{ sortIcon('commune') }}</span>
+              </th>
+              <th class="sortable" (click)="setSort('distanceFromCrisisKm')">
+                Distance crise <span class="material-icons si">{{ sortIcon('distanceFromCrisisKm') }}</span>
               </th>
               <th class="sortable" (click)="setSort('status')">
                 Statut <span class="material-icons si">{{ sortIcon('status') }}</span>
@@ -128,6 +166,11 @@
           <tbody>
             @for (row of pagedRows; track row.id) {
               <tr (click)="openDetail(row)">
+                <td class="col-select" (click)="$event.stopPropagation()">
+                  @if (isRowSelectable(row)) {
+                    <input type="checkbox" [checked]="isRowSelected(row)" (change)="toggleRowSelection(row)"/>
+                  }
+                </td>
                 <td class="col-kind">
                   <span class="kind-badge" [class]="kindClass(row.kind)">
                     <span class="material-icons">{{ kindIcon(row.kind) }}</span>
@@ -152,13 +195,23 @@
                 <td class="cell-contact">
                   @if (row.contact !== '—') {
                     <div class="contact-stack">
-                      <span>{{ row.contact }}</span>
+                      <span>
+                        {{ row.contact }}
+                        @if (row.isSecoursAccount) {
+                          <span class="secours-badge" title="Compte secours organisés">SECOURS</span>
+                        }
+                      </span>
                       <span class="contact-email">{{ row.email }}</span>
+                      @if (row.telephone) {
+                        <span class="contact-phone">{{ row.telephone }}</span>
+                      }
                     </div>
                   } @else {
                     <span class="muted">—</span>
                   }
                 </td>
+                <td class="cell-commune">{{ row.commune || '—' }}</td>
+                <td class="cell-distance">{{ row.distanceFromCrisisKm != null ? (row.distanceFromCrisisKm + ' km') : '—' }}</td>
                 <td>
                   <button
                     class="statut-chip clickable"
@@ -276,7 +329,15 @@
             <div class="detail-grid">
               <div class="detail-item">
                 <span class="material-icons">person</span>
-                <div><label>Nom</label><span>{{ selectedRow.contact }}</span></div>
+                <div>
+                  <label>Nom</label>
+                  <span>
+                    {{ selectedRow.contact }}
+                    @if (selectedRow.isSecoursAccount) {
+                      <span class="secours-badge" title="Compte secours organisés">SECOURS</span>
+                    }
+                  </span>
+                </div>
               </div>
               <div class="detail-item">
                 <span class="material-icons">mail</span>
@@ -509,6 +570,138 @@
         <button class="btn-ghost" (click)="closeAll()">Annuler</button>
         <button class="btn-danger" (click)="confirmDelete()">
           <span class="material-icons">delete_forever</span> Supprimer
+        </button>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- MODAL: ACTION GROUPÉE OFFRES — créer une équipe + assigner un régulateur   -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+@if (showBulkOfferModal) {
+  <div class="modal-overlay" (click)="showBulkOfferModal = false">
+    <div class="modal modal-sm" (click)="$event.stopPropagation()">
+      <div class="modal-header">
+        <h2><span class="material-icons">group_add</span> Créer une équipe</h2>
+        <button class="btn-icon-sm" (click)="showBulkOfferModal = false"><span class="material-icons">close</span></button>
+      </div>
+      <div class="modal-body">
+        <p class="status-target">
+          {{ selectedOfferIds.size }} offre{{ selectedOfferIds.size > 1 ? 's' : '' }} sélectionnée{{ selectedOfferIds.size > 1 ? 's' : '' }} — les auteurs identifiés deviendront membres de l'équipe.
+        </p>
+
+        <div class="form-field">
+          <label>Nom de l'équipe *</label>
+          <input type="text" [(ngModel)]="bulkTeamName" placeholder="Ex: Équipe hébergement nord"/>
+        </div>
+
+        <div class="form-field user-search">
+          <label>Régulateur (optionnel)</label>
+          <input
+            type="text"
+            placeholder="Rechercher un régulateur (nom, prénom, email)"
+            [(ngModel)]="bulkRegulateurQuery"
+            (input)="onBulkRegulateurQueryChange()"
+            (focus)="showBulkRegulateurResults = true"
+            (blur)="hideBulkRegulateurResultsDelayed()"
+          />
+          @if (showBulkRegulateurResults && filteredBulkRegulateurs.length) {
+            <ul class="user-search-results">
+              @for (u of filteredBulkRegulateurs; track u.id) {
+                <li (mousedown)="selectBulkRegulateur(u)">{{ u.first_name }} {{ u.last_name }} ({{ u.username }})</li>
+              }
+            </ul>
+          }
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-ghost" (click)="showBulkOfferModal = false">Annuler</button>
+        <button class="btn-primary" [disabled]="!bulkTeamName.trim()" (click)="submitBulkOfferTeam()">
+          <span class="material-icons">check</span> Créer l'équipe
+        </button>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- MODAL: ACTION GROUPÉE DEMANDES — affecter à une mission + une équipe        -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+@if (showBulkRequestModal) {
+  <div class="modal-overlay" (click)="showBulkRequestModal = false">
+    <div class="modal modal-sm" (click)="$event.stopPropagation()">
+      <div class="modal-header">
+        <h2><span class="material-icons">assignment_add</span> Affecter à une mission</h2>
+        <button class="btn-icon-sm" (click)="showBulkRequestModal = false"><span class="material-icons">close</span></button>
+      </div>
+      <div class="modal-body">
+        <p class="status-target">
+          {{ selectedRequestIds.size }} demande{{ selectedRequestIds.size > 1 ? 's' : '' }} sélectionnée{{ selectedRequestIds.size > 1 ? 's' : '' }}.
+          Un dossier de suivi sera créé pour chacune.
+        </p>
+
+        @if (!bulkRequestsShareCrisis) {
+          <p class="empty-text">Ces demandes ne partagent pas toutes la même crise : impossible de les affecter à une mission commune.</p>
+        } @else {
+          <div class="form-field">
+            <label>Mission</label>
+            <div class="mission-mode-toggle">
+              <label>
+                <input type="radio" name="missionMode" value="existing" [(ngModel)]="bulkMissionMode" [disabled]="existingMissionsForSelection.length === 0"/>
+                Mission existante
+              </label>
+              <label>
+                <input type="radio" name="missionMode" value="new" [(ngModel)]="bulkMissionMode"/>
+                Nouvelle mission
+              </label>
+            </div>
+          </div>
+
+          @if (bulkMissionMode === 'existing') {
+            <div class="form-field">
+              <select [(ngModel)]="bulkMissionId">
+                <option [ngValue]="null">— Choisir une mission —</option>
+                @for (m of existingMissionsForSelection; track m.id) {
+                  <option [ngValue]="m.id">{{ m.titre }}</option>
+                }
+              </select>
+            </div>
+          } @else {
+            <div class="form-field">
+              <label>Titre de la nouvelle mission *</label>
+              <input type="text" [(ngModel)]="bulkNewMissionTitre" placeholder="Ex: Dégager les routes secteur nord"/>
+            </div>
+          }
+
+          <div class="form-field user-search">
+            <label>Équipe *</label>
+            <input
+              type="text"
+              placeholder="Rechercher une équipe par nom"
+              [(ngModel)]="bulkTeamQuery"
+              (input)="onBulkTeamQueryChange()"
+              (focus)="showBulkTeamResults = true"
+              (blur)="hideBulkTeamResultsDelayed()"
+            />
+            @if (showBulkTeamResults && filteredBulkTeams.length) {
+              <ul class="user-search-results">
+                @for (t of filteredBulkTeams; track t.id) {
+                  <li (mousedown)="selectBulkTeam(t)">{{ t.name }}</li>
+                }
+              </ul>
+            }
+          </div>
+        }
+      </div>
+      <div class="modal-footer">
+        <button class="btn-ghost" (click)="showBulkRequestModal = false">Annuler</button>
+        <button
+          class="btn-primary"
+          [disabled]="!bulkRequestsShareCrisis || !bulkTeamIdForRequests || (bulkMissionMode === 'existing' ? !bulkMissionId : !bulkNewMissionTitre.trim())"
+          (click)="submitBulkRequestMission()"
+        >
+          <span class="material-icons">check</span> Affecter
         </button>
       </div>
     </div>

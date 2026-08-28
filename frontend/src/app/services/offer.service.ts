@@ -5,6 +5,7 @@ import { environment } from '../../environments/environment';
 import { Offer, OfferPayload, OfferType } from '../shared/models/offer.model';
 import { geoPointToLatLng, latLngToGeoJson } from '../shared/models/geopoint.model';
 import { StatsResponse } from '../shared/models/api.model';
+import { Team } from '../shared/models/team.model';
 
 @Injectable({
   providedIn: 'root'
@@ -71,6 +72,14 @@ export class OfferService {
     return this.http.post<{ id: string; dossier: string; created: boolean }>(
       `${this.url}/${offerId}/assign_dossier/`, { dossier: dossierId }
     );
+  }
+
+  /** POST /api/offres/bulk_create_team/ — crée une équipe à partir d'une sélection d'offres
+   * (membres = auteurs distincts), lui assigne les offres et un régulateur optionnel. */
+  bulkCreateTeam(offerIds: string[], teamName: string, regulateurId: string | null): Observable<Team> {
+    return this.http.post<Team>(`${this.url}/bulk_create_team/`, {
+      offer_ids: offerIds, team_name: teamName, regulateur: regulateurId,
+    });
   }
 
   private normalize = (o: any): Offer => {

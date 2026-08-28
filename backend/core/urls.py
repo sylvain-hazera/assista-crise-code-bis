@@ -12,7 +12,7 @@ from .views import (
     DeleteRequestView, DeleteOfferView, DeleteInformationView, CompetenceViewSet,
     ConfirmerAffectationBenevoleView,
     RecherchePersonneHistoriqueViewSet, AffectationCompetenceViewSet,
-    DossierViewSet, DocumentViewSet, DossierCommentaireViewSet, DossierHistoriqueViewSet, NotificationViewSet, TeamViewSet,
+    DossierViewSet, MissionViewSet, DocumentViewSet, DossierCommentaireViewSet, DossierHistoriqueViewSet, NotificationViewSet, TeamViewSet,
     InstitutionTypeViewSet,
     InstitutionViewSet,
     ContactInstitutionViewSet,
@@ -111,6 +111,7 @@ router.register(r'teams', TeamViewSet)
 router.register(r'competences',CompetenceViewSet)
 router.register(r'affectations',AffectationCompetenceViewSet)
 router.register(r'dossiers', DossierViewSet)
+router.register(r'missions', MissionViewSet)
 router.register(r'besoins', BesoinViewSet)
 router.register(r'besoins-competences', BesoinCompetenceViewSet)
 router.register(r'request-types-besoins', RequestTypeBesoinViewSet)

@@ -19,6 +19,7 @@ export interface Offer {
   first_name_offer: string;
   last_name_offer: string;
   email_offer: string;
+  phone_offer?: string | null;
   created_at: string;
   expires_at: string | null;
   status: Status;
@@ -28,6 +29,8 @@ export interface Offer {
   author: string | null;
   author_nom?: string | null;
   author_email?: string | null;
+  author_phone?: string | null;
+  author_type?: string | null;
   hebergement_duree?: string | null;
   numero_adeli_rpps?: string | null;
   transport_type?: string | null;
@@ -36,6 +39,8 @@ export interface Offer {
   renouvelable?: boolean;
   competences?: string[];
   competences_libelles?: string[];
+  commune?: string | null;
+  distance_from_crisis_km?: number | null;
 }
 
 export interface OfferPayload {

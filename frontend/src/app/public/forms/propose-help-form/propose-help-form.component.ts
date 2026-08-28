@@ -257,6 +257,7 @@ export class ProposeHelpFormComponent implements OnInit {
       formData.append('first_name_offer', this.informationForm.get('firstName')?.value);
       formData.append('last_name_offer', this.informationForm.get('lastName')?.value);
       formData.append('email_offer', this.informationForm.get('email')?.value);
+      formData.append('phone_offer', this.informationForm.get('phoneNumber')?.value);
 
       const typeId = this.typesOffreMap.get(v.type);
       if (typeId) formData.append('offer_type', typeId);

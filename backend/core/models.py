@@ -420,6 +420,9 @@ class Offer(EnvironmentScopedModel):
     first_name_offer = models.CharField(max_length=60)
     last_name_offer = models.CharField(max_length=80)
     email_offer = models.EmailField()
+    # Nullable côté modèle (pas de backfill à imposer aux offres déjà existantes) mais requis
+    # côté formulaire public pour toute nouvelle soumission, même pattern que User.phone_number.
+    phone_offer = models.CharField(max_length=20, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField(null=True, blank=True)
     deletion_token = models.CharField(max_length=64, unique=True, null=True, blank=True)
@@ -884,6 +887,17 @@ class Dossier(EnvironmentScopedModel):
         related_name="dossiers"
     )
 
+    mission = models.ForeignKey(
+        "Mission",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="dossiers",
+        help_text="Mission à laquelle ce dossier est rattaché, si affecté en tant que tel "
+                   "(affectation groupée de demandes). Une mission peut regrouper plusieurs "
+                   "équipes ; l'équipe précise pour CE dossier reste `equipe` ci-dessus.",
+    )
+
     demande = models.ForeignKey(
         "Request",
         on_delete=models.SET_NULL,
@@ -926,6 +940,65 @@ class Dossier(EnvironmentScopedModel):
 
     def __str__(self):
         return f"{self.numero} - {self.titre}"
+
+
+class Mission(EnvironmentScopedModel):
+    """Objectif opérationnel (ex: "dégager les routes secteur nord") auquel une ou plusieurs
+    équipes sont affectées et sous lequel des dossiers peuvent être regroupés. Champs
+    volontairement minimaux : la vue dédiée (quelles équipes, où, font quoi) et d'éventuels
+    champs supplémentaires (secteur géographique...) viennent dans un second temps, en ajouts
+    nullables, sans casser cette forme initiale."""
+
+    class Statut(models.TextChoices):
+        EN_PREPARATION = "EN_PREPARATION", "En préparation"
+        EN_COURS = "EN_COURS", "En cours"
+        TERMINEE = "TERMINEE", "Terminée"
+
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False
+    )
+
+    titre = models.CharField(
+        max_length=255
+    )
+
+    description = models.TextField(
+        blank=True,
+        null=True
+    )
+
+    crise = models.ForeignKey(
+        "Crisis",
+        on_delete=models.CASCADE,
+        related_name="missions"
+    )
+
+    equipes = models.ManyToManyField(
+        "Team",
+        blank=True,
+        related_name="missions"
+    )
+
+    statut = models.CharField(
+        max_length=20,
+        choices=Statut.choices,
+        default=Statut.EN_PREPARATION
+    )
+
+    date_creation = models.DateTimeField(
+        auto_now_add=True
+    )
+
+    date_cloture = models.DateTimeField(
+        null=True,
+        blank=True
+    )
+
+    def __str__(self):
+        return self.titre
+
 
 class DossierCommentaire(EnvironmentScopedModel):
 
@@ -1091,6 +1164,15 @@ class Team(EnvironmentScopedModel):
         on_delete=models.SET_NULL,
         null=True, blank=True,
         related_name="led_teams"
+    )
+    # Distinct du leader (chef d'équipe terrain) : le régulateur pilote l'équipe depuis le
+    # centre de crise. Alimenté depuis les utilisateurs ayant le rôle REGULATEUR via
+    # AffectationRoleOperationnel, pas une simple promotion du leader.
+    regulateur = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="teams_regulees"
     )
     members = models.ManyToManyField(
         User,

@@ -5,6 +5,7 @@ from django.db.models import Sum
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from .auth_validation import InstitutionEmailValidator
+from .geo_lookup import commune_from_code, commune_from_point
 from .permissions import INSTITUTIONAL_TYPES, get_active_environment, effective_role_or_none, mask_email, mask_phone
 from .models import (
     Environment,
@@ -26,7 +27,7 @@ from .models import (
     RecherchePersonneLecture, RecherchePersonneLectureHistorique,
     Document, RecherchePersonnePhoto, RecherchePersonneCommentairePhoto,
     DossierCommentaire, RecherchePersonne, RecherchePersonneCommentaire, RecherchePersonneHistorique,
-    DossierHistorique, Besoin, BesoinCompetence,Dossier, RequestType, RequestTypeBesoin, OfferType, InformationType, Team, Competence, AffectationCompetence,
+    DossierHistorique, Besoin, BesoinCompetence,Dossier, Mission, RequestType, RequestTypeBesoin, OfferType, InformationType, Team, Competence, AffectationCompetence,
     DisponibiliteOffre,
     DisponibilitePointEquipe,
     MaterielPoint,
@@ -299,8 +300,11 @@ class RequestSerializer(serializers.ModelSerializer):
     author = serializers.PrimaryKeyRelatedField(read_only=True, allow_null=True)
     author_nom = serializers.SerializerMethodField()
     author_email = serializers.CharField(source="author.email", read_only=True, default=None)
+    author_type = serializers.CharField(source="author.type", read_only=True, default=None)
     crisis_nom = serializers.CharField(source="crisis.name", read_only=True, default=None)
     has_photo = serializers.SerializerMethodField()
+    commune = serializers.SerializerMethodField()
+    distance_from_crisis_km = serializers.SerializerMethodField()
 
     class Meta:
         model = Request
@@ -321,6 +325,17 @@ class RequestSerializer(serializers.ModelSerializer):
         if not self._location_visible():
             return None
         return obj.location.x if obj.location else None
+
+    def get_commune(self, obj):
+        if not self._location_visible():
+            return None
+        return commune_from_code(obj.commune_code) or commune_from_point(obj.location)
+
+    def get_distance_from_crisis_km(self, obj):
+        if not self._location_visible():
+            return None
+        distance = getattr(obj, 'distance_from_crisis', None)
+        return round(distance.km, 1) if distance is not None else None
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -357,9 +372,13 @@ class OfferSerializer(serializers.ModelSerializer):
     author = serializers.PrimaryKeyRelatedField(read_only=True, allow_null=True)
     author_nom = serializers.SerializerMethodField()
     author_email = serializers.CharField(source="author.email", read_only=True, default=None)
+    author_phone = serializers.CharField(source="author.phone_number", read_only=True, default=None)
+    author_type = serializers.CharField(source="author.type", read_only=True, default=None)
     crisis_nom = serializers.CharField(source="crisis.name", read_only=True, default=None)
     has_photo = serializers.SerializerMethodField()
     competences_libelles = serializers.SerializerMethodField()
+    commune = serializers.SerializerMethodField()
+    distance_from_crisis_km = serializers.SerializerMethodField()
 
     class Meta:
         model = Offer
@@ -384,6 +403,17 @@ class OfferSerializer(serializers.ModelSerializer):
             return None
         return obj.location.x if obj.location else None
 
+    def get_commune(self, obj):
+        if not self._location_visible():
+            return None
+        return commune_from_point(obj.location)
+
+    def get_distance_from_crisis_km(self, obj):
+        if not self._location_visible():
+            return None
+        distance = getattr(obj, 'distance_from_crisis', None)
+        return round(distance.km, 1) if distance is not None else None
+
     def to_representation(self, instance):
         # `location` reste un champ générique auto-généré (écriture WKT inchangée) : on
         # masque juste sa valeur en LECTURE, pas la possibilité de l'écrire à la création.
@@ -394,6 +424,8 @@ class OfferSerializer(serializers.ModelSerializer):
         if request is not None and get_active_environment(request) == Environment.DEMO:
             data['email_offer'] = mask_email(data.get('email_offer'))
             data['author_email'] = mask_email(data.get('author_email'))
+            data['phone_offer'] = mask_phone(data.get('phone_offer'))
+            data['author_phone'] = mask_phone(data.get('author_phone'))
         return data
 
     def get_author_nom(self, obj):
@@ -524,8 +556,11 @@ class InformationSerializer(serializers.ModelSerializer):
     author = serializers.PrimaryKeyRelatedField(read_only=True, allow_null=True)
     author_nom = serializers.SerializerMethodField()
     author_email = serializers.CharField(source="author.email", read_only=True, default=None)
+    author_type = serializers.CharField(source="author.type", read_only=True, default=None)
     crisis_nom = serializers.CharField(source="crisis.name", read_only=True, default=None)
     has_photo = serializers.SerializerMethodField()
+    commune = serializers.SerializerMethodField()
+    distance_from_crisis_km = serializers.SerializerMethodField()
 
     class Meta:
         model = Information
@@ -546,6 +581,17 @@ class InformationSerializer(serializers.ModelSerializer):
         if not self._location_visible():
             return None
         return obj.location.x if obj.location else None
+
+    def get_commune(self, obj):
+        if not self._location_visible():
+            return None
+        return commune_from_point(obj.location)
+
+    def get_distance_from_crisis_km(self, obj):
+        if not self._location_visible():
+            return None
+        distance = getattr(obj, 'distance_from_crisis', None)
+        return round(distance.km, 1) if distance is not None else None
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -604,6 +650,7 @@ class TeamSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'name', 'description', 'color', 'created_at',
             'leader',
+            'regulateur',
             'member_ids',
             'assigned_crisis_ids',
             'assigned_offer_ids',
@@ -646,6 +693,32 @@ class AffectationCompetenceSerializer(serializers.ModelSerializer):
         model = AffectationCompetence
         fields = "__all__"
 
+class MissionSerializer(serializers.ModelSerializer):
+
+    crise_nom = serializers.CharField(
+        source='crise.name',
+        read_only=True
+    )
+
+    equipe_ids = serializers.PrimaryKeyRelatedField(
+        many=True, queryset=Team.objects.all(), source='equipes', required=False
+    )
+
+    equipes_noms = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Mission
+        fields = [
+            'id', 'titre', 'description', 'crise', 'crise_nom',
+            'equipe_ids', 'equipes_noms', 'statut',
+            'date_creation', 'date_cloture',
+        ]
+        read_only_fields = ['id', 'date_creation']
+
+    def get_equipes_noms(self, obj):
+        return [e.name for e in obj.equipes.all()]
+
+
 class DossierSerializer(serializers.ModelSerializer):
 
     crise_nom = serializers.CharField(
@@ -661,6 +734,12 @@ class DossierSerializer(serializers.ModelSerializer):
     equipe_nom = serializers.CharField(
         source='equipe.name',
         read_only=True
+    )
+
+    mission_titre = serializers.CharField(
+        source='mission.titre',
+        read_only=True,
+        default=None
     )
 
     has_updates = serializers.SerializerMethodField()

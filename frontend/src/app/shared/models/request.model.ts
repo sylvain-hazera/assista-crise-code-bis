@@ -29,6 +29,9 @@ export interface Request {
   author: string | null;                // UUID de l'User (FK)
   author_nom?: string | null;
   author_email?: string | null;
+  author_type?: string | null;
+  commune?: string | null;              // Résolu côté serveur (commune_code ou reverse-géocodage)
+  distance_from_crisis_km?: number | null;
 }
 
 // Payload pour le formulaire de création

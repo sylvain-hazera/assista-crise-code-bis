@@ -13,7 +13,8 @@ export interface Team {
   name:                 string;
   description:          string;
   color:                string;
-  leader:               string | null;      // UUID du chef
+  leader:               string | null;      // UUID du chef d'équipe (terrain)
+  regulateur?:          string | null;      // UUID du régulateur (pilotage depuis le centre de crise)
   member_ids:           string[];
   assigned_crisis_ids:  string[];
   assigned_offer_ids:   string[];

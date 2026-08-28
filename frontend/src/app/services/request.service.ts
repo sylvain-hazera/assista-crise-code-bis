@@ -94,6 +94,25 @@ export class RequestService {
     );
   }
 
+  /** POST /api/demandes/bulk_assign_mission/ — affecte plusieurs demandes en une fois à une
+   * mission (existante ou créée à la volée) et à une équipe. Toutes les demandes doivent
+   * partager la même crise, sinon 400. */
+  bulkAssignMission(
+    requestIds: string[],
+    teamId: string,
+    mission: { missionId: string } | { newMission: { titre: string } },
+  ): Observable<{ mission: string; dossiers_created: string[]; already_assigned: string[] }> {
+    const body: any = { request_ids: requestIds, team: teamId };
+    if ('missionId' in mission) {
+      body.mission = mission.missionId;
+    } else {
+      body.new_mission = mission.newMission;
+    }
+    return this.http.post<{ mission: string; dossiers_created: string[]; already_assigned: string[] }>(
+      `${this.url}/bulk_assign_mission/`, body
+    );
+  }
+
   // ── PRIVÉ ────────────────────────────────────────────────────
 
   private normalize = (d: any): Request => {

@@ -27,6 +27,9 @@ export interface Information {
   author: string | null;
   author_nom?: string | null;
   author_email?: string | null;
+  author_type?: string | null;
+  commune?: string | null;
+  distance_from_crisis_km?: number | null;
 }
 
 export interface InformationPayload {

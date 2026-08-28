@@ -19,7 +19,7 @@ from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from urllib.parse import quote
 from django_filters import rest_framework as filters
 from django.db import IntegrityError, transaction
-from django.db.models import Q
+from django.db.models import Q, F
 from django.contrib.gis.db.models.functions import Distance
 from rest_framework.pagination import PageNumberPagination
 from django.utils import timezone
@@ -105,7 +105,7 @@ from .models import (
     AffectationPointBenevole, StatutAffectation,
     RecherchePersonne, RecherchePersonneCommentaire, Besoin, Notification, DossierParticipant,
     RecherchePersonneCommentairePhoto, RecherchePersonneLecture, RecherchePersonneLectureHistorique,
-    Document, DossierCommentaire, DossierHistorique, BesoinCompetence, Competence, Dossier,
+    Document, DossierCommentaire, DossierHistorique, BesoinCompetence, Competence, Dossier, Mission,
     AuditLog, AuditAction,
     RecherchePersonneHistorique, RecherchePersonnePhoto,
     AffectationCompetence, RequestType, RequestTypeBesoin, OfferType, InformationType, Team,
@@ -244,6 +244,7 @@ from .serializers import (
     TeamSerializer,
     CompetenceSerializer,
     DossierSerializer,
+    MissionSerializer,
     AffectationCompetenceSerializer,
     BesoinSerializer,
     RecherchePersonneHistoriqueSerializer,
@@ -1210,6 +1211,16 @@ def team_zone_specificity(team, demande):
     return None
 
 
+def annotate_distance_from_crisis(queryset):
+    """Distance (annotée en mètres par GeoDjango) entre `location` de chaque ligne et la
+    `location` de sa propre crise liée — même fonction Distance que
+    PointOperationnelViewSet.candidats_benevoles, mais la référence varie par ligne (F() sur
+    la jointure crisis__location) au lieu d'être un point fixe. NULL naturellement (donc
+    distance_from_crisis=None) si location ou crisis absent, la jointure crisis étant déjà
+    nullable côté FK — pas de traitement particulier requis ici."""
+    return queryset.annotate(distance_from_crisis=Distance('location', F('crisis__location')))
+
+
 def resolve_competence_for_request(demande):
     """Compétence déduite du type de demande (RequestType -> Besoin -> Competence),
     utilisée aussi bien pour le matching automatique (perform_create) que pour fiabiliser
@@ -1219,6 +1230,83 @@ def resolve_competence_for_request(demande):
         return None
     mapping_competence = BesoinCompetence.objects.filter(besoin=mapping_besoin.besoin).first()
     return mapping_competence.competence if mapping_competence else None
+
+
+def _assign_request_to_team(demande, team, request, mission=None):
+    """Corps partagé par RequestViewSet.assign_team (une demande) et .bulk_assign_mission
+    (plusieurs) : crée le dossier de suivi, notifie le·s régulateur·s, informe le demandeur
+    par email, journalise. Retourne (outcome, dossier, regulateurs) où outcome vaut
+    "already_assigned" (no-op, dossier=None), "no_crisis" (dossier=None) ou "created"."""
+    if team.assigned_requests.filter(pk=demande.pk).exists():
+        return "already_assigned", None, None
+
+    if not demande.crisis:
+        return "no_crisis", None, None
+
+    team.assigned_requests.add(demande)
+
+    dossier = Dossier.objects.create(
+        numero=f"DOS-{uuid.uuid4().hex[:8].upper()}",
+        crise=demande.crisis,
+        competence=resolve_competence_for_request(demande),
+        equipe=team,
+        mission=mission,
+        demande=demande,
+        titre=demande.title,
+        description=f"Demande affectée à l'équipe {team.name} : {demande.title}",
+        statut=Dossier.Statut.AFFECTE,
+        environment=demande.environment,
+    )
+
+    demandeur, _ = resolve_or_invite_demandeur(demande, request=request)
+
+    # Régulateur·s à notifier : ceux affectés à la compétence du dossier si elle a pu
+    # être déduite, sinon (à défaut) les membres de l'équipe ayant un rôle opérationnel
+    # REGULATEUR actif pour l'une des compétences de l'équipe — pour ne pas notifier
+    # personne juste parce que le mapping RequestType->Besoin est absent.
+    regulateurs = populate_dossier_participants_and_notify(
+        dossier, demandeur=demandeur, equipe=team,
+        notification_titre="Nouvelle demande affectée à votre équipe",
+        notification_message=f"La demande « {demande.title} » a été affectée à l'équipe {team.name} (dossier {dossier.numero}).",
+    )
+
+    try:
+        suivi_paragraph = ""
+        if demandeur:
+            suivi_link = build_magic_link(
+                request, demandeur, "magic-login", next_url=f"/dossier-suivi/{dossier.id}"
+            )
+            suivi_paragraph = (
+                f"\nVous pouvez suivre l'avancement de votre dossier, ajouter des "
+                f"commentaires et des photos ici :\n{suivi_link}\n"
+            )
+        send_mail(
+            subject=f"Votre demande « {demande.title} » a été prise en charge",
+            message=(
+                f"Bonjour {demande.first_name_request},\n\n"
+                f"Votre demande d'aide « {demande.title} » a été affectée à l'équipe {team.name}, "
+                f"qui va la traiter (dossier {dossier.numero}).\n"
+                f"{suivi_paragraph}\n"
+                "Cordialement,\n"
+                "L'équipe Assista-Crise"
+            ),
+            from_email=None,
+            recipient_list=[demande.email_request],
+            fail_silently=True,
+        )
+    except Exception as e:
+        print(f"Erreur envoi email affectation demande : {e}")
+
+    audit_log(
+        request=request,
+        action_code="CREATION",
+        objet_type="Dossier",
+        objet_id=dossier.id,
+        crise=demande.crisis,
+        commentaire=f"Dossier {dossier.numero} créé suite à l'affectation de la demande à {team.name}",
+    )
+
+    return "created", dossier, regulateurs
 
 
 def populate_dossier_participants_and_notify(
@@ -1308,6 +1396,10 @@ class RequestViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     permission_classes = [AllowAny]
     filterset_class = AuthorEmailFilter
 
+    def get_queryset(self):
+        return annotate_distance_from_crisis(
+            super().get_queryset().select_related('crisis', 'author')
+        )
 
     def perform_create(self, serializer):
         # Générer un token de suppression unique
@@ -1509,78 +1601,76 @@ class RequestViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         demande = self.get_object()
         team = get_object_or_404(Team, pk=request.data.get("team"))
 
-        if team.assigned_requests.filter(pk=demande.pk).exists():
-            return Response({"already_assigned": True})
+        outcome, dossier, regulateurs = _assign_request_to_team(demande, team, request)
 
-        if not demande.crisis:
+        if outcome == "already_assigned":
+            return Response({"already_assigned": True})
+        if outcome == "no_crisis":
             return Response(
                 {"error": "Cette demande n'est liée à aucune crise : impossible de créer un dossier de suivi."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        team.assigned_requests.add(demande)
-
-        dossier = Dossier.objects.create(
-            numero=f"DOS-{uuid.uuid4().hex[:8].upper()}",
-            crise=demande.crisis,
-            competence=resolve_competence_for_request(demande),
-            equipe=team,
-            demande=demande,
-            titre=demande.title,
-            description=f"Demande affectée à l'équipe {team.name} : {demande.title}",
-            statut=Dossier.Statut.AFFECTE,
-            environment=demande.environment,
-        )
-
-        demandeur, _ = resolve_or_invite_demandeur(demande, request=request)
-
-        # Régulateur·s à notifier : ceux affectés à la compétence du dossier si elle a pu
-        # être déduite, sinon (à défaut) les membres de l'équipe ayant un rôle opérationnel
-        # REGULATEUR actif pour l'une des compétences de l'équipe — pour ne pas notifier
-        # personne juste parce que le mapping RequestType->Besoin est absent.
-        regulateurs = populate_dossier_participants_and_notify(
-            dossier, demandeur=demandeur, equipe=team,
-            notification_titre="Nouvelle demande affectée à votre équipe",
-            notification_message=f"La demande « {demande.title} » a été affectée à l'équipe {team.name} (dossier {dossier.numero}).",
-        )
-
-        try:
-            suivi_paragraph = ""
-            if demandeur:
-                suivi_link = build_magic_link(
-                    request, demandeur, "magic-login", next_url=f"/dossier-suivi/{dossier.id}"
-                )
-                suivi_paragraph = (
-                    f"\nVous pouvez suivre l'avancement de votre dossier, ajouter des "
-                    f"commentaires et des photos ici :\n{suivi_link}\n"
-                )
-            send_mail(
-                subject=f"Votre demande « {demande.title} » a été prise en charge",
-                message=(
-                    f"Bonjour {demande.first_name_request},\n\n"
-                    f"Votre demande d'aide « {demande.title} » a été affectée à l'équipe {team.name}, "
-                    f"qui va la traiter (dossier {dossier.numero}).\n"
-                    f"{suivi_paragraph}\n"
-                    "Cordialement,\n"
-                    "L'équipe Assista-Crise"
-                ),
-                from_email=None,
-                recipient_list=[demande.email_request],
-                fail_silently=True,
-            )
-        except Exception as e:
-            print(f"Erreur envoi email affectation demande : {e}")
-
-        audit_log(
-            request=request,
-            action_code="CREATION",
-            objet_type="Dossier",
-            objet_id=dossier.id,
-            crise=demande.crisis,
-            commentaire=f"Dossier {dossier.numero} créé suite à l'affectation de la demande à {team.name}",
-        )
-
         return Response({"dossier": str(dossier.id), "numero": dossier.numero, "regulateurs_notifies": regulateurs.count()})
+
+    @action(detail=False, methods=["post"], permission_classes=[IsInstitutionalActor])
+    def bulk_assign_mission(self, request):
+        """Affecte plusieurs demandes en une fois à une mission (existante ou créée à la
+        volée) et à une équipe — même mécanique que assign_team (un Dossier par demande,
+        notifications/email/audit inchangés), appliquée en boucle. Toutes les demandes
+        sélectionnées doivent partager la même crise (une mission est rattachée à une seule
+        crise) : sélection multi-crise refusée explicitement plutôt que scindée en silence."""
+        request_ids = request.data.get("request_ids") or []
+        if not request_ids:
+            return Response({"error": "Aucune demande sélectionnée."}, status=status.HTTP_400_BAD_REQUEST)
+
+        demandes = list(Request.objects.filter(pk__in=request_ids))
+        if len(demandes) != len(set(request_ids)):
+            return Response({"error": "Une ou plusieurs demandes sont introuvables."}, status=status.HTTP_400_BAD_REQUEST)
+
+        crisis_ids = {d.crisis_id for d in demandes}
+        if len(crisis_ids) != 1 or None in crisis_ids:
+            return Response(
+                {"error": "Toutes les demandes sélectionnées doivent être liées à la même crise pour être affectées à une mission commune."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        crisis_id = crisis_ids.pop()
+
+        team = get_object_or_404(Team, pk=request.data.get("team"))
+
+        mission_id = request.data.get("mission")
+        new_mission = request.data.get("new_mission")
+        if mission_id:
+            mission = get_object_or_404(Mission, pk=mission_id)
+            if str(mission.crise_id) != str(crisis_id):
+                return Response(
+                    {"error": "La mission choisie n'est pas rattachée à la même crise que les demandes sélectionnées."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        elif new_mission:
+            mission = Mission.objects.create(
+                titre=new_mission.get("titre", "").strip() or "Mission sans titre",
+                crise_id=crisis_id,
+                environment=get_active_environment(request),
+            )
+            mission.equipes.add(team)
+        else:
+            return Response({"error": "Choisissez une mission existante ou renseignez-en une nouvelle."}, status=status.HTTP_400_BAD_REQUEST)
+
+        dossiers_created = []
+        already_assigned = []
+        for demande in demandes:
+            outcome, dossier, _regulateurs = _assign_request_to_team(demande, team, request, mission=mission)
+            if outcome == "already_assigned":
+                already_assigned.append(str(demande.id))
+            elif outcome == "created":
+                dossiers_created.append(str(dossier.id))
+
+        return Response({
+            "mission": str(mission.id),
+            "dossiers_created": dossiers_created,
+            "already_assigned": already_assigned,
+        }, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["get"])
     def preview(self, request, pk=None):
@@ -1608,11 +1698,21 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             commentaire=f"Création équipe : {team.name}",
         )
 
+class MissionViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
+    queryset = Mission.objects.select_related('crise').prefetch_related('equipes').all()
+    serializer_class = MissionSerializer
+    permission_classes = [IsInstitutionalActor]
+
 class OfferViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     queryset = Offer.objects.all()
     serializer_class = OfferSerializer
     permission_classes = [AllowAny]
     filterset_class = OfferSearchFilter
+
+    def get_queryset(self):
+        return annotate_distance_from_crisis(
+            super().get_queryset().select_related('crisis', 'author')
+        )
 
     def perform_create(self, serializer):
         # Générer un token de suppression unique
@@ -1692,6 +1792,46 @@ class OfferViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
 
         return Response({"id": str(participant.id), "dossier": str(dossier.id), "created": created})
 
+    @action(detail=False, methods=["post"], permission_classes=[IsInstitutionalActor])
+    def bulk_create_team(self, request):
+        """Crée une équipe à partir d'une sélection d'offres : les membres sont les auteurs
+        distincts des offres sélectionnées (offres anonymes ignorées, même logique que
+        l'affectation d'équipe individuelle existante côté frontend), l'équipe est reliée aux
+        offres sélectionnées et un régulateur optionnel lui est assigné directement."""
+        offer_ids = request.data.get("offer_ids") or []
+        if not offer_ids:
+            return Response({"error": "Aucune offre sélectionnée."}, status=status.HTTP_400_BAD_REQUEST)
+
+        offres = list(Offer.objects.filter(pk__in=offer_ids))
+        if len(offres) != len(set(offer_ids)):
+            return Response({"error": "Une ou plusieurs offres sont introuvables."}, status=status.HTTP_400_BAD_REQUEST)
+
+        team_name = (request.data.get("team_name") or "").strip()
+        if not team_name:
+            return Response({"error": "Le nom de l'équipe est obligatoire."}, status=status.HTTP_400_BAD_REQUEST)
+
+        regulateur_id = request.data.get("regulateur")
+        regulateur = get_object_or_404(User, pk=regulateur_id) if regulateur_id else None
+
+        team = Team.objects.create(
+            name=team_name, regulateur=regulateur,
+            environment=get_active_environment(request),
+        )
+        team.assigned_offers.set(offres)
+        members = {o.author for o in offres if o.author_id}
+        if members:
+            team.members.set(members)
+
+        audit_log(
+            request=request,
+            action_code="CREATION",
+            objet_type="Team",
+            objet_id=team.id,
+            commentaire=f"Équipe {team.name} créée depuis {len(offres)} offre(s) sélectionnée(s)",
+        )
+
+        return Response(TeamSerializer(team).data, status=status.HTTP_201_CREATED)
+
     @action(detail=True, methods=["get"])
     def preview(self, request, pk=None):
         offer = self.get_object()
@@ -1712,6 +1852,11 @@ class InformationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     queryset = Information.objects.all()
     serializer_class = InformationSerializer
     permission_classes = [AllowAny]
+
+    def get_queryset(self):
+        return annotate_distance_from_crisis(
+            super().get_queryset().select_related('crisis', 'author')
+        )
 
     def perform_create(self, serializer):
         # Générer un token de suppression unique

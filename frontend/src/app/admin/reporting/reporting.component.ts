@@ -12,10 +12,14 @@ import { GeolocationService } from '../../services/geolocation.service';
 import { DisponibiliteOffreService } from '../../services/disponibilite-offre.service';
 import { TeamService } from '../../services/team.service';
 import { DossierService } from '../../services/dossier.service';
+import { MissionService } from '../../services/mission.service';
+import { UserService } from '../../services/user.service';
 
 import { DisponibiliteOffre } from '../../shared/models/disponibilite-offre.model';
 import { Team } from '../../shared/models/team.model';
 import { Dossier } from '../../shared/models/dossier.model';
+import { Mission } from '../../shared/models/mission.model';
+import { User, UserRole } from '../../shared/models/user.model';
 
 import { Crisis }       from '../../shared/models/crisis.model';
 import { Offer }       from '../../shared/models/offer.model';
@@ -44,6 +48,10 @@ export interface ReportRow {
   latitude:     number | null;
   longitude:    number | null;
   has_photo:    boolean;
+  commune:      string | null;
+  distanceFromCrisisKm: number | null;
+  authorType:   string | null;
+  isSecoursAccount: boolean;
   // raw originals for detail modal
   _raw:         Crisis | Offer | Request | Information;
 }
@@ -52,7 +60,7 @@ export interface ReportRow {
 
 type FilterKind   = ReportKind | 'ALL';
 type FilterStatus = Status     | 'ALL';
-type SortField    = 'title' | 'kind' | 'status' | 'date' | 'contact';
+type SortField    = 'title' | 'kind' | 'status' | 'date' | 'contact' | 'commune' | 'distanceFromCrisisKm';
 
 @Component({
   selector: 'app-reporting',
@@ -71,6 +79,8 @@ export class ReportingComponent implements OnInit, OnDestroy {
   rawInformations: Information[] = [];
   teams:           Team[]        = [];
   dossiers:        Dossier[]     = [];
+  missions:        Mission[]     = [];
+  regulateurs:     User[]        = [];
 
   // ── Détail offre : disponibilités + affectation ─────────────
   selectedOfferDispos: DisponibiliteOffre[] = [];
@@ -107,6 +117,24 @@ export class ReportingComponent implements OnInit, OnDestroy {
   selectedRow: ReportRow | null = null;
   selectedRowAddress: string | null = null;
   newStatus:   Status | ''      = '';
+
+  // ── Sélection multiple + actions groupées ───────────────────
+  selectedOfferIds   = new Set<string>();
+  selectedRequestIds = new Set<string>();
+
+  showBulkOfferModal   = false;
+  bulkTeamName          = '';
+  bulkRegulateurId: string | null = null;
+  bulkRegulateurQuery    = '';
+  showBulkRegulateurResults = false;
+
+  showBulkRequestModal = false;
+  bulkMissionMode: 'existing' | 'new' = 'new';
+  bulkMissionId: string | null = null;
+  bulkNewMissionTitre   = '';
+  bulkTeamIdForRequests: string | null = null;
+  bulkTeamQuery          = '';
+  showBulkTeamResults    = false;
 
   // ── Photos (blob-fetch access-contrôlé, plus d'URL brute côté API) ──────────
   photoUrls: Record<string, string> = {};
@@ -149,6 +177,8 @@ export class ReportingComponent implements OnInit, OnDestroy {
     private disponibiliteOffreService: DisponibiliteOffreService,
     private teamService:        TeamService,
     private dossierService:     DossierService,
+    private missionService:     MissionService,
+    private userService:        UserService,
   ) {}
 
   ngOnInit():    void { this.loadAll(); }
@@ -164,6 +194,8 @@ export class ReportingComponent implements OnInit, OnDestroy {
 
   loadAll(): void {
     this.isLoading = true;
+    this.selectedOfferIds.clear();
+    this.selectedRequestIds.clear();
     forkJoin({
       crises:       this.crisisService.getAll(),
       offres:       this.offerService.getAll(),
@@ -171,12 +203,16 @@ export class ReportingComponent implements OnInit, OnDestroy {
       informations: this.informationService.getAll(),
       teams:        this.teamService.getAll(),
       dossiers:     this.dossierService.getAll(),
+      missions:     this.missionService.getAll(),
+      users:        this.userService.getAll(),
     })
     .pipe(takeUntil(this.destroy$))
     .subscribe({
-      next: ({ crises, offres, demandes, informations, teams, dossiers }) => {
+      next: ({ crises, offres, demandes, informations, teams, dossiers, missions, users }) => {
         this.teams    = teams;
         this.dossiers = dossiers;
+        this.missions = missions;
+        this.regulateurs = users.filter(u => u.type === UserRole.REGULATEUR);
         this.rawCrises       = crises;
         this.rawOffers       = offres;
         this.rawRequests     = demandes;
@@ -213,6 +249,10 @@ export class ReportingComponent implements OnInit, OnDestroy {
       latitude:  c.latitude ?? null,
       longitude: c.longitude ?? null,
       has_photo: !!c.has_photo,
+      commune:   null,
+      distanceFromCrisisKm: null,
+      authorType: null,
+      isSecoursAccount: false,
       _raw:      c,
     }));
 
@@ -222,7 +262,7 @@ export class ReportingComponent implements OnInit, OnDestroy {
       title:     o.title,
       contact:   `${o.first_name_offer} ${o.last_name_offer}`,
       email:     o.email_offer,
-      telephone: null,
+      telephone: o.phone_offer ?? o.author_phone ?? null,
       status:    o.status,
       date:      o.created_at,
       dateExp:   o.expires_at,
@@ -233,6 +273,10 @@ export class ReportingComponent implements OnInit, OnDestroy {
       latitude:  o.latitude ?? null,
       longitude: o.longitude ?? null,
       has_photo: !!o.has_photo,
+      commune:   o.commune ?? null,
+      distanceFromCrisisKm: o.distance_from_crisis_km ?? null,
+      authorType: o.author_type ?? null,
+      isSecoursAccount: o.author_type === 'SECOURS',
       _raw:      o,
     }));
 
@@ -253,6 +297,10 @@ export class ReportingComponent implements OnInit, OnDestroy {
       latitude:  d.latitude ?? null,
       longitude: d.longitude ?? null,
       has_photo: !!d.has_photo,
+      commune:   d.commune ?? null,
+      distanceFromCrisisKm: d.distance_from_crisis_km ?? null,
+      authorType: d.author_type ?? null,
+      isSecoursAccount: d.author_type === 'SECOURS',
       _raw:      d,
     }));
 
@@ -273,6 +321,10 @@ export class ReportingComponent implements OnInit, OnDestroy {
       latitude:  i.latitude ?? null,
       longitude: i.longitude ?? null,
       has_photo: !!i.has_photo,
+      commune:   i.commune ?? null,
+      distanceFromCrisisKm: i.distance_from_crisis_km ?? null,
+      authorType: i.author_type ?? null,
+      isSecoursAccount: i.author_type === 'SECOURS',
       _raw:      i,
     }));
 
@@ -506,6 +558,167 @@ export class ReportingComponent implements OnInit, OnDestroy {
         this.assignDossierId = null;
       },
       error: (err) => this.showError(err?.error?.error || "Impossible d'affecter cette offre au dossier."),
+    });
+  }
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // SÉLECTION MULTIPLE + ACTIONS GROUPÉES
+  // ────────────────────────────────────────────────────────────────────────────
+
+  isRowSelectable(row: ReportRow): boolean {
+    return row.kind === 'Offer' || row.kind === 'Request';
+  }
+
+  isRowSelected(row: ReportRow): boolean {
+    if (row.kind === 'Offer') return this.selectedOfferIds.has(row.id);
+    if (row.kind === 'Request') return this.selectedRequestIds.has(row.id);
+    return false;
+  }
+
+  toggleRowSelection(row: ReportRow): void {
+    if (row.kind === 'Offer') {
+      this.selectedOfferIds.has(row.id) ? this.selectedOfferIds.delete(row.id) : this.selectedOfferIds.add(row.id);
+    } else if (row.kind === 'Request') {
+      this.selectedRequestIds.has(row.id) ? this.selectedRequestIds.delete(row.id) : this.selectedRequestIds.add(row.id);
+    }
+  }
+
+  get pagedOfferIds(): string[] { return this.pagedRows.filter(r => r.kind === 'Offer').map(r => r.id); }
+  get pagedRequestIds(): string[] { return this.pagedRows.filter(r => r.kind === 'Request').map(r => r.id); }
+
+  get allPagedOffersSelected(): boolean {
+    const ids = this.pagedOfferIds;
+    return ids.length > 0 && ids.every(id => this.selectedOfferIds.has(id));
+  }
+
+  get allPagedRequestsSelected(): boolean {
+    const ids = this.pagedRequestIds;
+    return ids.length > 0 && ids.every(id => this.selectedRequestIds.has(id));
+  }
+
+  toggleSelectAllOffers(): void {
+    const ids = this.pagedOfferIds;
+    if (this.allPagedOffersSelected) ids.forEach(id => this.selectedOfferIds.delete(id));
+    else ids.forEach(id => this.selectedOfferIds.add(id));
+  }
+
+  toggleSelectAllRequests(): void {
+    const ids = this.pagedRequestIds;
+    if (this.allPagedRequestsSelected) ids.forEach(id => this.selectedRequestIds.delete(id));
+    else ids.forEach(id => this.selectedRequestIds.add(id));
+  }
+
+  get selectedRequestRows(): ReportRow[] {
+    return this.allRows.filter(r => this.selectedRequestIds.has(r.id));
+  }
+
+  /** Une mission est rattachée à une seule crise : la création de mission depuis la sélection
+   * n'a de sens que si toutes les demandes sélectionnées partagent la même crise (garde-fou
+   * client, le backend refuse aussi explicitement le cas contraire). */
+  get bulkRequestsShareCrisis(): boolean {
+    const crises = new Set(this.selectedRequestRows.map(r => r.crisis));
+    return crises.size === 1 && !crises.has(null);
+  }
+
+  get existingMissionsForSelection(): Mission[] {
+    const rows = this.selectedRequestRows;
+    if (rows.length === 0 || !this.bulkRequestsShareCrisis) return [];
+    const crisisId = rows[0].crisis;
+    return this.missions.filter(m => m.crise === crisisId);
+  }
+
+  // ── Barre groupée offres : créer une équipe + assigner un régulateur ────────
+
+  openBulkOfferModal(): void {
+    this.bulkTeamName = '';
+    this.bulkRegulateurId = null;
+    this.bulkRegulateurQuery = '';
+    this.showBulkOfferModal = true;
+  }
+
+  get filteredBulkRegulateurs(): User[] {
+    const q = this.bulkRegulateurQuery.trim().toLowerCase();
+    if (!q) return [];
+    return this.regulateurs.filter(u =>
+      `${u.first_name} ${u.last_name}`.toLowerCase().includes(q) || u.username.toLowerCase().includes(q)
+    );
+  }
+
+  selectBulkRegulateur(u: User): void {
+    this.bulkRegulateurId = u.id!;
+    this.bulkRegulateurQuery = `${u.first_name} ${u.last_name}`.trim() || u.username;
+    this.showBulkRegulateurResults = false;
+  }
+
+  onBulkRegulateurQueryChange(): void {
+    this.bulkRegulateurId = null;
+    this.showBulkRegulateurResults = true;
+  }
+
+  hideBulkRegulateurResultsDelayed(): void {
+    setTimeout(() => this.showBulkRegulateurResults = false, 150);
+  }
+
+  submitBulkOfferTeam(): void {
+    if (!this.bulkTeamName.trim() || this.selectedOfferIds.size === 0) return;
+    this.offerService.bulkCreateTeam([...this.selectedOfferIds], this.bulkTeamName.trim(), this.bulkRegulateurId).subscribe({
+      next: (team) => {
+        this.teams.push(team);
+        this.showSuccess(`Équipe « ${team.name} » créée avec ${this.selectedOfferIds.size} offre(s).`);
+        this.selectedOfferIds.clear();
+        this.showBulkOfferModal = false;
+      },
+      error: (err) => this.showError(err?.error?.error || "Impossible de créer l'équipe."),
+    });
+  }
+
+  // ── Barre groupée demandes : affecter à une mission + une équipe ────────────
+
+  openBulkRequestModal(): void {
+    this.bulkMissionMode = this.existingMissionsForSelection.length > 0 ? 'existing' : 'new';
+    this.bulkMissionId = null;
+    this.bulkNewMissionTitre = '';
+    this.bulkTeamIdForRequests = null;
+    this.bulkTeamQuery = '';
+    this.showBulkRequestModal = true;
+  }
+
+  get filteredBulkTeams(): Team[] {
+    const q = this.bulkTeamQuery.trim().toLowerCase();
+    if (!q) return [];
+    return this.teams.filter(t => t.name.toLowerCase().includes(q));
+  }
+
+  selectBulkTeam(t: Team): void {
+    this.bulkTeamIdForRequests = t.id!;
+    this.bulkTeamQuery = t.name;
+    this.showBulkTeamResults = false;
+  }
+
+  onBulkTeamQueryChange(): void {
+    this.bulkTeamIdForRequests = null;
+    this.showBulkTeamResults = true;
+  }
+
+  hideBulkTeamResultsDelayed(): void {
+    setTimeout(() => this.showBulkTeamResults = false, 150);
+  }
+
+  submitBulkRequestMission(): void {
+    if (!this.bulkTeamIdForRequests || !this.bulkRequestsShareCrisis) return;
+    const missionArg = this.bulkMissionMode === 'existing' && this.bulkMissionId
+      ? { missionId: this.bulkMissionId }
+      : { newMission: { titre: this.bulkNewMissionTitre.trim() || 'Mission sans titre' } };
+
+    this.requestService.bulkAssignMission([...this.selectedRequestIds], this.bulkTeamIdForRequests, missionArg).subscribe({
+      next: (res) => {
+        const extra = res.already_assigned.length ? `, ${res.already_assigned.length} déjà affectée(s)` : '';
+        this.showSuccess(`${res.dossiers_created.length} dossier(s) créé(s)${extra}.`);
+        this.selectedRequestIds.clear();
+        this.showBulkRequestModal = false;
+        this.loadAll();
+      },
+      error: (err) => this.showError(err?.error?.error || "Impossible d'affecter ces demandes."),
     });
   }
 

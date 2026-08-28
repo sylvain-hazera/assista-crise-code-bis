@@ -12,6 +12,9 @@ export interface Dossier {
   equipe?: string;
   equipe_nom?: string;
 
+  mission?: string | null;
+  mission_titre?: string | null;
+
   titre: string;
   description: string;
 
