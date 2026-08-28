@@ -68,6 +68,9 @@ export class InstitutionsComponent implements OnInit {
   domaineForm!: FormGroup;
   regulateurForm!: FormGroup;
 
+  contactUserQuery = '';
+  showContactUserResults = false;
+
   // ── Type d'institution (référentiel) ──
   typeModal: RefModalView = 'none';
   selectedType: InstitutionType | null = null;
@@ -122,7 +125,7 @@ export class InstitutionsComponent implements OnInit {
 
     this.contactForm = this.fb.group({
       utilisateur: [null, Validators.required],
-      fonction: [''],
+      fonction: ['', Validators.required],
       contact_principal: [false],
     });
 
@@ -236,6 +239,7 @@ export class InstitutionsComponent implements OnInit {
     this.showDomaineForm = false;
     this.showRegulateurForm = false;
     this.contactForm.reset({ contact_principal: false });
+    this.contactUserQuery = '';
     this.domaineForm.reset({ valide: true });
     this.regulateurForm.reset({ actif: true });
     this.modal = 'detail';
@@ -260,10 +264,44 @@ export class InstitutionsComponent implements OnInit {
         this.reloadContacts();
         this.showSuccess('Contact ajouté.');
         this.contactForm.reset({ contact_principal: false });
+        this.contactUserQuery = '';
         this.showContactForm = false;
       },
       error: (err) => this.showError("Erreur lors de l'ajout du contact.", err),
     });
+  }
+
+  isContactFieldInvalid(field: string): boolean {
+    const control = this.contactForm.get(field);
+    return !!control && control.invalid && control.touched;
+  }
+
+  get contactUserResults(): User[] {
+    const q = this.contactUserQuery.trim().toLowerCase();
+    if (!q) return [];
+    return this.users.filter(u =>
+      `${u.first_name} ${u.last_name}`.toLowerCase().includes(q)
+      || u.username.toLowerCase().includes(q)
+    );
+  }
+
+  selectContactUser(user: User): void {
+    this.contactForm.get('utilisateur')?.setValue(user.id);
+    this.contactUserQuery = `${user.first_name} ${user.last_name}`.trim() || user.username;
+    this.showContactUserResults = false;
+  }
+
+  onContactUserQueryChange(): void {
+    // Retaper dans le champ après une sélection invalide le choix précédent : il faut
+    // re-sélectionner explicitement un résultat pour que le formulaire redevienne valide.
+    this.contactForm.get('utilisateur')?.setValue(null);
+    this.showContactUserResults = true;
+  }
+
+  hideContactUserResultsDelayed(): void {
+    // Délai court pour laisser le (click) sur un résultat s'exécuter avant que le blur
+    // ne referme la liste — sans ce délai, le clic sur un résultat n'a jamais lieu.
+    setTimeout(() => this.showContactUserResults = false, 150);
   }
 
   deleteContact(contact: ContactInstitution): void {

@@ -279,16 +279,40 @@
               </button>
             } @else {
               <form class="inline-form" [formGroup]="contactForm" (ngSubmit)="submitContact()">
-                <select formControlName="utilisateur">
-                  <option [ngValue]="null">— Utilisateur —</option>
-                  @for (u of users; track u.id) {
-                    <option [ngValue]="u.id">{{ u.first_name }} {{ u.last_name }} ({{ u.username }})</option>
+                <div class="user-search">
+                  <input
+                    type="text"
+                    placeholder="Rechercher un utilisateur (nom, prénom, email)"
+                    [(ngModel)]="contactUserQuery"
+                    [ngModelOptions]="{standalone: true}"
+                    (input)="onContactUserQueryChange()"
+                    (focus)="showContactUserResults = true"
+                    (blur)="hideContactUserResultsDelayed()"
+                    [class.invalid]="contactForm.get('utilisateur')?.invalid && contactForm.get('utilisateur')?.touched"
+                  />
+                  @if (showContactUserResults && contactUserResults.length) {
+                    <ul class="user-search-results">
+                      @for (u of contactUserResults; track u.id) {
+                        <li (mousedown)="selectContactUser(u)">{{ u.first_name }} {{ u.last_name }} ({{ u.username }})</li>
+                      }
+                    </ul>
                   }
-                </select>
-                <input type="text" formControlName="fonction" placeholder="Fonction"/>
+                </div>
+                <input
+                  type="text"
+                  formControlName="fonction"
+                  placeholder="Fonction *"
+                  [class.invalid]="isContactFieldInvalid('fonction')"
+                />
                 <label class="checkbox-row"><input type="checkbox" formControlName="contact_principal"/> Principal</label>
                 <button class="btn-primary sm" type="submit">Ajouter</button>
                 <button class="btn-secondary sm" type="button" (click)="showContactForm = false">Annuler</button>
+                @if (isContactFieldInvalid('fonction')) {
+                  <div class="error-message">La fonction est obligatoire.</div>
+                }
+                @if (contactForm.get('utilisateur')?.invalid && contactForm.get('utilisateur')?.touched) {
+                  <div class="error-message">Sélectionnez un utilisateur dans la liste.</div>
+                }
               </form>
             }
           }
