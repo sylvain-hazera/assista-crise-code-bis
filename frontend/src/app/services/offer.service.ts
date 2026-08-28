@@ -30,7 +30,7 @@ export class OfferService {
   /** GET /api/offres/my_offres/ */
   getMines(email: string): Observable<Offer[]> {
       // return this.getAll({ auteur: userId });
-      return this.getAll({ auteur_email: email });
+      return this.getAll({ author_email: email });
   }
 
   getById(id: string): Observable<Offer> {

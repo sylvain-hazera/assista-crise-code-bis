@@ -15,6 +15,10 @@ export interface Dossier {
   mission?: string | null;
   mission_titre?: string | null;
 
+  demande?: string | null;
+  information?: string | null;
+  information_titre?: string | null;
+
   titre: string;
   description: string;
 

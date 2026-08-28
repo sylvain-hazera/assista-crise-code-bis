@@ -36,7 +36,8 @@ from .audit import audit_log, get_client_ip
 from .export import build_crisis_export_zip
 from .institution_attachment import attach_user_to_institution, resolve_or_invite_responsable
 from .permissions import (
-    IsInstitutionalActor, IsAdministrator, IsOwnDeclarationOrInstitutional, INSTITUTIONAL_TYPES, user_can_view_photo,
+    IsInstitutionalActor, IsAdministrator, IsOwnDeclarationOrInstitutional, IsOwnerOrInstitutional,
+    INSTITUTIONAL_TYPES, user_can_view_photo,
     get_active_environment, get_effective_role, mask_email, mask_phone, send_mail_env_aware,
 )
 from .geo_lookup import commune_code_from_point
@@ -1462,6 +1463,18 @@ class RequestViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     permission_classes = [AllowAny]
     filterset_class = AuthorEmailFilter
 
+    def get_permissions(self):
+        # get_permissions() étant surchargé, chaque @action avec son propre permission_classes
+        # doit être explicitement listée ici, sinon elle retombe sur AllowAny (gotcha connue de
+        # ce fichier). update/partial_update/destroy n'avaient justement AUCUNE restriction
+        # avant ce correctif : n'importe qui, même anonyme, pouvait modifier/supprimer la
+        # demande de n'importe qui d'autre — voir IsOwnerOrInstitutional.
+        if self.action in ('update', 'partial_update', 'destroy'):
+            return [IsOwnerOrInstitutional()]
+        if self.action in ('assign_team', 'bulk_assign_mission', 'vue_mairie'):
+            return [IsInstitutionalActor()]
+        return [AllowAny()]
+
     def get_queryset(self):
         return annotate_distance_from_crisis(
             super().get_queryset().select_related('crisis', 'author')
@@ -1833,6 +1846,15 @@ class OfferViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     permission_classes = [AllowAny]
     filterset_class = OfferSearchFilter
 
+    def get_permissions(self):
+        # Voir le commentaire équivalent sur RequestViewSet.get_permissions : même correctif
+        # (update/partial_update/destroy n'avaient aucune restriction avant ce changement).
+        if self.action in ('update', 'partial_update', 'destroy'):
+            return [IsOwnerOrInstitutional()]
+        if self.action in ('assign_dossier', 'bulk_create_team'):
+            return [IsInstitutionalActor()]
+        return [AllowAny()]
+
     def get_queryset(self):
         return annotate_distance_from_crisis(
             super().get_queryset().select_related('crisis', 'author')
@@ -1977,6 +1999,18 @@ class InformationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     queryset = Information.objects.all()
     serializer_class = InformationSerializer
     permission_classes = [AllowAny]
+    filterset_class = AuthorEmailFilter
+
+    def get_permissions(self):
+        # Voir le commentaire équivalent sur RequestViewSet.get_permissions : même correctif
+        # (update/partial_update/destroy n'avaient aucune restriction avant ce changement —
+        # reproduit en direct : une requête DELETE anonyme supprimait n'importe quel
+        # signalement).
+        if self.action in ('update', 'partial_update', 'destroy'):
+            return [IsOwnerOrInstitutional()]
+        if self.action in ('vue_mairie', 'bulk_assign_team'):
+            return [IsInstitutionalActor()]
+        return [AllowAny()]
 
     def get_queryset(self):
         return annotate_distance_from_crisis(
@@ -3948,7 +3982,7 @@ class DeclarationSecuriteViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
             return [AllowAny()]
         if self.action == 'mes_declarations':
             return [permissions.IsAuthenticated()]
-        if self.action in ('update', 'partial_update'):
+        if self.action in ('update', 'partial_update', 'destroy'):
             return [IsOwnDeclarationOrInstitutional()]
         return [IsInstitutionalActor()]
 

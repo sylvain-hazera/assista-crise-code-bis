@@ -35,4 +35,9 @@ export class DeclarationSecuriteService {
   update(id: string, data: Partial<DeclarationSecurite>): Observable<DeclarationSecurite> {
     return this.http.patch<DeclarationSecurite>(`${this.url}/${id}/`, data);
   }
+
+  /** DELETE /api/declarations-securite/:id/ — l'auteur peut supprimer sa propre déclaration. */
+  delete(id: string): Observable<void> {
+    return this.http.delete<void>(`${this.url}/${id}/`);
+  }
 }

@@ -32,7 +32,7 @@ export class CrisisService {
    */
   getMines(email: string): Observable<Crisis[]> {
     // return this.getAll({ auteur: userId });
-    return this.getAll({ auteur_email: email });
+    return this.getAll({ author_email: email });
   }
 
   /**

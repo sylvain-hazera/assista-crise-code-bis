@@ -44,8 +44,20 @@
         <span class="tab-text">Besoins</span>
       </button>
       <button class="tab-button" [class.active]="activeTab === 'crisis'" (click)="setActiveTab('crisis')">
-        <span class="material-icons">local_fire_department</span> 
+        <span class="material-icons">local_fire_department</span>
         <span class="tab-text">Crises</span>
+      </button>
+      <button class="tab-button" [class.active]="activeTab === 'declaration'" (click)="setActiveTab('declaration')">
+        <span class="material-icons">verified_user</span>
+        <span class="tab-text">Je suis en sécurité</span>
+      </button>
+      <button class="tab-button" [class.active]="activeTab === 'information'" (click)="setActiveTab('information')">
+        <span class="material-icons">report</span>
+        <span class="tab-text">Signalements</span>
+      </button>
+      <button class="tab-button" [class.active]="activeTab === 'dossier'" (click)="setActiveTab('dossier')">
+        <span class="material-icons">folder</span>
+        <span class="tab-text">Mon dossier</span>
       </button>
     </div>
 
@@ -375,16 +387,174 @@
           }
         </div>
       }
+
+      <!-- DECLARATIONS "JE SUIS EN SÉCURITÉ" TAB -->
+      @if (activeTab === 'declaration') {
+        <div class="tab-panel">
+          <div class="table-actions">
+            <div class="search-bar">
+              <span class="material-icons">search</span>
+              <input type="text" placeholder="Filtrer par situation ou crise..." (input)="onFilterDeclaration($event)">
+            </div>
+          </div>
+
+          @if (isLoadingDeclarations) {
+            <div class="loading">Chargement des déclarations...</div>
+          } @else {
+            <div class="table-responsive">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Situation</th>
+                    <th>Crise</th>
+                    <th>Centre</th>
+                    <th>Date</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (declaration of filteredDeclarations; track declaration.id) {
+                    <tr>
+                      <td><strong>{{ declaration.situation_libelle }}</strong></td>
+                      <td>{{ declaration.crise_nom || '—' }}</td>
+                      <td>{{ declaration.centre_accueil_nom || '—' }}</td>
+                      <td>{{ declaration.date_declaration | date:'dd/MM/yyyy' }}</td>
+                      <td class="actions">
+                        <button class="icon-btn" (click)="viewDeclaration(declaration); $event.stopPropagation()">
+                          <span class="material-icons">visibility</span>
+                        </button>
+                        <button class="icon-btn delete" title="Supprimer" (click)="deleteDeclaration(declaration)">
+                          <span class="material-icons">delete</span>
+                        </button>
+                      </td>
+                    </tr>
+                  } @empty {
+                    <tr>
+                      <td colspan="5" class="empty-message">Aucune déclaration trouvée.</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          }
+        </div>
+      }
+
+      <!-- SIGNALEMENTS DIVERS TAB -->
+      @if (activeTab === 'information') {
+        <div class="tab-panel">
+          <div class="table-actions">
+            <div class="search-bar">
+              <span class="material-icons">search</span>
+              <input type="text" placeholder="Filtrer par titre ou statut..." (input)="onFilterInformation($event)">
+            </div>
+          </div>
+
+          @if (isLoadingInformations) {
+            <div class="loading">Chargement des signalements...</div>
+          } @else {
+            <div class="table-responsive">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Statut</th>
+                    <th>Titre</th>
+                    <th>Localisation</th>
+                    <th>Date</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (info of filteredInformations; track info.id) {
+                    <tr>
+                      <td><span class="status-badge">{{ getStatusLabel(info.status.toString()) }}</span></td>
+                      <td><strong>{{ info.title }}</strong></td>
+                      <td>{{ getLocation(info.latitude, info.longitude) }}</td>
+                      <td>{{ info.created_at | date:'dd/MM/yyyy' }}</td>
+                      <td class="actions">
+                        <button class="icon-btn" (click)="viewInformation(info); $event.stopPropagation()">
+                          <span class="material-icons">visibility</span>
+                        </button>
+                        <button class="icon-btn delete" title="Supprimer" (click)="deleteInformation(info)">
+                          <span class="material-icons">delete</span>
+                        </button>
+                      </td>
+                    </tr>
+                  } @empty {
+                    <tr>
+                      <td colspan="5" class="empty-message">Aucun signalement trouvé.</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          }
+        </div>
+      }
+
+      <!-- MON DOSSIER TAB -->
+      @if (activeTab === 'dossier') {
+        <div class="tab-panel">
+          <div class="table-actions">
+            <div class="search-bar">
+              <span class="material-icons">search</span>
+              <input type="text" placeholder="Filtrer par titre, statut ou numéro..." (input)="onFilterDossier($event)">
+            </div>
+          </div>
+
+          @if (isLoadingDossiers) {
+            <div class="loading">Chargement de vos dossiers...</div>
+          } @else {
+            <div class="table-responsive">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Statut</th>
+                    <th>Titre</th>
+                    <th>Crise</th>
+                    <th>Date</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (dossier of filteredDossiers; track dossier.id) {
+                    <tr (click)="goToDossierSuivi(dossier)" class="clickable-row">
+                      <td>
+                        <span class="status-badge">{{ dossier.statut }}</span>
+                        @if (dossier.has_updates) { <span class="update-dot" title="Nouvelles mises à jour"></span> }
+                      </td>
+                      <td><strong>{{ dossier.titre }}</strong></td>
+                      <td>{{ dossier.crise_nom || '—' }}</td>
+                      <td>{{ dossier.date_creation | date:'dd/MM/yyyy' }}</td>
+                      <td class="actions">
+                        <button class="icon-btn" title="Suivre ce dossier" (click)="goToDossierSuivi(dossier); $event.stopPropagation()">
+                          <span class="material-icons">visibility</span>
+                        </button>
+                      </td>
+                    </tr>
+                  } @empty {
+                    <tr>
+                      <td colspan="5" class="empty-message">Aucun dossier ne vous concerne pour le moment.</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          }
+        </div>
+      }
     </div>
     
     <!-- DETAIL MODAL -->
-    @if ((showDetailRequest || showDetailOffer || showDetailCrisis ) && selectedReport) {
+    @if ((showDetailRequest || showDetailOffer || showDetailCrisis || showDetailInformation || showDetailDeclaration) && selectedReport) {
       <div class="modal-overlay" (click)="closeDetail()">
         <div class="modal-content" (click)="$event.stopPropagation()">
           <div class="modal-header">
             <h2>
               @if (showDetailCrisis) { Détails de la crise }
               @else if (showDetailOffer) { Détails de l'offre }
+              @else if (showDetailInformation) { Détails du signalement }
+              @else if (showDetailDeclaration) { Détails de la déclaration }
               @else { Détails de la demande }
             </h2>
             <button class="close-btn" (click)="closeDetail()">
@@ -487,6 +657,64 @@
             <div class="detail-row">
               <label>Statut :</label>
               <span class="status-badge">{{ getStatusLabel(selectedReport!.status) }}</span>
+            </div>
+          }
+
+          @if (isInformation(selectedReport!)) {
+            <div class="detail-row">
+              <label>Titre :</label>
+              <span>{{ selectedReport!.title }}</span>
+            </div>
+            <div class="detail-row">
+              <label>Signalé par :</label>
+              <span>{{ selectedReport!.first_name_information }} {{ selectedReport!.last_name_information }}</span>
+            </div>
+            <div class="detail-row">
+              <label>Localisation :</label>
+              <span>{{ getLocation(selectedReport!.latitude, selectedReport!.longitude) }}</span>
+            </div>
+            <div class="detail-row">
+              <label>Date de création :</label>
+              <span>{{ selectedReport!.created_at | date:'dd/MM/yyyy à HH:mm' }}</span>
+            </div>
+            <div class="detail-row">
+              <label>Statut :</label>
+              <span class="status-badge">{{ getStatusLabel(selectedReport!.status) }}</span>
+            </div>
+          }
+
+          @if (isDeclaration(selectedReport!)) {
+            <div class="detail-row">
+              <label>Situation :</label>
+              <span>{{ selectedReport!.situation_libelle }}</span>
+            </div>
+            <div class="detail-row">
+              <label>Référent :</label>
+              <span>{{ selectedReport!.prenom_referent }} {{ selectedReport!.nom_referent }}</span>
+            </div>
+            <div class="detail-row">
+              <label>Contact :</label>
+              <span>{{ selectedReport!.contact_referent }}</span>
+            </div>
+            <div class="detail-row">
+              <label>Vous déclarez pour :</label>
+              <span>{{ selectedReport!.type_declarant_libelle }} ({{ selectedReport!.nombre_adultes }} adulte(s), {{ selectedReport!.nombre_enfants }} enfant(s))</span>
+            </div>
+            @if (selectedReport!.crise_nom) {
+              <div class="detail-row">
+                <label>Crise :</label>
+                <span>{{ selectedReport!.crise_nom }}</span>
+              </div>
+            }
+            @if (selectedReport!.centre_accueil_nom) {
+              <div class="detail-row">
+                <label>Centre d'accueil :</label>
+                <span>{{ selectedReport!.centre_accueil_nom }}</span>
+              </div>
+            }
+            <div class="detail-row">
+              <label>Date de déclaration :</label>
+              <span>{{ selectedReport!.date_declaration | date:'dd/MM/yyyy à HH:mm' }}</span>
             </div>
           }
         </div>

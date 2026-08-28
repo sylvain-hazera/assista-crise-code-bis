@@ -346,6 +346,26 @@ class TestUpdateOwnDeclaration:
 
         assert response.status_code in (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN)
 
+    def test_owner_can_delete_own_declaration(self, authenticated_client):
+        client, user = authenticated_client
+        declaration = self._declare(client, user)
+
+        response = client.delete(reverse('declarationsecurite-detail', kwargs={'pk': declaration['id']}))
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        assert not DeclarationSecurite.objects.filter(id=declaration['id']).exists()
+
+    def test_owner_cannot_delete_someone_elses_declaration(self, authenticated_client):
+        client, user = authenticated_client
+        other = User.objects.create_user(username='autre3@test.fr', email='autre3@test.fr', password='Test1234!')
+        declaration = self._declare(client, other)
+
+        client.force_authenticate(user=user)
+        response = client.delete(reverse('declarationsecurite-detail', kwargs={'pk': declaration['id']}))
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert DeclarationSecurite.objects.filter(id=declaration['id']).exists()
+
 
 @pytest.mark.django_db
 class TestCentresAccueilPublic:

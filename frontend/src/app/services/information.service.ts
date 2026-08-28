@@ -59,6 +59,12 @@ export class InformationService {
       .pipe(map(list => list.map(this.normalize)));
   }
 
+  /** GET /api/informations/?author_email=... — signalements créés par l'utilisateur connecté
+   * lui-même (compte lié à la création, voir InformationViewSet.perform_create). */
+  getMines(email: string): Observable<Information[]> {
+    return this.getAll({ author_email: email });
+  }
+
   /** POST /api/informations/bulk_assign_team/ — affecte une sélection de signalements à une
    * équipe existante ; crée un Dossier de suivi par signalement (comme pour les demandes). */
   bulkAssignTeam(informationIds: string[], teamId: string): Observable<BulkAssignInformationResult> {

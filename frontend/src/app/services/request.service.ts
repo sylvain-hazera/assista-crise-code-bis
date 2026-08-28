@@ -46,7 +46,7 @@ export class RequestService {
     //   .get<Request[]>(`${this.url}/my_requests/`)
     //   .pipe(map(list => list.map(this.normalize)));
     // return this.getAll({ auteur: userId });
-    return this.getAll({ auteur_email: email });
+    return this.getAll({ author_email: email });
   }
 
   /** GET /api/demandes/<id>/ */

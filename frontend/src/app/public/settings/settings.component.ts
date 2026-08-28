@@ -1,15 +1,21 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, Validators, ReactiveFormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { User } from '../../shared/models/user.model';
 import { AuthService } from '../../auth/services/auth.service';
 import { RequestService } from '../../services/request.service';
 import { OfferService } from '../../services/offer.service';
 import { CrisisService } from '../../services/crisis.service';
+import { InformationService } from '../../services/information.service';
+import { DeclarationSecuriteService } from '../../services/declaration-securite.service';
+import { DossierService } from '../../services/dossier.service';
 import { Request } from '../../shared/models/request.model';
 import { Offer } from '../../shared/models/offer.model';
 import { Crisis } from '../../shared/models/crisis.model';
+import { Information } from '../../shared/models/information.model';
+import { DeclarationSecurite } from '../../shared/models/declaration-securite.model';
+import { Dossier } from '../../shared/models/dossier.model';
 import { Status } from '../../shared/models/status.model';
 
 @Component({
@@ -55,14 +61,18 @@ export class SettingsComponent implements OnInit {
     return this._errorMessage;
   }
 
-  activeTab: 'profile' | 'password' | 'offer' | 'request' | 'crisis' = 'profile';
+  activeTab: 'profile' | 'password' | 'offer' | 'request' | 'crisis' | 'declaration' | 'information' | 'dossier' = 'profile';
 
   allCrisis:  Crisis[]   = [];  filteredCrisis:  Crisis[]   = [];  isLoadingCrisis  = false;
   allOffers:  Offer[]   = [];  filteredOffers:  Offer[]   = [];  isLoadingOffers  = false;
   allRequests: Request[] = []; filteredRequests: Request[] = []; isLoadingRequests = false;
+  allDeclarations: DeclarationSecurite[] = []; filteredDeclarations: DeclarationSecurite[] = []; isLoadingDeclarations = false;
+  allInformations: Information[] = []; filteredInformations: Information[] = []; isLoadingInformations = false;
+  allDossiers: Dossier[] = []; filteredDossiers: Dossier[] = []; isLoadingDossiers = false;
 
   showDetailCrisis = false;  showDetailOffer  = false;  showDetailRequest = false;
-  selectedReport: Crisis | Offer | Request | null = null;
+  showDetailInformation = false; showDetailDeclaration = false;
+  selectedReport: Crisis | Offer | Request | Information | DeclarationSecurite | null = null;
 
   constructor(
     private fb: FormBuilder,
@@ -70,7 +80,11 @@ export class SettingsComponent implements OnInit {
     private criseService:   CrisisService,
     private demandeService: RequestService,
     private offreService:   OfferService,
-    private router: Router
+    private informationService: InformationService,
+    private declarationService: DeclarationSecuriteService,
+    private dossierService: DossierService,
+    private router: Router,
+    private route: ActivatedRoute,
   ) {}
 
   ngOnInit(): void {
@@ -78,6 +92,12 @@ export class SettingsComponent implements OnInit {
     this.previewUrl = this.currentUser?.photo ?? null;
     this.initForms();
     this.loadAll();
+
+    const requestedTab = this.route.snapshot.queryParamMap.get('tab');
+    const validTabs: (typeof this.activeTab)[] = ['profile', 'password', 'offer', 'request', 'crisis', 'declaration', 'information', 'dossier'];
+    if (requestedTab && (validTabs as string[]).includes(requestedTab)) {
+      this.activeTab = requestedTab as typeof this.activeTab;
+    }
   }
 
   private initForms(): void {
@@ -107,6 +127,42 @@ export class SettingsComponent implements OnInit {
     this.loadCrises();
     this.loadOffres();
     this.loadDemandes();
+    this.loadDeclarations();
+    this.loadInformations();
+    this.loadDossiers();
+  }
+
+  private loadDeclarations(): void {
+    this.isLoadingDeclarations = true;
+    this.declarationService.mesDeclarations().subscribe({
+      next: list => {
+        this.allDeclarations = this.filteredDeclarations = list;
+        this.isLoadingDeclarations = false;
+      },
+      error: () => (this.isLoadingDeclarations = false)
+    });
+  }
+
+  private loadInformations(): void {
+    this.isLoadingInformations = true;
+    this.informationService.getMines(this.currentUser!.email).subscribe({
+      next: list => {
+        this.allInformations = this.filteredInformations = list;
+        this.isLoadingInformations = false;
+      },
+      error: () => (this.isLoadingInformations = false)
+    });
+  }
+
+  private loadDossiers(): void {
+    this.isLoadingDossiers = true;
+    this.dossierService.getAll().subscribe({
+      next: list => {
+        this.allDossiers = this.filteredDossiers = list;
+        this.isLoadingDossiers = false;
+      },
+      error: () => (this.isLoadingDossiers = false)
+    });
   }
 
   private loadCrises(): void {
@@ -249,6 +305,31 @@ export class SettingsComponent implements OnInit {
     );
   }
 
+  onFilterInformation(event: Event): void {
+    const term = (event.target as HTMLInputElement).value.toLowerCase();
+    this.filteredInformations = this.allInformations.filter(i =>
+      i.title.toLowerCase().includes(term) ||
+      i.status.toLowerCase().includes(term)
+    );
+  }
+
+  onFilterDeclaration(event: Event): void {
+    const term = (event.target as HTMLInputElement).value.toLowerCase();
+    this.filteredDeclarations = this.allDeclarations.filter(d =>
+      (d.situation_libelle ?? '').toLowerCase().includes(term) ||
+      (d.crise_nom ?? '').toLowerCase().includes(term)
+    );
+  }
+
+  onFilterDossier(event: Event): void {
+    const term = (event.target as HTMLInputElement).value.toLowerCase();
+    this.filteredDossiers = this.allDossiers.filter(d =>
+      d.titre.toLowerCase().includes(term) ||
+      d.statut.toLowerCase().includes(term) ||
+      d.numero.toLowerCase().includes(term)
+    );
+  }
+
   // ── Suppression ──────────────────────────────────────────────
 
   deleteCrisis(crise: Crisis): void {
@@ -271,6 +352,23 @@ export class SettingsComponent implements OnInit {
     if (!confirm(`Supprimer "${demande.title}" ?`)) return;
     this.demandeService.delete(demande.id).subscribe({
       next:  () => { this.successMessage = 'Demande supprimée'; this.loadDemandes(); },
+      error: err => (this.errorMessage = err.error?.detail ?? 'Erreur')
+    });
+  }
+
+  deleteInformation(info: Information): void {
+    if (!confirm(`Supprimer "${info.title}" ?`)) return;
+    this.informationService.delete(info.id).subscribe({
+      next:  () => { this.successMessage = 'Signalement supprimé'; this.loadInformations(); },
+      error: err => (this.errorMessage = err.error?.detail ?? 'Erreur')
+    });
+  }
+
+  deleteDeclaration(declaration: DeclarationSecurite): void {
+    if (!declaration.id) return;
+    if (!confirm(`Supprimer cette déclaration ?`)) return;
+    this.declarationService.delete(declaration.id).subscribe({
+      next:  () => { this.successMessage = 'Déclaration supprimée'; this.loadDeclarations(); },
       error: err => (this.errorMessage = err.error?.detail ?? 'Erreur')
     });
   }
@@ -313,6 +411,8 @@ export class SettingsComponent implements OnInit {
     this.showDetailCrisis = true;
     this.showDetailOffer = false;
     this.showDetailRequest = false;
+    this.showDetailInformation = false;
+    this.showDetailDeclaration = false;
   }
 
   viewOffer(offre: Offer): void {
@@ -321,6 +421,8 @@ export class SettingsComponent implements OnInit {
     this.showDetailOffer = true;
     this.showDetailCrisis = false;
     this.showDetailRequest = false;
+    this.showDetailInformation = false;
+    this.showDetailDeclaration = false;
   }
 
   viewRequest(demande: Request): void {
@@ -329,6 +431,32 @@ export class SettingsComponent implements OnInit {
     this.showDetailRequest = true;
     this.showDetailOffer = false;
     this.showDetailCrisis = false;
+    this.showDetailInformation = false;
+    this.showDetailDeclaration = false;
+  }
+
+  viewInformation(info: Information): void {
+    this.selectedReport = info;
+
+    this.showDetailInformation = true;
+    this.showDetailRequest = false;
+    this.showDetailOffer = false;
+    this.showDetailCrisis = false;
+    this.showDetailDeclaration = false;
+  }
+
+  viewDeclaration(declaration: DeclarationSecurite): void {
+    this.selectedReport = declaration;
+
+    this.showDetailDeclaration = true;
+    this.showDetailInformation = false;
+    this.showDetailRequest = false;
+    this.showDetailOffer = false;
+    this.showDetailCrisis = false;
+  }
+
+  goToDossierSuivi(dossier: Dossier): void {
+    this.router.navigate(['/dossier-suivi', dossier.id]);
   }
 
 
@@ -356,19 +484,29 @@ export class SettingsComponent implements OnInit {
     this.showDetailCrisis = false;
     this.showDetailOffer = false;
     this.showDetailRequest = false;
+    this.showDetailInformation = false;
+    this.showDetailDeclaration = false;
     this.selectedReport = null;
   }
 
-  isCrise(r: Crisis | Offer | Request): r is Crisis {
+  isCrise(r: Crisis | Offer | Request | Information | DeclarationSecurite): r is Crisis {
     return 'name' in r && 'validator' in r;
   }
 
-  isOffre(r: Crisis | Offer | Request): r is Offer {
+  isOffre(r: Crisis | Offer | Request | Information | DeclarationSecurite): r is Offer {
     return 'first_name_offer' in r;
   }
 
-  isDemande(r: Crisis | Offer | Request): r is Request {
+  isDemande(r: Crisis | Offer | Request | Information | DeclarationSecurite): r is Request {
     return 'first_name_request' in r;
+  }
+
+  isInformation(r: Crisis | Offer | Request | Information | DeclarationSecurite): r is Information {
+    return 'first_name_information' in r;
+  }
+
+  isDeclaration(r: Crisis | Offer | Request | Information | DeclarationSecurite): r is DeclarationSecurite {
+    return 'nom_referent' in r;
   }
   get isAdmin(): boolean { return this.authService.isAdmin(); }
   get isIndividual(): boolean { return this.currentUser?.type === 'UTIL_SIMPLE'; }

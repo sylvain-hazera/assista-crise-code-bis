@@ -81,6 +81,27 @@ class IsInstitutionalActor(BasePermission):
         )
 
 
+class IsOwnerOrInstitutional(BasePermission):
+    """Autorise l'auteur (compte lié, `obj.author`) d'un contenu public à le modifier ou le
+    supprimer lui-même, en plus des acteurs institutionnels. Offer/Request/Information sont en
+    `permission_classes = [AllowAny]` pour permettre la création publique (y compris anonyme) —
+    sans `get_permissions()` dédié pour update/partial_update/destroy, cette même permission
+    s'appliquait à CES actions aussi : n'importe qui, même anonyme, pouvait modifier ou
+    supprimer le contenu de n'importe qui d'autre (vérifié en le reproduisant). La suppression
+    anonyme reste possible par ailleurs via le lien à jeton envoyé par email
+    (delete-offer/delete-request/delete-information), qui ne passe pas par ce ViewSet."""
+
+    message = "Vous ne pouvez modifier ou supprimer que votre propre contenu."
+
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.is_authenticated)
+
+    def has_object_permission(self, request, view, obj):
+        if IsInstitutionalActor().has_permission(request, view):
+            return True
+        return obj.author_id == request.user.id
+
+
 class IsOwnDeclarationOrInstitutional(BasePermission):
     """Autorise l'auteur d'une déclaration de sécurité ("je suis en sécurité") à modifier sa
     propre situation (arrivée/départ d'un centre d'accueil, relogement...), en plus des
