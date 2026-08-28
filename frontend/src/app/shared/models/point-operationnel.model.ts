@@ -24,6 +24,7 @@ export interface PointOperationnel {
   actif: boolean;
   commentaire?: string | null;
   description?: string | null;
+  capacite_accueil?: number | null;
   date_ouverture?: string | null;
   date_fermeture?: string | null;
   competences_requises?: string[];
@@ -31,6 +32,19 @@ export interface PointOperationnel {
   equipe?: string | null;
   equipe_nom?: string | null;
   personnes_presentes?: number;
+}
+
+/** Version publique, à champs restreints, renvoyée par GET /points-operationnels/centres_accueil/
+ * — voir PointOperationnelPublicSerializer côté backend. */
+export interface CentreAccueilPublic {
+  id: string;
+  nom: string;
+  adresse: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  capacite_accueil: number | null;
+  personnes_presentes: number;
+  crise: string | null;
 }
 
 export interface PointEquipeMembre {
@@ -62,6 +76,7 @@ export interface PointOperationnelPayload {
   commentaire?: string;
   institution?: string;
   description?: string;
+  capacite_accueil?: number | null;
   date_ouverture?: string | null;
   date_fermeture?: string | null;
   location?: string;

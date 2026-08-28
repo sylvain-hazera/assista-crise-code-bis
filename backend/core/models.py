@@ -1980,6 +1980,14 @@ class PointOperationnel(EnvironmentScopedModel):
         default=False
     )
 
+    # Nullable = capacité non renseignée (pas "zéro place") — utilisé pour calculer la
+    # saturation dans le popup public "trouver un centre d'accueil" (personnes_presentes vs
+    # capacite_accueil), voir PointOperationnelViewSet.centres_accueil.
+    capacite_accueil = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+    )
+
     actif = models.BooleanField(
         default=True
     )
@@ -2216,6 +2224,13 @@ class TypeDeclarant(models.TextChoices):
     GROUPE = "GROUPE", "Groupe"
 
 
+class SituationDeclarant(models.TextChoices):
+    RELOGE = "RELOGE", "En sécurité / relogé"
+    EN_CENTRE = "EN_CENTRE", "En centre d'accueil"
+    BESOIN_CENTRE = "BESOIN_CENTRE", "En sécurité, cherche un centre d'accueil"
+    HORS_ZONE = "HORS_ZONE", "En sécurité, hors zone"
+
+
 class DeclarationSecurite(EnvironmentScopedModel):
     """"Je suis en sécurité" : une personne (ou un référent pour une famille/un groupe) se
     déclare en sécurité — soit elle-même (formulaire public, ex: en vacances loin du site,
@@ -2238,6 +2253,15 @@ class DeclarationSecurite(EnvironmentScopedModel):
 
     type_declarant = models.CharField(
         max_length=20, choices=TypeDeclarant.choices, default=TypeDeclarant.PERSONNE_SEULE,
+    )
+
+    # Distincte de type_declarant (qui décrit QUI est concerné — personne seule/famille/
+    # groupe) : situation décrit OÙ/COMMENT la personne se déclare en sécurité. BESOIN_CENTRE
+    # ne pose pas centre_accueil à la création (la personne n'en a pas encore choisi un — le
+    # formulaire public lui propose ensuite une liste de suggestions, purement indicative,
+    # sans créer de second enregistrement).
+    situation = models.CharField(
+        max_length=20, choices=SituationDeclarant.choices, default=SituationDeclarant.RELOGE,
     )
 
     nom_referent = models.CharField(max_length=80)

@@ -62,6 +62,77 @@
           </div>
         </div>
 
+        <!-- Situation -->
+        <div class="form-group">
+          <label class="form-label">Votre situation <span class="required">*</span></label>
+          <div class="type-declarant-options">
+            <label class="type-declarant-option">
+              <input type="radio" formControlName="situation" value="RELOGE"/>
+              Je suis en sécurité / relogé
+            </label>
+            <label class="type-declarant-option">
+              <input type="radio" formControlName="situation" value="EN_CENTRE"/>
+              Je suis en centre d'accueil
+            </label>
+            <label class="type-declarant-option">
+              <input type="radio" formControlName="situation" value="BESOIN_CENTRE"/>
+              Je suis en sécurité mais j'ai besoin d'un point de chute
+            </label>
+            <label class="type-declarant-option">
+              <input type="radio" formControlName="situation" value="HORS_ZONE"/>
+              Je suis en sécurité, hors zone (voyage, chez des proches…)
+            </label>
+          </div>
+        </div>
+
+        <!-- Choix du centre (situation "Je suis en centre d'accueil" uniquement) -->
+        @if (situationChoisie === 'EN_CENTRE') {
+          <div class="form-group">
+            <label for="centreAccueil" class="form-label">
+              Centre d'accueil <span class="required">*</span>
+            </label>
+            @if (!declareSafeForm.get('crisisId')?.value) {
+              <p class="section-description">Choisissez d'abord une crise ci-dessus pour indiquer un centre.</p>
+            } @else if (centresAccueil.length === 0) {
+              <p class="section-description">Aucun centre d'accueil connu pour cette crise pour le moment.</p>
+            } @else {
+              <div class="select-wrapper">
+                <select id="centreAccueil" formControlName="centreAccueil" class="form-select">
+                  <option value="">— Choisir un centre —</option>
+                  @for (centre of centresAccueil; track centre.id) {
+                    <option [value]="centre.id">{{ centre.nom }}</option>
+                  }
+                </select>
+                <span class="material-symbols-outlined select-arrow">arrow_drop_down</span>
+              </div>
+            }
+          </div>
+
+          <div class="checkbox-group">
+            <label class="checkbox-label">
+              <input
+                type="checkbox"
+                class="form-checkbox"
+                formControlName="regimeAlimentaire">
+              <span class="checkbox-text">
+                Régime alimentaire spécifique pour au moins une personne
+              </span>
+            </label>
+            @if (declareSafeForm.get('regimeAlimentaire')?.value) {
+              <p class="warning-text">
+                <span class="material-icons">info</span>
+                Merci de vous rapprocher des équipes sur place pour préciser le régime alimentaire concerné.
+              </p>
+            }
+          </div>
+        }
+
+        @if (situationChoisie === 'BESOIN_CENTRE') {
+          <p class="section-description">
+            Après l'enregistrement, nous vous proposerons une liste de centres d'accueil disponibles à proximité.
+          </p>
+        }
+
         <!-- Type de déclarant -->
         <div class="form-group">
           <label class="form-label">Vous déclarez pour <span class="required">*</span></label>
@@ -170,48 +241,6 @@
             </div>
           }
         </div>
-
-        <!-- Centre d'accueil (optionnel, une fois une crise choisie) -->
-        <div class="form-group">
-          <label for="centreAccueil" class="form-label">
-            Je suis actuellement dans un centre d'accueil
-          </label>
-          @if (!declareSafeForm.get('crisisId')?.value) {
-            <p class="section-description">Choisissez d'abord une crise ci-dessus pour indiquer un centre.</p>
-          } @else if (centresAccueil.length === 0) {
-            <p class="section-description">Aucun centre d'accueil connu pour cette crise pour le moment.</p>
-          } @else {
-            <div class="select-wrapper">
-              <select id="centreAccueil" formControlName="centreAccueil" class="form-select">
-                <option value="">— Non, aucun centre —</option>
-                @for (centre of centresAccueil; track centre.value) {
-                  <option [value]="centre.value">{{ centre.label }}</option>
-                }
-              </select>
-              <span class="material-symbols-outlined select-arrow">arrow_drop_down</span>
-            </div>
-          }
-        </div>
-
-        @if (declareSafeForm.get('centreAccueil')?.value) {
-          <div class="checkbox-group">
-            <label class="checkbox-label">
-              <input
-                type="checkbox"
-                class="form-checkbox"
-                formControlName="regimeAlimentaire">
-              <span class="checkbox-text">
-                Régime alimentaire spécifique pour au moins une personne
-              </span>
-            </label>
-            @if (declareSafeForm.get('regimeAlimentaire')?.value) {
-              <p class="warning-text">
-                <span class="material-icons">info</span>
-                Merci de vous rapprocher des équipes sur place pour préciser le régime alimentaire concerné.
-              </p>
-            }
-          </div>
-        }
 
         <!-- Submit Button -->
         <div class="form-actions">
@@ -385,3 +414,72 @@
     }
   </div>
 </div>
+
+<!-- ═══ POPUP "TROUVER UN CENTRE D'ACCUEIL" (situation "besoin d'un point de chute") ═══ -->
+@if (showCentrePopup) {
+  <div class="centre-popup-overlay" (click)="closeCentrePopup()">
+    <div class="centre-popup" (click)="$event.stopPropagation()">
+      <div class="centre-popup-header">
+        <h2>Votre déclaration a été enregistrée</h2>
+        <button type="button" class="icon-btn" (click)="closeCentrePopup()"><span class="material-icons">close</span></button>
+      </div>
+      <div class="centre-popup-body">
+        <p>Voici les centres d'accueil disponibles pour cette crise :</p>
+
+        @if (locatingUser) {
+          <p class="section-description">Localisation en cours pour trier par distance…</p>
+        } @else if (userLatitude == null) {
+          <p class="section-description">Localisation non disponible : les centres sont affichés sans tri par distance.</p>
+        }
+
+        @if (centresTries.length === 0) {
+          <p class="section-description">Aucun centre d'accueil connu pour cette crise pour le moment. Rapprochez-vous des équipes sur place.</p>
+        } @else {
+          <div class="centre-table-wrap">
+            <table class="centre-table">
+              <thead>
+                <tr>
+                  <th>Nom</th>
+                  <th>Localisation</th>
+                  <th>Distance</th>
+                  <th>Capacité</th>
+                  <th>Statut</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (centre of centresTries; track centre.id) {
+                  <tr>
+                    <td class="cell-nom">{{ centre.nom }}</td>
+                    <td>{{ centre.adresse || '—' }}</td>
+                    <td>{{ centre.distanceKm != null ? (centre.distanceKm + ' km') : '—' }}</td>
+                    <td>{{ centre.capacite_accueil != null ? (centre.personnes_presentes + ' / ' + centre.capacite_accueil) : '—' }}</td>
+                    <td>
+                      @if (centre.capacite_accueil == null) {
+                        <span class="statut-chip">Inconnu</span>
+                      } @else if (centre.sature) {
+                        <span class="statut-chip stat-sature">Saturé</span>
+                      } @else {
+                        <span class="statut-chip stat-dispo">Disponible</span>
+                      }
+                    </td>
+                    <td>
+                      @if (navigationLink(centre)) {
+                        <a [href]="navigationLink(centre)" target="_blank" rel="noopener" class="nav-link">
+                          <span class="material-icons">directions</span> Itinéraire
+                        </a>
+                      }
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
+      </div>
+      <div class="centre-popup-footer">
+        <button type="button" class="btn-submit" (click)="closeCentrePopup()">Fermer</button>
+      </div>
+    </div>
+  </div>
+}

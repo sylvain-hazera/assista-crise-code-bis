@@ -41,6 +41,12 @@
       </div>
 
       <div class="form-group">
+        <label>Capacité d'accueil (optionnel)</label>
+        <input type="number" formControlName="capacite_accueil" min="0" placeholder="Nombre de personnes maximum">
+        <p class="field-hint">Utilisée pour indiquer si le centre est saturé dans le formulaire public "je suis en sécurité".</p>
+      </div>
+
+      <div class="form-group">
         <label>Adresse</label>
         <app-address-picker placeholder="Rechercher une adresse…" (addressSelected)="onAddressSelected($event)"></app-address-picker>
         @if (latitude != null && longitude != null) {

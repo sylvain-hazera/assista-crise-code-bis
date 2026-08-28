@@ -534,6 +534,7 @@ class DeclarationSecuriteSerializer(serializers.ModelSerializer):
     d'un centre d'accueil). Aucun champ santé/médical : voir DeclarationSecurite.__doc__."""
 
     type_declarant_libelle = serializers.CharField(source="get_type_declarant_display", read_only=True)
+    situation_libelle = serializers.CharField(source="get_situation_display", read_only=True)
     centre_accueil_nom = serializers.CharField(source="centre_accueil.nom", read_only=True, default=None)
     crise_nom = serializers.CharField(source="crise.name", read_only=True, default=None)
     declare_par_nom = serializers.SerializerMethodField()
@@ -1420,6 +1421,33 @@ class PointOperationnelSerializer(
         crise = attrs.get('crise') or (self.instance.crise if self.instance else None)
         validate_crisis_open(crise, field_name="crise")
         return attrs
+
+
+class PointOperationnelPublicSerializer(serializers.ModelSerializer):
+    """Version publique, à champs restreints, d'un point opérationnel — utilisée par le
+    formulaire public "je suis en sécurité" (choix d'un centre d'accueil, suggestions de
+    centres disponibles). Volontairement distincte de PointOperationnelSerializer : celui-ci
+    expose aussi des champs internes (commentaire, responsable...) qui n'ont rien à faire
+    devant le grand public."""
+
+    latitude = serializers.SerializerMethodField()
+    longitude = serializers.SerializerMethodField()
+    personnes_presentes = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PointOperationnel
+        fields = ['id', 'nom', 'adresse', 'latitude', 'longitude', 'capacite_accueil', 'personnes_presentes', 'crise']
+
+    def get_latitude(self, obj):
+        return obj.location.y if obj.location else None
+
+    def get_longitude(self, obj):
+        return obj.location.x if obj.location else None
+
+    def get_personnes_presentes(self, obj):
+        return obj.registre_presences.filter(date_depart__isnull=True).aggregate(
+            total=Sum('nombre')
+        )['total'] or 0
 
 
 class ImplicationInstitutionSerializer(

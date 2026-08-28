@@ -83,6 +83,7 @@ export class PointModalComponent implements OnChanges {
       type: [this.point?.type ?? null, Validators.required],
       nom: [this.point?.nom ?? '', Validators.required],
       description: [this.point?.description ?? ''],
+      capacite_accueil: [this.point?.capacite_accueil ?? null],
       date_ouverture: [this.toDatetimeLocal(this.point?.date_ouverture)],
       date_fermeture: [this.toDatetimeLocal(this.point?.date_fermeture)],
       equipe: [this.point?.equipe ?? null],
@@ -166,10 +167,11 @@ export class PointModalComponent implements OnChanges {
       return;
     }
 
-    const { institution, type, nom, description, date_ouverture, date_fermeture, equipe } = this.form.value;
+    const { institution, type, nom, description, capacite_accueil, date_ouverture, date_fermeture, equipe } = this.form.value;
     const payload: any = {
       type, nom,
       description: description || undefined,
+      capacite_accueil: capacite_accueil || null,
       date_ouverture: date_ouverture || null,
       date_fermeture: date_fermeture || null,
       equipe: equipe || null,

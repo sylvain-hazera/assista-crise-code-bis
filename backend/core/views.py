@@ -216,6 +216,7 @@ from .serializers import (
     ContactInstitutionSerializer,
     InstitutionDomaineSerializer,
     PointOperationnelSerializer,
+    PointOperationnelPublicSerializer,
     ImplicationInstitutionSerializer,
     RecherchePersonnePhotoSerializer,
     DocumentSerializer,
@@ -3304,7 +3305,28 @@ class PointOperationnelViewSet(
         # pouvait modifier ou supprimer le point opérationnel d'une institution tierce.
         if self.action in ("create", "update", "partial_update", "destroy"):
             return [IsInstitutionalActor()]
+        # `centres_accueil` doit rester accessible aux visiteurs anonymes : c'est ce qui
+        # alimente le choix de centre du formulaire public "je suis en sécurité". Le
+        # `permission_classes=[AllowAny]` posé sur l'action elle-même (plus bas) ne suffit pas
+        # à lui seul : cette méthode le remplace entièrement pour toute cette vue, il faut
+        # explicitement la laisser passer ici aussi.
+        if self.action == "centres_accueil":
+            return [AllowAny()]
         return [permissions.IsAuthenticated()]
+
+    @action(detail=False, methods=["get"], permission_classes=[AllowAny])
+    def centres_accueil(self, request):
+        """Liste publique, à champs restreints, des centres d'accueil actifs (PointType
+        HEBERGEMENT) d'une crise — alimente le formulaire public "je suis en sécurité"
+        (`?crise=<id>`, requis) : choix d'un centre, ou suggestions de centres disponibles."""
+        crisis_id = request.query_params.get("crise")
+        if not crisis_id:
+            return Response({"error": "Le paramètre crise est requis."}, status=status.HTTP_400_BAD_REQUEST)
+        queryset = PointOperationnel.objects.filter(
+            crise_id=crisis_id, actif=True, type__code="HEBERGEMENT",
+            environment=get_active_environment(request),
+        ).select_related("type")
+        return Response(PointOperationnelPublicSerializer(queryset, many=True).data)
 
     def perform_update(self, serializer):
         point = serializer.save()

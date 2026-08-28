@@ -415,3 +415,109 @@ textarea {
     }
   }
 }
+
+// ── Popup "trouver un centre d'accueil" ─────────────────────────────────────────
+.centre-popup-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, .5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  padding: 1rem;
+}
+
+.centre-popup {
+  background: #fff;
+  border-radius: 10px;
+  width: 100%;
+  max-width: 780px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.centre-popup-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid #f0f0f0;
+
+  h2 { margin: 0; font-size: 1.1rem; }
+
+  .icon-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #6b7280;
+  }
+}
+
+.centre-popup-body {
+  padding: 1.25rem;
+  overflow-y: auto;
+}
+
+.centre-popup-footer {
+  padding: 1rem 1.25rem;
+  border-top: 1px solid #f0f0f0;
+  display: flex;
+  justify-content: flex-end;
+
+  .btn-submit { width: auto; padding: 0.6rem 1.5rem; }
+}
+
+.centre-table-wrap {
+  overflow-x: auto;
+}
+
+.centre-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+
+  th, td {
+    text-align: left;
+    padding: 0.6rem 0.6rem;
+    border-bottom: 1px solid #f0f0f0;
+    white-space: nowrap;
+  }
+
+  th {
+    color: #6b7280;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    font-weight: 700;
+  }
+
+  .cell-nom { font-weight: 600; }
+}
+
+.statut-chip {
+  display: inline-block;
+  padding: 0.2rem 0.6rem;
+  border-radius: 99px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  background: #f1f5f9;
+  color: #475569;
+
+  &.stat-dispo { background: #f0fdf4; color: #166534; }
+  &.stat-sature { background: #fef2f2; color: #b91c1c; }
+}
+
+.nav-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: #4CAF50;
+  font-weight: 600;
+  text-decoration: none;
+  font-size: 0.82rem;
+
+  .material-icons { font-size: 16px; }
+  &:hover { text-decoration: underline; }
+}

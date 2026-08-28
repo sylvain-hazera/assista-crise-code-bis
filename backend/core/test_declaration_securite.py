@@ -212,3 +212,54 @@ class TestDeclarationSecuriteListPermissions:
         client, _ = _make_admin(authenticated_client)
         response = client.get(reverse('declarationsecurite-list'))
         assert response.status_code == status.HTTP_200_OK
+
+
+@pytest.mark.django_db
+class TestCentresAccueilPublic:
+    """Endpoint public (formulaire "je suis en sécurité") listant les centres d'accueil
+    (PointType HEBERGEMENT) actifs d'une crise, à champs restreints."""
+
+    def _make_centre(self, crisis, **kwargs):
+        heb_type, _ = PointType.objects.get_or_create(
+            code='HEBERGEMENT', defaults={'libelle': "Centre d'accueil des personnes"},
+        )
+        defaults = {'nom': 'Centre', 'type': heb_type, 'crise': crisis, 'actif': True}
+        defaults.update(kwargs)
+        return PointOperationnel.objects.create(**defaults)
+
+    def test_requires_crise_param(self, api_client):
+        response = api_client.get(reverse('pointoperationnel-centres-accueil'))
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_anonymous_can_list_centres_for_a_crisis(self, api_client):
+        crisis = _make_crisis()
+        centre = self._make_centre(crisis, capacite_accueil=30)
+
+        response = api_client.get(reverse('pointoperationnel-centres-accueil'), {'crise': str(crisis.id)})
+
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data) == 1
+        assert response.data[0]['id'] == str(centre.id)
+        assert response.data[0]['capacite_accueil'] == 30
+        assert response.data[0]['personnes_presentes'] == 0
+        # Champs internes de PointOperationnelSerializer volontairement absents de la version publique
+        assert 'commentaire' not in response.data[0]
+        assert 'responsable' not in response.data[0]
+
+    def test_excludes_non_hebergement_points(self, api_client):
+        crisis = _make_crisis()
+        other_type, _ = PointType.objects.get_or_create(code='COLLECTE', defaults={'libelle': 'Point de collecte'})
+        PointOperationnel.objects.create(nom='Point collecte', type=other_type, crise=crisis, actif=True)
+
+        response = api_client.get(reverse('pointoperationnel-centres-accueil'), {'crise': str(crisis.id)})
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data == []
+
+    def test_excludes_inactive_centres(self, api_client):
+        crisis = _make_crisis()
+        self._make_centre(crisis, actif=False)
+
+        response = api_client.get(reverse('pointoperationnel-centres-accueil'), {'crise': str(crisis.id)})
+
+        assert response.data == []

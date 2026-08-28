@@ -13,6 +13,7 @@ import { GeolocationService } from '../../../services/geolocation.service';
 import { AddressPickerComponent } from '../../../shared/components/common/address-picker/address-picker.component';
 import { TagSearchInputComponent } from '../../../shared/components/common/tag-search-input/tag-search-input.component';
 import { AddressResult } from '../../../shared/models/address-result.model';
+import { CentreAccueilPublic } from '../../../shared/models/point-operationnel.model';
 
 enum StateForm {
   DeclareSafe,
@@ -48,9 +49,15 @@ export class OtherDeclarationFormComponent implements OnInit {
   crisisSearch: string = 'Aucune crise en rapport';
   showCrisisDropdown: boolean = false;
 
-  // Centres d'accueil proposés pour "Je suis en sécurité", une fois une crise choisie —
-  // seulement pertinent pour une entrée en centre, pas pour une auto-déclaration générique.
-  centresAccueil: { value: string; label: string }[] = [];
+  // Centres d'accueil proposés pour "Je suis en sécurité", une fois une crise choisie — pour
+  // le choix explicite d'un centre (situation EN_CENTRE) ou les suggestions du popup
+  // "trouver un centre" (situation BESOIN_CENTRE).
+  centresAccueil: CentreAccueilPublic[] = [];
+
+  showCentrePopup = false;
+  userLatitude: number | null = null;
+  userLongitude: number | null = null;
+  locatingUser = false;
 
   selectedInformationType: InformationType | null = null;
 
@@ -120,6 +127,7 @@ export class OtherDeclarationFormComponent implements OnInit {
   initForm(): void {
     this.declareSafeForm = this.formBuilder.group({
       crisisId: [''],
+      situation: ['RELOGE', Validators.required],
       typeDeclarant: ['PERSONNE_SEULE', Validators.required],
       lastName: ['', Validators.required],
       firstName: ['', Validators.required],
@@ -217,17 +225,20 @@ export class OtherDeclarationFormComponent implements OnInit {
 
   /** Centres d'accueil proposés une fois une crise choisie — vide (et champ masqué côté
    * template) si aucune crise n'est sélectionnée, une entrée en centre n'a pas de sens sans
-   * savoir à quelle crise elle se rattache. */
+   * savoir à quelle crise elle se rattache. Endpoint public dédié (pas getByCrise, qui exige
+   * une session authentifiée — ce formulaire est ouvert à tous). */
   private loadCentresAccueil(crisisId: string): void {
     this.declareSafeForm.patchValue({ centreAccueil: '' });
     this.centresAccueil = [];
     if (!crisisId) return;
-    this.pointOperationnelService.getByCrise(crisisId).subscribe({
-      next: (points) => {
-        this.centresAccueil = points.map(p => ({ value: p.id, label: p.nom }));
-      },
+    this.pointOperationnelService.getCentresAccueilPublics(crisisId).subscribe({
+      next: (centres) => { this.centresAccueil = centres; },
       error: () => { this.centresAccueil = []; },
     });
+  }
+
+  get situationChoisie(): string {
+    return this.declareSafeForm.get('situation')?.value;
   }
 
   /** Une position captée automatiquement (photo prise via l'appareil) vaut une adresse
@@ -237,7 +248,16 @@ export class OtherDeclarationFormComponent implements OnInit {
   }
 
   onSubmit(): void {
-    if (this.state === StateForm.DeclareSafe && this.declareSafeForm.valid) {
+    if (this.state === StateForm.DeclareSafe) {
+      if (!this.declareSafeForm.valid) {
+        this.declareSafeForm.markAllAsTouched();
+        alert('Veuillez remplir tous les champs obligatoires');
+        return;
+      }
+      if (this.situationChoisie === 'EN_CENTRE' && !this.declareSafeForm.get('centreAccueil')?.value) {
+        alert("Veuillez choisir un centre d'accueil dans la liste.");
+        return;
+      }
       this.submitDeclareSafeForm();
     } else if (
       this.state === StateForm.OtherDeclaration &&
@@ -254,14 +274,14 @@ export class OtherDeclarationFormComponent implements OnInit {
       }
       this.submitOtherInformationForm();
     } else {
-      // Mark all fields as touched to show validation errors
-      const form = this.state === StateForm.DeclareSafe ? this.declareSafeForm : this.otherInformationForm;
-      Object.keys(form.controls).forEach(key => {
-        form.get(key)?.markAsTouched();
+      // À ce stade this.state ne peut plus être DeclareSafe : le premier branch gère ce cas
+      // en entier (validation + soumission) et retourne toujours avant d'arriver ici.
+      Object.keys(this.otherInformationForm.controls).forEach(key => {
+        this.otherInformationForm.get(key)?.markAsTouched();
       });
-      if (this.state === StateForm.OtherDeclaration && !this.selectedInformationType) {
+      if (!this.selectedInformationType) {
         alert('Merci de sélectionner ou créer un type de signalement.');
-      } else if (this.state === StateForm.OtherDeclaration && !this.hasLocationForOther()) {
+      } else if (!this.hasLocationForOther()) {
         alert('Veuillez sélectionner une adresse dans la liste proposée, ou prendre une photo géolocalisée.');
       } else {
         alert('Veuillez remplir tous les champs obligatoires');
@@ -270,8 +290,10 @@ export class OtherDeclarationFormComponent implements OnInit {
   }
 
   private submitDeclareSafeForm(): void {
+    const situation = this.situationChoisie;
     const typeDeclarant = this.declareSafeForm.get('typeDeclarant')?.value;
     const payload: any = {
+      situation,
       type_declarant: typeDeclarant,
       nom_referent: this.declareSafeForm.get('lastName')?.value,
       prenom_referent: this.declareSafeForm.get('firstName')?.value,
@@ -288,17 +310,22 @@ export class OtherDeclarationFormComponent implements OnInit {
       payload.crise = crisisId;
     }
 
-    const centreAccueil = this.declareSafeForm.get('centreAccueil')?.value;
-    if (centreAccueil) {
-      payload.centre_accueil = centreAccueil;
+    if (situation === 'EN_CENTRE') {
+      payload.centre_accueil = this.declareSafeForm.get('centreAccueil')?.value;
       payload.regime_alimentaire_specifique = this.declareSafeForm.get('regimeAlimentaire')?.value;
     }
 
     this.declarationSecuriteService.create(payload).subscribe({
       next: (response) => {
         console.log('Déclaration de sécurité créée:', response);
-        alert('Votre déclaration a été enregistrée avec succès !');
-        this.router.navigate(['/accueil']);
+        if (situation === 'BESOIN_CENTRE') {
+          // Pas de redirection immédiate : le popup "trouver un centre" propose des
+          // suggestions avant de renvoyer la personne à l'accueil.
+          this.openCentrePopup();
+        } else {
+          alert('Votre déclaration a été enregistrée avec succès !');
+          this.router.navigate(['/accueil']);
+        }
       },
       error: (err) => {
         console.error('Erreur création déclaration:', err);
@@ -306,6 +333,56 @@ export class OtherDeclarationFormComponent implements OnInit {
         alert('Erreur lors de l\'enregistrement. Veuillez réessayer.');
       }
     });
+  }
+
+  // ── Popup "trouver un centre d'accueil" (situation BESOIN_CENTRE) ────────────
+
+  openCentrePopup(): void {
+    this.showCentrePopup = true;
+    if (this.userLatitude == null && !this.locatingUser) {
+      this.locatingUser = true;
+      this.geolocationService.requestLocation()
+        .then(coords => {
+          this.userLatitude = coords.latitude;
+          this.userLongitude = coords.longitude;
+        })
+        .catch(() => { /* géolocalisation refusée/indisponible : tri par distance simplement désactivé */ })
+        .finally(() => { this.locatingUser = false; });
+    }
+  }
+
+  closeCentrePopup(): void {
+    this.showCentrePopup = false;
+    this.router.navigate(['/accueil']);
+  }
+
+  /** Centres triés par distance croissante si la position de l'utilisateur est connue,
+   * ordre du serveur sinon (distance/saturation alors non calculables). */
+  get centresTries(): (CentreAccueilPublic & { distanceKm: number | null; sature: boolean })[] {
+    return this.centresAccueil
+      .map(c => ({
+        ...c,
+        distanceKm: this.distanceKm(c.latitude, c.longitude),
+        sature: c.capacite_accueil != null && c.personnes_presentes >= c.capacite_accueil,
+      }))
+      .sort((a, b) => (a.distanceKm ?? Infinity) - (b.distanceKm ?? Infinity));
+  }
+
+  private distanceKm(lat: number | null, lon: number | null): number | null {
+    if (lat == null || lon == null || this.userLatitude == null || this.userLongitude == null) return null;
+    const R = 6371;
+    const dLat = (lat - this.userLatitude) * Math.PI / 180;
+    const dLon = (lon - this.userLongitude) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) ** 2 +
+      Math.cos(this.userLatitude * Math.PI / 180) * Math.cos(lat * Math.PI / 180) *
+      Math.sin(dLon / 2) ** 2;
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return Math.round(R * c * 10) / 10;
+  }
+
+  navigationLink(centre: CentreAccueilPublic): string | null {
+    if (centre.latitude == null || centre.longitude == null) return null;
+    return `https://www.google.com/maps/dir/?api=1&destination=${centre.latitude},${centre.longitude}`;
   }
 
   private submitOtherInformationForm(): void {

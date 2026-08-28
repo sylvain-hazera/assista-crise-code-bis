@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
-import { PointOperationnel, PointOperationnelPayload, PointEquipeResponse } from '../shared/models/point-operationnel.model';
+import { PointOperationnel, PointOperationnelPayload, PointEquipeResponse, CentreAccueilPublic } from '../shared/models/point-operationnel.model';
 import { AffectationPointBenevole, InviterBenevolePayload, InviterBenevoleResponse } from '../shared/models/affectation-point-benevole.model';
 import { CandidatsBenevolesParams, CandidatsBenevolesResponse } from '../shared/models/candidat-benevole.model';
 
@@ -18,6 +18,13 @@ export class PointOperationnelService {
 
   getByCrise(criseId: string): Observable<PointOperationnel[]> {
     return this.http.get<PointOperationnel[]>(`${this.apiUrl}/`, { params: { crise: criseId } });
+  }
+
+  /** GET /api/points-operationnels/centres_accueil/?crise=<id> — endpoint public (AllowAny),
+   * à champs restreints, utilisé par le formulaire public "je suis en sécurité" (aucune
+   * session requise, contrairement à getByCrise/getAll ci-dessus). */
+  getCentresAccueilPublics(criseId: string): Observable<CentreAccueilPublic[]> {
+    return this.http.get<CentreAccueilPublic[]>(`${this.apiUrl}/centres_accueil/`, { params: { crise: criseId } });
   }
 
   /** Points dont je suis responsable, leader d'équipe ou membre — toutes crises confondues
