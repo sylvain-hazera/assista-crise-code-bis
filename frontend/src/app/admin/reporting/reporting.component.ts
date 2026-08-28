@@ -14,6 +14,7 @@ import { TeamService } from '../../services/team.service';
 import { DossierService } from '../../services/dossier.service';
 import { MissionService } from '../../services/mission.service';
 import { UserService } from '../../services/user.service';
+import { MinimapComponent } from '../../shared/components/common/minimap/minimap.component';
 
 import { DisponibiliteOffre } from '../../shared/models/disponibilite-offre.model';
 import { Team } from '../../shared/models/team.model';
@@ -65,7 +66,7 @@ type SortField    = 'title' | 'kind' | 'status' | 'date' | 'contact' | 'commune'
 @Component({
   selector: 'app-reporting',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, MinimapComponent],
   templateUrl: './reporting.component.html',
   styleUrls: ['./reporting.component.scss'],
 })
@@ -467,8 +468,19 @@ export class ReportingComponent implements OnInit, OnDestroy {
     }
   }
 
+  // ── Visionneuse photo plein écran (avec minimap de localisation) ────────────
+
+  showImageLightbox = false;
+  lightboxUrl = '';
+
   openImageFullsize(url: string): void {
-    window.open(url, '_blank');
+    this.lightboxUrl = url;
+    this.showImageLightbox = true;
+  }
+
+  closeImageLightbox(): void {
+    this.showImageLightbox = false;
+    this.lightboxUrl = '';
   }
 
   private readonly CRENEAUX: { creneau: string; label: string }[] = [
@@ -904,6 +916,7 @@ export class ReportingComponent implements OnInit, OnDestroy {
     this.assignTeamId = null;
     this.assignDossierId = null;
     this.newStatus   = '';
+    this.closeImageLightbox();
   }
 
   kindIcon(kind: ReportKind): string {
