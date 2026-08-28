@@ -197,6 +197,20 @@
     font-size: 0.85rem;
     margin-top: 0.25rem;
   }
+
+  .field-hint {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.4rem;
+    color: #64748b;
+    font-size: 0.8rem;
+    margin-top: 0.35rem;
+
+    .material-icons {
+      font-size: 1rem;
+      line-height: 1.3;
+    }
+  }
 }
 
 .type-declarant-options {

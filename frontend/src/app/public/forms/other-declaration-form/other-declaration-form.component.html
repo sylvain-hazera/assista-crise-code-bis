@@ -242,6 +242,8 @@
           }
         </div>
 
+        <app-rgpd-notice purpose="vous localiser et vous mettre en sécurité"></app-rgpd-notice>
+
         <!-- Submit Button -->
         <div class="form-actions">
           <button
@@ -312,13 +314,18 @@
           <label for="description" class="form-label">
             Description <span class="required">*</span>
           </label>
-          <textarea 
-            id="description" 
-            class="form-textarea" 
+          <textarea
+            id="description"
+            class="form-textarea"
             formControlName="description"
             rows="5"
             placeholder="Décrivez la situation..."
             [class.invalid]="isFieldInvalid('otherInformation', 'description')"></textarea>
+          <p class="field-hint">
+            <span class="material-icons">info</span>
+            N'indiquez aucune information de santé (maladie, handicap, régime alimentaire...) :
+            décrivez uniquement l'événement signalé.
+          </p>
           @if(isFieldInvalid('otherInformation', 'description')) {
             <div class="error-message">
               {{ getErrorMessage('otherInformation', 'description') }}
@@ -400,6 +407,8 @@
             </label>
           </div>
         </div>
+
+        <app-rgpd-notice purpose="traiter votre signalement"></app-rgpd-notice>
 
         <!-- Submit Button -->
         <div class="form-actions">

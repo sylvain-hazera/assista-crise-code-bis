@@ -17,6 +17,7 @@ import { AddressResult } from '../../../shared/models/address-result.model';
 import { TagSearchInputComponent } from '../../../shared/components/common/tag-search-input/tag-search-input.component';
 import { CompetenceService } from '../../../services/competence.service';
 import { Competence } from '../../../shared/models/competence.model';
+import { RgpdNoticeComponent } from '../../../shared/components/public/rgpd-notice/rgpd-notice.component';
 
 interface JourDispo {
   date: string;       // YYYY-MM-DD
@@ -36,7 +37,7 @@ const TYPE_AUTRE = 'Autre';
 @Component({
   selector: 'app-request-help-form',
   standalone: true,
-  imports: [ReactiveFormsModule, CommonModule, FormsModule, AddressPickerComponent, TagSearchInputComponent],
+  imports: [ReactiveFormsModule, CommonModule, FormsModule, AddressPickerComponent, TagSearchInputComponent, RgpdNoticeComponent],
   templateUrl: './propose-help-form.component.html',
   styleUrl: './propose-help-form.component.scss'
 })

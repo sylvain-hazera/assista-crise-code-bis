@@ -12,11 +12,12 @@ import { User } from '../../../shared/models/user.model';
 import { AuthService } from '../../../auth/services/auth.service';
 import { AddressPickerComponent } from '../../../shared/components/common/address-picker/address-picker.component';
 import { AddressResult } from '../../../shared/models/address-result.model';
+import { RgpdNoticeComponent } from '../../../shared/components/public/rgpd-notice/rgpd-notice.component';
 
 @Component({
   selector: 'app-request-help-form',
   standalone: true,
-  imports: [ReactiveFormsModule, CommonModule, FormsModule, AddressPickerComponent],
+  imports: [ReactiveFormsModule, CommonModule, FormsModule, AddressPickerComponent, RgpdNoticeComponent],
   templateUrl: './request-help-form.component.html',
   styleUrl: './request-help-form.component.scss'
 })

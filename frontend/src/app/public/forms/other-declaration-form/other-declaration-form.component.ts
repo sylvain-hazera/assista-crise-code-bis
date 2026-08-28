@@ -14,6 +14,7 @@ import { AddressPickerComponent } from '../../../shared/components/common/addres
 import { TagSearchInputComponent } from '../../../shared/components/common/tag-search-input/tag-search-input.component';
 import { AddressResult } from '../../../shared/models/address-result.model';
 import { CentreAccueilPublic } from '../../../shared/models/point-operationnel.model';
+import { RgpdNoticeComponent } from '../../../shared/components/public/rgpd-notice/rgpd-notice.component';
 
 enum StateForm {
   DeclareSafe,
@@ -23,7 +24,7 @@ enum StateForm {
 @Component({
   selector: 'app-other-declaration-form',
   standalone: true,
-  imports: [ReactiveFormsModule, CommonModule, FormsModule, AddressPickerComponent, TagSearchInputComponent],
+  imports: [ReactiveFormsModule, CommonModule, FormsModule, AddressPickerComponent, TagSearchInputComponent, RgpdNoticeComponent],
   templateUrl: './other-declaration-form.component.html',
   styleUrl: './other-declaration-form.component.scss'
 })

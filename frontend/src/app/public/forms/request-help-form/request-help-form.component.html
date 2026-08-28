@@ -116,6 +116,11 @@
                     rows="4"
                     [class.invalid]="descriptions.at(i).invalid && descriptions.at(i).touched">
                     </textarea>
+                    <p class="field-hint">
+                      <span class="material-icons">info</span>
+                      N'indiquez aucune information de santé (maladie, handicap, régime alimentaire...) :
+                      décrivez uniquement le besoin.
+                    </p>
                     @if(descriptions.at(i).invalid && descriptions.at(i).touched) {
                         <div class="error-message">
                             Veuillez entrer une description (minimum 10 caractères)
@@ -274,10 +279,12 @@
                 </div>
             </div>
 
+      <app-rgpd-notice purpose="traiter votre demande d'aide"></app-rgpd-notice>
+
       <!-- Bouton Submit -->
       <div class="form-actions">
-          <button 
-            type="submit" 
+          <button
+            type="submit"
             class="btn-submit"
             [disabled]="informationForm.invalid"
             (click)="onSubmit()">

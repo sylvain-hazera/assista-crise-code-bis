@@ -31,10 +31,17 @@
         des garanties renforcées spécifiques, allant au-delà de ce qui est décrit ici.
       </li>
       <li>
-        <strong>Recherche de personnes disparues.</strong> Ce module traite des données
-        (photographies, description physique) concernant des personnes qui n'ont elles-mêmes pas
-        pu consentir à leur publication. Le cadre légal applicable (intérêt légitime, mission
-        d'intérêt public, urgence vitale...) mérite d'être formellement tranché avec un juriste.
+        <strong>Recherche de personnes disparues.</strong> Contrairement à ce que le nom du module
+        pourrait laisser penser, il ne s'agit pas d'un avis de recherche public : la fonctionnalité
+        est réservée aux comptes institutionnels authentifiés et sert à demander aux équipes
+        municipales, par délégation du maire, si elles ont des nouvelles d'une personne évacuée.
+        En cas de réponse positive, l'information est transmise à la personne qui s'inquiétait ;
+        en l'absence de nouvelles, une recherche est engagée et peut être transmise à la
+        gendarmerie. Elle traite néanmoins des données (photographie, description physique)
+        concernant une personne qui n'a pas pu consentir elle-même à ce traitement — le cadre
+        légal exact (mission d'intérêt public déléguée, urgence vitale) mérite d'être formellement
+        confirmé avec un juriste, de même que l'articulation avec le rôle de sous-traitant évoqué
+        en section 1.
       </li>
       <li>
         <strong>Polices Google Fonts.</strong> Le site charge des polices depuis les serveurs
@@ -48,10 +55,25 @@
       <h2>1. Responsable du traitement</h2>
       <p>
         Assista Crise est un projet académique porté dans le cadre de la formation Info5 de
-        l'Université Grenoble Alpes. <strong>[À COMPLÉTER]</strong> : si le service est déployé
-        au-delà d'un cadre expérimental/pédagogique, l'entité juridiquement responsable du
-        traitement (l'université elle-même, un laboratoire, une association...) doit être
-        formellement désignée ici, avec son adresse et, le cas échéant, les coordonnées d'un
+        l'Université Grenoble Alpes. La qualification RGPD exacte de l'entité qui exploite le
+        service dépend du contexte d'usage et n'est pas encore tranchée :
+      </p>
+      <ul>
+        <li>lorsqu'une crise est pilotée par une autorité locale (mairie, service de secours) qui
+          décide de l'ouverture de la crise, des équipes mobilisées et des suites données aux
+          demandes, celle-ci agit comme <strong>responsable de traitement</strong> pour les données
+          de sa crise, et Assista Crise agit vraisemblablement comme <strong>sous-traitant</strong>
+          au sens de l'article 28 du RGPD — ce qui suppose normalement un contrat de
+          sous-traitance avec chaque autorité utilisatrice, qui n'existe pas encore à ce stade ;</li>
+        <li>pour les traitements propres au fonctionnement de la plateforme elle-même (création de
+          comptes, journal d'activité, sécurité technique), Assista Crise agit comme
+          <strong>responsable de traitement</strong>.</li>
+      </ul>
+      <p>
+        <strong>[À COMPLÉTER]</strong> : si le service est déployé au-delà d'un cadre
+        expérimental/pédagogique, l'entité juridiquement responsable (l'université elle-même, un
+        laboratoire, une association...) doit être formellement désignée ici, avec son adresse,
+        les contrats de sous-traitance correspondants et, le cas échéant, les coordonnées d'un
         délégué à la protection des données (DPO). Contact temporaire :
         <a href="mailto:contact&#64;assista-crise.fr">contact&#64;assista-crise.fr</a>.
       </p>
@@ -83,9 +105,11 @@
               d'accueil</td>
           </tr>
           <tr>
-            <td>Recherche de personnes</td>
-            <td>Identité, photographie, description physique de la personne recherchée</td>
-            <td>Faciliter les recherches de personnes disparues pendant une crise</td>
+            <td>Recherche de personnes (réservé aux comptes institutionnels)</td>
+            <td>Identité, photographie, description physique de la personne évacuée recherchée</td>
+            <td>Demander aux équipes municipales, par délégation du maire, si elles ont des
+              nouvelles d'une personne évacuée ; rassurer la personne qui s'inquiète si oui,
+              engager une recherche pouvant être transmise à la gendarmerie si non</td>
           </tr>
           <tr>
             <td>Création de compte</td>
@@ -105,14 +129,17 @@
     <section>
       <h2>3. Base légale</h2>
       <p>
-        Les traitements liés à la réponse à une situation de crise relèvent en premier lieu de la
-        <strong>sauvegarde des intérêts vitaux</strong> des personnes concernées et de
-        <strong>l'exécution d'une mission d'intérêt public</strong> de sécurité civile pour les
-        traitements réalisés par ou pour le compte des autorités locales et services de secours.
-        La création d'un compte et son fonctionnement courant relèvent de
+        Pour les traitements réalisés pour le compte d'une autorité locale ou d'un service de
+        secours (voir section 1), la base légale relève de cette autorité en sa qualité de
+        responsable de traitement : elle repose en pratique sur la <strong>sauvegarde des
+        intérêts vitaux</strong> des personnes concernées et sur <strong>l'exécution d'une mission
+        d'intérêt public</strong> de sécurité civile. Assista Crise, en tant que sous-traitant
+        présumé pour ces traitements, n'a pas à définir lui-même cette base mais doit la respecter
+        et la documenter avec chaque autorité concernée. La création d'un compte et son
+        fonctionnement courant, propres à la plateforme, relèvent quant à eux de
         <strong>l'exécution du contrat</strong> d'utilisation du service (voir nos
         <a routerLink="/cgu">CGU</a>). <em>[À confirmer/affiner avec un juriste selon le statut
-        exact de l'entité opérant le service.]</em>
+        exact de l'entité opérant le service et la qualification retenue en section 1.]</em>
       </p>
     </section>
 

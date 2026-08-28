@@ -1,0 +1,24 @@
+.rgpd-notice {
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-start;
+  background: #f1f5f9;
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin: 1.5rem 0 0;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: #555;
+
+  .material-icons {
+    font-size: 18px;
+    color: #64748b;
+    flex-shrink: 0;
+    margin-top: 0.1rem;
+  }
+
+  a {
+    color: #007bff;
+    text-decoration: underline;
+  }
+}
