@@ -6,12 +6,12 @@ export const adminGuard: CanActivateFn = (route, state) => {
   const authService = inject(AuthService);
   const router = inject(Router);
 
-  if (authService.isAdmin()) {
+  if (authService.canEnterAdminArea()) {
     return true; // Accès autorisé
   }
 
   // Redirection si l'utilisateur n'est pas admin
-  return router.parseUrl('/accueil'); 
+  return router.parseUrl('/accueil');
 };
 
 export const sysAdminGuard: CanActivateFn = (route, state) => {

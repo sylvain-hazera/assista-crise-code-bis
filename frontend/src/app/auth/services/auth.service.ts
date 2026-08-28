@@ -418,6 +418,13 @@ export class AuthService {
     return localStorage.getItem('access_token');
   }
 
+  /** À dessein basé uniquement sur le rôle PROD réel — d'autres endroits (ex: floutage des
+   * coordonnées précises sur la carte publique, map.component.ts) s'appuient dessus pour des
+   * décisions de confidentialité qui ne doivent JAMAIS s'élargir simplement parce qu'un compte
+   * a reçu un accès démo. Pour l'entrée dans la zone /admin elle-même, voir canEnterAdminArea()
+   * ci-dessous — c'est une question différente ("peut-il atteindre la bascule PROD/DEMO ?"),
+   * pas "a-t-il des droits institutionnels réels en ce moment ?".
+   */
   isAdmin(): boolean {
     return this.getCurrentUser()?.type === UserRole.RESCUE ||
       this.getCurrentUser()?.type === UserRole.LOCAL_AUTH||
@@ -427,6 +434,17 @@ export class AuthService {
 
   isSysAdmin(): boolean {
     return this.isAdmin();
+  }
+
+  /** Utilisé uniquement par adminGuard : doit aussi laisser passer un compte qui n'a de rôle
+   * élevé qu'en DEMO (demo_role réglé, type PROD resté simple), sinon le garde bloque l'accès
+   * à la mise en page qui contient justement la bascule PROD/DEMO — personne n'ayant reçu
+   * qu'un accès démo ne pourrait alors jamais l'atteindre. Une fois entré, les droits réels
+   * restent bornés par le rôle effectif (get_effective_role côté backend) : tant que la
+   * bascule n'est pas activée, ce compte garde ses droits PROD réels (simples), rien n'est
+   * élargi côté données — seul l'accès à la mise en page /admin l'est. */
+  canEnterAdminArea(): boolean {
+    return this.isAdmin() || !!this.getCurrentUser()?.demo_role;
   }
 
   isLoggedIn(): boolean {
