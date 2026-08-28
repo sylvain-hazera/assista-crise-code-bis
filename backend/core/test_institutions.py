@@ -292,3 +292,53 @@ class TestAnnuaireRegistration:
 
         assert ContactInstitution.objects.filter(institution=institution, utilisateur=user).exists()
         mock_search.assert_not_called()
+
+
+@pytest.mark.django_db
+class TestUserEditDoesNotReRunInstitutionEmailCheck:
+    """La vérification d'email institutionnel (UserSerializer.validate) ne doit s'appliquer
+    qu'à la création du compte. Avant ce correctif, elle se redéclenchait sur CHAQUE édition
+    d'un compte déjà institutionnel (AUT_LOCALE/SECOURS/ADMIN) — y compris pour un simple
+    changement sans rapport, comme régler le rôle démo — et échouait systématiquement, puisque
+    le formulaire d'édition ne renvoie pas les informations d'inscription (institution_name/
+    type, commune) qui ne sont capturées qu'une fois, à l'inscription."""
+
+    def test_registration_still_rejects_invalid_institutional_email(self, api_client, user_data):
+        payload = {
+            **user_data,
+            "email": "particulier@gmail.com",
+            "username": "particulier@gmail.com",
+            "type": "AUT_LOCALE",
+            "institution_name": "Mairie inventée",
+            "institution_type": "mairie",
+        }
+
+        response = api_client.post(reverse('user-register'), payload, format='json')
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert 'email' in response.data
+
+    def test_editing_existing_institutional_user_succeeds_without_institution_fields(self, authenticated_client):
+        admin_client, admin = authenticated_client
+        admin.type = 'ADMIN'
+        admin.save()
+
+        secours_user = User.objects.create_user(
+            username="secours-edit-test@sdis38.fr", email="secours-edit-test@sdis38.fr",
+            password="TestPass123!", type="SECOURS",
+        )
+
+        response = admin_client.patch(
+            reverse('user-detail', args=[secours_user.id]),
+            {
+                "username": secours_user.username,
+                "email": secours_user.email,
+                "type": "SECOURS",
+                "demo_role": "ADMIN",
+            },
+            format='multipart',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        secours_user.refresh_from_db()
+        assert secours_user.demo_role == "ADMIN"

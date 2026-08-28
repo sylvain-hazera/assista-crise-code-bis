@@ -162,19 +162,26 @@ class UserSerializer(serializers.ModelSerializer):
         return value or None
 
     def validate(self, attrs):
-        email = attrs.get('email')
-        user_type = attrs.get('type')
+        # Cette vérification n'a de sens qu'à la création du compte (l'email doit prouver
+        # l'appartenance à une institution pour s'inscrire comme tel) — elle ne doit jamais se
+        # redéclencher sur une simple modification d'un compte déjà existant (ex: un admin qui
+        # règle le rôle démo d'un compte SECOURS/AUT_LOCALE/ADMIN), sans quoi toute édition de
+        # ces comptes échoue puisque le formulaire d'édition ne renvoie pas les informations
+        # d'inscription (institution_name/type, commune) qui ne sont capturées qu'une fois.
+        if self.instance is None:
+            email = attrs.get('email')
+            user_type = attrs.get('type')
 
-        if user_type in {UserRole.LOCAL_AUTHORITY, UserRole.ORGANIZED_RESCUE, UserRole.ADMINISTRATOR}:
-            valid, message, _details = InstitutionEmailValidator.validate_institution_account(
-                email=email,
-                institution_name=attrs.get('institution_name', ''),
-                institution_type=attrs.get('institution_type', ''),
-                commune_name=attrs.get('commune_name', ''),
-                commune_code=attrs.get('commune_code', ''),
-            )
-            if not valid:
-                raise serializers.ValidationError({'email': message})
+            if user_type in {UserRole.LOCAL_AUTHORITY, UserRole.ORGANIZED_RESCUE, UserRole.ADMINISTRATOR}:
+                valid, message, _details = InstitutionEmailValidator.validate_institution_account(
+                    email=email,
+                    institution_name=attrs.get('institution_name', ''),
+                    institution_type=attrs.get('institution_type', ''),
+                    commune_name=attrs.get('commune_name', ''),
+                    commune_code=attrs.get('commune_code', ''),
+                )
+                if not valid:
+                    raise serializers.ValidationError({'email': message})
 
         return attrs
 
