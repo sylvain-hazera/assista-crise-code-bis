@@ -62,6 +62,24 @@ export class UsersComponent implements OnInit, OnDestroy {
     this.userForm = this.createForm();
   }
 
+  /** Masquage redondant côté client (le backend masque déjà email/phone_number en zone DEMO,
+   * voir UserSerializer.to_representation) : cette page liste les coordonnées réelles de tous
+   * les comptes, la plus sensible de l'app en la matière — ne jamais dépendre d'une seule
+   * couche pour ça (un cache HTTP périmé a suffi une fois à en exposer, voir
+   * NoCacheApiMiddleware). */
+  get isDemo(): boolean {
+    return this.authService.getEnvironment() === 'DEMO';
+  }
+
+  displayEmail(user: User): string {
+    return this.isDemo ? '••••••@zone.demo' : user.email;
+  }
+
+  displayPhone(phone: string | null | undefined): string {
+    if (!phone) return '';
+    return this.isDemo ? '+33 • •• •• •• ••' : phone;
+  }
+
   ngOnInit(): void {
     this.loadUsers();
     this.setupSearchListener();

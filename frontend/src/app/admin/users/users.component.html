@@ -136,11 +136,11 @@
               <div class="contact-info">
                 <span class="contact-item">
                   <span class="material-icons small">email</span>
-                  {{ user.email }}
+                  {{ displayEmail(user) }}
                 </span>
                 <span class="contact-item" *ngIf="user.phone_number">
                   <span class="material-icons small">phone</span>
-                  {{ user.phone_number }}
+                  {{ displayPhone(user.phone_number) }}
                 </span>
               </div>
             </td>
