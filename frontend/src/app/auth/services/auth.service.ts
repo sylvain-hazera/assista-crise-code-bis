@@ -392,6 +392,23 @@ export class AuthService {
   }
 
   /**
+   * POST /api/reset-password/<uidb64>/<token>/
+   * Consomme le lien reçu par email suite à une demande de réinitialisation déclenchée par un
+   * administrateur (page Utilisateurs) : contrairement à changePassword, ne nécessite pas de
+   * connaître l'ancien mot de passe.
+   */
+  resetPasswordConfirm(uidb64: string, token: string, new_password: string): Observable<void> {
+    return this.http
+      .post<void>(`${this.url}/reset-password/${uidb64}/${token}/`, { new_password })
+      .pipe(
+        catchError((error: HttpErrorResponse) => {
+          const errorMessage = error.error?.error || 'Ce lien est invalide ou a expiré';
+          return throwError(() => new Error(errorMessage));
+        })
+      );
+  }
+
+  /**
    * Révoque le refresh token côté serveur (best-effort — ne bloque jamais le nettoyage
    * local, même si l'appel réseau échoue, ex. hors-ligne ou token déjà expiré) puis
    * vide la session locale.

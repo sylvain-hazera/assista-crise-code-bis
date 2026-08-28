@@ -122,6 +122,7 @@ MAGIC_LINK_SIGNER = TimestampSigner(salt=MAGIC_LINK_SALT)
 FRONTEND_MAGIC_LINK_PATHS = {
     "activate-account": "activate-account",
     "magic-login": "connexion-magique",
+    "reset-password": "reinitialiser-mot-de-passe",
 }
 
 
@@ -910,11 +911,57 @@ class UserViewSet(viewsets.ModelViewSet):
         # Désactiver le compte (ou le supprimer)
         user_to_reject.is_active = False
         user_to_reject.save()
-        
+
         return Response({
             'message': 'Compte rejeté',
             'user': UserSerializer(user_to_reject).data
         })
+
+    @action(detail=True, methods=['post'])
+    def send_password_reset(self, request, pk=None):
+        """Envoie à l'utilisateur ciblé un lien lui permettant de définir un nouveau mot de
+        passe sans connaître l'ancien (contrairement à ChangePasswordView) — déclenché depuis
+        la page d'administration des utilisateurs, jamais en libre-service : réservé aux
+        administrateurs, même garde-fou que le reste de la page (sysAdminGuard côté front)."""
+        if get_effective_role(request) != UserRole.ADMINISTRATOR:
+            return Response(
+                {'error': 'Permissions insuffisantes'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        target_user = self.get_object()
+        reset_link = build_magic_link(request, target_user, "reset-password")
+
+        message = (
+            f"Bonjour {target_user.first_name} {target_user.last_name},\n\n"
+            "Un administrateur d'Assista-Crise a demandé la réinitialisation du mot de passe "
+            "de votre compte.\n\n"
+            f"Pour choisir un nouveau mot de passe, cliquez sur le lien suivant :\n{reset_link}\n\n"
+            "Ce lien est valable 7 jours et ne peut être utilisé qu'une seule fois. Si vous "
+            "n'êtes pas à l'origine de cette demande, vous pouvez ignorer cet email : votre mot "
+            "de passe actuel reste valable.\n\n"
+            "Cordialement,\n"
+            "L'équipe Assista-Crise"
+        )
+
+        send_mail_env_aware(
+            request,
+            subject="Réinitialisation de votre mot de passe Assista-Crise",
+            message=message,
+            from_email=None,
+            recipient_list=[target_user.email],
+            fail_silently=False,
+        )
+
+        audit_log(
+            request=request,
+            action_code="MODIFICATION",
+            objet_type="User",
+            objet_id=target_user.id,
+            commentaire=f"Envoi d'un lien de réinitialisation de mot de passe à {target_user.email}",
+        )
+
+        return Response({'message': f"Email de réinitialisation envoyé à {target_user.email}"})
 
 class CrisisViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     queryset = Crisis.objects.all()
@@ -2433,6 +2480,39 @@ class ChangePasswordView(generics.UpdateAPIView):
             return Response({"error": "Ancien mot de passe incorrect"}, status=status.HTTP_400_BAD_REQUEST)
         user.set_password(new_password)
         user.save()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class PasswordResetConfirmView(generics.GenericAPIView):
+    """Consomme le lien envoyé par UserViewSet.send_password_reset : contrairement à
+    ChangePasswordView, ne requiert pas de connaître l'ancien mot de passe — la preuve de
+    possession de la boîte mail (via le token signé) en tient lieu."""
+
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request, uidb64, token, *args, **kwargs):
+        user = get_user_from_magic_link(uidb64, token)
+        if not user:
+            return Response({'error': 'Lien invalide ou expiré'}, status=status.HTTP_400_BAD_REQUEST)
+
+        new_password = request.data.get('new_password')
+        if not new_password or len(new_password) < 8:
+            return Response(
+                {'error': 'Le mot de passe doit contenir au moins 8 caractères'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        user.set_password(new_password)
+        user.save(update_fields=['password'])
+
+        audit_log(
+            request=request,
+            action_code="MODIFICATION",
+            objet_type="User",
+            objet_id=user.id,
+            commentaire=f"Mot de passe réinitialisé via lien email : {user.email}",
+        )
+
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 class DocumentViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):

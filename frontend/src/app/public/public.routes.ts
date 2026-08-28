@@ -38,6 +38,11 @@ export const PUBLIC_ROUTES: Routes = [
           .then(m => m.MagicLoginComponent)
       },
       {
+        path: 'reinitialiser-mot-de-passe/:uidb64/:token',
+        loadComponent: () => import('../auth/component/reset-password/reset-password.component')
+          .then(m => m.ResetPasswordComponent)
+      },
+      {
         path: 'dossier-suivi/:id',
         canActivate: [authGuard],
         loadComponent: () => import('./dossier-suivi/dossier-suivi.component')

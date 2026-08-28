@@ -386,6 +386,31 @@ export class UsersComponent implements OnInit, OnDestroy {
   }
 
   /**
+   * Envoie à l'utilisateur un email lui permettant de réinitialiser son mot de passe
+   */
+  sendPasswordReset(user: User): void {
+    if (!confirm(`Envoyer un email de réinitialisation de mot de passe à ${user.email} ?`)) {
+      return;
+    }
+
+    this.isLoading = true;
+    this.userService.sendPasswordReset(user.id)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: () => {
+          this.successMessage = `Email de réinitialisation envoyé à ${user.email}`;
+          this.isLoading = false;
+          setTimeout(() => this.successMessage = '', 3000);
+        },
+        error: (error) => {
+          console.error('Erreur envoi email de réinitialisation:', error);
+          this.errorMessage = "Impossible d'envoyer l'email de réinitialisation";
+          this.isLoading = false;
+        }
+      });
+  }
+
+  /**
    * Valide un utilisateur (changement de rôle)
    */
   upgradeUser(user: User): void {

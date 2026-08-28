@@ -487,6 +487,17 @@
       border-color: #dc2626;
     }
   }
+
+  &.reset-password-btn {
+    color: #d97706;
+    border-color: #fde68a;
+
+    &:hover {
+      background: #d97706;
+      color: white;
+      border-color: #d97706;
+    }
+  }
 }
 
 // Pagination
