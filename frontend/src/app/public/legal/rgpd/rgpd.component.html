@@ -1,1 +1,219 @@
-<p>rgpd works!</p>
+<div class="legal-page">
+  <div class="legal-wrapper">
+    <h1>Politique de confidentialité</h1>
+    <p class="legal-updated">Dernière mise à jour : 28/08/2026</p>
+
+    <div class="legal-notice legal-notice-warning">
+      <span class="material-icons">warning</span>
+      <p>
+        <strong>[À COMPLÉTER avant publication]</strong> Ce texte décrit fidèlement les traitements
+        techniquement réalisés par l'application au 28/08/2026. Il manque cependant les éléments
+        d'identité du responsable de traitement (section 1) et n'a pas été validé par un délégué
+        à la protection des données (DPO) ni un juriste. Points signalés comme nécessitant une
+        attention particulière avant mise en production réelle (au-delà d'un usage
+        expérimental/interne) :
+      </p>
+    </div>
+    <ul class="legal-doubts">
+      <li>
+        <strong>Absence de recueil d'information au moment de la collecte.</strong> Les
+        formulaires publics (demande d'aide, offre d'aide, signalement, "je suis en sécurité")
+        collectent nom, prénom, email, téléphone et localisation précise sans afficher de mention
+        d'information RGPD ni de lien vers cette page au moment de la saisie. C'est une obligation
+        de l'article 13 du RGPD, pas seulement une bonne pratique.
+      </li>
+      <li>
+        <strong>Champs pouvant révéler des données de santé.</strong> Le "régime alimentaire
+        spécifique" (déclaration de sécurité) et les champs de commentaire libre (déclaration de
+        sécurité, recherche de personne) peuvent involontairement contenir des informations de
+        santé, de handicap ou d'appartenance religieuse — catégories de données dites
+        "sensibles" au sens de l'article 9 du RGPD, qui appellent en principe une base légale et
+        des garanties renforcées spécifiques, allant au-delà de ce qui est décrit ici.
+      </li>
+      <li>
+        <strong>Recherche de personnes disparues.</strong> Ce module traite des données
+        (photographies, description physique) concernant des personnes qui n'ont elles-mêmes pas
+        pu consentir à leur publication. Le cadre légal applicable (intérêt légitime, mission
+        d'intérêt public, urgence vitale...) mérite d'être formellement tranché avec un juriste.
+      </li>
+      <li>
+        <strong>Polices Google Fonts.</strong> Le site charge des polices depuis les serveurs
+        Google (fonts.googleapis.com), ce qui transmet l'adresse IP du visiteur à Google. C'est
+        mentionné en section 7 ci-dessous, mais l'auto-hébergement de ces polices est la pratique
+        recommandée par la CNIL pour éviter ce transfert.
+      </li>
+    </ul>
+
+    <section>
+      <h2>1. Responsable du traitement</h2>
+      <p>
+        Assista Crise est un projet académique porté dans le cadre de la formation Info5 de
+        l'Université Grenoble Alpes. <strong>[À COMPLÉTER]</strong> : si le service est déployé
+        au-delà d'un cadre expérimental/pédagogique, l'entité juridiquement responsable du
+        traitement (l'université elle-même, un laboratoire, une association...) doit être
+        formellement désignée ici, avec son adresse et, le cas échéant, les coordonnées d'un
+        délégué à la protection des données (DPO). Contact temporaire :
+        <a href="mailto:contact&#64;assista-crise.fr">contact&#64;assista-crise.fr</a>.
+      </p>
+    </section>
+
+    <section>
+      <h2>2. Données collectées et finalités</h2>
+      <table class="legal-table">
+        <thead>
+          <tr><th>Fonctionnalité</th><th>Données collectées</th><th>Finalité</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Demande d'aide / Offre d'aide</td>
+            <td>Nom, prénom, email, téléphone, localisation, description, photo (avec sa
+              géolocalisation et l'orientation de prise de vue si disponibles)</td>
+            <td>Mettre en relation la personne avec les bénévoles ou services compétents</td>
+          </tr>
+          <tr>
+            <td>Signalement ("autre information")</td>
+            <td>Nom, prénom, email, téléphone, localisation, description, photo (idem)</td>
+            <td>Signaler un danger ou un événement à traiter par les équipes de terrain</td>
+          </tr>
+          <tr>
+            <td>"Je suis en sécurité"</td>
+            <td>Nom, prénom du référent, contact, composition du foyer, régime alimentaire
+              spécifique le cas échéant, centre d'accueil choisi</td>
+            <td>Recenser les personnes évacuées, faciliter leur prise en charge en centre
+              d'accueil</td>
+          </tr>
+          <tr>
+            <td>Recherche de personnes</td>
+            <td>Identité, photographie, description physique de la personne recherchée</td>
+            <td>Faciliter les recherches de personnes disparues pendant une crise</td>
+          </tr>
+          <tr>
+            <td>Création de compte</td>
+            <td>Nom d'utilisateur, email, téléphone, code postal, photo de profil, rôle</td>
+            <td>Authentification, suivi de son propre historique, accès aux fonctions de
+              coordination pour les comptes institutionnels</td>
+          </tr>
+          <tr>
+            <td>Journal d'activité (main courante)</td>
+            <td>Compte à l'origine de l'action, horodatage, nature de l'action</td>
+            <td>Traçabilité des actions de coordination, sécurité du service</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>3. Base légale</h2>
+      <p>
+        Les traitements liés à la réponse à une situation de crise relèvent en premier lieu de la
+        <strong>sauvegarde des intérêts vitaux</strong> des personnes concernées et de
+        <strong>l'exécution d'une mission d'intérêt public</strong> de sécurité civile pour les
+        traitements réalisés par ou pour le compte des autorités locales et services de secours.
+        La création d'un compte et son fonctionnement courant relèvent de
+        <strong>l'exécution du contrat</strong> d'utilisation du service (voir nos
+        <a routerLink="/cgu">CGU</a>). <em>[À confirmer/affiner avec un juriste selon le statut
+        exact de l'entité opérant le service.]</em>
+      </p>
+    </section>
+
+    <section>
+      <h2>4. Qui a accès à ces données ?</h2>
+      <ul>
+        <li>
+          <strong>Le grand public</strong> ne voit jamais les coordonnées de contact (email,
+          téléphone) ni la localisation précise d'une demande, d'une offre ou d'un signalement —
+          seule une zone approximative est affichée sur la carte publique.
+        </li>
+        <li>
+          <strong>Les comptes institutionnels</strong> (autorité locale, secours organisés,
+          administrateur, régulateur), une fois leur compte validé, voient les coordonnées
+          complètes et la localisation précise, strictement dans le cadre de la coordination de la
+          réponse à la crise.
+        </li>
+        <li>
+          <strong>La personne elle-même</strong>, connectée à son compte, peut retrouver et
+          modifier ses propres déclarations, demandes, offres et signalements depuis la page
+          Paramètres du compte.
+        </li>
+      </ul>
+      <p>
+        Aucune donnée n'est vendue ni cédée à des tiers à des fins commerciales. Aucun transfert
+        hors de l'Union européenne n'est effectué, à l'exception du chargement de polices
+        d'écriture depuis les serveurs de Google (voir section 7).
+      </p>
+    </section>
+
+    <section>
+      <h2>5. Durée de conservation</h2>
+      <ul>
+        <li>
+          Les demandes, offres et signalements rattachés à une crise sont supprimés automatiquement
+          <strong>30 jours après la clôture de cette crise</strong> (un résumé statistique agrégé,
+          sans coordonnées personnelles, est conservé à des fins d'archive).
+        </li>
+        <li>
+          Le journal d'activité (main courante) est purgé automatiquement au-delà de
+          <strong>30 jours</strong>.
+        </li>
+        <li>
+          Les comptes utilisateurs sont conservés tant qu'ils sont actifs. Une demande de
+          suppression de compte peut être adressée à tout moment (voir section 6).
+        </li>
+        <li>
+          Les sauvegardes de la base de données sont conservées <strong>14 jours</strong> avant
+          suppression automatique.
+        </li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>6. Vos droits</h2>
+      <p>
+        Conformément au RGPD, vous disposez d'un droit d'accès, de rectification, d'effacement, de
+        limitation, d'opposition et de portabilité sur vos données personnelles.
+      </p>
+      <ul>
+        <li>
+          Pour une demande, une offre ou un signalement soumis sans création de compte, un lien de
+          suppression est fourni dans l'email de confirmation reçu au moment du dépôt.
+        </li>
+        <li>
+          Pour un compte utilisateur, vos propres déclarations, demandes, offres et signalements
+          sont consultables et supprimables depuis la page Paramètres du compte.
+        </li>
+        <li>
+          Pour toute autre demande (accès, rectification, suppression d'un compte lui-même,
+          question sur un traitement) : <a href="mailto:contact&#64;assista-crise.fr">contact&#64;assista-crise.fr</a>.
+        </li>
+      </ul>
+      <p>
+        Vous disposez également du droit d'introduire une réclamation auprès de la
+        <a href="https://www.cnil.fr/fr/plaintes" target="_blank" rel="noopener">CNIL</a>.
+      </p>
+    </section>
+
+    <section>
+      <h2>7. Cookies et traceurs</h2>
+      <p>
+        Le service n'utilise aucun cookie de mesure d'audience ni traceur publicitaire.
+        L'authentification repose sur un jeton stocké dans le stockage local de votre navigateur
+        (localStorage), propre à votre appareil, jamais transmis à un tiers.
+      </p>
+      <p>
+        Le site charge les polices d'écriture et icônes Google Fonts directement depuis les
+        serveurs de Google (fonts.googleapis.com, fonts.gstatic.com), ce qui transmet votre adresse
+        IP à Google au moment du chargement de la page.
+      </p>
+    </section>
+
+    <section>
+      <h2>8. Sécurité</h2>
+      <p>
+        Le service est accessible exclusivement en connexion chiffrée (HTTPS). Les mots de passe
+        sont stockés de façon irréversible (hachage). Les accès aux données de contact et de
+        localisation précises sont restreints par rôle. Les sauvegardes de la base de données sont
+        stockées avec des droits d'accès restreints.
+      </p>
+    </section>
+  </div>
+</div>
