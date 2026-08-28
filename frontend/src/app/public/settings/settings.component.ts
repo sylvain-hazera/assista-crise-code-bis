@@ -87,7 +87,7 @@ export class SettingsComponent implements OnInit {
       last_name:               [this.currentUser?.last_name,  [Validators.required, Validators.minLength(2)]],
       first_name:              [this.currentUser?.first_name  ?? ''],
       email:                   [this.currentUser?.email,       [Validators.required, Validators.email]],
-      telephone_utilisateur:   [this.currentUser?.phone_number ?? '']
+      phone_number:            [this.currentUser?.phone_number ?? '']
     });
 
     this.passwordForm = this.fb.group({

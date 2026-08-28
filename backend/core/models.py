@@ -927,6 +927,15 @@ class Dossier(EnvironmentScopedModel):
         help_text="Demande d'aide à l'origine de ce dossier, si affecté depuis une demande.",
     )
 
+    information = models.ForeignKey(
+        "Information",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="dossiers",
+        help_text="Signalement divers à l'origine de ce dossier, si affecté depuis un signalement.",
+    )
+
     titre = models.CharField(
         max_length=255
     )
@@ -1178,6 +1187,18 @@ class Team(EnvironmentScopedModel):
     description = models.TextField(null=True, blank=True)
     color = models.CharField(max_length=7, default='#3b82f6')  # hex color
     created_at = models.DateTimeField(auto_now_add=True)
+
+    # Institution de rattachement : une équipe ne doit jamais rester livrée à elle-même — voir
+    # `_notify_institution_referent_of_team` (views.py) qui prévient le·s référent·s
+    # (ContactInstitution) de l'institution à la création. Nullable pour ne pas bloquer la
+    # création d'équipe pour un compte sans institution renseignée (auto-complété depuis
+    # `request.user.institution` sinon).
+    institution = models.ForeignKey(
+        "Institution",
+        on_delete=models.PROTECT,
+        null=True, blank=True,
+        related_name="teams",
+    )
 
     leader = models.ForeignKey(
         User,

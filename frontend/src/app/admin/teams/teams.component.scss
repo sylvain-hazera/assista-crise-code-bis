@@ -145,6 +145,11 @@
   .card-desc { margin: 0; font-size: .85rem; color: var(--muted); line-height: 1.4; min-height: 2rem;
                display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 
+  .card-institution { margin: .4rem 0 0; font-size: .8rem; color: var(--muted); display: flex;
+                       align-items: center; gap: .3rem;
+    .material-icons { font-size: 1rem; }
+  }
+
   .card-stats {
     display: flex; flex-wrap: wrap; gap: .5rem;
     .stat {

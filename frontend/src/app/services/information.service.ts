@@ -6,6 +6,13 @@ import { map, Observable } from 'rxjs';
 import { geoPointToLatLng, latLngToGeoJson } from '../shared/models/geopoint.model';
 import { Team } from '../shared/models/team.model';
 
+export interface BulkAssignInformationResult {
+  team: Team;
+  dossiers_created: string[];
+  already_assigned: string[];
+  no_crisis: string[];
+}
+
 @Injectable({
   providedIn: 'root'
 })
@@ -53,9 +60,9 @@ export class InformationService {
   }
 
   /** POST /api/informations/bulk_assign_team/ — affecte une sélection de signalements à une
-   * équipe existante (pas de dossier créé, juste un rattachement équipe). */
-  bulkAssignTeam(informationIds: string[], teamId: string): Observable<Team> {
-    return this.http.post<Team>(`${this.url}/bulk_assign_team/`, {
+   * équipe existante ; crée un Dossier de suivi par signalement (comme pour les demandes). */
+  bulkAssignTeam(informationIds: string[], teamId: string): Observable<BulkAssignInformationResult> {
+    return this.http.post<BulkAssignInformationResult>(`${this.url}/bulk_assign_team/`, {
       information_ids: informationIds, team: teamId,
     });
   }

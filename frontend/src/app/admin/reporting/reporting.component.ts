@@ -681,8 +681,15 @@ export class ReportingComponent implements OnInit, OnDestroy {
   submitBulkInformationTeam(): void {
     if (!this.bulkInformationTeamId || this.selectedInformationIds.size === 0) return;
     this.informationService.bulkAssignTeam([...this.selectedInformationIds], this.bulkInformationTeamId).subscribe({
-      next: (team) => {
-        this.showSuccess(`${this.selectedInformationIds.size} signalement(s) affecté(s) à l'équipe « ${team.name} ».`);
+      next: (result) => {
+        let message = `${result.dossiers_created.length} signalement(s) affecté(s) à l'équipe « ${result.team.name} » (dossier créé pour chacun).`;
+        if (result.already_assigned.length > 0) {
+          message += ` ${result.already_assigned.length} déjà affecté(s) à cette équipe.`;
+        }
+        if (result.no_crisis.length > 0) {
+          message += ` ${result.no_crisis.length} sans crise associée n'ont pas pu être affecté(s).`;
+        }
+        this.showSuccess(message);
         this.selectedInformationIds.clear();
         this.showBulkInformationModal = false;
       },

@@ -676,11 +676,14 @@ class TeamSerializer(serializers.ModelSerializer):
         many=True, queryset=Competence.objects.all(), source='competences', required=False
     )
     zone_precise_geojson = serializers.SerializerMethodField()
+    institution_nom = serializers.CharField(source='institution.nom', read_only=True, default=None)
 
     class Meta:
         model  = Team
         fields = [
             'id', 'name', 'description', 'color', 'created_at',
+            'institution',
+            'institution_nom',
             'leader',
             'regulateur',
             'member_ids',
@@ -771,6 +774,12 @@ class DossierSerializer(serializers.ModelSerializer):
 
     mission_titre = serializers.CharField(
         source='mission.titre',
+        read_only=True,
+        default=None
+    )
+
+    information_titre = serializers.CharField(
+        source='information.title',
         read_only=True,
         default=None
     )

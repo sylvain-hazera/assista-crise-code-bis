@@ -71,6 +71,12 @@
 
               <h3>{{ team.name }}</h3>
               <p class="card-desc">{{ team.description || 'Aucune description' }}</p>
+              @if (team.institution_nom) {
+                <p class="card-institution">
+                  <span class="material-icons">apartment</span>
+                  {{ team.institution_nom }}
+                </p>
+              }
 
               <div class="card-stats">
                 <span class="stat">

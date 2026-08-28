@@ -15,6 +15,8 @@ export interface Team {
   color:                string;
   leader:               string | null;      // UUID du chef d'équipe (terrain)
   regulateur?:          string | null;      // UUID du régulateur (pilotage depuis le centre de crise)
+  institution?:         string | null;      // UUID de l'institution de rattachement (auto-complétée à la création si absente)
+  institution_nom?:     string | null;
   member_ids:           string[];
   assigned_crisis_ids:  string[];
   assigned_offer_ids:   string[];

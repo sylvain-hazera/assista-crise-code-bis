@@ -1,6 +1,7 @@
 """Permissions DRF réutilisables liées au type de compte (User.type)."""
 import hashlib
 
+from django.core.mail import send_mail
 from django.db.models import Q
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import BasePermission
@@ -27,6 +28,21 @@ def get_active_environment(request):
     if value not in (Environment.PROD, Environment.DEMO):
         raise ValidationError({"environment": "Environnement invalide (PROD ou DEMO attendu)."})
     return value
+
+
+def send_mail_env_aware(request, subject, message, from_email, recipient_list, **kwargs):
+    """Enveloppe django.core.mail.send_mail pour les notifications opérationnelles
+    (affectation, confirmation de création...) : en zone DEMO, redirige systématiquement vers
+    l'utilisateur connecté à l'origine de l'action plutôt que vers le destinataire enregistré
+    (souvent fictif/de repli en démo, ex: contact anonyme du formulaire "Autre information") —
+    pour que les comptes de démonstration voient concrètement ce que l'appli aurait envoyé,
+    sans jamais spammer une adresse tierce. Sans effet en PROD. Ne concerne pas les emails de
+    cycle de vie de compte (inscription, activation, validation) : structurellement propres à
+    PROD, la démo ne crée jamais de compte."""
+    if get_active_environment(request) == Environment.DEMO and getattr(request.user, "is_authenticated", False):
+        recipient_list = [request.user.email]
+        subject = f"[DEMO] {subject}"
+    return send_mail(subject, message, from_email, recipient_list, **kwargs)
 
 
 def get_effective_role(request):

@@ -37,7 +37,7 @@ from .export import build_crisis_export_zip
 from .institution_attachment import attach_user_to_institution, resolve_or_invite_responsable
 from .permissions import (
     IsInstitutionalActor, IsAdministrator, IsOwnDeclarationOrInstitutional, INSTITUTIONAL_TYPES, user_can_view_photo,
-    get_active_environment, get_effective_role, mask_email, mask_phone,
+    get_active_environment, get_effective_role, mask_email, mask_phone, send_mail_env_aware,
 )
 from .geo_lookup import commune_code_from_point
 
@@ -1165,7 +1165,8 @@ def send_point_volunteer_confirmation_email(request, affectation):
 
     lignes += ["", "Cordialement,", "L'équipe Assista-Crise"]
 
-    send_mail(
+    send_mail_env_aware(
+        request,
         subject=f"Confirmation de disponibilité — {point.nom}",
         message="\n".join(lignes),
         from_email=None,
@@ -1299,7 +1300,8 @@ def _assign_request_to_team(demande, team, request, mission=None):
                 f"\nVous pouvez suivre l'avancement de votre dossier, ajouter des "
                 f"commentaires et des photos ici :\n{suivi_link}\n"
             )
-        send_mail(
+        send_mail_env_aware(
+            request,
             subject=f"Votre demande « {demande.title} » a été prise en charge",
             message=(
                 f"Bonjour {demande.first_name_request},\n\n"
@@ -1326,6 +1328,51 @@ def _assign_request_to_team(demande, team, request, mission=None):
     )
 
     return "created", dossier, regulateurs
+
+
+def _assign_information_to_team(signalement, team, request):
+    """Corps de InformationViewSet.bulk_assign_team : crée le dossier de suivi et notifie les
+    régulateurs de l'équipe — symétrique à _assign_request_to_team, mais sans email au
+    signalant (souvent anonyme/coordonnées de repli, voir other-declaration-form) ni
+    participant DEMANDEUR (rôle qui ne correspond pas à un simple signalement). Retourne
+    (outcome, dossier) où outcome vaut "already_assigned" (no-op), "no_crisis" ou "created"."""
+    if team.assigned_informations.filter(pk=signalement.pk).exists():
+        return "already_assigned", None
+
+    if not signalement.crisis:
+        return "no_crisis", None
+
+    team.assigned_informations.add(signalement)
+    if signalement.author_id:
+        team.members.add(signalement.author)
+
+    dossier = Dossier.objects.create(
+        numero=f"DOS-{uuid.uuid4().hex[:8].upper()}",
+        crise=signalement.crisis,
+        equipe=team,
+        information=signalement,
+        titre=signalement.title,
+        description=f"Signalement affecté à l'équipe {team.name} : {signalement.title}",
+        statut=Dossier.Statut.AFFECTE,
+        environment=signalement.environment,
+    )
+
+    populate_dossier_participants_and_notify(
+        dossier, equipe=team,
+        notification_titre="Nouveau signalement affecté à votre équipe",
+        notification_message=f"Le signalement « {signalement.title} » a été affecté à l'équipe {team.name} (dossier {dossier.numero}).",
+    )
+
+    audit_log(
+        request=request,
+        action_code="CREATION",
+        objet_type="Dossier",
+        objet_id=dossier.id,
+        crise=signalement.crisis,
+        commentaire=f"Dossier {dossier.numero} créé suite à l'affectation du signalement à {team.name}",
+    )
+
+    return "created", dossier
 
 
 def populate_dossier_participants_and_notify(
@@ -1592,7 +1639,8 @@ class RequestViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         try:
             print(f"Tentative d'envoi de mail à {demande.email_request}...")
             
-            send_mail(
+            send_mail_env_aware(
+                self.request,
                 subject="Confirmation de votre demande",
                 message=(
                     f"Bonjour {demande.first_name_request},\n\n"
@@ -1711,6 +1759,43 @@ class RequestViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             return Response(status=403)
         return FileResponse(open(demande.photo.path, "rb"))
 
+def _notify_institution_referent_of_team(team, institution, request):
+    """Prévient le référent de l'institution qu'une équipe vient d'être créée sous son
+    rattachement — le référent est le contact principal (ContactInstitution.contact_principal)
+    s'il y en a un, sinon n'importe quel contact actif. Silencieux si l'institution n'a encore
+    aucun contact enregistré : ne bloque pas la création de l'équipe pour autant."""
+    referent_contact = (
+        ContactInstitution.objects.filter(institution=institution, actif=True, contact_principal=True).first()
+        or ContactInstitution.objects.filter(institution=institution, actif=True).first()
+    )
+    if referent_contact is None:
+        return
+
+    referent = referent_contact.utilisateur
+    message = (
+        f"L'équipe « {team.name} » vient d'être créée sous le rattachement de votre "
+        f"institution ({institution.nom})."
+    )
+    Notification.objects.create(
+        utilisateur=referent, titre="Nouvelle équipe créée sous votre institution",
+        message=message, environment=team.environment,
+    )
+    try:
+        send_mail_env_aware(
+            request,
+            subject=f"Nouvelle équipe créée sous {institution.nom}",
+            message=(
+                f"Bonjour {referent.first_name},\n\n{message}\n\n"
+                "Cordialement,\nL'équipe Assista-Crise"
+            ),
+            from_email=None,
+            recipient_list=[referent.email],
+            fail_silently=True,
+        )
+    except Exception as e:
+        print(f"Erreur envoi email référent institution (équipe) : {e}")
+
+
 class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     queryset           = Team.objects.prefetch_related(
         'members', 'assigned_crises', 'assigned_offers', 'assigned_requests'
@@ -1719,7 +1804,16 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def perform_create(self, serializer):
-        team = serializer.save(environment=get_active_environment(self.request))
+        # Une équipe ne doit pas rester livrée à elle-même : rattachée par défaut à
+        # l'institution du créateur si aucune n'est explicitement fournie — pas d'erreur si le
+        # créateur lui-même n'en a pas (compte encore non rattaché), l'équipe reste alors sans
+        # institution comme avant ce changement, plutôt que de bloquer sa création.
+        institution = serializer.validated_data.get('institution') or getattr(self.request.user, 'institution', None)
+        team = serializer.save(environment=get_active_environment(self.request), institution=institution)
+
+        if institution is not None:
+            _notify_institution_referent_of_team(team, institution, self.request)
+
         audit_log(
             request=self.request,
             action_code="CREATION",
@@ -1770,7 +1864,8 @@ class OfferViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         try:
             print(f"Tentative d'envoi de mail à {offre.email_offer}...")
             
-            send_mail(
+            send_mail_env_aware(
+                self.request,
                 subject=f"Confirmation : Votre offre '{offre.title}' a bien été enregistrée",
                 message=(
                     f"Bonjour {offre.first_name_offer},\n\n"
@@ -1906,7 +2001,8 @@ class InformationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         try:
             print(f"Tentative d'envoi de mail à {info.email_information}...")
             
-            send_mail(
+            send_mail_env_aware(
+                self.request,
                 subject=f"Confirmation : Votre information '{info.title}' a bien été partagée",
                 message=(
                     f"Bonjour {info.first_name_information},\n\n"
@@ -1939,10 +2035,10 @@ class InformationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     @action(detail=False, methods=["post"], permission_classes=[IsInstitutionalActor])
     def bulk_assign_team(self, request):
         """Affecte une sélection de signalements ("divers" — ex: arbre sur la chaussée) à une
-        équipe existante (ex: voirie), en une fois. Contrairement aux demandes, pas de dossier
-        de suivi ni de notification créés ici : juste un rattachement équipe, comme pour
-        l'affectation individuelle d'une offre. Les auteurs identifiés des signalements
-        rejoignent l'équipe, comme pour les offres."""
+        équipe existante (ex: voirie), en une fois. Crée un Dossier par signalement (statut
+        AFFECTE, "en attente de traitement"), comme pour les demandes — un signalement affecté
+        doit pouvoir être suivi au même titre qu'une demande, pas seulement rattaché à
+        l'équipe."""
         information_ids = request.data.get("information_ids") or []
         if not information_ids:
             return Response({"error": "Aucun signalement sélectionné."}, status=status.HTTP_400_BAD_REQUEST)
@@ -1952,20 +2048,25 @@ class InformationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             return Response({"error": "Un ou plusieurs signalements sont introuvables."}, status=status.HTTP_400_BAD_REQUEST)
 
         team = get_object_or_404(Team, pk=request.data.get("team"))
-        team.assigned_informations.add(*informations)
-        members = {i.author for i in informations if i.author_id}
-        if members:
-            team.members.add(*members)
 
-        audit_log(
-            request=request,
-            action_code="MODIFICATION",
-            objet_type="Team",
-            objet_id=team.id,
-            commentaire=f"{len(informations)} signalement(s) affecté(s) à l'équipe {team.name}",
-        )
+        dossiers_created = []
+        already_assigned = []
+        no_crisis = []
+        for signalement in informations:
+            outcome, dossier = _assign_information_to_team(signalement, team, request)
+            if outcome == "already_assigned":
+                already_assigned.append(str(signalement.id))
+            elif outcome == "no_crisis":
+                no_crisis.append(str(signalement.id))
+            elif outcome == "created":
+                dossiers_created.append(str(dossier.id))
 
-        return Response(TeamSerializer(team).data)
+        return Response({
+            "team": TeamSerializer(team).data,
+            "dossiers_created": dossiers_created,
+            "already_assigned": already_assigned,
+            "no_crisis": no_crisis,
+        })
 
     @action(detail=True, methods=["get"])
     def preview(self, request, pk=None):

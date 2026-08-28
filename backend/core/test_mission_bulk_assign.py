@@ -202,19 +202,23 @@ class TestBulkAssignMissionRequests:
 @pytest.mark.django_db
 class TestBulkAssignTeamInformations:
     """Signalements "divers" (ex: arbre sur la chaussée) affectés en bloc à une équipe
-    existante (ex: voirie) — pas de dossier de suivi ici, juste un rattachement équipe, comme
-    pour l'affectation individuelle d'une offre."""
+    existante (ex: voirie) : crée un Dossier de suivi par signalement rattaché à une crise
+    (statut AFFECTE), comme pour les demandes — un signalement affecté doit pouvoir être suivi
+    au même titre qu'une demande. Limitation connue : un signalement sans crise associée ne
+    peut pas générer de dossier (Dossier.crise est obligatoire), il reste alors seulement
+    rattaché à l'équipe — voir test_bulk_assign_skips_dossier_for_crisis_less_information."""
 
-    def test_bulk_assign_adds_authors_as_members(self, authenticated_client, information_type):
+    def test_bulk_assign_creates_dossiers_and_adds_authors_as_members(self, authenticated_client, information_type):
         client, _ = _make_admin(authenticated_client)
+        crisis = _make_crisis()
         author = User.objects.create_user(username='signaleur@test.fr', email='signaleur@test.fr', password='Test1234!')
         i1 = Information.objects.create(
-            title='Arbre sur la chaussée', location=Point(1, 1, srid=4326),
+            title='Arbre sur la chaussée', location=Point(1, 1, srid=4326), crisis=crisis,
             first_name_information='A', last_name_information='B', email_information='a@t.fr',
             phone_information='0600000000', information_type=information_type, author=author,
         )
         i2 = Information.objects.create(
-            title='Autre arbre', location=Point(1, 1, srid=4326),
+            title='Autre arbre', location=Point(1, 1, srid=4326), crisis=crisis,
             first_name_information='C', last_name_information='D', email_information='c@t.fr',
             phone_information='0600000000', information_type=information_type,
         )
@@ -227,8 +231,62 @@ class TestBulkAssignTeamInformations:
         )
 
         assert response.status_code == status.HTTP_200_OK
-        assert set(response.data['assigned_information_ids']) == {i1.id, i2.id}
-        assert response.data['member_ids'] == [author.id]
+        assert len(response.data['dossiers_created']) == 2
+        assert response.data['already_assigned'] == []
+        assert response.data['no_crisis'] == []
+        assert set(team.assigned_informations.values_list('id', flat=True)) == {i1.id, i2.id}
+        assert author in team.members.all()
+        for i in (i1, i2):
+            dossier = Dossier.objects.get(information=i)
+            assert dossier.equipe_id == team.id
+            assert dossier.crise_id == crisis.id
+            assert dossier.statut == Dossier.Statut.AFFECTE
+
+    def test_bulk_assign_is_noop_for_already_assigned_information(self, authenticated_client, information_type):
+        client, _ = _make_admin(authenticated_client)
+        crisis = _make_crisis()
+        i1 = Information.objects.create(
+            title='Arbre sur la chaussée', location=Point(1, 1, srid=4326), crisis=crisis,
+            first_name_information='A', last_name_information='B', email_information='a@t.fr',
+            phone_information='0600000000', information_type=information_type,
+        )
+        team = Team.objects.create(name='Voirie')
+
+        first = client.post(
+            reverse('information-bulk-assign-team'),
+            {'information_ids': [str(i1.id)], 'team': str(team.id)},
+            format='json',
+        )
+        assert len(first.data['dossiers_created']) == 1
+
+        second = client.post(
+            reverse('information-bulk-assign-team'),
+            {'information_ids': [str(i1.id)], 'team': str(team.id)},
+            format='json',
+        )
+        assert second.data['dossiers_created'] == []
+        assert second.data['already_assigned'] == [str(i1.id)]
+        assert Dossier.objects.filter(information=i1).count() == 1
+
+    def test_bulk_assign_skips_dossier_for_crisis_less_information(self, authenticated_client, information_type):
+        client, _ = _make_admin(authenticated_client)
+        i1 = Information.objects.create(
+            title='Arbre sur la chaussée', location=Point(1, 1, srid=4326),
+            first_name_information='A', last_name_information='B', email_information='a@t.fr',
+            phone_information='0600000000', information_type=information_type,
+        )
+        team = Team.objects.create(name='Voirie')
+
+        response = client.post(
+            reverse('information-bulk-assign-team'),
+            {'information_ids': [str(i1.id)], 'team': str(team.id)},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['dossiers_created'] == []
+        assert response.data['no_crisis'] == [str(i1.id)]
+        assert not Dossier.objects.filter(information=i1).exists()
 
     def test_bulk_assign_requires_information_ids(self, authenticated_client):
         client, _ = _make_admin(authenticated_client)
