@@ -21,11 +21,19 @@ export interface Dossier {
 
   latitude?: number | null;
   longitude?: number | null;
+  commune?: string | null;
+
+  contact_nom?: string | null;
+  contact_telephone?: string | null;
+  contact_email?: string | null;
 
   titre: string;
   description: string;
 
   statut: string;
+  priorite: 'URGENTE' | 'NORMALE' | 'BASSE';
+  priorite_libelle?: string;
+  ordre: number;
 
   date_creation: string;
   date_affectation?: string;

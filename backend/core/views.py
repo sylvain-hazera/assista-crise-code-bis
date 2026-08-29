@@ -467,7 +467,13 @@ class DossierViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             return Dossier.objects.none()
         if get_effective_role(self.request) in INSTITUTIONAL_TYPES:
             return Dossier.objects.filter(environment=environment)
-        return Dossier.objects.filter(participants__utilisateur=user, environment=environment).distinct()
+        # Un chef d'équipe de terrain (leader/régulateur d'une équipe) doit voir TOUS les
+        # dossiers de cette équipe, pas seulement ceux où il est lui-même participant — sinon
+        # aucune vue d'ensemble possible pour coordonner plusieurs équipes à la fois.
+        return Dossier.objects.filter(
+            Q(participants__utilisateur=user) | Q(equipe__leader=user) | Q(equipe__regulateur=user),
+            environment=environment,
+        ).distinct()
 
     def get_serializer_context(self):
         context = super().get_serializer_context()
@@ -507,6 +513,40 @@ class DossierViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         return Response(
             {"status": "ok"}
         )
+
+    @action(detail=True, methods=["post"], url_path="definir-priorite")
+    def definir_priorite(self, request, pk=None):
+        """Réservé au chef d'équipe de terrain (leader/régulateur de l'équipe affectée) ou à un
+        acteur institutionnel : contrairement à update/partial_update (réservés institutionnel),
+        cette action ne touche jamais qu'à `priorite`/`ordre`, pour permettre à un chef qui
+        pilote plusieurs équipes de trier/prioriser sa tournée sans lui ouvrir toute l'édition
+        du dossier."""
+        dossier = self.get_object()
+        user = request.user
+        equipe = dossier.equipe
+
+        est_chef_equipe = equipe is not None and user.id in (equipe.leader_id, equipe.regulateur_id)
+        if not est_chef_equipe and get_effective_role(request) not in INSTITUTIONAL_TYPES:
+            return Response(
+                {"error": "Seul le chef ou le régulateur de l'équipe affectée peut modifier la priorité/l'ordre."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        priorite = request.data.get("priorite")
+        if priorite is not None:
+            if priorite not in Dossier.Priorite.values:
+                return Response({"error": "Priorité invalide."}, status=status.HTTP_400_BAD_REQUEST)
+            dossier.priorite = priorite
+
+        ordre = request.data.get("ordre")
+        if ordre is not None:
+            try:
+                dossier.ordre = int(ordre)
+            except (TypeError, ValueError):
+                return Response({"error": "L'ordre doit être un nombre entier."}, status=status.HTTP_400_BAD_REQUEST)
+
+        dossier.save(update_fields=["priorite", "ordre"])
+        return Response(DossierSerializer(dossier, context=self.get_serializer_context()).data)
 
     @action(detail=False, methods=["get"])
     def ma_file(self, request):
@@ -2007,9 +2047,14 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'], url_path='mes-equipes')
     def mes_equipes(self, request):
-        """Équipes dont l'utilisateur connecté est membre — point d'entrée de sa "vue
-        équipe" (voir aussi le lien direct envoyé par email lors de son association)."""
-        equipes = self.get_queryset().filter(members=request.user)
+        """Équipes dont l'utilisateur connecté est membre, chef ou régulateur — point d'entrée
+        de sa "vue équipe" (voir aussi le lien direct envoyé par email lors de son
+        association). Inclut le rôle de chef/régulateur pour qu'un chef d'équipe de terrain
+        pilotant plusieurs équipes les retrouve toutes, même sur celles où il n'est pas compté
+        comme simple membre."""
+        equipes = self.get_queryset().filter(
+            Q(members=request.user) | Q(leader=request.user) | Q(regulateur=request.user)
+        ).distinct()
         return Response(self.get_serializer(equipes, many=True).data)
 
 class MissionViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):

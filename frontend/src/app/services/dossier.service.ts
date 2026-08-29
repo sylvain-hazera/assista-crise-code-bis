@@ -33,5 +33,11 @@ export class DossierService {
   cloturer(id: string, statut: 'CLOTURE' | 'RESOLU' = 'CLOTURE'): Observable<{ status: string; statut: string }> {
     return this.http.post<{ status: string; statut: string }>(`${this.url}/${id}/cloturer/`, { statut });
   }
+
+  /** Réservé au chef/régulateur de l'équipe affectée (ou institutionnel) : ne touche jamais
+   * qu'aux champs priorite/ordre, jamais au reste du dossier. */
+  definirPriorite(id: string, changes: { priorite?: string; ordre?: number }): Observable<Dossier> {
+    return this.http.post<Dossier>(`${this.url}/${id}/definir-priorite/`, changes);
+  }
 }
 

@@ -846,6 +846,11 @@ class DossierSerializer(serializers.ModelSerializer):
         read_only=True
     )
 
+    priorite_libelle = serializers.CharField(
+        source='get_priorite_display',
+        read_only=True
+    )
+
     mission_titre = serializers.CharField(
         source='mission.titre',
         read_only=True,
@@ -864,6 +869,10 @@ class DossierSerializer(serializers.ModelSerializer):
 
     latitude = serializers.SerializerMethodField()
     longitude = serializers.SerializerMethodField()
+    commune = serializers.SerializerMethodField()
+    contact_nom = serializers.SerializerMethodField()
+    contact_telephone = serializers.SerializerMethodField()
+    contact_email = serializers.SerializerMethodField()
 
     class Meta:
         model = Dossier
@@ -882,6 +891,39 @@ class DossierSerializer(serializers.ModelSerializer):
     def get_longitude(self, obj):
         origine = self._origine(obj)
         return origine.location.x if origine and origine.location else None
+
+    def get_commune(self, obj):
+        origine = self._origine(obj)
+        if not origine or not origine.location:
+            return None
+        if obj.demande and obj.demande.commune_code:
+            return commune_from_code(obj.demande.commune_code) or commune_from_point(origine.location)
+        return commune_from_point(origine.location)
+
+    def get_contact_nom(self, obj):
+        # Même logique de visibilité que latitude/longitude ci-dessus : pas de gating
+        # supplémentaire, l'accès au dossier lui-même suffit.
+        if obj.demande:
+            full_name = f"{obj.demande.first_name_request} {obj.demande.last_name_request}".strip()
+            return full_name or None
+        if obj.information:
+            full_name = f"{obj.information.first_name_information} {obj.information.last_name_information}".strip()
+            return full_name or None
+        return None
+
+    def get_contact_telephone(self, obj):
+        if obj.demande:
+            return obj.demande.phone_request
+        if obj.information:
+            return obj.information.phone_information
+        return None
+
+    def get_contact_email(self, obj):
+        if obj.demande:
+            return obj.demande.email_request
+        if obj.information:
+            return obj.information.email_information
+        return None
 
     def get_has_updates(self, obj):
 
@@ -941,6 +983,18 @@ class DossierSerializer(serializers.ModelSerializer):
             +
             documents
         )
+
+    def to_representation(self, instance):
+        # Même politique que RequestSerializer/InformationSerializer : en zone DEMO, jamais de
+        # vraie coordonnée de contact affichée, même à un compte institutionnel ou à un chef
+        # d'équipe — sinon ce serializer contournerait le masquage déjà en place sur la
+        # demande/le signalement d'origine.
+        data = super().to_representation(instance)
+        request = self.context.get('request')
+        if request is not None and get_active_environment(request) == Environment.DEMO:
+            data['contact_email'] = mask_email(data.get('contact_email'))
+            data['contact_telephone'] = mask_phone(data.get('contact_telephone'))
+        return data
 
 class DocumentSerializer(serializers.ModelSerializer):
 

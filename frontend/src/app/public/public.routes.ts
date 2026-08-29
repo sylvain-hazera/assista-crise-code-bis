@@ -61,6 +61,12 @@ export const PUBLIC_ROUTES: Routes = [
           .then(m => m.MonEquipeComponent)
       },
       {
+        path: 'mes-interventions',
+        canActivate: [authGuard],
+        loadComponent: () => import('../pages/mes-interventions/mes-interventions.component')
+          .then(m => m.MesInterventionsComponent)
+      },
+      {
         path: 'help-proposal',
         loadComponent: () => import('./forms/propose-help-form/propose-help-form.component')
           .then(m => m.ProposeHelpFormComponent)

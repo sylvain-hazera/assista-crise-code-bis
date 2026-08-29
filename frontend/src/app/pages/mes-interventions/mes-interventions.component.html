@@ -1,0 +1,135 @@
+<div class="interventions-page">
+
+  <header class="page-header">
+    <h1>Mes interventions</h1>
+    <p class="subtitle">Dossiers affectés à vos équipes, tous confondus.</p>
+  </header>
+
+  @if (isLoading) {
+    <div class="state-block">
+      <div class="spinner"></div>
+      <p>Chargement…</p>
+    </div>
+  } @else if (errorMessage) {
+    <div class="state-block">
+      <span class="material-icons error-icon">error_outline</span>
+      <p>{{ errorMessage }}</p>
+    </div>
+  } @else if (teams.length === 0) {
+    <div class="state-block">
+      <span class="material-icons">groups_off</span>
+      <p>Vous n'êtes chef, régulateur ou membre d'aucune équipe pour le moment.</p>
+    </div>
+  } @else {
+
+    <div class="filters">
+      <select [(ngModel)]="selectedTeamId">
+        <option value="ALL">Toutes mes équipes ({{ allDossiers.length }})</option>
+        @for (team of teams; track team.id) {
+          <option [value]="team.id">{{ team.name }}</option>
+        }
+      </select>
+
+      <select [(ngModel)]="statutFilter">
+        <option value="ALL">Tous statuts</option>
+        @for (opt of statutOptions; track opt.value) {
+          <option [value]="opt.value">{{ opt.label }}</option>
+        }
+      </select>
+
+      @if (!canReorder) {
+        <p class="reorder-hint">
+          <span class="material-icons">info</span>
+          Sélectionnez une équipe précise pour pouvoir réordonner sa tournée.
+        </p>
+      }
+    </div>
+
+    @if (filteredDossiers.length === 0) {
+      <div class="state-block">
+        <span class="material-icons">inbox</span>
+        <p>Aucun dossier ne correspond à ces filtres.</p>
+      </div>
+    } @else {
+      <div class="table-wrap">
+        <table class="interventions-table">
+          <thead>
+            <tr>
+              @if (canReorder) { <th class="col-order"></th> }
+              <th class="col-photo"></th>
+              <th>Dossier</th>
+              <th>Équipe</th>
+              <th>Localisation</th>
+              <th>Contact</th>
+              <th>Priorité</th>
+              <th>Statut</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (dossier of filteredDossiers; track dossier.id) {
+              <tr [class.saving]="savingDossierId === dossier.id">
+                @if (canReorder) {
+                  <td class="col-order">
+                    <button type="button" class="btn-order" (click)="moveUp(dossier)" title="Monter">
+                      <span class="material-icons">arrow_upward</span>
+                    </button>
+                    <button type="button" class="btn-order" (click)="moveDown(dossier)" title="Descendre">
+                      <span class="material-icons">arrow_downward</span>
+                    </button>
+                  </td>
+                }
+                <td class="col-photo">
+                  @if (photoUrls[dossier.id]) {
+                    <img [src]="photoUrls[dossier.id]" alt="" class="dossier-thumb">
+                  } @else {
+                    <div class="dossier-thumb-placeholder">
+                      <span class="material-icons">description</span>
+                    </div>
+                  }
+                </td>
+                <td>
+                  <span class="dossier-titre">{{ dossier.titre }}</span>
+                  <span class="dossier-numero">{{ dossier.numero }}</span>
+                </td>
+                <td>{{ teamName(dossier.equipe) }}</td>
+                <td>{{ dossier.commune || '—' }}</td>
+                <td>
+                  @if (dossier.contact_nom) {
+                    <div class="contact-cell">
+                      <span>{{ dossier.contact_nom }}</span>
+                      @if (dossier.contact_telephone) {
+                        <a [href]="'tel:' + dossier.contact_telephone" class="contact-link">
+                          <span class="material-icons">phone</span> {{ dossier.contact_telephone }}
+                        </a>
+                      }
+                    </div>
+                  } @else {
+                    <span class="muted">—</span>
+                  }
+                </td>
+                <td>
+                  <select
+                    class="priorite-select"
+                    [attr.data-priorite]="dossier.priorite"
+                    [ngModel]="dossier.priorite"
+                    (ngModelChange)="onPrioriteChange(dossier, $event)">
+                    @for (opt of priorites; track opt.value) {
+                      <option [value]="opt.value">{{ opt.label }}</option>
+                    }
+                  </select>
+                </td>
+                <td>
+                  <span class="statut-badge" [attr.data-statut]="dossier.statut">{{ statutLabel(dossier.statut) }}</span>
+                </td>
+                <td>
+                  <a [routerLink]="['/dossier-suivi', dossier.id]" class="btn-detail">Détail</a>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  }
+</div>

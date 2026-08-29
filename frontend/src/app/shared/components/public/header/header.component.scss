@@ -154,6 +154,7 @@
     &.quick-link-information { background: #3b82f6; }
     &.quick-link-dossier { background: #a855f7; }
     &.quick-link-team { background: #f59e0b; }
+    &.quick-link-interventions { background: #0ea5e9; }
   }
 
   // ============================================
@@ -438,6 +439,7 @@
     .mobile-quick-link.quick-link-information .material-icons { color: #3b82f6; }
     .mobile-quick-link.quick-link-dossier .material-icons { color: #a855f7; }
     .mobile-quick-link.quick-link-team .material-icons { color: #f59e0b; }
+    .mobile-quick-link.quick-link-interventions .material-icons { color: #0ea5e9; }
   }
 }
 

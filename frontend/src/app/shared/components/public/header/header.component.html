@@ -48,6 +48,9 @@
             <a class="quick-link quick-link-team" [routerLink]="['/mon-equipe', myTeamId]" (click)="closeAllMenus()" title="Mon équipe">
               <span class="material-icons">groups</span>
             </a>
+            <a class="quick-link quick-link-interventions" routerLink="/mes-interventions" (click)="closeAllMenus()" title="Mes interventions">
+              <span class="material-icons">checklist</span>
+            </a>
           }
         </div>
       }
@@ -171,6 +174,10 @@
         <a class="mobile-quick-link quick-link-team" [routerLink]="['/mon-equipe', myTeamId]" (click)="closeAllMenus()">
           <span class="material-icons">groups</span>
           Mon équipe
+        </a>
+        <a class="mobile-quick-link quick-link-interventions" routerLink="/mes-interventions" (click)="closeAllMenus()">
+          <span class="material-icons">checklist</span>
+          Mes interventions
         </a>
       }
     }

@@ -858,6 +858,11 @@ class AffectationCompetence(EnvironmentScopedModel):
 
 class Dossier(EnvironmentScopedModel):
 
+    class Priorite(models.TextChoices):
+        URGENTE = "URGENTE", "Urgente"
+        NORMALE = "NORMALE", "Normale"
+        BASSE = "BASSE", "Basse"
+
     class Statut(models.TextChoices):
 
         EN_ATTENTE_DISTRIBUTION = (
@@ -965,6 +970,19 @@ class Dossier(EnvironmentScopedModel):
     date_cloture = models.DateTimeField(
         null=True,
         blank=True
+    )
+
+    priorite = models.CharField(
+        max_length=10,
+        choices=Priorite.choices,
+        default=Priorite.NORMALE,
+        help_text="Priorité de traitement, réglable par le chef d'équipe pour trier ses dossiers.",
+    )
+
+    ordre = models.PositiveIntegerField(
+        default=0,
+        help_text="Ordre d'intervention manuel au sein de son équipe (le plus petit en premier) "
+                   "— permet à un chef d'équipe de terrain d'organiser sa tournée.",
     )
 
     def __str__(self):

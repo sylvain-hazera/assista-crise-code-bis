@@ -1,0 +1,223 @@
+.interventions-page {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 3rem;
+}
+
+.page-header {
+  margin-bottom: 1.25rem;
+
+  h1 {
+    margin: 0;
+    font-size: 1.5rem;
+    color: #1f2937;
+  }
+
+  .subtitle {
+    margin: 0.25rem 0 0;
+    color: #6b7280;
+    font-size: 0.9rem;
+  }
+}
+
+.state-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 3rem 1rem;
+  gap: 1rem;
+  color: #6b7280;
+
+  .material-icons { font-size: 2.5rem; color: #9ca3af; }
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid #f0f0f0;
+  border-top: 4px solid #667eea;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.error-icon { color: #dc3545; }
+
+.filters {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+
+  select {
+    padding: 0.5rem 0.75rem;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    background: white;
+  }
+}
+
+.reorder-hint {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: #6b7280;
+  font-size: 0.82rem;
+  margin: 0;
+
+  .material-icons { font-size: 1.1rem; color: #9ca3af; }
+}
+
+.table-wrap {
+  overflow-x: auto;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+
+.interventions-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+
+  th {
+    text-align: left;
+    padding: 0.75rem;
+    background: #f9fafb;
+    color: #6b7280;
+    font-weight: 600;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    white-space: nowrap;
+  }
+
+  td {
+    padding: 0.6rem 0.75rem;
+    border-top: 1px solid #f3f4f6;
+    vertical-align: middle;
+  }
+
+  tr.saving {
+    opacity: 0.6;
+  }
+}
+
+.col-order {
+  width: 60px;
+  display: flex;
+  gap: 0.2rem;
+}
+
+.btn-order {
+  background: none;
+  border: 1px solid #e5e7eb;
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 0.15rem;
+  display: flex;
+
+  .material-icons { font-size: 1rem; color: #4b5563; }
+
+  &:hover { background: #f3f4f6; }
+}
+
+.col-photo {
+  width: 56px;
+}
+
+.dossier-thumb {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 6px;
+}
+
+.dossier-thumb-placeholder {
+  width: 48px;
+  height: 48px;
+  border-radius: 6px;
+  background: #f3f4f6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #9ca3af;
+
+  .material-icons { font-size: 1.3rem; }
+}
+
+.dossier-titre {
+  display: block;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.dossier-numero {
+  display: block;
+  font-size: 0.75rem;
+  color: #9ca3af;
+}
+
+.contact-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.contact-link {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: #1d4ed8;
+  text-decoration: none;
+  font-size: 0.82rem;
+
+  .material-icons { font-size: 0.95rem; }
+
+  &:hover { text-decoration: underline; }
+}
+
+.muted { color: #9ca3af; }
+
+.priorite-select {
+  padding: 0.3rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+
+  &[data-priorite="URGENTE"] { background: #fee2e2; color: #b91c1c; }
+  &[data-priorite="NORMALE"] { background: #e5e7eb; color: #374151; }
+  &[data-priorite="BASSE"] { background: #dbeafe; color: #1d4ed8; }
+}
+
+.statut-badge {
+  font-size: 0.75rem;
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  background: #e5e7eb;
+  color: #374151;
+  white-space: nowrap;
+
+  &[data-statut="RESOLU"] { background: #dcfce7; color: #15803d; }
+  &[data-statut="CLOTURE"] { background: #f3f4f6; color: #6b7280; }
+  &[data-statut="EN_COURS"] { background: #dbeafe; color: #1d4ed8; }
+  &[data-statut="AFFECTE"] { background: #fef3c7; color: #92400e; }
+}
+
+.btn-detail {
+  color: #667eea;
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 0.85rem;
+  white-space: nowrap;
+
+  &:hover { text-decoration: underline; }
+}
