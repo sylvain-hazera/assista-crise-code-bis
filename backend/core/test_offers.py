@@ -179,3 +179,48 @@ class TestOfferLocationPrivacy:
 
         assert response.status_code == status.HTTP_201_CREATED
         assert response.data['latitude'] is None
+
+
+@pytest.mark.django_db
+class TestOfferEngagementFields:
+    """diplome_secourisme (bénévole en personne) et materiel_livraison (offre de matériel
+    seul) — voir propose-help-form pour la logique d'affichage conditionnelle."""
+
+    def test_declares_diplome_secourisme(self, api_client, offer_type):
+        payload = {
+            **OFFER_PAYLOAD,
+            "email_offer": "secouriste@test.fr",
+            "offer_type": str(offer_type.id),
+            "diplome_secourisme": True,
+        }
+        response = api_client.post(reverse('offer-list'), payload, format='json')
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data['diplome_secourisme'] is True
+        assert Offer.objects.get(email_offer="secouriste@test.fr").diplome_secourisme is True
+
+    def test_diplome_secourisme_defaults_to_false(self, offer):
+        assert offer.diplome_secourisme is False
+
+    def test_declares_materiel_livraison_possible(self, api_client, offer_type):
+        payload = {
+            **OFFER_PAYLOAD,
+            "email_offer": "materiel-livrable@test.fr",
+            "offer_type": str(offer_type.id),
+            "materiel_livraison": "LIVRAISON_POSSIBLE",
+        }
+        response = api_client.post(reverse('offer-list'), payload, format='json')
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data['materiel_livraison'] == "LIVRAISON_POSSIBLE"
+
+    def test_materiel_livraison_rejects_invalid_choice(self, api_client, offer_type):
+        payload = {
+            **OFFER_PAYLOAD,
+            "email_offer": "materiel-invalide@test.fr",
+            "offer_type": str(offer_type.id),
+            "materiel_livraison": "TELEPORTATION",
+        }
+        response = api_client.post(reverse('offer-list'), payload, format='json')
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_materiel_livraison_optional(self, offer):
+        assert offer.materiel_livraison is None

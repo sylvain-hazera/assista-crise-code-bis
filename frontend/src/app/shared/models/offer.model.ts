@@ -36,6 +36,8 @@ export interface Offer {
   transport_type?: string | null;
   materiel_type?: string | null;
   soutien_type?: string | null;
+  diplome_secourisme?: boolean;
+  materiel_livraison?: 'A_RECUPERER' | 'LIVRAISON_POSSIBLE' | null;
   renouvelable?: boolean;
   competences?: string[];
   competences_libelles?: string[];

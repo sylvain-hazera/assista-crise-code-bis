@@ -415,6 +415,11 @@ class TypeSoutien(models.TextChoices):
     SECOURISTE = "SECOURISTE", "Secouriste (y compris santé mentale)"
 
 
+class LivraisonMateriel(models.TextChoices):
+    A_RECUPERER = "A_RECUPERER", "À récupérer sur place"
+    LIVRAISON_POSSIBLE = "LIVRAISON_POSSIBLE", "Peut être déposé dans un centre de regroupement"
+
+
 class Offer(EnvironmentScopedModel):
     """Offres d'aide"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -459,6 +464,16 @@ class Offer(EnvironmentScopedModel):
     transport_type = models.CharField(max_length=20, choices=TypeTransportOffre.choices, null=True, blank=True)
     materiel_type = models.CharField(max_length=20, choices=TypeMateriel.choices, null=True, blank=True)
     soutien_type = models.CharField(max_length=20, choices=TypeSoutien.choices, null=True, blank=True)
+
+    # Déclaré pour les offres impliquant une présence en personne qui n'ont pas déjà leur propre
+    # qualification dédiée (Hébergement, Transport, Autre) — Soins et Soutien psychologique
+    # captent déjà cette information via numero_adeli_rpps/soutien_type, pas de doublon là.
+    diplome_secourisme = models.BooleanField(default=False)
+
+    # Uniquement pour une offre de type Matériel : le régulateur qui organise la collecte doit
+    # savoir s'il faut envoyer quelqu'un chercher le matériel, ou si l'offreur peut lui-même le
+    # déposer dans un centre de regroupement des moyens.
+    materiel_livraison = models.CharField(max_length=20, choices=LivraisonMateriel.choices, null=True, blank=True)
 
     # Vrai si l'offreur peut être resollicité au-delà de cette crise (ex: un agriculteur
     # qui prête son matériel ponctuellement pour d'autres interventions futures).

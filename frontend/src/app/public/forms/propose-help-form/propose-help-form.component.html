@@ -138,6 +138,27 @@
                             <span class="material-icons select-arrow">arrow_drop_down</span>
                         </div>
                     </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Comment ce matériel est-il mis à disposition ?</label>
+                        @for(option of materielLivraisonOptions; track option.value) {
+                            <label class="radio-label">
+                                <input type="radio" formControlName="materielLivraison" [value]="option.value">
+                                {{ option.label }}
+                            </label>
+                        }
+                    </div>
+                }
+
+                <!-- Diplôme de secourisme : offres impliquant une présence en personne, sans
+                     champ de qualification déjà dédié (Soins/Soutien en ont un) -->
+                @if (showSecourisme(rg.get('type')?.value)) {
+                    <div class="form-group checkbox-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" formControlName="diplomeSecourisme" class="form-checkbox">
+                            <span class="checkbox-text">J'ai un diplôme ou une formation de secourisme (PSC1, SST...)</span>
+                        </label>
+                    </div>
                 }
 
                 <!-- Soutien psychologique : profil -->

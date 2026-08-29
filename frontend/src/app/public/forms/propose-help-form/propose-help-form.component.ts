@@ -34,6 +34,11 @@ const TYPE_MATERIEL = 'Matériel';
 const TYPE_SOUTIEN = 'Soutien psychologique';
 const TYPE_AUTRE = 'Autre';
 
+// Types où l'offreur s'engage en personne mais n'a pas déjà de champ de qualification dédié
+// (Soins → numero_adeli_rpps, Soutien → soutien_type couvrent déjà ce besoin) : c'est là qu'une
+// case à cocher générique "diplôme de secourisme" apporte une information nouvelle.
+const TYPES_SECOURISME_GENERIQUE = [TYPE_HEBERGEMENT, TYPE_TRANSPORT, TYPE_AUTRE];
+
 @Component({
   selector: 'app-request-help-form',
   standalone: true,
@@ -60,6 +65,11 @@ export class ProposeHelpFormComponent implements OnInit {
   readonly TYPE_MATERIEL = TYPE_MATERIEL;
   readonly TYPE_SOUTIEN = TYPE_SOUTIEN;
   readonly TYPE_AUTRE = TYPE_AUTRE;
+
+  readonly materielLivraisonOptions: { value: string; label: string }[] = [
+    { value: 'A_RECUPERER', label: 'À récupérer sur place' },
+    { value: 'LIVRAISON_POSSIBLE', label: 'Je peux le déposer dans un centre de regroupement' },
+  ];
 
   readonly materielTypeOptions: { value: string; label: string }[] = [
     { value: '', label: '— Choisir —' },
@@ -287,7 +297,9 @@ export class ProposeHelpFormComponent implements OnInit {
       if (v.type === TYPE_SOINS && v.numeroAdeliRpps) formData.append('numero_adeli_rpps', v.numeroAdeliRpps);
       if (v.type === TYPE_TRANSPORT && v.transportType) formData.append('transport_type', v.transportType);
       if (v.type === TYPE_MATERIEL && v.materielType) formData.append('materiel_type', v.materielType);
+      if (v.type === TYPE_MATERIEL && v.materielLivraison) formData.append('materiel_livraison', v.materielLivraison);
       if (v.type === TYPE_SOUTIEN && v.soutienType) formData.append('soutien_type', v.soutienType);
+      if (this.showSecourisme(v.type)) formData.append('diplome_secourisme', String(!!v.diplomeSecourisme));
 
       formData.append('status', 'DISPONIBLE');
       if (this.currentUser?.id) formData.append('author', this.currentUser.id);
@@ -387,12 +399,20 @@ export class ProposeHelpFormComponent implements OnInit {
       transportType: [''],
       materielType: [''],
       soutienType: [''],
+      diplomeSecourisme: [false],
+      materielLivraison: [''],
       renouvelable: [false],
     }));
   }
 
   removeOffer(index: number): void {
     this.offerRows.removeAt(index);
+  }
+
+  /** Cette ligne d'offre implique-t-elle une présence en personne sans déjà avoir son propre
+   * champ de qualification (Soins/Soutien) ? Voir TYPES_SECOURISME_GENERIQUE. */
+  showSecourisme(type: string | null | undefined): boolean {
+    return !!type && TYPES_SECOURISME_GENERIQUE.includes(type);
   }
 
   /** Une personne qui ne propose QUE du matériel (ex: une cuve à prêter) n'a ni compétence ni
