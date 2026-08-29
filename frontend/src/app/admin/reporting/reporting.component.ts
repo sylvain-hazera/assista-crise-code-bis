@@ -15,11 +15,13 @@ import { DossierService } from '../../services/dossier.service';
 import { MissionService } from '../../services/mission.service';
 import { UserService } from '../../services/user.service';
 import { CompetenceService } from '../../services/competence.service';
+import { PointOperationnelService } from '../../services/point-operationnel.service';
 import { MinimapComponent } from '../../shared/components/common/minimap/minimap.component';
 import { Competence } from '../../shared/models/competence.model';
 
 import { DisponibiliteOffre } from '../../shared/models/disponibilite-offre.model';
 import { Team } from '../../shared/models/team.model';
+import { PointOperationnel } from '../../shared/models/point-operationnel.model';
 import { Dossier } from '../../shared/models/dossier.model';
 import { Mission } from '../../shared/models/mission.model';
 import { User, UserRole } from '../../shared/models/user.model';
@@ -202,24 +204,41 @@ export class ReportingComponent implements OnInit, OnDestroy {
     private missionService:     MissionService,
     private userService:        UserService,
     private competenceService:  CompetenceService,
+    private pointOperationnelService: PointOperationnelService,
   ) {}
 
   /** Présent quand on arrive depuis "Ouvrir le tableau des offres" du détail d'une équipe
    * (voir TeamsComponent) : remplace la barre d'action groupée habituelle par un bouton
    * "Ajouter à l'équipe" par offre. */
   pickForTeamId: string | null = null;
+  /** Idem, depuis "Ouvrir le tableau des offres" du détail d'un point (centre) — voir
+   * PointModalComponent : remplace la barre par un bouton "Ajouter au stock" par offre de
+   * matériel. Mutuellement exclusif avec pickForTeamId (un seul mode sélection à la fois). */
+  pickForPointId: string | null = null;
+  points: PointOperationnel[] = [];
 
   ngOnInit():    void {
     this.pickForTeamId = this.route.snapshot.queryParamMap.get('pickForTeam');
+    this.pickForPointId = this.route.snapshot.queryParamMap.get('pickForPoint');
     this.loadAll();
     this.competenceService.getAll().subscribe({
       next: (competences) => { this.competences = competences; },
       error: () => {},
     });
+    if (this.pickForPointId) {
+      this.pointOperationnelService.getAll().subscribe({
+        next: (points) => this.points = points,
+        error: () => {},
+      });
+    }
   }
 
   get pickForTeam(): Team | undefined {
     return this.teams.find(t => t.id === this.pickForTeamId);
+  }
+
+  get pickForPoint(): PointOperationnel | undefined {
+    return this.points.find(p => p.id === this.pickForPointId);
   }
 
   /** Ajoute l'offre comme ressource de l'équipe visée, rattachée à sa mission active (voir
@@ -234,8 +253,27 @@ export class ReportingComponent implements OnInit, OnDestroy {
     });
   }
 
+  /** Ajoute l'offre de matériel au stock du point visé (crée un apport individuel — voir
+   * OfferViewSet.affecter_stock). */
+  ajouterAuStock(offerId: string, e?: Event): void {
+    e?.stopPropagation();
+    if (!this.pickForPointId) return;
+    this.offerService.affecterStock(offerId, this.pickForPointId).subscribe({
+      next: () => this.showSuccess('Matériel ajouté au stock du point.'),
+      error: (err) => this.showError(err?.error?.error || "Impossible d'ajouter ce matériel au stock."),
+    });
+  }
+
   retourEquipe(): void {
     this.router.navigate(['/admin/equipes'], { queryParams: { openTeam: this.pickForTeamId } });
+  }
+
+  retourPoint(): void {
+    this.router.navigate(['/admin/centres']);
+  }
+
+  isOffreMateriel(row: ReportRow): boolean {
+    return row.kind === 'Offer' && (row._raw as Offer).materiel_type != null;
   }
   ngOnDestroy(): void {
     this.destroy$.next();

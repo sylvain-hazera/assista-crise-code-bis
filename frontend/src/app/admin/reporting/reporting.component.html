@@ -31,6 +31,15 @@
       </button>
     </div>
   }
+  @if (pickForPointId) {
+    <div class="pick-banner">
+      <span class="material-icons">add_task</span>
+      <span>Sélection de matériel pour le stock de « {{ pickForPoint?.nom || '…' }} »</span>
+      <button class="btn-primary sm" (click)="retourPoint()">
+        <span class="material-icons">arrow_back</span> Retour aux centres
+      </button>
+    </div>
+  }
 
   <!-- ══ TOASTS ════════════════════════════════════════════════════════════════ -->
   @if (successMessage) {
@@ -291,6 +300,12 @@
                     <button class="btn-primary sm" (click)="ajouterCommeRessource(row.id, $event)">
                       <span class="material-icons">add</span> Ajouter à l'équipe
                     </button>
+                  } @else if (pickForPointId && row.kind === 'Offer' && isOffreMateriel(row)) {
+                    <button class="btn-primary sm" (click)="ajouterAuStock(row.id, $event)">
+                      <span class="material-icons">add</span> Ajouter au stock
+                    </button>
+                  } @else if (pickForPointId && row.kind === 'Offer') {
+                    <span class="muted">Pas du matériel</span>
                   } @else {
                     <button class="btn-icon-sm" (click)="openDetail(row)" title="Voir">
                       <span class="material-icons">visibility</span>

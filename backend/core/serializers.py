@@ -33,6 +33,8 @@ from .models import (
     DisponibilitePointEquipe,
     MaterielPoint,
     MaterielCatalogue,
+    ContributionMateriel,
+    StatutMateriel,
     RegistrePresence,
     DeclarationSecurite,
     AffectationPointBenevole,
@@ -513,6 +515,29 @@ class MaterielCatalogueSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
+class ContributionMaterielSerializer(serializers.ModelSerializer):
+    """Un apport individuel de matériel — voir ContributionMateriel."""
+
+    responsable_nom = serializers.SerializerMethodField()
+    statut_libelle = serializers.CharField(source="get_statut_display", read_only=True)
+
+    class Meta:
+        model = ContributionMateriel
+        fields = '__all__'
+
+    def get_responsable_nom(self, obj):
+        if not obj.responsable:
+            return None
+        full_name = f"{obj.responsable.first_name} {obj.responsable.last_name}".strip()
+        return full_name or obj.responsable.email
+
+    def validate(self, attrs):
+        materiel_point = attrs.get('materiel_point') or (self.instance.materiel_point if self.instance else None)
+        if materiel_point:
+            validate_crisis_open(materiel_point.point.crise, field_name="crise")
+        return attrs
+
+
 class MaterielPointSerializer(serializers.ModelSerializer):
     """État du stock d'un item du catalogue matériel sur un point opérationnel."""
 
@@ -520,6 +545,7 @@ class MaterielPointSerializer(serializers.ModelSerializer):
     niveau_stock_libelle = serializers.CharField(source="get_niveau_stock_display", read_only=True)
     statut_libelle = serializers.CharField(source="get_statut_display", read_only=True)
     responsable_nom = serializers.SerializerMethodField()
+    quantite_totale = serializers.SerializerMethodField()
 
     class Meta:
         model = MaterielPoint
@@ -530,6 +556,13 @@ class MaterielPointSerializer(serializers.ModelSerializer):
             return None
         full_name = f"{obj.responsable.first_name} {obj.responsable.last_name}".strip()
         return full_name or obj.responsable.email
+
+    def get_quantite_totale(self, obj):
+        # Somme des apports actifs (voir ContributionMateriel) — None si aucun apport n'a
+        # jamais été tracé sur cette ligne, pour distinguer "pas d'apport suivi" (utiliser
+        # `quantite` manuel) de "0 apport actif restant" (tout a été retiré).
+        result = obj.contributions.exclude(statut=StatutMateriel.RETIRE).aggregate(total=Sum('quantite'))
+        return result['total']
 
     def validate(self, attrs):
         point = attrs.get('point') or (self.instance.point if self.instance else None)

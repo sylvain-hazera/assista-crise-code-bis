@@ -1,6 +1,7 @@
 import { Component, EventEmitter, Input, OnChanges, Output, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { Router } from '@angular/router';
 
 import { PointOperationnelService } from '../../../services/point-operationnel.service';
 import { CompetenceService } from '../../../services/competence.service';
@@ -63,6 +64,7 @@ export class PointModalComponent implements OnChanges {
     private pointService: PointOperationnelService,
     private competenceService: CompetenceService,
     private teamService: TeamService,
+    private router: Router,
   ) {
     this.buildForm();
     this.teamService.getAll().subscribe(teams => this.teams = teams);
@@ -132,6 +134,13 @@ export class PointModalComponent implements OnChanges {
 
   closeInventaireModal(): void {
     this.inventaireModalOpen = false;
+  }
+
+  /** Ouvre le tableau Signalements en mode sélection pour y piocher des offres de matériel à
+   * ajouter au stock de ce point (voir ReportingComponent ?pickForPoint=). */
+  ouvrirTableauOffres(): void {
+    if (!this.point?.id) return;
+    this.router.navigate(['/admin/signalements'], { queryParams: { pickForPoint: this.point.id } });
   }
 
   openComparaisonModal(): void {

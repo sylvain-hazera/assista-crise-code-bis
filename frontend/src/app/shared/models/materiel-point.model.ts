@@ -10,6 +10,9 @@ export interface MaterielPoint {
   niveau_stock_libelle?: string;
   nom?: string;
   quantite: number;
+  // Somme des apports actifs (voir ContributionMateriel) — null si aucun apport n'a jamais été
+  // tracé sur cette ligne (distinct de 0, qui signifierait "tout retiré").
+  quantite_totale?: number | null;
   unite: string;
   statut: StatutMateriel | null;
   statut_libelle?: string | null;

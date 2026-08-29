@@ -27,7 +27,7 @@
 
         <table class="data-table sm">
           <thead>
-            <tr><th>Besoin</th><th>Niveau de stock</th><th>Dernière mise à jour</th></tr>
+            <tr><th>Besoin</th><th>Niveau de stock</th><th>Quantité</th><th>Dernière mise à jour</th><th></th></tr>
           </thead>
           <tbody>
             @for (entry of stocks; track entry.item) {
@@ -47,10 +47,52 @@
                     }
                   </div>
                 </td>
+                <td>
+                  @if (entry.quantite_totale != null) {
+                    {{ entry.quantite_totale }} {{ entry.unite }}
+                  } @else {
+                    <span class="muted">—</span>
+                  }
+                </td>
                 <td>{{ entry.date_maj ? (entry.date_maj | date:'short') : '—' }}</td>
+                <td>
+                  <button type="button" class="btn-secondary sm" (click)="toggleApports(entry)">
+                    <span class="material-icons">{{ expandedItemId === entry.item ? 'expand_less' : 'expand_more' }}</span>
+                    Apports
+                  </button>
+                </td>
               </tr>
+              @if (expandedItemId === entry.item) {
+                <tr class="apports-row">
+                  <td colspan="5">
+                    @if (loadingContributions) {
+                      <p class="muted">Chargement des apports…</p>
+                    } @else {
+                      @if (contributionsFor(entry).length === 0) {
+                        <p class="muted">Aucun apport tracé pour ce besoin.</p>
+                      } @else {
+                        <ul class="apports-list">
+                          @for (c of contributionsFor(entry); track c.id) {
+                            <li>
+                              <strong>{{ c.fournisseur_nom || 'Anonyme' }}</strong>
+                              — {{ c.quantite }} {{ c.unite }} · {{ c.statut_libelle }}
+                              · {{ c.date_reception | date:'short' }}
+                            </li>
+                          }
+                        </ul>
+                      }
+                      <div class="apport-form">
+                        <input type="text" placeholder="Fourni par…" [(ngModel)]="newContribution.fournisseur_nom" [ngModelOptions]="{standalone: true}">
+                        <input type="number" min="1" placeholder="Quantité" [(ngModel)]="newContribution.quantite" [ngModelOptions]="{standalone: true}">
+                        <input type="text" placeholder="unité" [(ngModel)]="newContribution.unite" [ngModelOptions]="{standalone: true}">
+                        <button type="button" class="btn-primary sm" (click)="ajouterApportManuel(entry)">Ajouter</button>
+                      </div>
+                    }
+                  </td>
+                </tr>
+              }
             } @empty {
-              <tr><td colspan="3" class="empty">Aucun besoin dans le catalogue pour l'instant.</td></tr>
+              <tr><td colspan="5" class="empty">Aucun besoin dans le catalogue pour l'instant.</td></tr>
             }
           </tbody>
         </table>

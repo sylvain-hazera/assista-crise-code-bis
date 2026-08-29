@@ -4,9 +4,11 @@ import { FormsModule } from '@angular/forms';
 
 import { MaterielPointService } from '../../../services/materiel-point.service';
 import { MaterielCatalogueService } from '../../../services/materiel-catalogue.service';
+import { ContributionMaterielService } from '../../../services/contribution-materiel.service';
 import { PointOperationnel } from '../../../shared/models/point-operationnel.model';
 import { MaterielPoint, NiveauStock } from '../../../shared/models/materiel-point.model';
 import { MaterielCatalogue } from '../../../shared/models/materiel-catalogue.model';
+import { ContributionMateriel } from '../../../shared/models/contribution-materiel.model';
 import { TagSearchInputComponent } from '../../../shared/components/common/tag-search-input/tag-search-input.component';
 
 const NIVEAUX: { value: NiveauStock; label: string }[] = [
@@ -40,7 +42,69 @@ export class PointInventaireModalComponent implements OnInit {
   constructor(
     private materielService: MaterielPointService,
     private catalogueService: MaterielCatalogueService,
+    private contributionService: ContributionMaterielService,
   ) {}
+
+  // ── Apports (ContributionMateriel) ────────────────────────────
+  expandedItemId: string | null = null;
+  contributionsByMaterielPoint: Record<string, ContributionMateriel[]> = {};
+  loadingContributions = false;
+  newContribution = { fournisseur_nom: '', quantite: 1, unite: 'unité' };
+
+  toggleApports(entry: MaterielPoint): void {
+    if (this.expandedItemId === entry.item) {
+      this.expandedItemId = null;
+      return;
+    }
+    this.expandedItemId = entry.item;
+    this.newContribution = { fournisseur_nom: '', quantite: 1, unite: 'unité' };
+    if (entry.id) this.loadContributions(entry.id);
+  }
+
+  private loadContributions(materielPointId: string): void {
+    this.loadingContributions = true;
+    this.contributionService.getByMaterielPoint(materielPointId).subscribe({
+      next: (list) => { this.contributionsByMaterielPoint[materielPointId] = list; this.loadingContributions = false; },
+      error: () => { this.loadingContributions = false; },
+    });
+  }
+
+  contributionsFor(entry: MaterielPoint): ContributionMateriel[] {
+    return entry.id ? (this.contributionsByMaterielPoint[entry.id] ?? []) : [];
+  }
+
+  /** Ajoute un apport manuel (stock non issu d'une offre publique) — crée d'abord la ligne
+   * MaterielPoint si elle n'existe pas encore, même logique que setNiveau. */
+  ajouterApportManuel(entry: MaterielPoint): void {
+    if (!this.newContribution.fournisseur_nom.trim() || !this.newContribution.quantite) return;
+
+    const enregistrer = (materielPointId: string) => {
+      this.contributionService.create({
+        materiel_point: materielPointId,
+        fournisseur_nom: this.newContribution.fournisseur_nom.trim(),
+        quantite: this.newContribution.quantite,
+        unite: this.newContribution.unite || 'unité',
+      }).subscribe({
+        next: () => {
+          this.loadContributions(materielPointId);
+          this.newContribution = { fournisseur_nom: '', quantite: 1, unite: 'unité' };
+          this.load();
+        },
+      });
+    };
+
+    if (entry.id) {
+      enregistrer(entry.id);
+    } else {
+      this.materielService.create({ point: this.point.id, item: entry.item, niveau_stock: 'NUL' }).subscribe({
+        next: (created) => {
+          const idx = this.stocks.findIndex(s => s.item === entry.item);
+          if (idx !== -1) this.stocks[idx] = created;
+          enregistrer(created.id!);
+        },
+      });
+    }
+  }
 
   catalogueSearchFn = (q: string) => this.catalogueService.search(q);
   catalogueCreateFn = (nom: string) => this.catalogueService.create({ nom });

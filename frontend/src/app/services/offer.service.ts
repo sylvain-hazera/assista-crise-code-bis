@@ -88,6 +88,13 @@ export class OfferService {
     });
   }
 
+  /** POST /api/offres/{id}/affecter-stock/ — ajoute une offre de matériel au stock d'un point
+   * (crée un apport individuel, voir ContributionMateriel). Retourne la ligne MaterielPoint
+   * mise à jour. */
+  affecterStock(offerId: string, pointId: string): Observable<any> {
+    return this.http.post<any>(`${this.url}/${offerId}/affecter-stock/`, { point_id: pointId });
+  }
+
   private normalize = (o: any): Offer => {
     if (o.location?.coordinates) {
       return { ...o, ...geoPointToLatLng(o.location) };

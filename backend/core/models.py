@@ -2289,6 +2289,61 @@ class MaterielPoint(EnvironmentScopedModel):
         return f"{self.item.nom} ({self.point.nom})"
 
 
+class ContributionMateriel(EnvironmentScopedModel):
+    """Un apport individuel de matériel à une ligne de stock (MaterielPoint) — qui a fourni
+    quoi, quand, combien. Contrairement à MaterielPoint (une seule ligne par (point, item),
+    état courant), plusieurs contributions peuvent s'accumuler sur la même ligne : la quantité
+    totale affichée (voir MaterielPointSerializer.quantite_totale) est la somme des
+    contributions dont le statut n'est pas RETIRE."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    materiel_point = models.ForeignKey(
+        MaterielPoint,
+        on_delete=models.CASCADE,
+        related_name="contributions",
+    )
+
+    # Nullable : un apport manuel (stock déjà présent, non issu d'une offre publique) n'a pas
+    # d'offre à référencer.
+    offre = models.ForeignKey(
+        "Offer",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="contributions_materiel",
+    )
+
+    # Dénormalisé : reste lisible même sans offre liée, ou si l'offre est supprimée par la
+    # suite — l'attribution "à qui appartient ce matériel" ne doit jamais disparaître avec elle.
+    fournisseur_nom = models.CharField(max_length=140, blank=True)
+
+    quantite = models.PositiveIntegerField(default=1)
+
+    unite = models.CharField(max_length=20, default="unité")
+
+    statut = models.CharField(max_length=20, choices=StatutMateriel.choices, default=StatutMateriel.SUR_PLACE)
+
+    # Qui a enregistré l'apport côté centre (pas forcément la même personne que le fournisseur).
+    responsable = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="contributions_enregistrees",
+    )
+
+    commentaire = models.TextField(blank=True, null=True)
+
+    date_reception = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-date_reception"]
+
+    def __str__(self) -> str:
+        return f"{self.fournisseur_nom or 'Anonyme'} → {self.materiel_point}"
+
+
 class TypePersonneAccueillie(models.TextChoices):
     EVACUE = "EVACUE", "Personne évacuée"
     POMPIER = "POMPIER", "Pompier"

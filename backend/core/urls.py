@@ -29,6 +29,7 @@ from .views import (
     DisponibilitePointEquipeViewSet,
     MaterielPointViewSet,
     MaterielCatalogueViewSet,
+    ContributionMaterielViewSet,
     RegistrePresenceViewSet,
     DeclarationSecuriteViewSet,
 )
@@ -104,6 +105,7 @@ router.register(r'disponibilites-offres', DisponibiliteOffreViewSet)
 router.register(r'disponibilites-points-equipe', DisponibilitePointEquipeViewSet)
 router.register(r'materiels-points', MaterielPointViewSet)
 router.register(r'materiels-catalogue', MaterielCatalogueViewSet)
+router.register(r'contributions-materiel', ContributionMaterielViewSet)
 router.register(r'registre-presences', RegistrePresenceViewSet)
 router.register(r'declarations-securite', DeclarationSecuriteViewSet)
 router.register(r'informations', InformationViewSet)

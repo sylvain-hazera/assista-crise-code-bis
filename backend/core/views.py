@@ -107,7 +107,7 @@ from .models import (
     ImplicationInstitution,
     TypeImplication,
     User, Crisis, Request, Offer, Information, DisponibiliteOffre, DisponibilitePointEquipe, MaterielPoint,
-    MaterielCatalogue, NiveauStock, RegistrePresence, TypePersonneAccueillie, DeclarationSecurite, SituationDeclarant,
+    MaterielCatalogue, ContributionMateriel, StatutMateriel, TypeMateriel, NiveauStock, RegistrePresence, TypePersonneAccueillie, DeclarationSecurite, SituationDeclarant,
     AffectationPointBenevole, StatutAffectation,
     RecherchePersonne, RecherchePersonneCommentaire, Besoin, Notification, DossierParticipant,
     RecherchePersonneCommentairePhoto, RecherchePersonneLecture, RecherchePersonneLectureHistorique,
@@ -245,6 +245,7 @@ from .serializers import (
     DisponibilitePointEquipeSerializer,
     MaterielPointSerializer,
     MaterielCatalogueSerializer,
+    ContributionMaterielSerializer,
     RegistrePresenceSerializer,
     DeclarationSecuriteSerializer,
     AffectationPointBenevoleSerializer,
@@ -2460,6 +2461,11 @@ class OfferViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             return [IsOwnerOrInstitutional()]
         if self.action in ('assign_dossier', 'bulk_create_team', 'transformer'):
             return [IsInstitutionalActor()]
+        if self.action == 'affecter_stock':
+            # Pas IsInstitutionalActor : un bénévole simple membre de l'équipe du point (voir
+            # _peut_gerer_stock_point) peut légitimement gérer son stock, comme pour
+            # MaterielPointViewSet — la vérification fine se fait dans l'action elle-même.
+            return [permissions.IsAuthenticated()]
         return [AllowAny()]
 
     def get_queryset(self):
@@ -2650,6 +2656,70 @@ class OfferViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
                 print(f"Erreur envoi email affectation offre à l'équipe : {e}")
 
         return Response(TeamSerializer(team).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["post"], url_path="affecter-stock")
+    def affecter_stock(self, request, pk=None):
+        """Ajoute cette offre de matériel au stock d'un point (centre d'accueil ou de
+        regroupement des moyens) : crée un apport individuel (ContributionMateriel) rattaché à
+        l'offre, sur la ligne de stock (point, item) — créée si besoin. Ne modifie jamais le
+        `niveau_stock` qualitatif de la ligne : c'est à l'équipe du point de l'ajuster
+        ensuite en connaissance de cause (voir MaterielPointViewSet)."""
+        offer = self.get_object()
+        if offer.materiel_type is None:
+            return Response({"error": "Cette offre n'est pas de type Matériel."}, status=status.HTTP_400_BAD_REQUEST)
+
+        point_id = request.data.get("point_id")
+        point = get_object_or_404(PointOperationnel, pk=point_id)
+        if not _peut_gerer_stock_point(request, point):
+            return Response(
+                {"error": "Seul le responsable, un membre de l'équipe du point, ou un administrateur peut recevoir du matériel sur ce point."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        try:
+            validate_crisis_open(point.crise, field_name="crise")
+        except ValidationError as exc:
+            return Response({"error": exc.detail}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Résout l'item catalogue : celui explicitement précisé pour un matériel "Autre", sinon
+        # l'entrée du catalogue partagé correspondant au libellé du type fixe choisi (même
+        # dédoublonnage insensible à la casse que TagLikeViewSetMixin, pour que "Cuve" du menu
+        # rejoigne le même catalogue qu'une "Cuve" tapée en Autre).
+        if offer.materiel_type == TypeMateriel.AUTRE and offer.materiel_catalogue:
+            item = offer.materiel_catalogue
+        else:
+            libelle = offer.get_materiel_type_display()
+            item = MaterielCatalogue.objects.filter(nom__iexact=libelle).first()
+            if not item:
+                item = MaterielCatalogue.objects.create(nom=libelle)
+
+        materiel_point, _ = MaterielPoint.objects.get_or_create(
+            point=point, item=item, defaults={"environment": get_active_environment(request)},
+        )
+
+        quantite = request.data.get("quantite") or offer.quantite or 1
+        unite = request.data.get("unite") or offer.unite or "unité"
+        fournisseur_nom = f"{offer.first_name_offer} {offer.last_name_offer}".strip()
+
+        contribution = ContributionMateriel.objects.create(
+            materiel_point=materiel_point,
+            offre=offer,
+            fournisseur_nom=fournisseur_nom,
+            quantite=quantite,
+            unite=unite,
+            responsable=request.user,
+            environment=get_active_environment(request),
+        )
+
+        audit_log(
+            request=request,
+            action_code="CREATION",
+            objet_type="MaterielPoint",
+            objet_id=materiel_point.id,
+            crise=point.crise,
+            commentaire=f"Apport reçu : {item.nom} ({quantite} {unite}) fourni par {fournisseur_nom or 'anonyme'}",
+        )
+
+        return Response(MaterielPointSerializer(materiel_point).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["get"])
     def preview(self, request, pk=None):
@@ -4621,6 +4691,69 @@ class MaterielCatalogueViewSet(TagLikeViewSetMixin, viewsets.ModelViewSet):
     queryset = MaterielCatalogue.objects.all()
     serializer_class = MaterielCatalogueSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+
+def _peut_gerer_stock_point(request, point) -> bool:
+    """Même garde-fou que MaterielPointViewSet._can_manage (dupliqué ici plutôt que factorisé,
+    comme le reste de ce fichier le fait déjà pour ce contrôle) — admin, responsable du point,
+    ou chef/membre de son équipe."""
+    user = request.user
+    if get_effective_role(request) == UserRole.ADMINISTRATOR:
+        return True
+    if point.responsable_id == user.id:
+        return True
+    if point.equipe:
+        if point.equipe.leader_id == user.id:
+            return True
+        if point.equipe.members.filter(id=user.id).exists():
+            return True
+    return False
+
+
+class ContributionMaterielViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
+    """Apports individuels de matériel sur une ligne de stock — voir ContributionMateriel."""
+
+    queryset = ContributionMateriel.objects.select_related(
+        "materiel_point__point", "materiel_point__item", "offre", "responsable"
+    ).all()
+    serializer_class = ContributionMaterielSerializer
+    filterset_fields = ["materiel_point"]
+
+    def perform_create(self, serializer):
+        materiel_point = serializer.validated_data.get('materiel_point')
+        if not _peut_gerer_stock_point(self.request, materiel_point.point):
+            raise PermissionDenied(
+                "Seul le responsable, un membre de l'équipe du point, ou un administrateur "
+                "peut enregistrer un apport."
+            )
+        contribution = serializer.save(responsable=self.request.user, environment=get_active_environment(self.request))
+        audit_log(
+            request=self.request,
+            action_code="CREATION",
+            objet_type="MaterielPoint",
+            objet_id=contribution.materiel_point.id,
+            crise=contribution.materiel_point.point.crise,
+            commentaire=(
+                f"Apport reçu : {contribution.materiel_point.item.nom} "
+                f"({contribution.quantite} {contribution.unite}) fourni par {contribution.fournisseur_nom or 'anonyme'}"
+            ),
+        )
+
+    def perform_update(self, serializer):
+        if not _peut_gerer_stock_point(self.request, serializer.instance.materiel_point.point):
+            raise PermissionDenied(
+                "Seul le responsable, un membre de l'équipe du point, ou un administrateur "
+                "peut modifier un apport."
+            )
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        if not _peut_gerer_stock_point(self.request, instance.materiel_point.point):
+            raise PermissionDenied(
+                "Seul le responsable, un membre de l'équipe du point, ou un administrateur "
+                "peut supprimer un apport."
+            )
+        instance.delete()
 
 
 class MaterielPointViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
