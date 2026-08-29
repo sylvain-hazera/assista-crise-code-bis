@@ -124,7 +124,7 @@
   <aside class="admin-sidebar" [class.open]="sidebarOpen && isMobile">
     <nav class="sidebar-nav">
       @for (item of navItems; track item.route) {
-        @if (!(item.label === 'Utilisateurs' && !isSysAdmin())) {
+        @if (item.label === 'Utilisateurs' ? isSysAdmin() : isInstitutionalEffective) {
           <a 
             [routerLink]="item.route" 
             routerLinkActive="active"

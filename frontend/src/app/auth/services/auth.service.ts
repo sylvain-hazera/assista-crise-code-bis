@@ -453,6 +453,24 @@ export class AuthService {
     return this.isAdmin();
   }
 
+  /** Rôle réellement appliqué pour la requête EN COURS, miroir de get_effective_role côté
+   * backend : demo_role en zone DEMO, type en zone PROD. Contrairement à isAdmin() (toujours
+   * basé sur le rôle PROD réel, à dessein), c'est CE rôle qui détermine si les pages admin
+   * actuellement affichées ont une chance de charger quoi que ce soit — sert à ne montrer dans
+   * la barre latérale que ce que l'utilisateur peut effectivement utiliser MAINTENANT. */
+  getEffectiveRole(): UserRole | null {
+    if (this.getEnvironment() === 'DEMO') {
+      return this.getCurrentUser()?.demo_role ?? null;
+    }
+    return this.getCurrentUser()?.type ?? null;
+  }
+
+  isInstitutionalEffective(): boolean {
+    const role = this.getEffectiveRole();
+    return role === UserRole.RESCUE || role === UserRole.LOCAL_AUTH ||
+      role === UserRole.ADMIN || role === UserRole.REGULATEUR;
+  }
+
   /** Utilisé par adminGuard. Un compte n'ayant reçu qu'un accès démo (demo_role réglé, type
    * PROD resté simple) ne doit JAMAIS pouvoir entrer dans /admin tant qu'il est en zone PROD
    * — même si le backend refuse déjà les données (get_effective_role), la mise en page/le

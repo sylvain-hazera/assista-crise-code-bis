@@ -148,6 +148,15 @@ export class AdminLayoutComponent implements OnInit {
     return this.authService.isSysAdmin();
   }
 
+  /** Rôle EFFECTIF (voir AuthService.getEffectiveRole) : contrairement à isSysAdmin (toujours
+   * basé sur le rôle PROD réel), détermine ce qui a une chance de charger MAINTENANT — masque
+   * de la barre latérale toute rubrique qu'un compte démo-only avec un rôle démo non
+   * institutionnel ne pourrait de toute façon pas utiliser (voir institutionalEffectiveGuard,
+   * qui protège aussi ces routes côté navigation directe). */
+  get isInstitutionalEffective(): boolean {
+    return this.authService.isInstitutionalEffective();
+  }
+
   toggleSidebar(): void {
     if (this.isMobile) {
       // Sur mobile, toggle open/close

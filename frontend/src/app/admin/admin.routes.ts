@@ -8,7 +8,8 @@ import { TeamsComponent } from './teams/teams.component';
 import { MapComponent } from '../shared/components/common/map/map.component';
 import { ResultsComponent } from './results/results.component';
 import { UsersComponent } from './users/users.component';
-import { sysAdminGuard } from '../core/guards/admin.guard';
+import { sysAdminGuard, institutionalEffectiveGuard } from '../core/guards/admin.guard';
+import { AccesRefuseComponent } from './acces-refuse/acces-refuse.component';
 import { CompetencesComponent } from './competences/competences.component';
 import { AffectationsComponent } from './affectations/affectations.component';
 import { DossiersComponent } from './dossiers/dossiers.component';
@@ -23,25 +24,26 @@ import { RecherchePersonneDetailComponent } from '../pages/recherche-personne-de
 
 export const ADMIN_ROUTES: Routes = [
   { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
-  { path: 'dashboard', component: DashboardComponent },
-  { path: 'signalements', component: ReportingComponent }, 
-  { path: 'dossiers', component: DossiersComponent },
-  { path: 'missions', component: MissionsComponent },
-  { path: 'vue-mairie', component: VueMairieComponent },
-  { path: 'declarations-securite', component: DeclarationsSecuriteComponent },
-  { path: 'equipes', component: TeamsComponent },
-  { path: 'institutions', component: InstitutionsComponent },
-  { path: 'crises', component: CrisesComponent },
-  { path: 'centres', component: CentresComponent },
-  { path: 'carte', component: MapComponent },
-  { path: 'resultats', component: ResultsComponent },
+  { path: 'acces-refuse', component: AccesRefuseComponent },
+  { path: 'dashboard', component: DashboardComponent, canActivate: [institutionalEffectiveGuard] },
+  { path: 'signalements', component: ReportingComponent, canActivate: [institutionalEffectiveGuard] },
+  { path: 'dossiers', component: DossiersComponent, canActivate: [institutionalEffectiveGuard] },
+  { path: 'missions', component: MissionsComponent, canActivate: [institutionalEffectiveGuard] },
+  { path: 'vue-mairie', component: VueMairieComponent, canActivate: [institutionalEffectiveGuard] },
+  { path: 'declarations-securite', component: DeclarationsSecuriteComponent, canActivate: [institutionalEffectiveGuard] },
+  { path: 'equipes', component: TeamsComponent, canActivate: [institutionalEffectiveGuard] },
+  { path: 'institutions', component: InstitutionsComponent, canActivate: [institutionalEffectiveGuard] },
+  { path: 'crises', component: CrisesComponent, canActivate: [institutionalEffectiveGuard] },
+  { path: 'centres', component: CentresComponent, canActivate: [institutionalEffectiveGuard] },
+  { path: 'carte', component: MapComponent, canActivate: [institutionalEffectiveGuard] },
+  { path: 'resultats', component: ResultsComponent, canActivate: [institutionalEffectiveGuard] },
   { path: 'utilisateurs', component: UsersComponent, canActivate: [sysAdminGuard] },
-  { path: 'competences', component: CompetencesComponent },
-  { path: 'besoins', component: BesoinsComponent },
-  { path: 'correspondances', component: BesoinsCompetencesComponent },
-  { path: 'affectations', component: AffectationsComponent },
-  { path: 'recherches-personnes', component: RecherchesPersonnesComponent },
-  { path: 'recherches-personnes/new', component: RecherchePersonneCreateComponent },
-  { path: 'recherches-personnes/:id', component: RecherchePersonneDetailComponent },
+  { path: 'competences', component: CompetencesComponent, canActivate: [institutionalEffectiveGuard] },
+  { path: 'besoins', component: BesoinsComponent, canActivate: [institutionalEffectiveGuard] },
+  { path: 'correspondances', component: BesoinsCompetencesComponent, canActivate: [institutionalEffectiveGuard] },
+  { path: 'affectations', component: AffectationsComponent, canActivate: [institutionalEffectiveGuard] },
+  { path: 'recherches-personnes', component: RecherchesPersonnesComponent, canActivate: [institutionalEffectiveGuard] },
+  { path: 'recherches-personnes/new', component: RecherchePersonneCreateComponent, canActivate: [institutionalEffectiveGuard] },
+  { path: 'recherches-personnes/:id', component: RecherchePersonneDetailComponent, canActivate: [institutionalEffectiveGuard] },
 ];
 

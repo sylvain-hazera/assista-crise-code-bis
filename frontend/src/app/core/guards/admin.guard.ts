@@ -33,6 +33,25 @@ export const sysAdminGuard: CanActivateFn = (route, state) => {
   return withFreshProfile(authService, router, () => authService.isSysAdmin());
 };
 
+/** Contrairement à adminGuard/sysAdminGuard (qui renvoient vers /accueil, hors de l'admin), ce
+ * garde redirige vers une page dédiée À L'INTÉRIEUR de l'admin (sidebar/en-tête conservés) qui
+ * affiche clairement "vous n'avez pas les droits" — pour un compte entré dans /admin avec un
+ * rôle EFFECTIF (voir getEffectiveRole) non institutionnel, ex: accès démo réglé sur un rôle
+ * simple, ou en attendant que la bascule PROD/DEMO soit activée. Sans ce garde, chaque
+ * sous-page tentait de charger ses données et échouait avec une erreur générique. */
+export const institutionalEffectiveGuard: CanActivateFn = (route, state) => {
+  const authService = inject(AuthService);
+  const router = inject(Router);
+
+  if (!authService.getToken()) {
+    return router.parseUrl('/accueil');
+  }
+  return authService.fetchMe().pipe(
+    map(() => authService.isInstitutionalEffective() ? true : router.parseUrl('/admin/acces-refuse')),
+    catchError(() => of(router.parseUrl('/admin/acces-refuse'))),
+  );
+};
+
 
 
 
