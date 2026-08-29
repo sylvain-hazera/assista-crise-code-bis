@@ -157,28 +157,36 @@ export class MesInterventionsComponent implements OnInit, OnDestroy {
     const list = this.filteredDossiers;
     const index = list.findIndex(d => d.id === dossier.id);
     if (index <= 0) return;
-    this.swapOrdre(dossier, list[index - 1]);
+    [list[index - 1], list[index]] = [list[index], list[index - 1]];
+    this.persistOrder(list);
   }
 
   moveDown(dossier: Dossier): void {
     const list = this.filteredDossiers;
     const index = list.findIndex(d => d.id === dossier.id);
     if (index === -1 || index >= list.length - 1) return;
-    this.swapOrdre(dossier, list[index + 1]);
+    [list[index], list[index + 1]] = [list[index + 1], list[index]];
+    this.persistOrder(list);
   }
 
-  private swapOrdre(a: Dossier, b: Dossier): void {
-    const ordreA = a.ordre;
-    const ordreB = b.ordre;
-    this.savingDossierId = a.id;
-    this.dossierService.definirPriorite(a.id, { ordre: ordreB }).subscribe({
-      next: (updated) => { a.ordre = updated.ordre; },
-      error: () => {},
-      complete: () => { this.savingDossierId = null; },
-    });
-    this.dossierService.definirPriorite(b.id, { ordre: ordreA }).subscribe({
-      next: (updated) => { b.ordre = updated.ordre; },
-      error: () => {},
+  /** Réindexe l'`ordre` de toute la liste visible sur sa position (0, 1, 2…) plutôt que
+   * d'échanger les deux valeurs stockées : tous les dossiers démarrent avec le même `ordre`
+   * par défaut (0), donc échanger deux valeurs identiques ne changeait jamais rien de visible
+   * — le tri semblait "figé" jusqu'à un rechargement qui, faute d'ordre explicite en base pour
+   * les ex-æquo, réaffichait une position arbitraire différente et donnait l'illusion que ça
+   * avait fonctionné. Réindexer garantit des valeurs distinctes après chaque clic, donc un
+   * rendu immédiat et correct sans avoir besoin de recharger la page. */
+  private persistOrder(list: Dossier[]): void {
+    list.forEach((d, index) => {
+      if (d.ordre === index) return;
+      const previous = d.ordre;
+      d.ordre = index;
+      this.savingDossierId = d.id;
+      this.dossierService.definirPriorite(d.id, { ordre: index }).subscribe({
+        next: (updated) => { d.ordre = updated.ordre; },
+        error: () => { d.ordre = previous; },
+        complete: () => { this.savingDossierId = null; },
+      });
     });
   }
 
