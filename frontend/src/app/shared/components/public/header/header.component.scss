@@ -95,6 +95,33 @@
   }
 
   // ============================================
+  // ADMIN MENU LINK (entre le logo et le compte)
+  // ============================================
+  .admin-menu-link {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: #4338ca;
+    background: #eef2ff;
+    border: 1px solid #c7d2fe;
+    border-radius: 999px;
+    padding: 0.4rem 0.9rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: background-color 0.2s;
+
+    .material-icons {
+      font-size: 1.1rem;
+    }
+
+    &:hover {
+      background: #e0e7ff;
+    }
+  }
+
+  // ============================================
   // QUICK LINKS (accès rapides colorés "mes ...")
   // ============================================
   .quick-links {
@@ -489,6 +516,16 @@
       .logo-icon {
         width: 40px;
         height: 40px
+      }
+    }
+
+    // Espace limité : ne garde que l'icône, le libellé disparaît.
+    .admin-menu-link {
+      padding: 0.4rem;
+      border-radius: 50%;
+
+      .admin-menu-label {
+        display: none;
       }
     }
 

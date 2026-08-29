@@ -9,6 +9,13 @@
       <h1 class="logo-text">Assista Crise</h1>
     </div>
 
+    @if (isAdmin) {
+      <a class="admin-menu-link" routerLink="/admin/dashboard" (click)="closeAllMenus()" title="Menu d'administration">
+        <span class="material-icons">admin_panel_settings</span>
+        <span class="admin-menu-label">Menu d'administration</span>
+      </a>
+    }
+
     <div class="header-right">
       <!-- Navigation Desktop -->
     <nav class="navigation desktop-nav">
