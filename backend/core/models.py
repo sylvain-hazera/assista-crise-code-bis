@@ -475,6 +475,17 @@ class Offer(EnvironmentScopedModel):
     # déposer dans un centre de regroupement des moyens.
     materiel_livraison = models.CharField(max_length=20, choices=LivraisonMateriel.choices, null=True, blank=True)
 
+    # Uniquement pour Transport/Matériel (voir propose-help-form) : rappel obligatoire (permis/
+    # CACES, assurance, contrôle technique, sobriété, plaque d'immatriculation) coché
+    # explicitement par l'offreur — l'engagement de conformité lui-même, pas une vérification
+    # effective par la plateforme. Conservé pour trace/audit (ex: en cas de contrôle sur un
+    # laissez-passer délivré sur la base de cette offre).
+    confirmation_reglementaire = models.BooleanField(default=False)
+
+    # Texte libre : une ou plusieurs plaques si l'offreur propose plusieurs véhicules sous la
+    # même ligne d'offre. Vide pour un engin ne circulant jamais sur la voie publique.
+    immatriculation = models.CharField(max_length=100, null=True, blank=True)
+
     # Vrai si l'offreur peut être resollicité au-delà de cette crise (ex: un agriculteur
     # qui prête son matériel ponctuellement pour d'autres interventions futures).
     renouvelable = models.BooleanField(default=False)

@@ -180,7 +180,28 @@
                                 <li>Plaque d'immatriculation valide pour tout véhicule circulant sur la voie publique</li>
                             </ul>
                             <p>Ces informations pourront être demandées pour l'établissement d'un laissez-passer si nécessaire.</p>
+
+                            <label class="checkbox-label">
+                                <input type="checkbox" formControlName="confirmationReglementaire" class="form-checkbox">
+                                <span class="checkbox-text">Je confirme être en règle, ainsi que le véhicule ou l'engin proposé <span class="required">*</span></span>
+                            </label>
+                            @if (rg.get('confirmationReglementaire')?.invalid && rg.get('confirmationReglementaire')?.touched) {
+                                <div class="error-message">Cette confirmation est obligatoire pour ce type d'offre</div>
+                            }
                         </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label [for]="'immatriculation' + i" class="form-label">
+                            Plaque(s) d'immatriculation
+                            <span class="field-hint-inline">(si le véhicule circule sur la voie publique — laisser vide sinon)</span>
+                        </label>
+                        <input
+                            type="text"
+                            [id]="'immatriculation' + i"
+                            formControlName="immatriculation"
+                            class="form-input"
+                            placeholder="Ex. AB-123-CD (plusieurs plaques séparées par une virgule)">
                     </div>
                 }
 

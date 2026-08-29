@@ -224,3 +224,20 @@ class TestOfferEngagementFields:
 
     def test_materiel_livraison_optional(self, offer):
         assert offer.materiel_livraison is None
+
+    def test_declares_confirmation_reglementaire_et_immatriculation(self, api_client, offer_type):
+        payload = {
+            **OFFER_PAYLOAD,
+            "email_offer": "vehicule-conforme@test.fr",
+            "offer_type": str(offer_type.id),
+            "confirmation_reglementaire": True,
+            "immatriculation": "AB-123-CD",
+        }
+        response = api_client.post(reverse('offer-list'), payload, format='json')
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data['confirmation_reglementaire'] is True
+        assert response.data['immatriculation'] == "AB-123-CD"
+
+    def test_confirmation_reglementaire_defaults_to_false(self, offer):
+        assert offer.confirmation_reglementaire is False
+        assert offer.immatriculation is None

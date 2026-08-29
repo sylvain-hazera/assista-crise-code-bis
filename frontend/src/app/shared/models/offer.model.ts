@@ -38,6 +38,8 @@ export interface Offer {
   soutien_type?: string | null;
   diplome_secourisme?: boolean;
   materiel_livraison?: 'A_RECUPERER' | 'LIVRAISON_POSSIBLE' | null;
+  confirmation_reglementaire?: boolean;
+  immatriculation?: string | null;
   renouvelable?: boolean;
   competences?: string[];
   competences_libelles?: string[];

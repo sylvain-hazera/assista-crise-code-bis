@@ -1,5 +1,5 @@
 import { Component, OnInit } from '@angular/core';
-import { FormGroup, FormBuilder, Validators, ReactiveFormsModule, FormArray, AbstractControl } from '@angular/forms';
+import { FormGroup, FormBuilder, Validators, ReactiveFormsModule, FormArray, AbstractControl, ValidationErrors } from '@angular/forms';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { forkJoin, Observable } from 'rxjs';
@@ -38,6 +38,19 @@ const TYPE_AUTRE = 'Autre';
 // (Soins → numero_adeli_rpps, Soutien → soutien_type couvrent déjà ce besoin) : c'est là qu'une
 // case à cocher générique "diplôme de secourisme" apporte une information nouvelle.
 const TYPES_SECOURISME_GENERIQUE = [TYPE_HEBERGEMENT, TYPE_TRANSPORT, TYPE_AUTRE];
+
+/** La case de conformité (permis/CACES, assurance, CT, sobriété, plaque) n'est obligatoire que
+ * sur les lignes où un véhicule/engin est en jeu (voir showConformiteVehicule) — sa validité
+ * dépend donc du contrôle voisin `type`, pas d'elle-même. Angular ne réévalue pas
+ * automatiquement un validateur quand un AUTRE contrôle change : addOffer() force la
+ * réévaluation sur chaque changement de `type` (voir son abonnement à valueChanges). */
+function confirmationReglementaireValidator(control: AbstractControl): ValidationErrors | null {
+  const parent = control.parent;
+  if (!parent) return null;
+  const type = parent.get('type')?.value;
+  const requiert = type === TYPE_TRANSPORT || type === TYPE_MATERIEL;
+  return (requiert && !control.value) ? { required: true } : null;
+}
 
 @Component({
   selector: 'app-request-help-form',
@@ -300,6 +313,10 @@ export class ProposeHelpFormComponent implements OnInit {
       if (v.type === TYPE_MATERIEL && v.materielLivraison) formData.append('materiel_livraison', v.materielLivraison);
       if (v.type === TYPE_SOUTIEN && v.soutienType) formData.append('soutien_type', v.soutienType);
       if (this.showSecourisme(v.type)) formData.append('diplome_secourisme', String(!!v.diplomeSecourisme));
+      if (this.showConformiteVehicule(v.type)) {
+        formData.append('confirmation_reglementaire', String(!!v.confirmationReglementaire));
+        if (v.immatriculation) formData.append('immatriculation', v.immatriculation);
+      }
 
       formData.append('status', 'DISPONIBLE');
       if (this.currentUser?.id) formData.append('author', this.currentUser.id);
@@ -391,7 +408,7 @@ export class ProposeHelpFormComponent implements OnInit {
   }
 
   addOffer(): void {
-    this.offerRows.push(this.formBuilder.group({
+    const row = this.formBuilder.group({
       type: ['', Validators.required],
       description: ['', [Validators.minLength(10)]],
       hebergementDuree: [''],
@@ -401,8 +418,17 @@ export class ProposeHelpFormComponent implements OnInit {
       soutienType: [''],
       diplomeSecourisme: [false],
       materielLivraison: [''],
+      confirmationReglementaire: [false, confirmationReglementaireValidator],
+      immatriculation: [''],
       renouvelable: [false],
-    }));
+    });
+    // Le type conditionne l'exigibilité de confirmationReglementaire (voir le validateur) :
+    // sans cet abonnement, choisir Transport/Matériel APRÈS coup ne rendrait jamais la case
+    // obligatoire tant qu'on ne retouche pas la case elle-même.
+    row.get('type')?.valueChanges.subscribe(() => {
+      row.get('confirmationReglementaire')?.updateValueAndValidity();
+    });
+    this.offerRows.push(row);
   }
 
   removeOffer(index: number): void {
