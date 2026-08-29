@@ -2,6 +2,7 @@ import { HttpErrorResponse, HttpEvent, HttpHandlerFn, HttpInterceptorFn, HttpReq
 import { inject } from '@angular/core';
 import { AuthService } from '../../auth/services/auth.service';
 import { BehaviorSubject, Observable, catchError, filter, switchMap, take, throwError } from 'rxjs';
+import { environment } from '../../../environments/environment';
 
 let isRefreshing = false;
 const refreshedTokenSubject = new BehaviorSubject<string | null>(null);
@@ -20,7 +21,19 @@ function isAuthEndpoint(url: string): boolean {
   return url.includes('/token/');
 }
 
+// Ces en-têtes ne doivent JAMAIS partir vers un service tiers (ex: Base Adresse Nationale
+// pour l'autocomplétion d'adresse) : un serveur externe qui ne les déclare pas dans son
+// Access-Control-Allow-Headers fait échouer le préflight CORS entier, cassant la requête
+// même pour un usage anonyme sans token (observé avec X-Environment sur l'API BAN).
+function isOwnApiRequest(url: string): boolean {
+  return url.startsWith(environment.apiUrl);
+}
+
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
+  if (!isOwnApiRequest(req.url)) {
+    return next(req);
+  }
+
   const authService = inject(AuthService);
   const token = authService.getToken();
   let cloned = token ? withAuth(req, token) : req;
