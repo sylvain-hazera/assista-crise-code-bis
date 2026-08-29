@@ -463,6 +463,15 @@ class Offer(EnvironmentScopedModel):
     numero_adeli_rpps = models.CharField(max_length=50, null=True, blank=True)
     transport_type = models.CharField(max_length=20, choices=TypeTransportOffre.choices, null=True, blank=True)
     materiel_type = models.CharField(max_length=20, choices=TypeMateriel.choices, null=True, blank=True)
+    # Posé uniquement quand materiel_type == AUTRE : précise le matériel via le catalogue
+    # partagé (recherche ou création façon hashtag, voir MaterielCatalogue/TagLikeViewSetMixin)
+    # plutôt que de laisser "Autre" sans plus de détail — un matériel tapé une fois ("lits de
+    # camp") devient proposable à tout le monde ensuite.
+    materiel_catalogue = models.ForeignKey(
+        "MaterielCatalogue", on_delete=models.SET_NULL, null=True, blank=True, related_name="offres"
+    )
+    quantite = models.PositiveIntegerField(null=True, blank=True)
+    unite = models.CharField(max_length=20, null=True, blank=True)
     soutien_type = models.CharField(max_length=20, choices=TypeSoutien.choices, null=True, blank=True)
 
     # Déclaré pour les offres impliquant une présence en personne qui n'ont pas déjà leur propre

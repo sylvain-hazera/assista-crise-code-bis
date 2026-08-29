@@ -42,6 +42,10 @@ export interface Offer {
   immatriculation?: string | null;
   mission?: string | null;
   mission_titre?: string | null;
+  materiel_catalogue?: string | null;
+  materiel_catalogue_nom?: string | null;
+  quantite?: number | null;
+  unite?: string | null;
   renouvelable?: boolean;
   competences?: string[];
   competences_libelles?: string[];

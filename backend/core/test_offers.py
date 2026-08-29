@@ -12,6 +12,7 @@ from core.models import (
     DossierParticipant,
     Institution,
     InstitutionType,
+    MaterielCatalogue,
     Offer,
     OfferType,
 )
@@ -241,3 +242,25 @@ class TestOfferEngagementFields:
     def test_confirmation_reglementaire_defaults_to_false(self, offer):
         assert offer.confirmation_reglementaire is False
         assert offer.immatriculation is None
+
+    def test_declares_materiel_catalogue_quantite_unite(self, api_client, offer_type):
+        catalogue_item = MaterielCatalogue.objects.create(nom='Lits de camp (test offre)')
+        payload = {
+            **OFFER_PAYLOAD,
+            "email_offer": "lits-de-camp@test.fr",
+            "offer_type": str(offer_type.id),
+            "materiel_type": "AUTRE",
+            "materiel_catalogue": str(catalogue_item.id),
+            "quantite": 12,
+            "unite": "unité",
+        }
+        response = api_client.post(reverse('offer-list'), payload, format='json')
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data['materiel_catalogue_nom'] == 'Lits de camp (test offre)'
+        assert response.data['quantite'] == 12
+        assert response.data['unite'] == 'unité'
+
+    def test_materiel_catalogue_quantite_unite_optional(self, offer):
+        assert offer.materiel_catalogue is None
+        assert offer.quantite is None
+        assert offer.unite is None

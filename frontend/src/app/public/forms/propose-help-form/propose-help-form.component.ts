@@ -17,6 +17,8 @@ import { AddressResult } from '../../../shared/models/address-result.model';
 import { TagSearchInputComponent } from '../../../shared/components/common/tag-search-input/tag-search-input.component';
 import { CompetenceService } from '../../../services/competence.service';
 import { Competence } from '../../../shared/models/competence.model';
+import { MaterielCatalogueService } from '../../../services/materiel-catalogue.service';
+import { MaterielCatalogue } from '../../../shared/models/materiel-catalogue.model';
 import { RgpdNoticeComponent } from '../../../shared/components/public/rgpd-notice/rgpd-notice.component';
 
 interface JourDispo {
@@ -126,6 +128,12 @@ export class ProposeHelpFormComponent implements OnInit {
   competenceSearchFn = (q: string) => this.competenceService.search(q);
   competenceCreateFn = (nom: string) => this.competenceService.create({ nom });
 
+  // Catalogue partagé (façon hashtag) : un matériel "Autre" tapé une fois devient proposable à
+  // tout le monde ensuite — même mécanisme que pour l'inventaire des points.
+  materielCatalogueSearchFn = (q: string) => this.materielCatalogueService.search(q);
+  materielCatalogueCreateFn = (nom: string) => this.materielCatalogueService.create({ nom });
+  materielCatalogueCreateLabelFn = (value: string) => `Ajouter « ${value} » comme nouveau matériel`;
+
   constructor(
     private formBuilder: FormBuilder,
     private router: Router,
@@ -133,8 +141,13 @@ export class ProposeHelpFormComponent implements OnInit {
     private disponibiliteOffreService: DisponibiliteOffreService,
     private crisisService: CrisisService,
     private authService: AuthService,
-    private competenceService: CompetenceService
+    private competenceService: CompetenceService,
+    private materielCatalogueService: MaterielCatalogueService,
   ) {}
+
+  onMaterielCatalogueSelected(row: AbstractControl, item: MaterielCatalogue): void {
+    this.rowGroup(row).patchValue({ materielCatalogue: item.id, materielCatalogueNom: item.nom });
+  }
 
   onCompetenceSelected(item: Competence): void {
     if (this.selectedCompetences.some(c => c.id === item.id)) return;
@@ -310,6 +323,11 @@ export class ProposeHelpFormComponent implements OnInit {
       if (v.type === TYPE_SOINS && v.numeroAdeliRpps) formData.append('numero_adeli_rpps', v.numeroAdeliRpps);
       if (v.type === TYPE_TRANSPORT && v.transportType) formData.append('transport_type', v.transportType);
       if (v.type === TYPE_MATERIEL && v.materielType) formData.append('materiel_type', v.materielType);
+      if (v.type === TYPE_MATERIEL && v.materielType === 'AUTRE' && v.materielCatalogue) {
+        formData.append('materiel_catalogue', v.materielCatalogue);
+      }
+      if (v.type === TYPE_MATERIEL && v.quantite) formData.append('quantite', v.quantite);
+      if (v.type === TYPE_MATERIEL && v.unite) formData.append('unite', v.unite);
       if (v.type === TYPE_MATERIEL && v.materielLivraison) formData.append('materiel_livraison', v.materielLivraison);
       if (v.type === TYPE_SOUTIEN && v.soutienType) formData.append('soutien_type', v.soutienType);
       if (this.showSecourisme(v.type)) formData.append('diplome_secourisme', String(!!v.diplomeSecourisme));
@@ -415,6 +433,10 @@ export class ProposeHelpFormComponent implements OnInit {
       numeroAdeliRpps: [''],
       transportType: [''],
       materielType: [''],
+      materielCatalogue: [null],
+      materielCatalogueNom: [''],
+      quantite: [null],
+      unite: [''],
       soutienType: [''],
       diplomeSecourisme: [false],
       materielLivraison: [''],

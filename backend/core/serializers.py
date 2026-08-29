@@ -408,6 +408,7 @@ class OfferSerializer(serializers.ModelSerializer):
     author_type = serializers.CharField(source="author.type", read_only=True, default=None)
     crisis_nom = serializers.CharField(source="crisis.name", read_only=True, default=None)
     mission_titre = serializers.CharField(source="mission.titre", read_only=True, default=None)
+    materiel_catalogue_nom = serializers.CharField(source="materiel_catalogue.nom", read_only=True, default=None)
     has_photo = serializers.SerializerMethodField()
     competences_libelles = serializers.SerializerMethodField()
     commune = serializers.SerializerMethodField()

@@ -16,9 +16,15 @@
       </div>
     </div>
 
+    <datalist id="unites-datalist">
+      <option value="unité"></option>
+      <option value="litre"></option>
+      <option value="place"></option>
+    </datalist>
+
     @if(state === 1) {
       <form [formGroup]="requestForm">
-      
+
         <!-- Étape 1 : Détails de la demande -->
           <!-- Pour la crise -->
             <div class="form-group">
@@ -136,6 +142,30 @@
                                 }
                             </select>
                             <span class="material-icons select-arrow">arrow_drop_down</span>
+                        </div>
+                    </div>
+
+                    @if (rg.get('materielType')?.value === 'AUTRE') {
+                        <div class="form-group">
+                            <label class="form-label">Précisez le matériel</label>
+                            <app-tag-search-input
+                              placeholder="Chercher ou ajouter un matériel..."
+                              [searchFn]="materielCatalogueSearchFn"
+                              [createFn]="materielCatalogueCreateFn"
+                              [createLabelFn]="materielCatalogueCreateLabelFn"
+                              (itemSelected)="onMaterielCatalogueSelected(row, $event)">
+                            </app-tag-search-input>
+                            @if (rg.get('materielCatalogueNom')?.value) {
+                                <p class="field-hint-inline">Sélectionné : {{ rg.get('materielCatalogueNom')?.value }}</p>
+                            }
+                        </div>
+                    }
+
+                    <div class="form-group">
+                        <label class="form-label">Quantité</label>
+                        <div class="quantite-row">
+                            <input type="number" min="1" formControlName="quantite" placeholder="Ex. 12" class="form-input">
+                            <input type="text" formControlName="unite" list="unites-datalist" placeholder="unité, litre, place..." class="form-input">
                         </div>
                     </div>
 
