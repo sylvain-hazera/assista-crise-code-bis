@@ -14,7 +14,9 @@ import { TeamService } from '../../services/team.service';
 import { DossierService } from '../../services/dossier.service';
 import { MissionService } from '../../services/mission.service';
 import { UserService } from '../../services/user.service';
+import { CompetenceService } from '../../services/competence.service';
 import { MinimapComponent } from '../../shared/components/common/minimap/minimap.component';
+import { Competence } from '../../shared/models/competence.model';
 
 import { DisponibiliteOffre } from '../../shared/models/disponibilite-offre.model';
 import { Team } from '../../shared/models/team.model';
@@ -53,6 +55,7 @@ export interface ReportRow {
   distanceFromCrisisKm: number | null;
   authorType:   string | null;
   isSecoursAccount: boolean;
+  competencesLibelles: string[];
   // raw originals for detail modal
   _raw:         Crisis | Offer | Request | Information;
 }
@@ -103,8 +106,12 @@ export class ReportingComponent implements OnInit, OnDestroy {
   searchQuery   = '';
   filterKind:   FilterKind   = 'ALL';
   filterStatus: FilterStatus = 'ALL';
+  filterCommune   = '';
+  filterCompetence = 'ALL';
   sortField:    SortField    = 'date';
   sortAsc                    = false;
+
+  competences: Competence[] = [];
 
   // ── Pagination ─────────────────────────────────────────────
   pageSize    = 15;
@@ -187,9 +194,16 @@ export class ReportingComponent implements OnInit, OnDestroy {
     private dossierService:     DossierService,
     private missionService:     MissionService,
     private userService:        UserService,
+    private competenceService:  CompetenceService,
   ) {}
 
-  ngOnInit():    void { this.loadAll(); }
+  ngOnInit():    void {
+    this.loadAll();
+    this.competenceService.getAll().subscribe({
+      next: (competences) => { this.competences = competences; },
+      error: () => {},
+    });
+  }
   ngOnDestroy(): void {
     this.destroy$.next();
     this.destroy$.complete();
@@ -262,6 +276,7 @@ export class ReportingComponent implements OnInit, OnDestroy {
       distanceFromCrisisKm: null,
       authorType: null,
       isSecoursAccount: false,
+      competencesLibelles: [],
       _raw:      c,
     }));
 
@@ -286,6 +301,7 @@ export class ReportingComponent implements OnInit, OnDestroy {
       distanceFromCrisisKm: o.distance_from_crisis_km ?? null,
       authorType: o.author_type ?? null,
       isSecoursAccount: o.author_type === 'SECOURS',
+      competencesLibelles: o.competences_libelles ?? [],
       _raw:      o,
     }));
 
@@ -310,6 +326,7 @@ export class ReportingComponent implements OnInit, OnDestroy {
       distanceFromCrisisKm: d.distance_from_crisis_km ?? null,
       authorType: d.author_type ?? null,
       isSecoursAccount: d.author_type === 'SECOURS',
+      competencesLibelles: [],
       _raw:      d,
     }));
 
@@ -334,6 +351,7 @@ export class ReportingComponent implements OnInit, OnDestroy {
       distanceFromCrisisKm: i.distance_from_crisis_km ?? null,
       authorType: i.author_type ?? null,
       isSecoursAccount: i.author_type === 'SECOURS',
+      competencesLibelles: [],
       _raw:      i,
     }));
 
@@ -379,6 +397,19 @@ export class ReportingComponent implements OnInit, OnDestroy {
     // Statut filter
     if (this.filterStatus !== 'ALL') {
       list = list.filter(r => r.status === this.filterStatus);
+    }
+
+    // Commune filter (sous-chaîne, insensible à la casse — les noms de commune ne sont pas
+    // normalisés côté source, ex: "Saint-Étienne" vs "saint etienne")
+    const communeQuery = this.filterCommune.trim().toLowerCase();
+    if (communeQuery) {
+      list = list.filter(r => r.commune?.toLowerCase().includes(communeQuery));
+    }
+
+    // Compétence filter — ne concerne que les offres (seules à porter des compétences
+    // déclarées) : une demande/un signalement/une crise est exclu dès que ce filtre est actif.
+    if (this.filterCompetence !== 'ALL') {
+      list = list.filter(r => r.competencesLibelles.includes(this.filterCompetence));
     }
 
     // Search
@@ -431,6 +462,8 @@ export class ReportingComponent implements OnInit, OnDestroy {
     this.searchQuery   = '';
     this.filterKind    = 'ALL';
     this.filterStatus  = 'ALL';
+    this.filterCommune = '';
+    this.filterCompetence = 'ALL';
     this.currentPage   = 1;
     this.applyFilters();
   }

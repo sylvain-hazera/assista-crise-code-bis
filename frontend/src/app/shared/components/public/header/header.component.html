@@ -21,23 +21,46 @@
 
     <!-- Actions (User + Hamburger) -->
     <div class="header-actions">
+      <!-- Accès rapides colorés vers "mes ..." (visibles seulement connecté) : évite de
+           devoir découvrir que le rond avatar est un menu pour trouver ces fonctions. -->
+      @if (authService.isLoggedIn()) {
+        <div class="quick-links">
+          <a class="quick-link quick-link-offer" routerLink="/settings" [queryParams]="{tab: 'offer'}" (click)="closeAllMenus()" title="Mes offres">
+            <span class="material-icons">volunteer_activism</span>
+          </a>
+          <a class="quick-link quick-link-request" routerLink="/settings" [queryParams]="{tab: 'request'}" (click)="closeAllMenus()" title="Mes demandes">
+            <span class="material-icons">emergency</span>
+          </a>
+          <a class="quick-link quick-link-information" routerLink="/settings" [queryParams]="{tab: 'information'}" (click)="closeAllMenus()" title="Mes signalements">
+            <span class="material-icons">campaign</span>
+          </a>
+          <a class="quick-link quick-link-dossier" routerLink="/settings" [queryParams]="{tab: 'dossier'}" (click)="closeAllMenus()" title="Mon dossier">
+            <span class="material-icons">folder_shared</span>
+          </a>
+        </div>
+      }
+
       <!-- User Button -->
       <div class="user-wrapper">
-        <button 
-          class="user-button" 
+        <button
+          class="user-button"
+          [class.logged-in]="authService.isLoggedIn()"
           (click)="handleUserAction()"
           [attr.aria-label]="authService.isLoggedIn() ? 'Menu utilisateur' : 'Se connecter'">
           @if(!authService.isLoggedIn()) {
             <span class="material-icons">account_circle</span>
           } @else {
-            <!-- <span class="material-icons">account_circle</span> -->
-            @if(currentUser?.photo) {
-              <img [src]="currentUser!.photo" alt="Avatar">
-            } @else {
-              <span class="avatar-placeholder">
-                {{ currentUser?.first_name?.charAt(0) || ''}}{{ currentUser?.last_name?.charAt(0) || ''}}
-              </span>
-            }
+            <span class="user-avatar">
+              @if(currentUser?.photo) {
+                <img [src]="currentUser!.photo" alt="Avatar">
+              } @else {
+                <span class="avatar-placeholder">
+                  {{ currentUser?.first_name?.charAt(0) || ''}}{{ currentUser?.last_name?.charAt(0) || ''}}
+                </span>
+              }
+            </span>
+            <span class="user-button-label">Mon compte</span>
+            <span class="material-icons dropdown-caret">expand_more</span>
           }
         </button>
 
@@ -107,13 +130,32 @@
       <span class="material-icons">help</span>
       Guide
     </a>
-    <a 
-      routerLink="/carte" 
-      routerLinkActive="active" 
+    <a
+      routerLink="/carte"
+      routerLinkActive="active"
       (click)="closeAllMenus()">
       <span class="material-icons">map</span>
       Carte
     </a>
+    @if (authService.isLoggedIn()) {
+      <div class="mobile-nav-divider"></div>
+      <a class="mobile-quick-link quick-link-offer" routerLink="/settings" [queryParams]="{tab: 'offer'}" (click)="closeAllMenus()">
+        <span class="material-icons">volunteer_activism</span>
+        Mes offres
+      </a>
+      <a class="mobile-quick-link quick-link-request" routerLink="/settings" [queryParams]="{tab: 'request'}" (click)="closeAllMenus()">
+        <span class="material-icons">emergency</span>
+        Mes demandes
+      </a>
+      <a class="mobile-quick-link quick-link-information" routerLink="/settings" [queryParams]="{tab: 'information'}" (click)="closeAllMenus()">
+        <span class="material-icons">campaign</span>
+        Mes signalements
+      </a>
+      <a class="mobile-quick-link quick-link-dossier" routerLink="/settings" [queryParams]="{tab: 'dossier'}" (click)="closeAllMenus()">
+        <span class="material-icons">folder_shared</span>
+        Mon dossier
+      </a>
+    }
     <a 
       routerLink="/crises" 
       routerLinkActive="active" 

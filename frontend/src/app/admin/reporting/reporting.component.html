@@ -73,6 +73,21 @@
         }
       </select>
 
+      <input
+        type="text"
+        class="filter-select"
+        placeholder="Filtrer par commune…"
+        [(ngModel)]="filterCommune"
+        (ngModelChange)="currentPage = 1; applyFilters()"
+      />
+
+      <select class="filter-select" [(ngModel)]="filterCompetence" (ngModelChange)="currentPage = 1; applyFilters()" title="Ne s'applique qu'aux offres">
+        <option value="ALL">Toutes compétences</option>
+        @for (c of competences; track c.id) {
+          <option [value]="c.nom">{{ c.nom }}</option>
+        }
+      </select>
+
       <select class="filter-select" [(ngModel)]="pageSize" (ngModelChange)="currentPage = 1; applyFilters()">
         <option [value]="10">10 / page</option>
         <option [value]="15">15 / page</option>
@@ -80,7 +95,7 @@
         <option [value]="50">50 / page</option>
       </select>
 
-      @if (searchQuery || filterKind !== 'ALL' || filterStatus !== 'ALL') {
+      @if (searchQuery || filterKind !== 'ALL' || filterStatus !== 'ALL' || filterCommune || filterCompetence !== 'ALL') {
         <button class="btn-ghost sm" (click)="resetFilters()">
           <span class="material-icons">filter_alt_off</span>
           Réinitialiser
@@ -134,7 +149,7 @@
       <div class="empty">
         <span class="material-icons">manage_search</span>
         <p>Aucun signalement trouvé</p>
-        @if (searchQuery || filterKind !== 'ALL' || filterStatus !== 'ALL') {
+        @if (searchQuery || filterKind !== 'ALL' || filterStatus !== 'ALL' || filterCommune || filterCompetence !== 'ALL') {
           <button class="btn-ghost sm" (click)="resetFilters()">Effacer les filtres</button>
         }
       </div>
