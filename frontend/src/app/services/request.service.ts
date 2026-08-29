@@ -61,6 +61,12 @@ export class RequestService {
     return this.http.get(`${this.url}/${id}/preview/`, { responseType: 'blob' });
   }
 
+  /** POST /api/demandes/<id>/transformer/ — recrée cette demande en offre ou signalement
+   * (réservé institutionnel, refusé si déjà affectée). Supprime la demande d'origine. */
+  transformer(id: string, cible: 'OFFER' | 'INFORMATION'): Observable<any> {
+    return this.http.post<any>(`${this.url}/${id}/transformer/`, { cible });
+  }
+
   /** GET /api/demandes/vue_mairie/ — demandes de la commune de l'institution de l'utilisateur
    * appelant (mairie). 400 si aucune commune associée au compte. */
   vueMairie(): Observable<Request[]> {

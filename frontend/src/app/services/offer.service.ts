@@ -44,6 +44,12 @@ export class OfferService {
     return this.http.get(`${this.url}/${id}/preview/`, { responseType: 'blob' });
   }
 
+  /** POST /api/offres/<id>/transformer/ — recrée cette offre en demande ou signalement
+   * (réservé institutionnel, refusé si déjà affectée). Supprime l'offre d'origine. */
+  transformer(id: string, cible: 'REQUEST' | 'INFORMATION'): Observable<any> {
+    return this.http.post<any>(`${this.url}/${id}/transformer/`, { cible });
+  }
+
     /**
      * Statistiques.
      * GET /api/offres/stats/?[params]

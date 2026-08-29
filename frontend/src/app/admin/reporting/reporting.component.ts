@@ -56,6 +56,7 @@ export interface ReportRow {
   authorType:   string | null;
   isSecoursAccount: boolean;
   competencesLibelles: string[];
+  description: string | null;
   // raw originals for detail modal
   _raw:         Crisis | Offer | Request | Information;
 }
@@ -277,6 +278,7 @@ export class ReportingComponent implements OnInit, OnDestroy {
       authorType: null,
       isSecoursAccount: false,
       competencesLibelles: [],
+      description: c.description ?? null,
       _raw:      c,
     }));
 
@@ -302,6 +304,7 @@ export class ReportingComponent implements OnInit, OnDestroy {
       authorType: o.author_type ?? null,
       isSecoursAccount: o.author_type === 'SECOURS',
       competencesLibelles: o.competences_libelles ?? [],
+      description: o.description ?? null,
       _raw:      o,
     }));
 
@@ -327,6 +330,7 @@ export class ReportingComponent implements OnInit, OnDestroy {
       authorType: d.author_type ?? null,
       isSecoursAccount: d.author_type === 'SECOURS',
       competencesLibelles: [],
+      description: d.description ?? null,
       _raw:      d,
     }));
 
@@ -352,6 +356,7 @@ export class ReportingComponent implements OnInit, OnDestroy {
       authorType: i.author_type ?? null,
       isSecoursAccount: i.author_type === 'SECOURS',
       competencesLibelles: [],
+      description: null,
       _raw:      i,
     }));
 
@@ -969,6 +974,57 @@ export class ReportingComponent implements OnInit, OnDestroy {
   kindLabel(kind: ReportKind): string {
     return ({ Crisis: 'Crise', Offer: 'Offre',
               Request: 'Demande', Information: 'Information' })[kind];
+  }
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // TRANSFORMATION (une soumission classée dans le mauvais formulaire, ex: une
+  // offre de matériel déposée comme demande d'aide)
+  // ────────────────────────────────────────────────────────────────────────────
+
+  isTransforming = false;
+
+  /** Cibles de transformation possibles pour le type de la ligne sélectionnée — jamais vers
+   * son propre type, jamais depuis/vers Crisis (pas concerné par cette confusion de formulaire). */
+  get transformCibles(): { value: 'REQUEST' | 'OFFER' | 'INFORMATION'; label: string }[] {
+    if (!this.selectedRow) return [];
+    const all: { value: 'REQUEST' | 'OFFER' | 'INFORMATION'; label: string }[] = [
+      { value: 'REQUEST', label: 'Demande' },
+      { value: 'OFFER', label: 'Offre' },
+      { value: 'INFORMATION', label: 'Signalement' },
+    ];
+    return all.filter(c => c.value !== this.selectedRow!.kind.toUpperCase());
+  }
+
+  transformerSoumission(cibleValue: string): void {
+    if (!this.selectedRow || !cibleValue) return;
+    const cible = cibleValue as 'REQUEST' | 'OFFER' | 'INFORMATION';
+    const kind = this.selectedRow.kind;
+    const label = this.kindLabel(kind).toLowerCase();
+    const cibleLabel = ({ REQUEST: 'demande', OFFER: 'offre', INFORMATION: 'signalement' } as const)[cible];
+
+    if (!confirm(`Transformer cette ${label} en ${cibleLabel} ? La ${label} d'origine sera supprimée.`)) {
+      return;
+    }
+
+    const id = this.selectedRow.id;
+    this.isTransforming = true;
+
+    const obs = kind === 'Request' ? this.requestService.transformer(id, cible as 'OFFER' | 'INFORMATION')
+      : kind === 'Offer' ? this.offerService.transformer(id, cible as 'REQUEST' | 'INFORMATION')
+      : this.informationService.transformer(id, cible as 'REQUEST' | 'OFFER');
+
+    obs.subscribe({
+      next: () => {
+        this.isTransforming = false;
+        this.showSuccess(`Transformé(e) en ${cibleLabel} avec succès.`);
+        this.closeAll();
+        this.loadAll();
+      },
+      error: (err) => {
+        this.isTransforming = false;
+        alert(err.error?.error || 'Impossible de transformer cet élément.');
+      },
+    });
   }
 
   statusClass(s: Status): string {

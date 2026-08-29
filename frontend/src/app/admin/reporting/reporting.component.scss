@@ -514,7 +514,7 @@ table {
 .modal-overlay {
   position: fixed; inset: 0;
   background: rgba(15,23,42,.45); backdrop-filter: blur(4px);
-  z-index: 500; display: flex; align-items: center; justify-content: center;
+  z-index: 1000; display: flex; align-items: center; justify-content: center;
   padding: 1rem; animation: fadeIn .2s ease;
 }
 
@@ -543,6 +543,16 @@ table {
   display: flex; justify-content: flex-end; gap: .75rem;
   padding: 1.25rem 1.5rem; border-top: 1px solid var(--border);
   flex-wrap: wrap;
+}
+
+.transform-control {
+  display: flex; align-items: center; gap: .5rem;
+  margin-right: auto;
+}
+
+.transform-select {
+  padding: .5rem .75rem; border: 1px solid var(--border); border-radius: 8px;
+  font-size: .85rem; background: white;
 }
 
 // ── Detail modal ───────────────────────────────────────────────────────────────
@@ -584,7 +594,7 @@ table {
 }
 
 // ── Visionneuse photo plein écran + minimap ─────────────────────────────────
-.lightbox-overlay { z-index: 600; }
+.lightbox-overlay { z-index: 1100; }
 
 .lightbox-content {
   position: relative;

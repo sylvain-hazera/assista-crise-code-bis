@@ -51,6 +51,12 @@ export class InformationService {
     return this.http.get(`${this.url}/${id}/preview/`, { responseType: 'blob' });
   }
 
+  /** POST /api/informations/<id>/transformer/ — recrée ce signalement en demande ou offre
+   * (réservé institutionnel, refusé si déjà affecté). Supprime le signalement d'origine. */
+  transformer(id: string, cible: 'REQUEST' | 'OFFER'): Observable<any> {
+    return this.http.post<any>(`${this.url}/${id}/transformer/`, { cible });
+  }
+
   /** GET /api/informations/vue_mairie/ — signalements de la commune de l'institution de
    * l'utilisateur appelant (mairie). 400 si aucune commune associée au compte. */
   vueMairie(): Observable<Information[]> {

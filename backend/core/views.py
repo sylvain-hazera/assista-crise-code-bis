@@ -26,9 +26,11 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from .auth_validation import InstitutionEmailValidator
 import datetime
+import os
 import secrets
 import uuid
 import hashlib
+from django.core.files.base import ContentFile
 from PIL import Image
 from PIL.ExifTags import TAGS, GPSTAGS
 
@@ -1621,6 +1623,91 @@ def populate_dossier_participants_and_notify(
     return regulateurs
 
 
+# Un régulateur en tri initial se trompe parfois de formulaire (ex: une offre de matériel
+# déposée comme demande d'aide) : _transformer_soumission recrée l'objet sous le bon type en
+# copiant les champs communs (contact, localisation, description si le type cible en a un,
+# crise, auteur, photo), plutôt que d'obliger la personne à ressaisir. Volontairement réservé
+# aux soumissions PAS ENCORE affectées (aucune équipe, aucun dossier) : au-delà, la conversion
+# devrait migrer des relations (participants, historique...) que ce helper ne gère pas.
+_TRANSFORM_SUFFIX = {"REQUEST": "request", "OFFER": "offer", "INFORMATION": "information"}
+_TRANSFORM_TYPE_FIELD = {"REQUEST": "request_type", "OFFER": "offer_type", "INFORMATION": "information_type"}
+
+
+def _transform_deja_affecte(source_kind, obj) -> bool:
+    if obj.assigned_teams.exists():
+        return True
+    if source_kind in ("REQUEST", "INFORMATION") and obj.dossiers.exists():
+        return True
+    return False
+
+
+def _transformer_soumission(source_obj, source_kind, target_kind, request):
+    from .models import Request as RequestModel, Offer as OfferModel, Information as InformationModel
+    from .models import RequestType as RequestTypeModel, OfferType as OfferTypeModel, InformationType as InformationTypeModel
+
+    target_model = {"REQUEST": RequestModel, "OFFER": OfferModel, "INFORMATION": InformationModel}[target_kind]
+    target_type_model = {"REQUEST": RequestTypeModel, "OFFER": OfferTypeModel, "INFORMATION": InformationTypeModel}[target_kind]
+
+    source_suffix = _TRANSFORM_SUFFIX[source_kind]
+    target_suffix = _TRANSFORM_SUFFIX[target_kind]
+
+    # Type cible déduit par correspondance de libellé (ex: "Matériel" existe dans les 3
+    # catalogues) — à défaut, "Autre" ; jamais bloquant si aucun des deux n'existe.
+    source_type_obj = getattr(source_obj, _TRANSFORM_TYPE_FIELD[source_kind], None)
+    target_type_obj = None
+    if source_type_obj and source_type_obj.type:
+        target_type_obj = target_type_model.objects.filter(type=source_type_obj.type).first()
+    if not target_type_obj:
+        target_type_obj = target_type_model.objects.filter(type="Autre").first()
+
+    fields = {
+        "title": source_obj.title,
+        f"first_name_{target_suffix}": getattr(source_obj, f"first_name_{source_suffix}"),
+        f"last_name_{target_suffix}": getattr(source_obj, f"last_name_{source_suffix}"),
+        f"email_{target_suffix}": getattr(source_obj, f"email_{source_suffix}"),
+        f"phone_{target_suffix}": getattr(source_obj, f"phone_{source_suffix}"),
+        "location": source_obj.location,
+        "crisis": source_obj.crisis,
+        "author": source_obj.author,
+        # Pas de report du statut source : NON_TRAITEE/EN_COURS/TRAITEE (demande/signalement)
+        # et DISPONIBLE/INDISPONIBLE (offre) sont deux sémantiques différentes du même enum
+        # partagé — le nouvel objet part sur le statut par défaut de son propre type.
+        "environment": source_obj.environment,
+        "deletion_token": secrets.token_urlsafe(32),
+        _TRANSFORM_TYPE_FIELD[target_kind]: target_type_obj,
+    }
+    if hasattr(target_model, "commune_code") and hasattr(source_obj, "commune_code"):
+        fields["commune_code"] = source_obj.commune_code
+    if hasattr(target_model, "description"):
+        fields["description"] = getattr(source_obj, "description", None)
+
+    new_obj = target_model.objects.create(**fields)
+
+    if source_obj.photo:
+        source_obj.photo.open("rb")
+        new_obj.photo.save(os.path.basename(source_obj.photo.name), ContentFile(source_obj.photo.read()), save=True)
+        source_obj.photo.close()
+
+    audit_log(
+        request=request,
+        action_code="CREATION",
+        objet_type=target_kind.capitalize(),
+        objet_id=new_obj.id,
+        crise=new_obj.crisis,
+        commentaire=f"{target_kind.capitalize()} créé(e) par transformation de {source_kind.capitalize()} {source_obj.id} ({source_obj.title})",
+    )
+    audit_log(
+        request=request,
+        action_code="SUPPRESSION",
+        objet_type=source_kind.capitalize(),
+        objet_id=source_obj.id,
+        crise=source_obj.crisis,
+        commentaire=f"Supprimé(e) suite à transformation en {target_kind.capitalize()} {new_obj.id}",
+    )
+    source_obj.delete()
+    return new_obj
+
+
 class RequestViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     queryset = Request.objects.all()
     serializer_class = RequestSerializer
@@ -1635,7 +1722,7 @@ class RequestViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         # demande de n'importe qui d'autre — voir IsOwnerOrInstitutional.
         if self.action in ('update', 'partial_update', 'destroy'):
             return [IsOwnerOrInstitutional()]
-        if self.action in ('assign_team', 'bulk_assign_mission', 'vue_mairie'):
+        if self.action in ('assign_team', 'bulk_assign_mission', 'vue_mairie', 'transformer'):
             return [IsInstitutionalActor()]
         return [AllowAny()]
 
@@ -1644,10 +1731,27 @@ class RequestViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             super().get_queryset().select_related('crisis', 'author')
         )
 
+    @action(detail=True, methods=['post'])
+    def transformer(self, request, pk=None):
+        """Recrée cette demande sous forme d'offre ou de signalement (voir
+        _transformer_soumission) — réservé aux demandes pas encore affectées."""
+        demande = self.get_object()
+        cible = request.data.get('cible')
+        if cible not in ('OFFER', 'INFORMATION'):
+            return Response({'error': "cible doit être 'OFFER' ou 'INFORMATION'."}, status=status.HTTP_400_BAD_REQUEST)
+        if _transform_deja_affecte('REQUEST', demande):
+            return Response(
+                {'error': "Cette demande est déjà affectée à une équipe ou un dossier : impossible de la transformer."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        nouvel_objet = _transformer_soumission(demande, 'REQUEST', cible, request)
+        serializer_class = OfferSerializer if cible == 'OFFER' else InformationSerializer
+        return Response(serializer_class(nouvel_objet, context={'request': request}).data, status=status.HTTP_201_CREATED)
+
     def perform_create(self, serializer):
         # Générer un token de suppression unique
         deletion_token = secrets.token_urlsafe(32)
-        
+
         # Définir l'auteur si authentifié, sinon None
         author = self.request.user if self.request.user.is_authenticated else None
         demande = serializer.save(author=author, deletion_token=deletion_token, environment=get_active_environment(self.request))
@@ -2086,7 +2190,7 @@ class OfferViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         # (update/partial_update/destroy n'avaient aucune restriction avant ce changement).
         if self.action in ('update', 'partial_update', 'destroy'):
             return [IsOwnerOrInstitutional()]
-        if self.action in ('assign_dossier', 'bulk_create_team'):
+        if self.action in ('assign_dossier', 'bulk_create_team', 'transformer'):
             return [IsInstitutionalActor()]
         return [AllowAny()]
 
@@ -2094,6 +2198,28 @@ class OfferViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         return annotate_distance_from_crisis(
             super().get_queryset().select_related('crisis', 'author')
         )
+
+    @action(detail=True, methods=['post'])
+    def transformer(self, request, pk=None):
+        """Recrée cette offre sous forme de demande ou de signalement — réservé aux offres pas
+        encore affectées à une équipe (voir _transformer_soumission)."""
+        offre = self.get_object()
+        cible = request.data.get('cible')
+        if cible not in ('REQUEST', 'INFORMATION'):
+            return Response({'error': "cible doit être 'REQUEST' ou 'INFORMATION'."}, status=status.HTTP_400_BAD_REQUEST)
+        if _transform_deja_affecte('OFFER', offre):
+            return Response(
+                {'error': "Cette offre est déjà affectée à une équipe : impossible de la transformer."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not offre.location:
+            return Response(
+                {'error': "Cette offre n'a pas de localisation : impossible de la transformer en demande/signalement, qui en exigent une."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        nouvel_objet = _transformer_soumission(offre, 'OFFER', cible, request)
+        serializer_class = RequestSerializer if cible == 'REQUEST' else InformationSerializer
+        return Response(serializer_class(nouvel_objet, context={'request': request}).data, status=status.HTTP_201_CREATED)
 
     def perform_create(self, serializer):
         # Générer un token de suppression unique
@@ -2286,7 +2412,7 @@ class InformationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         # signalement).
         if self.action in ('update', 'partial_update', 'destroy'):
             return [IsOwnerOrInstitutional()]
-        if self.action in ('vue_mairie', 'bulk_assign_team'):
+        if self.action in ('vue_mairie', 'bulk_assign_team', 'transformer'):
             return [IsInstitutionalActor()]
         return [AllowAny()]
 
@@ -2294,6 +2420,25 @@ class InformationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         return annotate_distance_from_crisis(
             super().get_queryset().select_related('crisis', 'author')
         )
+
+    @action(detail=True, methods=['post'])
+    def transformer(self, request, pk=None):
+        """Recrée ce signalement sous forme de demande ou d'offre — réservé aux signalements
+        pas encore affectés à une équipe/dossier (voir _transformer_soumission). La
+        description, si le régulateur en saisit une ensuite côté demande/offre, n'existe pas
+        sur Information : seul le titre est repris."""
+        signalement = self.get_object()
+        cible = request.data.get('cible')
+        if cible not in ('REQUEST', 'OFFER'):
+            return Response({'error': "cible doit être 'REQUEST' ou 'OFFER'."}, status=status.HTTP_400_BAD_REQUEST)
+        if _transform_deja_affecte('INFORMATION', signalement):
+            return Response(
+                {'error': "Ce signalement est déjà affecté à une équipe ou un dossier : impossible de le transformer."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        nouvel_objet = _transformer_soumission(signalement, 'INFORMATION', cible, request)
+        serializer_class = RequestSerializer if cible == 'REQUEST' else OfferSerializer
+        return Response(serializer_class(nouvel_objet, context={'request': request}).data, status=status.HTTP_201_CREATED)
 
     def perform_create(self, serializer):
         # Générer un token de suppression unique

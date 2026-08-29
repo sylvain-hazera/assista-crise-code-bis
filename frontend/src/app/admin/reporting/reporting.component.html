@@ -379,12 +379,18 @@
           </div>
         }
 
-        <!-- Description (signalement divers : pas de champ description séparé, le titre
-             porte l'information complète — le titre de l'en-tête de la modale est tronqué) -->
+        <!-- Description : un signalement divers n'a pas de champ description séparé, le titre
+             porte l'information complète (tronqué dans l'en-tête de la modale) — demandes,
+             offres et crises ont bien un champ dédié. -->
         @if (isInfo(selectedRow._raw)) {
           <div class="detail-section">
             <h3>Description</h3>
             <p class="description-text">{{ selectedRow.title }}</p>
+          </div>
+        } @else if (selectedRow.description) {
+          <div class="detail-section">
+            <h3>Description</h3>
+            <p class="description-text">{{ selectedRow.description }}</p>
           </div>
         }
 
@@ -433,12 +439,6 @@
 
         <!-- Specific fields: Crise -->
         @if (isCrisis(selectedRow._raw)) {
-          @if (selectedRow._raw.description) {
-            <div class="detail-section">
-              <h3>Description</h3>
-              <p class="description-text">{{ selectedRow._raw.description }}</p>
-            </div>
-          }
           @if (selectedRow._raw.type) {
             <div class="detail-item">
               <span class="material-icons">category</span>
@@ -552,6 +552,23 @@
       </div>
 
       <div class="modal-footer">
+        @if (selectedRow.kind !== 'Crisis') {
+          <div class="transform-control">
+            <select #transformSelect class="transform-select" [disabled]="isTransforming">
+              <option value="" disabled selected>Transformer en…</option>
+              @for (c of transformCibles; track c.value) {
+                <option [value]="c.value">{{ c.label }}</option>
+              }
+            </select>
+            <button
+              class="btn-secondary"
+              [disabled]="isTransforming || !transformSelect.value"
+              (click)="transformerSoumission(transformSelect.value); transformSelect.value = ''"
+              title="La soumission d'origine sera recréée sous le type choisi, puis supprimée.">
+              <span class="material-icons">sync_alt</span> Transformer
+            </button>
+          </div>
+        }
         <button class="btn-ghost" (click)="closeAll()">Fermer</button>
         <button class="btn-secondary" (click)="exportRow(selectedRow, $event)">
           <span class="material-icons">download</span> Exporter

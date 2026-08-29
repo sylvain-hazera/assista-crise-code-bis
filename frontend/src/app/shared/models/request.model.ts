@@ -11,6 +11,7 @@ export interface RequestType {
 export interface Request {
   id: string;                           // UUID
   title: string;
+  description?: string | null;
   has_photo: boolean;
   location: GeoPoint;
   latitude?: number;                    // Extrait côté Angular
