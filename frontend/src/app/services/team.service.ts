@@ -10,6 +10,7 @@ export class TeamService {
   constructor(private http: HttpClient) {}
 
   getAll():                                Observable<Team[]>  { return this.http.get<Team[]>(`${this.url}/`); }
+  mesEquipes():                            Observable<Team[]>  { return this.http.get<Team[]>(`${this.url}/mes-equipes/`); }
   getById(id: string):                     Observable<Team>    { return this.http.get<Team>(`${this.url}/${id}/`); }
   create(data: Partial<Team>):             Observable<Team>    { return this.http.post<Team>(`${this.url}/`, data); }
   update(id: string, data: Partial<Team>): Observable<Team>    { return this.http.put<Team>(`${this.url}/${id}/`, data); }

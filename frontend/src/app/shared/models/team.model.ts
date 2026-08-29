@@ -8,16 +8,24 @@ export interface TeamMission {
   date?:   string;
 }
 
+export interface TeamMemberInfo {
+  id: string;
+  nom: string;
+}
+
 export interface Team {
   id?:                  string;
   name:                 string;
   description:          string;
   color:                string;
   leader:               string | null;      // UUID du chef d'équipe (terrain)
+  leader_nom?:          string | null;
   regulateur?:          string | null;      // UUID du régulateur (pilotage depuis le centre de crise)
+  regulateur_nom?:      string | null;
   institution?:         string | null;      // UUID de l'institution de rattachement (auto-complétée à la création si absente)
   institution_nom?:     string | null;
   member_ids:           string[];
+  members_info?:        TeamMemberInfo[];
   assigned_crisis_ids:  string[];
   assigned_offer_ids:   string[];
   assigned_request_ids: string[];

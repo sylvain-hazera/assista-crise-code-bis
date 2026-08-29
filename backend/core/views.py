@@ -1440,8 +1440,10 @@ def _assign_information_to_team(signalement, team, request):
         return "no_crisis", None
 
     team.assigned_informations.add(signalement)
-    if signalement.author_id:
+    nouveau_membre = False
+    if signalement.author_id and not team.members.filter(pk=signalement.author_id).exists():
         team.members.add(signalement.author)
+        nouveau_membre = True
 
     dossier = Dossier.objects.create(
         numero=f"DOS-{uuid.uuid4().hex[:8].upper()}",
@@ -1470,6 +1472,13 @@ def _assign_information_to_team(signalement, team, request):
     )
 
     if signalement.email_information:
+        equipe_paragraph = ""
+        if nouveau_membre:
+            equipe_paragraph = (
+                "\nVous avez été associé(e) à l'équipe : vous pouvez consulter à tout moment "
+                "sa zone, ses membres, ses missions et ses dossiers ici :\n"
+                f"{_vue_equipe_link(request, team, signalement.author)}\n"
+            )
         try:
             send_mail_env_aware(
                 request,
@@ -1477,7 +1486,7 @@ def _assign_information_to_team(signalement, team, request):
                 message=(
                     f"Bonjour {signalement.first_name_information},\n\n"
                     f"Votre signalement « {signalement.title} » a été affecté à l'équipe "
-                    f"{team.name}, qui va s'en charger (dossier {dossier.numero}).\n\n"
+                    f"{team.name}, qui va s'en charger (dossier {dossier.numero}).\n{equipe_paragraph}\n"
                     "Merci pour votre vigilance,\n"
                     "L'équipe Assista-Crise"
                 ),
@@ -1924,6 +1933,39 @@ def _notify_institution_referent_of_team(team, institution, request):
         print(f"Erreur envoi email référent institution (équipe) : {e}")
 
 
+def _vue_equipe_link(request, team, membre):
+    """Lien magique vers la "vue équipe" du bénévole (zone, membres, missions, dossiers) —
+    utilisé par toutes les notifications d'association à une équipe, quel que soit le chemin
+    d'affectation (voir TeamViewSet.perform_update, OfferViewSet.bulk_create_team,
+    _assign_information_to_team)."""
+    return build_magic_link(request, membre, "magic-login", next_url=f"/mon-equipe/{team.id}")
+
+
+def _notify_new_team_member(team, membre, request):
+    """Email envoyé à un bénévole qui vient d'être ajouté aux membres d'une équipe (cas
+    générique, ex: édition de l'équipe côté admin) : l'informe de l'association et lui
+    transmet le lien vers sa "vue équipe". Silencieux si l'envoi échoue (jamais bloquant)."""
+    if not membre.email:
+        return
+    try:
+        send_mail_env_aware(
+            request,
+            subject=f"Vous avez été associé(e) à l'équipe {team.name}",
+            message=(
+                f"Bonjour {membre.first_name},\n\n"
+                f"Vous avez été associé(e) à l'équipe « {team.name} ».\n\n"
+                "Vous pouvez consulter à tout moment la zone, les membres, les missions et les "
+                f"dossiers de votre équipe ici :\n{_vue_equipe_link(request, team, membre)}\n\n"
+                "Cordialement,\nL'équipe Assista-Crise"
+            ),
+            from_email=None,
+            recipient_list=[membre.email],
+            fail_silently=True,
+        )
+    except Exception as e:
+        print(f"Erreur envoi email association équipe : {e}")
+
+
 class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     queryset           = Team.objects.prefetch_related(
         'members', 'assigned_crises', 'assigned_offers', 'assigned_requests'
@@ -1942,6 +1984,9 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         if institution is not None:
             _notify_institution_referent_of_team(team, institution, self.request)
 
+        for membre in team.members.all():
+            _notify_new_team_member(team, membre, self.request)
+
         audit_log(
             request=self.request,
             action_code="CREATION",
@@ -1950,10 +1995,40 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             commentaire=f"Création équipe : {team.name}",
         )
 
+    def perform_update(self, serializer):
+        # Ne notifier que les membres réellement NOUVEAUX (jamais ceux déjà présents avant
+        # cette modification, pour ne pas ré-envoyer le mail à chaque édition de l'équipe qui
+        # ne touche pas member_ids, ex: changement de couleur ou de zone).
+        previous_member_ids = set(serializer.instance.members.values_list('id', flat=True))
+        team = serializer.save()
+        new_members = team.members.exclude(id__in=previous_member_ids)
+        for membre in new_members:
+            _notify_new_team_member(team, membre, self.request)
+
+    @action(detail=False, methods=['get'], url_path='mes-equipes')
+    def mes_equipes(self, request):
+        """Équipes dont l'utilisateur connecté est membre — point d'entrée de sa "vue
+        équipe" (voir aussi le lien direct envoyé par email lors de son association)."""
+        equipes = self.get_queryset().filter(members=request.user)
+        return Response(self.get_serializer(equipes, many=True).data)
+
 class MissionViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     queryset = Mission.objects.select_related('crise').prefetch_related('equipes').all()
     serializer_class = MissionSerializer
-    permission_classes = [IsInstitutionalActor]
+
+    def get_permissions(self):
+        # Écriture réservée aux institutionnels, comme avant. Lecture ouverte à tout
+        # authentifié (voir get_queryset) : un bénévole doit pouvoir consulter les missions
+        # de sa propre équipe depuis sa "vue équipe", pas seulement un acteur institutionnel.
+        if self.action in ('create', 'update', 'partial_update', 'destroy'):
+            return [IsInstitutionalActor()]
+        return [permissions.IsAuthenticated()]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if get_effective_role(self.request) in INSTITUTIONAL_TYPES:
+            return qs
+        return qs.filter(equipes__members=self.request.user).distinct()
 
 class OfferViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     queryset = Offer.objects.all()
@@ -2111,6 +2186,12 @@ class OfferViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         )
 
         for offre in offres:
+            equipe_paragraph = ""
+            if offre.author_id:
+                equipe_paragraph = (
+                    "\nVous pouvez consulter à tout moment la zone, les membres, les missions "
+                    f"et les dossiers de votre équipe ici :\n{_vue_equipe_link(request, team, offre.author)}\n"
+                )
             try:
                 send_mail_env_aware(
                     request,
@@ -2118,7 +2199,7 @@ class OfferViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
                     message=(
                         f"Bonjour {offre.first_name_offer},\n\n"
                         f"Votre offre d'aide « {offre.title} » a été affectée à l'équipe {team.name}, "
-                        "qui va s'en charger.\n\n"
+                        f"qui va s'en charger.\n{equipe_paragraph}\n"
                         "Merci pour votre aide,\n"
                         "L'équipe Assista-Crise"
                     ),
@@ -2548,17 +2629,22 @@ class MaPositionView(generics.GenericAPIView):
 
 class PositionsEquipesView(generics.ListAPIView):
     """Dernières positions connues des membres d'équipe (intervenants terrain), pour
-    affichage sur la carte admin — réservé aux acteurs institutionnels, jamais exposé au grand
-    public (même logique que la localisation précise des demandes/offres)."""
+    affichage sur la carte admin ou sur la "vue équipe" d'un bénévole — un acteur
+    institutionnel voit tout le monde, un simple membre d'équipe ne voit que les positions
+    des membres de SES propres équipes (jamais celles d'une équipe à laquelle il n'appartient
+    pas, même logique que la localisation précise des demandes/offres)."""
 
     serializer_class = DernierePositionUtilisateurSerializer
-    permission_classes = [IsInstitutionalActor]
+    permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        return DernierePositionUtilisateur.objects.filter(
+        qs = DernierePositionUtilisateur.objects.filter(
             environment=get_active_environment(self.request),
             utilisateur__teams__isnull=False,
         ).distinct().select_related('utilisateur')
+        if get_effective_role(self.request) in INSTITUTIONAL_TYPES:
+            return qs
+        return qs.filter(utilisateur__teams__members=self.request.user)
 
 
 class DocumentViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):

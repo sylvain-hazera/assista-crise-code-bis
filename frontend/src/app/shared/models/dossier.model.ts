@@ -19,6 +19,9 @@ export interface Dossier {
   information?: string | null;
   information_titre?: string | null;
 
+  latitude?: number | null;
+  longitude?: number | null;
+
   titre: string;
   description: string;
 

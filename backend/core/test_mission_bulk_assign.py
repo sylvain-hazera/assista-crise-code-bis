@@ -3,8 +3,9 @@ from django.contrib.gis.geos import Point
 from django.core import mail
 from django.urls import reverse
 from rest_framework import status
+from rest_framework.test import APIClient
 
-from core.models import Crisis, Dossier, Information, Mission, Offer, Request, Team, User
+from core.models import Crisis, Dossier, DossierParticipant, Information, Mission, Offer, Request, Team, User
 
 
 def _make_admin(authenticated_client):
@@ -110,6 +111,25 @@ class TestBulkCreateTeamOffers:
         assert response.status_code == status.HTTP_201_CREATED
         assert len(mail.outbox) == 2
         assert {m.to[0] for m in mail.outbox} == {'a@test.fr', 'b@test.fr'}
+
+    def test_bulk_create_team_email_includes_vue_equipe_link_for_authored_offer(self, authenticated_client, offer_type):
+        client, _ = _make_admin(authenticated_client)
+        author = User.objects.create_user(username='auteur-lien@test.fr', email='auteur-lien@test.fr', password='Test1234!')
+        offer = Offer.objects.create(
+            title='Offre avec compte', first_name_offer='A', last_name_offer='B',
+            email_offer='auteur-lien@test.fr', offer_type=offer_type, author=author,
+        )
+
+        response = client.post(
+            reverse('offer-bulk-create-team'),
+            {'offer_ids': [str(offer.id)], 'team_name': 'Equipe avec lien'},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        team_id = response.data['id']
+        assert len(mail.outbox) == 1
+        assert f'mon-equipe%2F{team_id}' in mail.outbox[0].body
 
     def test_bulk_create_team_requires_name(self, authenticated_client, offer_type):
         client, _ = _make_admin(authenticated_client)
@@ -346,3 +366,134 @@ class TestCommuneAndDistanceFields:
 
         assert response.status_code == status.HTTP_200_OK
         assert response.data['distance_from_crisis_km'] == 0.0
+
+
+@pytest.mark.django_db
+class TestRequestLocationVisibleToDossierParticipant:
+    """Un bénévole n'a pas de rôle institutionnel, mais doit voir la localisation précise
+    d'une demande dont il est participant (via son équipe) — sinon impossible d'intervenir."""
+
+    def test_team_member_sees_precise_location(self, create_user, request_type):
+        crisis = _make_crisis(location=Point(0.0, 0.0, srid=4326))
+        demande = _make_request(crisis, request_type, location=Point(2.5, 3.5, srid=4326))
+        team = Team.objects.create(name='Equipe voirie')
+        benevole = create_user(username='benevole-loc@test.fr', email='benevole-loc@test.fr', type='UTIL_SIMPLE')
+        team.members.add(benevole)
+        dossier = Dossier.objects.create(
+            numero='DOS-LOCVIS', crise=crisis, equipe=team, demande=demande, titre='Test',
+        )
+        DossierParticipant.objects.create(dossier=dossier, utilisateur=benevole, role=DossierParticipant.Role.EQUIPE)
+
+        client = APIClient()
+        client.force_authenticate(user=benevole)
+        response = client.get(reverse('request-detail', args=[demande.id]))
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['latitude'] == pytest.approx(3.5)
+        assert response.data['longitude'] == pytest.approx(2.5)
+
+    def test_unrelated_user_does_not_see_precise_location(self, create_user, request_type):
+        crisis = _make_crisis()
+        demande = _make_request(crisis, request_type)
+        unrelated = create_user(username='sans-lien@test.fr', email='sans-lien@test.fr', type='UTIL_SIMPLE')
+
+        client = APIClient()
+        client.force_authenticate(user=unrelated)
+        response = client.get(reverse('request-detail', args=[demande.id]))
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['latitude'] is None
+        assert response.data['longitude'] is None
+
+
+@pytest.mark.django_db
+class TestDossierLatitudeLongitude:
+
+    def test_dossier_exposes_location_from_its_demande(self, authenticated_client, request_type):
+        client, _ = _make_admin(authenticated_client)
+        crisis = _make_crisis()
+        demande = _make_request(crisis, request_type, location=Point(2.5, 3.5, srid=4326))
+        team = Team.objects.create(name='Equipe loc')
+        dossier = Dossier.objects.create(
+            numero='DOS-DOSSLOC', crise=crisis, equipe=team, demande=demande, titre='Test',
+        )
+
+        response = client.get(reverse('dossier-detail', args=[dossier.id]))
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['latitude'] == pytest.approx(3.5)
+        assert response.data['longitude'] == pytest.approx(2.5)
+
+    def test_dossier_without_origin_has_no_location(self, authenticated_client):
+        client, _ = _make_admin(authenticated_client)
+        crisis = _make_crisis()
+        team = Team.objects.create(name='Equipe sans origine')
+        dossier = Dossier.objects.create(numero='DOS-SANSORIGINE', crise=crisis, equipe=team, titre='Test')
+
+        response = client.get(reverse('dossier-detail', args=[dossier.id]))
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['latitude'] is None
+        assert response.data['longitude'] is None
+
+
+@pytest.mark.django_db
+class TestTeamMembersInfo:
+
+    def test_members_info_exposes_id_and_name_without_pii(self, authenticated_client, create_user):
+        client, _ = _make_admin(authenticated_client)
+        membre = create_user(username='membre-info@test.fr', email='membre-info@test.fr', type='UTIL_SIMPLE', first_name='Alice', last_name='Martin')
+        team = Team.objects.create(name='Equipe info')
+        team.members.add(membre)
+
+        response = client.get(reverse('team-detail', args=[team.id]))
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['members_info'] == [{'id': str(membre.id), 'nom': 'Alice Martin'}]
+        assert 'email' not in response.data['members_info'][0]
+
+
+@pytest.mark.django_db
+class TestMissionVisibility:
+
+    def test_institutional_actor_sees_all_missions(self, authenticated_client):
+        client, _ = _make_admin(authenticated_client)
+        crisis = _make_crisis()
+        team = Team.objects.create(name='Equipe non liée')
+        Mission.objects.create(titre='Mission X', crise=crisis)
+
+        response = client.get(reverse('mission-list'))
+
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data) == 1
+
+    def test_team_member_sees_only_missions_of_own_team(self, create_user):
+        crisis = _make_crisis()
+        team_membre = Team.objects.create(name='Equipe du membre')
+        team_autre = Team.objects.create(name='Autre equipe')
+        membre = create_user(username='membre-mission@test.fr', email='membre-mission@test.fr', type='UTIL_SIMPLE')
+        team_membre.members.add(membre)
+
+        mission_visible = Mission.objects.create(titre='Mission visible', crise=crisis)
+        mission_visible.equipes.add(team_membre)
+        mission_cachee = Mission.objects.create(titre='Mission cachée', crise=crisis)
+        mission_cachee.equipes.add(team_autre)
+
+        client = APIClient()
+        client.force_authenticate(user=membre)
+        response = client.get(reverse('mission-list'))
+
+        assert response.status_code == status.HTTP_200_OK
+        titres = [row['titre'] for row in response.data]
+        assert 'Mission visible' in titres
+        assert 'Mission cachée' not in titres
+
+    def test_non_institutional_cannot_create_mission(self, create_user):
+        crisis = _make_crisis()
+        simple_user = create_user(username='pas-institutionnel@test.fr', email='pas-institutionnel@test.fr', type='UTIL_SIMPLE')
+
+        client = APIClient()
+        client.force_authenticate(user=simple_user)
+        response = client.post(reverse('mission-list'), {'titre': 'Nouvelle mission', 'crise': str(crisis.id)})
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN

@@ -263,6 +263,10 @@ class CrisisSerializer(serializers.ModelSerializer):
     has_photo = serializers.SerializerMethodField()
     is_open = serializers.SerializerMethodField()
     has_responsable_actif = serializers.SerializerMethodField()
+    # `type` reste le code technique (ex: "INCEDIE", historique — jamais renommé pour éviter
+    # une migration de données sur les crises existantes) : `type_display` est le libellé
+    # humain ("Incendie") à afficher partout côté frontend, jamais le code brut.
+    type_display = serializers.CharField(source='get_type_display', read_only=True)
 
     class Meta:
         model = Crisis
@@ -297,9 +301,10 @@ class CrisisSerializer(serializers.ModelSerializer):
 class RequestSerializer(serializers.ModelSerializer):
     """Serializer pour les demandes d'aide.
 
-    La localisation précise (adresse) n'est un renseignement privé que la mairie et les
-    services de secours doivent voir — jamais le grand public. `latitude`/`longitude`/
-    `location` renvoient donc null pour tout consommateur non institutionnel."""
+    La localisation précise (adresse) n'est un renseignement privé que la mairie, les
+    services de secours, et les bénévoles effectivement affectés au dossier issu de cette
+    demande doivent voir — jamais le grand public. `latitude`/`longitude`/`location`
+    renvoient donc null pour tout autre consommateur."""
     latitude = serializers.SerializerMethodField()
     longitude = serializers.SerializerMethodField()
     author = serializers.PrimaryKeyRelatedField(read_only=True, allow_null=True)
@@ -316,35 +321,39 @@ class RequestSerializer(serializers.ModelSerializer):
         fields = '__all__'
         extra_kwargs = {'photo': {'write_only': True}}
 
-    def _location_visible(self) -> bool:
+    def _location_visible(self, obj) -> bool:
         request = self.context.get('request')
         user = getattr(request, 'user', None)
-        return bool(user and user.is_authenticated and request and effective_role_or_none(request) in INSTITUTIONAL_TYPES)
+        if not (user and user.is_authenticated and request):
+            return False
+        if effective_role_or_none(request) in INSTITUTIONAL_TYPES:
+            return True
+        return obj.dossiers.filter(participants__utilisateur=user).exists()
 
     def get_latitude(self, obj):
-        if not self._location_visible():
+        if not self._location_visible(obj):
             return None
         return obj.location.y if obj.location else None
 
     def get_longitude(self, obj):
-        if not self._location_visible():
+        if not self._location_visible(obj):
             return None
         return obj.location.x if obj.location else None
 
     def get_commune(self, obj):
-        if not self._location_visible():
+        if not self._location_visible(obj):
             return None
         return commune_from_code(obj.commune_code) or commune_from_point(obj.location)
 
     def get_distance_from_crisis_km(self, obj):
-        if not self._location_visible():
+        if not self._location_visible(obj):
             return None
         distance = getattr(obj, 'distance_from_crisis', None)
         return round(distance.km, 1) if distance is not None else None
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
-        if not self._location_visible():
+        if not self._location_visible(instance):
             data['location'] = None
         request = self.context.get('request')
         if request is not None and get_active_environment(request) == Environment.DEMO:
@@ -581,9 +590,10 @@ class AffectationPointBenevoleSerializer(serializers.ModelSerializer):
 class InformationSerializer(serializers.ModelSerializer):
     """Serializer pour les informations.
 
-    La localisation précise (adresse) n'est un renseignement privé que la mairie et les
-    services de secours doivent voir — jamais le grand public. `latitude`/`longitude`/
-    `location` renvoient donc null pour tout consommateur non institutionnel."""
+    La localisation précise (adresse) n'est un renseignement privé que la mairie, les
+    services de secours, et les bénévoles effectivement affectés au dossier issu de ce
+    signalement doivent voir — jamais le grand public. `latitude`/`longitude`/`location`
+    renvoient donc null pour tout autre consommateur."""
     latitude = serializers.SerializerMethodField()
     longitude = serializers.SerializerMethodField()
     author = serializers.PrimaryKeyRelatedField(read_only=True, allow_null=True)
@@ -600,35 +610,39 @@ class InformationSerializer(serializers.ModelSerializer):
         fields = '__all__'
         extra_kwargs = {'photo': {'write_only': True}}
 
-    def _location_visible(self) -> bool:
+    def _location_visible(self, obj) -> bool:
         request = self.context.get('request')
         user = getattr(request, 'user', None)
-        return bool(user and user.is_authenticated and request and effective_role_or_none(request) in INSTITUTIONAL_TYPES)
+        if not (user and user.is_authenticated and request):
+            return False
+        if effective_role_or_none(request) in INSTITUTIONAL_TYPES:
+            return True
+        return obj.dossiers.filter(participants__utilisateur=user).exists()
 
     def get_latitude(self, obj):
-        if not self._location_visible():
+        if not self._location_visible(obj):
             return None
         return obj.location.y if obj.location else None
 
     def get_longitude(self, obj):
-        if not self._location_visible():
+        if not self._location_visible(obj):
             return None
         return obj.location.x if obj.location else None
 
     def get_commune(self, obj):
-        if not self._location_visible():
+        if not self._location_visible(obj):
             return None
         return commune_from_point(obj.location)
 
     def get_distance_from_crisis_km(self, obj):
-        if not self._location_visible():
+        if not self._location_visible(obj):
             return None
         distance = getattr(obj, 'distance_from_crisis', None)
         return round(distance.km, 1) if distance is not None else None
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
-        if not self._location_visible():
+        if not self._location_visible(instance):
             data['location'] = None
         request = self.context.get('request')
         if request is not None and get_active_environment(request) == Environment.DEMO:
@@ -681,6 +695,9 @@ class TeamSerializer(serializers.ModelSerializer):
     )
     zone_precise_geojson = serializers.SerializerMethodField()
     institution_nom = serializers.CharField(source='institution.nom', read_only=True, default=None)
+    members_info = serializers.SerializerMethodField()
+    leader_nom = serializers.SerializerMethodField()
+    regulateur_nom = serializers.SerializerMethodField()
 
     class Meta:
         model  = Team
@@ -689,8 +706,11 @@ class TeamSerializer(serializers.ModelSerializer):
             'institution',
             'institution_nom',
             'leader',
+            'leader_nom',
             'regulateur',
+            'regulateur_nom',
             'member_ids',
+            'members_info',
             'assigned_crisis_ids',
             'assigned_offer_ids',
             'assigned_request_ids',
@@ -705,6 +725,24 @@ class TeamSerializer(serializers.ModelSerializer):
 
     def get_zone_precise_geojson(self, obj):
         return json.loads(obj.zone_precise.geojson) if obj.zone_precise else None
+
+    def _nom(self, user):
+        if not user:
+            return None
+        return f"{user.first_name} {user.last_name}".strip() or user.username
+
+    def get_members_info(self, obj):
+        # Dénormalisé ici (plutôt que de faire fetcher /api/users/ côté frontend) : un simple
+        # bénévole membre d'une équipe n'a pas forcément accès à la liste globale des
+        # utilisateurs, et n'a de toute façon besoin que du nom de ses coéquipiers, jamais de
+        # leur email/téléphone — voir "vue équipe".
+        return [{"id": str(m.id), "nom": self._nom(m)} for m in obj.members.all()]
+
+    def get_leader_nom(self, obj):
+        return self._nom(obj.leader)
+
+    def get_regulateur_nom(self, obj):
+        return self._nom(obj.regulateur)
 
 
 class DernierePositionUtilisateurSerializer(serializers.ModelSerializer):
@@ -824,9 +862,26 @@ class DossierSerializer(serializers.ModelSerializer):
 
     unread_count = serializers.SerializerMethodField()
 
+    latitude = serializers.SerializerMethodField()
+    longitude = serializers.SerializerMethodField()
+
     class Meta:
         model = Dossier
         fields = "__all__"
+
+    def _origine(self, obj):
+        return obj.demande or obj.information
+
+    def get_latitude(self, obj):
+        # Pas de gating supplémentaire ici : un Dossier n'est jamais listable publiquement
+        # (DossierViewSet.get_queryset le restreint déjà aux institutionnels ou aux
+        # participants), donc quiconque peut voir CE dossier peut voir sa localisation.
+        origine = self._origine(obj)
+        return origine.location.y if origine and origine.location else None
+
+    def get_longitude(self, obj):
+        origine = self._origine(obj)
+        return origine.location.x if origine and origine.location else None
 
     def get_has_updates(self, obj):
 

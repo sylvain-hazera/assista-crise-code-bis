@@ -86,11 +86,44 @@ class TestPositionsEquipes:
         assert str(membre_equipe.id) in utilisateur_ids
         assert str(hors_equipe.id) not in utilisateur_ids
 
-    def test_non_institutional_user_cannot_list_positions(self, create_user):
+    def test_user_with_no_team_sees_no_positions(self, create_user):
         simple_user = create_user(username="simple-pos@test.fr", email="simple-pos@test.fr", type="UTIL_SIMPLE")
         client = APIClient()
         client.force_authenticate(user=simple_user)
 
         response = client.get(reverse("positions_equipes"))
 
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data) == 0
+
+    def test_anonymous_cannot_list_positions(self):
+        client = APIClient()
+        response = client.get(reverse("positions_equipes"))
+        assert response.status_code in (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN)
+
+    def test_team_member_sees_only_own_team_positions(self, create_user):
+        membre_a = create_user(username="membre-a@test.fr", email="membre-a@test.fr", type="UTIL_SIMPLE")
+        membre_b = create_user(username="membre-b@test.fr", email="membre-b@test.fr", type="UTIL_SIMPLE")
+        autre_equipe_membre = create_user(username="autre-equipe@test.fr", email="autre-equipe@test.fr", type="UTIL_SIMPLE")
+
+        team_a = Team.objects.create(name="Equipe A", description="", color="#3b82f6")
+        team_a.members.add(membre_a, membre_b)
+        team_b = Team.objects.create(name="Equipe B", description="", color="#ff0000")
+        team_b.members.add(autre_equipe_membre)
+
+        client = APIClient()
+        client.force_authenticate(user=membre_a)
+        client.post(reverse("ma_position"), {"latitude": 45.19, "longitude": 5.72})
+        client.force_authenticate(user=membre_b)
+        client.post(reverse("ma_position"), {"latitude": 45.20, "longitude": 5.73})
+        client.force_authenticate(user=autre_equipe_membre)
+        client.post(reverse("ma_position"), {"latitude": 43.6, "longitude": 1.44})
+
+        client.force_authenticate(user=membre_a)
+        response = client.get(reverse("positions_equipes"))
+
+        assert response.status_code == status.HTTP_200_OK
+        utilisateur_ids = [str(row["utilisateur"]) for row in response.data]
+        assert str(membre_a.id) in utilisateur_ids
+        assert str(membre_b.id) in utilisateur_ids
+        assert str(autre_equipe_membre.id) not in utilisateur_ids
