@@ -37,6 +37,12 @@ export class AdminLayoutComponent implements OnInit {
 
     { icon: 'groups', label: 'Équipes', route: '/admin/equipes' },
 
+    // Route publique (hors /admin) volontairement : un chef d'équipe de terrain peut être un
+    // simple citoyen (UTIL_SIMPLE), pas forcément un acteur institutionnel — contrairement au
+    // reste de cette barre, cette rubrique reste visible/accessible même sans rôle effectif
+    // institutionnel (voir isNavItemVisible).
+    { icon: 'checklist', label: 'Mes interventions', route: '/mes-interventions' },
+
     { icon: 'apartment', label: 'Institutions', route: '/admin/institutions' },
 
     { icon: 'local_fire_department', label: 'Crises', route: '/admin/crises' },
@@ -155,6 +161,15 @@ export class AdminLayoutComponent implements OnInit {
    * qui protège aussi ces routes côté navigation directe). */
   get isInstitutionalEffective(): boolean {
     return this.authService.isInstitutionalEffective();
+  }
+
+  /** Utilisateurs : réservé aux vrais admins PROD (isSysAdmin). Mes interventions : toujours
+   * visible (route publique pour un chef d'équipe possiblement non institutionnel, voir
+   * navItems). Tout le reste : masqué si le rôle effectif courant n'est pas institutionnel. */
+  isNavItemVisible(item: NavItem): boolean {
+    if (item.label === 'Utilisateurs') return this.isSysAdmin();
+    if (item.label === 'Mes interventions') return true;
+    return this.isInstitutionalEffective;
   }
 
   toggleSidebar(): void {
