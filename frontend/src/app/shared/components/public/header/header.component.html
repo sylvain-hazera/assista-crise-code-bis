@@ -127,14 +127,17 @@
       </div>
 
       <!-- Hamburger Menu Button (Mobile) -->
-      <button 
-        class="hamburger-button" 
+      <button
+        class="hamburger-button"
         (click)="toggleMobileMenu()"
         [class.active]="showMobileMenu"
         aria-label="Menu de navigation">
-        <span class="hamburger-line"></span>
-        <span class="hamburger-line"></span>
-        <span class="hamburger-line"></span>
+        <span class="hamburger-icon">
+          <span class="hamburger-line"></span>
+          <span class="hamburger-line"></span>
+          <span class="hamburger-line"></span>
+        </span>
+        <span class="hamburger-label">Menu</span>
       </button>
     </div>
     </div>

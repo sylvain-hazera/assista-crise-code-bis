@@ -367,8 +367,14 @@
   .hamburger-button {
     display: none;
     flex-direction: column;
-    justify-content: space-around;
+    align-items: center;
+    justify-content: center;
+    gap: 0.15rem;
     width: 2rem;
+    // Hauteur inchangée : le libellé "Menu" est inséré DANS cette même enveloppe (icône réduite
+    // en conséquence, voir .hamburger-icon) pour ne jamais augmenter la hauteur de la barre —
+    // sinon les offsets fixes ailleurs (.mobile-nav top/height, .user-dropdown top) deviendraient
+    // faux et du contenu se retrouverait masqué sous la barre.
     height: 2rem;
     background: transparent;
     border: none;
@@ -376,9 +382,17 @@
     padding: 0;
     z-index: 102;
 
+    .hamburger-icon {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      width: 1.5rem;
+      height: 1.15rem;
+    }
+
     .hamburger-line {
-      width: 2rem;
-      height: 0.25rem;
+      width: 1.5rem;
+      height: 0.16rem;
       background-color: #333;
       border-radius: 10px;
       transition: all 0.3s linear;
@@ -386,18 +400,32 @@
       transform-origin: 1px;
     }
 
+    .hamburger-label {
+      font-size: 0.45rem;
+      font-weight: 600;
+      line-height: 1;
+      color: #333;
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+      transition: opacity 0.2s ease;
+    }
+
     &.active {
-      .hamburger-line:nth-child(1) {
+      .hamburger-icon .hamburger-line:nth-child(1) {
         transform: rotate(45deg);
       }
 
-      .hamburger-line:nth-child(2) {
+      .hamburger-icon .hamburger-line:nth-child(2) {
         opacity: 0;
         transform: translateX(20px);
       }
 
-      .hamburger-line:nth-child(3) {
+      .hamburger-icon .hamburger-line:nth-child(3) {
         transform: rotate(-45deg);
+      }
+
+      .hamburger-label {
+        opacity: 0;
       }
     }
   }
@@ -655,9 +683,19 @@
     .hamburger-button {
       width: 1.75rem;
       height: 1.75rem;
+      gap: 0.1rem;
+
+      .hamburger-icon {
+        width: 1.3rem;
+        height: 0.95rem;
+      }
 
       .hamburger-line {
-        width: 1.75rem;
+        width: 1.3rem;
+      }
+
+      .hamburger-label {
+        font-size: 0.38rem;
       }
     }
 
