@@ -2,7 +2,7 @@
 
   <header class="page-header">
     <h1>Mes interventions</h1>
-    <p class="subtitle">Dossiers affectés à vos équipes, tous confondus.</p>
+    <p class="subtitle">Gestion des opérations de votre équipe, triées par priorité.</p>
   </header>
 
   @if (isLoading) {
@@ -23,11 +23,11 @@
   } @else {
 
     <div class="filters">
-      <select [(ngModel)]="selectedTeamId">
-        <option value="ALL">Toutes mes équipes ({{ allDossiers.length }})</option>
+      <select [(ngModel)]="selectedTeamId" (ngModelChange)="onTeamChange()">
         @for (team of teams; track team.id) {
           <option [value]="team.id">{{ team.name }}</option>
         }
+        <option value="ALL">Toutes mes équipes ({{ allDossiers.length }})</option>
       </select>
 
       <select [(ngModel)]="statutFilter">
@@ -45,6 +45,18 @@
       }
     </div>
 
+    @if (canReorder) {
+      <section class="minimap-card">
+        <h2>Zone d'intervention — {{ selectedTeam?.name }}</h2>
+        <div class="minimap-container" #minimapContainer></div>
+        <div class="minimap-legend">
+          <span><span class="legend-dot" style="background:#dc2626"></span> Urgente</span>
+          <span><span class="legend-dot" style="background:#f59e0b"></span> Normale</span>
+          <span><span class="legend-dot" style="background:#3b82f6"></span> Basse</span>
+        </div>
+      </section>
+    }
+
     @if (filteredDossiers.length === 0) {
       <div class="state-block">
         <span class="material-icons">inbox</span>
@@ -57,10 +69,11 @@
             <tr>
               @if (canReorder) { <th class="col-order"></th> }
               <th class="col-photo"></th>
-              <th>Dossier</th>
+              <th>N° dossier</th>
               <th>Équipe</th>
-              <th>Localisation</th>
+              <th>Description</th>
               <th>Contact</th>
+              <th>Localisation</th>
               <th>Priorité</th>
               <th>Statut</th>
               <th></th>
@@ -93,16 +106,40 @@
                   <span class="dossier-numero">{{ dossier.numero }}</span>
                 </td>
                 <td>{{ teamName(dossier.equipe) }}</td>
-                <td>{{ dossier.commune || '—' }}</td>
+                <td class="col-description">
+                  @if (dossier.description_origine) {
+                    <span class="description-text">{{ dossier.description_origine }}</span>
+                  } @else {
+                    <span class="muted">—</span>
+                  }
+                </td>
                 <td>
                   @if (dossier.contact_nom) {
                     <div class="contact-cell">
-                      <span>{{ dossier.contact_nom }}</span>
+                      <span class="contact-nom">{{ dossier.contact_nom }}</span>
                       @if (dossier.contact_telephone) {
                         <a [href]="'tel:' + dossier.contact_telephone" class="contact-link">
                           <span class="material-icons">phone</span> {{ dossier.contact_telephone }}
                         </a>
                       }
+                      @if (dossier.contact_email) {
+                        <a [href]="'mailto:' + dossier.contact_email" class="contact-link">
+                          <span class="material-icons">email</span> {{ dossier.contact_email }}
+                        </a>
+                      }
+                    </div>
+                  } @else {
+                    <span class="muted">—</span>
+                  }
+                </td>
+                <td class="col-localisation">
+                  @if (dossier.latitude != null) {
+                    <div class="localisation-cell">
+                      @if (dossier.commune) { <span>{{ dossier.commune }}</span> }
+                      <span class="gps-text">{{ dossier.latitude!.toFixed(5) }}, {{ dossier.longitude!.toFixed(5) }}</span>
+                      <a [href]="mapsDirectionsUrl(dossier)" target="_blank" rel="noopener" class="itineraire-link">
+                        <span class="material-icons">directions</span> Itinéraire
+                      </a>
                     </div>
                   } @else {
                     <span class="muted">—</span>

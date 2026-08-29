@@ -424,6 +424,22 @@ class TestDossierLatitudeLongitude:
         assert response.data['latitude'] == pytest.approx(3.5)
         assert response.data['longitude'] == pytest.approx(2.5)
 
+    def test_dossier_exposes_description_from_its_demande(self, authenticated_client, request_type):
+        client, _ = _make_admin(authenticated_client)
+        crisis = _make_crisis()
+        demande = _make_request(crisis, request_type, description='Une cuve de 500L disponible')
+        team = Team.objects.create(name='Equipe desc')
+        dossier = Dossier.objects.create(
+            numero='DOS-DESCORIGINE', crise=crisis, equipe=team, demande=demande, titre='Test',
+        )
+
+        response = client.get(reverse('dossier-detail', args=[dossier.id]))
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['description_origine'] == 'Une cuve de 500L disponible'
+        # Le champ "description" du dossier lui-même reste le texte auto-généré, pas confondu.
+        assert response.data['description_origine'] != response.data['description']
+
     def test_dossier_without_origin_has_no_location(self, authenticated_client):
         client, _ = _make_admin(authenticated_client)
         crisis = _make_crisis()

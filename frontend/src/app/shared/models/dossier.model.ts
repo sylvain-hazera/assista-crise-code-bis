@@ -26,6 +26,7 @@ export interface Dossier {
   contact_nom?: string | null;
   contact_telephone?: string | null;
   contact_email?: string | null;
+  description_origine?: string | null;
 
   titre: string;
   description: string;

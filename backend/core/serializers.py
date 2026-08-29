@@ -890,6 +890,7 @@ class DossierSerializer(serializers.ModelSerializer):
     contact_nom = serializers.SerializerMethodField()
     contact_telephone = serializers.SerializerMethodField()
     contact_email = serializers.SerializerMethodField()
+    description_origine = serializers.SerializerMethodField()
 
     class Meta:
         model = Dossier
@@ -897,6 +898,16 @@ class DossierSerializer(serializers.ModelSerializer):
 
     def _origine(self, obj):
         return obj.demande or obj.information
+
+    def get_description_origine(self, obj):
+        # `description` sur Dossier lui-même est un texte généré automatiquement à
+        # l'affectation ("Demande affectée à l'équipe X : <titre>"), jamais ce que la personne
+        # a réellement écrit — ce champ-ci restitue la vraie description saisie sur la demande
+        # d'origine (un signalement n'a pas de description séparée, voir Information.__doc__
+        # ailleurs dans ce fichier : son titre porte déjà l'information complète).
+        if obj.demande:
+            return obj.demande.description
+        return None
 
     def get_latitude(self, obj):
         # Pas de gating supplémentaire ici : un Dossier n'est jamais listable publiquement
