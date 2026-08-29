@@ -56,12 +56,16 @@ class TestMissionCRUD:
         assert set(response.data['equipe_ids']) == {team1.id, team2.id}
         assert response.data['statut'] == 'EN_PREPARATION'
 
-    def test_mission_requires_crise(self, authenticated_client):
+    def test_mission_can_be_created_without_crise(self, authenticated_client):
+        # `crise` est devenue optionnelle : une mission "courante" d'équipe (voir
+        # Team.mission_active / TeamViewSet.definir_mission) se crée souvent en texte libre,
+        # sans crise précise identifiée dès le départ.
         client, _ = _make_admin(authenticated_client)
 
         response = client.post(reverse('mission-list'), {'titre': 'Sans crise'}, format='json')
 
-        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data['crise'] is None
 
 
 @pytest.mark.django_db

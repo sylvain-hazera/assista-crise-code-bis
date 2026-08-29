@@ -22,6 +22,8 @@ export interface Team {
   leader_nom?:          string | null;
   regulateur?:          string | null;      // UUID du régulateur (pilotage depuis le centre de crise)
   regulateur_nom?:      string | null;
+  mission_active?:      string | null;      // UUID de la mission courante de l'équipe (voir Mission)
+  mission_active_titre?: string | null;
   institution?:         string | null;      // UUID de l'institution de rattachement (auto-complétée à la création si absente)
   institution_nom?:     string | null;
   member_ids:           string[];

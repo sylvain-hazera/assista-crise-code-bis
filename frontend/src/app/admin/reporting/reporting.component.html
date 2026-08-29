@@ -22,6 +22,16 @@
     </div>
   </header>
 
+  @if (pickForTeamId) {
+    <div class="pick-banner">
+      <span class="material-icons">add_task</span>
+      <span>Sélection de ressources pour l'équipe « {{ pickForTeam?.name || '…' }} »</span>
+      <button class="btn-primary sm" (click)="retourEquipe()">
+        <span class="material-icons">arrow_back</span> Retour à l'équipe
+      </button>
+    </div>
+  }
+
   <!-- ══ TOASTS ════════════════════════════════════════════════════════════════ -->
   @if (successMessage) {
     <div class="toast toast-ok">
@@ -88,6 +98,12 @@
         }
       </select>
 
+      <select class="filter-select" [(ngModel)]="filterMaterielLivraison" (ngModelChange)="currentPage = 1; applyFilters()" title="Ne s'applique qu'aux offres de matériel">
+        <option value="ALL">Matériel : tous</option>
+        <option value="LIVRAISON_POSSIBLE">Dépôt en centre de regroupement</option>
+        <option value="A_RECUPERER">À récupérer sur place</option>
+      </select>
+
       <select class="filter-select" [(ngModel)]="pageSize" (ngModelChange)="currentPage = 1; applyFilters()">
         <option [value]="10">10 / page</option>
         <option [value]="15">15 / page</option>
@@ -95,7 +111,7 @@
         <option [value]="50">50 / page</option>
       </select>
 
-      @if (searchQuery || filterKind !== 'ALL' || filterStatus !== 'ALL' || filterCommune || filterCompetence !== 'ALL') {
+      @if (searchQuery || filterKind !== 'ALL' || filterStatus !== 'ALL' || filterCommune || filterCompetence !== 'ALL' || filterMaterielLivraison !== 'ALL') {
         <button class="btn-ghost sm" (click)="resetFilters()">
           <span class="material-icons">filter_alt_off</span>
           Réinitialiser
@@ -149,7 +165,7 @@
       <div class="empty">
         <span class="material-icons">manage_search</span>
         <p>Aucun signalement trouvé</p>
-        @if (searchQuery || filterKind !== 'ALL' || filterStatus !== 'ALL' || filterCommune || filterCompetence !== 'ALL') {
+        @if (searchQuery || filterKind !== 'ALL' || filterStatus !== 'ALL' || filterCommune || filterCompetence !== 'ALL' || filterMaterielLivraison !== 'ALL') {
           <button class="btn-ghost sm" (click)="resetFilters()">Effacer les filtres</button>
         }
       </div>
@@ -215,6 +231,21 @@
                           <span class="material-icons">link</span> crise liée
                         </span>
                       }
+                      @if (row.kind === 'Offer' && row.materielLivraison === 'LIVRAISON_POSSIBLE') {
+                        <span class="ressource-badge" title="Peut être déposé dans un centre de regroupement">
+                          <span class="material-icons">local_shipping</span>
+                        </span>
+                      }
+                      @if (row.kind === 'Offer' && row.diplomeSecourisme) {
+                        <span class="ressource-badge" title="Diplôme de secourisme déclaré">
+                          <span class="material-icons">medical_services</span>
+                        </span>
+                      }
+                      @if (row.kind === 'Offer' && row.confirmationReglementaire) {
+                        <span class="ressource-badge" title="Conformité véhicule/engin confirmée">
+                          <span class="material-icons">verified</span>
+                        </span>
+                      }
                     </div>
                   </div>
                 </td>
@@ -256,15 +287,21 @@
                   }
                 </td>
                 <td class="col-actions" (click)="$event.stopPropagation()">
-                  <button class="btn-icon-sm" (click)="openDetail(row)" title="Voir">
-                    <span class="material-icons">visibility</span>
-                  </button>
-                  <button class="btn-icon-sm" (click)="exportRow(row, $event)" title="Télécharger">
-                    <span class="material-icons">download</span>
-                  </button>
-                  <button class="btn-icon-sm danger" (click)="openDelete(row, $event)" title="Supprimer">
-                    <span class="material-icons">delete_outline</span>
-                  </button>
+                  @if (pickForTeamId && row.kind === 'Offer') {
+                    <button class="btn-primary sm" (click)="ajouterCommeRessource(row.id, $event)">
+                      <span class="material-icons">add</span> Ajouter à l'équipe
+                    </button>
+                  } @else {
+                    <button class="btn-icon-sm" (click)="openDetail(row)" title="Voir">
+                      <span class="material-icons">visibility</span>
+                    </button>
+                    <button class="btn-icon-sm" (click)="exportRow(row, $event)" title="Télécharger">
+                      <span class="material-icons">download</span>
+                    </button>
+                    <button class="btn-icon-sm danger" (click)="openDelete(row, $event)" title="Supprimer">
+                      <span class="material-icons">delete_outline</span>
+                    </button>
+                  }
                 </td>
               </tr>
             }

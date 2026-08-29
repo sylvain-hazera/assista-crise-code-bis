@@ -1,7 +1,7 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { forkJoin, Observable, Subject, takeUntil } from 'rxjs';
 
 import { CrisisService }  from '../../services/crisis.service';
@@ -57,6 +57,10 @@ export interface ReportRow {
   isSecoursAccount: boolean;
   competencesLibelles: string[];
   description: string | null;
+  // Offres uniquement — voir propose-help-form pour ce que ces champs signifient.
+  materielLivraison?: string | null;
+  diplomeSecourisme?: boolean;
+  confirmationReglementaire?: boolean;
   // raw originals for detail modal
   _raw:         Crisis | Offer | Request | Information;
 }
@@ -109,6 +113,7 @@ export class ReportingComponent implements OnInit, OnDestroy {
   filterStatus: FilterStatus = 'ALL';
   filterCommune   = '';
   filterCompetence = 'ALL';
+  filterMaterielLivraison: 'ALL' | 'A_RECUPERER' | 'LIVRAISON_POSSIBLE' = 'ALL';
   sortField:    SortField    = 'date';
   sortAsc                    = false;
 
@@ -185,6 +190,7 @@ export class ReportingComponent implements OnInit, OnDestroy {
 
   constructor(
     private route: ActivatedRoute,
+    private router: Router,
     private crisisService:      CrisisService,
     private offerService:       OfferService,
     private requestService:     RequestService,
@@ -198,12 +204,38 @@ export class ReportingComponent implements OnInit, OnDestroy {
     private competenceService:  CompetenceService,
   ) {}
 
+  /** Présent quand on arrive depuis "Ouvrir le tableau des offres" du détail d'une équipe
+   * (voir TeamsComponent) : remplace la barre d'action groupée habituelle par un bouton
+   * "Ajouter à l'équipe" par offre. */
+  pickForTeamId: string | null = null;
+
   ngOnInit():    void {
+    this.pickForTeamId = this.route.snapshot.queryParamMap.get('pickForTeam');
     this.loadAll();
     this.competenceService.getAll().subscribe({
       next: (competences) => { this.competences = competences; },
       error: () => {},
     });
+  }
+
+  get pickForTeam(): Team | undefined {
+    return this.teams.find(t => t.id === this.pickForTeamId);
+  }
+
+  /** Ajoute l'offre comme ressource de l'équipe visée, rattachée à sa mission active (voir
+   * TeamViewSet.assigner_ressource). Reste sur le tableau pour permettre d'en ajouter
+   * plusieurs d'affilée — "Retour à l'équipe" (bouton dédié) referme le mode sélection. */
+  ajouterCommeRessource(offerId: string, e?: Event): void {
+    e?.stopPropagation();
+    if (!this.pickForTeamId) return;
+    this.teamService.assignerRessource(this.pickForTeamId, offerId).subscribe({
+      next: () => this.showSuccess('Ressource ajoutée à l\'équipe.'),
+      error: (err) => this.showError(err?.error?.error || "Impossible d'ajouter cette ressource."),
+    });
+  }
+
+  retourEquipe(): void {
+    this.router.navigate(['/admin/equipes'], { queryParams: { openTeam: this.pickForTeamId } });
   }
   ngOnDestroy(): void {
     this.destroy$.next();
@@ -305,6 +337,9 @@ export class ReportingComponent implements OnInit, OnDestroy {
       isSecoursAccount: o.author_type === 'SECOURS',
       competencesLibelles: o.competences_libelles ?? [],
       description: o.description ?? null,
+      materielLivraison: o.materiel_livraison ?? null,
+      diplomeSecourisme: !!o.diplome_secourisme,
+      confirmationReglementaire: !!o.confirmation_reglementaire,
       _raw:      o,
     }));
 
@@ -417,6 +452,12 @@ export class ReportingComponent implements OnInit, OnDestroy {
       list = list.filter(r => r.competencesLibelles.includes(this.filterCompetence));
     }
 
+    // Matériel en centre de regroupement des moyens (vs à récupérer sur place) — ne concerne
+    // que les offres de type Matériel.
+    if (this.filterMaterielLivraison !== 'ALL') {
+      list = list.filter(r => r.materielLivraison === this.filterMaterielLivraison);
+    }
+
     // Search
     const q = this.searchQuery.trim().toLowerCase();
     if (q) {
@@ -469,6 +510,7 @@ export class ReportingComponent implements OnInit, OnDestroy {
     this.filterStatus  = 'ALL';
     this.filterCommune = '';
     this.filterCompetence = 'ALL';
+    this.filterMaterielLivraison = 'ALL';
     this.currentPage   = 1;
     this.applyFilters();
   }

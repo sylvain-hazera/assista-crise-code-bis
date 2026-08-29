@@ -379,17 +379,17 @@
           <button class="btn-secondary sm" (click)="saveZonePrecise()">Enregistrer la zone précise</button>
         </div>
 
-        <!-- ── MISSIONS ────────────────────────────────────── -->
+        <!-- ── MISSIONS (crises / demandes) ─────────────────── -->
         <div class="detail-section">
           <div class="section-header">
             <h3>
               <span class="material-icons">task_alt</span>
               Missions assignées
-              <span class="count-badge">{{ selectedTeam.missions.length }}</span>
+              <span class="count-badge">{{ missionsCount }}</span>
             </h3>
           </div>
 
-          @if (selectedTeam.missions.length === 0) {
+          @if (missionsByKind.length === 0) {
             <div class="no-missions">
               <span class="material-icons">inbox</span>
               <p>Aucune mission assignée.</p>
@@ -425,6 +425,69 @@
               </div>
             }
           }
+        </div>
+
+        <!-- ── RESSOURCES (offres : bénévoles/matériel) ─────── -->
+        <div class="detail-section">
+          <div class="section-header">
+            <h3>
+              <span class="material-icons">inventory_2</span>
+              Ressources assignées
+              <span class="count-badge">{{ resourcesForSelectedTeam.length }}</span>
+            </h3>
+          </div>
+
+          <div class="mission-active-bar">
+            @if (selectedTeam.mission_active_titre) {
+              <span class="mission-active-label">
+                <span class="material-icons">flag</span> Mission : {{ selectedTeam.mission_active_titre }}
+              </span>
+            } @else {
+              <span class="mission-active-label muted">Aucune mission définie pour cette équipe.</span>
+            }
+            <input type="text" placeholder="Nouvelle mission (texte libre)…" [(ngModel)]="missionTitreInput" />
+            <button class="btn-secondary sm" (click)="submitDefinirMission()">
+              {{ selectedTeam.mission_active_titre ? 'Changer' : 'Définir' }}
+            </button>
+          </div>
+
+          @if (resourcesForSelectedTeam.length > 0) {
+            <p class="resources-summary">
+              {{ resourcesSummary.seul }} bénévole(s) seul(s) · {{ resourcesSummary.avecMateriel }} avec matériel ·
+              {{ resourcesSummary.materielSeul }} matériel seul
+            </p>
+          }
+
+          @if (resourcesForSelectedTeam.length === 0) {
+            <div class="no-missions">
+              <span class="material-icons">inbox</span>
+              <p>Aucune ressource affectée.</p>
+            </div>
+          }
+
+          <div class="mission-list">
+            @for (m of resourcesForSelectedTeam; track m.id) {
+              <div class="mission-row">
+                <span class="mk-badge mk-offer">
+                  <span class="material-icons">volunteer_activism</span>
+                </span>
+                <div class="mission-info">
+                  <span class="mission-titre">{{ m.titre }}</span>
+                  <span class="mission-meta">
+                    {{ missionContact(m) }} · {{ fmtDate(m.date) }}
+                    @if (m.statut) { · {{ m.statut }} }
+                  </span>
+                </div>
+                <button class="icon-btn danger sm" (click)="retirerRessource(m.id)" title="Retirer cette ressource">
+                  <span class="material-icons">remove_circle_outline</span>
+                </button>
+              </div>
+            }
+          </div>
+
+          <button class="btn-secondary sm ressources-open-btn" (click)="ouvrirTableauOffres()">
+            <span class="material-icons">search</span> Ouvrir le tableau des offres
+          </button>
         </div>
 
         <!-- ── DOSSIERS ────────────────────────────────────── -->
@@ -554,7 +617,7 @@
               <span class="material-icons">{{ missionIcon(tab) }}</span>
               {{ tab }}s
               <span class="tab-c">
-                {{ (tab === 'Crisis' ? crisis : tab === 'Offer' ? offers : requests).length }}
+                {{ (tab === 'Crisis' ? crisis : requests).length }}
               </span>
             </button>
           }
@@ -587,29 +650,6 @@
             }
             @if (filteredCrisis.length === 0) {
               <p class="empty-tab">Aucune crise disponible</p>
-            }
-          }
-
-          @if (assignTab === 'Offer') {
-            @for (o of filteredOffers; track o.id) {
-              <div class="assign-item" [class.selected]="isMissionAssigned(o.id, 'Offer')"
-                   (click)="toggleMission(o.id, 'Offer', o.title, o.status, o.created_at)">
-                <span class="mk-badge mk-offer">
-                  <span class="material-icons">volunteer_activism</span>
-                </span>
-                <div class="assign-info">
-                  <span class="assign-titre">{{ o.title }}</span>
-                  <span class="assign-meta">
-                    {{ o.first_name_offer }} {{ o.last_name_offer }} · {{ fmtDate(o.created_at) }}
-                  </span>
-                </div>
-                <span class="material-icons assign-check">
-                  {{ isMissionAssigned(o.id, 'Offer') ? 'check_box' : 'check_box_outline_blank' }}
-                </span>
-              </div>
-            }
-            @if (filteredOffers.length === 0) {
-              <p class="empty-tab">Aucune offre disponible</p>
             }
           }
 

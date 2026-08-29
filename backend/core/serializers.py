@@ -406,6 +406,7 @@ class OfferSerializer(serializers.ModelSerializer):
     author_phone = serializers.CharField(source="author.phone_number", read_only=True, default=None)
     author_type = serializers.CharField(source="author.type", read_only=True, default=None)
     crisis_nom = serializers.CharField(source="crisis.name", read_only=True, default=None)
+    mission_titre = serializers.CharField(source="mission.titre", read_only=True, default=None)
     has_photo = serializers.SerializerMethodField()
     competences_libelles = serializers.SerializerMethodField()
     commune = serializers.SerializerMethodField()
@@ -715,6 +716,7 @@ class TeamSerializer(serializers.ModelSerializer):
     members_info = serializers.SerializerMethodField()
     leader_nom = serializers.SerializerMethodField()
     regulateur_nom = serializers.SerializerMethodField()
+    mission_active_titre = serializers.CharField(source='mission_active.titre', read_only=True, default=None)
 
     class Meta:
         model  = Team
@@ -726,6 +728,8 @@ class TeamSerializer(serializers.ModelSerializer):
             'leader_nom',
             'regulateur',
             'regulateur_nom',
+            'mission_active',
+            'mission_active_titre',
             'member_ids',
             'members_info',
             'assigned_crisis_ids',
@@ -824,7 +828,8 @@ class MissionSerializer(serializers.ModelSerializer):
 
     crise_nom = serializers.CharField(
         source='crise.name',
-        read_only=True
+        read_only=True,
+        default=None,
     )
 
     equipe_ids = serializers.PrimaryKeyRelatedField(

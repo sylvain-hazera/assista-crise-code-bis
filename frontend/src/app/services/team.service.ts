@@ -22,4 +22,16 @@ export class TeamService {
   }): Observable<Team> {
     return this.http.post<Team>(`${this.url}/${id}/inviter-membre/`, data);
   }
+
+  definirMission(id: string, titre: string): Observable<Team> {
+    return this.http.post<Team>(`${this.url}/${id}/definir-mission/`, { titre });
+  }
+
+  assignerRessource(id: string, offerId: string): Observable<Team> {
+    return this.http.post<Team>(`${this.url}/${id}/assigner-ressource/`, { offer_id: offerId });
+  }
+
+  retirerRessource(id: string, offerId: string): Observable<Team> {
+    return this.http.post<Team>(`${this.url}/${id}/retirer-ressource/`, { offer_id: offerId });
+  }
 }

@@ -328,6 +328,23 @@ h3 { margin: 0; font-size: .9rem; font-weight: 700; display: flex; align-items: 
 .mission-meta  { font-size: .75rem; color: var(--muted); }
 .no-missions   { font-size: .87rem; color: var(--muted); margin: 0; }
 
+.mission-active-bar {
+  display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
+  background: #f8fafc; border: 1px solid var(--border); border-radius: 10px;
+  padding: .6rem .75rem; margin-bottom: .75rem;
+  .mission-active-label {
+    display: flex; align-items: center; gap: .3rem; font-size: .85rem; font-weight: 600;
+    .material-icons { font-size: 16px; color: var(--primary); }
+    &.muted { color: var(--muted); font-weight: 400; }
+  }
+  input {
+    flex: 1; min-width: 160px; padding: .4rem .6rem; border: 1px solid var(--border);
+    border-radius: 8px; font-size: .83rem;
+  }
+}
+.resources-summary { font-size: .8rem; color: var(--muted); margin: 0 0 .6rem; }
+.ressources-open-btn { margin-top: .6rem; }
+
 // ── MK Badge ──────────────────────────────────────────────────────
 .mk-badge {
   width: 32px; height: 32px; border-radius: 8px;

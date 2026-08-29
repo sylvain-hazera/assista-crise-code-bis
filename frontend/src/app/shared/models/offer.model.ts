@@ -40,6 +40,8 @@ export interface Offer {
   materiel_livraison?: 'A_RECUPERER' | 'LIVRAISON_POSSIBLE' | null;
   confirmation_reglementaire?: boolean;
   immatriculation?: string | null;
+  mission?: string | null;
+  mission_titre?: string | null;
   renouvelable?: boolean;
   competences?: string[];
   competences_libelles?: string[];

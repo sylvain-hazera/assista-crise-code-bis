@@ -1,6 +1,7 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule, ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
+import { ActivatedRoute, Router } from '@angular/router';
 import { forkJoin } from 'rxjs';
 
 import { TeamService }       from '../../services/team.service';
@@ -27,7 +28,7 @@ import { Dossier } from '../../shared/models/dossier.model';
 import { Competence } from '../../shared/models/competence.model';
 
 type ModalView = 'none' | 'create' | 'detail' | 'edit' | 'delete' | 'assign' | 'planning';
-type AssignTab = 'Crisis' | 'Offer' | 'Request';
+type AssignTab = 'Crisis' | 'Request';
 
 const COLORS = ['#ef4444','#f97316','#eab308','#22c55e','#06b6d4','#3b82f6','#8b5cf6','#ec4899'];
 
@@ -67,7 +68,7 @@ export class TeamsComponent implements OnInit {
 
   modal: ModalView         = 'none';
   selectedTeam: Team | null = null;
-  readonly assignTabs: AssignTab[] = ['Crisis', 'Offer', 'Request'];
+  readonly assignTabs: AssignTab[] = ['Crisis', 'Request'];
   assignTab: AssignTab      = 'Crisis';
 
   searchQuery = '';
@@ -93,11 +94,25 @@ export class TeamsComponent implements OnInit {
     private dossierService: DossierService,
     private competenceService: CompetenceService,
     private roleOperationnelService: RoleOperationnelService,
+    private route: ActivatedRoute,
+    private router: Router,
   ) {}
 
   ngOnInit(): void {
     this.buildForms();
     this.loadRemoteData();
+  }
+
+  /** Retour depuis "Ouvrir le tableau des offres" (voir ReportingComponent, mode picker) :
+   * rouvre directement le détail de l'équipe concernée une fois les données chargées. */
+  private openTeamFromQueryParam(): void {
+    const openTeamId = this.route.snapshot.queryParamMap.get('openTeam');
+    if (!openTeamId) return;
+    const team = this.teams.find(t => t.id === openTeamId);
+    if (team) {
+      this.openDetail(team);
+      this.router.navigate([], { relativeTo: this.route, queryParams: {} });
+    }
   }
 
   // ── Load ─────────────────────────────────────────────────────
@@ -125,6 +140,7 @@ export class TeamsComponent implements OnInit {
         this.roles = roles;
         this.teams    = teams.map(t => ({ ...t, missions: this.buildMissions(t) }));
         this.isLoading = false;
+        this.openTeamFromQueryParam();
       },
       error: () => {
         this.showError('Impossible de charger les données.');
@@ -378,7 +394,7 @@ export class TeamsComponent implements OnInit {
     this.modal        = 'assign';
   }
 
-  toggleMission(id: string, kind: AssignTab, titre: string, statut?: string, date?: string): void {
+  toggleMission(id: string, kind: TeamMission['kind'], titre: string, statut?: string, date?: string): void {
     if (!this.selectedTeam) return;
     const team = this.selectedTeam;
     const exists = team.missions.some(m => m.id === id && m.kind === kind);
@@ -391,21 +407,13 @@ export class TeamsComponent implements OnInit {
     const offerIds   = missions.filter(m => m.kind === 'Offer').map(m => m.id);
     const requestIds = missions.filter(m => m.kind === 'Request').map(m => m.id);
 
-    // Affecter une offre à l'équipe y ajoute aussi la personne qui la propose : sinon on
-    // affecte une "mission" sans jamais rattacher le bénévole lui-même à l'équipe.
-    let memberIds = team.member_ids ?? [];
-    if (!exists && kind === 'Offer') {
-      const authorId = this.offers.find(o => o.id === id)?.author;
-      if (authorId && !memberIds.includes(authorId)) {
-        memberIds = [...memberIds, authorId];
-      }
-    }
-
+    // Les offres (ressources) ne passent plus par ce mécanisme générique — voir
+    // assignerRessource/retirerRessource, qui gèrent déjà l'ajout de l'auteur comme membre —
+    // offerIds n'est recalculé ici que pour ne pas écraser les ressources déjà affectées.
     this.teamService.patch(team.id!, {
       assigned_crisis_ids:  crisisIds,
       assigned_offer_ids:   offerIds,
       assigned_request_ids: requestIds,
-      member_ids:           memberIds,
     }).subscribe(updated => {
       this.selectedTeam = { ...updated, missions };
       this.reloadTeams();
@@ -446,13 +454,74 @@ export class TeamsComponent implements OnInit {
     return { Crisis: 'Crises', Offer: "Offres d'aide", Request: "Demandes d'aide" }[kind];
   }
 
-  /** Missions groupées par type (crises / offres / demandes) pour ne pas tout mélanger dans une
-   * même liste plate. */
+  /** Missions groupées par type (crises / demandes) pour ne pas tout mélanger dans une même
+   * liste plate — les offres (ressources) ont leur propre section dédiée, voir
+   * resourcesForSelectedTeam. */
   get missionsByKind(): { kind: TeamMission['kind']; missions: TeamMission[] }[] {
     if (!this.selectedTeam) return [];
-    return (['Crisis', 'Offer', 'Request'] as TeamMission['kind'][])
+    return (['Crisis', 'Request'] as TeamMission['kind'][])
       .map(kind => ({ kind, missions: this.selectedTeam!.missions.filter(m => m.kind === kind) }))
       .filter(g => g.missions.length > 0);
+  }
+
+  /** Nombre total de missions (crises + demandes, hors ressources/offres) affectées. */
+  get missionsCount(): number {
+    return this.missionsByKind.reduce((sum, g) => sum + g.missions.length, 0);
+  }
+
+  /** Ressources (offres) affectées à l'équipe — bénévoles seuls, bénévoles + matériel, ou
+   * matériel seul (voir Offer.materiel_type/transport_type/diplome_secourisme). */
+  get resourcesForSelectedTeam(): TeamMission[] {
+    return this.selectedTeam?.missions.filter(m => m.kind === 'Offer') ?? [];
+  }
+
+  /** Récapitulatif rapide : combien de ressources affectées sont des bénévoles seuls, des
+   * bénévoles avec matériel, ou du matériel seul — dérivé des offres déjà chargées, sans appel
+   * réseau supplémentaire. */
+  get resourcesSummary(): { seul: number; avecMateriel: number; materielSeul: number } {
+    let seul = 0, avecMateriel = 0, materielSeul = 0;
+    for (const m of this.resourcesForSelectedTeam) {
+      const o = this.offers.find(o => o.id === m.id);
+      if (!o) continue;
+      const estMateriel = o.materiel_type != null || o.materiel_livraison != null;
+      const estEnPersonne = !!o.author && (o.diplome_secourisme || o.transport_type != null || (!estMateriel));
+      if (estMateriel && estEnPersonne) avecMateriel++;
+      else if (estMateriel) materielSeul++;
+      else seul++;
+    }
+    return { seul, avecMateriel, materielSeul };
+  }
+
+  // ── Ressources : mission active + ajout/retrait ──────────────
+  missionTitreInput = '';
+
+  submitDefinirMission(): void {
+    if (!this.selectedTeam?.id || !this.missionTitreInput.trim()) return;
+    this.teamService.definirMission(this.selectedTeam.id, this.missionTitreInput.trim()).subscribe({
+      next: (updated) => {
+        this.selectedTeam = { ...updated, missions: this.selectedTeam!.missions };
+        this.missionTitreInput = '';
+        this.reloadTeams();
+        this.showSuccess('Mission de l\'équipe définie.');
+      },
+      error: (err) => this.showError(err?.error?.error || 'Erreur lors de la définition de la mission.'),
+    });
+  }
+
+  retirerRessource(offerId: string): void {
+    if (!this.selectedTeam?.id) return;
+    this.teamService.retirerRessource(this.selectedTeam.id, offerId).subscribe({
+      next: (updated) => {
+        this.selectedTeam = { ...updated, missions: this.buildMissions(updated) };
+        this.reloadTeams();
+      },
+      error: () => this.showError('Erreur lors du retrait de la ressource.'),
+    });
+  }
+
+  ouvrirTableauOffres(): void {
+    if (!this.selectedTeam?.id) return;
+    this.router.navigate(['/admin/signalements'], { queryParams: { pickForTeam: this.selectedTeam.id } });
   }
 
   /** Résumé rapide sous le titre d'une mission : contact + statut, pour ne pas avoir à ouvrir
@@ -576,11 +645,6 @@ export class TeamsComponent implements OnInit {
     const q = this.missionSearchQuery.trim().toLowerCase();
     if (!q) return this.crisis;
     return this.crisis.filter(c => c.name?.toLowerCase().includes(q));
-  }
-  get filteredOffers() {
-    const q = this.missionSearchQuery.trim().toLowerCase();
-    if (!q) return this.offers;
-    return this.offers.filter(o => o.title?.toLowerCase().includes(q));
   }
   get filteredRequests() {
     const q = this.missionSearchQuery.trim().toLowerCase();

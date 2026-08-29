@@ -486,6 +486,16 @@ class Offer(EnvironmentScopedModel):
     # même ligne d'offre. Vide pour un engin ne circulant jamais sur la voie publique.
     immatriculation = models.CharField(max_length=100, null=True, blank=True)
 
+    # Posé quand l'offre est ajoutée comme "ressource" à une équipe (voir
+    # TeamViewSet.assigner_ressource) : rattache l'offre à la mission active de cette équipe au
+    # moment de l'affectation, miroir de Dossier.mission.
+    mission = models.ForeignKey(
+        "Mission",
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="offres",
+    )
+
     # Vrai si l'offreur peut être resollicité au-delà de cette crise (ex: un agriculteur
     # qui prête son matériel ponctuellement pour d'autres interventions futures).
     renouvelable = models.BooleanField(default=False)
@@ -1042,9 +1052,14 @@ class Mission(EnvironmentScopedModel):
         null=True
     )
 
+    # Nullable : une mission "courante" d'équipe (voir Team.mission_active) se crée souvent en
+    # texte libre, sans crise précise identifiée dès le départ. SET_NULL plutôt que CASCADE
+    # devenu incohérent avec le caractère optionnel : la suppression d'une crise ne doit plus
+    # emporter les missions qui n'en dépendent pas forcément.
     crise = models.ForeignKey(
         "Crisis",
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
         related_name="missions"
     )
 
@@ -1258,6 +1273,16 @@ class Team(EnvironmentScopedModel):
         on_delete=models.SET_NULL,
         null=True, blank=True,
         related_name="teams_regulees"
+    )
+    # Mission "courante" de l'équipe (singulière) : distincte du M2M Mission.equipes (utilisé
+    # par la page Missions, où une mission peut réunir plusieurs équipes). Redéfinir cette
+    # mission remplace la précédente — une équipe n'a qu'une mission active à la fois, son
+    # historique reste dans AuditLog plutôt que dans plusieurs missions actives simultanées.
+    mission_active = models.ForeignKey(
+        "Mission",
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="equipes_actives"
     )
     members = models.ManyToManyField(
         User,

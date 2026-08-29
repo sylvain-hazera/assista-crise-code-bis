@@ -2145,6 +2145,17 @@ def _notify_new_team_member(team, membre, request):
         print(f"Erreur envoi email association équipe : {e}")
 
 
+def _appartient_a_institution(request, institution) -> bool:
+    """Un admin plateforme n'est jamais limité par cette vérification ; sinon, l'appelant doit
+    être un contact actif de l'institution donnée — même garde-fou territorial que
+    approve_account/reject_account, appliqué ici aux actions qui agissent sur une équipe."""
+    if get_effective_role(request) == UserRole.ADMINISTRATOR:
+        return True
+    return ContactInstitution.objects.filter(
+        institution=institution, utilisateur=request.user, actif=True,
+    ).exists()
+
+
 class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     queryset           = Team.objects.prefetch_related(
         'members', 'assigned_crises', 'assigned_offers', 'assigned_requests'
@@ -2159,7 +2170,10 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         # retrieve reste ouvert à tout authentifié : un bénévole doit pouvoir consulter SA
         # propre équipe (voir "vue équipe"), déjà distribuée par ID via mes-equipes/l'email
         # d'association, jamais par une liste publique.
-        if self.action in ('list', 'create', 'update', 'partial_update', 'destroy', 'inviter_membre'):
+        if self.action in (
+            'list', 'create', 'update', 'partial_update', 'destroy',
+            'inviter_membre', 'definir_mission', 'assigner_ressource', 'retirer_ressource',
+        ):
             return [IsInstitutionalActor()]
         return [permissions.IsAuthenticated()]
 
@@ -2224,15 +2238,11 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
 
         # Une mairie ne doit pouvoir inviter que dans SES propres équipes, pas dans celles
         # d'une autre institution — un admin plateforme n'est pas concerné par cette limite.
-        if get_effective_role(request) != UserRole.ADMINISTRATOR:
-            appartient = ContactInstitution.objects.filter(
-                institution=team.institution, utilisateur=request.user, actif=True,
-            ).exists()
-            if not appartient:
-                return Response(
-                    {"error": "Vous ne pouvez inviter des membres que pour les équipes de votre propre institution."},
-                    status=status.HTTP_403_FORBIDDEN,
-                )
+        if not _appartient_a_institution(request, team.institution):
+            return Response(
+                {"error": "Vous ne pouvez inviter des membres que pour les équipes de votre propre institution."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         email = (request.data.get('email') or '').strip().lower()
         first_name = (request.data.get('first_name') or '').strip()
@@ -2289,6 +2299,111 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         )
 
         return Response(TeamSerializer(team, context=self.get_serializer_context()).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['post'], url_path='definir-mission')
+    def definir_mission(self, request, pk=None):
+        """Définit (ou remplace) la mission courante de l'équipe, en texte libre — une équipe
+        n'a qu'une seule mission active à la fois ; la redéfinir n'efface pas l'historique
+        (voir AuditLog), elle change simplement ce sur quoi portent les prochaines ressources
+        affectées."""
+        team = self.get_object()
+        if not _appartient_a_institution(request, team.institution):
+            return Response(
+                {"error": "Vous ne pouvez définir la mission que pour les équipes de votre propre institution."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        titre = (request.data.get('titre') or '').strip()
+        if not titre:
+            return Response({"error": "Le titre de la mission est obligatoire."}, status=status.HTTP_400_BAD_REQUEST)
+
+        mission = Mission.objects.create(titre=titre, environment=get_active_environment(request))
+        mission.equipes.add(team)
+        team.mission_active = mission
+        team.save(update_fields=['mission_active'])
+
+        audit_log(
+            request=request,
+            action_code="MODIFICATION",
+            objet_type="Team",
+            objet_id=team.id,
+            commentaire=f"Mission de l'équipe définie : « {mission.titre} »",
+        )
+
+        return Response(TeamSerializer(team, context=self.get_serializer_context()).data)
+
+    @action(detail=True, methods=['post'], url_path='assigner-ressource')
+    def assigner_ressource(self, request, pk=None):
+        """Ajoute une offre (bénévole seul, bénévole+matériel, ou matériel seul) comme
+        ressource de l'équipe, rattachée à sa mission active — voir Team.mission_active. Ajoute
+        aussi l'auteur de l'offre comme membre de l'équipe, comme le faisait déjà l'ancien
+        mécanisme de "missions" assignées."""
+        team = self.get_object()
+        if not _appartient_a_institution(request, team.institution):
+            return Response(
+                {"error": "Vous ne pouvez affecter des ressources qu'aux équipes de votre propre institution."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if not team.mission_active_id:
+            return Response(
+                {"error": "Définissez d'abord la mission de l'équipe avant d'y affecter des ressources."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        offer_id = request.data.get('offer_id')
+        try:
+            offer = Offer.objects.get(id=offer_id)
+        except (Offer.DoesNotExist, ValueError, TypeError):
+            return Response({"error": "Offre introuvable."}, status=status.HTTP_400_BAD_REQUEST)
+
+        offer.mission = team.mission_active
+        offer.save(update_fields=['mission'])
+        team.assigned_offers.add(offer)
+        if offer.author_id:
+            team.members.add(offer.author_id)
+
+        audit_log(
+            request=request,
+            action_code="AFFECTATION",
+            objet_type="Team",
+            objet_id=team.id,
+            commentaire=f"Ressource ajoutée : « {offer.title} » (mission : {team.mission_active.titre})",
+        )
+
+        return Response(TeamSerializer(team, context=self.get_serializer_context()).data)
+
+    @action(detail=True, methods=['post'], url_path='retirer-ressource')
+    def retirer_ressource(self, request, pk=None):
+        """Retire une offre des ressources de l'équipe — ne vide le lien Offer.mission que s'il
+        pointait bien vers la mission active de CETTE équipe (une offre déjà réaffectée
+        ailleurs entre-temps ne doit pas se faire couper son lien par erreur)."""
+        team = self.get_object()
+        if not _appartient_a_institution(request, team.institution):
+            return Response(
+                {"error": "Vous ne pouvez retirer des ressources que pour les équipes de votre propre institution."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        offer_id = request.data.get('offer_id')
+        try:
+            offer = Offer.objects.get(id=offer_id)
+        except (Offer.DoesNotExist, ValueError, TypeError):
+            return Response({"error": "Offre introuvable."}, status=status.HTTP_400_BAD_REQUEST)
+
+        team.assigned_offers.remove(offer)
+        if team.mission_active_id and offer.mission_id == team.mission_active_id:
+            offer.mission = None
+            offer.save(update_fields=['mission'])
+
+        audit_log(
+            request=request,
+            action_code="SUPPRESSION",
+            objet_type="Team",
+            objet_id=team.id,
+            commentaire=f"Ressource retirée : « {offer.title} »",
+        )
+
+        return Response(TeamSerializer(team, context=self.get_serializer_context()).data)
 
 class MissionViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     queryset = Mission.objects.select_related('crise').prefetch_related('equipes').all()
