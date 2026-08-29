@@ -1,6 +1,8 @@
 import { Injectable } from '@angular/core';
 import { BehaviorSubject, Observable } from 'rxjs';
 import { HttpClient } from '@angular/common/http';
+import { AuthService } from '../auth/services/auth.service';
+import { PositionEquipeService } from './position-equipe.service';
 
 export interface Coordinates {
   latitude: number;
@@ -18,8 +20,23 @@ export class GeolocationService {
 
   private banApiUrl = 'https://api-adresse.data.gouv.fr/search/';
 
-  constructor(private http: HttpClient) {
+  constructor(
+    private http: HttpClient,
+    private authService: AuthService,
+    private positionEquipeService: PositionEquipeService
+  ) {
     this.checkStoredLocation();
+  }
+
+  /** Capture opportuniste de la position d'un acteur institutionnel : à chaque fois que
+   * l'app obtient une position GPS fraîche pour une autre raison (carte, adresse...), on en
+   * profite pour rafraîchir sa "dernière position connue" affichée sur la carte admin — jamais
+   * un traçage continu en tâche de fond, et pas grave si un appel échoue silencieusement. */
+  private reportPositionIfInstitutional(coords: Coordinates): void {
+    if (!this.authService.isAdmin()) return;
+    this.positionEquipeService.reportMyPosition(coords.latitude, coords.longitude).subscribe({
+      error: () => {}
+    });
   }
 
   getCoordinates(addressQuery: string): Observable<any> {
@@ -69,7 +86,8 @@ export class GeolocationService {
           this.locationSubject.next(coords);
           localStorage.setItem('userLocation', JSON.stringify(coords));
           this.permissionGranted = true;
-          
+          this.reportPositionIfInstitutional(coords);
+
           resolve(coords);
         },
         (error) => {

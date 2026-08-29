@@ -3,7 +3,7 @@ from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenBlacklistView
 from .views import (
     ChangePasswordView, PasswordResetConfirmView, MyTokenObtainPairView, MyTokenRefreshView, RegisterView, InstitutionValidationView, UserMeView,
-    AccountActivationView, MagicLoginView,
+    AccountActivationView, MagicLoginView, MaPositionView, PositionsEquipesView,
     UserViewSet, CrisisViewSet, RequestViewSet, 
     RecherchePersonneCommentairePhotoViewSet,
     OfferViewSet, DisponibiliteOffreViewSet, InformationViewSet, RecherchePersonnePhotoViewSet,
@@ -143,6 +143,8 @@ urlpatterns = [
     path('me/', UserMeView.as_view(), name='auth_me'),
     path('change-password/', ChangePasswordView.as_view(), name='auth_change_password'),
     path('reset-password/<str:uidb64>/<str:token>/', PasswordResetConfirmView.as_view(), name='reset_password_confirm'),
+    path('ma-position/', MaPositionView.as_view(), name='ma_position'),
+    path('positions-equipes/', PositionsEquipesView.as_view(), name='positions_equipes'),
     
     # URLs pour la suppression via token
     path('delete-request/<str:token>/', DeleteRequestView.as_view(), name='delete_request'),

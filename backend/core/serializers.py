@@ -28,6 +28,7 @@ from .models import (
     Document, RecherchePersonnePhoto, RecherchePersonneCommentairePhoto,
     DossierCommentaire, RecherchePersonne, RecherchePersonneCommentaire, RecherchePersonneHistorique,
     DossierHistorique, Besoin, BesoinCompetence,Dossier, Mission, RequestType, RequestTypeBesoin, OfferType, InformationType, Team, Competence, AffectationCompetence,
+    DernierePositionUtilisateur,
     DisponibiliteOffre,
     DisponibilitePointEquipe,
     MaterielPoint,
@@ -704,6 +705,38 @@ class TeamSerializer(serializers.ModelSerializer):
 
     def get_zone_precise_geojson(self, obj):
         return json.loads(obj.zone_precise.geojson) if obj.zone_precise else None
+
+
+class DernierePositionUtilisateurSerializer(serializers.ModelSerializer):
+    """Lecture seule : l'écriture passe exclusivement par MaPositionView (auto-déclaration par
+    l'utilisateur concerné), jamais via ce serializer générique."""
+
+    latitude = serializers.SerializerMethodField()
+    longitude = serializers.SerializerMethodField()
+    utilisateur_nom = serializers.SerializerMethodField()
+    team_ids = serializers.PrimaryKeyRelatedField(source='utilisateur.teams', many=True, read_only=True)
+    team_noms = serializers.SerializerMethodField()
+
+    class Meta:
+        model = DernierePositionUtilisateur
+        fields = [
+            'id', 'utilisateur', 'utilisateur_nom', 'latitude', 'longitude',
+            'horodatage', 'team_ids', 'team_noms',
+        ]
+        read_only_fields = fields
+
+    def get_latitude(self, obj):
+        return obj.location.y if obj.location else None
+
+    def get_longitude(self, obj):
+        return obj.location.x if obj.location else None
+
+    def get_utilisateur_nom(self, obj):
+        return f"{obj.utilisateur.first_name} {obj.utilisateur.last_name}".strip() or obj.utilisateur.username
+
+    def get_team_noms(self, obj):
+        return list(obj.utilisateur.teams.values_list('name', flat=True))
+
 
 class CompetenceSerializer(serializers.ModelSerializer):
     class Meta:

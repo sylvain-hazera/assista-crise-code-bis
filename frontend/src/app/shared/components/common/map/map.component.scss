@@ -10,6 +10,56 @@
     height: 100%;
 }
 
+.layer-toggle-panel {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 5;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  padding: 10px 14px;
+  font-size: 13px;
+  color: #333;
+}
+
+.layer-toggle-title {
+  font-weight: 600;
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.layer-toggle-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+  cursor: pointer;
+  white-space: nowrap;
+
+  input[type="checkbox"] {
+    cursor: pointer;
+    margin: 0;
+  }
+}
+
+.layer-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.crises-dot { background: #8CCFFF; }
+.requests-dot { background: #ff0000; }
+.offers-dot { background: #11b4da; }
+.informations-dot { background: #00ff00; }
+.positions-dot { background: #9c27b0; }
+
 /* Styles pour les popups des crises */
 :host ::ng-deep .maplibregl-popup-content {
   padding: 15px;

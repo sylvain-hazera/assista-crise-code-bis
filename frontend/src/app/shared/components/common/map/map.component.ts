@@ -1,4 +1,6 @@
 import { Component, OnInit, OnDestroy, AfterViewInit, Input, ViewChild, ElementRef } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import maplibregl from 'maplibre-gl';
 import * as turf from '@turf/turf';
 import { CrisisService } from '../../../../services/crisis.service';
@@ -9,14 +11,23 @@ import { Offer } from '../../../models/offer.model';
 import { RequestService } from '../../../../services/request.service';
 import { Request } from '../../../models/request.model';
 import { GeolocationService } from '../../../../services/geolocation.service';
+import { PositionEquipeService } from '../../../../services/position-equipe.service';
 import type { FeatureCollection, Geometry, Polygon } from 'geojson';
 import { AuthService } from '../../../../auth/services/auth.service';
 import { InformationService } from '../../../../services/information.service';
 
+interface LayerVisibility {
+  crises: boolean;
+  requests: boolean;
+  offers: boolean;
+  informations: boolean;
+  positions: boolean;
+}
+
 @Component({
   selector: 'app-map',
   standalone: true,
-  imports: [],
+  imports: [CommonModule, FormsModule],
   templateUrl: './map.component.html',
   styleUrl: './map.component.scss'
 })
@@ -29,14 +40,27 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   @Input() offers: Offer[] = [];
   @Input() informations: any[] = [];
   // Center of France by default, will be updated to user location if available
-  @Input() center: [number, number] = [2.2137, 46.2276]; 
+  @Input() center: [number, number] = [2.2137, 46.2276];
   @Input() zoom: number = 5;
-  
+
+  // Positions d'équipe réservées aux acteurs institutionnels : la checkbox correspondante
+  // n'est même pas rendue pour un visiteur non institutionnel (voir map.component.html).
+  isInstitutional = false;
+
+  layerVisibility: LayerVisibility = {
+    crises: true,
+    requests: true,
+    offers: true,
+    informations: true,
+    positions: true,
+  };
+
   private map: maplibregl.Map | null = null;
   private crisisCircle: any[] = [];
-  private requestGeoJSON: any = null;
-  private proposalGeoJSON: any = null;
-  private informationsGeoJSON: any = null;
+  private requestGeoJSON: FeatureCollection<Geometry> | null = null;
+  private proposalGeoJSON: FeatureCollection<Geometry> | null = null;
+  private informationsGeoJSON: FeatureCollection<Geometry> | null = null;
+  private teamPositionsGeoJSON: FeatureCollection<Geometry> | null = null;
   private subscription: Subscription | null = null;
 
   constructor(private crisisService: CrisisService,
@@ -44,17 +68,69 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
               private offerService: OfferService,
               private informationService: InformationService,
               private geolocationService: GeolocationService,
+              private positionEquipeService: PositionEquipeService,
               private authService: AuthService) {}
   ngOnInit(): void {
+    this.isInstitutional = this.authService.isAdmin();
+
     // Load user location and center map on it if available, otherwise keep default center
     this.loadUserLocation();
-    
+
     // If crises, requests, or offers were not passed in as inputs, load them from the API
     if (this.crises.length === 0) {
       this.loadCrises();
     }
     if (this.requests.length === 0 || this.offers.length === 0) {
       this.loadHelpData();
+    }
+    if (this.isInstitutional) {
+      this.loadTeamPositions();
+    }
+  }
+
+  /** Appelé par les checkbox du panneau de calques (voir template) : ré-applique la
+   * visibilité sur les couches déjà ajoutées à la carte, sans jamais recharger les données. */
+  onLayerToggle(): void {
+    this.applyClusterVisibility();
+    this.applyLayerVisibility('team-positions-layer', this.layerVisibility.positions);
+    this.applyLayerVisibility('team-positions-label', this.layerVisibility.positions);
+    this.applyLayerVisibility('location-radius', this.layerVisibility.crises);
+  }
+
+  private applyLayerVisibility(layerId: string, visible: boolean): void {
+    if (!this.map || !this.map.getLayer(layerId)) return;
+    this.map.setLayoutProperty(layerId, 'visibility', visible ? 'visible' : 'none');
+  }
+
+  /** Les demandes/offres/signalements partagent une seule source clusterisée : les cacher
+   * doit donc retirer leurs features de la source elle-même (pas juste la visibilité de
+   * calque), sinon un cluster masqué continuerait à compter les points cachés. */
+  private applyClusterVisibility(): void {
+    if (!this.map) return;
+    const source = this.map.getSource('clusters') as maplibregl.GeoJSONSource | undefined;
+    if (!source) return;
+    source.setData(this.buildVisibleClusterData());
+  }
+
+  private buildVisibleClusterData(): FeatureCollection<Geometry> {
+    const parts: any[] = [];
+    if (this.layerVisibility.requests && this.requestGeoJSON) parts.push(...this.requestGeoJSON.features);
+    if (this.layerVisibility.offers && this.proposalGeoJSON) parts.push(...this.proposalGeoJSON.features);
+    if (this.layerVisibility.informations && this.informationsGeoJSON) parts.push(...this.informationsGeoJSON.features);
+    return { type: 'FeatureCollection', features: parts };
+  }
+
+  /** MapLibre ne rejoue jamais l'événement 'load' pour un listener attaché après coup : sur ce
+   * composant, les données arrivent par API après l'initialisation de la carte, donc un simple
+   * `map.on('load', cb)` tardif ne se déclenchait jamais — c'est ce qui empêchait demandes/
+   * offres/signalements de s'afficher (seules les zones de crise, ajoutées de façon
+   * synchrone dans initializeMap(), apparaissaient). */
+  private runWhenMapReady(cb: () => void): void {
+    if (!this.map) return;
+    if (this.map.isStyleLoaded()) {
+      cb();
+    } else {
+      this.map.once('load', cb);
     }
   }
 
@@ -122,24 +198,29 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     });
   }
 
-  jsonToGeoJSON(data: any[]) { // Convert requests/offers/informations data to GeoJSON format for MapLibre
+  jsonToGeoJSON(data: any[], jitter: boolean = false): FeatureCollection<Geometry> { // Convert requests/offers/informations data to GeoJSON format for MapLibre
     return {
       type: 'FeatureCollection',
       features: data
         .filter(d => d.latitude && d.longitude)
-        .map(d => ({
-          type: 'Feature',
-          geometry: {
-            type: 'Point',
-            coordinates: [
-              Number(d.longitude),
-              Number(d.latitude)
-            ]
-          },
-          properties: {
-            ...d
+        .map(d => {
+          let longitude = Number(d.longitude);
+          let latitude = Number(d.latitude);
+          if (jitter) { // Add random noise to coordinates to prevent exact location identification
+            longitude += (Math.random() - 0.5) * 0.01;
+            latitude += (Math.random() - 0.5) * 0.01;
           }
-        }))
+          return {
+            type: 'Feature' as const,
+            geometry: {
+              type: 'Point' as const,
+              coordinates: [longitude, latitude]
+            },
+            properties: {
+              ...d
+            }
+          };
+        })
     };
   }
 
@@ -150,183 +231,252 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
       informations: this.informationService.getAll()
     }).subscribe({
       next: ({ requests, proposals, informations }) => {
-        console.log('Requests:', requests);
-        console.log('Proposals:', proposals);
-        console.log('Informations:', informations);
-
         this.requests = requests;
         this.offers = proposals;
         this.informations = informations;
 
-        this.requestGeoJSON = this.jsonToGeoJSON(requests);
-        this.proposalGeoJSON = this.jsonToGeoJSON(proposals);
-        this.informationsGeoJSON = this.jsonToGeoJSON(informations);
+        const jitter = !this.isInstitutional;
+        this.requestGeoJSON = this.jsonToGeoJSON(requests, jitter);
+        this.proposalGeoJSON = this.jsonToGeoJSON(proposals, jitter);
+        this.informationsGeoJSON = this.jsonToGeoJSON(informations, jitter);
 
-        if (this.map) {
-          this.addSourceAndLayers();
-        }
+        this.runWhenMapReady(() => this.addSourceAndLayers());
       },
       error: (err) => console.error('Erreur API:', err)
     });
   }
+
+  loadTeamPositions(): void {
+    this.positionEquipeService.getAll().subscribe({
+      next: (positions) => {
+        this.teamPositionsGeoJSON = {
+          type: 'FeatureCollection',
+          features: positions
+            .filter(p => p.latitude != null && p.longitude != null)
+            .map(p => ({
+              type: 'Feature',
+              geometry: { type: 'Point', coordinates: [Number(p.longitude), Number(p.latitude)] },
+              properties: {
+                utilisateur_nom: p.utilisateur_nom,
+                team_noms: (p.team_noms || []).join(', ') || 'Aucune équipe',
+                horodatage: p.horodatage,
+              }
+            }))
+        };
+        this.runWhenMapReady(() => this.addOrUpdateTeamPositionsLayer());
+      },
+      error: (err) => console.error('Erreur chargement positions équipes:', err)
+    });
+  }
+
+  private addOrUpdateTeamPositionsLayer(): void {
+    if (!this.map || !this.teamPositionsGeoJSON) return;
+
+    const existingSource = this.map.getSource('team-positions') as maplibregl.GeoJSONSource | undefined;
+    if (existingSource) {
+      existingSource.setData(this.teamPositionsGeoJSON);
+      return;
+    }
+
+    this.map.addSource('team-positions', { type: 'geojson', data: this.teamPositionsGeoJSON });
+
+    const visibility = this.layerVisibility.positions ? 'visible' : 'none';
+
+    this.map.addLayer({
+      id: 'team-positions-layer',
+      type: 'circle',
+      source: 'team-positions',
+      layout: { visibility },
+      paint: {
+        'circle-color': '#9c27b0',
+        'circle-radius': 7,
+        'circle-stroke-width': 2,
+        'circle-stroke-color': '#fff'
+      }
+    });
+
+    this.map.addLayer({
+      id: 'team-positions-label',
+      type: 'symbol',
+      source: 'team-positions',
+      layout: {
+        visibility,
+        'text-field': ['get', 'utilisateur_nom'],
+        'text-size': 11,
+        'text-offset': [0, 1.2],
+        'text-anchor': 'top'
+      },
+      paint: {
+        'text-color': '#4a148c',
+        'text-halo-color': '#fff',
+        'text-halo-width': 1
+      }
+    });
+
+    this.map.on('click', 'team-positions-layer', (e) => { // Popup avec le nom, l'équipe et la fraîcheur de la position
+      if (!e.features || e.features.length === 0) return;
+      const geometry = e.features[0].geometry as GeoJSON.Point;
+      const coordinates = geometry.coordinates.slice() as [number, number];
+      const nom = e.features[0].properties?.['utilisateur_nom'] || 'Inconnu';
+      const equipes = e.features[0].properties?.['team_noms'] || 'Aucune équipe';
+      const horodatage = e.features[0].properties?.['horodatage'];
+      const dateTxt = horodatage ? new Date(horodatage).toLocaleString('fr-FR') : 'inconnue';
+
+      new maplibregl.Popup()
+        .setLngLat(coordinates)
+        .setHTML(`<strong>${nom}</strong><br>Équipe(s) : ${equipes}<br>Dernière position connue : ${dateTxt}`)
+        .addTo(this.map!);
+    });
+
+    this.map.on('mouseenter', 'team-positions-layer', () => { this.map!.getCanvas().style.cursor = 'pointer'; });
+    this.map.on('mouseleave', 'team-positions-layer', () => { this.map!.getCanvas().style.cursor = ''; });
+  }
+
   private addSourceAndLayers(): void {
     if (!this.map) return;
     const isAdmin = this.authService.isAdmin();
-    const geoJsonList = [this.requestGeoJSON, this.proposalGeoJSON, this.informationsGeoJSON]; // Merge requests, offers and informations into a single GeoJSON
-    const mergedGeoJSON: FeatureCollection<Geometry> = {
-        type: 'FeatureCollection',
-        features: geoJsonList.flatMap(geoJson => geoJson ? geoJson.features : [])
-        };
-    if (!isAdmin) { // If not admin, add random noise to coordinates to prevent exact location identification
-      mergedGeoJSON.features.forEach(feature => {
-        const geometry = feature.geometry as GeoJSON.Point;
-        const originalCoords = geometry.coordinates as [number, number];
-        geometry.coordinates = [
-          originalCoords[0] + (Math.random() - 0.5) * 0.01,
-          originalCoords[1] + (Math.random() - 0.5) * 0.01,
-        ];
-      });
+
+    if (this.map.getSource('clusters')) { // Déjà ajoutée (ex: second appel après un rechargement des données) : juste rafraîchir
+      this.applyClusterVisibility();
+      return;
     }
-    this.map.on('load', () => {
-      if (mergedGeoJSON) {
-        this.map!.addSource('clusters', { // Add cluster source for both requests and offers
-          type: 'geojson',
-          data: mergedGeoJSON,
-          cluster: true,
-          clusterMaxZoom: 8,
-          clusterRadius: 50
-        });
-      }
-      this.map!.addLayer({ // Cluster layer to combine both requests and offers into clusters
-        id: 'clusters-layer',
-        type: 'circle',
-        source: 'clusters',
-        filter: ['has', 'point_count'],
-        paint: {
-                'circle-color': [ // Different colors based on the number of points in the cluster
-                    'step',
-                    ['get', 'point_count'],
-                    '#4CAF50',
-                    2,
-                    '#FF9800',
-                    7,
-                    '#F44336',
-                    15,
-                    '#B71C1C'
-                ],
-                'circle-radius': [ // Different radius based on the number of points in the cluster
-                    'step',
-                    ['get', 'point_count'],
-                    20,
-                    100,
-                    30,
-                    750,
-                    40
-                ]
-            }
-        }); 
 
-        this.map!.addLayer({ // Cluster count layer to show the number of points in each cluster
-            id: 'cluster-count',
-            type: 'symbol',
-            source: 'clusters',
-            filter: ['has', 'point_count'],
-            layout: {
-                'text-field': '{point_count_abbreviated}',
-                'text-font': ['Noto Sans Regular'],
-                'text-size': 12
-            }
-        });
-
-        this.map!.on('click', 'unclustered-point', (e) => { // Shows popup with details when clicking on an individual point (request or offer)
-            if (!e.features || e.features.length === 0) return;
-            const geometry = e.features[0].geometry as GeoJSON.Point;
-            let offerRequest: string;
-            const coordinates = geometry.coordinates.slice() as [number, number];
-            const statut = e.features[0].properties['status'] || 'N/A';
-            const title = e.features[0].properties['title'] || 'N/A';
-            const description = e.features[0].properties['description'] || 'Pas de description';
-            let name: string = '';
-            let first_name: string = '';
-            if ('last_name_request' in e.features[0].properties) {
-              offerRequest = 'la demande';
-              if (isAdmin){ // Only show requester/offerer/informater names to admins
-                    name = e.features[0].properties['last_name_request'] || 'N/A';
-                    name = `<br>Nom demandeur: ${name}`
-                    first_name = e.features[0].properties['first_name_request'] || 'N/A';
-                    first_name = `<br>Prénom demandeur: ${first_name}`
-              }
-            }
-            else if ('last_name_offer' in e.features[0].properties) {
-              offerRequest = 'l\'offre';
-              if (isAdmin){
-                    name = e.features[0].properties['last_name_offer'] || 'N/A';
-                    name = `<br>Nom offreur: ${name}`
-                    first_name = e.features[0].properties['first_name_offer'] || 'N/A';
-                    first_name = `<br>Prénom offreur: ${first_name}`
-                    }
-            }
-            else {
-              offerRequest = 'l\'information';
-              if (isAdmin){
-                    name = e.features[0].properties['last_name_information'] || 'N/A';
-                    name = `<br>Nom informateur: ${name}`
-                    first_name = e.features[0].properties['first_name_information'] || 'N/A';
-                    first_name = `<br>Prénom informateur: ${first_name}`
-              }
-            }
-            while (Math.abs(e.lngLat.lng - coordinates[0]) > 180) {
-                coordinates[0] += e.lngLat.lng > coordinates[0] ? 360 : -360;
-            }
-
-            new maplibregl.Popup() // Create a popup with details about the request/offer/information
-                .setLngLat(coordinates)
-                .setHTML(
-                    `Nom de ${offerRequest}: ${title}<br>Statut de ${offerRequest}: ${statut}<br>Description: ${description}${name}${first_name}`
-                )
-                .addTo(this.map!);
-        });
-        
-          this.map!.addLayer({ // Layer for individual points (requests, offers and informations) that are not clustered
-            id: 'unclustered-point',
-            type: 'circle',
-            source: 'clusters',
-            filter: ['!', ['has', 'point_count']],
-            paint: {
-                'circle-color': [
-                'case',
-                ['has', 'last_name_request'],
-                '#ff0000', // If it's a request
-                ['has', 'last_name_offer'],
-                '#11b4da', // If it's an offer
-                ['has', 'last_name_information'],
-                '#00ff00', // If it's an information
-                '#cccccc' // Default color (should not happen)
-                ],
-                'circle-radius': 5,
-                'circle-stroke-width': 1,
-                'circle-stroke-color': '#fff'
-            }
-        });
-
-        this.map!.on('click', 'clusters-layer', async (e) => { // Zoom into cluster on click
-            const features = this.map!.queryRenderedFeatures(e.point, {
-                layers: ['clusters-layer']
-            });
-            const clusterId = features[0].properties['cluster_id'];
-            const source = this.map!.getSource('clusters') as maplibregl.GeoJSONSource;
-            const zoom = await source.getClusterExpansionZoom(clusterId);
-            const geometry = features[0].geometry as GeoJSON.Point;
-            this.map!.easeTo({
-                center: geometry.coordinates as [number, number],
-                zoom
-            });
-        });
-
-        this.addHullLayer();
-        this.addHoverEffect();
-        this.addDirectionArrowLayer();
+    this.map.addSource('clusters', { // Add cluster source for requests, offers and informations
+      type: 'geojson',
+      data: this.buildVisibleClusterData(),
+      cluster: true,
+      clusterMaxZoom: 8,
+      clusterRadius: 50
     });
+    this.map!.addLayer({ // Cluster layer to combine both requests and offers into clusters
+      id: 'clusters-layer',
+      type: 'circle',
+      source: 'clusters',
+      filter: ['has', 'point_count'],
+      paint: {
+              'circle-color': [ // Different colors based on the number of points in the cluster
+                  'step',
+                  ['get', 'point_count'],
+                  '#4CAF50',
+                  2,
+                  '#FF9800',
+                  7,
+                  '#F44336',
+                  15,
+                  '#B71C1C'
+              ],
+              'circle-radius': [ // Different radius based on the number of points in the cluster
+                  'step',
+                  ['get', 'point_count'],
+                  20,
+                  100,
+                  30,
+                  750,
+                  40
+              ]
+          }
+      });
+
+      this.map!.addLayer({ // Cluster count layer to show the number of points in each cluster
+          id: 'cluster-count',
+          type: 'symbol',
+          source: 'clusters',
+          filter: ['has', 'point_count'],
+          layout: {
+              'text-field': '{point_count_abbreviated}',
+              'text-font': ['Noto Sans Regular'],
+              'text-size': 12
+          }
+      });
+
+      this.map!.on('click', 'unclustered-point', (e) => { // Shows popup with details when clicking on an individual point (request or offer)
+          if (!e.features || e.features.length === 0) return;
+          const geometry = e.features[0].geometry as GeoJSON.Point;
+          let offerRequest: string;
+          const coordinates = geometry.coordinates.slice() as [number, number];
+          const statut = e.features[0].properties['status'] || 'N/A';
+          const title = e.features[0].properties['title'] || 'N/A';
+          const description = e.features[0].properties['description'] || 'Pas de description';
+          let name: string = '';
+          let first_name: string = '';
+          if ('last_name_request' in e.features[0].properties) {
+            offerRequest = 'la demande';
+            if (isAdmin){ // Only show requester/offerer/informater names to admins
+                  name = e.features[0].properties['last_name_request'] || 'N/A';
+                  name = `<br>Nom demandeur: ${name}`
+                  first_name = e.features[0].properties['first_name_request'] || 'N/A';
+                  first_name = `<br>Prénom demandeur: ${first_name}`
+            }
+          }
+          else if ('last_name_offer' in e.features[0].properties) {
+            offerRequest = 'l\'offre';
+            if (isAdmin){
+                  name = e.features[0].properties['last_name_offer'] || 'N/A';
+                  name = `<br>Nom offreur: ${name}`
+                  first_name = e.features[0].properties['first_name_offer'] || 'N/A';
+                  first_name = `<br>Prénom offreur: ${first_name}`
+                  }
+          }
+          else {
+            offerRequest = 'l\'information';
+            if (isAdmin){
+                  name = e.features[0].properties['last_name_information'] || 'N/A';
+                  name = `<br>Nom informateur: ${name}`
+                  first_name = e.features[0].properties['first_name_information'] || 'N/A';
+                  first_name = `<br>Prénom informateur: ${first_name}`
+            }
+          }
+          while (Math.abs(e.lngLat.lng - coordinates[0]) > 180) {
+              coordinates[0] += e.lngLat.lng > coordinates[0] ? 360 : -360;
+          }
+
+          new maplibregl.Popup() // Create a popup with details about the request/offer/information
+              .setLngLat(coordinates)
+              .setHTML(
+                  `Nom de ${offerRequest}: ${title}<br>Statut de ${offerRequest}: ${statut}<br>Description: ${description}${name}${first_name}`
+              )
+              .addTo(this.map!);
+      });
+
+        this.map!.addLayer({ // Layer for individual points (requests, offers and informations) that are not clustered
+          id: 'unclustered-point',
+          type: 'circle',
+          source: 'clusters',
+          filter: ['!', ['has', 'point_count']],
+          paint: {
+              'circle-color': [
+              'case',
+              ['has', 'last_name_request'],
+              '#ff0000', // If it's a request
+              ['has', 'last_name_offer'],
+              '#11b4da', // If it's an offer
+              ['has', 'last_name_information'],
+              '#00ff00', // If it's an information
+              '#cccccc' // Default color (should not happen)
+              ],
+              'circle-radius': 5,
+              'circle-stroke-width': 1,
+              'circle-stroke-color': '#fff'
+          }
+      });
+
+      this.map!.on('click', 'clusters-layer', async (e) => { // Zoom into cluster on click
+          const features = this.map!.queryRenderedFeatures(e.point, {
+              layers: ['clusters-layer']
+          });
+          const clusterId = features[0].properties['cluster_id'];
+          const source = this.map!.getSource('clusters') as maplibregl.GeoJSONSource;
+          const zoom = await source.getClusterExpansionZoom(clusterId);
+          const geometry = features[0].geometry as GeoJSON.Point;
+          this.map!.easeTo({
+              center: geometry.coordinates as [number, number],
+              zoom
+          });
+      });
+
+      this.addHullLayer();
+      this.addHoverEffect();
+      this.addDirectionArrowLayer();
   }
 
   /** Petite flèche orientée selon l'azimut capturé au moment de la photo (boussole du

@@ -1267,6 +1267,27 @@ class Team(EnvironmentScopedModel):
     def __str__(self) -> str:
         return self.name
 
+
+class DernierePositionUtilisateur(EnvironmentScopedModel):
+    """Dernière position connue d'un utilisateur, capturée de façon opportuniste — quand le
+    navigateur a déjà obtenu sa géolocalisation pour une autre raison (consultation de la
+    carte, saisie d'une adresse...), jamais par un traçage continu en tâche de fond. Sert
+    uniquement à visualiser approximativement où se trouvent les équipes sur le terrain, sans
+    prétention de précision à la minute près : un seul enregistrement par utilisateur et par
+    environnement (PROD/DEMO), écrasé à chaque nouvelle capture."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    utilisateur = models.ForeignKey(User, on_delete=models.CASCADE, related_name="positions")
+    location = gis_models.PointField(srid=4326)
+    horodatage = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ("utilisateur", "environment")
+
+    def __str__(self) -> str:
+        return f"Position de {self.utilisateur} ({self.horodatage})"
+
+
 class DossierParticipant(EnvironmentScopedModel):
 
     class Role(models.TextChoices):

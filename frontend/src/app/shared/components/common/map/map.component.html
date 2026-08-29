@@ -1,3 +1,34 @@
 <div class="map-container">
     <div class="map-frame" #mapContainer style="width: 100%; height: 100%;"></div>
+
+    <div class="layer-toggle-panel">
+      <div class="layer-toggle-title">Calques</div>
+      <label class="layer-toggle-item">
+        <input type="checkbox" [(ngModel)]="layerVisibility.crises" (ngModelChange)="onLayerToggle()">
+        <span class="layer-dot crises-dot"></span>
+        Zones de crise
+      </label>
+      <label class="layer-toggle-item">
+        <input type="checkbox" [(ngModel)]="layerVisibility.requests" (ngModelChange)="onLayerToggle()">
+        <span class="layer-dot requests-dot"></span>
+        Demandes
+      </label>
+      <label class="layer-toggle-item">
+        <input type="checkbox" [(ngModel)]="layerVisibility.offers" (ngModelChange)="onLayerToggle()">
+        <span class="layer-dot offers-dot"></span>
+        Offres
+      </label>
+      <label class="layer-toggle-item">
+        <input type="checkbox" [(ngModel)]="layerVisibility.informations" (ngModelChange)="onLayerToggle()">
+        <span class="layer-dot informations-dot"></span>
+        Signalements
+      </label>
+      @if (isInstitutional) {
+        <label class="layer-toggle-item">
+          <input type="checkbox" [(ngModel)]="layerVisibility.positions" (ngModelChange)="onLayerToggle()">
+          <span class="layer-dot positions-dot"></span>
+          Positions équipes
+        </label>
+      }
+    </div>
 </div>

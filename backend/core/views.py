@@ -41,6 +41,7 @@ from .permissions import (
     get_active_environment, get_effective_role, mask_email, mask_phone, send_mail_env_aware,
 )
 from .geo_lookup import commune_code_from_point
+from django.contrib.gis.geos import Point
 
 
 GPS_IFD_TAG = 0x8825  # PIL.ExifTags.IFD.GPSInfo
@@ -112,6 +113,7 @@ from .models import (
     RecherchePersonneHistorique, RecherchePersonnePhoto,
     AffectationCompetence, RequestType, RequestTypeBesoin, OfferType, InformationType, Team,
     Status,
+    DernierePositionUtilisateur,
 )
 
 
@@ -254,6 +256,7 @@ from .serializers import (
     BesoinSerializer,
     RecherchePersonneHistoriqueSerializer,
     BesoinCompetenceSerializer,
+    DernierePositionUtilisateurSerializer,
 )
 
 class BesoinViewSet(viewsets.ModelViewSet):
@@ -2514,6 +2517,49 @@ class PasswordResetConfirmView(generics.GenericAPIView):
         )
 
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class MaPositionView(generics.GenericAPIView):
+    """Auto-déclaration de position par l'utilisateur connecté : jamais un traçage forcé en
+    tâche de fond — c'est au frontend de décider quand appeler ce endpoint, seulement lorsqu'il
+    a déjà obtenu la position pour une autre raison (carte, adresse...). Voir
+    DernierePositionUtilisateur pour la sémantique exacte (un seul enregistrement par
+    utilisateur et par environnement, écrasé à chaque capture)."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        try:
+            latitude = float(request.data.get('latitude'))
+            longitude = float(request.data.get('longitude'))
+        except (TypeError, ValueError):
+            return Response(
+                {'error': 'latitude et longitude sont requis et doivent être numériques'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        position, _ = DernierePositionUtilisateur.objects.update_or_create(
+            utilisateur=request.user,
+            environment=get_active_environment(request),
+            defaults={'location': Point(longitude, latitude, srid=4326)},
+        )
+        return Response(DernierePositionUtilisateurSerializer(position).data, status=status.HTTP_200_OK)
+
+
+class PositionsEquipesView(generics.ListAPIView):
+    """Dernières positions connues des membres d'équipe (intervenants terrain), pour
+    affichage sur la carte admin — réservé aux acteurs institutionnels, jamais exposé au grand
+    public (même logique que la localisation précise des demandes/offres)."""
+
+    serializer_class = DernierePositionUtilisateurSerializer
+    permission_classes = [IsInstitutionalActor]
+
+    def get_queryset(self):
+        return DernierePositionUtilisateur.objects.filter(
+            environment=get_active_environment(self.request),
+            utilisateur__teams__isnull=False,
+        ).distinct().select_related('utilisateur')
+
 
 class DocumentViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
 
