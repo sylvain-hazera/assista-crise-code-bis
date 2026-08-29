@@ -95,6 +95,37 @@
   }
 
   // ============================================
+  // BASCULE PROD/DEMO (accessible sans jamais entrer dans /admin)
+  // ============================================
+  .env-toggle-public {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    border: 1px solid #d1d5db;
+    background: #f3f4f6;
+    color: #374151;
+    padding: 0.4rem 0.8rem;
+    border-radius: 999px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 600;
+    white-space: nowrap;
+    transition: background-color 0.2s;
+
+    .material-icons { font-size: 1.1rem; }
+
+    &:hover { background: #e5e7eb; }
+
+    &.demo-mode {
+      background: #431407;
+      color: #fff;
+      border-color: #431407;
+
+      &:hover { background: #5c1d0a; }
+    }
+  }
+
+  // ============================================
   // ADMIN MENU LINK (entre le logo et le compte)
   // ============================================
   .admin-menu-link {
@@ -526,6 +557,11 @@
       font-size: 0.75rem;
     }
 
+    .env-toggle-public {
+      padding: 0.35rem 0.6rem;
+      font-size: 0.75rem;
+    }
+
     // Cacher la navigation desktop
     .navigation.desktop-nav {
       display: none;
@@ -594,6 +630,16 @@
 
     .admin-menu-link {
       padding: 0.35rem 0.55rem;
+      font-size: 0.68rem;
+      gap: 0.25rem;
+
+      .material-icons {
+        font-size: 1rem;
+      }
+    }
+
+    .env-toggle-public {
+      padding: 0.3rem 0.5rem;
       font-size: 0.68rem;
       gap: 0.25rem;
 

@@ -102,6 +102,24 @@ class IsOwnerOrInstitutional(BasePermission):
         return obj.author_id == request.user.id
 
 
+class IsSelfOrInstitutional(BasePermission):
+    """Pour UserViewSet : un compte ne peut modifier/supprimer que lui-même, en plus des
+    acteurs institutionnels — sans permission dédiée, UserViewSet (permission par défaut
+    IsAuthenticated, aucun get_permissions()) laissait n'importe quel compte authentifié
+    modifier ou supprimer le compte de n'importe qui d'autre par son UUID (vérifié en le
+    reproduisant)."""
+
+    message = "Vous ne pouvez modifier ou supprimer que votre propre compte."
+
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.is_authenticated)
+
+    def has_object_permission(self, request, view, obj):
+        if IsInstitutionalActor().has_permission(request, view):
+            return True
+        return obj.pk == request.user.pk
+
+
 class IsOwnDeclarationOrInstitutional(BasePermission):
     """Autorise l'auteur d'une déclaration de sécurité ("je suis en sécurité") à modifier sa
     propre situation (arrivée/départ d'un centre d'accueil, relogement...), en plus des

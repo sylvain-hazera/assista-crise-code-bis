@@ -17,6 +17,7 @@ class TestUserDemoMasking:
     def test_username_masked_in_demo(self, authenticated_client):
         client, admin = authenticated_client
         admin.type = 'ADMIN'
+        admin.demo_role = 'ADMIN'
         admin.save()
         target = User.objects.create_user(
             username='vraie.personne@test.fr', email='vraie.personne@test.fr', password='Test1234!',

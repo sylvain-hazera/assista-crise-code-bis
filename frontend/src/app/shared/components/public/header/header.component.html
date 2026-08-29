@@ -9,6 +9,17 @@
       <h1 class="logo-text">Assista Crise</h1>
     </div>
 
+    @if (canAccessDemo) {
+      <button
+        class="env-toggle-public"
+        [class.demo-mode]="isDemoEnv"
+        (click)="toggleEnvironment()"
+        [title]="isDemoEnv ? 'Repasser en production' : 'Passer en zone de démonstration'">
+        <span class="material-icons">{{ isDemoEnv ? 'science' : 'toggle_off' }}</span>
+        {{ isDemoEnv ? 'Démo' : 'Prod' }}
+      </button>
+    }
+
     @if (canEnterAdminArea) {
       <a class="admin-menu-link" routerLink="/admin/dashboard" (click)="closeAllMenus()" title="Menu d'administration">
         <span class="material-icons">admin_panel_settings</span>

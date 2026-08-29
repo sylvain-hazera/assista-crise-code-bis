@@ -52,12 +52,24 @@ export class HeaderComponent {
     return this.authService.isAdmin();
   }
 
-  /** Un compte n'ayant reçu qu'un accès démo (demo_role réglé, type PROD resté simple) doit
-   * quand même pouvoir atteindre /admin : c'est le seul endroit où se trouve la bascule
-   * PROD/DEMO — voir AuthService.canEnterAdminArea(). Sans ce accesseur, ce compte n'aurait
-   * strictement aucun moyen de découvrir/atteindre cette bascule. */
+  /** Contrairement à avant, un compte démo-only ne peut plus entrer dans /admin tant qu'il est
+   * en PROD (voir AuthService.canEnterAdminArea()) — la bascule PROD/DEMO ci-dessous, elle,
+   * reste accessible depuis l'en-tête public dès que canAccessDemo() est vrai, pour que ce
+   * compte puisse malgré tout basculer avant de tenter d'entrer dans /admin. */
   get canEnterAdminArea(): boolean {
     return this.authService.canEnterAdminArea();
+  }
+
+  get canAccessDemo(): boolean {
+    return this.authService.canAccessDemo();
+  }
+
+  get isDemoEnv(): boolean {
+    return this.authService.getEnvironment() === 'DEMO';
+  }
+
+  toggleEnvironment(): void {
+    this.authService.setEnvironment(this.isDemoEnv ? 'PROD' : 'DEMO');
   }
 
   handleUserAction() {

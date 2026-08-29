@@ -39,6 +39,7 @@ from .export import build_crisis_export_zip
 from .institution_attachment import attach_user_to_institution, resolve_or_invite_responsable
 from .permissions import (
     IsInstitutionalActor, IsAdministrator, IsOwnDeclarationOrInstitutional, IsOwnerOrInstitutional,
+    IsSelfOrInstitutional,
     INSTITUTIONAL_TYPES, user_can_view_photo,
     get_active_environment, get_effective_role, mask_email, mask_phone, send_mail_env_aware,
 )
@@ -654,7 +655,24 @@ class OfferSearchFilter(AuthorEmailFilter):
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
     serializer_class = UserSerializer
-    
+
+    def get_permissions(self):
+        # get_permissions() étant surchargé, chaque @action avec son propre permission_classes
+        # doit être explicitement listée ici, sinon elle retombe sur le cas général ci-dessous
+        # (gotcha connue de ce fichier). AVANT ce correctif, list/retrieve n'avaient AUCUNE
+        # restriction (n'importe quel compte authentifié pouvait lister tous les utilisateurs,
+        # emails/téléphones compris) et update/partial_update/destroy non plus (n'importe quel
+        # compte pouvait modifier ou supprimer le compte de n'importe qui d'autre — vérifié en
+        # le reproduisant, y compris une élévation de privilège via `type`/`demo_role`/
+        # `enabled`, voir UserSerializer.update()).
+        if self.action in ('register', 'login'):
+            return [AllowAny()]
+        if self.action in ('list', 'retrieve'):
+            return [IsInstitutionalActor()]
+        if self.action in ('update', 'partial_update', 'destroy'):
+            return [IsSelfOrInstitutional()]
+        return [permissions.IsAuthenticated()]
+
     @action(detail=False, methods=['post'], permission_classes=[AllowAny])
     def register(self, request):
         """Inscription d'un nouvel utilisateur"""
@@ -2115,7 +2133,18 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         'members', 'assigned_crises', 'assigned_offers', 'assigned_requests'
     ).select_related('leader').all()
     serializer_class   = TeamSerializer
-    permission_classes = [permissions.IsAuthenticated]
+
+    def get_permissions(self):
+        # AVANT ce correctif, list/create/update/destroy n'avaient aucune restriction propre :
+        # n'importe quel compte authentifié pouvait lister toutes les équipes (zones, membres),
+        # en créer, ou modifier n'importe laquelle — y compris se nommer soi-même leader/
+        # régulateur d'une équipe à laquelle il n'appartient pas (vérifié en le reproduisant).
+        # retrieve reste ouvert à tout authentifié : un bénévole doit pouvoir consulter SA
+        # propre équipe (voir "vue équipe"), déjà distribuée par ID via mes-equipes/l'email
+        # d'association, jamais par une liste publique.
+        if self.action in ('list', 'create', 'update', 'partial_update', 'destroy'):
+            return [IsInstitutionalActor()]
+        return [permissions.IsAuthenticated()]
 
     def perform_create(self, serializer):
         # Une équipe ne doit pas rester livrée à elle-même : rattachée par défaut à

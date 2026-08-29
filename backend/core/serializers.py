@@ -224,6 +224,23 @@ class UserSerializer(serializers.ModelSerializer):
 
         return user
 
+    def update(self, instance, validated_data):
+        # `type`/`demo_role`/`enabled` restent dans Meta.fields pour qu'un acteur institutionnel
+        # puisse les régler depuis la page Utilisateurs — mais UserViewSet.get_permissions()
+        # autorise aussi un compte à modifier SON PROPRE profil (photo, téléphone...), et sans
+        # ce filtre il pouvait au passage se réattribuer type=ADMIN ou s'auto-valider
+        # (enabled=True) par la même requête : vérifié en le reproduisant, corrigé ici plutôt
+        # qu'au niveau permission puisque le reste de la modification doit rester autorisé.
+        request = self.context.get('request')
+        is_institutional = bool(
+            request and request.user.is_authenticated
+            and effective_role_or_none(request) in INSTITUTIONAL_TYPES
+        )
+        if not is_institutional:
+            for field in ('type', 'demo_role', 'enabled'):
+                validated_data.pop(field, None)
+        return super().update(instance, validated_data)
+
 def validate_crisis_open(crisis, field_name="crisis"):
     """Verrou minimal réutilisé par tout ce qui s'accroche à une crise (implication, point
     opérationnel, délégation de compétence...) : bloque uniquement sur une crise clôturée. Ne
