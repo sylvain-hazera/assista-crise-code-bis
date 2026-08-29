@@ -52,6 +52,14 @@ export class HeaderComponent {
     return this.authService.isAdmin();
   }
 
+  /** Un compte n'ayant reçu qu'un accès démo (demo_role réglé, type PROD resté simple) doit
+   * quand même pouvoir atteindre /admin : c'est le seul endroit où se trouve la bascule
+   * PROD/DEMO — voir AuthService.canEnterAdminArea(). Sans ce accesseur, ce compte n'aurait
+   * strictement aucun moyen de découvrir/atteindre cette bascule. */
+  get canEnterAdminArea(): boolean {
+    return this.authService.canEnterAdminArea();
+  }
+
   handleUserAction() {
     if (this.authService.isLoggedIn()) {
       this.showUserMenu = !this.showUserMenu;
@@ -67,9 +75,9 @@ export class HeaderComponent {
 
 
   goToProfile() {
-    if(this.isAdmin) {
+    if(this.canEnterAdminArea) {
       this.router.navigate(['/admin/dashboard']);
-    } 
+    }
     this.closeAllMenus();
   }
   logout() {

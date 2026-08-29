@@ -9,7 +9,7 @@
       <h1 class="logo-text">Assista Crise</h1>
     </div>
 
-    @if (isAdmin) {
+    @if (canEnterAdminArea) {
       <a class="admin-menu-link" routerLink="/admin/dashboard" (click)="closeAllMenus()" title="Menu d'administration">
         <span class="material-icons">admin_panel_settings</span>
         <span class="admin-menu-label">Menu d'administration</span>
@@ -92,7 +92,7 @@
 
             <div class="dropdown-divider"></div>
 
-            @if (isAdmin) {
+            @if (canEnterAdminArea) {
               <button class="dropdown-item" (click)="goToProfile()">
                 <span class="material-icons">account_box</span>
                 Mon compte
