@@ -11,6 +11,7 @@ export interface Crisis {
   id: string;
   name: string;
   type: string;
+  type_display?: string;
   description?: string | null;
   status?:  Status;
   location: GeoPoint;

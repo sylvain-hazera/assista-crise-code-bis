@@ -171,9 +171,33 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
         })
         .catch((error: any) => {
           console.log('Géolocalisation non disponible:', error.message);
-          // Keep default center and zoom if geolocation fails or is denied
+          // GPS refusé/indisponible : se rabat sur le code postal du profil (adresse connue
+          // de l'utilisateur), moins précis mais toujours plus pertinent que le centre par
+          // défaut de la France — jamais bloquant si l'utilisateur n'est pas connecté ou n'a
+          // pas renseigné de code postal.
+          this.centerOnUserPostalCodeIfAvailable();
         });
     }
+  }
+
+  private centerOnUserPostalCodeIfAvailable(): void {
+    const postalCode = this.authService.getCurrentUser()?.postal_code;
+    if (!postalCode) return;
+
+    this.geolocationService.getCoordinates(postalCode).subscribe({
+      next: (res) => {
+        const feature = res?.features?.[0];
+        const coordinates = feature?.geometry?.coordinates;
+        if (!coordinates) return;
+
+        this.center = [coordinates[0], coordinates[1]];
+        this.zoom = 10;
+        if (this.map) {
+          this.map.flyTo({ center: this.center, zoom: this.zoom, duration: 2000 });
+        }
+      },
+      error: () => {},
+    });
   }
 
   ngAfterViewInit(): void { // Initialize the map after the view is initialized to ensure the container is available

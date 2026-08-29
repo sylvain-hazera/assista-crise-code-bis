@@ -81,7 +81,7 @@ export class RequestHelpFormComponent implements OnInit {
           { value: '', label: 'Aucune crise en rapport' },
           ...activeCrises.map(c => ({
             value: c.id,
-            label: `${c.name} - ${c.type}`
+            label: `${c.name} - ${c.type_display || c.type}`
           }))
         ];
         this.filteredCrisisOptions = [...this.crisisOptions];
@@ -158,7 +158,7 @@ export class RequestHelpFormComponent implements OnInit {
       lastName: [this.currentUser?.last_name, Validators.required],
       firstName: [this.currentUser?.first_name, Validators.required],
       email: [this.currentUser?.email, [Validators.required, Validators.email]],
-      phoneNumber: [this.currentUser?.phone_number, [Validators.required, Validators.pattern(/^\+?\d{10,15}$/)]]
+      phoneNumber: [this.currentUser?.phone_number, [Validators.required, Validators.pattern(/^\+?[\d\s.-]{10,20}$/)]]
     });
   }
 
@@ -247,7 +247,7 @@ export class RequestHelpFormComponent implements OnInit {
           if (err.error && err.error.photo) {
             alert("ERREUR PHOTO : " + err.error.photo[0]);
           } else {
-            alert("Erreur de validation : Vérifiez les champs du formulaire.");
+            alert(this.extractApiErrorMessage(err));
           }
         } else {
           alert("Une erreur technique est survenue. Veuillez réessayer.");
@@ -274,6 +274,7 @@ export class RequestHelpFormComponent implements OnInit {
   onContinue(): void {
     if (this.requestForm.valid && this.selectedAddress) {
       this.state = 2;
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     } else {
       Object.keys(this.requestForm.controls).forEach(key => {
         this.requestForm.get(key)?.markAsTouched();
@@ -291,6 +292,7 @@ export class RequestHelpFormComponent implements OnInit {
       this.router.navigate(['/accueil']);
     } else {
       this.state = 1;
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   }
 
@@ -312,5 +314,32 @@ export class RequestHelpFormComponent implements OnInit {
     this.needsType.removeAt(index);
     this.descriptions.removeAt(index);
     this.subCategorySelections.splice(index, 1);
+  }
+
+  /** Remonte la raison précise d'un refus (ex: "Cette crise est clôturée...") plutôt qu'un
+   * message générique — cf. validate_crisis_open_and_monitored côté backend. */
+  private extractApiErrorMessage(err: any): string {
+    const body = err?.error;
+    if (!body) {
+      return 'Une erreur technique est survenue. Veuillez réessayer.';
+    }
+    if (typeof body === 'string') {
+      return body;
+    }
+    if (typeof body.detail === 'string') {
+      return body.detail;
+    }
+    if (typeof body.error === 'string') {
+      return body.error;
+    }
+    const firstKey = Object.keys(body)[0];
+    if (firstKey) {
+      const value = body[firstKey];
+      const message = Array.isArray(value) ? value[0] : value;
+      if (typeof message === 'string') {
+        return message;
+      }
+    }
+    return 'Une erreur technique est survenue. Veuillez réessayer.';
   }
 }

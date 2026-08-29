@@ -303,7 +303,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
   private buildPieChart(crises: Crisis[]): void {
     const counts = new Map<string, number>();
     crises.forEach(c => {
-      const t = c.type?.trim() || 'Non spécifié';
+      const t = c.type_display?.trim() || c.type?.trim() || 'Non spécifié';
       counts.set(t, (counts.get(t) ?? 0) + 1);
     });
 

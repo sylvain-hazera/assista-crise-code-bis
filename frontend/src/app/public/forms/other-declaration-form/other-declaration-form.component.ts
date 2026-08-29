@@ -132,7 +132,7 @@ export class OtherDeclarationFormComponent implements OnInit {
       typeDeclarant: ['PERSONNE_SEULE', Validators.required],
       lastName: ['', Validators.required],
       firstName: ['', Validators.required],
-      phoneNumber: ['', [Validators.required, Validators.pattern(/^\+?\d{10,15}$/)]],
+      phoneNumber: ['', [Validators.required, Validators.pattern(/^\+?[\d\s.-]{10,20}$/)]],
       email: ['', [Validators.required, Validators.email]],
       nombreAdultes: [1, [Validators.required, Validators.min(1)]],
       nombreEnfants: [0, [Validators.required, Validators.min(0)]],
@@ -151,11 +151,13 @@ export class OtherDeclarationFormComponent implements OnInit {
   onDeclareSafe(): void {
     this.state = StateForm.DeclareSafe;
     this.fileName = 'Select'; // Reset file selection
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   onOtherDeclaration(): void {
     this.state = StateForm.OtherDeclaration;
     this.fileName = 'Select'; // Reset file selection
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   async onFileSelected(event: Event): Promise<void> {
@@ -331,9 +333,37 @@ export class OtherDeclarationFormComponent implements OnInit {
       error: (err) => {
         console.error('Erreur création déclaration:', err);
         console.error('Détails erreur:', err.error);
-        alert('Erreur lors de l\'enregistrement. Veuillez réessayer.');
+        alert(this.extractApiErrorMessage(err));
       }
     });
+  }
+
+  /** Remonte la raison précise d'un refus (ex: "Cette crise est clôturée...") plutôt qu'un
+   * message générique — cf. validate_crisis_open côté backend, seule condition bloquante
+   * pour ces formulaires publics au-delà des champs obligatoires eux-mêmes. */
+  private extractApiErrorMessage(err: any): string {
+    const body = err?.error;
+    if (!body) {
+      return 'Une erreur technique est survenue. Veuillez réessayer.';
+    }
+    if (typeof body === 'string') {
+      return body;
+    }
+    if (typeof body.detail === 'string') {
+      return body.detail;
+    }
+    if (typeof body.error === 'string') {
+      return body.error;
+    }
+    const firstKey = Object.keys(body)[0];
+    if (firstKey) {
+      const value = body[firstKey];
+      const message = Array.isArray(value) ? value[0] : value;
+      if (typeof message === 'string') {
+        return message;
+      }
+    }
+    return 'Une erreur technique est survenue. Veuillez réessayer.';
   }
 
   // ── Popup "trouver un centre d'accueil" (situation BESOIN_CENTRE) ────────────
@@ -438,7 +468,7 @@ export class OtherDeclarationFormComponent implements OnInit {
       error: (err) => {
         console.error('Erreur création information:', err);
         console.error('Détails erreur:', err.error);
-        alert('Erreur lors de l\'enregistrement. Veuillez réessayer.');
+        alert(this.extractApiErrorMessage(err));
       }
     });
   }

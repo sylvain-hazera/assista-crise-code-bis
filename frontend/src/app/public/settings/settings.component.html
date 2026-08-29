@@ -361,7 +361,7 @@
                         </span>
                       </td>
                       <td><strong>{{ crisis.name }}</strong></td>
-                      <td>{{ crisis.type }}</td>
+                      <td>{{ crisis.type_display || crisis.type }}</td>
                       <td>{{ crisis.description || 'N/A' }}</td>
                       <td>{{ crisis.start_date | date:'dd/MM/yyyy' }}</td>
                       <td class="actions">

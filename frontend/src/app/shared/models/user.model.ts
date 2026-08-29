@@ -14,6 +14,7 @@ export interface User {
   first_name: string;                   // AbstractUser
   last_name: string;                    // AbstractUser
   phone_number: string | null;
+  postal_code: string | null;
   photo: string | null;                 // URL relative (ex: /media/photos/xxx.jpg)
   type: UserRole;
   demo_role: UserRole | null;           // Rôle en zone de démonstration — null = pas d'accès démo

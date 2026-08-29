@@ -544,7 +544,7 @@
                 </span>
                 <div class="assign-info">
                   <span class="assign-titre">{{ c.name }}</span>
-                  <span class="assign-meta">{{ c.type ?? '—' }} · {{ fmtDate(c.start_date) }}</span>
+                  <span class="assign-meta">{{ c.type_display || c.type || '—' }} · {{ fmtDate(c.start_date) }}</span>
                 </div>
                 <span class="material-icons assign-check">
                   {{ isMissionAssigned(c.id, 'Crisis') ? 'check_box' : 'check_box_outline_blank' }}

@@ -369,6 +369,10 @@
                 Indiquez sur quels créneaux vous êtes disponible pour les 8 prochains jours.
                 </p>
 
+                <button type="button" class="btn-toggle-all-dispos" (click)="toggleAllDispos()">
+                  {{ allDisposChecked ? 'Tout décocher' : 'Tout cocher' }}
+                </button>
+
                 <div class="dispo-table-wrapper">
                   <table class="dispo-table">
                     <thead>

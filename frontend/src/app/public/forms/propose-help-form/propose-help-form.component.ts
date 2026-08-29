@@ -154,6 +154,17 @@ export class ProposeHelpFormComponent implements OnInit {
     slot.checked = !slot.checked;
   }
 
+  get allDisposChecked(): boolean {
+    return this.joursDispo.every(jour => jour.creneaux.every(slot => slot.checked));
+  }
+
+  /** Coche ou décoche tous les créneaux d'un coup — si au moins un créneau reste décoché,
+   * l'action est "tout cocher" ; sinon "tout décocher" (cf. allDisposChecked). */
+  toggleAllDispos(): void {
+    const nouvelEtat = !this.allDisposChecked;
+    this.joursDispo.forEach(jour => jour.creneaux.forEach(slot => slot.checked = nouvelEtat));
+  }
+
   loadTypesOffre(): void {
     this.offerService.getTypes().subscribe({
       next: (types: any[]) => {
@@ -177,7 +188,7 @@ export class ProposeHelpFormComponent implements OnInit {
           { value: '', label: 'Aucune crise en rapport' },
           ...activeCrises.map(c => ({
             value: c.id,
-            label: `${c.name} - ${c.type}`
+            label: `${c.name} - ${c.type_display || c.type}`
           }))
         ];
         this.filteredCrisisOptions = [...this.crisisOptions];
@@ -200,7 +211,7 @@ export class ProposeHelpFormComponent implements OnInit {
       lastName: [this.currentUser?.last_name, Validators.required],
       firstName: [this.currentUser?.first_name, Validators.required],
       email: [this.currentUser?.email, [Validators.required, Validators.email]],
-      phoneNumber: [this.currentUser?.phone_number, [Validators.required, Validators.pattern(/^\+?\d{10,15}$/)]]
+      phoneNumber: [this.currentUser?.phone_number, [Validators.required, Validators.pattern(/^\+?[\d\s.-]{10,20}$/)]]
     });
   }
 
@@ -330,6 +341,7 @@ export class ProposeHelpFormComponent implements OnInit {
    * coordonnées au moment du choix, aucun géocodage à refaire ici. */
   onContinue(): void {
     this.state = 2;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   goBack(): void {
@@ -337,6 +349,7 @@ export class ProposeHelpFormComponent implements OnInit {
       this.router.navigate(['/accueil']);
     } else {
       this.state = 1;
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   }
 

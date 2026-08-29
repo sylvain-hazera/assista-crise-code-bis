@@ -44,7 +44,7 @@
         @for (crisis of filteredCrises; track crisis.id) {
           <tr (click)="openDetail(crisis)">
             <td>{{ crisis.name }}</td>
-            <td>{{ crisis.type }}</td>
+            <td>{{ crisis.type_display || crisis.type }}</td>
             <td>{{ fmtDate(crisis.start_date) }}</td>
             <td><span class="badge badge-implique">{{ impliquesFor(crisis.id).length }}</span></td>
             <td><span class="badge badge-acteur">{{ acteursFor(crisis.id).length }}</span></td>
