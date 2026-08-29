@@ -1,0 +1,275 @@
+.mon-equipe-page {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 3rem;
+}
+
+.state-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 4rem 1rem;
+  gap: 1rem;
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid #f0f0f0;
+  border-top: 4px solid #667eea;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.error-icon {
+  font-size: 3rem;
+  color: #dc3545;
+}
+
+.btn-link {
+  color: #667eea;
+  font-weight: 600;
+  text-decoration: none;
+
+  &:hover { text-decoration: underline; }
+}
+
+.equipe-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 1.25rem 1.5rem;
+  background: white;
+  border-radius: 12px;
+  border-left: 5px solid #3b82f6;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  margin-bottom: 1.5rem;
+
+  h1 {
+    margin: 0;
+    font-size: 1.5rem;
+    color: #1f2937;
+  }
+
+  .institution {
+    margin: 0.25rem 0 0;
+    color: #6b7280;
+    font-size: 0.9rem;
+  }
+
+  .description {
+    margin: 0.5rem 0 0;
+    color: #4b5563;
+    font-size: 0.9rem;
+  }
+}
+
+.color-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 0.4rem;
+}
+
+.card {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 1.25rem;
+
+  h2 {
+    margin: 0 0 0.75rem;
+    font-size: 1.05rem;
+    color: #1f2937;
+  }
+}
+
+.muted {
+  color: #9ca3af;
+  font-style: italic;
+  margin: 0;
+}
+
+.members-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+
+  li {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0;
+    border-bottom: 1px solid #f3f4f6;
+
+    &:last-child { border-bottom: none; }
+
+    .material-icons {
+      font-size: 1.1rem;
+      color: #f59e0b;
+    }
+  }
+
+  .role-tag {
+    margin-left: auto;
+    font-size: 0.75rem;
+    background: #eef2ff;
+    color: #4338ca;
+    padding: 0.15rem 0.6rem;
+    border-radius: 999px;
+  }
+}
+
+.minimap-legend {
+  display: flex;
+  gap: 1.5rem;
+  font-size: 0.85rem;
+  color: #4b5563;
+  margin-bottom: 0.75rem;
+
+  span { display: flex; align-items: center; gap: 0.4rem; }
+}
+
+.legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.dossier-dot { background: #ff0000; }
+.membre-dot { background: #9c27b0; }
+
+.minimap-container {
+  width: 100%;
+  height: 350px;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.missions-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+
+  li {
+    padding: 0.75rem;
+    background: #f9fafb;
+    border-radius: 8px;
+  }
+}
+
+.mission-titre {
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.mission-statut {
+  margin-left: 0.75rem;
+  font-size: 0.75rem;
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  background: #e5e7eb;
+  color: #374151;
+
+  &[data-statut="EN_COURS"] { background: #dbeafe; color: #1d4ed8; }
+  &[data-statut="TERMINEE"] { background: #dcfce7; color: #15803d; }
+}
+
+.mission-description {
+  margin: 0.4rem 0 0;
+  font-size: 0.85rem;
+  color: #6b7280;
+}
+
+.dossiers-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.dossier-card {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  overflow: hidden;
+  text-decoration: none;
+  color: inherit;
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+
+  &:hover {
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+    transform: translateY(-2px);
+  }
+}
+
+.dossier-photo {
+  width: 100%;
+  height: 120px;
+  object-fit: cover;
+}
+
+.dossier-photo-placeholder {
+  width: 100%;
+  height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f3f4f6;
+  color: #9ca3af;
+
+  .material-icons { font-size: 2rem; }
+}
+
+.dossier-info {
+  padding: 0.6rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.dossier-titre {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #1f2937;
+}
+
+.dossier-numero {
+  font-size: 0.75rem;
+  color: #9ca3af;
+}
+
+.dossier-statut {
+  align-self: flex-start;
+  font-size: 0.7rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: #e5e7eb;
+  color: #374151;
+  margin-top: 0.2rem;
+
+  &[data-statut="RESOLU"] { background: #dcfce7; color: #15803d; }
+  &[data-statut="CLOTURE"] { background: #f3f4f6; color: #6b7280; }
+  &[data-statut="EN_COURS"] { background: #dbeafe; color: #1d4ed8; }
+  &[data-statut="AFFECTE"] { background: #fef3c7; color: #92400e; }
+}
+
+.dossier-mission {
+  font-size: 0.75rem;
+  color: #7c3aed;
+  margin-top: 0.15rem;
+}

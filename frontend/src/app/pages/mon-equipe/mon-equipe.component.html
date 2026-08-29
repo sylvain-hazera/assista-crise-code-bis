@@ -1,0 +1,121 @@
+<div class="mon-equipe-page">
+
+  @if (isLoading) {
+    <div class="state-block">
+      <div class="spinner"></div>
+      <p>Chargement de votre équipe…</p>
+    </div>
+  } @else if (errorMessage) {
+    <div class="state-block">
+      <span class="material-icons error-icon">error_outline</span>
+      <p>{{ errorMessage }}</p>
+      <a routerLink="/accueil" class="btn-link">Retour à l'accueil</a>
+    </div>
+  } @else if (team) {
+
+    <header class="equipe-header" [style.borderColor]="team.color">
+      <span class="color-dot" [style.background]="team.color"></span>
+      <div>
+        <h1>{{ team.name }}</h1>
+        @if (team.institution_nom) {
+          <p class="institution">{{ team.institution_nom }}</p>
+        }
+        @if (team.description) {
+          <p class="description">{{ team.description }}</p>
+        }
+      </div>
+    </header>
+
+    <section class="card">
+      <h2>Zone d'intervention</h2>
+      @if (team.communes.length || team.departements.length) {
+        @if (team.communes.length) {
+          <p><strong>Communes :</strong> {{ team.communes.join(', ') }}</p>
+        }
+        @if (team.departements.length) {
+          <p><strong>Départements :</strong> {{ team.departements.join(', ') }}</p>
+        }
+      } @else {
+        <p class="muted">Aucune zone déclarée pour cette équipe.</p>
+      }
+    </section>
+
+    <section class="card">
+      <h2>Membres de l'équipe</h2>
+      <ul class="members-list">
+        @if (team.leader_nom) {
+          <li class="member-role"><span class="material-icons">star</span> {{ team.leader_nom }} <span class="role-tag">Chef d'équipe terrain</span></li>
+        }
+        @if (team.regulateur_nom) {
+          <li class="member-role"><span class="material-icons">support_agent</span> {{ team.regulateur_nom }} <span class="role-tag">Régulateur</span></li>
+        }
+        @for (m of team.members_info; track m.id) {
+          <li>{{ m.nom }}</li>
+        }
+        @empty {
+          @if (!team.leader_nom && !team.regulateur_nom) {
+            <li class="muted">Aucun membre pour le moment.</li>
+          }
+        }
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>Carte : dossiers et positions des membres</h2>
+      <div class="minimap-legend">
+        <span><span class="legend-dot dossier-dot"></span> Dossiers</span>
+        <span><span class="legend-dot membre-dot"></span> Dernière position connue d'un membre</span>
+      </div>
+      <div class="minimap-container" #minimapContainer></div>
+    </section>
+
+    <section class="card">
+      <h2>Missions ({{ missions.length }})</h2>
+      @if (missions.length) {
+        <ul class="missions-list">
+          @for (mission of missions; track mission.id) {
+            <li>
+              <span class="mission-titre">{{ mission.titre }}</span>
+              <span class="mission-statut" [attr.data-statut]="mission.statut">{{ mission.statut }}</span>
+              @if (mission.description) {
+                <p class="mission-description">{{ mission.description }}</p>
+              }
+            </li>
+          }
+        </ul>
+      } @else {
+        <p class="muted">Aucune mission rattachée à cette équipe pour le moment.</p>
+      }
+    </section>
+
+    <section class="card">
+      <h2>Dossiers ({{ dossiers.length }})</h2>
+      @if (dossiers.length) {
+        <div class="dossiers-grid">
+          @for (dossier of dossiers; track dossier.id) {
+            <a class="dossier-card" [routerLink]="['/dossier-suivi', dossier.id]">
+              @if (photoUrls[dossier.id]) {
+                <img [src]="photoUrls[dossier.id]" alt="" class="dossier-photo">
+              } @else {
+                <div class="dossier-photo-placeholder">
+                  <span class="material-icons">description</span>
+                </div>
+              }
+              <div class="dossier-info">
+                <span class="dossier-titre">{{ dossier.titre }}</span>
+                <span class="dossier-numero">{{ dossier.numero }}</span>
+                <span class="dossier-statut" [attr.data-statut]="dossier.statut">{{ statutLabel(dossier.statut) }}</span>
+                @if (dossier.mission_titre) {
+                  <span class="dossier-mission">Mission : {{ dossier.mission_titre }}</span>
+                }
+              </div>
+            </a>
+          }
+        </div>
+      } @else {
+        <p class="muted">Aucun dossier affecté à cette équipe pour le moment.</p>
+      }
+    </section>
+
+  }
+</div>

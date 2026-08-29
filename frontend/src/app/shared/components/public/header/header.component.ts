@@ -2,6 +2,7 @@ import { Component, HostListener } from '@angular/core';
 import { Router, RouterModule } from '@angular/router';
 import { AuthService } from '../../../../auth/services/auth.service';
 import { User, UserRole } from '../../../models/user.model';
+import { TeamService } from '../../../../services/team.service';
 
 @Component({
   selector: 'app-header',
@@ -17,11 +18,20 @@ export class HeaderComponent {
   showUserMenu = false;
   showMobileMenu = false;
   isMobile = false;
+  myTeamId: string | null = null;
 
-  constructor(public authService: AuthService, private router: Router) {
+  constructor(public authService: AuthService, private router: Router, private teamService: TeamService) {
     this.currentUser = this.authService.getCurrentUser();
-    console.log(this.currentUser);
     this.checkScreenSize();
+
+    if (this.authService.isLoggedIn()) {
+      // Un seul raccourci "Mon équipe" affiché : le cas d'un bénévole membre de plusieurs
+      // équipes à la fois reste rare, et n'a pas besoin d'un sélecteur dédié dans l'en-tête.
+      this.teamService.mesEquipes().subscribe({
+        next: (teams) => { this.myTeamId = teams[0]?.id ?? null; },
+        error: () => {},
+      });
+    }
   }
 
   //Pour les tests

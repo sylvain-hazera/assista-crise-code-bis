@@ -37,6 +37,11 @@
           <a class="quick-link quick-link-dossier" routerLink="/settings" [queryParams]="{tab: 'dossier'}" (click)="closeAllMenus()" title="Mon dossier">
             <span class="material-icons">folder_shared</span>
           </a>
+          @if (myTeamId) {
+            <a class="quick-link quick-link-team" [routerLink]="['/mon-equipe', myTeamId]" (click)="closeAllMenus()" title="Mon équipe">
+              <span class="material-icons">groups</span>
+            </a>
+          }
         </div>
       }
 
@@ -155,6 +160,12 @@
         <span class="material-icons">folder_shared</span>
         Mon dossier
       </a>
+      @if (myTeamId) {
+        <a class="mobile-quick-link quick-link-team" [routerLink]="['/mon-equipe', myTeamId]" (click)="closeAllMenus()">
+          <span class="material-icons">groups</span>
+          Mon équipe
+        </a>
+      }
     }
     <a 
       routerLink="/crises" 
