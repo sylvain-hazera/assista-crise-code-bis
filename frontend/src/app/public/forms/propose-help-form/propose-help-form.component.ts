@@ -415,6 +415,15 @@ export class ProposeHelpFormComponent implements OnInit {
     return !!type && TYPES_SECOURISME_GENERIQUE.includes(type);
   }
 
+  /** Transport (toujours un véhicule, conduit par l'offreur) et Matériel (peut être un engin
+   * ou un véhicule remorquable, prêté seul ou avec l'offreur) sont les deux types où un
+   * véhicule/engin est potentiellement en jeu — le rappel s'affiche sur les deux, la conduite
+   * conditionnelle précise du texte ("que vous le conduisiez ou non") le rend juste même quand
+   * le matériel proposé n'est en réalité pas motorisé (ex: une cuve). */
+  showConformiteVehicule(type: string | null | undefined): boolean {
+    return type === TYPE_TRANSPORT || type === TYPE_MATERIEL;
+  }
+
   /** Une personne qui ne propose QUE du matériel (ex: une cuve à prêter) n'a ni compétence ni
    * disponibilité personnelle à déclarer : lui montrer ces deux sections (pensées pour un
    * bénévolat en personne) n'a pas de sens et ajoute du bruit/des clics inutiles. Dès qu'au

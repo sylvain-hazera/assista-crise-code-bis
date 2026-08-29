@@ -161,6 +161,29 @@
                     </div>
                 }
 
+                <!-- Véhicule/engin (transport ou matériel roulant/motorisé), conduit par
+                     l'offreur ou prêté seul : rappel des obligations légales -->
+                @if (showConformiteVehicule(rg.get('type')?.value)) {
+                    <div class="compliance-disclaimer">
+                        <span class="material-icons">warning_amber</span>
+                        <div>
+                            <p>
+                                <strong>Si votre offre implique un véhicule ou un engin</strong>
+                                (que vous le conduisiez/l'utilisiez vous-même ou qu'il soit prêté seul),
+                                vous et le matériel devez être en règle :
+                            </p>
+                            <ul>
+                                <li>Permis de conduire ou CACES adapté à la conduite ou à l'utilisation</li>
+                                <li>Assurance à jour</li>
+                                <li>Contrôle technique à jour</li>
+                                <li>Aucune consommation d'alcool ni de stupéfiants pendant l'intervention</li>
+                                <li>Plaque d'immatriculation valide pour tout véhicule circulant sur la voie publique</li>
+                            </ul>
+                            <p>Ces informations pourront être demandées pour l'établissement d'un laissez-passer si nécessaire.</p>
+                        </div>
+                    </div>
+                }
+
                 <!-- Soutien psychologique : profil -->
                 @if (rg.get('type')?.value === TYPE_SOUTIEN) {
                     <div class="form-group">

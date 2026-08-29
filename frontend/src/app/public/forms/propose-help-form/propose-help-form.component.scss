@@ -221,6 +221,33 @@
   line-height: 1.4;
 }
 
+.compliance-disclaimer {
+  display: flex;
+  gap: 0.6rem;
+  font-size: 0.85rem;
+  color: #7a4a00;
+  background: #fff8e6;
+  border-left: 3px solid #d99a00;
+  padding: 0.65rem 0.85rem;
+  margin: 0 0 0.6rem;
+  line-height: 1.45;
+
+  .material-icons {
+    color: #d99a00;
+    flex-shrink: 0;
+  }
+
+  p { margin: 0 0 0.4rem; }
+  p:last-child { margin-bottom: 0; }
+
+  ul {
+    margin: 0 0 0.4rem;
+    padding-left: 1.1rem;
+  }
+
+  li { margin-bottom: 0.15rem; }
+}
+
 .other-service {
   margin-bottom: 2rem;
   text-align: center;
