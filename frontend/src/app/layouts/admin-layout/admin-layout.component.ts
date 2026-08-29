@@ -71,7 +71,13 @@ export class AdminLayoutComponent implements OnInit {
 
     { icon: 'check_circle', label: 'Résultats', route: '/admin/resultats' },
 
-    { icon: 'group', label: 'Utilisateurs', route: '/admin/utilisateurs' }
+    { icon: 'group', label: 'Utilisateurs', route: '/admin/utilisateurs' },
+
+    // Comptes Secours organisés en attente (auto-inscription bloquée jusqu'à décision d'un
+    // admin ou de la mairie de leur territoire — voir accountValidationGuard) : réservé à ces
+    // deux rôles, pas à tout institutionnel (un régulateur ou un autre Secours n'a rien à y
+    // faire).
+    { icon: 'how_to_reg', label: 'Validations de comptes', route: '/admin/validations-comptes' },
 
 ];
 
@@ -175,6 +181,10 @@ export class AdminLayoutComponent implements OnInit {
   isNavItemVisible(item: NavItem): boolean {
     if (item.label === 'Utilisateurs') return this.isSysAdmin();
     if (item.label === 'Mes interventions') return true;
+    if (item.label === 'Validations de comptes') {
+      const role = this.authService.getEffectiveRole();
+      return role === UserRole.ADMIN || role === UserRole.LOCAL_AUTH;
+    }
     return this.isInstitutionalEffective;
   }
 

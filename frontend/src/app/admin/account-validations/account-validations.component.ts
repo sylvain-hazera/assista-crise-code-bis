@@ -1,8 +1,8 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { ValidationService, ValidationRequest } from '../../../services/validation.service';
-import { AuthService } from '../../../auth/services/auth.service';
-import { UserRole } from '../../../shared/models/user.model';
+import { UserService } from '../../services/user.service';
+import { AuthService } from '../../auth/services/auth.service';
+import { User, UserRole } from '../../shared/models/user.model';
 
 @Component({
   selector: 'app-account-validations',
@@ -12,16 +12,16 @@ import { UserRole } from '../../../shared/models/user.model';
   styleUrl: './account-validations.component.scss'
 })
 export class AccountValidationsComponent implements OnInit {
-  pendingValidations: ValidationRequest[] = [];
+  pendingUsers: User[] = [];
   isLoading = false;
   errorMessage = '';
   isAdmin = false;
   isInstitution = false;
-  currentUserPostalCode = '';
+  currentUserPostalCode: string | null = '';
 
   constructor(
-    private validationService: ValidationService,
-    private authService: AuthService
+    private userService: UserService,
+    private authService: AuthService,
   ) {}
 
   ngOnInit(): void {
@@ -31,9 +31,13 @@ export class AccountValidationsComponent implements OnInit {
       return;
     }
 
-    this.isAdmin = currentUser.userType === UserRole.Admin;
-    this.isInstitution = currentUser.userType === UserRole.Organization;
-    this.currentUserPostalCode = currentUser.postalCode;
+    // Rôle EFFECTIF (comme le backend, voir get_effective_role côté API) : une mairie en
+    // zone de démo avec un rôle démo non institutionnel ne doit pas voir cette page comme
+    // opérante alors que l'appel serait de toute façon refusé.
+    const role = this.authService.getEffectiveRole();
+    this.isAdmin = role === UserRole.ADMIN;
+    this.isInstitution = role === UserRole.LOCAL_AUTH;
+    this.currentUserPostalCode = currentUser.postal_code;
 
     this.loadValidations();
   }
@@ -41,74 +45,47 @@ export class AccountValidationsComponent implements OnInit {
   loadValidations(): void {
     this.isLoading = true;
     this.errorMessage = '';
-
-    const request$ = this.isAdmin
-      ? this.validationService.getPendingValidations()
-      : this.validationService.getValidationsByPostalCode(this.currentUserPostalCode);
-
-    request$.subscribe({
-      next: (validations) => {
-        this.pendingValidations = validations;
+    this.userService.getPendingValidations().subscribe({
+      next: (users) => {
+        this.pendingUsers = users;
         this.isLoading = false;
       },
-      error: (error) => {
-        console.error('Erreur chargement validations:', error);
+      error: () => {
         this.errorMessage = 'Erreur lors du chargement des demandes de validation';
         this.isLoading = false;
-      }
+      },
     });
   }
 
-  approveValidation(request: ValidationRequest): void {
-    if (!request.id) return;
+  // Le backend ne renvoie déjà que les comptes que l'appelant a le droit de traiter
+  // (tous pour un admin, ceux du même code postal pour une mairie — voir
+  // UserViewSet.pending_validations) : pas de filtre à refaire côté client.
 
-    if (confirm(`Êtes-vous sûr de vouloir approuver le compte de ${request.userName} ?`)) {
-      this.validationService.approveValidation(request.id).subscribe({
-        next: () => {
-          alert('Compte approuvé avec succès !');
-          this.loadValidations();
-        },
-        error: (error) => {
-          console.error('Erreur approbation:', error);
-          alert('Erreur lors de l\'approbation du compte');
-        }
-      });
-    }
+  approve(user: User): void {
+    if (!confirm(`Approuver le compte de ${user.first_name} ${user.last_name} ?`)) return;
+    this.userService.approveAccount(user.id).subscribe({
+      next: () => this.loadValidations(),
+      error: () => alert("Erreur lors de l'approbation du compte."),
+    });
   }
 
-  rejectValidation(request: ValidationRequest): void {
-    if (!request.id) return;
-
-    const reason = prompt('Raison du rejet (optionnel):');
-    if (reason !== null) {
-      this.validationService.rejectValidation(request.id, reason).subscribe({
-        next: () => {
-          alert('Compte rejeté');
-          this.loadValidations();
-        },
-        error: (error) => {
-          console.error('Erreur rejet:', error);
-          alert('Erreur lors du rejet du compte');
-        }
-      });
-    }
+  reject(user: User): void {
+    const reason = prompt('Raison du refus (optionnel) :');
+    if (reason === null) return;
+    this.userService.rejectAccount(user.id, reason).subscribe({
+      next: () => this.loadValidations(),
+      error: () => alert('Erreur lors du refus du compte.'),
+    });
   }
 
-  getUserTypeLabel(userType: string): string {
-    const labels: { [key: string]: string } = {
-      'ADMIN': 'Admin',
-      'AUT_LOCALE': 'Institution',
-      'SECOURS': 'Secours organisés',
-      'UTIL_SIMPLE': 'Particulier'
+  userTypeLabel(type: string): string {
+    const labels: Record<string, string> = {
+      ADMIN: 'Administrateur',
+      AUT_LOCALE: 'Institution',
+      SECOURS: 'Secours organisés',
+      UTIL_SIMPLE: 'Particulier',
+      REGULATEUR: 'Régulateur de crise',
     };
-    return labels[userType] || userType;
-  }
-
-  canValidate(request: ValidationRequest): boolean {
-    if (this.isAdmin) return true;
-    if (this.isInstitution && request.postalCode === this.currentUserPostalCode) {
-      return request.userType === 'AUT_LOCALE';
-    }
-    return false;
+    return labels[type] || type;
   }
 }

@@ -2,6 +2,7 @@ import { inject } from '@angular/core';
 import { Router, CanActivateFn } from '@angular/router';
 import { catchError, map, of } from 'rxjs';
 import { AuthService } from '../../auth/services/auth.service';
+import { UserRole } from '../../shared/models/user.model';
 
 /** Rafraîchit le profil depuis l'API avant de statuer : `canEnterAdminArea()`/`isSysAdmin()`
  * lisent le cache local posé à la connexion (voir `getCurrentUser()`), qui reste périmé tant
@@ -48,6 +49,29 @@ export const institutionalEffectiveGuard: CanActivateFn = (route, state) => {
   }
   return authService.fetchMe().pipe(
     map(() => authService.isInstitutionalEffective() ? true : router.parseUrl('/admin/acces-refuse')),
+    catchError(() => of(router.parseUrl('/admin/acces-refuse'))),
+  );
+};
+
+/** Validation des comptes en attente (aujourd'hui : uniquement les inscriptions Secours
+ * organisés, voir UserViewSet.pending_validations côté backend) — réservée à un admin ou à
+ * une mairie (qui ne voit/valide que les comptes de son propre code postal), pas à tout
+ * acteur institutionnel comme institutionalEffectiveGuard : un régulateur ou un compte Secours
+ * n'a rien à faire sur cette page. */
+export const accountValidationGuard: CanActivateFn = (route, state) => {
+  const authService = inject(AuthService);
+  const router = inject(Router);
+
+  if (!authService.getToken()) {
+    return router.parseUrl('/accueil');
+  }
+  return authService.fetchMe().pipe(
+    map(() => {
+      const role = authService.getEffectiveRole();
+      return (role === UserRole.ADMIN || role === UserRole.LOCAL_AUTH)
+        ? true
+        : router.parseUrl('/admin/acces-refuse');
+    }),
     catchError(() => of(router.parseUrl('/admin/acces-refuse'))),
   );
 };

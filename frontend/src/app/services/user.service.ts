@@ -37,4 +37,20 @@ export class UserService {
   sendPasswordReset(id: string): Observable<{ message: string }> {
     return this.http.post<{ message: string }>(`${this.apiUrl}/users/${id}/send_password_reset/`, {});
   }
+
+  /** Comptes créés mais désactivés en attente d'une décision (aujourd'hui : uniquement les
+   * inscriptions Secours organisés — une mairie s'active elle-même par simple confirmation
+   * d'email, voir AccountActivationView). Un admin voit tout ; une mairie ne voit que les
+   * comptes de son propre code postal (filtrage fait côté backend). */
+  getPendingValidations(): Observable<User[]> {
+    return this.http.get<User[]>(`${this.apiUrl}/users/pending_validations/`);
+  }
+
+  approveAccount(id: string): Observable<{ message: string; user: User }> {
+    return this.http.post<{ message: string; user: User }>(`${this.apiUrl}/users/${id}/approve_account/`, {});
+  }
+
+  rejectAccount(id: string, reason?: string): Observable<{ message: string; user: User }> {
+    return this.http.post<{ message: string; user: User }>(`${this.apiUrl}/users/${id}/reject_account/`, { reason });
+  }
 }

@@ -86,7 +86,6 @@
   color: white;
   padding: 1.5rem;
   display: flex;
-  justify-content: space-between;
   align-items: center;
 
   .user-info {
@@ -118,11 +117,6 @@
       &.aut_locale { background: #2196F3; }
       &.secours { background: #FF9800; }
     }
-  }
-
-  .request-date {
-    font-size: 0.9rem;
-    opacity: 0.9;
   }
 }
 
@@ -189,20 +183,6 @@
         box-shadow: 0 4px 8px rgba(244, 67, 54, 0.3);
       }
     }
-  }
-}
-
-.no-permission {
-  padding: 1rem 1.5rem;
-  background: #fff3cd;
-  color: #856404;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.95rem;
-
-  .material-symbols-outlined {
-    font-size: 1.3rem;
   }
 }
 
