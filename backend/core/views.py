@@ -656,6 +656,23 @@ class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
     serializer_class = UserSerializer
 
+    def get_queryset(self):
+        # ?institution=<uuid> restreint la liste aux membres actifs de cette institution (via
+        # ContactInstitution, la relation faisant autorité pour "qui appartient à cette
+        # institution" — User.institution n'est pas posé de façon fiable par tous les chemins
+        # d'inscription/rattachement) — utilisé par le sélecteur de membres d'une équipe pour ne
+        # proposer que les gens de la mairie qui la constitue, jamais tous les comptes de la
+        # plateforme.
+        queryset = super().get_queryset()
+        if self.action == 'list':
+            institution_id = self.request.query_params.get('institution')
+            if institution_id:
+                queryset = queryset.filter(
+                    institutions__institution_id=institution_id,
+                    institutions__actif=True,
+                ).distinct()
+        return queryset
+
     def get_permissions(self):
         # get_permissions() étant surchargé, chaque @action avec son propre permission_classes
         # doit être explicitement listée ici, sinon elle retombe sur le cas général ci-dessous
@@ -2142,7 +2159,7 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         # retrieve reste ouvert à tout authentifié : un bénévole doit pouvoir consulter SA
         # propre équipe (voir "vue équipe"), déjà distribuée par ID via mes-equipes/l'email
         # d'association, jamais par une liste publique.
-        if self.action in ('list', 'create', 'update', 'partial_update', 'destroy'):
+        if self.action in ('list', 'create', 'update', 'partial_update', 'destroy', 'inviter_membre'):
             return [IsInstitutionalActor()]
         return [permissions.IsAuthenticated()]
 
@@ -2189,6 +2206,89 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             Q(members=request.user) | Q(leader=request.user) | Q(regulateur=request.user)
         ).distinct()
         return Response(self.get_serializer(equipes, many=True).data)
+
+    @action(detail=True, methods=['post'], url_path='inviter-membre')
+    def inviter_membre(self, request, pk=None):
+        """Invite un nouveau membre dans l'institution de l'équipe (nom/prénom/email/tél/rôle),
+        l'ajoute directement à l'équipe, et lui donne les droits collectivité locale sur la
+        plateforme — quel que soit le rôle FONCTIONNEL choisi (RoleOperationnel), qui ne décrit
+        que sa place dans l'équipe, pas ses permissions applicatives. Si un compte existe déjà
+        pour cet email, son `type` n'est jamais rétrogradé ni changé : seul le rattachement à
+        l'institution/l'équipe est ajouté."""
+        team = self.get_object()
+        if team.institution is None:
+            return Response(
+                {"error": "Cette équipe n'est rattachée à aucune institution."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Une mairie ne doit pouvoir inviter que dans SES propres équipes, pas dans celles
+        # d'une autre institution — un admin plateforme n'est pas concerné par cette limite.
+        if get_effective_role(request) != UserRole.ADMINISTRATOR:
+            appartient = ContactInstitution.objects.filter(
+                institution=team.institution, utilisateur=request.user, actif=True,
+            ).exists()
+            if not appartient:
+                return Response(
+                    {"error": "Vous ne pouvez inviter des membres que pour les équipes de votre propre institution."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
+        email = (request.data.get('email') or '').strip().lower()
+        first_name = (request.data.get('first_name') or '').strip()
+        last_name = (request.data.get('last_name') or '').strip()
+        phone_number = (request.data.get('phone_number') or '').strip()
+        role_code = request.data.get('role_code')
+
+        if not email or not first_name or not last_name or not role_code:
+            return Response(
+                {"error": "Prénom, nom, email et rôle sont obligatoires."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        role = RoleOperationnel.objects.filter(code=role_code).first()
+        if not role:
+            return Response({"error": "Rôle inconnu."}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = User.objects.filter(email__iexact=email).first()
+        invited = False
+        if user is None:
+            user = User.objects.create_user(
+                username=email, email=email,
+                first_name=first_name, last_name=last_name, phone_number=phone_number,
+                password=None, type=UserRole.LOCAL_AUTHORITY, institution=team.institution,
+                enabled=False, is_active=False,
+            )
+            invited = True
+
+        ContactInstitution.objects.get_or_create(
+            institution=team.institution, utilisateur=user,
+            defaults={'fonction': role.libelle, 'actif': True},
+        )
+        AffectationRoleOperationnel.objects.get_or_create(
+            utilisateur=user, institution=team.institution, role=role, competence=None,
+            defaults={'actif': True},
+        )
+        team.members.add(user)
+
+        if invited:
+            # Le lien "vue équipe" de _notify_new_team_member est un lien de connexion magique :
+            # inutilisable tant que le compte n'est pas activé (voir MagicLoginView). Un compte
+            # tout juste invité ne reçoit donc que l'email d'activation (qui contient déjà un
+            # lien de connexion pour APRÈS activation) — jamais les deux à la fois.
+            send_institution_account_email(request, user)
+        else:
+            _notify_new_team_member(team, user, request)
+
+        audit_log(
+            request=request,
+            action_code="CREATION",
+            objet_type="Team",
+            objet_id=team.id,
+            commentaire=f"Invitation de {user.email} comme membre ({role.libelle})",
+        )
+
+        return Response(TeamSerializer(team, context=self.get_serializer_context()).data, status=status.HTTP_201_CREATED)
 
 class MissionViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     queryset = Mission.objects.select_related('crise').prefetch_related('equipes').all()

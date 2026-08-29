@@ -266,6 +266,25 @@ h3 { margin: 0; font-size: .9rem; font-weight: 700; display: flex; align-items: 
      .material-icons { font-size: 16px; color: var(--muted); } }
 
 // ── User pick list ────────────────────────────────────────────────
+.btn-link-invite {
+  display: inline-flex; align-items: center; gap: .35rem;
+  background: none; border: none; color: var(--primary); font-size: .85rem; font-weight: 600;
+  cursor: pointer; padding: .3rem 0; margin: .3rem 0 .6rem;
+  .material-icons { font-size: 18px; }
+  &:hover { text-decoration: underline; }
+}
+.invite-member-form {
+  background: #f8fafc; border: 1px solid var(--border); border-radius: 10px;
+  padding: .75rem; margin-bottom: .75rem; display: flex; flex-direction: column; gap: .5rem;
+}
+.invite-form-row {
+  display: flex; gap: .5rem;
+  input, select {
+    flex: 1; padding: .5rem .65rem; border: 1px solid var(--border); border-radius: 8px; font-size: .85rem;
+  }
+}
+.invite-error { color: var(--danger); font-size: .82rem; margin: 0; }
+
 .user-pick-list { display: flex; flex-direction: column; gap: .4rem; max-height: 220px; overflow-y: auto; }
 .user-pick-item {
   display: flex; align-items: center; gap: .75rem; padding: .6rem .85rem;

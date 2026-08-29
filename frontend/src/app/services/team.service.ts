@@ -16,4 +16,10 @@ export class TeamService {
   update(id: string, data: Partial<Team>): Observable<Team>    { return this.http.put<Team>(`${this.url}/${id}/`, data); }
   patch(id: string, data: Partial<Team>):  Observable<Team>    { return this.http.patch<Team>(`${this.url}/${id}/`, data); }
   delete(id: string):                      Observable<void>    { return this.http.delete<void>(`${this.url}/${id}/`); }
+
+  inviterMembre(id: string, data: {
+    first_name: string; last_name: string; email: string; phone_number: string; role_code: string;
+  }): Observable<Team> {
+    return this.http.post<Team>(`${this.url}/${id}/inviter-membre/`, data);
+  }
 }

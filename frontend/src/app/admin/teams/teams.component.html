@@ -237,12 +237,44 @@
             </div>
           </div>
 
-          <!-- Recherche membres -->
+          <!-- Recherche membres (scopée aux membres de l'institution de cette équipe) -->
           <div class="member-search">
             <span class="material-icons">search</span>
-            <input type="text" placeholder="Filtrer les utilisateurs…"
+            <input type="text" placeholder="Filtrer les membres de l'institution…"
               [(ngModel)]="memberSearchQuery" />
           </div>
+
+          @if (!selectedTeam.institution) {
+            <p class="empty-pick">Cette équipe n'est rattachée à aucune institution : aucun membre à proposer.</p>
+          } @else {
+
+          <button type="button" class="btn-link-invite" (click)="showInviteForm = !showInviteForm">
+            <span class="material-icons">person_add</span>
+            {{ showInviteForm ? 'Annuler' : "Inviter un nouveau membre" }}
+          </button>
+
+          @if (showInviteForm) {
+            <form [formGroup]="inviteForm" (ngSubmit)="submitInvite()" class="invite-member-form">
+              @if (inviteError) { <p class="invite-error">{{ inviteError }}</p> }
+              <div class="invite-form-row">
+                <input type="text" placeholder="Prénom" formControlName="first_name" />
+                <input type="text" placeholder="Nom" formControlName="last_name" />
+              </div>
+              <div class="invite-form-row">
+                <input type="email" placeholder="Email" formControlName="email" />
+                <input type="tel" placeholder="Téléphone" formControlName="phone_number" />
+              </div>
+              <div class="invite-form-row">
+                <select formControlName="role_code">
+                  <option [ngValue]="null">— Rôle dans l'équipe —</option>
+                  @for (r of roles; track r.code) {
+                    <option [ngValue]="r.code">{{ r.libelle }}</option>
+                  }
+                </select>
+                <button type="submit" class="btn-primary sm">Inviter et ajouter</button>
+              </div>
+            </form>
+          }
 
           <div class="user-pick-list">
             @for (u of filteredUsers; track u.id) {
@@ -279,9 +311,11 @@
               </div>
             }
             @if (filteredUsers.length === 0) {
-              <p class="empty-pick">Aucun utilisateur trouvé</p>
+              <p class="empty-pick">Aucun membre de l'institution ne correspond — vous pouvez en inviter un nouveau ci-dessus.</p>
             }
           </div>
+
+          }
         </div>
 
         <!-- ── THÈMES D'INTERVENTION ──────────────────────────── -->

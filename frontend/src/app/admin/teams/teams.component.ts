@@ -11,11 +11,13 @@ import { RequestService }    from '../../services/request.service';
 import { DisponibiliteOffreService } from '../../services/disponibilite-offre.service';
 import { DossierService } from '../../services/dossier.service';
 import { CompetenceService } from '../../services/competence.service';
+import { RoleOperationnelService } from '../../services/role-operationnel.service';
 import { ZoneMapComponent } from '../../shared/components/common/zone-map/zone-map.component';
 import { TagSearchInputComponent } from '../../shared/components/common/tag-search-input/tag-search-input.component';
 
 import { Team, TeamMission }  from '../../shared/models/team.model';
 import { User }        from '../../shared/models/user.model';
+import { RoleOperationnel } from '../../shared/models/institution.model';
 import { Crisis }              from '../../shared/models/crisis.model';
 import { Offer }              from '../../shared/models/offer.model';
 import { Request }            from '../../shared/models/request.model';
@@ -47,6 +49,15 @@ export class TeamsComponent implements OnInit {
   disponibilites: DisponibiliteOffre[] = [];
   dossiers: Dossier[] = [];
   competences: Competence[] = [];
+  roles: RoleOperationnel[] = [];
+
+  /** Membres candidats pour l'équipe SÉLECTIONNÉE uniquement (rechargés à l'ouverture du
+   * détail, scopés sur son institution) — distinct de `users` (liste globale, encore
+   * nécessaire pour résoudre noms/initiales de membres déjà affectés, y compris ceux qui
+   * auraient depuis quitté l'institution). */
+  candidateMembers: User[] = [];
+  showInviteForm = false;
+  inviteError = '';
 
   // ── UI ──────────────────────────────────────────────────────
   isLoading      = true;
@@ -66,6 +77,7 @@ export class TeamsComponent implements OnInit {
   // ── Forms ───────────────────────────────────────────────────
   createForm!: FormGroup;
   editForm!:   FormGroup;
+  inviteForm!: FormGroup;
 
   readonly COLORS = COLORS;
   selectedColor = COLORS[5];
@@ -80,6 +92,7 @@ export class TeamsComponent implements OnInit {
     private disponibiliteOffreService: DisponibiliteOffreService,
     private dossierService: DossierService,
     private competenceService: CompetenceService,
+    private roleOperationnelService: RoleOperationnelService,
   ) {}
 
   ngOnInit(): void {
@@ -99,8 +112,9 @@ export class TeamsComponent implements OnInit {
       disponibilites: this.disponibiliteOffreService.getAll(),
       dossiers: this.dossierService.getAll(),
       competences: this.competenceService.getAll(),
+      roles: this.roleOperationnelService.getAll(),
     }).subscribe({
-      next: ({ users, crisis, offers, requests, teams, disponibilites, dossiers, competences }) => {
+      next: ({ users, crisis, offers, requests, teams, disponibilites, dossiers, competences, roles }) => {
         this.users    = users;
         this.crisis   = crisis;
         this.offers   = offers;
@@ -108,6 +122,7 @@ export class TeamsComponent implements OnInit {
         this.disponibilites = disponibilites;
         this.dossiers = dossiers;
         this.competences = competences;
+        this.roles = roles;
         this.teams    = teams.map(t => ({ ...t, missions: this.buildMissions(t) }));
         this.isLoading = false;
       },
@@ -156,6 +171,13 @@ export class TeamsComponent implements OnInit {
       description: [''],
       leader:    [null],
     });
+    this.inviteForm = this.fb.group({
+      first_name:   ['', Validators.required],
+      last_name:    ['', Validators.required],
+      email:        ['', [Validators.required, Validators.email]],
+      phone_number: ['', Validators.required],
+      role_code:    [null, Validators.required],
+    });
   }
 
   // ── CREATE ────────────────────────────────────────────────────
@@ -193,6 +215,25 @@ export class TeamsComponent implements OnInit {
     this.communesInput = (team.communes ?? []).join(', ');
     this.pendingZoneWkt = team.zone_precise ?? null;
     this.modal = 'detail';
+    this.showInviteForm = false;
+    this.inviteError = '';
+    this.inviteForm.reset();
+    this.loadCandidateMembers(team);
+  }
+
+  /** Ne propose comme candidats à l'ajout QUE les membres de l'institution de cette équipe —
+   * avant ce correctif, tous les comptes de la plateforme (admins, secours, particuliers sans
+   * lien avec cette mairie...) apparaissaient dans le sélecteur. Vide si l'équipe n'a pas
+   * d'institution (rien de pertinent à proposer). */
+  private loadCandidateMembers(team: Team): void {
+    if (!team.institution) {
+      this.candidateMembers = [];
+      return;
+    }
+    this.userService.getAll({ institution: team.institution }).subscribe({
+      next: (users) => this.candidateMembers = users,
+      error: () => this.candidateMembers = [],
+    });
   }
 
   // ── ZONE D'INTERVENTION ─────────────────────────────────────────
@@ -276,6 +317,30 @@ export class TeamsComponent implements OnInit {
 
   isMember(userId: string): boolean {
     return this.selectedTeam?.member_ids?.includes(userId) ?? false;
+  }
+
+  /** Invite un nouveau membre dans l'institution de l'équipe (nom/prénom/email/tél/rôle) et
+   * l'ajoute directement à l'équipe — même s'il n'a pas encore activé son compte (voir
+   * TeamViewSet.inviter_membre côté backend). */
+  submitInvite(): void {
+    if (!this.selectedTeam?.id || this.inviteForm.invalid) {
+      this.inviteForm.markAllAsTouched();
+      return;
+    }
+    this.inviteError = '';
+    this.teamService.inviterMembre(this.selectedTeam.id, this.inviteForm.value).subscribe({
+      next: (updated) => {
+        this.selectedTeam = { ...updated, missions: this.selectedTeam!.missions };
+        this.loadCandidateMembers(updated);
+        this.reloadTeams();
+        this.showInviteForm = false;
+        this.inviteForm.reset();
+        this.showSuccess('Membre invité et ajouté à l\'équipe.');
+      },
+      error: (err) => {
+        this.inviteError = err?.error?.error || "Erreur lors de l'invitation.";
+      },
+    });
   }
 
   // ── THÈMES D'INTERVENTION ─────────────────────────────────────
@@ -500,8 +565,8 @@ export class TeamsComponent implements OnInit {
 
   get filteredUsers() {
     const q = this.memberSearchQuery.trim().toLowerCase();
-    if (!q) return this.users;
-    return this.users.filter(u =>
+    if (!q) return this.candidateMembers;
+    return this.candidateMembers.filter(u =>
       u.first_name?.toLowerCase().includes(q) ||
       u.last_name?.toLowerCase().includes(q)  ||
       u.username?.toLowerCase().includes(q)
