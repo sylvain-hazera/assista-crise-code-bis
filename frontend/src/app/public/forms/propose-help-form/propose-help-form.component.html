@@ -339,66 +339,68 @@
                 </div>
             </div>
 
-            <!-- Compétences que le bénévole peut apporter -->
-            <div class="form-section">
-                <h2 class="section-title">Vos compétences</h2>
-                <p class="section-description">
-                Indiquez les compétences que vous pouvez apporter (secourisme, logistique...) —
-                utile pour être recruté sur les besoins qui vous correspondent.
-                </p>
-                <app-tag-search-input
-                  placeholder="Chercher ou créer une compétence..."
-                  [searchFn]="competenceSearchFn"
-                  [createFn]="competenceCreateFn"
-                  (itemSelected)="onCompetenceSelected($event)">
-                </app-tag-search-input>
-                <div class="chip-list">
-                  @for (c of selectedCompetences; track c.id) {
-                    <span class="chip">
-                      {{ c.nom }}
-                      <button type="button" (click)="removeCompetence(c.id)">×</button>
-                    </span>
-                  }
-                </div>
-            </div>
+            @if (proposeAideEnPersonne) {
+              <!-- Compétences que le bénévole peut apporter -->
+              <div class="form-section">
+                  <h2 class="section-title">Vos compétences</h2>
+                  <p class="section-description">
+                  Indiquez les compétences que vous pouvez apporter (secourisme, logistique...) —
+                  utile pour être recruté sur les besoins qui vous correspondent.
+                  </p>
+                  <app-tag-search-input
+                    placeholder="Chercher ou créer une compétence..."
+                    [searchFn]="competenceSearchFn"
+                    [createFn]="competenceCreateFn"
+                    (itemSelected)="onCompetenceSelected($event)">
+                  </app-tag-search-input>
+                  <div class="chip-list">
+                    @for (c of selectedCompetences; track c.id) {
+                      <span class="chip">
+                        {{ c.nom }}
+                        <button type="button" (click)="removeCompetence(c.id)">×</button>
+                      </span>
+                    }
+                  </div>
+              </div>
 
-            <!-- Disponibilités sur les 8 prochains jours -->
-            <div class="form-section">
-                <h2 class="section-title">Vos disponibilités</h2>
-                <p class="section-description">
-                Indiquez sur quels créneaux vous êtes disponible pour les 8 prochains jours.
-                </p>
+              <!-- Disponibilités sur les 8 prochains jours -->
+              <div class="form-section">
+                  <h2 class="section-title">Vos disponibilités</h2>
+                  <p class="section-description">
+                  Indiquez sur quels créneaux vous êtes disponible pour les 8 prochains jours.
+                  </p>
 
-                <button type="button" class="btn-toggle-all-dispos" (click)="toggleAllDispos()">
-                  {{ allDisposChecked ? 'Tout décocher' : 'Tout cocher' }}
-                </button>
+                  <button type="button" class="btn-toggle-all-dispos" (click)="toggleAllDispos()">
+                    {{ allDisposChecked ? 'Tout décocher' : 'Tout cocher' }}
+                  </button>
 
-                <div class="dispo-table-wrapper">
-                  <table class="dispo-table">
-                    <thead>
-                      <tr>
-                        <th></th>
-                        <th>Matin</th>
-                        <th>Midi</th>
-                        <th>Soir</th>
-                        <th>Nuit</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      @for (jour of joursDispo; track jour.date) {
+                  <div class="dispo-table-wrapper">
+                    <table class="dispo-table">
+                      <thead>
                         <tr>
-                          <td class="dispo-jour">{{ jour.label }}</td>
-                          @for (slot of jour.creneaux; track slot.creneau) {
-                            <td class="dispo-cell">
-                              <input type="checkbox" [checked]="slot.checked" (change)="toggleDispo(jour, slot)">
-                            </td>
-                          }
+                          <th></th>
+                          <th>Matin</th>
+                          <th>Midi</th>
+                          <th>Soir</th>
+                          <th>Nuit</th>
                         </tr>
-                      }
-                    </tbody>
-                  </table>
-                </div>
-            </div>
+                      </thead>
+                      <tbody>
+                        @for (jour of joursDispo; track jour.date) {
+                          <tr>
+                            <td class="dispo-jour">{{ jour.label }}</td>
+                            @for (slot of jour.creneaux; track slot.creneau) {
+                              <td class="dispo-cell">
+                                <input type="checkbox" [checked]="slot.checked" (change)="toggleDispo(jour, slot)">
+                              </td>
+                            }
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+              </div>
+            }
 
       <app-rgpd-notice purpose="traiter votre offre d'aide"></app-rgpd-notice>
 

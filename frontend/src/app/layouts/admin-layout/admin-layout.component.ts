@@ -35,6 +35,12 @@ export class AdminLayoutComponent implements OnInit {
 
     { icon: 'flag', label: 'Signalements', route: '/admin/signalements' },
 
+    // Vue filtrée sur la commune de l'institution de l'utilisateur (typiquement une mairie) —
+    // existait déjà côté route/composant/backend mais n'apparaissait dans AUCUN menu (seul
+    // AdminSidebarComponent la référençait, un composant orphelin jamais instancié nulle part) :
+    // la page était donc inatteignable sans connaître son URL exacte.
+    { icon: 'location_city', label: 'Vue Mairie', route: '/admin/vue-mairie' },
+
     { icon: 'groups', label: 'Équipes', route: '/admin/equipes' },
 
     // Route publique (hors /admin) volontairement : un chef d'équipe de terrain peut être un

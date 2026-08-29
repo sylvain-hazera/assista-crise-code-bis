@@ -394,4 +394,16 @@ export class ProposeHelpFormComponent implements OnInit {
   removeOffer(index: number): void {
     this.offerRows.removeAt(index);
   }
+
+  /** Une personne qui ne propose QUE du matériel (ex: une cuve à prêter) n'a ni compétence ni
+   * disponibilité personnelle à déclarer : lui montrer ces deux sections (pensées pour un
+   * bénévolat en personne) n'a pas de sens et ajoute du bruit/des clics inutiles. Dès qu'au
+   * moins une ligne correspond à une aide en personne (hébergement, soins, transport, soutien,
+   * autre), on les affiche — le formulaire ne fait aucune hypothèse sur un matériel isolé. */
+  get proposeAideEnPersonne(): boolean {
+    return this.offerRows.controls.some(row => {
+      const type = row.value.type;
+      return !!type && type !== TYPE_MATERIEL;
+    });
+  }
 }
