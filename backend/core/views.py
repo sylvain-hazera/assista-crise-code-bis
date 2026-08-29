@@ -212,6 +212,7 @@ def send_crisis_regulateur_invite_email(request, user, crisis, institution):
 
 from .serializers import (
     validate_crisis_open,
+    AuditLogSerializer,
     InstitutionTypeSerializer,
     InstitutionSerializer,
     RoleOperationnelSerializer,
@@ -2205,9 +2206,32 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         # ne touche pas member_ids, ex: changement de couleur ou de zone).
         previous_member_ids = set(serializer.instance.members.values_list('id', flat=True))
         team = serializer.save()
-        new_members = team.members.exclude(id__in=previous_member_ids)
+        current_member_ids = set(team.members.values_list('id', flat=True))
+        new_members = team.members.filter(id__in=current_member_ids - previous_member_ids)
         for membre in new_members:
             _notify_new_team_member(team, membre, self.request)
+
+        # Journalise l'ajout/retrait de membres — jusqu'ici la seule action de TeamViewSet non
+        # tracée dans la main courante (voir AuditLogViewSet, onglet Historique de l'équipe).
+        added = current_member_ids - previous_member_ids
+        removed = previous_member_ids - current_member_ids
+        if added or removed:
+            noms = lambda ids: ", ".join(
+                (f"{u.first_name} {u.last_name}".strip() or u.username)
+                for u in User.objects.filter(id__in=ids)
+            )
+            parts = []
+            if added:
+                parts.append(f"ajouté(s) : {noms(added)}")
+            if removed:
+                parts.append(f"retiré(s) : {noms(removed)}")
+            audit_log(
+                request=self.request,
+                action_code="MODIFICATION",
+                objet_type="Team",
+                objet_id=team.id,
+                commentaire=f"Membres — {' / '.join(parts)}",
+            )
 
     @action(detail=False, methods=['get'], url_path='mes-equipes')
     def mes_equipes(self, request):
@@ -3349,6 +3373,37 @@ class DossierCommentaireViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVie
                 message=commentaire.commentaire[:250],
                 environment=commentaire.environment,
             )
+
+class AuditLogViewSet(EnvironmentScopedViewSetMixin, viewsets.ReadOnlyModelViewSet):
+    """Lecture seule de la main courante, jamais en liste globale : toujours filtrée sur un
+    objet précis (?objet_type=&objet_id=), sinon renvoie une liste vide plutôt que tout
+    l'historique de la plateforme. Pour Team, une mairie ne voit que l'historique des équipes
+    de sa propre institution (même garde-fou que definir_mission/assigner_ressource) ; tout
+    autre objet reste réservé à un admin — ce chantier n'a eu besoin d'ouvrir que Team."""
+    queryset = AuditLog.objects.all()
+    serializer_class = AuditLogSerializer
+    permission_classes = [IsInstitutionalActor]
+
+    def get_queryset(self):
+        objet_type = self.request.query_params.get('objet_type')
+        objet_id = self.request.query_params.get('objet_id')
+        if not objet_type or not objet_id:
+            return AuditLog.objects.none()
+
+        queryset = AuditLog.objects.filter(
+            objet_type=objet_type, objet_id=objet_id, environment=get_active_environment(self.request),
+        ).select_related('utilisateur', 'action').order_by('-date_action')
+
+        if objet_type == 'Team':
+            team = Team.objects.filter(id=objet_id).first()
+            if not team or not _appartient_a_institution(self.request, team.institution):
+                return AuditLog.objects.none()
+            return queryset
+
+        if get_effective_role(self.request) != UserRole.ADMINISTRATOR:
+            return AuditLog.objects.none()
+        return queryset
+
 
 class DossierHistoriqueViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     queryset = DossierHistorique.objects.all()

@@ -521,6 +521,36 @@
           }
         </div>
 
+        <!-- ── HISTORIQUE ──────────────────────────────────── -->
+        <div class="detail-section">
+          <div class="section-header">
+            <h3>
+              <span class="material-icons">history</span>
+              Historique
+              <span class="count-badge">{{ historyTimeline.length }}</span>
+            </h3>
+          </div>
+
+          @if (historyLoading) {
+            <p class="no-missions">Chargement…</p>
+          } @else if (historyTimeline.length === 0) {
+            <p class="no-missions">Aucun historique pour cette équipe.</p>
+          } @else {
+            <div class="history-list">
+              @for (h of historyTimeline; track $index) {
+                <div class="history-row">
+                  <span class="material-icons">{{ h.icon }}</span>
+                  <div class="history-info">
+                    <span class="history-label">{{ h.label }}</span>
+                    <span class="history-detail">{{ h.detail }}</span>
+                  </div>
+                  <span class="history-date">{{ fmtDate(h.date) }}</span>
+                </div>
+              }
+            </div>
+          }
+        </div>
+
       </div>
 
       <div class="modal-footer">

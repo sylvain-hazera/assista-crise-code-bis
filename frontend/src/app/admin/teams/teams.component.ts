@@ -13,6 +13,8 @@ import { DisponibiliteOffreService } from '../../services/disponibilite-offre.se
 import { DossierService } from '../../services/dossier.service';
 import { CompetenceService } from '../../services/competence.service';
 import { RoleOperationnelService } from '../../services/role-operationnel.service';
+import { AuditLogService, AuditLogEntry } from '../../services/audit-log.service';
+import { DossierHistoriqueService } from '../../services/dossier-historique.service';
 import { ZoneMapComponent } from '../../shared/components/common/zone-map/zone-map.component';
 import { TagSearchInputComponent } from '../../shared/components/common/tag-search-input/tag-search-input.component';
 
@@ -94,6 +96,8 @@ export class TeamsComponent implements OnInit {
     private dossierService: DossierService,
     private competenceService: CompetenceService,
     private roleOperationnelService: RoleOperationnelService,
+    private auditLogService: AuditLogService,
+    private dossierHistoriqueService: DossierHistoriqueService,
     private route: ActivatedRoute,
     private router: Router,
   ) {}
@@ -235,6 +239,49 @@ export class TeamsComponent implements OnInit {
     this.inviteError = '';
     this.inviteForm.reset();
     this.loadCandidateMembers(team);
+    this.loadHistory(team);
+  }
+
+  // ── HISTORIQUE ────────────────────────────────────────────────
+  auditEntries: AuditLogEntry[] = [];
+  dossierHistoriqueEntries: any[] = [];
+  historyLoading = false;
+
+  /** Charge la main courante de l'équipe (qui a rejoint/quitté, ressources/mission) et
+   * l'historique de traitement de ses dossiers (déjà tracé par DossierHistorique) — deux
+   * sources déjà existantes, fusionnées ici en une seule timeline. */
+  private loadHistory(team: Team): void {
+    if (!team.id) return;
+    this.historyLoading = true;
+    this.auditLogService.forObject('Team', team.id).subscribe({
+      next: (entries) => { this.auditEntries = entries; this.historyLoading = false; },
+      error: () => { this.auditEntries = []; this.historyLoading = false; },
+    });
+    this.dossierHistoriqueService.getAll().subscribe({
+      next: (entries) => this.dossierHistoriqueEntries = entries,
+      error: () => this.dossierHistoriqueEntries = [],
+    });
+  }
+
+  /** Timeline unifiée équipe + dossiers de l'équipe, triée du plus récent au plus ancien. */
+  get historyTimeline(): { date: string; icon: string; label: string; detail: string }[] {
+    if (!this.selectedTeam) return [];
+    const dossierIds = new Set(this.dossiersForSelectedTeam.map(d => d.id));
+    const fromAudit = this.auditEntries.map(e => ({
+      date: e.date_action,
+      icon: 'groups',
+      label: e.action_libelle || 'Équipe',
+      detail: `${e.commentaire || ''} — ${e.utilisateur_nom}`,
+    }));
+    const fromDossiers = this.dossierHistoriqueEntries
+      .filter(e => dossierIds.has(e.dossier))
+      .map(e => ({
+        date: e.date_creation,
+        icon: 'folder_open',
+        label: e.evenement,
+        detail: `${e.commentaire || ''} — ${e.auteur_nom}`,
+      }));
+    return [...fromAudit, ...fromDossiers].sort((a, b) => b.date.localeCompare(a.date));
   }
 
   /** Ne propose comme candidats à l'ajout QUE les membres de l'institution de cette équipe —

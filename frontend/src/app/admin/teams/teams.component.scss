@@ -345,6 +345,17 @@ h3 { margin: 0; font-size: .9rem; font-weight: 700; display: flex; align-items: 
 .resources-summary { font-size: .8rem; color: var(--muted); margin: 0 0 .6rem; }
 .ressources-open-btn { margin-top: .6rem; }
 
+.history-list { display: flex; flex-direction: column; gap: .5rem; max-height: 280px; overflow-y: auto; }
+.history-row {
+  display: flex; align-items: center; gap: .6rem; padding: .4rem 0;
+  border-bottom: 1px solid var(--border);
+  .material-icons { font-size: 16px; color: var(--muted); flex-shrink: 0; }
+}
+.history-info { flex: 1; display: flex; flex-direction: column; gap: .05rem; overflow: hidden; }
+.history-label { font-size: .82rem; font-weight: 600; }
+.history-detail { font-size: .75rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.history-date { font-size: .75rem; color: var(--muted); flex-shrink: 0; }
+
 // ── MK Badge ──────────────────────────────────────────────────────
 .mk-badge {
   width: 32px; height: 32px; border-radius: 8px;

@@ -37,6 +37,7 @@ from .models import (
     DeclarationSecurite,
     AffectationPointBenevole,
     Notification,
+    AuditLog,
 )
 
 class RecherchePersonneCommentairePhotoSerializer(
@@ -1087,6 +1088,23 @@ class DossierCommentaireSerializer(serializers.ModelSerializer):
             f"{obj.auteur.first_name} "
             f"{obj.auteur.last_name}"
         ).strip() or obj.auteur.username
+
+
+class AuditLogSerializer(serializers.ModelSerializer):
+    """Lecture seule — voir AuditLogViewSet, toujours interrogé avec ?objet_type=&objet_id=,
+    jamais en liste globale."""
+
+    utilisateur_nom = serializers.SerializerMethodField()
+    action_libelle = serializers.CharField(source='action.libelle', read_only=True, default=None)
+
+    class Meta:
+        model = AuditLog
+        fields = ['id', 'date_action', 'utilisateur_nom', 'action_libelle', 'objet_type', 'objet_id', 'commentaire']
+
+    def get_utilisateur_nom(self, obj):
+        if not obj.utilisateur:
+            return "Système"
+        return f"{obj.utilisateur.first_name} {obj.utilisateur.last_name}".strip() or obj.utilisateur.username
 
 
 class DossierHistoriqueSerializer(serializers.ModelSerializer):
