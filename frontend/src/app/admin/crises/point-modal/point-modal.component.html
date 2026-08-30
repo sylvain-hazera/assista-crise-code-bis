@@ -140,7 +140,7 @@
   </div>
 
   @if (equipeModalOpen && point) {
-    <app-point-equipe-modal [point]="point" [crisisId]="crisisId" [pointTypes]="pointTypes" (closed)="closeEquipeModal()"></app-point-equipe-modal>
+    <app-point-equipe-modal [point]="point" [crisisId]="crisisId!" [pointTypes]="pointTypes" (closed)="closeEquipeModal()"></app-point-equipe-modal>
   }
 
   @if (inventaireModalOpen && point) {
@@ -148,7 +148,7 @@
   }
 
   @if (comparaisonModalOpen) {
-    <app-stocks-comparaison-modal [crisisId]="crisisId" (closed)="closeComparaisonModal()"></app-stocks-comparaison-modal>
+    <app-stocks-comparaison-modal [crisisId]="crisisId!" (closed)="closeComparaisonModal()"></app-stocks-comparaison-modal>
   }
 
   @if (secretariatModalOpen && point) {

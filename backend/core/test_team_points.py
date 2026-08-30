@@ -1,11 +1,10 @@
 import pytest
 from django.urls import reverse
-from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient
 
 from core.models import (
-    ContactInstitution, Crisis, Institution, InstitutionType, PointOperationnel, PointType, Team,
+    ContactInstitution, Institution, InstitutionType, PointOperationnel, PointType, Team,
 )
 
 
@@ -40,78 +39,12 @@ def point_type_regroupement():
 
 
 @pytest.fixture
-def point_type_carburant():
-    ptype, _ = PointType.objects.get_or_create(
-        code='CARBURANT', defaults={'libelle': 'Point de ravitaillement carburant'},
-    )
-    return ptype
-
-
-@pytest.fixture
 def mairie_client(create_user, institution):
     user = create_user(username='mairie-points@test.fr', email='mairie-points@test.fr', type='AUT_LOCALE')
     ContactInstitution.objects.create(institution=institution, utilisateur=user, actif=True)
     client = APIClient()
     client.force_authenticate(user=user)
     return client, user
-
-
-@pytest.mark.django_db
-class TestCreerPoint:
-
-    def test_creates_point_linked_to_team(self, mairie_client, team, point_type_regroupement):
-        client, user = mairie_client
-        response = client.post(reverse('team-creer-point', args=[team.id]), {
-            'nom': 'Base logistique nord', 'type_id': str(point_type_regroupement.id),
-        }, format='json')
-
-        assert response.status_code == status.HTTP_201_CREATED
-        point = PointOperationnel.objects.get(id=response.data['id'])
-        assert point.equipe_id == team.id
-        assert point.type_id == point_type_regroupement.id
-        assert point.responsable_id == user.id
-        assert point.crise_id is None
-
-    def test_creates_point_with_optional_crisis(self, mairie_client, team, point_type_carburant):
-        client, _ = mairie_client
-        crisis = Crisis.objects.create(name='Crise point test', type='INCENDIE', location='POINT (5.72 45.18)')
-
-        response = client.post(reverse('team-creer-point', args=[team.id]), {
-            'nom': 'Station essence', 'type_id': str(point_type_carburant.id), 'crise_id': str(crisis.id),
-        }, format='json')
-
-        assert response.status_code == status.HTTP_201_CREATED
-        point = PointOperationnel.objects.get(id=response.data['id'])
-        assert point.crise_id == crisis.id
-
-    def test_rejects_closed_crisis(self, mairie_client, team, point_type_carburant):
-        client, _ = mairie_client
-        crisis = Crisis.objects.create(
-            name='Crise fermée point test', type='INCENDIE', location='POINT (5.72 45.18)', end_date=timezone.now(),
-        )
-        response = client.post(reverse('team-creer-point', args=[team.id]), {
-            'nom': 'Station essence', 'type_id': str(point_type_carburant.id), 'crise_id': str(crisis.id),
-        }, format='json')
-        assert response.status_code == status.HTTP_400_BAD_REQUEST
-
-    def test_rejects_missing_nom_or_type(self, mairie_client, team, point_type_regroupement):
-        client, _ = mairie_client
-        response = client.post(reverse('team-creer-point', args=[team.id]), {
-            'nom': '', 'type_id': str(point_type_regroupement.id),
-        }, format='json')
-        assert response.status_code == status.HTTP_400_BAD_REQUEST
-
-    def test_rejects_outside_team_institution(self, create_user, team, point_type_regroupement):
-        tiers = create_user(username='tiers-points@test.fr', email='tiers-points@test.fr', type='AUT_LOCALE')
-        other_institution = _make_institution(nom='Autre mairie points')
-        ContactInstitution.objects.create(institution=other_institution, utilisateur=tiers, actif=True)
-        client = APIClient()
-        client.force_authenticate(user=tiers)
-
-        response = client.post(reverse('team-creer-point', args=[team.id]), {
-            'nom': 'Base', 'type_id': str(point_type_regroupement.id),
-        }, format='json')
-        assert response.status_code == status.HTTP_403_FORBIDDEN
 
 
 @pytest.mark.django_db

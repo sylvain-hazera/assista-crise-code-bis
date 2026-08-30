@@ -59,12 +59,6 @@ export class TeamService {
     return this.http.post<void>(`${this.url}/${id}/delier-point/`, { point_id: pointId });
   }
 
-  creerPoint(id: string, data: {
-    nom: string; type_id: string; crise_id?: string; adresse?: string; description?: string;
-  }): Observable<PointOperationnel> {
-    return this.http.post<PointOperationnel>(`${this.url}/${id}/creer-point/`, data);
-  }
-
   rattacherEquipe(parentId: string, equipeId: string): Observable<Team> {
     return this.http.post<Team>(`${this.url}/${parentId}/rattacher-equipe/`, { equipe_id: equipeId });
   }

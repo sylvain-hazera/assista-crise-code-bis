@@ -2195,7 +2195,7 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             'list', 'create', 'update', 'partial_update', 'destroy',
             'inviter_membre', 'definir_mission', 'assigner_ressource', 'retirer_ressource',
             'definir_delegation', 'retirer_delegation', 'creer_dossier',
-            'lier_point', 'delier_point', 'creer_point',
+            'lier_point', 'delier_point',
             'rattacher_equipe', 'detacher_equipe',
         ):
             return [IsInstitutionalActor()]
@@ -2703,56 +2703,6 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         )
 
         return Response(status=status.HTTP_204_NO_CONTENT)
-
-    @action(detail=True, methods=['post'], url_path='creer-point')
-    def creer_point(self, request, pk=None):
-        """Crée directement un point opérationnel (regroupement des moyens, carburant...) pour
-        l'équipe, quand aucun point existant ne convient — rattaché immédiatement à l'équipe."""
-        team = self.get_object()
-        if not _appartient_a_equipe(request, team):
-            return Response(
-                {"error": "Vous ne pouvez créer un point que pour les équipes de votre institution (ou de l'institution déléguée)."},
-                status=status.HTTP_403_FORBIDDEN,
-            )
-
-        nom = (request.data.get('nom') or '').strip()
-        type_id = request.data.get('type_id')
-        if not nom or not type_id:
-            return Response({"error": "Le nom et le thème du point sont obligatoires."}, status=status.HTTP_400_BAD_REQUEST)
-        try:
-            point_type = PointType.objects.get(id=type_id)
-        except (PointType.DoesNotExist, ValueError, TypeError):
-            return Response({"error": "Thème de point introuvable."}, status=status.HTTP_400_BAD_REQUEST)
-
-        crise = None
-        crise_id = request.data.get('crise_id')
-        if crise_id:
-            try:
-                crise = Crisis.objects.get(id=crise_id)
-            except (Crisis.DoesNotExist, ValueError, TypeError):
-                return Response({"error": "Crise introuvable."}, status=status.HTTP_400_BAD_REQUEST)
-            validate_crisis_open(crise, field_name="crise_id")
-
-        point = PointOperationnel.objects.create(
-            nom=nom,
-            type=point_type,
-            crise=crise,
-            equipe=team,
-            responsable=request.user,
-            adresse=(request.data.get('adresse') or '').strip() or None,
-            description=(request.data.get('description') or '').strip() or None,
-            environment=get_active_environment(request),
-        )
-
-        audit_log(
-            request=request,
-            action_code="CREATION",
-            objet_type="Team",
-            objet_id=team.id,
-            commentaire=f"Point créé et lié : « {point.nom} » ({point_type.libelle})",
-        )
-
-        return Response(PointOperationnelSerializer(point, context=self.get_serializer_context()).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['post'], url_path='rattacher-equipe')
     def rattacher_equipe(self, request, pk=None):

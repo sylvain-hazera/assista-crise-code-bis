@@ -463,24 +463,6 @@
             </div>
           }
 
-          @if (showCreatePointForm) {
-            <div class="invite-member-form">
-              <input type="text" placeholder="Nom du point (ex : Base logistique nord)" [(ngModel)]="createPointNom" />
-              <div class="invite-form-row">
-                <select [(ngModel)]="createPointTypeId">
-                  @for (t of pointTypes; track t.id) {
-                    <option [ngValue]="t.id">{{ t.libelle }}</option>
-                  }
-                </select>
-              </div>
-              <input type="text" placeholder="Adresse (optionnel)" [(ngModel)]="createPointAdresse" />
-              <div class="section-header-actions">
-                <button class="btn-primary sm" (click)="submitCreerPoint()">Créer le point</button>
-                <button class="btn-ghost sm" (click)="showCreatePointForm = false">Annuler</button>
-              </div>
-            </div>
-          }
-
           @if (pointsForSelectedTeam.length === 0) {
             <p class="no-missions">Aucun point de regroupement rattaché à cette équipe.</p>
           } @else {
@@ -1016,4 +998,16 @@
       </div>
     </div>
   </div>
+}
+
+@if (showPointModal && selectedTeam) {
+  <app-point-modal
+    [crisisId]="selectedTeam.mission_active_crise_id ?? null"
+    [pointTypes]="pointTypes"
+    [selectableInstitutions]="selectedTeam.mission_active_crise_id ? institutions : []"
+    [defaultEquipeId]="selectedTeam.id!"
+    [point]="null"
+    (saved)="onPointCreated($event)"
+    (closed)="showPointModal = false">
+  </app-point-modal>
 }

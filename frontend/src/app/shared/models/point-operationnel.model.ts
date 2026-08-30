@@ -74,7 +74,7 @@ export interface PointEquipeResponse {
 export interface PointOperationnelPayload {
   nom: string;
   type: string;
-  crise: string;
+  crise?: string;  // optionnel : un point de regroupement des moyens créé depuis une équipe n'est pas forcément lié à une crise précise
   adresse?: string;
   commentaire?: string;
   institution?: string;

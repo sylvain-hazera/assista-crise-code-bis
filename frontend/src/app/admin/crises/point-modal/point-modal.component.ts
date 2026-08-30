@@ -34,11 +34,15 @@ import { PointSecretariatModalComponent } from '../point-secretariat-modal/point
   styleUrl: './point-modal.component.scss'
 })
 export class PointModalComponent implements OnChanges {
-  @Input({ required: true }) crisisId!: string;
+  // Optionnel : un point créé depuis une équipe (regroupement des moyens, carburant...) n'est
+  // pas forcément lié à une crise précise — voir TeamsComponent, seul appelant sans crisisId.
+  @Input() crisisId: string | null = null;
   @Input({ required: true }) pointTypes: PointType[] = [];
   @Input({ required: true }) selectableInstitutions: Institution[] = [];
   @Input() isAdmin = false;
   @Input() point: PointOperationnel | null = null; // null = création
+  /** Équipe pré-sélectionnée à la création (ex: depuis la fiche équipe) — reste modifiable. */
+  @Input() defaultEquipeId: string | null = null;
 
   @Output() saved = new EventEmitter<PointOperationnel>();
   @Output() closed = new EventEmitter<void>();
@@ -88,7 +92,7 @@ export class PointModalComponent implements OnChanges {
       capacite_accueil: [this.point?.capacite_accueil ?? null],
       date_ouverture: [this.toDatetimeLocal(this.point?.date_ouverture)],
       date_fermeture: [this.toDatetimeLocal(this.point?.date_fermeture)],
-      equipe: [this.point?.equipe ?? null],
+      equipe: [this.point?.equipe ?? this.defaultEquipeId ?? null],
     });
     this.latitude = this.point?.latitude ?? null;
     this.longitude = this.point?.longitude ?? null;
@@ -195,7 +199,11 @@ export class PointModalComponent implements OnChanges {
 
     const request$ = this.isEdit
       ? this.pointService.update(this.point!.id, payload)
-      : this.pointService.create({ ...payload, crise: this.crisisId, institution: institution || undefined });
+      : this.pointService.create({
+          ...payload,
+          ...(this.crisisId ? { crise: this.crisisId } : {}),
+          institution: institution || undefined,
+        });
 
     request$.subscribe({
       next: (result) => {

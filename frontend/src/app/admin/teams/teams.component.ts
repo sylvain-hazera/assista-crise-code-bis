@@ -20,6 +20,7 @@ import { PointOperationnelService } from '../../services/point-operationnel.serv
 import { PointTypeService } from '../../services/point-type.service';
 import { ZoneMapComponent } from '../../shared/components/common/zone-map/zone-map.component';
 import { TagSearchInputComponent } from '../../shared/components/common/tag-search-input/tag-search-input.component';
+import { PointModalComponent } from '../crises/point-modal/point-modal.component';
 
 import { Team, TeamMission }  from '../../shared/models/team.model';
 import { User }        from '../../shared/models/user.model';
@@ -41,7 +42,7 @@ const COLORS = ['#ef4444','#f97316','#eab308','#22c55e','#06b6d4','#3b82f6','#8b
 @Component({
   selector: 'app-teams',
   standalone: true,
-  imports: [CommonModule, FormsModule, ReactiveFormsModule, ZoneMapComponent, TagSearchInputComponent],
+  imports: [CommonModule, FormsModule, ReactiveFormsModule, ZoneMapComponent, TagSearchInputComponent, PointModalComponent],
   templateUrl: './teams.component.html',
   styleUrls: ['./teams.component.scss'],
 })
@@ -254,7 +255,7 @@ export class TeamsComponent implements OnInit {
     this.inviteForm.reset();
     this.showCreateDossierForm = false;
     this.showLinkPointForm = false;
-    this.showCreatePointForm = false;
+    this.showPointModal = false;
     this.showAttachTeamForm = false;
     this.loadCandidateMembers(team);
     this.loadHistory(team);
@@ -719,11 +720,8 @@ export class TeamsComponent implements OnInit {
 
   // ── POINTS DE REGROUPEMENT DES MOYENS ────────────────────────
   showLinkPointForm = false;
-  showCreatePointForm = false;
+  showPointModal = false;
   pointSearchQuery = '';
-  createPointNom = '';
-  createPointTypeId: string | null = null;
-  createPointAdresse = '';
 
   /** Points déjà rattachés à l'équipe (regroupement des moyens, carburant, restauration...). */
   get pointsForSelectedTeam(): PointOperationnel[] {
@@ -742,16 +740,23 @@ export class TeamsComponent implements OnInit {
 
   ouvrirLiaisonPoint(): void {
     this.showLinkPointForm = true;
-    this.showCreatePointForm = false;
+    this.showPointModal = false;
     this.pointSearchQuery = '';
   }
 
+  /** Ouvre la même modale de création que la vue crise (app-point-modal) — mêmes champs
+   * (thème, titre, description, capacité, adresse, dates), avec l'équipe pré-sélectionnée et
+   * sans crise obligatoire (un point de regroupement des moyens n'est pas forcément lié à une
+   * crise précise). */
   ouvrirCreationPoint(): void {
-    this.showCreatePointForm = true;
+    this.showPointModal = true;
     this.showLinkPointForm = false;
-    this.createPointNom = '';
-    this.createPointTypeId = this.pointTypes[0]?.id ?? null;
-    this.createPointAdresse = '';
+  }
+
+  onPointCreated(point: PointOperationnel): void {
+    this.points = [...this.points, point];
+    this.showPointModal = false;
+    this.showSuccess('Point créé et lié à l\'équipe.');
   }
 
   lierPoint(pointId: string): void {
@@ -777,25 +782,6 @@ export class TeamsComponent implements OnInit {
     });
   }
 
-  submitCreerPoint(): void {
-    if (!this.selectedTeam?.id || !this.createPointNom.trim() || !this.createPointTypeId) {
-      this.showError('Le nom et le thème du point sont obligatoires.');
-      return;
-    }
-    this.teamService.creerPoint(this.selectedTeam.id, {
-      nom: this.createPointNom.trim(),
-      type_id: this.createPointTypeId,
-      adresse: this.createPointAdresse.trim() || undefined,
-      crise_id: this.selectedTeam.mission_active_crise_id ?? undefined,
-    }).subscribe({
-      next: (point) => {
-        this.points = [...this.points, point];
-        this.showCreatePointForm = false;
-        this.showSuccess('Point créé et lié à l\'équipe.');
-      },
-      error: (err) => this.showError(err?.error?.error || 'Erreur lors de la création du point.'),
-    });
-  }
 
   // ── HIÉRARCHIE D'ÉQUIPES (rattachement comme ressource) ──────
   showAttachTeamForm = false;
