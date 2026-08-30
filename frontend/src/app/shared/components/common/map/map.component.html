@@ -23,6 +23,16 @@
         <span class="layer-dot informations-dot"></span>
         Signalements
       </label>
+      <label class="layer-toggle-item">
+        <input type="checkbox" [(ngModel)]="layerVisibility.centresHebergement" (ngModelChange)="onLayerToggle()">
+        <span class="layer-dot centres-hebergement-dot"></span>
+        Centres d'hébergement / accueil
+      </label>
+      <label class="layer-toggle-item">
+        <input type="checkbox" [(ngModel)]="layerVisibility.postesSecours" (ngModelChange)="onLayerToggle()">
+        <span class="layer-dot postes-secours-dot"></span>
+        Postes de secours / soins
+      </label>
       @if (isInstitutional) {
         <label class="layer-toggle-item">
           <input type="checkbox" [(ngModel)]="layerVisibility.positions" (ngModelChange)="onLayerToggle()">
@@ -37,12 +47,7 @@
         <label class="layer-toggle-item">
           <input type="checkbox" [(ngModel)]="layerVisibility.centresTous" (ngModelChange)="onLayerToggle()">
           <span class="layer-dot centres-dot"></span>
-          Centres
-        </label>
-        <label class="layer-toggle-item">
-          <input type="checkbox" [(ngModel)]="layerVisibility.centresSecours" (ngModelChange)="onLayerToggle()">
-          <span class="layer-dot centres-secours-dot"></span>
-          Centres secours/soins
+          Centres (tous types)
         </label>
       }
     </div>

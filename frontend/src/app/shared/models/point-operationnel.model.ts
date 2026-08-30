@@ -46,6 +46,8 @@ export interface CentreAccueilPublic {
   capacite_accueil: number | null;
   personnes_presentes: number;
   crise: string | null;
+  type_code?: string | null;
+  type_libelle?: string | null;
 }
 
 export interface PointEquipeMembre {

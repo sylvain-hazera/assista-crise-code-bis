@@ -1678,10 +1678,15 @@ class PointOperationnelPublicSerializer(serializers.ModelSerializer):
     latitude = serializers.SerializerMethodField()
     longitude = serializers.SerializerMethodField()
     personnes_presentes = serializers.SerializerMethodField()
+    # Le type lui-même n'a rien de sensible (un centre d'accueil doit justement être identifiable
+    # publiquement) — utile pour distinguer centres d'accueil / postes de secours sur la carte
+    # publique (voir PointOperationnelViewSet.carte_publique).
+    type_code = serializers.CharField(source="type.code", read_only=True, default=None)
+    type_libelle = serializers.CharField(source="type.libelle", read_only=True, default=None)
 
     class Meta:
         model = PointOperationnel
-        fields = ['id', 'nom', 'adresse', 'latitude', 'longitude', 'capacite_accueil', 'personnes_presentes', 'crise']
+        fields = ['id', 'nom', 'adresse', 'latitude', 'longitude', 'capacite_accueil', 'personnes_presentes', 'crise', 'type_code', 'type_libelle']
 
     def get_latitude(self, obj):
         return obj.location.y if obj.location else None

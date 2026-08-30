@@ -16,7 +16,7 @@ import { PointOperationnelService } from '../../../../services/point-operationne
 import type { FeatureCollection, Geometry, Polygon } from 'geojson';
 import { AuthService } from '../../../../auth/services/auth.service';
 import { InformationService } from '../../../../services/information.service';
-import { PointOperationnel } from '../../../models/point-operationnel.model';
+import { PointOperationnel, CentreAccueilPublic } from '../../../models/point-operationnel.model';
 
 interface LayerVisibility {
   crises: boolean;
@@ -26,13 +26,16 @@ interface LayerVisibility {
   positions: boolean;
   personnelSecourisme: boolean;
   centresTous: boolean;
-  centresSecours: boolean;
+  centresHebergement: boolean;
+  postesSecours: boolean;
 }
 
 // Codes/libellés déjà utilisés côté offre/point pour repérer secourisme/soins — voir
 // OfferSerializer.offer_type_nom / PointOperationnelSerializer.type_code.
 const OFFER_TYPE_SOINS = 'Soins médicaux et paramédicaux';
 const POINT_TYPE_SECOURS = 'SECOURS';
+const POINT_TYPE_HEBERGEMENT = 'HEBERGEMENT';
+const POSTE_SECOURS_ICON_ID = 'poste-secours-icon';
 
 @Component({
   selector: 'app-map',
@@ -65,7 +68,8 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     positions: true,
     personnelSecourisme: true,
     centresTous: true,
-    centresSecours: true,
+    centresHebergement: true,
+    postesSecours: true,
   };
 
   private map: maplibregl.Map | null = null;
@@ -76,7 +80,8 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   private teamPositionsGeoJSON: FeatureCollection<Geometry> | null = null;
   private personnelSecourismeGeoJSON: FeatureCollection<Geometry> | null = null;
   private centresTousGeoJSON: FeatureCollection<Geometry> | null = null;
-  private centresSecoursGeoJSON: FeatureCollection<Geometry> | null = null;
+  private centresHebergementGeoJSON: FeatureCollection<Geometry> | null = null;
+  private postesSecoursGeoJSON: FeatureCollection<Geometry> | null = null;
   private subscription: Subscription | null = null;
 
   constructor(private crisisService: CrisisService,
@@ -104,6 +109,9 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
       this.loadTeamPositions();
       this.loadCentres();
     }
+    // Centres d'accueil et postes de secours : visibles sans authentification (contrairement
+    // aux deux calques ci-dessus), voir PointOperationnelViewSet.carte_publique.
+    this.loadCentresPublics();
   }
 
   /** Appelé par les checkbox du panneau de calques (voir template) : ré-applique la
@@ -115,7 +123,8 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     this.applyLayerVisibility('location-radius', this.layerVisibility.crises);
     this.applyLayerVisibility('personnel-secourisme-layer', this.layerVisibility.personnelSecourisme);
     this.applyLayerVisibility('centres-tous-layer', this.layerVisibility.centresTous);
-    this.applyLayerVisibility('centres-secours-layer', this.layerVisibility.centresSecours);
+    this.applyLayerVisibility('centres-hebergement-layer', this.layerVisibility.centresHebergement);
+    this.applyLayerVisibility('postes-secours-layer', this.layerVisibility.postesSecours);
   }
 
   private applyLayerVisibility(layerId: string, visible: boolean): void {
@@ -430,69 +439,143 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   /** Tous les points opérationnels (centres d'accueil, de regroupement des moyens...) —
-   * institutionnel uniquement, comme les positions équipes : un centre logistique n'a pas
-   * vocation à être exposé au grand public de la même façon qu'un centre d'accueil (déjà
-   * public par ailleurs via PointOperationnelViewSet.centres_accueil, page "je suis en
-   * sécurité"). Le calque "Centres secours/soins" réutilise la même source, filtrée côté
-   * MapLibre sur type_code. */
+   * institutionnel uniquement, comme les positions équipes : un point logistique interne n'a
+   * pas vocation à être exposé au grand public comme le sont les deux calques publics dédiés
+   * (centres d'accueil, postes de secours — voir loadCentresPublics). */
   loadCentres(): void {
     this.pointOperationnelService.getAll().subscribe({
       next: (points) => {
         const withLocation = points.filter(p => p.latitude != null && p.longitude != null);
         this.centresTousGeoJSON = this.jsonToGeoJSON(withLocation);
-        this.centresSecoursGeoJSON = this.jsonToGeoJSON(
-          withLocation.filter(p => p.type_code === POINT_TYPE_SECOURS)
-        );
-        this.runWhenMapReady(() => this.addOrUpdateCentresLayers());
+        this.runWhenMapReady(() => this.addOrUpdateSimpleCircleLayer(
+          'centres-tous', 'centres-tous-layer', this.centresTousGeoJSON, '#6366f1', this.layerVisibility.centresTous,
+        ));
       },
       error: (err) => console.error('Erreur chargement centres:', err)
     });
   }
 
-  private addOrUpdateCentresLayers(): void {
-    if (!this.map) return;
+  /** Centres d'accueil et postes de secours : visibles sans authentification (voir
+   * PointOperationnelViewSet.carte_publique) — contrairement à "Tous les centres" ci-dessus,
+   * réservé aux institutionnels. */
+  loadCentresPublics(): void {
+    this.pointOperationnelService.getCartePublique().subscribe({
+      next: (points: CentreAccueilPublic[]) => {
+        const withLocation = points.filter(p => p.latitude != null && p.longitude != null);
+        this.centresHebergementGeoJSON = this.jsonToGeoJSON(
+          withLocation.filter(p => p.type_code === POINT_TYPE_HEBERGEMENT)
+        );
+        this.postesSecoursGeoJSON = this.jsonToGeoJSON(
+          withLocation.filter(p => p.type_code === POINT_TYPE_SECOURS)
+        );
+        this.runWhenMapReady(() => {
+          this.addOrUpdateSimpleCircleLayer(
+            'centres-hebergement', 'centres-hebergement-layer', this.centresHebergementGeoJSON,
+            '#059669', this.layerVisibility.centresHebergement,
+          );
+          this.addOrUpdatePostesSecoursLayer();
+        });
+      },
+      error: (err) => console.error('Erreur chargement centres publics:', err)
+    });
+  }
 
-    const addOrUpdate = (
-      sourceId: string, layerId: string, data: FeatureCollection<Geometry> | null,
-      color: string, visible: boolean,
-    ) => {
-      if (!data) return;
-      const existing = this.map!.getSource(sourceId) as maplibregl.GeoJSONSource | undefined;
-      if (existing) {
-        existing.setData(data);
-        return;
-      }
-      this.map!.addSource(sourceId, { type: 'geojson', data });
-      this.map!.addLayer({
-        id: layerId,
-        type: 'circle',
-        source: sourceId,
-        layout: { visibility: visible ? 'visible' : 'none' },
-        paint: {
-          'circle-color': color,
-          'circle-radius': 7,
-          'circle-stroke-width': 2,
-          'circle-stroke-color': '#fff',
+  private addOrUpdateSimpleCircleLayer(
+    sourceId: string, layerId: string, data: FeatureCollection<Geometry> | null,
+    color: string, visible: boolean,
+  ): void {
+    if (!this.map || !data) return;
+    const existing = this.map.getSource(sourceId) as maplibregl.GeoJSONSource | undefined;
+    if (existing) {
+      existing.setData(data);
+      return;
+    }
+    this.map.addSource(sourceId, { type: 'geojson', data });
+    this.map.addLayer({
+      id: layerId,
+      type: 'circle',
+      source: sourceId,
+      layout: { visibility: visible ? 'visible' : 'none' },
+      paint: {
+        'circle-color': color,
+        'circle-radius': 7,
+        'circle-stroke-width': 2,
+        'circle-stroke-color': '#fff',
+      },
+    });
+    this.map.on('click', layerId, (e) => {
+      if (!e.features || e.features.length === 0) return;
+      const geometry = e.features[0].geometry as GeoJSON.Point;
+      const coordinates = geometry.coordinates.slice() as [number, number];
+      const props = e.features[0].properties || {};
+      new maplibregl.Popup()
+        .setLngLat(coordinates)
+        .setHTML(`<strong>${props['nom'] || 'Centre'}</strong><br>${props['type_libelle'] || ''}`)
+        .addTo(this.map!);
+    });
+    this.map.on('mouseenter', layerId, () => { this.map!.getCanvas().style.cursor = 'pointer'; });
+    this.map.on('mouseleave', layerId, () => { this.map!.getCanvas().style.cursor = ''; });
+  }
+
+  /** Icône dédiée (croix rouge sur fond blanc) plutôt qu'un simple point coloré, pour rester
+   * immédiatement identifiable — y compris par un visiteur anonyme qui ne connaît pas la
+   * légende des calques. */
+  private ensurePosteSecoursIcon(): Promise<void> {
+    if (!this.map) return Promise.reject('map non initialisée');
+    if (this.map.hasImage(POSTE_SECOURS_ICON_ID)) return Promise.resolve();
+
+    const svg = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32">
+        <rect x="2" y="2" width="28" height="28" rx="5" fill="#ffffff" stroke="#dc2626" stroke-width="2"/>
+        <rect x="13.5" y="7" width="5" height="18" fill="#dc2626"/>
+        <rect x="7" y="13.5" width="18" height="5" fill="#dc2626"/>
+      </svg>`;
+    const url = `data:image/svg+xml;base64,${btoa(svg)}`;
+
+    return new Promise((resolve, reject) => {
+      this.map!.loadImage(url).then(({ data: image }) => {
+        if (!this.map!.hasImage(POSTE_SECOURS_ICON_ID)) this.map!.addImage(POSTE_SECOURS_ICON_ID, image);
+        resolve();
+      }).catch(reject);
+    });
+  }
+
+  private addOrUpdatePostesSecoursLayer(): void {
+    if (!this.map || !this.postesSecoursGeoJSON) return;
+
+    const existing = this.map.getSource('postes-secours') as maplibregl.GeoJSONSource | undefined;
+    if (existing) {
+      existing.setData(this.postesSecoursGeoJSON);
+      return;
+    }
+
+    this.ensurePosteSecoursIcon().then(() => {
+      if (!this.map || !this.postesSecoursGeoJSON) return;
+      this.map.addSource('postes-secours', { type: 'geojson', data: this.postesSecoursGeoJSON });
+      this.map.addLayer({
+        id: 'postes-secours-layer',
+        type: 'symbol',
+        source: 'postes-secours',
+        layout: {
+          visibility: this.layerVisibility.postesSecours ? 'visible' : 'none',
+          'icon-image': POSTE_SECOURS_ICON_ID,
+          'icon-size': 0.7,
+          'icon-allow-overlap': true,
         },
       });
-      this.map!.on('click', layerId, (e) => {
+      this.map.on('click', 'postes-secours-layer', (e) => {
         if (!e.features || e.features.length === 0) return;
         const geometry = e.features[0].geometry as GeoJSON.Point;
         const coordinates = geometry.coordinates.slice() as [number, number];
         const props = e.features[0].properties || {};
         new maplibregl.Popup()
           .setLngLat(coordinates)
-          .setHTML(`<strong>${props['nom'] || 'Centre'}</strong><br>${props['type_libelle'] || ''}`)
+          .setHTML(`<strong>${props['nom'] || 'Poste de secours'}</strong>`)
           .addTo(this.map!);
       });
-      this.map!.on('mouseenter', layerId, () => { this.map!.getCanvas().style.cursor = 'pointer'; });
-      this.map!.on('mouseleave', layerId, () => { this.map!.getCanvas().style.cursor = ''; });
-    };
-
-    // "Centres secours/soins" en dernier pour rester au-dessus de "Tous les centres" quand les
-    // deux se superposent au même endroit.
-    addOrUpdate('centres-tous', 'centres-tous-layer', this.centresTousGeoJSON, '#6366f1', this.layerVisibility.centresTous);
-    addOrUpdate('centres-secours', 'centres-secours-layer', this.centresSecoursGeoJSON, '#dc2626', this.layerVisibility.centresSecours);
+      this.map.on('mouseenter', 'postes-secours-layer', () => { this.map!.getCanvas().style.cursor = 'pointer'; });
+      this.map.on('mouseleave', 'postes-secours-layer', () => { this.map!.getCanvas().style.cursor = ''; });
+    }).catch((err) => console.error('Erreur chargement icône poste de secours:', err));
   }
 
   private addSourceAndLayers(): void {

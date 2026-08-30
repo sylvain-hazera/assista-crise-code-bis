@@ -27,6 +27,13 @@ export class PointOperationnelService {
     return this.http.get<CentreAccueilPublic[]>(`${this.apiUrl}/centres_accueil/`, { params: { crise: criseId } });
   }
 
+  /** GET /api/points-operationnels/carte_publique/ — endpoint public (AllowAny), toutes crises
+   * confondues (contrairement à getCentresAccueilPublics, scopé à une seule crise) : alimente
+   * les calques publics de la carte d'accueil (centres d'accueil, postes de secours). */
+  getCartePublique(): Observable<CentreAccueilPublic[]> {
+    return this.http.get<CentreAccueilPublic[]>(`${this.apiUrl}/carte_publique/`);
+  }
+
   /** Points dont je suis responsable, leader d'équipe ou membre — toutes crises confondues
    * (page "Centres", filtre "Mes centres"). */
   getMine(): Observable<PointOperationnel[]> {

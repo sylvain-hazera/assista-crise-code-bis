@@ -81,6 +81,47 @@ class TestPointOperationnelLocationSerialization:
 
 
 @pytest.mark.django_db
+class TestCartePublique:
+
+    def test_anonymous_sees_hebergement_and_secours_only(self, crisis):
+        hebergement_type = PointType.objects.get_or_create(code="HEBERGEMENT", defaults={"libelle": "Centre d'accueil des personnes"})[0]
+        secours_type = PointType.objects.get_or_create(code="SECOURS", defaults={"libelle": "Poste de secours"})[0]
+        autre_type = PointType.objects.create(code="AUTRE_CARTE_PUB_TEST", libelle="Autre test")
+
+        centre = PointOperationnel.objects.create(nom="Centre public test", type=hebergement_type, crise=crisis, actif=True)
+        poste = PointOperationnel.objects.create(nom="Poste secours public test", type=secours_type, crise=crisis, actif=True)
+        autre = PointOperationnel.objects.create(nom="Autre point public test", type=autre_type, crise=crisis, actif=True)
+
+        client = APIClient()
+        response = client.get(reverse('pointoperationnel-carte-publique'))
+
+        assert response.status_code == status.HTTP_200_OK
+        noms = {p["nom"] for p in response.data}
+        assert centre.nom in noms
+        assert poste.nom in noms
+        assert autre.nom not in noms
+
+    def test_excludes_inactive_points(self, crisis):
+        hebergement_type = PointType.objects.get_or_create(code="HEBERGEMENT", defaults={"libelle": "Centre d'accueil des personnes"})[0]
+        inactif = PointOperationnel.objects.create(nom="Centre inactif test", type=hebergement_type, crise=crisis, actif=False)
+
+        client = APIClient()
+        response = client.get(reverse('pointoperationnel-carte-publique'))
+
+        assert inactif.nom not in {p["nom"] for p in response.data}
+
+    def test_exposes_type_code_for_filtering(self, crisis):
+        secours_type = PointType.objects.get_or_create(code="SECOURS", defaults={"libelle": "Poste de secours"})[0]
+        poste = PointOperationnel.objects.create(nom="Poste type code test", type=secours_type, crise=crisis, actif=True)
+
+        client = APIClient()
+        response = client.get(reverse('pointoperationnel-carte-publique'))
+
+        entry = next(p for p in response.data if p["nom"] == poste.nom)
+        assert entry["type_code"] == "SECOURS"
+
+
+@pytest.mark.django_db
 class TestPointOperationnelEditPermissions:
 
     def test_owner_institutional_actor_can_edit(self, institutional_client, crisis, point_type):

@@ -61,7 +61,24 @@
 .positions-dot { background: #9c27b0; }
 .personnel-dot { background: #f59e0b; }
 .centres-dot { background: #6366f1; }
-.centres-secours-dot { background: #dc2626; }
+.centres-hebergement-dot { background: #059669; }
+
+// Mini reproduction du pictogramme réel du calque (croix rouge sur fond blanc), plutôt qu'un
+// simple point coloré comme les autres calques — reste identifiable même sans légende.
+.postes-secours-dot {
+  border-radius: 2px;
+  background: #fff;
+  border: 1.5px solid #dc2626;
+  position: relative;
+
+  &::before, &::after {
+    content: '';
+    position: absolute;
+    background: #dc2626;
+  }
+  &::before { top: 1px; bottom: 1px; left: 4px; width: 2px; }
+  &::after { left: 1px; right: 1px; top: 4px; height: 2px; }
+}
 
 /* Styles pour les popups des crises */
 :host ::ng-deep .maplibregl-popup-content {

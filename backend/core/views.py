@@ -4326,9 +4326,21 @@ class PointOperationnelViewSet(
         # `permission_classes=[AllowAny]` posé sur l'action elle-même (plus bas) ne suffit pas
         # à lui seul : cette méthode le remplace entièrement pour toute cette vue, il faut
         # explicitement la laisser passer ici aussi.
-        if self.action == "centres_accueil":
+        if self.action in ("centres_accueil", "carte_publique"):
             return [AllowAny()]
         return [permissions.IsAuthenticated()]
+
+    @action(detail=False, methods=["get"], permission_classes=[AllowAny])
+    def carte_publique(self, request):
+        """Centres visibles sans authentification sur la carte de la page d'accueil : centres
+        d'accueil (HEBERGEMENT) et postes de secours (SECOURS) actifs, toutes crises confondues
+        — contrairement à centres_accueil (scopé à une seule crise pour le formulaire "je suis
+        en sécurité"), cette liste alimente une carte globale, sans crise présélectionnée."""
+        queryset = PointOperationnel.objects.filter(
+            actif=True, type__code__in=["HEBERGEMENT", "SECOURS"],
+            environment=get_active_environment(request),
+        ).select_related("type")
+        return Response(PointOperationnelPublicSerializer(queryset, many=True).data)
 
     @action(detail=False, methods=["get"], permission_classes=[AllowAny])
     def centres_accueil(self, request):
