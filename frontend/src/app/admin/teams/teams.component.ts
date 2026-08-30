@@ -16,6 +16,8 @@ import { CompetenceService } from '../../services/competence.service';
 import { RoleOperationnelService } from '../../services/role-operationnel.service';
 import { AuditLogService, AuditLogEntry } from '../../services/audit-log.service';
 import { DossierHistoriqueService } from '../../services/dossier-historique.service';
+import { PointOperationnelService } from '../../services/point-operationnel.service';
+import { PointTypeService } from '../../services/point-type.service';
 import { ZoneMapComponent } from '../../shared/components/common/zone-map/zone-map.component';
 import { TagSearchInputComponent } from '../../shared/components/common/tag-search-input/tag-search-input.component';
 
@@ -30,6 +32,7 @@ import { DisponibiliteOffre } from '../../shared/models/disponibilite-offre.mode
 import { Dossier } from '../../shared/models/dossier.model';
 import { Competence } from '../../shared/models/competence.model';
 import { Institution } from '../../shared/models/institution.model';
+import { PointOperationnel, PointType } from '../../shared/models/point-operationnel.model';
 
 type ModalView = 'none' | 'create' | 'detail' | 'edit' | 'delete' | 'assign' | 'planning';
 
@@ -55,6 +58,8 @@ export class TeamsComponent implements OnInit {
   competences: Competence[] = [];
   roles: RoleOperationnel[] = [];
   institutions: Institution[] = [];
+  points: PointOperationnel[] = [];
+  pointTypes: PointType[] = [];
 
   /** Membres candidats pour l'équipe SÉLECTIONNÉE uniquement (rechargés à l'ouverture du
    * détail, scopés sur son institution) — distinct de `users` (liste globale, encore
@@ -99,6 +104,8 @@ export class TeamsComponent implements OnInit {
     private roleOperationnelService: RoleOperationnelService,
     private auditLogService: AuditLogService,
     private dossierHistoriqueService: DossierHistoriqueService,
+    private pointOperationnelService: PointOperationnelService,
+    private pointTypeService: PointTypeService,
     private route: ActivatedRoute,
     private router: Router,
   ) {}
@@ -134,8 +141,10 @@ export class TeamsComponent implements OnInit {
       competences: this.competenceService.getAll(),
       roles: this.roleOperationnelService.getAll(),
       institutions: this.institutionService.getAll(),
+      points: this.pointOperationnelService.getAll(),
+      pointTypes: this.pointTypeService.getAll(),
     }).subscribe({
-      next: ({ users, crisis, offers, requests, teams, disponibilites, dossiers, competences, roles, institutions }) => {
+      next: ({ users, crisis, offers, requests, teams, disponibilites, dossiers, competences, roles, institutions, points, pointTypes }) => {
         this.users    = users;
         this.crisis   = crisis;
         this.offers   = offers;
@@ -145,6 +154,8 @@ export class TeamsComponent implements OnInit {
         this.competences = competences;
         this.roles = roles;
         this.institutions = institutions;
+        this.points = points;
+        this.pointTypes = pointTypes;
         this.teams    = teams.map(t => ({ ...t, missions: this.buildMissions(t) }));
         this.isLoading = false;
         this.openTeamFromQueryParam();
@@ -241,6 +252,9 @@ export class TeamsComponent implements OnInit {
     this.showInviteForm = false;
     this.inviteError = '';
     this.inviteForm.reset();
+    this.showCreateDossierForm = false;
+    this.showLinkPointForm = false;
+    this.showCreatePointForm = false;
     this.loadCandidateMembers(team);
     this.loadHistory(team);
   }
@@ -699,6 +713,86 @@ export class TeamsComponent implements OnInit {
         this.showSuccess('Dossier créé.');
       },
       error: (err) => this.showError(err?.error?.error || 'Erreur lors de la création du dossier.'),
+    });
+  }
+
+  // ── POINTS DE REGROUPEMENT DES MOYENS ────────────────────────
+  showLinkPointForm = false;
+  showCreatePointForm = false;
+  pointSearchQuery = '';
+  createPointNom = '';
+  createPointTypeId: string | null = null;
+  createPointAdresse = '';
+
+  /** Points déjà rattachés à l'équipe (regroupement des moyens, carburant, restauration...). */
+  get pointsForSelectedTeam(): PointOperationnel[] {
+    if (!this.selectedTeam) return [];
+    return this.points.filter(p => p.equipe === this.selectedTeam!.id);
+  }
+
+  /** Points pas encore rattachés à une équipe, candidats à lier depuis cette fiche — filtrés
+   * par la recherche libre pour ne pas dérouler une liste sans fin sur une grosse plateforme. */
+  get pointsCandidatsALier(): PointOperationnel[] {
+    const q = this.pointSearchQuery.trim().toLowerCase();
+    return this.points
+      .filter(p => !p.equipe)
+      .filter(p => !q || p.nom.toLowerCase().includes(q));
+  }
+
+  ouvrirLiaisonPoint(): void {
+    this.showLinkPointForm = true;
+    this.showCreatePointForm = false;
+    this.pointSearchQuery = '';
+  }
+
+  ouvrirCreationPoint(): void {
+    this.showCreatePointForm = true;
+    this.showLinkPointForm = false;
+    this.createPointNom = '';
+    this.createPointTypeId = this.pointTypes[0]?.id ?? null;
+    this.createPointAdresse = '';
+  }
+
+  lierPoint(pointId: string): void {
+    if (!this.selectedTeam?.id) return;
+    this.teamService.lierPoint(this.selectedTeam.id, pointId).subscribe({
+      next: (point) => {
+        this.points = [...this.points.filter(p => p.id !== point.id), point];
+        this.showLinkPointForm = false;
+        this.showSuccess('Point lié à l\'équipe.');
+      },
+      error: (err) => this.showError(err?.error?.error || 'Erreur lors de la liaison du point.'),
+    });
+  }
+
+  delierPoint(pointId: string): void {
+    if (!this.selectedTeam?.id) return;
+    this.teamService.delierPoint(this.selectedTeam.id, pointId).subscribe({
+      next: () => {
+        this.points = this.points.map(p => p.id === pointId ? { ...p, equipe: null, equipe_nom: null } : p);
+        this.showSuccess('Point délié.');
+      },
+      error: (err) => this.showError(err?.error?.error || 'Erreur lors du retrait du point.'),
+    });
+  }
+
+  submitCreerPoint(): void {
+    if (!this.selectedTeam?.id || !this.createPointNom.trim() || !this.createPointTypeId) {
+      this.showError('Le nom et le thème du point sont obligatoires.');
+      return;
+    }
+    this.teamService.creerPoint(this.selectedTeam.id, {
+      nom: this.createPointNom.trim(),
+      type_id: this.createPointTypeId,
+      adresse: this.createPointAdresse.trim() || undefined,
+      crise_id: this.selectedTeam.mission_active_crise_id ?? undefined,
+    }).subscribe({
+      next: (point) => {
+        this.points = [...this.points, point];
+        this.showCreatePointForm = false;
+        this.showSuccess('Point créé et lié à l\'équipe.');
+      },
+      error: (err) => this.showError(err?.error?.error || 'Erreur lors de la création du point.'),
     });
   }
 

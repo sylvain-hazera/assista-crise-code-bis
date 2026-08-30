@@ -4,6 +4,7 @@ import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
 import { Team } from '../shared/models/team.model';  // ← import unique
 import { Dossier } from '../shared/models/dossier.model';
+import { PointOperationnel } from '../shared/models/point-operationnel.model';
 
 @Injectable({ providedIn: 'root' })
 export class TeamService {
@@ -48,5 +49,19 @@ export class TeamService {
     titre: string; description: string; crise_id: string; priorite?: string;
   }): Observable<Dossier> {
     return this.http.post<Dossier>(`${this.url}/${id}/creer-dossier/`, data);
+  }
+
+  lierPoint(id: string, pointId: string): Observable<PointOperationnel> {
+    return this.http.post<PointOperationnel>(`${this.url}/${id}/lier-point/`, { point_id: pointId });
+  }
+
+  delierPoint(id: string, pointId: string): Observable<void> {
+    return this.http.post<void>(`${this.url}/${id}/delier-point/`, { point_id: pointId });
+  }
+
+  creerPoint(id: string, data: {
+    nom: string; type_id: string; crise_id?: string; adresse?: string; description?: string;
+  }): Observable<PointOperationnel> {
+    return this.http.post<PointOperationnel>(`${this.url}/${id}/creer-point/`, data);
   }
 }

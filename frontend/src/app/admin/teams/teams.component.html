@@ -418,6 +418,91 @@
           <button class="btn-secondary sm" (click)="saveZonePrecise()">Enregistrer la zone précise</button>
         </div>
 
+        <!-- ── POINTS DE REGROUPEMENT DES MOYENS ─────────────── -->
+        <div class="detail-section">
+          <div class="section-header">
+            <h3>
+              <span class="material-icons">holiday_village</span>
+              Centres de regroupement des moyens
+              <span class="count-badge">{{ pointsForSelectedTeam.length }}</span>
+            </h3>
+            <div class="section-header-actions">
+              <button class="btn-link-invite" (click)="ouvrirLiaisonPoint()">
+                <span class="material-icons">link</span> Lier un point
+              </button>
+              <button class="btn-link-invite" (click)="ouvrirCreationPoint()">
+                <span class="material-icons">add</span> Créer un point
+              </button>
+            </div>
+          </div>
+          <p class="section-hint">Pour se regrouper avant une mission, se restaurer, faire le plein…</p>
+
+          @if (showLinkPointForm) {
+            <div class="invite-member-form">
+              <div class="member-search">
+                <span class="material-icons">search</span>
+                <input type="text" placeholder="Rechercher un point non rattaché…" [(ngModel)]="pointSearchQuery"/>
+              </div>
+              <div class="user-pick-list">
+                @for (p of pointsCandidatsALier; track p.id) {
+                  <div class="user-pick-item" (click)="lierPoint(p.id)">
+                    <span class="mk-badge mk-dossier">
+                      <span class="material-icons">holiday_village</span>
+                    </span>
+                    <div class="mission-info">
+                      <span class="mission-titre">{{ p.nom }}</span>
+                      <span class="mission-meta">{{ p.type_libelle || '—' }}</span>
+                    </div>
+                  </div>
+                }
+                @if (pointsCandidatsALier.length === 0) {
+                  <p class="empty-tab">Aucun point disponible à lier.</p>
+                }
+              </div>
+              <button class="btn-ghost sm" (click)="showLinkPointForm = false">Annuler</button>
+            </div>
+          }
+
+          @if (showCreatePointForm) {
+            <div class="invite-member-form">
+              <input type="text" placeholder="Nom du point (ex : Base logistique nord)" [(ngModel)]="createPointNom" />
+              <div class="invite-form-row">
+                <select [(ngModel)]="createPointTypeId">
+                  @for (t of pointTypes; track t.id) {
+                    <option [ngValue]="t.id">{{ t.libelle }}</option>
+                  }
+                </select>
+              </div>
+              <input type="text" placeholder="Adresse (optionnel)" [(ngModel)]="createPointAdresse" />
+              <div class="section-header-actions">
+                <button class="btn-primary sm" (click)="submitCreerPoint()">Créer le point</button>
+                <button class="btn-ghost sm" (click)="showCreatePointForm = false">Annuler</button>
+              </div>
+            </div>
+          }
+
+          @if (pointsForSelectedTeam.length === 0) {
+            <p class="no-missions">Aucun point de regroupement rattaché à cette équipe.</p>
+          } @else {
+            <div class="mission-list">
+              @for (p of pointsForSelectedTeam; track p.id) {
+                <div class="mission-row">
+                  <span class="mk-badge mk-dossier">
+                    <span class="material-icons">holiday_village</span>
+                  </span>
+                  <div class="mission-info">
+                    <span class="mission-titre">{{ p.nom }}</span>
+                    <span class="mission-meta">{{ p.type_libelle || '—' }} @if (p.adresse) { · {{ p.adresse }} }</span>
+                  </div>
+                  <button class="icon-btn danger sm" (click)="delierPoint(p.id)" title="Délier ce point">
+                    <span class="material-icons">remove_circle_outline</span>
+                  </button>
+                </div>
+              }
+            </div>
+          }
+        </div>
+
         <!-- ── DEMANDES ASSIGNÉES ────────────────────────────── -->
         <div class="detail-section">
           <div class="section-header">
