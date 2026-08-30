@@ -31,7 +31,7 @@ class TestCrisisEnvironmentIsolation:
     def test_crisis_created_in_prod_defaults_to_prod(self, institutional_client):
         client, _ = institutional_client
         response = _post(client, reverse('crisis-list'), {
-            "name": "Crise env prod test", "type": "INCEDIE",
+            "name": "Crise env prod test", "type": "INCENDIE",
             "location": '{"type": "Point", "coordinates": [5.72, 45.18]}',
         })
         assert response.status_code == status.HTTP_201_CREATED
@@ -43,7 +43,7 @@ class TestCrisisEnvironmentIsolation:
         user.demo_role = "AUT_LOCALE"
         user.save()
         response = _post(client, reverse('crisis-list'), {
-            "name": "Crise env demo test", "type": "INCEDIE",
+            "name": "Crise env demo test", "type": "INCENDIE",
             "location": '{"type": "Point", "coordinates": [5.72, 45.18]}',
         }, environment="DEMO")
         assert response.status_code == status.HTTP_201_CREATED
@@ -56,10 +56,10 @@ class TestCrisisEnvironmentIsolation:
         user.save()
 
         prod_crisis = Crisis.objects.create(
-            name="Crise prod isolation", type="INCEDIE", location="POINT (5.72 45.18)", environment="PROD",
+            name="Crise prod isolation", type="INCENDIE", location="POINT (5.72 45.18)", environment="PROD",
         )
         demo_crisis = Crisis.objects.create(
-            name="Crise demo isolation", type="INCEDIE", location="POINT (5.72 45.18)", environment="DEMO",
+            name="Crise demo isolation", type="INCENDIE", location="POINT (5.72 45.18)", environment="DEMO",
         )
 
         prod_ids = {c["id"] for c in _get(client, reverse('crisis-list')).data}
@@ -79,7 +79,7 @@ class TestEffectiveRoleGating:
         assert user.demo_role is None
         client = APIClient()
         client.force_authenticate(user=user)
-        crisis = Crisis.objects.create(name="Crise gating test", type="INCEDIE", location="POINT (5.72 45.18)")
+        crisis = Crisis.objects.create(name="Crise gating test", type="INCENDIE", location="POINT (5.72 45.18)")
 
         response = _post(client, reverse('crisis-reouvrir', args=[crisis.id]), {}, environment="DEMO")
 
@@ -93,11 +93,11 @@ class TestEffectiveRoleGating:
         client.force_authenticate(user=user)
 
         prod_crisis = Crisis.objects.create(
-            name="Crise dual role prod", type="INCEDIE", location="POINT (5.72 45.18)",
+            name="Crise dual role prod", type="INCENDIE", location="POINT (5.72 45.18)",
             environment="PROD", end_date=timezone.now(),
         )
         demo_crisis = Crisis.objects.create(
-            name="Crise dual role demo", type="INCEDIE", location="POINT (5.72 45.18)",
+            name="Crise dual role demo", type="INCENDIE", location="POINT (5.72 45.18)",
             environment="DEMO", end_date=timezone.now(),
         )
 

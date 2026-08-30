@@ -74,7 +74,7 @@ class TestCreerPoint:
 
     def test_creates_point_with_optional_crisis(self, mairie_client, team, point_type_carburant):
         client, _ = mairie_client
-        crisis = Crisis.objects.create(name='Crise point test', type='INCEDIE', location='POINT (5.72 45.18)')
+        crisis = Crisis.objects.create(name='Crise point test', type='INCENDIE', location='POINT (5.72 45.18)')
 
         response = client.post(reverse('team-creer-point', args=[team.id]), {
             'nom': 'Station essence', 'type_id': str(point_type_carburant.id), 'crise_id': str(crisis.id),
@@ -87,7 +87,7 @@ class TestCreerPoint:
     def test_rejects_closed_crisis(self, mairie_client, team, point_type_carburant):
         client, _ = mairie_client
         crisis = Crisis.objects.create(
-            name='Crise fermée point test', type='INCEDIE', location='POINT (5.72 45.18)', end_date=timezone.now(),
+            name='Crise fermée point test', type='INCENDIE', location='POINT (5.72 45.18)', end_date=timezone.now(),
         )
         response = client.post(reverse('team-creer-point', args=[team.id]), {
             'nom': 'Station essence', 'type_id': str(point_type_carburant.id), 'crise_id': str(crisis.id),

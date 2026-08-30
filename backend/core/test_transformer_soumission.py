@@ -19,7 +19,7 @@ def _make_admin(authenticated_client):
 
 @pytest.fixture
 def crisis(db):
-    return Crisis.objects.create(name='Crise transform', type='INCEDIE', location=Point(5.72, 45.18, srid=4326))
+    return Crisis.objects.create(name='Crise transform', type='INCENDIE', location=Point(5.72, 45.18, srid=4326))
 
 
 @pytest.fixture

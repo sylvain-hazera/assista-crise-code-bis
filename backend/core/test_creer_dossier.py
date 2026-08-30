@@ -24,7 +24,7 @@ def institution():
 
 @pytest.fixture
 def crisis():
-    return Crisis.objects.create(name='Crise dossier direct', type='INCEDIE', location='POINT (5.72 45.18)')
+    return Crisis.objects.create(name='Crise dossier direct', type='INCENDIE', location='POINT (5.72 45.18)')
 
 
 @pytest.fixture
@@ -101,7 +101,7 @@ class TestCreerDossier:
     def test_rejects_closed_crisis(self, mairie_client, team):
         client, _ = mairie_client
         closed_crisis = Crisis.objects.create(
-            name='Crise fermée dossier', type='INCEDIE', location='POINT (5.72 45.18)', end_date=timezone.now(),
+            name='Crise fermée dossier', type='INCENDIE', location='POINT (5.72 45.18)', end_date=timezone.now(),
         )
         response = client.post(reverse('team-creer-dossier', args=[team.id]), {
             'titre': 'Titre', 'description': 'Description', 'crise_id': str(closed_crisis.id),

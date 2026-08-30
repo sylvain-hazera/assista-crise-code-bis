@@ -79,7 +79,7 @@ class TestDefinirMission:
 
     def test_attaches_open_crisis(self, mairie_client, team_a):
         client, _ = mairie_client
-        crisis = Crisis.objects.create(name='Crise mission test', type='INCEDIE', location='POINT (5.72 45.18)')
+        crisis = Crisis.objects.create(name='Crise mission test', type='INCENDIE', location='POINT (5.72 45.18)')
 
         response = client.post(
             reverse('team-definir-mission', args=[team_a.id]),
@@ -94,7 +94,7 @@ class TestDefinirMission:
         from django.utils import timezone
         client, _ = mairie_client
         crisis = Crisis.objects.create(
-            name='Crise fermée test', type='INCEDIE', location='POINT (5.72 45.18)', end_date=timezone.now(),
+            name='Crise fermée test', type='INCENDIE', location='POINT (5.72 45.18)', end_date=timezone.now(),
         )
 
         response = client.post(

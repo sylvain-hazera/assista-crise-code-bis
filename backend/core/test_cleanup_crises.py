@@ -18,7 +18,7 @@ class TestCleanupCrises:
 
     def test_purges_crisis_closed_more_than_30_days_ago(self, request_type, offer_type, information_type):
         old_crisis = Crisis.objects.create(
-            name="Crise ancienne", type="INCEDIE", location=Point(5.72, 45.18, srid=4326),
+            name="Crise ancienne", type="INCENDIE", location=Point(5.72, 45.18, srid=4326),
             end_date=timezone.now() - timedelta(days=45),
         )
         Request.objects.create(
@@ -37,11 +37,11 @@ class TestCleanupCrises:
         )
 
         recent_crisis = Crisis.objects.create(
-            name="Crise récente", type="INCEDIE", location=Point(5.72, 45.18, srid=4326),
+            name="Crise récente", type="INCENDIE", location=Point(5.72, 45.18, srid=4326),
             end_date=timezone.now() - timedelta(days=5),
         )
         ongoing_crisis = Crisis.objects.create(
-            name="Crise en cours", type="INCEDIE", location=Point(5.72, 45.18, srid=4326),
+            name="Crise en cours", type="INCENDIE", location=Point(5.72, 45.18, srid=4326),
         )
 
         call_command('cleanup_crises')
@@ -55,7 +55,7 @@ class TestCleanupCrises:
 
     def test_dry_run_deletes_nothing(self):
         old_crisis = Crisis.objects.create(
-            name="Crise ancienne dry-run", type="INCEDIE", location=Point(5.72, 45.18, srid=4326),
+            name="Crise ancienne dry-run", type="INCENDIE", location=Point(5.72, 45.18, srid=4326),
             end_date=timezone.now() - timedelta(days=45),
         )
 

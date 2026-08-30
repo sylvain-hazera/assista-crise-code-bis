@@ -121,7 +121,7 @@ class User(AbstractUser):
 
 class TypeCrise(models.TextChoices):
     
-    INCEDIE = "INCEDIE", "Incendie"
+    INCENDIE = "INCENDIE", "Incendie"
     INONDATION = "INONDATION", "Inondation"
     ACCIDENT = "ACCIDENT", "Accident"
     CATASTROPHE_NATURELLE = "CATASTROPHE_NATURELLE", "Catastrophe naturelle"

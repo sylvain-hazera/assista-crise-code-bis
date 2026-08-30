@@ -107,7 +107,7 @@ class TestRequestAutoAssignmentGeoMatching:
 
     def test_request_routed_to_team_matching_department(self, request_type, create_user):
         competence = self._setup_competence_chain(request_type)
-        crisis = Crisis.objects.create(name="Crise geo", type="INCEDIE", location="POINT (5.72 45.18)")
+        crisis = Crisis.objects.create(name="Crise geo", type="INCENDIE", location="POINT (5.72 45.18)")
         _declare_responsable(crisis, create_user)
         team_far = Team.objects.create(name="Equipe loin", description="", color="#3b82f6", departements=["73"])
         team_near = Team.objects.create(name="Equipe proche", description="", color="#3b82f6", departements=["38"])
@@ -132,7 +132,7 @@ class TestRequestAutoAssignmentGeoMatching:
 
     def test_request_not_routed_when_no_team_matches_zone(self, request_type, create_user):
         competence = self._setup_competence_chain(request_type)
-        crisis = Crisis.objects.create(name="Crise geo 2", type="INCEDIE", location="POINT (5.72 45.18)")
+        crisis = Crisis.objects.create(name="Crise geo 2", type="INCENDIE", location="POINT (5.72 45.18)")
         _declare_responsable(crisis, create_user)
         team_far = Team.objects.create(name="Equipe loin 2", description="", color="#3b82f6", departements=["73"])
         AffectationCompetence.objects.create(crise=crisis, competence=competence, equipe=team_far, active=True)
@@ -203,7 +203,7 @@ class TestRequestAutoAssignmentGeoMatching:
         `perform_create` ne notifiait jusqu'ici aucun régulateur — un dossier pouvait
         rester invisible tant que personne ne parcourait la liste complète."""
         competence = self._setup_competence_chain(request_type)
-        crisis = Crisis.objects.create(name="Crise notif", type="INCEDIE", location="POINT (5.72 45.18)")
+        crisis = Crisis.objects.create(name="Crise notif", type="INCENDIE", location="POINT (5.72 45.18)")
         _declare_responsable(crisis, create_user)
         team = Team.objects.create(name="Equipe notif", description="", color="#3b82f6")
         AffectationCompetence.objects.create(crise=crisis, competence=competence, equipe=team, active=True)
@@ -235,7 +235,7 @@ class TestRequestAutoAssignmentGeoMatching:
     def test_no_notification_when_no_regulateur_on_competence(self, request_type, create_user):
         """Aucun régulateur affecté sur cette compétence : la création ne doit pas crasher."""
         competence = self._setup_competence_chain(request_type)
-        crisis = Crisis.objects.create(name="Crise sans regul", type="INCEDIE", location="POINT (5.72 45.18)")
+        crisis = Crisis.objects.create(name="Crise sans regul", type="INCENDIE", location="POINT (5.72 45.18)")
         _declare_responsable(crisis, create_user)
 
         client = APIClient()

@@ -16,7 +16,7 @@ from core.models import (
 
 @pytest.fixture
 def crisis(db):
-    return Crisis.objects.create(name="Crise ma_file", type="INCEDIE", location="POINT (5.72 45.18)")
+    return Crisis.objects.create(name="Crise ma_file", type="INCENDIE", location="POINT (5.72 45.18)")
 
 
 @pytest.fixture

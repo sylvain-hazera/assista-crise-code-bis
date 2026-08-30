@@ -20,7 +20,7 @@ from core.models import (
 
 CRISIS_PAYLOAD = {
     "name": "Incendie de test",
-    "type": "INCEDIE",
+    "type": "INCENDIE",
     "location": "POINT (5.7245 45.1885)",
     "radius": 5,
 }

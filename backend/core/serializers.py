@@ -285,9 +285,8 @@ class CrisisSerializer(serializers.ModelSerializer):
     has_photo = serializers.SerializerMethodField()
     is_open = serializers.SerializerMethodField()
     has_responsable_actif = serializers.SerializerMethodField()
-    # `type` reste le code technique (ex: "INCEDIE", historique — jamais renommé pour éviter
-    # une migration de données sur les crises existantes) : `type_display` est le libellé
-    # humain ("Incendie") à afficher partout côté frontend, jamais le code brut.
+    # `type` reste le code technique (ex: "INCENDIE") : `type_display` est le libellé humain
+    # ("Incendie") à afficher partout côté frontend, jamais le code brut.
     type_display = serializers.CharField(source='get_type_display', read_only=True)
 
     class Meta:

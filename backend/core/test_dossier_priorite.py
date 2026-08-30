@@ -9,7 +9,7 @@ from core.models import Crisis, Dossier, DossierParticipant, Request, Team, Requ
 
 @pytest.fixture
 def crisis(db):
-    return Crisis.objects.create(name="Crise déblaiement", type="INCEDIE", location=Point(5.72, 45.18, srid=4326))
+    return Crisis.objects.create(name="Crise déblaiement", type="INCENDIE", location=Point(5.72, 45.18, srid=4326))
 
 
 @pytest.fixture

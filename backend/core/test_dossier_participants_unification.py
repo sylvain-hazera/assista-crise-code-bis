@@ -68,7 +68,7 @@ class TestAutomaticPathParticipants:
         """Le dossier auto-créé doit référencer la demande d'origine (Dossier.demande) —
         jusqu'ici seul le chemin manuel (assign_team) le faisait."""
         competence = _setup_competence_chain(request_type)
-        crisis = Crisis.objects.create(name="Crise unif 1", type="INCEDIE", location="POINT (5.72 45.18)")
+        crisis = Crisis.objects.create(name="Crise unif 1", type="INCENDIE", location="POINT (5.72 45.18)")
         _declare_responsable(crisis, create_user)
         team = Team.objects.create(name="Equipe unif 1", description="", color="#3b82f6")
         AffectationCompetence.objects.create(crise=crisis, competence=competence, equipe=team, active=True)
@@ -94,7 +94,7 @@ class TestAutomaticPathParticipants:
         participant DEMANDEUR via resolve_or_invite_demandeur, pour pouvoir suivre son
         dossier — avant l'unification, seul demande.author (donc jamais l'anonyme) comptait."""
         competence = _setup_competence_chain(request_type)
-        crisis = Crisis.objects.create(name="Crise unif 2", type="INCEDIE", location="POINT (5.72 45.18)")
+        crisis = Crisis.objects.create(name="Crise unif 2", type="INCENDIE", location="POINT (5.72 45.18)")
         _declare_responsable(crisis, create_user)
 
         client = APIClient()
@@ -121,7 +121,7 @@ class TestAutomaticPathParticipants:
         """Le rôle REGULATION de DossierParticipant, jusqu'ici jamais peuplé, doit
         maintenant l'être pour tout régulateur notifié sur le chemin automatique."""
         competence = _setup_competence_chain(request_type)
-        crisis = Crisis.objects.create(name="Crise unif 3", type="INCEDIE", location="POINT (5.72 45.18)")
+        crisis = Crisis.objects.create(name="Crise unif 3", type="INCENDIE", location="POINT (5.72 45.18)")
         _declare_responsable(crisis, create_user)
         team = Team.objects.create(name="Equipe unif 3", description="", color="#3b82f6")
         AffectationCompetence.objects.create(crise=crisis, competence=competence, equipe=team, active=True)
@@ -148,7 +148,7 @@ class TestAutomaticPathParticipants:
     def test_no_competence_branch_still_links_demandeur(self, request_type, create_user):
         """Même quand aucune compétence n'est trouvée, le dossier de secours doit au moins
         rattacher le demandeur comme participant (avant : zéro participant du tout)."""
-        crisis = Crisis.objects.create(name="Crise unif 4", type="INCEDIE", location="POINT (5.72 45.18)")
+        crisis = Crisis.objects.create(name="Crise unif 4", type="INCENDIE", location="POINT (5.72 45.18)")
         _declare_responsable(crisis, create_user)
 
         client = APIClient()
@@ -190,7 +190,7 @@ class TestManualPathParticipants:
             request_type=request_type_local, crisis=None, author=author,
             **{**REQUEST_PAYLOAD, "email_request": "demandeur-unif-manuel@test.fr"},
         )
-        demande.crisis = Crisis.objects.create(name="Crise unif manuel", type="INCEDIE", location="POINT (5.72 45.18)")
+        demande.crisis = Crisis.objects.create(name="Crise unif manuel", type="INCENDIE", location="POINT (5.72 45.18)")
         demande.save()
 
         team = Team.objects.create(name="Equipe unif manuel", description="", color="#3b82f6")
@@ -214,7 +214,7 @@ class TestManualPathParticipants:
         from core.test_requests import REQUEST_PAYLOAD
         from core.models import Request
 
-        crisis = Crisis.objects.create(name="Crise unif manuel regul", type="INCEDIE", location="POINT (5.72 45.18)")
+        crisis = Crisis.objects.create(name="Crise unif manuel regul", type="INCENDIE", location="POINT (5.72 45.18)")
         author = create_user(username="demandeur-unif-regul@test.fr", email="demandeur-unif-regul@test.fr", type="UTIL_SIMPLE")
         demande = Request.objects.create(
             request_type=request_type, crisis=crisis, author=author,

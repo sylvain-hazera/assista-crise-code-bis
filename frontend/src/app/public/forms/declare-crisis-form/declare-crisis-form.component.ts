@@ -80,7 +80,7 @@ export class DeclareCrisisFormComponent implements OnInit{
 
     eventTypeOptions: { value: string; label: string }[] = [
     { value: '', label: 'Dropdown' },
-    { value: 'INCEDIE', label: 'Incendie' },
+    { value: 'INCENDIE', label: 'Incendie' },
     { value: 'INONDATION', label: 'Inondation' },
     { value: 'ACCIDENT', label: 'Accident' },
     { value: 'CATASTROPHE_NATURELLE', label: 'Catastrophe naturelle' },

@@ -9,7 +9,7 @@ from core.models import Crisis, PointOperationnel, PointType, RegistrePresence, 
 
 @pytest.fixture
 def crisis(db):
-    return Crisis.objects.create(name="Crise registre test", type="INCEDIE", location="POINT (5.72 45.18)")
+    return Crisis.objects.create(name="Crise registre test", type="INCENDIE", location="POINT (5.72 45.18)")
 
 
 @pytest.fixture

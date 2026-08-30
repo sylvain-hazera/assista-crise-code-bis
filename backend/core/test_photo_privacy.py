@@ -34,7 +34,7 @@ def _req(user):
 def crisis_with_photo(db, create_user):
     author = create_user(username="crisis-author@test.fr", email="crisis-author@test.fr", type="UTIL_SIMPLE")
     return Crisis.objects.create(
-        name="Crise test photo", type="INCEDIE", location="POINT (5.72 45.18)",
+        name="Crise test photo", type="INCENDIE", location="POINT (5.72 45.18)",
         author=author, photo=_fake_photo(),
     )
 
@@ -81,7 +81,7 @@ class TestUserCanViewPhoto:
 
     def test_unrelated_team_or_dossier_does_not_grant_access(self, create_user, crisis_with_photo):
         outsider = create_user(username="outsider-photo@test.fr", email="outsider-photo@test.fr", type="UTIL_SIMPLE")
-        other_crisis = Crisis.objects.create(name="Autre crise", type="INCEDIE", location="POINT (5.72 45.18)")
+        other_crisis = Crisis.objects.create(name="Autre crise", type="INCENDIE", location="POINT (5.72 45.18)")
         team = Team.objects.create(name="Equipe autre crise", description="", color="#3b82f6")
         team.members.add(outsider)
         team.assigned_crises.add(other_crisis)

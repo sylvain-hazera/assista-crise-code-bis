@@ -79,7 +79,7 @@ class TestAssignOfferToDossier:
 
     def test_institutional_actor_can_assign_offer_to_dossier(self, local_authority_client, offer):
         client, _ = local_authority_client
-        crisis = Crisis.objects.create(name="Crise test", type="INCEDIE", location="POINT (5.72 45.18)")
+        crisis = Crisis.objects.create(name="Crise test", type="INCENDIE", location="POINT (5.72 45.18)")
         dossier = Dossier.objects.create(
             numero="DOS-TEST-1", crise=crisis, titre="Dossier test", description="desc",
         )
@@ -102,7 +102,7 @@ class TestAssignOfferToDossier:
         anonymous_offer = Offer.objects.create(offer_type=offer_type, author=None, **{
             **OFFER_PAYLOAD, "email_offer": "anonyme@test.fr",
         })
-        crisis = Crisis.objects.create(name="Crise test 2", type="INCEDIE", location="POINT (5.72 45.18)")
+        crisis = Crisis.objects.create(name="Crise test 2", type="INCENDIE", location="POINT (5.72 45.18)")
         dossier = Dossier.objects.create(
             numero="DOS-TEST-2", crise=crisis, titre="Dossier test 2", description="desc",
         )
@@ -118,7 +118,7 @@ class TestAssignOfferToDossier:
 
     def test_simple_user_cannot_assign_offer_to_dossier(self, authenticated_client, offer):
         client, _ = authenticated_client
-        crisis = Crisis.objects.create(name="Crise test 3", type="INCEDIE", location="POINT (5.72 45.18)")
+        crisis = Crisis.objects.create(name="Crise test 3", type="INCENDIE", location="POINT (5.72 45.18)")
         dossier = Dossier.objects.create(
             numero="DOS-TEST-3", crise=crisis, titre="Dossier test 3", description="desc",
         )
