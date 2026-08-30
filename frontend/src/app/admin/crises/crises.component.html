@@ -96,6 +96,10 @@
             {{ selectedCrisis.type }} · déclarée le {{ fmtDate(selectedCrisis.start_date) }}
             @if (selectedCrisis.description) { — {{ selectedCrisis.description }} }
           </p>
+          <p class="crisis-meta">
+            <span class="material-icons">person</span> Déclarée par {{ selectedCrisis.author_nom || 'Compte supprimé' }}
+            · <span class="material-icons">place</span> {{ selectedCrisis.commune || (selectedCrisis.latitude + ', ' + selectedCrisis.longitude) }}
+          </p>
 
           @if (selectedCrisis.is_open === false) {
             <p class="crisis-closed-banner">

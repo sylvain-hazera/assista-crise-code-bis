@@ -365,3 +365,40 @@ class TestPointOperationnelActeur:
             format='json',
         )
         assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+@pytest.mark.django_db
+class TestCrisisAuthorAndLocationDisplay:
+    """La fiche crise doit permettre de savoir qui l'a déclarée et où elle se situe (retour
+    utilisateur) — author_nom et commune, exposés publiquement comme le reste de la fiche
+    crise (transparence publique déjà en place pour latitude/longitude)."""
+
+    def test_author_nom_resolved_from_full_name(self, local_authority_client):
+        client, user = local_authority_client
+        user.first_name, user.last_name = "Alice", "Martin"
+        user.save()
+        crisis = Crisis.objects.create(author=user, **CRISIS_PAYLOAD)
+
+        response = client.get(reverse('crisis-detail', args=[crisis.id]))
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['author_nom'] == 'Alice Martin'
+
+    def test_author_nom_none_when_author_deleted(self, local_authority_client):
+        client, _ = local_authority_client
+        crisis = Crisis.objects.create(author=None, **CRISIS_PAYLOAD)
+
+        response = client.get(reverse('crisis-detail', args=[crisis.id]))
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['author_nom'] is None
+
+    def test_commune_resolved_from_location(self, local_authority_client, monkeypatch):
+        client, _ = local_authority_client
+        monkeypatch.setattr('core.serializers.commune_from_point', lambda point: 'Grenoble')
+        crisis = Crisis.objects.create(**CRISIS_PAYLOAD)
+
+        response = client.get(reverse('crisis-detail', args=[crisis.id]))
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['commune'] == 'Grenoble'

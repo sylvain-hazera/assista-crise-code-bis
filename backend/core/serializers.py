@@ -280,6 +280,8 @@ class CrisisSerializer(serializers.ModelSerializer):
     zone_geojson = serializers.SerializerMethodField()
     zone_secteurs_geojson = serializers.SerializerMethodField()
     author = serializers.PrimaryKeyRelatedField(read_only=True, allow_null=True)
+    author_nom = serializers.SerializerMethodField()
+    commune = serializers.SerializerMethodField()
     has_photo = serializers.SerializerMethodField()
     is_open = serializers.SerializerMethodField()
     has_responsable_actif = serializers.SerializerMethodField()
@@ -298,6 +300,14 @@ class CrisisSerializer(serializers.ModelSerializer):
 
     def get_longitude(self, obj):
         return obj.location.x if obj.location else None
+
+    def get_author_nom(self, obj):
+        if not obj.author:
+            return None
+        return f"{obj.author.first_name} {obj.author.last_name}".strip() or obj.author.username
+
+    def get_commune(self, obj):
+        return commune_from_point(obj.location)
 
     def get_zone_geojson(self, obj):
         # GEOSGeometry.geojson est une propriété native de GeoDjango — pas besoin de
