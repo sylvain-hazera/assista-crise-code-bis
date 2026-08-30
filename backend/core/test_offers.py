@@ -269,3 +269,28 @@ class TestOfferEngagementFields:
         response = api_client.get(reverse('offer-detail', args=[offer.id]))
         assert response.status_code == status.HTTP_200_OK
         assert response.data['offer_type_nom'] == offer.offer_type.type
+
+
+@pytest.mark.django_db
+class TestOfferDepotGroupe:
+    """organisation_nom/groupe_id : une entreprise/association peut déposer plusieurs
+    personnes/véhicules en une seule visite du formulaire public, tagués ensemble — voir
+    propose-help-form.component.ts. Champs optionnels, rétrocompatibles avec les offres
+    individuelles existantes."""
+
+    def test_accepts_organisation_and_groupe_id(self, api_client, offer_type):
+        import uuid
+        groupe_id = str(uuid.uuid4())
+        payload = {
+            **OFFER_PAYLOAD, "email_offer": "entreprise@test.fr", "offer_type": str(offer_type.id),
+            "organisation_nom": "Citernes Dupont SARL", "groupe_id": groupe_id,
+        }
+        response = api_client.post(reverse('offer-list'), payload, format='json')
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data['organisation_nom'] == 'Citernes Dupont SARL'
+        assert response.data['groupe_id'] == groupe_id
+
+    def test_defaults_to_null_for_individual_offers(self, offer):
+        assert offer.organisation_nom is None
+        assert offer.groupe_id is None

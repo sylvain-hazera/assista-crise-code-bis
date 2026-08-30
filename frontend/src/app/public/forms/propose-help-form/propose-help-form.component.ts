@@ -247,7 +247,8 @@ export class ProposeHelpFormComponent implements OnInit {
       lastName: [this.currentUser?.last_name, Validators.required],
       firstName: [this.currentUser?.first_name, Validators.required],
       email: [this.currentUser?.email, [Validators.required, Validators.email]],
-      phoneNumber: [this.currentUser?.phone_number, [Validators.required, Validators.pattern(/^\+?[\d\s.-]{10,20}$/)]]
+      phoneNumber: [this.currentUser?.phone_number, [Validators.required, Validators.pattern(/^\+?[\d\s.-]{10,20}$/)]],
+      organisationNom: [''],
     });
   }
 
@@ -297,6 +298,12 @@ export class ProposeHelpFormComponent implements OnInit {
     const addressVisible = this.requestForm.get('addressVisible')?.value;
     const hasLocation = !!(addressVisible && this.latitude != null && this.longitude != null);
 
+    // Dépôt groupé (entreprise/association déposant plusieurs personnes/véhicules en une
+    // seule visite) : un seul groupe_id partagé par toutes les lignes de cette soumission, posé
+    // uniquement si un nom d'organisation est renseigné — sinon comportement inchangé.
+    const organisationNom = (this.informationForm.get('organisationNom')?.value || '').trim();
+    const groupeId = organisationNom ? crypto.randomUUID() : null;
+
     const creations: Observable<Offer>[] = this.offerRows.controls.map(row => {
       const v = row.value;
       const formData = new FormData();
@@ -337,6 +344,10 @@ export class ProposeHelpFormComponent implements OnInit {
       }
 
       formData.append('status', 'DISPONIBLE');
+      if (organisationNom) {
+        formData.append('organisation_nom', organisationNom);
+        formData.append('groupe_id', groupeId!);
+      }
       if (this.currentUser?.id) formData.append('author', this.currentUser.id);
       if (this.selectedFile) formData.append('photo', this.selectedFile);
       this.selectedCompetences.forEach(c => formData.append('competences', c.id));

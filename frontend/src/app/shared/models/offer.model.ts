@@ -32,6 +32,8 @@ export interface Offer {
   author_email?: string | null;
   author_phone?: string | null;
   author_type?: string | null;
+  organisation_nom?: string | null;  // dépôt groupé : nom de l'entreprise/association déposante
+  groupe_id?: string | null;         // partagé par toutes les offres d'une même soumission groupée
   hebergement_duree?: string | null;
   numero_adeli_rpps?: string | null;
   transport_type?: string | null;

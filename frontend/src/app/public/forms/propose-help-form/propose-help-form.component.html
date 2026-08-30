@@ -432,6 +432,23 @@
                         </div>
                     }
                 </div>
+                <!-- Organisation (dépôt groupé) -->
+                <div class="form-group">
+                <label for="organisationNom" class="form-label">
+                    Nom de l'organisation (optionnel)
+                </label>
+                <input
+                    type="text"
+                    id="organisationNom"
+                    formControlName="organisationNom"
+                    class="form-input"
+                    placeholder="Si vous déposez au nom d'une entreprise ou d'une association">
+                <div class="form-hint">
+                    À remplir si vous proposez plusieurs personnes ou véhicules au nom d'une
+                    entreprise ou d'une association — les offres ajoutées ci-dessus seront
+                    regroupées sous ce nom pour le régulateur.
+                </div>
+                </div>
             </div>
 
             @if (proposeAideEnPersonne) {

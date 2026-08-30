@@ -457,6 +457,15 @@ class Offer(EnvironmentScopedModel):
         related_name="submitted_offers",
     )
 
+    # Dépôt groupé (entreprise/association déposant plusieurs personnes/véhicules en une seule
+    # visite du formulaire public, voir propose-help-form) : organisation_nom identifie qui
+    # dépose (distinct de first_name_offer/last_name_offer, la personne physique), groupe_id
+    # est partagé par toutes les lignes d'une même soumission — simple étiquette de
+    # regroupement pour le tableau de bord régulateur (ReportingComponent), pas une FK vers un
+    # modèle de lot : un dépôt groupé n'a pas de cycle de vie propre au-delà de la sélection.
+    organisation_nom = models.CharField(max_length=150, blank=True, null=True)
+    groupe_id = models.UUIDField(null=True, blank=True)
+
     # Précisions spécifiques à certaines catégories (OfferType.type), une seule
     # s'applique en pratique selon le type choisi — voir propose-help-form.
     hebergement_duree = models.CharField(max_length=20, choices=DureeHebergement.choices, null=True, blank=True)
