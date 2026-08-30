@@ -1402,6 +1402,38 @@ class TeamDelegation(EnvironmentScopedModel):
         return f"{self.team.name} → {self.institution.nom}"
 
 
+class StatutEngagementRessource(models.TextChoices):
+    EN_ATTENTE = "EN_ATTENTE", "En attente de confirmation"
+    CONFIRME = "CONFIRME", "Confirmé"
+    DECLINE = "DECLINE", "Décliné"
+    EN_TRANSIT = "EN_TRANSIT", "En transit"
+    ARRIVE = "ARRIVE", "Arrivé / à disposition"
+
+
+class EngagementRessource(EnvironmentScopedModel):
+    """Suivi de la progression réelle d'une ressource (Offer) affectée à une équipe (voir
+    TeamViewSet.assigner_ressource) : a-t-elle confirmé sa venue, est-elle en route, est-elle
+    arrivée ? Créé/renouvelé à chaque affectation, jamais partagé entre deux affectations
+    successives — une réaffectation repart d'un engagement neuf, comme Offer.mission. Deux
+    canaux de mise à jour volontairement distincts : TeamViewSet.definir_statut_ressource
+    (équipe/régulateur, sans contrainte de séquence) et EngagementRessourcePublicView (la
+    personne/l'entreprise elle-même via le lien reçu par email, séquence stricte)."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    offer = models.OneToOneField(Offer, on_delete=models.CASCADE, related_name="engagement")
+    team = models.ForeignKey(Team, on_delete=models.CASCADE, related_name="engagements_ressources")
+    statut = models.CharField(
+        max_length=20, choices=StatutEngagementRessource.choices, default=StatutEngagementRessource.EN_ATTENTE,
+    )
+    token_confirmation = models.CharField(max_length=64, unique=True)
+    date_creation = models.DateTimeField(auto_now_add=True)
+    date_confirmation = models.DateTimeField(null=True, blank=True)
+    date_transit = models.DateTimeField(null=True, blank=True)
+    date_arrivee = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self) -> str:
+        return f"{self.offer.title} → {self.team.name} ({self.get_statut_display()})"
+
+
 class DernierePositionUtilisateur(EnvironmentScopedModel):
     """Dernière position connue d'un utilisateur, capturée de façon opportuniste — quand le
     navigateur a déjà obtenu sa géolocalisation pour une autre raison (consultation de la

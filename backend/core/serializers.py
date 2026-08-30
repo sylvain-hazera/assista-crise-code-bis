@@ -427,6 +427,11 @@ class OfferSerializer(serializers.ModelSerializer):
     competences_libelles = serializers.SerializerMethodField()
     commune = serializers.SerializerMethodField()
     distance_from_crisis_km = serializers.SerializerMethodField()
+    # Progression réelle d'une ressource affectée à une équipe (en attente/confirmé/en
+    # transit/arrivé/décliné) — voir EngagementRessource, absent (None) tant que l'offre n'a
+    # jamais été affectée comme ressource à une équipe.
+    engagement_statut = serializers.CharField(source='engagement.statut', read_only=True, default=None)
+    engagement_statut_libelle = serializers.SerializerMethodField()
 
     class Meta:
         model = Offer
@@ -435,6 +440,10 @@ class OfferSerializer(serializers.ModelSerializer):
 
     def get_competences_libelles(self, obj):
         return [c.nom for c in obj.competences.all()]
+
+    def get_engagement_statut_libelle(self, obj):
+        engagement = getattr(obj, 'engagement', None)
+        return engagement.get_statut_display() if engagement else None
 
     def _location_visible(self) -> bool:
         request = self.context.get('request')

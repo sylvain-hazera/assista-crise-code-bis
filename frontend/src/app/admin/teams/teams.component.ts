@@ -179,7 +179,11 @@ export class TeamsComponent implements OnInit {
     }
     for (const id of team.assigned_offer_ids ?? []) {
       const o = this.offers.find(o => o.id === id);
-      if (o) missions.push({ id, kind: 'Offer', titre: o.title, statut: o.status, date: o.created_at });
+      if (o) missions.push({
+        id, kind: 'Offer', titre: o.title, statut: o.status, date: o.created_at,
+        engagementStatut: o.engagement_statut ?? null,
+        engagementStatutLibelle: o.engagement_statut_libelle ?? null,
+      });
     }
     for (const id of team.assigned_request_ids ?? []) {
       const r = this.requests.find(r => r.id === id);
@@ -646,6 +650,48 @@ export class TeamsComponent implements OnInit {
   ouvrirTableauOffres(): void {
     if (!this.selectedTeam?.id) return;
     this.router.navigate(['/admin/signalements'], { queryParams: { pickForTeam: this.selectedTeam.id } });
+  }
+
+  // ── Progression de l'engagement d'une ressource ───────────────
+  private static readonly PROCHAIN_STATUT: Record<string, string> = {
+    EN_ATTENTE: 'CONFIRME',
+    CONFIRME: 'EN_TRANSIT',
+    EN_TRANSIT: 'ARRIVE',
+  };
+  private static readonly LIBELLE_ACTION: Record<string, string> = {
+    EN_ATTENTE: 'Confirmer',
+    CONFIRME: 'Marquer en transit',
+    EN_TRANSIT: 'Marquer arrivée',
+  };
+
+  /** Prochaine étape pour le bouton "Étape suivante" — null si aucun engagement ou déjà à un
+   * statut terminal (ARRIVE/DECLINE, plus rien à faire avancer manuellement). */
+  prochainStatutRessource(m: TeamMission): string | null {
+    if (!m.engagementStatut) return null;
+    return TeamsComponent.PROCHAIN_STATUT[m.engagementStatut] ?? null;
+  }
+
+  libelleActionRessource(m: TeamMission): string {
+    return TeamsComponent.LIBELLE_ACTION[m.engagementStatut ?? ''] ?? '';
+  }
+
+  avancerStatutRessource(offerId: string, statut: string): void {
+    if (!this.selectedTeam?.id) return;
+    this.teamService.definirStatutRessource(this.selectedTeam.id, offerId, statut).subscribe({
+      next: (updated) => {
+        this.offerService.getAll().subscribe(offers => {
+          this.offers = offers;
+          this.selectedTeam = { ...updated, missions: this.buildMissions(updated) };
+          this.reloadTeams();
+        });
+        this.showSuccess('Statut de la ressource mis à jour.');
+      },
+      error: (err) => this.showError(err?.error?.error || 'Erreur lors de la mise à jour du statut.'),
+    });
+  }
+
+  declinerRessource(offerId: string): void {
+    this.avancerStatutRessource(offerId, 'DECLINE');
   }
 
   /** Résumé rapide sous le titre d'une mission : contact + statut, pour ne pas avoir à ouvrir

@@ -6,6 +6,10 @@ export interface TeamMission {
   titre:   string;
   statut?: string;
   date?:   string;
+  // Offer uniquement — progression réelle de la ressource (voir EngagementRessource) :
+  // en attente / confirmé / en transit / arrivé / décliné, absent si jamais affectée.
+  engagementStatut?: string | null;
+  engagementStatutLibelle?: string | null;
 }
 
 export interface TeamMemberInfo {

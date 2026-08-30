@@ -116,6 +116,7 @@ from .models import (
     RecherchePersonneHistorique, RecherchePersonnePhoto,
     AffectationCompetence, RequestType, RequestTypeBesoin, OfferType, InformationType, Team,
     TeamDelegation,
+    EngagementRessource, StatutEngagementRessource,
     Status,
     DernierePositionUtilisateur,
 )
@@ -2197,6 +2198,7 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             'definir_delegation', 'retirer_delegation', 'creer_dossier',
             'lier_point', 'delier_point',
             'rattacher_equipe', 'detacher_equipe',
+            'definir_statut_ressource',
         ):
             return [IsInstitutionalActor()]
         return [permissions.IsAuthenticated()]
@@ -2530,6 +2532,16 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         if offer.author_id:
             team.members.add(offer.author_id)
 
+        # Un engagement neuf à chaque affectation — jamais partagé entre deux affectations
+        # successives, comme offer.mission (une réaffectation ailleurs repart de zéro). L'email
+        # de confirmation (lien public) est envoyé séparément — voir
+        # send_engagement_confirmation_email, ajouté avec la page de confirmation elle-même.
+        EngagementRessource.objects.filter(offer=offer).delete()
+        EngagementRessource.objects.create(
+            offer=offer, team=team, token_confirmation=secrets.token_urlsafe(32),
+            environment=get_active_environment(request),
+        )
+
         audit_log(
             request=request,
             action_code="AFFECTATION",
@@ -2562,6 +2574,7 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         if team.mission_active_id and offer.mission_id == team.mission_active_id:
             offer.mission = None
             offer.save(update_fields=['mission'])
+        EngagementRessource.objects.filter(offer=offer, team=team).delete()
 
         audit_log(
             request=request,
@@ -2569,6 +2582,54 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             objet_type="Team",
             objet_id=team.id,
             commentaire=f"Ressource retirée : « {offer.title} »",
+        )
+
+        return Response(TeamSerializer(team, context=self.get_serializer_context()).data)
+
+    @action(detail=True, methods=['post'], url_path='definir-statut-ressource')
+    def definir_statut_ressource(self, request, pk=None):
+        """Fait avancer manuellement le statut d'engagement d'une ressource assignée (en
+        attente / confirmé / en transit / arrivé / décliné) — sans contrainte de séquence,
+        contrairement au canal public (EngagementRessourcePublicView) : l'équipe peut sauter
+        directement à "arrivé" si elle l'apprend par un autre biais."""
+        team = self.get_object()
+        if not _appartient_a_equipe(request, team):
+            return Response(
+                {"error": "Vous ne pouvez modifier le statut des ressources que pour les équipes de votre institution (ou de l'institution déléguée)."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        offer_id = request.data.get('offer_id')
+        try:
+            offer = Offer.objects.get(id=offer_id)
+        except (Offer.DoesNotExist, ValueError, TypeError):
+            return Response({"error": "Offre introuvable."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            engagement = offer.engagement
+        except EngagementRessource.DoesNotExist:
+            return Response({"error": "Cette offre n'a pas d'engagement à suivre."}, status=status.HTTP_400_BAD_REQUEST)
+
+        statut = request.data.get('statut')
+        if statut not in StatutEngagementRessource.values:
+            return Response({"error": "Statut invalide."}, status=status.HTTP_400_BAD_REQUEST)
+
+        engagement.statut = statut
+        now = timezone.now()
+        if statut == StatutEngagementRessource.CONFIRME and not engagement.date_confirmation:
+            engagement.date_confirmation = now
+        elif statut == StatutEngagementRessource.EN_TRANSIT and not engagement.date_transit:
+            engagement.date_transit = now
+        elif statut == StatutEngagementRessource.ARRIVE and not engagement.date_arrivee:
+            engagement.date_arrivee = now
+        engagement.save()
+
+        audit_log(
+            request=request,
+            action_code="MODIFICATION",
+            objet_type="Team",
+            objet_id=team.id,
+            commentaire=f"Ressource « {offer.title} » — statut : {engagement.get_statut_display()}",
         )
 
         return Response(TeamSerializer(team, context=self.get_serializer_context()).data)

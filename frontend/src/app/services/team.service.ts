@@ -37,6 +37,10 @@ export class TeamService {
     return this.http.post<Team>(`${this.url}/${id}/retirer-ressource/`, { offer_id: offerId });
   }
 
+  definirStatutRessource(id: string, offerId: string, statut: string): Observable<Team> {
+    return this.http.post<Team>(`${this.url}/${id}/definir-statut-ressource/`, { offer_id: offerId, statut });
+  }
+
   definirDelegation(id: string, institutionId: string, commentaire?: string): Observable<Team> {
     return this.http.post<Team>(`${this.url}/${id}/definir-delegation/`, { institution_id: institutionId, commentaire });
   }

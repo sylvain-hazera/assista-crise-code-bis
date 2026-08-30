@@ -592,7 +592,20 @@
                     {{ missionContact(m) }} · {{ fmtDate(m.date) }}
                     @if (m.statut) { · {{ m.statut }} }
                   </span>
+                  @if (m.engagementStatutLibelle) {
+                    <span class="engagement-badge" [class]="'engagement-' + (m.engagementStatut || '').toLowerCase()">
+                      {{ m.engagementStatutLibelle }}
+                    </span>
+                  }
                 </div>
+                @if (prochainStatutRessource(m)) {
+                  <button class="btn-secondary sm" (click)="avancerStatutRessource(m.id, prochainStatutRessource(m)!)">
+                    {{ libelleActionRessource(m) }}
+                  </button>
+                }
+                @if (m.engagementStatut === 'EN_ATTENTE') {
+                  <button class="btn-ghost sm" (click)="declinerRessource(m.id)">Décliner</button>
+                }
                 <button class="icon-btn danger sm" (click)="retirerRessource(m.id)" title="Retirer cette ressource">
                   <span class="material-icons">remove_circle_outline</span>
                 </button>
