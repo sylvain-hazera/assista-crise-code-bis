@@ -1280,6 +1280,20 @@ class Team(EnvironmentScopedModel):
         related_name="teams_deleguees",
     )
 
+    # Équipe "de tête" à laquelle celle-ci est rattachée comme une ressource (ex: l'équipe
+    # d'une entreprise avec ses camions, rattachée à l'équipe de secteur qui la coordonne) —
+    # voir TeamViewSet.rattacher_equipe/detacher_equipe. Arbre à profondeur illimitée, un seul
+    # champ auto-référentiel suffit (`sous_equipes` donne les enfants directs). Rester
+    # rattachée n'affecte jamais l'autonomie opérationnelle de l'équipe (institution, mission,
+    # points, dossiers restent les siens propres) — c'est un lien organisationnel, pas une
+    # fusion, exactement comme une offre assignée en ressource ne devient pas l'équipe.
+    equipe_parente = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="sous_equipes",
+    )
+
     leader = models.ForeignKey(
         User,
         on_delete=models.SET_NULL,

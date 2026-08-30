@@ -623,6 +623,76 @@
           </button>
         </div>
 
+        <!-- ── ÉQUIPES RATTACHÉES (hiérarchie) ────────────────── -->
+        <div class="detail-section">
+          <div class="section-header">
+            <h3>
+              <span class="material-icons">account_tree</span>
+              Équipes rattachées
+              <span class="count-badge">{{ selectedTeam.sous_equipes_info?.length || 0 }}</span>
+            </h3>
+            @if (!showAttachTeamForm) {
+              <button class="btn-link-invite" (click)="ouvrirAttacheEquipe()">
+                <span class="material-icons">add_link</span> Rattacher une équipe
+              </button>
+            }
+          </div>
+
+          @if (selectedTeam.equipe_parente_nom) {
+            <p class="parent-team-banner">
+              <span class="material-icons">north</span>
+              Rattachée à l'équipe : {{ selectedTeam.equipe_parente_nom }}
+              <button class="btn-ghost sm" (click)="seDetacherDeParente()">Se détacher</button>
+            </p>
+          }
+
+          @if (showAttachTeamForm) {
+            <div class="invite-member-form">
+              <div class="member-search">
+                <span class="material-icons">search</span>
+                <input type="text" placeholder="Rechercher une équipe…" [(ngModel)]="attachTeamSearchQuery"/>
+              </div>
+              <div class="user-pick-list">
+                @for (t of equipesCandidatesARattacher; track t.id) {
+                  <div class="user-pick-item" (click)="rattacherEquipe(t.id!)">
+                    <span class="mk-badge mk-dossier">
+                      <span class="material-icons">groups</span>
+                    </span>
+                    <div class="mission-info">
+                      <span class="mission-titre">{{ t.name }}</span>
+                      <span class="mission-meta">{{ t.institution_nom || 'Sans institution' }}</span>
+                    </div>
+                  </div>
+                }
+                @if (equipesCandidatesARattacher.length === 0) {
+                  <p class="empty-tab">Aucune équipe disponible à rattacher.</p>
+                }
+              </div>
+              <button class="btn-ghost sm" (click)="showAttachTeamForm = false">Annuler</button>
+            </div>
+          }
+
+          @if (!selectedTeam.sous_equipes_info?.length) {
+            <p class="no-missions">Aucune équipe rattachée.</p>
+          } @else {
+            <div class="mission-list">
+              @for (s of selectedTeam.sous_equipes_info; track s.id) {
+                <div class="mission-row">
+                  <span class="mk-badge mk-dossier">
+                    <span class="material-icons">groups</span>
+                  </span>
+                  <div class="mission-info">
+                    <span class="mission-titre">{{ s.nom }}</span>
+                  </div>
+                  <button class="icon-btn danger sm" (click)="detacherSousEquipe(s.id)" title="Détacher cette équipe">
+                    <span class="material-icons">remove_circle_outline</span>
+                  </button>
+                </div>
+              }
+            </div>
+          }
+        </div>
+
         <!-- ── DOSSIERS ────────────────────────────────────── -->
         <div class="detail-section">
           <div class="section-header">

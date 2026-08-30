@@ -255,6 +255,7 @@ export class TeamsComponent implements OnInit {
     this.showCreateDossierForm = false;
     this.showLinkPointForm = false;
     this.showCreatePointForm = false;
+    this.showAttachTeamForm = false;
     this.loadCandidateMembers(team);
     this.loadHistory(team);
   }
@@ -793,6 +794,84 @@ export class TeamsComponent implements OnInit {
         this.showSuccess('Point créé et lié à l\'équipe.');
       },
       error: (err) => this.showError(err?.error?.error || 'Erreur lors de la création du point.'),
+    });
+  }
+
+  // ── HIÉRARCHIE D'ÉQUIPES (rattachement comme ressource) ──────
+  showAttachTeamForm = false;
+  attachTeamSearchQuery = '';
+
+  ouvrirAttacheEquipe(): void {
+    this.showAttachTeamForm = true;
+    this.attachTeamSearchQuery = '';
+  }
+
+  /** Tous les descendants connus côté client (sous-équipes, sous-sous-équipes...) d'une équipe
+   * — sert uniquement à ne pas proposer un choix qui créerait un cycle évident dans le
+   * sélecteur ; la garde anti-cycle qui fait foi reste côté serveur. */
+  private getDescendantIds(teamId: string): Set<string> {
+    const descendants = new Set<string>();
+    const queue = [teamId];
+    while (queue.length > 0) {
+      const currentId = queue.pop()!;
+      const current = this.teams.find(t => t.id === currentId);
+      for (const sous of current?.sous_equipes_info ?? []) {
+        if (!descendants.has(sous.id)) {
+          descendants.add(sous.id);
+          queue.push(sous.id);
+        }
+      }
+    }
+    return descendants;
+  }
+
+  /** Équipes proposables comme sous-équipe : ni l'équipe elle-même, ni ses descendants déjà
+   * connus, ni une équipe déjà rattachée ailleurs (le serveur refuserait, autant filtrer tout
+   * de suite) — filtrées par la recherche libre. */
+  get equipesCandidatesARattacher(): Team[] {
+    if (!this.selectedTeam) return [];
+    const excludedIds = this.getDescendantIds(this.selectedTeam.id!);
+    excludedIds.add(this.selectedTeam.id!);
+    const q = this.attachTeamSearchQuery.trim().toLowerCase();
+    return this.teams
+      .filter(t => !excludedIds.has(t.id!) && !t.equipe_parente)
+      .filter(t => !q || t.name.toLowerCase().includes(q));
+  }
+
+  rattacherEquipe(equipeId: string): void {
+    if (!this.selectedTeam?.id) return;
+    this.teamService.rattacherEquipe(this.selectedTeam.id, equipeId).subscribe({
+      next: (updated) => {
+        this.selectedTeam = { ...updated, missions: this.selectedTeam!.missions };
+        this.showAttachTeamForm = false;
+        this.reloadTeams();
+        this.showSuccess('Équipe rattachée.');
+      },
+      error: (err) => this.showError(err?.error?.error || "Erreur lors du rattachement de l'équipe."),
+    });
+  }
+
+  detacherSousEquipe(equipeId: string): void {
+    if (!this.selectedTeam?.id) return;
+    this.teamService.detacherEquipe(this.selectedTeam.id, equipeId).subscribe({
+      next: (updated) => {
+        this.selectedTeam = { ...updated, missions: this.selectedTeam!.missions };
+        this.reloadTeams();
+        this.showSuccess('Équipe détachée.');
+      },
+      error: (err) => this.showError(err?.error?.error || "Erreur lors du détachement de l'équipe."),
+    });
+  }
+
+  seDetacherDeParente(): void {
+    if (!this.selectedTeam?.id || !this.selectedTeam.equipe_parente) return;
+    this.teamService.detacherEquipe(this.selectedTeam.equipe_parente, this.selectedTeam.id).subscribe({
+      next: () => {
+        this.selectedTeam = { ...this.selectedTeam!, equipe_parente: null, equipe_parente_nom: null };
+        this.reloadTeams();
+        this.showSuccess('Équipe détachée de sa parente.');
+      },
+      error: (err) => this.showError(err?.error?.error || "Erreur lors du détachement de l'équipe."),
     });
   }
 

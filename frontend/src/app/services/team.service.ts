@@ -64,4 +64,12 @@ export class TeamService {
   }): Observable<PointOperationnel> {
     return this.http.post<PointOperationnel>(`${this.url}/${id}/creer-point/`, data);
   }
+
+  rattacherEquipe(parentId: string, equipeId: string): Observable<Team> {
+    return this.http.post<Team>(`${this.url}/${parentId}/rattacher-equipe/`, { equipe_id: equipeId });
+  }
+
+  detacherEquipe(parentId: string, equipeId: string): Observable<Team> {
+    return this.http.post<Team>(`${this.url}/${parentId}/detacher-equipe/`, { equipe_id: equipeId });
+  }
 }

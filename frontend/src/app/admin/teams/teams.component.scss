@@ -279,6 +279,15 @@ h3 { margin: 0; font-size: .9rem; font-weight: 700; display: flex; align-items: 
   .material-icons { font-size: 16px; color: var(--primary); }
 }
 
+.parent-team-banner {
+  display: flex; align-items: center; gap: .4rem; font-size: .85rem; font-weight: 600;
+  margin: 0 0 .6rem;
+  background: #f8fafc; border: 1px solid var(--border); border-radius: 8px;
+  padding: .5rem .75rem;
+  .material-icons { font-size: 16px; color: var(--primary); }
+  .btn-ghost { margin-left: auto; }
+}
+
 // ── User pick list ────────────────────────────────────────────────
 .btn-link-invite {
   display: inline-flex; align-items: center; gap: .35rem;

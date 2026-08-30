@@ -2179,8 +2179,8 @@ def _appartient_a_equipe(request, team) -> bool:
 
 class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     queryset           = Team.objects.prefetch_related(
-        'members', 'assigned_crises', 'assigned_offers', 'assigned_requests'
-    ).select_related('leader').all()
+        'members', 'assigned_crises', 'assigned_offers', 'assigned_requests', 'sous_equipes'
+    ).select_related('leader', 'equipe_parente').all()
     serializer_class   = TeamSerializer
 
     def get_permissions(self):
@@ -2196,6 +2196,7 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             'inviter_membre', 'definir_mission', 'assigner_ressource', 'retirer_ressource',
             'definir_delegation', 'retirer_delegation', 'creer_dossier',
             'lier_point', 'delier_point', 'creer_point',
+            'rattacher_equipe', 'detacher_equipe',
         ):
             return [IsInstitutionalActor()]
         return [permissions.IsAuthenticated()]
@@ -2752,6 +2753,98 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         )
 
         return Response(PointOperationnelSerializer(point, context=self.get_serializer_context()).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['post'], url_path='rattacher-equipe')
+    def rattacher_equipe(self, request, pk=None):
+        """Rattache une autre équipe à celle-ci comme une ressource (ex: l'équipe d'une
+        entreprise avec ses camions, rattachée à une équipe de secteur) — l'équipe qui accueille
+        agit sur son propre endpoint, même patron qu'assigner_ressource/lier_point. Le
+        rattachement n'affecte jamais l'autonomie opérationnelle de la sous-équipe (institution,
+        mission, points, dossiers restent les siens propres) ; aucune contrainte d'institution
+        commune : une équipe hors de toute institution mairie doit pouvoir rejoindre une équipe
+        de secteur qui, elle, en a une."""
+        team = self.get_object()
+        if not _appartient_a_equipe(request, team):
+            return Response(
+                {"error": "Vous ne pouvez rattacher une équipe qu'aux équipes de votre institution (ou de l'institution déléguée)."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        equipe_id = request.data.get('equipe_id')
+        try:
+            sous_equipe = Team.objects.get(id=equipe_id)
+        except (Team.DoesNotExist, ValueError, TypeError):
+            return Response({"error": "Équipe introuvable."}, status=status.HTTP_400_BAD_REQUEST)
+        if sous_equipe.id == team.id:
+            return Response({"error": "Une équipe ne peut pas se rattacher à elle-même."}, status=status.HTTP_400_BAD_REQUEST)
+        if sous_equipe.equipe_parente_id and sous_equipe.equipe_parente_id != team.id:
+            return Response(
+                {"error": "Cette équipe est déjà rattachée à une autre équipe : détachez-la d'abord."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Garde anti-cycle : si l'équipe à rattacher apparaît dans la lignée d'ancêtres de
+        # `team`, l'attacher créerait une boucle (ex: A parente de B, on tente B parente de A).
+        ancetre = team
+        while ancetre is not None:
+            if ancetre.id == sous_equipe.id:
+                return Response(
+                    {"error": "Impossible : cette équipe est déjà une équipe parente dans cette hiérarchie (créerait une boucle)."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            ancetre = ancetre.equipe_parente
+
+        sous_equipe.equipe_parente = team
+        sous_equipe.save(update_fields=['equipe_parente'])
+
+        for cible, commentaire in (
+            (team, f"Équipe rattachée : « {sous_equipe.name} »"),
+            (sous_equipe, f"Rattachée à l'équipe : « {team.name} »"),
+        ):
+            audit_log(
+                request=request, action_code="MODIFICATION", objet_type="Team",
+                objet_id=cible.id, commentaire=commentaire,
+            )
+
+        # `team` vient de self.get_object(), dont le queryset précharge sous_equipes — le cache
+        # de prefetch ne voit pas l'ajout qu'on vient de faire, d'où une relecture fraîche
+        # avant de sérialiser la réponse.
+        team = Team.objects.prefetch_related('sous_equipes').get(id=team.id)
+        return Response(TeamSerializer(team, context=self.get_serializer_context()).data)
+
+    @action(detail=True, methods=['post'], url_path='detacher-equipe')
+    def detacher_equipe(self, request, pk=None):
+        """Détache une sous-équipe — ne touche jamais une équipe déjà repartie sous une autre
+        équipe entre-temps."""
+        team = self.get_object()
+        if not _appartient_a_equipe(request, team):
+            return Response(
+                {"error": "Vous ne pouvez détacher une équipe que pour les équipes de votre institution (ou de l'institution déléguée)."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        equipe_id = request.data.get('equipe_id')
+        try:
+            sous_equipe = Team.objects.get(id=equipe_id)
+        except (Team.DoesNotExist, ValueError, TypeError):
+            return Response({"error": "Équipe introuvable."}, status=status.HTTP_400_BAD_REQUEST)
+        if sous_equipe.equipe_parente_id != team.id:
+            return Response({"error": "Cette équipe n'est pas rattachée à cette équipe."}, status=status.HTTP_400_BAD_REQUEST)
+
+        sous_equipe.equipe_parente = None
+        sous_equipe.save(update_fields=['equipe_parente'])
+
+        for cible, commentaire in (
+            (team, f"Équipe détachée : « {sous_equipe.name} »"),
+            (sous_equipe, f"Détachée de l'équipe : « {team.name} »"),
+        ):
+            audit_log(
+                request=request, action_code="MODIFICATION", objet_type="Team",
+                objet_id=cible.id, commentaire=commentaire,
+            )
+
+        team = Team.objects.prefetch_related('sous_equipes').get(id=team.id)
+        return Response(TeamSerializer(team, context=self.get_serializer_context()).data)
 
 class MissionViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     queryset = Mission.objects.select_related('crise').prefetch_related('equipes').all()

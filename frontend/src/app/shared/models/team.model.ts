@@ -30,6 +30,9 @@ export interface Team {
   institution_nom?:     string | null;
   institution_delegataire?:     string | null; // UUID de l'institution délégataire courante (lecture seule, voir TeamService.definirDelegation/retirerDelegation)
   institution_delegataire_nom?: string | null;
+  equipe_parente?:              string | null; // UUID de l'équipe de tête à laquelle celle-ci est rattachée comme ressource (lecture seule, voir TeamService.rattacherEquipe/detacherEquipe)
+  equipe_parente_nom?:          string | null;
+  sous_equipes_info?:           { id: string; nom: string }[];
   member_ids:           string[];
   members_info?:        TeamMemberInfo[];
   assigned_crisis_ids:  string[];

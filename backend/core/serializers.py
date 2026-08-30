@@ -769,6 +769,8 @@ class TeamSerializer(serializers.ModelSerializer):
     mission_active_titre = serializers.CharField(source='mission_active.titre', read_only=True, default=None)
     mission_active_crise_id = serializers.CharField(source='mission_active.crise_id', read_only=True, default=None)
     mission_active_crise_nom = serializers.CharField(source='mission_active.crise.name', read_only=True, default=None)
+    equipe_parente_nom = serializers.CharField(source='equipe_parente.name', read_only=True, default=None)
+    sous_equipes_info = serializers.SerializerMethodField()
 
     class Meta:
         model  = Team
@@ -778,6 +780,9 @@ class TeamSerializer(serializers.ModelSerializer):
             'institution_nom',
             'institution_delegataire',
             'institution_delegataire_nom',
+            'equipe_parente',
+            'equipe_parente_nom',
+            'sous_equipes_info',
             'leader',
             'leader_nom',
             'regulateur',
@@ -798,13 +803,17 @@ class TeamSerializer(serializers.ModelSerializer):
             'zone_precise',
             'zone_precise_geojson',
         ]
-        # institution_delegataire n'est pas modifiable ici : elle ne doit changer que via
-        # TeamViewSet.definir_delegation/retirer_delegation, qui maintiennent en même temps
-        # l'historique TeamDelegation (un PATCH générique le laisserait diverger).
-        read_only_fields = ['id', 'created_at', 'institution_delegataire']
+        # institution_delegataire/equipe_parente ne sont pas modifiables ici : elles ne doivent
+        # changer que via les actions dédiées (definir_delegation/retirer_delegation,
+        # rattacher_equipe/detacher_equipe), qui appliquent leurs propres gardes (historique,
+        # anti-cycle) — un PATCH générique les contournerait.
+        read_only_fields = ['id', 'created_at', 'institution_delegataire', 'equipe_parente']
 
     def get_zone_precise_geojson(self, obj):
         return json.loads(obj.zone_precise.geojson) if obj.zone_precise else None
+
+    def get_sous_equipes_info(self, obj):
+        return [{"id": str(s.id), "nom": s.name} for s in obj.sous_equipes.all()]
 
     def _nom(self, user):
         if not user:
