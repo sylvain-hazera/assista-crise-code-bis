@@ -63,6 +63,8 @@ export interface ReportRow {
   materielLivraison?: string | null;
   diplomeSecourisme?: boolean;
   confirmationReglementaire?: boolean;
+  organisationNom?: string | null;   // dépôt groupé : nom de l'entreprise/association déposante
+  groupeId?: string | null;
   // raw originals for detail modal
   _raw:         Crisis | Offer | Request | Information;
 }
@@ -387,6 +389,8 @@ export class ReportingComponent implements OnInit, OnDestroy {
       materielLivraison: o.materiel_livraison ?? null,
       diplomeSecourisme: !!o.diplome_secourisme,
       confirmationReglementaire: !!o.confirmation_reglementaire,
+      organisationNom: o.organisation_nom ?? null,
+      groupeId: o.groupe_id ?? null,
       _raw:      o,
     }));
 
@@ -842,7 +846,11 @@ export class ReportingComponent implements OnInit, OnDestroy {
   // ── Barre groupée offres : créer une équipe + assigner un régulateur ────────
 
   openBulkOfferModal(): void {
-    this.bulkTeamName = '';
+    // Pré-remplit le nom d'équipe avec l'organisation quand toutes les offres sélectionnées
+    // viennent d'un même dépôt groupé — reste modifiable, juste un gain de temps.
+    const selected = this.allRows.filter(r => this.selectedOfferIds.has(r.id));
+    const organisations = new Set(selected.map(r => r.organisationNom).filter(Boolean));
+    this.bulkTeamName = organisations.size === 1 ? [...organisations][0]! : '';
     this.bulkRegulateurId = null;
     this.bulkRegulateurQuery = '';
     this.showBulkOfferModal = true;

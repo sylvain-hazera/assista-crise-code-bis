@@ -238,6 +238,11 @@
                     }
                     <div>
                       <span class="titre-text">{{ row.title }}</span>
+                      @if (row.kind === 'Offer' && row.organisationNom) {
+                        <span class="organisation-badge" title="Dépôt groupé">
+                          <span class="material-icons">domain</span> {{ row.organisationNom }}
+                        </span>
+                      }
                       @if (row.crisis && row.kind !== 'Crisis') {
                         <span class="crise-link">
                           <span class="material-icons">link</span> crise liée
