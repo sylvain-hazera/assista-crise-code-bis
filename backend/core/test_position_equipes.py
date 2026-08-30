@@ -1,5 +1,8 @@
+import datetime
+
 import pytest
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient
 
@@ -127,3 +130,31 @@ class TestPositionsEquipes:
         assert str(membre_a.id) in utilisateur_ids
         assert str(membre_b.id) in utilisateur_ids
         assert str(autre_equipe_membre.id) not in utilisateur_ids
+
+    def test_stale_position_is_excluded(self, create_user):
+        # horodatage a `auto_now=True` : on la recule via .update() (bypass save()) plutôt que
+        # de la passer à la création, qui serait de toute façon écrasée par now().
+        admin = create_user(username="admin-pos-ttl@test.fr", email="admin-pos-ttl@test.fr", type="ADMIN")
+        frais = create_user(username="frais-pos@test.fr", email="frais-pos@test.fr", type="SECOURS")
+        perime = create_user(username="perime-pos@test.fr", email="perime-pos@test.fr", type="SECOURS")
+
+        team = Team.objects.create(name="Equipe TTL", description="", color="#3b82f6")
+        team.members.add(frais, perime)
+
+        client = APIClient()
+        client.force_authenticate(user=frais)
+        client.post(reverse("ma_position"), {"latitude": 45.19, "longitude": 5.72})
+        client.force_authenticate(user=perime)
+        client.post(reverse("ma_position"), {"latitude": 43.6, "longitude": 1.44})
+
+        DernierePositionUtilisateur.objects.filter(utilisateur=perime).update(
+            horodatage=timezone.now() - datetime.timedelta(hours=4)
+        )
+
+        client.force_authenticate(user=admin)
+        response = client.get(reverse("positions_equipes"))
+
+        assert response.status_code == status.HTTP_200_OK
+        utilisateur_ids = [str(row["utilisateur"]) for row in response.data]
+        assert str(frais.id) in utilisateur_ids
+        assert str(perime.id) not in utilisateur_ids

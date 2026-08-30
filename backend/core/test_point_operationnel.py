@@ -70,6 +70,15 @@ class TestPointOperationnelLocationSerialization:
         assert response.data["longitude"] == pytest.approx(5.72)
         assert response.data["description"] == "Un point de test"
 
+    def test_exposes_type_code(self, institutional_client, crisis, point_type):
+        client, _ = institutional_client
+        point = PointOperationnel.objects.create(nom="Point type code test", type=point_type, crise=crisis)
+
+        response = client.get(reverse('pointoperationnel-detail', args=[point.id]))
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["type_code"] == point_type.code
+
 
 @pytest.mark.django_db
 class TestPointOperationnelEditPermissions:

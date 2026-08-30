@@ -411,6 +411,9 @@ class OfferSerializer(serializers.ModelSerializer):
     crisis_nom = serializers.CharField(source="crisis.name", read_only=True, default=None)
     mission_titre = serializers.CharField(source="mission.titre", read_only=True, default=None)
     materiel_catalogue_nom = serializers.CharField(source="materiel_catalogue.nom", read_only=True, default=None)
+    # Dénormalisé pour repérer côté client les offres de soins médicaux/paramédicaux (calque
+    # carte "Personnel secourisme") sans avoir à résoudre le FK offer_type séparément.
+    offer_type_nom = serializers.CharField(source="offer_type.type", read_only=True, default=None)
     has_photo = serializers.SerializerMethodField()
     competences_libelles = serializers.SerializerMethodField()
     commune = serializers.SerializerMethodField()
@@ -1617,6 +1620,9 @@ class PointOperationnelSerializer(
 ):
 
     type_libelle = serializers.CharField(source="type.libelle", read_only=True, default=None)
+    # Dénormalisé pour filtrer côté client de façon fiable (ex: "SECOURS" pour le calque carte
+    # "Centres secours/soins") sans dépendre du libellé humain, qui peut changer.
+    type_code = serializers.CharField(source="type.code", read_only=True, default=None)
     responsable_nom = serializers.SerializerMethodField()
     latitude = serializers.SerializerMethodField()
     longitude = serializers.SerializerMethodField()

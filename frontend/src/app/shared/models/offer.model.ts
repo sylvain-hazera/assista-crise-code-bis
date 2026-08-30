@@ -24,6 +24,7 @@ export interface Offer {
   expires_at: string | null;
   status: Status;
   offer_type: string;                   // UUID du OfferType (FK)
+  offer_type_nom?: string | null;
   crisis: string | null;
   crisis_nom?: string | null;
   author: string | null;

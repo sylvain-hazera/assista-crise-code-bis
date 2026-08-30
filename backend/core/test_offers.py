@@ -264,3 +264,8 @@ class TestOfferEngagementFields:
         assert offer.materiel_catalogue is None
         assert offer.quantite is None
         assert offer.unite is None
+
+    def test_offer_type_nom_exposes_type_label(self, api_client, offer):
+        response = api_client.get(reverse('offer-detail', args=[offer.id]))
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['offer_type_nom'] == offer.offer_type.type

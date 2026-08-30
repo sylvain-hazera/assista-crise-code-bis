@@ -3160,7 +3160,14 @@ class PositionsEquipesView(generics.ListAPIView):
     affichage sur la carte admin ou sur la "vue équipe" d'un bénévole — un acteur
     institutionnel voit tout le monde, un simple membre d'équipe ne voit que les positions
     des membres de SES propres équipes (jamais celles d'une équipe à laquelle il n'appartient
-    pas, même logique que la localisation précise des demandes/offres)."""
+    pas, même logique que la localisation précise des demandes/offres).
+
+    Une position n'est capturée qu'à l'occasion d'une autre action (jamais de traçage en tâche
+    de fond, voir DernierePositionUtilisateur) : au-delà de POSITION_TTL, elle ne reflète plus
+    fiablement où se trouve la personne — on ne l'affiche plus plutôt que de laisser croire
+    qu'elle est toujours là."""
+
+    POSITION_TTL = datetime.timedelta(hours=3)
 
     serializer_class = DernierePositionUtilisateurSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -3169,6 +3176,7 @@ class PositionsEquipesView(generics.ListAPIView):
         qs = DernierePositionUtilisateur.objects.filter(
             environment=get_active_environment(self.request),
             utilisateur__teams__isnull=False,
+            horodatage__gte=timezone.now() - self.POSITION_TTL,
         ).distinct().select_related('utilisateur')
         if get_effective_role(self.request) in INSTITUTIONAL_TYPES:
             return qs

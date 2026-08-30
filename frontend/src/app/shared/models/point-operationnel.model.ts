@@ -13,6 +13,7 @@ export interface PointOperationnel {
   nom: string;
   type: string;
   type_libelle?: string | null;
+  type_code?: string | null;
   crise: string | null;
   crise_nom?: string | null;
   responsable: string | null;

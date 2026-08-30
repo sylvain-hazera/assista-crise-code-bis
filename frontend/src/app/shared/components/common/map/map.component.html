@@ -29,6 +29,21 @@
           <span class="layer-dot positions-dot"></span>
           Positions équipes
         </label>
+        <label class="layer-toggle-item">
+          <input type="checkbox" [(ngModel)]="layerVisibility.personnelSecourisme" (ngModelChange)="onLayerToggle()">
+          <span class="layer-dot personnel-dot"></span>
+          Personnel secourisme
+        </label>
+        <label class="layer-toggle-item">
+          <input type="checkbox" [(ngModel)]="layerVisibility.centresTous" (ngModelChange)="onLayerToggle()">
+          <span class="layer-dot centres-dot"></span>
+          Centres
+        </label>
+        <label class="layer-toggle-item">
+          <input type="checkbox" [(ngModel)]="layerVisibility.centresSecours" (ngModelChange)="onLayerToggle()">
+          <span class="layer-dot centres-secours-dot"></span>
+          Centres secours/soins
+        </label>
       }
     </div>
 </div>
