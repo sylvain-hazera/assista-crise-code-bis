@@ -265,6 +265,20 @@
 h3 { margin: 0; font-size: .9rem; font-weight: 700; display: flex; align-items: center; gap: .4rem;
      .material-icons { font-size: 16px; color: var(--muted); } }
 
+// ── Institution / délégation ────────────────────────────────────────
+.institution-picker-row {
+  display: flex; align-items: center; gap: .75rem; flex-wrap: wrap;
+  label { font-size: .78rem; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); min-width: 190px; }
+  select.form-select {
+    flex: 1; min-width: 220px; padding: .5rem .65rem; border: 1px solid var(--border);
+    border-radius: 8px; font-size: .85rem; color: var(--text); background: var(--surface);
+  }
+}
+.delegation-active {
+  display: flex; align-items: center; gap: .4rem; font-size: .85rem; font-weight: 600;
+  .material-icons { font-size: 16px; color: var(--primary); }
+}
+
 // ── User pick list ────────────────────────────────────────────────
 .btn-link-invite {
   display: inline-flex; align-items: center; gap: .35rem;
@@ -337,9 +351,9 @@ h3 { margin: 0; font-size: .9rem; font-weight: 700; display: flex; align-items: 
     .material-icons { font-size: 16px; color: var(--primary); }
     &.muted { color: var(--muted); font-weight: 400; }
   }
-  input {
+  input, select.form-select {
     flex: 1; min-width: 160px; padding: .4rem .6rem; border: 1px solid var(--border);
-    border-radius: 8px; font-size: .83rem;
+    border-radius: 8px; font-size: .83rem; color: var(--text); background: var(--surface);
   }
 }
 .resources-summary { font-size: .8rem; color: var(--muted); margin: 0 0 .6rem; }

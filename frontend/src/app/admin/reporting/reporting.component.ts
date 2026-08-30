@@ -217,6 +217,15 @@ export class ReportingComponent implements OnInit, OnDestroy {
   pickForPointId: string | null = null;
   points: PointOperationnel[] = [];
 
+  /** Vrai dès qu'on arrive en mode picker (équipe ou point) — dans ce mode, la sélection
+   * groupée habituelle (case à cocher + barre "Créer une équipe...") n'a pas de sens : on est
+   * déjà dans une équipe/un point précis, pas en train d'en créer un nouveau à partir d'une
+   * sélection. Voir col-actions, qui garde lui Voir/Télécharger/Supprimer visibles en plus du
+   * bouton d'ajout, contrairement à cette sélection groupée qui disparaît entièrement. */
+  get pickerModeActive(): boolean {
+    return !!(this.pickForTeamId || this.pickForPointId);
+  }
+
   ngOnInit():    void {
     this.pickForTeamId = this.route.snapshot.queryParamMap.get('pickForTeam');
     this.pickForPointId = this.route.snapshot.queryParamMap.get('pickForPoint');

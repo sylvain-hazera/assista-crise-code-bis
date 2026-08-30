@@ -6,6 +6,7 @@ import { forkJoin } from 'rxjs';
 
 import { TeamService }       from '../../services/team.service';
 import { UserService }       from '../../services/user.service';
+import { InstitutionService } from '../../services/institution.service';
 import { CrisisService }     from '../../services/crisis.service';
 import { OfferService }      from '../../services/offer.service';
 import { RequestService }    from '../../services/request.service';
@@ -28,9 +29,9 @@ import { Status }             from '../../shared/models/status.model';
 import { DisponibiliteOffre } from '../../shared/models/disponibilite-offre.model';
 import { Dossier } from '../../shared/models/dossier.model';
 import { Competence } from '../../shared/models/competence.model';
+import { Institution } from '../../shared/models/institution.model';
 
 type ModalView = 'none' | 'create' | 'detail' | 'edit' | 'delete' | 'assign' | 'planning';
-type AssignTab = 'Crisis' | 'Request';
 
 const COLORS = ['#ef4444','#f97316','#eab308','#22c55e','#06b6d4','#3b82f6','#8b5cf6','#ec4899'];
 
@@ -53,6 +54,7 @@ export class TeamsComponent implements OnInit {
   dossiers: Dossier[] = [];
   competences: Competence[] = [];
   roles: RoleOperationnel[] = [];
+  institutions: Institution[] = [];
 
   /** Membres candidats pour l'équipe SÉLECTIONNÉE uniquement (rechargés à l'ouverture du
    * détail, scopés sur son institution) — distinct de `users` (liste globale, encore
@@ -70,8 +72,6 @@ export class TeamsComponent implements OnInit {
 
   modal: ModalView         = 'none';
   selectedTeam: Team | null = null;
-  readonly assignTabs: AssignTab[] = ['Crisis', 'Request'];
-  assignTab: AssignTab      = 'Crisis';
 
   searchQuery = '';
   memberSearchQuery  = '';
@@ -89,6 +89,7 @@ export class TeamsComponent implements OnInit {
     private fb:          FormBuilder,
     private teamService: TeamService,
     private userService: UserService,
+    private institutionService: InstitutionService,
     private crisisService:  CrisisService,
     private offerService:   OfferService,
     private requestService: RequestService,
@@ -132,8 +133,9 @@ export class TeamsComponent implements OnInit {
       dossiers: this.dossierService.getAll(),
       competences: this.competenceService.getAll(),
       roles: this.roleOperationnelService.getAll(),
+      institutions: this.institutionService.getAll(),
     }).subscribe({
-      next: ({ users, crisis, offers, requests, teams, disponibilites, dossiers, competences, roles }) => {
+      next: ({ users, crisis, offers, requests, teams, disponibilites, dossiers, competences, roles, institutions }) => {
         this.users    = users;
         this.crisis   = crisis;
         this.offers   = offers;
@@ -142,6 +144,7 @@ export class TeamsComponent implements OnInit {
         this.dossiers = dossiers;
         this.competences = competences;
         this.roles = roles;
+        this.institutions = institutions;
         this.teams    = teams.map(t => ({ ...t, missions: this.buildMissions(t) }));
         this.isLoading = false;
         this.openTeamFromQueryParam();
@@ -284,19 +287,69 @@ export class TeamsComponent implements OnInit {
     return [...fromAudit, ...fromDossiers].sort((a, b) => b.date.localeCompare(a.date));
   }
 
-  /** Ne propose comme candidats à l'ajout QUE les membres de l'institution de cette équipe —
-   * avant ce correctif, tous les comptes de la plateforme (admins, secours, particuliers sans
-   * lien avec cette mairie...) apparaissaient dans le sélecteur. Vide si l'équipe n'a pas
-   * d'institution (rien de pertinent à proposer). */
+  /** Ne propose comme candidats à l'ajout QUE les membres de l'institution responsable de
+   * cette équipe ET, le cas échéant, de son institution délégataire — avant ce correctif, tous
+   * les comptes de la plateforme (admins, secours, particuliers sans lien avec cette mairie...)
+   * apparaissaient dans le sélecteur. Vide si l'équipe n'a aucune institution (rien de
+   * pertinent à proposer). */
   private loadCandidateMembers(team: Team): void {
-    if (!team.institution) {
+    const institutionIds = [team.institution, team.institution_delegataire].filter((id): id is string => !!id);
+    if (institutionIds.length === 0) {
       this.candidateMembers = [];
       return;
     }
-    this.userService.getAll({ institution: team.institution }).subscribe({
+    this.userService.getAll({ institution: institutionIds }).subscribe({
       next: (users) => this.candidateMembers = users,
       error: () => this.candidateMembers = [],
     });
+  }
+
+  // ── INSTITUTION / DÉLÉGATION ────────────────────────────────────
+  changerInstitution(institutionId: string): void {
+    if (!this.selectedTeam?.id || !institutionId || institutionId === this.selectedTeam.institution) return;
+    if (!confirm("Changer l'institution responsable de cette équipe ?")) return;
+    this.teamService.patch(this.selectedTeam.id, { institution: institutionId }).subscribe({
+      next: (updated) => {
+        this.selectedTeam = { ...updated, missions: this.selectedTeam!.missions };
+        this.loadCandidateMembers(this.selectedTeam);
+        this.reloadTeams();
+        this.showSuccess('Institution responsable mise à jour.');
+      },
+      error: (err) => this.showError(err?.error?.error || "Erreur lors du changement d'institution."),
+    });
+  }
+
+  delegerA(institutionId: string): void {
+    if (!this.selectedTeam?.id || !institutionId) return;
+    this.teamService.definirDelegation(this.selectedTeam.id, institutionId).subscribe({
+      next: (updated) => {
+        this.selectedTeam = { ...updated, missions: this.selectedTeam!.missions };
+        this.loadCandidateMembers(this.selectedTeam);
+        this.reloadTeams();
+        this.showSuccess('Équipe déléguée.');
+      },
+      error: (err) => this.showError(err?.error?.error || 'Erreur lors de la délégation.'),
+    });
+  }
+
+  retirerDelegation(): void {
+    if (!this.selectedTeam?.id) return;
+    this.teamService.retirerDelegation(this.selectedTeam.id).subscribe({
+      next: (updated) => {
+        this.selectedTeam = { ...updated, missions: this.selectedTeam!.missions };
+        this.loadCandidateMembers(this.selectedTeam);
+        this.reloadTeams();
+        this.showSuccess('Délégation retirée.');
+      },
+      error: (err) => this.showError(err?.error?.error || 'Erreur lors du retrait de la délégation.'),
+    });
+  }
+
+  /** Institutions proposables comme délégataire : toutes sauf l'institution responsable
+   * actuelle (une équipe ne peut pas se déléguer à elle-même). */
+  get institutionsDelegablesPourEquipe(): Institution[] {
+    if (!this.selectedTeam) return this.institutions;
+    return this.institutions.filter(i => i.id !== this.selectedTeam!.institution);
   }
 
   // ── ZONE D'INTERVENTION ─────────────────────────────────────────
@@ -437,7 +490,6 @@ export class TeamsComponent implements OnInit {
   openAssign(team: Team, e?: Event): void {
     e?.stopPropagation();
     this.selectedTeam = team;
-    this.assignTab    = 'Crisis';
     this.modal        = 'assign';
   }
 
@@ -467,7 +519,7 @@ export class TeamsComponent implements OnInit {
     });
   }
 
-  isMissionAssigned(id: string, kind: AssignTab): boolean {
+  isMissionAssigned(id: string, kind: TeamMission['kind']): boolean {
     return this.selectedTeam?.missions.some(m => m.id === id && m.kind === kind) ?? false;
   }
 
@@ -501,17 +553,18 @@ export class TeamsComponent implements OnInit {
     return { Crisis: 'Crises', Offer: "Offres d'aide", Request: "Demandes d'aide" }[kind];
   }
 
-  /** Missions groupées par type (crises / demandes) pour ne pas tout mélanger dans une même
-   * liste plate — les offres (ressources) ont leur propre section dédiée, voir
+  /** Demandes assignées à l'équipe — la crise se rattache désormais directement à la mission
+   * (voir mission-active-bar/submitDefinirMission), ce groupe ne couvre plus que les demandes
+   * d'aide. Les offres (ressources) ont leur propre section dédiée, voir
    * resourcesForSelectedTeam. */
   get missionsByKind(): { kind: TeamMission['kind']; missions: TeamMission[] }[] {
     if (!this.selectedTeam) return [];
-    return (['Crisis', 'Request'] as TeamMission['kind'][])
+    return (['Request'] as TeamMission['kind'][])
       .map(kind => ({ kind, missions: this.selectedTeam!.missions.filter(m => m.kind === kind) }))
       .filter(g => g.missions.length > 0);
   }
 
-  /** Nombre total de missions (crises + demandes, hors ressources/offres) affectées. */
+  /** Nombre total de demandes assignées. */
   get missionsCount(): number {
     return this.missionsByKind.reduce((sum, g) => sum + g.missions.length, 0);
   }
@@ -541,18 +594,26 @@ export class TeamsComponent implements OnInit {
 
   // ── Ressources : mission active + ajout/retrait ──────────────
   missionTitreInput = '';
+  missionCriseId: string | null = null;
 
   submitDefinirMission(): void {
     if (!this.selectedTeam?.id || !this.missionTitreInput.trim()) return;
-    this.teamService.definirMission(this.selectedTeam.id, this.missionTitreInput.trim()).subscribe({
+    this.teamService.definirMission(this.selectedTeam.id, this.missionTitreInput.trim(), this.missionCriseId ?? undefined).subscribe({
       next: (updated) => {
         this.selectedTeam = { ...updated, missions: this.selectedTeam!.missions };
         this.missionTitreInput = '';
+        this.missionCriseId = null;
         this.reloadTeams();
         this.showSuccess('Mission de l\'équipe définie.');
       },
       error: (err) => this.showError(err?.error?.error || 'Erreur lors de la définition de la mission.'),
     });
+  }
+
+  /** Crises ouvertes proposables pour la mission — une mission ne doit pas pouvoir se rattacher
+   * à une crise déjà clôturée (voir validate_crisis_open côté backend). */
+  get crisesOuvertes(): Crisis[] {
+    return this.crisis.filter(c => !c.end_date);
   }
 
   retirerRessource(offerId: string): void {
@@ -599,10 +660,46 @@ export class TeamsComponent implements OnInit {
   }
 
   /** Dossiers de suivi rattachés à l'équipe (créés automatiquement lors de l'affectation
-   * d'une demande, voir Request.assign_team côté backend). */
+   * d'une demande, voir Request.assign_team côté backend — ou manuellement depuis cette vue,
+   * voir showCreateDossierForm/submitCreerDossier, pour une mission sans demande d'origine). */
   get dossiersForSelectedTeam(): Dossier[] {
     if (!this.selectedTeam) return [];
     return this.dossiers.filter(d => d.equipe === this.selectedTeam!.id);
+  }
+
+  // ── DOSSIER SANS DEMANDE D'ORIGINE ────────────────────────────
+  showCreateDossierForm = false;
+  createDossierTitre = '';
+  createDossierDescription = '';
+  createDossierCriseId: string | null = null;
+  createDossierPriorite = 'NORMALE';
+
+  ouvrirCreationDossier(): void {
+    this.showCreateDossierForm = true;
+    this.createDossierTitre = '';
+    this.createDossierDescription = '';
+    this.createDossierCriseId = this.selectedTeam?.mission_active_crise_id ?? null;
+    this.createDossierPriorite = 'NORMALE';
+  }
+
+  submitCreerDossier(): void {
+    if (!this.selectedTeam?.id || !this.createDossierTitre.trim() || !this.createDossierDescription.trim() || !this.createDossierCriseId) {
+      this.showError('Titre, description et crise sont obligatoires.');
+      return;
+    }
+    this.teamService.creerDossier(this.selectedTeam.id, {
+      titre: this.createDossierTitre.trim(),
+      description: this.createDossierDescription.trim(),
+      crise_id: this.createDossierCriseId,
+      priorite: this.createDossierPriorite,
+    }).subscribe({
+      next: (dossier) => {
+        this.dossiers = [...this.dossiers, dossier];
+        this.showCreateDossierForm = false;
+        this.showSuccess('Dossier créé.');
+      },
+      error: (err) => this.showError(err?.error?.error || 'Erreur lors de la création du dossier.'),
+    });
   }
 
   /** Résumé rapide de disponibilité d'un membre, affiché directement dans la liste plutôt que
@@ -687,11 +784,6 @@ export class TeamsComponent implements OnInit {
       u.last_name?.toLowerCase().includes(q)  ||
       u.username?.toLowerCase().includes(q)
     );
-  }
-  get filteredCrisis() {
-    const q = this.missionSearchQuery.trim().toLowerCase();
-    if (!q) return this.crisis;
-    return this.crisis.filter(c => c.name?.toLowerCase().includes(q));
   }
   get filteredRequests() {
     const q = this.missionSearchQuery.trim().toLowerCase();

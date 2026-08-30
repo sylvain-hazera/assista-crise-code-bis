@@ -129,8 +129,9 @@
     </div>
   </div>
 
-  <!-- ══ BARRES D'ACTION GROUPÉE ══════════════════════════════════════════════════ -->
-  @if (selectedOfferIds.size > 0) {
+  <!-- ══ BARRES D'ACTION GROUPÉE (masquées en mode picker : hors-sujet quand on est déjà dans
+       une équipe/un point précis, voir pickerModeActive) ═══════════════════════════════════ -->
+  @if (!pickerModeActive && selectedOfferIds.size > 0) {
     <div class="bulk-bar">
       <span class="bulk-count">{{ selectedOfferIds.size }} offre{{ selectedOfferIds.size > 1 ? 's' : '' }} sélectionnée{{ selectedOfferIds.size > 1 ? 's' : '' }}</span>
       <button class="btn-primary sm" (click)="openBulkOfferModal()">
@@ -139,7 +140,7 @@
       <button class="btn-ghost sm" (click)="selectedOfferIds.clear()">Annuler la sélection</button>
     </div>
   }
-  @if (selectedRequestIds.size > 0) {
+  @if (!pickerModeActive && selectedRequestIds.size > 0) {
     <div class="bulk-bar">
       <span class="bulk-count">{{ selectedRequestIds.size }} demande{{ selectedRequestIds.size > 1 ? 's' : '' }} sélectionnée{{ selectedRequestIds.size > 1 ? 's' : '' }}</span>
       <button class="btn-primary sm" (click)="openBulkRequestModal()">
@@ -153,7 +154,7 @@
       }
     </div>
   }
-  @if (selectedInformationIds.size > 0) {
+  @if (!pickerModeActive && selectedInformationIds.size > 0) {
     <div class="bulk-bar">
       <span class="bulk-count">{{ selectedInformationIds.size }} signalement{{ selectedInformationIds.size > 1 ? 's' : '' }} sélectionné{{ selectedInformationIds.size > 1 ? 's' : '' }}</span>
       <button class="btn-primary sm" (click)="openBulkInformationModal()">
@@ -184,12 +185,14 @@
           <thead>
             <tr>
               <th class="col-select">
-                @if (filterKind === 'Offer') {
-                  <input type="checkbox" [checked]="allPagedOffersSelected" (change)="toggleSelectAllOffers()" title="Tout sélectionner"/>
-                } @else if (filterKind === 'Request') {
-                  <input type="checkbox" [checked]="allPagedRequestsSelected" (change)="toggleSelectAllRequests()" title="Tout sélectionner"/>
-                } @else if (filterKind === 'Information') {
-                  <input type="checkbox" [checked]="allPagedInformationsSelected" (change)="toggleSelectAllInformations()" title="Tout sélectionner"/>
+                @if (!pickerModeActive) {
+                  @if (filterKind === 'Offer') {
+                    <input type="checkbox" [checked]="allPagedOffersSelected" (change)="toggleSelectAllOffers()" title="Tout sélectionner"/>
+                  } @else if (filterKind === 'Request') {
+                    <input type="checkbox" [checked]="allPagedRequestsSelected" (change)="toggleSelectAllRequests()" title="Tout sélectionner"/>
+                  } @else if (filterKind === 'Information') {
+                    <input type="checkbox" [checked]="allPagedInformationsSelected" (change)="toggleSelectAllInformations()" title="Tout sélectionner"/>
+                  }
                 }
               </th>
               <th class="col-kind">Type</th>
@@ -218,7 +221,7 @@
             @for (row of pagedRows; track row.id) {
               <tr (click)="openDetail(row)">
                 <td class="col-select" (click)="$event.stopPropagation()">
-                  @if (isRowSelectable(row)) {
+                  @if (!pickerModeActive && isRowSelectable(row)) {
                     <input type="checkbox" [checked]="isRowSelected(row)" (change)="toggleRowSelection(row)"/>
                   }
                 </td>
@@ -296,6 +299,9 @@
                   }
                 </td>
                 <td class="col-actions" (click)="$event.stopPropagation()">
+                  <!-- En mode picker, le bouton d'ajout coexiste avec Voir/Télécharger/Supprimer
+                       (jamais l'un à la place de l'autre) : on doit pouvoir consulter le détail
+                       même en train de choisir une ressource à ajouter. -->
                   @if (pickForTeamId && row.kind === 'Offer') {
                     <button class="btn-primary sm" (click)="ajouterCommeRessource(row.id, $event)">
                       <span class="material-icons">add</span> Ajouter à l'équipe
@@ -306,17 +312,16 @@
                     </button>
                   } @else if (pickForPointId && row.kind === 'Offer') {
                     <span class="muted">Pas du matériel</span>
-                  } @else {
-                    <button class="btn-icon-sm" (click)="openDetail(row)" title="Voir">
-                      <span class="material-icons">visibility</span>
-                    </button>
-                    <button class="btn-icon-sm" (click)="exportRow(row, $event)" title="Télécharger">
-                      <span class="material-icons">download</span>
-                    </button>
-                    <button class="btn-icon-sm danger" (click)="openDelete(row, $event)" title="Supprimer">
-                      <span class="material-icons">delete_outline</span>
-                    </button>
                   }
+                  <button class="btn-icon-sm" (click)="openDetail(row)" title="Voir">
+                    <span class="material-icons">visibility</span>
+                  </button>
+                  <button class="btn-icon-sm" (click)="exportRow(row, $event)" title="Télécharger">
+                    <span class="material-icons">download</span>
+                  </button>
+                  <button class="btn-icon-sm danger" (click)="openDelete(row, $event)" title="Supprimer">
+                    <span class="material-icons">delete_outline</span>
+                  </button>
                 </td>
               </tr>
             }

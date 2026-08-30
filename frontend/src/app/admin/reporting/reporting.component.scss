@@ -285,7 +285,7 @@ table {
       }
 
       &.col-kind    { width: 130px; }
-      &.col-actions { width: 120px; text-align: right; }
+      &.col-actions { width: 120px; min-width: 120px; text-align: right; }
       &.col-select  { width: 36px; }
     }
   }
@@ -300,6 +300,7 @@ table {
     .col-actions {
       text-align: right;
       display: flex; align-items: center; justify-content: flex-end; gap: .35rem;
+      flex-wrap: wrap;
       padding-right: 1rem;
     }
   }

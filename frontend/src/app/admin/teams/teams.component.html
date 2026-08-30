@@ -57,7 +57,7 @@
                   {{ team.name[0].toUpperCase() }}
                 </div>
                 <div class="card-actions" (click)="$event.stopPropagation()">
-                  <button class="icon-btn" (click)="openAssign(team, $event)" title="Assigner missions">
+                  <button class="icon-btn" (click)="openAssign(team, $event)" title="Assigner des demandes">
                     <span class="material-icons">assignment</span>
                   </button>
                   <button class="icon-btn" (click)="openEdit(team, $event)" title="Modifier">
@@ -219,6 +219,45 @@
           <p class="detail-desc">{{ selectedTeam.description }}</p>
         }
 
+        <!-- ── INSTITUTION ─────────────────────────────────── -->
+        <div class="detail-section">
+          <div class="section-header">
+            <h3>
+              <span class="material-icons">account_balance</span>
+              Institution
+            </h3>
+          </div>
+          <div class="institution-picker-row">
+            <label>Institution responsable</label>
+            <select class="form-select"
+              [ngModel]="selectedTeam.institution"
+              (ngModelChange)="changerInstitution($event)">
+              <option [ngValue]="null">— Aucune —</option>
+              @for (inst of institutions; track inst.id) {
+                <option [ngValue]="inst.id">{{ inst.nom }}</option>
+              }
+            </select>
+          </div>
+          <div class="institution-picker-row">
+            <label>Institution délégataire (optionnel)</label>
+            @if (selectedTeam.institution_delegataire) {
+              <span class="delegation-active">
+                <span class="material-icons">handshake</span>
+                {{ selectedTeam.institution_delegataire_nom }}
+                <button class="btn-ghost sm" (click)="retirerDelegation()">Retirer la délégation</button>
+              </span>
+            } @else {
+              <select class="form-select" #delegationSelect
+                (change)="delegerA(delegationSelect.value); delegationSelect.value = ''">
+                <option value="" selected>— Déléguer à une institution —</option>
+                @for (inst of institutionsDelegablesPourEquipe; track inst.id) {
+                  <option [value]="inst.id">{{ inst.nom }}</option>
+                }
+              </select>
+            }
+          </div>
+        </div>
+
         <!-- ── MEMBRES ─────────────────────────────────────── -->
         <div class="detail-section">
           <div class="section-header">
@@ -379,12 +418,12 @@
           <button class="btn-secondary sm" (click)="saveZonePrecise()">Enregistrer la zone précise</button>
         </div>
 
-        <!-- ── MISSIONS (crises / demandes) ─────────────────── -->
+        <!-- ── DEMANDES ASSIGNÉES ────────────────────────────── -->
         <div class="detail-section">
           <div class="section-header">
             <h3>
               <span class="material-icons">task_alt</span>
-              Missions assignées
+              Demandes assignées
               <span class="count-badge">{{ missionsCount }}</span>
             </h3>
           </div>
@@ -392,9 +431,9 @@
           @if (missionsByKind.length === 0) {
             <div class="no-missions">
               <span class="material-icons">inbox</span>
-              <p>Aucune mission assignée.</p>
+              <p>Aucune demande assignée.</p>
               <button class="btn-secondary sm" (click)="modal = 'assign'">
-                <span class="material-icons">assignment</span> Assigner des missions
+                <span class="material-icons">assignment</span> Assigner des demandes
               </button>
             </div>
           } @else {
@@ -441,11 +480,20 @@
             @if (selectedTeam.mission_active_titre) {
               <span class="mission-active-label">
                 <span class="material-icons">flag</span> Mission : {{ selectedTeam.mission_active_titre }}
+                @if (selectedTeam.mission_active_crise_nom) {
+                  · <span class="material-icons">local_fire_department</span> {{ selectedTeam.mission_active_crise_nom }}
+                }
               </span>
             } @else {
               <span class="mission-active-label muted">Aucune mission définie pour cette équipe.</span>
             }
             <input type="text" placeholder="Nouvelle mission (texte libre)…" [(ngModel)]="missionTitreInput" />
+            <select class="form-select" [(ngModel)]="missionCriseId">
+              <option [ngValue]="null">Assigner à une crise (optionnel)</option>
+              @for (c of crisesOuvertes; track c.id) {
+                <option [ngValue]="c.id">{{ c.name }}</option>
+              }
+            </select>
             <button class="btn-secondary sm" (click)="submitDefinirMission()">
               {{ selectedTeam.mission_active_titre ? 'Changer' : 'Définir' }}
             </button>
@@ -498,7 +546,36 @@
               Dossiers affectés
               <span class="count-badge">{{ dossiersForSelectedTeam.length }}</span>
             </h3>
+            @if (!showCreateDossierForm) {
+              <button class="btn-link-invite" (click)="ouvrirCreationDossier()">
+                <span class="material-icons">add</span> Créer un dossier
+              </button>
+            }
           </div>
+
+          @if (showCreateDossierForm) {
+            <div class="invite-member-form">
+              <input type="text" placeholder="Titre (ex : Garde du feu)" [(ngModel)]="createDossierTitre" />
+              <textarea placeholder="Description de la mission" rows="2" [(ngModel)]="createDossierDescription"></textarea>
+              <div class="invite-form-row">
+                <select [(ngModel)]="createDossierCriseId">
+                  <option [ngValue]="null">— Choisir une crise —</option>
+                  @for (c of crisesOuvertes; track c.id) {
+                    <option [ngValue]="c.id">{{ c.name }}</option>
+                  }
+                </select>
+                <select [(ngModel)]="createDossierPriorite">
+                  <option value="BASSE">Basse</option>
+                  <option value="NORMALE">Normale</option>
+                  <option value="URGENTE">Urgente</option>
+                </select>
+              </div>
+              <div class="section-header-actions">
+                <button class="btn-primary sm" (click)="submitCreerDossier()">Créer le dossier</button>
+                <button class="btn-ghost sm" (click)="showCreateDossierForm = false">Annuler</button>
+              </div>
+            </div>
+          }
 
           @if (dossiersForSelectedTeam.length === 0) {
             <p class="no-missions">Aucun dossier de suivi pour cette équipe.</p>
@@ -633,25 +710,12 @@
       <div class="modal-header">
         <h2>
           <span class="material-icons">assignment</span>
-          Missions — {{ selectedTeam.name }}
+          Demandes — {{ selectedTeam.name }}
         </h2>
         <button class="icon-btn" (click)="closeModal()"><span class="material-icons">close</span></button>
       </div>
 
       <div class="modal-body">
-
-        <!-- Tabs -->
-        <div class="assign-tabs">
-          @for (tab of assignTabs; track tab) {
-            <button class="assign-tab" [class.active]="assignTab === tab" (click)="assignTab = tab">
-              <span class="material-icons">{{ missionIcon(tab) }}</span>
-              {{ tab }}s
-              <span class="tab-c">
-                {{ (tab === 'Crisis' ? crisis : requests).length }}
-              </span>
-            </button>
-          }
-        </div>
 
         <!-- Search missions -->
         <div class="member-search">
@@ -662,48 +726,25 @@
         <!-- List -->
         <div class="assign-list">
 
-          @if (assignTab === 'Crisis') {
-            @for (c of filteredCrisis; track c.id) {
-              <div class="assign-item" [class.selected]="isMissionAssigned(c.id, 'Crisis')"
-                   (click)="toggleMission(c.id, 'Crisis', c.name, c.status, c.start_date)">
-                <span class="mk-badge mk-crisis">
-                  <span class="material-icons">local_fire_department</span>
-                </span>
-                <div class="assign-info">
-                  <span class="assign-titre">{{ c.name }}</span>
-                  <span class="assign-meta">{{ c.type_display || c.type || '—' }} · {{ fmtDate(c.start_date) }}</span>
-                </div>
-                <span class="material-icons assign-check">
-                  {{ isMissionAssigned(c.id, 'Crisis') ? 'check_box' : 'check_box_outline_blank' }}
+          @for (d of filteredRequests; track d.id) {
+            <div class="assign-item" [class.selected]="isMissionAssigned(d.id, 'Request')"
+                 (click)="toggleMission(d.id, 'Request', d.title, d.status, d.created_at)">
+              <span class="mk-badge mk-request">
+                <span class="material-icons">emergency</span>
+              </span>
+              <div class="assign-info">
+                <span class="assign-titre">{{ d.title }}</span>
+                <span class="assign-meta">
+                  {{ d.first_name_request }} {{ d.last_name_request }} · {{ fmtDate(d.created_at) }}
                 </span>
               </div>
-            }
-            @if (filteredCrisis.length === 0) {
-              <p class="empty-tab">Aucune crise disponible</p>
-            }
+              <span class="material-icons assign-check">
+                {{ isMissionAssigned(d.id, 'Request') ? 'check_box' : 'check_box_outline_blank' }}
+              </span>
+            </div>
           }
-
-          @if (assignTab === 'Request') {
-            @for (d of filteredRequests; track d.id) {
-              <div class="assign-item" [class.selected]="isMissionAssigned(d.id, 'Request')"
-                   (click)="toggleMission(d.id, 'Request', d.title, d.status, d.created_at)">
-                <span class="mk-badge mk-request">
-                  <span class="material-icons">emergency</span>
-                </span>
-                <div class="assign-info">
-                  <span class="assign-titre">{{ d.title }}</span>
-                  <span class="assign-meta">
-                    {{ d.first_name_request }} {{ d.last_name_request }} · {{ fmtDate(d.created_at) }}
-                  </span>
-                </div>
-                <span class="material-icons assign-check">
-                  {{ isMissionAssigned(d.id, 'Request') ? 'check_box' : 'check_box_outline_blank' }}
-                </span>
-              </div>
-            }
-            @if (filteredRequests.length === 0) {
-              <p class="empty-tab">Aucune demande disponible</p>
-            }
+          @if (filteredRequests.length === 0) {
+            <p class="empty-tab">Aucune demande disponible</p>
           }
 
         </div>

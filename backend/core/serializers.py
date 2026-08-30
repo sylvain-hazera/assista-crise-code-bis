@@ -751,10 +751,15 @@ class TeamSerializer(serializers.ModelSerializer):
     )
     zone_precise_geojson = serializers.SerializerMethodField()
     institution_nom = serializers.CharField(source='institution.nom', read_only=True, default=None)
+    institution_delegataire_nom = serializers.CharField(
+        source='institution_delegataire.nom', read_only=True, default=None
+    )
     members_info = serializers.SerializerMethodField()
     leader_nom = serializers.SerializerMethodField()
     regulateur_nom = serializers.SerializerMethodField()
     mission_active_titre = serializers.CharField(source='mission_active.titre', read_only=True, default=None)
+    mission_active_crise_id = serializers.CharField(source='mission_active.crise_id', read_only=True, default=None)
+    mission_active_crise_nom = serializers.CharField(source='mission_active.crise.name', read_only=True, default=None)
 
     class Meta:
         model  = Team
@@ -762,12 +767,16 @@ class TeamSerializer(serializers.ModelSerializer):
             'id', 'name', 'description', 'color', 'created_at',
             'institution',
             'institution_nom',
+            'institution_delegataire',
+            'institution_delegataire_nom',
             'leader',
             'leader_nom',
             'regulateur',
             'regulateur_nom',
             'mission_active',
             'mission_active_titre',
+            'mission_active_crise_id',
+            'mission_active_crise_nom',
             'member_ids',
             'members_info',
             'assigned_crisis_ids',
@@ -780,7 +789,10 @@ class TeamSerializer(serializers.ModelSerializer):
             'zone_precise',
             'zone_precise_geojson',
         ]
-        read_only_fields = ['id', 'created_at']
+        # institution_delegataire n'est pas modifiable ici : elle ne doit changer que via
+        # TeamViewSet.definir_delegation/retirer_delegation, qui maintiennent en même temps
+        # l'historique TeamDelegation (un PATCH générique le laisserait diverger).
+        read_only_fields = ['id', 'created_at', 'institution_delegataire']
 
     def get_zone_precise_geojson(self, obj):
         return json.loads(obj.zone_precise.geojson) if obj.zone_precise else None

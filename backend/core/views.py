@@ -115,6 +115,7 @@ from .models import (
     AuditLog, AuditAction,
     RecherchePersonneHistorique, RecherchePersonnePhoto,
     AffectationCompetence, RequestType, RequestTypeBesoin, OfferType, InformationType, Team,
+    TeamDelegation,
     Status,
     DernierePositionUtilisateur,
 )
@@ -460,8 +461,11 @@ class DossierViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         # get_queryset : participant du dossier, ou compte institutionnel). Modifier ou
         # supprimer un dossier restait jusqu'ici possible à n'importe quel participant
         # (ex: un simple demandeur) faute de restriction dédiée — désormais réservé aux
-        # comptes institutionnels, comme pour les autres écritures sensibles de l'app.
-        if self.action in ("update", "partial_update", "destroy"):
+        # comptes institutionnels, comme pour les autres écritures sensibles de l'app. La
+        # création directe (sans passer par TeamViewSet.creer_dossier, seul chemin qui peuple
+        # DossierParticipant/DossierHistorique correctement) était jusqu'ici ouverte à
+        # n'importe quel compte authentifié — resserrée pour la même raison.
+        if self.action in ("create", "update", "partial_update", "destroy"):
             return [IsInstitutionalActor()]
         return super().get_permissions()
 
@@ -659,18 +663,19 @@ class UserViewSet(viewsets.ModelViewSet):
     serializer_class = UserSerializer
 
     def get_queryset(self):
-        # ?institution=<uuid> restreint la liste aux membres actifs de cette institution (via
-        # ContactInstitution, la relation faisant autorité pour "qui appartient à cette
-        # institution" — User.institution n'est pas posé de façon fiable par tous les chemins
-        # d'inscription/rattachement) — utilisé par le sélecteur de membres d'une équipe pour ne
-        # proposer que les gens de la mairie qui la constitue, jamais tous les comptes de la
-        # plateforme.
+        # ?institution=<uuid> (répétable : ?institution=<uuid1>&institution=<uuid2>) restreint
+        # la liste aux membres actifs d'une de ces institutions (via ContactInstitution, la
+        # relation faisant autorité pour "qui appartient à cette institution" — User.institution
+        # n'est pas posé de façon fiable par tous les chemins d'inscription/rattachement) —
+        # utilisé par le sélecteur de membres d'une équipe pour ne proposer que les gens de
+        # l'institution responsable ET, le cas échéant, de l'institution délégataire, jamais
+        # tous les comptes de la plateforme.
         queryset = super().get_queryset()
         if self.action == 'list':
-            institution_id = self.request.query_params.get('institution')
-            if institution_id:
+            institution_ids = [v for v in self.request.query_params.getlist('institution') if v]
+            if institution_ids:
                 queryset = queryset.filter(
-                    institutions__institution_id=institution_id,
+                    institutions__institution_id__in=institution_ids,
                     institutions__actif=True,
                 ).distinct()
         return queryset
@@ -2158,6 +2163,20 @@ def _appartient_a_institution(request, institution) -> bool:
     ).exists()
 
 
+def _appartient_a_equipe(request, team) -> bool:
+    """Vrai si l'utilisateur appartient à l'institution responsable OU à l'institution
+    délégataire de l'équipe — une fois une délégation active, l'institution délégataire gère
+    l'équipe au quotidien à égalité avec l'institution responsable (invitations, mission,
+    ressources, dossiers). Changer l'institution responsable ou la délégation elle-même reste
+    en revanche réservé à l'institution responsable seule (voir perform_update,
+    definir_delegation/retirer_delegation)."""
+    if _appartient_a_institution(request, team.institution):
+        return True
+    return bool(team.institution_delegataire_id) and _appartient_a_institution(
+        request, team.institution_delegataire
+    )
+
+
 class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     queryset           = Team.objects.prefetch_related(
         'members', 'assigned_crises', 'assigned_offers', 'assigned_requests'
@@ -2175,6 +2194,7 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         if self.action in (
             'list', 'create', 'update', 'partial_update', 'destroy',
             'inviter_membre', 'definir_mission', 'assigner_ressource', 'retirer_ressource',
+            'definir_delegation', 'retirer_delegation', 'creer_dossier',
         ):
             return [IsInstitutionalActor()]
         return [permissions.IsAuthenticated()]
@@ -2202,11 +2222,37 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         )
 
     def perform_update(self, serializer):
+        # Changer l'institution responsable est une décision structurante : réservée à
+        # l'institution ACTUELLE de l'équipe (jamais à la déléguée, ni à une institution tierce)
+        # — avant ce correctif, n'importe quel acteur institutionnel pouvait réaffecter
+        # n'importe quelle équipe via un PATCH générique, sans contrôle ni trace.
+        previous_institution = serializer.instance.institution
+        new_institution = serializer.validated_data.get('institution', previous_institution)
+        institution_changed = new_institution != previous_institution
+        if institution_changed and not _appartient_a_institution(self.request, previous_institution):
+            raise PermissionDenied(
+                "Seule l'institution responsable actuelle peut changer l'institution de l'équipe."
+            )
+
         # Ne notifier que les membres réellement NOUVEAUX (jamais ceux déjà présents avant
         # cette modification, pour ne pas ré-envoyer le mail à chaque édition de l'équipe qui
         # ne touche pas member_ids, ex: changement de couleur ou de zone).
         previous_member_ids = set(serializer.instance.members.values_list('id', flat=True))
         team = serializer.save()
+
+        if institution_changed:
+            audit_log(
+                request=self.request,
+                action_code="MODIFICATION",
+                objet_type="Team",
+                objet_id=team.id,
+                commentaire=(
+                    f"Institution responsable — "
+                    f"{previous_institution.nom if previous_institution else 'aucune'} → "
+                    f"{new_institution.nom if new_institution else 'aucune'}"
+                ),
+            )
+
         current_member_ids = set(team.members.values_list('id', flat=True))
         new_members = team.members.filter(id__in=current_member_ids - previous_member_ids)
         for membre in new_members:
@@ -2261,11 +2307,12 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Une mairie ne doit pouvoir inviter que dans SES propres équipes, pas dans celles
-        # d'une autre institution — un admin plateforme n'est pas concerné par cette limite.
-        if not _appartient_a_institution(request, team.institution):
+        # Une mairie ne doit pouvoir inviter que dans SES propres équipes (ou celles qui lui
+        # sont déléguées), pas dans celles d'une institution tierce — un admin plateforme
+        # n'est pas concerné par cette limite.
+        if not _appartient_a_equipe(request, team):
             return Response(
-                {"error": "Vous ne pouvez inviter des membres que pour les équipes de votre propre institution."},
+                {"error": "Vous ne pouvez inviter des membres que pour les équipes de votre institution (ou de l'institution déléguée)."},
                 status=status.HTTP_403_FORBIDDEN,
             )
 
@@ -2285,23 +2332,31 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         if not role:
             return Response({"error": "Rôle inconnu."}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Rattache le nouveau membre à l'institution de l'acteur qui invite (responsable ou
+        # déléguée) plutôt qu'à team.institution en dur — un référent de l'institution
+        # délégataire invite dans SA propre institution, pas dans celle du responsable qu'il ne
+        # représente pas.
+        target_institution = team.institution
+        if team.institution_delegataire_id and _appartient_a_institution(request, team.institution_delegataire):
+            target_institution = team.institution_delegataire
+
         user = User.objects.filter(email__iexact=email).first()
         invited = False
         if user is None:
             user = User.objects.create_user(
                 username=email, email=email,
                 first_name=first_name, last_name=last_name, phone_number=phone_number,
-                password=None, type=UserRole.LOCAL_AUTHORITY, institution=team.institution,
+                password=None, type=UserRole.LOCAL_AUTHORITY, institution=target_institution,
                 enabled=False, is_active=False,
             )
             invited = True
 
         ContactInstitution.objects.get_or_create(
-            institution=team.institution, utilisateur=user,
+            institution=target_institution, utilisateur=user,
             defaults={'fonction': role.libelle, 'actif': True},
         )
         AffectationRoleOperationnel.objects.get_or_create(
-            utilisateur=user, institution=team.institution, role=role, competence=None,
+            utilisateur=user, institution=target_institution, role=role, competence=None,
             defaults={'actif': True},
         )
         team.members.add(user)
@@ -2327,14 +2382,14 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'], url_path='definir-mission')
     def definir_mission(self, request, pk=None):
-        """Définit (ou remplace) la mission courante de l'équipe, en texte libre — une équipe
-        n'a qu'une seule mission active à la fois ; la redéfinir n'efface pas l'historique
-        (voir AuditLog), elle change simplement ce sur quoi portent les prochaines ressources
-        affectées."""
+        """Définit (ou remplace) la mission courante de l'équipe, en texte libre et rattachée
+        optionnellement à une crise — une équipe n'a qu'une seule mission active à la fois ; la
+        redéfinir n'efface pas l'historique (voir AuditLog), elle change simplement ce sur quoi
+        portent les prochaines ressources affectées."""
         team = self.get_object()
-        if not _appartient_a_institution(request, team.institution):
+        if not _appartient_a_equipe(request, team):
             return Response(
-                {"error": "Vous ne pouvez définir la mission que pour les équipes de votre propre institution."},
+                {"error": "Vous ne pouvez définir la mission que pour les équipes de votre institution (ou de l'institution déléguée)."},
                 status=status.HTTP_403_FORBIDDEN,
             )
 
@@ -2342,7 +2397,16 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         if not titre:
             return Response({"error": "Le titre de la mission est obligatoire."}, status=status.HTTP_400_BAD_REQUEST)
 
-        mission = Mission.objects.create(titre=titre, environment=get_active_environment(request))
+        crise = None
+        crise_id = request.data.get('crise_id')
+        if crise_id:
+            try:
+                crise = Crisis.objects.get(id=crise_id)
+            except (Crisis.DoesNotExist, ValueError, TypeError):
+                return Response({"error": "Crise introuvable."}, status=status.HTTP_400_BAD_REQUEST)
+            validate_crisis_open(crise, field_name="crise_id")
+
+        mission = Mission.objects.create(titre=titre, crise=crise, environment=get_active_environment(request))
         mission.equipes.add(team)
         team.mission_active = mission
         team.save(update_fields=['mission_active'])
@@ -2352,7 +2416,84 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             action_code="MODIFICATION",
             objet_type="Team",
             objet_id=team.id,
-            commentaire=f"Mission de l'équipe définie : « {mission.titre} »",
+            commentaire=(
+                f"Mission de l'équipe définie : « {mission.titre} »"
+                + (f" (crise : {crise.name})" if crise else "")
+            ),
+        )
+
+        return Response(TeamSerializer(team, context=self.get_serializer_context()).data)
+
+    @action(detail=True, methods=['post'], url_path='definir-delegation')
+    def definir_delegation(self, request, pk=None):
+        """Délègue l'équipe à une institution/association qui la gère au quotidien pour le
+        compte de l'institution responsable — réservé à l'institution responsable elle-même
+        (déléguer plus loin reste sa décision, jamais celle de la déléguée en place)."""
+        team = self.get_object()
+        if not _appartient_a_institution(request, team.institution):
+            return Response(
+                {"error": "Seule l'institution responsable de l'équipe peut la déléguer."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        institution_id = request.data.get('institution_id')
+        try:
+            institution = Institution.objects.get(id=institution_id)
+        except (Institution.DoesNotExist, ValueError, TypeError):
+            return Response({"error": "Institution introuvable."}, status=status.HTTP_400_BAD_REQUEST)
+        if institution.id == team.institution_id:
+            return Response(
+                {"error": "L'institution délégataire doit être différente de l'institution responsable."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        commentaire = (request.data.get('commentaire') or '').strip()
+
+        TeamDelegation.objects.filter(team=team, active=True).update(
+            active=False, date_fin=timezone.now()
+        )
+        TeamDelegation.objects.create(
+            team=team, institution=institution, commentaire=commentaire,
+            environment=get_active_environment(request),
+        )
+        team.institution_delegataire = institution
+        team.save(update_fields=['institution_delegataire'])
+
+        audit_log(
+            request=request,
+            action_code="MODIFICATION",
+            objet_type="Team",
+            objet_id=team.id,
+            commentaire=f"Équipe déléguée à {institution.nom}",
+        )
+
+        return Response(TeamSerializer(team, context=self.get_serializer_context()).data)
+
+    @action(detail=True, methods=['post'], url_path='retirer-delegation')
+    def retirer_delegation(self, request, pk=None):
+        """Met fin à la délégation en cours de l'équipe — réservé à l'institution responsable."""
+        team = self.get_object()
+        if not _appartient_a_institution(request, team.institution):
+            return Response(
+                {"error": "Seule l'institution responsable de l'équipe peut retirer sa délégation."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if not team.institution_delegataire_id:
+            return Response({"error": "Cette équipe n'est pas déléguée."}, status=status.HTTP_400_BAD_REQUEST)
+
+        ancienne = team.institution_delegataire
+        TeamDelegation.objects.filter(team=team, active=True).update(
+            active=False, date_fin=timezone.now()
+        )
+        team.institution_delegataire = None
+        team.save(update_fields=['institution_delegataire'])
+
+        audit_log(
+            request=request,
+            action_code="MODIFICATION",
+            objet_type="Team",
+            objet_id=team.id,
+            commentaire=f"Délégation à {ancienne.nom} retirée",
         )
 
         return Response(TeamSerializer(team, context=self.get_serializer_context()).data)
@@ -2364,9 +2505,9 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         aussi l'auteur de l'offre comme membre de l'équipe, comme le faisait déjà l'ancien
         mécanisme de "missions" assignées."""
         team = self.get_object()
-        if not _appartient_a_institution(request, team.institution):
+        if not _appartient_a_equipe(request, team):
             return Response(
-                {"error": "Vous ne pouvez affecter des ressources qu'aux équipes de votre propre institution."},
+                {"error": "Vous ne pouvez affecter des ressources qu'aux équipes de votre institution (ou de l'institution déléguée)."},
                 status=status.HTTP_403_FORBIDDEN,
             )
         if not team.mission_active_id:
@@ -2403,9 +2544,9 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         pointait bien vers la mission active de CETTE équipe (une offre déjà réaffectée
         ailleurs entre-temps ne doit pas se faire couper son lien par erreur)."""
         team = self.get_object()
-        if not _appartient_a_institution(request, team.institution):
+        if not _appartient_a_equipe(request, team):
             return Response(
-                {"error": "Vous ne pouvez retirer des ressources que pour les équipes de votre propre institution."},
+                {"error": "Vous ne pouvez retirer des ressources que pour les équipes de votre institution (ou de l'institution déléguée)."},
                 status=status.HTTP_403_FORBIDDEN,
             )
 
@@ -2429,6 +2570,67 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         )
 
         return Response(TeamSerializer(team, context=self.get_serializer_context()).data)
+
+    @action(detail=True, methods=['post'], url_path='creer-dossier')
+    def creer_dossier(self, request, pk=None):
+        """Crée un dossier directement pour l'équipe, sans demande/signalement d'origine — pour
+        une mission générale (garde du feu, surveillance d'un site...). Peuple les participants
+        et l'historique comme les dossiers créés par affectation d'une demande (voir
+        populate_dossier_participants_and_notify), pour que Suivi/commentaires/photos
+        fonctionnent identiquement."""
+        team = self.get_object()
+        if not _appartient_a_equipe(request, team):
+            return Response(
+                {"error": "Vous ne pouvez créer un dossier que pour les équipes de votre institution (ou de l'institution déléguée)."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        titre = (request.data.get('titre') or '').strip()
+        description = (request.data.get('description') or '').strip()
+        if not titre or not description:
+            return Response(
+                {"error": "Le titre et la description du dossier sont obligatoires."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        crise_id = request.data.get('crise_id')
+        try:
+            crise = Crisis.objects.get(id=crise_id)
+        except (Crisis.DoesNotExist, ValueError, TypeError):
+            return Response({"error": "Crise introuvable."}, status=status.HTTP_400_BAD_REQUEST)
+        validate_crisis_open(crise, field_name="crise_id")
+
+        priorite = request.data.get('priorite') or Dossier.Priorite.NORMALE
+        if priorite not in Dossier.Priorite.values:
+            return Response({"error": "Priorité invalide."}, status=status.HTTP_400_BAD_REQUEST)
+
+        dossier = Dossier.objects.create(
+            numero=f"DOS-{uuid.uuid4().hex[:8].upper()}",
+            crise=crise,
+            equipe=team,
+            mission=team.mission_active,
+            titre=titre,
+            description=description,
+            priorite=priorite,
+            statut=Dossier.Statut.AFFECTE,
+            environment=get_active_environment(request),
+        )
+        populate_dossier_participants_and_notify(dossier, equipe=team)
+        DossierHistorique.objects.create(
+            dossier=dossier, auteur=request.user, evenement="Création",
+            commentaire=f"Dossier créé directement pour la mission de l'équipe {team.name}",
+            environment=dossier.environment,
+        )
+
+        audit_log(
+            request=request,
+            action_code="CREATION",
+            objet_type="Dossier",
+            objet_id=dossier.id,
+            commentaire=f"Création dossier (sans demande) : {dossier}",
+        )
+
+        return Response(DossierSerializer(dossier, context=self.get_serializer_context()).data, status=status.HTTP_201_CREATED)
 
 class MissionViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     queryset = Mission.objects.select_related('crise').prefetch_related('equipes').all()
@@ -3474,7 +3676,7 @@ class AuditLogViewSet(EnvironmentScopedViewSetMixin, viewsets.ReadOnlyModelViewS
 
         if objet_type == 'Team':
             team = Team.objects.filter(id=objet_id).first()
-            if not team or not _appartient_a_institution(self.request, team.institution):
+            if not team or not _appartient_a_equipe(self.request, team):
                 return AuditLog.objects.none()
             return queryset
 

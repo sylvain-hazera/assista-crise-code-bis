@@ -3,7 +3,7 @@ from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from core.models import ContactInstitution, Institution, InstitutionType, Offer, OfferType, Team
+from core.models import ContactInstitution, Crisis, Institution, InstitutionType, Offer, OfferType, Team
 
 
 def _make_institution(**kwargs):
@@ -76,6 +76,50 @@ class TestDefinirMission:
         client, _ = mairie_client
         response = client.post(reverse('team-definir-mission', args=[team_a.id]), {'titre': '  '}, format='json')
         assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_attaches_open_crisis(self, mairie_client, team_a):
+        client, _ = mairie_client
+        crisis = Crisis.objects.create(name='Crise mission test', type='INCEDIE', location='POINT (5.72 45.18)')
+
+        response = client.post(
+            reverse('team-definir-mission', args=[team_a.id]),
+            {'titre': 'Mission liée à une crise', 'crise_id': str(crisis.id)}, format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        team_a.refresh_from_db()
+        assert team_a.mission_active.crise_id == crisis.id
+
+    def test_rejects_closed_crisis(self, mairie_client, team_a):
+        from django.utils import timezone
+        client, _ = mairie_client
+        crisis = Crisis.objects.create(
+            name='Crise fermée test', type='INCEDIE', location='POINT (5.72 45.18)', end_date=timezone.now(),
+        )
+
+        response = client.post(
+            reverse('team-definir-mission', args=[team_a.id]),
+            {'titre': 'Mission sur crise fermée', 'crise_id': str(crisis.id)}, format='json',
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_rejects_unknown_crisis(self, mairie_client, team_a):
+        client, _ = mairie_client
+        response = client.post(
+            reverse('team-definir-mission', args=[team_a.id]),
+            {'titre': 'Mission crise inconnue', 'crise_id': '00000000-0000-0000-0000-000000000000'}, format='json',
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_mission_without_crisis_still_works(self, mairie_client, team_a):
+        client, _ = mairie_client
+        response = client.post(
+            reverse('team-definir-mission', args=[team_a.id]), {'titre': 'Mission sans crise'}, format='json',
+        )
+        assert response.status_code == status.HTTP_200_OK
+        team_a.refresh_from_db()
+        assert team_a.mission_active.crise_id is None
 
 
 @pytest.mark.django_db

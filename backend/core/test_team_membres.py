@@ -74,6 +74,29 @@ class TestUserListFilteredByInstitution:
         assert response.status_code == status.HTTP_200_OK
         assert len(response.data) >= 2
 
+    def test_repeated_institution_param_searches_across_both(self, create_user, institution_a, institution_b):
+        # Recherche de membres à rattacher à une équipe déléguée : doit porter sur l'institution
+        # responsable ET l'institution délégataire à la fois.
+        admin = create_user(username='admin-membres3@test.fr', email='admin-membres3@test.fr', type='ADMIN')
+        membre_a = create_user(username='membre-a3@test.fr', email='membre-a3@test.fr', type='UTIL_SIMPLE')
+        membre_b = create_user(username='membre-b3@test.fr', email='membre-b3@test.fr', type='UTIL_SIMPLE')
+        membre_c = create_user(username='membre-c3@test.fr', email='membre-c3@test.fr', type='UTIL_SIMPLE')
+        institution_c = _make_institution(nom='Mairie C')
+        ContactInstitution.objects.create(institution=institution_a, utilisateur=membre_a, actif=True)
+        ContactInstitution.objects.create(institution=institution_b, utilisateur=membre_b, actif=True)
+        ContactInstitution.objects.create(institution=institution_c, utilisateur=membre_c, actif=True)
+
+        client = APIClient()
+        client.force_authenticate(user=admin)
+        from django.http import QueryDict
+        qs = QueryDict(mutable=True)
+        qs.setlist('institution', [str(institution_a.id), str(institution_b.id)])
+        response = client.get(f"{reverse('user-list')}?{qs.urlencode()}")
+
+        assert response.status_code == status.HTTP_200_OK
+        emails = {u['email'] for u in response.data}
+        assert emails == {'membre-a3@test.fr', 'membre-b3@test.fr'}
+
 
 @pytest.mark.django_db
 class TestInviterMembre:
@@ -162,3 +185,23 @@ class TestInviterMembre:
         }, format='json')
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_delegataire_invite_attaches_to_delegated_institution(self, create_user, team_a, role_responsable, institution_a, institution_b):
+        # Une équipe déléguée à la mairie B : un référent de la mairie B qui invite quelqu'un le
+        # rattache à SA propre institution (B), pas à celle du responsable (A).
+        team_a.institution_delegataire = institution_b
+        team_a.save(update_fields=['institution_delegataire'])
+        deleg_user = create_user(username='deleg-inviteur@test.fr', email='deleg-inviteur@test.fr', type='AUT_LOCALE')
+        ContactInstitution.objects.create(institution=institution_b, utilisateur=deleg_user, actif=True)
+        client = APIClient()
+        client.force_authenticate(user=deleg_user)
+
+        response = client.post(reverse('team-inviter-membre', args=[team_a.id]), {
+            'first_name': 'D', 'last_name': 'E', 'email': 'invite-via-delegation@test.fr',
+            'phone_number': '0600000000', 'role_code': role_responsable.code,
+        }, format='json')
+
+        assert response.status_code == status.HTTP_201_CREATED
+        invited = User.objects.get(email='invite-via-delegation@test.fr')
+        assert invited.institution_id == institution_b.id
+        assert ContactInstitution.objects.filter(institution=institution_b, utilisateur=invited, actif=True).exists()

@@ -3,6 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
 import { Team } from '../shared/models/team.model';  // ← import unique
+import { Dossier } from '../shared/models/dossier.model';
 
 @Injectable({ providedIn: 'root' })
 export class TeamService {
@@ -23,8 +24,8 @@ export class TeamService {
     return this.http.post<Team>(`${this.url}/${id}/inviter-membre/`, data);
   }
 
-  definirMission(id: string, titre: string): Observable<Team> {
-    return this.http.post<Team>(`${this.url}/${id}/definir-mission/`, { titre });
+  definirMission(id: string, titre: string, criseId?: string): Observable<Team> {
+    return this.http.post<Team>(`${this.url}/${id}/definir-mission/`, { titre, crise_id: criseId });
   }
 
   assignerRessource(id: string, offerId: string): Observable<Team> {
@@ -33,5 +34,19 @@ export class TeamService {
 
   retirerRessource(id: string, offerId: string): Observable<Team> {
     return this.http.post<Team>(`${this.url}/${id}/retirer-ressource/`, { offer_id: offerId });
+  }
+
+  definirDelegation(id: string, institutionId: string, commentaire?: string): Observable<Team> {
+    return this.http.post<Team>(`${this.url}/${id}/definir-delegation/`, { institution_id: institutionId, commentaire });
+  }
+
+  retirerDelegation(id: string): Observable<Team> {
+    return this.http.post<Team>(`${this.url}/${id}/retirer-delegation/`, {});
+  }
+
+  creerDossier(id: string, data: {
+    titre: string; description: string; crise_id: string; priorite?: string;
+  }): Observable<Dossier> {
+    return this.http.post<Dossier>(`${this.url}/${id}/creer-dossier/`, data);
   }
 }

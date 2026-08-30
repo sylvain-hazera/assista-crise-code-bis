@@ -1267,6 +1267,18 @@ class Team(EnvironmentScopedModel):
         null=True, blank=True,
         related_name="teams",
     )
+    # Institution délégataire courante (état courant, pointeur — l'historique complet des
+    # délégations vit dans TeamDelegation) : une association peut opérer l'équipe au quotidien
+    # pour le compte de l'institution responsable, qui garde seule la main sur ce rattachement
+    # (voir TeamViewSet.definir_delegation/retirer_delegation). SET_NULL et non PROTECT : la
+    # suppression d'une institution délégataire ne doit pas bloquer, contrairement à
+    # `institution` (le responsable) qui reste structurant.
+    institution_delegataire = models.ForeignKey(
+        "Institution",
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="teams_deleguees",
+    )
 
     leader = models.ForeignKey(
         User,
@@ -1344,6 +1356,27 @@ class Team(EnvironmentScopedModel):
 
     def __str__(self) -> str:
         return self.name
+
+
+class TeamDelegation(EnvironmentScopedModel):
+    """Historique des délégations d'une équipe à une institution/association opérant pour le
+    compte de l'institution responsable — voir Team.institution_delegataire (pointeur "état
+    courant" mis à jour en même temps qu'une ligne est créée/close ici)."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    team = models.ForeignKey(Team, on_delete=models.CASCADE, related_name="delegations")
+    institution = models.ForeignKey(
+        "Institution", on_delete=models.CASCADE, related_name="delegations_equipes_recues",
+    )
+    active = models.BooleanField(default=True)
+    date_debut = models.DateTimeField(auto_now_add=True)
+    date_fin = models.DateTimeField(null=True, blank=True)
+    commentaire = models.TextField(blank=True, null=True)
+
+    class Meta:
+        ordering = ["-date_debut"]
+
+    def __str__(self) -> str:
+        return f"{self.team.name} → {self.institution.nom}"
 
 
 class DernierePositionUtilisateur(EnvironmentScopedModel):

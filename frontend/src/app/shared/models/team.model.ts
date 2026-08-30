@@ -24,8 +24,12 @@ export interface Team {
   regulateur_nom?:      string | null;
   mission_active?:      string | null;      // UUID de la mission courante de l'équipe (voir Mission)
   mission_active_titre?: string | null;
-  institution?:         string | null;      // UUID de l'institution de rattachement (auto-complétée à la création si absente)
+  mission_active_crise_id?: string | null;
+  mission_active_crise_nom?: string | null;
+  institution?:         string | null;      // UUID de l'institution responsable (auto-complétée à la création si absente)
   institution_nom?:     string | null;
+  institution_delegataire?:     string | null; // UUID de l'institution délégataire courante (lecture seule, voir TeamService.definirDelegation/retirerDelegation)
+  institution_delegataire_nom?: string | null;
   member_ids:           string[];
   members_info?:        TeamMemberInfo[];
   assigned_crisis_ids:  string[];
