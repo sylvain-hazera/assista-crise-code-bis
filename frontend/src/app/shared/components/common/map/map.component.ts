@@ -60,6 +60,11 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   // n'est même pas rendue pour un visiteur non institutionnel (voir map.component.html).
   isInstitutional = false;
 
+  // Replié par défaut : la liste des calques peut compter jusqu'à 9 entrées pour un
+  // institutionnel, largement de quoi masquer une bonne partie de la carte sur mobile si elle
+  // reste toujours ouverte (voir layer-toggle-fab dans le template).
+  layersPanelOpen = false;
+
   layerVisibility: LayerVisibility = {
     crises: true,
     requests: true,
