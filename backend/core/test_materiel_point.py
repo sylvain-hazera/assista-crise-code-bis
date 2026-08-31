@@ -157,6 +157,21 @@ class TestMaterielCatalogueTagLike:
         assert response.status_code == status.HTTP_201_CREATED
         assert MaterielCatalogue.objects.filter(nom="Pain").exists()
 
+    def test_anonymous_can_search_and_create(self):
+        """Régression : le formulaire public "Proposer mon aide" (accessible sans compte)
+        propose ce catalogue pour le matériel "Autre" — un visiteur anonyme doit pouvoir
+        chercher et créer, comme Competence/InformationType pour la même raison."""
+        MaterielCatalogue.objects.create(nom="Lits de camp")
+        client = APIClient()
+
+        search = client.get(reverse('materielcatalogue-list'), {"q": "lits"})
+        assert search.status_code == status.HTTP_200_OK
+        assert any(i["nom"] == "Lits de camp" for i in search.data)
+
+        created = client.post(reverse('materielcatalogue-list'), {"nom": "Groupe électrogène"}, format='json')
+        assert created.status_code == status.HTTP_201_CREATED
+        assert MaterielCatalogue.objects.filter(nom="Groupe électrogène").exists()
+
 
 @pytest.mark.django_db
 class TestPointStocksAction:

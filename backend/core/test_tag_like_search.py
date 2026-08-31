@@ -73,14 +73,28 @@ class TestCompetenceKeywordSearch:
         assert response.status_code == status.HTTP_201_CREATED
         assert response.data["nom"] == "Transport Animaux"
 
-    def test_anonymous_cannot_create_competence(self):
-        """Contrairement à InformationType, Competence reste réservée aux comptes connectés
-        (contexte institutionnel/bénévoles enregistrés, pas un passant anonyme)."""
+    def test_anonymous_can_list_competences(self):
+        """Régression : le formulaire public "Proposer mon aide" (accessible sans compte)
+        affiche un champ de recherche de compétences — un visiteur anonyme doit pouvoir le
+        lister/chercher, comme pour InformationType (other-declaration-form)."""
+        Competence.objects.create(nom="Secourisme")
+        client = APIClient()
+
+        response = client.get(reverse('competence-list'), {"q": "secourisme"})
+
+        assert response.status_code == status.HTTP_200_OK
+        assert {c["nom"] for c in response.data} == {"Secourisme"}
+
+    def test_anonymous_can_create_competence(self):
+        """Un visiteur sans compte proposant son aide en personne doit pouvoir déclarer une
+        compétence inédite, immédiatement réutilisable par d'autres ensuite — même traitement
+        qu'InformationType, ouvert pour la même raison (formulaire public sans compte)."""
         client = APIClient()
 
         response = client.post(reverse('competence-list'), {"nom": "Nouveau theme"}, format='json')
 
-        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert response.status_code == status.HTTP_201_CREATED
+        assert Competence.objects.filter(nom="Nouveau theme").exists()
 
 
 @pytest.mark.django_db

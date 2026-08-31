@@ -355,8 +355,14 @@ class EnvironmentScopedViewSetMixin:
 
 
 class CompetenceViewSet(TagLikeViewSetMixin, viewsets.ModelViewSet):
+    # AllowAny, comme InformationTypeViewSet : recherchée/créée depuis des formulaires publics
+    # (propose-help-form) où le visiteur n'a pas forcément de compte — sans ça, le widget de
+    # recherche de compétences échoue silencieusement (401 avalé par le catchError du
+    # composant), symptôme remonté par un bêta-testeur ("le champ compétence ne fonctionne
+    # pas").
     queryset = Competence.objects.all()
     serializer_class = CompetenceSerializer
+    permission_classes = [AllowAny]
 
     def get_search_queryset(self, queryset, query):
         # Élargit la recherche par mots-clés aux compétences reliées à un Besoin dont le nom
@@ -5238,11 +5244,13 @@ class DisponibilitePointEquipeViewSet(EnvironmentScopedViewSetMixin, viewsets.Mo
 class MaterielCatalogueViewSet(TagLikeViewSetMixin, viewsets.ModelViewSet):
     """Vocabulaire partagé des besoins matériel — recherche/création façon hashtag, comme
     Competence/InformationType : n'importe quel centre peut ajouter un item, immédiatement
-    réutilisable par tous les autres (voir PointOperationnelViewSet.stocks)."""
+    réutilisable par tous les autres (voir PointOperationnelViewSet.stocks). AllowAny comme
+    ces deux autres : recherché/créé aussi depuis propose-help-form (matériel "Autre"), un
+    formulaire public sans compte requis — même correctif que CompetenceViewSet."""
 
     queryset = MaterielCatalogue.objects.all()
     serializer_class = MaterielCatalogueSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [AllowAny]
 
 
 def _peut_gerer_stock_point(request, point) -> bool:
