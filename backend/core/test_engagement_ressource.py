@@ -1,4 +1,5 @@
 import pytest
+from django.core import mail
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
@@ -190,3 +191,99 @@ class TestDefinirStatutRessource:
 
         engagement = EngagementRessource.objects.get(offer=offer)
         assert engagement.date_confirmation == first_date
+
+
+@pytest.mark.django_db
+class TestEmailConfirmation:
+
+    def test_assigning_resource_sends_confirmation_email(self, mairie_client, team, offer):
+        client, _ = mairie_client
+        _assign(client, team, offer)
+
+        assert len(mail.outbox) == 1
+        assert mail.outbox[0].to == ['offreur-engagement@test.fr']
+        engagement = EngagementRessource.objects.get(offer=offer)
+        assert engagement.token_confirmation in mail.outbox[0].body
+        assert '/confirmation-ressource/' in mail.outbox[0].body
+
+
+@pytest.mark.django_db
+class TestEngagementRessourcePublicView:
+
+    def test_get_returns_current_status_and_available_actions(self, mairie_client, team, offer):
+        client, _ = mairie_client
+        _assign(client, team, offer)
+        token = EngagementRessource.objects.get(offer=offer).token_confirmation
+
+        public_client = APIClient()
+        response = public_client.get(reverse('engagement_ressource_public', args=[token]))
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['statut'] == 'EN_ATTENTE'
+        assert set(response.data['actions_possibles']) == {'confirmer', 'decliner'}
+        assert response.data['team_nom'] == team.name
+
+    def test_unknown_token_returns_404(self):
+        public_client = APIClient()
+        response = public_client.get(reverse('engagement_ressource_public', args=['jeton-inconnu']))
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_confirmer_advances_to_confirme(self, mairie_client, team, offer):
+        client, _ = mairie_client
+        _assign(client, team, offer)
+        token = EngagementRessource.objects.get(offer=offer).token_confirmation
+
+        public_client = APIClient()
+        response = public_client.post(reverse('engagement_ressource_public', args=[token]), {'action': 'confirmer'}, format='json')
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['statut'] == 'CONFIRME'
+        engagement = EngagementRessource.objects.get(offer=offer)
+        assert engagement.date_confirmation is not None
+
+    def test_decliner_is_terminal(self, mairie_client, team, offer):
+        client, _ = mairie_client
+        _assign(client, team, offer)
+        token = EngagementRessource.objects.get(offer=offer).token_confirmation
+
+        public_client = APIClient()
+        response = public_client.post(reverse('engagement_ressource_public', args=[token]), {'action': 'decliner'}, format='json')
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['actions_possibles'] == []
+
+        # Plus aucune action possible après décliné.
+        response2 = public_client.post(reverse('engagement_ressource_public', args=[token]), {'action': 'confirmer'}, format='json')
+        assert response2.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_rejects_skipping_steps(self, mairie_client, team, offer):
+        client, _ = mairie_client
+        _assign(client, team, offer)
+        token = EngagementRessource.objects.get(offer=offer).token_confirmation
+
+        public_client = APIClient()
+        # Encore EN_ATTENTE : "transit"/"arrivee" ne sont pas dans les actions possibles.
+        response = public_client.post(reverse('engagement_ressource_public', args=[token]), {'action': 'arrivee'}, format='json')
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        engagement = EngagementRessource.objects.get(offer=offer)
+        assert engagement.statut == 'EN_ATTENTE'
+
+    def test_full_sequential_journey(self, mairie_client, team, offer):
+        client, _ = mairie_client
+        _assign(client, team, offer)
+        token = EngagementRessource.objects.get(offer=offer).token_confirmation
+        public_client = APIClient()
+
+        r1 = public_client.post(reverse('engagement_ressource_public', args=[token]), {'action': 'confirmer'}, format='json')
+        assert r1.data['statut'] == 'CONFIRME'
+
+        r2 = public_client.post(reverse('engagement_ressource_public', args=[token]), {'action': 'transit'}, format='json')
+        assert r2.data['statut'] == 'EN_TRANSIT'
+
+        r3 = public_client.post(reverse('engagement_ressource_public', args=[token]), {'action': 'arrivee'}, format='json')
+        assert r3.data['statut'] == 'ARRIVE'
+        assert r3.data['actions_possibles'] == []
+
+        engagement = EngagementRessource.objects.get(offer=offer)
+        assert engagement.date_confirmation is not None
+        assert engagement.date_transit is not None
+        assert engagement.date_arrivee is not None

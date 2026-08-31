@@ -1,0 +1,43 @@
+<div class="engagement-page">
+  <div class="engagement-card">
+
+    @if (loading) {
+      <p class="state-message">Chargement…</p>
+    } @else if (notFound) {
+      <p class="state-message error">Ce lien n'est plus valide.</p>
+    } @else if (statut) {
+      <h1>{{ statut.offer_title }}</h1>
+      <p class="sub">
+        Équipe : <strong>{{ statut.team_nom }}</strong>
+        @if (statut.mission_titre) { · Mission : <strong>{{ statut.mission_titre }}</strong> }
+      </p>
+
+      <div class="statut-badge" [class]="'statut-' + statut.statut.toLowerCase()">
+        {{ statut.statut_libelle }}
+      </div>
+
+      @if (statut.actions_possibles.length > 0) {
+        <div class="actions">
+          @for (action of statut.actions_possibles; track action) {
+            <button
+              class="btn-action"
+              [class.danger]="action === 'decliner'"
+              [disabled]="submitting"
+              (click)="agir(action)">
+              {{ actionLabels[action] }}
+            </button>
+          }
+        </div>
+      } @else {
+        <p class="state-message">Aucune action supplémentaire n'est nécessaire pour l'instant.</p>
+      }
+
+      @if (errorMessage) {
+        <p class="state-message error">{{ errorMessage }}</p>
+      }
+
+      <p class="hint">Vous pouvez revenir sur cette page à tout moment avec le même lien pour signaler votre départ puis votre arrivée.</p>
+    }
+
+  </div>
+</div>

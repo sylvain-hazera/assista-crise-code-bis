@@ -11,6 +11,7 @@ from .views import (
     BesoinCompetenceViewSet, RequestTypeBesoinViewSet, RequestTypeViewSet, OfferTypeViewSet, InformationTypeViewSet,
     DeleteRequestView, DeleteOfferView, DeleteInformationView, CompetenceViewSet,
     ConfirmerAffectationBenevoleView,
+    EngagementRessourcePublicView,
     RecherchePersonneHistoriqueViewSet, AffectationCompetenceViewSet,
     DossierViewSet, MissionViewSet, DocumentViewSet, DossierCommentaireViewSet, DossierHistoriqueViewSet, NotificationViewSet, TeamViewSet,
     AuditLogViewSet,
@@ -155,4 +156,5 @@ urlpatterns = [
     path('delete-offer/<str:token>/', DeleteOfferView.as_view(), name='delete_offer'),
     path('confirmer-affectation-benevole/<str:token>/<str:reponse>/', ConfirmerAffectationBenevoleView.as_view(), name='confirmer_affectation_benevole'),
     path('delete-information/<str:token>/', DeleteInformationView.as_view(), name='delete_information'),
+    path('engagement-ressource/<str:token>/', EngagementRessourcePublicView.as_view(), name='engagement_ressource_public'),
 ]

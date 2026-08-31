@@ -49,6 +49,11 @@ export const PUBLIC_ROUTES: Routes = [
           .then(m => m.DossierSuiviComponent)
       },
       {
+        path: 'confirmation-ressource/:token',
+        loadComponent: () => import('./engagement-ressource/engagement-ressource.component')
+          .then(m => m.EngagementRessourceComponent)
+      },
+      {
         path: 'settings',
         canActivate: [authGuard],
         loadComponent: () => import('./settings/settings.component')

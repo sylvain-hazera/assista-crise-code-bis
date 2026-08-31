@@ -1,6 +1,7 @@
 from django.shortcuts import render
 from django.http import FileResponse
 from rest_framework.decorators import action
+from rest_framework.views import APIView
 from rest_framework import viewsets, status, generics, permissions
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.decorators import action
@@ -1356,6 +1357,46 @@ def send_point_volunteer_confirmation_email(request, affectation):
     )
 
 
+def send_engagement_confirmation_email(request, engagement):
+    """Email envoyé quand une offre est affectée comme ressource à une équipe (voir
+    TeamViewSet.assigner_ressource) — lien opaque vers une page frontend persistante
+    (contrairement à ConfirmerAffectationBenevoleView, à sens unique) : la personne/
+    l'entreprise peut y revenir à chaque étape (confirmer, signaler le départ, signaler
+    l'arrivée) avec le même lien."""
+    offer = engagement.offer
+    destinataire = offer.author.email if offer.author_id else offer.email_offer
+    if not destinataire:
+        return
+
+    base_url = settings.SERVER_URL.rstrip('/')
+    lien = f"{base_url}/confirmation-ressource/{engagement.token_confirmation}"
+
+    lignes = [
+        f"Bonjour {offer.first_name_offer},",
+        "",
+        f"Votre offre « {offer.title} » a été affectée à l'équipe {engagement.team.name}"
+        + (f" pour la mission « {engagement.team.mission_active.titre} »" if engagement.team.mission_active_id else "")
+        + ".",
+        "",
+        "Merci de confirmer votre disponibilité, puis de signaler votre départ et votre",
+        "arrivée depuis la même page, en cliquant sur ce lien à chaque étape :",
+        "",
+        lien,
+        "",
+        "Cordialement,",
+        "L'équipe Assista-Crise",
+    ]
+
+    send_mail_env_aware(
+        request,
+        subject=f"Confirmez votre disponibilité — {offer.title}",
+        message="\n".join(lignes),
+        from_email=None,
+        recipient_list=[destinataire],
+        fail_silently=False,
+    )
+
+
 def department_code_from_commune_code(commune_code):
     """Extrait le code département d'un code commune INSEE : 3 chiffres pour l'outre-mer
     (971-976/98x), 2 caractères sinon (dont '2A'/'2B' pour la Corse, déjà sous cette forme
@@ -2533,14 +2574,13 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             team.members.add(offer.author_id)
 
         # Un engagement neuf à chaque affectation — jamais partagé entre deux affectations
-        # successives, comme offer.mission (une réaffectation ailleurs repart de zéro). L'email
-        # de confirmation (lien public) est envoyé séparément — voir
-        # send_engagement_confirmation_email, ajouté avec la page de confirmation elle-même.
+        # successives, comme offer.mission (une réaffectation ailleurs repart de zéro).
         EngagementRessource.objects.filter(offer=offer).delete()
-        EngagementRessource.objects.create(
+        engagement = EngagementRessource.objects.create(
             offer=offer, team=team, token_confirmation=secrets.token_urlsafe(32),
             environment=get_active_environment(request),
         )
+        send_engagement_confirmation_email(request, engagement)
 
         audit_log(
             request=request,
@@ -3393,6 +3433,71 @@ class ConfirmerAffectationBenevoleView(View):
             message = "Merci ! Votre disponibilité est confirmée."
 
         return HttpResponse(f"<h1>{message}</h1>")
+
+
+class EngagementRessourcePublicView(APIView):
+    """Page de suivi/confirmation publique d'une ressource affectée à une équipe — jeton
+    opaque, pas de compte requis. Contrairement à ConfirmerAffectationBenevoleView (lien à
+    sens unique, HTML brut), cette page reste consultable et actionnable à chaque étape avec
+    le même lien : GET renvoie l'état courant, POST fait avancer d'une étape (séquence stricte,
+    contrairement à TeamViewSet.definir_statut_ressource côté équipe qui peut sauter des
+    étapes)."""
+    permission_classes = [AllowAny]
+
+    ACTIONS_PAR_STATUT = {
+        StatutEngagementRessource.EN_ATTENTE: ["confirmer", "decliner"],
+        StatutEngagementRessource.CONFIRME: ["transit"],
+        StatutEngagementRessource.EN_TRANSIT: ["arrivee"],
+        StatutEngagementRessource.DECLINE: [],
+        StatutEngagementRessource.ARRIVE: [],
+    }
+
+    def _serialize(self, engagement):
+        return {
+            "offer_title": engagement.offer.title,
+            "team_nom": engagement.team.name,
+            "mission_titre": engagement.team.mission_active.titre if engagement.team.mission_active_id else None,
+            "statut": engagement.statut,
+            "statut_libelle": engagement.get_statut_display(),
+            "actions_possibles": self.ACTIONS_PAR_STATUT.get(engagement.statut, []),
+        }
+
+    def get(self, request, token):
+        engagement = get_object_or_404(EngagementRessource, token_confirmation=token)
+        return Response(self._serialize(engagement))
+
+    def post(self, request, token):
+        engagement = get_object_or_404(EngagementRessource, token_confirmation=token)
+        action_demandee = request.data.get('action')
+        if action_demandee not in self.ACTIONS_PAR_STATUT.get(engagement.statut, []):
+            return Response(
+                {"error": "Cette action n'est plus disponible pour cette étape."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        now = timezone.now()
+        if action_demandee == "confirmer":
+            engagement.statut = StatutEngagementRessource.CONFIRME
+            engagement.date_confirmation = now
+        elif action_demandee == "decliner":
+            engagement.statut = StatutEngagementRessource.DECLINE
+        elif action_demandee == "transit":
+            engagement.statut = StatutEngagementRessource.EN_TRANSIT
+            engagement.date_transit = now
+        elif action_demandee == "arrivee":
+            engagement.statut = StatutEngagementRessource.ARRIVE
+            engagement.date_arrivee = now
+        engagement.save()
+
+        audit_log(
+            request=request,
+            action_code="MODIFICATION",
+            objet_type="Team",
+            objet_id=engagement.team_id,
+            commentaire=f"Ressource « {engagement.offer.title} » — statut (auto-confirmation) : {engagement.get_statut_display()}",
+        )
+
+        return Response(self._serialize(engagement))
 
 
 class DeleteInformationView(View):
