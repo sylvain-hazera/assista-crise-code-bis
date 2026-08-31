@@ -294,3 +294,25 @@ class TestOfferDepotGroupe:
     def test_defaults_to_null_for_individual_offers(self, offer):
         assert offer.organisation_nom is None
         assert offer.groupe_id is None
+
+
+@pytest.mark.django_db
+class TestOfferPresencePhysique:
+    """Distinction explicite personne/matériel à la soumission (voir propose-help-form) :
+    un hébergement prêté n'implique jamais la présence de l'offreur, contrairement à un
+    camion apporté avec son chauffeur."""
+
+    def test_accepts_explicit_presence_true(self, api_client, offer_type):
+        payload = {**OFFER_PAYLOAD, "email_offer": "present@test.fr", "offer_type": str(offer_type.id), "presence_physique": True}
+        response = api_client.post(reverse('offer-list'), payload, format='json')
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data['presence_physique'] is True
+
+    def test_accepts_explicit_presence_false(self, api_client, offer_type):
+        payload = {**OFFER_PAYLOAD, "email_offer": "absent@test.fr", "offer_type": str(offer_type.id), "presence_physique": False}
+        response = api_client.post(reverse('offer-list'), payload, format='json')
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data['presence_physique'] is False
+
+    def test_defaults_to_null_when_omitted(self, offer):
+        assert offer.presence_physique is None

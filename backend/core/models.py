@@ -518,6 +518,14 @@ class Offer(EnvironmentScopedModel):
     # qui prête son matériel ponctuellement pour d'autres interventions futures).
     renouvelable = models.BooleanField(default=False)
 
+    # L'offreur est-il physiquement présent avec ce qu'il propose ? Distinction demandée
+    # explicitement (ex: un hébergement prêté n'implique jamais de présence, alors qu'un
+    # camion proposé "avec chauffeur" implique de le nourrir/suivre sa disponibilité comme un
+    # membre d'équipe) — voir TeamViewSet.assigner_ressource. Null pour les offres antérieures
+    # à ce champ (inconnu, pas de fausse certitude rétroactive) ; toujours posé explicitement
+    # par propose-help-form pour les nouvelles.
+    presence_physique = models.BooleanField(null=True, blank=True)
+
     # Déclarées par le bénévole à la soumission de l'offre (propose-help-form) — permet de
     # filtrer les candidats lors du recrutement sur un point opérationnel (PointOperationnel.
     # competences_requises est le pendant côté besoin, celui-ci est côté offre).

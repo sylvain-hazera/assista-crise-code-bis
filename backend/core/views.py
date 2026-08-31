@@ -2576,7 +2576,10 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         offer.mission = team.mission_active
         offer.save(update_fields=['mission'])
         team.assigned_offers.add(offer)
-        if offer.author_id:
+        # N'ajoute l'auteur comme membre que si sa présence physique n'est pas explicitement
+        # exclue (ex: un simple prêteur de chambre) — None (offres antérieures à ce champ)
+        # garde l'ancien comportement, seul False l'exclut désormais.
+        if offer.author_id and offer.presence_physique is not False:
             team.members.add(offer.author_id)
 
         # Un engagement neuf à chaque affectation — jamais partagé entre deux affectations
@@ -3091,7 +3094,9 @@ class OfferViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             environment=get_active_environment(request),
         )
         team.assigned_offers.set(offres)
-        members = {o.author for o in offres if o.author_id}
+        # Même garde que assigner_ressource : n'ajoute pas comme membre un offreur dont la
+        # présence physique est explicitement exclue.
+        members = {o.author for o in offres if o.author_id and o.presence_physique is not False}
         if members:
             team.members.set(members)
 

@@ -135,6 +135,31 @@ class TestBulkCreateTeamOffers:
         assert len(mail.outbox) == 1
         assert f'mon-equipe%2F{team_id}' in mail.outbox[0].body
 
+    def test_bulk_create_team_excludes_author_without_physical_presence(self, authenticated_client, offer_type):
+        """Un hébergement prêté (offreur non présent) ne doit pas devenir membre de l'équipe
+        créée, contrairement à une offre où la présence est vraie ou inconnue (None)."""
+        client, _ = _make_admin(authenticated_client)
+        present_author = User.objects.create_user(username='present@test.fr', email='present@test.fr', password='Test1234!')
+        absent_author = User.objects.create_user(username='absent@test.fr', email='absent@test.fr', password='Test1234!')
+        offer_present = Offer.objects.create(
+            title='Camion avec chauffeur', first_name_offer='A', last_name_offer='B',
+            email_offer='present@test.fr', offer_type=offer_type, author=present_author, presence_physique=True,
+        )
+        offer_absent = Offer.objects.create(
+            title='Chambre prêtée', first_name_offer='C', last_name_offer='D',
+            email_offer='absent@test.fr', offer_type=offer_type, author=absent_author, presence_physique=False,
+        )
+
+        response = client.post(
+            reverse('offer-bulk-create-team'),
+            {'offer_ids': [str(offer_present.id), str(offer_absent.id)], 'team_name': 'Equipe mixte'},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data['member_ids'] == [present_author.id]
+        assert set(response.data['assigned_offer_ids']) == {offer_present.id, offer_absent.id}
+
     def test_bulk_create_team_requires_name(self, authenticated_client, offer_type):
         client, _ = _make_admin(authenticated_client)
         offer = Offer.objects.create(

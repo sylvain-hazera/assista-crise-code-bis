@@ -149,6 +149,28 @@ class TestAssignerRessource:
         response = client.post(reverse('team-assigner-ressource', args=[team_a.id]), {'offer_id': '00000000-0000-0000-0000-000000000000'}, format='json')
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
+    def test_does_not_add_member_when_presence_physique_explicitly_false(self, mairie_client, team_a, offer):
+        """Un hébergement prêté (offreur non présent) ne doit pas faire de son auteur un
+        membre d'équipe — voir presence_physique."""
+        offer.presence_physique = False
+        offer.save(update_fields=['presence_physique'])
+        client, _ = mairie_client
+        client.post(reverse('team-definir-mission', args=[team_a.id]), {'titre': 'Mission'}, format='json')
+
+        client.post(reverse('team-assigner-ressource', args=[team_a.id]), {'offer_id': str(offer.id)}, format='json')
+
+        assert not team_a.members.filter(id=offer.author_id).exists()
+
+    def test_adds_member_when_presence_physique_unknown(self, mairie_client, team_a, offer):
+        """None (offre antérieure à ce champ) garde l'ancien comportement — seul False exclut."""
+        assert offer.presence_physique is None
+        client, _ = mairie_client
+        client.post(reverse('team-definir-mission', args=[team_a.id]), {'titre': 'Mission'}, format='json')
+
+        client.post(reverse('team-assigner-ressource', args=[team_a.id]), {'offer_id': str(offer.id)}, format='json')
+
+        assert team_a.members.filter(id=offer.author_id).exists()
+
 
 @pytest.mark.django_db
 class TestRetirerRessource:

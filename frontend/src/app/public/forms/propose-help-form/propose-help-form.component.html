@@ -180,6 +180,23 @@
                     </div>
                 }
 
+                <!-- Présence physique : types ambigus où l'offreur peut soit accompagner ce
+                     qu'il propose, soit le mettre à disposition seul (camion, matériel, vivres) -->
+                @if (showPresencePhysiqueChoice(rg.get('type')?.value)) {
+                    <div class="form-group">
+                        <label class="form-label">Serez-vous présent(e) vous-même ? <span class="required">*</span></label>
+                        <label class="radio-label">
+                            <input type="radio" formControlName="presencePhysique" [value]="true"> Oui, je viens moi-même avec ce que je propose
+                        </label>
+                        <label class="radio-label">
+                            <input type="radio" formControlName="presencePhysique" [value]="false"> Non, c'est mis à disposition sans moi
+                        </label>
+                        @if (rg.get('presencePhysique')?.invalid && rg.get('presencePhysique')?.touched) {
+                            <div class="error-message">Merci de préciser si vous serez présent(e).</div>
+                        }
+                    </div>
+                }
+
                 <!-- Diplôme de secourisme : offres impliquant une présence en personne, sans
                      champ de qualification déjà dédié (Soins/Soutien en ont un) -->
                 @if (showSecourisme(rg.get('type')?.value)) {

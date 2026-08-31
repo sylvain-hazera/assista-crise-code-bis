@@ -50,6 +50,7 @@ export interface Offer {
   quantite?: number | null;
   unite?: string | null;
   renouvelable?: boolean;
+  presence_physique?: boolean | null; // l'offreur est-il physiquement présent avec ce qu'il propose ? null = offre antérieure à ce champ, inconnu
   competences?: string[];
   competences_libelles?: string[];
   commune?: string | null;

@@ -604,7 +604,11 @@ export class TeamsComponent implements OnInit {
       const o = this.offers.find(o => o.id === m.id);
       if (!o) continue;
       const estMateriel = o.materiel_type != null || o.materiel_livraison != null;
-      const estEnPersonne = !!o.author && (o.diplome_secourisme || o.transport_type != null || (!estMateriel));
+      // presence_physique déclaré explicitement à la soumission (voir propose-help-form) —
+      // remplace l'ancienne heuristique (diplome_secourisme/transport_type), incapable de
+      // distinguer un Transport/Matériel avec ou sans l'offreur. Null (offres antérieures à
+      // ce champ) est traité comme présence pour ne pas changer leur classement rétroactivement.
+      const estEnPersonne = !!o.author && o.presence_physique !== false;
       if (estMateriel && estEnPersonne) avecMateriel++;
       else if (estMateriel) materielSeul++;
       else seul++;

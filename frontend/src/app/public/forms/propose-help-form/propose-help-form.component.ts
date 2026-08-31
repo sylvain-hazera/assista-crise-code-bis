@@ -35,6 +35,17 @@ const TYPE_TRANSPORT = 'Transport';
 const TYPE_MATERIEL = 'Matériel';
 const TYPE_SOUTIEN = 'Soutien psychologique';
 const TYPE_AUTRE = 'Autre';
+const TYPE_NOURRITURE = 'Nourriture et eau';
+
+// Présence physique de l'offreur avec ce qu'il propose : certains types l'excluent ou
+// l'impliquent toujours par nature, d'autres sont ambigus (un camion, des vivres... peuvent
+// être déposés seuls ou apportés par l'offreur en personne) et demandent une réponse
+// explicite — voir addOffer()/presencePhysiqueValidator. Un hébergement prêté n'implique
+// jamais que l'offreur y réside ; à l'inverse, Soins/Soutien/Autre (bénévolat) SONT la
+// personne elle-même, la présence est toujours vraie.
+const TYPES_PRESENCE_FORCEE_FAUSSE = [TYPE_HEBERGEMENT];
+const TYPES_PRESENCE_FORCEE_VRAIE = [TYPE_SOINS, TYPE_SOUTIEN, TYPE_AUTRE];
+const TYPES_PRESENCE_A_PRECISER = [TYPE_TRANSPORT, TYPE_MATERIEL, TYPE_NOURRITURE];
 
 // Types où l'offreur s'engage en personne mais n'a pas déjà de champ de qualification dédié
 // (Soins → numero_adeli_rpps, Soutien → soutien_type couvrent déjà ce besoin) : c'est là qu'une
@@ -52,6 +63,16 @@ function confirmationReglementaireValidator(control: AbstractControl): Validatio
   const type = parent.get('type')?.value;
   const requiert = type === TYPE_TRANSPORT || type === TYPE_MATERIEL;
   return (requiert && !control.value) ? { required: true } : null;
+}
+
+/** presencePhysique doit être explicitement true/false (jamais null) sur les types ambigus —
+ * voir TYPES_PRESENCE_A_PRECISER. Même mécanique que confirmationReglementaireValidator. */
+function presencePhysiqueValidator(control: AbstractControl): ValidationErrors | null {
+  const parent = control.parent;
+  if (!parent) return null;
+  const type = parent.get('type')?.value;
+  const requiert = TYPES_PRESENCE_A_PRECISER.includes(type);
+  return (requiert && control.value === null) ? { required: true } : null;
 }
 
 @Component({
@@ -326,6 +347,7 @@ export class ProposeHelpFormComponent implements OnInit {
 
       formData.append('description', this.buildDescription(v));
       formData.append('renouvelable', String(!!v.renouvelable));
+      if (v.presencePhysique !== null) formData.append('presence_physique', String(v.presencePhysique));
       if (v.type === TYPE_HEBERGEMENT && v.hebergementDuree) formData.append('hebergement_duree', v.hebergementDuree);
       if (v.type === TYPE_SOINS && v.numeroAdeliRpps) formData.append('numero_adeli_rpps', v.numeroAdeliRpps);
       if (v.type === TYPE_TRANSPORT && v.transportType) formData.append('transport_type', v.transportType);
@@ -350,14 +372,23 @@ export class ProposeHelpFormComponent implements OnInit {
       }
       if (this.currentUser?.id) formData.append('author', this.currentUser.id);
       if (this.selectedFile) formData.append('photo', this.selectedFile);
-      this.selectedCompetences.forEach(c => formData.append('competences', c.id));
+      // Compétences déclarées côté personne : n'ont de sens que si l'offreur est
+      // effectivement présent avec ce qu'il propose (voir presencePhysique).
+      if (v.presencePhysique === true) {
+        this.selectedCompetences.forEach(c => formData.append('competences', c.id));
+      }
 
       return this.offerService.create(formData);
     });
 
     forkJoin(creations).subscribe({
       next: (offers) => {
-        offers.forEach(o => this.declareDisponibilites(o.id));
+        // Des disponibilités n'ont de sens que pour une offre où l'offreur est présent en
+        // personne (voir presencePhysique) — offerRows et offers restent dans le même ordre
+        // puisque `creations` a été construit par un simple .map() sur offerRows.controls.
+        offers.forEach((o, i) => {
+          if (this.offerRows.at(i).value.presencePhysique === true) this.declareDisponibilites(o.id);
+        });
         alert('Votre offre a été enregistrée avec succès !');
         this.router.navigate(['/accueil']);
       },
@@ -454,14 +485,29 @@ export class ProposeHelpFormComponent implements OnInit {
       confirmationReglementaire: [false, confirmationReglementaireValidator],
       immatriculation: [''],
       renouvelable: [false],
+      presencePhysique: [null as boolean | null, presencePhysiqueValidator],
     });
     // Le type conditionne l'exigibilité de confirmationReglementaire (voir le validateur) :
     // sans cet abonnement, choisir Transport/Matériel APRÈS coup ne rendrait jamais la case
-    // obligatoire tant qu'on ne retouche pas la case elle-même.
-    row.get('type')?.valueChanges.subscribe(() => {
+    // obligatoire tant qu'on ne retouche pas la case elle-même. Pilote aussi presencePhysique :
+    // forcée vrai/faux sur les types non-ambigus, remise à null (à préciser) sur les autres —
+    // change de type après avoir répondu ne doit pas garder une réponse qui ne correspond plus.
+    row.get('type')?.valueChanges.subscribe((type: string | null) => {
       row.get('confirmationReglementaire')?.updateValueAndValidity();
+      if (TYPES_PRESENCE_FORCEE_VRAIE.includes(type ?? '')) {
+        row.get('presencePhysique')?.setValue(true);
+      } else if (TYPES_PRESENCE_FORCEE_FAUSSE.includes(type ?? '')) {
+        row.get('presencePhysique')?.setValue(false);
+      } else {
+        row.get('presencePhysique')?.setValue(null);
+      }
     });
     this.offerRows.push(row);
+  }
+
+  /** Cette ligne demande-t-elle explicitement si l'offreur est présent (types ambigus) ? */
+  showPresencePhysiqueChoice(type: string | null | undefined): boolean {
+    return !!type && TYPES_PRESENCE_A_PRECISER.includes(type);
   }
 
   removeOffer(index: number): void {
@@ -483,15 +529,13 @@ export class ProposeHelpFormComponent implements OnInit {
     return type === TYPE_TRANSPORT || type === TYPE_MATERIEL;
   }
 
-  /** Une personne qui ne propose QUE du matériel (ex: une cuve à prêter) n'a ni compétence ni
-   * disponibilité personnelle à déclarer : lui montrer ces deux sections (pensées pour un
-   * bénévolat en personne) n'a pas de sens et ajoute du bruit/des clics inutiles. Dès qu'au
-   * moins une ligne correspond à une aide en personne (hébergement, soins, transport, soutien,
-   * autre), on les affiche — le formulaire ne fait aucune hypothèse sur un matériel isolé. */
+  /** Une personne qui ne propose QUE du matériel (ex: une cuve à prêter, un hébergement vide)
+   * n'a ni compétence ni disponibilité personnelle à déclarer : lui montrer ces deux sections
+   * (pensées pour un engagement en personne) n'a pas de sens et ajoute du bruit/des clics
+   * inutiles. S'appuie désormais sur presencePhysique, déclaré explicitement par ligne
+   * (remplace l'ancienne règle "tout type ≠ Matériel", fausse pour l'Hébergement et incapable
+   * de distinguer un Transport/Matériel avec ou sans l'offreur). */
   get proposeAideEnPersonne(): boolean {
-    return this.offerRows.controls.some(row => {
-      const type = row.value.type;
-      return !!type && type !== TYPE_MATERIEL;
-    });
+    return this.offerRows.controls.some(row => row.value.presencePhysique === true);
   }
 }
