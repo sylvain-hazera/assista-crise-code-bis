@@ -5,10 +5,18 @@ import { forkJoin } from 'rxjs';
 import { RequestService } from '../../services/request.service';
 import { InformationService } from '../../services/information.service';
 import { DeclarationSecuriteService } from '../../services/declaration-securite.service';
+import { OfferService } from '../../services/offer.service';
+import { TeamService } from '../../services/team.service';
+import { PointOperationnelService } from '../../services/point-operationnel.service';
+import { DossierService } from '../../services/dossier.service';
 
 import { Request } from '../../shared/models/request.model';
 import { Information } from '../../shared/models/information.model';
 import { DeclarationSecurite } from '../../shared/models/declaration-securite.model';
+import { Offer } from '../../shared/models/offer.model';
+import { Team } from '../../shared/models/team.model';
+import { PointOperationnel } from '../../shared/models/point-operationnel.model';
+import { Dossier } from '../../shared/models/dossier.model';
 import { Status } from '../../shared/models/status.model';
 
 @Component({
@@ -23,6 +31,10 @@ export class VueMairieComponent implements OnInit {
   demandes: Request[] = [];
   informations: Information[] = [];
   declarationsSecurite: DeclarationSecurite[] = [];
+  offres: Offer[] = [];
+  equipes: Team[] = [];
+  points: PointOperationnel[] = [];
+  dossiers: Dossier[] = [];
 
   isLoading = true;
   errorMessage = '';
@@ -33,6 +45,10 @@ export class VueMairieComponent implements OnInit {
     private requestService: RequestService,
     private informationService: InformationService,
     private declarationSecuriteService: DeclarationSecuriteService,
+    private offerService: OfferService,
+    private teamService: TeamService,
+    private pointOperationnelService: PointOperationnelService,
+    private dossierService: DossierService,
   ) {}
 
   ngOnInit(): void {
@@ -46,11 +62,19 @@ export class VueMairieComponent implements OnInit {
       demandes: this.requestService.vueMairie(),
       informations: this.informationService.vueMairie(),
       declarationsSecurite: this.declarationSecuriteService.vueMairie(),
+      offres: this.offerService.vueMairie(),
+      equipes: this.teamService.vueMairie(),
+      points: this.pointOperationnelService.vueMairie(),
+      dossiers: this.dossierService.vueMairie(),
     }).subscribe({
-      next: ({ demandes, informations, declarationsSecurite }) => {
+      next: ({ demandes, informations, declarationsSecurite, offres, equipes, points, dossiers }) => {
         this.demandes = demandes;
         this.informations = informations;
         this.declarationsSecurite = declarationsSecurite;
+        this.offres = offres;
+        this.equipes = equipes;
+        this.points = points;
+        this.dossiers = dossiers;
         this.isLoading = false;
       },
       error: (err) => {

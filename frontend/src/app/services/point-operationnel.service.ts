@@ -40,6 +40,12 @@ export class PointOperationnelService {
     return this.http.get<PointOperationnel[]>(`${this.apiUrl}/`, { params: { mine: 'true' } });
   }
 
+  /** GET /api/points-operationnels/vue_mairie/ — points opérationnels de la commune de
+   * l'institution de l'utilisateur appelant (réservé institutionnel). */
+  vueMairie(): Observable<PointOperationnel[]> {
+    return this.http.get<PointOperationnel[]>(`${this.apiUrl}/vue_mairie/`);
+  }
+
   create(payload: PointOperationnelPayload): Observable<PointOperationnel> {
     return this.http.post<PointOperationnel>(`${this.apiUrl}/`, payload);
   }

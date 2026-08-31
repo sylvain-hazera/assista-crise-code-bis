@@ -78,6 +78,12 @@ export class OfferService {
     return this.http.post<Offer>(`${this.url}/${id}/reactiver/`, {});
   }
 
+  /** GET /api/offres/vue_mairie/ — offres de la commune de l'institution de l'utilisateur
+   * appelant (réservé institutionnel). */
+  vueMairie(): Observable<Offer[]> {
+    return this.http.get<Offer[]>(`${this.url}/vue_mairie/`).pipe(map(list => list.map(this.normalize)));
+  }
+
   /** POST /api/offres/<id>/assign_dossier/ — affecte l'auteur de l'offre au dossier (rôle OFFRANT). */
   assignDossier(offerId: string, dossierId: string): Observable<{ id: string; dossier: string; created: boolean }> {
     return this.http.post<{ id: string; dossier: string; created: boolean }>(

@@ -25,6 +25,8 @@ export class TeamService {
   delete(id: string):                      Observable<void>    { return this.http.delete<void>(`${this.url}/${id}/`); }
   /** POST /api/teams/<id>/reactiver/ — réactive une équipe désactivée (voir delete). */
   reactiver(id: string):                   Observable<Team>    { return this.http.post<Team>(`${this.url}/${id}/reactiver/`, {}); }
+  /** GET /api/teams/vue_mairie/ — équipes de l'institution de l'utilisateur appelant. */
+  vueMairie():                              Observable<Team[]>  { return this.http.get<Team[]>(`${this.url}/vue_mairie/`); }
 
   inviterMembre(id: string, data: {
     first_name: string; last_name: string; email: string; phone_number: string; role_code: string;

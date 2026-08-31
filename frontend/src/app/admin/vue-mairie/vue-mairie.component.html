@@ -69,6 +69,94 @@
     </section>
 
     <section class="block">
+      <h2><span class="material-icons">volunteer_activism</span> Offres d'aide <span class="count-badge">{{ offres.length }}</span></h2>
+      @if (offres.length === 0) {
+        <p class="empty-text">Aucune offre dans votre commune pour le moment.</p>
+      } @else {
+        <table class="data-table">
+          <thead><tr><th>Titre</th><th>Contact</th><th>Statut</th><th>Date</th></tr></thead>
+          <tbody>
+            @for (o of offres; track o.id) {
+              <tr>
+                <td class="cell-titre">{{ o.title }}</td>
+                <td>
+                  <div class="contact-stack">
+                    <span>{{ o.first_name_offer }} {{ o.last_name_offer }}</span>
+                    <span class="contact-sub">{{ o.email_offer }} · {{ o.phone_offer }}</span>
+                  </div>
+                </td>
+                <td><span class="statut-chip" [class]="statusClass(o.status)">{{ statusLabel(o.status) }}</span></td>
+                <td>{{ fmtDate(o.created_at) }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      }
+    </section>
+
+    <section class="block">
+      <h2><span class="material-icons">groups</span> Équipes <span class="count-badge">{{ equipes.length }}</span></h2>
+      <p class="empty-text section-note">Équipes de votre institution — ne couvre pas les équipes tierces dont la zone d'intervention engloberait votre commune.</p>
+      @if (equipes.length === 0) {
+        <p class="empty-text">Aucune équipe rattachée à votre institution.</p>
+      } @else {
+        <table class="data-table">
+          <thead><tr><th>Nom</th><th>Mission active</th></tr></thead>
+          <tbody>
+            @for (e of equipes; track e.id) {
+              <tr>
+                <td class="cell-titre">{{ e.name }}</td>
+                <td>{{ e.mission_active_titre || '—' }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      }
+    </section>
+
+    <section class="block">
+      <h2><span class="material-icons">place</span> Points opérationnels <span class="count-badge">{{ points.length }}</span></h2>
+      @if (points.length === 0) {
+        <p class="empty-text">Aucun point opérationnel dans votre commune.</p>
+      } @else {
+        <table class="data-table">
+          <thead><tr><th>Nom</th><th>Type</th><th>Responsable</th><th>Crise</th></tr></thead>
+          <tbody>
+            @for (p of points; track p.id) {
+              <tr>
+                <td class="cell-titre">{{ p.nom }}</td>
+                <td>{{ p.type_libelle || '—' }}</td>
+                <td>{{ p.responsable_nom || '—' }}</td>
+                <td>{{ p.crise_nom || '—' }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      }
+    </section>
+
+    <section class="block">
+      <h2><span class="material-icons">folder</span> Dossiers <span class="count-badge">{{ dossiers.length }}</span></h2>
+      @if (dossiers.length === 0) {
+        <p class="empty-text">Aucun dossier dans votre commune.</p>
+      } @else {
+        <table class="data-table">
+          <thead><tr><th>N°</th><th>Titre</th><th>Équipe</th><th>Statut</th></tr></thead>
+          <tbody>
+            @for (d of dossiers; track d.id) {
+              <tr>
+                <td>{{ d.numero }}</td>
+                <td class="cell-titre">{{ d.titre }}</td>
+                <td>{{ d.equipe_nom || '—' }}</td>
+                <td>{{ d.statut }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      }
+    </section>
+
+    <section class="block">
       <h2><span class="material-icons">flag</span> Signalements <span class="count-badge">{{ informations.length }}</span></h2>
       @if (informations.length === 0) {
         <p class="empty-text">Aucun signalement dans votre commune.</p>

@@ -473,9 +473,25 @@ class DossierViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         # création directe (sans passer par TeamViewSet.creer_dossier, seul chemin qui peuple
         # DossierParticipant/DossierHistorique correctement) était jusqu'ici ouverte à
         # n'importe quel compte authentifié — resserrée pour la même raison.
-        if self.action in ("create", "update", "partial_update", "destroy"):
+        if self.action in ("create", "update", "partial_update", "destroy", "vue_mairie"):
             return [IsInstitutionalActor()]
         return super().get_permissions()
+
+    @action(detail=False, methods=["get"])
+    def vue_mairie(self, request):
+        """Dossiers dont la demande, le signalement, ou l'équipe rattachée relève de la
+        commune de l'institution de l'utilisateur appelant — même garde que les autres
+        actions vue_mairie de ce fichier."""
+        commune_code = _institution_commune_or_400(request)
+        if isinstance(commune_code, Response):
+            return commune_code
+        queryset = Dossier.objects.filter(
+            Q(demande__commune_code=commune_code)
+            | Q(information__commune_code=commune_code)
+            | Q(equipe__institution__commune_code=commune_code),
+            environment=get_active_environment(request),
+        ).distinct()
+        return Response(self.get_serializer(queryset, many=True).data)
 
     def get_queryset(self):
         user = self.request.user
@@ -2340,7 +2356,7 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             'definir_delegation', 'retirer_delegation', 'creer_dossier',
             'lier_point', 'delier_point',
             'rattacher_equipe', 'detacher_equipe',
-            'definir_statut_ressource', 'reactiver',
+            'definir_statut_ressource', 'reactiver', 'vue_mairie',
         ):
             return [IsInstitutionalActor()]
         return [permissions.IsAuthenticated()]
@@ -2365,6 +2381,17 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             commentaire=f"Réactivation équipe : {team.name}",
         )
         return Response(TeamSerializer(team, context=self.get_serializer_context()).data)
+
+    @action(detail=False, methods=["get"], permission_classes=[IsInstitutionalActor])
+    def vue_mairie(self, request):
+        """Équipes de l'institution de l'utilisateur appelant (typiquement une mairie) —
+        interprété comme "mes équipes", pas la notion plus large de zone d'intervention
+        couvrant cette commune (communes/departements/zone_precise, hors périmètre ici)."""
+        commune_code = _institution_commune_or_400(request)
+        if isinstance(commune_code, Response):
+            return commune_code
+        queryset = self.get_queryset().filter(institution__commune_code=commune_code)
+        return Response(self.get_serializer(queryset, many=True).data)
 
     def perform_destroy(self, instance):
         instance.actif = False
@@ -3062,7 +3089,7 @@ class OfferViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         # (update/partial_update/destroy n'avaient aucune restriction avant ce changement).
         if self.action in ('update', 'partial_update', 'destroy'):
             return [IsOwnerOrInstitutional()]
-        if self.action in ('assign_dossier', 'bulk_create_team', 'transformer', 'reactiver'):
+        if self.action in ('assign_dossier', 'bulk_create_team', 'transformer', 'reactiver', 'vue_mairie'):
             return [IsInstitutionalActor()]
         if self.action == 'affecter_stock':
             # Pas IsInstitutionalActor : un bénévole simple membre de l'équipe du point (voir
@@ -3094,6 +3121,25 @@ class OfferViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             commentaire=f"Réactivation offre : {offre.title}",
         )
         return Response(OfferSerializer(offre, context={'request': request}).data)
+
+    @action(detail=False, methods=["get"], permission_classes=[IsInstitutionalActor])
+    def vue_mairie(self, request):
+        """Offres situées dans la commune de l'institution de l'utilisateur appelant — même
+        patron que DeclarationSecuriteViewSet.vue_mairie : Offer n'a pas de commune_code
+        stocké (contrairement à Request/Information), reverse-géocodage de `location` au
+        besoin. Les offres sans localisation n'ont pas de commune exploitable et sont donc
+        exclues ici, sans que ça affecte leur existence par ailleurs."""
+        commune_code = _institution_commune_or_400(request)
+        if isinstance(commune_code, Response):
+            return commune_code
+
+        queryset = self.get_queryset().filter(location__isnull=False)
+        matching_ids = [
+            o.id for o in queryset
+            if commune_code_from_point(o.location) == commune_code
+        ]
+        offres = self.get_queryset().filter(id__in=matching_ids)
+        return Response(self.get_serializer(offres, many=True).data)
 
     def perform_destroy(self, instance):
         instance.actif = False
@@ -5084,7 +5130,27 @@ class PointOperationnelViewSet(
         # explicitement la laisser passer ici aussi.
         if self.action in ("centres_accueil", "carte_publique"):
             return [AllowAny()]
+        if self.action == "vue_mairie":
+            return [IsInstitutionalActor()]
         return [permissions.IsAuthenticated()]
+
+    @action(detail=False, methods=["get"], permission_classes=[IsInstitutionalActor])
+    def vue_mairie(self, request):
+        """Points opérationnels situés dans la commune de l'institution de l'utilisateur
+        appelant — même patron que OfferViewSet.vue_mairie (PointOperationnel n'a pas de
+        commune_code stocké, reverse-géocodage de `location`). Les points sans localisation
+        sont exclus ici, sans que ça affecte leur existence par ailleurs."""
+        commune_code = _institution_commune_or_400(request)
+        if isinstance(commune_code, Response):
+            return commune_code
+
+        queryset = self.get_queryset().filter(location__isnull=False)
+        matching_ids = [
+            p.id for p in queryset
+            if commune_code_from_point(p.location) == commune_code
+        ]
+        points = self.get_queryset().filter(id__in=matching_ids)
+        return Response(self.get_serializer(points, many=True).data)
 
     @action(detail=False, methods=["get"], permission_classes=[AllowAny])
     def carte_publique(self, request):

@@ -22,6 +22,12 @@ export class DossierService {
     return this.http.get<Dossier[]>(`${this.url}/ma_file/`);
   }
 
+  /** GET /api/dossiers/vue_mairie/ — dossiers dont la demande, le signalement ou l'équipe
+   * relève de la commune de l'institution de l'utilisateur appelant. */
+  vueMairie(): Observable<Dossier[]> {
+    return this.http.get<Dossier[]>(`${this.url}/vue_mairie/`);
+  }
+
   getById(id: string): Observable<Dossier> {
     return this.http.get<Dossier>(`${this.url}/${id}/`);
   }
