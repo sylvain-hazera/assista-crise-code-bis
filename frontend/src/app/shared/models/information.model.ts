@@ -31,6 +31,7 @@ export interface Information {
   commune?: string | null;
   commune_code?: string | null;
   distance_from_crisis_km?: number | null;
+  actif?: boolean;                      // false = désactivé (politique de désactivation)
 }
 
 export interface InformationPayload {

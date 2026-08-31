@@ -703,7 +703,41 @@ class UserViewSet(viewsets.ModelViewSet):
             return [IsInstitutionalActor()]
         if self.action in ('update', 'partial_update', 'destroy'):
             return [IsSelfOrInstitutional()]
+        if self.action == 'reactiver':
+            return [IsInstitutionalActor()]
         return [permissions.IsAuthenticated()]
+
+    def perform_destroy(self, instance):
+        # Même effet que reject_account (is_active=False, voir le commentaire "Désactiver le
+        # compte (ou le supprimer)" ci-dessus) : jamais de suppression réelle d'un compte,
+        # cohérent avec la politique de désactivation appliquée à Offer/Request/Information/
+        # Team. `enabled` n'est pas touché ici : un compte déjà approuvé le reste, il suffit de
+        # reposer is_active=True pour le réactiver (voir reactiver ci-dessous).
+        instance.is_active = False
+        instance.save(update_fields=['is_active'])
+        audit_log(
+            request=self.request,
+            action_code="DESACTIVATION",
+            objet_type="User",
+            objet_id=instance.id,
+            commentaire=f"Désactivation compte : {instance.email}",
+        )
+
+    @action(detail=True, methods=["post"])
+    def reactiver(self, request, pk=None):
+        """Réactive un compte désactivé (voir perform_destroy) — réservé aux acteurs
+        institutionnels, comme approve_account/reject_account."""
+        user_to_reactivate = self.get_object()
+        user_to_reactivate.is_active = True
+        user_to_reactivate.save(update_fields=['is_active'])
+        audit_log(
+            request=request,
+            action_code="REACTIVATION",
+            objet_type="User",
+            objet_id=user_to_reactivate.id,
+            commentaire=f"Réactivation compte : {user_to_reactivate.email}",
+        )
+        return Response(UserSerializer(user_to_reactivate).data)
 
     @action(detail=False, methods=['post'], permission_classes=[AllowAny])
     def register(self, request):
@@ -1136,6 +1170,16 @@ class CrisisViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             nouvel_etat="CLOTUREE",
             commentaire=f"Crise {crise.name} clôturée par {user.email}",
         )
+
+        # Purge définitive des offres/demandes/signalements de cette crise déjà désactivés
+        # (voir la politique de désactivation, perform_destroy des 3 ViewSets concernés) — les
+        # éléments toujours actifs restent en revanche comme archive permanente de la crise,
+        # jamais purgés automatiquement. Team/User ne sont pas rattachés à UNE crise unique
+        # (une équipe/un compte peut survivre à plusieurs crises) : ils ne sont donc jamais
+        # purgés ici, seulement désactivés indéfiniment.
+        Offer.objects.filter(crisis=crise, actif=False).delete()
+        Request.objects.filter(crisis=crise, actif=False).delete()
+        Information.objects.filter(crisis=crise, actif=False).delete()
 
         return Response({"status": "ok", "end_date": crise.end_date})
 
@@ -1812,13 +1856,48 @@ class RequestViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         # demande de n'importe qui d'autre — voir IsOwnerOrInstitutional.
         if self.action in ('update', 'partial_update', 'destroy'):
             return [IsOwnerOrInstitutional()]
-        if self.action in ('assign_team', 'bulk_assign_mission', 'vue_mairie', 'transformer'):
+        if self.action in ('assign_team', 'bulk_assign_mission', 'vue_mairie', 'transformer', 'reactiver'):
             return [IsInstitutionalActor()]
         return [AllowAny()]
 
     def get_queryset(self):
-        return annotate_distance_from_crisis(
+        qs = annotate_distance_from_crisis(
             super().get_queryset().select_related('crisis', 'author')
+        )
+        # L'action reactiver doit pouvoir retrouver une demande désactivée pour la réactiver —
+        # déjà réservée à IsInstitutionalActor, pas besoin de repasser par ?actif=all ici.
+        if self.action == 'reactiver':
+            return qs
+        return _filter_actif(self.request, qs)
+
+    @action(detail=True, methods=["post"], permission_classes=[IsInstitutionalActor])
+    def reactiver(self, request, pk=None):
+        """Réactive une demande désactivée (voir perform_destroy) — reste dans l'historique
+        jusqu'à la clôture de la crise rattachée, purge automatique uniquement des demandes
+        toujours désactivées à ce moment-là."""
+        demande = self.get_object()
+        demande.actif = True
+        demande.save(update_fields=['actif'])
+        audit_log(
+            request=request,
+            action_code="REACTIVATION",
+            objet_type="Request",
+            objet_id=demande.id,
+            crise=demande.crisis,
+            commentaire=f"Réactivation demande : {demande.title}",
+        )
+        return Response(RequestSerializer(demande, context={'request': request}).data)
+
+    def perform_destroy(self, instance):
+        instance.actif = False
+        instance.save(update_fields=['actif'])
+        audit_log(
+            request=self.request,
+            action_code="DESACTIVATION",
+            objet_type="Request",
+            objet_id=instance.id,
+            crise=instance.crisis,
+            commentaire=f"Désactivation demande : {instance.title}",
         )
 
     @action(detail=True, methods=['post'])
@@ -2200,6 +2279,22 @@ def _notify_new_team_member(team, membre, request):
         print(f"Erreur envoi email association équipe : {e}")
 
 
+def _filter_actif(request, queryset):
+    """Filtre par défaut sur `actif=True` pour Offer/Request/Information/Team — masque les
+    éléments désactivés (voir perform_destroy de ces ViewSets) sauf pour un acteur
+    institutionnel qui demande explicitement `?actif=all` (ex: reporting/vue équipe/vue
+    utilisateurs, qui doivent pouvoir retrouver et réactiver un élément désactivé). Un acteur
+    non institutionnel qui passerait ce paramètre ne voit aucune différence : il ne doit de
+    toute façon jamais voir le contenu désactivé d'autrui."""
+    if (
+        request.query_params.get('actif') == 'all'
+        and request.user.is_authenticated
+        and get_effective_role(request) in INSTITUTIONAL_TYPES
+    ):
+        return queryset
+    return queryset.filter(actif=True)
+
+
 def _appartient_a_institution(request, institution) -> bool:
     """Un admin plateforme n'est jamais limité par cette vérification ; sinon, l'appelant doit
     être un contact actif de l'institution donnée — même garde-fou territorial que
@@ -2245,10 +2340,42 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             'definir_delegation', 'retirer_delegation', 'creer_dossier',
             'lier_point', 'delier_point',
             'rattacher_equipe', 'detacher_equipe',
-            'definir_statut_ressource',
+            'definir_statut_ressource', 'reactiver',
         ):
             return [IsInstitutionalActor()]
         return [permissions.IsAuthenticated()]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if self.action == 'reactiver':
+            return qs
+        return _filter_actif(self.request, qs)
+
+    @action(detail=True, methods=["post"], permission_classes=[IsInstitutionalActor])
+    def reactiver(self, request, pk=None):
+        """Réactive une équipe désactivée (voir perform_destroy)."""
+        team = self.get_object()
+        team.actif = True
+        team.save(update_fields=['actif'])
+        audit_log(
+            request=request,
+            action_code="REACTIVATION",
+            objet_type="Team",
+            objet_id=team.id,
+            commentaire=f"Réactivation équipe : {team.name}",
+        )
+        return Response(TeamSerializer(team, context=self.get_serializer_context()).data)
+
+    def perform_destroy(self, instance):
+        instance.actif = False
+        instance.save(update_fields=['actif'])
+        audit_log(
+            request=self.request,
+            action_code="DESACTIVATION",
+            objet_type="Team",
+            objet_id=instance.id,
+            commentaire=f"Désactivation équipe : {instance.name}",
+        )
 
     def perform_create(self, serializer):
         # Une équipe ne doit pas rester livrée à elle-même : rattachée par défaut à
@@ -2935,7 +3062,7 @@ class OfferViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         # (update/partial_update/destroy n'avaient aucune restriction avant ce changement).
         if self.action in ('update', 'partial_update', 'destroy'):
             return [IsOwnerOrInstitutional()]
-        if self.action in ('assign_dossier', 'bulk_create_team', 'transformer'):
+        if self.action in ('assign_dossier', 'bulk_create_team', 'transformer', 'reactiver'):
             return [IsInstitutionalActor()]
         if self.action == 'affecter_stock':
             # Pas IsInstitutionalActor : un bénévole simple membre de l'équipe du point (voir
@@ -2945,8 +3072,39 @@ class OfferViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         return [AllowAny()]
 
     def get_queryset(self):
-        return annotate_distance_from_crisis(
+        qs = annotate_distance_from_crisis(
             super().get_queryset().select_related('crisis', 'author')
+        )
+        if self.action == 'reactiver':
+            return qs
+        return _filter_actif(self.request, qs)
+
+    @action(detail=True, methods=["post"], permission_classes=[IsInstitutionalActor])
+    def reactiver(self, request, pk=None):
+        """Réactive une offre désactivée (voir perform_destroy)."""
+        offre = self.get_object()
+        offre.actif = True
+        offre.save(update_fields=['actif'])
+        audit_log(
+            request=request,
+            action_code="REACTIVATION",
+            objet_type="Offer",
+            objet_id=offre.id,
+            crise=offre.crisis,
+            commentaire=f"Réactivation offre : {offre.title}",
+        )
+        return Response(OfferSerializer(offre, context={'request': request}).data)
+
+    def perform_destroy(self, instance):
+        instance.actif = False
+        instance.save(update_fields=['actif'])
+        audit_log(
+            request=self.request,
+            action_code="DESACTIVATION",
+            objet_type="Offer",
+            objet_id=instance.id,
+            crise=instance.crisis,
+            commentaire=f"Désactivation offre : {instance.title}",
         )
 
     @action(detail=True, methods=['post'])
@@ -3228,13 +3386,44 @@ class InformationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         # signalement).
         if self.action in ('update', 'partial_update', 'destroy'):
             return [IsOwnerOrInstitutional()]
-        if self.action in ('vue_mairie', 'bulk_assign_team', 'transformer'):
+        if self.action in ('vue_mairie', 'bulk_assign_team', 'transformer', 'reactiver'):
             return [IsInstitutionalActor()]
         return [AllowAny()]
 
     def get_queryset(self):
-        return annotate_distance_from_crisis(
+        qs = annotate_distance_from_crisis(
             super().get_queryset().select_related('crisis', 'author')
+        )
+        if self.action == 'reactiver':
+            return qs
+        return _filter_actif(self.request, qs)
+
+    @action(detail=True, methods=["post"], permission_classes=[IsInstitutionalActor])
+    def reactiver(self, request, pk=None):
+        """Réactive un signalement désactivé (voir perform_destroy)."""
+        signalement = self.get_object()
+        signalement.actif = True
+        signalement.save(update_fields=['actif'])
+        audit_log(
+            request=request,
+            action_code="REACTIVATION",
+            objet_type="Information",
+            objet_id=signalement.id,
+            crise=signalement.crisis,
+            commentaire=f"Réactivation signalement : {signalement.title}",
+        )
+        return Response(InformationSerializer(signalement, context={'request': request}).data)
+
+    def perform_destroy(self, instance):
+        instance.actif = False
+        instance.save(update_fields=['actif'])
+        audit_log(
+            request=self.request,
+            action_code="DESACTIVATION",
+            objet_type="Information",
+            objet_id=instance.id,
+            crise=instance.crisis,
+            commentaire=f"Désactivation signalement : {instance.title}",
         )
 
     @action(detail=True, methods=['post'])
@@ -3394,17 +3583,34 @@ from django.shortcuts import get_object_or_404
 class DeleteRequestView(View):
     """Vue pour supprimer une demande via token"""
     def get(self, request, token):
+        # Désactive plutôt que supprimer (politique de désactivation, voir RequestViewSet.
+        # perform_destroy) : le message affiché reste "supprimée" pour l'expéditeur, la
+        # distinction technique est invisible pour lui — purge réelle seulement à la clôture
+        # de la crise rattachée.
         demande = get_object_or_404(Request, deletion_token=token)
         titre = demande.title
-        demande.delete()
+        demande.actif = False
+        demande.save(update_fields=['actif'])
+        audit_log(
+            request=request, action_code="DESACTIVATION", objet_type="Request",
+            objet_id=demande.id, crise=demande.crisis,
+            commentaire=f"Désactivation demande (lien email) : {titre}",
+        )
         return HttpResponse(f"<h1>Demande supprimée</h1><p>La demande '{titre}' a bien été supprimée.</p>")
 
 class DeleteOfferView(View):
     """Vue pour supprimer une offre via token"""
     def get(self, request, token):
+        # Voir le commentaire équivalent sur DeleteRequestView.
         offre = get_object_or_404(Offer, deletion_token=token)
         titre = offre.title
-        offre.delete()
+        offre.actif = False
+        offre.save(update_fields=['actif'])
+        audit_log(
+            request=request, action_code="DESACTIVATION", objet_type="Offer",
+            objet_id=offre.id, crise=offre.crisis,
+            commentaire=f"Désactivation offre (lien email) : {titre}",
+        )
         return HttpResponse(f"<h1>Offre supprimée</h1><p>L'offre '{titre}' a bien été supprimée.</p>")
 
 class ConfirmerAffectationBenevoleView(View):
@@ -3514,9 +3720,16 @@ class EngagementRessourcePublicView(APIView):
 class DeleteInformationView(View):
     """Vue pour supprimer une information via token"""
     def get(self, request, token):
+        # Voir le commentaire équivalent sur DeleteRequestView.
         info = get_object_or_404(Information, deletion_token=token)
         titre = info.title
-        info.delete()
+        info.actif = False
+        info.save(update_fields=['actif'])
+        audit_log(
+            request=request, action_code="DESACTIVATION", objet_type="Information",
+            objet_id=info.id, crise=info.crisis,
+            commentaire=f"Désactivation signalement (lien email) : {titre}",
+        )
         return HttpResponse(f"<h1>Information supprimée</h1><p>L'information '{titre}' a bien été supprimée.</p>")
 
     #  --------------------------- add by Laura ------------------------------------

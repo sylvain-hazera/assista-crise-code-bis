@@ -19,6 +19,7 @@ export interface User {
   type: UserRole;
   demo_role: UserRole | null;           // Rôle en zone de démonstration — null = pas d'accès démo
   enabled: boolean;
+  is_active?: boolean;                  // false = compte désactivé (politique de désactivation), lecture seule
   affected_crisis: string | null;       // UUID de la Crisis (FK)
   // M2M — listes d'UUID, non éditables directement
   validator?: string[];

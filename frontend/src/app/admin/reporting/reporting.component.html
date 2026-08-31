@@ -120,6 +120,11 @@
         <option [value]="50">50 / page</option>
       </select>
 
+      <label class="checkbox-inline" title="Afficher aussi les offres/demandes/signalements désactivés">
+        <input type="checkbox" [(ngModel)]="showDesactives" (ngModelChange)="loadAll()" />
+        Afficher aussi les éléments désactivés
+      </label>
+
       @if (searchQuery || filterKind !== 'ALL' || filterStatus !== 'ALL' || filterCommune || filterCompetence !== 'ALL' || filterMaterielLivraison !== 'ALL') {
         <button class="btn-ghost sm" (click)="resetFilters()">
           <span class="material-icons">filter_alt_off</span>
@@ -219,7 +224,7 @@
           </thead>
           <tbody>
             @for (row of pagedRows; track row.id) {
-              <tr (click)="openDetail(row)">
+              <tr (click)="openDetail(row)" [class.row-desactive]="!row.actif">
                 <td class="col-select" (click)="$event.stopPropagation()">
                   @if (!pickerModeActive && isRowSelectable(row)) {
                     <input type="checkbox" [checked]="isRowSelected(row)" (change)="toggleRowSelection(row)"/>
@@ -262,6 +267,9 @@
                         <span class="ressource-badge" title="Conformité véhicule/engin confirmée">
                           <span class="material-icons">verified</span>
                         </span>
+                      }
+                      @if (!row.actif) {
+                        <span class="desactive-badge" title="Désactivé(e) — reste dans l'historique jusqu'à la clôture de la crise">Désactivé</span>
                       }
                     </div>
                   </div>
@@ -324,9 +332,15 @@
                   <button class="btn-icon-sm" (click)="exportRow(row, $event)" title="Télécharger">
                     <span class="material-icons">download</span>
                   </button>
-                  <button class="btn-icon-sm danger" (click)="openDelete(row, $event)" title="Supprimer">
-                    <span class="material-icons">delete_outline</span>
-                  </button>
+                  @if (!row.actif) {
+                    <button class="btn-icon-sm" (click)="reactiver(row, $event)" title="Réactiver">
+                      <span class="material-icons">restore</span>
+                    </button>
+                  } @else {
+                    <button class="btn-icon-sm danger" (click)="openDelete(row, $event)" [title]="row.kind === 'Crisis' ? 'Supprimer' : 'Désactiver'">
+                      <span class="material-icons">{{ row.kind === 'Crisis' ? 'delete_outline' : 'block' }}</span>
+                    </button>
+                  }
                 </td>
               </tr>
             }
@@ -688,20 +702,26 @@
   <div class="modal-overlay" (click)="closeAll()">
     <div class="modal modal-sm" (click)="$event.stopPropagation()">
       <div class="modal-header danger">
-        <h2><span class="material-icons">warning</span> Supprimer</h2>
+        <h2><span class="material-icons">warning</span> {{ selectedRow.kind === 'Crisis' ? 'Supprimer' : 'Désactiver' }}</h2>
         <button class="btn-icon-sm" (click)="closeAll()"><span class="material-icons">close</span></button>
       </div>
       <div class="modal-body delete-body">
         <span class="delete-icon kind-badge lg" [class]="kindClass(selectedRow.kind)">
           <span class="material-icons">{{ kindIcon(selectedRow.kind) }}</span>
         </span>
-        <p>Supprimer le signalement <strong>{{ selectedRow.title }}</strong> ?</p>
-        <p class="delete-warn">Cette action est <strong>irréversible</strong>.</p>
+        @if (selectedRow.kind === 'Crisis') {
+          <p>Supprimer <strong>{{ selectedRow.title }}</strong> ?</p>
+          <p class="delete-warn">Cette action est <strong>irréversible</strong>.</p>
+        } @else {
+          <p>Désactiver <strong>{{ selectedRow.title }}</strong> ?</p>
+          <p class="delete-warn">Reste consultable dans l'historique jusqu'à la clôture de la crise rattachée, où il/elle sera définitivement purgé(e). Réactivable entre-temps.</p>
+        }
       </div>
       <div class="modal-footer">
         <button class="btn-ghost" (click)="closeAll()">Annuler</button>
         <button class="btn-danger" (click)="confirmDelete()">
-          <span class="material-icons">delete_forever</span> Supprimer
+          <span class="material-icons">{{ selectedRow.kind === 'Crisis' ? 'delete_forever' : 'block' }}</span>
+          {{ selectedRow.kind === 'Crisis' ? 'Supprimer' : 'Désactiver' }}
         </button>
       </div>
     </div>

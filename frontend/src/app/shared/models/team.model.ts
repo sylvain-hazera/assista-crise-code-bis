@@ -50,4 +50,5 @@ export interface Team {
   zone_precise_geojson?: Polygon | null;    // GeoJSON natif en lecture, prêt pour ZoneMapComponent
   missions:             TeamMission[];      // calculé localement, non envoyé à l'API
   created_at?:          string;
+  actif?:               boolean;           // false = désactivée (politique de désactivation)
 }

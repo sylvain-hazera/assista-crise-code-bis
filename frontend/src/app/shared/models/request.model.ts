@@ -33,6 +33,7 @@ export interface Request {
   author_type?: string | null;
   commune?: string | null;              // Résolu côté serveur (commune_code ou reverse-géocodage)
   distance_from_crisis_km?: number | null;
+  actif?: boolean;                      // false = désactivée (politique de désactivation)
 }
 
 // Payload pour le formulaire de création

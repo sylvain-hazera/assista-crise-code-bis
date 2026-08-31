@@ -65,6 +65,9 @@ export interface ReportRow {
   confirmationReglementaire?: boolean;
   organisationNom?: string | null;   // dépôt groupé : nom de l'entreprise/association déposante
   groupeId?: string | null;
+  // Offer/Request/Information uniquement (voir la politique de désactivation) — toujours true
+  // pour Crisis, qui n'a pas ce champ et se supprime réellement.
+  actif:        boolean;
   // raw originals for detail modal
   _raw:         Crisis | Offer | Request | Information;
 }
@@ -120,6 +123,10 @@ export class ReportingComponent implements OnInit, OnDestroy {
   filterMaterielLivraison: 'ALL' | 'A_RECUPERER' | 'LIVRAISON_POSSIBLE' = 'ALL';
   sortField:    SortField    = 'date';
   sortAsc                    = false;
+  // Offres/demandes/signalements désactivés (voir la politique de désactivation) sont masqués
+  // par défaut par le backend — ce bouton demande explicitement ?actif=all pour les retrouver
+  // et pouvoir les réactiver.
+  showDesactives = false;
 
   competences: Competence[] = [];
 
@@ -301,11 +308,12 @@ export class ReportingComponent implements OnInit, OnDestroy {
     this.selectedOfferIds.clear();
     this.selectedRequestIds.clear();
     this.selectedInformationIds.clear();
+    const actifParams = this.showDesactives ? { actif: 'all' } : undefined;
     forkJoin({
       crises:       this.crisisService.getAll(),
-      offres:       this.offerService.getAll(),
-      demandes:     this.requestService.getAll(),
-      informations: this.informationService.getAll(),
+      offres:       this.offerService.getAll(actifParams),
+      demandes:     this.requestService.getAll(actifParams),
+      informations: this.informationService.getAll(actifParams),
       teams:        this.teamService.getAll(),
       dossiers:     this.dossierService.getAll(),
       missions:     this.missionService.getAll(),
@@ -360,6 +368,7 @@ export class ReportingComponent implements OnInit, OnDestroy {
       isSecoursAccount: false,
       competencesLibelles: [],
       description: c.description ?? null,
+      actif:     true,
       _raw:      c,
     }));
 
@@ -391,6 +400,7 @@ export class ReportingComponent implements OnInit, OnDestroy {
       confirmationReglementaire: !!o.confirmation_reglementaire,
       organisationNom: o.organisation_nom ?? null,
       groupeId: o.groupe_id ?? null,
+      actif:     o.actif !== false,
       _raw:      o,
     }));
 
@@ -417,6 +427,7 @@ export class ReportingComponent implements OnInit, OnDestroy {
       isSecoursAccount: d.author_type === 'SECOURS',
       competencesLibelles: [],
       description: d.description ?? null,
+      actif:     d.actif !== false,
       _raw:      d,
     }));
 
@@ -443,6 +454,7 @@ export class ReportingComponent implements OnInit, OnDestroy {
       isSecoursAccount: i.author_type === 'SECOURS',
       competencesLibelles: [],
       description: null,
+      actif:     i.actif !== false,
       _raw:      i,
     }));
 
@@ -974,17 +986,37 @@ export class ReportingComponent implements OnInit, OnDestroy {
 
   confirmDelete(): void {
     if (!this.selectedRow) return;
+    const isCrisis = this.selectedRow.kind === 'Crisis';
     const obs = this.getDeleteObservable(this.selectedRow.kind, this.selectedRow.id);
     if (!obs) return;
     obs.subscribe({
       next: () => {
-        this.showSuccess('Signalement supprimé.');
+        this.showSuccess(isCrisis ? 'Supprimé.' : 'Désactivé.');
         this.showDeleteModal = false;
         this.selectedRow     = null;
         this.loadAll();
       },
-      error: () => this.showError('Erreur lors de la suppression.'),
+      error: () => this.showError(isCrisis ? 'Erreur lors de la suppression.' : 'Erreur lors de la désactivation.'),
     });
+  }
+
+  reactiver(row: ReportRow, event: Event): void {
+    event.stopPropagation();
+    const obs = this.getReactiverObservable(row.kind, row.id);
+    if (!obs) return;
+    obs.subscribe({
+      next: () => { this.showSuccess('Réactivé.'); this.loadAll(); },
+      error: () => this.showError('Erreur lors de la réactivation.'),
+    });
+  }
+
+  private getReactiverObservable(kind: ReportKind, id: string): Observable<any> | undefined {
+    switch (kind) {
+      case 'Offer':       return this.offerService.reactiver(id);
+      case 'Request':     return this.requestService.reactiver(id);
+      case 'Information': return this.informationService.reactiver(id);
+      default:            return undefined;
+    }
   }
 
   private getUpdateObservable(kind: ReportKind, id: string, data: any): Observable<any> {

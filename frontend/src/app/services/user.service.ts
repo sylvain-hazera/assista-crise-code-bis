@@ -34,6 +34,11 @@ export class UserService {
     return this.http.delete<void>(`${this.apiUrl}/users/${id}/`);
   }
 
+  /** POST /api/users/<id>/reactiver/ — réactive un compte désactivé (voir delete). */
+  reactiver(id: string): Observable<User> {
+    return this.http.post<User>(`${this.apiUrl}/users/${id}/reactiver/`, {});
+  }
+
   sendPasswordReset(id: string): Observable<{ message: string }> {
     return this.http.post<{ message: string }>(`${this.apiUrl}/users/${id}/send_password_reset/`, {});
   }

@@ -73,6 +73,11 @@ export class OfferService {
     return this.http.delete<void>(`${this.url}/${id}/`);
   }
 
+  /** POST /api/offres/<id>/reactiver/ — réactive une offre désactivée (voir delete). */
+  reactiver(id: string): Observable<Offer> {
+    return this.http.post<Offer>(`${this.url}/${id}/reactiver/`, {});
+  }
+
   /** POST /api/offres/<id>/assign_dossier/ — affecte l'auteur de l'offre au dossier (rôle OFFRANT). */
   assignDossier(offerId: string, dossierId: string): Observable<{ id: string; dossier: string; created: boolean }> {
     return this.http.post<{ id: string; dossier: string; created: boolean }>(

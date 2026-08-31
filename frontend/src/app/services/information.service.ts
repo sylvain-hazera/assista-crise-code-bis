@@ -91,6 +91,11 @@ export class InformationService {
     return this.http.delete<void>(`${this.url}/${id}/`);
   }
 
+  /** POST /api/informations/<id>/reactiver/ — réactive un signalement désactivé (voir delete). */
+  reactiver(id: string): Observable<Information> {
+    return this.http.post<Information>(`${this.url}/${id}/reactiver/`, {});
+  }
+
   private normalize = (i: any): Information => {
     if (i.location?.coordinates) {
       return { ...i, ...geoPointToLatLng(i.location) };

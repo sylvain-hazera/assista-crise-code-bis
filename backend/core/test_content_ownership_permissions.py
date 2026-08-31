@@ -86,7 +86,10 @@ class TestRequestOwnershipPermissions:
         )
         response = client.delete(reverse('request-detail', args=[demande.id]))
         assert response.status_code == status.HTTP_204_NO_CONTENT
-        assert not Request.objects.filter(id=demande.id).exists()
+        # Politique de désactivation (voir RequestViewSet.perform_destroy) : la demande reste
+        # en base, désactivée, jusqu'à la clôture de la crise rattachée.
+        demande.refresh_from_db()
+        assert demande.actif is False
 
 
 @pytest.mark.django_db

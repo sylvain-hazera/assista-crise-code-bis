@@ -100,6 +100,11 @@ export class RequestService {
     return this.http.delete<void>(`${this.url}/${id}/`);
   }
 
+  /** POST /api/demandes/<id>/reactiver/ — réactive une demande désactivée (voir delete). */
+  reactiver(id: string): Observable<Request> {
+    return this.http.post<Request>(`${this.url}/${id}/reactiver/`, {});
+  }
+
   /** POST /api/demandes/<id>/assign_team/ — affecte la demande à une équipe : crée un
    * dossier de suivi, notifie le régulateur de l'équipe et informe le demandeur par email. */
   assignTeam(requestId: string, teamId: string): Observable<{ dossier?: string; numero?: string; already_assigned?: boolean }> {

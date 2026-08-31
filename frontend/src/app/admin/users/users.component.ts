@@ -182,11 +182,11 @@ export class UsersComponent implements OnInit, OnDestroy {
       filtered = filtered.filter(user => user.type === this.selectedRole);
     }
 
-    // Filtre par statut (basé sur l'existence de l'utilisateur)
-    // Note: Adaptez selon votre modèle (enable, is_active, etc.)
+    // Filtre par statut : is_active === false signifie compte désactivé (voir la politique
+    // de désactivation) — is_active absent/true = actif.
     if (this.selectedStatus !== 'ALL') {
-      // À adapter selon votre modèle
-      // filtered = filtered.filter(user => user.is_active === (this.selectedStatus === 'ACTIVE'));
+      const wantActive = this.selectedStatus === 'ACTIVE';
+      filtered = filtered.filter(user => (user.is_active !== false) === wantActive);
     }
 
     this.filteredUsers = filtered;
@@ -360,26 +360,53 @@ export class UsersComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * Supprime un utilisateur après confirmation
+   * Désactive un compte utilisateur après confirmation (voir la politique de désactivation :
+   * un compte n'est jamais réellement supprimé, seulement désactivé — is_active=false).
    */
   deleteUser(user: User): void {
-    if (!confirm(`Êtes-vous sûr de vouloir supprimer l'utilisateur ${user.first_name} ${user.last_name} ?`)) {
+    if (!confirm(`Désactiver le compte de ${user.first_name} ${user.last_name} ? Le compte reste dans l'historique, réactivable à tout moment.`)) {
       return;
     }
 
     this.isLoading = true;
-    
+
     this.userService.delete(user.id)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: () => {
-          this.successMessage = 'Utilisateur supprimé avec succès';
+          this.successMessage = 'Compte désactivé avec succès';
           this.loadUsers();
           setTimeout(() => this.successMessage = '', 3000);
         },
         error: (error) => {
-          console.error('Erreur suppression utilisateur:', error);
-          this.errorMessage = 'Impossible de supprimer l\'utilisateur';
+          console.error('Erreur désactivation utilisateur:', error);
+          this.errorMessage = 'Impossible de désactiver le compte';
+          this.isLoading = false;
+        }
+      });
+  }
+
+  /**
+   * Réactive un compte utilisateur désactivé (voir deleteUser).
+   */
+  reactiverUser(user: User): void {
+    if (!confirm(`Réactiver le compte de ${user.first_name} ${user.last_name} ?`)) {
+      return;
+    }
+
+    this.isLoading = true;
+
+    this.userService.reactiver(user.id)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: () => {
+          this.successMessage = 'Compte réactivé avec succès';
+          this.loadUsers();
+          setTimeout(() => this.successMessage = '', 3000);
+        },
+        error: (error) => {
+          console.error('Erreur réactivation utilisateur:', error);
+          this.errorMessage = 'Impossible de réactiver le compte';
           this.isLoading = false;
         }
       });

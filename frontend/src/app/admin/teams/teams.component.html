@@ -28,6 +28,11 @@
     }
   </div>
 
+  <label class="checkbox-inline" title="Afficher aussi les équipes désactivées">
+    <input type="checkbox" [(ngModel)]="showDesactives" (ngModelChange)="toggleShowDesactives()" />
+    Afficher aussi les équipes désactivées
+  </label>
+
   <!-- ══ LOADING ═══════════════════════════════════════════════ -->
   @if (isLoading) {
     <div class="skel-grid">
@@ -48,7 +53,7 @@
     } @else {
       <div class="teams-grid">
         @for (team of filteredTeams; track team.id) {
-          <div class="team-card" (click)="openDetail(team)" [style.--accent]="team.color">
+          <div class="team-card" (click)="openDetail(team)" [style.--accent]="team.color" [class.card-desactivee]="team.actif === false">
             <div class="card-accent"></div>
             <div class="card-body">
 
@@ -57,19 +62,25 @@
                   {{ team.name[0].toUpperCase() }}
                 </div>
                 <div class="card-actions" (click)="$event.stopPropagation()">
-                  <button class="icon-btn" (click)="openAssign(team, $event)" title="Assigner des demandes">
-                    <span class="material-icons">assignment</span>
-                  </button>
-                  <button class="icon-btn" (click)="openEdit(team, $event)" title="Modifier">
-                    <span class="material-icons">edit</span>
-                  </button>
-                  <button class="icon-btn danger" (click)="openDelete(team, $event)" title="Supprimer">
-                    <span class="material-icons">delete_outline</span>
-                  </button>
+                  @if (team.actif === false) {
+                    <button class="icon-btn" (click)="reactiver(team, $event)" title="Réactiver">
+                      <span class="material-icons">restore</span>
+                    </button>
+                  } @else {
+                    <button class="icon-btn" (click)="openAssign(team, $event)" title="Assigner des demandes">
+                      <span class="material-icons">assignment</span>
+                    </button>
+                    <button class="icon-btn" (click)="openEdit(team, $event)" title="Modifier">
+                      <span class="material-icons">edit</span>
+                    </button>
+                    <button class="icon-btn danger" (click)="openDelete(team, $event)" title="Désactiver">
+                      <span class="material-icons">block</span>
+                    </button>
+                  }
                 </div>
               </div>
 
-              <h3>{{ team.name }}</h3>
+              <h3>{{ team.name }} @if (team.actif === false) { <span class="desactive-badge">Désactivée</span> }</h3>
               <p class="card-desc">{{ team.description || 'Aucune description' }}</p>
               @if (team.institution_nom) {
                 <p class="card-institution">
@@ -984,29 +995,21 @@
   <div class="modal-overlay" (click)="closeModal()">
     <div class="modal modal-sm" (click)="$event.stopPropagation()">
       <div class="modal-header danger">
-        <h2><span class="material-icons">warning</span> Supprimer l'équipe</h2>
+        <h2><span class="material-icons">warning</span> Désactiver l'équipe</h2>
         <button class="icon-btn" (click)="closeModal()"><span class="material-icons">close</span></button>
       </div>
       <div class="modal-body delete-body">
         <div class="team-avatar lg" [style.background]="selectedTeam.color">
           {{ selectedTeam.name[0] }}
         </div>
-        <p>Supprimer <strong>{{ selectedTeam.name }}</strong> ?</p>
-        @if (selectedTeam.member_ids.length > 0) {
-          <p class="delete-info">
-            <span class="material-icons">info</span>
-            {{ selectedTeam.member_ids.length }}
-            membre{{ selectedTeam.member_ids.length > 1 ? 's' : '' }}
-            ser{{ selectedTeam.member_ids.length > 1 ? 'ont' : 'a' }} retiré{{ selectedTeam.member_ids.length > 1 ? 's' : '' }}.
-          </p>
-        }
-        <p class="warn">Cette action est <strong>irréversible</strong>.</p>
+        <p>Désactiver <strong>{{ selectedTeam.name }}</strong> ?</p>
+        <p class="warn">L'équipe et ses membres restent dans l'historique — réactivable à tout moment.</p>
       </div>
       <div class="modal-footer">
         <button class="btn-ghost" (click)="closeModal()">Annuler</button>
         <button class="btn-danger" (click)="confirmDelete()" [disabled]="isSaving">
-          <span class="material-icons">delete_forever</span>
-          {{ isSaving ? 'Suppression…' : 'Supprimer' }}
+          <span class="material-icons">block</span>
+          {{ isSaving ? 'Désactivation…' : 'Désactiver' }}
         </button>
       </div>
     </div>

@@ -128,6 +128,10 @@ export class TeamsComponent implements OnInit {
     }
   }
 
+  // Équipes désactivées (voir la politique de désactivation) sont masquées par défaut par le
+  // backend — ce bouton demande explicitement ?actif=all pour les retrouver et les réactiver.
+  showDesactives = false;
+
   // ── Load ─────────────────────────────────────────────────────
   private loadRemoteData(): void {
     this.isLoading = true;
@@ -136,7 +140,7 @@ export class TeamsComponent implements OnInit {
       crisis:   this.crisisService.getAll(),
       offers:   this.offerService.getAll(),
       requests: this.requestService.getAll(),
-      teams:    this.teamService.getAll(),       // ← ajouté ici
+      teams:    this.teamService.getAll(this.showDesactives),       // ← ajouté ici
       disponibilites: this.disponibiliteOffreService.getAll(),
       dossiers: this.dossierService.getAll(),
       competences: this.competenceService.getAll(),
@@ -193,9 +197,13 @@ export class TeamsComponent implements OnInit {
   }
 
   reloadTeams(): void {
-    this.teamService.getAll().subscribe(teams => {
+    this.teamService.getAll(this.showDesactives).subscribe(teams => {
       this.teams = teams.map(t => ({ ...t, missions: this.buildMissions(t) }));
     });
+  }
+
+  toggleShowDesactives(): void {
+    this.reloadTeams();
   }
 
   // ── Forms ─────────────────────────────────────────────────────
@@ -436,10 +444,20 @@ export class TeamsComponent implements OnInit {
   confirmDelete(): void {
     if (!this.selectedTeam?.id) return;
     this.teamService.delete(this.selectedTeam.id).subscribe({
-      next: () => { this.reloadTeams(); this.showSuccess('Équipe supprimée.'); this.closeModal(); },
-      error: () => this.showError('Erreur lors de la suppression.'),
+      next: () => { this.reloadTeams(); this.showSuccess('Équipe désactivée.'); this.closeModal(); },
+      error: () => this.showError('Erreur lors de la désactivation.'),
     });
   }
+
+  reactiver(team: Team, e?: Event): void {
+    e?.stopPropagation();
+    if (!team.id) return;
+    this.teamService.reactiver(team.id).subscribe({
+      next: () => { this.reloadTeams(); this.showSuccess('Équipe réactivée.'); },
+      error: () => this.showError('Erreur lors de la réactivation.'),
+    });
+  }
+
   // ── MEMBERS ───────────────────────────────────────────────────
   toggleMember(userId: string): void {
     if (!this.selectedTeam) return;

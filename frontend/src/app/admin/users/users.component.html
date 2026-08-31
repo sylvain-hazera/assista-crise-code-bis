@@ -159,10 +159,11 @@
               }
             </td>
             <td class="status-cell">
-              <!-- À adapter selon votre modèle -->
-              <span class="status-badge status-active">
-                Actif
-              </span>
+              @if (user.is_active === false) {
+                <span class="status-badge status-inactive">Désactivé</span>
+              } @else {
+                <span class="status-badge status-active">Actif</span>
+              }
             </td>
             <td class="actions-cell">
               <div class="action-buttons">
@@ -196,10 +197,16 @@
                   <span class="material-icons">{{ user.enabled ? 'toggle_on' : 'toggle_off' }}</span>
                 </button>
 
-                <!-- Suppression -->
-                <button class="action-btn delete-btn" (click)="deleteUser(user)" title="Supprimer">
-                  <span class="material-icons">delete</span>
-                </button>
+                <!-- Désactivation / Réactivation (voir la politique de désactivation : jamais de suppression réelle d'un compte) -->
+                @if (user.is_active === false) {
+                  <button class="action-btn edit-btn" (click)="reactiverUser(user)" title="Réactiver">
+                    <span class="material-icons">restore</span>
+                  </button>
+                } @else {
+                  <button class="action-btn delete-btn" (click)="deleteUser(user)" title="Désactiver">
+                    <span class="material-icons">block</span>
+                  </button>
+                }
               </div>
             </td>
           </tr>

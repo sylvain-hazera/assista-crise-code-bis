@@ -301,6 +301,12 @@ class Request(EnvironmentScopedModel):
         choices=Status.choices,
         default=Status.UNPROCESSED,
     )
+    actif = models.BooleanField(
+        default=True,
+        help_text="False = désactivée par son auteur ou un acteur institutionnel — reste "
+                   "visible dans l'historique jusqu'à la clôture de la crise rattachée, "
+                   "où elle est définitivement purgée. Ne masque jamais les demandes actives.",
+    )
 
     request_type = models.ForeignKey(
         RequestType, on_delete=models.PROTECT, related_name="requests"
@@ -360,6 +366,12 @@ class Information(EnvironmentScopedModel):
         max_length=20,
         choices=Status.choices,
         default=Status.AVAILABLE,
+    )
+    actif = models.BooleanField(
+        default=True,
+        help_text="False = désactivée par son auteur ou un acteur institutionnel — reste "
+                   "visible dans l'historique jusqu'à la clôture de la crise rattachée, "
+                   "où elle est définitivement purgée. Ne masque jamais les signalements actifs.",
     )
 
     information_type = models.ForeignKey(
@@ -440,6 +452,12 @@ class Offer(EnvironmentScopedModel):
         max_length=20,
         choices=Status.choices,
         default=Status.AVAILABLE,
+    )
+    actif = models.BooleanField(
+        default=True,
+        help_text="False = désactivée par son auteur ou un acteur institutionnel — reste "
+                   "visible dans l'historique jusqu'à la clôture de la crise rattachée, "
+                   "où elle est définitivement purgée. Ne masque jamais les offres actives.",
     )
 
     offer_type = models.ForeignKey(
@@ -1272,6 +1290,13 @@ class Team(EnvironmentScopedModel):
     description = models.TextField(null=True, blank=True)
     color = models.CharField(max_length=7, default='#3b82f6')  # hex color
     created_at = models.DateTimeField(auto_now_add=True)
+    actif = models.BooleanField(
+        default=True,
+        help_text="False = désactivée par un acteur institutionnel — reste dans l'historique "
+                   "indéfiniment (une équipe peut couvrir plusieurs crises), pas de purge "
+                   "automatique à la clôture d'une crise contrairement à Offer/Request/"
+                   "Information.",
+    )
 
     # Institution de rattachement : une équipe ne doit jamais rester livrée à elle-même — voir
     # `_notify_institution_referent_of_team` (views.py) qui prévient le·s référent·s

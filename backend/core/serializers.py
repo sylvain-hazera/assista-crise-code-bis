@@ -138,7 +138,7 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['id', 'username', 'email', 'first_name', 'last_name', 'type', 'demo_role',
-                  'photo', 'phone_number', 'password', 'postal_code', 'enabled',
+                  'photo', 'phone_number', 'password', 'postal_code', 'enabled', 'is_active',
                   'institution_name', 'institution_type', 'commune_name', 'commune_code', 'institution_email_hint']
         extra_kwargs = {
             'password': {'write_only': True},
@@ -149,6 +149,11 @@ class UserSerializer(serializers.ModelSerializer):
             'postal_code': {'required': False},
             'enabled': {'required': False},
             'demo_role': {'required': False},
+            # is_active : jamais modifiable via un PATCH générique — seulement via
+            # approve_account/reject_account/UserViewSet.perform_destroy/reactiver, qui
+            # journalisent l'action (voir le commentaire "is_active est le champ réellement
+            # vérifié par /api/token/" sur approve_account).
+            'is_active': {'read_only': True},
         }
 
     def to_representation(self, instance):
@@ -348,7 +353,9 @@ class RequestSerializer(serializers.ModelSerializer):
     class Meta:
         model = Request
         fields = '__all__'
-        extra_kwargs = {'photo': {'write_only': True}}
+        # actif : jamais modifiable via un PATCH générique, uniquement via destroy/reactiver
+        # (qui journalisent l'action, voir RequestViewSet.perform_destroy/reactiver).
+        extra_kwargs = {'photo': {'write_only': True}, 'actif': {'read_only': True}}
 
     def _location_visible(self, obj) -> bool:
         request = self.context.get('request')
@@ -436,7 +443,9 @@ class OfferSerializer(serializers.ModelSerializer):
     class Meta:
         model = Offer
         fields = '__all__'
-        extra_kwargs = {'photo': {'write_only': True}}
+        # actif : jamais modifiable via un PATCH générique, uniquement via destroy/reactiver
+        # (qui journalisent l'action, voir OfferViewSet.perform_destroy/reactiver).
+        extra_kwargs = {'photo': {'write_only': True}, 'actif': {'read_only': True}}
 
     def get_competences_libelles(self, obj):
         return [c.nom for c in obj.competences.all()]
@@ -682,7 +691,9 @@ class InformationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Information
         fields = '__all__'
-        extra_kwargs = {'photo': {'write_only': True}}
+        # actif : jamais modifiable via un PATCH générique, uniquement via destroy/reactiver
+        # (qui journalisent l'action, voir InformationViewSet.perform_destroy/reactiver).
+        extra_kwargs = {'photo': {'write_only': True}, 'actif': {'read_only': True}}
 
     def _location_visible(self, obj) -> bool:
         request = self.context.get('request')
@@ -784,7 +795,7 @@ class TeamSerializer(serializers.ModelSerializer):
     class Meta:
         model  = Team
         fields = [
-            'id', 'name', 'description', 'color', 'created_at',
+            'id', 'name', 'description', 'color', 'created_at', 'actif',
             'institution',
             'institution_nom',
             'institution_delegataire',
@@ -816,7 +827,7 @@ class TeamSerializer(serializers.ModelSerializer):
         # changer que via les actions dédiées (definir_delegation/retirer_delegation,
         # rattacher_equipe/detacher_equipe), qui appliquent leurs propres gardes (historique,
         # anti-cycle) — un PATCH générique les contournerait.
-        read_only_fields = ['id', 'created_at', 'institution_delegataire', 'equipe_parente']
+        read_only_fields = ['id', 'created_at', 'actif', 'institution_delegataire', 'equipe_parente']
 
     def get_zone_precise_geojson(self, obj):
         return json.loads(obj.zone_precise.geojson) if obj.zone_precise else None
