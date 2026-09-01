@@ -262,6 +262,10 @@ class RequestType(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     type = models.CharField(max_length=100, unique=True, null=True, blank=True)
     description = models.TextField(null=True, blank=True)
+    # Même patron que OfferType.actif : jamais de suppression réelle (FK PROTECT depuis
+    # Request), seulement un masquage du formulaire public pour les types qu'on ne veut plus
+    # proposer (ex: "Soins médicaux", voir migration de données associée).
+    actif = models.BooleanField(default=True)
     parent = models.ForeignKey(
         "self",
         on_delete=models.CASCADE,

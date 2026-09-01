@@ -3593,6 +3593,9 @@ class RequestTypeViewSet(viewsets.ModelViewSet):
     serializer_class = RequestTypeSerializer
     permission_classes = [AllowAny]
 
+    def get_queryset(self):
+        return RequestType.objects.filter(actif=True)
+
 class OfferTypeViewSet(viewsets.ModelViewSet):
     queryset = OfferType.objects.all()
     serializer_class = OfferTypeSerializer

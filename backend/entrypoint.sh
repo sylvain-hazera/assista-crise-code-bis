@@ -39,10 +39,9 @@ python manage.py shell <<EOF
 from core.models import RequestType, OfferType, InformationType 
 
 types_demandes = [
-    'Assistance immédiate',
+    'Assistance à évacuation',
     'Hébergement',
     'Nourriture et eau',
-    'Soins médicaux',
     'Transport',
     'Matériel',
     'Soutien psychologique',
