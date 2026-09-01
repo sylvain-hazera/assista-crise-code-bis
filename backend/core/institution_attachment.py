@@ -211,6 +211,88 @@ def attach_user_to_institution(user, request=None):
     return matched_institution
 
 
+def attach_secours_user_to_institution(user, request=None):
+    """Rattache un compte SECOURS (Secours organisés) selon la sous-catégorie déclarée à
+    l'inscription (`user.pending_institution_type`, posé par UserSerializer.create pour
+    ORGANIZED_RESCUE) — à appeler uniquement à l'approbation du compte (approve_account),
+    seule étape de confiance pour ce type (pas de lien magique d'activation, voir register()).
+
+    - "aasc" : l'AASC est elle-même une institution — get-or-create par nom, comme
+      assign_default_institution_role le fait déjà pour LOCAL_AUTHORITY quand aucune
+      institution n'a pu être résolue, mais avec le VRAI nom déclaré (pending_institution_name)
+      plutôt que le nom de famille de l'utilisateur.
+    - "rcsc" : la réserve n'est pas sa propre institution, elle est rattachée à la Mairie déjà
+      existante de la commune déclarée (recherche par commune_code) — jamais créée à la volée
+      (une RCSC sans mairie enregistrée ne doit pas produire une fausse mairie).
+    - tout autre type (ou aucun) : ne fait rien, comportement inchangé.
+
+    Retourne l'institution rattachée, ou None (soit parce que le type n'est ni aasc ni rcsc,
+    soit parce qu'aucune mairie n'a pu être trouvée pour une RCSC — à l'appelant de décider
+    quoi faire dans ce dernier cas, ex: notifier pour un rattachement manuel)."""
+    pending_type = (user.pending_institution_type or '').strip().lower()
+    matched_institution = None
+
+    if pending_type == 'aasc':
+        aasc_type = InstitutionType.objects.filter(code='aasc').first()
+        if not aasc_type:
+            aasc_type = InstitutionType.objects.create(code='aasc', libelle='AASC')
+        matched_institution, institution_created = Institution.objects.get_or_create(
+            nom=user.pending_institution_name or user.email,
+            defaults={
+                'type': aasc_type, 'email': user.email, 'actif': True,
+                'commune_code': user.pending_commune_code or '',
+                'commune_nom': user.pending_commune_name or '',
+            },
+        )
+        # assign_default_institution_role pose l'affectation opérationnelle (RESPONSABLE en
+        # premier), mais ne crée jamais de ContactInstitution — à faire nous-même, comme
+        # resolve_or_create_institution_from_annuaire le fait pour le rattachement mairie.
+        contact, contact_created = ContactInstitution.objects.get_or_create(
+            institution=matched_institution, utilisateur=user,
+            defaults={'fonction': 'Créateur', 'contact_principal': institution_created, 'actif': True},
+        )
+        if contact_created and request is not None:
+            audit_log(
+                request=request,
+                action_code="CREATION",
+                objet_type="ContactInstitution",
+                objet_id=contact.id,
+                commentaire=f"Rattachement AASC de {user.email} à {matched_institution.nom}",
+            )
+        assign_default_institution_role(user, matched_institution)
+
+    elif pending_type == 'rcsc':
+        if user.pending_commune_code:
+            matched_institution = Institution.objects.filter(
+                type__code='mairie', commune_code=user.pending_commune_code, actif=True,
+            ).first()
+        if matched_institution:
+            contact, contact_created = ContactInstitution.objects.get_or_create(
+                institution=matched_institution, utilisateur=user,
+                defaults={'fonction': 'Réserviste RCSC', 'actif': True},
+            )
+            if contact_created and request is not None:
+                audit_log(
+                    request=request,
+                    action_code="CREATION",
+                    objet_type="ContactInstitution",
+                    objet_id=contact.id,
+                    commentaire=f"Rattachement RCSC de {user.email} à {matched_institution.nom}",
+                )
+
+    if user.pending_institution_name or user.pending_institution_type or user.pending_commune_name or user.pending_commune_code:
+        user.pending_institution_name = None
+        user.pending_institution_type = None
+        user.pending_commune_name = None
+        user.pending_commune_code = None
+        user.save(update_fields=[
+            'pending_institution_name', 'pending_institution_type',
+            'pending_commune_name', 'pending_commune_code',
+        ])
+
+    return matched_institution
+
+
 def resolve_or_invite_responsable(responsable_id, responsable_email, institution, request=None):
     """Résout le responsable/régulateur déclaré pour l'implication d'une institution sur une
     crise : soit un utilisateur déjà existant désigné par id, soit une invitation par email (un

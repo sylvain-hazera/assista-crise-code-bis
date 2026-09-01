@@ -165,6 +165,41 @@ def test_validate_institution_account_rejects_mismatch_between_type_and_domain()
 
 
 @pytest.mark.django_db
+def test_aasc_registration_accepted_with_non_governmental_email():
+    """"aasc" (comme association/entreprise/autre/ong/collectif) doit passer par le bypass
+    "accès limité" AVANT la whitelist de domaines gouvernementaux — sinon un email associatif
+    ou personnel réaliste (jamais mairie/prefecture/gouv.fr) était rejeté avant même
+    d'atteindre ce bypass, empêchant toute inscription AASC/RCSC en pratique."""
+    valid, message, details = InstitutionEmailValidator.validate_institution_account(
+        email="contact@aasc-bordeaux-secours.org",
+        institution_name="AASC Bordeaux Secours",
+        institution_type="aasc",
+        commune_name="Bordeaux",
+        commune_code="33063",
+    )
+
+    assert valid is True
+    assert details["validation_mode"] == "limited"
+
+
+@pytest.mark.django_db
+def test_rcsc_registration_accepted_with_non_governmental_email():
+    """Même bypass que pour "aasc" — un réserviste RCSC n'a pas non plus de domaine
+    gouvernemental à faire correspondre (son email personnel suffit, le rattachement à la
+    mairie se fait ensuite par recherche commune_code, pas par validation de domaine)."""
+    valid, message, details = InstitutionEmailValidator.validate_institution_account(
+        email="reserviste.rcsc@gmail.com",
+        institution_name="",
+        institution_type="rcsc",
+        commune_name="Bordeaux",
+        commune_code="33063",
+    )
+
+    assert valid is True
+    assert details["validation_mode"] == "limited"
+
+
+@pytest.mark.django_db
 def test_institution_registration_is_rejected_when_validation_fails():
     """Une inscription institutionnelle invalide doit être refusée, sans créer de compte."""
     serializer = UserSerializer(data={

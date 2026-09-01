@@ -37,7 +37,7 @@ from PIL.ExifTags import TAGS, GPSTAGS
 
 from .audit import audit_log, get_client_ip
 from .export import build_crisis_export_zip
-from .institution_attachment import attach_user_to_institution, resolve_or_invite_responsable
+from .institution_attachment import attach_user_to_institution, attach_secours_user_to_institution, resolve_or_invite_responsable
 from .permissions import (
     IsInstitutionalActor, IsAdministrator, IsOwnDeclarationOrInstitutional, IsOwnerOrInstitutional,
     IsSelfOrInstitutional,
@@ -1040,7 +1040,35 @@ class UserViewSet(viewsets.ModelViewSet):
         user_to_approve.enabled = True
         user_to_approve.is_active = True
         user_to_approve.save()
-        
+
+        # Rattachement institution pour les comptes SECOURS (AASC/RCSC) : pas de lien magique
+        # d'activation pour ce type (voir register()), donc c'est ICI — au moment où un humain
+        # de confiance (admin ou mairie) approuve réellement le compte — que ça doit se jouer,
+        # jamais avant. Capturé avant l'appel : attach_secours_user_to_institution efface les
+        # pending_* en sortie, donc plus moyen de savoir après coup si c'était une RCSC.
+        pending_type_secours = (user_to_approve.pending_institution_type or '').strip().lower()
+        if user_to_approve.type == UserRole.ORGANIZED_RESCUE:
+            matched_institution = attach_secours_user_to_institution(user_to_approve, request)
+            if pending_type_secours == 'rcsc' and matched_institution is None:
+                try:
+                    send_mail(
+                        subject="Compte RCSC validé sans mairie rattachée",
+                        message=(
+                            f"Bonjour,\n\n"
+                            f"Un compte réserviste RCSC a été approuvé mais aucune mairie "
+                            f"n'est enregistrée pour sa commune ({user_to_approve.pending_commune_name or 'non renseignée'}).\n\n"
+                            f"- Nom : {user_to_approve.first_name} {user_to_approve.last_name}\n"
+                            f"- Email : {user_to_approve.email}\n\n"
+                            "Un rattachement manuel à la bonne mairie est nécessaire dès qu'elle "
+                            "sera enregistrée sur la plateforme."
+                        ),
+                        from_email=None,
+                        recipient_list=['contact@assista-crise.fr'],
+                        fail_silently=False,
+                    )
+                except Exception as e:
+                    print(f"Erreur envoi email rattachement RCSC manuel : {e}")
+
         # Envoyer email de confirmation
         try:
             send_mail(

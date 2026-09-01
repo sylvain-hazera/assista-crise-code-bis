@@ -113,8 +113,28 @@ export class RegisterComponent implements OnInit, OnDestroy {
       institutionName: [''],
       institutionType: [''],
       institutionEmailHint: [''],
+      // AASC/RCSC : uniquement pour userType === RESCUE, remplacent le sélecteur générique
+      // institutionType (qui n'a jamais eu de sens pour un compte "Secours organisés" — voir
+      // toggleFieldsBasedOnUserType). Mutuellement exclusives.
+      isAasc: [false],
+      isRcsc: [false],
       acceptTerms: [false, Validators.requiredTrue]
     });
+  }
+
+  /** AASC/RCSC sont mutuellement exclusives — cocher l'une décoche l'autre. */
+  onAascChange(checked: boolean): void {
+    this.registerForm.patchValue({ isAasc: checked, isRcsc: checked ? false : this.registerForm.get('isRcsc')?.value });
+    this.toggleFieldsBasedOnUserType(this.registerForm.get('userType')?.value);
+  }
+
+  onRcscChange(checked: boolean): void {
+    this.registerForm.patchValue({ isRcsc: checked, isAasc: checked ? false : this.registerForm.get('isAasc')?.value });
+    this.toggleFieldsBasedOnUserType(this.registerForm.get('userType')?.value);
+  }
+
+  get isRescue(): boolean {
+    return this.registerForm?.get('userType')?.value === UserRole.RESCUE;
   }
 
   private setupUserTypeListener(): void {
@@ -151,12 +171,39 @@ export class RegisterComponent implements OnInit, OnDestroy {
       firstNameControl?.clearValidators();
       firstNameControl?.setValue('');
       firstNameControl?.disable();
-      institutionNameControl?.setValidators([Validators.required, Validators.minLength(2)]);
-      institutionNameControl?.enable();
-      institutionTypeControl?.setValidators([Validators.required]);
-      institutionTypeControl?.enable();
-      institutionEmailHintControl?.setValidators([Validators.required]);
-      institutionEmailHintControl?.enable();
+
+      const isRcsc = userType === UserRole.RESCUE && this.registerForm.get('isRcsc')?.value;
+      if (isRcsc) {
+        // RCSC : rattachement automatique à la mairie de la commune déclarée (déjà collectée
+        // ci-dessous), pas de nom/type/email d'institution à saisir — ce n'est pas sa propre
+        // institution.
+        institutionNameControl?.clearValidators();
+        institutionNameControl?.setValue('');
+        institutionNameControl?.disable();
+        institutionTypeControl?.clearValidators();
+        institutionTypeControl?.setValue('');
+        institutionTypeControl?.disable();
+        institutionEmailHintControl?.clearValidators();
+        institutionEmailHintControl?.setValue('');
+        institutionEmailHintControl?.disable();
+      } else {
+        institutionNameControl?.setValidators([Validators.required, Validators.minLength(2)]);
+        institutionNameControl?.enable();
+        institutionEmailHintControl?.setValidators([Validators.required]);
+        institutionEmailHintControl?.enable();
+
+        const isAasc = userType === UserRole.RESCUE && this.registerForm.get('isAasc')?.value;
+        if (isAasc) {
+          // AASC : type forcé côté submit (voir onSubmit), le sélecteur générique ne
+          // s'applique pas à ce cas.
+          institutionTypeControl?.clearValidators();
+          institutionTypeControl?.setValue('');
+          institutionTypeControl?.disable();
+        } else {
+          institutionTypeControl?.setValidators([Validators.required]);
+          institutionTypeControl?.enable();
+        }
+      }
     }
 
     firstNameControl?.updateValueAndValidity();
@@ -250,6 +297,15 @@ export class RegisterComponent implements OnInit, OnDestroy {
     const postalCode = commune?.codesPostaux[0] || '';
     const requiresValidation = userType !== UserRole.SIMPLE_USER;
 
+    // AASC/RCSC : le type d'institution n'est plus choisi dans le sélecteur générique pour ce
+    // cas (voir toggleFieldsBasedOnUserType) mais déduit directement des cases cochées. RCSC
+    // n'a pas de nom propre à envoyer (rattachement automatique à la mairie de la commune,
+    // résolu côté serveur).
+    const effectiveInstitutionType = userType === UserRole.RESCUE && formValue.isAasc ? 'aasc'
+      : userType === UserRole.RESCUE && formValue.isRcsc ? 'rcsc'
+      : formValue.institutionType || '';
+    const effectiveInstitutionName = userType === UserRole.RESCUE && formValue.isRcsc ? '' : (formValue.institutionName || '');
+
     const registerData: any = {
       username: formValue.email,
       email: formValue.email,
@@ -263,8 +319,8 @@ export class RegisterComponent implements OnInit, OnDestroy {
     };
 
     if (formValue.userType !== UserRole.SIMPLE_USER) {
-      registerData.institution_name = formValue.institutionName || '';
-      registerData.institution_type = formValue.institutionType || '';
+      registerData.institution_name = effectiveInstitutionName;
+      registerData.institution_type = effectiveInstitutionType;
       registerData.institution_email_hint = formValue.institutionEmailHint || '';
       registerData.commune_name = commune?.name || '';
       registerData.commune_code = communeCode;
@@ -296,8 +352,8 @@ export class RegisterComponent implements OnInit, OnDestroy {
     if (formValue.userType !== UserRole.SIMPLE_USER) {
       this.authService.validateInstitution({
         email: formValue.email,
-        institution_name: formValue.institutionName || '',
-        institution_type: formValue.institutionType || '',
+        institution_name: effectiveInstitutionName,
+        institution_type: effectiveInstitutionType,
         commune_name: commune?.name || '',
         commune_code: communeCode
       }).pipe(takeUntil(this.destroy$)).subscribe({

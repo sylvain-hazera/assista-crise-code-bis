@@ -376,6 +376,7 @@ class InstitutionEmailValidator:
         normalized_type = (institution_type or "").strip().lower()
         return normalized_type in {
             "aasc",
+            "rcsc",
             "dfci",
             "ccff",
             "association",
@@ -470,10 +471,6 @@ class InstitutionEmailValidator:
                 "validation_mode": "annuaire",
             }
 
-        email_valid, email_message = InstitutionEmailValidator.validate_email_domain(email)
-        if not email_valid:
-            return False, email_message, {"email": email_message}
-
         normalized_type = (institution_type or "").strip().lower()
         normalized_commune = (commune_name or "").strip().lower()
         normalized_name = (institution_name or "").strip().lower()
@@ -488,6 +485,21 @@ class InstitutionEmailValidator:
                 "code": resolved_code or commune_code or "",
             },
         }
+
+        # Les types "accès limité" (aasc, association, entreprise...) n'ont par nature aucun
+        # domaine gouvernemental à faire correspondre (une association ou une AASC utilise un
+        # email associatif/personnel quelconque) — le check ci-dessous doit donc passer AVANT
+        # validate_email_domain, dont la whitelist est entièrement composée de motifs
+        # gouvernementaux (mairie/préfecture/gouv.fr/...). Avec l'ancien ordre, ces types étaient
+        # rejetés avant même d'atteindre ce bypass, censé justement les en dispenser — jamais
+        # remarqué car aucun d'eux n'était sélectionnable dans le formulaire d'inscription.
+        if InstitutionEmailValidator.requires_limited_access(normalized_type):
+            details["validation_mode"] = "limited"
+            return True, "Compte institutionnel enregistré avec accès limité", details
+
+        email_valid, email_message = InstitutionEmailValidator.validate_email_domain(email)
+        if not email_valid:
+            return False, email_message, {"email": email_message}
 
         selected_token = InstitutionEmailValidator.SPECIFIC_TYPE_DOMAIN_TOKENS.get(normalized_type)
         if selected_token:
@@ -562,9 +574,8 @@ class InstitutionEmailValidator:
 
             return True, "Validation institutionnelle valide", details
 
-        if InstitutionEmailValidator.requires_limited_access(normalized_type):
-            details["validation_mode"] = "limited"
-            return True, "Compte institutionnel enregistré avec accès limité", details
+        # requires_limited_access(normalized_type) est déjà traité plus haut, avant
+        # validate_email_domain — inatteignable ici pour ces types.
 
         if normalized_commune and "mairie" in email and normalized_commune not in email and normalized_commune not in normalized_name:
             return False, "La commune ne correspond pas au domaine email fourni.", details

@@ -223,7 +223,11 @@ class UserSerializer(serializers.ModelSerializer):
             validated_data['enabled'] = False
             validated_data['is_active'] = False
 
-        if user_type == UserRole.LOCAL_AUTHORITY:
+        # LOCAL_AUTHORITY : rattachement à l'activation du lien magique (voir
+        # AccountActivationView). ORGANIZED_RESCUE : pas de lien magique pour ce type (voir
+        # register()), le rattachement AASC/RCSC se fait plus tard, à l'approbation du compte
+        # (approve_account) — voir attach_secours_user_to_institution.
+        if user_type in {UserRole.LOCAL_AUTHORITY, UserRole.ORGANIZED_RESCUE}:
             validated_data['pending_institution_name'] = pending_institution_name
             validated_data['pending_institution_type'] = pending_institution_type
             validated_data['pending_commune_name'] = pending_commune_name
