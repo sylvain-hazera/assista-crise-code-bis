@@ -165,6 +165,17 @@
 .detail-row {
   margin-bottom: 1rem;
   line-height: 1.5;
+
+  select {
+    margin-left: .5rem;
+    padding: .35rem .5rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    font-size: .9rem;
+    background: #fff;
+
+    &:disabled { opacity: .6; cursor: wait; }
+  }
 }
 .commentaire-card {
   border: 1px solid #e2e8f0;

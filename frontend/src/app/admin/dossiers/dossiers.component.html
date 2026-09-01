@@ -115,12 +115,28 @@
 
       <div class="detail-row">
         <strong>Équipe :</strong>
-        {{ selectedDossier.equipe_nom || 'Non affectée' }}
+        <span *ngIf="selectedDossier.statut === 'CLOTURE'">{{ selectedDossier.equipe_nom || 'Non affectée' }}</span>
+        <ng-container *ngIf="selectedDossier.statut !== 'CLOTURE'">
+          <select
+            [ngModel]="selectedDossier.equipe"
+            (ngModelChange)="affecterEquipe($event)"
+            [disabled]="savingEquipe">
+            <option [ngValue]="null" disabled>— Aucune équipe —</option>
+            <option *ngFor="let t of teams" [ngValue]="t.id">{{ t.name }}</option>
+          </select>
+        </ng-container>
       </div>
 
       <div class="detail-row">
         <strong>Statut :</strong>
-        {{ selectedDossier.statut }}
+        <span *ngIf="selectedDossier.statut === 'CLOTURE' || selectedDossier.statut === 'RESOLU'">{{ statutLabel(selectedDossier.statut) }}</span>
+        <select
+          *ngIf="selectedDossier.statut !== 'CLOTURE' && selectedDossier.statut !== 'RESOLU'"
+          [ngModel]="selectedDossier.statut"
+          (ngModelChange)="changerStatut($event)"
+          [disabled]="savingStatut">
+          <option *ngFor="let opt of statutOptions" [value]="opt.value">{{ opt.label }}</option>
+        </select>
       </div>
 
       <div class="detail-row cloture-actions" *ngIf="selectedDossier.statut !== 'CLOTURE'">

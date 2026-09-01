@@ -655,6 +655,79 @@ class DossierViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
 
+    @action(detail=True, methods=["post"], url_path="affecter-equipe", permission_classes=[IsInstitutionalActor])
+    def affecter_equipe(self, request, pk=None):
+        """Affecte (ou réaffecte) une équipe à ce dossier directement depuis la vue régulateur.
+        Jusqu'ici, seule la création via assign_team/creer_dossier peuplait correctement
+        DossierParticipant et notifiait les régulateurs — un dossier déjà existant sans équipe
+        (ou à réaffecter) n'avait aucun chemin dédié, seulement le PATCH générique qui ne fait
+        ni l'un ni l'autre. Fait passer le statut à AFFECTE s'il n'était qu'en attente."""
+        dossier = self.get_object()
+        team_id = request.data.get('equipe')
+        if not team_id:
+            return Response({"error": "Équipe requise."}, status=status.HTTP_400_BAD_REQUEST)
+        team = get_object_or_404(Team, pk=team_id)
+
+        ancien_statut = dossier.statut
+        dossier.equipe = team
+        if dossier.statut in (
+            Dossier.Statut.NOUVEAU, Dossier.Statut.EN_ATTENTE_AFFECTATION,
+            Dossier.Statut.EN_ATTENTE_DISTRIBUTION,
+        ):
+            dossier.statut = Dossier.Statut.AFFECTE
+        dossier.save(update_fields=['equipe', 'statut'])
+
+        DossierHistorique.objects.create(
+            dossier=dossier, auteur=request.user,
+            evenement=f"Équipe affectée : {team.name}", environment=dossier.environment,
+        )
+        populate_dossier_participants_and_notify(
+            dossier, equipe=team,
+            notification_titre="Dossier affecté à votre équipe",
+            notification_message=f"Le dossier {dossier.numero} ({dossier.titre}) a été affecté à l'équipe {team.name}.",
+        )
+        audit_log(
+            request=request, action_code="MODIFICATION", objet_type="Dossier",
+            objet_id=dossier.id, crise=dossier.crise,
+            ancien_etat=ancien_statut, nouvel_etat=dossier.statut,
+            commentaire=f"Équipe affectée au dossier {dossier.numero} : {team.name}",
+        )
+        return Response(DossierSerializer(dossier, context=self.get_serializer_context()).data)
+
+    @action(detail=True, methods=["post"], url_path="definir-statut", permission_classes=[IsInstitutionalActor])
+    def definir_statut(self, request, pk=None):
+        """Change le statut du dossier directement depuis la vue régulateur, pour les statuts
+        intermédiaires (avant clôture). CLOTURE/RESOLU restent exclusivement gérés par
+        cloturer(), qui a sa propre garde plus stricte (régulateur du dossier ou responsable de
+        la crise, pas n'importe quel institutionnel) — jamais dupliquée ici."""
+        dossier = self.get_object()
+        nouveau_statut = request.data.get('statut')
+        statuts_autorises = (
+            Dossier.Statut.NOUVEAU, Dossier.Statut.EN_ATTENTE_DISTRIBUTION,
+            Dossier.Statut.EN_ATTENTE_AFFECTATION, Dossier.Statut.AFFECTE, Dossier.Statut.EN_COURS,
+        )
+        if nouveau_statut not in statuts_autorises:
+            return Response(
+                {"error": "Statut invalide pour cette action (utilisez plutôt cloturer pour clôturer/résoudre)."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        ancien_statut = dossier.statut
+        dossier.statut = nouveau_statut
+        dossier.save(update_fields=['statut'])
+
+        DossierHistorique.objects.create(
+            dossier=dossier, auteur=request.user,
+            evenement=f"Statut changé : {dossier.get_statut_display()}", environment=dossier.environment,
+        )
+        audit_log(
+            request=request, action_code="MODIFICATION", objet_type="Dossier",
+            objet_id=dossier.id, crise=dossier.crise,
+            ancien_etat=ancien_statut, nouvel_etat=nouveau_statut,
+            commentaire=f"Statut du dossier {dossier.numero} changé : {ancien_statut} → {nouveau_statut}",
+        )
+        return Response(DossierSerializer(dossier, context=self.get_serializer_context()).data)
+
     @action(detail=True, methods=["post"], permission_classes=[IsInstitutionalActor])
     def cloturer(self, request, pk=None):
         """Clôture un dossier (ou le marque résolu, via {"statut": "RESOLU"} dans le corps

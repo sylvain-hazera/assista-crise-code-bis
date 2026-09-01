@@ -51,5 +51,18 @@ export class DossierService {
   marquerImportant(id: string): Observable<Dossier> {
     return this.http.post<Dossier>(`${this.url}/${id}/marquer-important/`, {});
   }
+
+  /** POST /api/dossiers/<id>/affecter-equipe/ — affecte (ou réaffecte) une équipe directement
+   * depuis la vue régulateur, peuple les participants et notifie ses régulateurs. Réservé
+   * institutionnel. */
+  affecterEquipe(id: string, equipeId: string): Observable<Dossier> {
+    return this.http.post<Dossier>(`${this.url}/${id}/affecter-equipe/`, { equipe: equipeId });
+  }
+
+  /** POST /api/dossiers/<id>/definir-statut/ — statuts intermédiaires uniquement (avant
+   * affectation, en attente, affecté, en cours) ; utiliser cloturer() pour CLOTURE/RESOLU. */
+  definirStatut(id: string, statut: string): Observable<Dossier> {
+    return this.http.post<Dossier>(`${this.url}/${id}/definir-statut/`, { statut });
+  }
 }
 

@@ -6,8 +6,26 @@ import { DossierCommentaireService } from '../../services/dossier-commentaire.se
 import { DossierHistoriqueService } from '../../services/dossier-historique.service';
 import { AuthService } from '../../auth/services/auth.service';
 import { DocumentService } from '../../services/document.service';
+import { TeamService } from '../../services/team.service';
 import { Dossier } from '../../shared/models/dossier.model';
+import { Team } from '../../shared/models/team.model';
 import { UserRole } from '../../shared/models/user.model';
+
+// Même mapping que mes-interventions/dossier-suivi (vocabulaire terrain) — affichage
+// uniquement, les valeurs de statut en base sont inchangées.
+const STATUT_LABELS: Record<string, string> = {
+  EN_ATTENTE_DISTRIBUTION: 'En attente de distribution',
+  NOUVEAU: 'Pris en compte',
+  EN_ATTENTE_AFFECTATION: "En attente d'affectation",
+  AFFECTE: 'Affecté à une équipe',
+  EN_COURS: 'En cours',
+  RESOLU: 'En attente de clôture',
+  CLOTURE: 'Terminé',
+};
+
+// Statuts modifiables directement depuis cette vue (definir_statut) — CLOTURE/RESOLU
+// restent exclusivement gérés par cloturerDossier(), avec sa propre garde côté backend.
+const STATUTS_MODIFIABLES = ['NOUVEAU', 'EN_ATTENTE_DISTRIBUTION', 'EN_ATTENTE_AFFECTATION', 'AFFECTE', 'EN_COURS'];
 
 @Component({
   selector: 'app-dossiers',
@@ -19,11 +37,16 @@ import { UserRole } from '../../shared/models/user.model';
 export class DossiersComponent implements OnInit {
 
   dossiers: Dossier[] = [];
+  teams: Team[] = [];
 
   viewMode: 'ma_file' | 'tous' = 'tous';
   isRegulateur = false;
 
   selectedDossier: Dossier | null = null;
+  savingEquipe = false;
+  savingStatut = false;
+
+  readonly statutOptions = STATUTS_MODIFIABLES.map(value => ({ value, label: STATUT_LABELS[value] }));
 
   commentaires: any[] = [];
   historique: any[] = [];
@@ -37,6 +60,7 @@ export class DossiersComponent implements OnInit {
     private commentaireService: DossierCommentaireService,
     private historiqueService: DossierHistoriqueService,
     private documentService: DocumentService,
+    private teamService: TeamService,
     private authService: AuthService
   ) {}
 
@@ -44,6 +68,11 @@ export class DossiersComponent implements OnInit {
     this.isRegulateur = this.authService.getCurrentUser()?.type === UserRole.REGULATEUR;
     this.viewMode = this.isRegulateur ? 'ma_file' : 'tous';
     this.load();
+    this.teamService.getAll().subscribe(teams => this.teams = teams);
+  }
+
+  statutLabel(statut: string): string {
+    return STATUT_LABELS[statut] || statut;
   }
 
   setViewMode(mode: 'ma_file' | 'tous'): void {
@@ -218,6 +247,42 @@ export class DossiersComponent implements OnInit {
 
   closeDossier(): void {
     this.selectedDossier = null;
+  }
+
+  affecterEquipe(equipeId: string): void {
+    if (!this.selectedDossier || !equipeId || this.savingEquipe) {
+      return;
+    }
+    this.savingEquipe = true;
+    this.dossierService.affecterEquipe(this.selectedDossier.id, equipeId).subscribe({
+      next: (updated) => {
+        this.selectedDossier = updated;
+        this.savingEquipe = false;
+        this.load();
+      },
+      error: (err) => {
+        alert(err.error?.error || "Impossible d'affecter cette équipe.");
+        this.savingEquipe = false;
+      },
+    });
+  }
+
+  changerStatut(statut: string): void {
+    if (!this.selectedDossier || this.savingStatut) {
+      return;
+    }
+    this.savingStatut = true;
+    this.dossierService.definirStatut(this.selectedDossier.id, statut).subscribe({
+      next: (updated) => {
+        this.selectedDossier = updated;
+        this.savingStatut = false;
+        this.load();
+      },
+      error: (err) => {
+        alert(err.error?.error || 'Impossible de changer le statut.');
+        this.savingStatut = false;
+      },
+    });
   }
 
   cloturerDossier(statut: 'CLOTURE' | 'RESOLU'): void {
