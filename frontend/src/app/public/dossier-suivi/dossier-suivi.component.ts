@@ -9,6 +9,7 @@ import { DocumentService } from '../../services/document.service';
 import { Dossier } from '../../shared/models/dossier.model';
 import { DossierCommentaire } from '../../shared/models/dossier-commentaire.model';
 import { DossierDocument } from '../../shared/models/dossier-document.model';
+import { MinimapComponent } from '../../shared/components/common/minimap/minimap.component';
 
 const STATUT_LABELS: Record<string, string> = {
   EN_ATTENTE_DISTRIBUTION: 'En attente de prise en charge',
@@ -26,7 +27,7 @@ const VALID_PHOTO_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 
 @Component({
   selector: 'app-dossier-suivi',
   standalone: true,
-  imports: [CommonModule, FormsModule, DatePipe],
+  imports: [CommonModule, FormsModule, DatePipe, MinimapComponent],
   templateUrl: './dossier-suivi.component.html',
   styleUrls: ['./dossier-suivi.component.scss']
 })
@@ -44,6 +45,7 @@ export class DossierSuiviComponent implements OnInit, OnDestroy {
   uploadingPhoto = false;
   uploadError = '';
   markingImportant = false;
+  selectedPhoto: DossierDocument | null = null;
 
   private dossierId = '';
 
@@ -125,6 +127,21 @@ export class DossierSuiviComponent implements OnInit, OnDestroy {
         this.markingImportant = false;
       }
     });
+  }
+
+  openPhotoPreview(doc: DossierDocument): void {
+    this.selectedPhoto = doc;
+  }
+
+  closePhotoPreview(): void {
+    this.selectedPhoto = null;
+  }
+
+  /** Lien "itinéraire" vers Google Maps depuis la position actuelle du terrain jusqu'à la
+   * photo sélectionnée — même construction que mes-interventions.component.ts. */
+  mapsDirectionsUrl(doc: DossierDocument): string | null {
+    if (doc.latitude == null || doc.longitude == null) return null;
+    return `https://www.google.com/maps/dir/?api=1&destination=${doc.latitude},${doc.longitude}`;
   }
 
   addCommentaire(): void {

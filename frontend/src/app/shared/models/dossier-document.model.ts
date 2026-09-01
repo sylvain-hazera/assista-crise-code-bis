@@ -10,4 +10,7 @@ export interface DossierDocument {
   demande?: string | null;
   offre?: string | null;
   dossier?: string | null;
+  latitude?: number | null;   // GPS EXIF décimal, null si absent ou non visible pour ce viewer
+  longitude?: number | null;
+  azimuth?: number | null;    // 0-360°, direction de la prise de vue
 }

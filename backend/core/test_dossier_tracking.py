@@ -278,3 +278,145 @@ class TestDocumentPrivacySerializer:
         data = self._serialize(document, other)
 
         assert data['metadata_privees'] == {}
+
+    def test_metadata_privees_visible_to_dossier_coequipier(self, create_user, dossier_with_demandeur):
+        """Décision explicite : contrairement à une photo d'offre/demande, une photo rattachée
+        à un Dossier partage son GPS avec tout participant du dossier, pas seulement son
+        auteur — les coéquipiers en ont besoin pour la minimap de suivi terrain."""
+        dossier, demandeur = dossier_with_demandeur
+        auteur = create_user(username="doc-auteur5@test.fr", email="doc-auteur5@test.fr", type="UTIL_SIMPLE")
+        document = self._make_document(auteur, dossier=dossier)
+
+        data = self._serialize(document, demandeur)
+
+        assert data['metadata_privees'] == {"GPSLatitude": "48.0"}
+
+    def test_metadata_privees_still_hidden_for_non_participant_on_dossier_photo(self, create_user, dossier_with_demandeur):
+        dossier, _demandeur = dossier_with_demandeur
+        auteur = create_user(username="doc-auteur6@test.fr", email="doc-auteur6@test.fr", type="UTIL_SIMPLE")
+        unrelated = create_user(username="doc-unrelated6@test.fr", email="doc-unrelated6@test.fr", type="UTIL_SIMPLE")
+        document = self._make_document(auteur, dossier=dossier)
+
+        data = self._serialize(document, unrelated)
+
+        assert data['metadata_privees'] == {}
+
+
+@pytest.mark.django_db
+class TestDocumentGpsDecimalFields:
+
+    def _make_document_with_gps(self, auteur, dossier=None):
+        fichier = SimpleUploadedFile("photo.jpg", b"fake-bytes", content_type="image/jpeg")
+        return Document.objects.create(
+            fichier=fichier,
+            auteur=auteur,
+            dossier=dossier,
+            metadata_privees={
+                "GPSLatitude": "(48.0, 51.0, 24.0)",
+                "GPSLatitudeRef": "N",
+                "GPSLongitude": "(2.0, 21.0, 3.0)",
+                "GPSLongitudeRef": "E",
+                "GPSImgDirection": "90.5",
+            },
+        )
+
+    def _serialize(self, document, viewer):
+        class DummyRequest:
+            user = viewer
+            META = {}
+        return DocumentSerializer(document, context={'request': DummyRequest()}).data
+
+    def test_converts_dms_to_decimal_for_author(self, create_user):
+        auteur = create_user(username="doc-gps-auteur@test.fr", email="doc-gps-auteur@test.fr", type="UTIL_SIMPLE")
+        document = self._make_document_with_gps(auteur)
+
+        data = self._serialize(document, auteur)
+
+        assert data['latitude'] == pytest.approx(48.8567, abs=1e-3)
+        assert data['longitude'] == pytest.approx(2.3508, abs=1e-3)
+        assert data['azimuth'] == pytest.approx(90.5)
+
+    def test_negative_for_south_west_hemisphere(self, create_user):
+        auteur = create_user(username="doc-gps-sw@test.fr", email="doc-gps-sw@test.fr", type="UTIL_SIMPLE")
+        fichier = SimpleUploadedFile("photo.jpg", b"fake-bytes", content_type="image/jpeg")
+        document = Document.objects.create(
+            fichier=fichier, auteur=auteur,
+            metadata_privees={
+                "GPSLatitude": "(48.0, 51.0, 24.0)", "GPSLatitudeRef": "S",
+                "GPSLongitude": "(2.0, 21.0, 3.0)", "GPSLongitudeRef": "W",
+            },
+        )
+
+        data = self._serialize(document, auteur)
+
+        assert data['latitude'] < 0
+        assert data['longitude'] < 0
+
+    def test_hidden_when_metadata_not_visible(self, create_user):
+        auteur = create_user(username="doc-gps-hidden@test.fr", email="doc-gps-hidden@test.fr", type="UTIL_SIMPLE")
+        other = create_user(username="doc-gps-other@test.fr", email="doc-gps-other@test.fr", type="UTIL_SIMPLE")
+        document = self._make_document_with_gps(auteur)
+
+        data = self._serialize(document, other)
+
+        assert data['latitude'] is None
+        assert data['longitude'] is None
+        assert data['azimuth'] is None
+
+    def test_none_when_no_gps_data(self, create_user):
+        auteur = create_user(username="doc-gps-none@test.fr", email="doc-gps-none@test.fr", type="UTIL_SIMPLE")
+        fichier = SimpleUploadedFile("photo.jpg", b"fake-bytes", content_type="image/jpeg")
+        document = Document.objects.create(fichier=fichier, auteur=auteur)
+
+        data = self._serialize(document, auteur)
+
+        assert data['latitude'] is None
+        assert data['longitude'] is None
+        assert data['azimuth'] is None
+
+
+@pytest.mark.django_db
+class TestDossierRegulateurContact:
+
+    def test_regulateurs_included_and_masked_in_demo(self, create_user, crisis, team):
+        """Le viewer est un acteur institutionnel (accès garanti à dossier-detail) : on vérifie
+        ici uniquement le contenu du champ regulateurs et son masquage DEMO, pas qui peut voir
+        le dossier lui-même (couvert ailleurs par TestDossierAccessScoping)."""
+        from core.models import AffectationRoleOperationnel, Competence, Institution, InstitutionType, RoleOperationnel
+
+        competence = Competence.objects.create(nom="Competence dossier regulateur test")
+        dossier = Dossier.objects.create(
+            numero="DOS-REGUL-TEST", crise=crisis, equipe=team, competence=competence, titre="Titre", statut=Dossier.Statut.NOUVEAU,
+        )
+        role, _ = RoleOperationnel.objects.get_or_create(code="REGULATEUR", defaults={"libelle": "Régulateur"})
+        itype, _ = InstitutionType.objects.get_or_create(code="MAIRIE_REGUL_DOSSIER_TEST", defaults={"libelle": "Mairie"})
+        institution = Institution.objects.create(nom="Mairie régul dossier test", type=itype)
+        regulateur = create_user(
+            username="regul-contact@test.fr", email="regul-contact@test.fr", type="UTIL_SIMPLE",
+            phone_number="0611223344",
+        )
+        AffectationRoleOperationnel.objects.create(
+            utilisateur=regulateur, institution=institution, competence=competence, role=role, actif=True,
+        )
+        viewer = create_user(
+            username="admin-regul-dossier-test@test.fr", email="admin-regul-dossier-test@test.fr",
+            type="ADMIN", demo_role="ADMIN",
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=viewer)
+        response = client.get(reverse('dossier-detail', args=[dossier.id]))
+
+        assert response.status_code == status.HTTP_200_OK
+        regulateurs = response.data['regulateurs']
+        assert len(regulateurs) == 1
+        assert regulateurs[0]['email'] == "regul-contact@test.fr"
+        assert regulateurs[0]['telephone'] == "0611223344"
+
+        dossier.environment = "DEMO"
+        dossier.save(update_fields=['environment'])
+        client.credentials(HTTP_X_ENVIRONMENT="DEMO")
+        response = client.get(reverse('dossier-detail', args=[dossier.id]))
+        regulateurs = response.data['regulateurs']
+        assert regulateurs[0]['email'] != "regul-contact@test.fr"
+        assert regulateurs[0]['telephone'] != "0611223344"

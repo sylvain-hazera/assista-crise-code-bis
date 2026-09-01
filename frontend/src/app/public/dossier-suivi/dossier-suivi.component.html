@@ -45,6 +45,31 @@
         <strong>Équipe en charge :</strong> {{ dossier.equipe_nom }}
       </div>
 
+      @if (dossier.commune || dossier.latitude != null || (dossier.regulateurs?.length ?? 0) > 0) {
+        <div class="logistique-box">
+          <h3><span class="material-icons">info</span> Rappel logistique</h3>
+          @if (dossier.commune) {
+            <div class="logistique-row"><strong>Commune :</strong> {{ dossier.commune }}</div>
+          }
+          @if (dossier.latitude != null && dossier.longitude != null) {
+            <div class="logistique-row">
+              <strong>GPS :</strong> {{ dossier.latitude!.toFixed(5) }}, {{ dossier.longitude!.toFixed(5) }}
+              <a
+                [href]="'https://www.google.com/maps/dir/?api=1&destination=' + dossier.latitude + ',' + dossier.longitude"
+                target="_blank" rel="noopener" class="itineraire-link">
+                <span class="material-icons">directions</span> Itinéraire
+              </a>
+            </div>
+          }
+          @for (regulateur of dossier.regulateurs; track regulateur.id) {
+            <div class="logistique-row">
+              <strong>Régulateur :</strong> {{ regulateur.nom }}
+              <span class="contact-sub">{{ regulateur.email }}<span *ngIf="regulateur.telephone"> · {{ regulateur.telephone }}</span></span>
+            </div>
+          }
+        </div>
+      }
+
       <hr>
 
       <section class="photos-section">
@@ -55,9 +80,12 @@
         </p>
 
         <div class="photos-grid">
-          <div class="photo-card" *ngFor="let doc of documents">
+          <div class="photo-card" *ngFor="let doc of documents" (click)="previews[doc.id] && openPhotoPreview(doc)">
             @if (previews[doc.id]) {
               <img [src]="previews[doc.id]" alt="Photo du dossier">
+              @if (doc.latitude != null) {
+                <span class="gps-pin"><span class="material-icons">location_on</span></span>
+              }
             } @else {
               <div class="photo-placeholder">
                 <span class="material-icons">image</span>
@@ -130,4 +158,27 @@
     }
 
   </div>
+
+  @if (selectedPhoto) {
+    <div class="photo-lightbox" (click)="closePhotoPreview()">
+      <button type="button" class="lightbox-close" (click)="closePhotoPreview()">
+        <span class="material-icons">close</span>
+      </button>
+      <div class="lightbox-content" (click)="$event.stopPropagation()">
+        <img [src]="previews[selectedPhoto.id]" alt="Photo du dossier">
+        @if (selectedPhoto.latitude != null && selectedPhoto.longitude != null) {
+          <div class="lightbox-map">
+            <app-minimap
+              [latitude]="selectedPhoto.latitude"
+              [longitude]="selectedPhoto.longitude"
+              [azimuth]="selectedPhoto.azimuth ?? null">
+            </app-minimap>
+            <a [href]="mapsDirectionsUrl(selectedPhoto)" target="_blank" rel="noopener" class="itineraire-link">
+              <span class="material-icons">directions</span> Itinéraire vers cette photo
+            </a>
+          </div>
+        }
+      </div>
+    </div>
+  }
 </div>

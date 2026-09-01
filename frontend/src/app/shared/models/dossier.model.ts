@@ -46,4 +46,6 @@ export interface Dossier {
 
   important?: boolean;                  // lecture seule, voir DossierService.marquerImportant
   date_signalement_important?: string | null;
+
+  regulateurs?: { id: string; nom: string; email: string; telephone: string | null }[];
 }

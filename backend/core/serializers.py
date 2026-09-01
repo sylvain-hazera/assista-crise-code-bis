@@ -1,6 +1,7 @@
 
 import json
 import os
+import re
 from django.db.models import Sum
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
@@ -939,6 +940,31 @@ class MissionSerializer(serializers.ModelSerializer):
         return [e.name for e in obj.equipes.all()]
 
 
+def _regulateurs_pour_dossier(dossier, equipe=None):
+    """Duplique volontairement `views._regulateurs_pour_dossier` (même logique exacte) plutôt
+    que d'importer depuis views.py, qui importe déjà ce module — importer dans l'autre sens
+    créerait un cycle. Même patron déjà accepté ailleurs dans ce fichier pour de petites
+    fonctions de garde partagées."""
+    if dossier.competence:
+        return User.objects.filter(
+            affectations_roles__competence=dossier.competence,
+            affectations_roles__role__code="REGULATEUR",
+            affectations_roles__actif=True,
+        ).distinct()
+    if equipe:
+        member_ids = equipe.members.values_list('id', flat=True)
+        regulateur_affectations = AffectationRoleOperationnel.objects.filter(
+            utilisateur_id__in=member_ids, role__code="REGULATEUR", actif=True,
+        )
+        competence_ids = list(equipe.competences.values_list('id', flat=True))
+        if competence_ids:
+            regulateur_affectations = regulateur_affectations.filter(competence_id__in=competence_ids)
+        return User.objects.filter(
+            id__in=regulateur_affectations.values_list('utilisateur_id', flat=True)
+        ).distinct()
+    return User.objects.none()
+
+
 class DossierSerializer(serializers.ModelSerializer):
 
     crise_nom = serializers.CharField(
@@ -984,6 +1010,7 @@ class DossierSerializer(serializers.ModelSerializer):
     contact_telephone = serializers.SerializerMethodField()
     contact_email = serializers.SerializerMethodField()
     description_origine = serializers.SerializerMethodField()
+    regulateurs = serializers.SerializerMethodField()
 
     class Meta:
         model = Dossier
@@ -1052,6 +1079,24 @@ class DossierSerializer(serializers.ModelSerializer):
             return obj.information.email_information
         return None
 
+    def get_regulateurs(self, obj):
+        # Rappel logistique pour les intervenants terrain (voir dossier-suivi) : contrairement
+        # aux autres coordonnées ci-dessus, jamais exposées nulle part pour un Dossier avant ce
+        # correctif. get_queryset() de DossierViewSet garantit déjà que seul un participant du
+        # dossier (ou un institutionnel) peut lire CE dossier — pas de garde supplémentaire ici,
+        # seul le masquage DEMO ci-dessous s'applique (comme les autres contacts de ce
+        # serializer).
+        regulateurs = _regulateurs_pour_dossier(obj, obj.equipe)
+        return [
+            {
+                'id': str(r.id),
+                'nom': (f"{r.first_name} {r.last_name}".strip() or r.email),
+                'email': r.email,
+                'telephone': r.phone_number,
+            }
+            for r in regulateurs
+        ]
+
     def get_has_updates(self, obj):
 
         return (
@@ -1115,19 +1160,38 @@ class DossierSerializer(serializers.ModelSerializer):
         # Même politique que RequestSerializer/InformationSerializer : en zone DEMO, jamais de
         # vraie coordonnée de contact affichée, même à un compte institutionnel ou à un chef
         # d'équipe — sinon ce serializer contournerait le masquage déjà en place sur la
-        # demande/le signalement d'origine.
+        # demande/le signalement d'origine. Idem pour le contact régulateur (rappel logistique,
+        # voir get_regulateurs) : mêmes coordonnées personnelles, même garde.
         data = super().to_representation(instance)
         request = self.context.get('request')
         if request is not None and get_active_environment(request) == Environment.DEMO:
             data['contact_email'] = mask_email(data.get('contact_email'))
             data['contact_telephone'] = mask_phone(data.get('contact_telephone'))
+            for regulateur in data.get('regulateurs') or []:
+                regulateur['email'] = mask_email(regulateur.get('email'))
+                regulateur['telephone'] = mask_phone(regulateur.get('telephone'))
         return data
+
+def _gps_dms_to_decimal(dms_str, ref):
+    """Convertit un tag GPS EXIF degrés/minutes/secondes tel que stringifié par
+    extract_exif_metadata ("(deg, min, sec)", voir views.py) en degrés décimaux. None si le
+    format est illisible plutôt que de faire échouer tout le serializer pour une photo."""
+    match = re.match(r'\(([\d.]+),\s*([\d.]+),\s*([\d.]+)\)', dms_str or '')
+    if not match:
+        return None
+    degrees, minutes, seconds = (float(g) for g in match.groups())
+    decimal = degrees + minutes / 60 + seconds / 3600
+    return -decimal if ref in ('S', 'W') else decimal
+
 
 class DocumentSerializer(serializers.ModelSerializer):
 
     auteur_nom = serializers.SerializerMethodField()
     nom_fichier = serializers.SerializerMethodField()
     metadata_privees = serializers.SerializerMethodField()
+    latitude = serializers.SerializerMethodField()
+    longitude = serializers.SerializerMethodField()
+    azimuth = serializers.SerializerMethodField()
 
     class Meta:
         model = Document
@@ -1152,16 +1216,50 @@ class DocumentSerializer(serializers.ModelSerializer):
             return None
         return os.path.basename(obj.fichier.name)
 
-    def get_metadata_privees(self, obj):
-        # Métadonnées EXIF sensibles (GPS notamment) : réservées à l'auteur du document
-        # et aux acteurs institutionnels, jamais aux autres participants du dossier.
+    def _metadata_privees_visible(self, obj) -> bool:
+        # Métadonnées EXIF sensibles (GPS notamment) : réservées à l'auteur du document et aux
+        # acteurs institutionnels — SAUF pour une photo rattachée à un Dossier, où tout
+        # participant du dossier y a accès aussi (décision explicite : les coéquipiers d'un
+        # même dossier ont besoin de la localisation des photos les uns des autres pour la
+        # minimap de suivi terrain, voir dossier-suivi). Une photo d'offre/demande (obj.dossier
+        # absent) garde la restriction stricte d'origine.
         request = self.context.get('request')
         user = getattr(request, 'user', None)
         if not user or not user.is_authenticated:
-            return {}
+            return False
         if user.id == obj.auteur_id or effective_role_or_none(request) in INSTITUTIONAL_TYPES:
-            return obj.metadata_privees
-        return {}
+            return True
+        return bool(obj.dossier_id and obj.dossier.participants.filter(utilisateur=user).exists())
+
+    def get_metadata_privees(self, obj):
+        return obj.metadata_privees if self._metadata_privees_visible(obj) else {}
+
+    def get_latitude(self, obj):
+        if not self._metadata_privees_visible(obj):
+            return None
+        meta = obj.metadata_privees
+        lat = meta.get('GPSLatitude')
+        ref = meta.get('GPSLatitudeRef')
+        return _gps_dms_to_decimal(lat, ref) if lat and ref else None
+
+    def get_longitude(self, obj):
+        if not self._metadata_privees_visible(obj):
+            return None
+        meta = obj.metadata_privees
+        lon = meta.get('GPSLongitude')
+        ref = meta.get('GPSLongitudeRef')
+        return _gps_dms_to_decimal(lon, ref) if lon and ref else None
+
+    def get_azimuth(self, obj):
+        if not self._metadata_privees_visible(obj):
+            return None
+        direction = obj.metadata_privees.get('GPSImgDirection')
+        if direction is None:
+            return None
+        try:
+            return float(direction)
+        except ValueError:
+            return None
 
 class DossierCommentaireSerializer(serializers.ModelSerializer):
 
