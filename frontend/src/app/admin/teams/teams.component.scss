@@ -331,9 +331,15 @@ h3 { margin: 0; font-size: .9rem; font-weight: 700; display: flex; align-items: 
   &:hover { background: #f8fafc; }
   &.selected { background: color-mix(in srgb, var(--ac, #3b82f6) 8%, white); border-color: var(--ac, #3b82f6); }
 }
-.zone-codes-form { display: flex; flex-wrap: wrap; gap: .75rem; align-items: flex-end; margin-bottom: .5rem;
-  label { display: flex; flex-direction: column; gap: .25rem; font-size: .78rem; color: var(--muted); }
-  input { padding: .4rem .6rem; border-radius: 6px; border: 1.5px solid var(--border); font-size: .85rem; } }
+.chip-list { display: flex; flex-wrap: wrap; gap: .4rem; margin: .5rem 0; }
+.chip {
+  display: inline-flex; align-items: center; gap: .35rem; background: #eff6ff; color: #1d4ed8;
+  border-radius: 999px; padding: .3rem .7rem; font-size: .8rem;
+  &.chip-departement { background: #f0fdf4; color: #15803d; }
+  button { background: none; border: none; color: inherit; cursor: pointer; font-size: 1rem; line-height: 1; }
+}
+.chip-empty { font-size: .8rem; color: #9ca3af; }
+.secteur-add-row { display: flex; gap: .75rem; margin-top: .5rem; app-tag-search-input { flex: 1; } }
 
 .commune-minimap {
   margin-bottom: .75rem;

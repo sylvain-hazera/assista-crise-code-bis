@@ -17,6 +17,7 @@ export interface User {
   postal_code: string | null;
   photo: string | null;                 // URL relative (ex: /media/photos/xxx.jpg)
   type: UserRole;
+  institution_nom?: string | null;      // Nom de l'institution active de l'utilisateur (lecture seule)
   demo_role: UserRole | null;           // Rôle en zone de démonstration — null = pas d'accès démo
   enabled: boolean;
   is_active?: boolean;                  // false = compte désactivé (politique de désactivation), lecture seule

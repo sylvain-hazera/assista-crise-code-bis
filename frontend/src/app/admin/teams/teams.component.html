@@ -287,10 +287,11 @@
             </div>
           </div>
 
-          <!-- Recherche membres (scopée aux membres de l'institution de cette équipe) -->
+          <!-- Recherche membres (scopée aux membres de l'institution de l'équipe, de sa
+               déléguée, et des institutions déjà liées — voir loadCandidateMembers) -->
           <div class="member-search">
             <span class="material-icons">search</span>
-            <input type="text" placeholder="Filtrer les membres de l'institution…"
+            <input type="text" placeholder="Filtrer les membres proposés…"
               [(ngModel)]="memberSearchQuery" />
           </div>
 
@@ -338,7 +339,12 @@
                 </div>
                 <div class="up-info">
                   <span class="up-name">{{ u.first_name }} {{ u.last_name || u.username }}</span>
-                  <span class="up-role">{{ u.type }}</span>
+                  <span class="up-role">
+                    {{ u.type }}
+                    @if (u.institution_nom && u.institution_nom !== selectedTeam.institution_nom) {
+                      · {{ u.institution_nom }}
+                    }
+                  </span>
                   @if (isMember(u.id)) {
                     <span class="up-dispo" [class.dispo-none]="!memberAvailability(u.id).hasAny">
                       <span class="material-icons">event_available</span>
@@ -423,16 +429,39 @@
             </div>
           }
 
-          <div class="zone-codes-form">
-            <label>
-              Départements (codes séparés par des virgules)
-              <input type="text" [(ngModel)]="departementsInput" placeholder="38, 73"/>
-            </label>
-            <label>
-              Communes (codes INSEE séparés par des virgules)
-              <input type="text" [(ngModel)]="communesInput" placeholder="38185, 73065"/>
-            </label>
-            <button class="btn-secondary sm" (click)="saveZoneCodes()">Enregistrer</button>
+          <div class="chip-list">
+            @for (code of (selectedTeam.communes || []); track code) {
+              <span class="chip">
+                {{ communeNoms[code] || code }}
+                <button type="button" (click)="removeZoneCommune(code)">×</button>
+              </span>
+            }
+            @for (code of (selectedTeam.departements || []); track code) {
+              <span class="chip chip-departement">
+                {{ departementNoms[code] || code }}
+                <button type="button" (click)="removeZoneDepartement(code)">×</button>
+              </span>
+            }
+            @if (!selectedTeam.communes?.length && !selectedTeam.departements?.length) {
+              <span class="chip-empty">Aucun secteur ajouté.</span>
+            }
+          </div>
+
+          <div class="secteur-add-row">
+            <app-tag-search-input
+              placeholder="Ajouter une commune (nom, code postal ou code INSEE)…"
+              labelField="name"
+              [searchFn]="communeSearchFn"
+              emptyMessage="Aucune commune ne correspond."
+              (itemSelected)="addZoneCommune($event)">
+            </app-tag-search-input>
+            <app-tag-search-input
+              placeholder="Ajouter un département…"
+              labelField="name"
+              [searchFn]="departementSearchFn"
+              emptyMessage="Aucun département ne correspond."
+              (itemSelected)="addZoneDepartement($event)">
+            </app-tag-search-input>
           </div>
 
           <p class="section-hint">Zone précise (dessinée), optionnelle — la plus fine des trois niveaux :</p>

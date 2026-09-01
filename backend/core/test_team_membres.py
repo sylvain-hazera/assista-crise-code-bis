@@ -4,7 +4,10 @@ from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from core.models import ContactInstitution, Institution, InstitutionType, RoleOperationnel, Team, User
+from core.models import (
+    ContactInstitution, Crisis, ImplicationInstitution, Institution, InstitutionType,
+    RoleOperationnel, Team, User,
+)
 
 
 def _make_institution(**kwargs):
@@ -205,3 +208,166 @@ class TestInviterMembre:
         invited = User.objects.get(email='invite-via-delegation@test.fr')
         assert invited.institution_id == institution_b.id
         assert ContactInstitution.objects.filter(institution=institution_b, utilisateur=invited, actif=True).exists()
+
+
+@pytest.mark.django_db
+class TestPatchScopedToOwnTeam:
+    """Avant ce correctif, un PATCH générique sur une équipe n'était scopé par aucune
+    vérification d'appartenance — tout acteur institutionnel pouvait modifier une équipe
+    d'une institution tierce tant qu'il ne touchait pas le champ `institution` lui-même."""
+
+    def test_cannot_patch_another_institutions_team(self, create_user, institution_a, institution_b):
+        team_b = Team.objects.create(name='Équipe B', institution=institution_b)
+        mairie_a_user = create_user(username='patch-cross-a@test.fr', email='patch-cross-a@test.fr', type='AUT_LOCALE')
+        ContactInstitution.objects.create(institution=institution_a, utilisateur=mairie_a_user, actif=True)
+        client = APIClient()
+        client.force_authenticate(user=mairie_a_user)
+
+        response = client.patch(reverse('team-detail', args=[team_b.id]), {'color': '#000000'}, format='json')
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_own_institution_can_still_patch(self, mairie_client, team_a):
+        client, _ = mairie_client
+        response = client.patch(reverse('team-detail', args=[team_a.id]), {'color': '#123456'}, format='json')
+        assert response.status_code == status.HTTP_200_OK
+
+    def test_orphan_team_still_patchable_by_any_institutional_actor(self, create_user):
+        team = Team.objects.create(name='Équipe orpheline patch')
+        itype, _ = InstitutionType.objects.get_or_create(code='TEST_TYPE_MEMBRES', defaults={'libelle': 'Test'})
+        institution = Institution.objects.create(nom='Mairie orpheline patch', type=itype)
+        user = create_user(username='patch-orphan@test.fr', email='patch-orphan@test.fr', type='AUT_LOCALE')
+        ContactInstitution.objects.create(institution=institution, utilisateur=user, actif=True)
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        response = client.patch(reverse('team-detail', args=[team.id]), {'color': '#abcdef'}, format='json')
+
+        assert response.status_code == status.HTTP_200_OK
+
+    def test_admin_can_patch_any_team(self, create_user, institution_b):
+        team_b = Team.objects.create(name='Équipe B admin patch', institution=institution_b)
+        admin = create_user(username='admin-patch-cross@test.fr', email='admin-patch-cross@test.fr', type='ADMIN')
+        client = APIClient()
+        client.force_authenticate(user=admin)
+
+        response = client.patch(reverse('team-detail', args=[team_b.id]), {'color': '#ffffff'}, format='json')
+
+        assert response.status_code == status.HTTP_200_OK
+
+
+@pytest.mark.django_db
+class TestMembreInstitutionLiee:
+    """Ajout d'un membre appartenant à une institution tierce, restreint aux institutions
+    "déjà liées" à celle de l'équipe : sa délégataire, ou une institution co-impliquée avec
+    elle sur une même crise (voir _institutions_liees)."""
+
+    def test_cannot_add_member_from_unrelated_institution(self, mairie_client, team_a, institution_b, create_user):
+        client, _ = mairie_client
+        outsider = create_user(username='outsider-membre@test.fr', email='outsider-membre@test.fr', type='UTIL_SIMPLE')
+        ContactInstitution.objects.create(institution=institution_b, utilisateur=outsider, actif=True)
+
+        response = client.patch(reverse('team-detail', args=[team_a.id]), {'member_ids': [str(outsider.id)]}, format='json')
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert not team_a.members.filter(id=outsider.id).exists()
+
+    def test_can_add_member_from_delegated_institution(self, mairie_client, team_a, institution_b, create_user):
+        team_a.institution_delegataire = institution_b
+        team_a.save(update_fields=['institution_delegataire'])
+        client, _ = mairie_client
+        deleg_member = create_user(username='deleg-membre@test.fr', email='deleg-membre@test.fr', type='UTIL_SIMPLE')
+        ContactInstitution.objects.create(institution=institution_b, utilisateur=deleg_member, actif=True)
+
+        response = client.patch(reverse('team-detail', args=[team_a.id]), {'member_ids': [str(deleg_member.id)]}, format='json')
+
+        assert response.status_code == status.HTTP_200_OK
+        assert team_a.members.filter(id=deleg_member.id).exists()
+
+    def test_can_add_member_from_institution_co_implicated_on_same_crisis(self, mairie_client, team_a, institution_a, institution_b, create_user):
+        crisis = Crisis.objects.create(name='Crise liée test', type='INCENDIE', location='POINT (5.72 45.18)')
+        ImplicationInstitution.objects.create(crise=crisis, institution=institution_a, type_implication='ACTEUR')
+        ImplicationInstitution.objects.create(crise=crisis, institution=institution_b, type_implication='IMPLIQUE')
+        client, _ = mairie_client
+        liee_member = create_user(username='liee-membre@test.fr', email='liee-membre@test.fr', type='UTIL_SIMPLE')
+        ContactInstitution.objects.create(institution=institution_b, utilisateur=liee_member, actif=True)
+
+        response = client.patch(reverse('team-detail', args=[team_a.id]), {'member_ids': [str(liee_member.id)]}, format='json')
+
+        assert response.status_code == status.HTTP_200_OK
+        assert team_a.members.filter(id=liee_member.id).exists()
+
+    def test_admin_can_add_member_from_any_institution(self, create_user, team_a, institution_b):
+        admin = create_user(username='admin-add-cross@test.fr', email='admin-add-cross@test.fr', type='ADMIN')
+        outsider = create_user(username='outsider-admin-add@test.fr', email='outsider-admin-add@test.fr', type='UTIL_SIMPLE')
+        ContactInstitution.objects.create(institution=institution_b, utilisateur=outsider, actif=True)
+        client = APIClient()
+        client.force_authenticate(user=admin)
+
+        response = client.patch(reverse('team-detail', args=[team_a.id]), {'member_ids': [str(outsider.id)]}, format='json')
+
+        assert response.status_code == status.HTTP_200_OK
+        assert team_a.members.filter(id=outsider.id).exists()
+
+    def test_can_add_member_with_no_institution_at_all(self, mairie_client, team_a, create_user):
+        # Cas normal : un bénévole ordinaire, sans aucun ContactInstitution (ex: l'auteur d'une
+        # offre rattaché automatiquement à une équipe depuis ReportingComponent) — ne doit
+        # jamais être bloqué par cette validation, seule une affiliation à une institution
+        # TIERCE l'est.
+        client, _ = mairie_client
+        volontaire = create_user(username='volontaire-sans-institution@test.fr', email='volontaire-sans-institution@test.fr', type='UTIL_SIMPLE')
+
+        response = client.patch(reverse('team-detail', args=[team_a.id]), {'member_ids': [str(volontaire.id)]}, format='json')
+
+        assert response.status_code == status.HTTP_200_OK
+        assert team_a.members.filter(id=volontaire.id).exists()
+
+    def test_removing_a_member_is_unaffected_by_this_validation(self, mairie_client, team_a, create_user):
+        member = create_user(username='removable-membre@test.fr', email='removable-membre@test.fr', type='UTIL_SIMPLE')
+        team_a.members.add(member)
+        client, _ = mairie_client
+
+        response = client.patch(reverse('team-detail', args=[team_a.id]), {'member_ids': []}, format='json')
+
+        assert response.status_code == status.HTTP_200_OK
+        assert not team_a.members.filter(id=member.id).exists()
+
+
+@pytest.mark.django_db
+class TestInstitutionsLiees:
+
+    def test_lists_delegataire_and_co_implicated_institutions(self, mairie_client, team_a, institution_a, institution_b):
+        team_c_institution = _make_institution(nom='Mairie C liée')
+        crisis = Crisis.objects.create(name='Crise institutions liées', type='INCENDIE', location='POINT (5.72 45.18)')
+        ImplicationInstitution.objects.create(crise=crisis, institution=institution_a, type_implication='ACTEUR')
+        ImplicationInstitution.objects.create(crise=crisis, institution=team_c_institution, type_implication='IMPLIQUE')
+        team_a.institution_delegataire = institution_b
+        team_a.save(update_fields=['institution_delegataire'])
+        client, _ = mairie_client
+
+        response = client.get(reverse('team-institutions-liees', args=[team_a.id]))
+
+        assert response.status_code == status.HTTP_200_OK
+        noms = {i['nom'] for i in response.data}
+        assert noms == {institution_b.nom, team_c_institution.nom}
+
+    def test_empty_for_team_without_institution(self, create_user):
+        team = Team.objects.create(name='Équipe orpheline liées')
+        admin = create_user(username='admin-liees-orph@test.fr', email='admin-liees-orph@test.fr', type='ADMIN')
+        client = APIClient()
+        client.force_authenticate(user=admin)
+
+        response = client.get(reverse('team-institutions-liees', args=[team.id]))
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data == []
+
+    def test_forbidden_for_unrelated_institutional_actor(self, create_user, team_a, institution_b):
+        outsider = create_user(username='outsider-liees@test.fr', email='outsider-liees@test.fr', type='AUT_LOCALE')
+        ContactInstitution.objects.create(institution=institution_b, utilisateur=outsider, actif=True)
+        client = APIClient()
+        client.force_authenticate(user=outsider)
+
+        response = client.get(reverse('team-institutions-liees', args=[team_a.id]))
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN

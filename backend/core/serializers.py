@@ -135,12 +135,18 @@ class UserSerializer(serializers.ModelSerializer):
     commune_name = serializers.CharField(write_only=True, required=False, allow_blank=True)
     commune_code = serializers.CharField(write_only=True, required=False, allow_blank=True)
     institution_email_hint = serializers.CharField(write_only=True, required=False, allow_blank=True)
-    
+    institution_nom = serializers.SerializerMethodField()
+
+    def get_institution_nom(self, obj):
+        contact = obj.institutions.filter(actif=True).select_related('institution').first()
+        return contact.institution.nom if contact else None
+
     class Meta:
         model = User
         fields = ['id', 'username', 'email', 'first_name', 'last_name', 'type', 'demo_role',
                   'photo', 'phone_number', 'password', 'postal_code', 'enabled', 'is_active',
-                  'institution_name', 'institution_type', 'commune_name', 'commune_code', 'institution_email_hint']
+                  'institution_name', 'institution_type', 'commune_name', 'commune_code', 'institution_email_hint',
+                  'institution_nom']
         extra_kwargs = {
             'password': {'write_only': True},
             'first_name': {'required': False},

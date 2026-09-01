@@ -117,6 +117,19 @@ export class LocationService {
     ).pipe(map(toCommunes));
   }
 
+  /** Nom d'une commune depuis son seul code INSEE — plus léger que getCommuneContour quand on
+   * n'a pas besoin du contour (ex: affichage d'un code déjà enregistré, voir TeamsComponent). */
+  getCommuneName(code: string): Observable<{ code: string; name: string }> {
+    return this.http.get<any>(`${this.API_GEO}/communes/${code}?fields=nom,code`)
+      .pipe(map(c => ({ code: c.code, name: c.nom })));
+  }
+
+  /** Nom d'un département depuis son seul code, même usage que getCommuneName. */
+  getDepartementName(code: string): Observable<{ code: string; name: string }> {
+    return this.http.get<any>(`${this.API_GEO}/departements/${code}?fields=nom,code`)
+      .pipe(map(d => ({ code: d.code, name: d.nom })));
+  }
+
   /** Contour officiel (Polygon ou MultiPolygon) d'une commune, pour bufferiser/unioner
    * côté frontend (composition de la zone de crise). */
   getCommuneContour(code: string): Observable<GeoContour> {

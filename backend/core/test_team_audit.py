@@ -85,9 +85,10 @@ class TestAuditLogViewSet:
 @pytest.mark.django_db
 class TestMemberChangesAudited:
 
-    def test_adding_member_creates_audit_entry(self, mairie_client, team_a, create_user):
+    def test_adding_member_creates_audit_entry(self, mairie_client, team_a, institution_a, create_user):
         client, _ = mairie_client
         nouveau = create_user(username='nouveau-membre@test.fr', email='nouveau-membre@test.fr', type='UTIL_SIMPLE')
+        ContactInstitution.objects.create(institution=institution_a, utilisateur=nouveau, actif=True)
 
         response = client.patch(reverse('team-detail', args=[team_a.id]), {'member_ids': [str(nouveau.id)]}, format='json')
         assert response.status_code == status.HTTP_200_OK

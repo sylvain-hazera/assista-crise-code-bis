@@ -2577,6 +2577,17 @@ def _appartient_a_equipe(request, team) -> bool:
     )
 
 
+def _institutions_liees(institution):
+    """Institutions considérées comme "déjà liées" à `institution` : celles co-impliquées avec
+    elle sur au moins une même crise (ImplicationInstitution), au sens le plus large (peu
+    importe le type d'implication ou si elle est encore active) — le périmètre retenu pour
+    autoriser le recrutement, dans une équipe, d'un membre appartenant à une institution tierce
+    (voir TeamViewSet.perform_update/institutions_liees), en plus de l'institution délégataire
+    qui l'est déjà par ailleurs."""
+    crise_ids = ImplicationInstitution.objects.filter(institution=institution).values_list('crise_id', flat=True)
+    return Institution.objects.filter(implications_crises__crise_id__in=crise_ids).exclude(pk=institution.pk).distinct()
+
+
 class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     queryset           = Team.objects.prefetch_related(
         'members', 'assigned_crises', 'assigned_offers', 'assigned_requests', 'sous_equipes'
@@ -2597,7 +2608,7 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             'definir_delegation', 'retirer_delegation', 'creer_dossier',
             'lier_point', 'delier_point',
             'rattacher_equipe', 'detacher_equipe',
-            'definir_statut_ressource', 'reactiver', 'vue_mairie',
+            'definir_statut_ressource', 'reactiver', 'vue_mairie', 'institutions_liees',
         ):
             return [IsInstitutionalActor()]
         return [permissions.IsAuthenticated()]
@@ -2668,11 +2679,23 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         )
 
     def perform_update(self, serializer):
+        # Un PATCH générique n'était jusqu'ici scopé par AUCUNE vérification d'appartenance :
+        # tout acteur institutionnel de la plateforme (n'importe quelle institution) pouvait
+        # modifier N'IMPORTE QUELLE équipe tierce (membres, chef, régulateur, couleur...) tant
+        # qu'il ne touchait pas le champ `institution` lui-même (seul champ déjà gardé, voir
+        # plus bas). Une équipe encore sans institution (cas normal, voir perform_create) reste
+        # ouverte à tout acteur institutionnel, comme avant ce correctif.
+        instance = serializer.instance
+        if instance.institution_id and not _appartient_a_equipe(self.request, instance):
+            raise PermissionDenied(
+                "Vous ne pouvez modifier que les équipes de votre institution (ou de l'institution déléguée)."
+            )
+
         # Changer l'institution responsable est une décision structurante : réservée à
         # l'institution ACTUELLE de l'équipe (jamais à la déléguée, ni à une institution tierce)
         # — avant ce correctif, n'importe quel acteur institutionnel pouvait réaffecter
         # n'importe quelle équipe via un PATCH générique, sans contrôle ni trace.
-        previous_institution = serializer.instance.institution
+        previous_institution = instance.institution
         new_institution = serializer.validated_data.get('institution', previous_institution)
         institution_changed = new_institution != previous_institution
         if institution_changed and not _appartient_a_institution(self.request, previous_institution):
@@ -2680,10 +2703,40 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
                 "Seule l'institution responsable actuelle peut changer l'institution de l'équipe."
             )
 
+        # Un membre ajouté qui appartient DÉJÀ à une institution tierce (via ContactInstitution)
+        # doit que celle-ci soit "autorisée" pour cette équipe : la sienne, sa déléguée, ou une
+        # institution co-impliquée avec elle sur une même crise (voir _institutions_liees/
+        # institutions_liees) — jusqu'ici seul le frontend restreignait le sélecteur de
+        # candidats, rien ne l'empêchait côté serveur (member_ids n'était pas validé). Un membre
+        # SANS AUCUNE institution (bénévole ordinaire, cas normal — la plupart des membres
+        # d'équipe, ex: l'auteur d'une offre rattaché automatiquement depuis ReportingComponent)
+        # reste toujours ajoutable : seule l'affiliation à une institution tierce est bloquée.
+        # Un admin plateforme n'est pas concerné par cette limite.
+        previous_member_ids = set(instance.members.values_list('id', flat=True))
+        if 'members' in serializer.validated_data and instance.institution_id and get_effective_role(self.request) != UserRole.ADMINISTRATOR:
+            added_ids = {u.id for u in serializer.validated_data['members']} - previous_member_ids
+            if added_ids:
+                allowed_institution_ids = {instance.institution_id}
+                if instance.institution_delegataire_id:
+                    allowed_institution_ids.add(instance.institution_delegataire_id)
+                allowed_institution_ids.update(
+                    _institutions_liees(instance.institution).values_list('id', flat=True)
+                )
+                disallowed_ids = set(
+                    ContactInstitution.objects.filter(utilisateur_id__in=added_ids, actif=True)
+                    .exclude(institution_id__in=allowed_institution_ids)
+                    .values_list('utilisateur_id', flat=True)
+                )
+                if disallowed_ids:
+                    raise ValidationError({
+                        "member_ids": "Certains membres ajoutés appartiennent à une institution tierce "
+                        "non autorisée pour cette équipe (ni la sienne, ni sa déléguée, ni une "
+                        "institution co-impliquée sur une même crise)."
+                    })
+
         # Ne notifier que les membres réellement NOUVEAUX (jamais ceux déjà présents avant
         # cette modification, pour ne pas ré-envoyer le mail à chaque édition de l'équipe qui
         # ne touche pas member_ids, ex: changement de couleur ou de zone).
-        previous_member_ids = set(serializer.instance.members.values_list('id', flat=True))
         team = serializer.save()
 
         if institution_changed:
@@ -2737,6 +2790,23 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             Q(members=request.user) | Q(leader=request.user) | Q(regulateur=request.user)
         ).distinct()
         return Response(self.get_serializer(equipes, many=True).data)
+
+    @action(detail=True, methods=['get'], url_path='institutions-liees')
+    def institutions_liees(self, request, pk=None):
+        """Institutions "déjà liées" à celle de cette équipe (voir _institutions_liees) : sa
+        délégataire, et toute institution co-impliquée avec elle sur une même crise — le
+        périmètre dans lequel le frontend va chercher des candidats à ajouter comme membre
+        externe (voir teams.component.ts, loadCandidateMembers). Réservé aux gestionnaires de
+        cette équipe : ne pas révéler ce rattachement à un tiers sans lien avec elle."""
+        team = self.get_object()
+        if team.institution_id and not _appartient_a_equipe(request, team) and get_effective_role(request) != UserRole.ADMINISTRATOR:
+            raise PermissionDenied("Réservé aux gestionnaires de cette équipe.")
+        if not team.institution_id:
+            return Response([])
+        institutions = list(_institutions_liees(team.institution))
+        if team.institution_delegataire_id and team.institution_delegataire not in institutions:
+            institutions.append(team.institution_delegataire)
+        return Response([{"id": str(i.id), "nom": i.nom} for i in institutions])
 
     @action(detail=True, methods=['post'], url_path='inviter-membre')
     def inviter_membre(self, request, pk=None):

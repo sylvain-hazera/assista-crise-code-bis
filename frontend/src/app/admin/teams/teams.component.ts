@@ -2,11 +2,13 @@ import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule, ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import { forkJoin } from 'rxjs';
+import { forkJoin, of, map } from 'rxjs';
+import { catchError } from 'rxjs/operators';
 
 import { TeamService }       from '../../services/team.service';
 import { UserService }       from '../../services/user.service';
 import { InstitutionService } from '../../services/institution.service';
+import { LocationService, Commune, Department } from '../../services/location.service';
 import { CrisisService }     from '../../services/crisis.service';
 import { OfferService }      from '../../services/offer.service';
 import { RequestService }    from '../../services/request.service';
@@ -97,6 +99,7 @@ export class TeamsComponent implements OnInit {
     private teamService: TeamService,
     private userService: UserService,
     private institutionService: InstitutionService,
+    private locationService: LocationService,
     private crisisService:  CrisisService,
     private offerService:   OfferService,
     private requestService: RequestService,
@@ -259,8 +262,9 @@ export class TeamsComponent implements OnInit {
   // ── DETAIL ────────────────────────────────────────────────────
   openDetail(team: Team): void {
     this.selectedTeam = team;
-    this.departementsInput = (team.departements ?? []).join(', ');
-    this.communesInput = (team.communes ?? []).join(', ');
+    this.communeNoms = {};
+    this.departementNoms = {};
+    this.loadZoneCodeLabels(team);
     this.pendingZoneWkt = team.zone_precise ?? null;
     this.modal = 'detail';
     this.showInviteForm = false;
@@ -317,19 +321,25 @@ export class TeamsComponent implements OnInit {
   }
 
   /** Ne propose comme candidats à l'ajout QUE les membres de l'institution responsable de
-   * cette équipe ET, le cas échéant, de son institution délégataire — avant ce correctif, tous
-   * les comptes de la plateforme (admins, secours, particuliers sans lien avec cette mairie...)
-   * apparaissaient dans le sélecteur. Vide si l'équipe n'a aucune institution (rien de
-   * pertinent à proposer). */
+   * cette équipe, de son institution délégataire, et des institutions "déjà liées" (co-
+   * impliquées sur une même crise, voir TeamViewSet.institutions_liees) — avant le premier
+   * correctif de cette liste, tous les comptes de la plateforme (admins, secours, particuliers
+   * sans lien avec cette mairie...) apparaissaient dans le sélecteur. Vide si l'équipe n'a
+   * aucune institution (rien de pertinent à proposer). */
   private loadCandidateMembers(team: Team): void {
-    const institutionIds = [team.institution, team.institution_delegataire].filter((id): id is string => !!id);
-    if (institutionIds.length === 0) {
+    const ownInstitutionIds = [team.institution, team.institution_delegataire].filter((id): id is string => !!id);
+    if (ownInstitutionIds.length === 0 || !team.id) {
       this.candidateMembers = [];
       return;
     }
-    this.userService.getAll({ institution: institutionIds }).subscribe({
-      next: (users) => this.candidateMembers = users,
-      error: () => this.candidateMembers = [],
+    this.teamService.institutionsLiees(team.id).pipe(
+      catchError(() => of([] as { id: string; nom: string }[])),
+    ).subscribe(liees => {
+      const institutionIds = [...new Set([...ownInstitutionIds, ...liees.map(i => i.id)])];
+      this.userService.getAll({ institution: institutionIds }).subscribe({
+        next: (users) => this.candidateMembers = users,
+        error: () => this.candidateMembers = [],
+      });
     });
   }
 
@@ -382,23 +392,64 @@ export class TeamsComponent implements OnInit {
   }
 
   // ── ZONE D'INTERVENTION ─────────────────────────────────────────
-  departementsInput = '';
-  communesInput = '';
+  communeNoms: Record<string, string> = {};
+  departementNoms: Record<string, string> = {};
   pendingZoneWkt: string | null = null;
+  communeSearchFn = (q: string) => this.locationService.searchCommunesByName(q);
+  departementSearchFn = (q: string) => {
+    const query = q.trim().toLowerCase();
+    return this.locationService.getDepartments().pipe(
+      map(deps => deps.filter(d => d.name.toLowerCase().includes(query) || d.code === query).slice(0, 10)),
+    );
+  };
 
-  private parseCodeList(raw: string): string[] {
-    return raw.split(',').map(s => s.trim()).filter(Boolean);
+  /** Résout les noms des départements/communes déjà enregistrés sur l'équipe, pour l'affichage
+   * des chips (le backend ne stocke que des codes) — même patron que CrisesComponent. N'écrit
+   * rien : appelé à l'ouverture du détail, avant toute modification par l'utilisateur. */
+  private loadZoneCodeLabels(team: Team): void {
+    (team.communes ?? []).forEach(code => {
+      this.locationService.getCommuneName(code).subscribe(c => this.communeNoms[c.code] = c.name);
+    });
+    (team.departements ?? []).forEach(code => {
+      this.locationService.getDepartementName(code).subscribe(d => this.departementNoms[d.code] = d.name);
+    });
   }
 
-  saveZoneCodes(): void {
-    if (!this.selectedTeam?.id) return;
-    this.teamService.patch(this.selectedTeam.id, {
-      departements: this.parseCodeList(this.departementsInput),
-      communes: this.parseCodeList(this.communesInput),
-    }).subscribe(updated => {
+  addZoneCommune(commune: Commune): void {
+    const team = this.selectedTeam;
+    if (!team?.id || (team.communes ?? []).includes(commune.code)) return;
+    this.communeNoms[commune.code] = commune.name;
+    this.teamService.patch(team.id, { communes: [...(team.communes ?? []), commune.code] }).subscribe(updated => {
       this.selectedTeam = { ...updated, missions: this.selectedTeam!.missions };
       this.reloadTeams();
-      this.showSuccess('Zone (départements/communes) enregistrée.');
+    });
+  }
+
+  removeZoneCommune(code: string): void {
+    const team = this.selectedTeam;
+    if (!team?.id) return;
+    this.teamService.patch(team.id, { communes: (team.communes ?? []).filter(c => c !== code) }).subscribe(updated => {
+      this.selectedTeam = { ...updated, missions: this.selectedTeam!.missions };
+      this.reloadTeams();
+    });
+  }
+
+  addZoneDepartement(dept: Department): void {
+    const team = this.selectedTeam;
+    if (!team?.id || (team.departements ?? []).includes(dept.code)) return;
+    this.departementNoms[dept.code] = dept.name;
+    this.teamService.patch(team.id, { departements: [...(team.departements ?? []), dept.code] }).subscribe(updated => {
+      this.selectedTeam = { ...updated, missions: this.selectedTeam!.missions };
+      this.reloadTeams();
+    });
+  }
+
+  removeZoneDepartement(code: string): void {
+    const team = this.selectedTeam;
+    if (!team?.id) return;
+    this.teamService.patch(team.id, { departements: (team.departements ?? []).filter(c => c !== code) }).subscribe(updated => {
+      this.selectedTeam = { ...updated, missions: this.selectedTeam!.missions };
+      this.reloadTeams();
     });
   }
 

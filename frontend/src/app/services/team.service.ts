@@ -79,4 +79,11 @@ export class TeamService {
   detacherEquipe(parentId: string, equipeId: string): Observable<Team> {
     return this.http.post<Team>(`${this.url}/${parentId}/detacher-equipe/`, { equipe_id: equipeId });
   }
+
+  /** GET /api/teams/<id>/institutions-liees/ — institution délégataire + institutions
+   * co-impliquées sur une même crise, utilisées pour élargir la recherche de membre à recruter
+   * au-delà de la seule institution de l'équipe (voir teams.component.ts, loadCandidateMembers). */
+  institutionsLiees(id: string): Observable<{ id: string; nom: string }[]> {
+    return this.http.get<{ id: string; nom: string }[]>(`${this.url}/${id}/institutions-liees/`);
+  }
 }
