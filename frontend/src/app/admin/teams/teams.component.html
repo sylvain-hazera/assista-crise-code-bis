@@ -412,6 +412,17 @@
             <span class="section-hint">Du plus large au plus précis</span>
           </div>
 
+          @if (selectedTeam.commune_centre?.latitude != null) {
+            <div class="commune-minimap">
+              <app-minimap
+                [latitude]="selectedTeam.commune_centre!.latitude!"
+                [longitude]="selectedTeam.commune_centre!.longitude!"
+                [zoom]="11">
+              </app-minimap>
+              <p class="section-hint">Centrée sur la commune de l'institution — pas la zone d'intervention précise.</p>
+            </div>
+          }
+
           <div class="zone-codes-form">
             <label>
               Départements (codes séparés par des virgules)
@@ -603,6 +614,16 @@
                     {{ missionContact(m) }} · {{ fmtDate(m.date) }}
                     @if (m.statut) { · {{ m.statut }} }
                   </span>
+                  @if (resourceCompetencesLabel(m) || resourceMaterielLabel(m)) {
+                    <span class="mission-meta resource-detail">
+                      @if (resourceCompetencesLabel(m)) {
+                        <span class="detail-chip"><span class="material-icons">school</span> {{ resourceCompetencesLabel(m) }}</span>
+                      }
+                      @if (resourceMaterielLabel(m)) {
+                        <span class="detail-chip"><span class="material-icons">construction</span> {{ resourceMaterielLabel(m) }}</span>
+                      }
+                    </span>
+                  }
                   @if (m.engagementStatutLibelle) {
                     <span class="engagement-badge" [class]="'engagement-' + (m.engagementStatut || '').toLowerCase()">
                       {{ m.engagementStatutLibelle }}

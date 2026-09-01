@@ -334,6 +334,12 @@ h3 { margin: 0; font-size: .9rem; font-weight: 700; display: flex; align-items: 
 .zone-codes-form { display: flex; flex-wrap: wrap; gap: .75rem; align-items: flex-end; margin-bottom: .5rem;
   label { display: flex; flex-direction: column; gap: .25rem; font-size: .78rem; color: var(--muted); }
   input { padding: .4rem .6rem; border-radius: 6px; border: 1.5px solid var(--border); font-size: .85rem; } }
+
+.commune-minimap {
+  margin-bottom: .75rem;
+  app-minimap { display: block; width: 100%; height: 180px; border-radius: 8px; overflow: hidden; }
+  .section-hint { margin-top: .35rem; }
+}
 .competence-chip-list { display: flex; flex-wrap: wrap; gap: .5rem; }
 .competence-chip {
   padding: .4rem .9rem; border-radius: 999px; border: 1.5px solid var(--border);
@@ -375,6 +381,16 @@ h3 { margin: 0; font-size: .9rem; font-weight: 700; display: flex; align-items: 
 }
 .mission-meta  { font-size: .75rem; color: var(--muted); }
 .no-missions   { font-size: .87rem; color: var(--muted); margin: 0; }
+
+.resource-detail {
+  display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .1rem;
+}
+.detail-chip {
+  display: inline-flex; align-items: center; gap: .2rem;
+  background: var(--border, #e2e8f0); color: var(--text);
+  padding: .05rem .45rem; border-radius: 999px; font-size: .72rem;
+  .material-icons { font-size: 13px; }
+}
 
 .mission-active-bar {
   display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;

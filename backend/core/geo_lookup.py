@@ -31,6 +31,29 @@ def commune_from_code(commune_code: str) -> str | None:
     return nom
 
 
+def commune_center_from_code(commune_code: str) -> dict:
+    """Centroïde d'une commune (lat/lon) résolu via geo.api.gouv.fr — sens inverse de
+    commune_code_from_point (point -> commune), utilisé pour centrer une minimap sur une
+    commune quand on n'a qu'un code INSEE et aucun point réel (ex: zone d'intervention d'une
+    équipe). Caché longtemps, comme commune_from_code : un centroïde de commune ne change pas."""
+    if not commune_code:
+        return {"latitude": None, "longitude": None}
+    cache_key = f"commune_centre:{commune_code}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+    url = f"https://geo.api.gouv.fr/communes/{urllib.parse.quote(commune_code)}?fields=centre"
+    data = _fetch_json(url)
+    result = {"latitude": None, "longitude": None}
+    if isinstance(data, dict):
+        centre = data.get("centre") or {}
+        coordinates = centre.get("coordinates")
+        if isinstance(coordinates, list) and len(coordinates) == 2:
+            result = {"latitude": coordinates[1], "longitude": coordinates[0]}
+    cache.set(cache_key, result, CACHE_TTL_SECONDS)
+    return result
+
+
 def _reverse_geocode_point(point) -> dict:
     """Reverse-géocode un point (lon/lat) via api-adresse.data.gouv.fr — même API que
     GeolocationService.reverseGeocode côté frontend (modal détail), déplacée côté serveur pour

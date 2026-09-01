@@ -6,7 +6,7 @@ from django.db.models import Sum
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from .auth_validation import InstitutionEmailValidator
-from .geo_lookup import commune_from_code, commune_from_point
+from .geo_lookup import commune_from_code, commune_from_point, commune_center_from_code
 from .permissions import INSTITUTIONAL_TYPES, get_active_environment, effective_role_or_none, mask_email, mask_phone
 from .models import (
     Environment,
@@ -796,6 +796,14 @@ class TeamSerializer(serializers.ModelSerializer):
     mission_active_crise_nom = serializers.CharField(source='mission_active.crise.name', read_only=True, default=None)
     equipe_parente_nom = serializers.CharField(source='equipe_parente.name', read_only=True, default=None)
     sous_equipes_info = serializers.SerializerMethodField()
+    commune_centre = serializers.SerializerMethodField()
+
+    def get_commune_centre(self, obj):
+        # Centre la minimap de la fiche équipe sur la commune de son institution — repli
+        # simple et toujours disponible, indépendant de la zone d'intervention précise
+        # (souvent non dessinée) — voir commune_center_from_code.
+        code = obj.institution.commune_code if obj.institution_id else None
+        return commune_center_from_code(code) if code else None
 
     class Meta:
         model  = Team
@@ -803,6 +811,7 @@ class TeamSerializer(serializers.ModelSerializer):
             'id', 'name', 'description', 'color', 'created_at', 'actif',
             'institution',
             'institution_nom',
+            'commune_centre',
             'institution_delegataire',
             'institution_delegataire_nom',
             'equipe_parente',

@@ -51,4 +51,5 @@ export interface Team {
   missions:             TeamMission[];      // calculé localement, non envoyé à l'API
   created_at?:          string;
   actif?:               boolean;           // false = désactivée (politique de désactivation)
+  commune_centre?:      { latitude: number | null; longitude: number | null } | null;
 }

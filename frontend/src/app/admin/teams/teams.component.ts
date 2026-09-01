@@ -19,6 +19,7 @@ import { DossierHistoriqueService } from '../../services/dossier-historique.serv
 import { PointOperationnelService } from '../../services/point-operationnel.service';
 import { PointTypeService } from '../../services/point-type.service';
 import { ZoneMapComponent } from '../../shared/components/common/zone-map/zone-map.component';
+import { MinimapComponent } from '../../shared/components/common/minimap/minimap.component';
 import { TagSearchInputComponent } from '../../shared/components/common/tag-search-input/tag-search-input.component';
 import { PointModalComponent } from '../crises/point-modal/point-modal.component';
 
@@ -42,7 +43,7 @@ const COLORS = ['#ef4444','#f97316','#eab308','#22c55e','#06b6d4','#3b82f6','#8b
 @Component({
   selector: 'app-teams',
   standalone: true,
-  imports: [CommonModule, FormsModule, ReactiveFormsModule, ZoneMapComponent, TagSearchInputComponent, PointModalComponent],
+  imports: [CommonModule, FormsModule, ReactiveFormsModule, ZoneMapComponent, MinimapComponent, TagSearchInputComponent, PointModalComponent],
   templateUrl: './teams.component.html',
   styleUrls: ['./teams.component.scss'],
 })
@@ -632,6 +633,34 @@ export class TeamsComponent implements OnInit {
       else seul++;
     }
     return { seul, avecMateriel, materielSeul };
+  }
+
+  // Même liste que propose-help-form.component.ts (materielTypeOptions) — dupliquée ici
+  // volontairement, comme le reste de ce fichier le fait déjà pour de petites tables de
+  // correspondance, plutôt que de créer un import partagé pour six libellés fixes.
+  private readonly MATERIEL_TYPE_LABELS: Record<string, string> = {
+    CUVE: 'Cuve', POMPE: 'Pompe', ETUVE: 'Étuve',
+    CHAMBRE_FROIDE: 'Chambre froide', REMORQUE: 'Remorque', AUTRE: 'Autre',
+  };
+
+  offerFor(m: TeamMission): Offer | undefined {
+    return this.offers.find(o => o.id === m.id);
+  }
+
+  /** Compétences déclarées par le bénévole sur cette ressource — vide pour du matériel seul. */
+  resourceCompetencesLabel(m: TeamMission): string | null {
+    const libelles = this.offerFor(m)?.competences_libelles;
+    return libelles?.length ? libelles.join(', ') : null;
+  }
+
+  /** Matériel apporté avec la ressource — le catalogue partagé (nom libre) prime sur le type
+   * générique quand l'offreur a précisé "Autre" avec un nom (voir propose-help-form). */
+  resourceMaterielLabel(m: TeamMission): string | null {
+    const o = this.offerFor(m);
+    if (!o) return null;
+    if (o.materiel_catalogue_nom) return o.materiel_catalogue_nom;
+    if (o.materiel_type) return this.MATERIEL_TYPE_LABELS[o.materiel_type] || o.materiel_type;
+    return null;
   }
 
   // ── Ressources : mission active + ajout/retrait ──────────────
