@@ -93,11 +93,18 @@ export class SettingsComponent implements OnInit {
     this.initForms();
     this.loadAll();
 
-    const requestedTab = this.route.snapshot.queryParamMap.get('tab');
+    // Abonnement réactif (pas juste route.snapshot, lu une seule fois) : les liens rapides de
+    // l'en-tête (`quick-link`) pointent tous vers /settings avec un `tab` différent — Angular
+    // réutilise la même instance de ce composant d'un tab à l'autre puisque la route ne change
+    // pas, donc ngOnInit ne se relance jamais. Sans cet abonnement, cliquer sur ces liens
+    // depuis l'écran /settings lui-même ne changeait jamais l'onglet affiché.
     const validTabs: (typeof this.activeTab)[] = ['profile', 'password', 'offer', 'request', 'crisis', 'declaration', 'information', 'dossier'];
-    if (requestedTab && (validTabs as string[]).includes(requestedTab)) {
-      this.activeTab = requestedTab as typeof this.activeTab;
-    }
+    this.route.queryParamMap.subscribe(params => {
+      const requestedTab = params.get('tab');
+      if (requestedTab && (validTabs as string[]).includes(requestedTab)) {
+        this.activeTab = requestedTab as typeof this.activeTab;
+      }
+    });
   }
 
   private initForms(): void {

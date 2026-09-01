@@ -150,10 +150,29 @@ export class ProposeHelpFormComponent implements OnInit {
   competenceCreateFn = (nom: string) => this.competenceService.create({ nom });
 
   // Catalogue partagé (façon hashtag) : un matériel "Autre" tapé une fois devient proposable à
-  // tout le monde ensuite — même mécanisme que pour l'inventaire des points.
+  // tout le monde ensuite — même mécanisme que pour l'inventaire des points. Chargé en entier
+  // (pas seulement via recherche) pour apparaître directement dans le menu déroulant "Type de
+  // matériel", avant "Autre" — qui ne doit plus servir que pour un matériel pas encore listé.
+  allMateriels: MaterielCatalogue[] = [];
   materielCatalogueSearchFn = (q: string) => this.materielCatalogueService.search(q);
   materielCatalogueCreateFn = (nom: string) => this.materielCatalogueService.create({ nom });
   materielCatalogueCreateLabelFn = (value: string) => `Ajouter « ${value} » comme nouveau matériel`;
+
+  readonly CATALOGUE_PREFIX = 'CATALOGUE:';
+
+  /** Le menu "Type de matériel" mélange les types structurels fixes (CUVE, POMPE...) et le
+   * catalogue partagé, distingués par un préfixe sur la valeur — choisir une entrée du
+   * catalogue revient à choisir "Autre" + ce matériel précis, sans repasser par la recherche. */
+  onMaterielTypeDropdownChange(row: AbstractControl, value: string): void {
+    const rg = this.rowGroup(row);
+    if (value.startsWith(this.CATALOGUE_PREFIX)) {
+      const id = value.slice(this.CATALOGUE_PREFIX.length);
+      const item = this.allMateriels.find(m => m.id === id);
+      rg.patchValue({ materielType: 'AUTRE', materielCatalogue: id, materielCatalogueNom: item?.nom ?? '' });
+    } else {
+      rg.patchValue({ materielType: value, materielCatalogue: null, materielCatalogueNom: '' });
+    }
+  }
 
   constructor(
     private formBuilder: FormBuilder,
@@ -168,6 +187,11 @@ export class ProposeHelpFormComponent implements OnInit {
 
   onMaterielCatalogueSelected(row: AbstractControl, item: MaterielCatalogue): void {
     this.rowGroup(row).patchValue({ materielCatalogue: item.id, materielCatalogueNom: item.nom });
+    // Apparaît désormais directement dans le menu déroulant, avant "Autre" — pour ce
+    // formulaire (pas besoin de recharger la page) et pour tous les suivants (déjà en base).
+    if (!this.allMateriels.some(m => m.id === item.id)) {
+      this.allMateriels = [...this.allMateriels, item];
+    }
   }
 
   onCompetenceSelected(item: Competence): void {
@@ -179,12 +203,37 @@ export class ProposeHelpFormComponent implements OnInit {
     this.selectedCompetences = this.selectedCompetences.filter(c => c.id !== id);
   }
 
+  // Liste déroulante des compétences déjà existantes (navigable sans avoir à taper), avec une
+  // option "Autre" qui révèle le champ de recherche/création libre ci-dessous — même patron
+  // que materielTypeOptions pour le matériel.
+  allCompetences: Competence[] = [];
+  competenceDropdownValue = '';
+  showCompetenceAutre = false;
+
+  onCompetenceDropdownChange(): void {
+    if (this.competenceDropdownValue === 'AUTRE') {
+      this.showCompetenceAutre = true;
+    } else if (this.competenceDropdownValue) {
+      const comp = this.allCompetences.find(c => c.id === this.competenceDropdownValue);
+      if (comp) this.onCompetenceSelected(comp);
+    }
+    this.competenceDropdownValue = '';
+  }
+
   ngOnInit(): void {
     this.currentUser = this.authService.getCurrentUser();
     this.initForm();
     this.loadTypesOffre();
     this.loadActiveCrises();
     this.buildJoursDispo();
+    this.competenceService.getAll().subscribe({
+      next: (list) => this.allCompetences = list,
+      error: () => {},
+    });
+    this.materielCatalogueService.getAll().subscribe({
+      next: (list) => this.allMateriels = list,
+      error: () => {},
+    });
   }
 
   private buildJoursDispo(): void {

@@ -136,16 +136,25 @@
                     <div class="form-group">
                         <label for="materielType" class="form-label">Type de matériel</label>
                         <div class="select-wrapper">
-                            <select id="materielType" formControlName="materielType" class="form-select">
+                            <select id="materielType" class="form-select"
+                              [value]="rg.get('materielCatalogue')?.value ? (CATALOGUE_PREFIX + rg.get('materielCatalogue')?.value) : rg.get('materielType')?.value"
+                              (change)="onMaterielTypeDropdownChange(row, $any($event.target).value)">
+                                <option value="" disabled>— Choisir —</option>
                                 @for(option of materielTypeOptions; track option.value) {
-                                    <option [value]="option.value">{{ option.label }}</option>
+                                    @if (option.value && option.value !== 'AUTRE') {
+                                        <option [value]="option.value">{{ option.label }}</option>
+                                    }
                                 }
+                                @for (m of allMateriels; track m.id) {
+                                    <option [value]="CATALOGUE_PREFIX + m.id">{{ m.nom }}</option>
+                                }
+                                <option value="AUTRE">Autre (matériel non listé)</option>
                             </select>
                             <span class="material-icons select-arrow">arrow_drop_down</span>
                         </div>
                     </div>
 
-                    @if (rg.get('materielType')?.value === 'AUTRE') {
+                    @if (rg.get('materielType')?.value === 'AUTRE' && !rg.get('materielCatalogue')?.value) {
                         <div class="form-group">
                             <label class="form-label">Précisez le matériel</label>
                             <app-tag-search-input
@@ -155,10 +164,10 @@
                               [createLabelFn]="materielCatalogueCreateLabelFn"
                               (itemSelected)="onMaterielCatalogueSelected(row, $event)">
                             </app-tag-search-input>
-                            @if (rg.get('materielCatalogueNom')?.value) {
-                                <p class="field-hint-inline">Sélectionné : {{ rg.get('materielCatalogueNom')?.value }}</p>
-                            }
                         </div>
+                    }
+                    @if (rg.get('materielCatalogueNom')?.value) {
+                        <p class="field-hint-inline">Sélectionné : {{ rg.get('materielCatalogueNom')?.value }}</p>
                     }
 
                     <div class="form-group">
@@ -305,7 +314,7 @@
             <!-- Lien pour autre service -->
             <div class="other-service">
                 <a class="other-service-link" (click)="addOffer()">
-                Demander un autre service ?
+                Proposer un autre service ?
                 </a>
             </div>
 
@@ -483,12 +492,24 @@
                   Indiquez les compétences que vous pouvez apporter (secourisme, logistique...) —
                   utile pour être recruté sur les besoins qui vous correspondent.
                   </p>
-                  <app-tag-search-input
-                    placeholder="Chercher ou créer une compétence..."
-                    [searchFn]="competenceSearchFn"
-                    [createFn]="competenceCreateFn"
-                    (itemSelected)="onCompetenceSelected($event)">
-                  </app-tag-search-input>
+                  <select class="form-select"
+                    [(ngModel)]="competenceDropdownValue"
+                    [ngModelOptions]="{standalone: true}"
+                    (ngModelChange)="onCompetenceDropdownChange()">
+                    <option value="" disabled selected>— Choisir une compétence —</option>
+                    @for (c of allCompetences; track c.id) {
+                      <option [value]="c.id">{{ c.nom }}</option>
+                    }
+                    <option value="AUTRE">Autre (préciser)</option>
+                  </select>
+                  @if (showCompetenceAutre) {
+                    <app-tag-search-input
+                      placeholder="Chercher ou créer une compétence..."
+                      [searchFn]="competenceSearchFn"
+                      [createFn]="competenceCreateFn"
+                      (itemSelected)="onCompetenceSelected($event)">
+                    </app-tag-search-input>
+                  }
                   <div class="chip-list">
                     @for (c of selectedCompetences; track c.id) {
                       <span class="chip">
