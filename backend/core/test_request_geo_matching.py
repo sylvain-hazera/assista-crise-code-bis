@@ -209,7 +209,7 @@ class TestRequestAutoAssignmentGeoMatching:
         AffectationCompetence.objects.create(crise=crisis, competence=competence, equipe=team, active=True)
 
         regulateur = create_user(username="regul-notif@test.fr", email="regul-notif@test.fr", type="UTIL_SIMPLE")
-        role = RoleOperationnel.objects.create(code="REGULATEUR", libelle="Régulateur")
+        role, _ = RoleOperationnel.objects.get_or_create(code="REGULATEUR", defaults={"libelle": "Régulateur"})
         itype = InstitutionType.objects.create(code="MAIRIE_NOTIF_TEST", libelle="Mairie")
         institution = Institution.objects.create(nom="Mairie notif test", type=itype)
         AffectationRoleOperationnel.objects.create(

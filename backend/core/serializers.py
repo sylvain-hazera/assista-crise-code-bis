@@ -136,17 +136,25 @@ class UserSerializer(serializers.ModelSerializer):
     commune_code = serializers.CharField(write_only=True, required=False, allow_blank=True)
     institution_email_hint = serializers.CharField(write_only=True, required=False, allow_blank=True)
     institution_nom = serializers.SerializerMethodField()
+    needs_institution_setup = serializers.SerializerMethodField()
 
     def get_institution_nom(self, obj):
         contact = obj.institutions.filter(actif=True).select_related('institution').first()
         return contact.institution.nom if contact else None
+
+    def get_needs_institution_setup(self, obj):
+        # Compte Autorité locale activé, mais pas encore rattaché à une institution (voir
+        # UserViewSet.institution_suggestion/confirmer_institution/creer_mon_institution) — sert
+        # au frontend à savoir s'il doit proposer l'écran "Finalisez votre inscription", y
+        # compris à une reconnexion ultérieure si la personne avait quitté cet écran sans finir.
+        return bool(obj.is_active and obj.type == UserRole.LOCAL_AUTHORITY and obj.pending_institution_name)
 
     class Meta:
         model = User
         fields = ['id', 'username', 'email', 'first_name', 'last_name', 'type', 'demo_role',
                   'photo', 'phone_number', 'password', 'postal_code', 'enabled', 'is_active',
                   'institution_name', 'institution_type', 'commune_name', 'commune_code', 'institution_email_hint',
-                  'institution_nom']
+                  'institution_nom', 'needs_institution_setup']
         extra_kwargs = {
             'password': {'write_only': True},
             'first_name': {'required': False},

@@ -710,6 +710,24 @@
   }
 }
 
+.setup-reminder-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1rem;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+
+  .material-icons { font-size: 1.1rem; }
+
+  &:hover { background: #fde68a; }
+}
+
 // Paysage mobile
 @media (max-height: 500px) and (orientation: landscape) {
   .mobile-nav {

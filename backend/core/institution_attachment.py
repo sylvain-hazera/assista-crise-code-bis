@@ -20,9 +20,10 @@ from .models import (
 )
 
 
-def attach_by_known_domain(user, request=None):
-    """Rattache l'utilisateur à l'institution propriétaire de son domaine email, si déjà connu
-    (InstitutionDomaine, alimenté par une précédente confirmation de l'annuaire)."""
+def find_institution_by_known_domain(user):
+    """Trouve (sans rattacher personne) l'institution propriétaire du domaine email de
+    l'utilisateur, si déjà connu (InstitutionDomaine, alimenté par une précédente confirmation
+    de l'annuaire)."""
     domain = (user.email or '').rsplit('@', 1)[-1].strip().lower()
     if not domain:
         return None
@@ -30,30 +31,10 @@ def attach_by_known_domain(user, request=None):
     institution_domaine = InstitutionDomaine.objects.filter(
         domaine__iexact=domain, valide=True
     ).select_related('institution').first()
-
     if not institution_domaine:
         return None
 
     institution = institution_domaine.institution
-
-    contact, created = ContactInstitution.objects.get_or_create(
-        institution=institution,
-        utilisateur=user,
-        defaults={'fonction': 'Membre (domaine email reconnu)', 'actif': True},
-    )
-
-    if created and request is not None:
-        audit_log(
-            request=request,
-            action_code="CREATION",
-            objet_type="ContactInstitution",
-            objet_id=contact.id,
-            commentaire=(
-                f"Rattachement automatique via domaine email '{domain}' "
-                f"à l'institution {institution.nom}"
-            ),
-        )
-
     # Backfill : cette institution existait déjà (domaine mis en cache par un premier membre)
     # mais n'avait pas encore de commune renseignée — ce nouveau membre peut la compléter.
     if not institution.commune_code and user.pending_commune_code:
@@ -64,10 +45,11 @@ def attach_by_known_domain(user, request=None):
     return institution
 
 
-def resolve_or_create_institution_from_annuaire(user, annuaire_match, request=None):
-    """Trouve/crée l'institution confirmée par l'annuaire officiel, met en cache son domaine
-    (InstitutionDomaine) et y rattache l'utilisateur, pour que les inscriptions suivantes sur
-    ce domaine profitent du rattachement automatique sans re-solliciter l'API."""
+def find_or_create_institution_from_annuaire(user, annuaire_match, request=None):
+    """Trouve/crée l'institution confirmée par l'annuaire officiel et met en cache son domaine
+    (InstitutionDomaine), sans rattacher personne — l'institution elle-même est réelle et
+    indépendante de qui s'y rattache ensuite, contrairement au ContactInstitution/rôle de CET
+    utilisateur (voir attach_user_with_role, décidé explicitement après confirmation)."""
     domain = annuaire_match.get('domain')
     nom = annuaire_match.get('nom') or domain
     type_code = (annuaire_match.get('type_service_local') or 'autre').strip().lower() or 'autre'
@@ -115,10 +97,50 @@ def resolve_or_create_institution_from_annuaire(user, annuaire_match, request=No
                 commentaire=f"Domaine '{domain}' confirmé via l'annuaire pour {institution.nom}",
             )
 
+    return institution
+
+
+def find_institution_for_pending_user(user, request=None):
+    """Cherche l'institution correspondant aux informations déclarées à l'inscription
+    (user.pending_institution_*) — cache de domaines connus, puis annuaire officiel si besoin.
+    Ne rattache PAS l'utilisateur (aucun ContactInstitution/rôle créé ici) : c'est la personne,
+    via un choix explicite après activation, qui confirme (voir attach_user_with_role) ou crée
+    sa propre institution si rien n'est trouvé ici (voir UserViewSet.creer_mon_institution).
+    Peut renvoyer None sans qu'aucune erreur ne se soit produite : signifie simplement "aucune
+    correspondance", pas un échec de la recherche elle-même."""
+    institution = find_institution_by_known_domain(user)
+
+    if institution is None and user.pending_institution_name:
+        valid, _message, details = InstitutionEmailValidator.validate_institution_account(
+            email=user.email,
+            institution_name=user.pending_institution_name or '',
+            institution_type=user.pending_institution_type or '',
+            commune_name=user.pending_commune_name or '',
+            commune_code=user.pending_commune_code or '',
+        )
+        annuaire_match = (details or {}).get('annuaire') if valid else None
+        if annuaire_match and annuaire_match.get('matched'):
+            institution = find_or_create_institution_from_annuaire(user, annuaire_match, request)
+
+    return institution
+
+
+def attach_user_with_role(user, institution, role_code, request=None, fonction='Membre', contact_principal=False):
+    """Rattache explicitement l'utilisateur à `institution` avec le rôle qu'il a choisi — appelé
+    une fois qu'il a confirmé lui-même la correspondance proposée par
+    find_institution_for_pending_user (UserViewSet.confirmer_institution), ou juste après avoir
+    créé sa propre institution (UserViewSet.creer_mon_institution — `fonction`/`contact_principal`
+    ajustés dans ce cas pour refléter qu'il en est le créateur). Nettoie les pending_* dans tous
+    les cas. Lève ValueError si `role_code` ne correspond à aucun RoleOperationnel connu (à
+    l'appelant de traduire ça en 400)."""
+    role = RoleOperationnel.objects.filter(code=role_code).first()
+    if not role:
+        raise ValueError(f"Rôle inconnu : {role_code}")
+
     contact, contact_created = ContactInstitution.objects.get_or_create(
         institution=institution,
         utilisateur=user,
-        defaults={'fonction': 'Membre (validation annuaire)', 'actif': True},
+        defaults={'fonction': fonction, 'contact_principal': contact_principal, 'actif': True},
     )
     if contact_created and request is not None:
         audit_log(
@@ -126,10 +148,36 @@ def resolve_or_create_institution_from_annuaire(user, annuaire_match, request=No
             action_code="CREATION",
             objet_type="ContactInstitution",
             objet_id=contact.id,
-            commentaire=f"Rattachement automatique via annuaire officiel à l'institution {institution.nom}",
+            commentaire=f"Rattachement de {user.email} à l'institution {institution.nom} (confirmé par l'utilisateur)",
         )
 
-    return institution
+    affectation, affectation_created = AffectationRoleOperationnel.objects.get_or_create(
+        utilisateur=user, institution=institution, competence=None, role=role,
+        defaults={'actif': True},
+    )
+    if affectation_created and request is not None:
+        audit_log(
+            request=request,
+            action_code="CREATION",
+            objet_type="AffectationRoleOperationnel",
+            objet_id=affectation.id,
+            commentaire=f"Rôle {role.libelle} attribué à {user.email} pour {institution.nom} (choisi par l'utilisateur)",
+        )
+
+    _clear_pending_institution_fields(user)
+    return contact
+
+
+def _clear_pending_institution_fields(user):
+    if user.pending_institution_name or user.pending_institution_type or user.pending_commune_name or user.pending_commune_code:
+        user.pending_institution_name = None
+        user.pending_institution_type = None
+        user.pending_commune_name = None
+        user.pending_commune_code = None
+        user.save(update_fields=[
+            'pending_institution_name', 'pending_institution_type',
+            'pending_commune_name', 'pending_commune_code',
+        ])
 
 
 def assign_default_institution_role(user, institution=None):
@@ -174,43 +222,6 @@ def assign_default_institution_role(user, institution=None):
     )
 
 
-def attach_user_to_institution(user, request=None):
-    """Point d'entrée unique : à appeler uniquement APRÈS confirmation de l'email (activation).
-
-    Essaie d'abord le cache local (InstitutionDomaine), puis à défaut relance une vérification
-    auprès de l'annuaire officiel à partir des informations déclarées à l'inscription
-    (user.pending_institution_*). Nettoie ces champs une fois utilisés, qu'une correspondance
-    ait été trouvée ou non."""
-    matched_institution = attach_by_known_domain(user, request)
-
-    if matched_institution is None and user.pending_institution_name:
-        valid, _message, details = InstitutionEmailValidator.validate_institution_account(
-            email=user.email,
-            institution_name=user.pending_institution_name or '',
-            institution_type=user.pending_institution_type or '',
-            commune_name=user.pending_commune_name or '',
-            commune_code=user.pending_commune_code or '',
-        )
-        annuaire_match = (details or {}).get('annuaire') if valid else None
-        if annuaire_match and annuaire_match.get('matched'):
-            matched_institution = resolve_or_create_institution_from_annuaire(user, annuaire_match, request)
-
-    if user.type == UserRole.LOCAL_AUTHORITY:
-        assign_default_institution_role(user, matched_institution)
-
-    if user.pending_institution_name or user.pending_institution_type or user.pending_commune_name or user.pending_commune_code:
-        user.pending_institution_name = None
-        user.pending_institution_type = None
-        user.pending_commune_name = None
-        user.pending_commune_code = None
-        user.save(update_fields=[
-            'pending_institution_name', 'pending_institution_type',
-            'pending_commune_name', 'pending_commune_code',
-        ])
-
-    return matched_institution
-
-
 def attach_secours_user_to_institution(user, request=None):
     """Rattache un compte SECOURS (Secours organisés) selon la sous-catégorie déclarée à
     l'inscription (`user.pending_institution_type`, posé par UserSerializer.create pour
@@ -246,7 +257,7 @@ def attach_secours_user_to_institution(user, request=None):
         )
         # assign_default_institution_role pose l'affectation opérationnelle (RESPONSABLE en
         # premier), mais ne crée jamais de ContactInstitution — à faire nous-même, comme
-        # resolve_or_create_institution_from_annuaire le fait pour le rattachement mairie.
+        # find_or_create_institution_from_annuaire le fait pour le rattachement mairie.
         contact, contact_created = ContactInstitution.objects.get_or_create(
             institution=matched_institution, utilisateur=user,
             defaults={'fonction': 'Créateur', 'contact_principal': institution_created, 'actif': True},
@@ -280,16 +291,7 @@ def attach_secours_user_to_institution(user, request=None):
                     commentaire=f"Rattachement RCSC de {user.email} à {matched_institution.nom}",
                 )
 
-    if user.pending_institution_name or user.pending_institution_type or user.pending_commune_name or user.pending_commune_code:
-        user.pending_institution_name = None
-        user.pending_institution_type = None
-        user.pending_commune_name = None
-        user.pending_commune_code = None
-        user.save(update_fields=[
-            'pending_institution_name', 'pending_institution_type',
-            'pending_commune_name', 'pending_commune_code',
-        ])
-
+    _clear_pending_institution_fields(user)
     return matched_institution
 
 

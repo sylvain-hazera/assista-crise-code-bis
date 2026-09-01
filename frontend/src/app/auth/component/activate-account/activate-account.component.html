@@ -16,7 +16,7 @@
         <p class="activate-text">{{ successMessage }}</p>
         <p class="activate-subtext">Vous êtes maintenant connecté.</p>
         <button type="button" class="btn-submit" (click)="goToDashboard()">
-          Accéder à Assista-Crise
+          {{ returnUrl === '/completer-inscription' ? 'Finaliser mon inscription' : 'Accéder à Assista-Crise' }}
         </button>
       </div>
     }

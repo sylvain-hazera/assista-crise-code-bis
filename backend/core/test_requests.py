@@ -87,7 +87,7 @@ class TestAssignRequestToTeam:
         client, _ = local_authority_client
         regulateur = create_user(username="regulateur@test.fr", email="regulateur@test.fr", type="UTIL_SIMPLE")
         team.members.add(regulateur)
-        role = RoleOperationnel.objects.create(code="REGULATEUR", libelle="Régulateur")
+        role, _ = RoleOperationnel.objects.get_or_create(code="REGULATEUR", defaults={"libelle": "Régulateur"})
         competence = Competence.objects.create(nom="Nourriture (test)")
         team.competences.add(competence)
         itype = InstitutionType.objects.create(code="MAIRIE_REQ_TEST", libelle="Mairie")

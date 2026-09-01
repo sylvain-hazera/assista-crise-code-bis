@@ -23,7 +23,7 @@ def crisis(db):
 def regulateur_setup(db, create_user):
     """Un régulateur affecté à une compétence, dans une institution donnée."""
     regulateur = create_user(username="regul-mafile@test.fr", email="regul-mafile@test.fr", type="REGULATEUR")
-    role = RoleOperationnel.objects.create(code="REGULATEUR", libelle="Régulateur")
+    role, _ = RoleOperationnel.objects.get_or_create(code="REGULATEUR", defaults={"libelle": "Régulateur"})
     competence = Competence.objects.create(nom="Compétence ma_file")
     itype = InstitutionType.objects.create(code="MAIRIE_MAFILE_TEST", libelle="Mairie")
     institution = Institution.objects.create(nom="Mairie ma_file test", type=itype)

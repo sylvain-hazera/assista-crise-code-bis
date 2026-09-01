@@ -37,7 +37,10 @@ from PIL.ExifTags import TAGS, GPSTAGS
 
 from .audit import audit_log, get_client_ip
 from .export import build_crisis_export_zip
-from .institution_attachment import attach_user_to_institution, attach_secours_user_to_institution, resolve_or_invite_responsable
+from .institution_attachment import (
+    find_institution_for_pending_user, attach_user_with_role,
+    attach_secours_user_to_institution, resolve_or_invite_responsable,
+)
 from .permissions import (
     IsInstitutionalActor, IsAdministrator, IsOwnDeclarationOrInstitutional, IsOwnerOrInstitutional,
     IsSelfOrInstitutional,
@@ -999,7 +1002,98 @@ class UserViewSet(viewsets.ModelViewSet):
                 'message': 'Utilisateur créé avec succès'
             }, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
+
+    @action(detail=False, methods=['get'])
+    def institution_suggestion(self, request):
+        """Institution retrouvée pour l'utilisateur connecté à partir de ce qu'il a déclaré à
+        l'inscription (voir find_institution_for_pending_user) — sans rien rattacher, appelable
+        plusieurs fois sans effet de bord. Alimente l'écran "Finalisez votre inscription" affiché
+        après activation pour un compte Autorité locale. 400 si rien à résoudre (compte déjà
+        rattaché, ou pas de ce type)."""
+        user = request.user
+        if not user.pending_institution_name:
+            return Response(
+                {"error": "Aucune institution en attente de rattachement pour ce compte."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        institution = find_institution_for_pending_user(user, request)
+        return Response({
+            "institution": InstitutionSerializer(institution, context=self.get_serializer_context()).data if institution else None,
+            # Pour préremplir le formulaire de création si rien n'est trouvé (voir
+            # creer_mon_institution) — ces champs sont write_only sur UserSerializer, donc pas
+            # récupérables autrement par le frontend une fois soumis à l'inscription.
+            "pending_institution_name": user.pending_institution_name,
+            "pending_commune_name": user.pending_commune_name,
+            "pending_commune_code": user.pending_commune_code,
+        })
+
+    @action(detail=False, methods=['post'], url_path='confirmer-institution')
+    def confirmer_institution(self, request):
+        """Confirme le rattachement à l'institution retrouvée par institution_suggestion, avec
+        le rôle choisi par l'utilisateur — au lieu du rôle deviné automatiquement comme avant ce
+        correctif."""
+        user = request.user
+        if not user.pending_institution_name:
+            return Response(
+                {"error": "Aucune institution en attente de rattachement pour ce compte."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        role_code = request.data.get('role_code')
+        if not role_code:
+            return Response({"error": "role_code est requis."}, status=status.HTTP_400_BAD_REQUEST)
+
+        institution = find_institution_for_pending_user(user, request)
+        if institution is None:
+            return Response(
+                {"error": "Aucune institution trouvée — utilisez creer_mon_institution pour la créer."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            attach_user_with_role(user, institution, role_code, request)
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(UserSerializer(user, context=self.get_serializer_context()).data)
+
+    @action(detail=False, methods=['post'], url_path='creer-mon-institution')
+    def creer_mon_institution(self, request):
+        """Quand institution_suggestion ne renvoie rien : la personne crée elle-même son
+        institution (mêmes champs que le formulaire admin, voir InstitutionSerializer/
+        InstitutionViewSet) et s'y rattache directement avec le rôle choisi, comme créatrice."""
+        user = request.user
+        if not user.pending_institution_name:
+            return Response(
+                {"error": "Aucune institution en attente de rattachement pour ce compte."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        role_code = request.data.get('role_code')
+        if not role_code:
+            return Response({"error": "role_code est requis."}, status=status.HTTP_400_BAD_REQUEST)
+
+        institution_serializer = InstitutionSerializer(data=request.data, context=self.get_serializer_context())
+        institution_serializer.is_valid(raise_exception=True)
+        institution = institution_serializer.save(environment=get_active_environment(request))
+        audit_log(
+            request=request,
+            action_code="CREATION",
+            objet_type="Institution",
+            objet_id=institution.id,
+            commentaire=f"Création institution par {user.email} lors de la finalisation d'inscription : {institution.nom}",
+        )
+
+        try:
+            attach_user_with_role(
+                user, institution, role_code, request,
+                fonction='Créateur', contact_principal=True,
+            )
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(
+            UserSerializer(user, context=self.get_serializer_context()).data,
+            status=status.HTTP_201_CREATED,
+        )
+
     @action(detail=False, methods=['post'], permission_classes=[AllowAny])
     def login(self, request):
         """Connexion utilisateur"""
@@ -4202,11 +4296,15 @@ class AccountActivationView(generics.GenericAPIView):
         user.is_active = True
         user.save(update_fields=['enabled', 'is_active'])
 
-        # Le rattachement à une institution (contact + rôle opérationnel) ne doit se faire qu'ici,
-        # une fois la possession de la boîte mail prouvée par ce clic — jamais à la simple
-        # inscription. Idempotent (get_or_create) : un second clic ne duplique rien.
+        # La RECHERCHE d'institution (domaine connu, puis annuaire officiel) se fait ici, une
+        # fois la possession de la boîte mail prouvée par ce clic — jamais à la simple
+        # inscription. Le RATTACHEMENT effectif (ContactInstitution + rôle), lui, n'a plus lieu
+        # automatiquement : l'utilisateur le confirme explicitement ensuite (voir
+        # UserViewSet.institution_suggestion/confirmer_institution/creer_mon_institution),
+        # avec le rôle de son choix plutôt qu'un rôle deviné. Idempotent (find_... ne modifie
+        # rien côté utilisateur) : un second clic ne duplique rien.
         if not already_enabled and getattr(user, 'type', None) == UserRole.LOCAL_AUTHORITY:
-            matched_institution = attach_user_to_institution(user, request)
+            matched_institution = find_institution_for_pending_user(user, request)
             audit_log(
                 request=request,
                 action_code="CONNEXION",
@@ -4215,11 +4313,11 @@ class AccountActivationView(generics.GenericAPIView):
                 commentaire=f"Activation de compte confirmée par email : {user.email}",
             )
             # Le compte est activé dans tous les cas (la possession de la boîte mail est
-            # prouvée), mais s'il n'a pu être rattaché à aucune institution automatiquement
-            # (ni domaine déjà connu, ni correspondance dans l'annuaire officiel), personne
-            # n'est prévenu aujourd'hui : le compte reste silencieusement sans institution.
-            # Même correctif que pour les comptes SECOURS/ADMIN en attente de validation
-            # (voir register(), plus haut) : prévenir contact@ pour un rattachement manuel.
+            # prouvée). S'il n'a pu être rapproché d'aucune institution automatiquement (ni
+            # domaine déjà connu, ni correspondance dans l'annuaire officiel), la personne se
+            # verra proposer de créer elle-même son institution (voir creer_mon_institution) —
+            # mais contact@ est notifié dans tous les cas, en filet de sécurité si elle
+            # n'achève jamais cette étape.
             if matched_institution is None:
                 try:
                     send_mail(

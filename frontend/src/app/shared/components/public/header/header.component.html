@@ -212,6 +212,17 @@
   </nav>
 </header>
 
+<!-- Rappel persistant : compte activé mais pas encore rattaché à une institution (voir
+     CompleterInscriptionComponent) — reste visible tant que ce n'est pas fait, y compris si la
+     personne avait quitté cet écran sans finir juste après l'activation. -->
+@if (currentUser?.needs_institution_setup) {
+  <a class="setup-reminder-banner" routerLink="/completer-inscription">
+    <span class="material-icons">info</span>
+    Finalisez votre inscription : rattachez-vous à votre institution
+    <span class="material-icons">arrow_forward</span>
+  </a>
+}
+
 <!-- Overlay -->
 @if (showUserMenu) {
   <div class="overlay" (click)="closeAllMenus()"></div>

@@ -33,6 +33,12 @@ export const PUBLIC_ROUTES: Routes = [
           .then(m => m.ActivateAccountComponent)
       },
       {
+        path: 'completer-inscription',
+        canActivate: [authGuard],
+        loadComponent: () => import('../auth/component/completer-inscription/completer-inscription.component')
+          .then(m => m.CompleterInscriptionComponent)
+      },
+      {
         path: 'connexion-magique/:uidb64/:token',
         loadComponent: () => import('../auth/component/magic-login/magic-login.component')
           .then(m => m.MagicLoginComponent)

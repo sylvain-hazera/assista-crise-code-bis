@@ -52,7 +52,7 @@ def _setup_competence_chain(request_type):
 
 def _regulateur(create_user, competence, email="regul-unif@test.fr"):
     regulateur = create_user(username=email, email=email, type="UTIL_SIMPLE")
-    role = RoleOperationnel.objects.create(code="REGULATEUR", libelle="Régulateur")
+    role, _ = RoleOperationnel.objects.get_or_create(code="REGULATEUR", defaults={"libelle": "Régulateur"})
     itype = InstitutionType.objects.create(code=f"ITYPE-{email}", libelle="Mairie")
     institution = Institution.objects.create(nom=f"Institution {email}", type=itype)
     AffectationRoleOperationnel.objects.create(
@@ -224,7 +224,7 @@ class TestManualPathParticipants:
         team = Team.objects.create(name="Equipe unif manuel regul", description="", color="#3b82f6")
         regulateur = create_user(username="regul-unif-manuel@test.fr", email="regul-unif-manuel@test.fr", type="UTIL_SIMPLE")
         team.members.add(regulateur)
-        role = RoleOperationnel.objects.create(code="REGULATEUR", libelle="Régulateur")
+        role, _ = RoleOperationnel.objects.get_or_create(code="REGULATEUR", defaults={"libelle": "Régulateur"})
         competence = Competence.objects.create(nom="Competence unif manuel regul")
         team.competences.add(competence)
         itype = InstitutionType.objects.create(code="ITYPE_UNIF_MANUEL", libelle="Mairie")

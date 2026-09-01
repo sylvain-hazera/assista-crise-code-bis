@@ -37,6 +37,12 @@ export class ActivateAccountComponent implements OnInit {
       next: (response) => {
         this.state = 'success';
         this.successMessage = response.message || 'Compte activé avec succès.';
+        // Compte Autorité locale pas encore rattaché à une institution : on l'emmène
+        // directement finaliser son inscription plutôt que de le laisser filer vers l'accueil
+        // (voir CompleterInscriptionComponent).
+        if (response.user?.needs_institution_setup) {
+          this.returnUrl = '/completer-inscription';
+        }
       },
       error: (error) => {
         this.state = 'error';

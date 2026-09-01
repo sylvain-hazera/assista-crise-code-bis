@@ -11,9 +11,10 @@ from core.models import (
     Institution,
     InstitutionDomaine,
     InstitutionType,
+    RoleOperationnel,
     User,
 )
-from core.institution_attachment import attach_by_known_domain
+from core.institution_attachment import find_institution_by_known_domain
 
 
 def _activation_url(user):
@@ -158,7 +159,10 @@ class TestInstitutionAutoAttachment:
         )
         assert login_response.status_code == status.HTTP_401_UNAUTHORIZED
 
-    def test_activation_attaches_to_cached_domain_and_returns_token(self, api_client, user_data):
+    def test_activation_finds_cached_domain_without_attaching(self, api_client, user_data):
+        """L'activation seule ne fait plus que RETROUVER l'institution (voir
+        institution_suggestion) — le rattachement effectif attend une confirmation explicite
+        (voir confirmer_institution, testé séparément)."""
         from django.core import mail
 
         institution_type = InstitutionType.objects.create(code="SDIS", libelle="SDIS")
@@ -183,18 +187,18 @@ class TestInstitutionAutoAttachment:
         assert 'token' in activation_response.data
         user.refresh_from_db()
         assert user.enabled is True
-        assert ContactInstitution.objects.filter(institution=institution, utilisateur=user).exists()
-        affectation = AffectationRoleOperationnel.objects.get(institution=institution, utilisateur=user)
-        assert affectation.role.code == 'RESPONSABLE'
-        assert affectation.competence is None, (
-            "aucune compétence arbitraire ne doit être posée automatiquement : "
-            "le responsable la précise ensuite via l'écran dédié"
-        )
-        # Rattachement réussi : pas de notification "sans institution" à envoyer.
+        assert not ContactInstitution.objects.filter(institution=institution, utilisateur=user).exists()
+        assert not AffectationRoleOperationnel.objects.filter(institution=institution, utilisateur=user).exists()
+        # Rattachement automatiquement trouvable : pas de notification "sans institution".
         assert not any('contact@assista-crise.fr' in m.to for m in mail.outbox)
 
-    def test_activation_is_idempotent(self, api_client, user_data):
-        """Cliquer deux fois sur le lien d'activation ne doit pas créer de doublons."""
+    def _activate_and_authenticate(self, api_client, user):
+        activation_response = api_client.get(_activation_url(user))
+        api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {activation_response.data['token']}")
+        return activation_response
+
+    def test_confirmer_institution_attaches_with_chosen_role(self, api_client, user_data):
+        RoleOperationnel.objects.get_or_create(code='REGULATEUR', defaults={'libelle': 'Régulateur'})
         institution_type = InstitutionType.objects.create(code="SDIS", libelle="SDIS")
         institution = Institution.objects.create(nom="SDIS 33", type=institution_type)
         InstitutionDomaine.objects.create(institution=institution, domaine="sdis33.fr", valide=True)
@@ -209,13 +213,142 @@ class TestInstitutionAutoAttachment:
         }
         register_response = api_client.post(reverse('user-register'), payload, format='json')
         user = User.objects.get(id=register_response.data["user"]["id"])
-        url = _activation_url(user)
+        self._activate_and_authenticate(api_client, user)
 
-        api_client.get(url)
-        api_client.get(url)
+        suggestion_response = api_client.get(reverse('user-institution-suggestion'))
+        assert suggestion_response.status_code == status.HTTP_200_OK
+        assert suggestion_response.data["institution"]["id"] == str(institution.id)
 
+        confirm_response = api_client.post(
+            reverse('user-confirmer-institution'), {"role_code": "REGULATEUR"}, format='json',
+        )
+
+        assert confirm_response.status_code == status.HTTP_200_OK
+        assert ContactInstitution.objects.filter(institution=institution, utilisateur=user).exists()
+        affectation = AffectationRoleOperationnel.objects.get(institution=institution, utilisateur=user)
+        assert affectation.role.code == 'REGULATEUR'
+        assert affectation.competence is None
+        user.refresh_from_db()
+        assert user.pending_institution_name is None
+
+    def test_confirmer_institution_is_idempotent(self, api_client, user_data):
+        """Confirmer deux fois ne doit pas créer de doublons."""
+        RoleOperationnel.objects.get_or_create(code='RESPONSABLE', defaults={'libelle': 'Responsable'})
+        institution_type = InstitutionType.objects.create(code="SDIS", libelle="SDIS")
+        institution = Institution.objects.create(nom="SDIS 33", type=institution_type)
+        InstitutionDomaine.objects.create(institution=institution, domaine="sdis33.fr", valide=True)
+
+        payload = {
+            **user_data,
+            "email": "agent@sdis33.fr",
+            "username": "agent@sdis33.fr",
+            "type": "AUT_LOCALE",
+            "institution_name": "SDIS 33",
+            "institution_type": "sdis",
+        }
+        register_response = api_client.post(reverse('user-register'), payload, format='json')
+        user = User.objects.get(id=register_response.data["user"]["id"])
+        self._activate_and_authenticate(api_client, user)
+
+        # Le premier appel nettoie pending_institution_name : institution_suggestion (et donc
+        # confirmer_institution) refuserait un second appel avec 400 — reproduit volontairement
+        # côté serveur pour vérifier qu'aucun doublon n'est possible même en cas de double-clic
+        # côté client avant que l'UI ait eu le temps de se mettre à jour.
+        api_client.post(reverse('user-confirmer-institution'), {"role_code": "RESPONSABLE"}, format='json')
+        second_response = api_client.post(reverse('user-confirmer-institution'), {"role_code": "RESPONSABLE"}, format='json')
+
+        assert second_response.status_code == status.HTTP_400_BAD_REQUEST
         assert ContactInstitution.objects.filter(institution=institution, utilisateur=user).count() == 1
         assert AffectationRoleOperationnel.objects.filter(institution=institution, utilisateur=user).count() == 1
+
+    def test_creer_mon_institution_when_no_suggestion(self, api_client, user_data):
+        RoleOperationnel.objects.get_or_create(code='RESPONSABLE', defaults={'libelle': 'Responsable'})
+        institution_type = InstitutionType.objects.create(code="mairie", libelle="Mairie")
+
+        payload = {
+            **user_data,
+            "email": "agent@mairie-a-creer.fr",
+            "username": "agent@mairie-a-creer.fr",
+            "type": "AUT_LOCALE",
+            "institution_name": "Mairie à créer",
+            "institution_type": "mairie",
+        }
+        with patch("core.auth_validation.InstitutionEmailValidator._search_annuaire", return_value=None):
+            register_response = api_client.post(reverse('user-register'), payload, format='json')
+        user = User.objects.get(id=register_response.data["user"]["id"])
+        with patch("core.auth_validation.InstitutionEmailValidator._search_annuaire", return_value=None):
+            self._activate_and_authenticate(api_client, user)
+
+            suggestion_response = api_client.get(reverse('user-institution-suggestion'))
+            assert suggestion_response.data["institution"] is None
+
+            create_response = api_client.post(reverse('user-creer-mon-institution'), {
+                "nom": "Mairie Créée Par Elle-Même",
+                "type": str(institution_type.id),
+                "role_code": "RESPONSABLE",
+            }, format='json')
+
+        assert create_response.status_code == status.HTTP_201_CREATED
+        institution = Institution.objects.get(nom="Mairie Créée Par Elle-Même")
+        contact = ContactInstitution.objects.get(institution=institution, utilisateur=user)
+        assert contact.fonction == 'Créateur'
+        assert contact.contact_principal is True
+        affectation = AffectationRoleOperationnel.objects.get(institution=institution, utilisateur=user)
+        assert affectation.role.code == 'RESPONSABLE'
+        user.refresh_from_db()
+        assert user.pending_institution_name is None
+
+    def test_confirmer_institution_requires_role_code(self, api_client, user_data):
+        institution_type = InstitutionType.objects.create(code="SDIS", libelle="SDIS")
+        institution = Institution.objects.create(nom="SDIS 33", type=institution_type)
+        InstitutionDomaine.objects.create(institution=institution, domaine="sdis33.fr", valide=True)
+
+        payload = {
+            **user_data,
+            "email": "agent@sdis33.fr",
+            "username": "agent@sdis33.fr",
+            "type": "AUT_LOCALE",
+            "institution_name": "SDIS 33",
+            "institution_type": "sdis",
+        }
+        register_response = api_client.post(reverse('user-register'), payload, format='json')
+        user = User.objects.get(id=register_response.data["user"]["id"])
+        self._activate_and_authenticate(api_client, user)
+
+        response = api_client.post(reverse('user-confirmer-institution'), {}, format='json')
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert not ContactInstitution.objects.filter(institution=institution, utilisateur=user).exists()
+
+    def test_needs_institution_setup_true_until_confirmed(self, api_client, user_data):
+        RoleOperationnel.objects.get_or_create(code='RESPONSABLE', defaults={'libelle': 'Responsable'})
+        institution_type = InstitutionType.objects.create(code="SDIS", libelle="SDIS")
+        InstitutionDomaine.objects.create(
+            institution=Institution.objects.create(nom="SDIS 33", type=institution_type),
+            domaine="sdis33.fr", valide=True,
+        )
+
+        payload = {
+            **user_data,
+            "email": "agent@sdis33.fr",
+            "username": "agent@sdis33.fr",
+            "type": "AUT_LOCALE",
+            "institution_name": "SDIS 33",
+            "institution_type": "sdis",
+        }
+        register_response = api_client.post(reverse('user-register'), payload, format='json')
+        user = User.objects.get(id=register_response.data["user"]["id"])
+
+        assert register_response.data["user"]["needs_institution_setup"] is False, (
+            "pas encore activé : rien à proposer avant la preuve de possession de l'email"
+        )
+
+        activation_response = self._activate_and_authenticate(api_client, user)
+        assert activation_response.data["user"]["needs_institution_setup"] is True
+
+        api_client.post(reverse('user-confirmer-institution'), {"role_code": "RESPONSABLE"}, format='json')
+        me_response = api_client.get(reverse('auth_me'))
+        assert me_response.data["needs_institution_setup"] is False
 
     @patch("core.auth_validation.InstitutionEmailValidator._search_annuaire")
     def test_activation_without_institution_match_notifies_contact(self, mock_search, api_client, user_data):
@@ -257,7 +390,7 @@ class TestInstitutionAutoAttachment:
         user = User.objects.create_user(
             username="a@sdis33.fr", email="a@sdis33.fr", password="x", type="AUT_LOCALE"
         )
-        assert attach_by_known_domain(user) is None
+        assert find_institution_by_known_domain(user) is None
 
 
 ANNUAIRE_SDIS_RECORD = {
@@ -276,7 +409,7 @@ class TestAnnuaireRegistration:
     mais le rattachement effectif n'a lieu qu'après activation, jamais à l'inscription."""
 
     @patch("core.auth_validation.InstitutionEmailValidator._search_annuaire")
-    def test_activation_via_annuaire_creates_institution_domaine_and_contact(self, mock_search, api_client, user_data):
+    def test_activation_via_annuaire_creates_institution_domaine_without_attaching(self, mock_search, api_client, user_data):
         mock_search.return_value = [ANNUAIRE_SDIS_RECORD]
 
         payload = {
@@ -297,10 +430,13 @@ class TestAnnuaireRegistration:
         assert activation_response.status_code == status.HTTP_200_OK
         assert 'token' in activation_response.data
 
+        # L'institution elle-même (réelle, indépendante de qui s'y rattache) et son domaine
+        # sont bien trouvés/mis en cache dès l'activation ; le rattachement de CET utilisateur,
+        # lui, attend sa confirmation explicite (voir confirmer_institution, testé séparément).
         institution = Institution.objects.get(nom="SDIS 33")
         assert InstitutionDomaine.objects.filter(institution=institution, domaine="sdis33.fr", valide=True).exists()
-        assert ContactInstitution.objects.filter(institution=institution, utilisateur=user).exists()
-        assert AffectationRoleOperationnel.objects.filter(institution=institution, utilisateur=user).exists()
+        assert not ContactInstitution.objects.filter(institution=institution, utilisateur=user).exists()
+        assert not AffectationRoleOperationnel.objects.filter(institution=institution, utilisateur=user).exists()
 
     @patch("core.auth_validation.InstitutionEmailValidator._search_annuaire")
     def test_activation_on_cached_domain_skips_annuaire_call(self, mock_search, api_client, user_data):
@@ -323,9 +459,11 @@ class TestAnnuaireRegistration:
         register_response = api_client.post(reverse('user-register'), payload, format='json')
         user = User.objects.get(id=register_response.data["user"]["id"])
 
-        api_client.get(_activation_url(user))
+        activation_response = api_client.get(_activation_url(user))
 
-        assert ContactInstitution.objects.filter(institution=institution, utilisateur=user).exists()
+        api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {activation_response.data['token']}")
+        suggestion_response = api_client.get(reverse('user-institution-suggestion'))
+        assert suggestion_response.data["institution"]["id"] == str(institution.id)
         mock_search.assert_not_called()
 
 

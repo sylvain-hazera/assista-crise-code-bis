@@ -1,0 +1,128 @@
+<div class="completer-container">
+  <div class="completer-wrapper">
+
+    @if (etape === 'chargement') {
+      <div class="state-block">
+        <div class="spinner"></div>
+        <p>Recherche de votre institution…</p>
+      </div>
+    }
+
+    @if (etape === 'confirmation' && institutionTrouvee) {
+      <div class="state-block">
+        <h1 class="completer-title">Finalisez votre inscription</h1>
+        <p class="completer-text">
+          Nous avons retrouvé une institution correspondant à votre email :
+        </p>
+        <div class="institution-card">
+          <span class="material-icons">apartment</span>
+          <div>
+            <strong>{{ institutionTrouvee.nom }}</strong>
+            @if (institutionTrouvee.type_libelle) {
+              <span class="institution-type">{{ institutionTrouvee.type_libelle }}</span>
+            }
+          </div>
+        </div>
+
+        <form [formGroup]="roleForm" (ngSubmit)="confirmer()">
+          <div class="form-group">
+            <label for="role_code">Votre rôle au sein de cette institution</label>
+            <select id="role_code" formControlName="role_code" class="form-select">
+              <option [ngValue]="''">— Choisir —</option>
+              @for (role of roles; track role.id) {
+                <option [ngValue]="role.code">{{ role.libelle }}</option>
+              }
+            </select>
+          </div>
+
+          @if (errorMessage) {
+            <p class="error-message">{{ errorMessage }}</p>
+          }
+
+          <div class="actions">
+            <button type="submit" class="btn-submit" [disabled]="submitting">
+              Oui, c'est la mienne — confirmer
+            </button>
+            <button type="button" class="btn-link" (click)="passerALaCreation()">
+              Ce n'est pas la mienne, créer une nouvelle institution
+            </button>
+          </div>
+        </form>
+      </div>
+    }
+
+    @if (etape === 'creation') {
+      <div class="state-block">
+        <h1 class="completer-title">Créez votre institution</h1>
+        <p class="completer-text">
+          Aucune institution correspondante n'a été retrouvée automatiquement — créez-la, vous
+          en deviendrez responsable.
+        </p>
+
+        <form [formGroup]="creationForm" (ngSubmit)="creer()">
+          <div class="form-group">
+            <label for="nom">Nom de l'institution <span class="required">*</span></label>
+            <input type="text" id="nom" formControlName="nom" class="form-input">
+          </div>
+
+          <div class="form-group">
+            <label for="type">Type <span class="required">*</span></label>
+            <select id="type" formControlName="type" class="form-select">
+              <option [ngValue]="null">— Choisir —</option>
+              @for (t of institutionTypes; track t.id) {
+                <option [ngValue]="t.id">{{ t.libelle }}</option>
+              }
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="description">Description</label>
+            <textarea id="description" formControlName="description" class="form-textarea" rows="2"></textarea>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="telephone">Téléphone</label>
+              <input type="tel" id="telephone" formControlName="telephone" class="form-input">
+            </div>
+            <div class="form-group">
+              <label for="email">Email</label>
+              <input type="email" id="email" formControlName="email" class="form-input">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="adresse">Adresse</label>
+            <input type="text" id="adresse" formControlName="adresse" class="form-input">
+          </div>
+
+          <div class="form-group">
+            <label for="creation-role-code">Votre rôle au sein de cette institution <span class="required">*</span></label>
+            <select id="creation-role-code" formControlName="role_code" class="form-select">
+              <option [ngValue]="''">— Choisir —</option>
+              @for (role of roles; track role.id) {
+                <option [ngValue]="role.code">{{ role.libelle }}</option>
+              }
+            </select>
+          </div>
+
+          @if (errorMessage) {
+            <p class="error-message">{{ errorMessage }}</p>
+          }
+
+          <div class="actions">
+            <button type="submit" class="btn-submit" [disabled]="submitting">
+              Créer mon institution
+            </button>
+            @if (institutionTrouvee) {
+              <button type="button" class="btn-link" (click)="etape = 'confirmation'">
+                Retour à la suggestion
+              </button>
+            }
+          </div>
+        </form>
+      </div>
+    }
+
+  </div>
+</div>
