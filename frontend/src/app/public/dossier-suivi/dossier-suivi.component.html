@@ -60,6 +60,17 @@
                 <span class="material-icons">directions</span> Itinéraire
               </a>
             </div>
+            <div class="logistique-minimap">
+              <app-minimap
+                [latitude]="dossier.latitude!"
+                [longitude]="dossier.longitude!"
+                [zoom]="13"
+                [pointsInteret]="pointsInteret">
+              </app-minimap>
+              @if (pointsInteret.length > 0) {
+                <p class="minimap-hint">Points opérationnels de la crise à proximité (transit, regroupement, accueil, secours...) — cliquez un repère pour son nom.</p>
+              }
+            </div>
           }
           @for (regulateur of dossier.regulateurs; track regulateur.id) {
             <div class="logistique-row">

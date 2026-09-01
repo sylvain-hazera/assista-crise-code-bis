@@ -163,6 +163,24 @@
   &:last-child { margin-bottom: 0; }
 }
 
+.logistique-minimap {
+  margin-top: 0.5rem;
+
+  app-minimap {
+    display: block;
+    width: 100%;
+    height: 220px;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  .minimap-hint {
+    margin: 0.35rem 0 0;
+    font-size: 0.78rem;
+    color: #64748b;
+  }
+}
+
 .itineraire-link {
   display: inline-flex;
   align-items: center;

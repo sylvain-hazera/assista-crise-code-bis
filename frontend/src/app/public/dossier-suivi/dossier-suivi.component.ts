@@ -9,7 +9,14 @@ import { DocumentService } from '../../services/document.service';
 import { Dossier } from '../../shared/models/dossier.model';
 import { DossierCommentaire } from '../../shared/models/dossier-commentaire.model';
 import { DossierDocument } from '../../shared/models/dossier-document.model';
-import { MinimapComponent } from '../../shared/components/common/minimap/minimap.component';
+import { MinimapComponent, MinimapPointInteret } from '../../shared/components/common/minimap/minimap.component';
+import { PointOperationnelService } from '../../services/point-operationnel.service';
+
+// Types de PointOperationnel pertinents à afficher à l'intervenant sur la minimap du dossier
+// (voir clarification produit) : points de transit, de regroupement des moyens (englobe la
+// notion de "logistique"), centres d'accueil, postes de secours — AUTRE explicitement exclu
+// (catégorie fourre-tout, jamais "intéressante" par nature).
+const TYPES_POINTS_INTERET = ['TRANSIT', 'REGROUPEMENT_MOYENS', 'HEBERGEMENT', 'SECOURS', 'COLLECTE', 'DISTRIBUTION', 'CARBURANT'];
 
 const STATUT_LABELS: Record<string, string> = {
   EN_ATTENTE_DISTRIBUTION: 'En attente de prise en charge',
@@ -46,6 +53,7 @@ export class DossierSuiviComponent implements OnInit, OnDestroy {
   uploadError = '';
   markingImportant = false;
   selectedPhoto: DossierDocument | null = null;
+  pointsInteret: MinimapPointInteret[] = [];
 
   private dossierId = '';
 
@@ -53,7 +61,8 @@ export class DossierSuiviComponent implements OnInit, OnDestroy {
     private route: ActivatedRoute,
     private dossierService: DossierService,
     private commentaireService: DossierCommentaireService,
-    private documentService: DocumentService
+    private documentService: DocumentService,
+    private pointOperationnelService: PointOperationnelService,
   ) {}
 
   ngOnInit(): void {
@@ -82,6 +91,7 @@ export class DossierSuiviComponent implements OnInit, OnDestroy {
       next: dossier => {
         this.dossier = dossier;
         this.loading = false;
+        this.loadPointsInteret(dossier.crise);
       },
       error: () => {
         this.notFound = true;
@@ -98,6 +108,26 @@ export class DossierSuiviComponent implements OnInit, OnDestroy {
     this.documentService.getAll().subscribe(data => {
       this.documents = data.filter(d => d.dossier === this.dossierId);
       this.documents.forEach(d => this.loadPreview(d));
+    });
+  }
+
+  /** Points opérationnels de la crise utiles à l'intervenant pour se repérer autour de son
+   * dossier (transit, regroupement des moyens, accueil, secours...) — voir TYPES_POINTS_INTERET.
+   * Silencieux en cas d'échec : cette minimap reste secondaire, ne doit jamais bloquer
+   * l'affichage du reste du dossier. */
+  private loadPointsInteret(crisisId: string): void {
+    if (!crisisId) return;
+    this.pointOperationnelService.getByCrise(crisisId).subscribe({
+      next: points => {
+        this.pointsInteret = points
+          .filter(p => p.actif && p.latitude != null && p.longitude != null && TYPES_POINTS_INTERET.includes(p.type_code || ''))
+          .map(p => ({
+            latitude: p.latitude!,
+            longitude: p.longitude!,
+            label: `${p.nom} (${p.type_libelle || p.type_code})`,
+          }));
+      },
+      error: () => { this.pointsInteret = []; },
     });
   }
 
