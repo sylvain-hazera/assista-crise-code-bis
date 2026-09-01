@@ -1069,6 +1069,13 @@ class Dossier(EnvironmentScopedModel):
                    "— permet à un chef d'équipe de terrain d'organiser sa tournée.",
     )
 
+    # Posé par un participant du dossier (souvent un bénévole terrain) pour signaler une
+    # urgence au régulateur sans attendre le prochain point — voir TeamViewSet ou
+    # DossierViewSet.marquer_important, qui notifie les régulateurs concernés (même recherche
+    # que populate_dossier_participants_and_notify, via _regulateurs_pour_dossier).
+    important = models.BooleanField(default=False)
+    date_signalement_important = models.DateTimeField(null=True, blank=True)
+
     def __str__(self):
         return f"{self.numero} - {self.titre}"
 

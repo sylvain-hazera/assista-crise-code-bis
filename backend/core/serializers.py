@@ -988,6 +988,12 @@ class DossierSerializer(serializers.ModelSerializer):
     class Meta:
         model = Dossier
         fields = "__all__"
+        # important/date_signalement_important : jamais modifiables via un PATCH générique,
+        # uniquement via DossierViewSet.marquer_important (qui notifie les régulateurs).
+        extra_kwargs = {
+            'important': {'read_only': True},
+            'date_signalement_important': {'read_only': True},
+        }
 
     def _origine(self, obj):
         return obj.demande or obj.information

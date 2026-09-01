@@ -14,12 +14,12 @@ import { Dossier } from '../../shared/models/dossier.model';
 
 const STATUT_LABELS: Record<string, string> = {
   EN_ATTENTE_DISTRIBUTION: 'En attente de distribution',
-  NOUVEAU: 'Nouveau',
+  NOUVEAU: 'Pris en compte',
   EN_ATTENTE_AFFECTATION: "En attente d'affectation",
   AFFECTE: 'Affecté à une équipe',
-  EN_COURS: 'En cours de traitement',
-  RESOLU: 'Résolu',
-  CLOTURE: 'Clôturé',
+  EN_COURS: 'En cours',
+  RESOLU: 'En attente de clôture',
+  CLOTURE: 'Terminé',
 };
 
 const PRIORITE_OPTIONS: { value: Dossier['priorite']; label: string }[] = [
@@ -194,6 +194,15 @@ export class MesInterventionsComponent implements OnInit, OnDestroy {
     this.savingDossierId = dossier.id;
     this.dossierService.definirPriorite(dossier.id, { priorite }).subscribe({
       next: (updated) => { dossier.priorite = updated.priorite; },
+      error: () => {},
+      complete: () => { this.savingDossierId = null; },
+    });
+  }
+
+  toggleImportant(dossier: Dossier): void {
+    this.savingDossierId = dossier.id;
+    this.dossierService.marquerImportant(dossier.id).subscribe({
+      next: (updated) => { dossier.important = updated.important; },
       error: () => {},
       complete: () => { this.savingDossierId = null; },
     });

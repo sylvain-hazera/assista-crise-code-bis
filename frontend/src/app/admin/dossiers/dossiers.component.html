@@ -40,9 +40,15 @@
 
         </div>
 
-        <span class="badge">
-          {{ d.statut }}
-        </span>
+        <div class="badges">
+          <span *ngIf="d.important" class="badge badge-important">
+            <span class="material-icons">priority_high</span> Important
+          </span>
+
+          <span class="badge">
+            {{ d.statut }}
+          </span>
+        </div>
 
       </div>
 

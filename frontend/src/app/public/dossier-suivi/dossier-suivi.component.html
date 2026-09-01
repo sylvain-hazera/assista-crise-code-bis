@@ -16,8 +16,25 @@
 
       <div class="suivi-header">
         <div class="numero">{{ dossier.numero }}</div>
-        <span class="statut-badge">{{ statutLabel(dossier.statut) }}</span>
+        <div class="badges">
+          @if (dossier.important) {
+            <span class="important-badge">
+              <span class="material-icons">priority_high</span> Important
+            </span>
+          }
+          <span class="statut-badge">{{ statutLabel(dossier.statut) }}</span>
+        </div>
       </div>
+
+      <button
+        type="button"
+        class="btn-important"
+        [class.active]="dossier.important"
+        [disabled]="markingImportant"
+        (click)="marquerImportant()">
+        <span class="material-icons">priority_high</span>
+        {{ dossier.important ? 'Ne plus signaler comme important' : 'Signaler comme important' }}
+      </button>
 
       <h1 class="titre">{{ dossier.titre }}</h1>
       @if (dossier.description) {

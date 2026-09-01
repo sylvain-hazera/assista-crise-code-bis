@@ -43,4 +43,7 @@ export interface Dossier {
 
   unread_count?: number;
   has_updates?: boolean;
+
+  important?: boolean;                  // lecture seule, voir DossierService.marquerImportant
+  date_signalement_important?: string | null;
 }

@@ -308,3 +308,30 @@
 
   &:hover { text-decoration: underline; }
 }
+
+.col-important { text-align: center; }
+
+.btn-icon-important {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1.5px solid #d1d5db;
+  background: #fff;
+  color: #9ca3af;
+  cursor: pointer;
+  transition: background .15s, color .15s, border-color .15s;
+
+  .material-icons { font-size: 18px; }
+
+  &:hover:not(:disabled) { border-color: #dc2626; color: #dc2626; }
+  &:disabled { opacity: 0.6; cursor: not-allowed; }
+
+  &.active {
+    background: #dc2626;
+    border-color: #dc2626;
+    color: #fff;
+  }
+}

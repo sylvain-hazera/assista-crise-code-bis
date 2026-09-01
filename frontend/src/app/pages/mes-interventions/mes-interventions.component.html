@@ -76,6 +76,7 @@
               <th>Localisation</th>
               <th>Priorité</th>
               <th>Statut</th>
+              <th class="col-important"></th>
               <th></th>
             </tr>
           </thead>
@@ -158,6 +159,17 @@
                 </td>
                 <td>
                   <span class="statut-badge" [attr.data-statut]="dossier.statut">{{ statutLabel(dossier.statut) }}</span>
+                </td>
+                <td class="col-important">
+                  <button
+                    type="button"
+                    class="btn-icon-important"
+                    [class.active]="dossier.important"
+                    [disabled]="savingDossierId === dossier.id"
+                    [title]="dossier.important ? 'Ne plus signaler comme important' : 'Signaler comme important'"
+                    (click)="toggleImportant(dossier)">
+                    <span class="material-icons">priority_high</span>
+                  </button>
                 </td>
                 <td>
                   <a [routerLink]="['/dossier-suivi', dossier.id]" class="btn-detail">Détail</a>

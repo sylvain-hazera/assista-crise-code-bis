@@ -581,6 +581,59 @@ class DossierViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         dossier.save(update_fields=["priorite", "ordre"])
         return Response(DossierSerializer(dossier, context=self.get_serializer_context()).data)
 
+    @action(detail=True, methods=["post"], url_path="marquer-important")
+    def marquer_important(self, request, pk=None):
+        """Signale une urgence sur ce dossier — accessible à tout participant (pas réservé aux
+        institutionnels, contrairement à update/partial_update) : un bénévole terrain doit
+        pouvoir alerter le régulateur lui-même, sans attendre un point de situation. get_object()
+        (via get_queryset()) garantit déjà que l'appelant est participant, chef/régulateur de
+        l'équipe affectée, ou institutionnel — même garde que DossierCommentaireViewSet.
+        perform_create. Bascule le flag (un second appel désactive) ; notifie les régulateurs
+        uniquement au passage à True, jamais à la désactivation."""
+        dossier = self.get_object()
+        dossier.important = not dossier.important
+        dossier.date_signalement_important = timezone.now() if dossier.important else None
+        dossier.save(update_fields=["important", "date_signalement_important"])
+
+        if dossier.important:
+            regulateurs = _regulateurs_pour_dossier(dossier, dossier.equipe)
+            for regulateur in regulateurs:
+                Notification.objects.create(
+                    utilisateur=regulateur,
+                    dossier=dossier,
+                    titre="Dossier marqué important",
+                    message=f"Le dossier {dossier.numero} ({dossier.titre}) a été signalé important par {request.user.email}.",
+                    environment=dossier.environment,
+                )
+                try:
+                    send_mail_env_aware(
+                        request,
+                        subject=f"Urgent : dossier {dossier.numero} marqué important",
+                        message=(
+                            f"Bonjour,\n\n"
+                            f"Le dossier {dossier.numero} ({dossier.titre}) a été signalé "
+                            f"comme important par {request.user.email}.\n\n"
+                            "Connectez-vous pour plus de détails.\n\n"
+                            "Cordialement,\n"
+                            "L'équipe Assista-Crise"
+                        ),
+                        from_email=None,
+                        recipient_list=[regulateur.email],
+                        fail_silently=True,
+                    )
+                except Exception as e:
+                    print(f"Erreur envoi email dossier important : {e}")
+            audit_log(
+                request=request,
+                action_code="MODIFICATION",
+                objet_type="Dossier",
+                objet_id=dossier.id,
+                crise=dossier.crise,
+                commentaire=f"Dossier {dossier.numero} marqué important par {request.user.email}",
+            )
+
+        return Response(DossierSerializer(dossier, context=self.get_serializer_context()).data)
+
     @action(detail=False, methods=["get"])
     def ma_file(self, request):
         """Dossiers en attente d'affectation sur les compétences (thèmes) du régulateur
@@ -1692,6 +1745,32 @@ def _assign_information_to_team(signalement, team, request):
     return "created", dossier
 
 
+def _regulateurs_pour_dossier(dossier, equipe=None):
+    """Régulateur·s réellement concerné·s par ce dossier — extrait de
+    populate_dossier_participants_and_notify pour être réutilisé ailleurs (ex: notifier au
+    passage d'un dossier en "important") sans dupliquer cette logique. Priorité à la
+    compétence du dossier (indépendante de l'équipe) ; à défaut, régulateur·s parmi les
+    membres de l'équipe affectée."""
+    if dossier.competence:
+        return User.objects.filter(
+            affectations_roles__competence=dossier.competence,
+            affectations_roles__role__code="REGULATEUR",
+            affectations_roles__actif=True,
+        ).distinct()
+    if equipe:
+        member_ids = equipe.members.values_list('id', flat=True)
+        regulateur_affectations = AffectationRoleOperationnel.objects.filter(
+            utilisateur_id__in=member_ids, role__code="REGULATEUR", actif=True,
+        )
+        competence_ids = list(equipe.competences.values_list('id', flat=True))
+        if competence_ids:
+            regulateur_affectations = regulateur_affectations.filter(competence_id__in=competence_ids)
+        return User.objects.filter(
+            id__in=regulateur_affectations.values_list('utilisateur_id', flat=True)
+        ).distinct()
+    return User.objects.none()
+
+
 def populate_dossier_participants_and_notify(
     dossier, demandeur=None, equipe=None,
     notification_titre="Nouveau dossier à affecter",
@@ -1728,29 +1807,7 @@ def populate_dossier_participants_and_notify(
                 environment=dossier.environment,
             )
 
-    if dossier.competence:
-        # Régulateur·s affecté·s à cette compétence, indépendamment de leur équipe.
-        regulateurs = User.objects.filter(
-            affectations_roles__competence=dossier.competence,
-            affectations_roles__role__code="REGULATEUR",
-            affectations_roles__actif=True,
-        ).distinct()
-    elif equipe:
-        # Pas de compétence rattachée au dossier (ex: mapping RequestType->Besoin absent) :
-        # à défaut, régulateur·s parmi les membres de l'équipe affectée, sur l'une de ses
-        # compétences déclarées (ou n'importe laquelle des leurs si l'équipe n'en a aucune).
-        member_ids = equipe.members.values_list('id', flat=True)
-        regulateur_affectations = AffectationRoleOperationnel.objects.filter(
-            utilisateur_id__in=member_ids, role__code="REGULATEUR", actif=True,
-        )
-        competence_ids = list(equipe.competences.values_list('id', flat=True))
-        if competence_ids:
-            regulateur_affectations = regulateur_affectations.filter(competence_id__in=competence_ids)
-        regulateurs = User.objects.filter(
-            id__in=regulateur_affectations.values_list('utilisateur_id', flat=True)
-        ).distinct()
-    else:
-        regulateurs = User.objects.none()
+    regulateurs = _regulateurs_pour_dossier(dossier, equipe)
 
     for regulateur in regulateurs:
         DossierParticipant.objects.get_or_create(

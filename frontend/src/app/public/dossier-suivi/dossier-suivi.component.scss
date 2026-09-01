@@ -58,6 +58,12 @@
   font-size: 0.9rem;
 }
 
+.badges {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .statut-badge {
   background: #eef1ff;
   color: #4c51bf;
@@ -66,6 +72,47 @@
   font-size: 0.8rem;
   font-weight: 600;
   white-space: nowrap;
+}
+
+.important-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  background: #fef2f2;
+  color: #dc2626;
+  padding: 0.3rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  white-space: nowrap;
+  .material-icons { font-size: 15px; }
+}
+
+.btn-important {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.75rem;
+  padding: 0.5rem 0.9rem;
+  border-radius: 8px;
+  border: 1.5px solid #dc2626;
+  background: #fff;
+  color: #dc2626;
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+
+  .material-icons { font-size: 18px; }
+
+  &:hover:not(:disabled) { background: #fef2f2; }
+  &:disabled { opacity: 0.6; cursor: not-allowed; }
+
+  &.active {
+    background: #dc2626;
+    color: #fff;
+    &:hover:not(:disabled) { background: #b91c1c; }
+  }
 }
 
 .titre {

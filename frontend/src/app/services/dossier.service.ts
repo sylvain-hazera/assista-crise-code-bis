@@ -45,5 +45,11 @@ export class DossierService {
   definirPriorite(id: string, changes: { priorite?: string; ordre?: number }): Observable<Dossier> {
     return this.http.post<Dossier>(`${this.url}/${id}/definir-priorite/`, changes);
   }
+
+  /** POST /api/dossiers/<id>/marquer-important/ — bascule le signalement "important" (notifie
+   * les régulateurs concernés au passage à true). Accessible à tout participant du dossier. */
+  marquerImportant(id: string): Observable<Dossier> {
+    return this.http.post<Dossier>(`${this.url}/${id}/marquer-important/`, {});
+  }
 }
 

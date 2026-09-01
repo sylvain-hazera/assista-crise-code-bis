@@ -12,12 +12,12 @@ import { DossierDocument } from '../../shared/models/dossier-document.model';
 
 const STATUT_LABELS: Record<string, string> = {
   EN_ATTENTE_DISTRIBUTION: 'En attente de prise en charge',
-  NOUVEAU: 'Nouveau',
+  NOUVEAU: 'Pris en compte',
   EN_ATTENTE_AFFECTATION: "En attente d'affectation",
   AFFECTE: 'Affecté à une équipe',
-  EN_COURS: 'En cours de traitement',
-  RESOLU: 'Résolu',
-  CLOTURE: 'Clôturé',
+  EN_COURS: 'En cours',
+  RESOLU: 'En attente de clôture',
+  CLOTURE: 'Terminé',
 };
 
 const MAX_PHOTO_SIZE = 5 * 1024 * 1024;
@@ -43,6 +43,7 @@ export class DossierSuiviComponent implements OnInit, OnDestroy {
   sendingCommentaire = false;
   uploadingPhoto = false;
   uploadError = '';
+  markingImportant = false;
 
   private dossierId = '';
 
@@ -107,6 +108,22 @@ export class DossierSuiviComponent implements OnInit, OnDestroy {
         this.previews[doc.id] = URL.createObjectURL(blob);
       },
       error: () => {}
+    });
+  }
+
+  marquerImportant(): void {
+    if (!this.dossierId || this.markingImportant) {
+      return;
+    }
+    this.markingImportant = true;
+    this.dossierService.marquerImportant(this.dossierId).subscribe({
+      next: dossier => {
+        this.dossier = dossier;
+        this.markingImportant = false;
+      },
+      error: () => {
+        this.markingImportant = false;
+      }
     });
   }
 
