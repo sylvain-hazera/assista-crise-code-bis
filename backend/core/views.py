@@ -5319,8 +5319,11 @@ class PointOperationnelViewSet(
         # champ de PointOperationnel : c'est un choix fait dans le formulaire de création, lu
         # directement depuis le payload. Si l'utilisateur n'a pas le droit de déclarer pour cette
         # institution (pas contact, pas admin), on retombe sur l'ancienne heuristique (son propre
-        # rattachement) plutôt que d'échouer silencieusement.
-        if point.crise_id:
+        # rattachement) plutôt que d'échouer silencieusement. Résolue même sans crise : sert
+        # aussi à rattacher la nouvelle équipe créée avec le point (voir plus bas), qui n'exige
+        # pas de crise.
+        nouvelle_equipe_nom = (self.request.data.get('nouvelle_equipe_nom') or '').strip()
+        if point.crise_id or nouvelle_equipe_nom:
             institution = None
             institution_id = self.request.data.get('institution')
             if institution_id:
@@ -5337,7 +5340,7 @@ class PointOperationnelViewSet(
                 ).select_related("institution").first()
                 institution = contact.institution if contact else None
 
-            if institution:
+            if point.crise_id and institution:
                 implication, created = ImplicationInstitution.objects.get_or_create(
                     crise=point.crise,
                     institution=institution,
@@ -5356,6 +5359,26 @@ class PointOperationnelViewSet(
                             f"{point.crise.name} (gestion de {point.nom})"
                         ),
                     )
+
+            # Créer une équipe en même temps que le point, plutôt que d'obliger à en créer une
+            # séparément avant de pouvoir en assigner une — seulement si aucune équipe n'a déjà
+            # été choisie dans le formulaire (mutuellement exclusifs côté frontend).
+            if nouvelle_equipe_nom and not point.equipe_id:
+                team = Team.objects.create(
+                    name=nouvelle_equipe_nom, institution=institution, environment=point.environment,
+                )
+                point.equipe = team
+                point.save(update_fields=['equipe'])
+                audit_log(
+                    request=self.request,
+                    action_code="CREATION",
+                    objet_type="Team",
+                    objet_id=team.id,
+                    crise=point.crise,
+                    commentaire=f"Équipe créée avec le point opérationnel {point.nom}",
+                )
+                if institution is not None:
+                    _notify_institution_referent_of_team(team, institution, self.request)
 
     HEURES_PAR_CRENEAU = 6  # MATIN/MIDI/SOIR/NUIT ≈ 4 créneaux de 6h sur 24h — approximation
     # affichée telle quelle (voir décision : affichage seul, pas de blocage automatique).

@@ -288,3 +288,78 @@ class TestPointOperationnelMineFilter:
         response = client.get(reverse('pointoperationnel-list'))
 
         assert len(response.data) >= 2
+
+
+@pytest.mark.django_db
+class TestCreerEquipeAvecPoint:
+    """Créer une équipe en même temps qu'un point opérationnel — évite d'avoir à en créer une
+    séparément avant de pouvoir en assigner une (retour terrain)."""
+
+    def test_creates_team_and_assigns_it_to_the_point(self, institutional_client, crisis, point_type, institution):
+        client, user = institutional_client
+        ContactInstitution.objects.create(institution=institution, utilisateur=user, actif=True)
+
+        response = client.post(
+            reverse('pointoperationnel-list'),
+            {
+                "nom": "Point avec nouvelle équipe", "type": str(point_type.id), "crise": str(crisis.id),
+                "nouvelle_equipe_nom": "Équipe créée avec le point",
+                "institution": str(institution.id),
+            },
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        team = Team.objects.get(name="Équipe créée avec le point")
+        assert team.institution_id == institution.id
+        assert response.data["equipe"] == team.id
+
+    def test_existing_equipe_takes_precedence_over_new_team_name(self, institutional_client, crisis, point_type):
+        client, _ = institutional_client
+        existing_team = Team.objects.create(name="Équipe déjà existante")
+
+        response = client.post(
+            reverse('pointoperationnel-list'),
+            {
+                "nom": "Point avec équipe existante", "type": str(point_type.id), "crise": str(crisis.id),
+                "equipe": str(existing_team.id),
+                "nouvelle_equipe_nom": "Ne doit pas être créée",
+            },
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data["equipe"] == existing_team.id
+        assert not Team.objects.filter(name="Ne doit pas être créée").exists()
+
+    def test_new_team_works_without_crisis(self, institutional_client, point_type):
+        client, _ = institutional_client
+
+        response = client.post(
+            reverse('pointoperationnel-list'),
+            {
+                "nom": "Point sans crise", "type": str(point_type.id),
+                "nouvelle_equipe_nom": "Équipe sans crise",
+            },
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert Team.objects.filter(name="Équipe sans crise").exists()
+
+    def test_blank_new_team_name_does_not_create_a_team(self, institutional_client, crisis, point_type):
+        client, _ = institutional_client
+        before = Team.objects.count()
+
+        response = client.post(
+            reverse('pointoperationnel-list'),
+            {
+                "nom": "Point sans nouvelle équipe", "type": str(point_type.id), "crise": str(crisis.id),
+                "nouvelle_equipe_nom": "   ",
+            },
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert Team.objects.count() == before
+        assert response.data["equipe"] is None

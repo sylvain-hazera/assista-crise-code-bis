@@ -61,6 +61,17 @@
     font-size: .78rem;
     color: #6b7280;
   }
+
+  .checkbox-label {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: .4rem;
+    font-weight: 400;
+    cursor: pointer;
+
+    input[type="checkbox"] { cursor: pointer; }
+  }
 }
 
 .form-row {

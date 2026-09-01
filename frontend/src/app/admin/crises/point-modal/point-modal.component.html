@@ -78,6 +78,22 @@
             <span class="material-icons">groups</span> Gérer l'équipe et les disponibilités
           </button>
         }
+        @if (!isEdit) {
+          <label class="checkbox-label">
+            <input
+              type="checkbox"
+              [checked]="form.get('creerNouvelleEquipe')?.value"
+              (change)="onCreerNouvelleEquipeChange($any($event.target).checked)">
+            <span>Créer une nouvelle équipe pour ce point</span>
+          </label>
+          @if (form.get('creerNouvelleEquipe')?.value) {
+            <input
+              type="text"
+              formControlName="nouvelleEquipeNom"
+              placeholder="Nom de la nouvelle équipe"
+              [class.invalid]="form.get('nouvelleEquipeNom')?.invalid && form.get('nouvelleEquipeNom')?.touched">
+          }
+        }
       </div>
 
       @if (isEdit) {

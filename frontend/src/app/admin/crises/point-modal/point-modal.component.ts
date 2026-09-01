@@ -93,6 +93,10 @@ export class PointModalComponent implements OnChanges {
       date_ouverture: [this.toDatetimeLocal(this.point?.date_ouverture)],
       date_fermeture: [this.toDatetimeLocal(this.point?.date_fermeture)],
       equipe: [this.point?.equipe ?? this.defaultEquipeId ?? null],
+      // Uniquement à la création (voir isEdit) : crée une équipe en même temps que le point,
+      // plutôt que d'obliger à en créer une séparément avant de pouvoir en assigner une.
+      creerNouvelleEquipe: [false],
+      nouvelleEquipeNom: [''],
     });
     this.latitude = this.point?.latitude ?? null;
     this.longitude = this.point?.longitude ?? null;
@@ -122,6 +126,22 @@ export class PointModalComponent implements OnChanges {
 
   get isEdit(): boolean {
     return !!this.point;
+  }
+
+  onCreerNouvelleEquipeChange(checked: boolean): void {
+    this.form.patchValue({ creerNouvelleEquipe: checked });
+    const nomControl = this.form.get('nouvelleEquipeNom');
+    const equipeControl = this.form.get('equipe');
+    if (checked) {
+      nomControl?.setValidators([Validators.required, Validators.minLength(2)]);
+      equipeControl?.setValue(null);
+      equipeControl?.disable();
+    } else {
+      nomControl?.clearValidators();
+      nomControl?.setValue('');
+      equipeControl?.enable();
+    }
+    nomControl?.updateValueAndValidity();
   }
 
   openEquipeModal(): void {
@@ -180,15 +200,18 @@ export class PointModalComponent implements OnChanges {
       return;
     }
 
-    const { institution, type, nom, description, capacite_accueil, date_ouverture, date_fermeture, equipe } = this.form.value;
+    const { institution, type, nom, description, capacite_accueil, date_ouverture, date_fermeture, equipe, creerNouvelleEquipe, nouvelleEquipeNom } = this.form.getRawValue();
     const payload: any = {
       type, nom,
       description: description || undefined,
       capacite_accueil: capacite_accueil || null,
       date_ouverture: date_ouverture || null,
       date_fermeture: date_fermeture || null,
-      equipe: equipe || null,
+      equipe: creerNouvelleEquipe ? null : (equipe || null),
     };
+    if (!this.isEdit && creerNouvelleEquipe && nouvelleEquipeNom?.trim()) {
+      payload.nouvelle_equipe_nom = nouvelleEquipeNom.trim();
+    }
 
     if (this.latitude != null && this.longitude != null) {
       payload.location = JSON.stringify({ type: 'Point', coordinates: [this.longitude, this.latitude] });
