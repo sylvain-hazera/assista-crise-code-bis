@@ -272,6 +272,65 @@ class TestOfferEngagementFields:
 
 
 @pytest.mark.django_db
+class TestOfferMaterielTransportComplement:
+    """Complète la liste des matériels/transports proposés : engin/machine tracté(e), cuve/
+    citerne mobile avec précision eau/carburant, transport d'animaux avec précision libre."""
+
+    def test_declares_engin_tracte(self, api_client, offer_type):
+        payload = {
+            **OFFER_PAYLOAD,
+            "email_offer": "engin-tracte@test.fr",
+            "offer_type": str(offer_type.id),
+            "materiel_type": "ENGIN_TRACTE",
+        }
+        response = api_client.post(reverse('offer-list'), payload, format='json')
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data['materiel_type'] == 'ENGIN_TRACTE'
+
+    def test_declares_cuve_avec_contenu_carburant(self, api_client, offer_type):
+        payload = {
+            **OFFER_PAYLOAD,
+            "email_offer": "cuve-carburant@test.fr",
+            "offer_type": str(offer_type.id),
+            "materiel_type": "CUVE",
+            "cuve_contenu": "CARBURANT",
+        }
+        response = api_client.post(reverse('offer-list'), payload, format='json')
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data['cuve_contenu'] == 'CARBURANT'
+
+    def test_cuve_contenu_optional(self, offer):
+        assert offer.cuve_contenu is None
+
+    def test_cuve_contenu_rejects_invalid_choice(self, api_client, offer_type):
+        payload = {
+            **OFFER_PAYLOAD,
+            "email_offer": "cuve-invalide@test.fr",
+            "offer_type": str(offer_type.id),
+            "materiel_type": "CUVE",
+            "cuve_contenu": "ESSENCE_DE_LICORNE",
+        }
+        response = api_client.post(reverse('offer-list'), payload, format='json')
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_declares_transport_animaux_avec_precision(self, api_client, offer_type):
+        payload = {
+            **OFFER_PAYLOAD,
+            "email_offer": "transport-animaux@test.fr",
+            "offer_type": str(offer_type.id),
+            "transport_type": "ANIMAUX",
+            "transport_animaux_precision": "Chevaux",
+        }
+        response = api_client.post(reverse('offer-list'), payload, format='json')
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data['transport_type'] == 'ANIMAUX'
+        assert response.data['transport_animaux_precision'] == 'Chevaux'
+
+    def test_transport_animaux_precision_optional(self, offer):
+        assert offer.transport_animaux_precision is None
+
+
+@pytest.mark.django_db
 class TestOfferDepotGroupe:
     """organisation_nom/groupe_id : une entreprise/association peut déposer plusieurs
     personnes/véhicules en une seule visite du formulaire public, tagués ensemble — voir

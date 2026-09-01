@@ -118,7 +118,7 @@
                     </div>
                 }
 
-                <!-- Transport : personnes ou matériel -->
+                <!-- Transport : personnes, matériel ou animaux -->
                 @if (rg.get('type')?.value === TYPE_TRANSPORT) {
                     <div class="form-group">
                         <label class="form-label">Type de transport proposé</label>
@@ -128,7 +128,21 @@
                         <label class="radio-label">
                             <input type="radio" formControlName="transportType" value="MATERIEL"> Transport de matériel
                         </label>
+                        <label class="radio-label">
+                            <input type="radio" formControlName="transportType" value="ANIMAUX"> Transport d'animaux
+                        </label>
                     </div>
+
+                    @if (rg.get('transportType')?.value === 'ANIMAUX') {
+                        <div class="form-group">
+                            <label class="form-label">Type d'animaux <span class="required">*</span></label>
+                            <input type="text" formControlName="transportAnimauxPrecision" class="form-input"
+                              placeholder="Ex. chiens, chats, chevaux, bétail...">
+                            @if (rg.get('transportAnimauxPrecision')?.invalid && rg.get('transportAnimauxPrecision')?.touched) {
+                                <div class="error-message">Merci de préciser le type d'animaux.</div>
+                            }
+                        </div>
+                    }
                 }
 
                 <!-- Matériel : sous-type -->
@@ -153,6 +167,18 @@
                             <span class="material-icons select-arrow">arrow_drop_down</span>
                         </div>
                     </div>
+
+                    @if (rg.get('materielType')?.value === 'CUVE') {
+                        <div class="form-group">
+                            <label class="form-label">Cette cuve/citerne sert à transporter...</label>
+                            @for(option of cuveContenuOptions; track option.value) {
+                                <label class="radio-label">
+                                    <input type="radio" formControlName="cuveContenu" [value]="option.value">
+                                    {{ option.label }}
+                                </label>
+                            }
+                        </div>
+                    }
 
                     @if (rg.get('materielType')?.value === 'AUTRE' && !rg.get('materielCatalogue')?.value) {
                         <div class="form-group">

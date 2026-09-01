@@ -439,6 +439,7 @@ class DureeHebergement(models.TextChoices):
 class TypeTransportOffre(models.TextChoices):
     PERSONNES = "PERSONNES", "Transport de personnes"
     MATERIEL = "MATERIEL", "Transport de matériel"
+    ANIMAUX = "ANIMAUX", "Transport d'animaux"
 
 
 class TypeMateriel(models.TextChoices):
@@ -447,7 +448,17 @@ class TypeMateriel(models.TextChoices):
     ETUVE = "ETUVE", "Étuve"
     CHAMBRE_FROIDE = "CHAMBRE_FROIDE", "Chambre froide"
     REMORQUE = "REMORQUE", "Remorque"
+    ENGIN_TRACTE = "ENGIN_TRACTE", "Engin/machine tracté(e) (bulldozer à lame, broyeur, déchaumeur, cover crop...)"
     AUTRE = "AUTRE", "Autre"
+
+
+class CuveContenu(models.TextChoices):
+    """Précision posée uniquement quand TypeMateriel.CUVE est choisi — le libellé de
+    TypeMateriel.CUVE reste volontairement "Cuve" (pas "Cuve / citerne mobile") pour ne pas
+    fragmenter le catalogue partagé déjà seedé sous ce nom (voir affecter_stock, qui résout
+    l'item catalogue par get_materiel_type_display())."""
+    EAU = "EAU", "Eau"
+    CARBURANT = "CARBURANT", "Carburant"
 
 
 class TypeSoutien(models.TextChoices):
@@ -525,6 +536,12 @@ class Offer(EnvironmentScopedModel):
     materiel_catalogue = models.ForeignKey(
         "MaterielCatalogue", on_delete=models.SET_NULL, null=True, blank=True, related_name="offres"
     )
+    # Posé uniquement quand materiel_type == CUVE : une cuve/citerne mobile d'eau ne se prête
+    # ni ne se cherche comme une cuve à carburant, malgré le même type structurel.
+    cuve_contenu = models.CharField(max_length=20, choices=CuveContenu.choices, null=True, blank=True)
+    # Posé uniquement quand transport_type == ANIMAUX : le type d'animal (chiens, chevaux,
+    # bétail...) change radicalement les moyens requis, pas de liste fermée pertinente ici.
+    transport_animaux_precision = models.CharField(max_length=255, null=True, blank=True)
     quantite = models.PositiveIntegerField(null=True, blank=True)
     unite = models.CharField(max_length=20, null=True, blank=True)
     soutien_type = models.CharField(max_length=20, choices=TypeSoutien.choices, null=True, blank=True)

@@ -18,8 +18,24 @@ class TestRequestTypeCategorySeed:
         children = set(materiel.sous_categories.values_list('type', flat=True))
         assert children == {
             "Groupe électrogène", "Starlink / connexion satellite",
-            "Télécommunication", "Pompage", "Cuve",
+            "Télécommunication", "Pompage", "Cuve / citerne mobile",
+            "Engin/machine tracté(e)",
         }
+
+    def test_cuve_renamed_to_cuve_citerne_mobile(self):
+        """Anciennement "Cuve" (0042) — même ligne (pas de doublon), renommée pour préciser
+        qu'elle sert aussi bien à l'eau qu'au carburant (voir 0095)."""
+        assert not RequestType.objects.filter(type="Cuve").exists()
+        cuve = RequestType.objects.get(type="Cuve / citerne mobile")
+        assert cuve.parent.type == "Matériel"
+        assert "eau" in cuve.description.lower() and "carburant" in cuve.description.lower()
+        assert not Besoin.objects.filter(nom="Cuve").exists()
+        assert Besoin.objects.filter(nom="Cuve / citerne mobile").exists()
+
+    def test_transport_has_animaux_child(self):
+        transport = RequestType.objects.get(type="Transport")
+        children = set(transport.sous_categories.values_list('type', flat=True))
+        assert "Transport d'animaux" in children
 
     def test_interpretariat_has_expected_children(self):
         parent = RequestType.objects.get(type="Interprétariat / traduction")
@@ -30,7 +46,8 @@ class TestRequestTypeCategorySeed:
         """Chaque nouvelle sous-catégorie doit être routable : un Besoin du même nom, relié
         via RequestTypeBesoin, sinon l'auto-affectation (perform_create) ne trouve jamais de
         compétence et le dossier reste sans équipe."""
-        for nom in ["Groupe électrogène", "Pompage", "Anglais", "Espagnol"]:
+        for nom in ["Groupe électrogène", "Pompage", "Anglais", "Espagnol",
+                    "Cuve / citerne mobile", "Engin/machine tracté(e)", "Transport d'animaux"]:
             request_type = RequestType.objects.get(type=nom)
             besoin = Besoin.objects.get(nom=nom)
             assert RequestTypeBesoin.objects.filter(request_type=request_type, besoin=besoin).exists()

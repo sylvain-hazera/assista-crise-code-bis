@@ -77,6 +77,16 @@ function presencePhysiqueValidator(control: AbstractControl): ValidationErrors |
   return (requiert && control.value === null) ? { required: true } : null;
 }
 
+/** Le type d'animal transporté change radicalement les moyens requis (cage, bétaillère...) :
+ * exigé dès que transportType === ANIMAUX. Dépend de transportType, pas de type — voir
+ * l'abonnement dédié dans addOffer(). */
+function transportAnimauxPrecisionValidator(control: AbstractControl): ValidationErrors | null {
+  const parent = control.parent;
+  if (!parent) return null;
+  const transportType = parent.get('transportType')?.value;
+  return (transportType === 'ANIMAUX' && !control.value) ? { required: true } : null;
+}
+
 @Component({
   selector: 'app-request-help-form',
   standalone: true,
@@ -109,12 +119,18 @@ export class ProposeHelpFormComponent implements OnInit {
 
   readonly materielTypeOptions: { value: string; label: string }[] = [
     { value: '', label: '— Choisir —' },
-    { value: 'CUVE', label: 'Cuve' },
+    { value: 'CUVE', label: 'Cuve / citerne mobile' },
     { value: 'POMPE', label: 'Pompe' },
     { value: 'ETUVE', label: 'Étuve' },
     { value: 'CHAMBRE_FROIDE', label: 'Chambre froide' },
     { value: 'REMORQUE', label: 'Remorque' },
+    { value: 'ENGIN_TRACTE', label: 'Engin/machine tracté(e) (bulldozer à lame, broyeur, déchaumeur, cover crop...)' },
     { value: 'AUTRE', label: 'Autre' },
+  ];
+
+  readonly cuveContenuOptions: { value: string; label: string }[] = [
+    { value: 'EAU', label: 'Eau' },
+    { value: 'CARBURANT', label: 'Carburant' },
   ];
 
   selectedAddress: AddressResult | null = null;
@@ -397,7 +413,13 @@ export class ProposeHelpFormComponent implements OnInit {
       if (v.type === TYPE_HEBERGEMENT && v.hebergementDuree) formData.append('hebergement_duree', v.hebergementDuree);
       if (v.type === TYPE_SOINS && v.numeroAdeliRpps) formData.append('numero_adeli_rpps', v.numeroAdeliRpps);
       if (v.type === TYPE_TRANSPORT && v.transportType) formData.append('transport_type', v.transportType);
+      if (v.type === TYPE_TRANSPORT && v.transportType === 'ANIMAUX' && v.transportAnimauxPrecision) {
+        formData.append('transport_animaux_precision', v.transportAnimauxPrecision);
+      }
       if (v.type === TYPE_MATERIEL && v.materielType) formData.append('materiel_type', v.materielType);
+      if (v.type === TYPE_MATERIEL && v.materielType === 'CUVE' && v.cuveContenu) {
+        formData.append('cuve_contenu', v.cuveContenu);
+      }
       if (v.type === TYPE_MATERIEL && v.materielType === 'AUTRE' && v.materielCatalogue) {
         formData.append('materiel_catalogue', v.materielCatalogue);
       }
@@ -534,7 +556,9 @@ export class ProposeHelpFormComponent implements OnInit {
       hebergementDuree: [''],
       numeroAdeliRpps: [''],
       transportType: [''],
+      transportAnimauxPrecision: ['', transportAnimauxPrecisionValidator],
       materielType: [''],
+      cuveContenu: [''],
       materielCatalogue: [null],
       materielCatalogueNom: [''],
       quantite: [null],
@@ -561,6 +585,12 @@ export class ProposeHelpFormComponent implements OnInit {
       } else {
         row.get('presencePhysique')?.setValue(null);
       }
+    });
+    // Même mécanique que confirmationReglementaireValidator ci-dessus, mais pilotée par
+    // transportType (sous-catégorie), pas type : choisir "Transport d'animaux" APRÈS coup doit
+    // rendre transportAnimauxPrecision obligatoire sans retoucher le champ lui-même.
+    row.get('transportType')?.valueChanges.subscribe(() => {
+      row.get('transportAnimauxPrecision')?.updateValueAndValidity();
     });
     this.offerRows.push(row);
   }

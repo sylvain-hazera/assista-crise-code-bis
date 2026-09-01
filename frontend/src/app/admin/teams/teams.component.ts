@@ -690,8 +690,9 @@ export class TeamsComponent implements OnInit {
   // volontairement, comme le reste de ce fichier le fait déjà pour de petites tables de
   // correspondance, plutôt que de créer un import partagé pour six libellés fixes.
   private readonly MATERIEL_TYPE_LABELS: Record<string, string> = {
-    CUVE: 'Cuve', POMPE: 'Pompe', ETUVE: 'Étuve',
-    CHAMBRE_FROIDE: 'Chambre froide', REMORQUE: 'Remorque', AUTRE: 'Autre',
+    CUVE: 'Cuve / citerne mobile', POMPE: 'Pompe', ETUVE: 'Étuve',
+    CHAMBRE_FROIDE: 'Chambre froide', REMORQUE: 'Remorque',
+    ENGIN_TRACTE: 'Engin/machine tracté(e)', AUTRE: 'Autre',
   };
 
   offerFor(m: TeamMission): Offer | undefined {
