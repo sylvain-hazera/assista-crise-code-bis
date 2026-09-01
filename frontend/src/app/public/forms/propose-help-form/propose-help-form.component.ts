@@ -426,11 +426,17 @@ export class ProposeHelpFormComponent implements OnInit {
     this.showCrisisDropdown = false;
   }
 
-  /** L'adresse est optionnelle pour un offreur d'aide : le sélecteur résout déjà les
-   * coordonnées au moment du choix, aucun géocodage à refaire ici. */
+  /** La commune est obligatoire même pour un offreur d'aide (matching géographique avec les
+   * besoins à proximité) : l'adresse précise reste néanmoins masquable au public via la case
+   * "adresse visible" plus bas — seule la sélection elle-même (qui résout une commune) est
+   * requise ici. */
   onContinue(): void {
-    this.state = 2;
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (this.selectedAddress) {
+      this.state = 2;
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } else {
+      alert('Veuillez sélectionner une adresse dans la liste proposée.');
+    }
   }
 
   goBack(): void {

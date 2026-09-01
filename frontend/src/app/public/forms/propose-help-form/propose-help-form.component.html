@@ -311,17 +311,24 @@
 
             <!-- Votre adresse -->
             <div class="form-section">
-                <h2 class="section-title">Votre adresse (optionnel)</h2>
+                <h2 class="section-title">Votre adresse <span class="required">*</span></h2>
                 <p class="section-description">
-                Vous pouvez proposer votre aide sans indiquer d'adresse.
+                La commune est nécessaire pour rapprocher votre offre des besoins à proximité —
+                vous choisissez juste après si l'adresse précise reste visible ou non.
                 </p>
 
                 <div class="form-group">
                   <app-address-picker
                     label="Votre adresse"
-                    placeholder="Rechercher une adresse (optionnel)…"
+                    placeholder="Rechercher une adresse…"
+                    [required]="true"
                     (addressSelected)="onAddressSelected($event)">
                   </app-address-picker>
+                  @if (requestForm.touched && !selectedAddress) {
+                    <div class="error-message">
+                      Veuillez sélectionner une adresse dans la liste proposée
+                    </div>
+                  }
                 </div>
 
                 <!-- Checkbox adresse visible -->
