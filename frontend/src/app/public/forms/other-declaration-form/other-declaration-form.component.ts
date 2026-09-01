@@ -15,6 +15,7 @@ import { TagSearchInputComponent } from '../../../shared/components/common/tag-s
 import { AddressResult } from '../../../shared/models/address-result.model';
 import { CentreAccueilPublic } from '../../../shared/models/point-operationnel.model';
 import { RgpdNoticeComponent } from '../../../shared/components/public/rgpd-notice/rgpd-notice.component';
+import { ValidationSummaryComponent } from '../../../shared/components/public/validation-summary/validation-summary.component';
 
 enum StateForm {
   DeclareSafe,
@@ -24,7 +25,7 @@ enum StateForm {
 @Component({
   selector: 'app-other-declaration-form',
   standalone: true,
-  imports: [ReactiveFormsModule, CommonModule, FormsModule, AddressPickerComponent, TagSearchInputComponent, RgpdNoticeComponent],
+  imports: [ReactiveFormsModule, CommonModule, FormsModule, AddressPickerComponent, TagSearchInputComponent, RgpdNoticeComponent, ValidationSummaryComponent],
   templateUrl: './other-declaration-form.component.html',
   styleUrl: './other-declaration-form.component.scss'
 })
@@ -40,9 +41,14 @@ export class OtherDeclarationFormComponent implements OnInit {
   longitude: number | null = null;
 
   selectedAddressOther: AddressResult | null = null;
+  selectedAddressSafe: AddressResult | null = null;
 
   onAddressSelectedOther(addr: AddressResult | null): void {
     this.selectedAddressOther = addr;
+  }
+
+  onAddressSelectedSafe(addr: AddressResult | null): void {
+    this.selectedAddressSafe = addr;
   }
 
   crisisOptions: { value: string; label: string }[] = [];
@@ -127,7 +133,7 @@ export class OtherDeclarationFormComponent implements OnInit {
 
   initForm(): void {
     this.declareSafeForm = this.formBuilder.group({
-      crisisId: [''],
+      crisisId: ['', Validators.required],
       situation: ['RELOGE', Validators.required],
       typeDeclarant: ['PERSONNE_SEULE', Validators.required],
       lastName: ['', Validators.required],
@@ -144,19 +150,25 @@ export class OtherDeclarationFormComponent implements OnInit {
       crisisId: [''],
       description: ['', [Validators.required, Validators.minLength(10)]],
       addressVisible: [false],
-      image: [null]
+      image: [null],
+      lastName: ['', Validators.required],
+      firstName: ['', Validators.required],
+      phoneNumber: ['', [Validators.required, Validators.pattern(/^\+?[\d\s.-]{10,20}$/)]],
+      email: ['', [Validators.required, Validators.email]],
     });
   }
 
   onDeclareSafe(): void {
     this.state = StateForm.DeclareSafe;
     this.fileName = 'Select'; // Reset file selection
+    this.formErrors = [];
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   onOtherDeclaration(): void {
     this.state = StateForm.OtherDeclaration;
     this.fileName = 'Select'; // Reset file selection
+    this.formErrors = [];
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
@@ -250,24 +262,53 @@ export class OtherDeclarationFormComponent implements OnInit {
     return !!this.selectedAddressOther || (this.capturedLatitude != null && this.capturedLongitude != null);
   }
 
+  // Encadré rouge de résumé, affiché juste au-dessus du bouton d'envoi de chaque formulaire —
+  // remplace les alert() génériques qui ne disaient jamais lesquels des champs posaient
+  // problème. Recalculé à chaque tentative de soumission.
+  formErrors: string[] = [];
+
+  private declareSafeValidationErrors(): string[] {
+    const errors: string[] = [];
+    const f = this.declareSafeForm;
+    if (f.get('crisisId')?.invalid) errors.push('Choisissez la crise concernée.');
+    if (f.get('lastName')?.invalid) errors.push('Le nom est obligatoire.');
+    if (f.get('firstName')?.invalid) errors.push('Le prénom est obligatoire.');
+    if (f.get('phoneNumber')?.invalid) errors.push('Le téléphone est obligatoire et doit être valide.');
+    if (f.get('email')?.invalid) errors.push('L\'email est obligatoire et doit être valide.');
+    if (f.get('nombreAdultes')?.invalid) errors.push('Le nombre d\'adultes doit être renseigné.');
+    if (f.get('nombreEnfants')?.invalid) errors.push('Le nombre d\'enfants doit être renseigné.');
+    if (this.situationChoisie === 'EN_CENTRE' && !f.get('centreAccueil')?.value) {
+      errors.push("Choisissez un centre d'accueil dans la liste.");
+    }
+    return errors;
+  }
+
+  private otherInformationValidationErrors(): string[] {
+    const errors: string[] = [];
+    const f = this.otherInformationForm;
+    if (!this.selectedInformationType) errors.push('Sélectionnez ou créez un type de signalement.');
+    if (f.get('description')?.invalid) errors.push('La description est obligatoire (10 caractères minimum).');
+    if (!this.hasLocationForOther()) errors.push('Sélectionnez une adresse, ou prenez une photo géolocalisée.');
+    if (f.get('lastName')?.invalid) errors.push('Le nom est obligatoire.');
+    if (f.get('firstName')?.invalid) errors.push('Le prénom est obligatoire.');
+    if (f.get('phoneNumber')?.invalid) errors.push('Le téléphone est obligatoire et doit être valide.');
+    if (f.get('email')?.invalid) errors.push('L\'email est obligatoire et doit être valide.');
+    return errors;
+  }
+
   onSubmit(): void {
     if (this.state === StateForm.DeclareSafe) {
-      if (!this.declareSafeForm.valid) {
-        this.declareSafeForm.markAllAsTouched();
-        alert('Veuillez remplir tous les champs obligatoires');
-        return;
-      }
-      if (this.situationChoisie === 'EN_CENTRE' && !this.declareSafeForm.get('centreAccueil')?.value) {
-        alert("Veuillez choisir un centre d'accueil dans la liste.");
-        return;
-      }
+      this.declareSafeForm.markAllAsTouched();
+      this.formErrors = this.declareSafeValidationErrors();
+      if (this.formErrors.length > 0) return;
       this.submitDeclareSafeForm();
-    } else if (
-      this.state === StateForm.OtherDeclaration &&
-      this.otherInformationForm.valid &&
-      this.selectedInformationType &&
-      this.hasLocationForOther()
-    ) {
+    } else {
+      Object.keys(this.otherInformationForm.controls).forEach(key => {
+        this.otherInformationForm.get(key)?.markAsTouched();
+      });
+      this.formErrors = this.otherInformationValidationErrors();
+      if (this.formErrors.length > 0) return;
+
       if (this.capturedLatitude != null && this.capturedLongitude != null) {
         this.latitude = this.capturedLatitude;
         this.longitude = this.capturedLongitude;
@@ -276,19 +317,6 @@ export class OtherDeclarationFormComponent implements OnInit {
         this.longitude = this.selectedAddressOther!.longitude;
       }
       this.submitOtherInformationForm();
-    } else {
-      // À ce stade this.state ne peut plus être DeclareSafe : le premier branch gère ce cas
-      // en entier (validation + soumission) et retourne toujours avant d'arriver ici.
-      Object.keys(this.otherInformationForm.controls).forEach(key => {
-        this.otherInformationForm.get(key)?.markAsTouched();
-      });
-      if (!this.selectedInformationType) {
-        alert('Merci de sélectionner ou créer un type de signalement.');
-      } else if (!this.hasLocationForOther()) {
-        alert('Veuillez sélectionner une adresse dans la liste proposée, ou prendre une photo géolocalisée.');
-      } else {
-        alert('Veuillez remplir tous les champs obligatoires');
-      }
     }
   }
 
@@ -306,11 +334,17 @@ export class OtherDeclarationFormComponent implements OnInit {
       nombre_adultes: typeDeclarant === 'PERSONNE_SEULE' ? 1 : this.declareSafeForm.get('nombreAdultes')?.value,
       nombre_enfants: typeDeclarant === 'PERSONNE_SEULE' ? 0 : this.declareSafeForm.get('nombreEnfants')?.value,
       commentaire: `Téléphone : ${this.declareSafeForm.get('phoneNumber')?.value}`,
+      crise: this.declareSafeForm.get('crisisId')?.value,
     };
 
-    const crisisId = this.declareSafeForm.get('crisisId')?.value;
-    if (crisisId) {
-      payload.crise = crisisId;
+    if (this.selectedAddressSafe) {
+      payload.location = JSON.stringify({
+        type: 'Point',
+        coordinates: [this.selectedAddressSafe.longitude, this.selectedAddressSafe.latitude],
+      });
+      if (this.selectedAddressSafe.citycode) {
+        payload.commune_code = this.selectedAddressSafe.citycode;
+      }
     }
 
     if (situation === 'EN_CENTRE') {
@@ -420,10 +454,10 @@ export class OtherDeclarationFormComponent implements OnInit {
     const formData = new FormData();
 
     formData.append('title', this.otherInformationForm.get('description')?.value.substring(0, 100)); // Titre = début de la description
-    formData.append('first_name_information', 'Anonyme'); // Information n'a pas de prénom dans ce form
-    formData.append('last_name_information', 'Anonyme'); // Information n'a pas de nom dans ce form
-    formData.append('email_information', 'anonyme@example.com'); // Email requis mais pas dans le form
-    formData.append('phone_information', '0000000000'); // Téléphone requis mais pas dans le form
+    formData.append('first_name_information', this.otherInformationForm.get('firstName')?.value);
+    formData.append('last_name_information', this.otherInformationForm.get('lastName')?.value);
+    formData.append('email_information', this.otherInformationForm.get('email')?.value);
+    formData.append('phone_information', this.otherInformationForm.get('phoneNumber')?.value);
 
     const localisation = {
       type: 'Point',
@@ -444,12 +478,8 @@ export class OtherDeclarationFormComponent implements OnInit {
     }
 
     formData.append('status', 'DISPONIBLE');
-
-    if (!this.selectedInformationType) {
-      alert('Merci de sélectionner ou créer un type de signalement.');
-      return;
-    }
-    formData.append('information_type', this.selectedInformationType.id);
+    // selectedInformationType déjà vérifié non-nul par onSubmit() (voir otherInformationValidationErrors).
+    formData.append('information_type', this.selectedInformationType!.id);
 
     // Crise (nullable)
     const crisisId = this.otherInformationForm.get('crisisId')?.value;

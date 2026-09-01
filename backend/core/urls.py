@@ -6,7 +6,7 @@ from .views import (
     AccountActivationView, MagicLoginView, MaPositionView, PositionsEquipesView,
     UserViewSet, CrisisViewSet, RequestViewSet, 
     RecherchePersonneCommentairePhotoViewSet,
-    OfferViewSet, DisponibiliteOffreViewSet, InformationViewSet, RecherchePersonnePhotoViewSet,
+    OfferViewSet, OfferPhotoViewSet, RequestPhotoViewSet, DisponibiliteOffreViewSet, InformationViewSet, RecherchePersonnePhotoViewSet,
     BesoinViewSet, RecherchePersonneCommentaireViewSet, RecherchePersonneViewSet,
     BesoinCompetenceViewSet, RequestTypeBesoinViewSet, RequestTypeViewSet, OfferTypeViewSet, InformationTypeViewSet,
     DeleteRequestView, DeleteOfferView, DeleteInformationView, CompetenceViewSet,
@@ -102,6 +102,8 @@ router.register(r'users', UserViewSet)
 router.register(r'crises', CrisisViewSet)
 router.register(r'demandes', RequestViewSet)
 router.register(r'offres', OfferViewSet)
+router.register(r'photos-demandes', RequestPhotoViewSet)
+router.register(r'photos-offres', OfferPhotoViewSet)
 router.register(r'disponibilites-offres', DisponibiliteOffreViewSet)
 router.register(r'disponibilites-points-equipe', DisponibilitePointEquipeViewSet)
 router.register(r'materiels-points', MaterielPointViewSet)

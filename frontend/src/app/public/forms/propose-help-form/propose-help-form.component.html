@@ -359,28 +359,19 @@
             <div class="form-section">
                 <h2 class="section-title">Images liées à l'annonce</h2>
                 <p class="section-description">
-                Ajouter des images pour illustrer le(s) services dont vous avez offre
+                Ajoutez jusqu'à 10 images pour illustrer le(s) service(s) proposé(s) — la
+                première ajoutée est la photo principale, vous pouvez en choisir une autre.
                 </p>
 
-                <div class="file-upload-wrapper">
-                <label for="fileUpload" class="file-upload-label">
-                    <span class="file-name">{{ fileName }}</span>
-                    <span class="material-symbols-outlined">upload</span>
-                </label>
-                <input
-                    type="file"
-                    id="fileUpload"
-                    accept="image/*"
-                    capture="environment"
-                    (change)="onFileSelected($event)"
-                    class="file-input">
-                </div>
+                <app-photo-gallery-picker (selectionChanged)="onPhotosSelected($event)"></app-photo-gallery-picker>
             </div>
+
+      <app-validation-summary [errors]="formErrorsStep1"></app-validation-summary>
 
       <!-- Bouton Submit -->
       <div class="form-actions">
-          <button 
-            type="button" 
+          <button
+            type="button"
             class="btn-submit"
             (click)="onContinue()">
             Suivant >
@@ -560,6 +551,8 @@
             }
 
       <app-rgpd-notice purpose="traiter votre offre d'aide"></app-rgpd-notice>
+
+      <app-validation-summary [errors]="formErrorsStep2"></app-validation-summary>
 
       <!-- Bouton Submit -->
       <div class="form-actions">

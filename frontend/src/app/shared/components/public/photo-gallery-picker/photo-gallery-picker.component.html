@@ -1,0 +1,41 @@
+<div class="photo-gallery-picker">
+  <input
+    #fileInput
+    type="file"
+    id="galleryFileInput"
+    class="file-input"
+    accept="image/*"
+    multiple
+    (change)="onFilesSelected($event)">
+
+  <label for="galleryFileInput" class="btn-add-photo">
+    <span class="material-icons">add_a_photo</span>
+    Ajouter des photos ({{ photos.length }}/{{ maxFiles }})
+  </label>
+
+  @if (errorMessage) {
+    <p class="error-message">{{ errorMessage }}</p>
+  }
+
+  @if (photos.length > 0) {
+    <div class="photo-grid">
+      @for (photo of photos; track photo.url; let i = $index) {
+        <div class="photo-thumb" [class.principale]="photo.principale">
+          <img [src]="photo.url" [alt]="photo.file.name">
+          <button type="button" class="btn-remove" (click)="remove(i)" title="Retirer">
+            <span class="material-icons">close</span>
+          </button>
+          @if (photo.principale) {
+            <span class="badge-principale">
+              <span class="material-icons">star</span> Principale
+            </span>
+          } @else {
+            <button type="button" class="btn-set-principale" (click)="setPrincipale(i)">
+              Définir comme principale
+            </button>
+          }
+        </div>
+      }
+    </div>
+  }
+</div>

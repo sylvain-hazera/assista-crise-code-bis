@@ -61,6 +61,16 @@ export class RequestService {
     return this.http.get(`${this.url}/${id}/preview/`, { responseType: 'blob' });
   }
 
+  /** POST /api/photos-demandes/ — ajoute une photo à la galerie d'une demande déjà créée
+   * (au-delà de sa photo principale, voir RequestPhoto/request-help-form). */
+  addPhoto(requestId: string, file: File, ordre: number): Observable<void> {
+    const fd = new FormData();
+    fd.append('request', requestId);
+    fd.append('image', file);
+    fd.append('ordre', String(ordre));
+    return this.http.post<void>(`${environment.apiUrl}/photos-demandes/`, fd);
+  }
+
   /** POST /api/demandes/<id>/transformer/ — recrée cette demande en offre ou signalement
    * (réservé institutionnel, refusé si déjà affectée). Supprime la demande d'origine. */
   transformer(id: string, cible: 'OFFER' | 'INFORMATION'): Observable<any> {

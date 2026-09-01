@@ -13,11 +13,13 @@ import { AuthService } from '../../../auth/services/auth.service';
 import { AddressPickerComponent } from '../../../shared/components/common/address-picker/address-picker.component';
 import { AddressResult } from '../../../shared/models/address-result.model';
 import { RgpdNoticeComponent } from '../../../shared/components/public/rgpd-notice/rgpd-notice.component';
+import { ValidationSummaryComponent } from '../../../shared/components/public/validation-summary/validation-summary.component';
+import { PhotoGalleryPickerComponent } from '../../../shared/components/public/photo-gallery-picker/photo-gallery-picker.component';
 
 @Component({
   selector: 'app-request-help-form',
   standalone: true,
-  imports: [ReactiveFormsModule, CommonModule, FormsModule, AddressPickerComponent, RgpdNoticeComponent],
+  imports: [ReactiveFormsModule, CommonModule, FormsModule, AddressPickerComponent, RgpdNoticeComponent, ValidationSummaryComponent, PhotoGalleryPickerComponent],
   templateUrl: './request-help-form.component.html',
   styleUrl: './request-help-form.component.scss'
 })
@@ -25,8 +27,6 @@ export class RequestHelpFormComponent implements OnInit {
   currentUser: User | null = null;
   requestForm!: FormGroup;
   informationForm!: FormGroup;
-  selectedFile: File | null = null;
-  fileName: string = 'Select';
   state: number = 1;
 
   latitude: number | null = null;
@@ -162,50 +162,44 @@ export class RequestHelpFormComponent implements OnInit {
     });
   }
 
-  onFileSelected(event: Event): void {
-    const input = event.target as HTMLInputElement;
-    if (input.files && input.files[0]) {
-      this.selectedFile = input.files[0];
-      this.fileName = this.selectedFile.name;
+  /** Galerie (jusqu'à 10 photos) — la première du tableau émis est toujours la principale
+   * désignée (voir PhotoGalleryPickerComponent), envoyée dans le champ `photo` existant de la
+   * demande ; les suivantes sont postées séparément vers la galerie après création. */
+  selectedPhotos: File[] = [];
 
-      // Vérifier le type de fichier
-      const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif'];
-      if (!validTypes.includes(this.selectedFile.type)) {
-        alert('Veuillez sélectionner une image valide (JPEG, PNG, GIF)');
-        this.selectedFile = null;
-        this.fileName = 'Select';
-        return;
-      }
+  onPhotosSelected(files: File[]): void {
+    this.selectedPhotos = files;
+  }
 
-      // Vérifier la taille (max 5MB)
-      if (this.selectedFile.size > 5 * 1024 * 1024) {
-        alert('L\'image ne doit pas dépasser 5MB');
-        this.selectedFile = null;
-        this.fileName = 'Select';
-        return;
-      }
+  // Encadré rouge de résumé, un par étape (formulaire en 2 temps) — remplace les alert()
+  // génériques qui ne disaient jamais lesquels des champs posaient problème.
+  formErrorsStep1: string[] = [];
+  formErrorsStep2: string[] = [];
 
-      this.requestForm.patchValue({ image: this.selectedFile });
-    }
+  private step1ValidationErrors(): string[] {
+    const errors: string[] = [];
+    if (this.needsType.invalid) errors.push('Précisez chaque besoin (choisissez un type dans la liste).');
+    if (!this.selectedAddress) errors.push('Sélectionnez une adresse dans la liste proposée.');
+    return errors;
+  }
+
+  private step2ValidationErrors(): string[] {
+    const errors: string[] = [];
+    const f = this.informationForm;
+    if (f.get('lastName')?.invalid) errors.push('Le nom est obligatoire.');
+    if (f.get('firstName')?.invalid) errors.push('Le prénom est obligatoire.');
+    if (f.get('email')?.invalid) errors.push('L\'email est obligatoire et doit être valide.');
+    if (f.get('phoneNumber')?.invalid) errors.push('Le téléphone est obligatoire et doit être valide.');
+    if (!this.latitude || !this.longitude) errors.push('Erreur de géolocalisation : vérifiez l\'adresse sélectionnée à l\'étape précédente.');
+    if (this.needsType.invalid) errors.push('Précisez chaque besoin (retournez à l\'étape précédente).');
+    return errors;
   }
 
   onSubmit(): void {
-    if (!this.informationForm.valid || !this.latitude || !this.longitude) {
-      Object.keys(this.informationForm.controls).forEach(key => {
-        this.informationForm.get(key)?.markAsTouched();
-      });
-      if (!this.latitude || !this.longitude) {
-        alert('Erreur de géolocalisation. Veuillez vérifier l\'adresse.');
-      } else {
-        alert('Veuillez remplir tous les champs obligatoires');
-      }
-      return;
-    }
-    if (this.needsType.invalid) {
-      this.needsType.markAllAsTouched();
-      alert('Veuillez préciser chaque besoin.');
-      return;
-    }
+    this.informationForm.markAllAsTouched();
+    this.needsType.markAllAsTouched();
+    this.formErrorsStep2 = this.step2ValidationErrors();
+    if (this.formErrorsStep2.length > 0) return;
 
     const crisisId = this.requestForm.get('crisisId')?.value;
     const crisisLabel = this.crisisOptions.find(c => c.value === crisisId)?.label || 'non liée à une crise';
@@ -231,13 +225,23 @@ export class RequestHelpFormComponent implements OnInit {
 
       formData.append('status', 'NON_TRAITEE');
       if (this.currentUser?.id) formData.append('author', this.currentUser.id);
-      if (this.selectedFile) formData.append('photo', this.selectedFile);
+      if (this.selectedPhotos[0]) formData.append('photo', this.selectedPhotos[0]);
 
       return this.helpRequestService.create(formData);
     });
 
     forkJoin(creations).subscribe({
-      next: () => {
+      next: (requests) => {
+        // Photos additionnelles de la galerie (au-delà de la principale déjà envoyée avec
+        // chaque demande) — postées séparément vers chaque demande créée, une fois qu'elle existe.
+        const photosSupplementaires = this.selectedPhotos.slice(1);
+        requests.forEach(r => {
+          photosSupplementaires.forEach((file, i) => {
+            this.helpRequestService.addPhoto(r.id, file, i).subscribe({
+              error: (err) => console.error('Erreur ajout photo galerie:', err),
+            });
+          });
+        });
         alert('Votre demande a été enregistrée avec succès !');
         this.router.navigate(['/accueil']);
       },
@@ -272,19 +276,14 @@ export class RequestHelpFormComponent implements OnInit {
   }
 
   onContinue(): void {
-    if (this.requestForm.valid && this.selectedAddress) {
-      this.state = 2;
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    } else {
-      Object.keys(this.requestForm.controls).forEach(key => {
-        this.requestForm.get(key)?.markAsTouched();
-      });
-      if (!this.selectedAddress) {
-        alert('Veuillez sélectionner une adresse dans la liste proposée.');
-      } else {
-        alert('Veuillez remplir tous les champs obligatoires');
-      }
-    }
+    Object.keys(this.requestForm.controls).forEach(key => {
+      this.requestForm.get(key)?.markAsTouched();
+    });
+    this.needsType.markAllAsTouched();
+    this.formErrorsStep1 = this.step1ValidationErrors();
+    if (this.formErrorsStep1.length > 0) return;
+    this.state = 2;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   goBack(): void {

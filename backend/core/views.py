@@ -107,7 +107,7 @@ from .models import (
     PointOperationnel,
     ImplicationInstitution,
     TypeImplication,
-    User, Crisis, Request, Offer, Information, DisponibiliteOffre, DisponibilitePointEquipe, MaterielPoint,
+    User, Crisis, Request, RequestPhoto, Offer, OfferPhoto, Information, DisponibiliteOffre, DisponibilitePointEquipe, MaterielPoint,
     MaterielCatalogue, ContributionMateriel, StatutMateriel, TypeMateriel, NiveauStock, RegistrePresence, TypePersonneAccueillie, DeclarationSecurite, SituationDeclarant,
     AffectationPointBenevole, StatutAffectation,
     RecherchePersonne, RecherchePersonneCommentaire, Besoin, Notification, DossierParticipant,
@@ -243,7 +243,9 @@ from .serializers import (
     CrisisSerializer,
     RequestTypeBesoinSerializer,
     RequestSerializer,
+    RequestPhotoSerializer,
     OfferSerializer,
+    OfferPhotoSerializer,
     DisponibiliteOffreSerializer,
     DisponibilitePointEquipeSerializer,
     MaterielPointSerializer,
@@ -2445,6 +2447,30 @@ class RequestViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             return Response(status=403)
         return FileResponse(open(demande.photo.path, "rb"))
 
+
+class RequestPhotoViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
+    """Galerie de photos additionnelles d'une demande d'aide (voir RequestPhoto.__doc__) —
+    create public comme la demande elle-même ; preview soumise à la même confidentialité que
+    Request.photo (voir RequestViewSet.preview)."""
+    queryset = RequestPhoto.objects.all()
+    serializer_class = RequestPhotoSerializer
+    filterset_fields = ["request"]
+
+    def get_permissions(self):
+        if self.action in ("create", "preview"):
+            return [AllowAny()]
+        return [permissions.IsAuthenticated()]
+
+    @action(detail=True, methods=["get"])
+    def preview(self, request, pk=None):
+        photo = self.get_object()
+        if not user_can_view_photo(
+            request, photo.request, teams_field='assigned_teams', dossiers_field='dossiers'
+        ):
+            return Response(status=403)
+        return FileResponse(open(photo.image.path, "rb"))
+
+
 def _notify_institution_referent_of_team(team, institution, request):
     """Prévient le référent de l'institution qu'une équipe vient d'être créée sous son
     rattachement — le référent est le contact principal (ContactInstitution.contact_principal)
@@ -3722,6 +3748,27 @@ class OfferViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         ):
             return Response(status=403)
         return FileResponse(open(offer.photo.path, "rb"))
+
+
+class OfferPhotoViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
+    """Galerie de photos additionnelles d'une offre d'aide (voir OfferPhoto.__doc__) — même
+    patron que RequestPhotoViewSet."""
+    queryset = OfferPhoto.objects.all()
+    serializer_class = OfferPhotoSerializer
+    filterset_fields = ["offer"]
+
+    def get_permissions(self):
+        if self.action in ("create", "preview"):
+            return [AllowAny()]
+        return [permissions.IsAuthenticated()]
+
+    @action(detail=True, methods=["get"])
+    def preview(self, request, pk=None):
+        photo = self.get_object()
+        if not user_can_view_photo(request, photo.offer, teams_field='assigned_teams'):
+            return Response(status=403)
+        return FileResponse(open(photo.image.path, "rb"))
+
 
 class DisponibiliteOffreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     """Créneaux de disponibilité (matin/midi/soir/nuit, 8 jours) déclarés avec une offre d'aide."""

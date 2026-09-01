@@ -44,6 +44,16 @@ export class OfferService {
     return this.http.get(`${this.url}/${id}/preview/`, { responseType: 'blob' });
   }
 
+  /** POST /api/photos-offres/ — ajoute une photo à la galerie d'une offre déjà créée (au-delà
+   * de sa photo principale, voir OfferPhoto/propose-help-form). */
+  addPhoto(offerId: string, file: File, ordre: number): Observable<void> {
+    const fd = new FormData();
+    fd.append('offer', offerId);
+    fd.append('image', file);
+    fd.append('ordre', String(ordre));
+    return this.http.post<void>(`${environment.apiUrl}/photos-offres/`, fd);
+  }
+
   /** POST /api/offres/<id>/transformer/ — recrée cette offre en demande ou signalement
    * (réservé institutionnel, refusé si déjà affectée). Supprime l'offre d'origine. */
   transformer(id: string, cible: 'REQUEST' | 'INFORMATION'): Observable<any> {

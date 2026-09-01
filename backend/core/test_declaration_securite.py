@@ -42,11 +42,13 @@ class TestDeclarationSecuritePublicSelfDeclare:
     """Auto-déclaration publique : ouverte à tous, sans centre d'accueil."""
 
     def test_anonymous_can_self_declare_without_centre(self, api_client):
+        crisis = _make_crisis()
         response = api_client.post(
             reverse('declarationsecurite-list'),
             {
                 'type_declarant': 'PERSONNE_SEULE', 'nom_referent': 'Dupont', 'prenom_referent': 'Jean',
                 'contact_referent': 'jean@test.fr', 'nombre_adultes': 1, 'nombre_enfants': 0,
+                'crise': str(crisis.id),
             },
             format='json',
         )
@@ -56,11 +58,13 @@ class TestDeclarationSecuritePublicSelfDeclare:
         assert response.data['registre_presence'] is None
 
     def test_anonymous_can_declare_famille_with_headcount(self, api_client):
+        crisis = _make_crisis()
         response = api_client.post(
             reverse('declarationsecurite-list'),
             {
                 'type_declarant': 'FAMILLE', 'nom_referent': 'Martin', 'prenom_referent': 'Alice',
                 'contact_referent': '0600000000', 'nombre_adultes': 2, 'nombre_enfants': 3,
+                'crise': str(crisis.id),
             },
             format='json',
         )
@@ -69,11 +73,23 @@ class TestDeclarationSecuritePublicSelfDeclare:
         assert response.data['nombre_adultes'] == 2
         assert response.data['nombre_enfants'] == 3
 
+    def test_missing_crise_rejected(self, api_client):
+        response = api_client.post(
+            reverse('declarationsecurite-list'),
+            {
+                'type_declarant': 'PERSONNE_SEULE', 'nom_referent': 'Dupont', 'prenom_referent': 'Jean',
+                'contact_referent': 'jean@test.fr', 'nombre_adultes': 1, 'nombre_enfants': 0,
+            },
+            format='json',
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
     def test_anonymous_can_declare_entry_at_a_centre(self, api_client):
         """Une personne peut se déclarer elle-même "arrivée" dans un centre d'accueil (ex:
         depuis son téléphone une fois sur place), sans avoir besoin d'être un membre de
         l'équipe du centre — ça crée aussi la ligne RegistrePresence associée, comme pour un
         recensement fait par un opérateur."""
+        crisis = _make_crisis()
         point = _make_point()
 
         response = api_client.post(
@@ -81,7 +97,7 @@ class TestDeclarationSecuritePublicSelfDeclare:
             {
                 'type_declarant': 'PERSONNE_SEULE', 'nom_referent': 'Dupont', 'prenom_referent': 'Jean',
                 'contact_referent': 'jean@test.fr', 'nombre_adultes': 1, 'nombre_enfants': 0,
-                'centre_accueil': str(point.id),
+                'centre_accueil': str(point.id), 'crise': str(crisis.id),
             },
             format='json',
         )
@@ -104,13 +120,14 @@ class TestDeclarationSecuriteOperateurCentre:
     def test_admin_can_declare_entry_and_registre_presence_is_created(self, authenticated_client):
         client, admin = _make_admin(authenticated_client)
         point = _make_point()
+        crisis = _make_crisis()
 
         response = client.post(
             reverse('declarationsecurite-list'),
             {
                 'type_declarant': 'GROUPE', 'nom_referent': 'Leroy', 'prenom_referent': 'Sophie',
                 'contact_referent': 'sophie@test.fr', 'nombre_adultes': 4, 'nombre_enfants': 6,
-                'centre_accueil': str(point.id),
+                'centre_accueil': str(point.id), 'crise': str(crisis.id),
             },
             format='json',
         )
@@ -128,6 +145,7 @@ class TestDeclarationSecuriteOperateurCentre:
     def test_regime_alimentaire_flag_is_relayed_as_warning_on_registre(self, authenticated_client):
         client, _ = _make_admin(authenticated_client)
         point = _make_point()
+        crisis = _make_crisis()
 
         response = client.post(
             reverse('declarationsecurite-list'),
@@ -135,6 +153,7 @@ class TestDeclarationSecuriteOperateurCentre:
                 'type_declarant': 'FAMILLE', 'nom_referent': 'Petit', 'prenom_referent': 'Marc',
                 'contact_referent': 'marc@test.fr', 'nombre_adultes': 2, 'nombre_enfants': 1,
                 'centre_accueil': str(point.id), 'regime_alimentaire_specifique': True,
+                'crise': str(crisis.id),
             },
             format='json',
         )
@@ -164,16 +183,17 @@ class TestDeclarationSecuriteVueMairie:
         point_in = _make_point(nom="Centre dans la commune", location=Point(1, 1, srid=4326))
         point_out = _make_point(nom="Centre hors commune", location=Point(2, 2, srid=4326))
         mock_geocode.side_effect = lambda p: "38185" if p.x == 1 else "75056"
+        crisis = _make_crisis()
 
         client.post(reverse('declarationsecurite-list'), {
             'type_declarant': 'PERSONNE_SEULE', 'nom_referent': 'Dedans', 'prenom_referent': 'A',
             'contact_referent': 'a@t.fr', 'nombre_adultes': 1, 'nombre_enfants': 0,
-            'centre_accueil': str(point_in.id),
+            'centre_accueil': str(point_in.id), 'crise': str(crisis.id),
         }, format='json')
         client.post(reverse('declarationsecurite-list'), {
             'type_declarant': 'PERSONNE_SEULE', 'nom_referent': 'Dehors', 'prenom_referent': 'B',
             'contact_referent': 'b@t.fr', 'nombre_adultes': 1, 'nombre_enfants': 0,
-            'centre_accueil': str(point_out.id),
+            'centre_accueil': str(point_out.id), 'crise': str(crisis.id),
         }, format='json')
 
         mairie_user = self._make_mairie_user()
@@ -224,11 +244,13 @@ class TestMesDeclarations:
         client, user = authenticated_client
         other = User.objects.create_user(username='autre@test.fr', email='autre@test.fr', password='Test1234!')
 
+        crisis = _make_crisis()
         api = client
         api.force_authenticate(user=user)
         r1 = api.post(reverse('declarationsecurite-list'), {
             'type_declarant': 'PERSONNE_SEULE', 'nom_referent': 'Moi', 'prenom_referent': 'A',
             'contact_referent': 'a@test.fr', 'nombre_adultes': 1, 'nombre_enfants': 0, 'situation': 'RELOGE',
+            'crise': str(crisis.id),
         }, format='json')
         assert r1.status_code == status.HTTP_201_CREATED
 
@@ -236,6 +258,7 @@ class TestMesDeclarations:
         api.post(reverse('declarationsecurite-list'), {
             'type_declarant': 'PERSONNE_SEULE', 'nom_referent': 'Autrui', 'prenom_referent': 'B',
             'contact_referent': 'b@test.fr', 'nombre_adultes': 1, 'nombre_enfants': 0, 'situation': 'RELOGE',
+            'crise': str(crisis.id),
         }, format='json')
 
         api.force_authenticate(user=user)
@@ -260,7 +283,7 @@ class TestUpdateOwnDeclaration:
         payload = {
             'type_declarant': 'PERSONNE_SEULE', 'nom_referent': 'Test', 'prenom_referent': 'Jean',
             'contact_referent': 'jean@test.fr', 'nombre_adultes': 1, 'nombre_enfants': 0,
-            'situation': 'HORS_ZONE',
+            'situation': 'HORS_ZONE', 'crise': str(_make_crisis().id),
         }
         payload.update(overrides)
         client.force_authenticate(user=user)
@@ -416,3 +439,50 @@ class TestCentresAccueilPublic:
         response = api_client.get(reverse('pointoperationnel-centres-accueil'), {'crise': str(crisis.id)})
 
         assert response.data == []
+
+
+@pytest.mark.django_db
+class TestDeclarationSecuriteAdresse:
+    """Adresse optionnelle (latitude/longitude/location) — même régime de confidentialité que
+    Information : jamais visible au grand public, seulement aux acteurs institutionnels."""
+
+    def test_location_accepted_and_hidden_from_public(self, api_client):
+        crisis = _make_crisis()
+        response = api_client.post(
+            reverse('declarationsecurite-list'),
+            {
+                'type_declarant': 'PERSONNE_SEULE', 'nom_referent': 'Dupont', 'prenom_referent': 'Jean',
+                'contact_referent': 'jean@test.fr', 'nombre_adultes': 1, 'nombre_enfants': 0,
+                'crise': str(crisis.id),
+                'location': '{"type": "Point", "coordinates": [5.72, 45.18]}',
+                'commune_code': '38185',
+            },
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data['latitude'] is None
+        assert response.data['longitude'] is None
+        declaration = DeclarationSecurite.objects.get(id=response.data['id'])
+        assert declaration.location is not None
+        assert declaration.commune_code == '38185'
+
+    def test_location_visible_to_institutional_actor(self, api_client, authenticated_client):
+        crisis = _make_crisis()
+        creation = api_client.post(
+            reverse('declarationsecurite-list'),
+            {
+                'type_declarant': 'PERSONNE_SEULE', 'nom_referent': 'Dupont', 'prenom_referent': 'Jean',
+                'contact_referent': 'jean@test.fr', 'nombre_adultes': 1, 'nombre_enfants': 0,
+                'crise': str(crisis.id),
+                'location': '{"type": "Point", "coordinates": [5.72, 45.18]}',
+            },
+            format='json',
+        )
+
+        client, _ = _make_admin(authenticated_client)
+        response = client.get(reverse('declarationsecurite-detail', kwargs={'pk': creation.data['id']}))
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['latitude'] == pytest.approx(45.18)
+        assert response.data['longitude'] == pytest.approx(5.72)

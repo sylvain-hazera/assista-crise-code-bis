@@ -1,0 +1,57 @@
+.photo-gallery-picker { display: flex; flex-direction: column; gap: .6rem; }
+
+.file-input { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
+
+.btn-add-photo {
+  display: inline-flex; align-items: center; gap: .4rem;
+  width: fit-content; padding: .5rem 1rem; border-radius: 8px;
+  background: #eff6ff; color: #1d4ed8; font-size: .88rem; font-weight: 600;
+  cursor: pointer;
+  &:hover { background: #dbeafe; }
+}
+
+.error-message { color: #b91c1c; font-size: .82rem; margin: 0; }
+
+.photo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: .6rem;
+}
+
+.photo-thumb {
+  position: relative;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 2px solid transparent;
+  aspect-ratio: 1;
+  background: #f3f4f6;
+
+  &.principale { border-color: #f59e0b; }
+
+  img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+  .btn-remove {
+    position: absolute; top: .25rem; right: .25rem;
+    background: rgba(0, 0, 0, .55); color: #fff; border: none; border-radius: 999px;
+    width: 22px; height: 22px; display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    .material-icons { font-size: 14px; }
+  }
+
+  .badge-principale {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    display: flex; align-items: center; justify-content: center; gap: .2rem;
+    background: #f59e0b; color: #fff; font-size: .68rem; font-weight: 600;
+    padding: .2rem 0;
+    .material-icons { font-size: 12px; }
+  }
+
+  .btn-set-principale {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    background: rgba(0, 0, 0, .55); color: #fff; border: none;
+    font-size: .68rem; padding: .25rem 0; cursor: pointer;
+    opacity: 0; transition: opacity .12s;
+  }
+
+  &:hover .btn-set-principale { opacity: 1; }
+}

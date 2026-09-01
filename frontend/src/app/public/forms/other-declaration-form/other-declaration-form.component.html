@@ -36,7 +36,7 @@
         <!-- Pour la crise -->
         <div class="form-group">
           <label for="crisisSearch" class="form-label">
-            Pour la crise
+            Pour la crise <span class="required">*</span>
           </label>
           <div class="autocomplete-wrapper">
             <input
@@ -48,6 +48,7 @@
               (focus)="showCrisisDropdown = true"
               placeholder="Rechercher une crise..."
               class="form-input"
+              [class.invalid]="isFieldInvalid('declareSafe', 'crisisId')"
               autocomplete="off"
             />
             @if(showCrisisDropdown && filteredCrisisOptions.length > 0) {
@@ -60,6 +61,11 @@
               </div>
             }
           </div>
+          @if(isFieldInvalid('declareSafe', 'crisisId')) {
+            <div class="error-message">
+              {{ getErrorMessage('declareSafe', 'crisisId') }}
+            </div>
+          }
         </div>
 
         <!-- Situation -->
@@ -168,6 +174,18 @@
           </p>
         }
 
+        <!-- Adresse (facultative — inutile si "Je suis en centre d'accueil", déjà situé) -->
+        @if (situationChoisie !== 'EN_CENTRE') {
+          <div class="form-group">
+            <app-address-picker
+              label="Adresse (facultatif)"
+              placeholder="Où vous trouvez-vous actuellement ?"
+              [required]="false"
+              (addressSelected)="onAddressSelectedSafe($event)">
+            </app-address-picker>
+          </div>
+        }
+
         <!-- Last Name -->
         <div class="form-group">
           <label for="lastName" class="form-label">
@@ -243,6 +261,8 @@
         </div>
 
         <app-rgpd-notice purpose="vous localiser et vous mettre en sécurité"></app-rgpd-notice>
+
+        <app-validation-summary [errors]="formErrors"></app-validation-summary>
 
         <!-- Submit Button -->
         <div class="form-actions">
@@ -408,7 +428,89 @@
           </div>
         </div>
 
+        <!-- Vos coordonnées -->
+        <div class="form-section">
+          <h2 class="section-title">Vos coordonnées</h2>
+          <p class="section-description">
+            Nécessaires pour que les secours ou votre mairie puissent vous recontacter si besoin.
+          </p>
+
+          <div class="form-group">
+            <label for="lastNameOther" class="form-label">
+              Nom <span class="required">*</span>
+            </label>
+            <input
+              type="text"
+              id="lastNameOther"
+              formControlName="lastName"
+              class="form-input"
+              placeholder="Nom"
+              [class.invalid]="isFieldInvalid('otherInformation', 'lastName')">
+            @if(isFieldInvalid('otherInformation', 'lastName')) {
+              <div class="error-message">
+                {{ getErrorMessage('otherInformation', 'lastName') }}
+              </div>
+            }
+          </div>
+
+          <div class="form-group">
+            <label for="firstNameOther" class="form-label">
+              Prénom <span class="required">*</span>
+            </label>
+            <input
+              type="text"
+              id="firstNameOther"
+              formControlName="firstName"
+              class="form-input"
+              placeholder="Prénom"
+              [class.invalid]="isFieldInvalid('otherInformation', 'firstName')">
+            @if(isFieldInvalid('otherInformation', 'firstName')) {
+              <div class="error-message">
+                {{ getErrorMessage('otherInformation', 'firstName') }}
+              </div>
+            }
+          </div>
+
+          <div class="form-group">
+            <label for="phoneNumberOther" class="form-label">
+              Téléphone <span class="required">*</span>
+            </label>
+            <input
+              type="tel"
+              id="phoneNumberOther"
+              formControlName="phoneNumber"
+              class="form-input"
+              placeholder="Téléphone"
+              [class.invalid]="isFieldInvalid('otherInformation', 'phoneNumber')">
+            @if(isFieldInvalid('otherInformation', 'phoneNumber')) {
+              <div class="error-message">
+                {{ getErrorMessage('otherInformation', 'phoneNumber') }}
+              </div>
+            }
+          </div>
+
+          <div class="form-group">
+            <label for="emailOther" class="form-label">
+              Mail <span class="required">*</span>
+            </label>
+            <input
+              type="email"
+              id="emailOther"
+              formControlName="email"
+              class="form-input"
+              placeholder="Mail"
+              [class.invalid]="isFieldInvalid('otherInformation', 'email')">
+            @if(isFieldInvalid('otherInformation', 'email')) {
+              <div class="error-message">
+                {{ getErrorMessage('otherInformation', 'email') }}
+              </div>
+            }
+          </div>
+        </div>
+
         <app-rgpd-notice purpose="traiter votre signalement"></app-rgpd-notice>
+
+        <app-validation-summary [errors]="formErrors"></app-validation-summary>
 
         <!-- Submit Button -->
         <div class="form-actions">

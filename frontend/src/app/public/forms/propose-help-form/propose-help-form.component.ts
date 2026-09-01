@@ -20,6 +20,8 @@ import { Competence } from '../../../shared/models/competence.model';
 import { MaterielCatalogueService } from '../../../services/materiel-catalogue.service';
 import { MaterielCatalogue } from '../../../shared/models/materiel-catalogue.model';
 import { RgpdNoticeComponent } from '../../../shared/components/public/rgpd-notice/rgpd-notice.component';
+import { ValidationSummaryComponent } from '../../../shared/components/public/validation-summary/validation-summary.component';
+import { PhotoGalleryPickerComponent } from '../../../shared/components/public/photo-gallery-picker/photo-gallery-picker.component';
 
 interface JourDispo {
   date: string;       // YYYY-MM-DD
@@ -78,7 +80,7 @@ function presencePhysiqueValidator(control: AbstractControl): ValidationErrors |
 @Component({
   selector: 'app-request-help-form',
   standalone: true,
-  imports: [ReactiveFormsModule, CommonModule, FormsModule, AddressPickerComponent, TagSearchInputComponent, RgpdNoticeComponent],
+  imports: [ReactiveFormsModule, CommonModule, FormsModule, AddressPickerComponent, TagSearchInputComponent, RgpdNoticeComponent, ValidationSummaryComponent, PhotoGalleryPickerComponent],
   templateUrl: './propose-help-form.component.html',
   styleUrl: './propose-help-form.component.scss'
 })
@@ -86,8 +88,6 @@ export class ProposeHelpFormComponent implements OnInit {
   currentUser : User | null = null;
   requestForm!: FormGroup;
   informationForm!: FormGroup;
-  selectedFile: File | null = null;
-  fileName: string = 'Select';
   state: number = 1;
 
   latitude: number | null = null;
@@ -322,46 +322,43 @@ export class ProposeHelpFormComponent implements OnInit {
     });
   }
 
-  onFileSelected(event: Event): void {
-    const input = event.target as HTMLInputElement;
-    if (input.files && input.files[0]) {
-      this.selectedFile = input.files[0];
-      this.fileName = this.selectedFile.name;
+  /** Galerie (jusqu'à 10 photos) — la première du tableau émis est toujours la principale
+   * désignée (voir PhotoGalleryPickerComponent), envoyée dans le champ `photo` existant de
+   * l'offre ; les suivantes sont postées séparément vers la galerie après création (voir
+   * onSubmit). */
+  selectedPhotos: File[] = [];
 
-      // Vérifier le type de fichier
-      const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif'];
-      if (!validTypes.includes(this.selectedFile.type)) {
-        alert('Veuillez sélectionner une image valide (JPEG, PNG, GIF)');
-        this.selectedFile = null;
-        this.fileName = 'Select';
-        return;
-      }
+  onPhotosSelected(files: File[]): void {
+    this.selectedPhotos = files;
+  }
 
-      // Vérifier la taille (max 5MB)
-      if (this.selectedFile.size > 5 * 1024 * 1024) {
-        alert('L\'image ne doit pas dépasser 5MB');
-        this.selectedFile = null;
-        this.fileName = 'Select';
-        return;
-      }
+  // Encadré rouge de résumé, un par étape (formulaire en 2 temps) — remplace les alert()
+  // génériques qui ne disaient jamais lesquels des champs posaient problème.
+  formErrorsStep1: string[] = [];
+  formErrorsStep2: string[] = [];
 
-      this.requestForm.patchValue({ image: this.selectedFile });
-    }
+  private step1ValidationErrors(): string[] {
+    const errors: string[] = [];
+    if (!this.selectedAddress) errors.push('Sélectionnez une adresse dans la liste proposée.');
+    return errors;
+  }
+
+  private step2ValidationErrors(): string[] {
+    const errors: string[] = [];
+    const f = this.informationForm;
+    if (f.get('lastName')?.invalid) errors.push('Le nom est obligatoire.');
+    if (f.get('firstName')?.invalid) errors.push('Le prénom est obligatoire.');
+    if (f.get('email')?.invalid) errors.push('L\'email est obligatoire et doit être valide.');
+    if (f.get('phoneNumber')?.invalid) errors.push('Le téléphone est obligatoire et doit être valide.');
+    if (this.offerRows.invalid) errors.push('Complétez les informations sur votre offre (un ou plusieurs champs manquants ou invalides).');
+    return errors;
   }
 
   onSubmit(): void {
-    if (!this.informationForm.valid) {
-      Object.keys(this.informationForm.controls).forEach(key => {
-        this.informationForm.get(key)?.markAsTouched();
-      });
-      alert('Veuillez remplir tous les champs obligatoires');
-      return;
-    }
-    if (this.offerRows.invalid) {
-      this.offerRows.markAllAsTouched();
-      alert('Veuillez compléter les informations sur votre offre.');
-      return;
-    }
+    this.informationForm.markAllAsTouched();
+    this.offerRows.markAllAsTouched();
+    this.formErrorsStep2 = this.step2ValidationErrors();
+    if (this.formErrorsStep2.length > 0) return;
 
     const crisisId = this.requestForm.get('crisisId')?.value;
     const crisisLabel = this.crisisOptions.find(c => c.value === crisisId)?.label || 'non liée à une crise';
@@ -420,7 +417,7 @@ export class ProposeHelpFormComponent implements OnInit {
         formData.append('groupe_id', groupeId!);
       }
       if (this.currentUser?.id) formData.append('author', this.currentUser.id);
-      if (this.selectedFile) formData.append('photo', this.selectedFile);
+      if (this.selectedPhotos[0]) formData.append('photo', this.selectedPhotos[0]);
       // Compétences déclarées côté personne : n'ont de sens que si l'offreur est
       // effectivement présent avec ce qu'il propose (voir presencePhysique).
       if (v.presencePhysique === true) {
@@ -437,6 +434,16 @@ export class ProposeHelpFormComponent implements OnInit {
         // puisque `creations` a été construit par un simple .map() sur offerRows.controls.
         offers.forEach((o, i) => {
           if (this.offerRows.at(i).value.presencePhysique === true) this.declareDisponibilites(o.id);
+        });
+        // Photos additionnelles de la galerie (au-delà de la principale déjà envoyée avec
+        // chaque offre) — postées séparément vers chaque offre créée, une fois qu'elle existe.
+        const photosSupplementaires = this.selectedPhotos.slice(1);
+        offers.forEach(o => {
+          photosSupplementaires.forEach((file, i) => {
+            this.offerService.addPhoto(o.id, file, i).subscribe({
+              error: (err) => console.error('Erreur ajout photo galerie:', err),
+            });
+          });
         });
         alert('Votre offre a été enregistrée avec succès !');
         this.router.navigate(['/accueil']);
@@ -480,12 +487,10 @@ export class ProposeHelpFormComponent implements OnInit {
    * "adresse visible" plus bas — seule la sélection elle-même (qui résout une commune) est
    * requise ici. */
   onContinue(): void {
-    if (this.selectedAddress) {
-      this.state = 2;
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    } else {
-      alert('Veuillez sélectionner une adresse dans la liste proposée.');
-    }
+    this.formErrorsStep1 = this.step1ValidationErrors();
+    if (this.formErrorsStep1.length > 0) return;
+    this.state = 2;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   goBack(): void {

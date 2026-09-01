@@ -14,17 +14,19 @@ import { ContactInstitutionService } from '../../../services/contact-institution
 import { InstitutionService } from '../../../services/institution.service';
 import { BesoinService } from '../../../services/besoin.service';
 import { ImplicationService } from '../../../services/implication.service';
+import { TeamService } from '../../../services/team.service';
 import { ContactInstitution, Institution } from '../../../shared/models/institution.model';
 import { Besoin } from '../../../shared/models/besoin.model';
 import { UserRole } from '../../../shared/models/user.model';
 import { AddressResult } from '../../../shared/models/address-result.model';
+import { ValidationSummaryComponent } from '../../../shared/components/public/validation-summary/validation-summary.component';
 
 type ResponsableMode = 'moi' | 'contact' | 'email';
 
 @Component({
   selector: 'app-declare-crisis-form',
   standalone: true,
-  imports: [ReactiveFormsModule, FormsModule, CommonModule, ZoneMapComponent, AddressPickerComponent],
+  imports: [ReactiveFormsModule, FormsModule, CommonModule, ZoneMapComponent, AddressPickerComponent, ValidationSummaryComponent],
   templateUrl: './declare-crisis-form.component.html',
   styleUrl: './declare-crisis-form.component.scss'
 })
@@ -57,6 +59,12 @@ export class DeclareCrisisFormComponent implements OnInit{
   responsableMode: ResponsableMode = 'moi';
   responsableContactId: string | null = null;
   responsableEmail = '';
+
+  // Créer une équipe pour son institution en même temps que la crise — évite d'avoir à
+  // recréer une équipe séparément depuis /admin/crises juste après (même logique que pour un
+  // point opérationnel, voir point-modal.component).
+  creerEquipe = false;
+  nouvelleEquipeNom = '';
 
   onInstitutionChange(id: string): void {
     this.selectedInstitutionId = id || null;
@@ -96,6 +104,7 @@ export class DeclareCrisisFormComponent implements OnInit{
     private institutionService: InstitutionService,
     private besoinService: BesoinService,
     private implicationService: ImplicationService,
+    private teamService: TeamService,
   ) {}
 
   ngOnInit() {
@@ -165,16 +174,32 @@ export class DeclareCrisisFormComponent implements OnInit{
     }
   }
 
+  // Encadré rouge de résumé, affiché juste au-dessus du bouton d'envoi — remplace les alert()
+  // génériques qui ne disaient jamais lesquels des champs posaient problème.
+  formErrors: string[] = [];
+
+  private validationErrors(): string[] {
+    const errors: string[] = [];
+    const f = this.crisisForm;
+    if (f.get('eventType')?.invalid) errors.push("Le type d'événement est obligatoire.");
+    if (f.get('title')?.invalid) errors.push('Le titre est obligatoire.');
+    if (f.get('description')?.invalid) errors.push('La description doit contenir au moins 10 caractères.');
+    if (!this.selectedAddress) errors.push('Sélectionnez une adresse dans la liste proposée.');
+    return errors;
+  }
+
   onSubmit(): void {
-    if (this.crisisForm.valid && this.selectedAddress) {
+    this.crisisForm.markAllAsTouched();
+    this.formErrors = this.validationErrors();
+    if (this.formErrors.length === 0) {
       const formValue = this.crisisForm.value;
 
       const payload: CrisisPayload = {
         name: formValue.title,
         type: formValue.eventType,
         description: formValue.description,
-        latitude: this.selectedAddress.latitude,
-        longitude: this.selectedAddress.longitude,
+        latitude: this.selectedAddress!.latitude,
+        longitude: this.selectedAddress!.longitude,
         zone: this.zoneWkt,
         author: this.authService.getCurrentUser()?.id,
         status: 'NON_TRAITEE'
@@ -209,15 +234,6 @@ export class DeclareCrisisFormComponent implements OnInit{
           alert(errorMessage);
         }
       });
-    } else {
-      Object.keys(this.crisisForm.controls).forEach(key => {
-        this.crisisForm.get(key)?.markAsTouched();
-      });
-      if (!this.selectedAddress) {
-        alert('Veuillez sélectionner une adresse dans la liste proposée.');
-      } else {
-        alert('Veuillez remplir tous les champs obligatoires');
-      }
     }
   }
 
@@ -250,7 +266,25 @@ export class DeclareCrisisFormComponent implements OnInit{
     }
 
     this.implicationService.create(payload).subscribe({
+      next: () => this.creerEquipeSiDemandee(crisisId),
       error: (err) => console.error("Erreur lors de la déclaration de l'implication :", err),
+    });
+  }
+
+  /** Crée une équipe pour l'institution déclarante, déjà rattachée à cette crise — seulement
+   * si demandé et une fois l'implication de l'institution confirmée. Un échec ici n'annule
+   * rien de ce qui précède : l'équipe peut toujours être créée séparément depuis /admin/crises. */
+  private creerEquipeSiDemandee(crisisId: string): void {
+    const nom = this.nouvelleEquipeNom.trim();
+    if (!this.creerEquipe || !nom || !this.selectedInstitutionId) {
+      return;
+    }
+    this.teamService.create({
+      name: nom,
+      institution: this.selectedInstitutionId,
+      assigned_crisis_ids: [crisisId],
+    }).subscribe({
+      error: (err) => console.error("Erreur lors de la création de l'équipe :", err),
     });
   }
 

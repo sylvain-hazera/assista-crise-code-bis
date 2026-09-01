@@ -330,6 +330,30 @@ class Request(EnvironmentScopedModel):
         return self.title
 
 
+class RequestPhoto(EnvironmentScopedModel):
+    """Photos additionnelles d'une demande d'aide, au-delà de la photo principale
+    (`Request.photo`, inchangée — la première/celle désignée par le demandeur reste stockée
+    là, aucun autre code ne bouge) : jusqu'à 9 de plus, 10 au total avec la principale. Même
+    régime de confidentialité que `Request.photo` (voir user_can_view_photo), servies via une
+    action preview dédiée plutôt qu'une URL brute d'image."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    request = models.ForeignKey(Request, on_delete=models.CASCADE, related_name="photos")
+
+    image = models.ImageField(upload_to="photos/demandes/galerie/", validators=[validate_image_file])
+
+    ordre = models.PositiveIntegerField(default=0)
+
+    date_ajout = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["ordre", "date_ajout"]
+
+    def __str__(self) -> str:
+        return f"Photo galerie — {self.request.title}"
+
+
 class InformationType(models.Model):
     """Types d'informations"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -555,6 +579,27 @@ class Offer(EnvironmentScopedModel):
 
     def __str__(self) -> str:
         return self.title
+
+
+class OfferPhoto(EnvironmentScopedModel):
+    """Photos additionnelles d'une offre d'aide, au-delà de la photo principale (`Offer.photo`,
+    inchangée) — même patron que RequestPhoto (voir son docstring)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    offer = models.ForeignKey(Offer, on_delete=models.CASCADE, related_name="photos")
+
+    image = models.ImageField(upload_to="photos/offres/galerie/", validators=[validate_image_file])
+
+    ordre = models.PositiveIntegerField(default=0)
+
+    date_ajout = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["ordre", "date_ajout"]
+
+    def __str__(self) -> str:
+        return f"Photo galerie — {self.offer.title}"
 
 
 class Creneau(models.TextChoices):
@@ -2554,7 +2599,7 @@ class DeclarationSecurite(EnvironmentScopedModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
     crise = models.ForeignKey(
-        "Crisis", on_delete=models.CASCADE, null=True, blank=True,
+        "Crisis", on_delete=models.CASCADE,
         related_name="declarations_securite",
     )
 
@@ -2581,6 +2626,16 @@ class DeclarationSecurite(EnvironmentScopedModel):
 
     nombre_adultes = models.PositiveIntegerField(default=1)
     nombre_enfants = models.PositiveIntegerField(default=0)
+
+    # Optionnelle : utile pour situer une auto-déclaration (ex: RELOGE ailleurs), mais pas
+    # pertinente pour EN_CENTRE (le centre choisi fait déjà foi) ni exigible dans tous les cas
+    # (BESOIN_CENTRE, saisie opérateur rapide au secrétariat...). Même patron qu'Information.
+    location = gis_models.PointField(srid=4326, null=True, blank=True)
+    commune_code = models.CharField(
+        max_length=10, null=True, blank=True,
+        help_text="Code commune INSEE résolu à la saisie de l'adresse (autocomplete), même "
+                   "usage qu'Information.commune_code.",
+    )
 
     # Rempli seulement si c'est une entrée en centre d'accueil (pas une simple auto-déclaration
     # "je ne suis pas sur place") — déclenche la création d'une ligne RegistrePresence associée.

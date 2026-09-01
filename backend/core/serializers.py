@@ -24,7 +24,7 @@ from .models import (
     PointOperationnel,
     ImplicationInstitution,
     TypeImplication,
-    User, Crisis, Request, Offer, Information,
+    User, Crisis, Request, RequestPhoto, Offer, OfferPhoto, Information,
     RecherchePersonneLecture, RecherchePersonneLectureHistorique,
     Document, RecherchePersonnePhoto, RecherchePersonneCommentairePhoto,
     DossierCommentaire, RecherchePersonne, RecherchePersonneCommentaire, RecherchePersonneHistorique,
@@ -422,6 +422,25 @@ class RequestSerializer(serializers.ModelSerializer):
         validate_crisis_open_and_monitored(attrs.get('crisis'))
         return attrs
 
+
+class RequestPhotoSerializer(serializers.ModelSerializer):
+    """Photo additionnelle d'une demande d'aide (galerie, 9 max en plus de la principale déjà
+    stockée sur Request.photo) — voir RequestPhoto.__doc__."""
+
+    class Meta:
+        model = RequestPhoto
+        fields = '__all__'
+        extra_kwargs = {'image': {'write_only': True}}
+
+    def validate(self, attrs):
+        request_obj = attrs.get('request') or (self.instance.request if self.instance else None)
+        if request_obj and request_obj.photos.count() >= 9:
+            raise serializers.ValidationError({
+                "image": "Maximum 9 photos additionnelles (10 au total avec la principale)."
+            })
+        return attrs
+
+
 class OfferSerializer(serializers.ModelSerializer):
     """Serializer pour les offres d'aide.
 
@@ -517,6 +536,25 @@ class OfferSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         validate_crisis_open_and_monitored(attrs.get('crisis'))
         return attrs
+
+
+class OfferPhotoSerializer(serializers.ModelSerializer):
+    """Photo additionnelle d'une offre d'aide (galerie, 9 max en plus de la principale déjà
+    stockée sur Offer.photo) — voir OfferPhoto.__doc__."""
+
+    class Meta:
+        model = OfferPhoto
+        fields = '__all__'
+        extra_kwargs = {'image': {'write_only': True}}
+
+    def validate(self, attrs):
+        offer = attrs.get('offer') or (self.instance.offer if self.instance else None)
+        if offer and offer.photos.count() >= 9:
+            raise serializers.ValidationError({
+                "image": "Maximum 9 photos additionnelles (10 au total avec la principale)."
+            })
+        return attrs
+
 
 class DisponibiliteOffreSerializer(serializers.ModelSerializer):
     """Créneau de disponibilité (jour + matin/midi/soir/nuit) d'un bénévole."""
@@ -645,6 +683,8 @@ class DeclarationSecuriteSerializer(serializers.ModelSerializer):
     centre_accueil_nom = serializers.CharField(source="centre_accueil.nom", read_only=True, default=None)
     crise_nom = serializers.CharField(source="crise.name", read_only=True, default=None)
     declare_par_nom = serializers.SerializerMethodField()
+    latitude = serializers.SerializerMethodField()
+    longitude = serializers.SerializerMethodField()
 
     class Meta:
         model = DeclarationSecurite
@@ -656,6 +696,32 @@ class DeclarationSecuriteSerializer(serializers.ModelSerializer):
             return None
         full_name = f"{obj.declare_par.first_name} {obj.declare_par.last_name}".strip()
         return full_name or obj.declare_par.email
+
+    # Même règle de confidentialité qu'InformationSerializer._location_visible : une adresse
+    # personnelle, potentiellement celle d'une personne vulnérable/déplacée — jamais exposée
+    # au grand public, seulement aux acteurs institutionnels.
+    def _location_visible(self, obj) -> bool:
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        if not (user and user.is_authenticated and request):
+            return False
+        return effective_role_or_none(request) in INSTITUTIONAL_TYPES
+
+    def get_latitude(self, obj):
+        if not self._location_visible(obj):
+            return None
+        return obj.location.y if obj.location else None
+
+    def get_longitude(self, obj):
+        if not self._location_visible(obj):
+            return None
+        return obj.location.x if obj.location else None
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if not self._location_visible(instance):
+            data['location'] = None
+        return data
 
     def validate(self, attrs):
         crise = attrs.get('crise') or (self.instance.crise if self.instance else None)
