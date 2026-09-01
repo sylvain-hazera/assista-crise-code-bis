@@ -14,8 +14,9 @@ export class MaterielCatalogueService {
 
   constructor(private http: HttpClient) {}
 
-  getAll(): Observable<MaterielCatalogue[]> {
-    return this.http.get<MaterielCatalogue[]>(`${this.url}/`);
+  getAll(categorie?: string): Observable<MaterielCatalogue[]> {
+    const params: Record<string, string> = categorie ? { categorie } : {};
+    return this.http.get<MaterielCatalogue[]>(`${this.url}/`, { params });
   }
 
   search(query: string): Observable<MaterielCatalogue[]> {

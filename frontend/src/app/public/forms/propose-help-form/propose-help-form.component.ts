@@ -124,7 +124,6 @@ export class ProposeHelpFormComponent implements OnInit {
     { value: 'ETUVE', label: 'Étuve' },
     { value: 'CHAMBRE_FROIDE', label: 'Chambre froide' },
     { value: 'REMORQUE', label: 'Remorque' },
-    { value: 'ENGIN_TRACTE', label: 'Engin/machine tracté(e) (bulldozer à lame, broyeur, déchaumeur, cover crop...)' },
     { value: 'AUTRE', label: 'Autre' },
   ];
 
@@ -132,6 +131,58 @@ export class ProposeHelpFormComponent implements OnInit {
     { value: 'EAU', label: 'Eau' },
     { value: 'CARBURANT', label: 'Carburant' },
   ];
+
+  // ── Rubrique "Engins agricoles / chantiers / spéciaux" ─────────────────────────
+  // Liste à cocher dédiée, indépendante du menu déroulant "Type de matériel" ci-dessus (qui ne
+  // sert plus qu'aux quelques types structurels fixes) : chaque engin coché devient, à la
+  // soumission, sa propre offre (type Matériel/Autre + ce catalogue précis), avec sa propre
+  // quantité et sa propre photo — voir buildEngineCreations(). Adossée à MaterielCatalogue
+  // (categorie=ENGIN), donc extensible en direct via la ligne "Autre" ci-dessous.
+  engineLines: { item: MaterielCatalogue; checked: boolean; quantite: number | null; photo: File | null }[] = [];
+  newEngineNom = '';
+  addingCustomEngine = false;
+  // Une seule confirmation réglementaire pour tout le lot d'engins cochés (pas une par ligne) —
+  // même rappel légal que showConformiteVehicule pour une ligne Transport/Matériel standard.
+  engineConfirmationReglementaire = false;
+
+  get hasCheckedEngines(): boolean {
+    return this.engineLines.some(l => l.checked);
+  }
+
+  private loadEngineCatalogue(): void {
+    this.materielCatalogueService.getAll('ENGIN').subscribe({
+      next: (list) => {
+        this.engineLines = list.map(item => ({ item, checked: false, quantite: null, photo: null }));
+      },
+      error: () => {},
+    });
+  }
+
+  onEnginePhotoSelected(line: { photo: File | null }, event: Event): void {
+    const input = event.target as HTMLInputElement;
+    line.photo = input.files?.[0] ?? null;
+  }
+
+  addCustomEngine(): void {
+    const nom = this.newEngineNom.trim();
+    if (!nom) return;
+    this.addingCustomEngine = true;
+    this.materielCatalogueService.create({ nom, categorie: 'ENGIN' }).subscribe({
+      next: (item) => {
+        // Réutilise la ligne existante si ce nom (insensible à la casse) est déjà dans le
+        // catalogue — même dédoublonnage que TagLikeViewSetMixin côté back.
+        const existing = this.engineLines.find(l => l.item.id === item.id);
+        if (existing) {
+          existing.checked = true;
+        } else {
+          this.engineLines = [...this.engineLines, { item, checked: true, quantite: null, photo: null }];
+        }
+        this.newEngineNom = '';
+        this.addingCustomEngine = false;
+      },
+      error: () => { this.addingCustomEngine = false; },
+    });
+  }
 
   selectedAddress: AddressResult | null = null;
 
@@ -250,6 +301,7 @@ export class ProposeHelpFormComponent implements OnInit {
       next: (list) => this.allMateriels = list,
       error: () => {},
     });
+    this.loadEngineCatalogue();
   }
 
   private buildJoursDispo(): void {
@@ -367,6 +419,9 @@ export class ProposeHelpFormComponent implements OnInit {
     if (f.get('email')?.invalid) errors.push('L\'email est obligatoire et doit être valide.');
     if (f.get('phoneNumber')?.invalid) errors.push('Le téléphone est obligatoire et doit être valide.');
     if (this.offerRows.invalid) errors.push('Complétez les informations sur votre offre (un ou plusieurs champs manquants ou invalides).');
+    if (this.hasCheckedEngines && !this.engineConfirmationReglementaire) {
+      errors.push('Confirmez être en règle (vous et les engins cochés) pour valider la rubrique Engins agricoles / chantiers / spéciaux.');
+    }
     return errors;
   }
 
@@ -387,7 +442,7 @@ export class ProposeHelpFormComponent implements OnInit {
     const organisationNom = (this.informationForm.get('organisationNom')?.value || '').trim();
     const groupeId = organisationNom ? crypto.randomUUID() : null;
 
-    const creations: Observable<Offer>[] = this.offerRows.controls.map(row => {
+    const rowCreations: Observable<Offer>[] = this.offerRows.controls.map(row => {
       const v = row.value;
       const formData = new FormData();
 
@@ -449,18 +504,64 @@ export class ProposeHelpFormComponent implements OnInit {
       return this.offerService.create(formData);
     });
 
+    // Rubrique "Engins agricoles / chantiers / spéciaux" : chaque ligne cochée devient sa
+    // propre offre (Matériel/Autre + ce catalogue précis), avec sa propre photo — indépendante
+    // de la galerie globale ci-dessus, qui ne s'applique qu'aux lignes du formulaire standard.
+    const checkedEngineLines = this.engineLines.filter(l => l.checked);
+    const engineCreations: Observable<Offer>[] = checkedEngineLines.map(line => {
+      const formData = new FormData();
+      formData.append('title', `Offre d'aide - ${crisisLabel} - Engin : ${line.item.nom}`);
+      formData.append('first_name_offer', this.informationForm.get('firstName')?.value);
+      formData.append('last_name_offer', this.informationForm.get('lastName')?.value);
+      formData.append('email_offer', this.informationForm.get('email')?.value);
+      formData.append('phone_offer', this.informationForm.get('phoneNumber')?.value);
+
+      const typeId = this.typesOffreMap.get(TYPE_MATERIEL);
+      if (typeId) formData.append('offer_type', typeId);
+      if (crisisId) formData.append('crisis', crisisId);
+      if (hasLocation) {
+        formData.append('location', JSON.stringify({
+          type: 'Point', coordinates: [this.longitude, this.latitude],
+        }));
+      }
+
+      formData.append('description', `Engin proposé : ${line.item.nom}`);
+      formData.append('renouvelable', 'false');
+      // Pas de choix "présent moi-même" dans cette liste rapide (contrairement à une ligne
+      // standard) : un engin coché ici est mis à disposition seul, par défaut.
+      formData.append('presence_physique', 'false');
+      formData.append('materiel_type', 'AUTRE');
+      formData.append('materiel_catalogue', line.item.id);
+      formData.append('quantite', String(line.quantite || 1));
+      formData.append('confirmation_reglementaire', String(!!this.engineConfirmationReglementaire));
+
+      formData.append('status', 'DISPONIBLE');
+      if (organisationNom) {
+        formData.append('organisation_nom', organisationNom);
+        formData.append('groupe_id', groupeId!);
+      }
+      if (this.currentUser?.id) formData.append('author', this.currentUser.id);
+      if (line.photo) formData.append('photo', line.photo);
+
+      return this.offerService.create(formData);
+    });
+
+    const creations = [...rowCreations, ...engineCreations];
+
     forkJoin(creations).subscribe({
       next: (offers) => {
         // Des disponibilités n'ont de sens que pour une offre où l'offreur est présent en
-        // personne (voir presencePhysique) — offerRows et offers restent dans le même ordre
-        // puisque `creations` a été construit par un simple .map() sur offerRows.controls.
-        offers.forEach((o, i) => {
+        // personne (voir presencePhysique) — seules les offres issues des lignes standard sont
+        // concernées, elles restent en tête de `offers` puisque `creations` les place en premier.
+        const rowOffers = offers.slice(0, rowCreations.length);
+        rowOffers.forEach((o, i) => {
           if (this.offerRows.at(i).value.presencePhysique === true) this.declareDisponibilites(o.id);
         });
         // Photos additionnelles de la galerie (au-delà de la principale déjà envoyée avec
         // chaque offre) — postées séparément vers chaque offre créée, une fois qu'elle existe.
+        // Ne s'applique qu'aux lignes standard : les engins ont chacun leur propre photo dédiée.
         const photosSupplementaires = this.selectedPhotos.slice(1);
-        offers.forEach(o => {
+        rowOffers.forEach(o => {
           photosSupplementaires.forEach((file, i) => {
             this.offerService.addPhoto(o.id, file, i).subscribe({
               error: (err) => console.error('Erreur ajout photo galerie:', err),

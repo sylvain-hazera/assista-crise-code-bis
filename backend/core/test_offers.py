@@ -273,19 +273,35 @@ class TestOfferEngagementFields:
 
 @pytest.mark.django_db
 class TestOfferMaterielTransportComplement:
-    """Complète la liste des matériels/transports proposés : engin/machine tracté(e), cuve/
-    citerne mobile avec précision eau/carburant, transport d'animaux avec précision libre."""
+    """Complète la liste des matériels/transports proposés : engins agricoles/chantiers/
+    spéciaux (voir TestEnginsCatalogueEtBesoins), cuve/citerne mobile avec précision eau/
+    carburant, transport d'animaux avec précision libre."""
 
-    def test_declares_engin_tracte(self, api_client, offer_type):
+    def test_engin_tracte_generique_nest_plus_un_choix_valide(self, api_client, offer_type):
+        """Remplacé par le catalogue extensible MaterielCatalogue.categorie == ENGIN (voir
+        TestEnginsCatalogueEtBesoins) — chaque engin y est nommé précisément."""
         payload = {
             **OFFER_PAYLOAD,
-            "email_offer": "engin-tracte@test.fr",
+            "email_offer": "engin-tracte-generique@test.fr",
             "offer_type": str(offer_type.id),
             "materiel_type": "ENGIN_TRACTE",
         }
         response = api_client.post(reverse('offer-list'), payload, format='json')
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_declares_engin_via_catalogue_autre(self, api_client, offer_type):
+        engin = MaterielCatalogue.objects.get(nom="Bulldozer à lame")
+        payload = {
+            **OFFER_PAYLOAD,
+            "email_offer": "bulldozer@test.fr",
+            "offer_type": str(offer_type.id),
+            "materiel_type": "AUTRE",
+            "materiel_catalogue": str(engin.id),
+            "quantite": 1,
+        }
+        response = api_client.post(reverse('offer-list'), payload, format='json')
         assert response.status_code == status.HTTP_201_CREATED
-        assert response.data['materiel_type'] == 'ENGIN_TRACTE'
+        assert response.data['materiel_catalogue_nom'] == "Bulldozer à lame"
 
     def test_declares_cuve_avec_contenu_carburant(self, api_client, offer_type):
         payload = {
@@ -328,6 +344,33 @@ class TestOfferMaterielTransportComplement:
 
     def test_transport_animaux_precision_optional(self, offer):
         assert offer.transport_animaux_precision is None
+
+
+@pytest.mark.django_db
+class TestEnginsCatalogueAgricolesChantiersSpeciaux:
+    """Rubrique dédiée "Engins agricoles / chantiers / spéciaux" (voir propose-help-form) : une
+    liste à cocher soutenue par MaterielCatalogue.categorie == ENGIN, extensible en direct."""
+
+    def test_engins_de_base_seedes_avec_categorie(self):
+        noms = {"Bulldozer à lame", "Broyeur", "Déchaumeur", "Cover crop", "Manitou"}
+        for nom in noms:
+            item = MaterielCatalogue.objects.get(nom=nom)
+            assert item.categorie == "ENGIN"
+
+    def test_categorie_filter_isole_les_engins(self, api_client):
+        MaterielCatalogue.objects.create(nom="Lits de camp (test engins)")
+        response = api_client.get(reverse('materielcatalogue-list'), {"categorie": "ENGIN"})
+        assert response.status_code == status.HTTP_200_OK
+        noms = {item['nom'] for item in response.data}
+        assert "Bulldozer à lame" in noms
+        assert "Lits de camp (test engins)" not in noms
+
+    def test_ajout_dun_engin_non_liste_via_creation_hashtag(self, api_client):
+        response = api_client.post(
+            reverse('materielcatalogue-list'), {"nom": "Épareuse (test)", "categorie": "ENGIN"}
+        )
+        assert response.status_code == status.HTTP_201_CREATED
+        assert MaterielCatalogue.objects.get(nom="Épareuse (test)").categorie == "ENGIN"
 
 
 @pytest.mark.django_db

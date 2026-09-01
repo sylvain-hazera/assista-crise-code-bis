@@ -448,7 +448,10 @@ class TypeMateriel(models.TextChoices):
     ETUVE = "ETUVE", "Étuve"
     CHAMBRE_FROIDE = "CHAMBRE_FROIDE", "Chambre froide"
     REMORQUE = "REMORQUE", "Remorque"
-    ENGIN_TRACTE = "ENGIN_TRACTE", "Engin/machine tracté(e) (bulldozer à lame, broyeur, déchaumeur, cover crop...)"
+    # Pas d'entrée générique "Engin tracté" ici : chaque engin (bulldozer à lame, broyeur,
+    # déchaumeur, cover crop, manitou...) est une entrée à part du catalogue partagé
+    # (MaterielCatalogue.categorie == ENGIN, voir propose-help-form) plutôt qu'un choix figé —
+    # cohérent avec le "Autre" ci-dessous, et extensible sans migration de schéma.
     AUTRE = "AUTRE", "Autre"
 
 
@@ -2404,6 +2407,13 @@ class StatutMateriel(models.TextChoices):
     RETIRE = "RETIRE", "Retiré"
 
 
+class MaterielCatalogueCategorie(models.TextChoices):
+    """Regroupement optionnel d'entrées du catalogue pour des listes à cocher dédiées (voir
+    propose-help-form, rubrique "Engins agricoles / chantiers / spéciaux") — un item sans
+    catégorie (None) reste un matériel "Autre" générique, cherché/ajouté normalement."""
+    ENGIN = "ENGIN", "Engin agricole / chantier / spécial"
+
+
 class MaterielCatalogue(models.Model):
     """Vocabulaire partagé et extensible des besoins matériel/logistique (lit, nourriture,
     eau...) — même esprit que Competence/InformationType (voir TagLikeViewSetMixin) : n'importe
@@ -2413,6 +2423,10 @@ class MaterielCatalogue(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
     nom = models.CharField(max_length=100, unique=True)
+
+    # Voir MaterielCatalogueCategorie — permet de proposer certaines entrées dans une liste à
+    # cocher dédiée plutôt que dans la recherche générique "Autre matériel".
+    categorie = models.CharField(max_length=20, choices=MaterielCatalogueCategorie.choices, null=True, blank=True)
 
     date_creation = models.DateTimeField(auto_now_add=True)
 

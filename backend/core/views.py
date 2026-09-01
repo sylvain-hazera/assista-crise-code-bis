@@ -6111,6 +6111,13 @@ class MaterielCatalogueViewSet(TagLikeViewSetMixin, viewsets.ModelViewSet):
     serializer_class = MaterielCatalogueSerializer
     permission_classes = [AllowAny]
 
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        categorie = self.request.query_params.get("categorie")
+        if categorie:
+            queryset = queryset.filter(categorie=categorie)
+        return queryset
+
 
 def _peut_gerer_stock_point(request, point) -> bool:
     """Même garde-fou que MaterielPointViewSet._can_manage (dupliqué ici plutôt que factorisé,

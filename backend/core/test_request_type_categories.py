@@ -19,8 +19,14 @@ class TestRequestTypeCategorySeed:
         assert children == {
             "Groupe électrogène", "Starlink / connexion satellite",
             "Télécommunication", "Pompage", "Cuve / citerne mobile",
-            "Engin/machine tracté(e)",
+            "Bulldozer à lame", "Broyeur", "Déchaumeur", "Cover crop", "Manitou",
         }
+
+    def test_generic_engin_tracte_replaced_by_named_engins(self):
+        """"Engin/machine tracté(e)" (0095, générique) remplacé par les entrées précises listées
+        ci-dessus (0097), cohérence avec la liste à cocher côté offres (MaterielCatalogue)."""
+        assert not RequestType.objects.filter(type="Engin/machine tracté(e)").exists()
+        assert not Besoin.objects.filter(nom="Engin/machine tracté(e)").exists()
 
     def test_cuve_renamed_to_cuve_citerne_mobile(self):
         """Anciennement "Cuve" (0042) — même ligne (pas de doublon), renommée pour préciser
@@ -47,7 +53,7 @@ class TestRequestTypeCategorySeed:
         via RequestTypeBesoin, sinon l'auto-affectation (perform_create) ne trouve jamais de
         compétence et le dossier reste sans équipe."""
         for nom in ["Groupe électrogène", "Pompage", "Anglais", "Espagnol",
-                    "Cuve / citerne mobile", "Engin/machine tracté(e)", "Transport d'animaux"]:
+                    "Cuve / citerne mobile", "Bulldozer à lame", "Manitou", "Transport d'animaux"]:
             request_type = RequestType.objects.get(type=nom)
             besoin = Besoin.objects.get(nom=nom)
             assert RequestTypeBesoin.objects.filter(request_type=request_type, besoin=besoin).exists()
