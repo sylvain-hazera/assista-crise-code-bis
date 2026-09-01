@@ -3840,7 +3840,7 @@ class AccountActivationView(generics.GenericAPIView):
         # une fois la possession de la boîte mail prouvée par ce clic — jamais à la simple
         # inscription. Idempotent (get_or_create) : un second clic ne duplique rien.
         if not already_enabled and getattr(user, 'type', None) == UserRole.LOCAL_AUTHORITY:
-            attach_user_to_institution(user, request)
+            matched_institution = attach_user_to_institution(user, request)
             audit_log(
                 request=request,
                 action_code="CONNEXION",
@@ -3848,6 +3848,31 @@ class AccountActivationView(generics.GenericAPIView):
                 objet_id=user.id,
                 commentaire=f"Activation de compte confirmée par email : {user.email}",
             )
+            # Le compte est activé dans tous les cas (la possession de la boîte mail est
+            # prouvée), mais s'il n'a pu être rattaché à aucune institution automatiquement
+            # (ni domaine déjà connu, ni correspondance dans l'annuaire officiel), personne
+            # n'est prévenu aujourd'hui : le compte reste silencieusement sans institution.
+            # Même correctif que pour les comptes SECOURS/ADMIN en attente de validation
+            # (voir register(), plus haut) : prévenir contact@ pour un rattachement manuel.
+            if matched_institution is None:
+                try:
+                    send_mail(
+                        subject="Compte mairie activé sans institution rattachée",
+                        message=(
+                            f"Bonjour,\n\n"
+                            f"Un compte mairie a confirmé son email mais n'a pu être rattaché "
+                            f"automatiquement à aucune institution (ni domaine connu, ni "
+                            f"correspondance dans l'annuaire officiel).\n\n"
+                            f"- Nom : {user.first_name} {user.last_name}\n"
+                            f"- Email : {user.email}\n\n"
+                            "Un rattachement manuel à l'institution correcte est nécessaire."
+                        ),
+                        from_email=None,
+                        recipient_list=['contact@assista-crise.fr'],
+                        fail_silently=False,
+                    )
+                except Exception as e:
+                    print(f"Erreur envoi email rattachement manuel : {e}")
 
         refresh = RefreshToken.for_user(user)
         return Response({

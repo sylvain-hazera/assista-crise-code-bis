@@ -159,6 +159,8 @@ class TestInstitutionAutoAttachment:
         assert login_response.status_code == status.HTTP_401_UNAUTHORIZED
 
     def test_activation_attaches_to_cached_domain_and_returns_token(self, api_client, user_data):
+        from django.core import mail
+
         institution_type = InstitutionType.objects.create(code="SDIS", libelle="SDIS")
         institution = Institution.objects.create(nom="SDIS 33", type=institution_type)
         InstitutionDomaine.objects.create(institution=institution, domaine="sdis33.fr", valide=True)
@@ -174,6 +176,7 @@ class TestInstitutionAutoAttachment:
         register_response = api_client.post(reverse('user-register'), payload, format='json')
         user = User.objects.get(id=register_response.data["user"]["id"])
 
+        mail.outbox.clear()
         activation_response = api_client.get(_activation_url(user))
 
         assert activation_response.status_code == status.HTTP_200_OK
@@ -187,6 +190,8 @@ class TestInstitutionAutoAttachment:
             "aucune compétence arbitraire ne doit être posée automatiquement : "
             "le responsable la précise ensuite via l'écran dédié"
         )
+        # Rattachement réussi : pas de notification "sans institution" à envoyer.
+        assert not any('contact@assista-crise.fr' in m.to for m in mail.outbox)
 
     def test_activation_is_idempotent(self, api_client, user_data):
         """Cliquer deux fois sur le lien d'activation ne doit pas créer de doublons."""
@@ -211,6 +216,36 @@ class TestInstitutionAutoAttachment:
 
         assert ContactInstitution.objects.filter(institution=institution, utilisateur=user).count() == 1
         assert AffectationRoleOperationnel.objects.filter(institution=institution, utilisateur=user).count() == 1
+
+    @patch("core.auth_validation.InstitutionEmailValidator._search_annuaire")
+    def test_activation_without_institution_match_notifies_contact(self, mock_search, api_client, user_data):
+        """Un compte mairie activé sans qu'aucune institution n'ait pu être auto-rattachée
+        (ni domaine connu, ni correspondance annuaire) ne doit pas rester silencieusement sans
+        institution : contact@ doit être notifié pour un rattachement manuel."""
+        from django.core import mail
+
+        mock_search.return_value = None  # pas de correspondance annuaire, repli sur le regex
+
+        payload = {
+            **user_data,
+            "email": "agent@mairie-sans-match.fr",
+            "username": "agent@mairie-sans-match.fr",
+            "type": "AUT_LOCALE",
+            "institution_name": "Mairie Sans Match",
+            "institution_type": "mairie",
+        }
+        register_response = api_client.post(reverse('user-register'), payload, format='json')
+        assert register_response.status_code == status.HTTP_201_CREATED
+        user = User.objects.get(id=register_response.data["user"]["id"])
+
+        mail.outbox.clear()
+        activation_response = api_client.get(_activation_url(user))
+
+        assert activation_response.status_code == status.HTTP_200_OK
+        assert not ContactInstitution.objects.filter(utilisateur=user).exists()
+        contact_emails = [m for m in mail.outbox if 'contact@assista-crise.fr' in m.to]
+        assert len(contact_emails) == 1
+        assert "sans institution" in contact_emails[0].subject.lower()
 
     def test_invalid_cached_domain_is_not_matched(self):
         institution_type = InstitutionType.objects.create(code="SDIS", libelle="SDIS")
