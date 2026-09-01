@@ -25,6 +25,7 @@ const CRENEAUX: { creneau: Creneau; label: string }[] = [
 
 const STATUT_LABELS: Record<StatutAffectation, string> = {
   EN_ATTENTE: 'En attente de confirmation',
+  EN_VALIDATION: 'En attente de validation',
   CONFIRME: 'Confirmé',
   DECLINE: 'Décliné',
 };
@@ -126,6 +127,29 @@ export class PointEquipeModalComponent implements OnInit {
     const affectation = this.affectations.find(a => a.benevole === membreId);
     if (!affectation) return null;
     return { statut: affectation.statut, libelle: STATUT_LABELS[affectation.statut] };
+  }
+
+  private affectationFor(membreId: string): AffectationPointBenevole | undefined {
+    return this.affectations.find(a => a.benevole === membreId);
+  }
+
+  // --- Validation régulateur d'un créneau accepté par le bénévole (statut EN_VALIDATION) ---
+
+  validatingId: string | null = null;
+
+  validerCreneau(membreId: string, decision: 'confirmer' | 'refuser'): void {
+    const affectation = this.affectationFor(membreId);
+    if (!affectation || this.validatingId) return;
+    this.validatingId = affectation.id;
+    this.pointService.validerBenevole(this.point.id, { affectation_id: affectation.id, decision }).subscribe({
+      next: () => {
+        this.validatingId = null;
+        this.load();
+      },
+      error: () => {
+        this.validatingId = null;
+      },
+    });
   }
 
   // --- Recrutement (mini-outil RH dédié, voir RecrutementBenevolesModalComponent) ---

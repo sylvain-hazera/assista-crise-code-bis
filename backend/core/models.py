@@ -2621,6 +2621,7 @@ class DeclarationSecurite(EnvironmentScopedModel):
 
 class StatutAffectation(models.TextChoices):
     EN_ATTENTE = "EN_ATTENTE", "En attente de confirmation"
+    EN_VALIDATION = "EN_VALIDATION", "En attente de validation par le régulateur"
     CONFIRME = "CONFIRME", "Confirmé"
     DECLINE = "DECLINE", "Décliné"
 

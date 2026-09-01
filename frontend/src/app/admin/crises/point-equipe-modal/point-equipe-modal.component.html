@@ -26,6 +26,12 @@
                 <td>
                   @if (statutFor(m.id); as s) {
                     <span class="badge" [class]="'badge-' + s.statut.toLowerCase()">{{ s.libelle }}</span>
+                    @if (s.statut === 'EN_VALIDATION') {
+                      <button type="button" class="btn-secondary xs" [disabled]="!!validatingId"
+                        (click)="$event.stopPropagation(); validerCreneau(m.id, 'confirmer')">Valider</button>
+                      <button type="button" class="btn-secondary xs" [disabled]="!!validatingId"
+                        (click)="$event.stopPropagation(); validerCreneau(m.id, 'refuser')">Refuser</button>
+                    }
                   } @else {
                     <span class="badge badge-membre">Membre d'équipe</span>
                   }

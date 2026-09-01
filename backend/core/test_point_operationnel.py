@@ -363,3 +363,43 @@ class TestCreerEquipeAvecPoint:
         assert response.status_code == status.HTTP_201_CREATED
         assert Team.objects.count() == before
         assert response.data["equipe"] is None
+
+
+@pytest.mark.django_db
+class TestCreerEquipeEnEditantLePoint:
+    """Créer une équipe pour un point déjà existant mais encore sans équipe, en l'éditant —
+    jusqu'ici la création à la volée n'était possible qu'à la création du point (voir
+    TestCreerEquipeAvecPoint ci-dessus), obligeant sinon un aller-retour par l'écran équipes."""
+
+    def test_creates_team_and_assigns_it_on_update(self, institutional_client, crisis, point_type, institution):
+        client, user = institutional_client
+        ContactInstitution.objects.create(institution=institution, utilisateur=user, actif=True)
+        point = PointOperationnel.objects.create(nom="Point sans équipe", type=point_type, crise=crisis)
+
+        response = client.patch(
+            reverse('pointoperationnel-detail', args=[point.id]),
+            {"nouvelle_equipe_nom": "Équipe créée en édition"},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        team = Team.objects.get(name="Équipe créée en édition")
+        assert team.institution_id == institution.id
+        assert response.data["equipe"] == team.id
+
+    def test_ignored_when_point_already_has_a_team(self, institutional_client, crisis, point_type):
+        client, _ = institutional_client
+        existing_team = Team.objects.create(name="Équipe déjà en place")
+        point = PointOperationnel.objects.create(nom="Point avec équipe", type=point_type, crise=crisis, equipe=existing_team)
+        before = Team.objects.count()
+
+        response = client.patch(
+            reverse('pointoperationnel-detail', args=[point.id]),
+            {"nouvelle_equipe_nom": "Ne doit pas être créée"},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert Team.objects.count() == before
+        assert response.data["equipe"] == existing_team.id
+        assert not Team.objects.filter(name="Ne doit pas être créée").exists()

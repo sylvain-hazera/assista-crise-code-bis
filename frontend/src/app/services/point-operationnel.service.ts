@@ -3,7 +3,7 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
 import { PointOperationnel, PointOperationnelPayload, PointEquipeResponse, CentreAccueilPublic } from '../shared/models/point-operationnel.model';
-import { AffectationPointBenevole, InviterBenevolePayload, InviterBenevoleResponse } from '../shared/models/affectation-point-benevole.model';
+import { AffectationPointBenevole, InviterBenevolePayload, InviterBenevoleResponse, ValiderBenevolePayload } from '../shared/models/affectation-point-benevole.model';
 import { CandidatsBenevolesParams, CandidatsBenevolesResponse } from '../shared/models/candidat-benevole.model';
 
 @Injectable({ providedIn: 'root' })
@@ -64,6 +64,12 @@ export class PointOperationnelService {
 
   inviterBenevole(id: string, payload: InviterBenevolePayload): Observable<InviterBenevoleResponse> {
     return this.http.post<InviterBenevoleResponse>(`${this.apiUrl}/${id}/inviter-benevole/`, payload);
+  }
+
+  /** Validation (ou refus) par le régulateur d'un créneau bénévole préalablement accepté par
+   * ce dernier (statut EN_VALIDATION) — voir PointOperationnelViewSet.valider_benevole. */
+  validerBenevole(id: string, payload: ValiderBenevolePayload): Observable<AffectationPointBenevole> {
+    return this.http.post<AffectationPointBenevole>(`${this.apiUrl}/${id}/valider-benevole/`, payload);
   }
 
   getCandidatsBenevoles(id: string, params: CandidatsBenevolesParams): Observable<CandidatsBenevolesResponse> {

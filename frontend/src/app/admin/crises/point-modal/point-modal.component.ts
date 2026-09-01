@@ -209,7 +209,7 @@ export class PointModalComponent implements OnChanges {
       date_fermeture: date_fermeture || null,
       equipe: creerNouvelleEquipe ? null : (equipe || null),
     };
-    if (!this.isEdit && creerNouvelleEquipe && nouvelleEquipeNom?.trim()) {
+    if (creerNouvelleEquipe && nouvelleEquipeNom?.trim()) {
       payload.nouvelle_equipe_nom = nouvelleEquipeNom.trim();
     }
 

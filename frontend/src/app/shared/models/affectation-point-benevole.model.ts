@@ -1,4 +1,4 @@
-export type StatutAffectation = 'EN_ATTENTE' | 'CONFIRME' | 'DECLINE';
+export type StatutAffectation = 'EN_ATTENTE' | 'EN_VALIDATION' | 'CONFIRME' | 'DECLINE';
 
 export interface AffectationPointBenevole {
   id: string;
@@ -27,4 +27,9 @@ export interface InviterBenevolePayload {
 export interface InviterBenevoleResponse {
   created: AffectationPointBenevole[];
   errors: { offer_id: string; error: string }[];
+}
+
+export interface ValiderBenevolePayload {
+  affectation_id: string;
+  decision: 'confirmer' | 'refuser';
 }

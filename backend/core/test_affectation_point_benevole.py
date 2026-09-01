@@ -11,6 +11,7 @@ from core.models import (
     Crisis,
     DisponibiliteOffre,
     DisponibilitePointEquipe,
+    Notification,
     Offer,
     OfferType,
     PointOperationnel,
@@ -222,7 +223,7 @@ class TestInviterBenevole:
 @pytest.mark.django_db
 class TestConfirmationLien:
 
-    def test_confirm_oui_sets_confirme(self, point, offer, create_user):
+    def test_confirm_oui_sets_en_validation_and_notifies_responsable(self, point, offer, responsable, create_user):
         benevole = create_user(username="benevole-confirm-oui@test.fr", email="benevole-confirm-oui@test.fr", type="UTIL_SIMPLE")
         affectation = AffectationPointBenevole.objects.create(
             point=point, benevole=benevole, offer=offer,
@@ -234,8 +235,10 @@ class TestConfirmationLien:
 
         assert response.status_code == status.HTTP_200_OK
         affectation.refresh_from_db()
-        assert affectation.statut == "CONFIRME"
+        assert affectation.statut == "EN_VALIDATION"
         assert affectation.date_reponse is not None
+        assert Notification.objects.filter(utilisateur=responsable, titre="Créneau bénévole à valider").exists()
+        assert any(responsable.email in m.to for m in mail.outbox)
 
     def test_confirm_non_sets_decline_and_removes_creneaux(self, point, offer, create_user):
         benevole = create_user(username="benevole-confirm-non@test.fr", email="benevole-confirm-non@test.fr", type="UTIL_SIMPLE")
@@ -269,13 +272,102 @@ class TestConfirmationLien:
         client.get(reverse('confirmer_affectation_benevole', args=["token-twice-test", "non"]))
 
         affectation.refresh_from_db()
-        assert affectation.statut == "CONFIRME"
+        assert affectation.statut == "EN_VALIDATION"
         assert affectation.date_reponse == premiere_reponse
 
     def test_confirm_invalid_token_404(self):
         client = APIClient()
         response = client.get(reverse('confirmer_affectation_benevole', args=["token-inexistant", "oui"]))
         assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+@pytest.mark.django_db
+class TestValiderBenevole:
+    """Arbitrage du régulateur sur un créneau bénévole en attente de validation (statut
+    EN_VALIDATION) — voir PointOperationnelViewSet.valider_benevole."""
+
+    def _make_affectation(self, point, offer, create_user, statut="EN_VALIDATION"):
+        benevole = create_user(
+            username=f"benevole-valider-{statut}@test.fr", email=f"benevole-valider-{statut}@test.fr", type="UTIL_SIMPLE",
+        )
+        return AffectationPointBenevole.objects.create(
+            point=point, benevole=benevole, offer=offer,
+            date_attendue=timezone.now(), token_confirmation=f"token-valider-{statut}",
+            statut=statut, date_reponse=timezone.now(),
+        )
+
+    def test_confirmer_sets_confirme_and_notifies_benevole(self, responsable_client, point, offer, create_user):
+        client, _ = responsable_client
+        affectation = self._make_affectation(point, offer, create_user)
+
+        response = client.post(
+            reverse('pointoperationnel-valider-benevole', args=[point.id]),
+            {"affectation_id": str(affectation.id), "decision": "confirmer"},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        affectation.refresh_from_db()
+        assert affectation.statut == "CONFIRME"
+        assert any(affectation.benevole.email in m.to for m in mail.outbox)
+
+    def test_refuser_sets_decline_and_removes_creneaux(self, responsable_client, point, offer, create_user):
+        client, _ = responsable_client
+        affectation = self._make_affectation(point, offer, create_user)
+        DisponibilitePointEquipe.objects.create(
+            point=point, membre=affectation.benevole, date="2026-09-01", creneau="MATIN", affectation=affectation,
+        )
+
+        response = client.post(
+            reverse('pointoperationnel-valider-benevole', args=[point.id]),
+            {"affectation_id": str(affectation.id), "decision": "refuser"},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        affectation.refresh_from_db()
+        assert affectation.statut == "DECLINE"
+        assert not DisponibilitePointEquipe.objects.filter(point=point, membre=affectation.benevole).exists()
+
+    def test_rejects_when_not_en_validation(self, responsable_client, point, offer, create_user):
+        client, _ = responsable_client
+        affectation = self._make_affectation(point, offer, create_user, statut="EN_ATTENTE")
+
+        response = client.post(
+            reverse('pointoperationnel-valider-benevole', args=[point.id]),
+            {"affectation_id": str(affectation.id), "decision": "confirmer"},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        affectation.refresh_from_db()
+        assert affectation.statut == "EN_ATTENTE"
+
+    def test_rejects_invalid_decision(self, responsable_client, point, offer, create_user):
+        client, _ = responsable_client
+        affectation = self._make_affectation(point, offer, create_user)
+
+        response = client.post(
+            reverse('pointoperationnel-valider-benevole', args=[point.id]),
+            {"affectation_id": str(affectation.id), "decision": "peut-etre"},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_unrelated_user_forbidden(self, create_user, point, offer):
+        affectation = self._make_affectation(point, offer, create_user)
+        tiers = create_user(username="tiers-valider@test.fr", email="tiers-valider@test.fr", type="AUT_LOCALE")
+        client = APIClient()
+        client.force_authenticate(user=tiers)
+
+        response = client.post(
+            reverse('pointoperationnel-valider-benevole', args=[point.id]),
+            {"affectation_id": str(affectation.id), "decision": "confirmer"},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
 
 
 @pytest.mark.django_db

@@ -78,7 +78,7 @@
             <span class="material-icons">groups</span> Gérer l'équipe et les disponibilités
           </button>
         }
-        @if (!isEdit) {
+        @if (!point?.equipe) {
           <label class="checkbox-label">
             <input
               type="checkbox"

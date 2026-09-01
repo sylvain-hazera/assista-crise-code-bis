@@ -56,6 +56,7 @@
   white-space: nowrap;
 }
 .badge-en_attente { background: #fef3c7; color: #92400e; }
+.badge-en_validation { background: #dbeafe; color: #1e40af; }
 .badge-confirme { background: #dcfce7; color: #166534; }
 .badge-decline { background: #fee2e2; color: #991b1b; }
 .badge-membre { background: #f3f4f6; color: #6b7280; }
@@ -106,3 +107,16 @@
 }
 .btn-primary.sm { background: #2563eb; color: #fff; }
 .btn-secondary.sm { background: #f3f4f6; color: #374151; }
+
+.btn-secondary.xs {
+  padding: .2rem .5rem;
+  font-size: .72rem;
+  border-radius: 5px;
+  border: none;
+  cursor: pointer;
+  margin-left: .35rem;
+  background: #f3f4f6;
+  color: #374151;
+
+  &:disabled { opacity: .5; cursor: not-allowed; }
+}

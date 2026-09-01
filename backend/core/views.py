@@ -1577,6 +1577,68 @@ def send_point_volunteer_confirmation_email(request, affectation):
     )
 
 
+def _notify_regulateurs_creneau_a_valider(affectation, request):
+    """Prévient le(s) régulateur(s) du point (responsable + leader d'équipe, sans doublon)
+    qu'un bénévole a répondu « oui » à une sollicitation et attend une validation avant
+    confirmation définitive (voir PointOperationnelViewSet.valider_benevole). Silencieux si le
+    point n'a ni responsable ni leader d'équipe joignable."""
+    point = affectation.point
+    destinataires = {u for u in (point.responsable, point.equipe.leader if point.equipe else None) if u}
+    if not destinataires:
+        return
+
+    message = (
+        f"{affectation.benevole.first_name} {affectation.benevole.last_name} a confirmé sa "
+        f"disponibilité pour le point « {point.nom} » — validation requise avant confirmation "
+        f"définitive."
+    )
+    for user in destinataires:
+        Notification.objects.create(
+            utilisateur=user, titre="Créneau bénévole à valider",
+            message=message, environment=affectation.environment,
+        )
+        try:
+            send_mail_env_aware(
+                request,
+                subject=f"Créneau à valider — {point.nom}",
+                message=f"Bonjour {user.first_name},\n\n{message}\n\nCordialement,\nL'équipe Assista-Crise",
+                from_email=None,
+                recipient_list=[user.email],
+                fail_silently=True,
+            )
+        except Exception as e:
+            print(f"Erreur envoi email validation créneau bénévole : {e}")
+
+
+def send_benevole_validation_result_email(request, affectation, decision):
+    """Email envoyé au bénévole une fois son créneau arbitré par le régulateur (voir
+    PointOperationnelViewSet.valider_benevole) — deuxième et dernier email de ce flux, après
+    celui de send_point_volunteer_confirmation_email."""
+    point = affectation.point
+    if decision == "confirmer":
+        subject = f"Créneau confirmé — {point.nom}"
+        message = (
+            f"Bonjour,\n\nVotre créneau sur le point « {point.nom} » du "
+            f"{affectation.date_attendue.strftime('%d/%m/%Y à %H:%M')} a été validé par le "
+            f"régulateur : votre participation est définitivement confirmée.\n\n"
+            "Cordialement,\nL'équipe Assista-Crise"
+        )
+    else:
+        subject = f"Créneau non retenu — {point.nom}"
+        message = (
+            f"Bonjour,\n\nMerci pour votre disponibilité sur le point « {point.nom} ». Le "
+            f"régulateur n'a finalement pas retenu ce créneau. N'hésitez pas à consulter "
+            f"d'autres opportunités sur la plateforme.\n\nCordialement,\nL'équipe Assista-Crise"
+        )
+    try:
+        send_mail_env_aware(
+            request, subject=subject, message=message, from_email=None,
+            recipient_list=[affectation.benevole.email], fail_silently=True,
+        )
+    except Exception as e:
+        print(f"Erreur envoi email résultat validation créneau bénévole : {e}")
+
+
 def send_engagement_confirmation_email(request, engagement):
     """Email envoyé quand une offre est affectée comme ressource à une équipe (voir
     TeamViewSet.assigner_ressource) — lien opaque vers une page frontend persistante
@@ -2418,6 +2480,27 @@ def _notify_institution_referent_of_team(team, institution, request):
         )
     except Exception as e:
         print(f"Erreur envoi email référent institution (équipe) : {e}")
+
+
+def _creer_equipe_pour_point(point, nom, institution, request):
+    """Crée une équipe et l'assigne à ce point — factorisé entre la création du point
+    (PointOperationnelViewSet.perform_create) et son édition ultérieure (perform_update),
+    qui permettent toutes deux de créer une équipe à la volée plutôt que d'imposer un
+    aller-retour séparé par l'écran équipes."""
+    team = Team.objects.create(name=nom, institution=institution, environment=point.environment)
+    point.equipe = team
+    point.save(update_fields=['equipe'])
+    audit_log(
+        request=request,
+        action_code="CREATION",
+        objet_type="Team",
+        objet_id=team.id,
+        crise=point.crise,
+        commentaire=f"Équipe créée avec le point opérationnel {point.nom}",
+    )
+    if institution is not None:
+        _notify_institution_referent_of_team(team, institution, request)
+    return team
 
 
 def _vue_equipe_link(request, team, membre):
@@ -3835,7 +3918,11 @@ class ConfirmerAffectationBenevoleView(View):
                 f"<p>Vous aviez déjà répondu « {affectation.get_statut_display()} » à cette sollicitation.</p>"
             )
 
-        affectation.statut = StatutAffectation.CONFIRME if reponse == "oui" else StatutAffectation.DECLINE
+        # Un "oui" n'engage plus directement le bénévole : il passe par une validation du
+        # régulateur avant confirmation définitive (retour terrain — jusqu'ici la réponse du
+        # bénévole valait confirmation immédiate et sans arbitrage possible). Un "non" reste en
+        # revanche définitif et immédiat, rien à valider dans ce sens.
+        affectation.statut = StatutAffectation.EN_VALIDATION if reponse == "oui" else StatutAffectation.DECLINE
         affectation.date_reponse = timezone.now()
         affectation.save()
 
@@ -3854,7 +3941,11 @@ class ConfirmerAffectationBenevoleView(View):
             affectation.creneaux.all().delete()
             message = "Votre indisponibilité a bien été enregistrée. Merci de nous avoir prévenus."
         else:
-            message = "Merci ! Votre disponibilité est confirmée."
+            message = (
+                "Merci ! Votre disponibilité a bien été enregistrée. Elle est en attente de "
+                "validation par le régulateur, qui vous confirmera votre créneau."
+            )
+            _notify_regulateurs_creneau_a_valider(affectation, request)
 
         return HttpResponse(f"<h1>{message}</h1>")
 
@@ -5375,6 +5466,41 @@ class PointOperationnelViewSet(
             commentaire=f"Modification point opérationnel : {point.nom}",
         )
 
+        # Même mécanisme qu'à la création (voir perform_create) : un point déjà existant mais
+        # encore sans équipe pouvait jusqu'ici seulement se voir assigner une équipe EXISTANTE
+        # (select "Équipe responsable") — créer une équipe à la volée n'était possible qu'au
+        # moment de la création du point, obligeant sinon un aller-retour par l'écran équipes.
+        # Ignoré si le point a déjà une équipe : remplacer l'équipe en place n'est pas le rôle
+        # de ce paramètre (utiliser le select existant pour ça).
+        nouvelle_equipe_nom = (self.request.data.get('nouvelle_equipe_nom') or '').strip()
+        if nouvelle_equipe_nom and not point.equipe_id:
+            _creer_equipe_pour_point(
+                point, nouvelle_equipe_nom, self._resolve_institution_for_new_team(), self.request
+            )
+
+    def _resolve_institution_for_new_team(self):
+        """Institution à rattacher à une équipe créée à la volée (voir perform_create/
+        perform_update) : celle explicitement choisie dans le payload si l'appelant y a accès,
+        sinon celle de son propre rattachement actif — jamais d'erreur si aucune des deux
+        n'est disponible, l'équipe reste alors sans institution plutôt que de bloquer."""
+        institution = None
+        institution_id = self.request.data.get('institution')
+        if institution_id:
+            candidate = Institution.objects.filter(pk=institution_id).first()
+            is_own = candidate and ContactInstitution.objects.filter(
+                utilisateur=self.request.user, institution=candidate, actif=True
+            ).exists()
+            if candidate and (is_own or get_effective_role(self.request) == UserRole.ADMINISTRATOR):
+                institution = candidate
+
+        if institution is None:
+            contact = ContactInstitution.objects.filter(
+                utilisateur=self.request.user, actif=True
+            ).select_related("institution").first()
+            institution = contact.institution if contact else None
+
+        return institution
+
     def perform_create(self, serializer):
         point = serializer.save(responsable=self.request.user, environment=get_active_environment(self.request))
 
@@ -5397,21 +5523,7 @@ class PointOperationnelViewSet(
         # pas de crise.
         nouvelle_equipe_nom = (self.request.data.get('nouvelle_equipe_nom') or '').strip()
         if point.crise_id or nouvelle_equipe_nom:
-            institution = None
-            institution_id = self.request.data.get('institution')
-            if institution_id:
-                candidate = Institution.objects.filter(pk=institution_id).first()
-                is_own = candidate and ContactInstitution.objects.filter(
-                    utilisateur=self.request.user, institution=candidate, actif=True
-                ).exists()
-                if candidate and (is_own or get_effective_role(self.request) == UserRole.ADMINISTRATOR):
-                    institution = candidate
-
-            if institution is None:
-                contact = ContactInstitution.objects.filter(
-                    utilisateur=self.request.user, actif=True
-                ).select_related("institution").first()
-                institution = contact.institution if contact else None
+            institution = self._resolve_institution_for_new_team()
 
             if point.crise_id and institution:
                 implication, created = ImplicationInstitution.objects.get_or_create(
@@ -5435,23 +5547,10 @@ class PointOperationnelViewSet(
 
             # Créer une équipe en même temps que le point, plutôt que d'obliger à en créer une
             # séparément avant de pouvoir en assigner une — seulement si aucune équipe n'a déjà
-            # été choisie dans le formulaire (mutuellement exclusifs côté frontend).
+            # été choisie dans le formulaire (mutuellement exclusifs côté frontend). Même
+            # mécanisme réutilisé depuis perform_update pour un point déjà existant.
             if nouvelle_equipe_nom and not point.equipe_id:
-                team = Team.objects.create(
-                    name=nouvelle_equipe_nom, institution=institution, environment=point.environment,
-                )
-                point.equipe = team
-                point.save(update_fields=['equipe'])
-                audit_log(
-                    request=self.request,
-                    action_code="CREATION",
-                    objet_type="Team",
-                    objet_id=team.id,
-                    crise=point.crise,
-                    commentaire=f"Équipe créée avec le point opérationnel {point.nom}",
-                )
-                if institution is not None:
-                    _notify_institution_referent_of_team(team, institution, self.request)
+                _creer_equipe_pour_point(point, nouvelle_equipe_nom, institution, self.request)
 
     HEURES_PAR_CRENEAU = 6  # MATIN/MIDI/SOIR/NUIT ≈ 4 créneaux de 6h sur 24h — approximation
     # affichée telle quelle (voir décision : affichage seul, pas de blocage automatique).
@@ -5585,6 +5684,58 @@ class PointOperationnelViewSet(
             {"created": AffectationPointBenevoleSerializer(created, many=True).data, "errors": errors},
             status=status.HTTP_201_CREATED,
         )
+
+    @action(detail=True, methods=["post"], url_path="valider-benevole")
+    def valider_benevole(self, request, pk=None):
+        """Arbitrage du régulateur sur un créneau bénévole préalablement accepté par ce dernier
+        (statut EN_VALIDATION, voir ConfirmerAffectationBenevoleView) — étape intermédiaire
+        ajoutée entre la réponse « oui » du bénévole et son engagement définitif, pour laisser
+        le régulateur valider ou finalement écarter le créneau avant confirmation (retour
+        terrain — jusqu'ici la réponse du bénévole valait confirmation immédiate)."""
+        point = self.get_object()
+
+        if point.responsable_id != request.user.id and not (
+            point.equipe and point.equipe.leader_id == request.user.id
+        ) and get_effective_role(request) != UserRole.ADMINISTRATOR:
+            raise PermissionDenied(
+                "Seul le responsable ou le leader de l'équipe du point peut valider un créneau bénévole."
+            )
+
+        decision = request.data.get("decision")
+        if decision not in ("confirmer", "refuser"):
+            return Response({"error": "decision doit être 'confirmer' ou 'refuser'."}, status=status.HTTP_400_BAD_REQUEST)
+
+        affectation_id = request.data.get("affectation_id")
+        affectation = get_object_or_404(AffectationPointBenevole, pk=affectation_id, point=point)
+        if affectation.statut != StatutAffectation.EN_VALIDATION:
+            return Response(
+                {"error": "Ce créneau n'est pas en attente de validation."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        affectation.statut = StatutAffectation.CONFIRME if decision == "confirmer" else StatutAffectation.DECLINE
+        affectation.save()
+
+        if decision == "refuser":
+            # Même traitement qu'un "non" du bénévole (voir ConfirmerAffectationBenevoleView) :
+            # les créneaux liés à une affectation écartée n'ont plus lieu d'être.
+            affectation.creneaux.all().delete()
+
+        audit_log(
+            request=request,
+            action_code="MODIFICATION",
+            objet_type="AffectationPointBenevole",
+            objet_id=affectation.id,
+            crise=point.crise,
+            commentaire=(
+                f"Créneau de {affectation.benevole.email} "
+                f"{'validé' if decision == 'confirmer' else 'écarté'} par {request.user.email}"
+            ),
+        )
+
+        send_benevole_validation_result_email(request, affectation, decision)
+
+        return Response(AffectationPointBenevoleSerializer(affectation).data)
 
     @action(detail=True, methods=["get"], url_path="candidats-benevoles")
     def candidats_benevoles(self, request, pk=None):
