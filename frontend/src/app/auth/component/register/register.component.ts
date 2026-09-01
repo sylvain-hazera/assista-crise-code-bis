@@ -57,6 +57,7 @@ export class RegisterComponent implements OnInit, OnDestroy {
     { value: 'police_municipale', label: 'Police municipale' },
     { value: 'gendarmerie', label: 'Gendarmerie' },
     { value: 'samu', label: 'SAMU' },
+    { value: 'sdis', label: 'SDIS (Service départemental d\'incendie et de secours)' },
     { value: 'ars', label: 'ARS (Agence régionale de santé)' },
     { value: 'chu', label: 'CHU / Hôpital' },
     { value: 'ministere', label: 'Ministère' },

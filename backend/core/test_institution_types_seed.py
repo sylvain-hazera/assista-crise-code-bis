@@ -23,3 +23,12 @@ def test_official_verified_types_seeded():
 def test_sante_and_police_municipale_types_seeded():
     codes = set(InstitutionType.objects.values_list('code', flat=True))
     assert {'police_municipale', 'ars_antenne', 'chu'}.issubset(codes)
+
+
+@pytest.mark.django_db
+def test_sdis_type_seeded():
+    """Le mécanisme de validation automatique (auth_validation.py) gère déjà le token 'sdis',
+    mais aucune ligne InstitutionType ne l'a jamais seedé — sans ça, un pompier ne peut même
+    pas sélectionner ce type à l'inscription."""
+    codes = set(InstitutionType.objects.values_list('code', flat=True))
+    assert 'sdis' in codes

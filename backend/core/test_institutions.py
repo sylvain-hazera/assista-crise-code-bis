@@ -271,7 +271,7 @@ class TestAnnuaireRegistration:
     def test_activation_on_cached_domain_skips_annuaire_call(self, mock_search, api_client, user_data):
         """Un domaine déjà mis en cache (par une précédente confirmation annuaire) doit être
         reconnu directement à l'activation, sans re-solliciter l'API gouvernementale."""
-        institution_type = InstitutionType.objects.create(code="sdis", libelle="Sdis")
+        institution_type, _ = InstitutionType.objects.get_or_create(code="sdis", defaults={"libelle": "Sdis"})
         institution = Institution.objects.create(nom="SDIS 33", type=institution_type)
         InstitutionDomaine.objects.create(institution=institution, domaine="sdis33.fr", valide=True)
 
