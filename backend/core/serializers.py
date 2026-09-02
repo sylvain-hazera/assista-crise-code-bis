@@ -135,7 +135,6 @@ class UserSerializer(serializers.ModelSerializer):
     institution_type = serializers.CharField(write_only=True, required=False, allow_blank=True)
     commune_name = serializers.CharField(write_only=True, required=False, allow_blank=True)
     commune_code = serializers.CharField(write_only=True, required=False, allow_blank=True)
-    institution_email_hint = serializers.CharField(write_only=True, required=False, allow_blank=True)
     institution_nom = serializers.SerializerMethodField()
     institution_id = serializers.SerializerMethodField()
     needs_institution_setup = serializers.SerializerMethodField()
@@ -162,7 +161,7 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
         fields = ['id', 'username', 'email', 'first_name', 'last_name', 'type', 'demo_role',
                   'photo', 'phone_number', 'password', 'postal_code', 'enabled', 'is_active',
-                  'institution_name', 'institution_type', 'commune_name', 'commune_code', 'institution_email_hint',
+                  'institution_name', 'institution_type', 'commune_name', 'commune_code',
                   'institution_nom', 'institution_id', 'needs_institution_setup']
         extra_kwargs = {
             'password': {'write_only': True},
@@ -232,7 +231,7 @@ class UserSerializer(serializers.ModelSerializer):
         pending_commune_name = validated_data.get('commune_name', '')
         pending_commune_code = validated_data.get('commune_code', '')
 
-        for field in ['institution_name', 'institution_type', 'commune_name', 'commune_code', 'institution_email_hint']:
+        for field in ['institution_name', 'institution_type', 'commune_name', 'commune_code']:
             validated_data.pop(field, None)
 
         if 'username' not in validated_data:

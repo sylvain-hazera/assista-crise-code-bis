@@ -143,65 +143,7 @@
             </div>
           </div>
         }
-
-        @if (!isRescue || !registerForm.get('isRcsc')?.value) {
-          <div class="form-group">
-            <label for="institutionEmailHint" class="form-label">Email institutionnel <span class="required">*</span></label>
-            <input
-              type="email"
-              id="institutionEmailHint"
-              formControlName="institutionEmailHint"
-              class="form-input"
-              placeholder="contact@mairie-bordeaux.fr"
-              [class.invalid]="isFieldInvalid('institutionEmailHint')">
-            <div class="error-message" *ngIf="isFieldInvalid('institutionEmailHint')">
-              {{ getFieldError('institutionEmailHint') }}
-            </div>
-          </div>
-        }
       }
-
-      <!-- Mot de passe -->
-      <div class="form-group">
-        <label for="password" class="form-label">
-          Mot de passe <span class="required">*</span>
-        </label>
-        <div class="password-wrapper">
-          <span class="material-icons password-icon">lock</span>
-          <input 
-            [type]="showPassword ? 'text' : 'password'" 
-            id="password" 
-            formControlName="password"
-            class="form-input password-input"
-            placeholder="Password"
-            [class.invalid]="isFieldInvalid('password')">
-          <button 
-            type="button" 
-            class="material-icons toggle-password"
-            (click)="togglePasswordVisibility()">
-            {{ showPassword ? 'visibility' : 'visibility_off' }}
-          </button>
-        </div>
-        <div class="error-message" *ngIf="isFieldInvalid('password')">
-          {{ getFieldError('password') }}
-        </div>
-        
-        <!-- Indicateur de force du mot de passe -->
-         @if(registerForm.get('password')?.value) {
-            <div class="password-strength" *ngIf="registerForm.get('password')?.value">
-            <div class="strength-bar">
-                <div 
-                class="strength-fill"
-                [class.weak]="registerForm.get('password')?.errors?.['passwordStrength']"
-                [class.strong]="!registerForm.get('password')?.errors?.['passwordStrength']">
-                </div>
-            </div>
-            <p class="strength-text">
-                {{ registerForm.get('password')?.errors?.['passwordStrength'] ? 'Faible' : 'Fort' }}
-            </p>
-            </div>
-         }
-      </div>
 
       <!-- Téléphone -->
       <div class="form-group">
@@ -235,6 +177,48 @@
         <div class="error-message" *ngIf="isFieldInvalid('email')">
           {{ getFieldError('email') }}
         </div>
+      </div>
+
+      <!-- Mot de passe -->
+      <div class="form-group">
+        <label for="password" class="form-label">
+          Mot de passe <span class="required">*</span>
+        </label>
+        <div class="password-wrapper">
+          <span class="material-icons password-icon">lock</span>
+          <input
+            [type]="showPassword ? 'text' : 'password'"
+            id="password"
+            formControlName="password"
+            class="form-input password-input"
+            placeholder="Password"
+            [class.invalid]="isFieldInvalid('password')">
+          <button
+            type="button"
+            class="material-icons toggle-password"
+            (click)="togglePasswordVisibility()">
+            {{ showPassword ? 'visibility' : 'visibility_off' }}
+          </button>
+        </div>
+        <div class="error-message" *ngIf="isFieldInvalid('password')">
+          {{ getFieldError('password') }}
+        </div>
+
+        <!-- Indicateur de force du mot de passe -->
+         @if(registerForm.get('password')?.value) {
+            <div class="password-strength" *ngIf="registerForm.get('password')?.value">
+            <div class="strength-bar">
+                <div
+                class="strength-fill"
+                [class.weak]="registerForm.get('password')?.errors?.['passwordStrength']"
+                [class.strong]="!registerForm.get('password')?.errors?.['passwordStrength']">
+                </div>
+            </div>
+            <p class="strength-text">
+                {{ registerForm.get('password')?.errors?.['passwordStrength'] ? 'Faible' : 'Fort' }}
+            </p>
+            </div>
+         }
       </div>
 
       <!-- Département -->

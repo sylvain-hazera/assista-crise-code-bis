@@ -112,7 +112,6 @@ export class RegisterComponent implements OnInit, OnDestroy {
       commune: ['', Validators.required],
       institutionName: [''],
       institutionType: [''],
-      institutionEmailHint: [''],
       // AASC/RCSC : uniquement pour userType === RESCUE, remplacent le sélecteur générique
       // institutionType (qui n'a jamais eu de sens pour un compte "Secours organisés" — voir
       // toggleFieldsBasedOnUserType). Mutuellement exclusives.
@@ -149,7 +148,6 @@ export class RegisterComponent implements OnInit, OnDestroy {
     const firstNameControl = this.registerForm.get('firstName');
     const institutionNameControl = this.registerForm.get('institutionName');
     const institutionTypeControl = this.registerForm.get('institutionType');
-    const institutionEmailHintControl = this.registerForm.get('institutionEmailHint');
 
     if (userType === UserRole.SIMPLE_USER) {
       firstNameControl?.setValidators([
@@ -164,9 +162,6 @@ export class RegisterComponent implements OnInit, OnDestroy {
       institutionTypeControl?.clearValidators();
       institutionTypeControl?.setValue('');
       institutionTypeControl?.disable();
-      institutionEmailHintControl?.clearValidators();
-      institutionEmailHintControl?.setValue('');
-      institutionEmailHintControl?.disable();
     } else {
       firstNameControl?.clearValidators();
       firstNameControl?.setValue('');
@@ -183,14 +178,9 @@ export class RegisterComponent implements OnInit, OnDestroy {
         institutionTypeControl?.clearValidators();
         institutionTypeControl?.setValue('');
         institutionTypeControl?.disable();
-        institutionEmailHintControl?.clearValidators();
-        institutionEmailHintControl?.setValue('');
-        institutionEmailHintControl?.disable();
       } else {
         institutionNameControl?.setValidators([Validators.required, Validators.minLength(2)]);
         institutionNameControl?.enable();
-        institutionEmailHintControl?.setValidators([Validators.required]);
-        institutionEmailHintControl?.enable();
 
         const isAasc = userType === UserRole.RESCUE && this.registerForm.get('isAasc')?.value;
         if (isAasc) {
@@ -209,7 +199,6 @@ export class RegisterComponent implements OnInit, OnDestroy {
     firstNameControl?.updateValueAndValidity();
     institutionNameControl?.updateValueAndValidity();
     institutionTypeControl?.updateValueAndValidity();
-    institutionEmailHintControl?.updateValueAndValidity();
   }
 
   // Validateur personnalisé pour la force du mot de passe
@@ -321,7 +310,6 @@ export class RegisterComponent implements OnInit, OnDestroy {
     if (formValue.userType !== UserRole.SIMPLE_USER) {
       registerData.institution_name = effectiveInstitutionName;
       registerData.institution_type = effectiveInstitutionType;
-      registerData.institution_email_hint = formValue.institutionEmailHint || '';
       registerData.commune_name = commune?.name || '';
       registerData.commune_code = communeCode;
     }
