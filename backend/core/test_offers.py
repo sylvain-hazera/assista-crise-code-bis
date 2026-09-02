@@ -418,3 +418,67 @@ class TestOfferPresencePhysique:
 
     def test_defaults_to_null_when_omitted(self, offer):
         assert offer.presence_physique is None
+
+
+@pytest.mark.django_db
+class TestOfferHebergementDetails:
+    """Critères détaillés du logement proposé (voir HebergementDetailsMixin, partagé avec
+    Request) — tous optionnels, une seule offre couvre déjà hebergement_duree (existant)."""
+
+    def test_declares_full_hebergement_details(self, api_client, offer_type):
+        payload = {
+            **OFFER_PAYLOAD,
+            "email_offer": "hebergement-complet@test.fr",
+            "offer_type": str(offer_type.id),
+            "hebergement_duree": "LONGUE_DUREE",
+            "type_loyer": "NEGOCIE",
+            "loyer_montant_min": 300,
+            "loyer_montant_max": 450,
+            "type_logement": "APPARTEMENT",
+            "niveau_logement": "ETAGE",
+            "acces_etage": "ASCENSEUR",
+            "nombre_pieces": 4,
+            "nombre_chambres": 2,
+            "capacite_adultes": 2,
+            "capacite_enfants": 1,
+            "animaux_acceptes": True,
+            "jardin": False,
+            "pmr_compatible": True,
+        }
+        response = api_client.post(reverse('offer-list'), payload, format='json')
+        assert response.status_code == status.HTTP_201_CREATED
+        d = response.data
+        assert d['hebergement_duree'] == "LONGUE_DUREE"
+        assert d['type_loyer'] == "NEGOCIE"
+        assert d['loyer_montant_min'] == 300
+        assert d['loyer_montant_max'] == 450
+        assert d['type_logement'] == "APPARTEMENT"
+        assert d['niveau_logement'] == "ETAGE"
+        assert d['acces_etage'] == "ASCENSEUR"
+        assert d['nombre_pieces'] == 4
+        assert d['nombre_chambres'] == 2
+        assert d['capacite_adultes'] == 2
+        assert d['capacite_enfants'] == 1
+        assert d['animaux_acceptes'] is True
+        assert d['jardin'] is False
+        assert d['pmr_compatible'] is True
+
+    def test_hebergement_details_all_optional(self, offer):
+        assert offer.type_loyer is None
+        assert offer.loyer_montant_min is None
+        assert offer.type_logement is None
+        assert offer.niveau_logement is None
+        assert offer.nombre_pieces is None
+        assert offer.animaux_acceptes is False
+        assert offer.jardin is False
+        assert offer.pmr_compatible is False
+
+    def test_type_loyer_rejects_invalid_choice(self, api_client, offer_type):
+        payload = {
+            **OFFER_PAYLOAD,
+            "email_offer": "loyer-invalide@test.fr",
+            "offer_type": str(offer_type.id),
+            "type_loyer": "AU_CHAPEAU",
+        }
+        response = api_client.post(reverse('offer-list'), payload, format='json')
+        assert response.status_code == status.HTTP_400_BAD_REQUEST

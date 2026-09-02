@@ -257,6 +257,64 @@ class ImplicationInstitution(EnvironmentScopedModel):
         return f"{self.institution} - {self.crise} ({self.type_implication})"
 
 
+class DureeHebergement(models.TextChoices):
+    TEMPORAIRE = "TEMPORAIRE", "Temporaire"
+    LONGUE_DUREE = "LONGUE_DUREE", "Longue durée"
+
+
+class TypeLoyer(models.TextChoices):
+    GRATUIT = "GRATUIT", "Gratuit"
+    NEGOCIE = "NEGOCIE", "Loyer négocié (du fait de la situation)"
+    MARCHE = "MARCHE", "Loyer au prix du marché"
+
+
+class TypeLogement(models.TextChoices):
+    MAISON = "MAISON", "Maison"
+    APPARTEMENT = "APPARTEMENT", "Appartement"
+    STUDIO = "STUDIO", "Studio"
+    COLOCATION = "COLOCATION", "Colocation"
+    CHAMBRE = "CHAMBRE", "Chambre"
+
+
+class NiveauLogement(models.TextChoices):
+    PLAIN_PIED = "PLAIN_PIED", "Plain-pied"
+    ETAGE = "ETAGE", "Étage"
+
+
+class AccesEtage(models.TextChoices):
+    ESCALIER = "ESCALIER", "Escalier"
+    ASCENSEUR = "ASCENSEUR", "Ascenseur"
+
+
+class HebergementDetailsMixin(models.Model):
+    """Champs communs à une offre et une demande d'hébergement — un logement proposé ou
+    recherché partage exactement le même vocabulaire (voir Offer/Request). L'adresse du
+    logement lui-même n'a pas de champ dédié ici : elle utilise `location`/`commune_code`,
+    déjà propres à chaque Offer/Request (voir propose-help-form/request-help-form, qui posent
+    un sélecteur d'adresse spécifique à la ligne Hébergement quand elle diffère de celle du
+    déclarant, sinon retombent sur cette dernière)."""
+
+    hebergement_duree = models.CharField(max_length=20, choices=DureeHebergement.choices, null=True, blank=True)
+    type_loyer = models.CharField(max_length=20, choices=TypeLoyer.choices, null=True, blank=True)
+    # Posés uniquement quand type_loyer == NEGOCIE ou MARCHE.
+    loyer_montant_min = models.PositiveIntegerField(null=True, blank=True)
+    loyer_montant_max = models.PositiveIntegerField(null=True, blank=True)
+    type_logement = models.CharField(max_length=20, choices=TypeLogement.choices, null=True, blank=True)
+    niveau_logement = models.CharField(max_length=20, choices=NiveauLogement.choices, null=True, blank=True)
+    # Posé uniquement quand niveau_logement == ETAGE.
+    acces_etage = models.CharField(max_length=20, choices=AccesEtage.choices, null=True, blank=True)
+    nombre_pieces = models.PositiveIntegerField(null=True, blank=True)
+    nombre_chambres = models.PositiveIntegerField(null=True, blank=True)
+    capacite_adultes = models.PositiveIntegerField(null=True, blank=True)
+    capacite_enfants = models.PositiveIntegerField(null=True, blank=True)
+    animaux_acceptes = models.BooleanField(default=False)
+    jardin = models.BooleanField(default=False)
+    pmr_compatible = models.BooleanField(default=False)
+
+    class Meta:
+        abstract = True
+
+
 class RequestType(models.Model):
     """Types de demandes d'aide"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -281,7 +339,7 @@ class RequestType(models.Model):
         return self.type
 
 
-class Request(EnvironmentScopedModel):
+class Request(HebergementDetailsMixin, EnvironmentScopedModel):
     """Demandes d'aide"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     title = models.CharField(max_length=150)
@@ -431,11 +489,6 @@ class OfferType(models.Model):
         return self.type
 
 
-class DureeHebergement(models.TextChoices):
-    TEMPORAIRE = "TEMPORAIRE", "Temporaire"
-    LONGUE_DUREE = "LONGUE_DUREE", "Longue durée"
-
-
 class TypeTransportOffre(models.TextChoices):
     PERSONNES = "PERSONNES", "Transport de personnes"
     MATERIEL = "MATERIEL", "Transport de matériel"
@@ -474,7 +527,7 @@ class LivraisonMateriel(models.TextChoices):
     LIVRAISON_POSSIBLE = "LIVRAISON_POSSIBLE", "Peut être déposé dans un centre de regroupement"
 
 
-class Offer(EnvironmentScopedModel):
+class Offer(HebergementDetailsMixin, EnvironmentScopedModel):
     """Offres d'aide"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     title = models.CharField(max_length=150)
@@ -527,8 +580,8 @@ class Offer(EnvironmentScopedModel):
     groupe_id = models.UUIDField(null=True, blank=True)
 
     # Précisions spécifiques à certaines catégories (OfferType.type), une seule
-    # s'applique en pratique selon le type choisi — voir propose-help-form.
-    hebergement_duree = models.CharField(max_length=20, choices=DureeHebergement.choices, null=True, blank=True)
+    # s'applique en pratique selon le type choisi — voir propose-help-form. hebergement_duree
+    # et les autres champs Hébergement viennent de HebergementDetailsMixin (base de la classe).
     numero_adeli_rpps = models.CharField(max_length=50, null=True, blank=True)
     transport_type = models.CharField(max_length=20, choices=TypeTransportOffre.choices, null=True, blank=True)
     materiel_type = models.CharField(max_length=20, choices=TypeMateriel.choices, null=True, blank=True)

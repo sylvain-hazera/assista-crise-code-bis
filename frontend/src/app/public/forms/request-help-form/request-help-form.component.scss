@@ -194,6 +194,19 @@
   }
 }
 
+.quantite-row {
+  display: flex;
+  gap: 0.6rem;
+
+  input { flex: 1; }
+}
+
+.field-hint-inline {
+  font-weight: 400;
+  font-size: 0.82rem;
+  color: #888;
+}
+
 .other-service {
   margin-bottom: 2rem;
   text-align: center;

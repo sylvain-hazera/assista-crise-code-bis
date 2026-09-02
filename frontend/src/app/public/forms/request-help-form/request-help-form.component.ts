@@ -16,6 +16,41 @@ import { RgpdNoticeComponent } from '../../../shared/components/public/rgpd-noti
 import { ValidationSummaryComponent } from '../../../shared/components/public/validation-summary/validation-summary.component';
 import { PhotoGalleryPickerComponent } from '../../../shared/components/public/photo-gallery-picker/photo-gallery-picker.component';
 
+const TYPE_HEBERGEMENT = 'Hébergement';
+
+/** Critères détaillés du logement recherché, par index de besoin — même patron que
+ * subCategorySelections (tableau parallèle à needsType/descriptions, pas un FormGroup :
+ * needsType reste un FormArray de simples contrôles string, voir addNeed()/removeNeed()). */
+interface HebergementDetails {
+  hebergementDuree: string;
+  latitude: number | null;
+  longitude: number | null;
+  communeCode: string | null;
+  typeLoyer: string;
+  loyerMontantMin: number | null;
+  loyerMontantMax: number | null;
+  typeLogement: string;
+  niveauLogement: string;
+  accesEtage: string;
+  nombrePieces: number | null;
+  nombreChambres: number | null;
+  capaciteAdultes: number | null;
+  capaciteEnfants: number | null;
+  animauxAcceptes: boolean;
+  jardin: boolean;
+  pmrCompatible: boolean;
+}
+
+function emptyHebergementDetails(): HebergementDetails {
+  return {
+    hebergementDuree: '', latitude: null, longitude: null, communeCode: null,
+    typeLoyer: '', loyerMontantMin: null, loyerMontantMax: null,
+    typeLogement: '', niveauLogement: '', accesEtage: '',
+    nombrePieces: null, nombreChambres: null, capaciteAdultes: null, capaciteEnfants: null,
+    animauxAcceptes: false, jardin: false, pmrCompatible: false,
+  };
+}
+
 @Component({
   selector: 'app-request-help-form',
   standalone: true,
@@ -123,6 +158,35 @@ export class RequestHelpFormComponent implements OnInit {
   childrenByParentType: Map<string, { value: string; label: string }[]> = new Map();
   subCategorySelections: string[] = [];
 
+  readonly TYPE_HEBERGEMENT = TYPE_HEBERGEMENT;
+
+  // Critères détaillés du logement recherché, par index de besoin — voir HebergementDetails.
+  hebergementDetails: HebergementDetails[] = [];
+
+  readonly typeLoyerOptions: { value: string; label: string }[] = [
+    { value: 'GRATUIT', label: 'Gratuit' },
+    { value: 'NEGOCIE', label: 'Loyer négocié (du fait de la situation)' },
+    { value: 'MARCHE', label: 'Loyer au prix du marché' },
+  ];
+
+  readonly typeLogementOptions: { value: string; label: string }[] = [
+    { value: '', label: '— Choisir —' },
+    { value: 'MAISON', label: 'Maison' },
+    { value: 'APPARTEMENT', label: 'Appartement' },
+    { value: 'STUDIO', label: 'Studio' },
+    { value: 'COLOCATION', label: 'Colocation' },
+    { value: 'CHAMBRE', label: 'Chambre' },
+  ];
+
+  /** Adresse du logement recherché, propre à ce besoin — indépendante de "Votre adresse" : au
+   * submit, on l'utilise pour `location`/`commune_code` si renseignée, sinon on retombe sur
+   * l'adresse partagée (voir onSubmit). */
+  onHebergementAddressSelected(index: number, addr: AddressResult | null): void {
+    this.hebergementDetails[index].latitude = addr?.latitude ?? null;
+    this.hebergementDetails[index].longitude = addr?.longitude ?? null;
+    this.hebergementDetails[index].communeCode = addr?.citycode ?? null;
+  }
+
   childrenFor(index: number): { value: string; label: string }[] {
     const topLevel = this.needsType.at(index)?.value;
     return topLevel ? (this.childrenByParentType.get(topLevel) ?? []) : [];
@@ -207,7 +271,9 @@ export class RequestHelpFormComponent implements OnInit {
 
     const creations: Observable<Request>[] = this.needsType.controls.map((needControl, i) => {
       const needType = this.effectiveNeedType(i);
+      const topLevelType = needControl.value;
       const description = this.descriptions.at(i).value;
+      const hd = this.hebergementDetails[i];
       const formData = new FormData();
 
       formData.append('title', `Demande d'aide - ${crisisLabel} - ${needType}`);
@@ -215,13 +281,41 @@ export class RequestHelpFormComponent implements OnInit {
       formData.append('last_name_request', this.informationForm.get('lastName')?.value);
       formData.append('email_request', this.informationForm.get('email')?.value);
       formData.append('phone_request', this.informationForm.get('phoneNumber')?.value);
-      formData.append('location', JSON.stringify(localisation));
-      if (this.selectedAddress?.citycode) formData.append('commune_code', this.selectedAddress.citycode);
+
+      // L'adresse propre au logement recherché (si renseignée pour ce besoin Hébergement) prime
+      // sur "Votre adresse", partagée par défaut avec tous les besoins de la soumission.
+      const hebergementHasOwnLocation = topLevelType === TYPE_HEBERGEMENT && hd?.latitude != null && hd?.longitude != null;
+      if (hebergementHasOwnLocation) {
+        formData.append('location', JSON.stringify({ type: 'Point', coordinates: [hd.longitude, hd.latitude] }));
+        if (hd.communeCode) formData.append('commune_code', hd.communeCode);
+      } else {
+        formData.append('location', JSON.stringify(localisation));
+        if (this.selectedAddress?.citycode) formData.append('commune_code', this.selectedAddress.citycode);
+      }
 
       const typeId = this.typesDemandeMap.get(needType);
       if (typeId) formData.append('request_type', typeId);
       if (crisisId) formData.append('crisis', crisisId);
       if (description) formData.append('description', description);
+
+      if (topLevelType === TYPE_HEBERGEMENT && hd) {
+        if (hd.hebergementDuree) formData.append('hebergement_duree', hd.hebergementDuree);
+        if (hd.typeLoyer) formData.append('type_loyer', hd.typeLoyer);
+        if (hd.typeLoyer && hd.typeLoyer !== 'GRATUIT') {
+          if (hd.loyerMontantMin) formData.append('loyer_montant_min', String(hd.loyerMontantMin));
+          if (hd.loyerMontantMax) formData.append('loyer_montant_max', String(hd.loyerMontantMax));
+        }
+        if (hd.typeLogement) formData.append('type_logement', hd.typeLogement);
+        if (hd.niveauLogement) formData.append('niveau_logement', hd.niveauLogement);
+        if (hd.niveauLogement === 'ETAGE' && hd.accesEtage) formData.append('acces_etage', hd.accesEtage);
+        if (hd.nombrePieces) formData.append('nombre_pieces', String(hd.nombrePieces));
+        if (hd.nombreChambres) formData.append('nombre_chambres', String(hd.nombreChambres));
+        if (hd.capaciteAdultes) formData.append('capacite_adultes', String(hd.capaciteAdultes));
+        if (hd.capaciteEnfants) formData.append('capacite_enfants', String(hd.capaciteEnfants));
+        formData.append('animaux_acceptes', String(!!hd.animauxAcceptes));
+        formData.append('jardin', String(!!hd.jardin));
+        formData.append('pmr_compatible', String(!!hd.pmrCompatible));
+      }
 
       formData.append('status', 'NON_TRAITEE');
       if (this.currentUser?.id) formData.append('author', this.currentUser.id);
@@ -307,12 +401,14 @@ export class RequestHelpFormComponent implements OnInit {
     this.needsType.push(this.formBuilder.control('', Validators.required));
     this.descriptions.push(this.formBuilder.control('', [Validators.minLength(10)]));
     this.subCategorySelections.push('');
+    this.hebergementDetails.push(emptyHebergementDetails());
   }
 
   removeNeed(index: number): void {
     this.needsType.removeAt(index);
     this.descriptions.removeAt(index);
     this.subCategorySelections.splice(index, 1);
+    this.hebergementDetails.splice(index, 1);
   }
 
   /** Remonte la raison précise d'un refus (ex: "Cette crise est clôturée...") plutôt qu'un

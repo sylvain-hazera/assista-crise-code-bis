@@ -145,6 +145,32 @@ export class ProposeHelpFormComponent implements OnInit {
     { value: 'CARBURANT', label: 'Carburant' },
   ];
 
+  // ── Hébergement : critères détaillés du logement (offre) ───────────────────────
+  readonly typeLoyerOptions: { value: string; label: string }[] = [
+    { value: 'GRATUIT', label: 'Gratuit' },
+    { value: 'NEGOCIE', label: 'Loyer négocié (du fait de la situation)' },
+    { value: 'MARCHE', label: 'Loyer au prix du marché' },
+  ];
+
+  readonly typeLogementOptions: { value: string; label: string }[] = [
+    { value: '', label: '— Choisir —' },
+    { value: 'MAISON', label: 'Maison' },
+    { value: 'APPARTEMENT', label: 'Appartement' },
+    { value: 'STUDIO', label: 'Studio' },
+    { value: 'COLOCATION', label: 'Colocation' },
+    { value: 'CHAMBRE', label: 'Chambre' },
+  ];
+
+  /** Adresse du logement propre à cette ligne Hébergement (voir hebergementLatitude/Longitude
+   * dans addOffer()) — indépendante de "Votre adresse" : au submit, on utilise celle-ci pour
+   * `location`/`commune_code` si renseignée, sinon on retombe sur l'adresse partagée. */
+  onHebergementAddressSelected(row: AbstractControl, addr: AddressResult | null): void {
+    this.rowGroup(row).patchValue({
+      hebergementLatitude: addr?.latitude ?? null,
+      hebergementLongitude: addr?.longitude ?? null,
+    });
+  }
+
   // ── Rubrique "Engins agricoles / chantiers / spéciaux" ─────────────────────────
   // Liste à cocher dédiée, indépendante du menu déroulant "Type de matériel" ci-dessus (qui ne
   // sert plus qu'aux quelques types structurels fixes) : chaque engin coché devient, à la
@@ -481,7 +507,14 @@ export class ProposeHelpFormComponent implements OnInit {
       if (typeId) formData.append('offer_type', typeId);
       if (crisisId) formData.append('crisis', crisisId);
 
-      if (hasLocation) {
+      // L'adresse propre au logement (si renseignée sur cette ligne Hébergement) prime sur
+      // "Votre adresse", partagée par défaut avec toutes les lignes de la soumission.
+      const hebergementHasOwnLocation = v.type === TYPE_HEBERGEMENT && v.hebergementLatitude != null && v.hebergementLongitude != null;
+      if (hebergementHasOwnLocation) {
+        formData.append('location', JSON.stringify({
+          type: 'Point', coordinates: [v.hebergementLongitude, v.hebergementLatitude],
+        }));
+      } else if (hasLocation) {
         formData.append('location', JSON.stringify({
           type: 'Point', coordinates: [this.longitude, this.latitude],
         }));
@@ -491,6 +524,25 @@ export class ProposeHelpFormComponent implements OnInit {
       formData.append('renouvelable', String(!!v.renouvelable));
       if (v.presencePhysique !== null) formData.append('presence_physique', String(v.presencePhysique));
       if (v.type === TYPE_HEBERGEMENT && v.hebergementDuree) formData.append('hebergement_duree', v.hebergementDuree);
+      if (v.type === TYPE_HEBERGEMENT && v.typeLoyer) formData.append('type_loyer', v.typeLoyer);
+      if (v.type === TYPE_HEBERGEMENT && v.typeLoyer && v.typeLoyer !== 'GRATUIT') {
+        if (v.loyerMontantMin) formData.append('loyer_montant_min', v.loyerMontantMin);
+        if (v.loyerMontantMax) formData.append('loyer_montant_max', v.loyerMontantMax);
+      }
+      if (v.type === TYPE_HEBERGEMENT && v.typeLogement) formData.append('type_logement', v.typeLogement);
+      if (v.type === TYPE_HEBERGEMENT && v.niveauLogement) formData.append('niveau_logement', v.niveauLogement);
+      if (v.type === TYPE_HEBERGEMENT && v.niveauLogement === 'ETAGE' && v.accesEtage) {
+        formData.append('acces_etage', v.accesEtage);
+      }
+      if (v.type === TYPE_HEBERGEMENT && v.nombrePieces) formData.append('nombre_pieces', v.nombrePieces);
+      if (v.type === TYPE_HEBERGEMENT && v.nombreChambres) formData.append('nombre_chambres', v.nombreChambres);
+      if (v.type === TYPE_HEBERGEMENT && v.capaciteAdultes) formData.append('capacite_adultes', v.capaciteAdultes);
+      if (v.type === TYPE_HEBERGEMENT && v.capaciteEnfants) formData.append('capacite_enfants', v.capaciteEnfants);
+      if (v.type === TYPE_HEBERGEMENT) {
+        formData.append('animaux_acceptes', String(!!v.animauxAcceptes));
+        formData.append('jardin', String(!!v.jardin));
+        formData.append('pmr_compatible', String(!!v.pmrCompatible));
+      }
       if (v.type === TYPE_SOINS && v.numeroAdeliRpps) formData.append('numero_adeli_rpps', v.numeroAdeliRpps);
       if (v.type === TYPE_TRANSPORT && v.transportType) formData.append('transport_type', v.transportType);
       if (v.type === TYPE_TRANSPORT && v.transportType === 'ANIMAUX' && v.transportAnimauxPrecision) {
@@ -681,6 +733,24 @@ export class ProposeHelpFormComponent implements OnInit {
       type: ['', Validators.required],
       description: ['', [Validators.minLength(10)]],
       hebergementDuree: [''],
+      // Adresse du logement, si différente de "Votre adresse" (voir onHebergementAddressSelected)
+      // — retombe sur cette dernière au moment de la soumission si laissée vide. Offer n'a pas
+      // de champ commune_code (contrairement à Request) : seule la position géographique compte.
+      hebergementLatitude: [null as number | null],
+      hebergementLongitude: [null as number | null],
+      typeLoyer: [''],
+      loyerMontantMin: [null],
+      loyerMontantMax: [null],
+      typeLogement: [''],
+      niveauLogement: [''],
+      accesEtage: [''],
+      nombrePieces: [null],
+      nombreChambres: [null],
+      capaciteAdultes: [null],
+      capaciteEnfants: [null],
+      animauxAcceptes: [false],
+      jardin: [false],
+      pmrCompatible: [false],
       numeroAdeliRpps: [''],
       transportType: [''],
       transportAnimauxPrecision: ['', transportAnimauxPrecisionValidator],

@@ -173,3 +173,59 @@ class TestNotificationApi:
         assert response.status_code == status.HTTP_200_OK
         notif.refresh_from_db()
         assert notif.lu is True
+
+
+@pytest.mark.django_db
+class TestRequestHebergementDetails:
+    """Critères détaillés du logement recherché (voir HebergementDetailsMixin, partagé avec
+    Offer) — Request n'avait jusqu'ici aucun champ hébergement (contrairement à Offer)."""
+
+    def test_declares_full_hebergement_details(self, api_client, request_type):
+        payload = {
+            **REQUEST_PAYLOAD,
+            "email_request": "hebergement-recherche@test.fr",
+            "request_type": str(request_type.id),
+            "hebergement_duree": "TEMPORAIRE",
+            "type_loyer": "GRATUIT",
+            "type_logement": "MAISON",
+            "niveau_logement": "PLAIN_PIED",
+            "nombre_pieces": 3,
+            "nombre_chambres": 2,
+            "capacite_adultes": 3,
+            "capacite_enfants": 2,
+            "animaux_acceptes": True,
+            "jardin": True,
+            "pmr_compatible": False,
+        }
+        response = api_client.post(reverse('request-list'), payload, format='json')
+        assert response.status_code == status.HTTP_201_CREATED
+        d = response.data
+        assert d['hebergement_duree'] == "TEMPORAIRE"
+        assert d['type_loyer'] == "GRATUIT"
+        assert d['type_logement'] == "MAISON"
+        assert d['niveau_logement'] == "PLAIN_PIED"
+        assert d['nombre_pieces'] == 3
+        assert d['nombre_chambres'] == 2
+        assert d['capacite_adultes'] == 3
+        assert d['capacite_enfants'] == 2
+        assert d['animaux_acceptes'] is True
+        assert d['jardin'] is True
+        assert d['pmr_compatible'] is False
+
+    def test_hebergement_details_all_optional(self, request_obj):
+        assert request_obj.hebergement_duree is None
+        assert request_obj.type_loyer is None
+        assert request_obj.type_logement is None
+        assert request_obj.animaux_acceptes is False
+        assert request_obj.jardin is False
+        assert request_obj.pmr_compatible is False
+
+    def test_type_logement_rejects_invalid_choice(self, api_client, request_type):
+        payload = {
+            **REQUEST_PAYLOAD,
+            "email_request": "logement-invalide@test.fr",
+            "request_type": str(request_type.id),
+            "type_logement": "CHATEAU",
+        }
+        response = api_client.post(reverse('request-list'), payload, format='json')
+        assert response.status_code == status.HTTP_400_BAD_REQUEST

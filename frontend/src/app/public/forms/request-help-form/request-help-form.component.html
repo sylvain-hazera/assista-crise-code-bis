@@ -105,6 +105,105 @@
                     </div>
                 }
 
+                <!-- Hébergement : durée + critères détaillés du logement recherché -->
+                @if (needsType.at(i).value === TYPE_HEBERGEMENT) {
+                    <div class="form-group">
+                        <label class="form-label">Durée d'hébergement recherchée</label>
+                        <label class="radio-label">
+                            <input type="radio" [(ngModel)]="hebergementDetails[i].hebergementDuree" [ngModelOptions]="{standalone: true}" value="TEMPORAIRE"> Temporaire
+                        </label>
+                        <label class="radio-label">
+                            <input type="radio" [(ngModel)]="hebergementDetails[i].hebergementDuree" [ngModelOptions]="{standalone: true}" value="LONGUE_DUREE"> Longue durée
+                        </label>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Adresse du logement recherché <span class="field-hint-inline">(si différente de la vôtre, ci-dessous)</span></label>
+                        <app-address-picker
+                          label="Adresse du logement recherché"
+                          placeholder="Rechercher une adresse…"
+                          (addressSelected)="onHebergementAddressSelected(i, $event)">
+                        </app-address-picker>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Loyer envisagé</label>
+                        @for(option of typeLoyerOptions; track option.value) {
+                            <label class="radio-label">
+                                <input type="radio" [(ngModel)]="hebergementDetails[i].typeLoyer" [ngModelOptions]="{standalone: true}" [value]="option.value">
+                                {{ option.label }}
+                            </label>
+                        }
+                        @if (hebergementDetails[i].typeLoyer === 'NEGOCIE' || hebergementDetails[i].typeLoyer === 'MARCHE') {
+                            <div class="quantite-row">
+                                <input type="number" min="0" [(ngModel)]="hebergementDetails[i].loyerMontantMin" [ngModelOptions]="{standalone: true}" placeholder="Budget min (€/mois)" class="form-input">
+                                <input type="number" min="0" [(ngModel)]="hebergementDetails[i].loyerMontantMax" [ngModelOptions]="{standalone: true}" placeholder="Budget max (€/mois)" class="form-input">
+                            </div>
+                        }
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Type de logement recherché</label>
+                        <div class="select-wrapper">
+                            <select [(ngModel)]="hebergementDetails[i].typeLogement" [ngModelOptions]="{standalone: true}" class="form-select">
+                                @for(option of typeLogementOptions; track option.value) {
+                                    <option [value]="option.value">{{ option.label }}</option>
+                                }
+                            </select>
+                            <span class="material-icons select-arrow">arrow_drop_down</span>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Niveau</label>
+                        <label class="radio-label">
+                            <input type="radio" [(ngModel)]="hebergementDetails[i].niveauLogement" [ngModelOptions]="{standalone: true}" value="PLAIN_PIED"> Plain-pied
+                        </label>
+                        <label class="radio-label">
+                            <input type="radio" [(ngModel)]="hebergementDetails[i].niveauLogement" [ngModelOptions]="{standalone: true}" value="ETAGE"> Étage
+                        </label>
+                        @if (hebergementDetails[i].niveauLogement === 'ETAGE') {
+                            <label class="radio-label">
+                                <input type="radio" [(ngModel)]="hebergementDetails[i].accesEtage" [ngModelOptions]="{standalone: true}" value="ESCALIER"> Accès par escalier
+                            </label>
+                            <label class="radio-label">
+                                <input type="radio" [(ngModel)]="hebergementDetails[i].accesEtage" [ngModelOptions]="{standalone: true}" value="ASCENSEUR"> Accès par ascenseur
+                            </label>
+                        }
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Nombre de pièces / de chambres souhaité</label>
+                        <div class="quantite-row">
+                            <input type="number" min="0" [(ngModel)]="hebergementDetails[i].nombrePieces" [ngModelOptions]="{standalone: true}" placeholder="Pièces" class="form-input">
+                            <input type="number" min="0" [(ngModel)]="hebergementDetails[i].nombreChambres" [ngModelOptions]="{standalone: true}" placeholder="Chambres" class="form-input">
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Capacité à loger</label>
+                        <div class="quantite-row">
+                            <input type="number" min="0" [(ngModel)]="hebergementDetails[i].capaciteAdultes" [ngModelOptions]="{standalone: true}" placeholder="Adultes" class="form-input">
+                            <input type="number" min="0" [(ngModel)]="hebergementDetails[i].capaciteEnfants" [ngModelOptions]="{standalone: true}" placeholder="Enfants" class="form-input">
+                        </div>
+                    </div>
+
+                    <div class="form-group checkbox-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" [(ngModel)]="hebergementDetails[i].animauxAcceptes" [ngModelOptions]="{standalone: true}" class="form-checkbox">
+                            <span class="checkbox-text">Animaux à loger</span>
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" [(ngModel)]="hebergementDetails[i].jardin" [ngModelOptions]="{standalone: true}" class="form-checkbox">
+                            <span class="checkbox-text">Jardin souhaité</span>
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" [(ngModel)]="hebergementDetails[i].pmrCompatible" [ngModelOptions]="{standalone: true}" class="form-checkbox">
+                            <span class="checkbox-text">Compatible PMR nécessaire</span>
+                        </label>
+                    </div>
+                }
+
                 <!-- Description -->
                 <div class="form-group">
                     <label [for]="'description' + i" class="form-label">Description</label>

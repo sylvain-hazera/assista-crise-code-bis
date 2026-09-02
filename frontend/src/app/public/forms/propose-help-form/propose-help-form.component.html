@@ -93,7 +93,7 @@
                     }
                 </div>
 
-                <!-- Hébergement : durée -->
+                <!-- Hébergement : durée + critères détaillés du logement -->
                 @if (rg.get('type')?.value === TYPE_HEBERGEMENT) {
                     <div class="form-group">
                         <label class="form-label">Durée de l'hébergement proposé</label>
@@ -102,6 +102,92 @@
                         </label>
                         <label class="radio-label">
                             <input type="radio" formControlName="hebergementDuree" value="LONGUE_DUREE"> Longue durée
+                        </label>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Adresse du logement <span class="field-hint-inline">(si différente de la vôtre, ci-dessous)</span></label>
+                        <app-address-picker
+                          label="Adresse du logement"
+                          placeholder="Rechercher une adresse…"
+                          (addressSelected)="onHebergementAddressSelected(row, $event)">
+                        </app-address-picker>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Loyer</label>
+                        @for(option of typeLoyerOptions; track option.value) {
+                            <label class="radio-label">
+                                <input type="radio" formControlName="typeLoyer" [value]="option.value">
+                                {{ option.label }}
+                            </label>
+                        }
+                        @if (rg.get('typeLoyer')?.value === 'NEGOCIE' || rg.get('typeLoyer')?.value === 'MARCHE') {
+                            <div class="quantite-row">
+                                <input type="number" min="0" formControlName="loyerMontantMin" placeholder="Montant min (€/mois)" class="form-input">
+                                <input type="number" min="0" formControlName="loyerMontantMax" placeholder="Montant max (€/mois)" class="form-input">
+                            </div>
+                        }
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Type de logement</label>
+                        <div class="select-wrapper">
+                            <select formControlName="typeLogement" class="form-select">
+                                @for(option of typeLogementOptions; track option.value) {
+                                    <option [value]="option.value">{{ option.label }}</option>
+                                }
+                            </select>
+                            <span class="material-icons select-arrow">arrow_drop_down</span>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Niveau</label>
+                        <label class="radio-label">
+                            <input type="radio" formControlName="niveauLogement" value="PLAIN_PIED"> Plain-pied
+                        </label>
+                        <label class="radio-label">
+                            <input type="radio" formControlName="niveauLogement" value="ETAGE"> Étage
+                        </label>
+                        @if (rg.get('niveauLogement')?.value === 'ETAGE') {
+                            <label class="radio-label">
+                                <input type="radio" formControlName="accesEtage" value="ESCALIER"> Accès par escalier
+                            </label>
+                            <label class="radio-label">
+                                <input type="radio" formControlName="accesEtage" value="ASCENSEUR"> Accès par ascenseur
+                            </label>
+                        }
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Nombre de pièces / de chambres</label>
+                        <div class="quantite-row">
+                            <input type="number" min="0" formControlName="nombrePieces" placeholder="Pièces" class="form-input">
+                            <input type="number" min="0" formControlName="nombreChambres" placeholder="Chambres" class="form-input">
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Capacité d'accueil</label>
+                        <div class="quantite-row">
+                            <input type="number" min="0" formControlName="capaciteAdultes" placeholder="Adultes" class="form-input">
+                            <input type="number" min="0" formControlName="capaciteEnfants" placeholder="Enfants" class="form-input">
+                        </div>
+                    </div>
+
+                    <div class="form-group checkbox-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" formControlName="animauxAcceptes" class="form-checkbox">
+                            <span class="checkbox-text">Animaux acceptés</span>
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" formControlName="jardin" class="form-checkbox">
+                            <span class="checkbox-text">Jardin</span>
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" formControlName="pmrCompatible" class="form-checkbox">
+                            <span class="checkbox-text">Compatible PMR</span>
                         </label>
                     </div>
                 }
