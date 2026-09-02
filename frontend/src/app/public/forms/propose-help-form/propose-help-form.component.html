@@ -196,28 +196,72 @@
                         <p class="field-hint-inline">Sélectionné : {{ rg.get('materielCatalogueNom')?.value }}</p>
                     }
 
-                    <div class="form-group">
-                        <label class="form-label">Quantité</label>
-                        <div class="quantite-row">
-                            <input type="number" min="1" formControlName="quantite" placeholder="Ex. 12" class="form-input">
-                            <input type="text" formControlName="unite" list="unites-datalist" placeholder="unité, litre, place..." class="form-input">
+                    <!-- Engins agricoles / chantiers / spéciaux : liste à cocher dédiée, sous ce
+                         choix précis du menu ci-dessus. Chaque ligne cochée devient sa propre
+                         offre à la soumission (voir onSubmit) — cette ligne-ci n'en devient
+                         jamais une elle-même, d'où l'absence de Quantité/Livraison génériques. -->
+                    @if (rg.get('materielType')?.value === ENGINS_AGRICOLES_VALUE) {
+                        <div class="engine-lines">
+                            @for (line of engineLines; track line.item.id) {
+                                <div class="engine-line">
+                                    <label class="checkbox-label engine-line-checkbox">
+                                        <input type="checkbox" [(ngModel)]="line.checked" [ngModelOptions]="{standalone: true}" class="form-checkbox">
+                                        <span class="checkbox-text">{{ line.item.nom }}</span>
+                                    </label>
+                                    @if (line.checked) {
+                                        <input type="number" min="1" [(ngModel)]="line.quantite" [ngModelOptions]="{standalone: true}"
+                                          placeholder="Qté" class="form-input engine-line-qty">
+                                        <input type="file" accept="image/*" (change)="onEnginePhotoSelected(line, $event)" class="engine-line-photo">
+                                    }
+                                </div>
+                            }
                         </div>
-                    </div>
 
-                    <div class="form-group">
-                        <label class="form-label">Comment ce matériel est-il mis à disposition ?</label>
-                        @for(option of materielLivraisonOptions; track option.value) {
-                            <label class="radio-label">
-                                <input type="radio" formControlName="materielLivraison" [value]="option.value">
-                                {{ option.label }}
-                            </label>
+                        <div class="engine-line-autre">
+                            <input type="text" [(ngModel)]="newEngineNom" [ngModelOptions]="{standalone: true}"
+                              placeholder="Un engin qui n'est pas dans la liste ? Tapez son nom..." class="form-input"
+                              (keydown.enter)="$event.preventDefault(); addCustomEngine()">
+                            <button type="button" class="btn-add-engine" [disabled]="!newEngineNom.trim() || addingCustomEngine" (click)="addCustomEngine()">
+                                Ajouter à la liste
+                            </button>
+                        </div>
+                        <p class="field-hint">Un engin ajouté ici rejoint la liste, immédiatement proposable par tout le monde ensuite.</p>
+
+                        @if (hasCheckedEngines) {
+                            <div class="form-group checkbox-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" [(ngModel)]="engineConfirmationReglementaire" [ngModelOptions]="{standalone: true}" class="form-checkbox">
+                                    <span class="checkbox-text">
+                                      Je confirme être en règle, ainsi que les engins cochés ci-dessus
+                                      (permis/CACES, assurance, contrôle technique, immatriculation si besoin) <span class="required">*</span>
+                                    </span>
+                                </label>
+                            </div>
                         }
-                    </div>
+                    } @else {
+                        <div class="form-group">
+                            <label class="form-label">Quantité</label>
+                            <div class="quantite-row">
+                                <input type="number" min="1" formControlName="quantite" placeholder="Ex. 12" class="form-input">
+                                <input type="text" formControlName="unite" list="unites-datalist" placeholder="unité, litre, place..." class="form-input">
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">Comment ce matériel est-il mis à disposition ?</label>
+                            @for(option of materielLivraisonOptions; track option.value) {
+                                <label class="radio-label">
+                                    <input type="radio" formControlName="materielLivraison" [value]="option.value">
+                                    {{ option.label }}
+                                </label>
+                            }
+                        </div>
+                    }
                 }
 
                 <!-- Présence physique : types ambigus où l'offreur peut soit accompagner ce
                      qu'il propose, soit le mettre à disposition seul (camion, matériel, vivres) -->
-                @if (showPresencePhysiqueChoice(rg.get('type')?.value)) {
+                @if (showPresencePhysiqueChoice(rg.get('type')?.value, rg.get('materielType')?.value)) {
                     <div class="form-group">
                         <label class="form-label">Serez-vous présent(e) vous-même ? <span class="required">*</span></label>
                         <label class="radio-label">
@@ -245,7 +289,7 @@
 
                 <!-- Véhicule/engin (transport ou matériel roulant/motorisé), conduit par
                      l'offreur ou prêté seul : rappel des obligations légales -->
-                @if (showConformiteVehicule(rg.get('type')?.value)) {
+                @if (showConformiteVehicule(rg.get('type')?.value, rg.get('materielType')?.value)) {
                     <div class="compliance-disclaimer">
                         <span class="material-icons">warning_amber</span>
                         <div>
@@ -342,54 +386,6 @@
                 <a class="other-service-link" (click)="addOffer()">
                 Proposer un autre service ?
                 </a>
-            </div>
-
-            <!-- Engins agricoles / chantiers / spéciaux : liste à cocher dédiée, chaque ligne
-                 cochée devient sa propre offre à la soumission (voir onSubmit/buildEngineCreations). -->
-            <div class="form-section">
-                <h2 class="section-title">Engins agricoles / chantiers / spéciaux</h2>
-                <p class="section-description">
-                Cochez chaque engin que vous proposez, avec sa quantité et, si possible, une photo.
-                Chaque ligne cochée devient une offre distincte.
-                </p>
-
-                <div class="engine-lines">
-                    @for (line of engineLines; track line.item.id) {
-                        <div class="engine-line">
-                            <label class="checkbox-label engine-line-checkbox">
-                                <input type="checkbox" [(ngModel)]="line.checked" [ngModelOptions]="{standalone: true}" class="form-checkbox">
-                                <span class="checkbox-text">{{ line.item.nom }}</span>
-                            </label>
-                            @if (line.checked) {
-                                <input type="number" min="1" [(ngModel)]="line.quantite" [ngModelOptions]="{standalone: true}"
-                                  placeholder="Qté" class="form-input engine-line-qty">
-                                <input type="file" accept="image/*" (change)="onEnginePhotoSelected(line, $event)" class="engine-line-photo">
-                            }
-                        </div>
-                    }
-                </div>
-
-                <div class="engine-line-autre">
-                    <input type="text" [(ngModel)]="newEngineNom" [ngModelOptions]="{standalone: true}"
-                      placeholder="Un engin qui n'est pas dans la liste ? Tapez son nom..." class="form-input"
-                      (keydown.enter)="$event.preventDefault(); addCustomEngine()">
-                    <button type="button" class="btn-add-engine" [disabled]="!newEngineNom.trim() || addingCustomEngine" (click)="addCustomEngine()">
-                        Ajouter à la liste
-                    </button>
-                </div>
-                <p class="field-hint">Un engin ajouté ici rejoint la liste, immédiatement proposable par tout le monde ensuite.</p>
-
-                @if (hasCheckedEngines) {
-                    <div class="form-group checkbox-group">
-                        <label class="checkbox-label">
-                            <input type="checkbox" [(ngModel)]="engineConfirmationReglementaire" [ngModelOptions]="{standalone: true}" class="form-checkbox">
-                            <span class="checkbox-text">
-                              Je confirme être en règle, ainsi que les engins cochés ci-dessus
-                              (permis/CACES, assurance, contrôle technique, immatriculation si besoin) <span class="required">*</span>
-                            </span>
-                        </label>
-                    </div>
-                }
             </div>
 
             <!-- Votre adresse -->

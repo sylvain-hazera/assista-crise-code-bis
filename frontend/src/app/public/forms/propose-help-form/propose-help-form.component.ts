@@ -39,6 +39,12 @@ const TYPE_SOUTIEN = 'Soutien psychologique';
 const TYPE_AUTRE = 'Autre';
 const TYPE_NOURRITURE = 'Nourriture et eau';
 
+// Valeur de materielType déclenchant la rubrique "Engins agricoles / chantiers / spéciaux"
+// (liste à cocher, voir engineLines) — un "pseudo-type" : cette ligne du formulaire ne devient
+// jamais elle-même une offre, seuls les engins cochés en dessous en deviennent une chacun (voir
+// isEnginesGatewayRow()/onSubmit()).
+const ENGINS_AGRICOLES_VALUE = 'ENGINS_AGRICOLES';
+
 // Présence physique de l'offreur avec ce qu'il propose : certains types l'excluent ou
 // l'impliquent toujours par nature, d'autres sont ambigus (un camion, des vivres... peuvent
 // être déposés seuls ou apportés par l'offreur en personne) et demandent une réponse
@@ -63,6 +69,10 @@ function confirmationReglementaireValidator(control: AbstractControl): Validatio
   const parent = control.parent;
   if (!parent) return null;
   const type = parent.get('type')?.value;
+  // La ligne "passerelle" vers la rubrique Engins ne devient jamais elle-même une offre (voir
+  // ENGINS_AGRICOLES_VALUE) : sa propre confirmation réglementaire n'a pas de sens, celle du lot
+  // d'engins cochés (engineConfirmationReglementaire) la remplace.
+  if (type === TYPE_MATERIEL && parent.get('materielType')?.value === ENGINS_AGRICOLES_VALUE) return null;
   const requiert = type === TYPE_TRANSPORT || type === TYPE_MATERIEL;
   return (requiert && !control.value) ? { required: true } : null;
 }
@@ -73,6 +83,7 @@ function presencePhysiqueValidator(control: AbstractControl): ValidationErrors |
   const parent = control.parent;
   if (!parent) return null;
   const type = parent.get('type')?.value;
+  if (type === TYPE_MATERIEL && parent.get('materielType')?.value === ENGINS_AGRICOLES_VALUE) return null;
   const requiert = TYPES_PRESENCE_A_PRECISER.includes(type);
   return (requiert && control.value === null) ? { required: true } : null;
 }
@@ -111,6 +122,7 @@ export class ProposeHelpFormComponent implements OnInit {
   readonly TYPE_MATERIEL = TYPE_MATERIEL;
   readonly TYPE_SOUTIEN = TYPE_SOUTIEN;
   readonly TYPE_AUTRE = TYPE_AUTRE;
+  readonly ENGINS_AGRICOLES_VALUE = ENGINS_AGRICOLES_VALUE;
 
   readonly materielLivraisonOptions: { value: string; label: string }[] = [
     { value: 'A_RECUPERER', label: 'À récupérer sur place' },
@@ -124,6 +136,7 @@ export class ProposeHelpFormComponent implements OnInit {
     { value: 'ETUVE', label: 'Étuve' },
     { value: 'CHAMBRE_FROIDE', label: 'Chambre froide' },
     { value: 'REMORQUE', label: 'Remorque' },
+    { value: ENGINS_AGRICOLES_VALUE, label: 'Engins agricoles / chantiers / spécialisés' },
     { value: 'AUTRE', label: 'Autre' },
   ];
 
@@ -298,7 +311,9 @@ export class ProposeHelpFormComponent implements OnInit {
       error: () => {},
     });
     this.materielCatalogueService.getAll().subscribe({
-      next: (list) => this.allMateriels = list,
+      // Les engins (categorie=ENGIN) ont leur propre rubrique dédiée (voir loadEngineCatalogue)
+      // — exclus d'ici pour ne pas apparaître une seconde fois dans "Type de matériel" > Autre.
+      next: (list) => this.allMateriels = list.filter(m => m.categorie !== 'ENGIN'),
       error: () => {},
     });
     this.loadEngineCatalogue();
@@ -442,7 +457,16 @@ export class ProposeHelpFormComponent implements OnInit {
     const organisationNom = (this.informationForm.get('organisationNom')?.value || '').trim();
     const groupeId = organisationNom ? crypto.randomUUID() : null;
 
-    const rowCreations: Observable<Offer>[] = this.offerRows.controls.map(row => {
+    // La ligne "passerelle" vers Engins agricoles (voir ENGINS_AGRICOLES_VALUE) ne devient
+    // jamais elle-même une offre : seuls les engins cochés en dessous (checkedEngineLines) en
+    // deviennent une chacun. `realRows` remplace offerRows.controls comme base d'index pour le
+    // reste de la méthode (déclaration de disponibilités, photos de galerie).
+    const realRows = this.offerRows.controls.filter(row => {
+      const v = row.value;
+      return !(v.type === TYPE_MATERIEL && v.materielType === ENGINS_AGRICOLES_VALUE);
+    });
+
+    const rowCreations: Observable<Offer>[] = realRows.map(row => {
       const v = row.value;
       const formData = new FormData();
 
@@ -483,7 +507,7 @@ export class ProposeHelpFormComponent implements OnInit {
       if (v.type === TYPE_MATERIEL && v.materielLivraison) formData.append('materiel_livraison', v.materielLivraison);
       if (v.type === TYPE_SOUTIEN && v.soutienType) formData.append('soutien_type', v.soutienType);
       if (this.showSecourisme(v.type)) formData.append('diplome_secourisme', String(!!v.diplomeSecourisme));
-      if (this.showConformiteVehicule(v.type)) {
+      if (this.showConformiteVehicule(v.type, v.materielType)) {
         formData.append('confirmation_reglementaire', String(!!v.confirmationReglementaire));
         if (v.immatriculation) formData.append('immatriculation', v.immatriculation);
       }
@@ -555,7 +579,7 @@ export class ProposeHelpFormComponent implements OnInit {
         // concernées, elles restent en tête de `offers` puisque `creations` les place en premier.
         const rowOffers = offers.slice(0, rowCreations.length);
         rowOffers.forEach((o, i) => {
-          if (this.offerRows.at(i).value.presencePhysique === true) this.declareDisponibilites(o.id);
+          if (realRows[i].value.presencePhysique === true) this.declareDisponibilites(o.id);
         });
         // Photos additionnelles de la galerie (au-delà de la principale déjà envoyée avec
         // chaque offre) — postées séparément vers chaque offre créée, une fois qu'elle existe.
@@ -693,11 +717,24 @@ export class ProposeHelpFormComponent implements OnInit {
     row.get('transportType')?.valueChanges.subscribe(() => {
       row.get('transportAnimauxPrecision')?.updateValueAndValidity();
     });
+    // Choisir "Engins agricoles..." (ligne passerelle, voir ENGINS_AGRICOLES_VALUE) dispense
+    // cette ligne de presencePhysique/confirmationReglementaire, remplacées par les leurs
+    // (engineConfirmationReglementaire) — sans cet abonnement, les valider une fois avant de
+    // changer d'avis laisserait l'ancienne réponse geler l'état invalide/valide du contrôle.
+    row.get('materielType')?.valueChanges.subscribe((materielType: string | null) => {
+      row.get('confirmationReglementaire')?.updateValueAndValidity();
+      row.get('presencePhysique')?.updateValueAndValidity();
+      if (materielType === ENGINS_AGRICOLES_VALUE) {
+        row.get('presencePhysique')?.setValue(null);
+      }
+    });
     this.offerRows.push(row);
   }
 
-  /** Cette ligne demande-t-elle explicitement si l'offreur est présent (types ambigus) ? */
-  showPresencePhysiqueChoice(type: string | null | undefined): boolean {
+  /** Cette ligne demande-t-elle explicitement si l'offreur est présent (types ambigus) ? Pas
+   * pour la ligne "passerelle" Engins agricoles — voir ENGINS_AGRICOLES_VALUE. */
+  showPresencePhysiqueChoice(type: string | null | undefined, materielType?: string | null): boolean {
+    if (type === TYPE_MATERIEL && materielType === ENGINS_AGRICOLES_VALUE) return false;
     return !!type && TYPES_PRESENCE_A_PRECISER.includes(type);
   }
 
@@ -716,7 +753,8 @@ export class ProposeHelpFormComponent implements OnInit {
    * véhicule/engin est potentiellement en jeu — le rappel s'affiche sur les deux, la conduite
    * conditionnelle précise du texte ("que vous le conduisiez ou non") le rend juste même quand
    * le matériel proposé n'est en réalité pas motorisé (ex: une cuve). */
-  showConformiteVehicule(type: string | null | undefined): boolean {
+  showConformiteVehicule(type: string | null | undefined, materielType?: string | null): boolean {
+    if (type === TYPE_MATERIEL && materielType === ENGINS_AGRICOLES_VALUE) return false;
     return type === TYPE_TRANSPORT || type === TYPE_MATERIEL;
   }
 
