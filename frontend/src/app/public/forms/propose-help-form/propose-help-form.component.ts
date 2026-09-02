@@ -157,6 +157,7 @@ export class ProposeHelpFormComponent implements OnInit {
   // Une seule confirmation réglementaire pour tout le lot d'engins cochés (pas une par ligne) —
   // même rappel légal que showConformiteVehicule pour une ligne Transport/Matériel standard.
   engineConfirmationReglementaire = false;
+  engineImmatriculation = '';
 
   get hasCheckedEngines(): boolean {
     return this.engineLines.some(l => l.checked);
@@ -558,6 +559,7 @@ export class ProposeHelpFormComponent implements OnInit {
       formData.append('materiel_catalogue', line.item.id);
       formData.append('quantite', String(line.quantite || 1));
       formData.append('confirmation_reglementaire', String(!!this.engineConfirmationReglementaire));
+      if (this.engineImmatriculation.trim()) formData.append('immatriculation', this.engineImmatriculation.trim());
 
       formData.append('status', 'DISPONIBLE');
       if (organisationNom) {

@@ -211,7 +211,21 @@
                                     @if (line.checked) {
                                         <input type="number" min="1" [(ngModel)]="line.quantite" [ngModelOptions]="{standalone: true}"
                                           placeholder="Qté" class="form-input engine-line-qty">
-                                        <input type="file" accept="image/*" (change)="onEnginePhotoSelected(line, $event)" class="engine-line-photo">
+                                        <div class="engine-line-photo-actions">
+                                            <input type="file" accept="image/*" [id]="'engine-photo-add-' + line.item.id"
+                                              class="file-input-hidden" (change)="onEnginePhotoSelected(line, $event)">
+                                            <label [for]="'engine-photo-add-' + line.item.id" class="btn-photo-action">
+                                                <span class="material-icons">add_a_photo</span> Ajouter
+                                            </label>
+                                            <input type="file" accept="image/*" capture="environment" [id]="'engine-photo-take-' + line.item.id"
+                                              class="file-input-hidden" (change)="onEnginePhotoSelected(line, $event)">
+                                            <label [for]="'engine-photo-take-' + line.item.id" class="btn-photo-action">
+                                                <span class="material-icons">photo_camera</span> Prendre
+                                            </label>
+                                            @if (line.photo) {
+                                                <span class="field-hint-inline">{{ line.photo.name }}</span>
+                                            }
+                                        </div>
                                     }
                                 </div>
                             }
@@ -228,14 +242,37 @@
                         <p class="field-hint">Un engin ajouté ici rejoint la liste, immédiatement proposable par tout le monde ensuite.</p>
 
                         @if (hasCheckedEngines) {
-                            <div class="form-group checkbox-group">
-                                <label class="checkbox-label">
-                                    <input type="checkbox" [(ngModel)]="engineConfirmationReglementaire" [ngModelOptions]="{standalone: true}" class="form-checkbox">
-                                    <span class="checkbox-text">
-                                      Je confirme être en règle, ainsi que les engins cochés ci-dessus
-                                      (permis/CACES, assurance, contrôle technique, immatriculation si besoin) <span class="required">*</span>
-                                    </span>
+                            <div class="compliance-disclaimer">
+                                <span class="material-icons">warning_amber</span>
+                                <div>
+                                    <p>
+                                        <strong>Si votre offre implique un véhicule ou un engin</strong>
+                                        (que vous le conduisiez/l'utilisiez vous-même ou qu'il soit prêté seul),
+                                        vous et le matériel devez être en règle :
+                                    </p>
+                                    <ul>
+                                        <li>Permis de conduire ou CACES adapté à la conduite ou à l'utilisation</li>
+                                        <li>Assurance à jour</li>
+                                        <li>Contrôle technique à jour</li>
+                                        <li>Aucune consommation d'alcool ni de stupéfiants pendant l'intervention</li>
+                                        <li>Plaque d'immatriculation valide pour tout véhicule circulant sur la voie publique</li>
+                                    </ul>
+                                    <p>Ces informations pourront être demandées pour l'établissement d'un laissez-passer si nécessaire.</p>
+
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" [(ngModel)]="engineConfirmationReglementaire" [ngModelOptions]="{standalone: true}" class="form-checkbox">
+                                        <span class="checkbox-text">Je confirme être en règle, ainsi que les engins cochés ci-dessus <span class="required">*</span></span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="engineImmatriculation" class="form-label">
+                                    Plaque(s) d'immatriculation
+                                    <span class="field-hint-inline">(si un engin circule sur la voie publique — laisser vide sinon)</span>
                                 </label>
+                                <input type="text" id="engineImmatriculation" [(ngModel)]="engineImmatriculation" [ngModelOptions]="{standalone: true}"
+                                  class="form-input" placeholder="Ex. AB-123-CD (plusieurs plaques séparées par une virgule)">
                             </div>
                         }
                     } @else {

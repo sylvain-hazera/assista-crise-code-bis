@@ -347,8 +347,35 @@
     width: 90px;
   }
 
-  .engine-line-photo {
-    max-width: 220px;
+  .engine-line-photo-actions {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    flex-wrap: wrap;
+  }
+
+  .file-input-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    opacity: 0;
+  }
+
+  .btn-photo-action {
+    display: inline-flex;
+    align-items: center;
+    gap: .3rem;
+    padding: .35rem .7rem;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    background: #f5f5f5;
+    cursor: pointer;
+    font-size: .85rem;
+
+    .material-icons {
+      font-size: 1.1rem;
+    }
   }
 }
 
