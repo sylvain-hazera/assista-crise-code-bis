@@ -1,0 +1,228 @@
+<div class="hebergement-container">
+  @if (isLoading) {
+    <p class="loading">Chargement…</p>
+  } @else if (errorMessage) {
+    <p class="error-message">{{ errorMessage }}</p>
+  } @else if (team) {
+
+    <div class="page-header">
+      <a class="back-link" [routerLink]="['/mon-equipe', team.id]">
+        <span class="material-icons">arrow_back</span> Retour à l'équipe
+      </a>
+      <h1>
+        <span class="material-icons">home_work</span>
+        Hébergement — {{ team.name }}
+      </h1>
+    </div>
+
+    <!-- Minimap des offres de logement -->
+    <div class="minimap-section">
+      <app-minimap
+        [latitude]="centerLatitude"
+        [longitude]="centerLongitude"
+        [zoom]="10"
+        [pointsInteret]="pointsInteret">
+      </app-minimap>
+    </div>
+
+    <!-- Filtres communs -->
+    <div class="filters-bar">
+      <div class="filter-group">
+        <label>Type de logement</label>
+        <select [(ngModel)]="filterTypeLogement">
+          <option value="">Tous</option>
+          @for (key of typeLogementLabels | keyvalue; track key.key) {
+            <option [value]="key.key">{{ key.value }}</option>
+          }
+        </select>
+      </div>
+
+      <div class="filter-group">
+        <label>Loyer</label>
+        <select [(ngModel)]="filterTypeLoyer">
+          <option value="">Tous</option>
+          @for (key of typeLoyerLabels | keyvalue; track key.key) {
+            <option [value]="key.key">{{ key.value }}</option>
+          }
+        </select>
+      </div>
+
+      <div class="filter-group checkboxes">
+        <label class="checkbox-label"><input type="checkbox" [(ngModel)]="filterAnimaux"> Animaux</label>
+        <label class="checkbox-label"><input type="checkbox" [(ngModel)]="filterJardin"> Jardin</label>
+        <label class="checkbox-label"><input type="checkbox" [(ngModel)]="filterPmr"> PMR</label>
+      </div>
+
+      <div class="filter-group zone-filter">
+        <label>Zone (offres) — commune(s) + rayon</label>
+        <app-tag-search-input
+          placeholder="Ajouter une commune…"
+          labelField="name"
+          [searchFn]="communeSearchFn"
+          emptyMessage="Aucune commune ne correspond."
+          (itemSelected)="addZoneCommune($event)">
+        </app-tag-search-input>
+        @if (zoneCommunes.length > 0) {
+          <div class="chip-list">
+            @for (c of zoneCommunes; track c.code) {
+              <span class="chip">{{ c.name }} <button type="button" (click)="removeZoneCommune(c.code)">×</button></span>
+            }
+          </div>
+          <input type="number" min="0" [(ngModel)]="zoneRayonKm" placeholder="Rayon (km)" class="rayon-input">
+        }
+      </div>
+
+      @if (demandeComparee) {
+        <div class="filter-group tolerance-filter">
+          <label>Comparaison avec « {{ demandeComparee.title }} » — tolérance ±</label>
+          <input type="number" min="0" [(ngModel)]="tolerance" class="rayon-input">
+          <button type="button" class="btn-link" (click)="demandeComparee = null">Annuler la comparaison</button>
+        </div>
+      }
+    </div>
+
+    <!-- Tableau 2 colonnes : demandes | offres -->
+    <div class="matching-columns">
+      <div class="column column-demandes">
+        <h2>Demandes ({{ demandesAffichees.length }})</h2>
+        <div class="table-scroll">
+          <table class="matching-table">
+            <thead>
+              <tr>
+                <th class="sortable" (click)="setSortDemandes('title')">Titre</th>
+                <th class="sortable" (click)="setSortDemandes('type_logement')">Type</th>
+                <th class="sortable" (click)="setSortDemandes('nombre_pieces')">Pièces</th>
+                <th class="sortable" (click)="setSortDemandes('nombre_chambres')">Chambres</th>
+                <th class="sortable" (click)="setSortDemandes('capacite_adultes')">Capacité</th>
+                <th>Critères</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (d of demandesAffichees; track d.id) {
+                <tr [class.selected]="demandeComparee?.id === d.id">
+                  <td>{{ d.title }}</td>
+                  <td>{{ logementLabel(d) }}</td>
+                  <td>{{ d.nombre_pieces ?? '—' }}</td>
+                  <td>{{ d.nombre_chambres ?? '—' }}</td>
+                  <td>{{ d.capacite_adultes ?? '—' }} adultes / {{ d.capacite_enfants ?? 0 }} enfants</td>
+                  <td>
+                    @if (d.animaux_acceptes) { <span class="material-icons" title="Animaux">pets</span> }
+                    @if (d.jardin) { <span class="material-icons" title="Jardin">yard</span> }
+                    @if (d.pmr_compatible) { <span class="material-icons" title="PMR">accessible</span> }
+                  </td>
+                  <td>
+                    <button type="button" class="btn-secondary sm" (click)="compareToDemande(d)">
+                      {{ demandeComparee?.id === d.id ? 'Comparé' : 'Comparer' }}
+                    </button>
+                  </td>
+                </tr>
+              } @empty {
+                <tr><td colspan="7" class="empty">Aucune demande d'hébergement pour cette équipe.</td></tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="column column-offres">
+        <h2>Offres ({{ offresAffichees.length }})</h2>
+        <div class="table-scroll">
+          <table class="matching-table">
+            <thead>
+              <tr>
+                <th class="sortable" (click)="setSortOffres('title')">Titre</th>
+                <th class="sortable" (click)="setSortOffres('type_logement')">Type</th>
+                <th class="sortable" (click)="setSortOffres('nombre_pieces')">Pièces</th>
+                <th class="sortable" (click)="setSortOffres('nombre_chambres')">Chambres</th>
+                <th class="sortable" (click)="setSortOffres('capacite_adultes')">Capacité</th>
+                <th>Critères</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (o of offresAffichees; track o.id) {
+                <tr>
+                  <td>{{ o.title }}</td>
+                  <td>{{ logementLabel(o) }}</td>
+                  <td>{{ o.nombre_pieces ?? '—' }}</td>
+                  <td>{{ o.nombre_chambres ?? '—' }}</td>
+                  <td>{{ o.capacite_adultes ?? '—' }} adultes / {{ o.capacite_enfants ?? 0 }} enfants</td>
+                  <td>
+                    @if (o.animaux_acceptes) { <span class="material-icons" title="Animaux">pets</span> }
+                    @if (o.jardin) { <span class="material-icons" title="Jardin">yard</span> }
+                    @if (o.pmr_compatible) { <span class="material-icons" title="PMR">accessible</span> }
+                  </td>
+                  <td>
+                    <button type="button" class="btn-secondary sm" (click)="openOfferDetail(o)">Détail</button>
+                  </td>
+                </tr>
+              } @empty {
+                <tr><td colspan="7" class="empty">Aucune offre d'hébergement ne correspond aux filtres.</td></tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Panneau détail offre + messagerie -->
+    @if (selectedOffer) {
+      <div class="offer-detail-overlay" (click)="closeOfferDetail()">
+        <div class="offer-detail-panel" (click)="$event.stopPropagation()">
+          <button type="button" class="btn-close" (click)="closeOfferDetail()">
+            <span class="material-icons">close</span>
+          </button>
+
+          <h2>{{ selectedOffer.title }}</h2>
+          <p class="offer-owner">{{ selectedOffer.first_name_offer }} {{ selectedOffer.last_name_offer }}</p>
+
+          <dl class="offer-criteria">
+            <dt>Type</dt><dd>{{ logementLabel(selectedOffer) }}</dd>
+            <dt>Loyer</dt><dd>{{ loyerLabel(selectedOffer) }}
+              @if (selectedOffer.loyer_montant_min || selectedOffer.loyer_montant_max) {
+                ({{ selectedOffer.loyer_montant_min ?? '?' }}–{{ selectedOffer.loyer_montant_max ?? '?' }} €/mois)
+              }
+            </dd>
+            <dt>Pièces / Chambres</dt><dd>{{ selectedOffer.nombre_pieces ?? '—' }} / {{ selectedOffer.nombre_chambres ?? '—' }}</dd>
+            <dt>Capacité</dt><dd>{{ selectedOffer.capacite_adultes ?? '—' }} adultes, {{ selectedOffer.capacite_enfants ?? 0 }} enfants</dd>
+            <dt>Critères</dt>
+            <dd>
+              {{ selectedOffer.animaux_acceptes ? 'Animaux acceptés' : 'Animaux non acceptés' }},
+              {{ selectedOffer.jardin ? 'avec jardin' : 'sans jardin' }},
+              {{ selectedOffer.pmr_compatible ? 'compatible PMR' : 'non compatible PMR' }}
+            </dd>
+            @if (selectedOffer.description) {
+              <dt>Description</dt><dd>{{ selectedOffer.description }}</dd>
+            }
+          </dl>
+
+          <h3>Messages</h3>
+          <div class="messages-thread">
+            @for (m of offerMessages; track m.id) {
+              <div class="message" [class.from-owner]="!m.auteur_equipe">
+                <p class="message-meta">
+                  <strong>{{ m.auteur_equipe ? (m.auteur_equipe_nom || 'Équipe') : (selectedOffer.first_name_offer + ' ' + selectedOffer.last_name_offer) }}</strong>
+                  — {{ m.date_creation | date:'short' }}
+                </p>
+                <p class="message-content">{{ m.contenu }}</p>
+              </div>
+            } @empty {
+              <p class="empty">Aucun message pour l'instant.</p>
+            }
+            @if (messagesError) {
+              <p class="error-message">{{ messagesError }}</p>
+            }
+          </div>
+
+          <div class="message-form">
+            <textarea [(ngModel)]="newMessageContenu" rows="3" placeholder="Écrire un message au propriétaire de l'offre…"></textarea>
+            <button type="button" class="btn-primary sm" [disabled]="!newMessageContenu.trim() || sendingMessage" (click)="sendMessage()">
+              Envoyer (le propriétaire recevra un lien pour répondre et modifier son offre)
+            </button>
+          </div>
+        </div>
+      </div>
+    }
+  }
+</div>

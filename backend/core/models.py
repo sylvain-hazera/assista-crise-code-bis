@@ -554,6 +554,10 @@ class Offer(HebergementDetailsMixin, EnvironmentScopedModel):
     created_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField(null=True, blank=True)
     deletion_token = models.CharField(max_length=64, unique=True, null=True, blank=True)
+    # Distinct de deletion_token (portées différentes : celui-ci ne permet ni suppression ni
+    # accès à autre chose que le fil de messages/l'édition de cette offre) — voir OfferMessage
+    # et OfferReponsePublicView. Généré à la création, même patron que deletion_token.
+    reponse_token = models.CharField(max_length=64, unique=True, null=True, blank=True)
     status = models.CharField(
         max_length=20,
         choices=Status.choices,
@@ -663,6 +667,30 @@ class Offer(HebergementDetailsMixin, EnvironmentScopedModel):
 
     def __str__(self) -> str:
         return self.title
+
+
+class OfferMessage(EnvironmentScopedModel):
+    """Fil de discussion entre une équipe (ex: équipe hébergement mettant en relation demandes
+    et offres de logement) et le propriétaire d'une offre — ex: préciser les modalités d'un
+    logement proposé. Le propriétaire n'a en général pas de compte : il répond et édite son
+    offre via le lien reçu par email (voir Offer.reponse_token et OfferReponsePublicView),
+    même esprit qu'EngagementRessourcePublicView pour les ressources affectées."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    offer = models.ForeignKey(Offer, on_delete=models.CASCADE, related_name="messages")
+    # Rempli quand le message vient d'un membre de l'équipe ; null quand il vient du
+    # propriétaire de l'offre (jamais les deux à la fois).
+    auteur_equipe = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name="messages_offres_envoyes",
+    )
+    contenu = models.TextField()
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["date_creation"]
+
+    def __str__(self) -> str:
+        expediteur = self.auteur_equipe.email if self.auteur_equipe_id else "propriétaire de l'offre"
+        return f"Message sur « {self.offer.title} » de {expediteur}"
 
 
 class OfferPhoto(EnvironmentScopedModel):
@@ -1529,6 +1557,16 @@ class Team(EnvironmentScopedModel):
     
     competences = models.ManyToManyField(
         Competence,
+        blank=True,
+        related_name="equipes"
+    )
+
+    # Thèmes déclarés pour cette équipe (ex: "Hébergement") — même vocabulaire que les
+    # "Thèmes à l'écoute" d'une institution actrice (ImplicationInstitution.themes), pensé pour
+    # être réutilisable par d'autres vues dédiées futures (équipe soins, équipe transport...),
+    # pas seulement la vue de correspondance hébergement/relogement qui l'utilise en premier.
+    themes = models.ManyToManyField(
+        "Besoin",
         blank=True,
         related_name="equipes"
     )

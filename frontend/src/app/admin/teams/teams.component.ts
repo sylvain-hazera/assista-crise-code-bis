@@ -1,7 +1,7 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule, ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { forkJoin, of, map } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 
@@ -15,6 +15,7 @@ import { RequestService }    from '../../services/request.service';
 import { DisponibiliteOffreService } from '../../services/disponibilite-offre.service';
 import { DossierService } from '../../services/dossier.service';
 import { CompetenceService } from '../../services/competence.service';
+import { BesoinService } from '../../services/besoin.service';
 import { RoleOperationnelService } from '../../services/role-operationnel.service';
 import { AuditLogService, AuditLogEntry } from '../../services/audit-log.service';
 import { DossierHistoriqueService } from '../../services/dossier-historique.service';
@@ -35,6 +36,7 @@ import { Status }             from '../../shared/models/status.model';
 import { DisponibiliteOffre } from '../../shared/models/disponibilite-offre.model';
 import { Dossier } from '../../shared/models/dossier.model';
 import { Competence } from '../../shared/models/competence.model';
+import { Besoin } from '../../shared/models/besoin.model';
 import { Institution } from '../../shared/models/institution.model';
 import { PointOperationnel, PointType } from '../../shared/models/point-operationnel.model';
 
@@ -45,7 +47,7 @@ const COLORS = ['#ef4444','#f97316','#eab308','#22c55e','#06b6d4','#3b82f6','#8b
 @Component({
   selector: 'app-teams',
   standalone: true,
-  imports: [CommonModule, FormsModule, ReactiveFormsModule, ZoneMapComponent, MinimapComponent, TagSearchInputComponent, PointModalComponent],
+  imports: [CommonModule, FormsModule, ReactiveFormsModule, RouterLink, ZoneMapComponent, MinimapComponent, TagSearchInputComponent, PointModalComponent],
   templateUrl: './teams.component.html',
   styleUrls: ['./teams.component.scss'],
 })
@@ -60,6 +62,7 @@ export class TeamsComponent implements OnInit {
   disponibilites: DisponibiliteOffre[] = [];
   dossiers: Dossier[] = [];
   competences: Competence[] = [];
+  besoins: Besoin[] = [];
   roles: RoleOperationnel[] = [];
   institutions: Institution[] = [];
   points: PointOperationnel[] = [];
@@ -106,6 +109,7 @@ export class TeamsComponent implements OnInit {
     private disponibiliteOffreService: DisponibiliteOffreService,
     private dossierService: DossierService,
     private competenceService: CompetenceService,
+    private besoinService: BesoinService,
     private roleOperationnelService: RoleOperationnelService,
     private auditLogService: AuditLogService,
     private dossierHistoriqueService: DossierHistoriqueService,
@@ -148,12 +152,13 @@ export class TeamsComponent implements OnInit {
       disponibilites: this.disponibiliteOffreService.getAll(),
       dossiers: this.dossierService.getAll(),
       competences: this.competenceService.getAll(),
+      besoins: this.besoinService.getAll(),
       roles: this.roleOperationnelService.getAll(),
       institutions: this.institutionService.getAll(),
       points: this.pointOperationnelService.getAll(),
       pointTypes: this.pointTypeService.getAll(),
     }).subscribe({
-      next: ({ users, crisis, offers, requests, teams, disponibilites, dossiers, competences, roles, institutions, points, pointTypes }) => {
+      next: ({ users, crisis, offers, requests, teams, disponibilites, dossiers, competences, besoins, roles, institutions, points, pointTypes }) => {
         this.users    = users;
         this.crisis   = crisis;
         this.offers   = offers;
@@ -161,6 +166,7 @@ export class TeamsComponent implements OnInit {
         this.disponibilites = disponibilites;
         this.dossiers = dossiers;
         this.competences = competences;
+        this.besoins = besoins;
         this.roles = roles;
         this.institutions = institutions;
         this.points = points;
@@ -574,6 +580,28 @@ export class TeamsComponent implements OnInit {
     if (!this.hasCompetence(item.id)) {
       this.toggleCompetence(item.id);
     }
+  }
+
+  // ── SPÉCIALITÉ DE L'ÉQUIPE (vues dédiées, ex: "Hébergement") ────
+  // Distinct des "Thèmes d'intervention" (competences) ci-dessus : celui-ci déclenche des
+  // vues/tableaux de bord spécifiques à un besoin précis (voir HebergementMatchingComponent),
+  // pas un simple filtre de compétence bénévole.
+  toggleTheme(themeId: string): void {
+    if (!this.selectedTeam) return;
+    const ids = this.selectedTeam.theme_ids ?? [];
+    const newIds = ids.includes(themeId) ? ids.filter(id => id !== themeId) : [...ids, themeId];
+    this.teamService.patch(this.selectedTeam.id!, { theme_ids: newIds }).subscribe(updated => {
+      this.selectedTeam = { ...updated, missions: this.selectedTeam!.missions };
+      this.reloadTeams();
+    });
+  }
+
+  hasTheme(themeId: string): boolean {
+    return this.selectedTeam?.theme_ids?.includes(themeId) ?? false;
+  }
+
+  besoinHebergementId(): string {
+    return this.besoins.find(b => b.nom === 'Hébergement')?.id ?? '';
   }
 
   // ── ASSIGN MISSIONS ───────────────────────────────────────────

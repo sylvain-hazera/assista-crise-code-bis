@@ -1,0 +1,278 @@
+.hebergement-container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+.loading, .error-message {
+  text-align: center;
+  padding: 2rem;
+}
+
+.page-header {
+  margin-bottom: 1.5rem;
+
+  .back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: .3rem;
+    color: #1d4ed8;
+    cursor: pointer;
+    margin-bottom: .5rem;
+  }
+
+  h1 {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    font-size: 1.5rem;
+    margin: 0;
+  }
+}
+
+.minimap-section {
+  height: 320px;
+  margin-bottom: 1.5rem;
+  border-radius: 8px;
+  overflow: hidden;
+
+  app-minimap {
+    display: block;
+    height: 100%;
+  }
+}
+
+.filters-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  padding: 1rem;
+  background: #f8f9fa;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+  align-items: flex-start;
+
+  .filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: .35rem;
+
+    label {
+      font-size: .82rem;
+      font-weight: 600;
+      color: #555;
+    }
+
+    select, .rayon-input {
+      padding: .4rem .6rem;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+  }
+
+  .checkboxes {
+    flex-direction: row;
+    gap: 1rem;
+    align-self: center;
+
+    .checkbox-label {
+      display: flex;
+      align-items: center;
+      gap: .3rem;
+      font-weight: 400;
+    }
+  }
+
+  .zone-filter, .tolerance-filter {
+    min-width: 260px;
+  }
+
+  .btn-link {
+    background: none;
+    border: none;
+    color: #1d4ed8;
+    cursor: pointer;
+    text-decoration: underline;
+    font-size: .8rem;
+    padding: 0;
+    align-self: flex-start;
+  }
+}
+
+.chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .4rem;
+  margin-top: .4rem;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  background: #eff6ff;
+  color: #1d4ed8;
+  border-radius: 999px;
+  padding: .25rem .6rem;
+  font-size: .82rem;
+
+  button {
+    background: none;
+    border: none;
+    color: #1d4ed8;
+    cursor: pointer;
+    font-size: 1rem;
+    line-height: 1;
+    padding: 0;
+  }
+}
+
+.matching-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+
+  @media (max-width: 900px) {
+    grid-template-columns: 1fr;
+  }
+}
+
+.column {
+  h2 {
+    font-size: 1.1rem;
+    margin: 0 0 .75rem;
+  }
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+.matching-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .85rem;
+
+  th, td {
+    padding: .5rem .6rem;
+    border-bottom: 1px solid #eee;
+    text-align: left;
+    white-space: nowrap;
+  }
+
+  th.sortable {
+    cursor: pointer;
+    user-select: none;
+
+    &:hover { background: #f0f0f0; }
+  }
+
+  tr.selected {
+    background: #eff6ff;
+  }
+
+  .empty {
+    text-align: center;
+    color: #888;
+    padding: 1.5rem;
+  }
+
+  .material-icons {
+    font-size: 1.1rem;
+    color: #555;
+    margin-right: .2rem;
+  }
+}
+
+.offer-detail-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.offer-detail-panel {
+  background: #fff;
+  border-radius: 8px;
+  padding: 1.5rem;
+  max-width: 600px;
+  width: 90%;
+  max-height: 85vh;
+  overflow-y: auto;
+  position: relative;
+
+  .btn-close {
+    position: absolute;
+    top: .75rem;
+    right: .75rem;
+    background: none;
+    border: none;
+    cursor: pointer;
+  }
+
+  h2 { margin-top: 0; }
+
+  .offer-owner {
+    color: #666;
+    margin-top: -.5rem;
+  }
+}
+
+.offer-criteria {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: .3rem 1rem;
+  margin: 1rem 0;
+
+  dt { font-weight: 600; color: #555; }
+  dd { margin: 0; }
+}
+
+.messages-thread {
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid #eee;
+  border-radius: 6px;
+  padding: .75rem;
+  margin-bottom: .75rem;
+}
+
+.message {
+  margin-bottom: .75rem;
+  padding: .5rem;
+  border-radius: 6px;
+  background: #f0f4ff;
+
+  &.from-owner {
+    background: #f5f5f5;
+  }
+
+  .message-meta {
+    font-size: .78rem;
+    color: #666;
+    margin: 0 0 .25rem;
+  }
+
+  .message-content {
+    margin: 0;
+    white-space: pre-wrap;
+  }
+}
+
+.message-form {
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+
+  textarea {
+    width: 100%;
+    box-sizing: border-box;
+    padding: .5rem;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    resize: vertical;
+  }
+}

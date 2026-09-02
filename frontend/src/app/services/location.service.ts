@@ -130,6 +130,13 @@ export class LocationService {
       .pipe(map(d => ({ code: d.code, name: d.nom })));
   }
 
+  /** Centre géographique (point) d'une commune depuis son code INSEE — pour un filtre par
+   * rayon (ex: zone de recherche hébergement), plus léger qu'un contour à bufferiser. */
+  getCommuneCentre(code: string): Observable<{ latitude: number; longitude: number }> {
+    return this.http.get<any>(`${this.API_GEO}/communes/${code}?fields=centre`)
+      .pipe(map(c => ({ latitude: c.centre.coordinates[1], longitude: c.centre.coordinates[0] })));
+  }
+
   /** Contour officiel (Polygon ou MultiPolygon) d'une commune, pour bufferiser/unioner
    * côté frontend (composition de la zone de crise). */
   getCommuneContour(code: string): Observable<GeoContour> {

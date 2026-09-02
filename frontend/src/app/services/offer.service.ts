@@ -3,6 +3,7 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { map, Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
 import { Offer, OfferPayload, OfferType } from '../shared/models/offer.model';
+import { OfferMessage } from '../shared/models/offer-message.model';
 import { geoPointToLatLng, latLngToGeoJson } from '../shared/models/geopoint.model';
 import { StatsResponse } from '../shared/models/api.model';
 import { Team } from '../shared/models/team.model';
@@ -114,6 +115,18 @@ export class OfferService {
    * mise à jour. */
   affecterStock(offerId: string, pointId: string): Observable<any> {
     return this.http.post<any>(`${this.url}/${offerId}/affecter-stock/`, { point_id: pointId });
+  }
+
+  /** GET /api/offres/{id}/messages/ — fil de discussion avec le propriétaire de l'offre
+   * (réservé acteur institutionnel — voir vue équipe hébergement). */
+  getMessages(offerId: string): Observable<OfferMessage[]> {
+    return this.http.get<OfferMessage[]>(`${this.url}/${offerId}/messages/`);
+  }
+
+  /** POST /api/offres/{id}/messages/ — envoie un message au propriétaire de l'offre, qui
+   * reçoit un lien de réponse/édition par email. */
+  sendMessage(offerId: string, contenu: string): Observable<OfferMessage> {
+    return this.http.post<OfferMessage>(`${this.url}/${offerId}/messages/`, { contenu });
   }
 
   private normalize = (o: any): Offer => {

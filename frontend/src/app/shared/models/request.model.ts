@@ -13,9 +13,9 @@ export interface Request {
   title: string;
   description?: string | null;
   has_photo: boolean;
-  location: GeoPoint;
-  latitude?: number;                    // Extrait côté Angular
-  longitude?: number;
+  location: GeoPoint | null;            // null pour une demande d'hébergement (zone de recherche à la place)
+  latitude?: number | null;             // Extrait côté Angular
+  longitude?: number | null;
   commune_code?: string | null;         // Code INSEE résolu par l'autocomplete d'adresse
   first_name_request: string;
   last_name_request: string;
@@ -34,6 +34,22 @@ export interface Request {
   commune?: string | null;              // Résolu côté serveur (commune_code ou reverse-géocodage)
   distance_from_crisis_km?: number | null;
   actif?: boolean;                      // false = désactivée (politique de désactivation)
+  hebergement_duree?: string | null;
+  type_loyer?: string | null;
+  loyer_montant_min?: number | null;
+  loyer_montant_max?: number | null;
+  type_logement?: string | null;
+  niveau_logement?: string | null;
+  acces_etage?: string | null;
+  nombre_pieces?: number | null;
+  nombre_chambres?: number | null;
+  capacite_adultes?: number | null;
+  capacite_enfants?: number | null;
+  animaux_acceptes?: boolean;
+  jardin?: boolean;
+  pmr_compatible?: boolean;
+  zone_recherche_communes?: string[];   // codes INSEE de la zone de recherche (hébergement)
+  zone_recherche_rayon_km?: number | null;
 }
 
 // Payload pour le formulaire de création

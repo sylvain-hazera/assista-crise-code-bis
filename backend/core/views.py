@@ -110,7 +110,7 @@ from .models import (
     PointOperationnel,
     ImplicationInstitution,
     TypeImplication,
-    User, Crisis, Request, RequestPhoto, Offer, OfferPhoto, Information, DisponibiliteOffre, DisponibilitePointEquipe, MaterielPoint,
+    User, Crisis, Request, RequestPhoto, Offer, OfferPhoto, OfferMessage, Information, DisponibiliteOffre, DisponibilitePointEquipe, MaterielPoint,
     MaterielCatalogue, ContributionMateriel, StatutMateriel, TypeMateriel, NiveauStock, RegistrePresence, TypePersonneAccueillie, DeclarationSecurite, SituationDeclarant,
     AffectationPointBenevole, StatutAffectation,
     RecherchePersonne, RecherchePersonneCommentaire, Besoin, Notification, DossierParticipant,
@@ -249,6 +249,7 @@ from .serializers import (
     RequestPhotoSerializer,
     OfferSerializer,
     OfferPhotoSerializer,
+    OfferMessageSerializer,
     DisponibiliteOffreSerializer,
     DisponibilitePointEquipeSerializer,
     MaterielPointSerializer,
@@ -3527,6 +3528,8 @@ class OfferViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             # _peut_gerer_stock_point) peut légitimement gérer son stock, comme pour
             # MaterielPointViewSet — la vérification fine se fait dans l'action elle-même.
             return [permissions.IsAuthenticated()]
+        if self.action == 'messages':
+            return [IsInstitutionalActor()]
         return [AllowAny()]
 
     def get_queryset(self):
@@ -3552,6 +3555,49 @@ class OfferViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             commentaire=f"Réactivation offre : {offre.title}",
         )
         return Response(OfferSerializer(offre, context={'request': request}).data)
+
+    @action(detail=True, methods=["get", "post"])
+    def messages(self, request, pk=None):
+        """Fil de discussion avec le propriétaire de cette offre — voir OfferMessage. GET liste
+        (tout acteur institutionnel), POST envoie un message côté équipe : génère
+        reponse_token si besoin et notifie le propriétaire par email avec le lien public de
+        réponse/édition (voir OfferReponsePublicView)."""
+        offre = self.get_object()
+        if request.method == "GET":
+            return Response(OfferMessageSerializer(offre.messages.all(), many=True).data)
+
+        contenu = (request.data.get('contenu') or '').strip()
+        if not contenu:
+            return Response({"error": "Le message ne peut pas être vide."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not offre.reponse_token:
+            offre.reponse_token = secrets.token_urlsafe(32)
+            offre.save(update_fields=['reponse_token'])
+
+        message = OfferMessage.objects.create(
+            offer=offre, auteur_equipe=request.user, contenu=contenu, environment=offre.environment,
+        )
+
+        reponse_url = f"{settings.SERVER_URL.rstrip('/')}/repondre-offre/{offre.reponse_token}/"
+        try:
+            send_mail_env_aware(
+                request,
+                subject=f"Nouveau message à propos de votre offre « {offre.title} »",
+                message=(
+                    f"Bonjour {offre.first_name_offer},\n\n"
+                    "Vous avez reçu un nouveau message à propos de votre offre :\n\n"
+                    f"« {contenu} »\n\n"
+                    f"Vous pouvez y répondre ou modifier votre offre ici :\n{reponse_url}\n\n"
+                    "Cordialement,\nL'équipe Assista-Crise"
+                ),
+                from_email=None,
+                recipient_list=[offre.email_offer],
+                fail_silently=True,
+            )
+        except Exception as e:
+            print(f"Erreur envoi email message offre : {e}")
+
+        return Response(OfferMessageSerializer(message).data, status=status.HTTP_201_CREATED)
 
     @action(detail=False, methods=["get"], permission_classes=[IsInstitutionalActor])
     def vue_mairie(self, request):
@@ -3609,14 +3655,18 @@ class OfferViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     def perform_create(self, serializer):
         # Générer un token de suppression unique
         deletion_token = secrets.token_urlsafe(32)
-        
+        # Distinct de deletion_token (voir Offer.reponse_token) : permet au propriétaire de
+        # répondre à un message et d'éditer son offre via un lien reçu par email, sans lui
+        # donner accès à la suppression.
+        reponse_token = secrets.token_urlsafe(32)
+
         # Si user authentifié, il est autheur
         environment = get_active_environment(self.request)
         if self.request.user.is_authenticated:
-            offre = serializer.save(author=self.request.user, deletion_token=deletion_token, environment=environment)
+            offre = serializer.save(author=self.request.user, deletion_token=deletion_token, reponse_token=reponse_token, environment=environment)
         else:
             # Sinon il est none
-            offre = serializer.save(author=None, deletion_token=deletion_token, environment=environment)
+            offre = serializer.save(author=None, deletion_token=deletion_token, reponse_token=reponse_token, environment=environment)
         
         audit_log(
             request=self.request,
@@ -4224,6 +4274,69 @@ class EngagementRessourcePublicView(APIView):
         )
 
         return Response(self._serialize(engagement))
+
+
+def _notify_equipes_hebergement(offer, titre, message_texte):
+    """Notifie (Notification + email) tous les membres des équipes ayant le thème
+    "Hébergement" et assignées à la crise de cette offre (Team.themes/Team.assigned_crises) —
+    utilisé quand le propriétaire d'une offre répond à un message ou modifie son offre via
+    OfferReponsePublicView."""
+    if not offer.crisis_id:
+        return
+    equipes = Team.objects.filter(themes__nom='Hébergement', assigned_crises=offer.crisis_id).distinct()
+    destinataires = User.objects.filter(teams__in=equipes).distinct()
+    for user in destinataires:
+        Notification.objects.create(utilisateur=user, titre=titre, message=message_texte)
+        if user.email:
+            try:
+                send_mail(
+                    subject=titre, message=message_texte, from_email=None,
+                    recipient_list=[user.email], fail_silently=True,
+                )
+            except Exception as e:
+                print(f"Erreur envoi email notification équipe hébergement : {e}")
+
+
+class OfferReponsePublicView(APIView):
+    """Page publique (jeton opaque, pas de compte requis) permettant au propriétaire d'une
+    offre de consulter/répondre au fil de messages et d'éditer son offre — voir
+    Offer.reponse_token et OfferMessage. Même esprit qu'EngagementRessourcePublicView, mais
+    consultable/actionnable librement (pas de séquence stricte d'étapes)."""
+    permission_classes = [AllowAny]
+
+    def get(self, request, token):
+        offre = get_object_or_404(Offer, reponse_token=token)
+        return Response({
+            "offer": OfferSerializer(offre, context={'request': request}).data,
+            "messages": OfferMessageSerializer(offre.messages.all(), many=True).data,
+        })
+
+    def post(self, request, token):
+        offre = get_object_or_404(Offer, reponse_token=token)
+        contenu = (request.data.get('contenu') or '').strip()
+        if not contenu:
+            return Response({"error": "Le message ne peut pas être vide."}, status=status.HTTP_400_BAD_REQUEST)
+        message = OfferMessage.objects.create(
+            offer=offre, auteur_equipe=None, contenu=contenu, environment=offre.environment,
+        )
+        _notify_equipes_hebergement(
+            offre,
+            titre=f"Réponse reçue sur l'offre « {offre.title} »",
+            message_texte=f"{offre.first_name_offer} {offre.last_name_offer} a répondu :\n\n« {contenu} »",
+        )
+        return Response(OfferMessageSerializer(message).data, status=status.HTTP_201_CREATED)
+
+    def patch(self, request, token):
+        offre = get_object_or_404(Offer, reponse_token=token)
+        serializer = OfferSerializer(offre, data=request.data, partial=True, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        _notify_equipes_hebergement(
+            offre,
+            titre=f"Offre modifiée : « {offre.title} »",
+            message_texte=f"{offre.first_name_offer} {offre.last_name_offer} a modifié son offre.",
+        )
+        return Response(OfferSerializer(offre, context={'request': request}).data)
 
 
 class DeleteInformationView(View):

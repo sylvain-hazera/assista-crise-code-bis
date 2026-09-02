@@ -408,6 +408,36 @@
           </div>
         </div>
 
+        <!-- ── SPÉCIALITÉ DE L'ÉQUIPE (vues dédiées) ───────────── -->
+        <div class="detail-section">
+          <div class="section-header">
+            <h3>
+              <span class="material-icons">dashboard</span>
+              Spécialité de l'équipe
+              <span class="count-badge">{{ selectedTeam.theme_ids?.length || 0 }}</span>
+            </h3>
+            <span class="section-hint">Donne accès à un tableau de bord dédié (ex: Hébergement)</span>
+          </div>
+
+          <div class="competence-chip-list">
+            @for (b of besoins; track b.id) {
+              <button type="button"
+                      class="competence-chip"
+                      [class.selected]="hasTheme(b.id)"
+                      [style.--ac]="selectedTeam.color"
+                      (click)="toggleTheme(b.id)">
+                {{ b.nom }}
+              </button>
+            }
+          </div>
+
+          @if (hasTheme(besoinHebergementId())) {
+            <a class="btn-secondary sm" [routerLink]="['/mon-equipe', selectedTeam.id, 'hebergement']">
+              <span class="material-icons">home_work</span> Ouvrir le tableau de bord Hébergement
+            </a>
+          }
+        </div>
+
         <!-- ── ZONE D'INTERVENTION ────────────────────────────── -->
         <div class="detail-section">
           <div class="section-header">

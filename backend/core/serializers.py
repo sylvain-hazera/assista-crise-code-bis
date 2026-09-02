@@ -24,7 +24,7 @@ from .models import (
     PointOperationnel,
     ImplicationInstitution,
     TypeImplication,
-    User, Crisis, Request, RequestPhoto, Offer, OfferPhoto, Information,
+    User, Crisis, Request, RequestPhoto, Offer, OfferPhoto, OfferMessage, Information,
     RecherchePersonneLecture, RecherchePersonneLectureHistorique,
     Document, RecherchePersonnePhoto, RecherchePersonneCommentairePhoto,
     DossierCommentaire, RecherchePersonne, RecherchePersonneCommentaire, RecherchePersonneHistorique,
@@ -374,7 +374,12 @@ class RequestSerializer(serializers.ModelSerializer):
         fields = '__all__'
         # actif : jamais modifiable via un PATCH générique, uniquement via destroy/reactiver
         # (qui journalisent l'action, voir RequestViewSet.perform_destroy/reactiver).
-        extra_kwargs = {'photo': {'write_only': True}, 'actif': {'read_only': True}}
+        # deletion_token : jamais exposé en lecture, sinon n'importe quel visiteur du détail
+        # public de la demande pourrait la supprimer lui-même via ce jeton.
+        extra_kwargs = {
+            'photo': {'write_only': True}, 'actif': {'read_only': True},
+            'deletion_token': {'write_only': True},
+        }
 
     def _location_visible(self, obj) -> bool:
         request = self.context.get('request')
@@ -483,7 +488,13 @@ class OfferSerializer(serializers.ModelSerializer):
         fields = '__all__'
         # actif : jamais modifiable via un PATCH générique, uniquement via destroy/reactiver
         # (qui journalisent l'action, voir OfferViewSet.perform_destroy/reactiver).
-        extra_kwargs = {'photo': {'write_only': True}, 'actif': {'read_only': True}}
+        # deletion_token/reponse_token : jamais exposés en lecture, sinon n'importe quel
+        # visiteur du détail public de l'offre pourrait la supprimer ou usurper son
+        # propriétaire (répondre/éditer) via ces jetons.
+        extra_kwargs = {
+            'photo': {'write_only': True}, 'actif': {'read_only': True},
+            'deletion_token': {'write_only': True}, 'reponse_token': {'write_only': True},
+        }
 
     def get_competences_libelles(self, obj):
         return [c.nom for c in obj.competences.all()]
@@ -562,6 +573,21 @@ class OfferPhotoSerializer(serializers.ModelSerializer):
                 "image": "Maximum 9 photos additionnelles (10 au total avec la principale)."
             })
         return attrs
+
+
+class OfferMessageSerializer(serializers.ModelSerializer):
+    """Message du fil de discussion équipe ↔ propriétaire d'une offre — voir OfferMessage."""
+    auteur_equipe_nom = serializers.SerializerMethodField()
+
+    class Meta:
+        model = OfferMessage
+        fields = ['id', 'offer', 'auteur_equipe', 'auteur_equipe_nom', 'contenu', 'date_creation']
+        extra_kwargs = {'auteur_equipe': {'read_only': True}}
+
+    def get_auteur_equipe_nom(self, obj):
+        if not obj.auteur_equipe_id:
+            return None
+        return f"{obj.auteur_equipe.first_name} {obj.auteur_equipe.last_name}".strip() or obj.auteur_equipe.email
 
 
 class DisponibiliteOffreSerializer(serializers.ModelSerializer):
@@ -778,7 +804,12 @@ class InformationSerializer(serializers.ModelSerializer):
         fields = '__all__'
         # actif : jamais modifiable via un PATCH générique, uniquement via destroy/reactiver
         # (qui journalisent l'action, voir InformationViewSet.perform_destroy/reactiver).
-        extra_kwargs = {'photo': {'write_only': True}, 'actif': {'read_only': True}}
+        # deletion_token : jamais exposé en lecture, sinon n'importe quel visiteur du détail
+        # public du signalement pourrait le supprimer lui-même via ce jeton.
+        extra_kwargs = {
+            'photo': {'write_only': True}, 'actif': {'read_only': True},
+            'deletion_token': {'write_only': True},
+        }
 
     def _location_visible(self, obj) -> bool:
         request = self.context.get('request')
@@ -863,6 +894,10 @@ class TeamSerializer(serializers.ModelSerializer):
     competence_ids = serializers.PrimaryKeyRelatedField(
         many=True, queryset=Competence.objects.all(), source='competences', required=False
     )
+    theme_ids = serializers.PrimaryKeyRelatedField(
+        many=True, queryset=Besoin.objects.all(), source='themes', required=False
+    )
+    themes_libelles = serializers.SerializerMethodField()
     zone_precise_geojson = serializers.SerializerMethodField()
     institution_nom = serializers.CharField(source='institution.nom', read_only=True, default=None)
     institution_delegataire_nom = serializers.CharField(
@@ -912,6 +947,8 @@ class TeamSerializer(serializers.ModelSerializer):
             'assigned_request_ids',
             'assigned_information_ids',
             'competence_ids',
+            'theme_ids',
+            'themes_libelles',
             'departements',
             'communes',
             'zone_precise',
@@ -928,6 +965,9 @@ class TeamSerializer(serializers.ModelSerializer):
 
     def get_sous_equipes_info(self, obj):
         return [{"id": str(s.id), "nom": s.name} for s in obj.sous_equipes.all()]
+
+    def get_themes_libelles(self, obj):
+        return [t.nom for t in obj.themes.all()]
 
     def _nom(self, user):
         if not user:

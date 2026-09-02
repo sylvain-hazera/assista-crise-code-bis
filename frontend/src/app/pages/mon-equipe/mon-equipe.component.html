@@ -23,6 +23,11 @@
         @if (team.description) {
           <p class="description">{{ team.description }}</p>
         }
+        @if (team.themes_libelles?.includes('Hébergement')) {
+          <a class="btn-secondary sm" [routerLink]="['/mon-equipe', team.id, 'hebergement']">
+            <span class="material-icons">home_work</span> Tableau de bord Hébergement
+          </a>
+        }
       </div>
     </header>
 

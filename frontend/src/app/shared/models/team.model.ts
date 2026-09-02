@@ -44,6 +44,8 @@ export interface Team {
   assigned_request_ids: string[];
   assigned_information_ids: string[];
   competence_ids:       string[];
+  theme_ids?:           string[];             // UUID des Besoin déclarés comme thèmes de l'équipe (ex: "Hébergement")
+  themes_libelles?:     string[];
   departements:         string[];           // codes département déclarés (ex: ['38', '73'])
   communes:             string[];           // codes commune INSEE déclarés, plus précis
   zone_precise?:        string | null;      // WKT en écriture (le plus précis des 3 niveaux)

@@ -35,9 +35,24 @@ export interface Offer {
   organisation_nom?: string | null;  // dépôt groupé : nom de l'entreprise/association déposante
   groupe_id?: string | null;         // partagé par toutes les offres d'une même soumission groupée
   hebergement_duree?: string | null;
+  type_loyer?: string | null;
+  loyer_montant_min?: number | null;
+  loyer_montant_max?: number | null;
+  type_logement?: string | null;
+  niveau_logement?: string | null;
+  acces_etage?: string | null;
+  nombre_pieces?: number | null;
+  nombre_chambres?: number | null;
+  capacite_adultes?: number | null;
+  capacite_enfants?: number | null;
+  animaux_acceptes?: boolean;
+  jardin?: boolean;
+  pmr_compatible?: boolean;
   numero_adeli_rpps?: string | null;
   transport_type?: string | null;
+  transport_animaux_precision?: string | null;
   materiel_type?: string | null;
+  cuve_contenu?: string | null;
   soutien_type?: string | null;
   diplome_secourisme?: boolean;
   materiel_livraison?: 'A_RECUPERER' | 'LIVRAISON_POSSIBLE' | null;

@@ -60,6 +60,11 @@ export const PUBLIC_ROUTES: Routes = [
           .then(m => m.EngagementRessourceComponent)
       },
       {
+        path: 'repondre-offre/:token',
+        loadComponent: () => import('./offer-reponse/offer-reponse.component')
+          .then(m => m.OfferReponseComponent)
+      },
+      {
         path: 'settings',
         canActivate: [authGuard],
         loadComponent: () => import('./settings/settings.component')
@@ -70,6 +75,12 @@ export const PUBLIC_ROUTES: Routes = [
         canActivate: [authGuard],
         loadComponent: () => import('../pages/mon-equipe/mon-equipe.component')
           .then(m => m.MonEquipeComponent)
+      },
+      {
+        path: 'mon-equipe/:id/hebergement',
+        canActivate: [authGuard],
+        loadComponent: () => import('../pages/hebergement-matching/hebergement-matching.component')
+          .then(m => m.HebergementMatchingComponent)
       },
       {
         path: 'mes-interventions',

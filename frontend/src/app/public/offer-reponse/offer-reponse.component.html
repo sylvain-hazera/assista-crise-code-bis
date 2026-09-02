@@ -1,0 +1,141 @@
+<div class="offer-reponse-container">
+  @if (loading) {
+    <p class="loading">Chargement…</p>
+  } @else if (notFound) {
+    <p class="error-message">Ce lien n'est plus valide.</p>
+  } @else if (offer) {
+
+    <h1>{{ offer.title }}</h1>
+    <p class="subtitle">Bonjour {{ offer.first_name_offer }}, voici les échanges à propos de votre offre.</p>
+
+    @if (saveSuccess) {
+      <p class="success-message">Votre offre a bien été mise à jour.</p>
+    }
+
+    @if (!editing) {
+      <div class="offer-summary">
+        <dl>
+          <dt>Type de logement</dt><dd>{{ offer.type_logement ? (typeLogementLabels[offer.type_logement] || offer.type_logement) : '—' }}</dd>
+          <dt>Loyer</dt><dd>{{ offer.type_loyer ? (typeLoyerLabels[offer.type_loyer] || offer.type_loyer) : '—' }}</dd>
+          <dt>Pièces / Chambres</dt><dd>{{ offer.nombre_pieces ?? '—' }} / {{ offer.nombre_chambres ?? '—' }}</dd>
+          <dt>Capacité</dt><dd>{{ offer.capacite_adultes ?? '—' }} adultes, {{ offer.capacite_enfants ?? 0 }} enfants</dd>
+          <dt>Critères</dt>
+          <dd>
+            {{ offer.animaux_acceptes ? 'Animaux acceptés' : 'Animaux non acceptés' }},
+            {{ offer.jardin ? 'avec jardin' : 'sans jardin' }},
+            {{ offer.pmr_compatible ? 'compatible PMR' : 'non compatible PMR' }}
+          </dd>
+          @if (offer.description) {
+            <dt>Description</dt><dd>{{ offer.description }}</dd>
+          }
+        </dl>
+        <button type="button" class="btn-secondary" (click)="startEditing()">
+          <span class="material-icons">edit</span> Modifier mon offre
+        </button>
+      </div>
+    } @else {
+      <form class="offer-edit-form" (ngSubmit)="saveEdits()">
+        <div class="form-group">
+          <label>Description</label>
+          <textarea [(ngModel)]="editForm.description" name="description" rows="3"></textarea>
+        </div>
+
+        <div class="form-group">
+          <label>Type de logement</label>
+          <select [(ngModel)]="editForm.type_logement" name="type_logement">
+            <option [ngValue]="null">—</option>
+            @for (key of typeLogementLabels | keyvalue; track key.key) {
+              <option [value]="key.key">{{ key.value }}</option>
+            }
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>Loyer</label>
+          <select [(ngModel)]="editForm.type_loyer" name="type_loyer">
+            <option [ngValue]="null">—</option>
+            @for (key of typeLoyerLabels | keyvalue; track key.key) {
+              <option [value]="key.key">{{ key.value }}</option>
+            }
+          </select>
+          @if (editForm.type_loyer && editForm.type_loyer !== 'GRATUIT') {
+            <div class="inline-row">
+              <input type="number" min="0" [(ngModel)]="editForm.loyer_montant_min" name="loyer_montant_min" placeholder="Montant min (€/mois)">
+              <input type="number" min="0" [(ngModel)]="editForm.loyer_montant_max" name="loyer_montant_max" placeholder="Montant max (€/mois)">
+            </div>
+          }
+        </div>
+
+        <div class="form-group inline-row">
+          <div>
+            <label>Pièces</label>
+            <input type="number" min="0" [(ngModel)]="editForm.nombre_pieces" name="nombre_pieces">
+          </div>
+          <div>
+            <label>Chambres</label>
+            <input type="number" min="0" [(ngModel)]="editForm.nombre_chambres" name="nombre_chambres">
+          </div>
+        </div>
+
+        <div class="form-group inline-row">
+          <div>
+            <label>Capacité adultes</label>
+            <input type="number" min="0" [(ngModel)]="editForm.capacite_adultes" name="capacite_adultes">
+          </div>
+          <div>
+            <label>Capacité enfants</label>
+            <input type="number" min="0" [(ngModel)]="editForm.capacite_enfants" name="capacite_enfants">
+          </div>
+        </div>
+
+        <div class="form-group checkbox-group">
+          <label class="checkbox-label"><input type="checkbox" [(ngModel)]="editForm.animaux_acceptes" name="animaux_acceptes"> Animaux acceptés</label>
+          <label class="checkbox-label"><input type="checkbox" [(ngModel)]="editForm.jardin" name="jardin"> Jardin</label>
+          <label class="checkbox-label"><input type="checkbox" [(ngModel)]="editForm.pmr_compatible" name="pmr_compatible"> Compatible PMR</label>
+        </div>
+
+        <div class="form-group">
+          <label>Disponibilité</label>
+          <select [(ngModel)]="editForm.status" name="status">
+            <option value="DISPONIBLE">Toujours disponible</option>
+            <option value="INDISPONIBLE">Plus disponible</option>
+          </select>
+        </div>
+
+        @if (saveError) {
+          <p class="error-message">{{ saveError }}</p>
+        }
+
+        <div class="form-actions">
+          <button type="submit" class="btn-primary" [disabled]="saving">Enregistrer</button>
+          <button type="button" class="btn-secondary" (click)="cancelEditing()">Annuler</button>
+        </div>
+      </form>
+    }
+
+    <h2>Messages</h2>
+    <div class="messages-thread">
+      @for (m of messages; track m.id) {
+        <div class="message" [class.from-owner]="!m.auteur_equipe">
+          <p class="message-meta">
+            <strong>{{ m.auteur_equipe ? (m.auteur_equipe_nom || 'Équipe') : 'Vous' }}</strong>
+            — {{ m.date_creation | date:'short' }}
+          </p>
+          <p class="message-content">{{ m.contenu }}</p>
+        </div>
+      } @empty {
+        <p class="empty">Aucun message pour l'instant.</p>
+      }
+    </div>
+
+    <div class="message-form">
+      <textarea [(ngModel)]="newMessageContenu" rows="3" placeholder="Répondre…"></textarea>
+      @if (messageError) {
+        <p class="error-message">{{ messageError }}</p>
+      }
+      <button type="button" class="btn-primary" [disabled]="!newMessageContenu.trim() || sendingMessage" (click)="sendReply()">
+        Envoyer
+      </button>
+    </div>
+  }
+</div>
