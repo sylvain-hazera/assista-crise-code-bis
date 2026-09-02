@@ -114,6 +114,46 @@
           <button type="button" class="btn-secondary sm" (click)="openSecretariatModal()">
             <span class="material-icons">how_to_reg</span> Registre de présence
           </button>
+          <button type="button" class="btn-secondary sm" (click)="openVueOperationnelleModal()">
+            <span class="material-icons">dashboard</span> Vue opérationnelle
+          </button>
+        </div>
+      }
+
+      @if (isEdit) {
+        <div class="form-group">
+          <label>Équipes de gestion supplémentaires <span class="field-hint-inline">(en plus de l'équipe ci-dessus — roulement, spécialités)</span></label>
+          <div class="chip-list">
+            @for (t of teams; track t.id) {
+              <button type="button" class="chip-toggle" [class.selected]="selectedEquipesGestion.includes(t.id!)" (click)="toggleEquipeGestion(t.id!)">
+                {{ t.name }}
+              </button>
+            }
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Équipes de terrain ravitaillées ici <span class="field-hint-inline">(repas, repos, carburant...)</span></label>
+          <div class="chip-list">
+            @for (t of teams; track t.id) {
+              <button type="button" class="chip-toggle" [class.selected]="selectedEquipesRavitaillement.includes(t.id!)" (click)="toggleEquipeRavitaillement(t.id!)">
+                {{ t.name }}
+              </button>
+            }
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Responsables supplémentaires <span class="field-hint-inline">(roulement jour/nuit, spécialités)</span></label>
+          <input type="text" [(ngModel)]="responsableFilter" [ngModelOptions]="{standalone: true}"
+            placeholder="Filtrer par nom ou email...">
+          <div class="chip-list">
+            @for (u of filteredUsers; track u.id) {
+              <button type="button" class="chip-toggle" [class.selected]="selectedResponsables.includes(u.id)" (click)="toggleResponsable(u.id)">
+                {{ userNom(u) }}
+              </button>
+            }
+          </div>
         </div>
       }
 
@@ -169,6 +209,10 @@
 
   @if (secretariatModalOpen && point) {
     <app-point-secretariat-modal [point]="point" (closed)="closeSecretariatModal()"></app-point-secretariat-modal>
+  }
+
+  @if (vueOperationnelleModalOpen && point) {
+    <app-point-vue-operationnelle-modal [point]="point" (closed)="closeVueOperationnelleModal()"></app-point-vue-operationnelle-modal>
   }
 
 </div>

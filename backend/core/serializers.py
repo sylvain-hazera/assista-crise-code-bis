@@ -22,6 +22,7 @@ from .models import (
     DisponibiliteOperationnelle,
     PointType,
     PointOperationnel,
+    TypePersonneAccueillie,
     ImplicationInstitution,
     TypeImplication,
     User, Crisis, Request, RequestPhoto, Offer, OfferPhoto, OfferMessage, Information,
@@ -1917,6 +1918,22 @@ class PointOperationnelSerializer(
     equipe_nom = serializers.CharField(source="equipe.name", read_only=True, default=None)
     crise_nom = serializers.CharField(source="crise.name", read_only=True, default=None)
     personnes_presentes = serializers.SerializerMethodField()
+    responsables_ids = serializers.PrimaryKeyRelatedField(
+        many=True, queryset=User.objects.all(), source='responsables', required=False
+    )
+    # Contact complet (nom/email/téléphone) de tous les responsables de ce point — `responsable`
+    # (champ historique) + `responsables` (M2M) + chefs des équipes de gestion, dédoublonnés :
+    # voir point_responsables_contacts(). Affiché dans la comparaison de stocks entre centres.
+    responsables_contacts = serializers.SerializerMethodField()
+    equipes_gestion_ids = serializers.PrimaryKeyRelatedField(
+        many=True, queryset=Team.objects.all(), source='equipes_gestion', required=False
+    )
+    equipes_gestion_noms = serializers.SerializerMethodField()
+    equipes_ravitaillement_ids = serializers.PrimaryKeyRelatedField(
+        many=True, queryset=Team.objects.all(), source='equipes_ravitaillement', required=False
+    )
+    equipes_ravitaillement_noms = serializers.SerializerMethodField()
+    civils_accueillis = serializers.SerializerMethodField()
 
     class Meta:
 
@@ -1940,11 +1957,38 @@ class PointOperationnelSerializer(
             total=Sum('nombre')
         )['total'] or 0
 
+    def get_civils_accueillis(self, obj):
+        # Sous-ensemble de personnes_presentes : uniquement les évacués (pas les pompiers/
+        # bénévoles d'autres équipes, déjà comptés ailleurs comme personnel).
+        return obj.registre_presences.filter(
+            date_depart__isnull=True, type_personne=TypePersonneAccueillie.EVACUE
+        ).aggregate(total=Sum('nombre'))['total'] or 0
+
     def get_responsable_nom(self, obj):
         if not obj.responsable:
             return None
         full_name = f"{obj.responsable.first_name} {obj.responsable.last_name}".strip()
         return full_name or obj.responsable.username
+
+    def get_responsables_contacts(self, obj):
+        return [
+            {
+                "id": str(u.id),
+                "nom": (f"{u.first_name} {u.last_name}".strip() or u.username),
+                "email": u.email,
+                "telephone": u.phone_number,
+            }
+            for u in obj.responsables_effectifs()
+        ]
+
+    def get_equipes_gestion_noms(self, obj):
+        noms = [t.name for t in obj.equipes_gestion.all()]
+        if obj.equipe and obj.equipe.name not in noms:
+            noms.append(obj.equipe.name)
+        return noms
+
+    def get_equipes_ravitaillement_noms(self, obj):
+        return [t.name for t in obj.equipes_ravitaillement.all()]
 
     def validate(self, attrs):
         # attrs['crise'] est absent sur un PATCH qui ne touche pas ce champ — retomber sur la

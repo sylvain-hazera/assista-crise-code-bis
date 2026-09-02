@@ -2448,8 +2448,58 @@ class PointOperationnel(EnvironmentScopedModel):
         help_text="Équipe responsable de la tenue de ce point.",
     )
 
+    # Un point peut être tenu par plusieurs équipes selon la spécialité (roulement jour/nuit,
+    # secours/logistique...), en plus (ou à la place, pour un point neuf) de `equipe` ci-dessus
+    # — conservé tel quel pour ne rien casser des usages existants (minimap, actions equipe...).
+    # La "vue opérationnelle" additionne les deux, dédoublonnées.
+    equipes_gestion = models.ManyToManyField(
+        "Team",
+        blank=True,
+        related_name="points_geres_specialite",
+        help_text="Équipes supplémentaires tenant ce point (par spécialité), en plus de `equipe`.",
+    )
+
+    # Relation intrinsèquement plusieurs-à-plusieurs : une équipe de terrain peut se ravitailler
+    # (repas, repos, carburant...) sur plusieurs points, et un point peut ravitailler plusieurs
+    # équipes — voir PointOperationnelViewSet.vue_operationnelle.
+    equipes_ravitaillement = models.ManyToManyField(
+        "Team",
+        blank=True,
+        related_name="points_ravitaillement",
+        help_text="Équipes de terrain ravitaillées par ce point (repas, repos, carburant...).",
+    )
+
+    # Plusieurs responsables possibles (roulement jour/nuit, spécialités), en plus de
+    # `responsable` ci-dessus — conservé tel quel pour les mêmes raisons que `equipe`. Le
+    # contact affiché/notifié (comparaison de stocks, demande de transfert) est l'union des
+    # deux, dédoublonnée.
+    responsables = models.ManyToManyField(
+        User,
+        blank=True,
+        related_name="points_responsable_secondaire",
+        help_text="Responsables supplémentaires de ce point, en plus de `responsable`.",
+    )
+
     def __str__(self):
         return self.nom
+
+    def responsables_effectifs(self) -> list:
+        """Union dédoublonnée de tous les responsables de ce point : `responsable` (champ
+        historique) + `responsables` (M2M) + chefs des équipes de gestion (`equipe` +
+        `equipes_gestion`) — utilisée pour l'affichage contact (comparaison de stocks) et le
+        ciblage des notifications (demande de transfert)."""
+        vus = {}
+        if self.responsable_id:
+            vus[self.responsable_id] = self.responsable
+        for u in self.responsables.all():
+            vus[u.id] = u
+        equipes = list(self.equipes_gestion.all())
+        if self.equipe_id:
+            equipes.append(self.equipe)
+        for equipe in equipes:
+            if equipe.leader_id and equipe.leader_id not in vus:
+                vus[equipe.leader_id] = equipe.leader
+        return list(vus.values())
 
 
 class DisponibilitePointEquipe(EnvironmentScopedModel):

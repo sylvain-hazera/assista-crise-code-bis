@@ -1,4 +1,5 @@
 import { AffectationPointBenevole } from './affectation-point-benevole.model';
+import { ResponsableContact } from './materiel-point.model';
 
 export interface PointType {
   id: string;
@@ -33,6 +34,32 @@ export interface PointOperationnel {
   equipe?: string | null;
   equipe_nom?: string | null;
   personnes_presentes?: number;
+  civils_accueillis?: number;
+  responsables_ids?: string[];
+  responsables_contacts?: ResponsableContact[];
+  equipes_gestion_ids?: string[];
+  equipes_gestion_noms?: string[];
+  equipes_ravitaillement_ids?: string[];
+  equipes_ravitaillement_noms?: string[];
+}
+
+export interface VueOperationnelleEquipe {
+  id: string;
+  nom: string;
+  effectif: number;
+  materiel: {
+    titre: string;
+    materiel_type: string | null;
+    materiel_catalogue_nom: string | null;
+    quantite: number | null;
+    unite: string | null;
+  }[];
+}
+
+export interface VueOperationnelle {
+  equipes_gestion: VueOperationnelleEquipe[];
+  equipes_ravitaillement: VueOperationnelleEquipe[];
+  civils_accueillis: number;
 }
 
 /** Version publique, à champs restreints, renvoyée par GET /points-operationnels/centres_accueil/
@@ -89,4 +116,7 @@ export interface PointOperationnelPayload {
   // temps que le point, plutôt que d'obliger à en créer une séparément avant. Ignoré si
   // `equipe` est déjà renseigné.
   nouvelle_equipe_nom?: string;
+  equipes_gestion_ids?: string[];
+  equipes_ravitaillement_ids?: string[];
+  responsables_ids?: string[];
 }

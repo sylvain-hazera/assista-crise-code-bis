@@ -114,6 +114,30 @@
   color: #9ca3af;
 }
 
+.chip-toggle {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: .3rem .7rem;
+  font-size: .8rem;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  color: #374151;
+  cursor: pointer;
+
+  &.selected {
+    background: #eff6ff;
+    color: #1d4ed8;
+    border-color: #1d4ed8;
+  }
+}
+
+.field-hint-inline {
+  font-weight: 400;
+  font-size: .78rem;
+  color: #6b7280;
+}
+
 .error-message {
   color: #dc2626;
   font-size: .85rem;

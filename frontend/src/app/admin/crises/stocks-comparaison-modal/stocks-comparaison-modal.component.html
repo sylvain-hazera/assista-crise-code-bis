@@ -10,13 +10,38 @@
       @if (loading) {
         <p>Chargement...</p>
       } @else if (data && data.points.length > 0) {
+        <p class="field-hint">
+          Cochez un ou plusieurs articles d'UN SEUL centre pour demander qu'il vous les transfère.
+        </p>
+
         <div class="table-scroll">
           <table class="data-table sm">
             <thead>
               <tr>
                 <th>Besoin</th>
                 @for (point of data.points; track point.id) {
-                  <th>{{ point.nom }}</th>
+                  <th>
+                    <div class="point-header">
+                      <span class="point-nom">{{ point.nom }}</span>
+                      @if (point.responsables_contacts.length > 0) {
+                        <div class="point-responsables">
+                          @for (r of point.responsables_contacts; track r.id) {
+                            <div class="responsable-contact">
+                              <span class="responsable-nom">{{ r.nom }}</span>
+                              @if (r.telephone) {
+                                <span class="contact-item"><span class="material-icons small">phone</span>{{ r.telephone }}</span>
+                              }
+                              @if (r.email) {
+                                <span class="contact-item"><span class="material-icons small">email</span>{{ r.email }}</span>
+                              }
+                            </div>
+                          }
+                        </div>
+                      } @else {
+                        <span class="point-responsables empty">Aucun responsable renseigné</span>
+                      }
+                    </div>
+                  </th>
                 }
               </tr>
             </thead>
@@ -25,10 +50,21 @@
                 <tr>
                   <td>{{ item.item_nom }}</td>
                   @for (point of data.points; track point.id) {
+                    @let cell = item.niveaux[point.id];
                     <td>
-                      <span class="badge" [class]="'niveau-' + item.niveaux[point.id].niveau_stock">
-                        {{ item.niveaux[point.id].niveau_stock_libelle }}
+                      <span class="badge" [class]="'niveau-' + cell.niveau_stock">
+                        {{ cell.niveau_stock_libelle }}
                       </span>
+                      @if (cell.quantite != null) {
+                        <span class="field-hint-inline">({{ cell.quantite }} {{ cell.unite }})</span>
+                      }
+                      @if (isSelectable(point.id, cell.materiel_point_id)) {
+                        <label class="checkbox-label select-transfer">
+                          <input type="checkbox"
+                            [checked]="isSelected(cell.materiel_point_id)"
+                            (change)="toggleSelection(point.id, item.item_nom, cell)">
+                        </label>
+                      }
                     </td>
                   }
                 </tr>
@@ -36,6 +72,60 @@
             </tbody>
           </table>
         </div>
+
+        @if (selectedItems.length > 0) {
+          <div class="transfer-bar">
+            <span>{{ selectedItems.length }} article(s) sélectionné(s) sur « {{ sourcePointNom() }} »</span>
+            <button type="button" class="btn-primary sm" (click)="openTransferForm()">
+              <span class="material-icons">local_shipping</span> Demander un transfert
+            </button>
+          </div>
+        }
+
+        @if (transferSuccess) {
+          <p class="success-message">{{ transferSuccess }}</p>
+        }
+
+        @if (showTransferForm) {
+          <div class="transfer-form">
+            <h3>Demander le transfert depuis « {{ sourcePointNom() }} »</h3>
+            <ul class="transfer-items-list">
+              @for (s of selectedItems; track s.materielPointId) {
+                <li>
+                  {{ s.itemNom }}
+                  <input type="number" min="0" [(ngModel)]="s.quantiteDemandee" class="qty-input">
+                  <span class="field-hint-inline">/ {{ s.quantiteDisponible ?? '?' }} disponible(s)</span>
+                </li>
+              }
+            </ul>
+
+            <div class="form-group">
+              <label>Vers quel centre ?</label>
+              <select [(ngModel)]="destinationPointId">
+                <option value="">— Choisir —</option>
+                @for (p of otherPoints(); track p.id) {
+                  <option [value]="p.id">{{ p.nom }}</option>
+                }
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label>Message (optionnel)</label>
+              <textarea [(ngModel)]="transferMessage" rows="2"></textarea>
+            </div>
+
+            @if (transferError) {
+              <p class="error-message">{{ transferError }}</p>
+            }
+
+            <div class="form-actions">
+              <button type="button" class="btn-primary sm" [disabled]="sendingTransfer" (click)="confirmTransfer()">
+                Envoyer la demande
+              </button>
+              <button type="button" class="btn-secondary sm" (click)="cancelTransferForm()">Annuler</button>
+            </div>
+          </div>
+        }
       } @else {
         <p class="empty">Aucun autre point opérationnel sur cette crise pour comparer.</p>
       }

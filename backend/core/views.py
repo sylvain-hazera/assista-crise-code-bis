@@ -1517,8 +1517,11 @@ class CrisisViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         niveaux = {}
         for m in materiels:
             niveaux.setdefault(str(m.item_id), {})[str(m.point_id)] = {
+                "materiel_point_id": str(m.id),
                 "niveau_stock": m.niveau_stock,
                 "niveau_stock_libelle": m.get_niveau_stock_display(),
+                "quantite": m.quantite,
+                "unite": m.unite,
             }
 
         items = []
@@ -1529,15 +1532,24 @@ class CrisisViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
                 "item_nom": item.nom,
                 "niveaux": {
                     str(p.id): par_point.get(str(p.id), {
+                        "materiel_point_id": None,
                         "niveau_stock": NiveauStock.NUL,
                         "niveau_stock_libelle": NiveauStock.NUL.label,
+                        "quantite": None,
+                        "unite": None,
                     })
                     for p in points
                 },
             })
 
         return Response({
-            "points": [{"id": str(p.id), "nom": p.nom, "type_libelle": p.type.libelle if p.type else None} for p in points],
+            "points": [
+                {
+                    "id": str(p.id), "nom": p.nom, "type_libelle": p.type.libelle if p.type else None,
+                    "responsables_contacts": PointOperationnelSerializer(p).get_responsables_contacts(p),
+                }
+                for p in points
+            ],
             "items": items,
         })
 
@@ -6171,6 +6183,94 @@ class PointOperationnelViewSet(
                     "date_maj": None,
                 })
         return Response(resultats)
+
+    @action(detail=True, methods=["post"], url_path="demander-transfert")
+    def demander_transfert(self, request, pk=None):
+        """Demande de transfert de matériel depuis CE point (pk, le point source où le stock a
+        été repéré comme "en trop") vers un point de destination — envoie un email et une
+        notification à tous les responsables du point source (voir
+        PointOperationnel.responsables_effectifs). Ne modifie aucun stock : reste une simple
+        demande, à charge des responsables du point source de l'honorer sur place."""
+        point_source = self.get_object()
+        destination_id = request.data.get("destination_point_id")
+        destination = get_object_or_404(PointOperationnel, pk=destination_id)
+        items = request.data.get("items") or []
+        message_libre = (request.data.get("message") or "").strip()
+
+        if not items:
+            return Response({"error": "Sélectionnez au moins un article à transférer."}, status=status.HTTP_400_BAD_REQUEST)
+
+        lignes = []
+        for entry in items:
+            mp = MaterielPoint.objects.filter(pk=entry.get("materiel_point_id"), point=point_source).select_related("item").first()
+            if not mp:
+                continue
+            quantite_demandee = entry.get("quantite_demandee")
+            lignes.append(f"- {mp.item.nom}" + (f" : {quantite_demandee}" if quantite_demandee else ""))
+
+        if not lignes:
+            return Response({"error": "Aucun des articles sélectionnés n'a été trouvé sur ce point."}, status=status.HTTP_400_BAD_REQUEST)
+
+        demandeur = request.user
+        demandeur_nom = f"{demandeur.first_name} {demandeur.last_name}".strip() or demandeur.email
+
+        titre = f"Demande de transfert depuis « {point_source.nom} » vers « {destination.nom} »"
+        corps = (
+            f"{demandeur_nom} demande le transfert des articles suivants depuis « {point_source.nom} » "
+            f"vers « {destination.nom} » :\n\n" + "\n".join(lignes)
+        )
+        if message_libre:
+            corps += f"\n\nMessage :\n{message_libre}"
+
+        destinataires = point_source.responsables_effectifs()
+        for user in destinataires:
+            Notification.objects.create(utilisateur=user, titre=titre, message=corps)
+            if user.email:
+                try:
+                    send_mail_env_aware(
+                        request, subject=titre, message=corps, from_email=None,
+                        recipient_list=[user.email], fail_silently=True,
+                    )
+                except Exception as e:
+                    print(f"Erreur envoi email demande de transfert : {e}")
+
+        return Response({"notifies": len(destinataires)}, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["get"], url_path="vue-operationnelle")
+    def vue_operationnelle(self, request, pk=None):
+        """Vue opérationnelle d'un point : équipes le tenant (par spécialité), équipes de
+        terrain qu'il ravitaille, et civils actuellement accueillis — pour chaque équipe,
+        effectif et matériel (offres de type Matériel qui lui ont été affectées comme
+        ressources, seule source de "leur matériel" existante à ce jour)."""
+        point = self.get_object()
+
+        def equipe_info(team):
+            materiel_offres = team.assigned_offers.filter(offer_type__type="Matériel")
+            return {
+                "id": str(team.id),
+                "nom": team.name,
+                "effectif": team.members.count(),
+                "materiel": [
+                    {
+                        "titre": o.title,
+                        "materiel_type": o.materiel_type,
+                        "materiel_catalogue_nom": o.materiel_catalogue.nom if o.materiel_catalogue_id else None,
+                        "quantite": o.quantite,
+                        "unite": o.unite,
+                    }
+                    for o in materiel_offres
+                ],
+            }
+
+        equipes_gestion = list(point.equipes_gestion.all())
+        if point.equipe and point.equipe not in equipes_gestion:
+            equipes_gestion.append(point.equipe)
+
+        return Response({
+            "equipes_gestion": [equipe_info(t) for t in equipes_gestion],
+            "equipes_ravitaillement": [equipe_info(t) for t in point.equipes_ravitaillement.all()],
+            "civils_accueillis": PointOperationnelSerializer(point).get_civils_accueillis(point),
+        })
 
 
 class DisponibilitePointEquipeViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):

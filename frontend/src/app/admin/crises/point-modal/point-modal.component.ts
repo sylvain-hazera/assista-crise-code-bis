@@ -1,15 +1,17 @@
 import { Component, EventEmitter, Input, OnChanges, Output, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { FormBuilder, FormGroup, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 
 import { PointOperationnelService } from '../../../services/point-operationnel.service';
 import { CompetenceService } from '../../../services/competence.service';
 import { TeamService } from '../../../services/team.service';
+import { UserService } from '../../../services/user.service';
 import { PointOperationnel, PointType } from '../../../shared/models/point-operationnel.model';
 import { Institution } from '../../../shared/models/institution.model';
 import { Competence } from '../../../shared/models/competence.model';
 import { Team } from '../../../shared/models/team.model';
+import { User } from '../../../shared/models/user.model';
 import { AddressResult } from '../../../shared/models/address-result.model';
 import { AddressPickerComponent } from '../../../shared/components/common/address-picker/address-picker.component';
 import { PointPickerComponent } from '../../../shared/components/common/point-picker/point-picker.component';
@@ -18,6 +20,7 @@ import { PointEquipeModalComponent } from '../point-equipe-modal/point-equipe-mo
 import { PointInventaireModalComponent } from '../point-inventaire-modal/point-inventaire-modal.component';
 import { StocksComparaisonModalComponent } from '../stocks-comparaison-modal/stocks-comparaison-modal.component';
 import { PointSecretariatModalComponent } from '../point-secretariat-modal/point-secretariat-modal.component';
+import { PointVueOperationnelleModalComponent } from '../point-vue-operationnelle-modal/point-vue-operationnelle-modal.component';
 
 /**
  * Modale "Créer/éditer un point opérationnel" — remplace l'ancien formulaire inline de
@@ -29,7 +32,7 @@ import { PointSecretariatModalComponent } from '../point-secretariat-modal/point
 @Component({
   selector: 'app-point-modal',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, AddressPickerComponent, PointPickerComponent, TagSearchInputComponent, PointEquipeModalComponent, PointInventaireModalComponent, StocksComparaisonModalComponent, PointSecretariatModalComponent],
+  imports: [CommonModule, ReactiveFormsModule, FormsModule, AddressPickerComponent, PointPickerComponent, TagSearchInputComponent, PointEquipeModalComponent, PointInventaireModalComponent, StocksComparaisonModalComponent, PointSecretariatModalComponent, PointVueOperationnelleModalComponent],
   templateUrl: './point-modal.component.html',
   styleUrl: './point-modal.component.scss'
 })
@@ -58,20 +61,31 @@ export class PointModalComponent implements OnChanges {
   errorMessage = '';
   selectedCompetences: { id: string; nom: string }[] = [];
   teams: Team[] = [];
+  users: User[] = [];
   equipeModalOpen = false;
   inventaireModalOpen = false;
   comparaisonModalOpen = false;
   secretariatModalOpen = false;
+  vueOperationnelleModalOpen = false;
+
+  // Équipes/responsables supplémentaires (roulement jour/nuit, spécialités) — voir
+  // PointOperationnel.equipes_gestion/equipes_ravitaillement/responsables. Distinct de
+  // `equipe` (champ historique, unique) géré par le formulaire principal ci-dessus.
+  selectedEquipesGestion: string[] = [];
+  selectedEquipesRavitaillement: string[] = [];
+  selectedResponsables: string[] = [];
 
   constructor(
     private fb: FormBuilder,
     private pointService: PointOperationnelService,
     private competenceService: CompetenceService,
     private teamService: TeamService,
+    private userService: UserService,
     private router: Router,
   ) {
     this.buildForm();
     this.teamService.getAll().subscribe(teams => this.teams = teams);
+    this.userService.getAll().subscribe(users => this.users = users);
   }
 
   competenceSearchFn = (q: string) => this.competenceService.search(q);
@@ -104,6 +118,65 @@ export class PointModalComponent implements OnChanges {
     const ids = this.point?.competences_requises ?? [];
     const libelles = this.point?.competences_requises_libelles ?? [];
     this.selectedCompetences = ids.map((id, i) => ({ id, nom: libelles[i] ?? id }));
+
+    this.selectedEquipesGestion = this.point?.equipes_gestion_ids ?? [];
+    this.selectedEquipesRavitaillement = this.point?.equipes_ravitaillement_ids ?? [];
+    this.selectedResponsables = this.point?.responsables_ids ?? [];
+  }
+
+  toggleEquipeGestion(id: string): void {
+    if (!this.point) return;
+    const ids = this.selectedEquipesGestion.includes(id)
+      ? this.selectedEquipesGestion.filter(i => i !== id)
+      : [...this.selectedEquipesGestion, id];
+    this.pointService.update(this.point.id, { equipes_gestion_ids: ids }).subscribe(updated => {
+      this.selectedEquipesGestion = ids;
+      this.pointUpdated.emit(updated);
+    });
+  }
+
+  toggleEquipeRavitaillement(id: string): void {
+    if (!this.point) return;
+    const ids = this.selectedEquipesRavitaillement.includes(id)
+      ? this.selectedEquipesRavitaillement.filter(i => i !== id)
+      : [...this.selectedEquipesRavitaillement, id];
+    this.pointService.update(this.point.id, { equipes_ravitaillement_ids: ids }).subscribe(updated => {
+      this.selectedEquipesRavitaillement = ids;
+      this.pointUpdated.emit(updated);
+    });
+  }
+
+  toggleResponsable(id: string): void {
+    if (!this.point) return;
+    const ids = this.selectedResponsables.includes(id)
+      ? this.selectedResponsables.filter(i => i !== id)
+      : [...this.selectedResponsables, id];
+    this.pointService.update(this.point.id, { responsables_ids: ids }).subscribe(updated => {
+      this.selectedResponsables = ids;
+      this.pointUpdated.emit(updated);
+    });
+  }
+
+  userNom(user: User): string {
+    return `${user.first_name ?? ''} ${user.last_name ?? ''}`.trim() || user.email;
+  }
+
+  // Filtre client (pas de recherche serveur dédiée) — évite une liste de responsables
+  // potentiellement très longue à parcourir sans filtre.
+  responsableFilter = '';
+
+  get filteredUsers(): User[] {
+    const q = this.responsableFilter.trim().toLowerCase();
+    if (!q) return this.users;
+    return this.users.filter(u => this.userNom(u).toLowerCase().includes(q) || u.email.toLowerCase().includes(q));
+  }
+
+  openVueOperationnelleModal(): void {
+    this.vueOperationnelleModalOpen = true;
+  }
+
+  closeVueOperationnelleModal(): void {
+    this.vueOperationnelleModalOpen = false;
   }
 
   onCompetenceSelected(item: Competence): void {

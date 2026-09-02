@@ -33,11 +33,29 @@ export interface MaterielPointPayload {
   commentaire?: string;
 }
 
+export interface ResponsableContact {
+  id: string;
+  nom: string;
+  email: string | null;
+  telephone: string | null;
+}
+
 export interface StocksComparaison {
-  points: { id: string; nom: string; type_libelle: string | null }[];
+  points: { id: string; nom: string; type_libelle: string | null; responsables_contacts: ResponsableContact[] }[];
   items: {
     item: string;
     item_nom: string;
-    niveaux: Record<string, { niveau_stock: NiveauStock; niveau_stock_libelle: string }>;
+    niveaux: Record<string, {
+      materiel_point_id: string | null;
+      niveau_stock: NiveauStock;
+      niveau_stock_libelle: string;
+      quantite: number | null;
+      unite: string | null;
+    }>;
   }[];
+}
+
+export interface DemandeTransfertItem {
+  materiel_point_id: string;
+  quantite_demandee?: number | null;
 }

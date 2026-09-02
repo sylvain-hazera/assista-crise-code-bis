@@ -2,9 +2,10 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
-import { PointOperationnel, PointOperationnelPayload, PointEquipeResponse, CentreAccueilPublic } from '../shared/models/point-operationnel.model';
+import { PointOperationnel, PointOperationnelPayload, PointEquipeResponse, CentreAccueilPublic, VueOperationnelle } from '../shared/models/point-operationnel.model';
 import { AffectationPointBenevole, InviterBenevolePayload, InviterBenevoleResponse, ValiderBenevolePayload } from '../shared/models/affectation-point-benevole.model';
 import { CandidatsBenevolesParams, CandidatsBenevolesResponse } from '../shared/models/candidat-benevole.model';
+import { DemandeTransfertItem } from '../shared/models/materiel-point.model';
 
 @Injectable({ providedIn: 'root' })
 export class PointOperationnelService {
@@ -82,5 +83,21 @@ export class PointOperationnelService {
     (params.competences ?? []).forEach(c => httpParams = httpParams.append('competences', c));
 
     return this.http.get<CandidatsBenevolesResponse>(`${this.apiUrl}/${id}/candidats-benevoles/`, { params: httpParams });
+  }
+
+  /** POST /api/points-operationnels/{id}/demander-transfert/ — id = point SOURCE (celui dont
+   * le stock a été repéré en trop). Notifie (Notification + email) tous ses responsables. */
+  demanderTransfert(
+    pointSourceId: string, destinationPointId: string, items: DemandeTransfertItem[], message?: string
+  ): Observable<{ notifies: number }> {
+    return this.http.post<{ notifies: number }>(`${this.apiUrl}/${pointSourceId}/demander-transfert/`, {
+      destination_point_id: destinationPointId, items, message,
+    });
+  }
+
+  /** GET /api/points-operationnels/{id}/vue-operationnelle/ — équipes gestionnaires/de
+   * ravitaillement (effectif + matériel) et civils accueillis. */
+  getVueOperationnelle(id: string): Observable<VueOperationnelle> {
+    return this.http.get<VueOperationnelle>(`${this.apiUrl}/${id}/vue-operationnelle/`);
   }
 }

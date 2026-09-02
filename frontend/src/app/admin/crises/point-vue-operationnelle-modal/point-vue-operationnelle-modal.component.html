@@ -1,0 +1,84 @@
+<div class="modal-overlay" (click)="close()">
+  <div class="modal" (click)="$event.stopPropagation()">
+
+    <div class="modal-header">
+      <h2>Vue opérationnelle — {{ point.nom }}</h2>
+      <button class="icon-btn" (click)="close()"><span class="material-icons">close</span></button>
+    </div>
+
+    <div class="modal-body">
+      @if (loading) {
+        <p>Chargement...</p>
+      } @else if (data) {
+
+        <div class="summary-bar">
+          <div class="summary-item">
+            <span class="material-icons">groups</span>
+            {{ data.civils_accueillis }} civil(s) accueilli(s)
+          </div>
+        </div>
+
+        <h3>Équipes tenant ce point</h3>
+        @if (data.equipes_gestion.length > 0) {
+          <table class="data-table sm">
+            <thead>
+              <tr><th>Équipe</th><th>Effectif</th><th>Matériel</th></tr>
+            </thead>
+            <tbody>
+              @for (e of data.equipes_gestion; track e.id) {
+                <tr>
+                  <td>{{ e.nom }}</td>
+                  <td>{{ e.effectif }}</td>
+                  <td>
+                    @if (e.materiel.length > 0) {
+                      <ul class="materiel-list">
+                        @for (m of e.materiel; track m.titre) {
+                          <li>{{ m.materiel_catalogue_nom || m.titre }}{{ m.quantite ? ' (' + m.quantite + (m.unite ? ' ' + m.unite : '') + ')' : '' }}</li>
+                        }
+                      </ul>
+                    } @else {
+                      <span class="empty">Aucun matériel affecté.</span>
+                    }
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        } @else {
+          <p class="empty">Aucune équipe de gestion sur ce point.</p>
+        }
+
+        <h3>Équipes de terrain ravitaillées ici</h3>
+        @if (data.equipes_ravitaillement.length > 0) {
+          <table class="data-table sm">
+            <thead>
+              <tr><th>Équipe</th><th>Effectif</th><th>Matériel</th></tr>
+            </thead>
+            <tbody>
+              @for (e of data.equipes_ravitaillement; track e.id) {
+                <tr>
+                  <td>{{ e.nom }}</td>
+                  <td>{{ e.effectif }}</td>
+                  <td>
+                    @if (e.materiel.length > 0) {
+                      <ul class="materiel-list">
+                        @for (m of e.materiel; track m.titre) {
+                          <li>{{ m.materiel_catalogue_nom || m.titre }}{{ m.quantite ? ' (' + m.quantite + (m.unite ? ' ' + m.unite : '') + ')' : '' }}</li>
+                        }
+                      </ul>
+                    } @else {
+                      <span class="empty">Aucun matériel affecté.</span>
+                    }
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        } @else {
+          <p class="empty">Aucune équipe de terrain ravitaillée sur ce point.</p>
+        }
+      }
+    </div>
+
+  </div>
+</div>
