@@ -5,6 +5,9 @@
       <h1><span class="material-icons">home_work</span> Centres</h1>
       <p class="subtitle">{{ filteredPoints.length }} centre{{ filteredPoints.length > 1 ? 's' : '' }}</p>
     </div>
+    <button type="button" class="btn-primary" (click)="openCreateModal()">
+      <span class="material-icons">add</span> Nouveau centre
+    </button>
   </header>
 
   @if (errorMessage) {
@@ -61,9 +64,9 @@
     </table>
   }
 
-  @if (pointModalOpen && editingPoint) {
+  @if (pointModalOpen) {
     <app-point-modal
-      [crisisId]="editingPoint.crise!"
+      [crisisId]="editingPoint?.crise ?? null"
       [pointTypes]="pointTypes"
       [selectableInstitutions]="selectableInstitutions"
       [isAdmin]="isAdmin"

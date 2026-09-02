@@ -107,6 +107,7 @@ export class PointModalComponent implements OnChanges {
       date_ouverture: [this.toDatetimeLocal(this.point?.date_ouverture)],
       date_fermeture: [this.toDatetimeLocal(this.point?.date_fermeture)],
       equipe: [this.point?.equipe ?? this.defaultEquipeId ?? null],
+      responsable: [this.point?.responsable ?? null],
       // Uniquement à la création (voir isEdit) : crée une équipe en même temps que le point,
       // plutôt que d'obliger à en créer une séparément avant de pouvoir en assigner une.
       creerNouvelleEquipe: [false],
@@ -273,7 +274,7 @@ export class PointModalComponent implements OnChanges {
       return;
     }
 
-    const { institution, type, nom, description, capacite_accueil, date_ouverture, date_fermeture, equipe, creerNouvelleEquipe, nouvelleEquipeNom } = this.form.getRawValue();
+    const { institution, type, nom, description, capacite_accueil, date_ouverture, date_fermeture, equipe, responsable, creerNouvelleEquipe, nouvelleEquipeNom } = this.form.getRawValue();
     const payload: any = {
       type, nom,
       description: description || undefined,
@@ -281,6 +282,7 @@ export class PointModalComponent implements OnChanges {
       date_ouverture: date_ouverture || null,
       date_fermeture: date_fermeture || null,
       equipe: creerNouvelleEquipe ? null : (equipe || null),
+      responsable: responsable || null,
     };
     if (creerNouvelleEquipe && nouvelleEquipeNom?.trim()) {
       payload.nouvelle_equipe_nom = nouvelleEquipeNom.trim();

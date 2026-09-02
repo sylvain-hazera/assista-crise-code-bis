@@ -96,6 +96,16 @@
         }
       </div>
 
+      <div class="form-group">
+        <label>Responsable</label>
+        <select formControlName="responsable">
+          <option [ngValue]="null">— Aucun responsable désigné —</option>
+          @for (u of users; track u.id) {
+            <option [ngValue]="u.id">{{ userNom(u) }}</option>
+          }
+        </select>
+      </div>
+
       @if (isEdit) {
         <div class="form-group">
           <label>Inventaire matériel</label>

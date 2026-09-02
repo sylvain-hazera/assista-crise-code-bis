@@ -23,6 +23,22 @@
   }
 }
 
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  padding: .55rem 1rem;
+  border-radius: 6px;
+  border: none;
+  background: #1d4ed8;
+  color: #fff;
+  font-size: .88rem;
+  font-weight: 600;
+  cursor: pointer;
+
+  &:hover { background: #1e40af; }
+}
+
 .toast {
   display: flex;
   align-items: center;

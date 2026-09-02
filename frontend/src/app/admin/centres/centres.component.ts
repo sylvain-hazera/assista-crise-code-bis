@@ -88,6 +88,11 @@ export class CentresComponent implements OnInit {
     this.pointModalOpen = true;
   }
 
+  openCreateModal(): void {
+    this.editingPoint = null;
+    this.pointModalOpen = true;
+  }
+
   closePointModal(): void {
     this.pointModalOpen = false;
     this.editingPoint = null;

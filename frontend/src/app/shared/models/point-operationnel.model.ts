@@ -112,6 +112,7 @@ export interface PointOperationnelPayload {
   location?: string;
   competences_requises?: string[];
   equipe?: string | null;
+  responsable?: string | null;
   // Alternative à `equipe` (mutuellement exclusifs) : crée une équipe portant ce nom en même
   // temps que le point, plutôt que d'obliger à en créer une séparément avant. Ignoré si
   // `equipe` est déjà renseigné.
