@@ -109,28 +109,6 @@
             </p>
           }
 
-          @if (isAdmin) {
-            <section class="section-block quick-create-institution">
-              @if (!showQuickCreateInstitution) {
-                <button class="btn-secondary sm" (click)="showQuickCreateInstitution = true">
-                  <span class="material-icons">add_business</span> Nouvelle institution
-                </button>
-              } @else {
-                <form class="inline-form" (ngSubmit)="submitQuickCreateInstitution()">
-                  <input type="text" placeholder="Nom de l'institution" [(ngModel)]="quickCreateNom" name="quickCreateNom" required>
-                  <select [(ngModel)]="quickCreateTypeId" name="quickCreateTypeId" required>
-                    <option [ngValue]="null">— Type —</option>
-                    @for (t of institutionTypes; track t.id) {
-                      <option [ngValue]="t.id">{{ t.libelle }}</option>
-                    }
-                  </select>
-                  <button type="submit" class="btn-primary sm" [disabled]="quickCreateSaving || !quickCreateNom.trim() || !quickCreateTypeId">Créer</button>
-                  <button type="button" class="btn-secondary sm" (click)="showQuickCreateInstitution = false">Annuler</button>
-                </form>
-              }
-            </section>
-          }
-
           <!-- Zone précise -->
           <section class="section-block">
             <h3><span class="material-icons">draw</span> Zone précise</h3>
@@ -219,7 +197,13 @@
 
           <!-- Impliqués -->
           <section class="section-block">
-            <h3><span class="material-icons">flag</span> Institutions impliquées</h3>
+            <h3>
+              <span class="material-icons">flag</span> Institutions impliquées
+              <span class="material-icons info-tooltip"
+                    title="Impliquée : la commune ou le territoire de l'institution est concerné par la crise. Acteur (opérationnel) : l'institution gère des moyens sur cette crise (ex. un point de collecte). Les deux statuts peuvent coexister pour une même institution.">
+                info
+              </span>
+            </h3>
             <table class="data-table sm">
               <thead><tr><th>Institution</th><th>Type</th><th>Thèmes</th><th>Responsable</th><th>Commentaire</th><th></th></tr></thead>
               <tbody>
@@ -358,6 +342,28 @@
                   </div>
                 </div>
               }
+            }
+
+            @if (isAdmin) {
+              <div class="quick-create-institution">
+                @if (!showQuickCreateInstitution) {
+                  <button class="btn-secondary sm" (click)="showQuickCreateInstitution = true">
+                    <span class="material-icons">add_business</span> Nouvelle institution
+                  </button>
+                } @else {
+                  <form class="inline-form" (ngSubmit)="submitQuickCreateInstitution()">
+                    <input type="text" placeholder="Nom de l'institution" [(ngModel)]="quickCreateNom" name="quickCreateNom" required>
+                    <select [(ngModel)]="quickCreateTypeId" name="quickCreateTypeId" required>
+                      <option [ngValue]="null">— Type —</option>
+                      @for (t of institutionTypes; track t.id) {
+                        <option [ngValue]="t.id">{{ t.libelle }}</option>
+                      }
+                    </select>
+                    <button type="submit" class="btn-primary sm" [disabled]="quickCreateSaving || !quickCreateNom.trim() || !quickCreateTypeId">Créer</button>
+                    <button type="button" class="btn-secondary sm" (click)="showQuickCreateInstitution = false">Annuler</button>
+                  </form>
+                }
+              </div>
             }
           </section>
 
