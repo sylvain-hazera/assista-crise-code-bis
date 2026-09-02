@@ -7,15 +7,17 @@ import { PointOperationnelService } from '../../../services/point-operationnel.s
 import { CompetenceService } from '../../../services/competence.service';
 import { TeamService } from '../../../services/team.service';
 import { UserService } from '../../../services/user.service';
+import { CrisisService } from '../../../services/crisis.service';
+import { AuthService } from '../../../auth/services/auth.service';
 import { PointOperationnel, PointType } from '../../../shared/models/point-operationnel.model';
 import { Institution } from '../../../shared/models/institution.model';
 import { Competence } from '../../../shared/models/competence.model';
 import { Team } from '../../../shared/models/team.model';
 import { User } from '../../../shared/models/user.model';
+import { Crisis } from '../../../shared/models/crisis.model';
 import { AddressResult } from '../../../shared/models/address-result.model';
 import { AddressPickerComponent } from '../../../shared/components/common/address-picker/address-picker.component';
 import { PointPickerComponent } from '../../../shared/components/common/point-picker/point-picker.component';
-import { TagSearchInputComponent } from '../../../shared/components/common/tag-search-input/tag-search-input.component';
 import { PointEquipeModalComponent } from '../point-equipe-modal/point-equipe-modal.component';
 import { PointInventaireModalComponent } from '../point-inventaire-modal/point-inventaire-modal.component';
 import { StocksComparaisonModalComponent } from '../stocks-comparaison-modal/stocks-comparaison-modal.component';
@@ -32,7 +34,7 @@ import { PointVueOperationnelleModalComponent } from '../point-vue-operationnell
 @Component({
   selector: 'app-point-modal',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, FormsModule, AddressPickerComponent, PointPickerComponent, TagSearchInputComponent, PointEquipeModalComponent, PointInventaireModalComponent, StocksComparaisonModalComponent, PointSecretariatModalComponent, PointVueOperationnelleModalComponent],
+  imports: [CommonModule, ReactiveFormsModule, FormsModule, AddressPickerComponent, PointPickerComponent, PointEquipeModalComponent, PointInventaireModalComponent, StocksComparaisonModalComponent, PointSecretariatModalComponent, PointVueOperationnelleModalComponent],
   templateUrl: './point-modal.component.html',
   styleUrl: './point-modal.component.scss'
 })
@@ -62,6 +64,11 @@ export class PointModalComponent implements OnChanges {
   selectedCompetences: { id: string; nom: string }[] = [];
   teams: Team[] = [];
   users: User[] = [];
+  crises: Crisis[] = [];
+  allCompetences: Competence[] = [];
+  competenceSelectValue = '';
+  competenceAutreLibelle = '';
+  myInstitutionId: string | null = null;
   equipeModalOpen = false;
   inventaireModalOpen = false;
   comparaisonModalOpen = false;
@@ -81,15 +88,75 @@ export class PointModalComponent implements OnChanges {
     private competenceService: CompetenceService,
     private teamService: TeamService,
     private userService: UserService,
+    private crisisService: CrisisService,
+    private authService: AuthService,
     private router: Router,
   ) {
     this.buildForm();
+    this.myInstitutionId = this.authService.getCurrentUser()?.institution_id ?? null;
     this.teamService.getAll().subscribe(teams => this.teams = teams);
-    this.userService.getAll().subscribe(users => this.users = users);
+    const userParams = this.myInstitutionId ? { institution: this.myInstitutionId } : undefined;
+    this.userService.getAll(userParams).subscribe(users => {
+      this.users = users;
+      this.ensureAssignedUsersPresent();
+    });
+    this.competenceService.getAll().subscribe(c => this.allCompetences = c);
+    this.crisisService.getAll().subscribe(crises => this.crises = crises);
   }
 
-  competenceSearchFn = (q: string) => this.competenceService.search(q);
-  competenceCreateFn = (nom: string) => this.competenceService.create({ nom });
+  // Utilisateurs déjà rattachés (responsable historique ou responsables supplémentaires) mais
+  // absents de la liste scopée à mon institution (ex: affectés avant ce filtre, ou par un
+  // admin d'une autre institution) — récupérés individuellement pour ne pas les faire
+  // disparaître silencieusement des sélecteurs.
+  private ensureAssignedUsersPresent(): void {
+    const missingIds = new Set<string>();
+    if (this.point?.responsable && !this.users.some(u => u.id === this.point!.responsable)) {
+      missingIds.add(this.point.responsable);
+    }
+    for (const id of this.selectedResponsables) {
+      if (!this.users.some(u => u.id === id)) missingIds.add(id);
+    }
+    missingIds.forEach(id => {
+      this.userService.getById(id).subscribe(u => { this.users = [...this.users, u]; });
+    });
+  }
+
+  // "Équipe responsable" + "Équipes de gestion supplémentaires" : ne proposer que les équipes
+  // de ma propre institution (délégation à une autre institution/équipe hors périmètre de ce
+  // sélecteur) — sans faire disparaître une équipe déjà affectée avant ce filtre.
+  get teamsMonInstitution(): Team[] {
+    if (!this.myInstitutionId) return this.teams;
+    return this.teams.filter(t =>
+      t.institution === this.myInstitutionId ||
+      t.id === this.point?.equipe ||
+      this.selectedEquipesGestion.includes(t.id!)
+    );
+  }
+
+  get availableCompetences(): Competence[] {
+    const selectedIds = new Set(this.selectedCompetences.map(c => c.id));
+    return this.allCompetences.filter(c => !selectedIds.has(c.id));
+  }
+
+  addSelectedCompetence(): void {
+    if (!this.competenceSelectValue) return;
+    if (this.competenceSelectValue === '__autre__') {
+      const nom = this.competenceAutreLibelle.trim();
+      if (!nom) return;
+      this.competenceService.create({ nom }).subscribe(created => {
+        this.allCompetences = [...this.allCompetences, created];
+        this.onCompetenceSelected(created);
+        this.competenceSelectValue = '';
+        this.competenceAutreLibelle = '';
+      });
+      return;
+    }
+    const comp = this.allCompetences.find(c => c.id === this.competenceSelectValue);
+    if (comp) {
+      this.onCompetenceSelected(comp);
+      this.competenceSelectValue = '';
+    }
+  }
 
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['point']) {
@@ -98,8 +165,13 @@ export class PointModalComponent implements OnChanges {
   }
 
   private buildForm(): void {
+    // Une crise doit toujours être choisie à la création lorsqu'aucune n'est déjà imposée par
+    // le contexte d'ouverture de la modale (ex: depuis la fiche d'une crise) — évite les
+    // centres orphelins créés depuis /admin/centres.
+    const criseRequired = !this.isEdit && !this.crisisId;
     this.form = this.fb.group({
       institution: [null],
+      crise: [this.point?.crise ?? this.crisisId ?? null, criseRequired ? [Validators.required] : []],
       type: [this.point?.type ?? null, Validators.required],
       nom: [this.point?.nom ?? '', Validators.required],
       description: [this.point?.description ?? ''],
@@ -274,7 +346,7 @@ export class PointModalComponent implements OnChanges {
       return;
     }
 
-    const { institution, type, nom, description, capacite_accueil, date_ouverture, date_fermeture, equipe, responsable, creerNouvelleEquipe, nouvelleEquipeNom } = this.form.getRawValue();
+    const { institution, crise, type, nom, description, capacite_accueil, date_ouverture, date_fermeture, equipe, responsable, creerNouvelleEquipe, nouvelleEquipeNom } = this.form.getRawValue();
     const payload: any = {
       type, nom,
       description: description || undefined,
@@ -299,7 +371,7 @@ export class PointModalComponent implements OnChanges {
       ? this.pointService.update(this.point!.id, payload)
       : this.pointService.create({
           ...payload,
-          ...(this.crisisId ? { crise: this.crisisId } : {}),
+          crise: this.crisisId || crise || undefined,
           institution: institution || undefined,
         });
 

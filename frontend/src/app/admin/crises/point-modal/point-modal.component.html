@@ -20,6 +20,21 @@
         </div>
       }
 
+      @if (!isEdit && !crisisId) {
+        <div class="form-group">
+          <label>Crise <span class="required">*</span></label>
+          <select formControlName="crise">
+            <option [ngValue]="null" disabled>— Sélectionner une crise —</option>
+            @for (c of crises; track c.id) {
+              <option [ngValue]="c.id">{{ c.name }}</option>
+            }
+          </select>
+          @if (form.get('crise')?.invalid && form.get('crise')?.touched) {
+            <p class="field-hint error">La crise est obligatoire.</p>
+          }
+        </div>
+      }
+
       <div class="form-group">
         <label>Type de point <span class="required">*</span></label>
         <select formControlName="type">
@@ -69,7 +84,7 @@
         <label>Équipe responsable</label>
         <select formControlName="equipe">
           <option [ngValue]="null">— Aucune équipe assignée —</option>
-          @for (t of teams; track t.id) {
+          @for (t of teamsMonInstitution; track t.id) {
             <option [ngValue]="t.id">{{ t.name }}</option>
           }
         </select>
@@ -134,7 +149,7 @@
         <div class="form-group">
           <label>Équipes de gestion supplémentaires <span class="field-hint-inline">(en plus de l'équipe ci-dessus — roulement, spécialités)</span></label>
           <div class="chip-list">
-            @for (t of teams; track t.id) {
+            @for (t of teamsMonInstitution; track t.id) {
               <button type="button" class="chip-toggle" [class.selected]="selectedEquipesGestion.includes(t.id!)" (click)="toggleEquipeGestion(t.id!)">
                 {{ t.name }}
               </button>
@@ -144,10 +159,15 @@
 
         <div class="form-group">
           <label>Équipes de terrain ravitaillées ici <span class="field-hint-inline">(repas, repos, carburant...)</span></label>
-          <div class="chip-list">
+          <div class="team-supply-list">
             @for (t of teams; track t.id) {
-              <button type="button" class="chip-toggle" [class.selected]="selectedEquipesRavitaillement.includes(t.id!)" (click)="toggleEquipeRavitaillement(t.id!)">
-                {{ t.name }}
+              <button type="button" class="team-supply-row" [class.selected]="selectedEquipesRavitaillement.includes(t.id!)" (click)="toggleEquipeRavitaillement(t.id!)">
+                <span class="team-supply-nom">{{ t.name }}</span>
+                <span class="team-supply-meta">
+                  <span><span class="material-icons">group</span>{{ t.member_ids?.length ?? 0 }}</span>
+                  <span><span class="material-icons">directions_car</span>{{ t.vehicules_count ?? 0 }}</span>
+                  <span><span class="material-icons">person</span>{{ t.leader_nom || '—' }}</span>
+                </span>
               </button>
             }
           </div>
@@ -170,12 +190,23 @@
       @if (isEdit) {
         <div class="form-group">
           <label>Compétences nécessaires</label>
-          <app-tag-search-input
-            placeholder="Chercher ou créer une compétence..."
-            [searchFn]="competenceSearchFn"
-            [createFn]="competenceCreateFn"
-            (itemSelected)="onCompetenceSelected($event)">
-          </app-tag-search-input>
+          <div class="inline-row">
+            <select [(ngModel)]="competenceSelectValue" [ngModelOptions]="{standalone: true}">
+              <option value="" disabled>— Choisir une compétence —</option>
+              @for (c of availableCompetences; track c.id) {
+                <option [value]="c.id">{{ c.nom }}</option>
+              }
+              <option value="__autre__">Autre…</option>
+            </select>
+            @if (competenceSelectValue === '__autre__') {
+              <input type="text" [(ngModel)]="competenceAutreLibelle" [ngModelOptions]="{standalone: true}" placeholder="Préciser la compétence">
+            }
+            <button type="button" class="btn-secondary sm"
+              [disabled]="!competenceSelectValue || (competenceSelectValue === '__autre__' && !competenceAutreLibelle.trim())"
+              (click)="addSelectedCompetence()">
+              Ajouter
+            </button>
+          </div>
           <div class="chip-list">
             @for (c of selectedCompetences; track c.id) {
               <span class="chip">

@@ -39,6 +39,7 @@ export interface Team {
   sous_equipes_info?:           { id: string; nom: string }[];
   member_ids:           string[];
   members_info?:        TeamMemberInfo[];
+  vehicules_count?:     number;            // Offres de type Transport affectées à l'équipe (lecture seule)
   assigned_crisis_ids:  string[];
   assigned_offer_ids:   string[];
   assigned_request_ids: string[];

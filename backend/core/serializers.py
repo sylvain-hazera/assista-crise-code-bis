@@ -137,11 +137,19 @@ class UserSerializer(serializers.ModelSerializer):
     commune_code = serializers.CharField(write_only=True, required=False, allow_blank=True)
     institution_email_hint = serializers.CharField(write_only=True, required=False, allow_blank=True)
     institution_nom = serializers.SerializerMethodField()
+    institution_id = serializers.SerializerMethodField()
     needs_institution_setup = serializers.SerializerMethodField()
 
     def get_institution_nom(self, obj):
         contact = obj.institutions.filter(actif=True).select_related('institution').first()
         return contact.institution.nom if contact else None
+
+    def get_institution_id(self, obj):
+        # Utilisé côté frontend pour restreindre les sélecteurs de responsables/équipes d'un
+        # point opérationnel aux seuls membres/équipes de SA PROPRE institution (jamais toute
+        # la plateforme) — voir point-modal.component.ts.
+        contact = obj.institutions.filter(actif=True).select_related('institution').first()
+        return str(contact.institution_id) if contact else None
 
     def get_needs_institution_setup(self, obj):
         # Compte Autorité locale activé, mais pas encore rattaché à une institution (voir
@@ -155,7 +163,7 @@ class UserSerializer(serializers.ModelSerializer):
         fields = ['id', 'username', 'email', 'first_name', 'last_name', 'type', 'demo_role',
                   'photo', 'phone_number', 'password', 'postal_code', 'enabled', 'is_active',
                   'institution_name', 'institution_type', 'commune_name', 'commune_code', 'institution_email_hint',
-                  'institution_nom', 'needs_institution_setup']
+                  'institution_nom', 'institution_id', 'needs_institution_setup']
         extra_kwargs = {
             'password': {'write_only': True},
             'first_name': {'required': False},
@@ -907,6 +915,7 @@ class TeamSerializer(serializers.ModelSerializer):
     members_info = serializers.SerializerMethodField()
     leader_nom = serializers.SerializerMethodField()
     regulateur_nom = serializers.SerializerMethodField()
+    vehicules_count = serializers.SerializerMethodField()
     mission_active_titre = serializers.CharField(source='mission_active.titre', read_only=True, default=None)
     mission_active_crise_id = serializers.CharField(source='mission_active.crise_id', read_only=True, default=None)
     mission_active_crise_nom = serializers.CharField(source='mission_active.crise.name', read_only=True, default=None)
@@ -943,6 +952,7 @@ class TeamSerializer(serializers.ModelSerializer):
             'mission_active_crise_nom',
             'member_ids',
             'members_info',
+            'vehicules_count',
             'assigned_crisis_ids',
             'assigned_offer_ids',
             'assigned_request_ids',
@@ -981,6 +991,11 @@ class TeamSerializer(serializers.ModelSerializer):
         # utilisateurs, et n'a de toute façon besoin que du nom de ses coéquipiers, jamais de
         # leur email/téléphone — voir "vue équipe".
         return [{"id": str(m.id), "nom": self._nom(m)} for m in obj.members.all()]
+
+    def get_vehicules_count(self, obj):
+        # Ressources de type Transport affectées à l'équipe — même source que "leur matériel"
+        # (Team.assigned_offers), voir PointOperationnelViewSet.vue_operationnelle.
+        return obj.assigned_offers.filter(offer_type__type="Transport").count()
 
     def get_leader_nom(self, obj):
         return self._nom(obj.leader)
