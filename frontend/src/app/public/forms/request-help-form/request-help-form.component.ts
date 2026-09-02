@@ -15,17 +15,21 @@ import { AddressResult } from '../../../shared/models/address-result.model';
 import { RgpdNoticeComponent } from '../../../shared/components/public/rgpd-notice/rgpd-notice.component';
 import { ValidationSummaryComponent } from '../../../shared/components/public/validation-summary/validation-summary.component';
 import { PhotoGalleryPickerComponent } from '../../../shared/components/public/photo-gallery-picker/photo-gallery-picker.component';
+import { TagSearchInputComponent } from '../../../shared/components/common/tag-search-input/tag-search-input.component';
+import { LocationService, Commune } from '../../../services/location.service';
 
 const TYPE_HEBERGEMENT = 'Hébergement';
 
 /** Critères détaillés du logement recherché, par index de besoin — même patron que
  * subCategorySelections (tableau parallèle à needsType/descriptions, pas un FormGroup :
- * needsType reste un FormArray de simples contrôles string, voir addNeed()/removeNeed()). */
+ * needsType reste un FormArray de simples contrôles string, voir addNeed()/removeNeed()).
+ * Pas d'adresse précise ici (contrairement à l'offre) : une recherche de logement porte sur
+ * une zone (une ou plusieurs communes + rayon optionnel), pas un point — voir
+ * zoneCommunes/zoneRayonKm et Request.zone_recherche_communes/zone_recherche_rayon_km. */
 interface HebergementDetails {
   hebergementDuree: string;
-  latitude: number | null;
-  longitude: number | null;
-  communeCode: string | null;
+  zoneCommunes: Commune[];
+  zoneRayonKm: number | null;
   typeLoyer: string;
   loyerMontantMin: number | null;
   loyerMontantMax: number | null;
@@ -43,7 +47,7 @@ interface HebergementDetails {
 
 function emptyHebergementDetails(): HebergementDetails {
   return {
-    hebergementDuree: '', latitude: null, longitude: null, communeCode: null,
+    hebergementDuree: '', zoneCommunes: [], zoneRayonKm: null,
     typeLoyer: '', loyerMontantMin: null, loyerMontantMax: null,
     typeLogement: '', niveauLogement: '', accesEtage: '',
     nombrePieces: null, nombreChambres: null, capaciteAdultes: null, capaciteEnfants: null,
@@ -54,7 +58,7 @@ function emptyHebergementDetails(): HebergementDetails {
 @Component({
   selector: 'app-request-help-form',
   standalone: true,
-  imports: [ReactiveFormsModule, CommonModule, FormsModule, AddressPickerComponent, RgpdNoticeComponent, ValidationSummaryComponent, PhotoGalleryPickerComponent],
+  imports: [ReactiveFormsModule, CommonModule, FormsModule, AddressPickerComponent, RgpdNoticeComponent, ValidationSummaryComponent, PhotoGalleryPickerComponent, TagSearchInputComponent],
   templateUrl: './request-help-form.component.html',
   styleUrl: './request-help-form.component.scss'
 })
@@ -98,7 +102,8 @@ export class RequestHelpFormComponent implements OnInit {
     private router: Router,
     private helpRequestService: RequestService,
     private crisisService: CrisisService,
-    private authService: AuthService
+    private authService: AuthService,
+    private locationService: LocationService
   ) {}
 
   ngOnInit(): void {
@@ -178,13 +183,20 @@ export class RequestHelpFormComponent implements OnInit {
     { value: 'CHAMBRE', label: 'Chambre' },
   ];
 
-  /** Adresse du logement recherché, propre à ce besoin — indépendante de "Votre adresse" : au
-   * submit, on l'utilise pour `location`/`commune_code` si renseignée, sinon on retombe sur
-   * l'adresse partagée (voir onSubmit). */
-  onHebergementAddressSelected(index: number, addr: AddressResult | null): void {
-    this.hebergementDetails[index].latitude = addr?.latitude ?? null;
-    this.hebergementDetails[index].longitude = addr?.longitude ?? null;
-    this.hebergementDetails[index].communeCode = addr?.citycode ?? null;
+  /** Zone de recherche du logement (une ou plusieurs communes + rayon optionnel), propre à ce
+   * besoin — une recherche de logement porte sur une zone, pas une adresse précise qu'on ne
+   * connaît pas encore (voir Request.zone_recherche_communes/zone_recherche_rayon_km). */
+  communeSearchFn = (q: string) => this.locationService.searchCommunesByName(q);
+
+  addZoneCommune(index: number, commune: Commune): void {
+    const details = this.hebergementDetails[index];
+    if (details.zoneCommunes.some(c => c.code === commune.code)) return;
+    details.zoneCommunes = [...details.zoneCommunes, commune];
+  }
+
+  removeZoneCommune(index: number, code: string): void {
+    const details = this.hebergementDetails[index];
+    details.zoneCommunes = details.zoneCommunes.filter(c => c.code !== code);
   }
 
   childrenFor(index: number): { value: string; label: string }[] {
@@ -240,10 +252,17 @@ export class RequestHelpFormComponent implements OnInit {
   formErrorsStep1: string[] = [];
   formErrorsStep2: string[] = [];
 
+  /** "Votre adresse" n'a de sens que pour les besoins autres qu'Hébergement (qui a sa propre
+   * zone de recherche, voir hebergementDetails) — inutile de la rendre obligatoire si tous les
+   * besoins de cette soumission sont des recherches de logement. */
+  addressRequired(): boolean {
+    return this.needsType.controls.some(c => c.value !== TYPE_HEBERGEMENT);
+  }
+
   private step1ValidationErrors(): string[] {
     const errors: string[] = [];
     if (this.needsType.invalid) errors.push('Précisez chaque besoin (choisissez un type dans la liste).');
-    if (!this.selectedAddress) errors.push('Sélectionnez une adresse dans la liste proposée.');
+    if (this.addressRequired() && !this.selectedAddress) errors.push('Sélectionnez une adresse dans la liste proposée.');
     return errors;
   }
 
@@ -254,7 +273,9 @@ export class RequestHelpFormComponent implements OnInit {
     if (f.get('firstName')?.invalid) errors.push('Le prénom est obligatoire.');
     if (f.get('email')?.invalid) errors.push('L\'email est obligatoire et doit être valide.');
     if (f.get('phoneNumber')?.invalid) errors.push('Le téléphone est obligatoire et doit être valide.');
-    if (!this.latitude || !this.longitude) errors.push('Erreur de géolocalisation : vérifiez l\'adresse sélectionnée à l\'étape précédente.');
+    if (this.addressRequired() && (!this.latitude || !this.longitude)) {
+      errors.push('Erreur de géolocalisation : vérifiez l\'adresse sélectionnée à l\'étape précédente.');
+    }
     if (this.needsType.invalid) errors.push('Précisez chaque besoin (retournez à l\'étape précédente).');
     return errors;
   }
@@ -282,13 +303,10 @@ export class RequestHelpFormComponent implements OnInit {
       formData.append('email_request', this.informationForm.get('email')?.value);
       formData.append('phone_request', this.informationForm.get('phoneNumber')?.value);
 
-      // L'adresse propre au logement recherché (si renseignée pour ce besoin Hébergement) prime
-      // sur "Votre adresse", partagée par défaut avec tous les besoins de la soumission.
-      const hebergementHasOwnLocation = topLevelType === TYPE_HEBERGEMENT && hd?.latitude != null && hd?.longitude != null;
-      if (hebergementHasOwnLocation) {
-        formData.append('location', JSON.stringify({ type: 'Point', coordinates: [hd.longitude, hd.latitude] }));
-        if (hd.communeCode) formData.append('commune_code', hd.communeCode);
-      } else {
+      // Un besoin Hébergement n'a pas d'adresse précise : sa zone de recherche (une ou
+      // plusieurs communes) remplace `location`/`commune_code` — voir plus bas. Tous les
+      // autres besoins gardent "Votre adresse", partagée par la soumission.
+      if (topLevelType !== TYPE_HEBERGEMENT) {
         formData.append('location', JSON.stringify(localisation));
         if (this.selectedAddress?.citycode) formData.append('commune_code', this.selectedAddress.citycode);
       }
@@ -299,6 +317,13 @@ export class RequestHelpFormComponent implements OnInit {
       if (description) formData.append('description', description);
 
       if (topLevelType === TYPE_HEBERGEMENT && hd) {
+        if (hd.zoneCommunes.length > 0) {
+          formData.append('zone_recherche_communes', JSON.stringify(hd.zoneCommunes.map(c => c.code)));
+          // Conserve un matching géographique de base (commune_code) même sans adresse
+          // précise — voir team_zone_specificity, qui sait déjà s'en contenter.
+          formData.append('commune_code', hd.zoneCommunes[0].code);
+        }
+        if (hd.zoneRayonKm) formData.append('zone_recherche_rayon_km', String(hd.zoneRayonKm));
         if (hd.hebergementDuree) formData.append('hebergement_duree', hd.hebergementDuree);
         if (hd.typeLoyer) formData.append('type_loyer', hd.typeLoyer);
         if (hd.typeLoyer && hd.typeLoyer !== 'GRATUIT') {

@@ -118,12 +118,31 @@
                     </div>
 
                     <div class="form-group">
-                        <label class="form-label">Adresse du logement recherché <span class="field-hint-inline">(si différente de la vôtre, ci-dessous)</span></label>
-                        <app-address-picker
-                          label="Adresse du logement recherché"
-                          placeholder="Rechercher une adresse…"
-                          (addressSelected)="onHebergementAddressSelected(i, $event)">
-                        </app-address-picker>
+                        <label class="form-label">Zone de recherche <span class="field-hint-inline">(une ou plusieurs communes)</span></label>
+                        <app-tag-search-input
+                          placeholder="Ajouter une commune (nom, code postal ou code INSEE)…"
+                          labelField="name"
+                          [searchFn]="communeSearchFn"
+                          emptyMessage="Aucune commune ne correspond."
+                          (itemSelected)="addZoneCommune(i, $event)">
+                        </app-tag-search-input>
+                        @if (hebergementDetails[i].zoneCommunes.length > 0) {
+                            <div class="chip-list">
+                                @for (commune of hebergementDetails[i].zoneCommunes; track commune.code) {
+                                    <span class="chip">
+                                        {{ commune.name }}
+                                        <button type="button" (click)="removeZoneCommune(i, commune.code)" title="Retirer" aria-label="Retirer">×</button>
+                                    </span>
+                                }
+                            </div>
+                        }
+                        <div class="form-group">
+                            <label [for]="'zoneRayon' + i" class="form-label">Rayon de recherche autour de ces communes (optionnel)</label>
+                            <input type="number" min="0" [id]="'zoneRayon' + i"
+                              [(ngModel)]="hebergementDetails[i].zoneRayonKm" [ngModelOptions]="{standalone: true}"
+                              placeholder="Ex. 20" class="form-input">
+                            <span class="field-hint-inline">km</span>
+                        </div>
                     </div>
 
                     <div class="form-group">
@@ -235,7 +254,9 @@
                 </a>
             </div>
 
-            <!-- Votre adresse -->
+            <!-- Votre adresse : sans objet si tous les besoins sont des recherches de logement
+                 (voir la zone de recherche propre à Hébergement, ci-dessus). -->
+            @if (addressRequired()) {
             <div class="form-section">
                 <h2 class="section-title">Votre adresse <span class="required">*</span></h2>
 
@@ -266,6 +287,7 @@
                 </label>
                 </div>
             </div>
+            }
 
             <!-- Images liées à l'annonce -->
             <div class="form-section">

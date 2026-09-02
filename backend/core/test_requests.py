@@ -229,3 +229,45 @@ class TestRequestHebergementDetails:
         }
         response = api_client.post(reverse('request-list'), payload, format='json')
         assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+
+@pytest.mark.django_db
+class TestRequestZoneRechercheHebergement:
+    """Une demande d'hébergement n'a pas d'adresse précise : sa zone de recherche (une ou
+    plusieurs communes + rayon optionnel) remplace `location`/`commune_code` — voir
+    request-help-form, qui n'envoie plus aucune adresse pour ce besoin."""
+
+    def test_creates_without_location_using_zone_communes(self, api_client, request_type):
+        payload = {
+            "title": "Recherche logement zone",
+            "first_name_request": "Marie",
+            "last_name_request": "Demandeuse",
+            "email_request": "zone-recherche@test.fr",
+            "phone_request": "0600000000",
+            "status": "NON_TRAITEE",
+            "request_type": str(request_type.id),
+            "zone_recherche_communes": ["38185", "38151"],
+            "zone_recherche_rayon_km": 20,
+            "commune_code": "38185",
+        }
+        response = api_client.post(reverse('request-list'), payload, format='json')
+        assert response.status_code == status.HTTP_201_CREATED
+        req = Request.objects.get(email_request="zone-recherche@test.fr")
+        assert req.location is None
+        assert req.zone_recherche_communes == ["38185", "38151"]
+        assert req.zone_recherche_rayon_km == 20
+        assert req.commune_code == "38185"
+
+    def test_zone_recherche_defaults_to_empty_list(self, request_obj):
+        assert request_obj.zone_recherche_communes == []
+        assert request_obj.zone_recherche_rayon_km is None
+
+    def test_location_now_optional_on_request(self, request_type):
+        """Assouplissement nécessaire pour la zone de recherche (voir migration 0099) — même
+        patron qu'Offer.location, déjà nullable."""
+        req = Request.objects.create(
+            title="Sans localisation", request_type=request_type,
+            first_name_request="Zz", last_name_request="Test",
+            email_request="sans-location@test.fr", phone_request="0600000000",
+        )
+        assert req.location is None

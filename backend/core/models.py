@@ -345,12 +345,23 @@ class Request(HebergementDetailsMixin, EnvironmentScopedModel):
     title = models.CharField(max_length=150)
     description = models.TextField(null=True, blank=True)
     photo = models.ImageField(upload_to="photos/demandes/", null=True, blank=True, validators=[validate_image_file])
-    location = gis_models.PointField(srid=4326)
+    # Nullable (contrairement à l'origine) : une demande d'hébergement n'a pas d'adresse
+    # précise à donner, seulement une zone de recherche (voir zone_recherche_communes) —
+    # même assouplissement déjà fait pour Offer.location. team_zone_specificity et
+    # annotate_distance_from_crisis gèrent déjà l'absence de location sans erreur.
+    location = gis_models.PointField(srid=4326, null=True, blank=True)
     commune_code = models.CharField(
         max_length=10, null=True, blank=True,
         help_text="Code commune INSEE résolu à la saisie de l'adresse (autocomplete), "
-                   "utilisé pour le matching géographique avec les zones d'intervention des équipes.",
+                   "utilisé pour le matching géographique avec les zones d'intervention des équipes. "
+                   "Pour une demande d'hébergement : première commune de zone_recherche_communes.",
     )
+    # Zone de recherche d'un logement (demande d'hébergement uniquement) : une ou plusieurs
+    # communes saisies manuellement, avec un rayon optionnel — remplace l'adresse précise,
+    # inadaptée à une recherche de logement (on ne sait pas encore où on va vivre). Même
+    # convention que Team.communes/Crisis.zone_communes (JSONField de codes INSEE).
+    zone_recherche_communes = models.JSONField(default=list, blank=True)
+    zone_recherche_rayon_km = models.PositiveIntegerField(null=True, blank=True)
     first_name_request = models.CharField(max_length=60)
     last_name_request = models.CharField(max_length=80)
     email_request = models.EmailField()
