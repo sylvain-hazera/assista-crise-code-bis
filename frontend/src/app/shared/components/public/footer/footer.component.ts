@@ -33,8 +33,7 @@ export class FooterComponent {
   ];
 
   contact = {
-    email:   'contact@assista-crise.fr',
-    support: 'support@assista-crise.fr',
+    email: 'contact@assista-crise.fr',
   };
 
   openEmail(address: string): void {
