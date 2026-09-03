@@ -42,6 +42,45 @@ class EnvironmentScopedModel(models.Model):
         abstract = True
 
 
+class Commune(models.Model):
+    """Référentiel commune (code INSEE) — nom et centroïde résolus à la demande depuis
+    geo.api.gouv.fr et conservés durablement. Remplace le cache Django (LocMemCache puis
+    FileBasedCache) précédemment utilisé par geo_lookup.py : cette donnée est quasi-permanente
+    (une commune ne change pratiquement jamais de nom/position), mérite d'être sauvegardée avec
+    le reste de la base (le cache fichier ne l'était pas) et ne doit pas expirer arbitrairement.
+    Vocabulaire partagé PROD/DEMO, comme MaterielCatalogue/Competence : pas de champ
+    `environment`, une commune n'a pas de sens à exister "en double" par zone."""
+
+    code = models.CharField(max_length=10, primary_key=True)
+    nom = models.CharField(max_length=255, null=True, blank=True)
+    centre_latitude = models.FloatField(null=True, blank=True)
+    centre_longitude = models.FloatField(null=True, blank=True)
+    date_maj = models.DateTimeField(auto_now=True)
+
+    def __str__(self) -> str:
+        return self.nom or self.code
+
+
+class PointCommune(models.Model):
+    """Résultat d'un reverse-géocodage (point GPS -> commune), arrondi à 4 décimales (~11m) —
+    voir Commune pour le nom/centroïde une fois résolu. Beaucoup de points distincts peuvent
+    partager la même commune, d'où la normalisation en deux tables plutôt que dupliquer le nom
+    à chaque point."""
+
+    lat = models.FloatField()
+    lon = models.FloatField()
+    commune = models.ForeignKey(Commune, on_delete=models.CASCADE, null=True, blank=True, related_name="points")
+    date_maj = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["lat", "lon"], name="uq_point_commune"),
+        ]
+
+    def __str__(self) -> str:
+        return f"({self.lat}, {self.lon}) -> {self.commune_id or '?'}"
+
+
 class User(AbstractUser):
     """Modèle utilisateur personnalisé"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

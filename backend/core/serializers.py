@@ -141,15 +141,26 @@ class UserSerializer(serializers.ModelSerializer):
     institution_id = serializers.SerializerMethodField()
     needs_institution_setup = serializers.SerializerMethodField()
 
-    def get_institution_nom(self, obj):
+    def _active_contact(self, obj):
+        # institution_nom et institution_id faisaient chacun leur propre requête pour le même
+        # ContactInstitution actif — mémorisé sur l'instance le temps de la sérialisation
+        # (utile surtout en liste, ex: UserViewSet).
+        cached = getattr(obj, '_active_contact_cache', 'unset')
+        if cached != 'unset':
+            return cached
         contact = obj.institutions.filter(actif=True).select_related('institution').first()
+        obj._active_contact_cache = contact
+        return contact
+
+    def get_institution_nom(self, obj):
+        contact = self._active_contact(obj)
         return contact.institution.nom if contact else None
 
     def get_institution_id(self, obj):
         # Utilisé côté frontend pour restreindre les sélecteurs de responsables/équipes d'un
         # point opérationnel aux seuls membres/équipes de SA PROPRE institution (jamais toute
         # la plateforme) — voir point-modal.component.ts.
-        contact = obj.institutions.filter(actif=True).select_related('institution').first()
+        contact = self._active_contact(obj)
         return str(contact.institution_id) if contact else None
 
     def get_needs_institution_setup(self, obj):
@@ -359,7 +370,9 @@ class CrisisSerializer(serializers.ModelSerializer):
         return obj.end_date is None
 
     def get_has_responsable_actif(self, obj):
-        return obj.implications.filter(responsable__isnull=False, actif=True).exists()
+        # En Python sur .all() (réutilise prefetch_related('implications')) plutôt qu'un
+        # .filter().exists() qui ignorerait le cache et relancerait une requête par crise.
+        return any(i.responsable_id and i.actif for i in obj.implications.all())
 
 class RequestSerializer(serializers.ModelSerializer):
     """Serializer pour les demandes d'aide.
@@ -1010,8 +1023,11 @@ class TeamSerializer(serializers.ModelSerializer):
 
     def get_vehicules_count(self, obj):
         # Ressources de type Transport affectées à l'équipe — même source que "leur matériel"
-        # (Team.assigned_offers), voir PointOperationnelViewSet.vue_operationnelle.
-        return obj.assigned_offers.filter(offer_type__type="Transport").count()
+        # (Team.assigned_offers), voir PointOperationnelViewSet.vue_operationnelle. Filtré en
+        # Python (pas .filter() côté DB) pour réutiliser le prefetch_related('assigned_offers')
+        # de TeamViewSet.queryset — un .filter() sur un manager déjà prefetch ignore le cache et
+        # relance une requête par équipe.
+        return sum(1 for o in obj.assigned_offers.all() if o.offer_type_id and o.offer_type.type == "Transport")
 
     def get_leader_nom(self, obj):
         return self._nom(obj.leader)
@@ -1263,14 +1279,21 @@ class DossierSerializer(serializers.ModelSerializer):
         ]
 
     def get_has_updates(self, obj):
-
-        return (
-            self.get_unread_count(obj)
-            > 0
-        )
+        # get_unread_count() coûte jusqu'à 3 requêtes (participant + 2 count()) : les deux
+        # champs le déclenchaient chacun séparément (has_updates ET unread_count sont tous les
+        # deux exposés), doublant inutilement ce coût pour chaque dossier d'une liste. Mémorisé
+        # sur l'instance le temps de la sérialisation.
+        return self.get_unread_count(obj) > 0
 
     def get_unread_count(self, obj):
+        cached = getattr(obj, '_unread_count_cache', None)
+        if cached is not None:
+            return cached
+        result = self._compute_unread_count(obj)
+        obj._unread_count_cache = result
+        return result
 
+    def _compute_unread_count(self, obj):
         request = self.context.get(
             "request"
         )
@@ -1519,16 +1542,24 @@ class RecherchePersonneSerializer(
     def get_has_photo(self, obj):
         return bool(obj.photo)
 
+    def _dernier_commentaire(self, obj):
+        # dernier_commentaire/date_dernier_commentaire/nb_photos_dernier_commentaire et
+        # etat_utilisateur refaisaient chacun la même requête "dernier commentaire" — mémorisé
+        # sur l'instance le temps de la sérialisation (jusqu'à 4 requêtes identiques par fiche
+        # en liste).
+        cached = getattr(obj, '_dernier_commentaire_cache', 'unset')
+        if cached != 'unset':
+            return cached
+        commentaire = obj.commentaires.order_by("-date_creation").first()
+        obj._dernier_commentaire_cache = commentaire
+        return commentaire
+
     def get_dernier_commentaire(
         self,
         obj
     ):
 
-        commentaire = (
-            obj.commentaires
-            .order_by("-date_creation")
-            .first()
-        )
+        commentaire = self._dernier_commentaire(obj)
 
         if not commentaire:
             return ""
@@ -1540,11 +1571,7 @@ class RecherchePersonneSerializer(
         obj
     ):
 
-        commentaire = (
-            obj.commentaires
-            .order_by("-date_creation")
-            .first()
-        )
+        commentaire = self._dernier_commentaire(obj)
 
         if not commentaire:
             return None
@@ -1557,11 +1584,7 @@ class RecherchePersonneSerializer(
         obj
     ):
 
-        commentaire = (
-            obj.commentaires
-            .order_by("-date_creation")
-            .first()
-        )
+        commentaire = self._dernier_commentaire(obj)
 
         if not commentaire:
             return 0
@@ -1600,11 +1623,7 @@ class RecherchePersonneSerializer(
 
             derniere_activite = obj.date_creation
 
-            commentaire = (
-                obj.commentaires
-                .order_by("-date_creation")
-                .first()
-            )
+            commentaire = self._dernier_commentaire(obj)
 
             if commentaire:
                 derniere_activite = max(

@@ -20,7 +20,7 @@ from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from urllib.parse import quote
 from django_filters import rest_framework as filters
 from django.db import IntegrityError, transaction
-from django.db.models import Q, F
+from django.db.models import Q, F, Prefetch
 from django.contrib.gis.db.models.functions import Distance
 from rest_framework.pagination import PageNumberPagination
 from django.utils import timezone
@@ -292,11 +292,11 @@ class BesoinViewSet(viewsets.ModelViewSet):
         )
 
 class BesoinCompetenceViewSet(viewsets.ModelViewSet):
-    queryset = BesoinCompetence.objects.all()
+    queryset = BesoinCompetence.objects.select_related('besoin', 'competence').all()
     serializer_class = BesoinCompetenceSerializer
 
 class RequestTypeBesoinViewSet(viewsets.ModelViewSet):
-    queryset = RequestTypeBesoin.objects.all()
+    queryset = RequestTypeBesoin.objects.select_related('request_type', 'besoin').all()
     serializer_class = RequestTypeBesoinSerializer
 
 class TagLikeViewSetMixin:
@@ -396,7 +396,7 @@ class CompetenceViewSet(TagLikeViewSetMixin, viewsets.ModelViewSet):
         )
 
 class AffectationCompetenceViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
-    queryset = AffectationCompetence.objects.all()
+    queryset = AffectationCompetence.objects.select_related('crise', 'competence', 'equipe')
     serializer_class = AffectationCompetenceSerializer
 
     def get_permissions(self):
@@ -471,7 +471,12 @@ def _notify_dossier_closure(dossier, request):
 
 
 class DossierViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
-    queryset = Dossier.objects.all()
+    # DossierSerializer déréférence crise/competence/equipe/mission/information/demande (FK)
+    # pour chaque dossier — sans select_related, ~6 requêtes SQL par dossier rien que pour ça
+    # (372 requêtes mesurées pour 76 dossiers DEMO, avant même unread_count, voir sa
+    # dé-duplication ci-dessus). Le reste du coût restant (get_regulateurs) est une recherche
+    # légitime par dossier (compétence/équipe), pas un N+1 à corriger.
+    queryset = Dossier.objects.select_related('crise', 'competence', 'equipe', 'mission', 'information', 'demande')
     serializer_class = DossierSerializer
 
     def get_permissions(self):
@@ -504,16 +509,20 @@ class DossierViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         return Response(self.get_serializer(queryset, many=True).data)
 
     def get_queryset(self):
+        # Reconstruit depuis self.queryset (pas Dossier.objects.* directement) pour conserver
+        # le select_related de la classe — sinon chaque branche ci-dessous repart d'un
+        # queryset "nu" et le redéréférence à chaque objet en sérialisation.
+        base = self.queryset
         user = self.request.user
         environment = get_active_environment(self.request)
         if not user.is_authenticated:
-            return Dossier.objects.none()
+            return base.none()
         if get_effective_role(self.request) in INSTITUTIONAL_TYPES:
-            return Dossier.objects.filter(environment=environment)
+            return base.filter(environment=environment)
         # Un chef d'équipe de terrain (leader/régulateur d'une équipe) doit voir TOUS les
         # dossiers de cette équipe, pas seulement ceux où il est lui-même participant — sinon
         # aucune vue d'ensemble possible pour coordonner plusieurs équipes à la fois.
-        return Dossier.objects.filter(
+        return base.filter(
             Q(participants__utilisateur=user) | Q(equipe__leader=user) | Q(equipe__regulateur=user),
             environment=environment,
         ).distinct()
@@ -1364,7 +1373,10 @@ class UserViewSet(viewsets.ModelViewSet):
         return Response({'message': f"Email de réinitialisation envoyé à {target_user.email}"})
 
 class CrisisViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
-    queryset = Crisis.objects.all()
+    # author_nom déréférence author (FK) ; has_responsable_actif touche implications (reverse
+    # FK), prefetch + vérification en Python dans get_has_responsable_actif ci-dessous plutôt
+    # qu'un .filter().exists() par crise.
+    queryset = Crisis.objects.select_related('author').prefetch_related('implications')
     serializer_class = CrisisSerializer
     filterset_class = AuthorEmailFilter
 
@@ -2917,9 +2929,15 @@ class PlanViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
 
 
 class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
+    # TeamSerializer déréférence aussi institution/institution_delegataire/regulateur (FK) et
+    # themes/competences/assigned_informations (M2M) en plus de ce qui était déjà prefetch —
+    # 77 requêtes mesurées pour 13 équipes DEMO avant cet ajout.
     queryset           = Team.objects.prefetch_related(
-        'members', 'assigned_crises', 'assigned_offers', 'assigned_requests', 'sous_equipes'
-    ).select_related('leader', 'equipe_parente').all()
+        'members',
+        Prefetch('assigned_offers', queryset=Offer.objects.select_related('offer_type')),
+        'assigned_crises', 'assigned_requests', 'sous_equipes',
+        'themes', 'competences', 'assigned_informations',
+    ).select_related('leader', 'equipe_parente', 'institution', 'institution_delegataire', 'regulateur').all()
     serializer_class   = TeamSerializer
 
     def get_permissions(self):
@@ -4135,7 +4153,7 @@ class DisponibiliteOffreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVie
     filterset_fields = ["offer"]
 
 class InformationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
-    queryset = Information.objects.all()
+    queryset = Information.objects.select_related('author', 'crisis')
     serializer_class = InformationSerializer
     permission_classes = [AllowAny]
     filterset_class = AuthorEmailFilter
@@ -5121,8 +5139,12 @@ class RecherchePersonneViewSet(
     EnvironmentScopedViewSetMixin, viewsets.ModelViewSet
 ):
 
+    # crise_nom déréférence crise (FK) ; dernier_commentaire/nb_photos_dernier_commentaire/
+    # date_dernier_commentaire/etat_utilisateur touchent tous commentaires (reverse FK), voir
+    # RecherchePersonneSerializer._dernier_commentaire (dédupliqué à 1 requête/fiche).
     queryset = (
         RecherchePersonne.objects
+        .select_related('crise')
         .order_by("-date_creation")
     )
 
@@ -5134,11 +5156,14 @@ class RecherchePersonneViewSet(
         permissions.IsAuthenticated
     ]
     def get_queryset(self):
+        # Depuis self.queryset (pas RecherchePersonne.objects.* directement) pour conserver le
+        # select_related de la classe.
+        base = self.queryset
         if not self.request.user.is_authenticated:
-            return RecherchePersonne.objects.none()
+            return base.none()
         if not self.request.user.enabled:
-            return RecherchePersonne.objects.none()
-        return RecherchePersonne.objects.filter(
+            return base.none()
+        return base.filter(
             environment=get_active_environment(self.request)
         ).order_by("-date_creation")
 
@@ -5420,10 +5445,11 @@ class RecherchePersonneHistoriqueViewSet(
     EnvironmentScopedViewSetMixin, viewsets.ModelViewSet
 ):
 
+    # auteur_nom déréférence auteur (FK).
     queryset = (
         RecherchePersonneHistorique
         .objects
-        .all()
+        .select_related('auteur')
         .order_by('-date_creation')
     )
 
@@ -5543,8 +5569,9 @@ class InstitutionViewSet(
     EnvironmentScopedViewSetMixin, viewsets.ModelViewSet
 ):
 
+    # InstitutionSerializer déréférence type (FK) pour chaque institution.
     queryset = (
-        Institution.objects.all()
+        Institution.objects.select_related('type')
     )
 
     serializer_class = (
@@ -5556,10 +5583,13 @@ class InstitutionViewSet(
         restent visibles en DEMO pour permettre de s'appuyer sur les vraies mairies/
         associations dans une démonstration, mais une institution créée en DEMO ne doit
         jamais apparaître en PROD."""
+        # Depuis self.queryset (pas Institution.objects.* directement) pour conserver le
+        # select_related de la classe.
+        base = self.queryset
         environment = get_active_environment(self.request)
         if environment == Environment.DEMO:
-            return Institution.objects.filter(environment__in=[Environment.PROD, Environment.DEMO])
-        return Institution.objects.filter(environment=Environment.PROD)
+            return base.filter(environment__in=[Environment.PROD, Environment.DEMO])
+        return base.filter(environment=Environment.PROD)
 
     def perform_create(self, serializer):
         institution = serializer.save(environment=get_active_environment(self.request))
@@ -5914,8 +5944,17 @@ class PointOperationnelViewSet(
     EnvironmentScopedViewSetMixin, viewsets.ModelViewSet
 ):
 
+    # PointOperationnelSerializer déréférence type/equipe/crise/responsable (FK), le leader de
+    # chaque équipe de gestion (via responsables_effectifs()), et 4 M2M (responsables,
+    # competences_requises, equipes_gestion, equipes_ravitaillement) — sans ces select_related/
+    # prefetch_related, ~16 requêtes SQL par point (198 requêtes mesurées pour 12 points DEMO).
     queryset = (
-        PointOperationnel.objects.all()
+        PointOperationnel.objects.select_related('type', 'equipe', 'equipe__leader', 'crise', 'responsable')
+        .prefetch_related(
+            'responsables', 'competences_requises',
+            'equipes_gestion', 'equipes_gestion__leader',
+            'equipes_ravitaillement',
+        )
     )
 
     serializer_class = (
@@ -6882,7 +6921,11 @@ class ImplicationInstitutionViewSet(
 ):
     """Rattachement d'une institution à une crise : impliquée et/ou acteur opérationnel."""
 
-    queryset = ImplicationInstitution.objects.select_related("institution", "crise", "utilisateur").all()
+    # responsable_nom/themes_libelles déréférencent responsable (FK) et themes (M2M), absents
+    # du select_related/prefetch_related existant.
+    queryset = ImplicationInstitution.objects.select_related(
+        "institution", "crise", "utilisateur", "responsable"
+    ).prefetch_related("themes").all()
     serializer_class = ImplicationInstitutionSerializer
     filterset_fields = ["crise", "institution", "type_implication"]
 
@@ -6967,8 +7010,9 @@ class ContactInstitutionViewSet(
     EnvironmentScopedViewSetMixin, viewsets.ModelViewSet
 ):
 
+    # utilisateur_nom/utilisateur_email déréférencent utilisateur (FK).
     queryset = (
-        ContactInstitution.objects.all()
+        ContactInstitution.objects.select_related('institution', 'utilisateur')
     )
 
     serializer_class = (

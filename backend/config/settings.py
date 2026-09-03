@@ -158,22 +158,6 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
-# Sans CACHES explicite, Django retombe sur LocMemCache : un cache PAR PROCESSUS gunicorn worker
-# (donc jamais partagé entre les 3 workers), vidé à chaque redémarrage du conteneur. Les lookups
-# géographiques (geo_lookup.py : reverse-géocodage par item d'une liste d'offres/demandes,
-# jusqu'à 5s de timeout chacun) s'appuient sur ce cache pour éviter un appel externe à chaque
-# lecture — avec LocMemCache, un simple redéploiement suffisait à revider ce cache et à
-# provoquer plusieurs secondes de latence sur la première requête suivante (constaté en direct :
-# 25s sur /api/demandes/ juste après un redémarrage du conteneur backend). FileBasedCache,
-# stocké sur le volume media déjà persistant, survit aux redémarrages/redéploiements et est
-# partagé par les 3 workers — sans dépendance supplémentaire (pas de Redis à opérer).
-CACHES = {
-    'default': {
-        'BACKEND': 'django.core.cache.backends.filebased.FileBasedCache',
-        'LOCATION': str(MEDIA_ROOT / '.django_cache'),
-    }
-}
-
 CORS_ALLOWED_ORIGINS = [
     "http://172.16.1.113:4200",
     "http://assista-crise.duckdns.org",
