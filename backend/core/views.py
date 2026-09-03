@@ -123,6 +123,8 @@ from .models import (
     EngagementRessource, StatutEngagementRessource,
     Status,
     DernierePositionUtilisateur,
+    Zone,
+    Plan,
 )
 
 
@@ -271,6 +273,8 @@ from .serializers import (
     RecherchePersonneHistoriqueSerializer,
     BesoinCompetenceSerializer,
     DernierePositionUtilisateurSerializer,
+    ZoneSerializer,
+    PlanSerializer,
 )
 
 class BesoinViewSet(viewsets.ModelViewSet):
@@ -2719,6 +2723,195 @@ def _institutions_liees(institution):
     qui l'est déjà par ailleurs."""
     crise_ids = ImplicationInstitution.objects.filter(institution=institution).values_list('crise_id', flat=True)
     return Institution.objects.filter(implications_crises__crise_id__in=crise_ids).exclude(pk=institution.pk).distinct()
+
+
+def _resolve_institution_or_400(request):
+    """Institution explicitement choisie dans le payload si l'appelant y a accès (ou est
+    administrateur), sinon celle de son propre rattachement actif (ContactInstitution, la
+    relation faisant autorité — voir UserSerializer.get_institution_id) — lève une erreur de
+    validation si aucune des deux n'est disponible. Utilisé par ZoneViewSet/PlanViewSet, qui
+    exigent toujours une institution (contrairement à PointOperationnel, qui peut s'en passer,
+    voir PointOperationnelViewSet._resolve_institution_for_new_team)."""
+    institution = None
+    institution_id = request.data.get('institution')
+    if institution_id:
+        candidate = Institution.objects.filter(pk=institution_id).first()
+        is_own = candidate and ContactInstitution.objects.filter(
+            utilisateur=request.user, institution=candidate, actif=True
+        ).exists()
+        if candidate and (is_own or get_effective_role(request) == UserRole.ADMINISTRATOR):
+            institution = candidate
+
+    if institution is None:
+        contact = ContactInstitution.objects.filter(
+            utilisateur=request.user, actif=True
+        ).select_related("institution").first()
+        institution = contact.institution if contact else None
+
+    if institution is None:
+        raise ValidationError(
+            {"institution": "Impossible de déterminer l'institution : précisez-la explicitement."}
+        )
+    return institution
+
+
+class ZoneViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
+    """Catalogue de zones nommées d'une institution (voir Zone) — support du dispositif
+    pré-enregistré (Plan) : chaque équipe/point peut en référencer une pour dire "je couvre le
+    Quartier Nord" sans redessiner sa géométrie."""
+
+    queryset = Zone.objects.select_related('institution').all()
+    serializer_class = ZoneSerializer
+
+    def get_permissions(self):
+        if self.action in ('create', 'update', 'partial_update', 'destroy'):
+            return [IsInstitutionalActor()]
+        return [permissions.IsAuthenticated()]
+
+    def get_queryset(self):
+        qs = _filter_actif(self.request, super().get_queryset())
+        institution_ids = [v for v in self.request.query_params.getlist('institution') if v]
+        if institution_ids:
+            return qs.filter(institution_id__in=institution_ids)
+        if get_effective_role(self.request) == UserRole.ADMINISTRATOR:
+            return qs
+        mes_institutions = ContactInstitution.objects.filter(
+            utilisateur=self.request.user, actif=True
+        ).values_list('institution_id', flat=True)
+        return qs.filter(institution_id__in=mes_institutions)
+
+    def perform_create(self, serializer):
+        institution = _resolve_institution_or_400(self.request)
+        zone = serializer.save(institution=institution, environment=get_active_environment(self.request))
+        audit_log(
+            request=self.request,
+            action_code="CREATION",
+            objet_type="Zone",
+            objet_id=zone.id,
+            commentaire=f"Création zone : {zone.nom} ({institution.nom})",
+        )
+
+    def perform_destroy(self, instance):
+        # Même politique de désactivation que Team/Offer/Request/Information : jamais de
+        # suppression réelle, une zone référencée par des équipes/points/plans ne doit pas
+        # casser leurs FK/M2M.
+        instance.actif = False
+        instance.save(update_fields=['actif'])
+
+
+class PlanViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
+    """Dispositif pré-enregistré d'une institution (voir Plan) : sous-ensemble d'équipes/points/
+    zones déjà existants, activable en un geste sur une crise réelle (voir `activer`)."""
+
+    queryset = Plan.objects.select_related('institution').prefetch_related(
+        'zones', 'equipes', 'points'
+    ).all()
+    serializer_class = PlanSerializer
+
+    def get_permissions(self):
+        if self.action in ('create', 'update', 'partial_update', 'destroy', 'activer'):
+            return [IsInstitutionalActor()]
+        return [permissions.IsAuthenticated()]
+
+    def get_queryset(self):
+        qs = _filter_actif(self.request, super().get_queryset())
+        institution_ids = [v for v in self.request.query_params.getlist('institution') if v]
+        if institution_ids:
+            return qs.filter(institution_id__in=institution_ids)
+        if get_effective_role(self.request) == UserRole.ADMINISTRATOR:
+            return qs
+        mes_institutions = ContactInstitution.objects.filter(
+            utilisateur=self.request.user, actif=True
+        ).values_list('institution_id', flat=True)
+        return qs.filter(institution_id__in=mes_institutions)
+
+    def perform_create(self, serializer):
+        institution = _resolve_institution_or_400(self.request)
+        plan = serializer.save(institution=institution, environment=get_active_environment(self.request))
+        audit_log(
+            request=self.request,
+            action_code="CREATION",
+            objet_type="Plan",
+            objet_id=plan.id,
+            commentaire=f"Création plan : {plan.nom} ({institution.nom})",
+        )
+
+    def perform_destroy(self, instance):
+        instance.actif = False
+        instance.save(update_fields=['actif'])
+
+    @action(detail=True, methods=["post"])
+    def activer(self, request, pk=None):
+        """Applique un sous-ensemble choisi des équipes/points du plan à une crise réelle
+        (existante ou créée à la volée) : `equipes` peut ajuster les thèmes de chaque équipe
+        pour cette activation précise (sinon ses thèmes actuels sont conservés tels quels),
+        `points` les rattache simplement à la crise. Idempotent : ré-appeler pour ajouter une
+        équipe plus tard dans la même crise ne casse rien. N'affecte jamais les équipes/points
+        eux-mêmes de façon destructive — voir Plan (docstring) et le point de vigilance sur
+        `cloturer()` dans le plan d'implémentation. `get_object()` s'appuie sur `get_queryset()`
+        (scopé à l'institution de l'appelant, ou admin) : un plan d'une autre institution renvoie
+        déjà 404 avant d'atteindre ce code, pas besoin d'un contrôle de permission distinct ici."""
+        plan = self.get_object()
+
+        crise_id = request.data.get('crise_id')
+        nouvelle_crise = request.data.get('nouvelle_crise')
+        if crise_id:
+            crise = Crisis.objects.filter(pk=crise_id).first()
+            if not crise:
+                return Response({"error": "Crise introuvable."}, status=status.HTTP_400_BAD_REQUEST)
+        elif nouvelle_crise:
+            crisis_serializer = CrisisSerializer(data=nouvelle_crise)
+            crisis_serializer.is_valid(raise_exception=True)
+            crise = crisis_serializer.save(
+                author=request.user, environment=get_active_environment(request)
+            )
+        else:
+            return Response(
+                {"error": "Précisez crise_id (crise existante) ou nouvelle_crise (à créer)."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        plan_team_ids = set(plan.equipes.values_list('id', flat=True))
+        plan_point_ids = set(plan.points.values_list('id', flat=True))
+
+        equipes_activees = []
+        for entry in (request.data.get('equipes') or []):
+            team_id = entry.get('team_id')
+            team = Team.objects.filter(pk=team_id, id__in=plan_team_ids).first()
+            if not team:
+                continue
+            team.assigned_crises.add(crise)
+            themes_ids = entry.get('themes_ids')
+            if themes_ids is not None:
+                team.themes.set(themes_ids)
+            equipes_activees.append(team)
+
+        points_actives = []
+        for point_id in (request.data.get('points') or []):
+            point = PointOperationnel.objects.filter(pk=point_id, id__in=plan_point_ids).first()
+            if not point:
+                continue
+            point.crise = crise
+            point.save(update_fields=['crise'])
+            points_actives.append(point)
+
+        audit_log(
+            request=request,
+            action_code="ACTIVATION",
+            objet_type="Plan",
+            objet_id=plan.id,
+            crise=crise,
+            commentaire=(
+                f"Activation du plan {plan.nom} sur la crise {crise.name} "
+                f"({len(equipes_activees)} équipe(s), {len(points_actives)} point(s))"
+            ),
+        )
+
+        return Response({
+            "crise": CrisisSerializer(crise).data,
+            "equipes_activees": [str(t.id) for t in equipes_activees],
+            "points_actives": [str(p.id) for p in points_actives],
+        })
 
 
 class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):

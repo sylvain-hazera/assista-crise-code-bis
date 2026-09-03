@@ -34,6 +34,8 @@ from .views import (
     ContributionMaterielViewSet,
     RegistrePresenceViewSet,
     DeclarationSecuriteViewSet,
+    ZoneViewSet,
+    PlanViewSet,
 )
 
 router = DefaultRouter()
@@ -134,6 +136,8 @@ router.register(r'recherches-personnes-commentaires', RecherchePersonneCommentai
 router.register(r'recherches-personnes-historique', RecherchePersonneHistoriqueViewSet),
 router.register(r'recherches-personnes-photos', RecherchePersonnePhotoViewSet)
 router.register(r'recherches-personnes-commentaires-photos',RecherchePersonneCommentairePhotoViewSet)
+router.register(r'zones', ZoneViewSet)
+router.register(r'plans', PlanViewSet)
 
 urlpatterns = [
     path('', include(router.urls)),

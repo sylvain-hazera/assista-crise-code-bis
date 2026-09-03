@@ -42,6 +42,8 @@ from .models import (
     AffectationPointBenevole,
     Notification,
     AuditLog,
+    Zone,
+    Plan,
 )
 
 class RecherchePersonneCommentairePhotoSerializer(
@@ -882,6 +884,21 @@ class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
         # On ajoute l'utilisateur sérialisé à la réponse
         data['user'] = UserSerializer(self.user).data
         return data
+
+class ZoneSerializer(serializers.ModelSerializer):
+    institution_nom = serializers.CharField(source='institution.nom', read_only=True, default=None)
+    zone_precise_geojson = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Zone
+        fields = "__all__"
+        # institution n'est jamais réaffectable via un PATCH générique — voir
+        # ZoneViewSet.perform_create (résolue côté serveur), même politique que PlanSerializer.
+        read_only_fields = ['id', 'institution']
+
+    def get_zone_precise_geojson(self, obj):
+        return json.loads(obj.zone_precise.geojson) if obj.zone_precise else None
+
 
 class TeamSerializer(serializers.ModelSerializer):
     member_ids       = serializers.PrimaryKeyRelatedField(
@@ -2011,6 +2028,38 @@ class PointOperationnelSerializer(
         crise = attrs.get('crise') or (self.instance.crise if self.instance else None)
         validate_crisis_open(crise, field_name="crise")
         return attrs
+
+
+class PlanSerializer(serializers.ModelSerializer):
+    institution_nom = serializers.CharField(source='institution.nom', read_only=True, default=None)
+    zones_ids = serializers.PrimaryKeyRelatedField(
+        many=True, queryset=Zone.objects.all(), source='zones', required=False
+    )
+    zones_noms = serializers.SerializerMethodField()
+    equipes_ids = serializers.PrimaryKeyRelatedField(
+        many=True, queryset=Team.objects.all(), source='equipes', required=False
+    )
+    equipes_noms = serializers.SerializerMethodField()
+    points_ids = serializers.PrimaryKeyRelatedField(
+        many=True, queryset=PointOperationnel.objects.all(), source='points', required=False
+    )
+    points_noms = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Plan
+        fields = "__all__"
+        # institution n'est jamais réaffectable via un PATCH générique — voir
+        # PlanViewSet.perform_create (résolue côté serveur).
+        read_only_fields = ['id', 'institution']
+
+    def get_zones_noms(self, obj):
+        return [z.nom for z in obj.zones.all()]
+
+    def get_equipes_noms(self, obj):
+        return [t.name for t in obj.equipes.all()]
+
+    def get_points_noms(self, obj):
+        return [p.nom for p in obj.points.all()]
 
 
 class PointOperationnelPublicSerializer(serializers.ModelSerializer):

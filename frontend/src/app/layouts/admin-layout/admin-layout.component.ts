@@ -55,6 +55,12 @@ export class AdminLayoutComponent implements OnInit {
 
     { icon: 'home_work', label: 'Centres', route: '/admin/centres' },
 
+    { icon: 'layers', label: 'Zones', route: '/admin/zones' },
+
+    // Dispositif pré-enregistré (PCS) : équipes/points/zones préparés à l'avance, activables
+    // en un geste sur une crise réelle — voir PlanViewSet.activer.
+    { icon: 'fact_check', label: 'Plans', route: '/admin/plans' },
+
     { icon: 'category', label: 'Compétences', route: '/admin/competences' },
 
     { icon: 'playlist_add_check', label: 'Besoins', route: '/admin/besoins' },

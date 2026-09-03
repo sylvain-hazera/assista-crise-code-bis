@@ -1,0 +1,87 @@
+<div class="plans-page">
+
+  <header class="page-header">
+    <div class="header-left">
+      <h1><span class="material-icons">fact_check</span> Plans</h1>
+      <p class="subtitle">{{ filteredPlans.length }} plan{{ filteredPlans.length > 1 ? 's' : '' }} — dispositif pré-enregistré</p>
+    </div>
+    <button type="button" class="btn-primary" (click)="openCreateModal()">
+      <span class="material-icons">add</span> Nouveau plan
+    </button>
+  </header>
+
+  @if (errorMessage) {
+    <div class="toast toast-err"><span class="material-icons">error_outline</span> {{ errorMessage }}</div>
+  }
+
+  @if (successMessage) {
+    <div class="toast toast-ok">
+      <span class="material-icons">check_circle</span> {{ successMessage }}
+      <button type="button" class="btn-link" (click)="goToCrises()">Voir dans Crises</button>
+    </div>
+  }
+
+  @if (isLoading) {
+    <div class="loading">Chargement...</div>
+  }
+
+  @if (!isLoading) {
+    <div class="toolbar">
+      <div class="search-box">
+        <span class="material-icons">search</span>
+        <input type="text" placeholder="Rechercher un plan…" [(ngModel)]="searchQuery"/>
+      </div>
+    </div>
+
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Plan</th>
+          <th>Zones</th>
+          <th>Équipes</th>
+          <th>Points</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (plan of filteredPlans; track plan.id) {
+          <tr (click)="openEditModal(plan)">
+            <td>{{ plan.nom }}</td>
+            <td>{{ plan.zones_noms.length || '—' }}</td>
+            <td>{{ plan.equipes_noms.length || '—' }}</td>
+            <td>{{ plan.points_noms.length || '—' }}</td>
+            <td class="actions">
+              <button type="button" class="btn-activer" (click)="openActivationModal(plan, $event)">
+                <span class="material-icons">bolt</span> Activer
+              </button>
+              <button type="button" class="icon-btn" (click)="deletePlan(plan, $event)" title="Retirer">
+                <span class="material-icons">delete_outline</span>
+              </button>
+            </td>
+          </tr>
+        } @empty {
+          <tr>
+            <td colspan="5" class="empty">Aucun plan déclaré pour l'instant.</td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  }
+
+  @if (modalOpen) {
+    <app-plan-modal
+      [plan]="editingPlan"
+      (saved)="onSaved()"
+      (closed)="closeModal()">
+    </app-plan-modal>
+  }
+
+  @if (activationModalOpen && activatingPlan) {
+    <app-plan-activation-modal
+      [plan]="activatingPlan"
+      (activated)="onActivated($event)"
+      (closed)="closeActivationModal()">
+    </app-plan-activation-modal>
+  }
+
+</div>

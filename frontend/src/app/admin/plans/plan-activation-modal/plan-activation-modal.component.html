@@ -1,0 +1,118 @@
+<div class="modal-overlay" (click)="close()">
+  <div class="modal" (click)="$event.stopPropagation()">
+
+    <div class="modal-header">
+      <h2>Activer « {{ plan.nom }} »</h2>
+      <button class="icon-btn" (click)="close()"><span class="material-icons">close</span></button>
+    </div>
+
+    @if (loading) {
+      <div class="modal-body"><p class="loading">Chargement…</p></div>
+    }
+
+    @if (!loading) {
+      <div class="modal-body">
+
+        <div class="form-group">
+          <label>Crise à activer</label>
+          <div class="scope-toggle">
+            <button type="button" [class.active]="mode === 'existing'" (click)="mode = 'existing'">Crise existante</button>
+            <button type="button" [class.active]="mode === 'new'" (click)="mode = 'new'">Nouvelle crise</button>
+          </div>
+        </div>
+
+        @if (mode === 'existing') {
+          <div class="form-group">
+            <label>Crise ouverte <span class="required">*</span></label>
+            <select [(ngModel)]="selectedCrisisId">
+              <option [ngValue]="null" disabled>— Sélectionner une crise —</option>
+              @for (c of crises; track c.id) {
+                <option [ngValue]="c.id">{{ c.name }}</option>
+              }
+            </select>
+            @if (crises.length === 0) {
+              <p class="field-hint">Aucune crise ouverte pour l'instant — créez-en une nouvelle.</p>
+            }
+          </div>
+        }
+
+        @if (mode === 'new') {
+          <div class="form-group">
+            <label>Nom de la crise <span class="required">*</span></label>
+            <input type="text" [(ngModel)]="nouvelleCriseName" placeholder="Ex: Canicule Août 2026">
+          </div>
+          <div class="form-group">
+            <label>Type</label>
+            <select [(ngModel)]="nouvelleCriseType">
+              @for (t of crisisTypeOptions; track t.value) {
+                <option [value]="t.value">{{ t.label }}</option>
+              }
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Localisation <span class="required">*</span></label>
+            <app-address-picker placeholder="Rechercher une adresse…" (addressSelected)="onAddressSelected($event)"></app-address-picker>
+            @if (latitude != null && longitude != null) {
+              <app-point-picker [latitude]="latitude" [longitude]="longitude" (positionChange)="onPositionChange($event)"></app-point-picker>
+            }
+          </div>
+        }
+
+        <div class="form-group">
+          <label>Équipes à activer</label>
+          <div class="team-activation-list">
+            @for (t of planTeams; track t.id) {
+              <div class="team-activation-row" [class.selected]="selectedTeamIds.includes(t.id!)">
+                <label class="checkbox-label">
+                  <input type="checkbox" [checked]="selectedTeamIds.includes(t.id!)" (change)="toggleTeam(t.id!)">
+                  <span>{{ t.name }}</span>
+                </label>
+                @if (selectedTeamIds.includes(t.id!)) {
+                  <div class="theme-chip-list">
+                    @for (theme of allThemes; track theme.id) {
+                      <button type="button" class="chip-toggle sm"
+                        [class.selected]="(teamThemeSelections[t.id!] || []).includes(theme.id)"
+                        (click)="toggleTheme(t.id!, theme.id)">
+                        {{ theme.nom }}
+                      </button>
+                    }
+                  </div>
+                }
+              </div>
+            }
+            @if (planTeams.length === 0) {
+              <span class="chip-empty">Ce plan ne contient aucune équipe.</span>
+            }
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Points à activer</label>
+          <div class="chip-list">
+            @for (p of planPoints; track p.id) {
+              <button type="button" class="chip-toggle" [class.selected]="selectedPointIds.includes(p.id)" (click)="togglePoint(p.id)">
+                {{ p.nom }}
+              </button>
+            }
+            @if (planPoints.length === 0) {
+              <span class="chip-empty">Ce plan ne contient aucun point.</span>
+            }
+          </div>
+        </div>
+
+        @if (errorMessage) {
+          <p class="error-message">{{ errorMessage }}</p>
+        }
+
+        <div class="modal-actions">
+          <button type="button" class="btn-primary" [disabled]="!canSubmit || activating" (click)="submit()">
+            {{ activating ? 'Activation…' : 'Activer le plan' }}
+          </button>
+          <button type="button" class="btn-secondary" (click)="close()">Annuler</button>
+        </div>
+
+      </div>
+    }
+
+  </div>
+</div>

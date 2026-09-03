@@ -1,0 +1,77 @@
+<div class="modal-overlay" (click)="close()">
+  <div class="modal" (click)="$event.stopPropagation()">
+
+    <div class="modal-header">
+      <h2>{{ isEdit ? 'Modifier le plan' : 'Nouveau plan' }}</h2>
+      <button class="icon-btn" (click)="close()"><span class="material-icons">close</span></button>
+    </div>
+
+    <form class="modal-body" [formGroup]="form" (ngSubmit)="submit()">
+
+      <div class="form-group">
+        <label>Nom <span class="required">*</span></label>
+        <input type="text" formControlName="nom" placeholder="Ex: Plan canicule">
+      </div>
+
+      <div class="form-group">
+        <label>Description</label>
+        <textarea formControlName="description" rows="2" placeholder="Description du plan (optionnel)"></textarea>
+      </div>
+
+      <div class="form-group">
+        <label>Zones couvertes</label>
+        <div class="chip-list">
+          @for (z of zones; track z.id) {
+            <button type="button" class="chip-toggle" [class.selected]="selectedZoneIds.includes(z.id)" (click)="toggleZone(z.id)">
+              {{ z.nom }}
+            </button>
+          }
+          @if (zones.length === 0) {
+            <span class="chip-empty">Aucune zone déclarée — voir la rubrique Zones.</span>
+          }
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Équipes du dispositif</label>
+        <div class="chip-list">
+          @for (t of teams; track t.id) {
+            <button type="button" class="chip-toggle" [class.selected]="selectedTeamIds.includes(t.id!)" (click)="toggleTeam(t.id!)">
+              {{ t.name }}
+            </button>
+          }
+          @if (teams.length === 0) {
+            <span class="chip-empty">Aucune équipe disponible.</span>
+          }
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Points de regroupement du dispositif</label>
+        <div class="chip-list">
+          @for (p of points; track p.id) {
+            <button type="button" class="chip-toggle" [class.selected]="selectedPointIds.includes(p.id)" (click)="togglePoint(p.id)">
+              {{ p.nom }}
+            </button>
+          }
+          @if (points.length === 0) {
+            <span class="chip-empty">Aucun point disponible.</span>
+          }
+        </div>
+      </div>
+
+      @if (errorMessage) {
+        <p class="error-message">{{ errorMessage }}</p>
+      }
+
+      <div class="modal-actions">
+        <button type="submit" class="btn-primary" [disabled]="saving">
+          {{ isEdit ? 'Enregistrer' : 'Créer le plan' }}
+        </button>
+        <button type="button" class="btn-secondary" (click)="close()">Annuler</button>
+      </div>
+
+    </form>
+
+  </div>
+</div>

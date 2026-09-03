@@ -1,6 +1,8 @@
 import { InstitutionsComponent } from './institutions/institutions.component';
 import { CrisesComponent } from './crises/crises.component';
 import { CentresComponent } from './centres/centres.component';
+import { ZonesComponent } from './zones/zones.component';
+import { PlansComponent } from './plans/plans.component';
 import { Routes } from '@angular/router';
 import { DashboardComponent } from './dashboard/dashboard.component';
 import { ReportingComponent } from './reporting/reporting.component';
@@ -36,6 +38,8 @@ export const ADMIN_ROUTES: Routes = [
   { path: 'institutions', component: InstitutionsComponent, canActivate: [institutionalEffectiveGuard] },
   { path: 'crises', component: CrisesComponent, canActivate: [institutionalEffectiveGuard] },
   { path: 'centres', component: CentresComponent, canActivate: [institutionalEffectiveGuard] },
+  { path: 'zones', component: ZonesComponent, canActivate: [institutionalEffectiveGuard] },
+  { path: 'plans', component: PlansComponent, canActivate: [institutionalEffectiveGuard] },
   { path: 'carte', component: MapComponent, canActivate: [institutionalEffectiveGuard] },
   { path: 'resultats', component: ResultsComponent, canActivate: [institutionalEffectiveGuard] },
   { path: 'utilisateurs', component: UsersComponent, canActivate: [sysAdminGuard] },

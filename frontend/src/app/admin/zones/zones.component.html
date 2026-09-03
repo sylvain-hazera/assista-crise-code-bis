@@ -1,0 +1,67 @@
+<div class="zones-page">
+
+  <header class="page-header">
+    <div class="header-left">
+      <h1><span class="material-icons">layers</span> Zones</h1>
+      <p class="subtitle">{{ filteredZones.length }} zone{{ filteredZones.length > 1 ? 's' : '' }}</p>
+    </div>
+    <button type="button" class="btn-primary" (click)="openCreateModal()">
+      <span class="material-icons">add</span> Nouvelle zone
+    </button>
+  </header>
+
+  @if (errorMessage) {
+    <div class="toast toast-err"><span class="material-icons">error_outline</span> {{ errorMessage }}</div>
+  }
+
+  @if (isLoading) {
+    <div class="loading">Chargement...</div>
+  }
+
+  @if (!isLoading) {
+    <div class="toolbar">
+      <div class="search-box">
+        <span class="material-icons">search</span>
+        <input type="text" placeholder="Rechercher une zone…" [(ngModel)]="searchQuery"/>
+      </div>
+    </div>
+
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Zone</th>
+          <th>Communes</th>
+          <th>Description</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (zone of filteredZones; track zone.id) {
+          <tr (click)="openEditModal(zone)">
+            <td>{{ zone.nom }}</td>
+            <td>{{ zone.communes.length || '—' }}</td>
+            <td>{{ zone.description || '—' }}</td>
+            <td class="actions">
+              <button type="button" class="icon-btn" (click)="deleteZone(zone, $event)" title="Retirer">
+                <span class="material-icons">delete_outline</span>
+              </button>
+            </td>
+          </tr>
+        } @empty {
+          <tr>
+            <td colspan="4" class="empty">Aucune zone déclarée pour l'instant.</td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  }
+
+  @if (modalOpen) {
+    <app-zone-modal
+      [zone]="editingZone"
+      (saved)="onSaved()"
+      (closed)="closeModal()">
+    </app-zone-modal>
+  }
+
+</div>

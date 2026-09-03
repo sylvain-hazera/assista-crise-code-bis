@@ -1451,6 +1451,44 @@ class Document(EnvironmentScopedModel):
     def __str__(self):
         return str(self.id)
 
+
+class Zone(EnvironmentScopedModel):
+    """Zone nommée propre à une institution (ex: "Quartier Nord", "Centre-ville") — permet de
+    référencer une même zone depuis plusieurs équipes/points plutôt que de redessiner sa
+    géométrie à chaque fois. Distincte de la géométrie brute déjà portée individuellement par
+    `Team.zone_precise`/`Crisis.zone` : sert de catalogue partagé pour un Plan (voir plus bas)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    institution = models.ForeignKey(
+        "Institution",
+        on_delete=models.PROTECT,
+        related_name="zones",
+    )
+
+    nom = models.CharField(max_length=255)
+
+    description = models.TextField(blank=True, null=True)
+
+    communes = models.JSONField(
+        default=list, blank=True,
+        help_text="Liste de codes commune INSEE (ex: ['38185']).",
+    )
+
+    zone_precise = gis_models.PolygonField(
+        srid=4326, null=True, blank=True,
+        help_text="Zone dessinée à la main, plus précise que la liste de communes.",
+    )
+
+    actif = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["nom"]
+
+    def __str__(self) -> str:
+        return self.nom
+
+
 class Team(EnvironmentScopedModel):
     """Équipes de gestion de crise"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -1586,6 +1624,16 @@ class Team(EnvironmentScopedModel):
     zone_precise = gis_models.PolygonField(
         srid=4326, null=True, blank=True,
         help_text="Zone dessinée à la main, la plus précise des trois niveaux.",
+    )
+
+    # Référence vers le catalogue de zones nommées de l'institution (voir Zone) — purement
+    # additif, n'interfère pas avec departements/communes/zone_precise ci-dessus qui restent la
+    # source de vérité pour le matching géographique existant.
+    zone_principale = models.ForeignKey(
+        "Zone",
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="equipes",
     )
 
     def __str__(self) -> str:
@@ -2480,6 +2528,15 @@ class PointOperationnel(EnvironmentScopedModel):
         help_text="Responsables supplémentaires de ce point, en plus de `responsable`.",
     )
 
+    # Référence vers le catalogue de zones nommées de l'institution (voir Zone) — purement
+    # additif, sans lien avec `location` (position précise du point lui-même).
+    zone = models.ForeignKey(
+        "Zone",
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="points_operationnels",
+    )
+
     def __str__(self):
         return self.nom
 
@@ -2551,6 +2608,43 @@ class DisponibilitePointEquipe(EnvironmentScopedModel):
 
     def __str__(self) -> str:
         return f"{self.point.nom} - {self.membre.email} - {self.date} ({self.creneau})"
+
+
+class Plan(EnvironmentScopedModel):
+    """Dispositif pré-enregistré d'une institution (ex: "Plan canicule", "PCS général") :
+    regroupe un sous-ensemble de ses équipes/points/zones déjà existants, préparé à l'avance et
+    activable sur une crise réelle le jour J (voir PlanViewSet.activer). Ne duplique jamais les
+    équipes/points/stocks eux-mêmes — ce sont les mêmes objets, déjà utilisables indépendamment
+    de toute crise (Team.institution, PointOperationnel.crise nullable, MaterielPoint sans FK
+    crise), simplement regroupés ici sous un nom pour être activés ensemble en un geste."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    institution = models.ForeignKey(
+        "Institution",
+        on_delete=models.PROTECT,
+        related_name="plans",
+    )
+
+    nom = models.CharField(max_length=255)
+
+    description = models.TextField(blank=True, null=True)
+
+    zones = models.ManyToManyField(Zone, blank=True, related_name="plans")
+
+    equipes = models.ManyToManyField("Team", blank=True, related_name="plans")
+
+    points = models.ManyToManyField(
+        "PointOperationnel", blank=True, related_name="plans",
+    )
+
+    actif = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["nom"]
+
+    def __str__(self) -> str:
+        return self.nom
 
 
 class StatutMateriel(models.TextChoices):

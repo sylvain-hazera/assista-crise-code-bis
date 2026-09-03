@@ -1,0 +1,151 @@
+.plans-page {
+  padding: 1.5rem;
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+
+  h1 {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    margin: 0;
+    font-size: 1.5rem;
+  }
+
+  .subtitle {
+    margin: .25rem 0 0;
+    color: #6b7280;
+    font-size: .9rem;
+  }
+}
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  padding: .55rem 1rem;
+  border-radius: 6px;
+  border: none;
+  background: #1d4ed8;
+  color: #fff;
+  font-size: .88rem;
+  font-weight: 600;
+  cursor: pointer;
+
+  &:hover { background: #1e40af; }
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  padding: .6rem 1rem;
+  border-radius: 6px;
+  margin-bottom: 1rem;
+  font-size: .9rem;
+
+  &.toast-err { background: #fef2f2; color: #b91c1c; }
+  &.toast-ok { background: #f0fdf4; color: #15803d; }
+
+  .btn-link {
+    margin-left: auto;
+    background: none;
+    border: none;
+    color: inherit;
+    text-decoration: underline;
+    cursor: pointer;
+    font-size: .85rem;
+  }
+}
+
+.loading, .empty {
+  padding: 2rem;
+  text-align: center;
+  color: #6b7280;
+}
+
+.toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 1rem;
+}
+
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  padding: .4rem .75rem;
+  flex: 1;
+  max-width: 320px;
+
+  .material-icons { color: #9ca3af; font-size: 1.1rem; }
+
+  input {
+    border: none;
+    outline: none;
+    flex: 1;
+    font-size: .9rem;
+  }
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+
+  th, td {
+    text-align: left;
+    padding: .65rem .75rem;
+    border-bottom: 1px solid #f0f0f0;
+  }
+
+  th {
+    color: #6b7280;
+    font-weight: 600;
+    font-size: .8rem;
+    text-transform: uppercase;
+  }
+
+  tbody tr:hover { background: #f9fafb; cursor: pointer; }
+
+  td.actions {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: .5rem;
+    cursor: default;
+  }
+}
+
+.btn-activer {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  padding: .35rem .7rem;
+  border-radius: 6px;
+  border: 1px solid #1d4ed8;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: .8rem;
+  font-weight: 600;
+  cursor: pointer;
+
+  .material-icons { font-size: 1rem; }
+
+  &:hover { background: #dbeafe; }
+}
+
+.icon-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #9ca3af;
+
+  &:hover { color: #dc2626; }
+}
