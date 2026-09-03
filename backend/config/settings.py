@@ -30,7 +30,7 @@ SECRET_KEY = os.environ.get(
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 
-ALLOWED_HOSTS = ['localhost', '172.16.1.113', '127.0.0.1', 'assista-crise.fr', 'www.assista-crise.fr', 'demo.assista-crise.fr', 'assista-crise.duckdns.org']
+ALLOWED_HOSTS = ['localhost', '172.16.1.113', '172.16.1.114', '127.0.0.1', 'assista-crise.fr', 'www.assista-crise.fr', 'demo.assista-crise.fr', 'assista-crise.duckdns.org']
 
 CSRF_TRUSTED_ORIGINS = [
     "https://assista-crise.fr",
