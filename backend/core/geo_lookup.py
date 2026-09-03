@@ -2,6 +2,16 @@ import json
 import urllib.parse
 import urllib.request
 
+from django.utils import timezone
+
+# Un code/point sans correspondance (coordonnées de test imprécises, zone sans adresse
+# répertoriée...) n'est retenté qu'après ce délai, jamais à chaque lecture — mesuré en direct :
+# sans cooldown, 119 points DEMO non résolus sur 225 suffisaient à ajouter ~15-20s à
+# /api/demandes/ (un appel externe par point non résolu, à CHAQUE requête). Assez court pour
+# qu'une adresse nouvellement répertoriée finisse par se résoudre, assez long pour ne jamais
+# dominer le temps de réponse d'une liste.
+RETRY_COOLDOWN = timezone.timedelta(hours=6)
+
 
 def _fetch_json(url: str):
     try:
@@ -9,6 +19,34 @@ def _fetch_json(url: str):
             return json.loads(response.read().decode("utf-8"))
     except Exception:
         return None
+
+
+def _should_attempt(derniere_tentative) -> bool:
+    if derniere_tentative is None:
+        return True
+    return timezone.now() - derniere_tentative > RETRY_COOLDOWN
+
+
+def _resolve_commune(commune) -> None:
+    """Complète commune.nom/centre_latitude/centre_longitude en un seul appel externe
+    (?fields=nom,centre) si l'un des deux manque encore et que le cooldown le permet — évite
+    deux appels séparés (un par commune_from_code/commune_center_from_code) qui se
+    marcheraient sinon dessus via le même derniere_tentative."""
+    has_nom = commune.nom is not None
+    has_centre = commune.centre_latitude is not None or commune.centre_longitude is not None
+    if (has_nom and has_centre) or not _should_attempt(commune.derniere_tentative):
+        return
+    url = f"https://geo.api.gouv.fr/communes/{urllib.parse.quote(commune.code)}?fields=nom,centre"
+    data = _fetch_json(url)
+    commune.derniere_tentative = timezone.now()
+    if isinstance(data, dict):
+        nom = data.get("nom")
+        if nom:
+            commune.nom = nom
+        coordinates = (data.get("centre") or {}).get("coordinates")
+        if isinstance(coordinates, list) and len(coordinates) == 2:
+            commune.centre_longitude, commune.centre_latitude = coordinates
+    commune.save(update_fields=["nom", "centre_latitude", "centre_longitude", "derniere_tentative", "date_maj"])
 
 
 def commune_from_code(commune_code: str) -> str | None:
@@ -19,13 +57,7 @@ def commune_from_code(commune_code: str) -> str | None:
     if not commune_code:
         return None
     commune, _ = Commune.objects.get_or_create(code=commune_code)
-    if commune.nom is None:
-        url = f"https://geo.api.gouv.fr/communes/{urllib.parse.quote(commune_code)}?fields=nom"
-        data = _fetch_json(url)
-        nom = data.get("nom") if isinstance(data, dict) else None
-        if nom:
-            commune.nom = nom
-            commune.save(update_fields=["nom", "date_maj"])
+    _resolve_commune(commune)
     return commune.nom
 
 
@@ -39,15 +71,7 @@ def commune_center_from_code(commune_code: str) -> dict:
     if not commune_code:
         return {"latitude": None, "longitude": None}
     commune, _ = Commune.objects.get_or_create(code=commune_code)
-    if commune.centre_latitude is None and commune.centre_longitude is None:
-        url = f"https://geo.api.gouv.fr/communes/{urllib.parse.quote(commune_code)}?fields=centre"
-        data = _fetch_json(url)
-        if isinstance(data, dict):
-            centre = data.get("centre") or {}
-            coordinates = centre.get("coordinates")
-            if isinstance(coordinates, list) and len(coordinates) == 2:
-                commune.centre_longitude, commune.centre_latitude = coordinates
-                commune.save(update_fields=["centre_latitude", "centre_longitude", "date_maj"])
+    _resolve_commune(commune)
     return {"latitude": commune.centre_latitude, "longitude": commune.centre_longitude}
 
 
@@ -59,16 +83,18 @@ def _reverse_geocode_point(point) -> dict:
     rapport aux coordonnées brutes. Résultat stocké durablement en base (PointCommune +
     Commune) plutôt qu'en cache : cette correspondance ne change jamais, et un cache qui expire
     ou se vide à chaque redémarrage provoquait plusieurs secondes de latence sur les listes
-    d'offres/demandes (jusqu'à 5s de timeout par appel externe non résolu)."""
+    d'offres/demandes (jusqu'à 5s de timeout par appel externe non résolu). Un point sans
+    correspondance n'est retenté qu'après RETRY_COOLDOWN, jamais à chaque lecture."""
     from core.models import Commune, PointCommune
 
     if point is None:
         return {"nom": None, "citycode": None}
     lat, lon = round(point.y, 4), round(point.x, 4)
     point_commune, _ = PointCommune.objects.select_related("commune").get_or_create(lat=lat, lon=lon)
-    if point_commune.commune_id is None:
+    if point_commune.commune_id is None and _should_attempt(point_commune.derniere_tentative):
         url = f"https://api-adresse.data.gouv.fr/reverse/?lon={lon}&lat={lat}"
         data = _fetch_json(url)
+        point_commune.derniere_tentative = timezone.now()
         nom, citycode = None, None
         if isinstance(data, dict):
             features = data.get("features") or []
@@ -82,7 +108,7 @@ def _reverse_geocode_point(point) -> dict:
                 commune.nom = nom
                 commune.save(update_fields=["nom", "date_maj"])
             point_commune.commune = commune
-            point_commune.save(update_fields=["commune", "date_maj"])
+        point_commune.save(update_fields=["commune", "derniere_tentative", "date_maj"])
     if point_commune.commune_id:
         return {"nom": point_commune.commune.nom, "citycode": point_commune.commune_id}
     return {"nom": None, "citycode": None}

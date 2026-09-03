@@ -56,6 +56,13 @@ class Commune(models.Model):
     centre_latitude = models.FloatField(null=True, blank=True)
     centre_longitude = models.FloatField(null=True, blank=True)
     date_maj = models.DateTimeField(auto_now=True)
+    # Distinct de date_maj (mise à jour seulement en cas de succès) : posé à CHAQUE tentative,
+    # réussie ou non — voir geo_lookup.RETRY_COOLDOWN. Sans lui, un code sans correspondance
+    # (coordonnées de test imprécises, zone sans adresse répertoriée...) serait retenté à
+    # chaque lecture, indéfiniment : mesuré en direct, 119 points non résolus sur 225 en DEMO
+    # suffisaient à ajouter ~15-20s à /api/demandes/ (un appel externe par point non résolu, à
+    # chaque requête).
+    derniere_tentative = models.DateTimeField(null=True, blank=True)
 
     def __str__(self) -> str:
         return self.nom or self.code
@@ -71,6 +78,8 @@ class PointCommune(models.Model):
     lon = models.FloatField()
     commune = models.ForeignKey(Commune, on_delete=models.CASCADE, null=True, blank=True, related_name="points")
     date_maj = models.DateTimeField(auto_now=True)
+    # Voir Commune.derniere_tentative — même logique de cooldown pour un point sans résultat.
+    derniere_tentative = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         constraints = [

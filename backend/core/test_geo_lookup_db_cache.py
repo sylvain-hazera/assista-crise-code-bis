@@ -2,9 +2,11 @@ from unittest.mock import patch
 
 import pytest
 from django.contrib.gis.geos import Point
+from django.utils import timezone
 
 from core.geo_lookup import (
-    commune_center_from_code, commune_code_from_point, commune_from_code, commune_from_point,
+    RETRY_COOLDOWN, commune_center_from_code, commune_code_from_point, commune_from_code,
+    commune_from_point,
 )
 from core.models import Commune, PointCommune
 
@@ -31,12 +33,26 @@ class TestCommuneFromCode:
         assert mock_fetch.call_count == 1
 
     @patch("core.geo_lookup._fetch_json")
-    def test_retries_after_a_failed_resolution(self, mock_fetch):
-        # Contrairement à l'ancien cache (qui mémorisait un échec pour 30 jours), une commune
-        # non résolue reste "à retenter" : nom encore None en base, donc un appel ultérieur
-        # retente l'API externe.
+    def test_does_not_retry_a_failed_resolution_within_the_cooldown(self, mock_fetch):
+        # Contrairement à un cache qui n'expire jamais l'échec, mais aussi contrairement à un
+        # retry à chaque lecture (régression constatée en direct : ~15-20s ajoutés à
+        # /api/demandes/ par des points non résolus retentés à chaque requête) — un échec
+        # récent n'est PAS retenté avant RETRY_COOLDOWN.
         mock_fetch.return_value = None
         assert commune_from_code("99999") is None
+        assert commune_from_code("99999") is None
+        assert mock_fetch.call_count == 1
+
+    @patch("core.geo_lookup._fetch_json")
+    def test_retries_a_failed_resolution_after_the_cooldown(self, mock_fetch):
+        mock_fetch.return_value = None
+        commune_from_code("99999")
+        assert mock_fetch.call_count == 1
+
+        commune = Commune.objects.get(code="99999")
+        commune.derniere_tentative = timezone.now() - RETRY_COOLDOWN - timezone.timedelta(minutes=1)
+        commune.save(update_fields=["derniere_tentative"])
+
         mock_fetch.return_value = {"nom": "Trouvée"}
         assert commune_from_code("99999") == "Trouvée"
         assert mock_fetch.call_count == 2
@@ -67,18 +83,17 @@ class TestCommuneCenterFromCode:
         assert mock_fetch.call_count == 1
 
     @patch("core.geo_lookup._fetch_json")
-    def test_shares_commune_row_with_commune_from_code(self, mock_fetch):
-        # Une seule ligne Commune par code, que la résolution vienne du nom ou du centroïde —
-        # c'est tout l'intérêt de la table normalisée par rapport au cache (pas de duplication).
-        mock_fetch.return_value = {"nom": "Grenoble"}
-        commune_from_code("38185")
-        mock_fetch.return_value = {"centre": {"coordinates": [5.7245, 45.1885]}}
-        commune_center_from_code("38185")
+    def test_shares_commune_row_and_single_fetch_with_commune_from_code(self, mock_fetch):
+        # Une seule ligne Commune par code, et un seul appel externe pour les deux : nom et
+        # centre sont demandés ensemble (?fields=nom,centre) — sinon la résolution du nom
+        # poserait déjà `derniere_tentative`, empêchant la résolution du centre avant le
+        # cooldown (et inversement).
+        mock_fetch.return_value = {"nom": "Grenoble", "centre": {"coordinates": [5.7245, 45.1885]}}
+        assert commune_from_code("38185") == "Grenoble"
+        assert commune_center_from_code("38185") == {"latitude": 45.1885, "longitude": 5.7245}
+        assert mock_fetch.call_count == 1
 
         assert Commune.objects.filter(code="38185").count() == 1
-        commune = Commune.objects.get(code="38185")
-        assert commune.nom == "Grenoble"
-        assert commune.centre_latitude == 45.1885
 
 
 @pytest.mark.django_db
@@ -105,6 +120,18 @@ class TestReverseGeocodePoint:
         commune_from_point(point)
         # Reproduit la régression constatée en direct : sans stockage durable, chaque appel
         # (donc chaque item d'une liste) refaisait l'appel externe.
+        assert mock_fetch.call_count == 1
+
+    @patch("core.geo_lookup._fetch_json")
+    def test_does_not_retry_an_unresolved_point_within_the_cooldown(self, mock_fetch):
+        # C'est LA régression constatée en direct : un point sans correspondance (coordonnées
+        # de test imprécises, zone sans adresse répertoriée...) — 119 sur 225 points DEMO au
+        # moment du constat — était retenté à chaque lecture, ajoutant ~15-20s à
+        # /api/demandes/ (un appel externe par point non résolu, à chaque requête).
+        mock_fetch.return_value = {"type": "FeatureCollection", "features": []}
+        point = Point(5.7, 45.2, srid=4326)
+        assert commune_from_point(point) is None
+        assert commune_from_point(point) is None
         assert mock_fetch.call_count == 1
 
     @patch("core.geo_lookup._fetch_json")
