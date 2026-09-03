@@ -2192,7 +2192,9 @@ def _transformer_soumission(source_obj, source_kind, target_kind, request):
 
 
 class RequestViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
-    queryset = Request.objects.all()
+    # RequestSerializer déréférence author/crisis pour chaque demande — même optimisation que
+    # OfferViewSet.queryset (221 requêtes mesurées pour 220 demandes DEMO sans select_related).
+    queryset = Request.objects.select_related('author', 'crisis')
     serializer_class = RequestSerializer
     permission_classes = [AllowAny]
     filterset_class = AuthorEmailFilter
@@ -3716,7 +3718,13 @@ class MissionViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         return qs.filter(equipes__members=self.request.user).distinct()
 
 class OfferViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
-    queryset = Offer.objects.all()
+    # OfferSerializer déréférence author/crisis/mission/materiel_catalogue/offer_type/engagement
+    # (FK ou OneToOne inverse) et competences (M2M) pour chaque offre — sans select_related/
+    # prefetch_related, ça vaut ~5 requêtes SQL par offre (1313 requêtes mesurées pour 262
+    # offres DEMO). Purement une optimisation de requête, aucun changement de comportement.
+    queryset = Offer.objects.select_related(
+        'author', 'crisis', 'mission', 'materiel_catalogue', 'offer_type', 'engagement',
+    ).prefetch_related('competences')
     serializer_class = OfferSerializer
     permission_classes = [AllowAny]
     filterset_class = OfferSearchFilter
