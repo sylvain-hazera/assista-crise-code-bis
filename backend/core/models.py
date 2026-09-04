@@ -55,6 +55,15 @@ class Commune(models.Model):
     nom = models.CharField(max_length=255, null=True, blank=True)
     centre_latitude = models.FloatField(null=True, blank=True)
     centre_longitude = models.FloatField(null=True, blank=True)
+    # departement_code/epci_code/population : référentiel administratif complet, chargé en
+    # masse depuis geo.api.gouv.fr (voir core/management/commands/import_communes.py) —
+    # distinct du reverse-géocodage à la demande ci-dessus (qui ne résout qu'une commune à la
+    # fois, au moment où un point GPS la traverse). Sert à scoper la consultation des offres de
+    # bénévoles par secteur (mairie -> commune, communauté de communes -> EPCI, SDIS/
+    # gendarmerie/préfecture -> département) sans jointure géographique en lecture.
+    departement_code = models.CharField(max_length=3, null=True, blank=True, db_index=True)
+    epci_code = models.CharField(max_length=10, null=True, blank=True, db_index=True)
+    population = models.PositiveIntegerField(null=True, blank=True)
     date_maj = models.DateTimeField(auto_now=True)
     # Distinct de date_maj (mise à jour seulement en cas de succès) : posé à CHAQUE tentative,
     # réussie ou non — voir geo_lookup.RETRY_COOLDOWN. Sans lui, un code sans correspondance
@@ -593,6 +602,13 @@ class Offer(HebergementDetailsMixin, EnvironmentScopedModel):
     description = models.TextField(null=True, blank=True)
     photo = models.ImageField(upload_to="photos/offres/", null=True, blank=True, validators=[validate_image_file])
     location = gis_models.PointField(srid=4326, null=True, blank=True)
+    # Résolus une seule fois à la création (voir OfferViewSet.perform_create), à partir de
+    # `location` — même rôle que Request.commune_code/Information.commune_code, ajouté ici
+    # pour la "vue secteur" (mairie/EPCI/département) sans reverse-géocoder chaque offre à
+    # chaque requête (l'ancien vue_mairie le faisait ligne par ligne, voir son commentaire).
+    commune_code = models.CharField(max_length=10, null=True, blank=True, db_index=True)
+    epci_code = models.CharField(max_length=10, null=True, blank=True, db_index=True)
+    departement_code = models.CharField(max_length=3, null=True, blank=True, db_index=True)
     first_name_offer = models.CharField(max_length=60)
     last_name_offer = models.CharField(max_length=80)
     email_offer = models.EmailField()

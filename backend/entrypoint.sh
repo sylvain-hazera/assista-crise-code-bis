@@ -55,6 +55,7 @@ types_offres = [
     'Transport',
     'Matériel',
     'Soutien psychologique',
+    'Bénévolat',
     'Autre'
 ]
 

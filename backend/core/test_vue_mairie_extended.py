@@ -38,18 +38,19 @@ def _make_mairie_user(commune_code="38185", code="MAIRIE_VME"):
 @pytest.mark.django_db
 class TestOfferVueMairie:
 
-    @patch("core.views.commune_code_from_point")
-    def test_filters_by_commune(self, mock_geocode, api_client):
+    def test_filters_by_commune(self, api_client):
+        # commune_code résolu une seule fois à la création (perform_create), plus par
+        # reverse-géocodage en direct dans vue_mairie — donc posé ici directement, comme le
+        # ferait perform_create au moment de la soumission réelle.
         otype = OfferType.objects.create(type="Matériel (vue mairie test)", description="")
         offre_in = Offer.objects.create(
-            title="Offre dans la commune", location=Point(1, 1, srid=4326),
+            title="Offre dans la commune", location=Point(1, 1, srid=4326), commune_code="38185",
             first_name_offer="A", last_name_offer="B", email_offer="a@t.fr", offer_type=otype,
         )
         offre_out = Offer.objects.create(
-            title="Offre hors commune", location=Point(2, 2, srid=4326),
+            title="Offre hors commune", location=Point(2, 2, srid=4326), commune_code="75056",
             first_name_offer="C", last_name_offer="D", email_offer="c@t.fr", offer_type=otype,
         )
-        mock_geocode.side_effect = lambda p: "38185" if p.x == 1 else "75056"
 
         user, _ = _make_mairie_user()
         api_client.force_authenticate(user=user)

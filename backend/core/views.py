@@ -49,7 +49,8 @@ from .permissions import (
     INSTITUTIONAL_TYPES, user_can_view_photo,
     get_active_environment, get_effective_role, mask_email, mask_phone, send_mail_env_aware,
 )
-from .geo_lookup import commune_code_from_point
+from .geo_lookup import commune_code_from_point, commune_secteur_codes
+from .pagination import OptionalPageNumberPagination
 from django.contrib.gis.geos import Point
 
 
@@ -1996,6 +1997,51 @@ def _institution_commune_or_400(request):
     return institution.commune_code
 
 
+# Niveau de secteur consultable selon le type d'institution — voir _institution_secteur_or_400.
+# Une mairie/police municipale voit sa commune ; une communauté de communes voit son EPCI ; les
+# acteurs départementaux (SDIS, gendarmerie, préfecture, sous-préfecture, conseil départemental)
+# voient leur département. Any type not listed defaults to "commune" (le niveau le plus
+# restrictif), jamais un niveau plus large par défaut.
+SECTEUR_NIVEAU_PAR_TYPE_INSTITUTION = {
+    "MAIRIE": "commune",
+    "POLICE_MUNICIPALE": "commune",
+    "EPCI": "epci",
+    "SDIS": "departement",
+    "GENDARMERIE": "departement",
+    "PREFECTURE": "departement",
+    "SOUS_PREF": "departement",
+    "CG": "departement",
+}
+
+
+def _institution_secteur_or_400(request):
+    """(niveau, code) du secteur consultable par l'institution de l'utilisateur appelant :
+    dérivé de institution.commune_code (déjà renseigné pour toute institution via l'annuaire,
+    voir _institution_commune_or_400) en remontant vers son EPCI/département via Commune —
+    pas de nouveau champ sur Institution. Retourne une Response 400 prête à renvoyer si
+    l'institution n'a pas de commune, ou si le secteur dérivé (EPCI/département) n'est pas
+    encore résolu en base."""
+    commune_code = _institution_commune_or_400(request)
+    if isinstance(commune_code, Response):
+        return commune_code
+
+    institution = request.user.institution
+    type_code = (institution.type.code or "").upper()
+    niveau = SECTEUR_NIVEAU_PAR_TYPE_INSTITUTION.get(type_code, "commune")
+
+    if niveau == "commune":
+        return "commune", commune_code
+
+    secteur = commune_secteur_codes(commune_code)
+    code = secteur.get(f"{niveau}_code")
+    if not code:
+        return Response(
+            {"error": f"Secteur ({niveau}) introuvable pour la commune de votre institution."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    return niveau, code
+
+
 def resolve_competence_for_request(demande):
     """Compétence déduite du type de demande (RequestType -> Besoin -> Competence),
     utilisée aussi bien pour le matching automatique (perform_create) que pour fiabiliser
@@ -3878,7 +3924,7 @@ class OfferViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         # (update/partial_update/destroy n'avaient aucune restriction avant ce changement).
         if self.action in ('update', 'partial_update', 'destroy'):
             return [IsOwnerOrInstitutional()]
-        if self.action in ('assign_dossier', 'bulk_create_team', 'transformer', 'reactiver', 'vue_mairie'):
+        if self.action in ('assign_dossier', 'bulk_create_team', 'transformer', 'reactiver', 'vue_mairie', 'vue_secteur'):
             return [IsInstitutionalActor()]
         if self.action == 'affecter_stock':
             # Pas IsInstitutionalActor : un bénévole simple membre de l'équipe du point (voir
@@ -3956,23 +4002,43 @@ class OfferViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
 
         return Response(OfferMessageSerializer(message).data, status=status.HTTP_201_CREATED)
 
-    @action(detail=False, methods=["get"], permission_classes=[IsInstitutionalActor])
+    @action(detail=False, methods=["get"], permission_classes=[IsInstitutionalActor],
+            pagination_class=OptionalPageNumberPagination)
     def vue_mairie(self, request):
-        """Offres situées dans la commune de l'institution de l'utilisateur appelant — même
-        patron que DeclarationSecuriteViewSet.vue_mairie : Offer n'a pas de commune_code
-        stocké (contrairement à Request/Information), reverse-géocodage de `location` au
-        besoin. Les offres sans localisation n'ont pas de commune exploitable et sont donc
-        exclues ici, sans que ça affecte leur existence par ailleurs."""
+        """Offres de la commune de l'institution de l'utilisateur appelant. Filtre sur
+        Offer.commune_code (résolu une seule fois à la création, voir perform_create) — plus
+        de reverse-géocodage par offre à chaque appel (l'ancienne version rappelait l'API
+        externe pour CHAQUE offre de la queryset à CHAQUE requête, non borné par le volume)."""
         commune_code = _institution_commune_or_400(request)
         if isinstance(commune_code, Response):
             return commune_code
 
-        queryset = self.get_queryset().filter(location__isnull=False)
-        matching_ids = [
-            o.id for o in queryset
-            if commune_code_from_point(o.location) == commune_code
-        ]
-        offres = self.get_queryset().filter(id__in=matching_ids)
+        offres = self.get_queryset().filter(commune_code=commune_code).order_by("-created_at")
+        page = self.paginate_queryset(offres)
+        if page is not None:
+            return self.get_paginated_response(self.get_serializer(page, many=True).data)
+        return Response(self.get_serializer(offres, many=True).data)
+
+    @action(detail=False, methods=["get"], permission_classes=[IsInstitutionalActor],
+            pagination_class=OptionalPageNumberPagination)
+    def vue_secteur(self, request):
+        """Offres du secteur de l'institution de l'utilisateur appelant, à l'échelle adaptée à
+        son type : commune (mairie), EPCI (communauté de communes), département (SDIS,
+        gendarmerie, préfecture...) — voir _institution_secteur_or_400. Généralise vue_mairie
+        aux autres échelons administratifs ; toujours un simple filtre sur colonne indexée
+        (commune_code/epci_code/departement_code), jamais de jointure géographique en lecture.
+        Pagination recommandée (`?page=1`) : un département peut compter plusieurs milliers de
+        fiches."""
+        secteur = _institution_secteur_or_400(request)
+        if isinstance(secteur, Response):
+            return secteur
+        niveau, code = secteur
+
+        champ = {"commune": "commune_code", "epci": "epci_code", "departement": "departement_code"}[niveau]
+        offres = self.get_queryset().filter(**{champ: code}).order_by("-created_at")
+        page = self.paginate_queryset(offres)
+        if page is not None:
+            return self.get_paginated_response(self.get_serializer(page, many=True).data)
         return Response(self.get_serializer(offres, many=True).data)
 
     def perform_destroy(self, instance):
@@ -4024,7 +4090,19 @@ class OfferViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         else:
             # Sinon il est none
             offre = serializer.save(author=None, deletion_token=deletion_token, reponse_token=reponse_token, environment=environment)
-        
+
+        # Résout commune_code/epci_code/departement_code une seule fois ici plutôt qu'à chaque
+        # consultation (voir vue_secteur, et le commentaire sur Offer.commune_code) : le seul
+        # appel externe payé sur cette donnée est celui-ci, à la création.
+        if offre.location:
+            commune_code = commune_code_from_point(offre.location)
+            if commune_code:
+                secteur = commune_secteur_codes(commune_code)
+                offre.commune_code = commune_code
+                offre.epci_code = secteur["epci_code"]
+                offre.departement_code = secteur["departement_code"]
+                offre.save(update_fields=["commune_code", "epci_code", "departement_code"])
+
         audit_log(
             request=self.request,
             action_code="CREATION",
