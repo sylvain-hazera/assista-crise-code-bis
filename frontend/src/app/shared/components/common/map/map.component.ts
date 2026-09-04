@@ -28,6 +28,7 @@ interface LayerVisibility {
   centresTous: boolean;
   centresHebergement: boolean;
   postesSecours: boolean;
+  benevolesPompiers: boolean;
 }
 
 // Codes/libellés déjà utilisés côté offre/point pour repérer secourisme/soins — voir
@@ -75,6 +76,10 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     centresTous: true,
     centresHebergement: true,
     postesSecours: true,
+    // Annuaire de bénévoles (potentiellement plusieurs centaines de fiches sur un secteur
+    // départemental) : masqué par défaut, pour ne pas polluer la carte de crise dès l'ouverture
+    // — l'utilisateur l'active volontairement s'il en a besoin.
+    benevolesPompiers: false,
   };
 
   private map: maplibregl.Map | null = null;
@@ -84,6 +89,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   private informationsGeoJSON: FeatureCollection<Geometry> | null = null;
   private teamPositionsGeoJSON: FeatureCollection<Geometry> | null = null;
   private personnelSecourismeGeoJSON: FeatureCollection<Geometry> | null = null;
+  private benevolesPompiersGeoJSON: FeatureCollection<Geometry> | null = null;
   private centresTousGeoJSON: FeatureCollection<Geometry> | null = null;
   private centresHebergementGeoJSON: FeatureCollection<Geometry> | null = null;
   private postesSecoursGeoJSON: FeatureCollection<Geometry> | null = null;
@@ -113,6 +119,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     if (this.isInstitutional) {
       this.loadTeamPositions();
       this.loadCentres();
+      this.loadBenevolesPompiers();
     }
     // Centres d'accueil et postes de secours : visibles sans authentification (contrairement
     // aux deux calques ci-dessus), voir PointOperationnelViewSet.carte_publique.
@@ -130,6 +137,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     this.applyLayerVisibility('centres-tous-layer', this.layerVisibility.centresTous);
     this.applyLayerVisibility('centres-hebergement-layer', this.layerVisibility.centresHebergement);
     this.applyLayerVisibility('postes-secours-layer', this.layerVisibility.postesSecours);
+    this.applyLayerVisibility('benevoles-pompiers-layer', this.layerVisibility.benevolesPompiers);
   }
 
   private applyLayerVisibility(layerId: string, visible: boolean): void {
@@ -317,6 +325,24 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     });
   }
 
+  /** Annuaire de bénévoles (Offer type Bénévolat), scopé au secteur de l'institution appelante
+   * (commune/EPCI/département — voir OfferService.vueSecteur) : appel réseau distinct de
+   * loadHelpData, jamais mélangé aux offres de crise (exclude_type=Bénévolat là-bas). Calque
+   * masqué par défaut (voir layerVisibility.benevolesPompiers). */
+  loadBenevolesPompiers(): void {
+    this.offerService.vueSecteur().subscribe({
+      next: (benevoles) => {
+        this.benevolesPompiersGeoJSON = this.jsonToGeoJSON(benevoles);
+        this.runWhenMapReady(() => this.addOrUpdateBenevolesPompiersLayer());
+      },
+      error: () => {
+        // 400 si l'institution de l'utilisateur n'a pas de commune renseignée, ou si son type
+        // n'est pas géré — pas d'annuaire disponible pour ce compte, la carte reste utilisable
+        // sans ce calque.
+      },
+    });
+  }
+
   loadTeamPositions(): void {
     this.positionEquipeService.getAll().subscribe({
       next: (positions) => {
@@ -443,6 +469,55 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
 
     this.map.on('mouseenter', 'personnel-secourisme-layer', () => { this.map!.getCanvas().style.cursor = 'pointer'; });
     this.map.on('mouseleave', 'personnel-secourisme-layer', () => { this.map!.getCanvas().style.cursor = ''; });
+  }
+
+  private addOrUpdateBenevolesPompiersLayer(): void {
+    if (!this.map || !this.benevolesPompiersGeoJSON) return;
+
+    const existingSource = this.map.getSource('benevoles-pompiers') as maplibregl.GeoJSONSource | undefined;
+    if (existingSource) {
+      existingSource.setData(this.benevolesPompiersGeoJSON);
+      return;
+    }
+
+    this.map.addSource('benevoles-pompiers', { type: 'geojson', data: this.benevolesPompiersGeoJSON });
+
+    this.map.addLayer({
+      id: 'benevoles-pompiers-layer',
+      type: 'circle',
+      source: 'benevoles-pompiers',
+      layout: { visibility: this.layerVisibility.benevolesPompiers ? 'visible' : 'none' },
+      paint: {
+        'circle-color': '#7c3aed',
+        'circle-radius': 5,
+        'circle-stroke-width': 2,
+        'circle-stroke-color': '#fff'
+      }
+    });
+
+    this.map.on('click', 'benevoles-pompiers-layer', (e) => {
+      if (!e.features || e.features.length === 0) return;
+      const geometry = e.features[0].geometry as GeoJSON.Point;
+      const coordinates = geometry.coordinates.slice() as [number, number];
+      const props = e.features[0].properties || {};
+      const nom = `${props['first_name_offer'] || ''} ${props['last_name_offer'] || ''}`.trim() || 'Inconnu';
+      // MapLibre sérialise les propriétés tableau/objet en JSON string dans une source GeoJSON.
+      const raw = props['competences_libelles'];
+      let competences = '';
+      if (Array.isArray(raw)) {
+        competences = raw.join(', ');
+      } else if (typeof raw === 'string') {
+        try { competences = JSON.parse(raw).join(', '); } catch { competences = raw; }
+      }
+
+      new maplibregl.Popup()
+        .setLngLat(coordinates)
+        .setHTML(`<strong>${nom}</strong><br>Ancien sapeur-pompier bénévole${competences ? '<br>' + competences : ''}`)
+        .addTo(this.map!);
+    });
+
+    this.map.on('mouseenter', 'benevoles-pompiers-layer', () => { this.map!.getCanvas().style.cursor = 'pointer'; });
+    this.map.on('mouseleave', 'benevoles-pompiers-layer', () => { this.map!.getCanvas().style.cursor = ''; });
   }
 
   /** Tous les points opérationnels (centres d'accueil, de regroupement des moyens...) —

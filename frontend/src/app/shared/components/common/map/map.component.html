@@ -61,6 +61,11 @@
           <span class="layer-dot centres-dot"></span>
           Centres (tous types)
         </label>
+        <label class="layer-toggle-item">
+          <input type="checkbox" [(ngModel)]="layerVisibility.benevolesPompiers" (ngModelChange)="onLayerToggle()">
+          <span class="layer-dot benevoles-pompiers-dot"></span>
+          Bénévoles pompiers (annuaire, secteur)
+        </label>
       }
     </div>
     }

@@ -95,6 +95,14 @@ export class OfferService {
     return this.http.get<Offer[]>(`${this.url}/vue_mairie/`).pipe(map(list => list.map(this.normalize)));
   }
 
+  /** GET /api/offres/vue_secteur/ — comme vue_mairie, mais à l'échelle adaptée au type
+   * d'institution de l'appelant (commune/EPCI/département, voir _institution_secteur_or_400
+   * côté backend). Sans ?page=, renvoie tout d'un coup — volontaire ici : un secteur (même un
+   * département) reste d'un volume raisonnable, contrairement à /offres/ non filtré. */
+  vueSecteur(): Observable<Offer[]> {
+    return this.http.get<Offer[]>(`${this.url}/vue_secteur/`).pipe(map(list => list.map(this.normalize)));
+  }
+
   /** POST /api/offres/<id>/assign_dossier/ — affecte l'auteur de l'offre au dossier (rôle OFFRANT). */
   assignDossier(offerId: string, dossierId: string): Observable<{ id: string; dossier: string; created: boolean }> {
     return this.http.post<{ id: string; dossier: string; created: boolean }>(
