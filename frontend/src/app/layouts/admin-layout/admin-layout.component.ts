@@ -79,6 +79,8 @@ export class AdminLayoutComponent implements OnInit {
 
     { icon: 'group', label: 'Utilisateurs', route: '/admin/utilisateurs' },
 
+    { icon: 'fact_check', label: 'Main courante', route: '/admin/main-courante' },
+
     // Comptes Secours organisés en attente (auto-inscription bloquée jusqu'à décision d'un
     // admin ou de la mairie de leur territoire — voir accountValidationGuard) : réservé à ces
     // deux rôles, pas à tout institutionnel (un régulateur ou un autre Secours n'a rien à y
@@ -185,7 +187,7 @@ export class AdminLayoutComponent implements OnInit {
    * visible (route publique pour un chef d'équipe possiblement non institutionnel, voir
    * navItems). Tout le reste : masqué si le rôle effectif courant n'est pas institutionnel. */
   isNavItemVisible(item: NavItem): boolean {
-    if (item.label === 'Utilisateurs') return this.isSysAdmin();
+    if (item.label === 'Utilisateurs' || item.label === 'Main courante') return this.isSysAdmin();
     if (item.label === 'Mes interventions') return true;
     if (item.label === 'Validations de comptes') {
       const role = this.authService.getEffectiveRole();

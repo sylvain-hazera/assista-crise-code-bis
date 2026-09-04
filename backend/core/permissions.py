@@ -1,7 +1,6 @@
 """Permissions DRF réutilisables liées au type de compte (User.type)."""
 import hashlib
 
-from django.core.mail import send_mail
 from django.db.models import Q
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import BasePermission
@@ -39,10 +38,12 @@ def send_mail_env_aware(request, subject, message, from_email, recipient_list, *
     sans jamais spammer une adresse tierce. Sans effet en PROD. Ne concerne pas les emails de
     cycle de vie de compte (inscription, activation, validation) : structurellement propres à
     PROD, la démo ne crée jamais de compte."""
+    from .audit import send_mail_logged
+
     if get_active_environment(request) == Environment.DEMO and getattr(request.user, "is_authenticated", False):
         recipient_list = [request.user.email]
         subject = f"[DEMO] {subject}"
-    return send_mail(subject, message, from_email, recipient_list, **kwargs)
+    return send_mail_logged(request, subject, message, from_email, recipient_list, **kwargs)
 
 
 def get_effective_role(request):
@@ -165,6 +166,20 @@ def mask_phone(value):
     digest = "".join(c for c in hashlib.sha256(value.encode()).hexdigest() if c.isdigit())
     digits = (digest + "0123456789")[:9]
     return f"+33 {digits[0]} {digits[1:3]} {digits[3:5]} {digits[5:7]} {digits[7:9]}"
+
+
+def strip_masked_fields_in_demo(request, validated_data, fields):
+    """Retire `fields` de `validated_data` en zone DEMO — un formulaire d'édition affiche la
+    version masquée (mask_email/mask_phone, voir to_representation des serializers concernés)
+    et la renvoie telle quelle au save, même si un tout autre champ a changé : sans ce garde-
+    fou, éditer une fiche en DEMO écrase silencieusement une vraie adresse email/téléphone par
+    son masque affiché. Reproduit et corrigé en direct (comptes GRUISSAN/NICOLAS sur .114,
+    voir UserSerializer.update) puis généralisé à Request/Offer/Information, qui suivent le
+    même schéma de masquage."""
+    if request is not None and get_active_environment(request) == Environment.DEMO:
+        for field in fields:
+            validated_data.pop(field, None)
+    return validated_data
 
 
 def user_can_view_photo(request, obj, *, author_field='author', teams_field=None, dossiers_field=None):

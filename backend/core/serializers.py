@@ -7,7 +7,10 @@ from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from .auth_validation import InstitutionEmailValidator
 from .geo_lookup import commune_from_code, commune_from_point, commune_center_from_code
-from .permissions import INSTITUTIONAL_TYPES, get_active_environment, effective_role_or_none, mask_email, mask_phone
+from .permissions import (
+    INSTITUTIONAL_TYPES, get_active_environment, effective_role_or_none, mask_email, mask_phone,
+    strip_masked_fields_in_demo,
+)
 from .models import (
     Environment,
     UserRole,
@@ -287,6 +290,7 @@ class UserSerializer(serializers.ModelSerializer):
         if not is_institutional:
             for field in ('type', 'demo_role', 'enabled'):
                 validated_data.pop(field, None)
+        validated_data = strip_masked_fields_in_demo(request, validated_data, ('email', 'username', 'phone_number'))
         return super().update(instance, validated_data)
 
 def validate_crisis_open(crisis, field_name="crisis"):
@@ -458,6 +462,11 @@ class RequestSerializer(serializers.ModelSerializer):
         validate_crisis_open_and_monitored(attrs.get('crisis'))
         return attrs
 
+    def update(self, instance, validated_data):
+        request = self.context.get('request')
+        validated_data = strip_masked_fields_in_demo(request, validated_data, ('email_request', 'phone_request'))
+        return super().update(instance, validated_data)
+
 
 class RequestPhotoSerializer(serializers.ModelSerializer):
     """Photo additionnelle d'une demande d'aide (galerie, 9 max en plus de la principale déjà
@@ -578,6 +587,11 @@ class OfferSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         validate_crisis_open_and_monitored(attrs.get('crisis'))
         return attrs
+
+    def update(self, instance, validated_data):
+        request = self.context.get('request')
+        validated_data = strip_masked_fields_in_demo(request, validated_data, ('email_offer', 'phone_offer'))
+        return super().update(instance, validated_data)
 
 
 class OfferPhotoSerializer(serializers.ModelSerializer):
@@ -887,6 +901,11 @@ class InformationSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         validate_crisis_open_and_monitored(attrs.get('crisis'))
         return attrs
+
+    def update(self, instance, validated_data):
+        request = self.context.get('request')
+        validated_data = strip_masked_fields_in_demo(request, validated_data, ('email_information', 'phone_information'))
+        return super().update(instance, validated_data)
 
 class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
     """Serializer personnalisé pour l'authentification JWT"""
@@ -1483,6 +1502,33 @@ class AuditLogSerializer(serializers.ModelSerializer):
     def get_utilisateur_nom(self, obj):
         if not obj.utilisateur:
             return "Système"
+        return f"{obj.utilisateur.first_name} {obj.utilisateur.last_name}".strip() or obj.utilisateur.username
+
+
+class AuditLogAdminSerializer(serializers.ModelSerializer):
+    """Vue complète de la main courante, réservée à AuditLogViewSet.list/export en mode
+    consultation globale (administrateur, sans ?objet_type=&objet_id=) — contrairement à
+    AuditLogSerializer (widget d'historique par fiche), expose aussi l'adresse IP, le
+    user-agent, l'institution et le statut succès/échec : c'est le registre RGPD complet, pas
+    un simple fil d'activité."""
+
+    utilisateur_email = serializers.CharField(source='utilisateur.email', read_only=True, default=None)
+    utilisateur_nom = serializers.SerializerMethodField()
+    institution_nom = serializers.CharField(source='institution.nom', read_only=True, default=None)
+    action_code = serializers.CharField(source='action.code', read_only=True, default=None)
+    action_libelle = serializers.CharField(source='action.libelle', read_only=True, default=None)
+
+    class Meta:
+        model = AuditLog
+        fields = [
+            'id', 'date_action', 'utilisateur_email', 'utilisateur_nom', 'institution_nom',
+            'adresse_ip', 'user_agent', 'action_code', 'action_libelle', 'objet_type',
+            'objet_id', 'commentaire', 'succes', 'environment',
+        ]
+
+    def get_utilisateur_nom(self, obj):
+        if not obj.utilisateur:
+            return "Système / anonyme"
         return f"{obj.utilisateur.first_name} {obj.utilisateur.last_name}".strip() or obj.utilisateur.username
 
 

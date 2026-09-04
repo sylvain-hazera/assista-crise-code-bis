@@ -1,5 +1,5 @@
 from django.shortcuts import render
-from django.http import FileResponse
+from django.http import FileResponse, StreamingHttpResponse
 from rest_framework.decorators import action
 from rest_framework.views import APIView
 from rest_framework import viewsets, status, generics, permissions
@@ -13,7 +13,6 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from .serializers import MyTokenObtainPairSerializer  # if you've defined it in serializers
 from django.conf import settings
 from django.contrib.auth import authenticate
-from django.core.mail import send_mail
 from django.core.signing import TimestampSigner, BadSignature, SignatureExpired
 from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
@@ -28,6 +27,8 @@ from rest_framework.pagination import PageNumberPagination
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from .auth_validation import InstitutionEmailValidator
+import csv
+import io
 import datetime
 import os
 import secrets
@@ -37,7 +38,7 @@ from django.core.files.base import ContentFile
 from PIL import Image
 from PIL.ExifTags import TAGS, GPSTAGS
 
-from .audit import audit_log, get_client_ip
+from .audit import audit_log, get_client_ip, send_mail_logged
 from .export import build_crisis_export_zip
 from .institution_attachment import (
     find_institution_for_pending_user, attach_user_with_role,
@@ -187,7 +188,8 @@ def send_institution_account_email(request, user):
         "L'équipe Assista-Crise"
     )
 
-    send_mail(
+    send_mail_logged(
+        request,
         subject="Votre accès institutionnel Assista-Crise",
         message=message,
         from_email=None,
@@ -213,7 +215,8 @@ def send_crisis_regulateur_invite_email(request, user, crisis, institution):
         "L'équipe Assista-Crise"
     )
 
-    send_mail(
+    send_mail_logged(
+        request,
         subject="Vous avez été désigné responsable d'une crise sur Assista-Crise",
         message=message,
         from_email=None,
@@ -224,6 +227,7 @@ def send_crisis_regulateur_invite_email(request, user, crisis, institution):
 from .serializers import (
     validate_crisis_open,
     AuditLogSerializer,
+    AuditLogAdminSerializer,
     InstitutionTypeSerializer,
     InstitutionSerializer,
     RoleOperationnelSerializer,
@@ -947,7 +951,8 @@ class UserViewSet(viewsets.ModelViewSet):
             if not user.enabled:
                 # Envoyer email à l'utilisateur
                 try:
-                    send_mail(
+                    send_mail_logged(
+                        request,
                         subject="Compte créé - En attente de validation",
                         message=(
                             f"Bonjour {user.first_name} {user.last_name},\n\n"
@@ -972,7 +977,8 @@ class UserViewSet(viewsets.ModelViewSet):
                 
                 if admin_emails:
                     try:
-                        send_mail(
+                        send_mail_logged(
+                            request,
                             subject=f"Nouvelle demande de validation - {user.get_type_display()}",
                             message=(
                                 f"Un nouveau compte nécessite votre validation :\n\n"
@@ -993,7 +999,8 @@ class UserViewSet(viewsets.ModelViewSet):
 
                 if getattr(user, 'type', None) in {'AUT_LOCALE', 'SECOURS', 'ADMIN'}:
                     try:
-                        send_mail(
+                        send_mail_logged(
+                            request,
                             subject="Nouvelle création de compte institutionnel",
                             message=(
                                 f"Bonjour,\n\n"
@@ -1245,7 +1252,8 @@ class UserViewSet(viewsets.ModelViewSet):
             matched_institution = attach_secours_user_to_institution(user_to_approve, request)
             if pending_type_secours == 'rcsc' and matched_institution is None:
                 try:
-                    send_mail(
+                    send_mail_logged(
+                        request,
                         subject="Compte RCSC validé sans mairie rattachée",
                         message=(
                             f"Bonjour,\n\n"
@@ -1265,7 +1273,8 @@ class UserViewSet(viewsets.ModelViewSet):
 
         # Envoyer email de confirmation
         try:
-            send_mail(
+            send_mail_logged(
+                request,
                 subject="Votre compte a été validé !",
                 message=(
                     f"Bonjour {user_to_approve.first_name} {user_to_approve.last_name},\n\n"
@@ -1310,7 +1319,8 @@ class UserViewSet(viewsets.ModelViewSet):
         
         # Envoyer email de rejet
         try:
-            send_mail(
+            send_mail_logged(
+                request,
                 subject="Votre demande de compte a été refusée",
                 message=(
                     f"Bonjour {user_to_reject.first_name} {user_to_reject.last_name},\n\n"
@@ -1990,6 +2000,21 @@ def annotate_distance_from_crisis(queryset):
     distance_from_crisis=None) si location ou crisis absent, la jointure crisis étant déjà
     nullable côté FK — pas de traitement particulier requis ici."""
     return queryset.annotate(distance_from_crisis=Distance('location', F('crisis__location')))
+
+
+def parse_datetime_param(value):
+    """Accepte aussi bien une date seule (YYYY-MM-DD, ce qu'envoie un <input type=date>) qu'un
+    datetime ISO complet — parse_datetime seul renvoie None sur une date seule."""
+    if not value:
+        return None
+    parsed = parse_datetime(value)
+    if parsed:
+        return parsed
+    try:
+        d = datetime.date.fromisoformat(value)
+    except ValueError:
+        return None
+    return timezone.make_aware(datetime.datetime.combine(d, datetime.time.min))
 
 
 def _institution_commune_or_400(request):
@@ -4722,7 +4747,7 @@ class EngagementRessourcePublicView(APIView):
         return Response(self._serialize(engagement))
 
 
-def _notify_equipes_hebergement(offer, titre, message_texte):
+def _notify_equipes_hebergement(request, offer, titre, message_texte):
     """Notifie (Notification + email) tous les membres des équipes ayant le thème
     "Hébergement" et assignées à la crise de cette offre (Team.themes/Team.assigned_crises) —
     utilisé quand le propriétaire d'une offre répond à un message ou modifie son offre via
@@ -4735,8 +4760,8 @@ def _notify_equipes_hebergement(offer, titre, message_texte):
         Notification.objects.create(utilisateur=user, titre=titre, message=message_texte)
         if user.email:
             try:
-                send_mail(
-                    subject=titre, message=message_texte, from_email=None,
+                send_mail_logged(
+                    request, subject=titre, message=message_texte, from_email=None,
                     recipient_list=[user.email], fail_silently=True,
                 )
             except Exception as e:
@@ -4766,6 +4791,7 @@ class OfferReponsePublicView(APIView):
             offer=offre, auteur_equipe=None, contenu=contenu, environment=offre.environment,
         )
         _notify_equipes_hebergement(
+            request,
             offre,
             titre=f"Réponse reçue sur l'offre « {offre.title} »",
             message_texte=f"{offre.first_name_offer} {offre.last_name_offer} a répondu :\n\n« {contenu} »",
@@ -4778,6 +4804,7 @@ class OfferReponsePublicView(APIView):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         _notify_equipes_hebergement(
+            request,
             offre,
             titre=f"Offre modifiée : « {offre.title} »",
             message_texte=f"{offre.first_name_offer} {offre.last_name_offer} a modifié son offre.",
@@ -4816,6 +4843,16 @@ class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
     serializer_class = UserSerializer # Ajoute la logique de mot de passe dans le serializer
     permission_classes = [permissions.AllowAny]
+
+    def perform_create(self, serializer):
+        user = serializer.save()
+        audit_log(
+            request=self.request,
+            action_code="CREATION",
+            objet_type="User",
+            objet_id=user.id,
+            commentaire=f"Création de compte : {user.email}",
+        )
 
 class InstitutionValidationView(generics.GenericAPIView):
     permission_classes = [permissions.AllowAny]
@@ -4879,7 +4916,8 @@ class AccountActivationView(generics.GenericAPIView):
             # n'achève jamais cette étape.
             if matched_institution is None:
                 try:
-                    send_mail(
+                    send_mail_logged(
+                        request,
                         subject="Compte mairie activé sans institution rattachée",
                         message=(
                             f"Bonjour,\n\n"
@@ -5306,21 +5344,36 @@ class DossierCommentaireViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVie
             )
 
 class AuditLogViewSet(EnvironmentScopedViewSetMixin, viewsets.ReadOnlyModelViewSet):
-    """Lecture seule de la main courante, jamais en liste globale : toujours filtrée sur un
-    objet précis (?objet_type=&objet_id=), sinon renvoie une liste vide plutôt que tout
-    l'historique de la plateforme. Pour Team, une mairie ne voit que l'historique des équipes
-    de sa propre institution (même garde-fou que definir_mission/assigner_ressource) ; tout
-    autre objet reste réservé à un admin — ce chantier n'a eu besoin d'ouvrir que Team."""
+    """Lecture seule de la main courante. Deux modes :
+    - Fiche précise (?objet_type=&objet_id=) : widget d'historique par objet, ouvert à tout
+      acteur institutionnel (Team scopé à sa propre institution, tout le reste réservé à un
+      admin) — comportement historique, inchangé.
+    - Consultation globale (sans objet_type/objet_id) : réservée à un administrateur, filtrable
+      (date_debut/date_fin/action/objet_type/utilisateur/succes), paginée (voir
+      OptionalPageNumberPagination — ce mode peut légitimement compter des dizaines de milliers
+      de lignes depuis AuditTraceMiddleware). Voir aussi l'action `export` pour un CSV."""
     queryset = AuditLog.objects.all()
     serializer_class = AuditLogSerializer
     permission_classes = [IsInstitutionalActor]
+    pagination_class = OptionalPageNumberPagination
+
+    def get_serializer_class(self):
+        if self._is_browse_mode():
+            return AuditLogAdminSerializer
+        return AuditLogSerializer
+
+    def _is_browse_mode(self):
+        params = self.request.query_params
+        return not (params.get('objet_type') and params.get('objet_id'))
 
     def get_queryset(self):
+        if self._is_browse_mode():
+            if get_effective_role(self.request) != UserRole.ADMINISTRATOR:
+                return AuditLog.objects.none()
+            return self._filtered_browse_queryset()
+
         objet_type = self.request.query_params.get('objet_type')
         objet_id = self.request.query_params.get('objet_id')
-        if not objet_type or not objet_id:
-            return AuditLog.objects.none()
-
         queryset = AuditLog.objects.filter(
             objet_type=objet_type, objet_id=objet_id, environment=get_active_environment(self.request),
         ).select_related('utilisateur', 'action').order_by('-date_action')
@@ -5334,6 +5387,84 @@ class AuditLogViewSet(EnvironmentScopedViewSetMixin, viewsets.ReadOnlyModelViewS
         if get_effective_role(self.request) != UserRole.ADMINISTRATOR:
             return AuditLog.objects.none()
         return queryset
+
+    def _filtered_browse_queryset(self):
+        params = self.request.query_params
+        queryset = AuditLog.objects.filter(
+            environment=get_active_environment(self.request),
+        ).select_related('utilisateur', 'institution', 'action').order_by('-date_action')
+
+        date_debut = parse_datetime_param(params.get('date_debut'))
+        if date_debut:
+            queryset = queryset.filter(date_action__gte=date_debut)
+        date_fin = parse_datetime_param(params.get('date_fin'))
+        if date_fin:
+            queryset = queryset.filter(date_action__lte=date_fin)
+        if params.get('action'):
+            queryset = queryset.filter(action__code=params['action'])
+        if params.get('objet_type'):
+            queryset = queryset.filter(objet_type=params['objet_type'])
+        if params.get('utilisateur'):
+            queryset = queryset.filter(utilisateur__email__icontains=params['utilisateur'])
+        if params.get('succes') in ('true', 'false'):
+            queryset = queryset.filter(succes=(params['succes'] == 'true'))
+        return queryset
+
+    @action(detail=False, methods=["get"])
+    def export(self, request):
+        """Export CSV de la main courante — mêmes filtres que la consultation, réservé à un
+        administrateur. Colonnes en clair (pas d'UUID d'action, pas de JSON) pour rester lisible
+        par quelqu'un qui ouvre le fichier dans un tableur, pas seulement par un développeur."""
+        if get_effective_role(request) != UserRole.ADMINISTRATOR:
+            raise PermissionDenied("Cet export est réservé aux administrateurs.")
+
+        queryset = self._filtered_browse_queryset()
+        total = queryset.count()
+
+        def generate():
+            buffer = io.StringIO()
+            writer = csv.writer(buffer, delimiter=';')
+            writer.writerow([
+                "Date", "Heure", "Utilisateur", "Institution", "Adresse IP", "Action",
+                "Type d'objet", "ID objet", "Commentaire", "Succès", "Environnement", "Navigateur",
+            ])
+            yield buffer.getvalue()
+            buffer.seek(0); buffer.truncate(0)
+
+            for entry in queryset.iterator(chunk_size=500):
+                utilisateur = entry.utilisateur
+                nom_utilisateur = (
+                    (f"{utilisateur.first_name} {utilisateur.last_name}".strip() or utilisateur.email)
+                    if utilisateur else "Système / anonyme"
+                )
+                writer.writerow([
+                    entry.date_action.strftime("%d/%m/%Y"),
+                    entry.date_action.strftime("%H:%M:%S"),
+                    nom_utilisateur,
+                    entry.institution.nom if entry.institution else "",
+                    entry.adresse_ip or "",
+                    entry.action.libelle if entry.action else "",
+                    entry.objet_type,
+                    str(entry.objet_id) if entry.objet_id else "",
+                    entry.commentaire or "",
+                    "Oui" if entry.succes else "Non",
+                    entry.environment,
+                    entry.user_agent or "",
+                ])
+                yield buffer.getvalue()
+                buffer.seek(0); buffer.truncate(0)
+
+        audit_log(
+            request=request,
+            action_code="EXPORT",
+            objet_type="AuditLog",
+            commentaire=f"Export CSV de la main courante ({total} lignes)",
+        )
+
+        horodatage = timezone.now().strftime("%Y-%m-%d_%H%M")
+        response = StreamingHttpResponse(generate(), content_type="text/csv; charset=utf-8")
+        response['Content-Disposition'] = f'attachment; filename="main-courante-{horodatage}.csv"'
+        return response
 
 
 class DossierHistoriqueViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):

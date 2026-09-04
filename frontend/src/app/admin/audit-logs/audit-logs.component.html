@@ -1,0 +1,129 @@
+<div class="audit-page">
+
+  <header class="audit-header">
+    <div class="audit-title">
+      <span class="material-icons title-icon">fact_check</span>
+      <h1>Main courante</h1>
+      @if (!isLoading) {
+        <span class="badge-total">{{ totalCount }} entrée{{ totalCount > 1 ? 's' : '' }}</span>
+      }
+    </div>
+    <button class="btn-primary" (click)="exportCsv()" [disabled]="isExporting">
+      <span class="material-icons">download</span>
+      {{ isExporting ? 'Export en cours…' : 'Exporter en CSV' }}
+    </button>
+  </header>
+
+  @if (errorMessage) {
+    <div class="alert-error">
+      <span class="material-icons">error_outline</span>
+      {{ errorMessage }}
+    </div>
+  }
+
+  <section class="filters-bar">
+    <div class="filter-field">
+      <label>Depuis</label>
+      <input type="date" [(ngModel)]="filters.date_debut" />
+    </div>
+    <div class="filter-field">
+      <label>Jusqu'au</label>
+      <input type="date" [(ngModel)]="filters.date_fin" />
+    </div>
+    <div class="filter-field">
+      <label>Action</label>
+      <select [(ngModel)]="filters.action">
+        <option [ngValue]="undefined">Toutes</option>
+        @for (opt of actionOptions; track opt.code) {
+          <option [value]="opt.code">{{ opt.libelle }}</option>
+        }
+      </select>
+    </div>
+    <div class="filter-field">
+      <label>Type d'objet</label>
+      <input type="text" placeholder="ex: Offer, User, Crisis…" [(ngModel)]="filters.objet_type" />
+    </div>
+    <div class="filter-field">
+      <label>Utilisateur</label>
+      <input type="text" placeholder="email…" [(ngModel)]="filters.utilisateur" />
+    </div>
+    <div class="filter-field">
+      <label>Statut</label>
+      <select [(ngModel)]="filters.succes">
+        <option [ngValue]="undefined">Tous</option>
+        <option value="true">Succès</option>
+        <option value="false">Échec</option>
+      </select>
+    </div>
+    <div class="filter-actions">
+      <button class="btn-secondary" (click)="applyFilters()">
+        <span class="material-icons">filter_alt</span> Filtrer
+      </button>
+      <button class="btn-ghost" (click)="resetFilters()">Réinitialiser</button>
+    </div>
+  </section>
+
+  <section class="table-card">
+    @if (isLoading) {
+      <div class="skel-rows">
+        @for (i of [1,2,3,4,5,6,7,8]; track i) { <div class="skel skel-row"></div> }
+      </div>
+    } @else if (entries.length) {
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Utilisateur</th>
+              <th>Institution</th>
+              <th>IP</th>
+              <th>Action</th>
+              <th>Objet</th>
+              <th>Commentaire</th>
+              <th>Statut</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (entry of entries; track entry.id) {
+              <tr [class.row-echec]="!entry.succes">
+                <td class="date-cell">{{ entry.date_action | date:'dd/MM/yyyy HH:mm:ss' }}</td>
+                <td>
+                  <div class="user-cell">
+                    <span>{{ entry.utilisateur_nom }}</span>
+                    @if (entry.utilisateur_email) { <span class="user-email">{{ entry.utilisateur_email }}</span> }
+                  </div>
+                </td>
+                <td>{{ entry.institution_nom || '—' }}</td>
+                <td class="ip-cell">{{ entry.adresse_ip || '—' }}</td>
+                <td><span class="action-chip">{{ actionLibelle(entry.action_code) }}</span></td>
+                <td>{{ entry.objet_type }}</td>
+                <td class="comment-cell" [title]="entry.commentaire || ''">{{ entry.commentaire || '—' }}</td>
+                <td>
+                  <span class="status-chip" [class.status-ok]="entry.succes" [class.status-ko]="!entry.succes">
+                    {{ entry.succes ? 'OK' : 'Échec' }}
+                  </span>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+
+      <div class="pagination">
+        <button class="btn-icon" (click)="goToPage(page - 1)" [disabled]="page <= 1">
+          <span class="material-icons">chevron_left</span>
+        </button>
+        <span>Page {{ page }} / {{ totalPages }}</span>
+        <button class="btn-icon" (click)="goToPage(page + 1)" [disabled]="page >= totalPages">
+          <span class="material-icons">chevron_right</span>
+        </button>
+      </div>
+    } @else {
+      <div class="empty-state">
+        <span class="material-icons">inbox</span>
+        <p>Aucune entrée pour ces filtres</p>
+      </div>
+    }
+  </section>
+
+</div>

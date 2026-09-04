@@ -204,7 +204,7 @@ class TestEmailNotifications:
     """Tests des notifications par email"""
     
     @pytest.mark.skip(reason="Mock send_mail ne capture pas les appels dans try/except")
-    @patch('core.views.send_mail')
+    @patch('django.core.mail.send_mail')
     def test_register_rescue_sends_email(self, mock_send_mail, api_client):
         """Test inscription SECOURS envoie email de validation"""
         url = reverse('user-register')
@@ -226,7 +226,7 @@ class TestEmailNotifications:
         assert mock_send_mail.called
     
     @pytest.mark.skip(reason="Nécessite investigation serializer Request")
-    @patch('core.views.send_mail')
+    @patch('django.core.mail.send_mail')
     def test_request_creation_sends_email(self, mock_send_mail, api_client, request_type):
         """Test création demande envoie email de confirmation"""
         url = reverse('request-list')
@@ -275,7 +275,7 @@ class TestAccountValidation:
         )
         
         api_client.force_authenticate(user=admin)
-        with patch('core.views.send_mail'):
+        with patch('django.core.mail.send_mail'):
             url = reverse('user-approve-account', kwargs={'pk': pending.id})
             response = api_client.post(url)
         
@@ -302,7 +302,7 @@ class TestAccountValidation:
         )
         
         api_client.force_authenticate(user=admin)
-        with patch('core.views.send_mail'):
+        with patch('django.core.mail.send_mail'):
             url = reverse('user-reject-account', kwargs={'pk': pending.id})
             response = api_client.post(url, {'reason': 'Test rejet'}, format='json')
         
@@ -333,7 +333,7 @@ class TestDeletionViews:
     """Tests des vues de suppression par token"""
     
     @pytest.mark.skip(reason="Nécessite investigation serializer Request")
-    @patch('core.views.send_mail')
+    @patch('django.core.mail.send_mail')
     def test_delete_request_by_token(self, mock_send_mail, api_client, request_type):
         """Test suppression demande via token"""
         # Créer une demande

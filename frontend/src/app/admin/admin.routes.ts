@@ -10,6 +10,7 @@ import { TeamsComponent } from './teams/teams.component';
 import { MapComponent } from '../shared/components/common/map/map.component';
 import { ResultsComponent } from './results/results.component';
 import { UsersComponent } from './users/users.component';
+import { AuditLogsComponent } from './audit-logs/audit-logs.component';
 import { sysAdminGuard, institutionalEffectiveGuard, accountValidationGuard } from '../core/guards/admin.guard';
 import { AccesRefuseComponent } from './acces-refuse/acces-refuse.component';
 import { AccountValidationsComponent } from './account-validations/account-validations.component';
@@ -43,6 +44,7 @@ export const ADMIN_ROUTES: Routes = [
   { path: 'carte', component: MapComponent, canActivate: [institutionalEffectiveGuard] },
   { path: 'resultats', component: ResultsComponent, canActivate: [institutionalEffectiveGuard] },
   { path: 'utilisateurs', component: UsersComponent, canActivate: [sysAdminGuard] },
+  { path: 'main-courante', component: AuditLogsComponent, canActivate: [sysAdminGuard] },
   { path: 'validations-comptes', component: AccountValidationsComponent, canActivate: [accountValidationGuard] },
   { path: 'competences', component: CompetencesComponent, canActivate: [institutionalEffectiveGuard] },
   { path: 'besoins', component: BesoinsComponent, canActivate: [institutionalEffectiveGuard] },

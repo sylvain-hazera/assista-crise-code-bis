@@ -41,7 +41,7 @@ class TestAascAttachment:
         pending = _make_pending_secours("aasc", institution_name="AASC Grenoble Secours")
 
         api_client.force_authenticate(user=admin)
-        with patch("core.views.send_mail"):
+        with patch("django.core.mail.send_mail"):
             response = api_client.post(reverse("user-approve-account", kwargs={"pk": pending.id}))
 
         assert response.status_code == status.HTTP_200_OK
@@ -78,7 +78,7 @@ class TestRcscAttachment:
         pending = _make_pending_secours("rcsc", commune_code="38185")
 
         api_client.force_authenticate(user=admin)
-        with patch("core.views.send_mail") as mock_send_mail:
+        with patch("django.core.mail.send_mail") as mock_send_mail:
             response = api_client.post(reverse("user-approve-account", kwargs={"pk": pending.id}))
 
         assert response.status_code == status.HTTP_200_OK
