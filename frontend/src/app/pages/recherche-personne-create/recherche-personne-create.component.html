@@ -1,0 +1,342 @@
+<div class="recherche-container">
+
+  <div class="form-wrapper">
+
+    <div class="form-header">
+
+      <a
+        class="back-link"
+        routerLink="/recherches-personnes"
+      >
+        <span class="material-icons">
+          arrow_back
+        </span>
+        Retour
+      </a>
+
+      <div class="divider-header">
+        <span class="line"></span>
+
+        <h1 class="form-title">
+          Nouvelle recherche
+        </h1>
+
+        <span class="line"></span>
+      </div>
+
+    </div>
+
+    <div class="form-section">
+
+      <h2 class="section-title">
+        Personne recherchée
+      </h2>
+
+      <div class="form-group">
+        <label class="form-label">
+          Nom
+        </label>
+
+        <input
+          type="text"
+          class="form-input"
+          [(ngModel)]="modele.nom"
+          placeholder="Nom"
+        >
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">
+          Prénom
+        </label>
+
+        <input
+          type="text"
+          class="form-input"
+          [(ngModel)]="modele.prenom"
+          placeholder="Prénom"
+        >
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">
+          Age
+        </label>
+
+        <input
+          type="number"
+          class="form-input"
+          [(ngModel)]="modele.age"
+          placeholder="Age"
+        >
+      </div>
+
+    </div>
+
+    <div class="form-section">
+
+      <h2 class="section-title">
+        Photo
+      </h2>
+
+      <div class="file-upload-wrapper">
+
+        <input
+          type="file"
+          id="fileUpload"
+          class="file-input"
+          (change)="onFileSelected($event)"
+        >
+
+        <label
+          for="fileUpload"
+          class="file-upload-label"
+        >
+          <span class="material-icons">
+            photo_camera
+          </span>
+
+          Déposez une photo ou cliquez pour sélectionner un fichier
+
+        </label>
+
+        <div
+          *ngIf="previewUrl"
+          class="preview-wrapper"
+        >
+
+          <img
+            [src]="previewUrl"
+            alt=""
+            class="preview-image"
+          >
+
+        </div>
+
+      </div>
+
+    </div>
+
+    <div class="form-section">
+
+      <h2 class="section-title">
+        Informations complémentaires
+      </h2>
+
+      <div class="form-group">
+
+        <label class="form-label">
+          Description
+        </label>
+
+        <textarea
+          class="form-textarea"
+          [(ngModel)]="modele.description"
+          placeholder="Dernière position connue, signes distinctifs, tenue vestimentaire, informations utiles..."
+        ></textarea>
+
+      </div>
+
+    </div>
+
+
+
+    <div class="form-section">
+
+      <h2 class="section-title">
+        Localisation
+      </h2>
+
+      <div class="form-group">
+
+        <label class="form-label">
+          Crise associée
+        </label>
+
+        <select
+          class="form-select"
+          [(ngModel)]="modele.crise"
+        >
+          <option [ngValue]="null">
+            Sélectionner une crise
+          </option>
+
+          <option
+            *ngFor="let crise of crises"
+            [value]="crise.id"
+          >
+            {{ crise.name }}
+          </option>
+
+        </select>
+
+      </div>
+
+      <div class="form-group">
+
+        <label class="form-label">
+          Ville
+        </label>
+
+        <input
+          type="text"
+          class="form-input"
+          [(ngModel)]="modele.ville"
+          placeholder="Ville"
+        >
+
+      </div>
+
+      <div class="form-group">
+
+        <label class="form-label">
+          Type de localisation
+        </label>
+
+        <select
+          class="form-select"
+          [(ngModel)]="modele.source"
+        >
+          <option value="DOMICILE">
+            Domicile
+          </option>
+
+          <option value="EHPAD">
+            EHPAD
+          </option>
+
+        </select>
+
+      </div>
+
+      <div *ngIf="modele.source === 'EHPAD'">
+
+        <div class="form-group">
+
+          <label class="form-label">
+            Nom de l'EHPAD
+          </label>
+
+          <input
+            type="text"
+            class="form-input"
+            [(ngModel)]="modele.ehpad_nom"
+            placeholder="Nom de l'EHPAD"
+          >
+
+        </div>
+
+        <div class="form-group">
+
+          <label class="form-label">
+            Adresse EHPAD
+          </label>
+
+          <textarea
+            class="form-textarea"
+            [(ngModel)]="modele.ehpad_adresse"
+          ></textarea>
+
+        </div>
+
+      </div>
+
+      <div *ngIf="modele.source === 'DOMICILE'">
+
+        <div class="form-group">
+
+          <label class="form-label">
+            Adresse
+          </label>
+
+          <textarea
+            class="form-textarea"
+            [(ngModel)]="modele.adresse"
+          ></textarea>
+
+        </div>
+
+      </div>
+
+    </div>
+
+    <div class="form-section">
+
+      <h2 class="section-title">
+        Coordonnées du déclarant
+      </h2>
+      <p class="section-description">
+        Ces coordonnées seront utilisées pour permettre aux secours
+        et aux autorités locales de vous contacter rapidement.
+      </p>
+      <p
+        *ngIf="modele.contact_email"
+        clas*="user-detected"
+      >
+        Les coordonnées du compte connecté
+        seront utilisées.
+      </p>
+
+
+      <div class="form-group">
+
+        <label class="form-label">
+          Nom du contact
+        </label>
+
+        <input
+          type="text"
+          class="form-input"
+          [(ngModel)]="modele.contact_nom"
+          [readonly]="true"
+        >
+
+      </div>
+
+      <div class="form-group">
+
+        <label class="form-label">
+          Email
+        </label>
+
+        <input
+          type="email"
+          class="form-input"
+          [(ngModel)]="modele.contact_email"
+          [readonly]="true"
+        >
+
+      </div>
+
+      <div class="form-group">
+
+        <label class="form-label">
+          Téléphone
+        </label>
+
+        <input
+          type="text"
+          class="form-input"
+          [(ngModel)]="modele.contact_telephone"
+        >
+
+      </div>
+
+    </div>
+
+    <div class="form-actions">
+
+      <button
+        type="button"
+        class="btn-submit"
+        (click)="enregistrer()"
+      >
+        Créer la recherche
+      </button>
+
+    </div>
+
+  </div>
+
+</div>
+

@@ -1,0 +1,19 @@
+<h2>Besoins</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Nom</th>
+      <th>Description</th>
+      <th>Actif</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr *ngFor="let b of besoins">
+      <td>{{ b.nom }}</td>
+      <td>{{ b.description }}</td>
+      <td>{{ b.actif ? 'Oui' : 'Non' }}</td>
+    </tr>
+  </tbody>
+</table>

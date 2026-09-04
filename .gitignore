@@ -9,6 +9,7 @@ Thumbs.db
 *.log
 *.tmp
 node_modules
+.vscode/
 
 # ==========================================
 # 2. BACKEND PYTHON
@@ -18,6 +19,9 @@ backend/*.py[cod]
 backend/*$py.class
 backend/.pytest_cache/
 backend/.mypy_cache/
+backend/.coverage
+backend/coverage.xml
+backend/htmlcov/
 backend/.venv/
 venv/
 ENV/
