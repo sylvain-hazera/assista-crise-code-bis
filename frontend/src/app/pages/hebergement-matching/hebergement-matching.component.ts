@@ -162,7 +162,9 @@ export class HebergementMatchingComponent implements OnInit {
   private loadAll(): void {
     forkJoin({
       team: this.teamService.getById(this.teamId),
-      offers: this.offerService.getAll(),
+      // exclude_type=Bénévolat : hors-sujet pour un matching d'hébergement (voir
+      // ReportingComponent.loadAll pour le même motif).
+      offers: this.offerService.getAll({ exclude_type: 'Bénévolat' }),
       requests: this.requestService.getAll(),
       requestTypes: this.requestService.getTypes(),
     }).subscribe({

@@ -309,9 +309,13 @@ export class ReportingComponent implements OnInit, OnDestroy {
     this.selectedRequestIds.clear();
     this.selectedInformationIds.clear();
     const actifParams = this.showDesactives ? { actif: 'all' } : undefined;
+    // exclude_type=Bénévolat : l'annuaire permanent de bénévoles (potentiellement des
+    // milliers de fiches, sans crise rattachée) ne relève pas de ce tableau de triage —
+    // consultable via OfferService.vueSecteur à la place.
+    const offreParams = { ...(actifParams ?? {}), exclude_type: 'Bénévolat' };
     forkJoin({
       crises:       this.crisisService.getAll(),
-      offres:       this.offerService.getAll(actifParams),
+      offres:       this.offerService.getAll(offreParams),
       demandes:     this.requestService.getAll(actifParams),
       informations: this.informationService.getAll(actifParams),
       teams:        this.teamService.getAll(),

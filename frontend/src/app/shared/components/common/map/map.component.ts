@@ -286,7 +286,9 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   loadHelpData() { // Load requests, offers and informations in parallel and process them together to add to the map
     this.subscription = forkJoin({
       requests: this.requestService.getAll(),
-      proposals: this.offerService.getAll(),
+      // exclude_type=Bénévolat : l'annuaire permanent de bénévoles n'a pas vocation à être
+      // épinglé sur la carte des besoins/offres de crise (voir ReportingComponent.loadAll).
+      proposals: this.offerService.getAll({ exclude_type: 'Bénévolat' }),
       informations: this.informationService.getAll()
     }).subscribe({
       next: ({ requests, proposals, informations }) => {

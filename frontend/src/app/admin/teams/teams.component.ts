@@ -146,7 +146,9 @@ export class TeamsComponent implements OnInit {
     forkJoin({
       users:    this.userService.getAll(),
       crisis:   this.crisisService.getAll(),
-      offers:   this.offerService.getAll(),
+      // exclude_type=Bénévolat : l'annuaire permanent de bénévoles n'a pas vocation à être
+      // proposé comme ressource affectable à une équipe (voir ReportingComponent.loadAll).
+      offers:   this.offerService.getAll({ exclude_type: 'Bénévolat' }),
       requests: this.requestService.getAll(),
       teams:    this.teamService.getAll(this.showDesactives),       // ← ajouté ici
       disponibilites: this.disponibiliteOffreService.getAll(),
@@ -809,7 +811,7 @@ export class TeamsComponent implements OnInit {
     if (!this.selectedTeam?.id) return;
     this.teamService.definirStatutRessource(this.selectedTeam.id, offerId, statut).subscribe({
       next: (updated) => {
-        this.offerService.getAll().subscribe(offers => {
+        this.offerService.getAll({ exclude_type: 'Bénévolat' }).subscribe(offers => {
           this.offers = offers;
           this.selectedTeam = { ...updated, missions: this.buildMissions(updated) };
           this.reloadTeams();

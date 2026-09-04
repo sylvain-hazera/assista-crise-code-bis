@@ -818,6 +818,11 @@ class OfferSearchFilter(AuthorEmailFilter):
     inviter_benevole) : on cherche parmi TOUTES les offres, pas seulement celles de la crise en
     cours, décision actée avec l'utilisateur."""
     search = filters.CharFilter(method='filter_search')
+    # Exclut un type d'offre (ex: "Bénévolat") — utilisé par le tableau de triage régulateur
+    # (ReportingComponent) pour ne pas charger l'annuaire permanent de bénévoles au côté des
+    # offres de crise en attente d'action : sémantiquement différent (pas de crise rattachée,
+    # potentiellement des milliers de fiches), à consulter via /offres/vue_secteur/ à la place.
+    exclude_type = filters.CharFilter(method='filter_exclude_type')
 
     def filter_search(self, queryset, name, value):
         return queryset.filter(
@@ -829,6 +834,9 @@ class OfferSearchFilter(AuthorEmailFilter):
             | Q(author__last_name__icontains=value)
             | Q(author__email__icontains=value)
         )
+
+    def filter_exclude_type(self, queryset, name, value):
+        return queryset.exclude(offer_type__type=value)
 
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
@@ -1399,7 +1407,10 @@ class DashboardStatsView(APIView):
         now = timezone.now()
 
         crises_all = Crisis.objects.filter(environment=env)
-        offres_all = Offer.objects.filter(environment=env)
+        # exclude Bénévolat : annuaire permanent de bénévoles (potentiellement des milliers de
+        # fiches, sans crise rattachée) — hors-sujet pour ce tableau de bord de suivi de crise,
+        # même motif que ReportingComponent.loadAll côté frontend.
+        offres_all = Offer.objects.filter(environment=env).exclude(offer_type__type='Bénévolat')
         demandes_all = Request.objects.filter(environment=env)
         totals = {
             "crises": crises_all.count(),
