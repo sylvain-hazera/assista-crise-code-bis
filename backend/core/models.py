@@ -63,6 +63,7 @@ class Commune(models.Model):
     # gendarmerie/préfecture -> département) sans jointure géographique en lecture.
     departement_code = models.CharField(max_length=3, null=True, blank=True, db_index=True)
     epci_code = models.CharField(max_length=10, null=True, blank=True, db_index=True)
+    region_code = models.CharField(max_length=3, null=True, blank=True, db_index=True)
     population = models.PositiveIntegerField(null=True, blank=True)
     date_maj = models.DateTimeField(auto_now=True)
     # Distinct de date_maj (mise à jour seulement en cas de succès) : posé à CHAQUE tentative,
@@ -609,6 +610,7 @@ class Offer(HebergementDetailsMixin, EnvironmentScopedModel):
     commune_code = models.CharField(max_length=10, null=True, blank=True, db_index=True)
     epci_code = models.CharField(max_length=10, null=True, blank=True, db_index=True)
     departement_code = models.CharField(max_length=3, null=True, blank=True, db_index=True)
+    region_code = models.CharField(max_length=3, null=True, blank=True, db_index=True)
     first_name_offer = models.CharField(max_length=60)
     last_name_offer = models.CharField(max_length=80)
     email_offer = models.EmailField()
@@ -976,6 +978,40 @@ class Institution(EnvironmentScopedModel):
         blank=True,
         null=True
     )
+
+    # Dénormalisés depuis commune_code (voir Institution.save()) : le secteur réel d'une
+    # institution EPCI/département/région ne doit jamais être recalculé en base Commune à
+    # chaque appel de vue_secteur — juste lu ici. Résolus une seule fois, à chaque changement
+    # de commune_code.
+    epci_code = models.CharField(max_length=10, null=True, blank=True)
+    departement_code = models.CharField(max_length=3, null=True, blank=True)
+    region_code = models.CharField(max_length=3, null=True, blank=True)
+
+    class SecteurNiveau(models.TextChoices):
+        COMMUNE = "commune", "Communal"
+        EPCI = "epci", "Intercommunal (EPCI)"
+        DEPARTEMENT = "departement", "Départemental"
+        REGION = "region", "Régional"
+        NATIONAL = "national", "National"
+
+    # Force le niveau de secteur de vue_secteur pour CETTE institution, indépendamment de son
+    # type — pensé pour un compte de test (simuler un secteur national/régional pour une
+    # mairie, par exemple), jamais posé automatiquement. Null = comportement normal (niveau
+    # déduit du type d'institution, voir SECTEUR_NIVEAU_PAR_TYPE_INSTITUTION).
+    secteur_override = models.CharField(
+        max_length=20, choices=SecteurNiveau.choices, null=True, blank=True,
+        help_text="Force le niveau de secteur (vue_secteur) pour cette institution, quel que "
+                   "soit son type — usage test uniquement, laisser vide sinon.",
+    )
+
+    def save(self, *args, **kwargs):
+        if self.commune_code:
+            from .geo_lookup import commune_secteur_codes
+            secteur = commune_secteur_codes(self.commune_code)
+            self.epci_code = secteur.get("epci_code")
+            self.departement_code = secteur.get("departement_code")
+            self.region_code = secteur.get("region_code")
+        super().save(*args, **kwargs)
 
     actif = models.BooleanField(
         default=True

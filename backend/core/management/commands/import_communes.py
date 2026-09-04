@@ -42,7 +42,7 @@ class Command(BaseCommand):
     def _import_departement(self, dep_code):
         url = (
             f"{GEO_API}/departements/{urllib.parse.quote(dep_code)}/communes"
-            "?fields=nom,code,population,codeDepartement,codeEpci,centre&format=json"
+            "?fields=nom,code,population,codeDepartement,codeEpci,codeRegion,centre&format=json"
         )
         data = self._fetch(url)
         if not data:
@@ -59,6 +59,7 @@ class Command(BaseCommand):
                 population=c.get("population"),
                 departement_code=c.get("codeDepartement"),
                 epci_code=c.get("codeEpci"),
+                region_code=c.get("codeRegion"),
                 centre_longitude=lon,
                 centre_latitude=lat,
             ))
@@ -67,7 +68,7 @@ class Command(BaseCommand):
             objs,
             update_conflicts=True,
             unique_fields=["code"],
-            update_fields=["nom", "population", "departement_code", "epci_code", "centre_longitude", "centre_latitude"],
+            update_fields=["nom", "population", "departement_code", "epci_code", "region_code", "centre_longitude", "centre_latitude"],
         )
         self.stdout.write(f"  {dep_code}: {len(objs)} communes")
         return len(objs)

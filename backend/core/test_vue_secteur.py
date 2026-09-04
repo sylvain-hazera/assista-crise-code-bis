@@ -15,16 +15,26 @@ from core.models import Commune, Institution, InstitutionType, Offer, OfferType
 def commune_grenoble(db):
     return Commune.objects.create(
         code="38185", nom="Grenoble", departement_code="38", epci_code="200040715",
-        centre_latitude=45.18, centre_longitude=5.72,
+        region_code="84", centre_latitude=45.18, centre_longitude=5.72,
     )
 
 
 @pytest.fixture
 def commune_voiron(db, commune_grenoble):
-    # Même département (38), EPCI différent de Grenoble.
+    # Même département (38) et région (84), EPCI différent de Grenoble.
     return Commune.objects.create(
         code="38544", nom="Voiron", departement_code="38", epci_code="200070078",
-        centre_latitude=45.36, centre_longitude=5.59,
+        region_code="84", centre_latitude=45.36, centre_longitude=5.59,
+    )
+
+
+@pytest.fixture
+def commune_lille(db):
+    # Autre département (59) et région (32) — pour vérifier qu'une portée plus large les
+    # englobe tous, et qu'une portée départementale/régionale les distingue bien.
+    return Commune.objects.create(
+        code="59350", nom="Lille", departement_code="59", epci_code="200093201",
+        region_code="32", centre_latitude=50.63, centre_longitude=3.06,
     )
 
 
@@ -35,6 +45,7 @@ def _make_offer(commune, environment="DEMO"):
         offer_type=otype, environment=environment,
         first_name_offer="Jean", last_name_offer="Dupont", email_offer="jean@test.fr",
         commune_code=commune.code, epci_code=commune.epci_code, departement_code=commune.departement_code,
+        region_code=commune.region_code,
     )
 
 
@@ -143,12 +154,95 @@ class TestVueSecteur:
 class TestCommuneSecteurCodes:
 
     @patch("core.geo_lookup._fetch_json")
-    def test_returns_epci_and_departement(self, mock_fetch):
+    def test_returns_epci_departement_region(self, mock_fetch):
         from core.geo_lookup import commune_secteur_codes
-        mock_fetch.return_value = {"nom": "Grenoble", "codeDepartement": "38", "codeEpci": "200040715"}
+        mock_fetch.return_value = {
+            "nom": "Grenoble", "codeDepartement": "38", "codeEpci": "200040715", "codeRegion": "84",
+        }
         result = commune_secteur_codes("38185")
-        assert result == {"epci_code": "200040715", "departement_code": "38"}
+        assert result == {"epci_code": "200040715", "departement_code": "38", "region_code": "84"}
 
     def test_none_input(self):
         from core.geo_lookup import commune_secteur_codes
-        assert commune_secteur_codes(None) == {"epci_code": None, "departement_code": None}
+        assert commune_secteur_codes(None) == {"epci_code": None, "departement_code": None, "region_code": None}
+
+
+@pytest.mark.django_db
+class TestInstitutionSaveDenormalizesSecteur:
+
+    def test_save_populates_epci_departement_region_from_commune(self, commune_grenoble):
+        itype, _ = InstitutionType.objects.get_or_create(code="MAIRIE_DENORM_TEST", defaults={"libelle": "Mairie"})
+        institution = Institution.objects.create(nom="Mairie dénorm test", type=itype, commune_code=commune_grenoble.code)
+        assert institution.epci_code == "200040715"
+        assert institution.departement_code == "38"
+        assert institution.region_code == "84"
+
+
+@pytest.mark.django_db
+class TestVueSecteurRegionAndNational:
+
+    def test_conseil_regional_sees_whole_region(self, create_user, commune_grenoble, commune_voiron, commune_lille):
+        _make_offer(commune_grenoble)   # région 84
+        _make_offer(commune_voiron)     # région 84
+        _make_offer(commune_lille)      # région 32
+
+        institution = _make_institution("CR", commune_grenoble.code)
+        user = create_user(username="cr-secteur@test.fr", email="cr-secteur@test.fr", type="AUT_LOCALE", demo_role="AUT_LOCALE")
+        user.institution = institution
+        user.save()
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        response = client.get(reverse("offer-vue-secteur"), HTTP_X_ENVIRONMENT="DEMO")
+        assert response.status_code == 200
+        assert len(response.data) == 2  # Grenoble + Voiron (région 84), pas Lille (région 32)
+
+    def test_secteur_override_national_sees_everything(self, create_user, commune_grenoble, commune_lille):
+        _make_offer(commune_grenoble)
+        _make_offer(commune_lille)
+
+        institution = _make_institution("MAIRIE", commune_grenoble.code)
+        institution.secteur_override = "national"
+        institution.save()
+        user = create_user(username="national-secteur@test.fr", email="national-secteur@test.fr", type="AUT_LOCALE", demo_role="AUT_LOCALE")
+        user.institution = institution
+        user.save()
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        response = client.get(reverse("offer-vue-secteur"), HTTP_X_ENVIRONMENT="DEMO")
+        assert response.status_code == 200
+        assert len(response.data) == 2  # les deux, malgré un type MAIRIE (normalement commune)
+
+    def test_secteur_override_takes_precedence_over_type(self, create_user, commune_grenoble, commune_voiron):
+        _make_offer(commune_grenoble)
+        _make_offer(commune_voiron)
+
+        # MAIRIE serait "commune" par défaut (ne verrait que Grenoble) — l'override la fait
+        # passer en "departement" (voit aussi Voiron, même département 38).
+        institution = _make_institution("MAIRIE", commune_grenoble.code)
+        institution.secteur_override = "departement"
+        institution.save()
+        user = create_user(username="override-secteur@test.fr", email="override-secteur@test.fr", type="AUT_LOCALE", demo_role="AUT_LOCALE")
+        user.institution = institution
+        user.save()
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        response = client.get(reverse("offer-vue-secteur"), HTTP_X_ENVIRONMENT="DEMO")
+        assert response.status_code == 200
+        assert len(response.data) == 2
+
+    def test_secteur_override_is_read_only_via_api(self, create_user, commune_grenoble):
+        institution = _make_institution("MAIRIE", commune_grenoble.code)
+        user = create_user(username="tamper-secteur@test.fr", email="tamper-secteur@test.fr", type="ADMIN")
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        response = client.patch(
+            reverse("institution-detail", args=[institution.id]),
+            {"secteur_override": "national"}, format="json",
+        )
+        assert response.status_code == 200
+        institution.refresh_from_db()
+        assert institution.secteur_override is None

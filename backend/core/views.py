@@ -2036,8 +2036,8 @@ def _institution_commune_or_400(request):
 # Niveau de secteur consultable selon le type d'institution — voir _institution_secteur_or_400.
 # Une mairie/police municipale voit sa commune ; une communauté de communes voit son EPCI ; les
 # acteurs départementaux (SDIS, gendarmerie, préfecture, sous-préfecture, conseil départemental)
-# voient leur département. Any type not listed defaults to "commune" (le niveau le plus
-# restrictif), jamais un niveau plus large par défaut.
+# voient leur département ; un conseil régional voit sa région. Any type not listed defaults to
+# "commune" (le niveau le plus restrictif), jamais un niveau plus large par défaut.
 SECTEUR_NIVEAU_PAR_TYPE_INSTITUTION = {
     "MAIRIE": "commune",
     "POLICE_MUNICIPALE": "commune",
@@ -2047,32 +2047,47 @@ SECTEUR_NIVEAU_PAR_TYPE_INSTITUTION = {
     "PREFECTURE": "departement",
     "SOUS_PREF": "departement",
     "CG": "departement",
+    "CR": "region",
+}
+
+# Colonne Offer correspondante par niveau de secteur — "national" n'en a pas (aucun filtre
+# géographique, voir vue_secteur).
+SECTEUR_CHAMP_OFFER = {
+    "commune": "commune_code",
+    "epci": "epci_code",
+    "departement": "departement_code",
+    "region": "region_code",
 }
 
 
 def _institution_secteur_or_400(request):
-    """(niveau, code) du secteur consultable par l'institution de l'utilisateur appelant :
-    dérivé de institution.commune_code (déjà renseigné pour toute institution via l'annuaire,
-    voir _institution_commune_or_400) en remontant vers son EPCI/département via Commune —
-    pas de nouveau champ sur Institution. Retourne une Response 400 prête à renvoyer si
-    l'institution n'a pas de commune, ou si le secteur dérivé (EPCI/département) n'est pas
-    encore résolu en base."""
+    """(niveau, code) du secteur consultable par l'institution de l'utilisateur appelant.
+    `institution.secteur_override` (posé manuellement, usage test uniquement — voir le champ)
+    prend le pas sur le niveau déduit du type. Le code lui-même est lu directement sur
+    l'institution (epci_code/departement_code/region_code, dénormalisés par Institution.save()
+    depuis commune_code) — jamais recalculé ici. "national" ne renvoie aucun code (pas de
+    filtre géographique). Retourne une Response 400 prête à renvoyer si l'institution n'a pas
+    de commune, ou si le secteur demandé (override compris) n'est pas renseigné."""
     commune_code = _institution_commune_or_400(request)
     if isinstance(commune_code, Response):
         return commune_code
 
     institution = request.user.institution
-    type_code = (institution.type.code or "").upper()
-    niveau = SECTEUR_NIVEAU_PAR_TYPE_INSTITUTION.get(type_code, "commune")
+    if institution.secteur_override:
+        niveau = institution.secteur_override
+    else:
+        type_code = (institution.type.code or "").upper()
+        niveau = SECTEUR_NIVEAU_PAR_TYPE_INSTITUTION.get(type_code, "commune")
 
+    if niveau == "national":
+        return "national", None
     if niveau == "commune":
         return "commune", commune_code
 
-    secteur = commune_secteur_codes(commune_code)
-    code = secteur.get(f"{niveau}_code")
+    code = getattr(institution, f"{niveau}_code", None)
     if not code:
         return Response(
-            {"error": f"Secteur ({niveau}) introuvable pour la commune de votre institution."},
+            {"error": f"Secteur ({niveau}) introuvable pour votre institution."},
             status=status.HTTP_400_BAD_REQUEST,
         )
     return niveau, code
@@ -4071,18 +4086,22 @@ class OfferViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     def vue_secteur(self, request):
         """Offres du secteur de l'institution de l'utilisateur appelant, à l'échelle adaptée à
         son type : commune (mairie), EPCI (communauté de communes), département (SDIS,
-        gendarmerie, préfecture...) — voir _institution_secteur_or_400. Généralise vue_mairie
-        aux autres échelons administratifs ; toujours un simple filtre sur colonne indexée
-        (commune_code/epci_code/departement_code), jamais de jointure géographique en lecture.
-        Pagination recommandée (`?page=1`) : un département peut compter plusieurs milliers de
-        fiches."""
+        gendarmerie, préfecture...), région (conseil régional), ou national (aucun filtre
+        géographique) — voir _institution_secteur_or_400. Un `secteur_override` posé sur
+        l'institution (usage test) prend le pas sur le niveau déduit du type. Toujours soit
+        aucun filtre (national), soit un simple filtre sur colonne indexée déjà dénormalisée
+        (commune_code/epci_code/departement_code/region_code), jamais de jointure géographique
+        en lecture. Pagination recommandée (`?page=1`) : un secteur large peut compter plusieurs
+        milliers de fiches."""
         secteur = _institution_secteur_or_400(request)
         if isinstance(secteur, Response):
             return secteur
         niveau, code = secteur
 
-        champ = {"commune": "commune_code", "epci": "epci_code", "departement": "departement_code"}[niveau]
-        offres = self.get_queryset().filter(**{champ: code}).order_by("-created_at")
+        if niveau == "national":
+            offres = self.get_queryset().order_by("-created_at")
+        else:
+            offres = self.get_queryset().filter(**{SECTEUR_CHAMP_OFFER[niveau]: code}).order_by("-created_at")
         page = self.paginate_queryset(offres)
         if page is not None:
             return self.get_paginated_response(self.get_serializer(page, many=True).data)
@@ -4138,9 +4157,9 @@ class OfferViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             # Sinon il est none
             offre = serializer.save(author=None, deletion_token=deletion_token, reponse_token=reponse_token, environment=environment)
 
-        # Résout commune_code/epci_code/departement_code une seule fois ici plutôt qu'à chaque
-        # consultation (voir vue_secteur, et le commentaire sur Offer.commune_code) : le seul
-        # appel externe payé sur cette donnée est celui-ci, à la création.
+        # Résout commune_code/epci_code/departement_code/region_code une seule fois ici plutôt
+        # qu'à chaque consultation (voir vue_secteur, et le commentaire sur Offer.commune_code) :
+        # le seul appel externe payé sur cette donnée est celui-ci, à la création.
         if offre.location:
             commune_code = commune_code_from_point(offre.location)
             if commune_code:
@@ -4148,7 +4167,8 @@ class OfferViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
                 offre.commune_code = commune_code
                 offre.epci_code = secteur["epci_code"]
                 offre.departement_code = secteur["departement_code"]
-                offre.save(update_fields=["commune_code", "epci_code", "departement_code"])
+                offre.region_code = secteur["region_code"]
+                offre.save(update_fields=["commune_code", "epci_code", "departement_code", "region_code"])
 
         audit_log(
             request=self.request,

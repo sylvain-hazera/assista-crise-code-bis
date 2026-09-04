@@ -29,17 +29,17 @@ def _should_attempt(derniere_tentative) -> bool:
 
 def _resolve_commune(commune) -> None:
     """Complète commune.nom/centre_latitude/centre_longitude/departement_code/epci_code/
-    population en un seul appel externe si l'un des champs manque encore et que le cooldown
-    le permet — évite plusieurs appels séparés qui se marcheraient sinon dessus via le même
-    derniere_tentative."""
+    region_code/population en un seul appel externe si l'un des champs manque encore et que le
+    cooldown le permet — évite plusieurs appels séparés qui se marcheraient sinon dessus via le
+    même derniere_tentative."""
     has_nom = commune.nom is not None
     has_centre = commune.centre_latitude is not None or commune.centre_longitude is not None
-    has_secteur = commune.departement_code is not None
+    has_secteur = commune.departement_code is not None and commune.region_code is not None
     if (has_nom and has_centre and has_secteur) or not _should_attempt(commune.derniere_tentative):
         return
     url = (
         f"https://geo.api.gouv.fr/communes/{urllib.parse.quote(commune.code)}"
-        "?fields=nom,centre,codeDepartement,codeEpci,population"
+        "?fields=nom,centre,codeDepartement,codeEpci,codeRegion,population"
     )
     data = _fetch_json(url)
     commune.derniere_tentative = timezone.now()
@@ -56,12 +56,15 @@ def _resolve_commune(commune) -> None:
         epci_code = data.get("codeEpci")
         if epci_code:
             commune.epci_code = epci_code
+        region_code = data.get("codeRegion")
+        if region_code:
+            commune.region_code = region_code
         population = data.get("population")
         if population is not None:
             commune.population = population
     commune.save(update_fields=[
         "nom", "centre_latitude", "centre_longitude", "departement_code", "epci_code",
-        "population", "derniere_tentative", "date_maj",
+        "region_code", "population", "derniere_tentative", "date_maj",
     ])
 
 
@@ -92,16 +95,21 @@ def commune_center_from_code(commune_code: str) -> dict:
 
 
 def commune_secteur_codes(commune_code: str) -> dict:
-    """(epci_code, departement_code) d'une commune — utilisé pour dériver le secteur d'une
-    institution (communauté de communes ou département) à partir de son seul commune_code,
-    sans champ dédié sur Institution (voir OfferViewSet.vue_secteur)."""
+    """(epci_code, departement_code, region_code) d'une commune — utilisé pour dénormaliser le
+    secteur d'une institution (Institution.save()) ou d'une offre (OfferViewSet.perform_create)
+    à partir de son seul commune_code, une seule fois, plutôt que de rejoindre Commune à chaque
+    lecture (voir OfferViewSet.vue_secteur)."""
     from core.models import Commune
 
     if not commune_code:
-        return {"epci_code": None, "departement_code": None}
+        return {"epci_code": None, "departement_code": None, "region_code": None}
     commune, _ = Commune.objects.get_or_create(code=commune_code)
     _resolve_commune(commune)
-    return {"epci_code": commune.epci_code, "departement_code": commune.departement_code}
+    return {
+        "epci_code": commune.epci_code,
+        "departement_code": commune.departement_code,
+        "region_code": commune.region_code,
+    }
 
 
 def _reverse_geocode_point(point) -> dict:

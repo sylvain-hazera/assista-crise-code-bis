@@ -1896,6 +1896,12 @@ class InstitutionSerializer(
         model = Institution
 
         fields = "__all__"
+        # secteur_override : jamais modifiable via l'API (InstitutionViewSet n'a aucune
+        # restriction de permission sur update/partial_update — n'importe quel compte
+        # authentifié peut éditer n'importe quelle institution). Un champ qui élargit une
+        # visibilité (jusqu'à "national") ne doit être posable que depuis le django-admin,
+        # réservé au staff.
+        extra_kwargs = {"secteur_override": {"read_only": True}}
 class RoleOperationnelSerializer(
     serializers.ModelSerializer
 ):
