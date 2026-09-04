@@ -2495,7 +2495,18 @@ class RequestViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         # Définir l'auteur si authentifié, sinon None
         author = self.request.user if self.request.user.is_authenticated else None
         demande = serializer.save(author=author, deletion_token=deletion_token, environment=get_active_environment(self.request))
-        
+
+        # Résout commune_code une seule fois ici plutôt qu'à chaque consultation (même correctif
+        # que OfferViewSet.perform_create) : sans lui, RequestSerializer.get_commune retombe sur
+        # commune_from_point à CHAQUE lecture — mesuré en direct sur la carte DEMO, 9.3s pour
+        # seulement 112 demandes (commune_code jamais renseigné jusqu'ici, aucune vue ne le
+        # posait à la création).
+        if demande.location and not demande.commune_code:
+            commune_code = commune_code_from_point(demande.location)
+            if commune_code:
+                demande.commune_code = commune_code
+                demande.save(update_fields=["commune_code"])
+
         audit_log(
             request=self.request,
             action_code="CREATION",

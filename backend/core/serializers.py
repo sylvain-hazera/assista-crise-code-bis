@@ -870,7 +870,7 @@ class InformationSerializer(serializers.ModelSerializer):
     def get_commune(self, obj):
         if not self._location_visible(obj):
             return None
-        return commune_from_point(obj.location)
+        return commune_from_code(obj.commune_code) or commune_from_point(obj.location)
 
     def get_distance_from_crisis_km(self, obj):
         if not self._location_visible(obj):
