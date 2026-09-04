@@ -20,7 +20,9 @@ from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from urllib.parse import quote
 from django_filters import rest_framework as filters
 from django.db import IntegrityError, transaction
-from django.db.models import Q, F, Prefetch
+from django.db.models import Q, F, Prefetch, Count
+from django.db.models.functions import TruncDate
+from dateutil.relativedelta import relativedelta
 from django.contrib.gis.db.models.functions import Distance
 from rest_framework.pagination import PageNumberPagination
 from django.utils import timezone
@@ -110,7 +112,7 @@ from .models import (
     PointOperationnel,
     ImplicationInstitution,
     TypeImplication,
-    User, Crisis, Request, RequestPhoto, Offer, OfferPhoto, OfferMessage, Information, DisponibiliteOffre, DisponibilitePointEquipe, MaterielPoint,
+    User, Crisis, TypeCrise, Request, RequestPhoto, Offer, OfferPhoto, OfferMessage, Information, DisponibiliteOffre, DisponibilitePointEquipe, MaterielPoint,
     MaterielCatalogue, ContributionMateriel, StatutMateriel, TypeMateriel, NiveauStock, RegistrePresence, TypePersonneAccueillie, DeclarationSecurite, SituationDeclarant,
     AffectationPointBenevole, StatutAffectation,
     RecherchePersonne, RecherchePersonneCommentaire, Besoin, Notification, DossierParticipant,
@@ -1371,6 +1373,130 @@ class UserViewSet(viewsets.ModelViewSet):
         )
 
         return Response({'message': f"Email de réinitialisation envoyé à {target_user.email}"})
+
+class DashboardStatsView(APIView):
+    """Agrégats pour le tableau de bord admin (cartes de synthèse, courbe d'évolution 30
+    jours, camembert des types de crise, éléments récents) — calculés en base par COUNT/
+    GROUP BY plutôt qu'en chargeant les listes complètes de crises/offres/demandes côté
+    frontend (voir dashboard.component.ts : l'ancienne implémentation faisait un getAll()
+    sur les 3 endpoints, sérialisant chaque objet avec toutes ses relations et son lookup
+    géo juste pour en compter la longueur)."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    FILTER_DELTAS = {
+        "week": relativedelta(days=7),
+        "month": relativedelta(months=1),
+        "quarter": relativedelta(months=3),
+        "half_year": relativedelta(months=6),
+        "year": relativedelta(years=1),
+    }
+
+    def get(self, request):
+        env = get_active_environment(request)
+        filter_key = request.query_params.get("filter", "all")
+        now = timezone.now()
+
+        crises_all = Crisis.objects.filter(environment=env)
+        offres_all = Offer.objects.filter(environment=env)
+        demandes_all = Request.objects.filter(environment=env)
+        totals = {
+            "crises": crises_all.count(),
+            "offres": offres_all.count(),
+            "demandes": demandes_all.count(),
+        }
+        total_items = totals["crises"] + totals["offres"] + totals["demandes"]
+
+        delta = self.FILTER_DELTAS.get(filter_key)
+        filter_start = now - delta if delta else None
+
+        crises_qs, offres_qs, demandes_qs = crises_all, offres_all, demandes_all
+        if filter_start:
+            crises_qs = crises_qs.filter(start_date__gte=filter_start, start_date__lte=now)
+            offres_qs = offres_qs.filter(created_at__gte=filter_start, created_at__lte=now)
+            demandes_qs = demandes_qs.filter(created_at__gte=filter_start, created_at__lte=now)
+
+        current = {
+            "crises": crises_qs.count(),
+            "offres": offres_qs.count(),
+            "demandes": demandes_qs.count(),
+        }
+
+        previous = {"crises": 0, "offres": 0, "demandes": 0}
+        if filter_start:
+            duree = now - filter_start
+            prev_end = filter_start
+            prev_start = prev_end - duree
+            previous = {
+                "crises": crises_all.filter(start_date__gte=prev_start, start_date__lte=prev_end).count(),
+                "offres": offres_all.filter(created_at__gte=prev_start, created_at__lte=prev_end).count(),
+                "demandes": demandes_all.filter(created_at__gte=prev_start, created_at__lte=prev_end).count(),
+            }
+
+        # Courbe d'évolution : toujours les 30 derniers jours calendaires, bornés en plus par
+        # la période sélectionnée (réplique le comportement de l'ancien buildLineChart, qui
+        # comptait les occurrences par jour dans le sous-ensemble déjà filtré par période).
+        window_start = (now - datetime.timedelta(days=29)).replace(hour=0, minute=0, second=0, microsecond=0)
+        effective_start = max(window_start, filter_start) if filter_start else window_start
+
+        def day_counts(queryset, date_field):
+            rows = (
+                queryset.filter(**{f"{date_field}__gte": effective_start, f"{date_field}__lte": now})
+                .annotate(day=TruncDate(date_field))
+                .values("day")
+                .annotate(n=Count("id"))
+            )
+            return {row["day"]: row["n"] for row in rows}
+
+        crises_by_day = day_counts(crises_all, "start_date")
+        offres_by_day = day_counts(offres_all, "created_at")
+        demandes_by_day = day_counts(demandes_all, "created_at")
+
+        day_points = []
+        for i in range(29, -1, -1):
+            d = (now - datetime.timedelta(days=i)).date()
+            day_points.append({
+                "date": d.isoformat(),
+                "crises": crises_by_day.get(d, 0),
+                "offres": offres_by_day.get(d, 0),
+                "demandes": demandes_by_day.get(d, 0),
+            })
+
+        # Camembert des types de crise, sur la période filtrée.
+        type_labels = dict(TypeCrise.choices)
+        pie = [
+            {"type": row["type"], "type_display": type_labels.get(row["type"], row["type"]), "count": row["n"]}
+            for row in crises_qs.values("type").annotate(n=Count("id")).order_by("-n")[:6]
+        ]
+
+        # Éléments récents (8 plus récents, tous types confondus, sur la période filtrée).
+        recent = (
+            [
+                {"id": str(c["id"]), "title": c["name"], "type": "Crise", "date": c["start_date"], "status": "NON_TRAITEE"}
+                for c in crises_qs.order_by("-start_date").values("id", "name", "start_date")[:8]
+            ]
+            + [
+                {"id": str(o["id"]), "title": o["title"], "type": "Ressource", "date": o["created_at"], "status": o["status"]}
+                for o in offres_qs.order_by("-created_at").values("id", "title", "created_at", "status")[:8]
+            ]
+            + [
+                {"id": str(r["id"]), "title": r["title"], "type": "Besoin", "date": r["created_at"], "status": r["status"]}
+                for r in demandes_qs.order_by("-created_at").values("id", "title", "created_at", "status")[:8]
+            ]
+        )
+        recent.sort(key=lambda item: item["date"], reverse=True)
+        recent = recent[:8]
+
+        return Response({
+            "stats": current,
+            "previous": previous,
+            "totals": totals,
+            "day_points": day_points,
+            "pie": pie,
+            "recent_items": recent,
+            "total_items": total_items,
+        })
+
 
 class CrisisViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     # author_nom déréférence author (FK) ; has_responsable_actif touche implications (reverse

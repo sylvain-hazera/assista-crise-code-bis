@@ -36,6 +36,7 @@ from .views import (
     DeclarationSecuriteViewSet,
     ZoneViewSet,
     PlanViewSet,
+    DashboardStatsView,
 )
 
 router = DefaultRouter()
@@ -155,6 +156,7 @@ urlpatterns = [
     path('me/', UserMeView.as_view(), name='auth_me'),
     path('change-password/', ChangePasswordView.as_view(), name='auth_change_password'),
     path('reset-password/<str:uidb64>/<str:token>/', PasswordResetConfirmView.as_view(), name='reset_password_confirm'),
+    path('stats/dashboard/', DashboardStatsView.as_view(), name='dashboard_stats'),
     path('ma-position/', MaPositionView.as_view(), name='ma_position'),
     path('positions-equipes/', PositionsEquipesView.as_view(), name='positions_equipes'),
     
