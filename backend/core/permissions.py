@@ -103,6 +103,28 @@ class IsOwnerOrInstitutional(BasePermission):
         return obj.author_id == request.user.id
 
 
+class IsInstitutionMemberOrAdministrator(BasePermission):
+    """Seul un membre actif de CETTE institution précise (ContactInstitution), ou un
+    administrateur plateforme, peut la modifier — contrairement à IsInstitutionalActor
+    (n'importe quel acteur institutionnel, de n'importe quelle institution), qui laissait
+    n'importe quel compte authentifié institutionnel éditer l'institution de quelqu'un d'autre
+    (InstitutionViewSet n'avait aucune restriction de permission sur update/partial_update)."""
+
+    message = "Seul un membre de cette institution peut la modifier."
+
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.is_authenticated)
+
+    def has_object_permission(self, request, view, obj):
+        if get_effective_role(request) == UserRole.ADMINISTRATOR:
+            return True
+        from .models import ContactInstitution
+        return ContactInstitution.objects.filter(
+            institution=obj, utilisateur=request.user, actif=True,
+            environment=get_active_environment(request),
+        ).exists()
+
+
 class IsSelfOrInstitutional(BasePermission):
     """Pour UserViewSet : un compte ne peut modifier/supprimer que lui-même, en plus des
     acteurs institutionnels — sans permission dédiée, UserViewSet (permission par défaut

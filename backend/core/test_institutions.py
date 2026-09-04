@@ -49,6 +49,9 @@ class TestInstitutionCRUD:
         client, user = authenticated_client
         institution_type = InstitutionType.objects.create(code="MAIRIE", libelle="Mairie")
         institution = Institution.objects.create(nom="Ancien nom", type=institution_type)
+        # Seul un membre de l'institution (ou un administrateur) peut la modifier depuis le
+        # correctif de ce soir — voir IsInstitutionMemberOrAdministrator.
+        ContactInstitution.objects.create(institution=institution, utilisateur=user, actif=True)
 
         response = client.patch(
             reverse('institution-detail', args=[institution.id]),
@@ -64,6 +67,9 @@ class TestInstitutionCRUD:
         client, user = authenticated_client
         institution_type = InstitutionType.objects.create(code="MAIRIE", libelle="Mairie")
         institution = Institution.objects.create(nom="À supprimer", type=institution_type)
+        # Seul un membre de l'institution (ou un administrateur) peut la supprimer depuis le
+        # correctif de ce soir — voir IsInstitutionMemberOrAdministrator.
+        ContactInstitution.objects.create(institution=institution, utilisateur=user, actif=True)
 
         response = client.delete(reverse('institution-detail', args=[institution.id]))
 

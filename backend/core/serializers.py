@@ -1896,12 +1896,30 @@ class InstitutionSerializer(
         model = Institution
 
         fields = "__all__"
-        # secteur_override : jamais modifiable via l'API (InstitutionViewSet n'a aucune
-        # restriction de permission sur update/partial_update — n'importe quel compte
-        # authentifié peut éditer n'importe quelle institution). Un champ qui élargit une
-        # visibilité (jusqu'à "national") ne doit être posable que depuis le django-admin,
-        # réservé au staff.
-        extra_kwargs = {"secteur_override": {"read_only": True}}
+
+    def update(self, instance, validated_data):
+        # secteur_override élargit potentiellement la visibilité jusqu'à "national" — jamais
+        # laissé passer par la permission générale d'édition d'institution
+        # (IsInstitutionMemberOrAdministrator, voir InstitutionViewSet.get_permissions).
+        # Restriction supplémentaire ici, à dessein plus stricte et différente selon
+        # l'environnement actif : en PROD, réservé au(x) super-admin(s) Django (is_superuser) ;
+        # en DEMO (bac à sable, enjeu moindre), tout membre actif de CETTE institution peut le
+        # régler — usage prévu : simuler un secteur de test (voir Institution.secteur_override).
+        if "secteur_override" in validated_data:
+            request = self.context.get("request")
+            if not self._can_edit_secteur_override(request, instance):
+                validated_data.pop("secteur_override")
+        return super().update(instance, validated_data)
+
+    def _can_edit_secteur_override(self, request, institution):
+        if request is None or not getattr(request.user, "is_authenticated", False):
+            return False
+        if get_active_environment(request) == Environment.PROD:
+            return request.user.is_superuser
+        return ContactInstitution.objects.filter(
+            institution=institution, utilisateur=request.user, actif=True,
+            environment=get_active_environment(request),
+        ).exists()
 class RoleOperationnelSerializer(
     serializers.ModelSerializer
 ):

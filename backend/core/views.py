@@ -46,7 +46,7 @@ from .institution_attachment import (
 )
 from .permissions import (
     IsInstitutionalActor, IsAdministrator, IsOwnDeclarationOrInstitutional, IsOwnerOrInstitutional,
-    IsSelfOrInstitutional,
+    IsSelfOrInstitutional, IsInstitutionMemberOrAdministrator,
     INSTITUTIONAL_TYPES, user_can_view_photo,
     get_active_environment, get_effective_role, mask_email, mask_phone, send_mail_env_aware,
 )
@@ -5954,6 +5954,14 @@ class InstitutionViewSet(
     serializer_class = (
         InstitutionSerializer
     )
+
+    def get_permissions(self):
+        # Avant ce correctif, update/partial_update/destroy n'avaient aucune restriction
+        # (n'importe quel compte authentifié pouvait modifier ou supprimer l'institution de
+        # n'importe qui d'autre) — vérifié en le reproduisant.
+        if self.action in ('update', 'partial_update', 'destroy'):
+            return [IsInstitutionMemberOrAdministrator()]
+        return [permissions.IsAuthenticated()]
 
     def get_queryset(self):
         """Règle à sens unique (voir plan zone de démo) : les vraies institutions (PROD)
