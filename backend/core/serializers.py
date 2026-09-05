@@ -6,7 +6,7 @@ from django.db.models import Sum
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from .auth_validation import InstitutionEmailValidator
-from .geo_lookup import commune_from_code, commune_from_point, commune_center_from_code, commune_risques
+from .geo_lookup import commune_from_code, commune_from_point, commune_center_from_code, commune_risques, commune_risques_date_maj
 from .permissions import (
     INSTITUTIONAL_TYPES, get_active_environment, effective_role_or_none, mask_email, mask_phone,
     strip_masked_fields_in_demo,
@@ -186,6 +186,7 @@ class UserSerializer(serializers.ModelSerializer):
             # l'instant les seuls risques de LA commune de l'institution, pas l'agrégation de
             # tout le secteur (voir commune_risques).
             "risques": commune_risques(institution.commune_code),
+            "risques_date_maj": commune_risques_date_maj(institution.commune_code),
         }
 
     def get_needs_institution_setup(self, obj):

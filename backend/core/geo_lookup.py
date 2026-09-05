@@ -94,11 +94,14 @@ def commune_center_from_code(commune_code: str) -> dict:
     return {"latitude": commune.centre_latitude, "longitude": commune.centre_longitude}
 
 
-def _resolve_risques(commune) -> None:
+def _resolve_risques(commune, force: bool = False) -> None:
     """Peuple commune.risques_territoire depuis l'API Géorisques (gaspar/risques) — publique,
     sans authentification, un seul appel par commune (voir _should_attempt/RETRY_COOLDOWN,
-    cooldown dédié derniere_tentative_risques, indépendant de celui de geo.api.gouv.fr)."""
-    if commune.risques_territoire or not _should_attempt(commune.derniere_tentative_risques):
+    cooldown dédié derniere_tentative_risques, indépendant de celui de geo.api.gouv.fr).
+    `force=True` (bouton "Actualiser" de la Vue Ma Collectivité) ignore le cache déjà posé ET
+    le cooldown — un rafraîchissement demandé explicitement par l'utilisateur ne doit jamais
+    être silencieusement ignoré."""
+    if not force and (commune.risques_territoire or not _should_attempt(commune.derniere_tentative_risques)):
         return
     url = f"https://georisques.gouv.fr/api/v1/gaspar/risques?code_insee={urllib.parse.quote(commune.code)}&page_size=50"
     data = _fetch_json(url)
@@ -113,18 +116,30 @@ def _resolve_risques(commune) -> None:
     commune.save(update_fields=["risques_territoire", "derniere_tentative_risques", "date_maj"])
 
 
-def commune_risques(commune_code: str) -> list:
+def commune_risques(commune_code: str, force: bool = False) -> list:
     """Aléas naturels/technologiques recensés sur une commune (API Géorisques) — voir
     Commune.risques_territoire. Utilisé pour la section "diagnostic des risques" de la Vue Ma
     Collectivité, dénormalisé comme le reste des champs Commune (jamais recalculé en lecture
-    une fois résolu)."""
+    une fois résolu, sauf `force=True` explicite)."""
     from core.models import Commune
 
     if not commune_code:
         return []
     commune, _ = Commune.objects.get_or_create(code=commune_code)
-    _resolve_risques(commune)
+    _resolve_risques(commune, force=force)
     return commune.risques_territoire
+
+
+def commune_risques_date_maj(commune_code: str):
+    """Date de dernière écriture de Commune.risques_territoire (succès ou échec de tentative,
+    voir _resolve_risques) — affichée à côté du bouton "Actualiser" de la Vue Ma Collectivité.
+    None si la commune n'a jamais été résolue (aucune ligne Commune, ou champ jamais écrit)."""
+    from core.models import Commune
+
+    if not commune_code:
+        return None
+    commune = Commune.objects.filter(code=commune_code).first()
+    return commune.date_maj if commune else None
 
 
 def epci_nom_from_code(epci_code: str) -> str | None:

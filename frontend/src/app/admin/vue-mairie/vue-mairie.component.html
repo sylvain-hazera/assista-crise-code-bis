@@ -10,14 +10,24 @@
         <span class="zone-niveau">({{ niveauLabel(maZoneNiveau) }})</span>
       </p>
     }
-    @if (risquesTerritoire.length > 0) {
-      <p class="risques-territoire">
+    @if (maZoneNom) {
+      <div class="risques-territoire">
         <span class="material-icons">warning</span>
-        Risques identifiés :
-        @for (r of risquesTerritoire; track r.num_risque) {
-          <span class="risque-chip">{{ r.libelle_risque_long }}</span>
+        <span class="risques-label">Risques identifiés :</span>
+        @if (risquesTerritoire.length > 0) {
+          @for (r of risquesTerritoire; track r.num_risque) {
+            <span class="risque-chip">{{ r.libelle_risque_long }}</span>
+          }
+        } @else {
+          <span class="risques-vide">Aucun risque résolu pour le moment</span>
         }
-      </p>
+        @if (risquesDateMaj) {
+          <span class="risques-date">maj le {{ fmtDate(risquesDateMaj) }}</span>
+        }
+        <button type="button" class="risques-refresh" (click)="actualiserRisques()" [disabled]="risquesEnCours">
+          <span class="material-icons">refresh</span> {{ risquesEnCours ? 'Actualisation…' : 'Actualiser' }}
+        </button>
+      </div>
     }
   </header>
 

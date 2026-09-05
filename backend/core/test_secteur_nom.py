@@ -71,10 +71,13 @@ class TestMaZone:
         user = create_user(email="pompier@test.fr", type="AUT_LOCALE", institution=institution)
         client = APIClient()
         client.force_authenticate(user=user)
-        with patch("core.serializers.commune_risques", return_value=[]):
+        with patch("core.serializers.commune_risques", return_value=[]), \
+             patch("core.serializers.commune_risques_date_maj", return_value=None):
             response = client.get(reverse("user-detail", args=[user.id]))
         assert response.status_code == 200
-        assert response.data["ma_zone"] == {"niveau": "departement", "nom": "Isère", "risques": []}
+        assert response.data["ma_zone"] == {
+            "niveau": "departement", "nom": "Isère", "risques": [], "risques_date_maj": None,
+        }
 
     def test_ma_zone_includes_territory_risks(self, create_user, commune_grenoble):
         institution = _make_institution("MAIRIE", commune_grenoble.code)
@@ -94,3 +97,42 @@ class TestMaZone:
         response = client.get(reverse("user-detail", args=[user.id]))
         assert response.status_code == 200
         assert response.data["ma_zone"] is None
+
+
+@pytest.mark.django_db
+class TestActualiserRisques:
+
+    def test_forces_a_fresh_fetch(self, create_user, commune_grenoble):
+        institution = _make_institution("MAIRIE", commune_grenoble.code)
+        user = create_user(email="secretaire-refresh@test.fr", type="AUT_LOCALE", institution=institution)
+        client = APIClient()
+        client.force_authenticate(user=user)
+        risques = [{"num_risque": "11", "libelle_risque_long": "Inondation"}]
+
+        with patch("core.views.commune_risques", return_value=risques) as mock_risques, \
+             patch("core.views.commune_risques_date_maj", return_value="2026-09-06T10:00:00Z"):
+            response = client.post(reverse("user-actualiser-risques"))
+
+        assert response.status_code == 200
+        assert response.data["risques"] == risques
+        assert response.data["risques_date_maj"] == "2026-09-06T10:00:00Z"
+        mock_risques.assert_called_once_with(commune_grenoble.code, force=True)
+
+    def test_without_institution_returns_400(self, create_user):
+        user = create_user(email="sans-institution-refresh@test.fr", type="AUT_LOCALE")
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        response = client.post(reverse("user-actualiser-risques"))
+
+        assert response.status_code == 400
+
+    def test_non_institutional_actor_forbidden(self, create_user, commune_grenoble):
+        institution = _make_institution("MAIRIE", commune_grenoble.code)
+        user = create_user(email="simple-refresh@test.fr", type="UTIL_SIMPLE", institution=institution)
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        response = client.post(reverse("user-actualiser-risques"))
+
+        assert response.status_code == 403

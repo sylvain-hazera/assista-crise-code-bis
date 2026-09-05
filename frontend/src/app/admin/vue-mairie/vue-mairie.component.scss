@@ -32,11 +32,22 @@
     margin: .5rem 0 0; font-size: .85rem; color: var(--text);
     .material-icons { font-size: 18px; color: #b45309; }
   }
-  .risque-chip {
-    padding: .15rem .6rem; border-radius: 99px;
-    background: #fffbeb; color: #92400e;
-    font-size: .78rem; font-weight: 600;
+  .risques-vide { color: var(--muted); font-size: .82rem; }
+  .risques-date { color: var(--muted); font-size: .76rem; }
+  .risques-refresh {
+    display: inline-flex; align-items: center; gap: .25rem;
+    margin-left: .25rem; padding: .2rem .6rem; border-radius: 99px;
+    border: 1px solid var(--border); background: var(--surface); color: var(--primary);
+    font-size: .76rem; font-weight: 600; cursor: pointer;
+    .material-icons { font-size: 15px; color: var(--primary); }
+    &:hover:not(:disabled) { background: #eff6ff; }
+    &:disabled { opacity: .5; cursor: not-allowed; }
   }
+}
+.risque-chip {
+  padding: .15rem .6rem; border-radius: 99px;
+  background: #fffbeb; color: #92400e;
+  font-size: .78rem; font-weight: 600;
 }
 
 .reglages-grid {

@@ -87,4 +87,14 @@ export class UserService {
   }): Observable<User> {
     return this.http.post<User>(`${this.apiUrl}/users/creer-mon-institution/`, data);
   }
+
+  /** POST /api/users/actualiser-risques/ — force le rafraîchissement des risques du territoire
+   * de l'institution du compte connecté (ignore le cache, voir UserViewSet.actualiser_risques),
+   * pour le bouton "Actualiser" de la Vue Ma Collectivité. */
+  actualiserRisques(): Observable<{
+    risques: { num_risque: string; libelle_risque_long: string }[];
+    risques_date_maj: string | null;
+  }> {
+    return this.http.post<any>(`${this.apiUrl}/users/actualiser-risques/`, {});
+  }
 }

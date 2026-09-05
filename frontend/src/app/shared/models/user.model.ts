@@ -24,6 +24,7 @@ export interface User {
     niveau: string;
     nom: string | null;
     risques: { num_risque: string; libelle_risque_long: string }[];  // Aléas du territoire (API Géorisques) — voir Vue Ma Collectivité
+    risques_date_maj: string | null;  // Date de dernière résolution des risques — voir bouton "Actualiser"
   } | null;  // Secteur effectif de l'institution (User.institution) — voir Vue Ma Collectivité
   demo_role: UserRole | null;           // Rôle en zone de démonstration — null = pas d'accès démo
   enabled: boolean;

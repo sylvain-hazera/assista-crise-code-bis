@@ -50,7 +50,7 @@ from .permissions import (
     INSTITUTIONAL_TYPES, user_can_view_photo,
     get_active_environment, get_effective_role, mask_email, mask_phone, send_mail_env_aware,
 )
-from .geo_lookup import commune_code_from_point, commune_secteur_codes
+from .geo_lookup import commune_code_from_point, commune_secteur_codes, commune_risques, commune_risques_date_maj
 from .pagination import OptionalPageNumberPagination
 from django.contrib.gis.geos import Point
 
@@ -884,9 +884,27 @@ class UserViewSet(viewsets.ModelViewSet):
             return [IsInstitutionalActor()]
         if self.action in ('update', 'partial_update', 'destroy'):
             return [IsSelfOrInstitutional()]
-        if self.action == 'reactiver':
+        if self.action in ('reactiver', 'actualiser_risques'):
             return [IsInstitutionalActor()]
         return [permissions.IsAuthenticated()]
+
+    @action(detail=False, methods=["post"], url_path="actualiser-risques")
+    def actualiser_risques(self, request):
+        """Force le rafraîchissement des risques du territoire de l'institution de
+        l'utilisateur appelant (ignore le cache et le cooldown, contrairement à la lecture
+        normale via UserSerializer.get_ma_zone) — bouton "Actualiser" de la Vue Ma
+        Collectivité."""
+        institution = getattr(request.user, 'institution', None)
+        if institution is None or not institution.commune_code:
+            return Response(
+                {"error": "Aucune commune associée à votre institution."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        risques = commune_risques(institution.commune_code, force=True)
+        return Response({
+            "risques": risques,
+            "risques_date_maj": commune_risques_date_maj(institution.commune_code),
+        })
 
     def perform_destroy(self, instance):
         # Même effet que reject_account (is_active=False, voir le commentaire "Désactiver le

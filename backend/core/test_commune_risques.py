@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
-from core.geo_lookup import commune_risques
+from core.geo_lookup import commune_risques, commune_risques_date_maj
 from core.models import Commune
 
 
@@ -59,3 +59,34 @@ class TestCommuneRisques:
         # Un seul appel réseau malgré les deux lectures : le cooldown empêche de retenter
         # immédiatement une commune non résolue (voir RETRY_COOLDOWN).
         mock_fetch.assert_called_once()
+
+    def test_force_refetches_even_when_already_cached(self):
+        with patch("core.geo_lookup._fetch_json", return_value=GEORISQUES_RESPONSE) as mock_fetch:
+            commune_risques("38185")
+            commune_risques("38185", force=True)
+
+        assert mock_fetch.call_count == 2
+
+    def test_force_refetches_even_within_cooldown_after_failure(self):
+        with patch("core.geo_lookup._fetch_json", return_value=None) as mock_fetch:
+            commune_risques("38185")
+            commune_risques("38185", force=True)
+
+        assert mock_fetch.call_count == 2
+
+
+@pytest.mark.django_db
+class TestCommuneRisquesDateMaj:
+
+    def test_none_for_unresolved_commune(self):
+        assert commune_risques_date_maj("38185") is None
+
+    def test_set_after_a_resolution_attempt(self):
+        with patch("core.geo_lookup._fetch_json", return_value=GEORISQUES_RESPONSE):
+            commune_risques("38185")
+
+        assert commune_risques_date_maj("38185") is not None
+
+    def test_none_for_empty_code(self):
+        assert commune_risques_date_maj(None) is None
+        assert commune_risques_date_maj("") is None

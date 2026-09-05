@@ -11,6 +11,7 @@ import { TeamService } from '../../services/team.service';
 import { PointOperationnelService } from '../../services/point-operationnel.service';
 import { DossierService } from '../../services/dossier.service';
 import { JournalCollectiviteService } from '../../services/journal-collectivite.service';
+import { UserService } from '../../services/user.service';
 import { AuthService } from '../../auth/services/auth.service';
 
 import { Request } from '../../shared/models/request.model';
@@ -75,6 +76,8 @@ export class VueMairieComponent implements OnInit {
   maZoneNom: string | null = null;
   maZoneNiveau: string | null = null;
   risquesTerritoire: { num_risque: string; libelle_risque_long: string }[] = [];
+  risquesDateMaj: string | null = null;
+  risquesEnCours = false;
 
   isLoading = true;
   errorMessage = '';
@@ -93,6 +96,7 @@ export class VueMairieComponent implements OnInit {
     private pointOperationnelService: PointOperationnelService,
     private dossierService: DossierService,
     private journalCollectiviteService: JournalCollectiviteService,
+    private userService: UserService,
     private authService: AuthService,
   ) {}
 
@@ -110,8 +114,21 @@ export class VueMairieComponent implements OnInit {
         this.maZoneNom = user.ma_zone?.nom ?? null;
         this.maZoneNiveau = user.ma_zone?.niveau ?? null;
         this.risquesTerritoire = user.ma_zone?.risques ?? [];
+        this.risquesDateMaj = user.ma_zone?.risques_date_maj ?? null;
       },
       error: () => {},
+    });
+  }
+
+  actualiserRisques(): void {
+    this.risquesEnCours = true;
+    this.userService.actualiserRisques().subscribe({
+      next: ({ risques, risques_date_maj }) => {
+        this.risquesTerritoire = risques;
+        this.risquesDateMaj = risques_date_maj;
+        this.risquesEnCours = false;
+      },
+      error: () => { this.risquesEnCours = false; },
     });
   }
 
