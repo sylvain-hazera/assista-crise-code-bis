@@ -2,7 +2,7 @@ import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import { forkJoin, Observable, Subject, takeUntil } from 'rxjs';
+import { catchError, forkJoin, Observable, of, Subject, takeUntil } from 'rxjs';
 
 import { CrisisService }  from '../../services/crisis.service';
 import { OfferService }   from '../../services/offer.service';
@@ -313,9 +313,18 @@ export class ReportingComponent implements OnInit, OnDestroy {
     // milliers de fiches, sans crise rattachée) ne relève pas de ce tableau de triage —
     // consultable via OfferService.vueSecteur à la place.
     const offreParams = { ...(actifParams ?? {}), exclude_type: 'Bénévolat' };
+    // En mode "ajouter une ressource à une équipe" (pickForTeamId), l'annuaire de bénévoles
+    // (normalement exclu de ce tableau, voir exclude_type ci-dessus) redevient nécessaire :
+    // c'est le seul moyen actuel de rattacher un bénévole à une équipe. Scopé au secteur de
+    // l'institution (vue_secteur), jamais chargé pour la vue de triage normale. catchError :
+    // pas d'institution/secteur résolu ne doit pas casser le reste du chargement.
+    const benevoles$ = this.pickForTeamId
+      ? this.offerService.vueSecteur().pipe(catchError(() => of([])))
+      : of([]);
     forkJoin({
       crises:       this.crisisService.getAll(),
       offres:       this.offerService.getAll(offreParams),
+      benevoles:    benevoles$,
       demandes:     this.requestService.getAll(actifParams),
       informations: this.informationService.getAll(actifParams),
       teams:        this.teamService.getAll(),
@@ -325,13 +334,13 @@ export class ReportingComponent implements OnInit, OnDestroy {
     })
     .pipe(takeUntil(this.destroy$))
     .subscribe({
-      next: ({ crises, offres, demandes, informations, teams, dossiers, missions, users }) => {
+      next: ({ crises, offres, benevoles, demandes, informations, teams, dossiers, missions, users }) => {
         this.teams    = teams;
         this.dossiers = dossiers;
         this.missions = missions;
         this.regulateurs = users.filter(u => u.type === UserRole.REGULATEUR);
         this.rawCrises       = crises;
-        this.rawOffers       = offres;
+        this.rawOffers       = [...offres, ...benevoles];
         this.rawRequests     = demandes;
         this.rawInformations = informations;
         this.buildRows();
