@@ -65,6 +65,11 @@ class Commune(models.Model):
     epci_code = models.CharField(max_length=10, null=True, blank=True, db_index=True)
     region_code = models.CharField(max_length=3, null=True, blank=True, db_index=True)
     population = models.PositiveIntegerField(null=True, blank=True)
+    # Aléas naturels/technologiques recensés sur la commune (API Géorisques, gaspar/risques) —
+    # {"num_risque", "libelle_risque_long"} par entrée, jamais recalculé en lecture (voir
+    # geo_lookup.commune_risques). Alimente la section "diagnostic des risques" attendue par un
+    # PCS/DICRIM (voir Institution.secteur_nom pour le même principe de dénormalisation).
+    risques_territoire = models.JSONField(default=list, blank=True)
     date_maj = models.DateTimeField(auto_now=True)
     # Distinct de date_maj (mise à jour seulement en cas de succès) : posé à CHAQUE tentative,
     # réussie ou non — voir geo_lookup.RETRY_COOLDOWN. Sans lui, un code sans correspondance
@@ -73,6 +78,10 @@ class Commune(models.Model):
     # suffisaient à ajouter ~15-20s à /api/demandes/ (un appel externe par point non résolu, à
     # chaque requête).
     derniere_tentative = models.DateTimeField(null=True, blank=True)
+    # Cooldown séparé de derniere_tentative ci-dessus : l'API Géorisques (gaspar/risques) est un
+    # service externe distinct de geo.api.gouv.fr (nom/centroïde/departement), avec sa propre
+    # disponibilité — un échec sur l'un ne doit jamais bloquer une nouvelle tentative sur l'autre.
+    derniere_tentative_risques = models.DateTimeField(null=True, blank=True)
 
     def __str__(self) -> str:
         return self.nom or self.code

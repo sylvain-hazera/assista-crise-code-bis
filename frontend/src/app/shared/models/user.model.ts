@@ -20,7 +20,11 @@ export interface User {
   institution_nom?: string | null;      // Nom de l'institution active de l'utilisateur (lecture seule)
   institution_id?: string | null;       // UUID de l'institution active de l'utilisateur (lecture seule)
   needs_institution_setup?: boolean;    // Compte Autorité locale activé mais pas encore rattaché à une institution
-  ma_zone?: { niveau: string; nom: string | null } | null;  // Secteur effectif de l'institution (User.institution) — voir Vue Ma Collectivité
+  ma_zone?: {
+    niveau: string;
+    nom: string | null;
+    risques: { num_risque: string; libelle_risque_long: string }[];  // Aléas du territoire (API Géorisques) — voir Vue Ma Collectivité
+  } | null;  // Secteur effectif de l'institution (User.institution) — voir Vue Ma Collectivité
   demo_role: UserRole | null;           // Rôle en zone de démonstration — null = pas d'accès démo
   enabled: boolean;
   is_active?: boolean;                  // false = compte désactivé (politique de désactivation), lecture seule

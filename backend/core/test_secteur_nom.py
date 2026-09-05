@@ -71,9 +71,21 @@ class TestMaZone:
         user = create_user(email="pompier@test.fr", type="AUT_LOCALE", institution=institution)
         client = APIClient()
         client.force_authenticate(user=user)
-        response = client.get(reverse("user-detail", args=[user.id]))
+        with patch("core.serializers.commune_risques", return_value=[]):
+            response = client.get(reverse("user-detail", args=[user.id]))
         assert response.status_code == 200
-        assert response.data["ma_zone"] == {"niveau": "departement", "nom": "Isère"}
+        assert response.data["ma_zone"] == {"niveau": "departement", "nom": "Isère", "risques": []}
+
+    def test_ma_zone_includes_territory_risks(self, create_user, commune_grenoble):
+        institution = _make_institution("MAIRIE", commune_grenoble.code)
+        user = create_user(email="secretaire-risques@test.fr", type="AUT_LOCALE", institution=institution)
+        client = APIClient()
+        client.force_authenticate(user=user)
+        risques = [{"num_risque": "11", "libelle_risque_long": "Inondation"}]
+        with patch("core.serializers.commune_risques", return_value=risques):
+            response = client.get(reverse("user-detail", args=[user.id]))
+        assert response.status_code == 200
+        assert response.data["ma_zone"]["risques"] == risques
 
     def test_ma_zone_none_without_institution(self, create_user):
         user = create_user(email="sans-institution@test.fr", type="AUT_LOCALE")

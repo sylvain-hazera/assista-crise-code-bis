@@ -10,6 +10,15 @@
         <span class="zone-niveau">({{ niveauLabel(maZoneNiveau) }})</span>
       </p>
     }
+    @if (risquesTerritoire.length > 0) {
+      <p class="risques-territoire">
+        <span class="material-icons">warning</span>
+        Risques identifiés :
+        @for (r of risquesTerritoire; track r.num_risque) {
+          <span class="risque-chip">{{ r.libelle_risque_long }}</span>
+        }
+      </p>
+    }
   </header>
 
   <section class="block reglages-block">

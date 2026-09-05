@@ -94,6 +94,39 @@ def commune_center_from_code(commune_code: str) -> dict:
     return {"latitude": commune.centre_latitude, "longitude": commune.centre_longitude}
 
 
+def _resolve_risques(commune) -> None:
+    """Peuple commune.risques_territoire depuis l'API Géorisques (gaspar/risques) — publique,
+    sans authentification, un seul appel par commune (voir _should_attempt/RETRY_COOLDOWN,
+    cooldown dédié derniere_tentative_risques, indépendant de celui de geo.api.gouv.fr)."""
+    if commune.risques_territoire or not _should_attempt(commune.derniere_tentative_risques):
+        return
+    url = f"https://georisques.gouv.fr/api/v1/gaspar/risques?code_insee={urllib.parse.quote(commune.code)}&page_size=50"
+    data = _fetch_json(url)
+    commune.derniere_tentative_risques = timezone.now()
+    resultats = (data or {}).get("data") or []
+    if resultats:
+        detail = resultats[0].get("risques_detail") or []
+        commune.risques_territoire = [
+            {"num_risque": r.get("num_risque"), "libelle_risque_long": r.get("libelle_risque_long")}
+            for r in detail
+        ]
+    commune.save(update_fields=["risques_territoire", "derniere_tentative_risques", "date_maj"])
+
+
+def commune_risques(commune_code: str) -> list:
+    """Aléas naturels/technologiques recensés sur une commune (API Géorisques) — voir
+    Commune.risques_territoire. Utilisé pour la section "diagnostic des risques" de la Vue Ma
+    Collectivité, dénormalisé comme le reste des champs Commune (jamais recalculé en lecture
+    une fois résolu)."""
+    from core.models import Commune
+
+    if not commune_code:
+        return []
+    commune, _ = Commune.objects.get_or_create(code=commune_code)
+    _resolve_risques(commune)
+    return commune.risques_territoire
+
+
 def epci_nom_from_code(epci_code: str) -> str | None:
     """Nom d'un EPCI (communauté de communes/métropole) — résolu à la demande, sans mise en
     cache en base contrairement à Commune : appelé uniquement depuis Institution.save(), sur

@@ -74,6 +74,7 @@ export class VueMairieComponent implements OnInit {
 
   maZoneNom: string | null = null;
   maZoneNiveau: string | null = null;
+  risquesTerritoire: { num_risque: string; libelle_risque_long: string }[] = [];
 
   isLoading = true;
   errorMessage = '';
@@ -108,6 +109,7 @@ export class VueMairieComponent implements OnInit {
       next: (user) => {
         this.maZoneNom = user.ma_zone?.nom ?? null;
         this.maZoneNiveau = user.ma_zone?.niveau ?? null;
+        this.risquesTerritoire = user.ma_zone?.risques ?? [];
       },
       error: () => {},
     });

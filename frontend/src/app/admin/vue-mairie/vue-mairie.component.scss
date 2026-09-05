@@ -27,6 +27,16 @@
     .material-icons { font-size: 18px; color: var(--primary); }
     .zone-niveau { color: var(--muted); }
   }
+  .risques-territoire {
+    display: flex; align-items: center; flex-wrap: wrap; gap: .4rem;
+    margin: .5rem 0 0; font-size: .85rem; color: var(--text);
+    .material-icons { font-size: 18px; color: #b45309; }
+  }
+  .risque-chip {
+    padding: .15rem .6rem; border-radius: 99px;
+    background: #fffbeb; color: #92400e;
+    font-size: .78rem; font-weight: 600;
+  }
 }
 
 .reglages-grid {
