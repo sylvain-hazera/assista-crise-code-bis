@@ -329,16 +329,23 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
    * (commune/EPCI/département — voir OfferService.vueSecteur) : appel réseau distinct de
    * loadHelpData, jamais mélangé aux offres de crise (exclude_type=Bénévolat là-bas). Calque
    * masqué par défaut (voir layerVisibility.benevolesPompiers). */
+  /** Non-null seulement si loadBenevolesPompiers a échoué — affiché en infobulle sur le
+   * calque (voir template) plutôt que silencieux : un compte institutionnel sans commune
+   * renseignée, ou dont l'institution n'est pas encore rattachée (User.institution vide),
+   * n'a sinon aucun moyen de comprendre pourquoi le calque reste vide une fois coché. */
+  benevolesPompiersError: string | null = null;
+
   loadBenevolesPompiers(): void {
     this.offerService.vueSecteur().subscribe({
       next: (benevoles) => {
+        this.benevolesPompiersError = null;
         this.benevolesPompiersGeoJSON = this.jsonToGeoJSON(benevoles);
         this.runWhenMapReady(() => this.addOrUpdateBenevolesPompiersLayer());
       },
-      error: () => {
-        // 400 si l'institution de l'utilisateur n'a pas de commune renseignée, ou si son type
-        // n'est pas géré — pas d'annuaire disponible pour ce compte, la carte reste utilisable
-        // sans ce calque.
+      error: (err) => {
+        // 400 le plus courant : institution de l'utilisateur vide, ou sans commune renseignée.
+        this.benevolesPompiersError = err?.error?.error || "Annuaire indisponible pour ce compte.";
+        console.warn('Bénévoles pompiers indisponibles :', this.benevolesPompiersError);
       },
     });
   }
