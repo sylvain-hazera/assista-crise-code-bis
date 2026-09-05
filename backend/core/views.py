@@ -4117,8 +4117,10 @@ class OfferViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         l'institution (usage test) prend le pas sur le niveau déduit du type. Toujours soit
         aucun filtre (national), soit un simple filtre sur colonne indexée déjà dénormalisée
         (commune_code/epci_code/departement_code/region_code), jamais de jointure géographique
-        en lecture. Pagination recommandée (`?page=1`) : un secteur large peut compter plusieurs
-        milliers de fiches."""
+        en lecture. Pagination recommandée (`?page=1&page_size=`) : un secteur large peut
+        compter plusieurs milliers de fiches — typiquement l'annuaire de bénévoles (type
+        Bénévolat), voir `?type=`/`?exclude_type=` ci-dessous pour le séparer des offres de
+        crise plutôt que de tout charger d'un bloc (voir VueMairieComponent)."""
         secteur = _institution_secteur_or_400(request)
         if isinstance(secteur, Response):
             return secteur
@@ -4128,6 +4130,14 @@ class OfferViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             offres = self.get_queryset().order_by("-created_at")
         else:
             offres = self.get_queryset().filter(**{SECTEUR_CHAMP_PAR_NIVEAU[niveau]: code}).order_by("-created_at")
+
+        type_filter = request.query_params.get('type')
+        if type_filter:
+            offres = offres.filter(offer_type__type=type_filter)
+        exclude_type = request.query_params.get('exclude_type')
+        if exclude_type:
+            offres = offres.exclude(offer_type__type=exclude_type)
+
         page = self.paginate_queryset(offres)
         if page is not None:
             return self.get_paginated_response(self.get_serializer(page, many=True).data)
@@ -4560,14 +4570,20 @@ class InformationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         except Exception as e:
             print(f"Erreur critique : L'envoi de l'email a échoué. Détails : {e}")
 
-    @action(detail=False, methods=["get"], permission_classes=[IsInstitutionalActor])
+    @action(detail=False, methods=["get"], permission_classes=[IsInstitutionalActor],
+            pagination_class=OptionalPageNumberPagination)
     def vue_mairie(self, request):
         """Signalements de la commune de l'institution de l'utilisateur appelant — même
-        contrat que RequestViewSet.vue_mairie."""
+        contrat que RequestViewSet.vue_mairie. Pagination opt-in (`?page=1&page_size=`) pour
+        permettre à la Vue Ma Collectivité de plafonner le volume chargé, comme pour
+        Offer/Request.vue_secteur."""
         commune_code = _institution_commune_or_400(request)
         if isinstance(commune_code, Response):
             return commune_code
-        queryset = self.get_queryset().filter(commune_code=commune_code)
+        queryset = self.get_queryset().filter(commune_code=commune_code).order_by("-created_at")
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            return self.get_paginated_response(self.get_serializer(page, many=True).data)
         return Response(self.get_serializer(queryset, many=True).data)
 
     @action(detail=False, methods=["post"], permission_classes=[IsInstitutionalActor])

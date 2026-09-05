@@ -58,11 +58,14 @@ export class InformationService {
   }
 
   /** GET /api/informations/vue_mairie/ — signalements de la commune de l'institution de
-   * l'utilisateur appelant (mairie). 400 si aucune commune associée au compte. */
-  vueMairie(): Observable<Information[]> {
+   * l'utilisateur appelant (mairie). 400 si aucune commune associée au compte. `limite`
+   * plafonne côté serveur (page_size), voir VueMairieComponent. */
+  vueMairie(options?: { limite?: number }): Observable<Information[]> {
+    let params = new HttpParams();
+    if (options?.limite) params = params.set('page', '1').set('page_size', String(options.limite));
     return this.http
-      .get<Information[]>(`${this.url}/vue_mairie/`)
-      .pipe(map(list => list.map(this.normalize)));
+      .get<Information[] | { results: Information[] }>(`${this.url}/vue_mairie/`, { params })
+      .pipe(map(res => (Array.isArray(res) ? res : res.results).map(this.normalize)));
   }
 
   /** GET /api/informations/?author_email=... — signalements créés par l'utilisateur connecté

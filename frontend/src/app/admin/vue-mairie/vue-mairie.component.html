@@ -12,6 +12,45 @@
     }
   </header>
 
+  <section class="block reglages-block">
+    <h2><span class="material-icons">tune</span> Réglages d'affichage</h2>
+    <p class="empty-text section-note">Plafonne le nombre de fiches chargées par catégorie — utile sur un grand secteur (région, national) où l'annuaire de bénévoles peut compter plusieurs centaines de fiches.</p>
+    <div class="reglages-grid">
+      <label class="reglage-item">
+        <span>Demandes</span>
+        <select class="form-select" [ngModel]="limites.demandes" (ngModelChange)="changerLimite('demandes', $event)">
+          @for (opt of optionsLimite; track opt) {
+            <option [ngValue]="opt">{{ labelLimite(opt) }}</option>
+          }
+        </select>
+      </label>
+      <label class="reglage-item">
+        <span>Offres</span>
+        <select class="form-select" [ngModel]="limites.offres" (ngModelChange)="changerLimite('offres', $event)">
+          @for (opt of optionsLimite; track opt) {
+            <option [ngValue]="opt">{{ labelLimite(opt) }}</option>
+          }
+        </select>
+      </label>
+      <label class="reglage-item">
+        <span>Bénévoles</span>
+        <select class="form-select" [ngModel]="limites.benevoles" (ngModelChange)="changerLimite('benevoles', $event)">
+          @for (opt of optionsLimite; track opt) {
+            <option [ngValue]="opt">{{ labelLimite(opt) }}</option>
+          }
+        </select>
+      </label>
+      <label class="reglage-item">
+        <span>Signalements</span>
+        <select class="form-select" [ngModel]="limites.signalements" (ngModelChange)="changerLimite('signalements', $event)">
+          @for (opt of optionsLimite; track opt) {
+            <option [ngValue]="opt">{{ labelLimite(opt) }}</option>
+          }
+        </select>
+      </label>
+    </div>
+  </section>
+
   <section class="block journal-block">
     <h2><span class="material-icons">menu_book</span> Journal de bord <span class="count-badge">{{ journalEntries.length }}</span></h2>
     <p class="empty-text section-note">Notes libres, horodatées et tracées dans les auditlogs — une entrée ne peut ni être modifiée ni supprimée une fois enregistrée.</p>
@@ -63,6 +102,9 @@
 
     <section class="block">
       <h2><span class="material-icons">emergency</span> Demandes d'aide <span class="count-badge">{{ demandes.length }}</span></h2>
+      @if (recapDemandesTronque) {
+        <p class="limite-notice">Affichage plafonné à {{ limites.demandes }} — le récapitulatif ci-dessous ne porte que sur les demandes chargées.</p>
+      }
 
       <div class="recap-filtres">
         <button type="button" class="recap-chip" [class.active]="filtreDemande === 'total'" (click)="setFiltreDemande('total')">
@@ -141,8 +183,11 @@
 
     <section class="block">
       <h2><span class="material-icons">volunteer_activism</span> Offres d'aide <span class="count-badge">{{ offres.length }}</span></h2>
+      @if (limites.offres && offres.length === limites.offres) {
+        <p class="limite-notice">Affichage plafonné à {{ limites.offres }} — augmentez la limite dans les réglages pour voir plus d'offres.</p>
+      }
       @if (offres.length === 0) {
-        <p class="empty-text">Aucune offre dans votre commune pour le moment.</p>
+        <p class="empty-text">Aucune offre dans votre secteur pour le moment.</p>
       } @else {
         <table class="data-table">
           <thead><tr><th>Titre</th><th>Contact</th><th>Statut</th><th>Date</th></tr></thead>
@@ -158,6 +203,36 @@
                 </td>
                 <td><span class="statut-chip" [class]="statusClass(o.status)">{{ statusLabel(o.status) }}</span></td>
                 <td>{{ fmtDate(o.created_at) }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      }
+    </section>
+
+    <section class="block">
+      <h2><span class="material-icons">local_fire_department</span> Bénévoles <span class="count-badge">{{ benevoles.length }}</span></h2>
+      <p class="empty-text section-note">Annuaire de bénévoles (offre de type Bénévolat) — séparé des offres de crise, potentiellement des centaines de fiches sur un grand secteur.</p>
+      @if (limites.benevoles && benevoles.length === limites.benevoles) {
+        <p class="limite-notice">Affichage plafonné à {{ limites.benevoles }} — augmentez la limite dans les réglages pour voir plus de bénévoles.</p>
+      }
+      @if (benevoles.length === 0) {
+        <p class="empty-text">Aucun bénévole dans votre secteur pour le moment.</p>
+      } @else {
+        <table class="data-table">
+          <thead><tr><th>Titre</th><th>Contact</th><th>Statut</th><th>Date</th></tr></thead>
+          <tbody>
+            @for (b of benevoles; track b.id) {
+              <tr>
+                <td class="cell-titre">{{ b.title }}</td>
+                <td>
+                  <div class="contact-stack">
+                    <span>{{ b.first_name_offer }} {{ b.last_name_offer }}</span>
+                    <span class="contact-sub">{{ b.email_offer }} · {{ b.phone_offer }}</span>
+                  </div>
+                </td>
+                <td><span class="statut-chip" [class]="statusClass(b.status)">{{ statusLabel(b.status) }}</span></td>
+                <td>{{ fmtDate(b.created_at) }}</td>
               </tr>
             }
           </tbody>
@@ -229,6 +304,9 @@
 
     <section class="block">
       <h2><span class="material-icons">flag</span> Signalements <span class="count-badge">{{ informations.length }}</span></h2>
+      @if (limites.signalements && informations.length === limites.signalements) {
+        <p class="limite-notice">Affichage plafonné à {{ limites.signalements }} — augmentez la limite dans les réglages pour voir plus de signalements.</p>
+      }
       @if (informations.length === 0) {
         <p class="empty-text">Aucun signalement dans votre commune.</p>
       } @else {

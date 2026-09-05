@@ -29,6 +29,26 @@
   }
 }
 
+.reglages-grid {
+  display: flex; flex-wrap: wrap; gap: 1rem;
+}
+.reglage-item {
+  display: flex; flex-direction: column; gap: .3rem;
+  font-size: .78rem; font-weight: 600; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .02em;
+}
+.form-select {
+  font: inherit; font-weight: 400; text-transform: none; letter-spacing: normal;
+  padding: .45rem .6rem; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--surface); color: var(--text); min-width: 7rem;
+  &:focus { outline: none; border-color: var(--primary); }
+}
+.limite-notice {
+  margin: -.5rem 0 .75rem; padding: .5rem .75rem;
+  background: #fffbeb; color: #92400e; border-radius: 8px;
+  font-size: .8rem;
+}
+
 .journal-form {
   display: flex; flex-direction: column; gap: .5rem; margin-bottom: 1rem;
 }

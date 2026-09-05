@@ -33,6 +33,20 @@ const NIVEAU_LABEL: Record<string, string> = {
 
 type FiltreDemande = 'total' | 'non_affectee' | 'affectee' | 'en_cours' | 'traitee';
 
+type CategorieLimite = 'demandes' | 'offres' | 'benevoles' | 'signalements';
+
+// null = "Tout" (pas de plafond). Bénévoles à part : l'annuaire synthétique de pompiers
+// volontaires (voir generate_benevoles_pompiers_national) peut compter plusieurs centaines de
+// fiches à l'échelle d'une région — inutile à charger en entier par défaut sur cette page.
+const LIMITES_PAR_DEFAUT: Record<CategorieLimite, number | null> = {
+  demandes: null,
+  offres: null,
+  benevoles: 50,
+  signalements: null,
+};
+const LIMITES_STORAGE_KEY = 'vueCollectivite.limites';
+const OPTIONS_LIMITE: (number | null)[] = [25, 50, 100, 250, 500, null];
+
 @Component({
   selector: 'app-vue-mairie',
   standalone: true,
@@ -47,6 +61,7 @@ export class VueMairieComponent implements OnInit {
   informations: Information[] = [];
   declarationsSecurite: DeclarationSecurite[] = [];
   offres: Offer[] = [];
+  benevoles: Offer[] = [];
   equipes: Team[] = [];
   points: PointOperationnel[] = [];
   dossiers: Dossier[] = [];
@@ -61,6 +76,9 @@ export class VueMairieComponent implements OnInit {
 
   isLoading = true;
   errorMessage = '';
+
+  limites: Record<CategorieLimite, number | null> = this.chargerLimites();
+  readonly optionsLimite = OPTIONS_LIMITE;
 
   readonly Status = Status;
 
@@ -98,6 +116,17 @@ export class VueMairieComponent implements OnInit {
     return niveau ? (NIVEAU_LABEL[niveau] ?? niveau) : '';
   }
 
+  labelLimite(v: number | null): string {
+    return v === null ? 'Tout' : String(v);
+  }
+
+  // Le récapitulatif des demandes (voir recapDemandes) est calculé sur les seules demandes
+  // chargées : si un plafond est actif et pile atteint, il ne reflète alors qu'un sous-ensemble
+  // du secteur, pas le total réel — averti dans le template plutôt que silencieusement inexact.
+  get recapDemandesTronque(): boolean {
+    return this.limites.demandes !== null && this.demandes.length === this.limites.demandes;
+  }
+
   loadJournal(): void {
     this.journalCollectiviteService.getAll().subscribe({
       next: (entries) => { this.journalEntries = entries; },
@@ -127,19 +156,21 @@ export class VueMairieComponent implements OnInit {
     this.isLoading = true;
     this.errorMessage = '';
     forkJoin({
-      demandes: this.requestService.vueSecteur(),
-      informations: this.informationService.vueMairie(),
+      demandes: this.requestService.vueSecteur({ limite: this.limites.demandes ?? undefined }),
+      informations: this.informationService.vueMairie({ limite: this.limites.signalements ?? undefined }),
       declarationsSecurite: this.declarationSecuriteService.vueMairie(),
-      offres: this.offerService.vueSecteur(),
+      offres: this.offerService.vueSecteur({ limite: this.limites.offres ?? undefined, excludeType: 'Bénévolat' }),
+      benevoles: this.offerService.vueSecteur({ limite: this.limites.benevoles ?? undefined, type: 'Bénévolat' }),
       equipes: this.teamService.vueMairie(),
       points: this.pointOperationnelService.vueMairie(),
       dossiers: this.dossierService.vueMairie(),
     }).subscribe({
-      next: ({ demandes, informations, declarationsSecurite, offres, equipes, points, dossiers }) => {
+      next: ({ demandes, informations, declarationsSecurite, offres, benevoles, equipes, points, dossiers }) => {
         this.demandes = demandes;
         this.informations = informations;
         this.declarationsSecurite = declarationsSecurite;
         this.offres = offres;
+        this.benevoles = benevoles;
         this.equipes = equipes;
         this.points = points;
         this.dossiers = dossiers;
@@ -150,6 +181,22 @@ export class VueMairieComponent implements OnInit {
         this.isLoading = false;
       },
     });
+  }
+
+  private chargerLimites(): Record<CategorieLimite, number | null> {
+    try {
+      const brut = localStorage.getItem(LIMITES_STORAGE_KEY);
+      if (brut) return { ...LIMITES_PAR_DEFAUT, ...JSON.parse(brut) };
+    } catch {}
+    return { ...LIMITES_PAR_DEFAUT };
+  }
+
+  changerLimite(categorie: CategorieLimite, valeur: number | null): void {
+    this.limites = { ...this.limites, [categorie]: valeur };
+    try {
+      localStorage.setItem(LIMITES_STORAGE_KEY, JSON.stringify(this.limites));
+    } catch {}
+    this.loadAll();
   }
 
   get recapDemandes(): Record<FiltreDemande, number> {

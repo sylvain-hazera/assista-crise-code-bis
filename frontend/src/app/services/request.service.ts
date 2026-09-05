@@ -88,11 +88,15 @@ export class RequestService {
   /** GET /api/demandes/vue_secteur/ — comme vue_mairie, mais à l'échelle adaptée au type
    * d'institution de l'appelant (commune/EPCI/département/région/national, voir
    * _institution_secteur_or_400 côté backend) — inclut est_affectee (RequestSerializer),
-   * calculé côté serveur pour le récapitulatif de la Vue Ma Collectivité. */
-  vueSecteur(): Observable<Request[]> {
+   * calculé côté serveur pour le récapitulatif de la Vue Ma Collectivité. `limite` plafonne
+   * côté serveur (page_size) : le récapitulatif reflète alors seulement les demandes chargées,
+   * pas le total réel du secteur (voir VueMairieComponent). */
+  vueSecteur(options?: { limite?: number }): Observable<Request[]> {
+    let params = new HttpParams();
+    if (options?.limite) params = params.set('page', '1').set('page_size', String(options.limite));
     return this.http
-      .get<Request[]>(`${this.url}/vue_secteur/`)
-      .pipe(map(list => list.map(this.normalize)));
+      .get<Request[] | { results: Request[] }>(`${this.url}/vue_secteur/`, { params })
+      .pipe(map(res => (Array.isArray(res) ? res : res.results).map(this.normalize)));
   }
 
   /**

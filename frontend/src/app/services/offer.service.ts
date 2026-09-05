@@ -97,10 +97,18 @@ export class OfferService {
 
   /** GET /api/offres/vue_secteur/ — comme vue_mairie, mais à l'échelle adaptée au type
    * d'institution de l'appelant (commune/EPCI/département, voir _institution_secteur_or_400
-   * côté backend). Sans ?page=, renvoie tout d'un coup — volontaire ici : un secteur (même un
-   * département) reste d'un volume raisonnable, contrairement à /offres/ non filtré. */
-  vueSecteur(): Observable<Offer[]> {
-    return this.http.get<Offer[]>(`${this.url}/vue_secteur/`).pipe(map(list => list.map(this.normalize)));
+   * côté backend). Sans `limite`, renvoie tout d'un coup — un secteur large (région, national)
+   * peut compter des milliers de fiches, en particulier l'annuaire de bénévoles (type
+   * Bénévolat, voir `type`/`excludeType`) : passer `limite` plafonne côté serveur (`page_size`)
+   * plutôt que de tout charger pour ne rien afficher. */
+  vueSecteur(options?: { limite?: number; type?: string; excludeType?: string }): Observable<Offer[]> {
+    let params = new HttpParams();
+    if (options?.limite) params = params.set('page', '1').set('page_size', String(options.limite));
+    if (options?.type) params = params.set('type', options.type);
+    if (options?.excludeType) params = params.set('exclude_type', options.excludeType);
+    return this.http.get<Offer[] | { results: Offer[] }>(`${this.url}/vue_secteur/`, { params }).pipe(
+      map(res => (Array.isArray(res) ? res : res.results).map(this.normalize))
+    );
   }
 
   /** POST /api/offres/<id>/assign_dossier/ — affecte l'auteur de l'offre au dossier (rôle OFFRANT). */
