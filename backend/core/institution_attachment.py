@@ -125,6 +125,24 @@ def find_institution_for_pending_user(user, request=None):
     return institution
 
 
+def grant_institution_and_demo_access(user, institution):
+    """Pose User.institution (si pas déjà défini — ne bascule jamais le contexte "Vue Ma
+    Collectivité" d'un compte déjà rattaché ailleurs, ex: un profil multi-institutions membre
+    de plusieurs mairies) et accorde automatiquement le même rôle en zone DEMO (si aucun accès
+    démo n'a déjà été réglé — manuellement ou par un rattachement précédent). Un compte
+    institutionnel réel doit pouvoir essayer la démo sans dépendre d'un octroi manuel séparé par
+    un administrateur (voir AuthService.canAccessDemo côté frontend)."""
+    update_fields = []
+    if user.institution_id is None:
+        user.institution = institution
+        update_fields.append('institution')
+    if not user.demo_role:
+        user.demo_role = user.type
+        update_fields.append('demo_role')
+    if update_fields:
+        user.save(update_fields=update_fields)
+
+
 def attach_user_with_role(user, institution, role_code, request=None, fonction='Membre', contact_principal=False):
     """Rattache explicitement l'utilisateur à `institution` avec le rôle qu'il a choisi — appelé
     une fois qu'il a confirmé lui-même la correspondance proposée par
@@ -150,6 +168,7 @@ def attach_user_with_role(user, institution, role_code, request=None, fonction='
             objet_id=contact.id,
             commentaire=f"Rattachement de {user.email} à l'institution {institution.nom} (confirmé par l'utilisateur)",
         )
+    grant_institution_and_demo_access(user, institution)
 
     affectation, affectation_created = AffectationRoleOperationnel.objects.get_or_create(
         utilisateur=user, institution=institution, competence=None, role=role,
@@ -270,12 +289,13 @@ def attach_secours_user_to_institution(user, request=None):
                 objet_id=contact.id,
                 commentaire=f"Rattachement AASC de {user.email} à {matched_institution.nom}",
             )
+        grant_institution_and_demo_access(user, matched_institution)
         assign_default_institution_role(user, matched_institution)
 
     elif pending_type == 'rcsc':
         if user.pending_commune_code:
             matched_institution = Institution.objects.filter(
-                type__code='mairie', commune_code=user.pending_commune_code, actif=True,
+                type__code__iexact='mairie', commune_code=user.pending_commune_code, actif=True,
             ).first()
         if matched_institution:
             contact, contact_created = ContactInstitution.objects.get_or_create(
@@ -290,6 +310,7 @@ def attach_secours_user_to_institution(user, request=None):
                     objet_id=contact.id,
                     commentaire=f"Rattachement RCSC de {user.email} à {matched_institution.nom}",
                 )
+            grant_institution_and_demo_access(user, matched_institution)
 
     _clear_pending_institution_fields(user)
     return matched_institution
@@ -329,6 +350,7 @@ def resolve_or_invite_responsable(responsable_id, responsable_email, institution
                 objet_id=contact.id,
                 commentaire=f"Rattachement de {user.email} comme régulateur pour {institution.nom}",
             )
+        grant_institution_and_demo_access(user, institution)
         return user, False
 
     email = (responsable_email or '').strip().lower()
@@ -352,6 +374,7 @@ def resolve_or_invite_responsable(responsable_id, responsable_email, institution
                 objet_id=contact.id,
                 commentaire=f"Rattachement de {existing.email} comme régulateur pour {institution.nom}",
             )
+        grant_institution_and_demo_access(existing, institution)
         return existing, False
 
     user = User.objects.create_user(
@@ -360,6 +383,7 @@ def resolve_or_invite_responsable(responsable_id, responsable_email, institution
         password=None,
         type=UserRole.REGULATEUR,
         institution=institution,
+        demo_role=UserRole.REGULATEUR,
         enabled=False,
         is_active=False,
     )
