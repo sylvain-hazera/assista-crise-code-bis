@@ -35,14 +35,15 @@ type FiltreDemande = 'total' | 'non_affectee' | 'affectee' | 'en_cours' | 'trait
 
 type CategorieLimite = 'demandes' | 'offres' | 'benevoles' | 'signalements';
 
-// null = "Tout" (pas de plafond). Bénévoles à part : l'annuaire synthétique de pompiers
-// volontaires (voir generate_benevoles_pompiers_national) peut compter plusieurs centaines de
-// fiches à l'échelle d'une région — inutile à charger en entier par défaut sur cette page.
+// null = "Tout" (pas de plafond). 25 par défaut pour les 4 catégories — un secteur large
+// (région, national) peut charger des centaines de fiches d'un coup, en particulier l'annuaire
+// de bénévoles (voir generate_benevoles_pompiers_national), inutile à charger en entier par
+// défaut sur cette page.
 const LIMITES_PAR_DEFAUT: Record<CategorieLimite, number | null> = {
-  demandes: null,
-  offres: null,
-  benevoles: 50,
-  signalements: null,
+  demandes: 25,
+  offres: 25,
+  benevoles: 25,
+  signalements: 25,
 };
 const LIMITES_STORAGE_KEY = 'vueCollectivite.limites';
 const OPTIONS_LIMITE: (number | null)[] = [25, 50, 100, 250, 500, null];
