@@ -15,6 +15,7 @@ celery>=5.3.0
 redis>=5.0.0
 gunicorn>=21.2.0
 whitenoise>=6.6.0
+openpyxl>=3.1.0
 
 # Tests & Coverage
 pytest>=7.4.0

@@ -1,7 +1,12 @@
 <div class="mairie-page">
 
   <header class="page-header">
-    <h1><span class="material-icons">apartment</span> Vue Ma Collectivité</h1>
+    <div class="header-top">
+      <h1><span class="material-icons">apartment</span> Vue Ma Collectivité</h1>
+      <a routerLink="/admin/import-personnel" class="btn-import-personnel">
+        <span class="material-icons">upload_file</span> Importer mon personnel/élus
+      </a>
+    </div>
     <p class="subtitle">Demandes et signalements de votre commune</p>
     @if (maZoneNom) {
       <p class="ma-zone">

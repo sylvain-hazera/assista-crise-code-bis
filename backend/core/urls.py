@@ -38,6 +38,9 @@ from .views import (
     ZoneViewSet,
     PlanViewSet,
     DashboardStatsView,
+    ImportApercuView,
+    ImportPersonnelCommunalView,
+    ImportPersonnelCommunalExempleView,
 )
 
 router = DefaultRouter()
@@ -159,6 +162,9 @@ urlpatterns = [
     path('change-password/', ChangePasswordView.as_view(), name='auth_change_password'),
     path('reset-password/<str:uidb64>/<str:token>/', PasswordResetConfirmView.as_view(), name='reset_password_confirm'),
     path('stats/dashboard/', DashboardStatsView.as_view(), name='dashboard_stats'),
+    path('imports/apercu/', ImportApercuView.as_view(), name='import_apercu'),
+    path('imports/personnel-communal/', ImportPersonnelCommunalView.as_view(), name='import_personnel_communal'),
+    path('imports/personnel-communal/exemple/', ImportPersonnelCommunalExempleView.as_view(), name='import_personnel_communal_exemple'),
     path('ma-position/', MaPositionView.as_view(), name='ma_position'),
     path('positions-equipes/', PositionsEquipesView.as_view(), name='positions_equipes'),
     

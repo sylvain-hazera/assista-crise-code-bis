@@ -1,6 +1,7 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { forkJoin } from 'rxjs';
 
 import { RequestService } from '../../services/request.service';
@@ -52,7 +53,7 @@ const OPTIONS_LIMITE: (number | null)[] = [25, 50, 100, 250, 500, null];
 @Component({
   selector: 'app-vue-mairie',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, RouterLink],
   templateUrl: './vue-mairie.component.html',
   styleUrls: ['./vue-mairie.component.scss'],
 })

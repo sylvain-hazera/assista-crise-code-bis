@@ -1,5 +1,5 @@
 from django.shortcuts import render
-from django.http import FileResponse, StreamingHttpResponse
+from django.http import FileResponse, StreamingHttpResponse, HttpResponse
 from rest_framework.decorators import action
 from rest_framework.views import APIView
 from rest_framework import viewsets, status, generics, permissions, mixins
@@ -51,6 +51,12 @@ from .permissions import (
     get_active_environment, get_effective_role, mask_email, mask_phone, send_mail_env_aware,
 )
 from .geo_lookup import commune_code_from_point, commune_secteur_codes, commune_risques, commune_risques_date_maj
+from .imports import (
+    CHAMPS_PERSONNEL_COMMUNAL,
+    exemple_csv_personnel_communal,
+    importer_personnel_communal,
+    parse_fichier,
+)
 from .pagination import OptionalPageNumberPagination
 from django.contrib.gis.geos import Point
 
@@ -1415,6 +1421,76 @@ class UserViewSet(viewsets.ModelViewSet):
         )
 
         return Response({'message': f"Email de réinitialisation envoyé à {target_user.email}"})
+
+
+class ImportApercuView(APIView):
+    """Étape 1 de l'import CSV/XLS (n'importe quel type de liste, voir imports.py) : renvoie les
+    en-têtes détectées et un aperçu (10 premières lignes) pour que l'utilisateur associe chaque
+    colonne de son fichier à un champ cible avant de lancer l'import réel — jamais d'import à
+    l'aveugle sur la seule foi de l'ordre des colonnes."""
+    permission_classes = [IsInstitutionalActor]
+
+    def post(self, request):
+        fichier = request.FILES.get('fichier')
+        if not fichier:
+            return Response({"error": "Aucun fichier reçu."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            colonnes, lignes = parse_fichier(fichier)
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception:
+            return Response(
+                {"error": "Impossible de lire ce fichier — vérifiez qu'il s'agit bien d'un CSV ou XLSX valide."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return Response({
+            "colonnes": colonnes,
+            "apercu": lignes[:10],
+            "total_lignes": len(lignes),
+        })
+
+
+class ImportPersonnelCommunalView(APIView):
+    """Étape 2 : import réel du personnel communal/élus de l'institution de l'utilisateur
+    appelant, en comptes complets (voir imports.importer_personnel_communal) — jamais une
+    donnée de santé : seuls prénom/nom/email/téléphone/fonction sont lus, quelle que soit la
+    colonne du fichier source qui leur est associée."""
+    permission_classes = [IsInstitutionalActor]
+
+    def post(self, request):
+        institution = getattr(request.user, 'institution', None)
+        if institution is None:
+            return Response(
+                {"error": "Aucune institution associée à votre compte."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        fichier = request.FILES.get('fichier')
+        if not fichier:
+            return Response({"error": "Aucun fichier reçu."}, status=status.HTTP_400_BAD_REQUEST)
+        mapping = {champ: request.data.get(f"mapping_{champ}") for champ in CHAMPS_PERSONNEL_COMMUNAL}
+        if not mapping.get("email") or not mapping.get("nom"):
+            return Response(
+                {"error": "Les colonnes Email et Nom doivent être associées avant de lancer l'import."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            _colonnes, lignes = parse_fichier(fichier)
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        resultat = importer_personnel_communal(request, institution, lignes, mapping)
+        return Response(resultat)
+
+
+class ImportPersonnelCommunalExempleView(APIView):
+    """Fichier CSV d'exemple téléchargeable juste à côté du formulaire d'import, pour que la
+    mairie prépare son propre fichier dans le bon format avant de l'envoyer."""
+    permission_classes = [IsInstitutionalActor]
+
+    def get(self, request):
+        response = HttpResponse(exemple_csv_personnel_communal(), content_type="text/csv; charset=utf-8")
+        response['Content-Disposition'] = 'attachment; filename="exemple-personnel-communal.csv"'
+        return response
+
 
 class DashboardStatsView(APIView):
     """Agrégats pour le tableau de bord admin (cartes de synthèse, courbe d'évolution 30
