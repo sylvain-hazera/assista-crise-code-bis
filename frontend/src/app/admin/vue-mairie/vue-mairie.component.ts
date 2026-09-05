@@ -31,6 +31,8 @@ const NIVEAU_LABEL: Record<string, string> = {
   national: 'National',
 };
 
+type FiltreDemande = 'total' | 'non_affectee' | 'affectee' | 'en_cours' | 'traitee';
+
 @Component({
   selector: 'app-vue-mairie',
   standalone: true,
@@ -41,6 +43,7 @@ const NIVEAU_LABEL: Record<string, string> = {
 export class VueMairieComponent implements OnInit {
 
   demandes: Request[] = [];
+  filtreDemande: FiltreDemande = 'total';
   informations: Information[] = [];
   declarationsSecurite: DeclarationSecurite[] = [];
   offres: Offer[] = [];
@@ -124,10 +127,10 @@ export class VueMairieComponent implements OnInit {
     this.isLoading = true;
     this.errorMessage = '';
     forkJoin({
-      demandes: this.requestService.vueMairie(),
+      demandes: this.requestService.vueSecteur(),
       informations: this.informationService.vueMairie(),
       declarationsSecurite: this.declarationSecuriteService.vueMairie(),
-      offres: this.offerService.vueMairie(),
+      offres: this.offerService.vueSecteur(),
       equipes: this.teamService.vueMairie(),
       points: this.pointOperationnelService.vueMairie(),
       dossiers: this.dossierService.vueMairie(),
@@ -147,6 +150,30 @@ export class VueMairieComponent implements OnInit {
         this.isLoading = false;
       },
     });
+  }
+
+  get recapDemandes(): Record<FiltreDemande, number> {
+    return {
+      total: this.demandes.length,
+      non_affectee: this.demandes.filter(d => !d.est_affectee).length,
+      affectee: this.demandes.filter(d => !!d.est_affectee).length,
+      en_cours: this.demandes.filter(d => d.status === Status.IN_PROGRESS).length,
+      traitee: this.demandes.filter(d => d.status === Status.PROCESSED).length,
+    };
+  }
+
+  get demandesAffichees(): Request[] {
+    switch (this.filtreDemande) {
+      case 'non_affectee': return this.demandes.filter(d => !d.est_affectee);
+      case 'affectee':     return this.demandes.filter(d => !!d.est_affectee);
+      case 'en_cours':     return this.demandes.filter(d => d.status === Status.IN_PROGRESS);
+      case 'traitee':      return this.demandes.filter(d => d.status === Status.PROCESSED);
+      default:             return this.demandes;
+    }
+  }
+
+  setFiltreDemande(filtre: FiltreDemande): void {
+    this.filtreDemande = filtre;
   }
 
   headcount(d: DeclarationSecurite): number {

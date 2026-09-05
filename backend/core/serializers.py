@@ -411,6 +411,7 @@ class RequestSerializer(serializers.ModelSerializer):
     has_photo = serializers.SerializerMethodField()
     commune = serializers.SerializerMethodField()
     distance_from_crisis_km = serializers.SerializerMethodField()
+    est_affectee = serializers.SerializerMethodField()
 
     class Meta:
         model = Request
@@ -453,6 +454,15 @@ class RequestSerializer(serializers.ModelSerializer):
             return None
         distance = getattr(obj, 'distance_from_crisis', None)
         return round(distance.km, 1) if distance is not None else None
+
+    def get_est_affectee(self, obj):
+        # RequestViewSet.vue_secteur annote nb_equipes_affectees (1 requête pour toute la
+        # liste) — sans cette annotation (ex: détail d'une seule demande), retombe sur une
+        # requête directe, comme distance_from_crisis_km ci-dessus.
+        nb_equipes = getattr(obj, 'nb_equipes_affectees', None)
+        if nb_equipes is not None:
+            return nb_equipes > 0
+        return obj.assigned_teams.exists()
 
     def to_representation(self, instance):
         data = super().to_representation(instance)

@@ -63,13 +63,34 @@
 
     <section class="block">
       <h2><span class="material-icons">emergency</span> Demandes d'aide <span class="count-badge">{{ demandes.length }}</span></h2>
+
+      <div class="recap-filtres">
+        <button type="button" class="recap-chip" [class.active]="filtreDemande === 'total'" (click)="setFiltreDemande('total')">
+          Total <strong>{{ recapDemandes.total }}</strong>
+        </button>
+        <button type="button" class="recap-chip" [class.active]="filtreDemande === 'non_affectee'" (click)="setFiltreDemande('non_affectee')">
+          Non affectée <strong>{{ recapDemandes.non_affectee }}</strong>
+        </button>
+        <button type="button" class="recap-chip" [class.active]="filtreDemande === 'affectee'" (click)="setFiltreDemande('affectee')">
+          Affectée <strong>{{ recapDemandes.affectee }}</strong>
+        </button>
+        <button type="button" class="recap-chip" [class.active]="filtreDemande === 'en_cours'" (click)="setFiltreDemande('en_cours')">
+          En cours <strong>{{ recapDemandes.en_cours }}</strong>
+        </button>
+        <button type="button" class="recap-chip" [class.active]="filtreDemande === 'traitee'" (click)="setFiltreDemande('traitee')">
+          Traitée <strong>{{ recapDemandes.traitee }}</strong>
+        </button>
+      </div>
+
       @if (demandes.length === 0) {
-        <p class="empty-text">Aucune demande dans votre commune pour le moment.</p>
+        <p class="empty-text">Aucune demande dans votre secteur pour le moment.</p>
+      } @else if (demandesAffichees.length === 0) {
+        <p class="empty-text">Aucune demande ne correspond à ce filtre.</p>
       } @else {
         <table class="data-table">
-          <thead><tr><th>Titre</th><th>Contact</th><th>Statut</th><th>Date</th></tr></thead>
+          <thead><tr><th>Titre</th><th>Contact</th><th>Affectation</th><th>Statut</th><th>Date</th></tr></thead>
           <tbody>
-            @for (d of demandes; track d.id) {
+            @for (d of demandesAffichees; track d.id) {
               <tr>
                 <td class="cell-titre">{{ d.title }}</td>
                 <td>
@@ -77,6 +98,11 @@
                     <span>{{ d.first_name_request }} {{ d.last_name_request }}</span>
                     <span class="contact-sub">{{ d.email_request }} · {{ d.phone_request }}</span>
                   </div>
+                </td>
+                <td>
+                  <span class="statut-chip" [class]="d.est_affectee ? 'stat-traitee' : 'stat-urgent'">
+                    {{ d.est_affectee ? 'Affectée' : 'Non affectée' }}
+                  </span>
                 </td>
                 <td><span class="statut-chip" [class]="statusClass(d.status)">{{ statusLabel(d.status) }}</span></td>
                 <td>{{ fmtDate(d.created_at) }}</td>

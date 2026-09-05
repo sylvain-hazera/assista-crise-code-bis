@@ -414,6 +414,12 @@ class Request(HebergementDetailsMixin, EnvironmentScopedModel):
                    "utilisé pour le matching géographique avec les zones d'intervention des équipes. "
                    "Pour une demande d'hébergement : première commune de zone_recherche_communes.",
     )
+    # Dénormalisés depuis commune_code (voir RequestViewSet.perform_create), même principe que
+    # sur Offer : permet vue_secteur (EPCI/département/région) sans jointure géographique en
+    # lecture.
+    epci_code = models.CharField(max_length=10, null=True, blank=True, db_index=True)
+    departement_code = models.CharField(max_length=3, null=True, blank=True, db_index=True)
+    region_code = models.CharField(max_length=3, null=True, blank=True, db_index=True)
     # Zone de recherche d'un logement (demande d'hébergement uniquement) : une ou plusieurs
     # communes saisies manuellement, avec un rayon optionnel — remplace l'adresse précise,
     # inadaptée à une recherche de logement (on ne sait pas encore où on va vivre). Même

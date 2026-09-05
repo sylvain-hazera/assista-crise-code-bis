@@ -2038,9 +2038,10 @@ def _institution_commune_or_400(request):
     return institution.commune_code
 
 
-# Colonne Offer correspondante par niveau de secteur — "national" n'en a pas (aucun filtre
-# géographique, voir vue_secteur).
-SECTEUR_CHAMP_OFFER = {
+# Colonne correspondante par niveau de secteur — mêmes noms de champ dénormalisés sur Offer et
+# Request (voir OfferViewSet.perform_create/RequestViewSet.perform_create) — "national" n'en a
+# pas (aucun filtre géographique, voir vue_secteur).
+SECTEUR_CHAMP_PAR_NIVEAU = {
     "commune": "commune_code",
     "epci": "epci_code",
     "departement": "departement_code",
@@ -2428,7 +2429,7 @@ class RequestViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         # demande de n'importe qui d'autre — voir IsOwnerOrInstitutional.
         if self.action in ('update', 'partial_update', 'destroy'):
             return [IsOwnerOrInstitutional()]
-        if self.action in ('assign_team', 'bulk_assign_mission', 'vue_mairie', 'transformer', 'reactiver'):
+        if self.action in ('assign_team', 'bulk_assign_mission', 'vue_mairie', 'vue_secteur', 'transformer', 'reactiver'):
             return [IsInstitutionalActor()]
         return [AllowAny()]
 
@@ -2497,16 +2498,21 @@ class RequestViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         author = self.request.user if self.request.user.is_authenticated else None
         demande = serializer.save(author=author, deletion_token=deletion_token, environment=get_active_environment(self.request))
 
-        # Résout commune_code une seule fois ici plutôt qu'à chaque consultation (même correctif
-        # que OfferViewSet.perform_create) : sans lui, RequestSerializer.get_commune retombe sur
-        # commune_from_point à CHAQUE lecture — mesuré en direct sur la carte DEMO, 9.3s pour
-        # seulement 112 demandes (commune_code jamais renseigné jusqu'ici, aucune vue ne le
-        # posait à la création).
+        # Résout commune_code/epci_code/departement_code/region_code une seule fois ici plutôt
+        # qu'à chaque consultation (même correctif que OfferViewSet.perform_create) : sans
+        # commune_code, RequestSerializer.get_commune retombe sur commune_from_point à CHAQUE
+        # lecture — mesuré en direct sur la carte DEMO, 9.3s pour seulement 112 demandes
+        # (commune_code jamais renseigné jusqu'ici, aucune vue ne le posait à la création).
+        # Les trois autres champs alimentent vue_secteur (EPCI/département/région).
         if demande.location and not demande.commune_code:
             commune_code = commune_code_from_point(demande.location)
             if commune_code:
+                secteur = commune_secteur_codes(commune_code)
                 demande.commune_code = commune_code
-                demande.save(update_fields=["commune_code"])
+                demande.epci_code = secteur["epci_code"]
+                demande.departement_code = secteur["departement_code"]
+                demande.region_code = secteur["region_code"]
+                demande.save(update_fields=["commune_code", "epci_code", "departement_code", "region_code"])
 
         audit_log(
             request=self.request,
@@ -2782,6 +2788,29 @@ class RequestViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             return commune_code
         queryset = self.get_queryset().filter(commune_code=commune_code)
         return Response(self.get_serializer(queryset, many=True).data)
+
+    @action(detail=False, methods=["get"], permission_classes=[IsInstitutionalActor],
+            pagination_class=OptionalPageNumberPagination)
+    def vue_secteur(self, request):
+        """Demandes du secteur de l'institution de l'utilisateur appelant, même patron que
+        OfferViewSet.vue_secteur (commune/EPCI/département/région/national selon le type
+        d'institution ou secteur_override) — voir _institution_secteur_or_400. Annote
+        nb_equipes_affectees (1 requête pour toute la liste, voir RequestSerializer.get_est_affectee)
+        pour le récapitulatif affectée/non affectée du frontend, sans requête par demande."""
+        secteur = _institution_secteur_or_400(request)
+        if isinstance(secteur, Response):
+            return secteur
+        niveau, code = secteur
+
+        base = self.get_queryset().annotate(nb_equipes_affectees=Count('assigned_teams', distinct=True))
+        if niveau == "national":
+            demandes = base.order_by("-created_at")
+        else:
+            demandes = base.filter(**{SECTEUR_CHAMP_PAR_NIVEAU[niveau]: code}).order_by("-created_at")
+        page = self.paginate_queryset(demandes)
+        if page is not None:
+            return self.get_paginated_response(self.get_serializer(page, many=True).data)
+        return Response(self.get_serializer(demandes, many=True).data)
 
     @action(detail=True, methods=["get"])
     def preview(self, request, pk=None):
@@ -3260,11 +3289,22 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         # Changer l'institution responsable est une décision structurante : réservée à
         # l'institution ACTUELLE de l'équipe (jamais à la déléguée, ni à une institution tierce)
         # — avant ce correctif, n'importe quel acteur institutionnel pouvait réaffecter
-        # n'importe quelle équipe via un PATCH générique, sans contrôle ni trace.
+        # n'importe quelle équipe via un PATCH générique, sans contrôle ni trace. Une équipe
+        # SANS institution actuelle (cas normal, voir perform_create — c'est même le cas de
+        # toutes les équipes DEMO créées jusqu'ici) est un cas à part : `_appartient_a_institution`
+        # ne peut par construction jamais être vrai pour `None` (aucun ContactInstitution n'a
+        # institution=NULL), ce qui bloquerait DÉFINITIVEMENT toute première affectation — donc
+        # tout acteur institutionnel peut poser l'institution d'une équipe encore orpheline,
+        # cohérent avec le paragraphe ci-dessus (déjà ouverte à tout acteur institutionnel tant
+        # qu'elle n'a pas d'institution).
         previous_institution = instance.institution
         new_institution = serializer.validated_data.get('institution', previous_institution)
         institution_changed = new_institution != previous_institution
-        if institution_changed and not _appartient_a_institution(self.request, previous_institution):
+        if (
+            institution_changed
+            and previous_institution is not None
+            and not _appartient_a_institution(self.request, previous_institution)
+        ):
             raise PermissionDenied(
                 "Seule l'institution responsable actuelle peut changer l'institution de l'équipe."
             )
@@ -4087,7 +4127,7 @@ class OfferViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         if niveau == "national":
             offres = self.get_queryset().order_by("-created_at")
         else:
-            offres = self.get_queryset().filter(**{SECTEUR_CHAMP_OFFER[niveau]: code}).order_by("-created_at")
+            offres = self.get_queryset().filter(**{SECTEUR_CHAMP_PAR_NIVEAU[niveau]: code}).order_by("-created_at")
         page = self.paginate_queryset(offres)
         if page is not None:
             return self.get_paginated_response(self.get_serializer(page, many=True).data)

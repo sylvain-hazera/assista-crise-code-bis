@@ -85,6 +85,16 @@ export class RequestService {
       .pipe(map(list => list.map(this.normalize)));
   }
 
+  /** GET /api/demandes/vue_secteur/ — comme vue_mairie, mais à l'échelle adaptée au type
+   * d'institution de l'appelant (commune/EPCI/département/région/national, voir
+   * _institution_secteur_or_400 côté backend) — inclut est_affectee (RequestSerializer),
+   * calculé côté serveur pour le récapitulatif de la Vue Ma Collectivité. */
+  vueSecteur(): Observable<Request[]> {
+    return this.http
+      .get<Request[]>(`${this.url}/vue_secteur/`)
+      .pipe(map(list => list.map(this.normalize)));
+  }
+
   /**
    * Statistiques.
    * GET /api/demandes/stats/?[params]

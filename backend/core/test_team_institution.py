@@ -73,3 +73,39 @@ class TestTeamInstitution:
         assert response.status_code == status.HTTP_201_CREATED
         assert Notification.objects.count() == 0
         assert len(mail.outbox) == 0
+
+    def test_any_institutional_actor_can_assign_institution_to_orphan_team(self, institutional_client):
+        """Une équipe SANS institution (cas de toutes les équipes DEMO créées jusqu'ici) doit
+        pouvoir en recevoir une — sans ce cas particulier, _appartient_a_institution(request,
+        None) ne peut par construction jamais être vrai (aucun ContactInstitution n'a
+        institution=NULL), ce qui bloquait DÉFINITIVEMENT toute première affectation."""
+        client, user = institutional_client
+        team = Team.objects.create(name='Equipe orpheline')
+        assert team.institution_id is None
+        institution = _make_institution()
+
+        response = client.patch(
+            reverse('team-detail', args=[team.id]), {'institution': str(institution.id)}, format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        team.refresh_from_db()
+        assert team.institution_id == institution.id
+
+    def test_reassigning_already_owned_team_still_requires_membership(self, institutional_client):
+        """Contrairement au cas orphelin ci-dessus, une équipe DÉJÀ rattachée à une institution
+        ne doit pouvoir être réaffectée que par un membre de cette institution actuelle — sinon
+        n'importe quel acteur institutionnel pourrait voler l'équipe d'une institution tierce."""
+        client, user = institutional_client
+        institution_actuelle = _make_institution(nom='Institution actuelle')
+        institution_cible = _make_institution(nom='Institution cible')
+        team = Team.objects.create(name='Equipe deja rattachee', institution=institution_actuelle)
+        # L'utilisateur n'est membre (ContactInstitution) d'AUCUNE des deux institutions.
+
+        response = client.patch(
+            reverse('team-detail', args=[team.id]), {'institution': str(institution_cible.id)}, format='json',
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        team.refresh_from_db()
+        assert team.institution_id == institution_actuelle.id

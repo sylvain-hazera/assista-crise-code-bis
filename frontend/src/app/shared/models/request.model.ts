@@ -33,6 +33,7 @@ export interface Request {
   author_type?: string | null;
   commune?: string | null;              // Résolu côté serveur (commune_code ou reverse-géocodage)
   distance_from_crisis_km?: number | null;
+  est_affectee?: boolean;               // true si au moins une équipe l'a prise en charge (Team.assigned_requests)
   actif?: boolean;                      // false = désactivée (politique de désactivation)
   hebergement_duree?: string | null;
   type_loyer?: string | null;
