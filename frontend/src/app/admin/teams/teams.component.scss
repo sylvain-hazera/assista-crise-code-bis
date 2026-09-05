@@ -413,7 +413,16 @@ h3 { margin: 0; font-size: .9rem; font-weight: 700; display: flex; align-items: 
   }
 }
 .resources-summary { font-size: .8rem; color: var(--muted); margin: 0 0 .6rem; }
-.ressources-open-btn { margin-top: .6rem; }
+.ressources-open-btn {
+  margin-top: .6rem;
+  &:disabled { opacity: .5; cursor: not-allowed; }
+}
+.mission-required-warning {
+  display: flex; align-items: center; gap: .4rem; font-size: .8rem; color: #92400e;
+  background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px;
+  padding: .5rem .7rem; margin: .4rem 0 0;
+  .material-icons { font-size: 16px; color: #d97706; }
+}
 
 .history-list { display: flex; flex-direction: column; gap: .5rem; max-height: 280px; overflow-y: auto; }
 .history-row {

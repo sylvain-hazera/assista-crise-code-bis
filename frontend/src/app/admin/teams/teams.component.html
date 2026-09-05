@@ -704,7 +704,15 @@
             }
           </div>
 
-          <button class="btn-secondary sm ressources-open-btn" (click)="ouvrirTableauOffres()">
+          @if (!selectedTeam.mission_active_titre) {
+            <p class="mission-required-warning">
+              <span class="material-icons">warning</span>
+              Définissez d'abord une mission ci-dessus : sans elle, aucune ressource ne peut être affectée à cette équipe.
+            </p>
+          }
+          <button class="btn-secondary sm ressources-open-btn" (click)="ouvrirTableauOffres()"
+                  [disabled]="!selectedTeam.mission_active_titre"
+                  [title]="!selectedTeam.mission_active_titre ? 'Définissez une mission avant d\'ouvrir le tableau des offres.' : ''">
             <span class="material-icons">search</span> Ouvrir le tableau des offres
           </button>
         </div>
