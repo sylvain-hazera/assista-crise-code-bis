@@ -94,6 +94,17 @@ def commune_center_from_code(commune_code: str) -> dict:
     return {"latitude": commune.centre_latitude, "longitude": commune.centre_longitude}
 
 
+def epci_nom_from_code(epci_code: str) -> str | None:
+    """Nom d'un EPCI (communauté de communes/métropole) — résolu à la demande, sans mise en
+    cache en base contrairement à Commune : appelé uniquement depuis Institution.save(), sur
+    un événement bien plus rare (modification d'institution) qu'un reverse-géocodage de point."""
+    if not epci_code:
+        return None
+    url = f"https://geo.api.gouv.fr/epcis/{urllib.parse.quote(epci_code)}?fields=nom"
+    data = _fetch_json(url)
+    return data.get("nom") if isinstance(data, dict) else None
+
+
 def commune_secteur_codes(commune_code: str) -> dict:
     """(epci_code, departement_code, region_code) d'une commune — utilisé pour dénormaliser le
     secteur d'une institution (Institution.save()) ou d'une offre (OfferViewSet.perform_create)

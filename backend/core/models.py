@@ -1004,13 +1004,36 @@ class Institution(EnvironmentScopedModel):
                    "soit son type — usage test uniquement, laisser vide sinon.",
     )
 
+    # Dénormalisés en même temps que epci_code/departement_code/region_code ci-dessus : le
+    # niveau EFFECTIF (secteur_override s'il est posé, sinon déduit du type) et son nom lisible
+    # ("Nouvelle-Aquitaine", "Grenoble"...) — affichés tels quels par "Ma zone est :" (voir
+    # UserSerializer.get_ma_zone), jamais recalculés à la lecture.
+    secteur_niveau_effectif = models.CharField(max_length=20, null=True, blank=True)
+    secteur_nom = models.CharField(max_length=255, null=True, blank=True)
+
     def save(self, *args, **kwargs):
         if self.commune_code:
-            from .geo_lookup import commune_secteur_codes
+            from .geo_lookup import commune_from_code, commune_secteur_codes, epci_nom_from_code
+            from .geo_reference import DEPARTEMENTS, REGIONS, SECTEUR_NIVEAU_PAR_TYPE_INSTITUTION
+
             secteur = commune_secteur_codes(self.commune_code)
             self.epci_code = secteur.get("epci_code")
             self.departement_code = secteur.get("departement_code")
             self.region_code = secteur.get("region_code")
+
+            type_code = (self.type.code or "").upper() if self.type_id else ""
+            niveau = self.secteur_override or SECTEUR_NIVEAU_PAR_TYPE_INSTITUTION.get(type_code, "commune")
+            self.secteur_niveau_effectif = niveau
+            if niveau == "commune":
+                self.secteur_nom = self.commune_nom or commune_from_code(self.commune_code)
+            elif niveau == "epci":
+                self.secteur_nom = epci_nom_from_code(self.epci_code)
+            elif niveau == "departement":
+                self.secteur_nom = DEPARTEMENTS.get(self.departement_code)
+            elif niveau == "region":
+                self.secteur_nom = REGIONS.get(self.region_code)
+            elif niveau == "national":
+                self.secteur_nom = "France entière"
         super().save(*args, **kwargs)
 
     actif = models.BooleanField(
@@ -1023,6 +1046,26 @@ class Institution(EnvironmentScopedModel):
 
     def __str__(self):
         return self.nom
+
+
+class JournalCollectivite(EnvironmentScopedModel):
+    """Une entrée du "journal de bord" de la Vue Ma Collectivité — texte libre saisi par un
+    membre de l'institution (typiquement le secrétaire de mairie), immuable une fois créée
+    (aucune route update/delete n'existe côté ViewSet — voir JournalCollectiviteViewSet) et
+    systématiquement journalisée dans AuditLog (voir perform_create), pour former une vraie
+    main courante horodatée."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    institution = models.ForeignKey(Institution, on_delete=models.CASCADE, related_name="journal_entries")
+    auteur = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="journal_entries")
+    contenu = models.TextField()
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-date_creation"]
+
+    def __str__(self):
+        return f"{self.institution.nom} — {self.date_creation:%d/%m/%Y %H:%M}"
 
 
 class RoleOperationnel(models.Model):

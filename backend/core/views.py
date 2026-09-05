@@ -2,7 +2,7 @@ from django.shortcuts import render
 from django.http import FileResponse, StreamingHttpResponse
 from rest_framework.decorators import action
 from rest_framework.views import APIView
-from rest_framework import viewsets, status, generics, permissions
+from rest_framework import viewsets, status, generics, permissions, mixins
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -129,6 +129,7 @@ from .models import (
     DernierePositionUtilisateur,
     Zone,
     Plan,
+    JournalCollectivite,
 )
 
 
@@ -228,6 +229,7 @@ from .serializers import (
     validate_crisis_open,
     AuditLogSerializer,
     AuditLogAdminSerializer,
+    JournalCollectiviteSerializer,
     InstitutionTypeSerializer,
     InstitutionSerializer,
     RoleOperationnelSerializer,
@@ -843,7 +845,10 @@ class OfferSearchFilter(AuthorEmailFilter):
         return queryset.exclude(offer_type__type=value)
 
 class UserViewSet(viewsets.ModelViewSet):
-    queryset = User.objects.all()
+    # select_related('institution') : UserSerializer.get_ma_zone lit obj.institution sur
+    # CHAQUE utilisateur sérialisé (list compris), sans ce select_related ce serait une requête
+    # par utilisateur listé.
+    queryset = User.objects.select_related('institution').all()
     serializer_class = UserSerializer
 
     def get_queryset(self):
@@ -2033,23 +2038,6 @@ def _institution_commune_or_400(request):
     return institution.commune_code
 
 
-# Niveau de secteur consultable selon le type d'institution — voir _institution_secteur_or_400.
-# Une mairie/police municipale voit sa commune ; une communauté de communes voit son EPCI ; les
-# acteurs départementaux (SDIS, gendarmerie, préfecture, sous-préfecture, conseil départemental)
-# voient leur département ; un conseil régional voit sa région. Any type not listed defaults to
-# "commune" (le niveau le plus restrictif), jamais un niveau plus large par défaut.
-SECTEUR_NIVEAU_PAR_TYPE_INSTITUTION = {
-    "MAIRIE": "commune",
-    "POLICE_MUNICIPALE": "commune",
-    "EPCI": "epci",
-    "SDIS": "departement",
-    "GENDARMERIE": "departement",
-    "PREFECTURE": "departement",
-    "SOUS_PREF": "departement",
-    "CG": "departement",
-    "CR": "region",
-}
-
 # Colonne Offer correspondante par niveau de secteur — "national" n'en a pas (aucun filtre
 # géographique, voir vue_secteur).
 SECTEUR_CHAMP_OFFER = {
@@ -2073,11 +2061,9 @@ def _institution_secteur_or_400(request):
         return commune_code
 
     institution = request.user.institution
-    if institution.secteur_override:
-        niveau = institution.secteur_override
-    else:
-        type_code = (institution.type.code or "").upper()
-        niveau = SECTEUR_NIVEAU_PAR_TYPE_INSTITUTION.get(type_code, "commune")
+    # Déjà calculé et stocké par Institution.save() (secteur_override en priorité, sinon
+    # déduit du type via SECTEUR_NIVEAU_PAR_TYPE_INSTITUTION) — jamais recalculé ici.
+    niveau = institution.secteur_niveau_effectif or "commune"
 
     if niveau == "national":
         return "national", None
@@ -5496,6 +5482,51 @@ class AuditLogViewSet(EnvironmentScopedViewSetMixin, viewsets.ReadOnlyModelViewS
         response = StreamingHttpResponse(generate(), content_type="text/csv; charset=utf-8")
         response['Content-Disposition'] = f'attachment; filename="main-courante-{horodatage}.csv"'
         return response
+
+
+class JournalCollectiviteViewSet(
+    EnvironmentScopedViewSetMixin,
+    mixins.ListModelMixin,
+    mixins.CreateModelMixin,
+    mixins.RetrieveModelMixin,
+    viewsets.GenericViewSet,
+):
+    """Journal de bord de la Vue Ma Collectivité — texte libre saisi par un membre de
+    l'institution (typiquement le secrétaire de mairie). Volontairement PAS un ModelViewSet :
+    aucune route update/partial_update/destroy n'existe (ni ici, ni dans le router — voir
+    core/urls.py), pour qu'une entrée soit structurellement immuable une fois créée, comme
+    demandé ("ne peuvent pas être supprimées ou modifiées")."""
+
+    queryset = JournalCollectivite.objects.select_related('auteur', 'institution').all()
+    serializer_class = JournalCollectiviteSerializer
+    permission_classes = [IsInstitutionalActor]
+
+    def get_queryset(self):
+        # Scopé à la SEULE institution de l'utilisateur appelant (User.institution, le FK
+        # direct — même source que _institution_commune_or_400/_institution_secteur_or_400
+        # utilisées par la Vue Ma Collectivité, pas ContactInstitution) : jamais le journal
+        # d'une autre collectivité.
+        institution = getattr(self.request.user, 'institution', None)
+        if institution is None:
+            return JournalCollectivite.objects.none()
+        return super().get_queryset().filter(institution=institution)
+
+    def perform_create(self, serializer):
+        institution = getattr(self.request.user, 'institution', None)
+        if institution is None:
+            raise PermissionDenied("Aucune institution associée à votre compte.")
+        entry = serializer.save(
+            institution=institution,
+            auteur=self.request.user,
+            environment=get_active_environment(self.request),
+        )
+        audit_log(
+            request=self.request,
+            action_code="JOURNAL_BORD",
+            objet_type="JournalCollectivite",
+            objet_id=entry.id,
+            commentaire=f"Journal de bord ({institution.nom}) : {entry.contenu[:200]}",
+        )
 
 
 class DossierHistoriqueViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):

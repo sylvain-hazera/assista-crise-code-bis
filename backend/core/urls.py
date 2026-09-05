@@ -16,6 +16,7 @@ from .views import (
     RecherchePersonneHistoriqueViewSet, AffectationCompetenceViewSet,
     DossierViewSet, MissionViewSet, DocumentViewSet, DossierCommentaireViewSet, DossierHistoriqueViewSet, NotificationViewSet, TeamViewSet,
     AuditLogViewSet,
+    JournalCollectiviteViewSet,
     InstitutionTypeViewSet,
     InstitutionViewSet,
     ContactInstitutionViewSet,
@@ -131,6 +132,7 @@ router.register(r'documents', DocumentViewSet)
 router.register(r'dossier-commentaires', DossierCommentaireViewSet)
 router.register(r'dossier-historique', DossierHistoriqueViewSet)
 router.register(r'audit-logs', AuditLogViewSet)
+router.register(r'journal-collectivite', JournalCollectiviteViewSet, basename='journal-collectivite')
 router.register(r'notifications', NotificationViewSet, basename='notification')
 router.register(r'recherches-personnes', RecherchePersonneViewSet)
 router.register(r'recherches-personnes-commentaires', RecherchePersonneCommentaireViewSet)

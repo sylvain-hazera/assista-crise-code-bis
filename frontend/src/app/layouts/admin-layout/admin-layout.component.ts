@@ -39,7 +39,7 @@ export class AdminLayoutComponent implements OnInit {
     // existait déjà côté route/composant/backend mais n'apparaissait dans AUCUN menu (seul
     // AdminSidebarComponent la référençait, un composant orphelin jamais instancié nulle part) :
     // la page était donc inatteignable sans connaître son URL exacte.
-    { icon: 'location_city', label: 'Vue Mairie', route: '/admin/vue-mairie' },
+    { icon: 'location_city', label: 'Vue Ma Collectivité', route: '/admin/vue-mairie' },
 
     { icon: 'groups', label: 'Équipes', route: '/admin/equipes' },
 

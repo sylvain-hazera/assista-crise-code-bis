@@ -32,7 +32,7 @@ export class AdminSidebarComponent {
     { icon: 'check_circle', label: 'Résultats', route: '/admin/resultats' },
     { icon: 'folder', label: 'Dossiers', route: '/admin/dossiers' },
     { icon: 'flag_circle', label: 'Missions', route: '/admin/missions' },
-    { icon: 'apartment', label: 'Vue Mairie', route: '/admin/vue-mairie' },
+    { icon: 'apartment', label: 'Vue Ma Collectivité', route: '/admin/vue-mairie' },
     { icon: 'verified_user', label: 'Sécurité', route: '/admin/declarations-securite' },
     { icon: 'assignment', label: 'Affectations', route: '/admin/affectations'}
 ];

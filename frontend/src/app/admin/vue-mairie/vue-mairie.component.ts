@@ -1,5 +1,6 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { forkJoin } from 'rxjs';
 
 import { RequestService } from '../../services/request.service';
@@ -9,6 +10,8 @@ import { OfferService } from '../../services/offer.service';
 import { TeamService } from '../../services/team.service';
 import { PointOperationnelService } from '../../services/point-operationnel.service';
 import { DossierService } from '../../services/dossier.service';
+import { JournalCollectiviteService } from '../../services/journal-collectivite.service';
+import { AuthService } from '../../auth/services/auth.service';
 
 import { Request } from '../../shared/models/request.model';
 import { Information } from '../../shared/models/information.model';
@@ -18,11 +21,20 @@ import { Team } from '../../shared/models/team.model';
 import { PointOperationnel } from '../../shared/models/point-operationnel.model';
 import { Dossier } from '../../shared/models/dossier.model';
 import { Status } from '../../shared/models/status.model';
+import { JournalCollectivite } from '../../shared/models/journal-collectivite.model';
+
+const NIVEAU_LABEL: Record<string, string> = {
+  commune: 'Communal',
+  epci: 'Intercommunal',
+  departement: 'Départemental',
+  region: 'Régional',
+  national: 'National',
+};
 
 @Component({
   selector: 'app-vue-mairie',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, FormsModule],
   templateUrl: './vue-mairie.component.html',
   styleUrls: ['./vue-mairie.component.scss'],
 })
@@ -35,6 +47,14 @@ export class VueMairieComponent implements OnInit {
   equipes: Team[] = [];
   points: PointOperationnel[] = [];
   dossiers: Dossier[] = [];
+
+  journalEntries: JournalCollectivite[] = [];
+  nouvelleEntree = '';
+  journalEnCours = false;
+  journalErreur = '';
+
+  maZoneNom: string | null = null;
+  maZoneNiveau: string | null = null;
 
   isLoading = true;
   errorMessage = '';
@@ -49,10 +69,55 @@ export class VueMairieComponent implements OnInit {
     private teamService: TeamService,
     private pointOperationnelService: PointOperationnelService,
     private dossierService: DossierService,
+    private journalCollectiviteService: JournalCollectiviteService,
+    private authService: AuthService,
   ) {}
 
   ngOnInit(): void {
     this.loadAll();
+    this.loadMaZone();
+    this.loadJournal();
+  }
+
+  loadMaZone(): void {
+    // Rafraîchi depuis le serveur (pas juste localStorage) : la zone peut avoir changé
+    // (rattachement d'institution, secteur_override) depuis la dernière connexion.
+    this.authService.fetchMe().subscribe({
+      next: (user) => {
+        this.maZoneNom = user.ma_zone?.nom ?? null;
+        this.maZoneNiveau = user.ma_zone?.niveau ?? null;
+      },
+      error: () => {},
+    });
+  }
+
+  niveauLabel(niveau: string | null): string {
+    return niveau ? (NIVEAU_LABEL[niveau] ?? niveau) : '';
+  }
+
+  loadJournal(): void {
+    this.journalCollectiviteService.getAll().subscribe({
+      next: (entries) => { this.journalEntries = entries; },
+      error: () => {},
+    });
+  }
+
+  ajouterEntreeJournal(): void {
+    const contenu = this.nouvelleEntree.trim();
+    if (!contenu) return;
+    this.journalEnCours = true;
+    this.journalErreur = '';
+    this.journalCollectiviteService.create(contenu).subscribe({
+      next: (entry) => {
+        this.journalEntries = [entry, ...this.journalEntries];
+        this.nouvelleEntree = '';
+        this.journalEnCours = false;
+      },
+      error: (err) => {
+        this.journalErreur = err?.error?.error || "Impossible d'ajouter cette entrée au journal.";
+        this.journalEnCours = false;
+      },
+    });
   }
 
   loadAll(): void {
@@ -78,7 +143,7 @@ export class VueMairieComponent implements OnInit {
         this.isLoading = false;
       },
       error: (err) => {
-        this.errorMessage = err?.error?.error || "Impossible de charger la vue mairie.";
+        this.errorMessage = err?.error?.error || "Impossible de charger la vue de votre collectivité.";
         this.isLoading = false;
       },
     });
@@ -111,5 +176,11 @@ export class VueMairieComponent implements OnInit {
   fmtDate(d: string | null): string {
     if (!d) return '—';
     return new Date(d).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  }
+
+  fmtDateHeure(d: string): string {
+    return new Date(d).toLocaleString('fr-FR', {
+      day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+    });
   }
 }

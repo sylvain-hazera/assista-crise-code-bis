@@ -49,6 +49,7 @@ export class AuditLogsComponent implements OnInit, OnDestroy {
     { code: 'TELECHARGEMENT', libelle: 'Téléchargement de document' },
     { code: 'ENVOI_EMAIL', libelle: "Envoi d'email" },
     { code: 'EXPORT', libelle: 'Export de données' },
+    { code: 'JOURNAL_BORD', libelle: 'Écriture au journal de bord' },
   ];
 
   constructor(private auditLogService: AuditLogService) {}

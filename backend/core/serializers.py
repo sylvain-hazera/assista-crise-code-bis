@@ -47,6 +47,7 @@ from .models import (
     AuditLog,
     Zone,
     Plan,
+    JournalCollectivite,
 )
 
 class RecherchePersonneCommentairePhotoSerializer(
@@ -143,6 +144,7 @@ class UserSerializer(serializers.ModelSerializer):
     institution_nom = serializers.SerializerMethodField()
     institution_id = serializers.SerializerMethodField()
     needs_institution_setup = serializers.SerializerMethodField()
+    ma_zone = serializers.SerializerMethodField()
 
     def _active_contact(self, obj):
         # institution_nom et institution_id faisaient chacun leur propre requête pour le même
@@ -166,6 +168,20 @@ class UserSerializer(serializers.ModelSerializer):
         contact = self._active_contact(obj)
         return str(contact.institution_id) if contact else None
 
+    def get_ma_zone(self, obj):
+        # Niveau/nom déjà calculés et stockés par Institution.save() (secteur_override en
+        # priorité, sinon déduit du type) — jamais recalculés ici. Basé sur User.institution
+        # (le FK direct), la même source que _institution_commune_or_400/_institution_secteur_or_400
+        # (core/views.py) utilisée par la Vue Ma Collectivité — pas ContactInstitution, qui est un
+        # mécanisme distinct (voir institution_nom/institution_id ci-dessus).
+        institution = getattr(obj, 'institution', None)
+        if institution is None or not institution.commune_code:
+            return None
+        return {
+            "niveau": institution.secteur_niveau_effectif,
+            "nom": institution.secteur_nom,
+        }
+
     def get_needs_institution_setup(self, obj):
         # Compte Autorité locale activé, mais pas encore rattaché à une institution (voir
         # UserViewSet.institution_suggestion/confirmer_institution/creer_mon_institution) — sert
@@ -178,7 +194,7 @@ class UserSerializer(serializers.ModelSerializer):
         fields = ['id', 'username', 'email', 'first_name', 'last_name', 'type', 'demo_role',
                   'photo', 'phone_number', 'password', 'postal_code', 'enabled', 'is_active',
                   'institution_name', 'institution_type', 'commune_name', 'commune_code',
-                  'institution_nom', 'institution_id', 'needs_institution_setup']
+                  'institution_nom', 'institution_id', 'needs_institution_setup', 'ma_zone']
         extra_kwargs = {
             'password': {'write_only': True},
             'first_name': {'required': False},
@@ -1482,6 +1498,28 @@ class DossierCommentaireSerializer(serializers.ModelSerializer):
         if not obj.auteur:
             return "Inconnu"
 
+        return (
+            f"{obj.auteur.first_name} "
+            f"{obj.auteur.last_name}"
+        ).strip() or obj.auteur.username
+
+
+class JournalCollectiviteSerializer(serializers.ModelSerializer):
+    """Entrée du journal de bord de la Vue Ma Collectivité — auteur/institution/date_creation en
+    lecture seule (posés par JournalCollectiviteViewSet.perform_create, jamais par le client) ;
+    aucun champ n'est modifiable après création, cohérent avec l'absence de route update/delete
+    (voir JournalCollectiviteViewSet)."""
+
+    auteur_nom = serializers.SerializerMethodField()
+
+    class Meta:
+        model = JournalCollectivite
+        fields = ['id', 'institution', 'auteur', 'auteur_nom', 'contenu', 'date_creation']
+        read_only_fields = ['id', 'institution', 'auteur', 'date_creation']
+
+    def get_auteur_nom(self, obj):
+        if not obj.auteur:
+            return "Inconnu"
         return (
             f"{obj.auteur.first_name} "
             f"{obj.auteur.last_name}"
