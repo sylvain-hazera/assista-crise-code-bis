@@ -5421,10 +5421,15 @@ class AuditLogViewSet(EnvironmentScopedViewSetMixin, viewsets.ReadOnlyModelViewS
     - Fiche précise (?objet_type=&objet_id=) : widget d'historique par objet, ouvert à tout
       acteur institutionnel (Team scopé à sa propre institution, tout le reste réservé à un
       admin) — comportement historique, inchangé.
-    - Consultation globale (sans objet_type/objet_id) : réservée à un administrateur, filtrable
+    - Consultation globale (sans objet_type/objet_id) : la main courante GÉNÉRALE (toutes
+      institutions confondues) n'est visible que du super-admin Django (`is_superuser`, même
+      choix que pour Institution.secteur_override en PROD) ; un acteur institutionnel non
+      super-admin ne voit que les actes de SA PROPRE institution (`request.user.institution`),
+      jamais ceux d'une institution tierce — voir _browse_queryset_for_user. Filtrable
       (date_debut/date_fin/action/objet_type/utilisateur/succes), paginée (voir
       OptionalPageNumberPagination — ce mode peut légitimement compter des dizaines de milliers
-      de lignes depuis AuditTraceMiddleware). Voir aussi l'action `export` pour un CSV."""
+      de lignes depuis AuditTraceMiddleware). Voir aussi l'action `export` pour un CSV, scopé de
+      la même façon."""
     queryset = AuditLog.objects.all()
     serializer_class = AuditLogSerializer
     permission_classes = [IsInstitutionalActor]
@@ -5441,9 +5446,7 @@ class AuditLogViewSet(EnvironmentScopedViewSetMixin, viewsets.ReadOnlyModelViewS
 
     def get_queryset(self):
         if self._is_browse_mode():
-            if get_effective_role(self.request) != UserRole.ADMINISTRATOR:
-                return AuditLog.objects.none()
-            return self._filtered_browse_queryset()
+            return self._browse_queryset_for_user()
 
         objet_type = self.request.query_params.get('objet_type')
         objet_id = self.request.query_params.get('objet_id')
@@ -5460,6 +5463,18 @@ class AuditLogViewSet(EnvironmentScopedViewSetMixin, viewsets.ReadOnlyModelViewS
         if get_effective_role(self.request) != UserRole.ADMINISTRATOR:
             return AuditLog.objects.none()
         return queryset
+
+    def _browse_queryset_for_user(self):
+        """Périmètre de la consultation globale pour l'utilisateur appelant — voir le
+        docstring de la classe. Le super-admin voit tout ; un acteur institutionnel ne voit que
+        les AuditLog de SA PROPRE institution (`institution`, posée par audit_log() depuis
+        request.user.institution au moment de l'écriture) ; sans institution, rien."""
+        if self.request.user.is_superuser:
+            return self._filtered_browse_queryset()
+        institution = getattr(self.request.user, 'institution', None)
+        if institution is None:
+            return AuditLog.objects.none()
+        return self._filtered_browse_queryset().filter(institution=institution)
 
     def _filtered_browse_queryset(self):
         params = self.request.query_params
@@ -5485,13 +5500,12 @@ class AuditLogViewSet(EnvironmentScopedViewSetMixin, viewsets.ReadOnlyModelViewS
 
     @action(detail=False, methods=["get"])
     def export(self, request):
-        """Export CSV de la main courante — mêmes filtres que la consultation, réservé à un
-        administrateur. Colonnes en clair (pas d'UUID d'action, pas de JSON) pour rester lisible
-        par quelqu'un qui ouvre le fichier dans un tableur, pas seulement par un développeur."""
-        if get_effective_role(request) != UserRole.ADMINISTRATOR:
-            raise PermissionDenied("Cet export est réservé aux administrateurs.")
-
-        queryset = self._filtered_browse_queryset()
+        """Export CSV de la main courante — mêmes filtres et même périmètre que la
+        consultation globale (voir _browse_queryset_for_user) : le super-admin exporte tout,
+        un acteur institutionnel n'exporte que les actes de sa propre institution. Colonnes en
+        clair (pas d'UUID d'action, pas de JSON) pour rester lisible par quelqu'un qui ouvre le
+        fichier dans un tableur, pas seulement par un développeur."""
+        queryset = self._browse_queryset_for_user()
         total = queryset.count()
 
         def generate():
