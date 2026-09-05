@@ -435,6 +435,11 @@ class Request(HebergementDetailsMixin, EnvironmentScopedModel):
     # convention que Team.communes/Crisis.zone_communes (JSONField de codes INSEE).
     zone_recherche_communes = models.JSONField(default=list, blank=True)
     zone_recherche_rayon_km = models.PositiveIntegerField(null=True, blank=True)
+    # Demande de transport (request_type de type "Transport") impliquant un véhicule : combien
+    # de personnes il peut transporter en plus du conducteur — voir Offer.nombre_places_assises
+    # et MaterielPoint.nombre_places_assises pour les deux autres rubriques véhicules de l'app.
+    # Pas de champ transport_type ici contrairement à Offer : optionnel, sans condition d'affichage.
+    nombre_places_assises = models.PositiveIntegerField(null=True, blank=True)
     first_name_request = models.CharField(max_length=60)
     last_name_request = models.CharField(max_length=80)
     email_request = models.EmailField()
@@ -718,6 +723,12 @@ class Offer(HebergementDetailsMixin, EnvironmentScopedModel):
     # Texte libre : une ou plusieurs plaques si l'offreur propose plusieurs véhicules sous la
     # même ligne d'offre. Vide pour un engin ne circulant jamais sur la voie publique.
     immatriculation = models.CharField(max_length=100, null=True, blank=True)
+
+    # Pertinent quand transport_type == PERSONNES : combien de personnes le véhicule peut
+    # transporter en plus du conducteur — même colonne "Nb de places" que le tableau "Véhicules
+    # détenus par la commune" d'un PCS (voir aussi Request.nombre_places_assises et
+    # MaterielPoint.nombre_places_assises pour les deux autres rubriques véhicules de l'app).
+    nombre_places_assises = models.PositiveIntegerField(null=True, blank=True)
 
     # Posé quand l'offre est ajoutée comme "ressource" à une équipe (voir
     # TeamViewSet.assigner_ressource) : rattache l'offre à la mission active de cette équipe au
@@ -2886,6 +2897,12 @@ class MaterielPoint(EnvironmentScopedModel):
         blank=True,
         related_name="materiels_geres",
     )
+
+    # Pertinent quand item est un véhicule (stock détenu par la municipalité) : même colonne
+    # "Nb de places" que le tableau "Véhicules détenus par la commune" d'un PCS, sans conditionner
+    # à une catégorie de catalogue dédiée — voir Offer.nombre_places_assises pour le même champ
+    # côté offres, et Request.nombre_places_assises côté demandes.
+    nombre_places_assises = models.PositiveIntegerField(null=True, blank=True)
 
     commentaire = models.TextField(blank=True, null=True)
 

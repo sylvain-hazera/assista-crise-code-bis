@@ -229,6 +229,14 @@
                             }
                         </div>
                     }
+
+                    @if (rg.get('transportType')?.value === 'PERSONNES') {
+                        <div class="form-group">
+                            <label class="form-label">Nombre de places assises (en plus du conducteur)</label>
+                            <input type="number" min="0" formControlName="nombrePlacesAssises" class="form-input"
+                              placeholder="Ex. 4">
+                        </div>
+                    }
                 }
 
                 <!-- Matériel : sous-type -->

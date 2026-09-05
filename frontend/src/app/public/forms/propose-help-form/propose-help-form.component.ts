@@ -548,6 +548,9 @@ export class ProposeHelpFormComponent implements OnInit {
       if (v.type === TYPE_TRANSPORT && v.transportType === 'ANIMAUX' && v.transportAnimauxPrecision) {
         formData.append('transport_animaux_precision', v.transportAnimauxPrecision);
       }
+      if (v.type === TYPE_TRANSPORT && v.transportType === 'PERSONNES' && v.nombrePlacesAssises != null) {
+        formData.append('nombre_places_assises', String(v.nombrePlacesAssises));
+      }
       if (v.type === TYPE_MATERIEL && v.materielType) formData.append('materiel_type', v.materielType);
       if (v.type === TYPE_MATERIEL && v.materielType === 'CUVE' && v.cuveContenu) {
         formData.append('cuve_contenu', v.cuveContenu);
@@ -754,6 +757,7 @@ export class ProposeHelpFormComponent implements OnInit {
       numeroAdeliRpps: [''],
       transportType: [''],
       transportAnimauxPrecision: ['', transportAnimauxPrecisionValidator],
+      nombrePlacesAssises: [null as number | null],
       materielType: [''],
       cuveContenu: [''],
       materielCatalogue: [null],

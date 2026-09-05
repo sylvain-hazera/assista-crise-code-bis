@@ -51,6 +51,7 @@ export interface Request {
   pmr_compatible?: boolean;
   zone_recherche_communes?: string[];   // codes INSEE de la zone de recherche (hébergement)
   zone_recherche_rayon_km?: number | null;
+  nombre_places_assises?: number | null;  // Demande de transport : places nécessaires en plus du conducteur
 }
 
 // Payload pour le formulaire de création

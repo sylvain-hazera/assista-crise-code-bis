@@ -58,6 +58,7 @@ export interface Offer {
   materiel_livraison?: 'A_RECUPERER' | 'LIVRAISON_POSSIBLE' | null;
   confirmation_reglementaire?: boolean;
   immatriculation?: string | null;
+  nombre_places_assises?: number | null;  // Transport de personnes : places disponibles en plus du conducteur
   mission?: string | null;
   mission_titre?: string | null;
   materiel_catalogue?: string | null;
