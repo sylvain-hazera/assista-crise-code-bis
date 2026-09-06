@@ -16,8 +16,8 @@ services:
       - DEBUG=False
       - DB_HOST=db
       - DB_NAME=assista-db
-      - DB_USER=admin
-      - DB_PASS=admin
+      - DB_USER=${DB_USER}
+      - DB_PASS=${DB_PASS}
       - MQTT_BROKER=mosquitto
       - EMAIL_HOST=smtp.ionos.fr      # Use Ionos in prod
       - EMAIL_PORT=465
@@ -41,6 +41,14 @@ services:
       - front
       - back
 
+  # NB : ce fichier n'est plus la source de vérité du déploiement réel (.113/.114 sont
+  # relancés à la main, voir les scripts de déploiement) — laissé ici pour une éventuelle
+  # reconstruction from scratch. ATTENTION si ce cas se présente : POSTGRES_USER ci-dessous
+  # devient le SUPERUSER PostgreSQL de bootstrap (comportement de l'image officielle), pas
+  # juste "le compte de l'appli" — sur une base neuve, DB_USER/DB_PASS ne doivent PAS être les
+  # identifiants applicatifs à droits restreints. Une fois la base initialisée, refaire la même
+  # séparation superuser (bootstrap) / rôle applicatif à droits limités que sur .113/.114
+  # (rôles svc_dbmaint / assista_app).
   db:
     image: postgis/postgis:15-3.3
     container_name: ac_db
@@ -48,10 +56,10 @@ services:
       - postgres_data:/var/lib/postgresql/data
     environment:
       - POSTGRES_DB=assista-db
-      - POSTGRES_USER=admin
-      - POSTGRES_PASSWORD=admin
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASS}
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U admin -d assista-db"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d assista-db"]
       interval: 5s
       timeout: 5s
       retries: 5

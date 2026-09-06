@@ -111,10 +111,23 @@ DATABASES = {
     'default': {
         'ENGINE': 'django.contrib.gis.db.backends.postgis',
         'NAME': os.environ.get('DB_NAME', 'assista-db'),
-        'USER': os.environ.get('DB_USER', 'admin'),
-        'PASSWORD': os.environ.get('DB_PASS', 'admin'),
+        # Pas de valeur par défaut pour USER/PASSWORD (contrairement à avant, où le repli
+        # 'admin'/'admin' codé en dur ici correspondait EXACTEMENT aux identifiants réellement
+        # utilisés en prod, jamais changés) : mieux vaut un démarrage qui échoue bruyamment
+        # (KeyError) qu'un repli silencieux vers un identifiant faible.
+        'USER': os.environ['DB_USER'],
+        'PASSWORD': os.environ['DB_PASS'],
         'HOST': os.environ.get('DB_HOST', 'db'),
         'PORT': '5432',
+        # Le rôle applicatif (assista_app) n'est pas superuser et ne peut donc pas exécuter
+        # CREATE EXTENSION lui-même sur une base de test fraîche : on clone plutôt
+        # template_postgis (PostGIS déjà installé), dont assista_app est propriétaire — voir
+        # le commit qui a remplacé l'ancien rôle "admin" (superuser) par ce rôle à droits
+        # limités.
+        'TEST': {
+            'NAME': 'test_assista-db',
+            'TEMPLATE': 'template_postgis',
+        },
     }
 }
 
