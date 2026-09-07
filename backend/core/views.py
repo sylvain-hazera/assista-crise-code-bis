@@ -5688,9 +5688,10 @@ class JournalCollectiviteViewSet(
     core/urls.py), pour qu'une entrée soit structurellement immuable une fois créée, comme
     demandé ("ne peuvent pas être supprimées ou modifiées")."""
 
-    queryset = JournalCollectivite.objects.select_related('auteur', 'institution').all()
+    queryset = JournalCollectivite.objects.select_related('auteur', 'institution', 'crise').all()
     serializer_class = JournalCollectiviteSerializer
     permission_classes = [IsInstitutionalActor]
+    filterset_fields = ["crise"]
 
     def get_queryset(self):
         # Scopé à la SEULE institution de l'utilisateur appelant (User.institution, le FK
@@ -5706,6 +5707,22 @@ class JournalCollectiviteViewSet(
         institution = getattr(self.request.user, 'institution', None)
         if institution is None:
             raise PermissionDenied("Aucune institution associée à votre compte.")
+
+        # Une institution peut être impliquée sur plusieurs crises actives simultanément — le
+        # journal doit être rattaché à une crise précise où elle est effectivement impliquée,
+        # jamais une crise arbitraire choisie côté client. Même pattern que
+        # DelegationCompetenceSerializer.validate.
+        crise = serializer.validated_data.get('crise')
+        implique = ImplicationInstitution.objects.filter(
+            crise=crise, institution=institution,
+            type_implication__in=[TypeImplication.ACTEUR, TypeImplication.IMPLIQUE],
+            actif=True,
+        ).exists()
+        if not implique:
+            raise ValidationError({
+                "crise": "Votre institution doit être impliquée sur cette crise pour y ajouter une entrée de journal.",
+            })
+
         entry = serializer.save(
             institution=institution,
             auteur=self.request.user,
@@ -7644,7 +7661,7 @@ class ImplicationInstitutionViewSet(
         "institution", "crise", "utilisateur", "responsable"
     ).prefetch_related("themes").all()
     serializer_class = ImplicationInstitutionSerializer
-    filterset_fields = ["crise", "institution", "type_implication"]
+    filterset_fields = ["crise", "institution", "type_implication", "actif"]
 
     def get_permissions(self):
         if self.action == "create":

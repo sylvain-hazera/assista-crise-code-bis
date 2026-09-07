@@ -1583,10 +1583,11 @@ class JournalCollectiviteSerializer(serializers.ModelSerializer):
     (voir JournalCollectiviteViewSet)."""
 
     auteur_nom = serializers.SerializerMethodField()
+    crise_nom = serializers.CharField(source="crise.name", read_only=True, default=None)
 
     class Meta:
         model = JournalCollectivite
-        fields = ['id', 'institution', 'auteur', 'auteur_nom', 'contenu', 'date_creation']
+        fields = ['id', 'institution', 'crise', 'crise_nom', 'auteur', 'auteur_nom', 'contenu', 'date_creation']
         read_only_fields = ['id', 'institution', 'auteur', 'date_creation']
 
     def get_auteur_nom(self, obj):

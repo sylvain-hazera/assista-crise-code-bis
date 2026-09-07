@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
 import { ImplicationInstitution, ImplicationInstitutionPayload } from '../shared/models/implication.model';
@@ -10,8 +10,14 @@ export class ImplicationService {
 
   constructor(private http: HttpClient) {}
 
-  getAll(): Observable<ImplicationInstitution[]> {
-    return this.http.get<ImplicationInstitution[]>(`${this.apiUrl}/`);
+  // `institution`/`actif` optionnels (?institution=&actif=, voir filterset_fields côté
+  // backend) — utilisé par VueMairieComponent pour peupler le sélecteur de crise du journal
+  // de bord (crises actives de MON institution uniquement).
+  getAll(options?: { institution?: string; actif?: boolean }): Observable<ImplicationInstitution[]> {
+    let params = new HttpParams();
+    if (options?.institution) params = params.set('institution', options.institution);
+    if (options?.actif !== undefined) params = params.set('actif', String(options.actif));
+    return this.http.get<ImplicationInstitution[]>(`${this.apiUrl}/`, { params });
   }
 
   getByCrise(criseId: string): Observable<ImplicationInstitution[]> {

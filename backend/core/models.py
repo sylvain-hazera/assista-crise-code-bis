@@ -1083,6 +1083,12 @@ class JournalCollectivite(EnvironmentScopedModel):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     institution = models.ForeignKey(Institution, on_delete=models.CASCADE, related_name="journal_entries")
+    # Une institution peut être impliquée sur plusieurs crises actives simultanément (voir
+    # ImplicationInstitution) : le journal de bord doit être rattaché à UNE crise précise, pas
+    # juste à l'institution — sinon des entrées de crises différentes se mélangent dans le même
+    # flux. Passé nullable transitoirement le temps de la migration de backfill (voir
+    # 0119_journalcollectivite_crise.py / 0120_backfill_journal_collectivite_crise.py).
+    crise = models.ForeignKey("Crisis", on_delete=models.CASCADE, related_name="journal_entries")
     auteur = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="journal_entries")
     contenu = models.TextField()
     date_creation = models.DateTimeField(auto_now_add=True)

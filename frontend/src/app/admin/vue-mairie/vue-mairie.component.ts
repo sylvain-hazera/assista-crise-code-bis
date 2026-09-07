@@ -14,6 +14,7 @@ import { DossierService } from '../../services/dossier.service';
 import { JournalCollectiviteService } from '../../services/journal-collectivite.service';
 import { UserService } from '../../services/user.service';
 import { AuthService } from '../../auth/services/auth.service';
+import { ImplicationService } from '../../services/implication.service';
 
 import { Request } from '../../shared/models/request.model';
 import { Information } from '../../shared/models/information.model';
@@ -24,6 +25,7 @@ import { PointOperationnel } from '../../shared/models/point-operationnel.model'
 import { Dossier } from '../../shared/models/dossier.model';
 import { Status } from '../../shared/models/status.model';
 import { JournalCollectivite } from '../../shared/models/journal-collectivite.model';
+import { ImplicationInstitution } from '../../shared/models/implication.model';
 
 const NIVEAU_LABEL: Record<string, string> = {
   commune: 'Communal',
@@ -76,6 +78,11 @@ export class VueMairieComponent implements OnInit {
   nouvelleEntree = '';
   journalEnCours = false;
   journalErreur = '';
+  // Crises actives de mon institution (voir loadCrisesImplication) — une institution peut être
+  // impliquée sur plusieurs à la fois, le journal est désormais rattaché à l'une d'elles.
+  mesCrisesActives: ImplicationInstitution[] = [];
+  criseJournalSelectionnee = '';
+  monInstitutionId: string | null = null;
 
   maZoneNom: string | null = null;
   maZoneNiveau: string | null = null;
@@ -102,6 +109,7 @@ export class VueMairieComponent implements OnInit {
     private journalCollectiviteService: JournalCollectiviteService,
     private userService: UserService,
     private authService: AuthService,
+    private implicationService: ImplicationService,
   ) {}
 
   ngOnInit(): void {
@@ -119,6 +127,27 @@ export class VueMairieComponent implements OnInit {
         this.maZoneNiveau = user.ma_zone?.niveau ?? null;
         this.risquesTerritoire = user.ma_zone?.risques ?? [];
         this.risquesDateMaj = user.ma_zone?.risques_date_maj ?? null;
+        this.monInstitutionId = user.institution_id ?? null;
+        this.loadCrisesImplication();
+      },
+      error: () => {},
+    });
+  }
+
+  // Crises actives (ImplicationInstitution.actif=true) de mon institution — alimente le
+  // sélecteur du formulaire de journal de bord, requis depuis que crise y est obligatoire.
+  loadCrisesImplication(): void {
+    if (!this.monInstitutionId) { this.mesCrisesActives = []; return; }
+    this.implicationService.getAll({ institution: this.monInstitutionId, actif: true }).subscribe({
+      next: (implications) => {
+        // Une institution peut avoir plusieurs lignes ImplicationInstitution pour la même
+        // crise (IMPLIQUE et ACTEUR) — dédoublonné par crise.
+        const parCrise = new Map<string, ImplicationInstitution>();
+        for (const imp of implications) parCrise.set(imp.crise, imp);
+        this.mesCrisesActives = Array.from(parCrise.values());
+        if (this.mesCrisesActives.length === 1) {
+          this.criseJournalSelectionnee = this.mesCrisesActives[0].crise;
+        }
       },
       error: () => {},
     });
@@ -160,10 +189,10 @@ export class VueMairieComponent implements OnInit {
 
   ajouterEntreeJournal(): void {
     const contenu = this.nouvelleEntree.trim();
-    if (!contenu) return;
+    if (!contenu || !this.criseJournalSelectionnee) return;
     this.journalEnCours = true;
     this.journalErreur = '';
-    this.journalCollectiviteService.create(contenu).subscribe({
+    this.journalCollectiviteService.create(contenu, this.criseJournalSelectionnee).subscribe({
       next: (entry) => {
         this.journalEntries = [entry, ...this.journalEntries];
         this.nouvelleEntree = '';

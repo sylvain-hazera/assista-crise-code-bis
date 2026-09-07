@@ -79,22 +79,36 @@
     <h2><span class="material-icons">menu_book</span> Journal de bord <span class="count-badge">{{ journalEntries.length }}</span></h2>
     <p class="empty-text section-note">Notes libres, horodatées et tracées dans les auditlogs — une entrée ne peut ni être modifiée ni supprimée une fois enregistrée.</p>
 
-    <form class="journal-form" (ngSubmit)="ajouterEntreeJournal()">
-      <textarea
-        class="journal-textarea"
-        rows="3"
-        placeholder="Ajouter une note au journal de bord..."
-        [(ngModel)]="nouvelleEntree"
-        name="nouvelleEntree"
-        [disabled]="journalEnCours"
-      ></textarea>
-      @if (journalErreur) {
-        <p class="journal-erreur">{{ journalErreur }}</p>
-      }
-      <button type="submit" class="journal-submit" [disabled]="journalEnCours || !nouvelleEntree.trim()">
-        <span class="material-icons">add</span> Ajouter au journal
-      </button>
-    </form>
+    @if (mesCrisesActives.length === 0) {
+      <p class="empty-text">Aucune crise active pour votre institution — impossible d'ajouter une entrée au journal tant qu'aucune implication active n'est déclarée.</p>
+    } @else {
+      <form class="journal-form" (ngSubmit)="ajouterEntreeJournal()">
+        <select
+          class="form-select"
+          [(ngModel)]="criseJournalSelectionnee"
+          name="criseJournalSelectionnee"
+          [disabled]="journalEnCours">
+          <option value="" disabled>Choisir la crise concernée…</option>
+          @for (imp of mesCrisesActives; track imp.crise) {
+            <option [value]="imp.crise">{{ imp.crise_nom || imp.crise }}</option>
+          }
+        </select>
+        <textarea
+          class="journal-textarea"
+          rows="3"
+          placeholder="Ajouter une note au journal de bord..."
+          [(ngModel)]="nouvelleEntree"
+          name="nouvelleEntree"
+          [disabled]="journalEnCours"
+        ></textarea>
+        @if (journalErreur) {
+          <p class="journal-erreur">{{ journalErreur }}</p>
+        }
+        <button type="submit" class="journal-submit" [disabled]="journalEnCours || !nouvelleEntree.trim() || !criseJournalSelectionnee">
+          <span class="material-icons">add</span> Ajouter au journal
+        </button>
+      </form>
+    }
 
     @if (journalEntries.length === 0) {
       <p class="empty-text">Aucune entrée dans le journal de bord pour le moment.</p>
@@ -104,6 +118,9 @@
           <li>
             <div class="journal-meta">
               <strong>{{ entry.auteur_nom }}</strong>
+              @if (entry.crise_nom) {
+                <span class="contact-sub">· {{ entry.crise_nom }}</span>
+              }
               <span class="contact-sub">{{ fmtDateHeure(entry.date_creation) }}</span>
             </div>
             <p class="journal-contenu">{{ entry.contenu }}</p>
