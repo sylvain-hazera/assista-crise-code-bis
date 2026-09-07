@@ -474,12 +474,21 @@ class RequestSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         data = super().to_representation(instance)
         if not self._location_visible(instance):
+            # Hors zone/anonyme : aucune donnée personnelle exposée, en PROD comme en DEMO —
+            # pas juste un masquage réversible (mask_email/mask_phone), qui n'a de sens que
+            # pour un acteur déjà autorisé mais en environnement de démonstration.
             data['location'] = None
-        request = self.context.get('request')
-        if request is not None and get_active_environment(request) == Environment.DEMO:
-            data['email_request'] = mask_email(data.get('email_request'))
-            data['phone_request'] = mask_phone(data.get('phone_request'))
-            data['author_email'] = mask_email(data.get('author_email'))
+            data['first_name_request'] = None
+            data['last_name_request'] = None
+            data['email_request'] = None
+            data['phone_request'] = None
+            data['author_email'] = None
+        else:
+            request = self.context.get('request')
+            if request is not None and get_active_environment(request) == Environment.DEMO:
+                data['email_request'] = mask_email(data.get('email_request'))
+                data['phone_request'] = mask_phone(data.get('phone_request'))
+                data['author_email'] = mask_email(data.get('author_email'))
         return data
 
     def get_author_nom(self, obj):
@@ -599,13 +608,22 @@ class OfferSerializer(serializers.ModelSerializer):
         # masque juste sa valeur en LECTURE, pas la possibilité de l'écrire à la création.
         data = super().to_representation(instance)
         if not self._location_visible():
+            # Hors zone/anonyme : aucune donnée personnelle exposée, en PROD comme en DEMO —
+            # voir RequestSerializer.to_representation pour le même principe.
             data['location'] = None
-        request = self.context.get('request')
-        if request is not None and get_active_environment(request) == Environment.DEMO:
-            data['email_offer'] = mask_email(data.get('email_offer'))
-            data['author_email'] = mask_email(data.get('author_email'))
-            data['phone_offer'] = mask_phone(data.get('phone_offer'))
-            data['author_phone'] = mask_phone(data.get('author_phone'))
+            data['first_name_offer'] = None
+            data['last_name_offer'] = None
+            data['email_offer'] = None
+            data['phone_offer'] = None
+            data['author_email'] = None
+            data['author_phone'] = None
+        else:
+            request = self.context.get('request')
+            if request is not None and get_active_environment(request) == Environment.DEMO:
+                data['email_offer'] = mask_email(data.get('email_offer'))
+                data['author_email'] = mask_email(data.get('author_email'))
+                data['phone_offer'] = mask_phone(data.get('phone_offer'))
+                data['author_phone'] = mask_phone(data.get('author_phone'))
         return data
 
     def get_author_nom(self, obj):
@@ -914,12 +932,20 @@ class InformationSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         data = super().to_representation(instance)
         if not self._location_visible(instance):
+            # Hors zone/anonyme : aucune donnée personnelle exposée, en PROD comme en DEMO —
+            # voir RequestSerializer.to_representation pour le même principe.
             data['location'] = None
-        request = self.context.get('request')
-        if request is not None and get_active_environment(request) == Environment.DEMO:
-            data['email_information'] = mask_email(data.get('email_information'))
-            data['phone_information'] = mask_phone(data.get('phone_information'))
-            data['author_email'] = mask_email(data.get('author_email'))
+            data['first_name_information'] = None
+            data['last_name_information'] = None
+            data['email_information'] = None
+            data['phone_information'] = None
+            data['author_email'] = None
+        else:
+            request = self.context.get('request')
+            if request is not None and get_active_environment(request) == Environment.DEMO:
+                data['email_information'] = mask_email(data.get('email_information'))
+                data['phone_information'] = mask_phone(data.get('phone_information'))
+                data['author_email'] = mask_email(data.get('author_email'))
         return data
 
     def get_author_nom(self, obj):
