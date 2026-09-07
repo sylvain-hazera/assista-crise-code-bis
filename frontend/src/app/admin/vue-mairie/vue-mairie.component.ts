@@ -18,7 +18,7 @@ import { AuthService } from '../../auth/services/auth.service';
 import { Request } from '../../shared/models/request.model';
 import { Information } from '../../shared/models/information.model';
 import { DeclarationSecurite } from '../../shared/models/declaration-securite.model';
-import { Offer } from '../../shared/models/offer.model';
+import { Offer, OfferNationalPartial } from '../../shared/models/offer.model';
 import { Team } from '../../shared/models/team.model';
 import { PointOperationnel } from '../../shared/models/point-operationnel.model';
 import { Dossier } from '../../shared/models/dossier.model';
@@ -65,6 +65,9 @@ export class VueMairieComponent implements OnInit {
   declarationsSecurite: DeclarationSecurite[] = [];
   offres: Offer[] = [];
   benevoles: Offer[] = [];
+  franceEntierePartiel: OfferNationalPartial[] = [];
+  franceEntiereChargee = false;
+  franceEntiereEnCours = false;
   equipes: Team[] = [];
   points: PointOperationnel[] = [];
   dossiers: Dossier[] = [];
@@ -201,6 +204,22 @@ export class VueMairieComponent implements OnInit {
         this.errorMessage = err?.error?.error || "Impossible de charger la vue de votre collectivité.";
         this.isLoading = false;
       },
+    });
+  }
+
+  // "Voir toute la France (partiel)" : chargé à la demande (pas dans loadAll ci-dessus), pour
+  // ne pas imposer une requête nationale supplémentaire à chaque ouverture de la page — un
+  // acteur communal n'en a besoin qu'occasionnellement, pour une vue d'ensemble.
+  voirFranceEntiere(): void {
+    if (this.franceEntiereChargee || this.franceEntiereEnCours) return;
+    this.franceEntiereEnCours = true;
+    this.offerService.vueSecteurNationalPartiel({ limite: 100 }).subscribe({
+      next: (offres) => {
+        this.franceEntierePartiel = offres;
+        this.franceEntiereChargee = true;
+        this.franceEntiereEnCours = false;
+      },
+      error: () => { this.franceEntiereEnCours = false; },
     });
   }
 

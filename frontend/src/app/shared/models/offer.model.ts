@@ -76,6 +76,17 @@ export interface Offer {
   actif?: boolean;                    // false = désactivée (politique de désactivation)
 }
 
+// Vue "France entière (partiel)" (OfferViewSet.vue_secteur?echelle=national, voir
+// OfferNationalPartialSerializer côté backend) — jamais les coordonnées/contact d'une
+// institution tierce, seulement type/statut/crise/date.
+export interface OfferNationalPartial {
+  id: string;
+  offer_type_nom: string | null;
+  status: Status;
+  crisis_nom: string | null;
+  created_at: string;
+}
+
 export interface OfferPayload {
   title: string;
   first_name_offer: string;

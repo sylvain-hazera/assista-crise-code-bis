@@ -246,3 +246,73 @@ class TestVueSecteurRegionAndNational:
         assert response.status_code == 200
         institution.refresh_from_db()
         assert institution.secteur_override is None
+
+
+@pytest.mark.django_db
+class TestVueSecteurEchelleNationalPartial:
+    """"Voir toute la France (partiel)" (?echelle=national) : donne à N'IMPORTE QUEL acteur
+    institutionnel — même une simple mairie, normalement limitée à sa commune — une vue
+    nationale, mais toujours réduite (OfferNationalPartialSerializer), jamais le détail complet
+    (voir OfferViewSet.vue_secteur)."""
+
+    def test_mairie_sees_national_count_with_echelle_param(self, create_user, commune_grenoble, commune_lille):
+        _make_offer(commune_grenoble)
+        _make_offer(commune_lille)
+
+        institution = _make_institution("MAIRIE", commune_grenoble.code)
+        user = create_user(username="mairie-echelle@test.fr", email="mairie-echelle@test.fr", type="AUT_LOCALE", demo_role="AUT_LOCALE")
+        user.institution = institution
+        user.save()
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        # Sans ?echelle=national : limité à sa commune (1 seule, Grenoble).
+        response_zone = client.get(reverse("offer-vue-secteur"), HTTP_X_ENVIRONMENT="DEMO")
+        assert len(response_zone.data) == 1
+
+        # Avec ?echelle=national : les deux, France entière.
+        response_national = client.get(
+            reverse("offer-vue-secteur"), {"echelle": "national"}, HTTP_X_ENVIRONMENT="DEMO"
+        )
+        assert response_national.status_code == 200
+        assert len(response_national.data) == 2
+
+    def test_echelle_national_never_exposes_contact_fields(self, create_user, commune_grenoble):
+        offer = _make_offer(commune_grenoble)
+
+        institution = _make_institution("MAIRIE", commune_grenoble.code)
+        user = create_user(username="mairie-echelle-pii@test.fr", email="mairie-echelle-pii@test.fr", type="AUT_LOCALE", demo_role="AUT_LOCALE")
+        user.institution = institution
+        user.save()
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        response = client.get(
+            reverse("offer-vue-secteur"), {"echelle": "national"}, HTTP_X_ENVIRONMENT="DEMO"
+        )
+
+        assert response.status_code == 200
+        entry = next(o for o in response.data if o["id"] == str(offer.id))
+        assert set(entry.keys()) == {"id", "offer_type_nom", "status", "crisis_nom", "created_at"}
+
+    def test_own_national_institution_also_gets_partial_serializer(self, create_user, commune_grenoble, commune_lille):
+        # Même une institution dont le NIVEAU PROPRE est déjà national (secteur_override) ne
+        # doit plus voir le détail complet ici — corrige le comportement d'avant ce correctif.
+        offer = _make_offer(commune_grenoble)
+        _make_offer(commune_lille)
+
+        institution = _make_institution("MAIRIE", commune_grenoble.code)
+        institution.secteur_override = "national"
+        institution.save()
+        user = create_user(username="national-partial@test.fr", email="national-partial@test.fr", type="AUT_LOCALE", demo_role="AUT_LOCALE")
+        user.institution = institution
+        user.save()
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        response = client.get(reverse("offer-vue-secteur"), HTTP_X_ENVIRONMENT="DEMO")
+
+        assert response.status_code == 200
+        entry = next(o for o in response.data if o["id"] == str(offer.id))
+        assert "email_offer" not in entry
+        assert "first_name_offer" not in entry

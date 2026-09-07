@@ -275,6 +275,7 @@ from .serializers import (
     RequestSerializer,
     RequestPhotoSerializer,
     OfferSerializer,
+    OfferNationalPartialSerializer,
     OfferPhotoSerializer,
     OfferMessageSerializer,
     DisponibiliteOffreSerializer,
@@ -2870,12 +2871,29 @@ class RequestViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         base = self.get_queryset().annotate(nb_equipes_affectees=Count('assigned_teams', distinct=True))
         if niveau == "national":
             demandes = base.order_by("-created_at")
+            hors_zone_recap = []
         else:
             demandes = base.filter(**{SECTEUR_CHAMP_PAR_NIVEAU[niveau]: code}).order_by("-created_at")
+            # Hors zone = récapitulatif agrégé, jamais une liste d'items réduits (contrairement
+            # à Team/PointOperationnel/Dossier/DeclarationSecurite/Information, en exclusion
+            # totale) : juste une quantité par type de demande, pour donner une vue d'ensemble
+            # nationale sans exposer le détail (ni a fortiori la PII) des demandes d'une autre
+            # institution.
+            hors_zone_recap = list(
+                base.exclude(**{SECTEUR_CHAMP_PAR_NIVEAU[niveau]: code})
+                .values('request_type__type')
+                .annotate(count=Count('id'))
+                .order_by('request_type__type')
+            )
         page = self.paginate_queryset(demandes)
         if page is not None:
-            return self.get_paginated_response(self.get_serializer(page, many=True).data)
-        return Response(self.get_serializer(demandes, many=True).data)
+            response = self.get_paginated_response(self.get_serializer(page, many=True).data)
+            response.data['hors_zone_recap'] = hors_zone_recap
+            return response
+        return Response({
+            'results': self.get_serializer(demandes, many=True).data,
+            'hors_zone_recap': hors_zone_recap,
+        })
 
     @action(detail=True, methods=["get"])
     def preview(self, request, pk=None):
@@ -4197,11 +4215,20 @@ class OfferViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         en lecture. Pagination recommandée (`?page=1&page_size=`) : un secteur large peut
         compter plusieurs milliers de fiches — typiquement l'annuaire de bénévoles (type
         Bénévolat), voir `?type=`/`?exclude_type=` ci-dessous pour le séparer des offres de
-        crise plutôt que de tout charger d'un bloc (voir VueMairieComponent)."""
+        crise plutôt que de tout charger d'un bloc (voir VueMairieComponent).
+
+        `?echelle=national` force le niveau national quel que soit le secteur propre de
+        l'appelant — "Voir toute la France (partiel)" côté frontend : donne à N'IMPORTE QUEL
+        acteur institutionnel (même une simple mairie) une vue d'ensemble nationale, toujours
+        servie par OfferNationalPartialSerializer (jamais les coordonnées/contact d'une
+        institution tierce), jamais le serializer complet même quand le niveau national est
+        celui, propre, de l'appelant."""
         secteur = _institution_secteur_or_400(request)
         if isinstance(secteur, Response):
             return secteur
         niveau, code = secteur
+        if request.query_params.get('echelle') == 'national':
+            niveau = 'national'
 
         if niveau == "national":
             offres = self.get_queryset().order_by("-created_at")
@@ -4215,10 +4242,11 @@ class OfferViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         if exclude_type:
             offres = offres.exclude(offer_type__type=exclude_type)
 
+        serializer_class = OfferNationalPartialSerializer if niveau == "national" else self.get_serializer_class()
         page = self.paginate_queryset(offres)
         if page is not None:
-            return self.get_paginated_response(self.get_serializer(page, many=True).data)
-        return Response(self.get_serializer(offres, many=True).data)
+            return self.get_paginated_response(serializer_class(page, many=True, context=self.get_serializer_context()).data)
+        return Response(serializer_class(offres, many=True, context=self.get_serializer_context()).data)
 
     def perform_destroy(self, instance):
         instance.actif = False

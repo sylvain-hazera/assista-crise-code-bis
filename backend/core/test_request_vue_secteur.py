@@ -56,7 +56,7 @@ class TestRequestVueSecteur:
         response = client.get(reverse("request-vue-secteur"))
 
         assert response.status_code == 200
-        assert len(response.data) == 2
+        assert len(response.data['results']) == 2
 
     def test_mairie_sees_only_its_commune(self, create_user, commune_grenoble, commune_voiron):
         institution = _make_institution("MAIRIE", commune_grenoble.code)
@@ -69,7 +69,23 @@ class TestRequestVueSecteur:
         response = client.get(reverse("request-vue-secteur"))
 
         assert response.status_code == 200
-        assert len(response.data) == 1
+        assert len(response.data['results']) == 1
+
+    def test_mairie_hors_zone_recap_counts_by_type(self, create_user, commune_grenoble, commune_voiron):
+        # Hors zone = récapitulatif agrégé (quantité par type), pas une liste d'items réduits —
+        # voir RequestViewSet.vue_secteur.
+        institution = _make_institution("MAIRIE", commune_grenoble.code)
+        user = create_user(email="mairie-recap@test.fr", username="mairie-recap@test.fr", type="AUT_LOCALE", institution=institution)
+        _make_request(commune_grenoble)
+        _make_request(commune_voiron)
+        _make_request(commune_voiron)
+
+        client = APIClient()
+        client.force_authenticate(user=user)
+        response = client.get(reverse("request-vue-secteur"))
+
+        assert response.status_code == 200
+        assert response.data['hors_zone_recap'] == [{'request_type__type': 'Aide urgente', 'count': 2}]
 
     def test_region_actor_sees_all(self, create_user, commune_grenoble, commune_voiron):
         institution = _make_institution("CR", commune_grenoble.code)
@@ -82,7 +98,8 @@ class TestRequestVueSecteur:
         response = client.get(reverse("request-vue-secteur"))
 
         assert response.status_code == 200
-        assert len(response.data) == 2
+        assert len(response.data['results']) == 2
+        assert response.data['hors_zone_recap'] == []
 
     def test_est_affectee_reflects_team_assignment(self, create_user, commune_grenoble):
         institution = _make_institution("CR", commune_grenoble.code)
@@ -97,7 +114,7 @@ class TestRequestVueSecteur:
         response = client.get(reverse("request-vue-secteur"))
 
         assert response.status_code == 200
-        par_titre = {r["title"]: r["est_affectee"] for r in response.data}
+        par_titre = {r["title"]: r["est_affectee"] for r in response.data['results']}
         assert par_titre["Non affectée"] is False
         assert par_titre["Affectée"] is True
 
@@ -112,7 +129,7 @@ class TestRequestVueSecteur:
         client.force_authenticate(user=user)
         response = client.get(reverse("request-vue-secteur"))
 
-        statuts = [r["status"] for r in response.data]
+        statuts = [r["status"] for r in response.data['results']]
         assert statuts.count(Status.UNPROCESSED) == 1
         assert statuts.count(Status.IN_PROGRESS) == 1
         assert statuts.count(Status.PROCESSED) == 1

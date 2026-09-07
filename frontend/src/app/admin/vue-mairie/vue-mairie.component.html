@@ -232,6 +232,34 @@
           </tbody>
         </table>
       }
+      <div class="section-note">
+        @if (!franceEntiereChargee) {
+          <button type="button" class="btn-lien" (click)="voirFranceEntiere()" [disabled]="franceEntiereEnCours">
+            {{ franceEntiereEnCours ? 'Chargement…' : 'Voir toute la France (partiel)' }}
+          </button>
+        } @else {
+          <p class="empty-text section-note">
+            France entière — type, statut, crise et date uniquement (jamais les coordonnées) :
+          </p>
+          @if (franceEntierePartiel.length === 0) {
+            <p class="empty-text">Aucune offre au niveau national pour le moment.</p>
+          } @else {
+            <table class="data-table">
+              <thead><tr><th>Type</th><th>Crise</th><th>Statut</th><th>Date</th></tr></thead>
+              <tbody>
+                @for (o of franceEntierePartiel; track o.id) {
+                  <tr>
+                    <td>{{ o.offer_type_nom }}</td>
+                    <td>{{ o.crisis_nom || '—' }}</td>
+                    <td><span class="statut-chip" [class]="statusClass(o.status)">{{ statusLabel(o.status) }}</span></td>
+                    <td>{{ fmtDate(o.created_at) }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          }
+        }
+      </div>
     </section>
 
     <section class="block">

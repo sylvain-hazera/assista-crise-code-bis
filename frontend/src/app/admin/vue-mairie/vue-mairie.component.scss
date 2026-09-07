@@ -153,6 +153,15 @@
 .empty-text { color: var(--muted); font-size: .85rem; }
 .section-note { margin: -.5rem 0 .75rem; font-size: .78rem; }
 
+.btn-lien {
+  display: inline-flex; align-items: center; gap: .3rem;
+  padding: .4rem .9rem; border-radius: 99px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--primary);
+  font-size: .82rem; font-weight: 600; cursor: pointer;
+  &:hover:not(:disabled) { background: #eff6ff; }
+  &:disabled { opacity: .5; cursor: not-allowed; }
+}
+
 .regime-badge {
   display: inline-block;
   margin-top: .3rem;

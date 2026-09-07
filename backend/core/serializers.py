@@ -657,6 +657,20 @@ class OfferSerializer(serializers.ModelSerializer):
         return super().update(instance, validated_data)
 
 
+class OfferNationalPartialSerializer(serializers.ModelSerializer):
+    """Vue "France entière (partiel)" d'OfferViewSet.vue_secteur (niveau national) : donne à
+    tout acteur institutionnel, quel que soit son propre niveau de secteur, une vue d'ensemble
+    nationale des offres — type/statut/crise/date uniquement, jamais les coordonnées/contact
+    d'une institution tierce (nom, email, téléphone, localisation). Contrairement à
+    OfferSerializer, jamais complet : ni masquage réversible (DEMO) ni détail nominatif."""
+    offer_type_nom = serializers.CharField(source="offer_type.type", read_only=True, default=None)
+    crisis_nom = serializers.CharField(source="crisis.name", read_only=True, default=None)
+
+    class Meta:
+        model = Offer
+        fields = ['id', 'offer_type_nom', 'status', 'crisis_nom', 'created_at']
+
+
 class OfferPhotoSerializer(serializers.ModelSerializer):
     """Photo additionnelle d'une offre d'aide (galerie, 9 max en plus de la principale déjà
     stockée sur Offer.photo) — voir OfferPhoto.__doc__."""

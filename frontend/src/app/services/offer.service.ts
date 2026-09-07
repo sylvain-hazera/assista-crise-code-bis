@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { map, Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
-import { Offer, OfferPayload, OfferType } from '../shared/models/offer.model';
+import { Offer, OfferNationalPartial, OfferPayload, OfferType } from '../shared/models/offer.model';
 import { OfferMessage } from '../shared/models/offer-message.model';
 import { geoPointToLatLng, latLngToGeoJson } from '../shared/models/geopoint.model';
 import { StatsResponse } from '../shared/models/api.model';
@@ -109,6 +109,18 @@ export class OfferService {
     return this.http.get<Offer[] | { results: Offer[] }>(`${this.url}/vue_secteur/`, { params }).pipe(
       map(res => (Array.isArray(res) ? res : res.results).map(this.normalize))
     );
+  }
+
+  /** GET /api/offres/vue_secteur/?echelle=national — "Voir toute la France (partiel)" : vue
+   * nationale accessible à tout acteur institutionnel quel que soit son propre niveau de
+   * secteur, toujours réduite à type/statut/crise/date (OfferNationalPartialSerializer côté
+   * backend) — jamais les coordonnées/contact d'une institution tierce. */
+  vueSecteurNationalPartiel(options?: { limite?: number }): Observable<OfferNationalPartial[]> {
+    let params = new HttpParams().set('echelle', 'national');
+    if (options?.limite) params = params.set('page', '1').set('page_size', String(options.limite));
+    return this.http
+      .get<OfferNationalPartial[] | { results: OfferNationalPartial[] }>(`${this.url}/vue_secteur/`, { params })
+      .pipe(map(res => (Array.isArray(res) ? res : res.results)));
   }
 
   /** POST /api/offres/<id>/assign_dossier/ — affecte l'auteur de l'offre au dossier (rôle OFFRANT). */
