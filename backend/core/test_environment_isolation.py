@@ -119,27 +119,33 @@ class TestEffectiveRoleGating:
 class TestInstitutionAsymmetricVisibility:
 
     def test_prod_institution_visible_from_demo(self, institutional_client):
+        # ADMIN (bypass universel du zonage, voir zone_scoping.py) : ce test porte sur
+        # l'asymétrie PROD/DEMO, pas sur le filtrage par zone — institutional_client n'a pas
+        # d'institution/zone résolvable, ce qui viderait sinon la liste (voir InstitutionViewSet.
+        # get_queryset, action list).
         client, user = institutional_client
-        user.demo_role = "AUT_LOCALE"
+        user.type = "ADMIN"
+        user.demo_role = "ADMIN"
         user.save()
         itype = InstitutionType.objects.create(code="MAIRIE_ENV_TEST", libelle="Mairie")
         prod_institution = Institution.objects.create(nom="Vraie mairie", type=itype, environment="PROD")
 
         response = _get(client, reverse('institution-list'), environment="DEMO")
 
-        ids = {i["id"] for i in response.data}
+        ids = {i["id"] for i in response.data['results']}
         assert str(prod_institution.id) in ids
 
     def test_demo_institution_invisible_from_prod(self, institutional_client):
         client, user = institutional_client
-        user.demo_role = "AUT_LOCALE"
+        user.type = "ADMIN"
+        user.demo_role = "ADMIN"
         user.save()
         itype = InstitutionType.objects.create(code="ASSO_ENV_TEST", libelle="Association")
         demo_institution = Institution.objects.create(nom="Fausse asso demo", type=itype, environment="DEMO")
 
         response = _get(client, reverse('institution-list'))
 
-        ids = {i["id"] for i in response.data}
+        ids = {i["id"] for i in response.data['results']}
         assert str(demo_institution.id) not in ids
 
     def test_institution_created_in_demo_is_tagged_demo(self, institutional_client):

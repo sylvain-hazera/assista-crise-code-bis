@@ -58,7 +58,7 @@ from .imports import (
     importer_personnel_communal,
     parse_fichier,
 )
-from .pagination import OptionalPageNumberPagination
+from .pagination import OptionalPageNumberPagination, InstitutionPagination
 from .zone_scoping import (
     SECTEUR_CHAMP_PAR_NIVEAU,
     _institution_commune_or_400,
@@ -6177,14 +6177,19 @@ class InstitutionViewSet(
     EnvironmentScopedViewSetMixin, viewsets.ModelViewSet
 ):
 
-    # InstitutionSerializer déréférence type (FK) pour chaque institution.
+    # InstitutionSerializer déréférence type (FK) pour chaque institution. order_by('nom') :
+    # requis pour une pagination stable (désormais toujours active, voir InstitutionPagination)
+    # — sans ordre explicite, DRF pagine sur un ordre de résultats non garanti par Postgres, ce
+    # qui peut dupliquer ou sauter des lignes d'une page à l'autre.
     queryset = (
-        Institution.objects.select_related('type')
+        Institution.objects.select_related('type').order_by('nom')
     )
 
     serializer_class = (
         InstitutionSerializer
     )
+
+    pagination_class = InstitutionPagination
 
     def get_permissions(self):
         # Avant ce correctif, update/partial_update/destroy n'avaient aucune restriction
@@ -6204,8 +6209,37 @@ class InstitutionViewSet(
         base = self.queryset
         environment = get_active_environment(self.request)
         if environment == Environment.DEMO:
-            return base.filter(environment__in=[Environment.PROD, Environment.DEMO])
-        return base.filter(environment=Environment.PROD)
+            qs = base.filter(environment__in=[Environment.PROD, Environment.DEMO])
+        else:
+            qs = base.filter(environment=Environment.PROD)
+
+        if self.action != 'list':
+            # retrieve reste ouvert (même patron que Team/Dossier/PointOperationnel) : accéder
+            # à une institution précise déjà connue (ex: profil affiché dans le cadre d'une
+            # crise partagée) n'est pas un vecteur de découverte, contrairement à la liste.
+            return qs
+        if effective_role_or_none(self.request) == UserRole.ADMINISTRATOR:
+            return qs
+
+        # AVANT ce correctif, list ne filtrait QUE par environnement : n'importe quel compte
+        # authentifié listait TOUTES les institutions de la plateforme. Désormais "chez moi"
+        # (ma propre institution, même si sa zone n'est pas résolvable) + "ma zone" — jamais la
+        # liste complète, sauf ADMIN. Comparaison directe (pas filter_queryset_to_viewer_zone,
+        # dont le .none() par défaut masquerait aussi "chez moi" quand la zone n'est pas
+        # résolvable) pour ne jamais comparer un champ de secteur à None (Q(champ=None)
+        # matcherait toute institution où ce champ est NULL en base, une fuite, pas juste "moi").
+        user = self.request.user
+        own_institution_id = getattr(user, 'institution_id', None) if user.is_authenticated else None
+        condition = Q(pk=own_institution_id) if own_institution_id else Q(pk=None)
+        zone = viewer_zone_code(self.request)
+        if zone is not None:
+            niveau, code = zone
+            if niveau == "national":
+                return qs
+            champ = SECTEUR_CHAMP_PAR_NIVEAU.get(niveau)
+            if champ and code:
+                condition = condition | Q(**{champ: code})
+        return qs.filter(condition)
 
     def perform_create(self, serializer):
         institution = serializer.save(environment=get_active_environment(self.request))

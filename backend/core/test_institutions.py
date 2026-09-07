@@ -4,9 +4,11 @@ from django.urls import reverse
 from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_encode
 from rest_framework import status
+from rest_framework.test import APIClient
 
 from core.models import (
     AffectationRoleOperationnel,
+    Commune,
     ContactInstitution,
     Institution,
     InstitutionDomaine,
@@ -570,3 +572,116 @@ class TestUserEditDoesNotReRunInstitutionEmailCheck:
         assert response.status_code == status.HTTP_200_OK
         secours_user.refresh_from_db()
         assert secours_user.demo_role == "ADMIN"
+
+
+@pytest.mark.django_db
+class TestInstitutionListZoneScoping:
+    """La liste des institutions ("chez moi" + ma zone, sauf rôle ADMIN qui voit tout) est
+    désormais toujours paginée (InstitutionPagination, 25/page) — voir InstitutionViewSet.
+    get_queryset. AVANT ce correctif, list ne filtrait QUE par environnement PROD/DEMO :
+    n'importe quel compte authentifié listait TOUTES les institutions de la plateforme."""
+
+    @pytest.fixture
+    def commune_a(self, db):
+        return Commune.objects.create(
+            code="38185", nom="Grenoble", departement_code="38", epci_code="200040715",
+            region_code="84", centre_latitude=45.18, centre_longitude=5.72,
+        )
+
+    @pytest.fixture
+    def commune_b(self, db):
+        return Commune.objects.create(
+            code="38544", nom="Voiron", departement_code="38", epci_code="200070078",
+            region_code="84", centre_latitude=45.36, centre_longitude=5.59,
+        )
+
+    def test_response_is_always_paginated(self, create_user, commune_a):
+        itype, _ = InstitutionType.objects.get_or_create(code="MAIRIE_LIST_ZONE", defaults={"libelle": "Mairie"})
+        institution = Institution.objects.create(nom="Mairie pagination test", type=itype, commune_code=commune_a.code)
+        user = create_user(username="pagination-test@test.fr", email="pagination-test@test.fr", type="AUT_LOCALE")
+        user.institution = institution
+        user.save()
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        response = client.get(reverse('institution-list'))
+
+        assert response.status_code == status.HTTP_200_OK
+        assert set(response.data.keys()) == {"count", "next", "previous", "results"}
+
+    def test_sees_own_institution_and_zone_not_others(self, create_user, commune_a, commune_b):
+        itype, _ = InstitutionType.objects.get_or_create(code="MAIRIE_LIST_ZONE2", defaults={"libelle": "Mairie"})
+        ma_mairie = Institution.objects.create(nom="Ma mairie", type=itype, commune_code=commune_a.code)
+        autre_meme_zone = Institution.objects.create(nom="Autre institution même commune", type=itype, commune_code=commune_a.code)
+        autre_zone = Institution.objects.create(nom="Institution hors zone", type=itype, commune_code=commune_b.code)
+
+        user = create_user(username="mairie-list-zone@test.fr", email="mairie-list-zone@test.fr", type="AUT_LOCALE")
+        user.institution = ma_mairie
+        user.save()
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        response = client.get(reverse('institution-list'), {"page_size": 100})
+
+        noms = {i["nom"] for i in response.data["results"]}
+        assert ma_mairie.nom in noms
+        assert autre_meme_zone.nom in noms
+        assert autre_zone.nom not in noms
+
+    def test_own_institution_visible_even_without_resolvable_zone(self, create_user):
+        # "Chez moi" reste visible même si mon institution n'a pas de commune_code renseignée
+        # (zone non résolvable) — jamais masquée par le filtrage par zone.
+        itype, _ = InstitutionType.objects.get_or_create(code="MAIRIE_LIST_ZONE3", defaults={"libelle": "Mairie"})
+        ma_mairie = Institution.objects.create(nom="Ma mairie sans commune", type=itype)
+
+        user = create_user(username="sans-commune-list@test.fr", email="sans-commune-list@test.fr", type="AUT_LOCALE")
+        user.institution = ma_mairie
+        user.save()
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        response = client.get(reverse('institution-list'))
+
+        noms = {i["nom"] for i in response.data["results"]}
+        assert ma_mairie.nom in noms
+
+    def test_no_institution_sees_nothing(self, create_user, commune_a):
+        itype, _ = InstitutionType.objects.get_or_create(code="MAIRIE_LIST_ZONE4", defaults={"libelle": "Mairie"})
+        Institution.objects.create(nom="Une institution quelconque", type=itype, commune_code=commune_a.code)
+
+        user = create_user(username="aucune-institution-list@test.fr", email="aucune-institution-list@test.fr", type="AUT_LOCALE")
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        response = client.get(reverse('institution-list'))
+
+        assert response.data["results"] == []
+
+    def test_admin_sees_everything(self, create_user, commune_a, commune_b):
+        itype, _ = InstitutionType.objects.get_or_create(code="MAIRIE_LIST_ZONE5", defaults={"libelle": "Mairie"})
+        Institution.objects.create(nom="Institution A admin", type=itype, commune_code=commune_a.code)
+        Institution.objects.create(nom="Institution B admin", type=itype, commune_code=commune_b.code)
+
+        user = create_user(username="admin-list-zone@test.fr", email="admin-list-zone@test.fr", type="ADMIN")
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        response = client.get(reverse('institution-list'), {"page_size": 100})
+
+        noms = {i["nom"] for i in response.data["results"]}
+        assert {"Institution A admin", "Institution B admin"}.issubset(noms)
+
+    def test_retrieve_stays_open_across_zones(self, create_user, commune_a, commune_b):
+        itype, _ = InstitutionType.objects.get_or_create(code="MAIRIE_LIST_ZONE6", defaults={"libelle": "Mairie"})
+        ma_mairie = Institution.objects.create(nom="Ma mairie retrieve", type=itype, commune_code=commune_a.code)
+        autre = Institution.objects.create(nom="Autre institution retrieve", type=itype, commune_code=commune_b.code)
+
+        user = create_user(username="retrieve-zone@test.fr", email="retrieve-zone@test.fr", type="AUT_LOCALE")
+        user.institution = ma_mairie
+        user.save()
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        response = client.get(reverse('institution-detail', args=[autre.id]))
+
+        assert response.status_code == status.HTTP_200_OK
