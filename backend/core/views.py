@@ -58,6 +58,13 @@ from .imports import (
     parse_fichier,
 )
 from .pagination import OptionalPageNumberPagination
+from .zone_scoping import (
+    SECTEUR_CHAMP_PAR_NIVEAU,
+    _institution_commune_or_400,
+    _institution_secteur_or_400,
+    filter_queryset_to_viewer_zone,
+    object_in_viewer_zone,
+)
 from django.contrib.gis.geos import Point
 
 
@@ -2114,64 +2121,6 @@ def parse_datetime_param(value):
     except ValueError:
         return None
     return timezone.make_aware(datetime.datetime.combine(d, datetime.time.min))
-
-
-def _institution_commune_or_400(request):
-    """Code commune de l'institution de l'utilisateur appelant, pour les actions "vue mairie"
-    partagées par RequestViewSet/InformationViewSet. Retourne soit le code (str), soit une
-    Response 400 prête à renvoyer si l'utilisateur n'a pas d'institution ou que celle-ci n'a
-    pas de commune renseignée (ex: institution non-AUT_LOCALE, ou AUT_LOCALE non encore
-    rattachée via l'annuaire) — jamais une liste vide silencieuse qui masquerait la vraie
-    cause."""
-    institution = getattr(request.user, 'institution', None)
-    if institution is None or not institution.commune_code:
-        return Response(
-            {"error": "Aucune commune associée à votre institution : contactez un administrateur."},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-    return institution.commune_code
-
-
-# Colonne correspondante par niveau de secteur — mêmes noms de champ dénormalisés sur Offer et
-# Request (voir OfferViewSet.perform_create/RequestViewSet.perform_create) — "national" n'en a
-# pas (aucun filtre géographique, voir vue_secteur).
-SECTEUR_CHAMP_PAR_NIVEAU = {
-    "commune": "commune_code",
-    "epci": "epci_code",
-    "departement": "departement_code",
-    "region": "region_code",
-}
-
-
-def _institution_secteur_or_400(request):
-    """(niveau, code) du secteur consultable par l'institution de l'utilisateur appelant.
-    `institution.secteur_override` (posé manuellement, usage test uniquement — voir le champ)
-    prend le pas sur le niveau déduit du type. Le code lui-même est lu directement sur
-    l'institution (epci_code/departement_code/region_code, dénormalisés par Institution.save()
-    depuis commune_code) — jamais recalculé ici. "national" ne renvoie aucun code (pas de
-    filtre géographique). Retourne une Response 400 prête à renvoyer si l'institution n'a pas
-    de commune, ou si le secteur demandé (override compris) n'est pas renseigné."""
-    commune_code = _institution_commune_or_400(request)
-    if isinstance(commune_code, Response):
-        return commune_code
-
-    institution = request.user.institution
-    # Déjà calculé et stocké par Institution.save() (secteur_override en priorité, sinon
-    # déduit du type via SECTEUR_NIVEAU_PAR_TYPE_INSTITUTION) — jamais recalculé ici.
-    niveau = institution.secteur_niveau_effectif or "commune"
-
-    if niveau == "national":
-        return "national", None
-    if niveau == "commune":
-        return "commune", commune_code
-
-    code = getattr(institution, f"{niveau}_code", None)
-    if not code:
-        return Response(
-            {"error": f"Secteur ({niveau}) introuvable pour votre institution."},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-    return niveau, code
 
 
 def resolve_competence_for_request(demande):
