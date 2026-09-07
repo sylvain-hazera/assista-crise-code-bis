@@ -6127,6 +6127,15 @@ class InstitutionTypeViewSet(
         InstitutionTypeSerializer
     )
 
+    def get_permissions(self):
+        # list/retrieve doivent rester accessibles sans compte : le formulaire d'inscription
+        # public (register.component) en a besoin pour peupler son sélecteur de type
+        # d'institution avant même que le visiteur ait un compte — comme InformationTypeViewSet
+        # pour les formulaires publics équivalents. Écriture inchangée (défaut IsAuthenticated).
+        if self.action in ('list', 'retrieve'):
+            return [AllowAny()]
+        return super().get_permissions()
+
     def perform_create(self, serializer):
         institution_type = serializer.save()
         audit_log(

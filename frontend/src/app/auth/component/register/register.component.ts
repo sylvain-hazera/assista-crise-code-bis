@@ -6,11 +6,8 @@ import { Subject, takeUntil } from 'rxjs';
 import { AuthService } from '../../services/auth.service';
 import { UserRole } from '../../../shared/models/user.model';
 import { LocationService, Department, Commune } from '../../../services/location.service';
-
-interface InstitutionTypeOption {
-  value: string;
-  label: string;
-}
+import { InstitutionTypeService } from '../../../services/institution-type.service';
+import { InstitutionType } from '../../../shared/models/institution.model';
 
 @Component({
   selector: 'app-register',
@@ -49,36 +46,36 @@ export class RegisterComponent implements OnInit, OnDestroy {
     { value: UserRole.RESCUE, label: 'Secours organisés' },
   ];
 
-  institutionTypeOptions: InstitutionTypeOption[] = [
-    { value: 'mairie', label: 'Mairie' },
-    { value: 'prefecture', label: 'Préfecture' },
-    { value: 'sous_prefecture', label: 'Sous-préfecture' },
-    { value: 'police', label: 'Police' },
-    { value: 'police_municipale', label: 'Police municipale' },
-    { value: 'gendarmerie', label: 'Gendarmerie' },
-    { value: 'samu', label: 'SAMU' },
-    { value: 'sdis', label: 'SDIS (Service départemental d\'incendie et de secours)' },
-    { value: 'ars', label: 'ARS (Agence régionale de santé)' },
-    { value: 'chu', label: 'CHU / Hôpital' },
-    { value: 'ministere', label: 'Ministère' },
-    { value: 'collectivite', label: 'Collectivité locale' },
-    { value: 'cc', label: 'Communauté de communes' },
-    { value: 'metropole', label: 'Métropole' },
-    { value: 'conseil_departemental', label: 'Conseil départemental' },
-    { value: 'conseil_regional', label: 'Conseil régional' },
-  ];
+  // Peuplé depuis la vraie table InstitutionType (voir ngOnInit) — remplace un ancien tableau
+  // codé en dur, déconnecté de la base, qui manquait "association"/"aasc" et dont plusieurs
+  // codes ne correspondaient même plus à ceux réellement en base (ex: sous_prefecture vs
+  // sous_pref, conseil_departemental/conseil_regional vs cg/cr, cc/metropole vs epci unique).
+  // "aasc" est exclu ici : sélectionné via la case à cocher dédiée (userType RESCUE), pas via
+  // ce sélecteur générique (voir toggleFieldsBasedOnUserType/onSubmit).
+  institutionTypeOptions: InstitutionType[] = [];
 
   constructor(
     private formBuilder: FormBuilder,
     private authService: AuthService,
     private router: Router,
-    private locationService: LocationService
+    private locationService: LocationService,
+    private institutionTypeService: InstitutionTypeService
   ) {}
 
   ngOnInit(): void {
     this.initForm();
     this.setupUserTypeListener();
     this.loadDepartments();
+    this.loadInstitutionTypes();
+  }
+
+  private loadInstitutionTypes(): void {
+    this.institutionTypeService.getAll().subscribe({
+      next: (types) => {
+        this.institutionTypeOptions = types.filter(t => t.code !== 'aasc');
+      },
+      error: (err) => console.error('Erreur chargement types d\'institution:', err)
+    });
   }
 
   private loadDepartments(): void {

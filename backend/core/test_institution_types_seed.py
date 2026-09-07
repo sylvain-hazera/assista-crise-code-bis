@@ -1,4 +1,7 @@
 import pytest
+from django.urls import reverse
+from rest_framework import status
+from rest_framework.test import APIClient
 
 from core.models import InstitutionType
 
@@ -32,3 +35,18 @@ def test_sdis_type_seeded():
     pas sélectionner ce type à l'inscription."""
     codes = set(InstitutionType.objects.values_list('code', flat=True))
     assert 'sdis' in codes
+
+
+@pytest.mark.django_db
+def test_list_accessible_anonymously():
+    """Le formulaire d'inscription public (register.component) doit pouvoir peupler son
+    sélecteur de type d'institution AVANT que le visiteur n'ait un compte — voir
+    InstitutionTypeViewSet.get_permissions."""
+    InstitutionType.objects.get_or_create(code='association', defaults={'libelle': 'Association Loi 1901'})
+    client = APIClient()
+
+    response = client.get(reverse('institutiontype-list'))
+
+    assert response.status_code == status.HTTP_200_OK
+    codes = {t['code'] for t in response.data}
+    assert 'association' in codes
