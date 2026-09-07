@@ -132,8 +132,8 @@
                 class="form-select"
                 [class.invalid]="isFieldInvalid('institutionType')">
                 <option value="">Sélectionner un type</option>
-                <option *ngFor="let option of institutionTypeOptions" [value]="option.value">
-                  {{ option.label }}
+                <option *ngFor="let option of institutionTypeOptions" [value]="option.code">
+                  {{ option.libelle }}
                 </option>
               </select>
               <span class="material-icons select-arrow">arrow_drop_down</span>
