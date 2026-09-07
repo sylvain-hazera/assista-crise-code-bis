@@ -235,6 +235,47 @@ class TestDeclarationSecuriteListPermissions:
 
 
 @pytest.mark.django_db
+class TestDeclarationSecuriteListZoneScoping:
+    """Hors zone = exclusion totale sur la liste par défaut (pas de résumé, contrairement à
+    Request) — voir DeclarationSecuriteViewSet.get_queryset. Ne s'applique ni à vue_mairie
+    (filtrage par géocodage inverse, voir TestDeclarationSecuriteVueMairie) ni à
+    retrieve/update/destroy (doivent rester visibles pour IsOwnDeclarationOrInstitutional, voir
+    TestUpdateOwnDeclaration)."""
+
+    def _make_mairie_user(self, commune_code):
+        itype, _ = InstitutionType.objects.get_or_create(code="MAIRIE_DS_ZONE", defaults={"libelle": "Mairie"})
+        institution = Institution.objects.create(
+            nom=f"Mairie DS Zone {commune_code}", type=itype, commune_code=commune_code,
+        )
+        return User.objects.create_user(
+            username=f"mairie-ds-zone-{commune_code}@test.fr", email=f"mairie-ds-zone-{commune_code}@test.fr",
+            password="Test1234!", type="AUT_LOCALE", institution=institution,
+        )
+
+    def test_list_excludes_declarations_outside_zone(self, authenticated_client):
+        client, _ = authenticated_client
+        crisis = _make_crisis()
+        declaration_in = DeclarationSecurite.objects.create(
+            crise=crisis, nom_referent="Dedans", prenom_referent="A", contact_referent="a@t.fr",
+            commune_code="38185", epci_code="200040715", departement_code="38", region_code="84",
+        )
+        declaration_out = DeclarationSecurite.objects.create(
+            crise=crisis, nom_referent="Dehors", prenom_referent="B", contact_referent="b@t.fr",
+            commune_code="75056", epci_code="200054781", departement_code="75", region_code="11",
+        )
+
+        mairie_user = self._make_mairie_user("38185")
+        client.force_authenticate(user=mairie_user)
+
+        response = client.get(reverse('declarationsecurite-list'))
+
+        assert response.status_code == status.HTTP_200_OK
+        noms = {d['nom_referent'] for d in response.data}
+        assert 'Dedans' in noms
+        assert 'Dehors' not in noms
+
+
+@pytest.mark.django_db
 class TestMesDeclarations:
     """Un utilisateur connecté doit pouvoir retrouver ses propres déclarations, même sans
     droits institutionnels — contrairement à la liste générale (réservée, voir

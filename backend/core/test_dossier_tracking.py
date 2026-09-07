@@ -10,7 +10,7 @@ from rest_framework.test import APIClient
 from django.contrib.auth import get_user_model
 from PIL import Image
 
-from core.models import Crisis, Dossier, DossierParticipant, Document, Request, Team
+from core.models import Commune, Crisis, Dossier, DossierParticipant, Document, Institution, InstitutionType, Request, Team
 from core.serializers import DocumentSerializer
 from core.views import build_magic_link, extract_exif_metadata, resolve_or_invite_demandeur
 
@@ -186,13 +186,46 @@ class TestDossierAccessScoping:
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
-    def test_institutional_actor_sees_all_dossiers(self, dossier_with_demandeur, local_authority_client, crisis, team):
+    def test_institutional_actor_without_institution_sees_nothing(self, dossier_with_demandeur, local_authority_client, crisis, team):
+        # AVANT le correctif de zonage, un acteur institutionnel voyait TOUS les dossiers de
+        # l'environnement, sans filtre géographique — même sans institution rattachée (donc
+        # sans aucune zone de compétence résolvable). C'est exactement le bug corrigé : zéro
+        # zone résolvable = zéro dossier visible, jamais la liste complète par défaut.
         Dossier.objects.create(numero="DOS-AUTRE2", crise=crisis, equipe=team, titre="Autre dossier 2")
         client, _ = local_authority_client
 
         response = client.get(reverse('dossier-list'))
 
-        assert len(response.data) >= 2
+        assert response.data == []
+
+    def test_institutional_actor_sees_dossiers_in_its_zone_only(self, create_user, crisis):
+        commune_in = Commune.objects.create(
+            code="38185", nom="Grenoble", departement_code="38", epci_code="200040715",
+            region_code="84", centre_latitude=45.18, centre_longitude=5.72,
+        )
+        commune_out = Commune.objects.create(
+            code="38544", nom="Voiron", departement_code="38", epci_code="200070078",
+            region_code="84", centre_latitude=45.36, centre_longitude=5.59,
+        )
+        itype, _ = InstitutionType.objects.get_or_create(code="MAIRIE_DOSSIER_ZONE", defaults={"libelle": "Mairie"})
+        institution_in = Institution.objects.create(nom="Mairie dossier zone in", type=itype, commune_code=commune_in.code)
+        institution_out = Institution.objects.create(nom="Mairie dossier zone out", type=itype, commune_code=commune_out.code)
+        team_in = Team.objects.create(name="Equipe zone in", institution=institution_in)
+        team_out = Team.objects.create(name="Equipe zone out", institution=institution_out)
+        dossier_in = Dossier.objects.create(numero="DOS-ZONE-IN", crise=crisis, equipe=team_in, titre="Dans la zone")
+        dossier_out = Dossier.objects.create(numero="DOS-ZONE-OUT", crise=crisis, equipe=team_out, titre="Hors zone")
+
+        user = create_user(username="mairie-dossier-zone@test.fr", email="mairie-dossier-zone@test.fr", type="AUT_LOCALE")
+        user.institution = institution_in
+        user.save()
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        response = client.get(reverse('dossier-list'))
+
+        ids = {d["id"] for d in response.data}
+        assert str(dossier_in.id) in ids
+        assert str(dossier_out.id) not in ids
 
 
 def _jpeg_with_gps_exif():

@@ -48,7 +48,8 @@ from .permissions import (
     IsInstitutionalActor, IsAdministrator, IsOwnDeclarationOrInstitutional, IsOwnerOrInstitutional,
     IsSelfOrInstitutional, IsInstitutionMemberOrAdministrator,
     INSTITUTIONAL_TYPES, user_can_view_photo,
-    get_active_environment, get_effective_role, mask_email, mask_phone, send_mail_env_aware,
+    get_active_environment, get_effective_role, effective_role_or_none, mask_email, mask_phone,
+    send_mail_env_aware,
 )
 from .geo_lookup import commune_code_from_point, commune_secteur_codes, commune_risques, commune_risques_date_maj
 from .imports import (
@@ -64,6 +65,7 @@ from .zone_scoping import (
     _institution_secteur_or_400,
     filter_queryset_to_viewer_zone,
     object_in_viewer_zone,
+    viewer_zone_code,
 )
 from django.contrib.gis.geos import Point
 
@@ -143,6 +145,7 @@ from .models import (
     Zone,
     Plan,
     JournalCollectivite,
+    Commune,
 )
 
 
@@ -540,7 +543,26 @@ class DossierViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         if not user.is_authenticated:
             return base.none()
         if get_effective_role(self.request) in INSTITUTIONAL_TYPES:
-            return base.filter(environment=environment)
+            # AVANT ce correctif, cette branche renvoyait TOUS les dossiers de l'environnement
+            # actif, sans aucun filtre géographique — n'importe quel acteur institutionnel
+            # voyait les dossiers de n'importe quelle institution tierce. Même union que
+            # vue_mairie (demande/information/équipe rattachée), généralisée à tous les
+            # niveaux de secteur via filter_queryset_to_viewer_zone — mais seulement sur la
+            # liste par défaut : retrieve/update/destroy/cloturer restent ouverts à tout acteur
+            # institutionnel indépendamment de sa zone, pour ne pas interférer avec le contrôle
+            # d'accès déjà en place (régulateur/responsable de crise = 200, institutionnel
+            # non-lié = 403) — "mon institution doit être ACTEUR sur la crise", hors scope ici.
+            qs = base.filter(environment=environment)
+            if self.action == 'list':
+                return filter_queryset_to_viewer_zone(
+                    self.request, qs,
+                    resolver=lambda niveau, code: (
+                        Q(**{f"demande__{SECTEUR_CHAMP_PAR_NIVEAU[niveau]}": code})
+                        | Q(**{f"information__{SECTEUR_CHAMP_PAR_NIVEAU[niveau]}": code})
+                        | Q(**{f"equipe__institution__{SECTEUR_CHAMP_PAR_NIVEAU[niveau]}": code})
+                    ),
+                ).distinct()
+            return qs
         # Un chef d'équipe de terrain (leader/régulateur d'une équipe) doit voir TOUS les
         # dossiers de cette équipe, pas seulement ceux où il est lui-même participant — sinon
         # aucune vue d'ensemble possible pour coordonner plusieurs équipes à la fois.
@@ -3255,7 +3277,19 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         qs = super().get_queryset()
         if self.action == 'reactiver':
             return qs
-        return _filter_actif(self.request, qs)
+        qs = _filter_actif(self.request, qs)
+        if self.action == 'list':
+            # retrieve reste ouvert (voir get_permissions ci-dessus : un bénévole doit pouvoir
+            # consulter SA propre équipe même hors de sa zone) — seule la liste est réduite à
+            # la zone de compétence de l'appelant, généralisant le filtre déjà appliqué par
+            # vue_mairie (qui ne couvrait que le niveau commune) à tous les niveaux.
+            qs = filter_queryset_to_viewer_zone(
+                self.request, qs,
+                resolver=lambda niveau, code: Q(**{
+                    f"institution__{SECTEUR_CHAMP_PAR_NIVEAU[niveau]}": code
+                }),
+            )
+        return qs
 
     @action(detail=True, methods=["post"], permission_classes=[IsInstitutionalActor])
     def reactiver(self, request, pk=None):
@@ -4525,7 +4559,15 @@ class InformationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         )
         if self.action == 'reactiver':
             return qs
-        return _filter_actif(self.request, qs)
+        qs = _filter_actif(self.request, qs)
+        if self.action == 'list' and effective_role_or_none(self.request) in INSTITUTIONAL_TYPES:
+            # Hors zone = exclusion totale (pas de résumé, contrairement à RequestViewSet.
+            # vue_secteur) : un acteur institutionnel ne voit plus, sur la liste par défaut,
+            # les signalements hors de sa zone de compétence — l'accès public (anonyme/simple
+            # utilisateur) à l'existence d'un signalement (titre/type/date, jamais la PII, déjà
+            # masquée par InformationSerializer._location_visible) reste inchangé.
+            qs = filter_queryset_to_viewer_zone(self.request, qs)
+        return qs
 
     @action(detail=True, methods=["post"], permission_classes=[IsInstitutionalActor])
     def reactiver(self, request, pk=None):
@@ -6495,14 +6537,53 @@ class PointOperationnelViewSet(
     def get_queryset(self):
         """`?mine=true` restreint aux points dont l'utilisateur est responsable, leader ou
         membre de l'équipe — alimente la page "Mes centres" (accès direct, toutes crises
-        confondues, sans repasser par la fiche de chaque crise)."""
+        confondues, sans repasser par la fiche de chaque crise) : reste une vue personnelle,
+        jamais réduite par zone (comme TeamViewSet.get_queryset avec `retrieve`)."""
         qs = super().get_queryset()
         if self.request.query_params.get("mine") == "true":
             user = self.request.user
-            qs = qs.filter(
+            return qs.filter(
                 Q(responsable=user) | Q(equipe__leader=user) | Q(equipe__members=user)
             ).distinct()
+        if self.action == 'list':
+            qs = self._filter_points_to_viewer_zone(qs)
         return qs
+
+    def _filter_points_to_viewer_zone(self, qs):
+        """PointOperationnel n'a pas de code commune/EPCI/département/région dénormalisé
+        (contrairement à Request/Offer/Information) : combine un filtre direct sur les points
+        rattachés à une équipe elle-même rattachée à une institution
+        (`Q(equipe__institution__{champ}=code)`, comme DossierViewSet.vue_mairie) et, pour les
+        points sans équipe ou dont l'équipe n'a pas d'institution, un géocodage inverse point
+        par point (`commune_code_from_point`, même mécanisme que vue_mairie) résolu au niveau
+        de secteur de l'appelant via le référentiel Commune."""
+        if effective_role_or_none(self.request) == UserRole.ADMINISTRATOR:
+            return qs
+        zone = viewer_zone_code(self.request)
+        if zone is None:
+            return qs.none()
+        niveau, code = zone
+        if niveau == "national":
+            return qs
+        champ = SECTEUR_CHAMP_PAR_NIVEAU[niveau]
+        direct = Q(**{f"equipe__institution__{champ}": code})
+        sans_institution = qs.filter(
+            Q(equipe__isnull=True) | Q(equipe__institution__isnull=True),
+            location__isnull=False,
+        )
+        matching_ids = []
+        for point in sans_institution:
+            point_commune_code = commune_code_from_point(point.location)
+            if not point_commune_code:
+                continue
+            if niveau == "commune":
+                point_code = point_commune_code
+            else:
+                commune = Commune.objects.filter(code=point_commune_code).first()
+                point_code = getattr(commune, champ, None) if commune else None
+            if point_code == code:
+                matching_ids.append(point.id)
+        return qs.filter(direct | Q(id__in=matching_ids))
 
     def get_permissions(self):
         # Avant ce correctif, seul `create` était restreint : n'importe quel compte connecté
@@ -7330,6 +7411,24 @@ class DeclarationSecuriteViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
             return [IsOwnDeclarationOrInstitutional()]
         return [IsInstitutionalActor()]
 
+    def get_queryset(self):
+        # Exclusion totale hors zone sur la LISTE par défaut uniquement (pas de résumé,
+        # contrairement à Request) : une déclaration "je suis en sécurité" est une coordonnée
+        # personnelle. Ne s'applique pas à retrieve/update/destroy/vue_mairie/mes_declarations :
+        # vue_mairie fait déjà son propre filtrage par géocodage inverse (les déclarations
+        # rattachées à un centre n'ont pas d'epci/departement/region_code propres) ;
+        # update/destroy doivent rester visibles pour laisser IsOwnDeclarationOrInstitutional
+        # distinguer 403 (trouvé, refusé) de 404 (jamais visible) ; mes_declarations doit
+        # retrouver la déclaration de son auteur quelle que soit sa zone.
+        qs = super().get_queryset()
+        if self.action != 'list':
+            return qs
+        zone_qs = filter_queryset_to_viewer_zone(self.request, qs)
+        user = self.request.user
+        if user.is_authenticated:
+            return (qs.filter(declare_par=user) | zone_qs).distinct()
+        return zone_qs
+
     def _enregistrer_arrivee_centre(self, declaration, centre, enregistre_par):
         """Crée l'entrée de registre de présence d'un centre et la rattache à la déclaration
         — factorisé car appelé à la fois à la création et lors d'un changement de situation
@@ -7357,6 +7456,16 @@ class DeclarationSecuriteViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
             declare_par=declare_par,
             environment=get_active_environment(self.request),
         )
+
+        # Résout epci_code/departement_code/region_code une seule fois ici — même correctif
+        # que RequestViewSet.perform_create (voir son commentaire) : nécessaire pour exclure
+        # une déclaration hors zone (object_in_viewer_zone) au-delà du seul niveau commune.
+        if declaration.commune_code and not declaration.epci_code:
+            secteur = commune_secteur_codes(declaration.commune_code)
+            declaration.epci_code = secteur["epci_code"]
+            declaration.departement_code = secteur["departement_code"]
+            declaration.region_code = secteur["region_code"]
+            declaration.save(update_fields=["epci_code", "departement_code", "region_code"])
 
         if centre is not None:
             self._enregistrer_arrivee_centre(declaration, centre, declare_par)

@@ -1,8 +1,12 @@
 import pytest
 from django.urls import reverse
+from rest_framework import status
 from rest_framework.test import APIClient
 
-from core.models import ContactInstitution, Institution, InstitutionType, Offer, OfferType, Team
+from core.models import (
+    Commune, ContactInstitution, Crisis, Institution, InstitutionType, Offer, OfferType,
+    PointOperationnel, PointType, Team,
+)
 from core.serializers import TeamSerializer, UserSerializer
 
 
@@ -97,3 +101,98 @@ class TestTeamSerializerVehiculesCount:
 
         data = TeamSerializer(team).data
         assert data['vehicules_count'] == 0
+
+
+@pytest.mark.django_db
+class TestPointOperationnelListZoneScoping:
+    """La liste des points opérationnels (action `list`) est réduite à la zone de compétence
+    de l'appelant : directement via l'institution de l'équipe rattachée, ou par géocodage
+    inverse pour un point sans équipe/institution (voir
+    PointOperationnelViewSet._filter_points_to_viewer_zone)."""
+
+    @pytest.fixture
+    def commune_a(self, db):
+        return Commune.objects.create(
+            code="38185", nom="Grenoble", departement_code="38", epci_code="200040715",
+            region_code="84", centre_latitude=45.18, centre_longitude=5.72,
+        )
+
+    @pytest.fixture
+    def commune_b(self, db):
+        return Commune.objects.create(
+            code="38544", nom="Voiron", departement_code="38", epci_code="200070078",
+            region_code="84", centre_latitude=45.36, centre_longitude=5.59,
+        )
+
+    @pytest.fixture
+    def crisis(self, db):
+        from django.contrib.gis.geos import Point
+        return Crisis.objects.create(name="Crise test points zone", location=Point(5.72, 45.18, srid=4326))
+
+    @pytest.fixture
+    def point_type(self, db):
+        return PointType.objects.create(code="POINT_ZONE_TEST", libelle="Point test zone")
+
+    def _make_institution(self, code, commune):
+        itype, _ = InstitutionType.objects.get_or_create(code=code, defaults={"libelle": code})
+        return Institution.objects.create(nom=f"Institution {code}", type=itype, commune_code=commune.code)
+
+    def test_point_with_equipe_filtered_by_institution_zone(self, create_user, commune_a, commune_b, crisis, point_type):
+        institution_a = self._make_institution("POINT_ZONE_A", commune_a)
+        institution_b = self._make_institution("POINT_ZONE_B", commune_b)
+        equipe_a = Team.objects.create(name="Equipe Zone A", institution=institution_a)
+        equipe_b = Team.objects.create(name="Equipe Zone B", institution=institution_b)
+        point_a = PointOperationnel.objects.create(nom="Point A", type=point_type, crise=crisis, equipe=equipe_a)
+        point_b = PointOperationnel.objects.create(nom="Point B", type=point_type, crise=crisis, equipe=equipe_b)
+
+        user = create_user(username="point-zone-a@test.fr", email="point-zone-a@test.fr", type="AUT_LOCALE")
+        user.institution = institution_a
+        user.save()
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        response = client.get(reverse('pointoperationnel-list'))
+        assert response.status_code == status.HTTP_200_OK
+        names = {p['nom'] for p in response.data}
+        assert point_a.nom in names
+        assert point_b.nom not in names
+
+    def test_point_without_equipe_filtered_by_reverse_geocoding(self, create_user, commune_a, crisis, point_type):
+        from django.contrib.gis.geos import Point as GeoPoint
+        from unittest.mock import patch
+
+        institution_a = self._make_institution("POINT_ZONE_C", commune_a)
+        point_sans_equipe = PointOperationnel.objects.create(
+            nom="Point sans équipe", type=point_type, crise=crisis,
+            location=GeoPoint(commune_a.centre_longitude, commune_a.centre_latitude, srid=4326),
+        )
+
+        user = create_user(username="point-zone-c@test.fr", email="point-zone-c@test.fr", type="AUT_LOCALE")
+        user.institution = institution_a
+        user.save()
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        with patch("core.views.commune_code_from_point", return_value=commune_a.code):
+            response = client.get(reverse('pointoperationnel-list'))
+
+        assert response.status_code == status.HTTP_200_OK
+        names = {p['nom'] for p in response.data}
+        assert point_sans_equipe.nom in names
+
+    def test_admin_sees_all_zones(self, create_user, commune_a, commune_b, crisis, point_type):
+        institution_a = self._make_institution("POINT_ZONE_D", commune_a)
+        institution_b = self._make_institution("POINT_ZONE_E", commune_b)
+        equipe_a = Team.objects.create(name="Equipe Zone D", institution=institution_a)
+        equipe_b = Team.objects.create(name="Equipe Zone E", institution=institution_b)
+        PointOperationnel.objects.create(nom="Point D", type=point_type, crise=crisis, equipe=equipe_a)
+        PointOperationnel.objects.create(nom="Point E", type=point_type, crise=crisis, equipe=equipe_b)
+
+        user = create_user(username="point-zone-admin@test.fr", email="point-zone-admin@test.fr", type="ADMIN")
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        response = client.get(reverse('pointoperationnel-list'))
+        assert response.status_code == status.HTTP_200_OK
+        names = {p['nom'] for p in response.data}
+        assert {"Point D", "Point E"}.issubset(names)

@@ -233,7 +233,12 @@ class TestPointOperationnelCompetencesRequises:
 class TestPointOperationnelCriseNom:
 
     def test_list_includes_crise_nom(self, institutional_client, crisis, point_type):
-        client, _ = institutional_client
+        # ADMIN (bypass universel du zonage, voir zone_scoping.py) : ce test porte sur le champ
+        # crise_nom du serializer, pas sur le filtrage par zone — institutional_client n'a pas
+        # d'institution/zone résolvable, ce qui exclurait sinon le point de la liste.
+        client, user = institutional_client
+        user.type = 'ADMIN'
+        user.save()
         PointOperationnel.objects.create(nom="Point avec crise", type=point_type, crise=crisis)
 
         response = client.get(reverse('pointoperationnel-list'))
@@ -280,14 +285,17 @@ class TestPointOperationnelMineFilter:
         ids = {p["id"] for p in response.data}
         assert ids == {str(mine.id)}
 
-    def test_without_mine_returns_all_points(self, institutional_client, crisis, point_type):
+    def test_without_mine_and_without_zone_returns_nothing(self, institutional_client, crisis, point_type):
+        # AVANT le correctif de zonage, `list` sans `mine` renvoyait TOUS les points de
+        # l'environnement, sans filtre géographique — corrigé : sans institution/zone
+        # résolvable, la liste par défaut est vide (même règle que TeamViewSet/DossierViewSet).
         client, user = institutional_client
         PointOperationnel.objects.create(nom="Mon point", type=point_type, crise=crisis, responsable=user)
         PointOperationnel.objects.create(nom="Point d'un autre", type=point_type, crise=crisis)
 
         response = client.get(reverse('pointoperationnel-list'))
 
-        assert len(response.data) >= 2
+        assert response.data == []
 
 
 @pytest.mark.django_db

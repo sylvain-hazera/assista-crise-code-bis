@@ -3088,6 +3088,13 @@ class DeclarationSecurite(EnvironmentScopedModel):
         help_text="Code commune INSEE résolu à la saisie de l'adresse (autocomplete), même "
                    "usage qu'Information.commune_code.",
     )
+    # Dénormalisés depuis commune_code (voir DeclarationSecuriteViewSet.perform_create), même
+    # principe que Request.epci_code/departement_code/region_code — nécessaires pour exclure
+    # une déclaration hors zone de compétence (zone_scoping.object_in_viewer_zone) au-delà du
+    # seul niveau commune.
+    epci_code = models.CharField(max_length=10, null=True, blank=True, db_index=True)
+    departement_code = models.CharField(max_length=3, null=True, blank=True, db_index=True)
+    region_code = models.CharField(max_length=3, null=True, blank=True, db_index=True)
 
     # Rempli seulement si c'est une entrée en centre d'accueil (pas une simple auto-déclaration
     # "je ne suis pas sur place") — déclenche la création d'une ligne RegistrePresence associée.
