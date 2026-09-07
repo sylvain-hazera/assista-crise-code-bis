@@ -11,6 +11,7 @@ from .permissions import (
     INSTITUTIONAL_TYPES, get_active_environment, effective_role_or_none, mask_email, mask_phone,
     strip_masked_fields_in_demo,
 )
+from .zone_scoping import object_in_viewer_zone
 from .models import (
     Environment,
     UserRole,
@@ -437,7 +438,12 @@ class RequestSerializer(serializers.ModelSerializer):
         user = getattr(request, 'user', None)
         if not (user and user.is_authenticated and request):
             return False
-        if effective_role_or_none(request) in INSTITUTIONAL_TYPES:
+        # Corrige la faille identifiée par l'audit sécurité (voir zone_scoping.py) : un rôle
+        # institutionnel seul ne suffit plus, il faut aussi que la demande soit dans la zone
+        # de compétence de l'acteur (object_in_viewer_zone) — sinon n'importe quel acteur
+        # institutionnel de la plateforme voyait le détail complet de n'importe quelle demande
+        # nationale.
+        if effective_role_or_none(request) in INSTITUTIONAL_TYPES and object_in_viewer_zone(request, obj):
             return True
         return obj.dossiers.filter(participants__utilisateur=user).exists()
 
@@ -577,28 +583,34 @@ class OfferSerializer(serializers.ModelSerializer):
         engagement = getattr(obj, 'engagement', None)
         return engagement.get_statut_display() if engagement else None
 
-    def _location_visible(self) -> bool:
+    def _location_visible(self, obj) -> bool:
+        # Même correctif que RequestSerializer._location_visible (voir son commentaire) : un
+        # rôle institutionnel seul ne suffit plus, il faut aussi que l'offre soit dans la zone
+        # de compétence de l'acteur. Offer n'a pas de branche "participant du dossier lié"
+        # (contrairement à Request/Information) : seul le rôle+zone donne accès.
         request = self.context.get('request')
         user = getattr(request, 'user', None)
-        return bool(user and user.is_authenticated and request and effective_role_or_none(request) in INSTITUTIONAL_TYPES)
+        if not (user and user.is_authenticated and request):
+            return False
+        return effective_role_or_none(request) in INSTITUTIONAL_TYPES and object_in_viewer_zone(request, obj)
 
     def get_latitude(self, obj):
-        if not self._location_visible():
+        if not self._location_visible(obj):
             return None
         return obj.location.y if obj.location else None
 
     def get_longitude(self, obj):
-        if not self._location_visible():
+        if not self._location_visible(obj):
             return None
         return obj.location.x if obj.location else None
 
     def get_commune(self, obj):
-        if not self._location_visible():
+        if not self._location_visible(obj):
             return None
         return commune_from_code(obj.commune_code) or commune_from_point(obj.location)
 
     def get_distance_from_crisis_km(self, obj):
-        if not self._location_visible():
+        if not self._location_visible(obj):
             return None
         distance = getattr(obj, 'distance_from_crisis', None)
         return round(distance.km, 1) if distance is not None else None
@@ -607,7 +619,7 @@ class OfferSerializer(serializers.ModelSerializer):
         # `location` reste un champ générique auto-généré (écriture WKT inchangée) : on
         # masque juste sa valeur en LECTURE, pas la possibilité de l'écrire à la création.
         data = super().to_representation(instance)
-        if not self._location_visible():
+        if not self._location_visible(instance):
             # Hors zone/anonyme : aucune donnée personnelle exposée, en PROD comme en DEMO —
             # voir RequestSerializer.to_representation pour le même principe.
             data['location'] = None
@@ -904,7 +916,10 @@ class InformationSerializer(serializers.ModelSerializer):
         user = getattr(request, 'user', None)
         if not (user and user.is_authenticated and request):
             return False
-        if effective_role_or_none(request) in INSTITUTIONAL_TYPES:
+        # Même correctif que RequestSerializer._location_visible (voir son commentaire) : un
+        # rôle institutionnel seul ne suffit plus, il faut aussi que le signalement soit dans
+        # la zone de compétence de l'acteur.
+        if effective_role_or_none(request) in INSTITUTIONAL_TYPES and object_in_viewer_zone(request, obj):
             return True
         return obj.dossiers.filter(participants__utilisateur=user).exists()
 

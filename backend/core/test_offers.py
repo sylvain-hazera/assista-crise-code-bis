@@ -5,6 +5,7 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from core.models import (
+    Commune,
     Crisis,
     ContactInstitution,
     DisponibiliteOffre,
@@ -17,9 +18,14 @@ from core.models import (
     OfferType,
 )
 
+# Commune pré-résolue (même valeurs que core/test_vue_secteur.py) pour que Institution.save()
+# trouve tout en base, sans appel réseau à geo.api.gouv.fr pendant les tests.
+COMMUNE_CODE = "38185"
+
 OFFER_PAYLOAD = {
     "title": "Aide bénévole",
     "location": "POINT (5.7245 45.1885)",
+    "commune_code": COMMUNE_CODE,
     "first_name_offer": "Jean",
     "last_name_offer": "Bénévole",
     "email_offer": "jean.benevole@test.fr",
@@ -33,20 +39,35 @@ def offer_type(db):
 
 
 @pytest.fixture
-def offer(db, offer_type, create_user):
+def commune_grenoble(db):
+    return Commune.objects.create(
+        code=COMMUNE_CODE, nom="Grenoble", departement_code="38", epci_code="200040715",
+        region_code="84", centre_latitude=45.18, centre_longitude=5.72,
+    )
+
+
+@pytest.fixture
+def offer(db, offer_type, create_user, commune_grenoble):
     author = create_user(username="offrant@test.fr", email="offrant@test.fr", type="UTIL_SIMPLE")
     return Offer.objects.create(offer_type=offer_type, author=author, **OFFER_PAYLOAD)
 
 
 @pytest.fixture
-def institution(db):
+def institution(db, commune_grenoble):
     itype = InstitutionType.objects.create(code="MAIRIE_OFFER_TEST", libelle="Mairie")
-    return Institution.objects.create(nom="Mairie de Test Offres", type=itype)
+    return Institution.objects.create(
+        nom="Mairie de Test Offres", type=itype, commune_code=COMMUNE_CODE,
+    )
 
 
 @pytest.fixture
 def local_authority_client(create_user, institution):
+    # La zone de compétence (viewer_zone_code) se résout sur User.institution (FK directe),
+    # pas sur ContactInstitution (annuaire de contacts publics, sans rapport) — les deux sont
+    # posés ici pour rester fidèle aux deux usages réels d'un compte AUT_LOCALE rattaché.
     user = create_user(username="autorite-offres@test.fr", email="autorite-offres@test.fr", type="AUT_LOCALE")
+    user.institution = institution
+    user.save()
     ContactInstitution.objects.create(institution=institution, utilisateur=user, actif=True)
     client = APIClient()
     client.force_authenticate(user=user)

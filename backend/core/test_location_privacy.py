@@ -4,6 +4,7 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from core.models import (
+    Commune,
     ContactInstitution,
     Environment,
     Information,
@@ -16,9 +17,15 @@ from core.models import (
     RequestType,
 )
 
+# Commune pré-résolue (même valeurs que core/test_vue_secteur.py) pour que Institution.save()
+# (commune_secteur_codes) et la vue institutionnelle trouvent tout en base, sans appel réseau
+# à geo.api.gouv.fr pendant les tests.
+COMMUNE_CODE = "38185"
+
 REQUEST_PAYLOAD = {
     "title": "Besoin de nourriture",
     "location": "POINT (5.7245 45.1885)",
+    "commune_code": COMMUNE_CODE,
     "first_name_request": "Marie",
     "last_name_request": "Demandeuse",
     "email_request": "marie.demandeuse@test.fr",
@@ -29,6 +36,7 @@ REQUEST_PAYLOAD = {
 INFORMATION_PAYLOAD = {
     "title": "Arbre sur la chaussée",
     "location": "POINT (5.7245 45.1885)",
+    "commune_code": COMMUNE_CODE,
     "first_name_information": "Paul",
     "last_name_information": "Signaleur",
     "email_information": "paul.signaleur@test.fr",
@@ -39,12 +47,21 @@ INFORMATION_PAYLOAD = {
 OFFER_PAYLOAD = {
     "title": "Don de couvertures",
     "location": "POINT (5.7245 45.1885)",
+    "commune_code": COMMUNE_CODE,
     "first_name_offer": "Julie",
     "last_name_offer": "Donatrice",
     "email_offer": "julie.donatrice@test.fr",
     "phone_offer": "0600000000",
     "status": "DISPONIBLE",
 }
+
+
+@pytest.fixture
+def commune_grenoble(db):
+    return Commune.objects.create(
+        code=COMMUNE_CODE, nom="Grenoble", departement_code="38", epci_code="200040715",
+        region_code="84", centre_latitude=45.18, centre_longitude=5.72,
+    )
 
 
 @pytest.fixture
@@ -63,29 +80,36 @@ def offer_type(db):
 
 
 @pytest.fixture
-def demande(db, request_type):
+def demande(db, request_type, commune_grenoble):
     return Request.objects.create(request_type=request_type, **REQUEST_PAYLOAD)
 
 
 @pytest.fixture
-def information(db, information_type):
+def information(db, information_type, commune_grenoble):
     return Information.objects.create(information_type=information_type, **INFORMATION_PAYLOAD)
 
 
 @pytest.fixture
-def offer(db, offer_type):
+def offer(db, offer_type, commune_grenoble):
     return Offer.objects.create(offer_type=offer_type, **OFFER_PAYLOAD)
 
 
 @pytest.fixture
-def institution(db):
+def institution(db, commune_grenoble):
     itype = InstitutionType.objects.create(code="MAIRIE_PRIVACY_TEST", libelle="Mairie")
-    return Institution.objects.create(nom="Mairie de Test Privacy", type=itype)
+    return Institution.objects.create(
+        nom="Mairie de Test Privacy", type=itype, commune_code=COMMUNE_CODE,
+    )
 
 
 @pytest.fixture
 def local_authority_client(create_user, institution):
+    # La zone de compétence (viewer_zone_code) se résout sur User.institution (FK directe),
+    # pas sur ContactInstitution (annuaire de contacts publics, sans rapport) — les deux sont
+    # posés ici pour rester fidèle aux deux usages réels d'un compte AUT_LOCALE rattaché.
     user = create_user(username="autorite-privacy@test.fr", email="autorite-privacy@test.fr", type="AUT_LOCALE")
+    user.institution = institution
+    user.save()
     ContactInstitution.objects.create(institution=institution, utilisateur=user, actif=True)
     client = APIClient()
     client.force_authenticate(user=user)
