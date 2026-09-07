@@ -241,7 +241,13 @@ class TestTeamDesactivation:
         assert str(team.id) not in [item['id'] for item in response.data]
 
     def test_actif_all_shows_deactivated_team(self, institutional_client, team):
-        client, _ = institutional_client
+        # ADMIN (bypass universel du zonage, voir zone_scoping.py) : ce test porte sur le
+        # paramètre ?actif=all, pas sur le filtrage par zone — institutional_client n'a pas
+        # d'institution/zone résolvable, ce qui viderait sinon la liste (voir TeamViewSet.
+        # get_queryset, action list).
+        client, user = institutional_client
+        user.type = 'ADMIN'
+        user.save()
         team.actif = False
         team.save(update_fields=['actif'])
 

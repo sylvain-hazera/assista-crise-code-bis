@@ -4560,7 +4560,15 @@ class InformationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         if self.action == 'reactiver':
             return qs
         qs = _filter_actif(self.request, qs)
-        if self.action == 'list' and effective_role_or_none(self.request) in INSTITUTIONAL_TYPES:
+        # get_effective_role (appelé par effective_role_or_none) suppose un utilisateur
+        # authentifié (accès direct à request.user.type) — contrairement à Request/Offer, la
+        # liste ici est AllowAny (voir get_permissions), donc bien atteignable anonymement :
+        # sans ce garde, un visiteur anonyme provoque une 500 (AttributeError sur AnonymousUser).
+        if (
+            self.action == 'list'
+            and self.request.user.is_authenticated
+            and effective_role_or_none(self.request) in INSTITUTIONAL_TYPES
+        ):
             # Hors zone = exclusion totale (pas de résumé, contrairement à RequestViewSet.
             # vue_secteur) : un acteur institutionnel ne voit plus, sur la liste par défaut,
             # les signalements hors de sa zone de compétence — l'accès public (anonyme/simple
