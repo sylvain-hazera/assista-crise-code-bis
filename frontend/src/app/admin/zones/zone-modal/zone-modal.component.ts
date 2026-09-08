@@ -30,6 +30,7 @@ export class ZoneModalComponent implements OnChanges {
   form!: FormGroup;
   communes: string[] = [];
   communeNoms: Record<string, string> = {};
+  communePostaux: Record<string, string> = {};
   zonePreciseWkt: string | null = null;
   saving = false;
   errorMessage = '';
@@ -57,8 +58,12 @@ export class ZoneModalComponent implements OnChanges {
     });
     this.communes = [...(this.zone?.communes ?? [])];
     this.communeNoms = {};
+    this.communePostaux = {};
     this.communes.forEach(code => {
-      this.locationService.getCommuneName(code).subscribe(c => this.communeNoms[c.code] = c.name);
+      this.locationService.getCommuneName(code).subscribe(c => {
+        this.communeNoms[c.code] = c.name;
+        if (c.codePostal) this.communePostaux[c.code] = c.codePostal;
+      });
     });
     this.zonePreciseWkt = this.zone?.zone_precise ?? null;
   }
@@ -74,6 +79,7 @@ export class ZoneModalComponent implements OnChanges {
   addCommune(commune: Commune): void {
     if (this.communes.includes(commune.code)) return;
     this.communeNoms[commune.code] = commune.name;
+    if (commune.codePostal) this.communePostaux[commune.code] = commune.codePostal;
     this.communes = [...this.communes, commune.code];
   }
 

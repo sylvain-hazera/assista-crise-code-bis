@@ -27,6 +27,10 @@ export class TagSearchInputComponent<T = any> {
    * le bouton "+ Créer..." ne s'affiche alors jamais. */
   @Input() createFn?: (value: string) => Observable<T>;
   @Input() labelField = 'nom';
+  /** Optionnel : champ affiché entre parenthèses à côté du label dans le menu déroulant (ex:
+   * "codePostal" pour une commune, "code" pour un département) — évite de confondre deux
+   * résultats homonymes (ex: plusieurs communes "Saint-Martin"). */
+  @Input() subLabelField?: string;
   @Input() placeholder = 'Rechercher ou créer un thème...';
   @Input() emptyMessage = 'Aucun résultat existant ne correspond.';
   @Input() createLabelFn: (value: string) => string = (value) => `Créer « ${value} » comme nouveau thème`;
@@ -68,6 +72,10 @@ export class TagSearchInputComponent<T = any> {
 
   label(item: T): string {
     return (item as any)[this.labelField];
+  }
+
+  subLabel(item: T): string | undefined {
+    return this.subLabelField ? (item as any)[this.subLabelField] : undefined;
   }
 
   hasExactMatch(): boolean {

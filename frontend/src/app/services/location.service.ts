@@ -12,6 +12,10 @@ export interface Commune {
   code: string;
   name: string;
   codesPostaux: string[];
+  /** Premier code postal de codesPostaux (une commune peut en avoir plusieurs) — affiché à
+   * côté du nom partout où on choisit une commune, pour éviter les homonymes (ex: plusieurs
+   * "Saint-Martin" en France). */
+  codePostal?: string;
   codeDepartement: string;
 }
 
@@ -19,6 +23,7 @@ export interface GeoContour {
   code: string;
   name: string;
   contour: Polygon | MultiPolygon;
+  codePostal?: string;
 }
 
 @Injectable({
@@ -52,7 +57,8 @@ export class LocationService {
     ).pipe(
       map(communes => communes.map(c => ({
         ...c,
-        name: c.nom || c.name
+        name: c.nom || c.name,
+        codePostal: c.codesPostaux?.[0]
       }))),
       map(communes => communes.sort((a, b) => a.name.localeCompare(b.name)))
     );
@@ -92,7 +98,8 @@ export class LocationService {
     if (!q) return of([]);
 
     const fields = 'nom,code,codesPostaux,codeDepartement';
-    const toCommunes = (list: any[]) => (list || []).map(c => ({ ...c, name: c.nom }));
+    const toCommunes = (list: any[]) =>
+      (list || []).map(c => ({ ...c, name: c.nom, codePostal: c.codesPostaux?.[0] }));
 
     if (/^\d{5}$/.test(q)) {
       return forkJoin({
@@ -119,9 +126,9 @@ export class LocationService {
 
   /** Nom d'une commune depuis son seul code INSEE — plus léger que getCommuneContour quand on
    * n'a pas besoin du contour (ex: affichage d'un code déjà enregistré, voir TeamsComponent). */
-  getCommuneName(code: string): Observable<{ code: string; name: string }> {
-    return this.http.get<any>(`${this.API_GEO}/communes/${code}?fields=nom,code`)
-      .pipe(map(c => ({ code: c.code, name: c.nom })));
+  getCommuneName(code: string): Observable<{ code: string; name: string; codePostal?: string }> {
+    return this.http.get<any>(`${this.API_GEO}/communes/${code}?fields=nom,code,codesPostaux`)
+      .pipe(map(c => ({ code: c.code, name: c.nom, codePostal: c.codesPostaux?.[0] })));
   }
 
   /** Nom d'un département depuis son seul code, même usage que getCommuneName. */
@@ -140,8 +147,8 @@ export class LocationService {
   /** Contour officiel (Polygon ou MultiPolygon) d'une commune, pour bufferiser/unioner
    * côté frontend (composition de la zone de crise). */
   getCommuneContour(code: string): Observable<GeoContour> {
-    return this.http.get<any>(`${this.API_GEO}/communes/${code}?fields=nom,code,contour`)
-      .pipe(map(c => ({ code: c.code, name: c.nom, contour: c.contour })));
+    return this.http.get<any>(`${this.API_GEO}/communes/${code}?fields=nom,code,contour,codesPostaux`)
+      .pipe(map(c => ({ code: c.code, name: c.nom, contour: c.contour, codePostal: c.codesPostaux?.[0] })));
   }
 
   /** Contour officiel d'un département, même usage que getCommuneContour. */

@@ -127,6 +127,11 @@
   }
 }
 
+.chip-sublabel {
+  opacity: .7;
+  font-size: .9em;
+}
+
 .matching-columns {
   display: grid;
   grid-template-columns: 1fr 1fr;

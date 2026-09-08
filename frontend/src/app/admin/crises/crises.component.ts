@@ -90,6 +90,7 @@ export class CrisesComponent implements OnInit {
   delegationCommunes: string[] = [];
   delegationDepartementNoms: Record<string, string> = {};
   delegationCommuneNoms: Record<string, string> = {};
+  delegationCommunePostaux: Record<string, string> = {};
   delegationZoneWkt: string | null = null;
 
   competenceSearchFn = (q: string) => this.competenceService.search(q);
@@ -103,6 +104,7 @@ export class CrisesComponent implements OnInit {
 
   // ── Zone de crise : secteurs (communes/départements + rayon) ───
   zoneCommuneNoms: Record<string, string> = {};
+  zoneCommunePostaux: Record<string, string> = {};
   zoneDepartementNoms: Record<string, string> = {};
   zoneSecteursLoading = false;
   communeSearchFn = (q: string) => this.locationService.searchCommunesByName(q);
@@ -265,6 +267,7 @@ export class CrisesComponent implements OnInit {
     this.quickCreateNom = '';
     this.quickCreateTypeId = null;
     this.zoneCommuneNoms = {};
+    this.zoneCommunePostaux = {};
     this.zoneDepartementNoms = {};
     this.modal = 'detail';
     this.loadZoneSecteurLabels();
@@ -310,7 +313,10 @@ export class CrisesComponent implements OnInit {
       communes: this.fetchContours(crisis.zone_communes ?? [], code => this.locationService.getCommuneContour(code)),
       departements: this.fetchContours(crisis.zone_departements ?? [], code => this.locationService.getDepartementContour(code)),
     }).subscribe(({ communes, departements }) => {
-      communes.forEach(c => this.zoneCommuneNoms[c.code] = c.name);
+      communes.forEach(c => {
+        this.zoneCommuneNoms[c.code] = c.name;
+        if (c.codePostal) this.zoneCommunePostaux[c.code] = c.codePostal;
+      });
       departements.forEach(d => this.zoneDepartementNoms[d.code] = d.name);
     });
   }
@@ -342,6 +348,7 @@ export class CrisesComponent implements OnInit {
     const crisis = this.selectedCrisis;
     if (!crisis || (crisis.zone_communes ?? []).includes(commune.code)) return;
     this.zoneCommuneNoms[commune.code] = commune.name;
+    if (commune.codePostal) this.zoneCommunePostaux[commune.code] = commune.codePostal;
     const zone_communes = [...(crisis.zone_communes ?? []), commune.code];
     this.recomputeAndSaveZoneSecteurs(zone_communes, crisis.zone_departements ?? []);
   }
@@ -677,6 +684,7 @@ export class CrisesComponent implements OnInit {
     this.delegationCommunes = [];
     this.delegationDepartementNoms = {};
     this.delegationCommuneNoms = {};
+    this.delegationCommunePostaux = {};
     this.delegationZoneWkt = null;
   }
 
@@ -699,6 +707,7 @@ export class CrisesComponent implements OnInit {
     if (this.delegationCommunes.includes(commune.code)) return;
     this.delegationCommunes = [...this.delegationCommunes, commune.code];
     this.delegationCommuneNoms[commune.code] = commune.name;
+    if (commune.codePostal) this.delegationCommunePostaux[commune.code] = commune.codePostal;
   }
 
   removeDelegationCommune(code: string): void {

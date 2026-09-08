@@ -24,6 +24,7 @@
           @for (code of communes; track code) {
             <span class="chip">
               {{ communeNoms[code] || code }}
+              @if (communePostaux[code]) { <span class="chip-sublabel">({{ communePostaux[code] }})</span> }
               <button type="button" (click)="removeCommune(code)">×</button>
             </span>
           }
@@ -34,6 +35,7 @@
         <app-tag-search-input
           placeholder="Ajouter une commune (nom, code postal ou code INSEE)…"
           labelField="name"
+          subLabelField="codePostal"
           [searchFn]="communeSearchFn"
           emptyMessage="Aucune commune ne correspond."
           (itemSelected)="addCommune($event)">

@@ -122,6 +122,7 @@
                         <app-tag-search-input
                           placeholder="Ajouter une commune (nom, code postal ou code INSEE)…"
                           labelField="name"
+                          subLabelField="codePostal"
                           [searchFn]="communeSearchFn"
                           emptyMessage="Aucune commune ne correspond."
                           (itemSelected)="addZoneCommune(i, $event)">
@@ -131,6 +132,7 @@
                                 @for (commune of hebergementDetails[i].zoneCommunes; track commune.code) {
                                     <span class="chip">
                                         {{ commune.name }}
+                                        @if (commune.codePostal) { <span class="chip-sublabel">({{ commune.codePostal }})</span> }
                                         <button type="button" (click)="removeZoneCommune(i, commune.code)" title="Retirer" aria-label="Retirer">×</button>
                                     </span>
                                 }

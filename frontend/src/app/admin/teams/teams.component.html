@@ -463,12 +463,13 @@
             @for (code of (selectedTeam.communes || []); track code) {
               <span class="chip">
                 {{ communeNoms[code] || code }}
+                @if (communePostaux[code]) { <span class="chip-sublabel">({{ communePostaux[code] }})</span> }
                 <button type="button" (click)="removeZoneCommune(code)">×</button>
               </span>
             }
             @for (code of (selectedTeam.departements || []); track code) {
               <span class="chip chip-departement">
-                {{ departementNoms[code] || code }}
+                {{ departementNoms[code] || code }} <span class="chip-sublabel">({{ code }})</span>
                 <button type="button" (click)="removeZoneDepartement(code)">×</button>
               </span>
             }
@@ -481,6 +482,7 @@
             <app-tag-search-input
               placeholder="Ajouter une commune (nom, code postal ou code INSEE)…"
               labelField="name"
+              subLabelField="codePostal"
               [searchFn]="communeSearchFn"
               emptyMessage="Aucune commune ne correspond."
               (itemSelected)="addZoneCommune($event)">
@@ -488,6 +490,7 @@
             <app-tag-search-input
               placeholder="Ajouter un département…"
               labelField="name"
+              subLabelField="code"
               [searchFn]="departementSearchFn"
               emptyMessage="Aucun département ne correspond."
               (itemSelected)="addZoneDepartement($event)">

@@ -58,6 +58,7 @@
         <app-tag-search-input
           placeholder="Ajouter une commune…"
           labelField="name"
+          subLabelField="codePostal"
           [searchFn]="communeSearchFn"
           emptyMessage="Aucune commune ne correspond."
           (itemSelected)="addZoneCommune($event)">
@@ -65,7 +66,7 @@
         @if (zoneCommunes.length > 0) {
           <div class="chip-list">
             @for (c of zoneCommunes; track c.code) {
-              <span class="chip">{{ c.name }} <button type="button" (click)="removeZoneCommune(c.code)">×</button></span>
+              <span class="chip">{{ c.name }}@if (c.codePostal) {<span class="chip-sublabel"> ({{ c.codePostal }})</span>} <button type="button" (click)="removeZoneCommune(c.code)">×</button></span>
             }
           </div>
           <input type="number" min="0" [(ngModel)]="zoneRayonKm" placeholder="Rayon (km)" class="rayon-input">

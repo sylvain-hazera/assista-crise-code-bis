@@ -153,6 +153,7 @@
               @for (code of (selectedCrisis.zone_communes || []); track code) {
                 <span class="chip">
                   {{ zoneCommuneNoms[code] || code }}
+                  @if (zoneCommunePostaux[code]) { <span class="chip-sublabel">({{ zoneCommunePostaux[code] }})</span> }
                   @if (selectedCrisis.is_open !== false) {
                     <button type="button" (click)="removeZoneCommune(code)">×</button>
                   }
@@ -160,7 +161,7 @@
               }
               @for (code of (selectedCrisis.zone_departements || []); track code) {
                 <span class="chip chip-departement">
-                  {{ zoneDepartementNoms[code] || code }}
+                  {{ zoneDepartementNoms[code] || code }} <span class="chip-sublabel">({{ code }})</span>
                   @if (selectedCrisis.is_open !== false) {
                     <button type="button" (click)="removeZoneDepartement(code)">×</button>
                   }
@@ -180,6 +181,7 @@
                 <app-tag-search-input
                   placeholder="Ajouter une commune..."
                   labelField="name"
+                  subLabelField="codePostal"
                   [searchFn]="communeSearchFn"
                   emptyMessage="Aucune commune ne correspond."
                   (itemSelected)="addZoneCommune($event)">
@@ -187,6 +189,7 @@
                 <app-tag-search-input
                   placeholder="Ajouter un département..."
                   labelField="name"
+                  subLabelField="code"
                   [searchFn]="departementSearchFn"
                   emptyMessage="Aucun département ne correspond."
                   (itemSelected)="addZoneDepartement($event)">
@@ -478,13 +481,14 @@
                     <div class="chip-list">
                       @for (code of delegationDepartements; track code) {
                         <span class="chip chip-departement">
-                          {{ delegationDepartementNoms[code] || code }}
+                          {{ delegationDepartementNoms[code] || code }} <span class="chip-sublabel">({{ code }})</span>
                           <button type="button" (click)="removeDelegationDepartement(code)">×</button>
                         </span>
                       }
                       @for (code of delegationCommunes; track code) {
                         <span class="chip">
                           {{ delegationCommuneNoms[code] || code }}
+                          @if (delegationCommunePostaux[code]) { <span class="chip-sublabel">({{ delegationCommunePostaux[code] }})</span> }
                           <button type="button" (click)="removeDelegationCommune(code)">×</button>
                         </span>
                       }
@@ -496,6 +500,7 @@
                     <app-tag-search-input
                       placeholder="Ajouter un département (nom ou numéro)..."
                       labelField="name"
+                      subLabelField="code"
                       [searchFn]="departementSearchFn"
                       emptyMessage="Aucun département ne correspond."
                       (itemSelected)="addDelegationDepartement($event)">
@@ -503,6 +508,7 @@
                     <app-tag-search-input
                       placeholder="Ajouter une commune (nom, code postal ou code INSEE)..."
                       labelField="name"
+                      subLabelField="codePostal"
                       [searchFn]="communeSearchFn"
                       emptyMessage="Aucune commune ne correspond."
                       (itemSelected)="addDelegationCommune($event)">

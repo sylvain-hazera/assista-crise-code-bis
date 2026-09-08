@@ -20,7 +20,7 @@
       *ngFor="let item of results"
       (click)="select(item)"
     >
-      {{ label(item) }}
+      {{ label(item) }}<span *ngIf="subLabel(item)" class="tag-search-sublabel"> ({{ subLabel(item) }})</span>
     </button>
 
     <div *ngIf="!loading && results.length === 0" class="tag-search-empty">

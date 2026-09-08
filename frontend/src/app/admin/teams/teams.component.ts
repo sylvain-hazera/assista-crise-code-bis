@@ -401,6 +401,7 @@ export class TeamsComponent implements OnInit {
 
   // ── ZONE D'INTERVENTION ─────────────────────────────────────────
   communeNoms: Record<string, string> = {};
+  communePostaux: Record<string, string> = {};
   departementNoms: Record<string, string> = {};
   pendingZoneWkt: string | null = null;
   communeSearchFn = (q: string) => this.locationService.searchCommunesByName(q);
@@ -416,7 +417,10 @@ export class TeamsComponent implements OnInit {
    * rien : appelé à l'ouverture du détail, avant toute modification par l'utilisateur. */
   private loadZoneCodeLabels(team: Team): void {
     (team.communes ?? []).forEach(code => {
-      this.locationService.getCommuneName(code).subscribe(c => this.communeNoms[c.code] = c.name);
+      this.locationService.getCommuneName(code).subscribe(c => {
+        this.communeNoms[c.code] = c.name;
+        if (c.codePostal) this.communePostaux[c.code] = c.codePostal;
+      });
     });
     (team.departements ?? []).forEach(code => {
       this.locationService.getDepartementName(code).subscribe(d => this.departementNoms[d.code] = d.name);
@@ -427,6 +431,7 @@ export class TeamsComponent implements OnInit {
     const team = this.selectedTeam;
     if (!team?.id || (team.communes ?? []).includes(commune.code)) return;
     this.communeNoms[commune.code] = commune.name;
+    if (commune.codePostal) this.communePostaux[commune.code] = commune.codePostal;
     this.teamService.patch(team.id, { communes: [...(team.communes ?? []), commune.code] }).subscribe(updated => {
       this.selectedTeam = { ...updated, missions: this.selectedTeam!.missions };
       this.reloadTeams();
