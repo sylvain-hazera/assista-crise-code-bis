@@ -151,6 +151,78 @@ class TestDefinirPriorite:
 
 
 @pytest.mark.django_db
+class TestDefinirStatutTeamLeader:
+    """definir_statut était réservé à IsInstitutionalActor — un chef/régulateur d'équipe
+    non-institutionnel (ex: bénévole simple type UTIL_SIMPLE) ne pouvait pas changer le
+    statut de ses propres dossiers depuis "Mes interventions", contrairement à
+    definir_priorite/marquer_important qui l'autorisent déjà. Même garde ajoutée ici."""
+
+    def test_team_leader_can_set_statut(self, create_user, crisis):
+        chef = create_user(username="chef-statut@test.fr", email="chef-statut@test.fr", type="UTIL_SIMPLE")
+        team = Team.objects.create(name="Equipe statut 1", leader=chef)
+        dossier = _make_dossier(crisis, team, statut=Dossier.Statut.AFFECTE)
+
+        client = APIClient()
+        client.force_authenticate(user=chef)
+        response = client.post(
+            reverse("dossier-definir-statut", args=[dossier.id]),
+            {"statut": "EN_COURS"},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        dossier.refresh_from_db()
+        assert dossier.statut == "EN_COURS"
+
+    def test_team_regulateur_can_set_statut(self, create_user, crisis):
+        regulateur = create_user(username="regul-statut@test.fr", email="regul-statut@test.fr", type="UTIL_SIMPLE")
+        team = Team.objects.create(name="Equipe statut 2", regulateur=regulateur)
+        dossier = _make_dossier(crisis, team, statut=Dossier.Statut.AFFECTE)
+
+        client = APIClient()
+        client.force_authenticate(user=regulateur)
+        response = client.post(
+            reverse("dossier-definir-statut", args=[dossier.id]),
+            {"statut": "EN_COURS"},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+
+    def test_plain_member_cannot_set_statut(self, create_user, crisis):
+        chef = create_user(username="chef-statut2@test.fr", email="chef-statut2@test.fr", type="UTIL_SIMPLE")
+        membre = create_user(username="membre-statut@test.fr", email="membre-statut@test.fr", type="UTIL_SIMPLE")
+        team = Team.objects.create(name="Equipe statut 3", leader=chef)
+        team.members.add(membre)
+        dossier = _make_dossier(crisis, team, statut=Dossier.Statut.AFFECTE)
+        DossierParticipant.objects.create(dossier=dossier, utilisateur=membre, role=DossierParticipant.Role.EQUIPE)
+
+        client = APIClient()
+        client.force_authenticate(user=membre)
+        response = client.post(
+            reverse("dossier-definir-statut", args=[dossier.id]),
+            {"statut": "EN_COURS"},
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        dossier.refresh_from_db()
+        assert dossier.statut == Dossier.Statut.AFFECTE
+
+    def test_unrelated_user_cannot_set_statut(self, create_user, crisis):
+        chef = create_user(username="chef-statut3@test.fr", email="chef-statut3@test.fr", type="UTIL_SIMPLE")
+        unrelated = create_user(username="sans-lien-statut@test.fr", email="sans-lien-statut@test.fr", type="UTIL_SIMPLE")
+        team = Team.objects.create(name="Equipe statut 4", leader=chef)
+        dossier = _make_dossier(crisis, team, statut=Dossier.Statut.AFFECTE)
+
+        client = APIClient()
+        client.force_authenticate(user=unrelated)
+        response = client.post(
+            reverse("dossier-definir-statut", args=[dossier.id]),
+            {"statut": "EN_COURS"},
+        )
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+@pytest.mark.django_db
 class TestDossierContactEtCommune:
     def test_contact_fields_come_from_demande(self, create_user, crisis, request_type):
         chef = create_user(username="chef8@test.fr", email="chef8@test.fr", type="UTIL_SIMPLE")

@@ -778,13 +778,25 @@ class DossierViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         )
         return Response(DossierSerializer(dossier, context=self.get_serializer_context()).data)
 
-    @action(detail=True, methods=["post"], url_path="definir-statut", permission_classes=[IsInstitutionalActor])
+    @action(detail=True, methods=["post"], url_path="definir-statut", permission_classes=[permissions.IsAuthenticated])
     def definir_statut(self, request, pk=None):
-        """Change le statut du dossier directement depuis la vue régulateur, pour les statuts
-        intermédiaires (avant clôture). CLOTURE/RESOLU restent exclusivement gérés par
-        cloturer(), qui a sa propre garde plus stricte (régulateur du dossier ou responsable de
-        la crise, pas n'importe quel institutionnel) — jamais dupliquée ici."""
+        """Change le statut du dossier directement depuis la vue régulateur — ou depuis "Mes
+        interventions" pour le chef/régulateur de l'équipe affectée (même garde que
+        definir_priorite/marquer_important ci-dessus : un chef d'équipe non-institutionnel doit
+        pouvoir faire évoluer le statut de ses propres dossiers sans attendre un institutionnel).
+        Pour les statuts intermédiaires (avant clôture) uniquement. CLOTURE/RESOLU restent
+        exclusivement gérés par cloturer(), qui a sa propre garde plus stricte (régulateur du
+        dossier ou responsable de la crise, pas n'importe quel institutionnel) — jamais
+        dupliquée ici."""
         dossier = self.get_object()
+        equipe = dossier.equipe
+        est_chef_equipe = equipe is not None and request.user.id in (equipe.leader_id, equipe.regulateur_id)
+        if not est_chef_equipe and get_effective_role(request) not in INSTITUTIONAL_TYPES:
+            return Response(
+                {"error": "Seul le chef ou le régulateur de l'équipe affectée peut changer le statut."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         nouveau_statut = request.data.get('statut')
         statuts_autorises = (
             Dossier.Statut.NOUVEAU, Dossier.Statut.EN_ATTENTE_DISTRIBUTION,
