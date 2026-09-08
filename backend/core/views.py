@@ -154,6 +154,7 @@ from .models import (
     DernierePositionUtilisateur,
     Zone,
     Plan,
+    PlanMissionModele,
     JournalCollectivite,
     Commune,
 )
@@ -311,6 +312,7 @@ from .serializers import (
     DernierePositionUtilisateurSerializer,
     ZoneSerializer,
     PlanSerializer,
+    PlanMissionModeleSerializer,
 )
 
 class BesoinViewSet(viewsets.ModelViewSet):
@@ -3410,6 +3412,78 @@ def _notifier_activation_plan(request, crise, equipes, points):
             _notifier_activation_plan_destinataire(request, user, titre, message, crise)
 
 
+def _instancier_mission_modele(request, modele, team, crise):
+    """Instancie une Mission + un Dossier réels à partir d'un PlanMissionModele, à l'activation
+    de l'équipe correspondante sur une crise — dossier sans demande/signalement d'origine
+    (même principe que TeamViewSet.creer_dossier, pour une mission proactive type
+    "patrouille"/"surveillance"). Seul le référent désigné (s'il y en a un) est ajouté comme
+    participant équipe du dossier — PAS systématiquement tous les membres de l'équipe,
+    contrairement à TeamViewSet.creer_dossier/populate_dossier_participants_and_notify : une
+    mission de plan est typiquement confiée à une personne précise (ex: un élu référent), pas à
+    toute l'équipe."""
+    mission = Mission.objects.create(
+        titre=modele.titre, description=modele.description, crise=crise,
+        statut=Mission.Statut.EN_PREPARATION, environment=crise.environment,
+        modele_origine=modele,
+    )
+    mission.equipes.add(team)
+
+    dossier = Dossier.objects.create(
+        numero=f"DOS-{uuid.uuid4().hex[:8].upper()}",
+        crise=crise, equipe=team, mission=mission,
+        titre=modele.titre, description=modele.description or modele.titre,
+        priorite=modele.priorite, statut=Dossier.Statut.AFFECTE,
+        environment=crise.environment,
+    )
+
+    if modele.referent:
+        DossierParticipant.objects.get_or_create(
+            dossier=dossier, utilisateur=modele.referent, role=DossierParticipant.Role.EQUIPE,
+            defaults={"environment": dossier.environment},
+        )
+        DossierHistorique.objects.create(
+            dossier=dossier, auteur=modele.referent,
+            evenement="Référent désigné à l'activation du plan",
+            environment=dossier.environment,
+        )
+
+    for regulateur in _regulateurs_pour_dossier(dossier, team):
+        DossierParticipant.objects.get_or_create(
+            dossier=dossier, utilisateur=regulateur, role=DossierParticipant.Role.REGULATION,
+            defaults={"environment": dossier.environment},
+        )
+        titre_notif = "Mission activée depuis un plan"
+        message_notif = (
+            f"La mission « {mission.titre} » ({team.name}) a été activée sur la crise "
+            f"« {crise.name} »."
+        )
+        Notification.objects.create(
+            utilisateur=regulateur, dossier=dossier, crise=crise,
+            titre=titre_notif, message=message_notif, environment=dossier.environment,
+        )
+        if regulateur.email:
+            try:
+                send_mail_env_aware(
+                    request, subject=titre_notif, message=message_notif, from_email=None,
+                    recipient_list=[regulateur.email], fail_silently=True,
+                )
+            except Exception as e:
+                print(f"Erreur envoi email mission de plan : {e}")
+
+    audit_log(
+        request=request,
+        action_code="CREATION",
+        objet_type="Dossier",
+        objet_id=dossier.id,
+        crise=crise,
+        commentaire=(
+            f"Dossier {dossier.numero} créé automatiquement à l'activation du plan "
+            f"(mission : {mission.titre}, équipe : {team.name})"
+        ),
+    )
+    return dossier
+
+
 class PlanViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     """Dispositif pré-enregistré d'une institution (voir Plan) : sous-ensemble d'équipes/points/
     zones déjà existants, activable en un geste sur une crise réelle (voir `activer`)."""
@@ -3520,11 +3594,70 @@ class PlanViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
 
         _notifier_activation_plan(request, crise, equipes_activees, points_actives)
 
+        # Le stock (MaterielPoint) n'a jamais besoin d'être répliqué à l'activation : il n'est
+        # jamais lié à une crise (voir Plan/MaterielPoint, docstrings), donc du stock déjà
+        # entré sur un point encore "prévu" reste sur ce même point une fois activé. Seules les
+        # missions modélisées (PlanMissionModele) n'existent pas encore avant l'activation.
+        dossiers_crees = []
+        for team in equipes_activees:
+            for modele in plan.missions_modeles.filter(equipe=team):
+                # Idempotent, comme le reste de activer() : ne pas recréer une mission déjà
+                # instanciée depuis ce modèle sur cette même crise (ex: équipe réactivée après
+                # coup dans le même appel de plan).
+                if Mission.objects.filter(crise=crise, modele_origine=modele).exists():
+                    continue
+                dossiers_crees.append(_instancier_mission_modele(request, modele, team, crise))
+
         return Response({
             "crise": CrisisSerializer(crise).data,
             "equipes_activees": [str(t.id) for t in equipes_activees],
             "points_actives": [str(p.id) for p in points_actives],
+            "dossiers_crees": [str(d.id) for d in dossiers_crees],
         })
+
+
+class PlanMissionModeleViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
+    """Modèles de mission pré-enregistrés dans un Plan (voir PlanMissionModele) — instanciés en
+    vraies Mission/Dossier à l'activation de l'équipe correspondante (PlanViewSet.activer)."""
+
+    queryset = PlanMissionModele.objects.select_related('plan', 'equipe', 'referent').all()
+    serializer_class = PlanMissionModeleSerializer
+    filterset_fields = ["plan", "equipe"]
+
+    def get_permissions(self):
+        if self.action in ('create', 'update', 'partial_update', 'destroy'):
+            return [IsInstitutionalActor()]
+        return [permissions.IsAuthenticated()]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if get_effective_role(self.request) == UserRole.ADMINISTRATOR:
+            return qs
+        mes_institutions = ContactInstitution.objects.filter(
+            utilisateur=self.request.user, actif=True
+        ).values_list('institution_id', flat=True)
+        return qs.filter(plan__institution_id__in=mes_institutions)
+
+    def perform_create(self, serializer):
+        plan_id = self.request.data.get('plan')
+        plan = get_object_or_404(Plan, pk=plan_id)
+        if get_effective_role(self.request) != UserRole.ADMINISTRATOR and not ContactInstitution.objects.filter(
+            utilisateur=self.request.user, institution=plan.institution, actif=True
+        ).exists():
+            raise PermissionDenied("Vous ne pouvez créer un modèle de mission que pour un plan de votre institution.")
+
+        equipe = serializer.validated_data.get('equipe')
+        if not plan.equipes.filter(pk=equipe.pk).exists():
+            raise ValidationError({"equipe": "Cette équipe ne fait pas partie du plan."})
+
+        modele = serializer.save(plan=plan, environment=get_active_environment(self.request))
+        audit_log(
+            request=self.request,
+            action_code="CREATION",
+            objet_type="PlanMissionModele",
+            objet_id=modele.id,
+            commentaire=f"Modèle de mission « {modele.titre} » ajouté au plan {plan.nom} ({modele.equipe.name})",
+        )
 
 
 class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):

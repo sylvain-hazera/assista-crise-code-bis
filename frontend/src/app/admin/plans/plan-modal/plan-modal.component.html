@@ -73,5 +73,81 @@
 
     </form>
 
+    @if (isEdit) {
+      <div class="modal-body missions-modeles-section">
+        <h3>Missions modèles</h3>
+        <p class="field-hint">
+          Une mission pré-enregistrée pour une équipe du plan (ex: « Patrouille le long des
+          berges » pour l'équipe « Surveillance de la crue ») — instanciée en vrai dossier à
+          l'activation de cette équipe sur une crise, avec pour seul intervenant le référent
+          désigné ci-dessous (pas forcément toute l'équipe, ex: un élu référent).
+        </p>
+
+        <table class="data-table sm">
+          <thead><tr><th>Équipe</th><th>Mission</th><th>Référent</th><th></th></tr></thead>
+          <tbody>
+            @for (m of missionsModeles; track m.id) {
+              <tr>
+                <td>{{ m.equipe_nom }}</td>
+                <td>{{ m.titre }}</td>
+                <td>{{ m.referent_nom || '—' }}</td>
+                <td class="actions">
+                  <button class="icon-btn danger" type="button" (click)="deleteMission(m)" title="Retirer">
+                    <span class="material-icons">delete_outline</span>
+                  </button>
+                </td>
+              </tr>
+            } @empty {
+              <tr><td colspan="4" class="empty">Aucune mission modèle.</td></tr>
+            }
+          </tbody>
+        </table>
+
+        @if (selectedTeamIds.length === 0) {
+          <p class="field-hint">Sélectionnez au moins une équipe du dispositif pour lui ajouter une mission modèle.</p>
+        } @else if (!showMissionForm) {
+          <button class="btn-secondary sm" type="button" (click)="showMissionForm = true">
+            <span class="material-icons">add</span> Ajouter une mission modèle
+          </button>
+        } @else {
+          <div class="inline-form" [formGroup]="missionForm">
+            <select formControlName="equipe">
+              <option [ngValue]="null">— Équipe —</option>
+              @for (t of selectableTeamsForMission; track t.id) {
+                <option [ngValue]="t.id">{{ t.name }}</option>
+              }
+            </select>
+            <input type="text" formControlName="titre" placeholder="Titre de la mission *">
+            <input type="text" formControlName="description" placeholder="Description (optionnel)">
+
+            <div class="user-search">
+              <input
+                type="text"
+                placeholder="Référent désigné (optionnel)"
+                [(ngModel)]="missionReferentQuery"
+                [ngModelOptions]="{standalone: true}"
+                (input)="onMissionReferentQueryChange()"
+                (focus)="showMissionReferentResults = true"
+                (blur)="hideMissionReferentResultsDelayed()"
+              />
+              @if (showMissionReferentResults && missionReferentResults.length) {
+                <ul class="user-search-results">
+                  @for (u of missionReferentResults; track u.id) {
+                    <li (mousedown)="selectMissionReferent(u)">{{ u.first_name }} {{ u.last_name }} ({{ u.username }})</li>
+                  }
+                </ul>
+              }
+            </div>
+
+            <button class="btn-primary sm" type="button" [disabled]="missionSaving" (click)="submitMission()">Ajouter</button>
+            <button class="btn-secondary sm" type="button" (click)="showMissionForm = false">Annuler</button>
+            @if (missionError) {
+              <div class="error-message">{{ missionError }}</div>
+            }
+          </div>
+        }
+      </div>
+    }
+
   </div>
 </div>

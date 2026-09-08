@@ -1506,6 +1506,16 @@ class Mission(EnvironmentScopedModel):
         blank=True
     )
 
+    # Modèle de plan à l'origine de cette mission, si instanciée automatiquement à l'activation
+    # d'un plan (voir PlanViewSet.activer/PlanMissionModele) — sert à ne pas la recréer si le
+    # plan est réactivé sur la même crise (même équipe ré-ajoutée après coup, par exemple).
+    modele_origine = models.ForeignKey(
+        "PlanMissionModele",
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="missions_instanciees",
+    )
+
     def __str__(self):
         return self.titre
 
@@ -2887,6 +2897,53 @@ class Plan(EnvironmentScopedModel):
 
     def __str__(self) -> str:
         return self.nom
+
+
+class PlanMissionModele(EnvironmentScopedModel):
+    """Modèle de mission pré-enregistré dans un Plan, propre à l'une de ses équipes (ex: pour
+    l'équipe "Surveillance du niveau de la crue", la mission "Patrouille le long des berges") —
+    à l'activation de cette équipe sur une crise réelle (PlanViewSet.activer), instancie une
+    vraie Mission + un Dossier sans demande/signalement d'origine, même principe que
+    TeamViewSet.creer_dossier (mission proactive, pas déclenchée par une demande de citoyen).
+
+    Le stock (MaterielPoint), lui, n'a jamais besoin d'être "modélisé" séparément : il n'est
+    jamais lié à une crise (voir MaterielPoint/Plan ci-dessus), donc du stock entré à l'avance
+    sur un point encore "prévu" (crise vide) reste sur ce même point une fois celui-ci activé —
+    aucune réplication à faire, contrairement à une mission qui n'existe pas encore avant
+    l'activation."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    plan = models.ForeignKey(Plan, on_delete=models.CASCADE, related_name="missions_modeles")
+
+    equipe = models.ForeignKey(
+        "Team", on_delete=models.CASCADE, related_name="missions_modeles_plan",
+        help_text="Doit être l'une des équipes du plan — vérifié à la création (voir "
+                   "PlanMissionModeleViewSet.perform_create), pas de contrainte DB (l'équipe "
+                   "peut être ajoutée au plan après coup).",
+    )
+
+    titre = models.CharField(max_length=255)
+
+    description = models.TextField(blank=True, null=True)
+
+    # Pas forcément un membre de l'équipe (ex: un élu référent) — la mission instanciée ne
+    # rattache QUE ce référent comme participant équipe du dossier, jamais tous les membres de
+    # l'équipe automatiquement (contrairement à TeamViewSet.creer_dossier).
+    referent = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="missions_modeles_referent",
+        help_text="Personne désignée pour cette mission à l'activation (pas forcément un "
+                   "membre de l'équipe) — optionnel.",
+    )
+
+    priorite = models.CharField(max_length=10, choices=Dossier.Priorite.choices, default=Dossier.Priorite.NORMALE)
+
+    class Meta:
+        ordering = ["titre"]
+
+    def __str__(self) -> str:
+        return f"{self.titre} ({self.equipe.name})"
 
 
 class StatutMateriel(models.TextChoices):

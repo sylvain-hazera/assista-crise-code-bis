@@ -101,7 +101,10 @@ export class PlansComponent implements OnInit {
 
   onActivated(result: PlanActivationResult): void {
     this.closeActivationModal();
-    this.successMessage = `Plan activé sur la crise « ${result.crise.name} » (${result.equipes_activees.length} équipe(s), ${result.points_actives.length} point(s)).`;
+    const dossiersPart = result.dossiers_crees.length > 0
+      ? `, ${result.dossiers_crees.length} mission(s) instanciée(s)`
+      : '';
+    this.successMessage = `Plan activé sur la crise « ${result.crise.name} » (${result.equipes_activees.length} équipe(s), ${result.points_actives.length} point(s)${dossiersPart}).`;
   }
 
   goToCrises(): void {

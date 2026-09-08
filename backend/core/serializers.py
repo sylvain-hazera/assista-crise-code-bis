@@ -49,6 +49,7 @@ from .models import (
     AuditLog,
     Zone,
     Plan,
+    PlanMissionModele,
     JournalCollectivite,
 )
 
@@ -2294,6 +2295,24 @@ class PlanSerializer(serializers.ModelSerializer):
 
     def get_points_noms(self, obj):
         return [p.nom for p in obj.points.all()]
+
+
+class PlanMissionModeleSerializer(serializers.ModelSerializer):
+    equipe_nom = serializers.CharField(source='equipe.name', read_only=True, default=None)
+    referent_nom = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PlanMissionModele
+        fields = "__all__"
+        # plan n'est jamais réaffectable via un PATCH générique — voir
+        # PlanMissionModeleViewSet.perform_create (résolu depuis l'URL/le payload initial).
+        read_only_fields = ['id', 'plan']
+
+    def get_referent_nom(self, obj):
+        if not obj.referent:
+            return None
+        full_name = f"{obj.referent.first_name} {obj.referent.last_name}".strip()
+        return full_name or obj.referent.email
 
 
 class PointOperationnelPublicSerializer(serializers.ModelSerializer):

@@ -37,6 +37,7 @@ from .views import (
     DeclarationSecuriteViewSet,
     ZoneViewSet,
     PlanViewSet,
+    PlanMissionModeleViewSet,
     DashboardStatsView,
     ImportApercuView,
     ImportPersonnelCommunalView,
@@ -146,6 +147,7 @@ router.register(r'recherches-personnes-photos', RecherchePersonnePhotoViewSet)
 router.register(r'recherches-personnes-commentaires-photos',RecherchePersonneCommentairePhotoViewSet)
 router.register(r'zones', ZoneViewSet)
 router.register(r'plans', PlanViewSet)
+router.register(r'plans-missions-modeles', PlanMissionModeleViewSet)
 
 urlpatterns = [
     path('', include(router.urls)),

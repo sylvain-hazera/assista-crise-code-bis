@@ -42,4 +42,31 @@ export interface PlanActivationResult {
   crise: { id: string; name: string; [key: string]: unknown };
   equipes_activees: string[];
   points_actives: string[];
+  dossiers_crees: string[];
+}
+
+export type PrioriteDossier = 'URGENTE' | 'NORMALE' | 'BASSE';
+
+/** Modèle de mission pré-enregistré dans un Plan, propre à l'une de ses équipes — instancié en
+ * vraie Mission + Dossier à l'activation de cette équipe sur une crise réelle (voir
+ * PlanViewSet.activer côté backend). */
+export interface PlanMissionModele {
+  id: string;
+  plan: string;
+  equipe: string;
+  equipe_nom?: string | null;
+  titre: string;
+  description?: string | null;
+  referent?: string | null;
+  referent_nom?: string | null;
+  priorite: PrioriteDossier;
+}
+
+export interface PlanMissionModelePayload {
+  plan: string;
+  equipe: string;
+  titre: string;
+  description?: string;
+  referent?: string | null;
+  priorite?: PrioriteDossier;
 }
