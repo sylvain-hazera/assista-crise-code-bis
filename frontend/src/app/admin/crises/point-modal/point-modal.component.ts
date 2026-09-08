@@ -104,24 +104,14 @@ export class PointModalComponent implements OnChanges {
    * responsable de CE point (via son équipe) ou de son institution déléguée — pas l'institution
    * du compte connecté (ex: un admin dont l'institution personnelle n'a aucun rapport avec le
    * point édité), sans quoi le sélecteur proposait soit les mauvaises personnes, soit personne
-   * du tout. Un admin peut désigner n'importe qui (aucun filtre) — seule exception au périmètre
-   * institutionnel, cohérent avec la validation équivalente côté serveur
-   * (PointOperationnelViewSet.perform_update). Un point sans équipe (donc sans institution
-   * déterminable) n'a pas de candidats proposés — le champ reste utilisable en tapant "Moi"
-   * (l'utilisateur assigné avant de choisir une équipe apparaît via ensureAssignedUsersPresent). */
+   * du tout. Toujours filtré, MÊME pour un admin (qui reste autorisé côté serveur à désigner
+   * n'importe qui, voir PointOperationnelViewSet.perform_update, mais un sélecteur listant tous
+   * les comptes de la plateforme n'est pas exploitable et n'a jamais de raison d'être la bonne
+   * réponse ici). Un point sans équipe (donc sans institution déterminable) n'a pas de
+   * candidats proposés — le champ reste utilisable en tapant "Moi" (l'utilisateur assigné avant
+   * de choisir une équipe apparaît via ensureAssignedUsersPresent). */
   private refreshCandidateUsers(): void {
-    if (this.isAdmin) {
-      this.userService.getAll().subscribe(users => {
-        this.users = users;
-        this.ensureAssignedUsersPresent();
-      });
-      return;
-    }
-
-    const equipeId = this.form?.get('equipe')?.value ?? this.point?.equipe ?? this.defaultEquipeId;
-    const equipe = this.teams.find(t => t.id === equipeId);
-    const institutionIds = [equipe?.institution, equipe?.institution_delegataire]
-      .filter((id): id is string => !!id);
+    const institutionIds = this.pointInstitutionIds;
 
     if (institutionIds.length === 0) {
       this.users = [];
@@ -133,6 +123,22 @@ export class PointModalComponent implements OnChanges {
       this.users = users;
       this.ensureAssignedUsersPresent();
     });
+  }
+
+  /** Institution(s) "actives" du point en cours d'édition : celle de l'équipe responsable
+   * actuellement choisie + sa déléguée (le cas normal — la source de vérité une fois une équipe
+   * assignée), ou à défaut (création, aucune équipe encore choisie) celle explicitement
+   * sélectionnée dans le champ Institution — jamais l'institution du compte connecté, sans
+   * rapport avec CE point pour un admin ou un régulateur intervenant hors de sa propre
+   * institution. */
+  private get pointInstitutionIds(): string[] {
+    const equipeId = this.form?.get('equipe')?.value ?? this.point?.equipe ?? this.defaultEquipeId;
+    const equipe = this.teams.find(t => t.id === equipeId);
+    if (equipe) {
+      return [equipe.institution, equipe.institution_delegataire].filter((id): id is string => !!id);
+    }
+    const institutionId = this.form?.get('institution')?.value ?? this.myInstitutionId;
+    return institutionId ? [institutionId] : [];
   }
 
   // Utilisateurs déjà rattachés (responsable historique ou responsables supplémentaires) mais
@@ -152,15 +158,19 @@ export class PointModalComponent implements OnChanges {
     });
   }
 
-  // "Équipe responsable" + "Équipes de gestion supplémentaires" : ne proposer que les équipes
-  // de ma propre institution (délégation à une autre institution/équipe hors périmètre de ce
-  // sélecteur) — sans faire disparaître une équipe déjà affectée avant ce filtre.
+  // "Équipe responsable" + "Équipes de gestion supplémentaires" + "Équipes de terrain
+  // ravitaillées ici" : ne proposer que les équipes de l'institution responsable DE CE POINT
+  // (ou sa déléguée, voir pointInstitutionIds) — pas celle du compte connecté, sans quoi un
+  // admin (ou un régulateur intervenant hors de sa propre institution) voyait soit les
+  // mauvaises équipes, soit aucune. Une équipe déjà affectée avant ce filtre reste visible.
   get teamsMonInstitution(): Team[] {
-    if (!this.myInstitutionId) return this.teams;
+    const institutionIds = this.pointInstitutionIds;
+    if (institutionIds.length === 0) return this.teams;
     return this.teams.filter(t =>
-      t.institution === this.myInstitutionId ||
+      (!!t.institution && institutionIds.includes(t.institution)) ||
       t.id === this.point?.equipe ||
-      this.selectedEquipesGestion.includes(t.id!)
+      this.selectedEquipesGestion.includes(t.id!) ||
+      this.selectedEquipesRavitaillement.includes(t.id!)
     );
   }
 
@@ -227,10 +237,12 @@ export class PointModalComponent implements OnChanges {
     this.selectedEquipesRavitaillement = this.point?.equipes_ravitaillement_ids ?? [];
     this.selectedResponsables = this.point?.responsables_ids ?? [];
 
-    // Les candidats "Responsable" dépendent de l'équipe choisie (voir refreshCandidateUsers) —
-    // recalculés à chaque changement d'équipe, et une première fois ici (utile si `teams` est
-    // déjà chargé, ex: réouverture de la modale pour un autre point).
+    // Les candidats "Responsable" dépendent de l'équipe choisie, ou à défaut de l'institution
+    // choisie (création, avant toute équipe — voir pointInstitutionIds/refreshCandidateUsers) —
+    // recalculés à chaque changement de l'un ou l'autre, et une première fois ici (utile si
+    // `teams` est déjà chargé, ex: réouverture de la modale pour un autre point).
     this.form.get('equipe')?.valueChanges.subscribe(() => this.refreshCandidateUsers());
+    this.form.get('institution')?.valueChanges.subscribe(() => this.refreshCandidateUsers());
     this.refreshCandidateUsers();
   }
 

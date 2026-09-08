@@ -160,7 +160,7 @@
         <div class="form-group">
           <label>Équipes de terrain ravitaillées ici <span class="field-hint-inline">(repas, repos, carburant...)</span></label>
           <div class="team-supply-list">
-            @for (t of teams; track t.id) {
+            @for (t of teamsMonInstitution; track t.id) {
               <button type="button" class="team-supply-row" [class.selected]="selectedEquipesRavitaillement.includes(t.id!)" (click)="toggleEquipeRavitaillement(t.id!)">
                 <span class="team-supply-nom">{{ t.name }}</span>
                 <span class="team-supply-meta">
