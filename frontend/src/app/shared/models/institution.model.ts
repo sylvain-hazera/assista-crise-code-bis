@@ -31,6 +31,8 @@ export interface ContactInstitution {
   fonction?: string;
   contact_principal: boolean;
   actif: boolean;
+  // Zone (catalogue Zone de l'institution) couverte par ce contact — préparation PCS/PICS.
+  zone?: string | null;
   date_creation?: string;
 }
 

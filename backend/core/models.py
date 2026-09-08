@@ -3450,6 +3450,17 @@ class ContactInstitution(EnvironmentScopedModel):
         default=True
     )
 
+    # Zone de l'institution (catalogue Zone, voir plus haut) que ce contact couvre/représente —
+    # ex: préparation PCS/PICS, un référent différent par quartier. Optionnel : la plupart des
+    # contacts restent rattachés à l'institution entière, sans zone précise.
+    zone = models.ForeignKey(
+        Zone,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="contacts",
+    )
+
     date_creation = models.DateTimeField(
         auto_now_add=True
     )

@@ -278,13 +278,21 @@
 
           @if (detailTab === 'contacts') {
             <table class="data-table sm">
-              <thead><tr><th>Utilisateur</th><th>Fonction</th><th>Principal</th><th></th></tr></thead>
+              <thead><tr><th>Utilisateur</th><th>Fonction</th><th>Principal</th><th>Zone</th><th></th></tr></thead>
               <tbody>
                 @for (contact of institutionContacts; track contact.id) {
                   <tr>
                     <td>{{ userName(contact.utilisateur) }}</td>
                     <td>{{ contact.fonction || '—' }}</td>
                     <td>{{ contact.contact_principal ? 'Oui' : 'Non' }}</td>
+                    <td>
+                      <select [ngModel]="contact.zone" [ngModelOptions]="{standalone: true}" (ngModelChange)="setContactZone(contact, $event)">
+                        <option [ngValue]="null">— Aucune —</option>
+                        @for (z of zones; track z.id) {
+                          <option [ngValue]="z.id">{{ z.nom }}</option>
+                        }
+                      </select>
+                    </td>
                     <td class="actions">
                       <button class="icon-btn danger" (click)="deleteContact(contact)" title="Supprimer">
                         <span class="material-icons">delete_outline</span>
@@ -292,7 +300,7 @@
                     </td>
                   </tr>
                 } @empty {
-                  <tr><td colspan="4" class="empty">Aucun contact.</td></tr>
+                  <tr><td colspan="5" class="empty">Aucun contact.</td></tr>
                 }
               </tbody>
             </table>
@@ -348,6 +356,12 @@
                   <option [ngValue]="null">— Thème (optionnel) —</option>
                   @for (c of competences; track c.id) {
                     <option [ngValue]="c.id">{{ c.nom }}</option>
+                  }
+                </select>
+                <select formControlName="zone">
+                  <option [ngValue]="null">— Zone (optionnelle) —</option>
+                  @for (z of zones; track z.id) {
+                    <option [ngValue]="z.id">{{ z.nom }}</option>
                   }
                 </select>
 

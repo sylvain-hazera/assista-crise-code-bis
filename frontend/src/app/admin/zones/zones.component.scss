@@ -23,6 +23,21 @@
   }
 }
 
+.help-text {
+  display: flex;
+  align-items: flex-start;
+  gap: .5rem;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  padding: .6rem .9rem;
+  margin: 0 0 1rem;
+  font-size: .85rem;
+  color: #1e3a8a;
+
+  .material-icons { font-size: 1.1rem; color: #1d4ed8; margin-top: .1rem; }
+}
+
 .btn-primary {
   display: inline-flex;
   align-items: center;

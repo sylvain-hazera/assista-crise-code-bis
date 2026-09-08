@@ -17,12 +17,14 @@ def _make_institution(nom, code):
 
 @pytest.fixture
 def institution_a():
-    return _make_institution('Mairie Dispositif A', 'DISPOSITIF_A')
+    # code MAIRIE (et pas un code arbitraire) : ZoneViewSet.perform_create réserve la création
+    # de zones aux mairies/EPCI (préparation PCS/PICS), voir _institution_est_autorite_locale.
+    return _make_institution('Mairie Dispositif A', 'MAIRIE')
 
 
 @pytest.fixture
 def institution_b():
-    return _make_institution('Mairie Dispositif B', 'DISPOSITIF_B')
+    return _make_institution('Mairie Dispositif B', 'MAIRIE')
 
 
 @pytest.fixture

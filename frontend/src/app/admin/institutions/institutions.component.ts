@@ -143,6 +143,9 @@ export class InstitutionsComponent implements OnInit {
       // éviter d'avoir à ressaisir le même utilisateur dans l'onglet "Régulateurs / thèmes".
       role: [null],
       competence: [null],
+      // Zone (catalogue Zone de l'institution) que ce contact couvre — préparation PCS/PICS,
+      // voir ZonesComponent.
+      zone: [null],
     });
 
     this.domaineForm = this.fb.group({
@@ -298,9 +301,9 @@ export class InstitutionsComponent implements OnInit {
   submitContact(): void {
     if (!this.selectedInstitution?.id || this.contactForm.invalid) { this.contactForm.markAllAsTouched(); return; }
     const institution = this.selectedInstitution.id;
-    const { utilisateur, fonction, contact_principal, role, competence } = this.contactForm.value;
+    const { utilisateur, fonction, contact_principal, role, competence, zone } = this.contactForm.value;
 
-    this.contactService.create({ utilisateur, fonction, contact_principal, institution, actif: true }).subscribe({
+    this.contactService.create({ utilisateur, fonction, contact_principal, institution, actif: true, zone }).subscribe({
       next: () => {
         this.reloadContacts();
 
@@ -323,6 +326,23 @@ export class InstitutionsComponent implements OnInit {
         this.showContactForm = false;
       },
       error: (err) => this.showError("Erreur lors de l'ajout du contact.", err),
+    });
+  }
+
+  /** Édition de la zone d'un contact déjà présent (pas seulement à la création) — PUT exige
+   * tous les champs requis (institution/utilisateur), pas seulement `zone` (voir
+   * AffectationRoleOperationnelService.update, même contrainte). */
+  setContactZone(contact: ContactInstitution, zoneId: string | null): void {
+    this.contactService.update(contact.id!, {
+      utilisateur: contact.utilisateur, institution: contact.institution,
+      fonction: contact.fonction, contact_principal: contact.contact_principal,
+      actif: contact.actif, zone: zoneId,
+    }).subscribe({
+      next: (updated) => {
+        const idx = this.contacts.findIndex(c => c.id === updated.id);
+        if (idx !== -1) this.contacts[idx] = updated;
+      },
+      error: (err) => this.showError('Impossible de mettre à jour la zone.', err),
     });
   }
 

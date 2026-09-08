@@ -3350,6 +3350,13 @@ class ZoneViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         institution = _resolve_institution_or_400(self.request)
+        # Zones = découpage PCS/PICS, un dispositif communal/intercommunal — pas de sens pour
+        # un SDIS, une préfecture ou une association (voir _institution_est_autorite_locale,
+        # même critère que le workflow de validation des déclarations ACTEUR).
+        if get_effective_role(self.request) != UserRole.ADMINISTRATOR and not _institution_est_autorite_locale(institution):
+            raise PermissionDenied(
+                "Les zones sont réservées aux mairies et intercommunalités (préparation PCS/PICS)."
+            )
         zone = serializer.save(institution=institution, environment=get_active_environment(self.request))
         audit_log(
             request=self.request,
