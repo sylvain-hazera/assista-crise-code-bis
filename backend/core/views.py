@@ -51,7 +51,11 @@ from .permissions import (
     get_active_environment, get_effective_role, effective_role_or_none, mask_email, mask_phone,
     send_mail_env_aware, _peut_gerer_stock_point,
 )
-from .geo_lookup import commune_code_from_point, commune_secteur_codes, commune_risques, commune_risques_date_maj
+from .geo_lookup import (
+    commune_code_from_point, commune_secteur_codes, commune_risques, commune_risques_date_maj,
+    commune_center_from_code,
+)
+from django.contrib.gis.measure import D
 from .imports import (
     CHAMPS_PERSONNEL_COMMUNAL,
     exemple_csv_personnel_communal,
@@ -63,9 +67,11 @@ from .zone_scoping import (
     SECTEUR_CHAMP_PAR_NIVEAU,
     _institution_commune_or_400,
     _institution_secteur_or_400,
+    apply_zone,
     filter_queryset_to_viewer_zone,
     object_in_viewer_zone,
     viewer_zone_code,
+    widen_zone_from_request,
 )
 from django.contrib.gis.geos import Point
 
@@ -1755,6 +1761,46 @@ class DashboardStatsView(APIView):
         })
 
 
+def _crisis_zone_resolver(niveau, code):
+    """Resolver Crisis pour _widen_zone_for_reporting/apply_zone : pas de code géo dénormalisé
+    (zone_communes/zone_departements, une crise pouvant couvrir plusieurs secteurs) —
+    approximé par containment sur ces listes pour commune/departement, même limite que
+    DashboardStatsView._scope_to_zone. epci/region : aucune correspondance directe possible
+    sans agréger les communes membres — laisse passer sans filtre supplémentaire à ces deux
+    niveaux plutôt que de deviner."""
+    if niveau == "commune":
+        return Q(zone_communes__contains=[code])
+    if niveau == "departement":
+        return Q(zone_departements__contains=[code])
+    return Q()
+
+
+def _widen_zone_for_reporting(request, queryset, resolver=None):
+    """Filtre `queryset` (action `list`) à la zone élargissable de l'appelant — strictement
+    opt-in via `?scope=zone` (sans lui, comportement inchangé, quel que soit le rôle) : `list`
+    sur Crisis/Offer/Request est un endpoint PARTAGÉ par plusieurs écrans (ex: CrisesComponent,
+    qui doit lister TOUTES les crises pour permettre à une institution de candidater n'importe
+    où — pas seulement dans sa zone), donc pas question de changer son comportement par défaut
+    juste pour ReportingComponent (vue Signalements), seul appelant à envoyer ce paramètre.
+    Avec `?scope=zone` : ADMINISTRATOR voit toujours tout ; un acteur institutionnel sans zone
+    résolvable (institution sans commune) obtient .none() plutôt qu'une liste nationale par
+    défaut ; un visiteur anonyme/simple utilisateur explicitement envoyant `scope=zone` (ne
+    devrait pas arriver en usage normal) obtient aussi .none(), jamais un contournement vers
+    plus de données. Élargissement explicite au-delà du niveau naturel via
+    ?echelle=epci|departement|region|national (voir zone_scoping.widen_zone_from_request)."""
+    if request.query_params.get('scope') != 'zone':
+        return queryset
+    role = effective_role_or_none(request)
+    if role == UserRole.ADMINISTRATOR:
+        return queryset
+    if role not in INSTITUTIONAL_TYPES:
+        return queryset.none()
+    zone = widen_zone_from_request(request)
+    if zone is None:
+        return queryset.none()
+    return apply_zone(queryset, zone, resolver=resolver)
+
+
 class CrisisViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     # author_nom déréférence author (FK) ; has_responsable_actif touche implications (reverse
     # FK), prefetch + vérification en Python dans get_has_responsable_actif ci-dessous plutôt
@@ -1762,6 +1808,16 @@ class CrisisViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     queryset = Crisis.objects.select_related('author').prefetch_related('implications')
     serializer_class = CrisisSerializer
     filterset_class = AuthorEmailFilter
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        # Hors zone = exclusion totale sur la LISTE par défaut uniquement (pas de résumé),
+        # même patron qu'InformationViewSet — la page d'accueil publique et les autres
+        # consommateurs de ce même endpoint restent inchangés (queryset non filtré pour un
+        # visiteur anonyme/simple utilisateur, voir _widen_zone_for_reporting).
+        if self.action == 'list':
+            return _widen_zone_for_reporting(self.request, qs, resolver=_crisis_zone_resolver)
+        return qs
 
     def get_permissions(self):
         # Consultation (liste/détail) : ouverte à tous, transparence publique inchangée.
@@ -2613,7 +2669,12 @@ class RequestViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         # déjà réservée à IsInstitutionalActor, pas besoin de repasser par ?actif=all ici.
         if self.action == 'reactiver':
             return qs
-        return _filter_actif(self.request, qs)
+        qs = _filter_actif(self.request, qs)
+        if self.action == 'list':
+            # Opt-in (?scope=zone) : voir _widen_zone_for_reporting — n'affecte que
+            # ReportingComponent, pas les autres consommateurs de cette même liste.
+            qs = _widen_zone_for_reporting(self.request, qs)
+        return qs
 
     @action(detail=True, methods=["post"], permission_classes=[IsInstitutionalActor])
     def reactiver(self, request, pk=None):
@@ -4196,6 +4257,30 @@ class MissionViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             return qs
         return qs.filter(equipes__members=self.request.user).distinct()
 
+def _apply_rayon_km(request, queryset):
+    """Filtre `queryset` (Offer) par rayon en kilomètres autour de la commune de l'institution
+    de l'appelant — élargissement plus fin que l'échelle commune/epci/departement/region,
+    demandé spécifiquement pour les offres/bénévoles dans ReportingComponent (une ressource
+    peut légitimement venir d'un peu plus loin que sa propre commune, sans pour autant élargir
+    jusqu'au département entier). Retourne `None` (queryset laissé inchangé par l'appelant) si
+    `rayon_km` est absent/invalide, ou si la commune de l'institution n'est pas résolvable."""
+    rayon_param = request.query_params.get('rayon_km')
+    if not rayon_param:
+        return None
+    try:
+        rayon_km = float(rayon_param)
+    except (TypeError, ValueError):
+        return None
+    institution = getattr(request.user, 'institution', None) if request.user.is_authenticated else None
+    if institution is None or not institution.commune_code:
+        return None
+    centre = commune_center_from_code(institution.commune_code)
+    if centre.get('latitude') is None or centre.get('longitude') is None:
+        return None
+    point = Point(centre['longitude'], centre['latitude'], srid=4326)
+    return queryset.annotate(distance_ma_zone=Distance('location', point)).filter(distance_ma_zone__lte=D(km=rayon_km))
+
+
 class OfferViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     # OfferSerializer déréférence author/crisis/mission/materiel_catalogue/offer_type/engagement
     # (FK ou OneToOne inverse) et competences (M2M) pour chaque offre — sans select_related/
@@ -4230,7 +4315,14 @@ class OfferViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         )
         if self.action == 'reactiver':
             return qs
-        return _filter_actif(self.request, qs)
+        qs = _filter_actif(self.request, qs)
+        if self.action == 'list':
+            # Opt-in (?scope=zone) : voir _widen_zone_for_reporting — n'affecte que
+            # ReportingComponent, pas les autres consommateurs de cette même liste.
+            # ?rayon_km= prend le pas sur ?echelle= quand les deux sont fournis (plus fin).
+            rayon_qs = _apply_rayon_km(self.request, qs)
+            qs = rayon_qs if rayon_qs is not None else _widen_zone_for_reporting(self.request, qs)
+        return qs
 
     @action(detail=True, methods=["post"], permission_classes=[IsInstitutionalActor])
     def reactiver(self, request, pk=None):
@@ -4722,17 +4814,19 @@ class InformationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         # authentifié (accès direct à request.user.type) — contrairement à Request/Offer, la
         # liste ici est AllowAny (voir get_permissions), donc bien atteignable anonymement :
         # sans ce garde, un visiteur anonyme provoque une 500 (AttributeError sur AnonymousUser).
-        if (
-            self.action == 'list'
-            and self.request.user.is_authenticated
-            and effective_role_or_none(self.request) in INSTITUTIONAL_TYPES
-        ):
-            # Hors zone = exclusion totale (pas de résumé, contrairement à RequestViewSet.
-            # vue_secteur) : un acteur institutionnel ne voit plus, sur la liste par défaut,
-            # les signalements hors de sa zone de compétence — l'accès public (anonyme/simple
-            # utilisateur) à l'existence d'un signalement (titre/type/date, jamais la PII, déjà
-            # masquée par InformationSerializer._location_visible) reste inchangé.
-            qs = filter_queryset_to_viewer_zone(self.request, qs, resolver=_information_zone_resolver)
+        if self.action == 'list' and self.request.user.is_authenticated:
+            role = effective_role_or_none(self.request)
+            if role in INSTITUTIONAL_TYPES and role != UserRole.ADMINISTRATOR:
+                # Hors zone = exclusion totale (pas de résumé, contrairement à RequestViewSet.
+                # vue_secteur) : un acteur institutionnel ne voit plus, sur la liste par
+                # défaut, les signalements hors de sa zone de compétence — l'accès public
+                # (anonyme/simple utilisateur) à l'existence d'un signalement (titre/type/
+                # date, jamais la PII, déjà masquée par InformationSerializer._location_
+                # visible) reste inchangé. widen_zone_from_request (plutôt que
+                # viewer_zone_code) permet en plus un élargissement explicite via
+                # ?echelle=epci|departement|region|national, utilisé par ReportingComponent.
+                zone = widen_zone_from_request(self.request)
+                qs = apply_zone(qs, zone, resolver=_information_zone_resolver) if zone else qs.none()
         return qs
 
     @action(detail=True, methods=["post"], permission_classes=[IsInstitutionalActor])

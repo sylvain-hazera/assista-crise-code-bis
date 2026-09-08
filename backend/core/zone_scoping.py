@@ -91,6 +91,34 @@ def viewer_zone_code(request):
     return result
 
 
+ECHELLE_ORDER = ["commune", "epci", "departement", "region", "national"]
+
+
+def widen_zone_from_request(request):
+    """Zone effective (niveau, code) pour une liste "élargissable" (vue Signalements) : part
+    du niveau naturel de l'institution de l'appelant (comme _institution_secteur_or_400/
+    viewer_zone_code), mais autorise un élargissement explicite via `?echelle=epci|
+    departement|region|national` — jamais un niveau plus étroit que le niveau naturel (une
+    mairie ne peut pas se réduire à "moins que sa commune", ça ne change rien pour elle et
+    évite un paramètre trompeur). `?echelle` absent, invalide, ou égal au niveau naturel :
+    comportement inchangé (niveau naturel). None si aucune zone n'est résolvable pour
+    l'appelant (pas institutionnel, pas d'institution/commune) — l'appelant décide alors
+    lui-même du repli (national, ou 400, selon le contexte)."""
+    natural = viewer_zone_code(request)
+    if natural is None:
+        return None
+    echelle = request.query_params.get('echelle')
+    if not echelle or echelle not in ECHELLE_ORDER:
+        return natural
+    if ECHELLE_ORDER.index(echelle) <= ECHELLE_ORDER.index(natural[0]):
+        return natural
+    if echelle == "national":
+        return ("national", None)
+    institution = request.user.institution
+    code = getattr(institution, f"{echelle}_code", None)
+    return (echelle, code) if code else natural
+
+
 def object_in_viewer_zone(request, obj, champ_par_niveau=SECTEUR_CHAMP_PAR_NIVEAU):
     """Prédicat par objet : True si `obj` est dans la zone de compétence de l'utilisateur
     courant de `request`. UserRole.ADMINISTRATOR (rôle applicatif) et le niveau "national"
@@ -110,6 +138,22 @@ def object_in_viewer_zone(request, obj, champ_par_niveau=SECTEUR_CHAMP_PAR_NIVEA
     return getattr(obj, champ, None) == code
 
 
+def apply_zone(queryset, zone, resolver=None, champ_par_niveau=SECTEUR_CHAMP_PAR_NIVEAU):
+    """Applique un zone (niveau, code) déjà résolu — factorise le filtrage lui-même, pour les
+    appelants qui ont leur propre logique de résolution (ex: widen_zone_from_request, pour les
+    listes "élargissables"). Voir filter_queryset_to_viewer_zone pour le cas standard
+    (résolution + filtrage en un appel)."""
+    niveau, code = zone
+    if niveau == "national":
+        return queryset
+    if resolver is not None:
+        return queryset.filter(resolver(niveau, code))
+    champ = champ_par_niveau.get(niveau)
+    if not champ:
+        return queryset.none()
+    return queryset.filter(**{champ: code})
+
+
 def filter_queryset_to_viewer_zone(request, queryset, resolver=None, champ_par_niveau=SECTEUR_CHAMP_PAR_NIVEAU):
     """Version dure (querysets) du même filtrage, pour les `get_queryset`/actions `list` :
     réduit `queryset` à la zone de compétence de l'utilisateur courant. UserRole.ADMINISTRATOR
@@ -124,12 +168,4 @@ def filter_queryset_to_viewer_zone(request, queryset, resolver=None, champ_par_n
     zone = viewer_zone_code(request)
     if zone is None:
         return queryset.none()
-    niveau, code = zone
-    if niveau == "national":
-        return queryset
-    if resolver is not None:
-        return queryset.filter(resolver(niveau, code))
-    champ = champ_par_niveau.get(niveau)
-    if not champ:
-        return queryset.none()
-    return queryset.filter(**{champ: code})
+    return apply_zone(queryset, zone, resolver=resolver, champ_par_niveau=champ_par_niveau)
