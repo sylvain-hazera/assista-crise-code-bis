@@ -158,7 +158,20 @@
                   </select>
                 </td>
                 <td>
-                  <span class="statut-badge" [attr.data-statut]="dossier.statut">{{ statutLabel(dossier.statut) }}</span>
+                  @if (dossier.statut === 'CLOTURE' || dossier.statut === 'RESOLU') {
+                    <span class="statut-badge" [attr.data-statut]="dossier.statut">{{ statutLabel(dossier.statut) }}</span>
+                  } @else {
+                    <select
+                      class="statut-select"
+                      [attr.data-statut]="dossier.statut"
+                      [ngModel]="dossier.statut"
+                      [disabled]="savingDossierId === dossier.id"
+                      (ngModelChange)="onStatutChange(dossier, $event)">
+                      @for (opt of statutModifiableOptions; track opt.value) {
+                        <option [value]="opt.value">{{ opt.label }}</option>
+                      }
+                    </select>
+                  }
                 </td>
                 <td class="col-important">
                   <button

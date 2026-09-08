@@ -28,6 +28,12 @@ const PRIORITE_OPTIONS: { value: Dossier['priorite']; label: string }[] = [
   { value: 'BASSE', label: 'Basse' },
 ];
 
+// Statuts modifiables directement depuis cette vue (DossierViewSet.definir_statut, ouvert au
+// chef/régulateur de l'équipe affectée même non-institutionnel) — CLOTURE/RESOLU restent
+// exclusivement gérés par cloturer(), pas de bouton équivalent ici (voir DossiersComponent
+// côté admin pour ce cas). Même liste que dossiers.component.ts (STATUTS_MODIFIABLES).
+const STATUTS_MODIFIABLES = ['NOUVEAU', 'EN_ATTENTE_DISTRIBUTION', 'EN_ATTENTE_AFFECTATION', 'AFFECTE', 'EN_COURS'];
+
 // Le tri par priorité prime toujours sur l'ordre manuel : un dossier urgent doit remonter en
 // tête même s'il vient d'être ajouté (ordre par défaut à 0, sinon systématiquement premier
 // quelle que soit sa priorité — ce qui n'a pas de sens opérationnellement).
@@ -57,6 +63,7 @@ export class MesInterventionsComponent implements OnInit, OnDestroy {
   savingDossierId: string | null = null;
 
   readonly priorites = PRIORITE_OPTIONS;
+  readonly statutModifiableOptions = STATUTS_MODIFIABLES.map(value => ({ value, label: STATUT_LABELS[value] }));
   readonly statutOptions = Object.entries(STATUT_LABELS).map(([value, label]) => ({ value, label }));
 
   private map: maplibregl.Map | null = null;
@@ -194,6 +201,15 @@ export class MesInterventionsComponent implements OnInit, OnDestroy {
     this.savingDossierId = dossier.id;
     this.dossierService.definirPriorite(dossier.id, { priorite }).subscribe({
       next: (updated) => { dossier.priorite = updated.priorite; },
+      error: () => {},
+      complete: () => { this.savingDossierId = null; },
+    });
+  }
+
+  onStatutChange(dossier: Dossier, statut: string): void {
+    this.savingDossierId = dossier.id;
+    this.dossierService.definirStatut(dossier.id, statut).subscribe({
+      next: (updated) => { dossier.statut = updated.statut; },
       error: () => {},
       complete: () => { this.savingDossierId = null; },
     });

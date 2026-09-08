@@ -299,6 +299,14 @@
   &[data-statut="AFFECTE"] { background: #fef3c7; color: #92400e; }
 }
 
+.statut-select {
+  font-size: 0.75rem; padding: 0.15rem 0.5rem; border-radius: 999px; border: 1px solid transparent;
+  background: #e5e7eb; color: #374151; white-space: nowrap; cursor: pointer;
+
+  &[data-statut="EN_COURS"] { background: #dbeafe; color: #1d4ed8; }
+  &[data-statut="AFFECTE"] { background: #fef3c7; color: #92400e; }
+}
+
 .btn-detail {
   color: #667eea;
   text-decoration: none;
