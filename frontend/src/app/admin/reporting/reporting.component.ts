@@ -77,6 +77,7 @@ export interface ReportRow {
 type FilterKind   = ReportKind | 'ALL';
 type FilterStatus = Status     | 'ALL';
 type SortField    = 'title' | 'kind' | 'status' | 'date' | 'contact' | 'commune' | 'distanceFromCrisisKm';
+type EchelleFilter = 'zone' | 'rayon' | 'departement' | 'region' | 'national';
 
 @Component({
   selector: 'app-reporting',
@@ -127,6 +128,20 @@ export class ReportingComponent implements OnInit, OnDestroy {
   // par défaut par le backend — ce bouton demande explicitement ?actif=all pour les retrouver
   // et pouvoir les réactiver.
   showDesactives = false;
+
+  // ── Échelle géographique (par défaut : ma zone) ─────────────
+  // 'zone' = niveau naturel de l'institution (backend: ?scope=zone, sans ?echelle) ; 'rayon' =
+  // ?scope=zone&rayon_km=, n'affecte que les offres/bénévoles côté backend (_apply_rayon_km,
+  // OfferViewSet uniquement) ; les autres valeurs élargissent via ?echelle= (toutes listes).
+  echelleOptions: { value: EchelleFilter; label: string }[] = [
+    { value: 'zone',        label: 'Ma zone' },
+    { value: 'rayon',       label: 'Rayon (km)' },
+    { value: 'departement', label: 'Mon département' },
+    { value: 'region',      label: 'Ma région' },
+    { value: 'national',    label: 'Toute la France' },
+  ];
+  echelle: EchelleFilter = 'zone';
+  rayonKm = 25;
 
   competences: Competence[] = [];
 
@@ -303,16 +318,31 @@ export class ReportingComponent implements OnInit, OnDestroy {
   // LOAD
   // ────────────────────────────────────────────────────────────────────────────
 
+  /** Params d'échelle géographique communs à Crise/Offre/Demande/Signalement : ?scope=zone
+   * (opt-in, voir _widen_zone_for_reporting côté backend) + éventuel ?echelle= élargi. Le
+   * rayon en km n'affecte que les offres (?rayon_km=, voir _apply_rayon_km côté backend) —
+   * les autres types restent à "ma zone" quand ce choix est sélectionné. */
+  private buildEchelleParams(forOffer = false): Record<string, string> {
+    const params: Record<string, string> = { scope: 'zone' };
+    if (this.echelle === 'rayon') {
+      if (forOffer) params['rayon_km'] = String(this.rayonKm);
+    } else if (this.echelle !== 'zone') {
+      params['echelle'] = this.echelle;
+    }
+    return params;
+  }
+
   loadAll(): void {
     this.isLoading = true;
     this.selectedOfferIds.clear();
     this.selectedRequestIds.clear();
     this.selectedInformationIds.clear();
     const actifParams = this.showDesactives ? { actif: 'all' } : undefined;
+    const zoneParams = this.buildEchelleParams();
     // exclude_type=Bénévolat : l'annuaire permanent de bénévoles (potentiellement des
     // milliers de fiches, sans crise rattachée) ne relève pas de ce tableau de triage —
     // consultable via OfferService.vueSecteur à la place.
-    const offreParams = { ...(actifParams ?? {}), exclude_type: 'Bénévolat' };
+    const offreParams = { ...(actifParams ?? {}), exclude_type: 'Bénévolat', ...this.buildEchelleParams(true) };
     // En mode "ajouter une ressource à une équipe" (pickForTeamId), l'annuaire de bénévoles
     // (normalement exclu de ce tableau, voir exclude_type ci-dessus) redevient nécessaire :
     // c'est le seul moyen actuel de rattacher un bénévole à une équipe. Scopé au secteur de
@@ -322,11 +352,11 @@ export class ReportingComponent implements OnInit, OnDestroy {
       ? this.offerService.vueSecteur().pipe(catchError(() => of([])))
       : of([]);
     forkJoin({
-      crises:       this.crisisService.getAll(),
+      crises:       this.crisisService.getAll(zoneParams),
       offres:       this.offerService.getAll(offreParams),
       benevoles:    benevoles$,
-      demandes:     this.requestService.getAll(actifParams),
-      informations: this.informationService.getAll(actifParams),
+      demandes:     this.requestService.getAll({ ...(actifParams ?? {}), ...zoneParams }),
+      informations: this.informationService.getAll({ ...(actifParams ?? {}), ...zoneParams }),
       teams:        this.teamService.getAll(),
       dossiers:     this.dossierService.getAll(),
       missions:     this.missionService.getAll(),

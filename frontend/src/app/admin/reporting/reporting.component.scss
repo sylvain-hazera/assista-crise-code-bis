@@ -255,6 +255,8 @@
   &:focus { border-color: var(--primary); }
 }
 
+.rayon-input { width: 5.5rem; cursor: text; }
+
 .checkbox-inline {
   display: flex; align-items: center; gap: .4rem;
   font-size: .85rem; color: var(--muted); cursor: pointer;

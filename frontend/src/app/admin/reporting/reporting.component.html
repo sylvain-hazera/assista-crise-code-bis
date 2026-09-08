@@ -100,6 +100,28 @@
         (ngModelChange)="currentPage = 1; applyFilters()"
       />
 
+      <select
+        class="filter-select"
+        [(ngModel)]="echelle"
+        (ngModelChange)="loadAll()"
+        title="Étendue géographique — par défaut, ma zone de compétence. Le rayon en km n'élargit que les offres/bénévoles."
+      >
+        @for (opt of echelleOptions; track opt.value) {
+          <option [value]="opt.value">{{ opt.label }}</option>
+        }
+      </select>
+
+      @if (echelle === 'rayon') {
+        <input
+          type="number"
+          class="filter-select rayon-input"
+          min="1"
+          [(ngModel)]="rayonKm"
+          (change)="loadAll()"
+          title="Rayon en kilomètres autour de ma commune (offres/bénévoles uniquement)"
+        />
+      }
+
       <select class="filter-select" [(ngModel)]="filterCompetence" (ngModelChange)="currentPage = 1; applyFilters()" title="Ne s'applique qu'aux offres">
         <option value="ALL">Toutes compétences</option>
         @for (c of competences; track c.id) {
