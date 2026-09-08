@@ -46,7 +46,7 @@ from .institution_attachment import (
 )
 from .permissions import (
     IsInstitutionalActor, IsAdministrator, IsOwnDeclarationOrInstitutional, IsOwnerOrInstitutional,
-    IsSelfOrInstitutional, IsInstitutionMemberOrAdministrator,
+    IsSelfOrInstitutional, IsInstitutionMemberOrAdministrator, IsOfferOwnerOrInstitutional,
     INSTITUTIONAL_TYPES, user_can_view_photo,
     get_active_environment, get_effective_role, effective_role_or_none, mask_email, mask_phone,
     send_mail_env_aware,
@@ -4581,8 +4581,16 @@ class DisponibiliteOffreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVie
     """Créneaux de disponibilité (matin/midi/soir/nuit, 8 jours) déclarés avec une offre d'aide."""
     queryset = DisponibiliteOffre.objects.all()
     serializer_class = DisponibiliteOffreSerializer
-    permission_classes = [AllowAny]
     filterset_fields = ["offer"]
+
+    def get_permissions(self):
+        # list/retrieve/create restent AllowAny : la déclaration de créneaux fait partie du
+        # formulaire public "proposer une aide" (Offer.permission_classes est aussi AllowAny en
+        # création), y compris pour un bénévole anonyme. update/partial_update/destroy exigeaient
+        # avant ce correctif AUCUNE permission du tout — voir IsOfferOwnerOrInstitutional.
+        if self.action in ('update', 'partial_update', 'destroy'):
+            return [IsOfferOwnerOrInstitutional()]
+        return [AllowAny()]
 
 class InformationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     queryset = Information.objects.select_related('author', 'crisis')

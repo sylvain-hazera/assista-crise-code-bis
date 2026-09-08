@@ -3,7 +3,7 @@ from django.contrib.gis.geos import Point
 from django.urls import reverse
 from rest_framework import status
 
-from core.models import Information, Offer, Request, User
+from core.models import DisponibiliteOffre, Information, Offer, Request, User
 
 
 @pytest.mark.django_db
@@ -140,3 +140,93 @@ class TestInformationOwnershipPermissions:
         assert response.status_code == status.HTTP_200_OK
         assert len(response.data) == 1
         assert response.data[0]['title'] == 'Le mien'
+
+
+@pytest.mark.django_db
+class TestDisponibiliteOffreOwnershipPermissions:
+    """DisponibiliteOffreViewSet était en permission_classes = [AllowAny] pour toute la classe,
+    sans aucune restriction : n'importe qui, même anonyme, pouvait modifier ou supprimer les
+    créneaux de disponibilité de n'importe quel bénévole sur n'importe quelle offre. Corrigé via
+    IsOfferOwnerOrInstitutional (même principe que IsOwnerOrInstitutional, mais l'auteur fait
+    autorité via l'offre parente, DisponibiliteOffre n'ayant pas d'auteur direct)."""
+
+    def test_anonymous_cannot_update(self, api_client, offer_type):
+        offer = Offer.objects.create(
+            title='Offre', first_name_offer='A', last_name_offer='B',
+            email_offer='a@t.fr', offer_type=offer_type,
+        )
+        dispo = DisponibiliteOffre.objects.create(offer=offer, date='2026-09-01', creneau='MATIN')
+        response = api_client.patch(
+            reverse('disponibiliteoffre-detail', args=[dispo.id]), {'creneau': 'SOIR'}, format='json',
+        )
+        assert response.status_code in (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN)
+        dispo.refresh_from_db()
+        assert dispo.creneau == 'MATIN'
+
+    def test_anonymous_cannot_delete(self, api_client, offer_type):
+        offer = Offer.objects.create(
+            title='Offre', first_name_offer='A', last_name_offer='B',
+            email_offer='a@t.fr', offer_type=offer_type,
+        )
+        dispo = DisponibiliteOffre.objects.create(offer=offer, date='2026-09-01', creneau='MATIN')
+        response = api_client.delete(reverse('disponibiliteoffre-detail', args=[dispo.id]))
+        assert response.status_code in (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN)
+        assert DisponibiliteOffre.objects.filter(id=dispo.id).exists()
+
+    def test_offer_author_can_update_own_disponibilite(self, authenticated_client, offer_type):
+        client, author = authenticated_client
+        offer = Offer.objects.create(
+            title='Offre', first_name_offer='A', last_name_offer='B',
+            email_offer='a@t.fr', offer_type=offer_type, author=author,
+        )
+        dispo = DisponibiliteOffre.objects.create(offer=offer, date='2026-09-01', creneau='MATIN')
+        response = client.patch(
+            reverse('disponibiliteoffre-detail', args=[dispo.id]), {'creneau': 'SOIR'}, format='json',
+        )
+        assert response.status_code == status.HTTP_200_OK
+
+    def test_other_authenticated_user_cannot_update(self, authenticated_client, offer_type):
+        client, user = authenticated_client
+        author = User.objects.create_user(
+            username='auteur-dispo@test.fr', email='auteur-dispo@test.fr', password='Test1234!',
+        )
+        offer = Offer.objects.create(
+            title='Offre', first_name_offer='A', last_name_offer='B',
+            email_offer='a@t.fr', offer_type=offer_type, author=author,
+        )
+        dispo = DisponibiliteOffre.objects.create(offer=offer, date='2026-09-01', creneau='MATIN')
+        response = client.patch(
+            reverse('disponibiliteoffre-detail', args=[dispo.id]), {'creneau': 'SOIR'}, format='json',
+        )
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_institutional_actor_can_update_any_disponibilite(self, authenticated_client, offer_type):
+        client, admin = authenticated_client
+        admin.type = 'ADMIN'
+        admin.save()
+        author = User.objects.create_user(
+            username='auteur-dispo2@test.fr', email='auteur-dispo2@test.fr', password='Test1234!',
+        )
+        offer = Offer.objects.create(
+            title='Offre', first_name_offer='A', last_name_offer='B',
+            email_offer='a@t.fr', offer_type=offer_type, author=author,
+        )
+        dispo = DisponibiliteOffre.objects.create(offer=offer, date='2026-09-01', creneau='MATIN')
+        response = client.patch(
+            reverse('disponibiliteoffre-detail', args=[dispo.id]), {'creneau': 'SOIR'}, format='json',
+        )
+        assert response.status_code == status.HTTP_200_OK
+
+    def test_anonymous_can_still_create(self, api_client, offer_type):
+        """list/retrieve/create restent AllowAny : la déclaration de créneaux fait partie du
+        formulaire public "proposer une aide", y compris pour un bénévole anonyme."""
+        offer = Offer.objects.create(
+            title='Offre', first_name_offer='A', last_name_offer='B',
+            email_offer='a@t.fr', offer_type=offer_type,
+        )
+        response = api_client.post(
+            reverse('disponibiliteoffre-list'),
+            {'offer': str(offer.id), 'date': '2026-09-01', 'creneau': 'MATIN'},
+            format='json',
+        )
+        assert response.status_code == status.HTTP_201_CREATED

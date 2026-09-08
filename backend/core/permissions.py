@@ -103,6 +103,25 @@ class IsOwnerOrInstitutional(BasePermission):
         return obj.author_id == request.user.id
 
 
+class IsOfferOwnerOrInstitutional(BasePermission):
+    """Même principe que IsOwnerOrInstitutional, pour les objets qui n'ont pas d'auteur direct
+    mais dépendent d'une Offer (ex: DisponibiliteOffre) — l'auteur de l'offre parente fait
+    autorité. DisponibiliteOffreViewSet était en `permission_classes = [AllowAny]` sur toute la
+    classe, sans aucune restriction : n'importe qui, même anonyme, pouvait créer/modifier/
+    supprimer les créneaux de disponibilité de n'importe quel bénévole sur n'importe quelle
+    offre (vérifié en le reproduisant)."""
+
+    message = "Vous ne pouvez modifier ou supprimer que les disponibilités de votre propre offre."
+
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.is_authenticated)
+
+    def has_object_permission(self, request, view, obj):
+        if IsInstitutionalActor().has_permission(request, view):
+            return True
+        return obj.offer.author_id == request.user.id
+
+
 class IsInstitutionMemberOrAdministrator(BasePermission):
     """Seul un membre actif de CETTE institution précise (ContactInstitution), ou un
     administrateur plateforme, peut la modifier — contrairement à IsInstitutionalActor
