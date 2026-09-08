@@ -618,6 +618,20 @@ export class CrisesComponent implements OnInit {
     });
   }
 
+  validerImplication(implication: ImplicationInstitution): void {
+    this.implicationService.valider(implication.id).subscribe({
+      next: () => { this.reloadImplications(); this.showSuccess(`Déclaration de ${implication.institution_nom} validée.`); },
+      error: () => this.showError('Impossible de valider cette déclaration.'),
+    });
+  }
+
+  refuserImplication(implication: ImplicationInstitution): void {
+    this.implicationService.refuser(implication.id).subscribe({
+      next: () => { this.reloadImplications(); this.showSuccess(`Déclaration de ${implication.institution_nom} refusée.`); },
+      error: () => this.showError('Impossible de refuser cette déclaration.'),
+    });
+  }
+
   /** Autorisé au déclarant, à un contact de l'institution, ou à un admin — même règle que
    * le backend (voir ImplicationInstitutionViewSet._can_manage). */
   canManageImplication(implication: ImplicationInstitution): boolean {

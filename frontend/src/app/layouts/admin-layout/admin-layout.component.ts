@@ -132,6 +132,12 @@ export class AdminLayoutComponent implements OnInit {
 
   onNotificationClick(notification: AppNotification): void {
     this.showNotifications = false;
+    // Une notification liée à une crise (ex: déclaration acteur en attente de validation) mène
+    // directement à cette crise (?id=, déjà géré par CrisesComponent) plutôt que de se
+    // contenter d'informer.
+    if (notification.crise) {
+      this.router.navigate(['/admin/crises'], { queryParams: { id: notification.crise } });
+    }
     if (notification.lu) return;
     this.notificationService.markAsRead(notification.id).subscribe({
       next: (updated) => {

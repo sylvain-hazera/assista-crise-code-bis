@@ -258,6 +258,12 @@ class TypeImplication(models.TextChoices):
     ACTEUR = "ACTEUR", "Acteur opérationnel"
 
 
+class StatutImplication(models.TextChoices):
+    EN_ATTENTE = "EN_ATTENTE", "En attente de validation"
+    VALIDEE = "VALIDEE", "Validée"
+    REFUSEE = "REFUSEE", "Refusée"
+
+
 class ImplicationInstitution(EnvironmentScopedModel):
     """Rattachement d'une institution à une crise : impliquée (sa commune est concernée)
     et/ou acteur opérationnel (elle gère des moyens sur cette crise, ex: un point de
@@ -310,6 +316,15 @@ class ImplicationInstitution(EnvironmentScopedModel):
         blank=True,
         related_name="implications_institutions",
         help_text="Besoins sur lesquels l'institution est à l'écoute pour cette crise.",
+    )
+
+    # VALIDEE par défaut : ne change rien pour IMPLIQUE (jamais soumise à validation) ni pour
+    # ACTEUR déclarée par une institution AUT_LOCALE (auto-validée). Seule
+    # ImplicationInstitutionViewSet.perform_create pose EN_ATTENTE, et seulement pour une
+    # déclaration ACTEUR d'une institution non-AUT_LOCALE (association/AASC...) — voir
+    # ImplicationInstitutionViewSet.valider/refuser pour la suite du workflow.
+    statut = models.CharField(
+        max_length=20, choices=StatutImplication.choices, default=StatutImplication.VALIDEE,
     )
 
     class Meta:
@@ -1972,6 +1987,18 @@ class Notification(EnvironmentScopedModel):
 
     dossier = models.ForeignKey(
         Dossier,
+        on_delete=models.CASCADE,
+        related_name="notifications",
+        null=True,
+        blank=True
+    )
+
+    # Lien facultatif vers une crise, pour les notifications hors-contexte dossier qui mènent
+    # à une action sur une crise précise (ex: déclaration ACTEUR en attente de validation, voir
+    # ImplicationInstitutionViewSet.perform_create) — permet au frontend de naviguer directement
+    # vers cette crise au clic (admin-layout.component), plutôt que de se contenter d'informer.
+    crise = models.ForeignKey(
+        Crisis,
         on_delete=models.CASCADE,
         related_name="notifications",
         null=True,

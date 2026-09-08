@@ -208,7 +208,7 @@
               </span>
             </h3>
             <table class="data-table sm">
-              <thead><tr><th>Institution</th><th>Type</th><th>Thèmes</th><th>Responsable</th><th>Commentaire</th><th></th></tr></thead>
+              <thead><tr><th>Institution</th><th>Type</th><th>Statut</th><th>Thèmes</th><th>Responsable</th><th>Commentaire</th><th></th></tr></thead>
               <tbody>
                 @for (implication of implicationsFor(selectedCrisis.id); track implication.id) {
                   <tr>
@@ -217,6 +217,18 @@
                       <span class="badge" [class.badge-implique]="implication.type_implication === 'IMPLIQUE'" [class.badge-acteur]="implication.type_implication === 'ACTEUR'">
                         {{ implication.type_implication === 'IMPLIQUE' ? 'Impliquée' : 'Acteur' }}
                       </span>
+                    </td>
+                    <td>
+                      @if (implication.type_implication === 'ACTEUR') {
+                        <span class="badge"
+                              [class.badge-en-attente]="implication.statut === 'EN_ATTENTE'"
+                              [class.badge-validee]="implication.statut === 'VALIDEE'"
+                              [class.badge-refusee]="implication.statut === 'REFUSEE'">
+                          {{ implication.statut === 'EN_ATTENTE' ? 'En attente' : implication.statut === 'REFUSEE' ? 'Refusée' : 'Validée' }}
+                        </span>
+                      } @else {
+                        —
+                      }
                     </td>
                     <td>
                       {{ (implication.themes_libelles || []).join(', ') || '—' }}
@@ -239,6 +251,14 @@
                     <td>{{ implication.responsable_nom || '—' }}</td>
                     <td>{{ implication.commentaire || '—' }}</td>
                     <td class="actions">
+                      @if (implication.peut_valider) {
+                        <button class="icon-btn" (click)="validerImplication(implication)" title="Valider cette déclaration">
+                          <span class="material-icons">check_circle_outline</span>
+                        </button>
+                        <button class="icon-btn danger" (click)="refuserImplication(implication)" title="Refuser cette déclaration">
+                          <span class="material-icons">cancel</span>
+                        </button>
+                      }
                       @if (canManageImplication(implication)) {
                         <button class="icon-btn danger" (click)="retirerImplication(implication)" title="Se retirer">
                           <span class="material-icons">delete_outline</span>
@@ -247,7 +267,7 @@
                     </td>
                   </tr>
                 } @empty {
-                  <tr><td colspan="6" class="empty">Aucune institution impliquée pour l'instant.</td></tr>
+                  <tr><td colspan="7" class="empty">Aucune institution impliquée pour l'instant.</td></tr>
                 }
               </tbody>
             </table>

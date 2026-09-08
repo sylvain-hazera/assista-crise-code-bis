@@ -49,7 +49,7 @@ from .permissions import (
     IsSelfOrInstitutional, IsInstitutionMemberOrAdministrator, IsOfferOwnerOrInstitutional,
     INSTITUTIONAL_TYPES, user_can_view_photo,
     get_active_environment, get_effective_role, effective_role_or_none, mask_email, mask_phone,
-    send_mail_env_aware, _peut_gerer_stock_point,
+    send_mail_env_aware, _peut_gerer_stock_point, is_regulateur_aut_locale_de_la_crise,
 )
 from .geo_lookup import (
     commune_code_from_point, commune_secteur_codes, commune_risques, commune_risques_date_maj,
@@ -138,6 +138,7 @@ from .models import (
     PointOperationnel,
     ImplicationInstitution,
     TypeImplication,
+    StatutImplication,
     User, Crisis, TypeCrise, Request, RequestPhoto, Offer, OfferPhoto, OfferMessage, Information, DisponibiliteOffre, DisponibilitePointEquipe, MaterielPoint,
     MaterielCatalogue, ContributionMateriel, StatutMateriel, TypeMateriel, NiveauStock, RegistrePresence, TypePersonneAccueillie, DeclarationSecurite, SituationDeclarant,
     AffectationPointBenevole, StatutAffectation,
@@ -3288,6 +3289,7 @@ def _institutions_acteurs_liees(institution):
     return Institution.objects.filter(
         implications_crises__crise_id__in=crise_ids,
         implications_crises__type_implication=TypeImplication.ACTEUR,
+        implications_crises__statut=StatutImplication.VALIDEE,
     ).exclude(pk=institution.pk).distinct()
 
 
@@ -6055,6 +6057,7 @@ class JournalCollectiviteViewSet(
         implique = ImplicationInstitution.objects.filter(
             crise=crise, institution=institution,
             type_implication__in=[TypeImplication.ACTEUR, TypeImplication.IMPLIQUE],
+            statut=StatutImplication.VALIDEE,
             actif=True,
         ).exists()
         if not implique:
@@ -8029,6 +8032,55 @@ class DeclarationSecuriteViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
         return Response(self.get_serializer(declarations, many=True).data)
 
 
+def _institution_est_autorite_locale(institution) -> bool:
+    """Institution de type mairie/EPCI — les deux types d'institution correspondant à une
+    collectivité territoriale (voir SECTEUR_NIVEAU_PAR_TYPE_INSTITUTION, core/geo_reference.py),
+    à distinguer des associations/AASC et des services de l'État (SDIS, préfecture...) : seules
+    ces dernières passent par le workflow d'acceptation d'une déclaration ACTEUR (voir
+    ImplicationInstitutionViewSet.perform_create/valider/refuser)."""
+    type_code = (getattr(institution.type, 'code', '') or '').upper()
+    return type_code in {"MAIRIE", "EPCI"}
+
+
+def _regulateurs_aut_locale_de_la_crise(crise):
+    """Comptes AUT_LOCALE rattachés (ContactInstitution actif) à une institution elle-même
+    impliquée (validée, active) sur `crise` — destinataires de la notification de demande de
+    validation d'une déclaration ACTEUR non-AUT_LOCALE, et seuls comptes ensuite autorisés à la
+    valider/refuser (voir is_regulateur_aut_locale_de_la_crise, core/permissions.py)."""
+    institution_ids = ImplicationInstitution.objects.filter(
+        crise=crise, statut=StatutImplication.VALIDEE, actif=True,
+    ).values_list('institution_id', flat=True)
+    user_ids = ContactInstitution.objects.filter(
+        institution_id__in=institution_ids, actif=True,
+    ).values_list('utilisateur_id', flat=True)
+    return User.objects.filter(id__in=user_ids, type=UserRole.LOCAL_AUTHORITY)
+
+
+def _notifier_demande_validation_implication(request, implication):
+    """Notification + email (send_mail_env_aware) à chaque régulateur AUT_LOCALE de la crise
+    quand une institution non-AUT_LOCALE déclare ACTEUR — reste en attente tant qu'aucun
+    régulateur ne l'a validée (voir ImplicationInstitutionViewSet.valider/refuser)."""
+    titre = f"Déclaration en attente de validation : {implication.institution.nom}"
+    message = (
+        f"{implication.institution.nom} s'est déclarée acteur opérationnel sur la crise "
+        f"« {implication.crise.name} » et attend votre validation (onglet Institutions de la "
+        "crise)."
+    )
+    for user in _regulateurs_aut_locale_de_la_crise(implication.crise):
+        Notification.objects.create(
+            utilisateur=user, titre=titre, message=message, environment=implication.environment,
+            crise=implication.crise,
+        )
+        if user.email:
+            try:
+                send_mail_env_aware(
+                    request, subject=titre, message=message, from_email=None,
+                    recipient_list=[user.email], fail_silently=True,
+                )
+            except Exception as e:
+                print(f"Erreur envoi email validation implication : {e}")
+
+
 class ImplicationInstitutionViewSet(
     EnvironmentScopedViewSetMixin, viewsets.ModelViewSet
 ):
@@ -8043,7 +8095,7 @@ class ImplicationInstitutionViewSet(
     filterset_fields = ["crise", "institution", "type_implication", "actif"]
 
     def get_permissions(self):
-        if self.action == "create":
+        if self.action in ("create", "valider", "refuser"):
             return [IsInstitutionalActor()]
         return [permissions.IsAuthenticated()]
 
@@ -8068,13 +8120,25 @@ class ImplicationInstitutionViewSet(
                 responsable_id, responsable_email, institution, self.request
             )
 
+        # Une institution non-AUT_LOCALE (association, AASC...) qui se déclare acteur
+        # opérationnel reste en attente jusqu'à validation par un régulateur AUT_LOCALE de la
+        # crise — IMPLIQUE et ACTEUR déclaré par une AUT_LOCALE restent auto-validés (statut
+        # VALIDEE, valeur par défaut du modèle).
+        statut = StatutImplication.VALIDEE
+        type_implication = serializer.validated_data.get("type_implication")
+        if type_implication == TypeImplication.ACTEUR and not _institution_est_autorite_locale(institution):
+            statut = StatutImplication.EN_ATTENTE
+
         implication = serializer.save(
             utilisateur=self.request.user, responsable=resolved_responsable,
-            environment=get_active_environment(self.request),
+            environment=get_active_environment(self.request), statut=statut,
         )
 
         if invited:
             send_crisis_regulateur_invite_email(self.request, resolved_responsable, implication.crise, institution)
+
+        if statut == StatutImplication.EN_ATTENTE:
+            _notifier_demande_validation_implication(self.request, implication)
 
         audit_log(
             request=self.request,
@@ -8085,8 +8149,53 @@ class ImplicationInstitutionViewSet(
             commentaire=(
                 f"{implication.institution.nom} déclarée "
                 f"{implication.get_type_implication_display().lower()} sur la crise {implication.crise.name}"
+                + (" (en attente de validation)" if statut == StatutImplication.EN_ATTENTE else "")
             ),
         )
+
+    @action(detail=True, methods=['post'])
+    def valider(self, request, pk=None):
+        implication = self.get_object()
+        if implication.statut != StatutImplication.EN_ATTENTE:
+            raise ValidationError({"statut": "Cette déclaration n'est pas en attente de validation."})
+        if not is_regulateur_aut_locale_de_la_crise(request, implication.crise):
+            raise PermissionDenied(
+                "Seul un régulateur d'une autorité locale impliquée sur cette crise peut valider cette déclaration."
+            )
+
+        implication.statut = StatutImplication.VALIDEE
+        implication.save(update_fields=['statut'])
+        audit_log(
+            request=request,
+            action_code="MODIFICATION",
+            objet_type="ImplicationInstitution",
+            objet_id=implication.id,
+            crise=implication.crise,
+            commentaire=f"Déclaration acteur de {implication.institution.nom} validée par {request.user.email}.",
+        )
+        return Response(self.get_serializer(implication).data)
+
+    @action(detail=True, methods=['post'])
+    def refuser(self, request, pk=None):
+        implication = self.get_object()
+        if implication.statut != StatutImplication.EN_ATTENTE:
+            raise ValidationError({"statut": "Cette déclaration n'est pas en attente de validation."})
+        if not is_regulateur_aut_locale_de_la_crise(request, implication.crise):
+            raise PermissionDenied(
+                "Seul un régulateur d'une autorité locale impliquée sur cette crise peut refuser cette déclaration."
+            )
+
+        implication.statut = StatutImplication.REFUSEE
+        implication.save(update_fields=['statut'])
+        audit_log(
+            request=request,
+            action_code="MODIFICATION",
+            objet_type="ImplicationInstitution",
+            objet_id=implication.id,
+            crise=implication.crise,
+            commentaire=f"Déclaration acteur de {implication.institution.nom} refusée par {request.user.email}.",
+        )
+        return Response(self.get_serializer(implication).data)
 
     def perform_destroy(self, instance):
         if not self._can_manage(instance):

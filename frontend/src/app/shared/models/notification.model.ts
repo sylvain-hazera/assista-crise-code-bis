@@ -3,6 +3,7 @@ export interface AppNotification {
   utilisateur: string;
   dossier: string | null;
   dossier_numero: string | null;
+  crise: string | null;
   titre: string;
   message: string;
   lu: boolean;

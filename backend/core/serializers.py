@@ -29,6 +29,7 @@ from .models import (
     TypePersonneAccueillie,
     ImplicationInstitution,
     TypeImplication,
+    StatutImplication,
     User, Crisis, Request, RequestPhoto, Offer, OfferPhoto, OfferMessage, Information,
     RecherchePersonneLecture, RecherchePersonneLectureHistorique,
     Document, RecherchePersonnePhoto, RecherchePersonneCommentairePhoto,
@@ -1681,7 +1682,7 @@ class NotificationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Notification
         fields = "__all__"
-        read_only_fields = ["utilisateur", "dossier", "titre", "message", "date_creation"]
+        read_only_fields = ["utilisateur", "dossier", "crise", "titre", "message", "date_creation"]
 
 class RecherchePersonneSerializer(
     serializers.ModelSerializer
@@ -2100,6 +2101,7 @@ class DelegationCompetenceSerializer(
                 crise=crise,
                 institution=institution_source,
                 type_implication__in=[TypeImplication.ACTEUR, TypeImplication.IMPLIQUE],
+                statut=StatutImplication.VALIDEE,
                 actif=True,
             ).exists()
             if not deja_impliquee:
@@ -2118,6 +2120,7 @@ class DelegationCompetenceSerializer(
                 crise=crise,
                 institution=institution_cible,
                 type_implication=TypeImplication.ACTEUR,
+                statut=StatutImplication.VALIDEE,
                 actif=True,
             ).exists()
             if not cible_actrice:
@@ -2329,6 +2332,11 @@ class ImplicationInstitutionSerializer(
     responsable_nom = serializers.SerializerMethodField()
     themes_libelles = serializers.SerializerMethodField()
     responsable_email = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    # Jamais posé par le client (création/modification) : uniquement par perform_create (voir
+    # ImplicationInstitutionViewSet) et par les actions valider/refuser dédiées, sans quoi une
+    # institution non-AUT_LOCALE pourrait s'auto-valider en envoyant simplement statut=VALIDEE.
+    statut = serializers.ChoiceField(choices=StatutImplication.choices, read_only=True)
+    peut_valider = serializers.SerializerMethodField()
 
     class Meta:
 
@@ -2344,6 +2352,19 @@ class ImplicationInstitutionSerializer(
 
     def get_themes_libelles(self, obj):
         return [t.nom for t in obj.themes.all()]
+
+    def get_peut_valider(self, obj):
+        """True si l'utilisateur courant peut valider/refuser CETTE déclaration en attente —
+        régulateur AUT_LOCALE d'une institution elle-même impliquée (validée, active) sur la
+        même crise. Piloté par le même calcul que ImplicationInstitutionViewSet.valider/refuser,
+        pour que le bouton n'apparaisse jamais là où l'action serait de toute façon refusée."""
+        if obj.statut != StatutImplication.EN_ATTENTE:
+            return False
+        request = self.context.get('request')
+        if request is None:
+            return False
+        from .permissions import is_regulateur_aut_locale_de_la_crise
+        return is_regulateur_aut_locale_de_la_crise(request, obj.crise)
 
     def validate(self, attrs):
         # attrs['crise'] est absent sur un PATCH qui ne touche pas ce champ — retomber sur la

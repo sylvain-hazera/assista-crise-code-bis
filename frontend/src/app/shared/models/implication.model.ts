@@ -1,4 +1,5 @@
 export type TypeImplication = 'IMPLIQUE' | 'ACTEUR';
+export type StatutImplication = 'EN_ATTENTE' | 'VALIDEE' | 'REFUSEE';
 
 export interface ImplicationInstitution {
   id: string;
@@ -8,6 +9,8 @@ export interface ImplicationInstitution {
   crise_nom?: string | null;
   utilisateur: string | null;
   type_implication: TypeImplication;
+  statut: StatutImplication;
+  peut_valider?: boolean;
   commentaire?: string | null;
   actif: boolean;
   date_creation: string;

@@ -35,4 +35,12 @@ export class ImplicationService {
   delete(id: string): Observable<void> {
     return this.http.delete<void>(`${this.apiUrl}/${id}/`);
   }
+
+  valider(id: string): Observable<ImplicationInstitution> {
+    return this.http.post<ImplicationInstitution>(`${this.apiUrl}/${id}/valider/`, {});
+  }
+
+  refuser(id: string): Observable<ImplicationInstitution> {
+    return this.http.post<ImplicationInstitution>(`${this.apiUrl}/${id}/refuser/`, {});
+  }
 }

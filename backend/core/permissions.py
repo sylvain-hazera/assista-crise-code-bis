@@ -68,6 +68,33 @@ def effective_role_or_none(request):
         return None
 
 
+def is_regulateur_aut_locale_de_la_crise(request, crise) -> bool:
+    """L'utilisateur courant est-il un compte AUT_LOCALE (rôle effectif, prod/démo) rattaché à
+    une institution elle-même impliquée (validée, active) sur `crise` ? — condition
+    d'autorisation pour valider/refuser une déclaration ACTEUR en attente d'une institution
+    tierce (ImplicationInstitutionViewSet.valider/refuser), et pour piloter l'affichage des
+    boutons correspondants côté ImplicationInstitutionSerializer.peut_valider. Défini ici (et
+    pas dans serializers.py/views.py) pour être appelable depuis les deux sans import
+    circulaire — même raison que _peut_gerer_stock_point."""
+    if not request.user or not request.user.is_authenticated:
+        return False
+    if effective_role_or_none(request) != UserRole.LOCAL_AUTHORITY:
+        return False
+
+    # ContactInstitution (rattachement institutionnel), pas User.institution (FK direct
+    # distinct, réservé à la "Vue Ma collectivité" — voir UserSerializer.get_ma_zone) : c'est
+    # ContactInstitution que ImplicationInstitutionViewSet utilise déjà partout ailleurs
+    # (perform_create/_can_manage) pour déterminer "l'institution de l'appelant".
+    from .models import ContactInstitution, ImplicationInstitution, StatutImplication
+
+    institution_ids = ContactInstitution.objects.filter(
+        utilisateur=request.user, actif=True,
+    ).values_list('institution_id', flat=True)
+    return ImplicationInstitution.objects.filter(
+        crise=crise, institution_id__in=institution_ids, statut=StatutImplication.VALIDEE, actif=True,
+    ).exists()
+
+
 class IsInstitutionalActor(BasePermission):
     """Autorise les comptes institutionnels (autorité locale, secours organisés, admin) —
     au sens du rôle EFFECTIF de la requête (prod ou démo selon la bascule active)."""
