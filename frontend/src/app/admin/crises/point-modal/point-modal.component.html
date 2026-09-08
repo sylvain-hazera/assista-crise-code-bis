@@ -121,7 +121,7 @@
         </select>
       </div>
 
-      @if (isEdit) {
+      @if (isEdit && point?.peut_gerer) {
         <div class="form-group">
           <label>Inventaire matériel</label>
           <button type="button" class="btn-secondary sm" (click)="openInventaireModal()">
@@ -133,7 +133,7 @@
         </div>
       }
 
-      @if (isEdit) {
+      @if (isEdit && point?.peut_gerer) {
         <div class="form-group">
           <label>Secrétariat</label>
           <button type="button" class="btn-secondary sm" (click)="openSecretariatModal()">

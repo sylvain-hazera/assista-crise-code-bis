@@ -49,7 +49,7 @@ from .permissions import (
     IsSelfOrInstitutional, IsInstitutionMemberOrAdministrator, IsOfferOwnerOrInstitutional,
     INSTITUTIONAL_TYPES, user_can_view_photo,
     get_active_environment, get_effective_role, effective_role_or_none, mask_email, mask_phone,
-    send_mail_env_aware,
+    send_mail_env_aware, _peut_gerer_stock_point,
 )
 from .geo_lookup import commune_code_from_point, commune_secteur_codes, commune_risques, commune_risques_date_maj
 from .imports import (
@@ -7426,21 +7426,6 @@ class MaterielCatalogueViewSet(TagLikeViewSetMixin, viewsets.ModelViewSet):
         instance.delete()
 
 
-def _peut_gerer_stock_point(request, point) -> bool:
-    """Même garde-fou que MaterielPointViewSet._can_manage (dupliqué ici plutôt que factorisé,
-    comme le reste de ce fichier le fait déjà pour ce contrôle) — admin, responsable du point,
-    ou chef/membre de son équipe."""
-    user = request.user
-    if get_effective_role(request) == UserRole.ADMINISTRATOR:
-        return True
-    if point.responsable_id == user.id:
-        return True
-    if point.equipe:
-        if point.equipe.leader_id == user.id:
-            return True
-        if point.equipe.members.filter(id=user.id).exists():
-            return True
-    return False
 
 
 class ContributionMaterielViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
@@ -7498,19 +7483,7 @@ class MaterielPointViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet)
     filterset_fields = ["point", "statut", "item"]
 
     def _can_manage(self, request, point):
-        # Même logique que DisponibilitePointEquipeViewSet._can_manage (pas de notion de
-        # "membre" ici — n'importe quel membre de l'équipe peut mettre à jour un stock).
-        user = request.user
-        if get_effective_role(request) == UserRole.ADMINISTRATOR:
-            return True
-        if point.responsable_id == user.id:
-            return True
-        if point.equipe:
-            if point.equipe.leader_id == user.id:
-                return True
-            if point.equipe.members.filter(id=user.id).exists():
-                return True
-        return False
+        return _peut_gerer_stock_point(request, point)
 
     def perform_create(self, serializer):
         point = serializer.validated_data.get('point')
@@ -7563,17 +7536,7 @@ class RegistrePresenceViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewS
     filterset_fields = ["point", "type_personne"]
 
     def _can_manage(self, request, point):
-        user = request.user
-        if get_effective_role(request) == UserRole.ADMINISTRATOR:
-            return True
-        if point.responsable_id == user.id:
-            return True
-        if point.equipe:
-            if point.equipe.leader_id == user.id:
-                return True
-            if point.equipe.members.filter(id=user.id).exists():
-                return True
-        return False
+        return _peut_gerer_stock_point(request, point)
 
     def perform_create(self, serializer):
         point = serializer.validated_data.get('point')

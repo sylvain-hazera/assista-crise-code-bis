@@ -19,6 +19,10 @@ export interface PointOperationnel {
   crise_nom?: string | null;
   responsable: string | null;
   responsable_nom?: string | null;
+  /** Calculé côté serveur (admin, responsable du point, ou chef/membre de son équipe) — pour
+   * conditionner l'affichage des boutons Secrétariat/Stock sur les droits réels plutôt que
+   * juste "point déjà créé". */
+  peut_gerer?: boolean;
   adresse?: string | null;
   latitude?: number | null;
   longitude?: number | null;

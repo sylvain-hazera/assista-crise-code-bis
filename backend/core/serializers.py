@@ -9,7 +9,7 @@ from .auth_validation import InstitutionEmailValidator
 from .geo_lookup import commune_from_code, commune_from_point, commune_center_from_code, commune_risques, commune_risques_date_maj
 from .permissions import (
     INSTITUTIONAL_TYPES, get_active_environment, effective_role_or_none, mask_email, mask_phone,
-    strip_masked_fields_in_demo,
+    strip_masked_fields_in_demo, _peut_gerer_stock_point,
 )
 from .zone_scoping import object_in_viewer_zone
 from .models import (
@@ -2169,12 +2169,24 @@ class PointOperationnelSerializer(
     )
     equipes_ravitaillement_noms = serializers.SerializerMethodField()
     civils_accueillis = serializers.SerializerMethodField()
+    peut_gerer = serializers.SerializerMethodField()
 
     class Meta:
 
         model = PointOperationnel
 
         fields = "__all__"
+
+    def get_peut_gerer(self, obj):
+        # Reflète exactement la règle déjà appliquée côté API (RegistrePresenceViewSet.
+        # _can_manage / _peut_gerer_stock_point) — les boutons "Secrétariat"/"Stock" du détail
+        # centre n'étaient conditionnés côté frontend que par isEdit (point déjà créé), sans
+        # refléter les droits réels : n'importe quel utilisateur authentifié voyait ces
+        # boutons, y compris s'ils menaient ensuite à un 403.
+        request = self.context.get('request')
+        if not request or not request.user.is_authenticated:
+            return False
+        return _peut_gerer_stock_point(request, obj)
 
     def get_latitude(self, obj):
         return obj.location.y if obj.location else None

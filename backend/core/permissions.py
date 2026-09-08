@@ -191,6 +191,26 @@ class IsAdministrator(BasePermission):
         )
 
 
+def _peut_gerer_stock_point(request, point) -> bool:
+    """Admin, responsable du point (champ `responsable` singulier — pas le M2M `responsables`,
+    même limite que le contrôle d'origine), ou chef/membre de son équipe. Utilisé à la fois
+    pour l'autorisation réelle (RegistrePresenceViewSet, ContributionMaterielViewSet,
+    MaterielPointViewSet dans views.py) et pour le champ calculé `peut_gerer` exposé par
+    PointOperationnelSerializer, afin que les boutons Secrétariat/Stock du frontend reflètent
+    exactement les mêmes droits que ceux réellement appliqués par l'API."""
+    user = request.user
+    if get_effective_role(request) == UserRole.ADMINISTRATOR:
+        return True
+    if point.responsable_id == user.id:
+        return True
+    if point.equipe:
+        if point.equipe.leader_id == user.id:
+            return True
+        if point.equipe.members.filter(id=user.id).exists():
+            return True
+    return False
+
+
 def mask_email(value):
     """Email factice mais stable (la même vraie adresse donne toujours le même masque), pour
     ne jamais exposer une vraie adresse pendant une démonstration en zone DEMO."""
