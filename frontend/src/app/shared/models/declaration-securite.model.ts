@@ -14,6 +14,9 @@ export interface DeclarationSecurite {
   contact_referent: string;
   nombre_adultes: number;
   nombre_enfants: number;
+  /** Âges individuels, jamais de nom — aussi long que déclaré (peut différer de
+   * nombre_enfants si non renseigné pour tous). */
+  ages_enfants?: number[];
   centre_accueil?: string | null;
   centre_accueil_nom?: string | null;
   regime_alimentaire_specifique?: boolean;

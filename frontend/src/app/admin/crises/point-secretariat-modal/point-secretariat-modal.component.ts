@@ -33,6 +33,11 @@ export class PointSecretariatModalComponent implements OnInit {
   loading = true;
   form: FormGroup;
 
+  // Âge de chaque enfant déclaré (index = même ordre que les lignes affichées) — jamais de
+  // nom, juste l'âge (voir DeclarationSecurite.ages_enfants) ; redimensionné à chaque
+  // changement de nombre_enfants, valeurs déjà saisies conservées.
+  agesEnfants: (number | null)[] = [];
+
   constructor(
     private fb: FormBuilder,
     private registreService: RegistrePresenceService,
@@ -54,6 +59,22 @@ export class PointSecretariatModalComponent implements OnInit {
       nombre_enfants: [0, [Validators.min(0)]],
       regime_alimentaire_specifique: [false],
     });
+    this.form.get('nombre_enfants')?.valueChanges.subscribe((n: number) => this.resizeAgesEnfants(n));
+  }
+
+  private resizeAgesEnfants(nombreEnfants: number): void {
+    const n = Math.max(0, nombreEnfants || 0);
+    if (n === this.agesEnfants.length) return;
+    if (n < this.agesEnfants.length) {
+      this.agesEnfants = this.agesEnfants.slice(0, n);
+    } else {
+      this.agesEnfants = [...this.agesEnfants, ...Array(n - this.agesEnfants.length).fill(null)];
+    }
+  }
+
+  setAgeEnfant(index: number, value: string): void {
+    const age = value === '' ? null : Number(value);
+    this.agesEnfants[index] = age != null && !Number.isNaN(age) ? age : null;
   }
 
   get isEvacue(): boolean {
@@ -90,6 +111,7 @@ export class PointSecretariatModalComponent implements OnInit {
       type_declarant: 'PERSONNE_SEULE', nom_referent: '', prenom_referent: '', contact_referent: '',
       nombre_adultes: 1, nombre_enfants: 0, regime_alimentaire_specifique: false,
     });
+    this.agesEnfants = [];
   }
 
   submit(): void {
@@ -111,6 +133,8 @@ export class PointSecretariatModalComponent implements OnInit {
         contact_referent: v.contact_referent,
         nombre_adultes: v.type_declarant === 'PERSONNE_SEULE' ? 1 : v.nombre_adultes,
         nombre_enfants: v.type_declarant === 'PERSONNE_SEULE' ? 0 : v.nombre_enfants,
+        ages_enfants: v.type_declarant === 'PERSONNE_SEULE'
+          ? [] : this.agesEnfants.filter((a): a is number => a != null),
         regime_alimentaire_specifique: v.regime_alimentaire_specifique,
         commentaire: v.commentaire,
         centre_accueil: this.point.id,

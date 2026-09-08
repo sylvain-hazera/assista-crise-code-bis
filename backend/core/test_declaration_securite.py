@@ -73,6 +73,39 @@ class TestDeclarationSecuritePublicSelfDeclare:
         assert response.data['nombre_adultes'] == 2
         assert response.data['nombre_enfants'] == 3
 
+    def test_ages_enfants_is_saved_as_simple_age_list(self, api_client):
+        """Pas de nom, pas d'identité — juste les âges, voir DeclarationSecurite.ages_enfants."""
+        crisis = _make_crisis()
+        response = api_client.post(
+            reverse('declarationsecurite-list'),
+            {
+                'type_declarant': 'FAMILLE', 'nom_referent': 'Martin', 'prenom_referent': 'Alice',
+                'contact_referent': '0600000000', 'nombre_adultes': 2, 'nombre_enfants': 3,
+                'ages_enfants': [12, 7, 3], 'crise': str(crisis.id),
+            },
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data['ages_enfants'] == [12, 7, 3]
+        declaration = DeclarationSecurite.objects.get(id=response.data['id'])
+        assert declaration.ages_enfants == [12, 7, 3]
+
+    def test_ages_enfants_defaults_to_empty_list(self, api_client):
+        crisis = _make_crisis()
+        response = api_client.post(
+            reverse('declarationsecurite-list'),
+            {
+                'type_declarant': 'PERSONNE_SEULE', 'nom_referent': 'Dupont', 'prenom_referent': 'Jean',
+                'contact_referent': 'jean@test.fr', 'nombre_adultes': 1, 'nombre_enfants': 0,
+                'crise': str(crisis.id),
+            },
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data['ages_enfants'] == []
+
     def test_missing_crise_rejected(self, api_client):
         response = api_client.post(
             reverse('declarationsecurite-list'),

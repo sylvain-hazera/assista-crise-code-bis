@@ -3152,6 +3152,13 @@ class DeclarationSecurite(EnvironmentScopedModel):
     nombre_adultes = models.PositiveIntegerField(default=1)
     nombre_enfants = models.PositiveIntegerField(default=0)
 
+    # Liste simple d'âges (ex: [12, 7, 3]), PAS de nom ni d'autre identifiant — même principe
+    # que regime_alimentaire_specifique (indicateur utile, jamais de PII enfant lourde). Ne
+    # contraint pas la longueur à nombre_enfants côté modèle (saisie plus tard, correction
+    # possible) — le formulaire (secrétariat) affiche autant de lignes d'âge que
+    # nombre_enfants.
+    ages_enfants = models.JSONField(default=list, blank=True)
+
     # Optionnelle : utile pour situer une auto-déclaration (ex: RELOGE ailleurs), mais pas
     # pertinente pour EN_CENTRE (le centre choisi fait déjà foi) ni exigible dans tous les cas
     # (BESOIN_CENTRE, saisie opérateur rapide au secrétariat...). Même patron qu'Information.
