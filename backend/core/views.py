@@ -3268,31 +3268,50 @@ def _appartient_a_equipe(request, team) -> bool:
     )
 
 
-def _institutions_liees(institution):
-    """Institutions considérées comme "déjà liées" à `institution` : celles co-impliquées avec
-    elle sur au moins une même crise (ImplicationInstitution), au sens le plus large (peu
-    importe le type d'implication ou si elle est encore active) — le périmètre retenu pour
-    autoriser le recrutement, dans une équipe, d'un membre appartenant à une institution tierce
-    (voir TeamViewSet.perform_update/institutions_liees), en plus de l'institution délégataire
-    qui l'est déjà par ailleurs."""
-    crise_ids = ImplicationInstitution.objects.filter(institution=institution).values_list('crise_id', flat=True)
-    return Institution.objects.filter(implications_crises__crise_id__in=crise_ids).exclude(pk=institution.pk).distinct()
+def _institutions_liees(team):
+    """Institutions considérées comme "déjà liées" à l'institution de `team` : celles co-
+    impliquées avec elle (ImplicationInstitution, au sens le plus large — peu importe le type
+    d'implication) sur au moins une des crises auxquelles CETTE ÉQUIPE est effectivement
+    affectée (team.assigned_crises) — le périmètre retenu pour autoriser le recrutement, dans
+    une équipe, d'un membre appartenant à une institution tierce (voir TeamViewSet.
+    perform_update/institutions_liees), en plus de l'institution délégataire qui l'est déjà par
+    ailleurs.
+
+    AVANT ce correctif, le périmètre se basait sur TOUTES les crises où l'institution de
+    l'équipe est impliquée, sans lien avec cette équipe précise : une équipe sans aucune crise
+    assignée proposait quand même tout le personnel d'une institution voisine, simplement parce
+    que sa propre institution était par ailleurs actrice d'un incident sans rapport avec cette
+    équipe (ex: une équipe généraliste d'une mairie exposant le personnel d'une mairie voisine
+    co-actrice d'un feu de forêt local, alors que cette équipe n'a jamais été affectée à ce
+    feu)."""
+    if not team.institution_id:
+        return Institution.objects.none()
+    crise_ids = team.assigned_crises.values_list('id', flat=True)
+    if not crise_ids:
+        return Institution.objects.none()
+    return Institution.objects.filter(
+        implications_crises__crise_id__in=crise_ids,
+    ).exclude(pk=team.institution_id).distinct()
 
 
-def _institutions_acteurs_liees(institution):
-    """Institutions ACTEUR sur au moins une crise où `institution` est elle-même impliquée
-    (IMPLIQUE ou ACTEUR) — périmètre retenu pour "institution délégataire" d'une équipe
+def _institutions_acteurs_liees(team):
+    """Institutions ACTEUR (validées) sur au moins une des crises auxquelles `team` est
+    effectivement affectée — périmètre retenu pour "institution délégataire" d'une équipe
     (TeamViewSet.institutions_liees?type=acteur) : contrairement à _institutions_liees (plus
     large, IMPLIQUE compris, pour le recrutement de membres), déléguer une compétence n'a de
-    sens que vers une institution réellement actrice de la crise — avant ce correctif, le
-    frontend proposait TOUTES les institutions de la plateforme comme délégataire, sans lien
-    avec la crise de l'équipe."""
-    crise_ids = ImplicationInstitution.objects.filter(institution=institution).values_list('crise_id', flat=True)
+    sens que vers une institution réellement actrice de LA crise de cette équipe — même
+    correctif de portée que _institutions_liees ci-dessus (scopé à team.assigned_crises, pas à
+    toute crise où l'institution de l'équipe est impliquée par ailleurs)."""
+    if not team.institution_id:
+        return Institution.objects.none()
+    crise_ids = team.assigned_crises.values_list('id', flat=True)
+    if not crise_ids:
+        return Institution.objects.none()
     return Institution.objects.filter(
         implications_crises__crise_id__in=crise_ids,
         implications_crises__type_implication=TypeImplication.ACTEUR,
         implications_crises__statut=StatutImplication.VALIDEE,
-    ).exclude(pk=institution.pk).distinct()
+    ).exclude(pk=team.institution_id).distinct()
 
 
 def _resolve_institution_or_400(request):
@@ -3821,7 +3840,7 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
                 if instance.institution_delegataire_id:
                     allowed_institution_ids.add(instance.institution_delegataire_id)
                 allowed_institution_ids.update(
-                    _institutions_liees(instance.institution).values_list('id', flat=True)
+                    _institutions_liees(instance).values_list('id', flat=True)
                 )
                 disallowed_ids = set(
                     ContactInstitution.objects.filter(utilisateur_id__in=added_ids, actif=True)
@@ -3909,9 +3928,9 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         if not team.institution_id:
             return Response([])
         if request.query_params.get('type') == 'acteur':
-            institutions = list(_institutions_acteurs_liees(team.institution))
+            institutions = list(_institutions_acteurs_liees(team))
         else:
-            institutions = list(_institutions_liees(team.institution))
+            institutions = list(_institutions_liees(team))
         if team.institution_delegataire_id and team.institution_delegataire not in institutions:
             institutions.append(team.institution_delegataire)
         return Response([{"id": str(i.id), "nom": i.nom} for i in institutions])

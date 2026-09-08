@@ -288,6 +288,11 @@ class TestMembreInstitutionLiee:
         crisis = Crisis.objects.create(name='Crise liée test', type='INCENDIE', location='POINT (5.72 45.18)')
         ImplicationInstitution.objects.create(crise=crisis, institution=institution_a, type_implication='ACTEUR')
         ImplicationInstitution.objects.create(crise=crisis, institution=institution_b, type_implication='IMPLIQUE')
+        # L'équipe doit être elle-même affectée à CETTE crise pour que la co-implication compte
+        # (voir _institutions_liees) — sans ça, une équipe sans aucun lien avec l'incendie
+        # exposerait quand même le personnel d'une institution co-actrice, simplement parce que
+        # sa propre institution y participe par ailleurs.
+        team_a.assigned_crises.add(crisis)
         client, _ = mairie_client
         liee_member = create_user(username='liee-membre@test.fr', email='liee-membre@test.fr', type='UTIL_SIMPLE')
         ContactInstitution.objects.create(institution=institution_b, utilisateur=liee_member, actif=True)
@@ -296,6 +301,24 @@ class TestMembreInstitutionLiee:
 
         assert response.status_code == status.HTTP_200_OK
         assert team_a.members.filter(id=liee_member.id).exists()
+
+    def test_cannot_add_member_from_institution_implicated_on_an_unrelated_crisis(self, mairie_client, team_a, institution_a, institution_b, create_user):
+        """Régression : institution_a (celle de team_a) est actrice d'un incident SANS AUCUN
+        RAPPORT avec team_a (team_a.assigned_crises reste vide) — institution_b, co-actrice de
+        ce même incident, ne devient PAS "liée" à team_a pour autant (avant ce correctif, elle
+        l'aurait été, exposant tout son personnel à n'importe quelle équipe de institution_a,
+        même sans lien avec la crise en question)."""
+        crisis = Crisis.objects.create(name='Incident sans lien avec team_a', type='INCENDIE', location='POINT (5.72 45.18)')
+        ImplicationInstitution.objects.create(crise=crisis, institution=institution_a, type_implication='ACTEUR')
+        ImplicationInstitution.objects.create(crise=crisis, institution=institution_b, type_implication='IMPLIQUE')
+        client, _ = mairie_client
+        outsider = create_user(username='outsider-crise-non-liee@test.fr', email='outsider-crise-non-liee@test.fr', type='UTIL_SIMPLE')
+        ContactInstitution.objects.create(institution=institution_b, utilisateur=outsider, actif=True)
+
+        response = client.patch(reverse('team-detail', args=[team_a.id]), {'member_ids': [str(outsider.id)]}, format='json')
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert not team_a.members.filter(id=outsider.id).exists()
 
     def test_admin_can_add_member_from_any_institution(self, create_user, team_a, institution_b):
         admin = create_user(username='admin-add-cross@test.fr', email='admin-add-cross@test.fr', type='ADMIN')
@@ -341,6 +364,7 @@ class TestInstitutionsLiees:
         crisis = Crisis.objects.create(name='Crise institutions liées', type='INCENDIE', location='POINT (5.72 45.18)')
         ImplicationInstitution.objects.create(crise=crisis, institution=institution_a, type_implication='ACTEUR')
         ImplicationInstitution.objects.create(crise=crisis, institution=team_c_institution, type_implication='IMPLIQUE')
+        team_a.assigned_crises.add(crisis)
         team_a.institution_delegataire = institution_b
         team_a.save(update_fields=['institution_delegataire'])
         client, _ = mairie_client
@@ -372,6 +396,20 @@ class TestInstitutionsLiees:
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
+    def test_excludes_institution_from_crisis_team_is_not_assigned_to(self, mairie_client, team_a, institution_a, institution_b):
+        """Régression : team_a n'est affectée à AUCUNE crise — une co-implication entre
+        institution_a (celle de team_a) et institution_b sur une crise sans rapport avec team_a
+        ne doit rendre visible ni son personnel ni son nom dans ce sélecteur."""
+        crisis = Crisis.objects.create(name='Crise sans team_a', type='INCENDIE', location='POINT (5.72 45.18)')
+        ImplicationInstitution.objects.create(crise=crisis, institution=institution_a, type_implication='ACTEUR')
+        ImplicationInstitution.objects.create(crise=crisis, institution=institution_b, type_implication='IMPLIQUE')
+        client, _ = mairie_client
+
+        response = client.get(reverse('team-institutions-liees', args=[team_a.id]))
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data == []
+
 
 @pytest.mark.django_db
 class TestInstitutionsLieesTypeActeur:
@@ -387,6 +425,7 @@ class TestInstitutionsLieesTypeActeur:
         ImplicationInstitution.objects.create(crise=crisis, institution=institution_a, type_implication='ACTEUR')
         ImplicationInstitution.objects.create(crise=crisis, institution=institution_b, type_implication='IMPLIQUE')
         ImplicationInstitution.objects.create(crise=crisis, institution=acteur_institution, type_implication='ACTEUR')
+        team_a.assigned_crises.add(crisis)
         client, _ = mairie_client
 
         response = client.get(reverse('team-institutions-liees', args=[team_a.id]), {'type': 'acteur'})
