@@ -1,8 +1,10 @@
 // ── Design tokens ─────────────────────────────────────────────────────────────
 :host {
-  --crisis-col:  #ef4444;
-  --offer-col:   #22c55e;
-  --request-col: #3b82f6;
+  --crisis-col:      #ef4444;
+  --offer-col:       #22c55e;
+  --request-col:     #3b82f6;
+  --information-col: #8b5cf6;
+  --benevole-col:    #f59e0b;
 
   --bg:          #f4f5f7;
   --surface:     #ffffff;
@@ -188,9 +190,18 @@
 
   &:hover { transform: translateY(-2px); box-shadow: 0 6px 24px rgba(0,0,0,.1); }
 
-  &.stat-crisis  { border-color: var(--crisis-col);  .stat-icon { color: var(--crisis-col);  background: #fef2f2; } }
-  &.stat-offer   { border-color: var(--offer-col);   .stat-icon { color: var(--offer-col);   background: #f0fdf4; } }
-  &.stat-request { border-color: var(--request-col); .stat-icon { color: var(--request-col); background: #eff6ff; } }
+  &.stat-crisis      { border-color: var(--crisis-col);      .stat-icon { color: var(--crisis-col);      background: #fef2f2; } }
+  &.stat-offer       { border-color: var(--offer-col);       .stat-icon { color: var(--offer-col);       background: #f0fdf4; } }
+  &.stat-request     { border-color: var(--request-col);     .stat-icon { color: var(--request-col);     background: #eff6ff; } }
+  &.stat-information { border-color: var(--information-col); .stat-icon { color: var(--information-col); background: #f5f3ff; } }
+  &.stat-benevole    { border-color: var(--benevole-col);    .stat-icon { color: var(--benevole-col);    background: #fffbeb; } }
+
+  &.stat-national {
+    border-color: var(--muted);
+    background: var(--bg);
+
+    .stat-label { margin-bottom: .6rem; }
+  }
 
   .stat-body {
     .stat-label { margin: 0 0 .3rem; font-size: .82rem; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
@@ -207,6 +218,26 @@
     padding: .75rem;
     border-radius: 12px;
     flex-shrink: 0;
+  }
+}
+
+.national-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem 1rem;
+
+  li {
+    display: inline-flex;
+    align-items: center;
+    gap: .3rem;
+    font-size: .95rem;
+    font-weight: 700;
+    color: var(--text);
+
+    .material-icons { font-size: 1.05rem; color: var(--muted); }
   }
 }
 

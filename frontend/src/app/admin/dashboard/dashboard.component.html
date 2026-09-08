@@ -66,6 +66,19 @@
         <span class="stat-icon material-icons">{{ s.icon }}</span>
       </div>
     }
+
+    @if (isZoneScoped) {
+      <div class="stat-card stat-national" title="Mêmes chiffres, toute la France — sans le filtre de zone appliqué aux 5 cartes ci-contre">
+        <div class="stat-body">
+          <p class="stat-label">France entière</p>
+          <ul class="national-list">
+            @for (n of nationalFigures; track n.title) {
+              <li><span class="material-icons">{{ n.icon }}</span>{{ n.value }}</li>
+            }
+          </ul>
+        </div>
+      </div>
+    }
   </section>
 
   <!-- ══ CHARTS ═══════════════════════════════════════════════════════════ -->

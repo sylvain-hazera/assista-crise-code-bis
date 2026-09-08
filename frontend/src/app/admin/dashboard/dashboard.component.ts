@@ -12,8 +12,15 @@ interface StatCard {
   change: string;
   changePositive: boolean;
   icon: string;
-  color: 'crisis' | 'offer' | 'request';
+  color: 'crisis' | 'offer' | 'request' | 'information' | 'benevole';
   loading: boolean;
+}
+
+/** Chiffre brut (pas de delta) pour la 6ᵉ fenêtre miniature nationale. */
+interface NationalFigure {
+  title: string;
+  value: string;
+  icon: string;
 }
 
 interface DayPoint {
@@ -79,6 +86,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
   lineMax             = 1;
   totalItems          = 0;
   crisesTotal         = 0;
+  nationalFigures:    NationalFigure[] = [];
+  isZoneScoped        = false;
 
   // ── Config ─────────────────────────────────────────────────
   readonly filterOptions = [
@@ -133,7 +142,9 @@ export class DashboardComponent implements OnInit, OnDestroy {
   private process(data: DashboardStats): void {
     this.totalItems  = data.total_items;
     this.crisesTotal = data.totals.crises;
+    this.isZoneScoped = data.is_zone_scoped;
     this.buildStats(data);
+    this.buildNational(data);
     this.buildLineChart(data.day_points);
     this.buildPieChart(data.pie);
     this.buildRecentItems(data.recent_items);
@@ -167,6 +178,31 @@ export class DashboardComponent implements OnInit, OnDestroy {
         changePositive: data.stats.demandes >= data.previous.demandes,
         icon: 'emergency',             color: 'request',  loading: false,
       },
+      {
+        title: 'Signalements',     value: this.fmt(data.stats.signalements),
+        change: delta(data.stats.signalements, data.previous.signalements),
+        changePositive: data.stats.signalements <= data.previous.signalements,   // moins de signalements = mieux
+        icon: 'campaign',              color: 'information', loading: false,
+      },
+      {
+        title: 'Bénévoles',        value: this.fmt(data.stats.benevoles),
+        change: delta(data.stats.benevoles, data.previous.benevoles),
+        changePositive: data.stats.benevoles >= data.previous.benevoles,
+        icon: 'groups',                 color: 'benevole', loading: false,
+      },
+    ];
+  }
+
+  // ── National (6ᵉ fenêtre miniature) ─────────────────────────
+
+  private buildNational(data: DashboardStats): void {
+    const n = data.national.stats;
+    this.nationalFigures = [
+      { title: 'Crises',       value: this.fmt(n.crises),       icon: 'local_fire_department' },
+      { title: 'Ressources',   value: this.fmt(n.offres),       icon: 'volunteer_activism' },
+      { title: 'Besoins',      value: this.fmt(n.demandes),     icon: 'emergency' },
+      { title: 'Signalements', value: this.fmt(n.signalements), icon: 'campaign' },
+      { title: 'Bénévoles',    value: this.fmt(n.benevoles),    icon: 'groups' },
     ];
   }
 
@@ -342,6 +378,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
       { title: 'Crises',     value: '—', change: '', changePositive: false, icon: 'local_fire_department', color: 'crisis',   loading },
       { title: 'Ressources', value: '—', change: '', changePositive: true,  icon: 'volunteer_activism',    color: 'offer',    loading },
       { title: 'Besoins',    value: '—', change: '', changePositive: true,  icon: 'emergency',             color: 'request',  loading },
+      { title: 'Signalements', value: '—', change: '', changePositive: true, icon: 'campaign',             color: 'information', loading },
+      { title: 'Bénévoles',  value: '—', change: '', changePositive: true,  icon: 'groups',                color: 'benevole', loading },
     ];
   }
 }

@@ -28,16 +28,29 @@ export interface DashboardCounts {
   crises: number;
   offres: number;
   demandes: number;
+  signalements: number;
+  benevoles: number;
+}
+
+export interface DashboardNational {
+  stats: DashboardCounts;
+  previous: DashboardCounts;
 }
 
 export interface DashboardStats {
   stats: DashboardCounts;
   previous: DashboardCounts;
-  totals: DashboardCounts;
+  totals: Pick<DashboardCounts, 'crises' | 'offres' | 'demandes'>;
   day_points: DashboardDayPoint[];
   pie: DashboardPieSlice[];
   recent_items: DashboardRecentItem[];
   total_items: number;
+  /** Mêmes 5 métriques que "stats"/"previous", jamais scopées à une zone — alimente la 6ᵉ
+   * fenêtre miniature. Identique à stats/previous quand is_zone_scoped est false. */
+  national: DashboardNational;
+  /** false pour un administrateur ou un utilisateur sans zone résolvable (pas
+   * d'institution/commune) — "stats" est alors déjà national, la 6ᵉ fenêtre est redondante. */
+  is_zone_scoped: boolean;
 }
 
 export type DashboardFilter = 'all' | 'week' | 'month' | 'quarter' | 'half_year' | 'year';

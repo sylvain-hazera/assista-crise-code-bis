@@ -1554,6 +1554,21 @@ class ImportPersonnelCommunalExempleView(APIView):
         return response
 
 
+def _dashboard_zone_filter(request):
+    """(niveau, code) de la zone du viewer pour le tableau de bord — jamais bloquant : un
+    administrateur ou un utilisateur sans zone résolvable (pas institutionnel, institution
+    sans commune) obtient `None`, traité comme "vue nationale" par l'appelant plutôt qu'un
+    tableau vide (contrairement à filter_queryset_to_viewer_zone, qui renvoie .none() faute
+    de zone connue — approprié pour des listes de contenu, pas pour un dashboard accessible à
+    tout utilisateur authentifié, y compris un bénévole simple sans institution)."""
+    if effective_role_or_none(request) == UserRole.ADMINISTRATOR:
+        return None
+    zone = viewer_zone_code(request)
+    if zone is None or zone[0] == "national":
+        return None
+    return zone
+
+
 class DashboardStatsView(APIView):
     """Agrégats pour le tableau de bord admin (cartes de synthèse, courbe d'évolution 30
     jours, camembert des types de crise, éléments récents) — calculés en base par COUNT/
@@ -1572,17 +1587,83 @@ class DashboardStatsView(APIView):
         "year": relativedelta(years=1),
     }
 
+    def _base_querysets(self, env):
+        crises = Crisis.objects.filter(environment=env)
+        # exclude Bénévolat : annuaire permanent de bénévoles (potentiellement des milliers de
+        # fiches, sans crise rattachée) — hors-sujet pour le suivi de crise du dashboard,
+        # même motif que ReportingComponent.loadAll côté frontend. Compté séparément (carte
+        # "Bénévoles") plutôt qu'exclu silencieusement.
+        offres = Offer.objects.filter(environment=env).exclude(offer_type__type='Bénévolat')
+        demandes = Request.objects.filter(environment=env)
+        signalements = Information.objects.filter(environment=env)
+        benevoles = Offer.objects.filter(environment=env, offer_type__type='Bénévolat')
+        return {
+            "crises": crises, "offres": offres, "demandes": demandes,
+            "signalements": signalements, "benevoles": benevoles,
+        }
+
+    def _scope_to_zone(self, querysets, zone):
+        """Restreint chaque queryset à la zone (niveau, code) donnée. Offer/Request ont un code
+        géo dénormalisé complet (commune_code/epci_code/departement_code/region_code, voir
+        SECTEUR_CHAMP_PAR_NIVEAU) ; Information n'a, elle, que commune_code (pas epci/
+        departement/region — vérifié sur le modèle) : filtrable seulement au niveau commune,
+        reste national au-delà pour ne pas lever une FieldError. Crisis n'a aucun code
+        dénormalisé (zone_communes/zone_departements, une crise pouvant couvrir plusieurs
+        secteurs) — approximé par containment sur ces listes pour les niveaux commune/
+        departement ; best-effort pour epci/region (aucune correspondance directe possible sans
+        agréger les communes membres), la carte "Crises" restant alors nationale."""
+        niveau, code = zone
+        result = dict(querysets)
+        champ = SECTEUR_CHAMP_PAR_NIVEAU.get(niveau)
+        if champ:
+            for key in ("offres", "demandes", "benevoles"):
+                result[key] = result[key].filter(**{champ: code})
+        if niveau == "commune":
+            result["signalements"] = result["signalements"].filter(commune_code=code)
+            result["crises"] = result["crises"].filter(zone_communes__contains=[code])
+        elif niveau == "departement":
+            result["crises"] = result["crises"].filter(zone_departements__contains=[code])
+        return result
+
+    def _period_counts(self, querysets, filter_start, now):
+        crises_qs, offres_qs, demandes_qs = querysets["crises"], querysets["offres"], querysets["demandes"]
+        signalements_qs, benevoles_qs = querysets["signalements"], querysets["benevoles"]
+        if filter_start:
+            crises_qs = crises_qs.filter(start_date__gte=filter_start, start_date__lte=now)
+            offres_qs = offres_qs.filter(created_at__gte=filter_start, created_at__lte=now)
+            demandes_qs = demandes_qs.filter(created_at__gte=filter_start, created_at__lte=now)
+            signalements_qs = signalements_qs.filter(created_at__gte=filter_start, created_at__lte=now)
+            benevoles_qs = benevoles_qs.filter(created_at__gte=filter_start, created_at__lte=now)
+
+        current = {
+            "crises": crises_qs.count(), "offres": offres_qs.count(), "demandes": demandes_qs.count(),
+            "signalements": signalements_qs.count(), "benevoles": benevoles_qs.count(),
+        }
+
+        previous = {"crises": 0, "offres": 0, "demandes": 0, "signalements": 0, "benevoles": 0}
+        if filter_start:
+            duree = now - filter_start
+            prev_end = filter_start
+            prev_start = prev_end - duree
+            previous = {
+                "crises": querysets["crises"].filter(start_date__gte=prev_start, start_date__lte=prev_end).count(),
+                "offres": querysets["offres"].filter(created_at__gte=prev_start, created_at__lte=prev_end).count(),
+                "demandes": querysets["demandes"].filter(created_at__gte=prev_start, created_at__lte=prev_end).count(),
+                "signalements": querysets["signalements"].filter(created_at__gte=prev_start, created_at__lte=prev_end).count(),
+                "benevoles": querysets["benevoles"].filter(created_at__gte=prev_start, created_at__lte=prev_end).count(),
+            }
+        return current, previous
+
     def get(self, request):
         env = get_active_environment(request)
         filter_key = request.query_params.get("filter", "all")
         now = timezone.now()
 
-        crises_all = Crisis.objects.filter(environment=env)
-        # exclude Bénévolat : annuaire permanent de bénévoles (potentiellement des milliers de
-        # fiches, sans crise rattachée) — hors-sujet pour ce tableau de bord de suivi de crise,
-        # même motif que ReportingComponent.loadAll côté frontend.
-        offres_all = Offer.objects.filter(environment=env).exclude(offer_type__type='Bénévolat')
-        demandes_all = Request.objects.filter(environment=env)
+        national_qs = self._base_querysets(env)
+        zone = _dashboard_zone_filter(request)
+        zone_qs = self._scope_to_zone(national_qs, zone) if zone else national_qs
+
+        crises_all, offres_all, demandes_all = zone_qs["crises"], zone_qs["offres"], zone_qs["demandes"]
         totals = {
             "crises": crises_all.count(),
             "offres": offres_all.count(),
@@ -1593,28 +1674,16 @@ class DashboardStatsView(APIView):
         delta = self.FILTER_DELTAS.get(filter_key)
         filter_start = now - delta if delta else None
 
+        current, previous = self._period_counts(zone_qs, filter_start, now)
+        national_current, national_previous = (
+            self._period_counts(national_qs, filter_start, now) if zone else (current, previous)
+        )
+
         crises_qs, offres_qs, demandes_qs = crises_all, offres_all, demandes_all
         if filter_start:
             crises_qs = crises_qs.filter(start_date__gte=filter_start, start_date__lte=now)
             offres_qs = offres_qs.filter(created_at__gte=filter_start, created_at__lte=now)
             demandes_qs = demandes_qs.filter(created_at__gte=filter_start, created_at__lte=now)
-
-        current = {
-            "crises": crises_qs.count(),
-            "offres": offres_qs.count(),
-            "demandes": demandes_qs.count(),
-        }
-
-        previous = {"crises": 0, "offres": 0, "demandes": 0}
-        if filter_start:
-            duree = now - filter_start
-            prev_end = filter_start
-            prev_start = prev_end - duree
-            previous = {
-                "crises": crises_all.filter(start_date__gte=prev_start, start_date__lte=prev_end).count(),
-                "offres": offres_all.filter(created_at__gte=prev_start, created_at__lte=prev_end).count(),
-                "demandes": demandes_all.filter(created_at__gte=prev_start, created_at__lte=prev_end).count(),
-            }
 
         # Courbe d'évolution : toujours les 30 derniers jours calendaires, bornés en plus par
         # la période sélectionnée (réplique le comportement de l'ancien buildLineChart, qui
@@ -1678,6 +1747,11 @@ class DashboardStatsView(APIView):
             "pie": pie,
             "recent_items": recent,
             "total_items": total_items,
+            # National toujours présent (identique à "stats"/"previous" si aucune zone n'a pu
+            # être appliquée — administrateur ou utilisateur sans zone résolvable) : alimente la
+            # 6ᵉ fenêtre miniature du dashboard, à côté des 5 cartes "ma zone".
+            "national": {"stats": national_current, "previous": national_previous},
+            "is_zone_scoped": zone is not None,
         })
 
 
