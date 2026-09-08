@@ -20,6 +20,7 @@ import { DossiersComponent } from './dossiers/dossiers.component';
 import { MissionsComponent } from './missions/missions.component';
 import { VueMairieComponent } from './vue-mairie/vue-mairie.component';
 import { ImportPersonnelComponent } from './import-personnel/import-personnel.component';
+import { ImportInstitutionsComponent } from './import-institutions/import-institutions.component';
 import { DeclarationsSecuriteComponent } from './declarations-securite/declarations-securite.component';
 import { BesoinsComponent } from './besoins/besoins.component';
 import { BesoinsCompetencesComponent } from './besoins-competences/besoins-competences.component';
@@ -36,6 +37,7 @@ export const ADMIN_ROUTES: Routes = [
   { path: 'missions', component: MissionsComponent, canActivate: [institutionalEffectiveGuard] },
   { path: 'vue-mairie', component: VueMairieComponent, canActivate: [institutionalEffectiveGuard] },
   { path: 'import-personnel', component: ImportPersonnelComponent, canActivate: [institutionalEffectiveGuard] },
+  { path: 'import-institutions', component: ImportInstitutionsComponent, canActivate: [institutionalEffectiveGuard] },
   { path: 'declarations-securite', component: DeclarationsSecuriteComponent, canActivate: [institutionalEffectiveGuard] },
   { path: 'equipes', component: TeamsComponent, canActivate: [institutionalEffectiveGuard] },
   { path: 'institutions', component: InstitutionsComponent, canActivate: [institutionalEffectiveGuard] },

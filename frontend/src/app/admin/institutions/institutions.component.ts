@@ -1,5 +1,6 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { RouterLink } from '@angular/router';
 import { FormsModule, ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { forkJoin } from 'rxjs';
 
@@ -11,6 +12,9 @@ import { InstitutionDomaineService } from '../../services/institution-domaine.se
 import { UserService } from '../../services/user.service';
 import { CompetenceService } from '../../services/competence.service';
 import { AffectationRoleOperationnelService } from '../../services/affectation-role-operationnel.service';
+import { LocationService, Commune } from '../../services/location.service';
+import { ZoneService } from '../../services/zone.service';
+import { Zone } from '../../shared/models/zone.model';
 import { TagSearchInputComponent } from '../../shared/components/common/tag-search-input/tag-search-input.component';
 
 import {
@@ -32,7 +36,7 @@ type DetailTab = 'contacts' | 'domaines' | 'regulateurs';
 @Component({
   selector: 'app-institutions',
   standalone: true,
-  imports: [CommonModule, FormsModule, ReactiveFormsModule, TagSearchInputComponent],
+  imports: [CommonModule, FormsModule, ReactiveFormsModule, RouterLink, TagSearchInputComponent],
   templateUrl: './institutions.component.html',
   styleUrls: ['./institutions.component.scss'],
 })
@@ -48,6 +52,9 @@ export class InstitutionsComponent implements OnInit {
   domaines: InstitutionDomaine[] = [];
   competences: Competence[] = [];
   affectationsRoles: AffectationRoleOperationnel[] = [];
+  /** Zones (catalogue) de l'institution actuellement ouverte — chargées à l'ouverture du
+   * détail (openDetail), pas dans le forkJoin initial (scopées à une seule institution). */
+  zones: Zone[] = [];
 
   isLoading = true;
   isSaving = false;
@@ -91,6 +98,8 @@ export class InstitutionsComponent implements OnInit {
     private userService: UserService,
     private competenceService: CompetenceService,
     private affectationRoleService: AffectationRoleOperationnelService,
+    private locationService: LocationService,
+    private zoneService: ZoneService,
   ) {}
 
   ngOnInit(): void {
@@ -106,6 +115,9 @@ export class InstitutionsComponent implements OnInit {
       telephone: [''],
       email: ['', Validators.email],
       adresse: [''],
+      commune_code: [null],
+      commune_nom: [null],
+      commune_code_postal: [null],
       actif: [true],
     });
 
@@ -142,6 +154,8 @@ export class InstitutionsComponent implements OnInit {
       utilisateur: [null, Validators.required],
       role: [null, Validators.required],
       competence: [null],
+      zone: [null],
+      responsabilite: [''],
       actif: [true],
     });
   }
@@ -208,9 +222,26 @@ export class InstitutionsComponent implements OnInit {
       telephone: institution.telephone,
       email: institution.email,
       adresse: institution.adresse,
+      commune_code: institution.commune_code,
+      commune_nom: institution.commune_nom,
+      commune_code_postal: institution.commune_code_postal,
       actif: institution.actif,
     });
     this.modal = 'edit';
+  }
+
+  communeSearchFn = (q: string) => this.locationService.searchCommunesByName(q);
+
+  onCommuneSelected(commune: Commune): void {
+    this.institutionForm.patchValue({
+      commune_code: commune.code,
+      commune_nom: commune.name,
+      commune_code_postal: commune.codePostal ?? null,
+    });
+  }
+
+  clearCommune(): void {
+    this.institutionForm.patchValue({ commune_code: null, commune_nom: null, commune_code_postal: null });
   }
 
   submitEdit(): void {
@@ -247,6 +278,10 @@ export class InstitutionsComponent implements OnInit {
     this.domaineForm.reset({ valide: true });
     this.regulateurForm.reset({ actif: true });
     this.modal = 'detail';
+    this.zones = [];
+    if (institution.id) {
+      this.zoneService.getAll(institution.id).subscribe(zones => this.zones = zones);
+    }
   }
 
   closeModal(): void {
@@ -407,6 +442,11 @@ export class InstitutionsComponent implements OnInit {
   competenceLabel(id: string | null): string {
     if (!id) return 'Aucun thème précisé';
     return this.competences.find(c => c.id === id)?.nom ?? id.slice(0, 8);
+  }
+
+  zoneLabel(id: string | null): string {
+    if (!id) return '—';
+    return this.zones.find(z => z.id === id)?.nom ?? id.slice(0, 8);
   }
 
   competenceSearchFn = (q: string) => this.competenceService.search(q);

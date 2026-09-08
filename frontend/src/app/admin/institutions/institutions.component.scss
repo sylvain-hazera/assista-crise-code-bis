@@ -232,6 +232,13 @@
     }
   }
 
+  .chip {
+    display: inline-flex; align-items: center; gap: .35rem; background: #eff6ff; color: #1d4ed8;
+    border-radius: 999px; padding: .3rem .7rem; font-size: .8rem; align-self: flex-start;
+    button { background: none; border: none; color: inherit; cursor: pointer; font-size: 1rem; line-height: 1; }
+  }
+  .chip-sublabel { opacity: .7; font-size: .9em; }
+
   input[type="text"], input[type="email"], select, textarea {
     border: 1px solid #d1d5db;
     border-radius: 6px;

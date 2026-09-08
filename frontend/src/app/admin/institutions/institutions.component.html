@@ -5,6 +5,9 @@
       <h1><span class="material-icons">apartment</span> Institutions</h1>
       <p class="subtitle">{{ institutions.length }} institution{{ institutions.length > 1 ? 's' : '' }}</p>
     </div>
+    <a routerLink="/admin/import-institutions" class="btn-secondary sm">
+      <span class="material-icons">upload_file</span> Importer des institutions
+    </a>
   </header>
 
   @if (successMessage) {
@@ -197,6 +200,27 @@
           <label>Adresse
             <textarea formControlName="adresse" rows="2"></textarea>
           </label>
+
+          <label>Commune</label>
+          @if (institutionForm.value.commune_nom) {
+            <span class="chip">
+              {{ institutionForm.value.commune_nom }}
+              @if (institutionForm.value.commune_code_postal) {
+                <span class="chip-sublabel">({{ institutionForm.value.commune_code_postal }})</span>
+              }
+              <button type="button" (click)="clearCommune()">×</button>
+            </span>
+          } @else {
+            <app-tag-search-input
+              placeholder="Chercher une commune (nom, code postal ou code INSEE)…"
+              labelField="name"
+              subLabelField="codePostal"
+              [searchFn]="communeSearchFn"
+              emptyMessage="Aucune commune ne correspond."
+              (itemSelected)="onCommuneSelected($event)">
+            </app-tag-search-input>
+          }
+
           <label class="checkbox-row">
             <input type="checkbox" formControlName="actif"/> Institution active
           </label>
@@ -380,13 +404,15 @@
               les thèmes (compétences) sur lesquels il opère.
             </p>
             <table class="data-table sm">
-              <thead><tr><th>Utilisateur</th><th>Rôle</th><th>Thème</th><th>Actif</th><th></th></tr></thead>
+              <thead><tr><th>Utilisateur</th><th>Rôle</th><th>Thème</th><th>Zone</th><th>Responsabilité</th><th>Actif</th><th></th></tr></thead>
               <tbody>
                 @for (affectation of institutionAffectationsRoles; track affectation.id) {
                   <tr>
                     <td>{{ userName(affectation.utilisateur) }}</td>
                     <td>{{ roleLabel(affectation.role) }}</td>
                     <td>{{ competenceLabel(affectation.competence) }}</td>
+                    <td>{{ zoneLabel(affectation.zone ?? null) }}</td>
+                    <td>{{ affectation.responsabilite || '—' }}</td>
                     <td>{{ affectation.actif ? 'Oui' : 'Non' }}</td>
                     <td class="actions">
                       <button class="icon-btn danger" (click)="deleteAffectationRole(affectation)" title="Supprimer">
@@ -395,7 +421,7 @@
                     </td>
                   </tr>
                 } @empty {
-                  <tr><td colspan="5" class="empty">Aucune affectation.</td></tr>
+                  <tr><td colspan="7" class="empty">Aucune affectation.</td></tr>
                 }
               </tbody>
             </table>
@@ -430,6 +456,13 @@
                     <option [ngValue]="c.id">{{ c.nom }}</option>
                   }
                 </select>
+                <select formControlName="zone" title="Zone d'intervention (optionnelle, parmi les zones cataloguées de l'institution)">
+                  <option [ngValue]="null">— Zone d'intervention (optionnel) —</option>
+                  @for (z of zones; track z.id) {
+                    <option [ngValue]="z.id">{{ z.nom }}</option>
+                  }
+                </select>
+                <input type="text" formControlName="responsabilite" placeholder="Responsabilité (ex: Coordination hébergement nord)"/>
                 <label class="checkbox-row"><input type="checkbox" formControlName="actif"/> Actif</label>
                 <button class="btn-primary sm" type="submit">Ajouter</button>
                 <button class="btn-secondary sm" type="button" (click)="showRegulateurForm = false">Annuler</button>

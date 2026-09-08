@@ -65,6 +65,27 @@ class TestInstitutionCRUD:
         institution.refresh_from_db()
         assert institution.nom == "Nouveau nom"
 
+    def test_update_institution_commune_fields(self, authenticated_client):
+        """Commune/code postal éditables depuis la fiche institution (TagSearchInputComponent,
+        voir InstitutionsComponent) — jamais dénormalisés automatiquement contrairement à
+        epci_code/departement_code/region_code (voir Institution.save())."""
+        client, user = authenticated_client
+        institution_type = InstitutionType.objects.create(code="MAIRIE", libelle="Mairie")
+        institution = Institution.objects.create(nom="Institution commune", type=institution_type)
+        ContactInstitution.objects.create(institution=institution, utilisateur=user, actif=True)
+
+        response = client.patch(
+            reverse('institution-detail', args=[institution.id]),
+            {"commune_code": "38185", "commune_nom": "Grenoble", "commune_code_postal": "38000"},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        institution.refresh_from_db()
+        assert institution.commune_code == "38185"
+        assert institution.commune_nom == "Grenoble"
+        assert institution.commune_code_postal == "38000"
+
     def test_delete_institution(self, authenticated_client):
         client, user = authenticated_client
         institution_type = InstitutionType.objects.create(code="MAIRIE", libelle="Mairie")

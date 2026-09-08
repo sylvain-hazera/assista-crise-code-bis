@@ -58,8 +58,11 @@ from .geo_lookup import (
 from django.contrib.gis.measure import D
 from .imports import (
     CHAMPS_PERSONNEL_COMMUNAL,
+    CHAMPS_INSTITUTIONS,
     exemple_csv_personnel_communal,
+    exemple_csv_institutions,
     importer_personnel_communal,
+    importer_institutions,
     parse_fichier,
 )
 from .pagination import OptionalPageNumberPagination, InstitutionPagination
@@ -1557,6 +1560,41 @@ class ImportPersonnelCommunalExempleView(APIView):
     def get(self, request):
         response = HttpResponse(exemple_csv_personnel_communal(), content_type="text/csv; charset=utf-8")
         response['Content-Disposition'] = 'attachment; filename="exemple-personnel-communal.csv"'
+        return response
+
+
+class ImportInstitutionsView(APIView):
+    """Étape 2 de l'import d'institutions (étape 1 = ImportApercuView, générique) : crée les
+    institutions du fichier (voir imports.importer_institutions) — même permission que l'import
+    personnel/élus, pas réservé aux administrateurs (cohérent avec la création d'institution à
+    l'unité via InstitutionViewSet.create, ouverte à tout compte authentifié)."""
+    permission_classes = [IsInstitutionalActor]
+
+    def post(self, request):
+        fichier = request.FILES.get('fichier')
+        if not fichier:
+            return Response({"error": "Aucun fichier reçu."}, status=status.HTTP_400_BAD_REQUEST)
+        mapping = {champ: request.data.get(f"mapping_{champ}") for champ in CHAMPS_INSTITUTIONS}
+        if not mapping.get("nom") or not mapping.get("type"):
+            return Response(
+                {"error": "Les colonnes Nom et Type doivent être associées avant de lancer l'import."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            _colonnes, lignes = parse_fichier(fichier)
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        resultat = importer_institutions(request, lignes, mapping)
+        return Response(resultat)
+
+
+class ImportInstitutionsExempleView(APIView):
+    """Fichier CSV d'exemple téléchargeable juste à côté du formulaire d'import d'institutions."""
+    permission_classes = [IsInstitutionalActor]
+
+    def get(self, request):
+        response = HttpResponse(exemple_csv_institutions(), content_type="text/csv; charset=utf-8")
+        response['Content-Disposition'] = 'attachment; filename="exemple-institutions.csv"'
         return response
 
 

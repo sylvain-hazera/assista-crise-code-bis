@@ -17,6 +17,7 @@ export interface Institution {
   adresse?: string | null;
   commune_code?: string | null;
   commune_nom?: string | null;
+  commune_code_postal?: string | null;
   actif: boolean;
   date_creation?: string;
 }
@@ -58,4 +59,7 @@ export interface AffectationRoleOperationnel {
   date_debut?: string;
   date_fin?: string | null;
   commentaire?: string | null;
+  zone?: string | null;               // UUID de la Zone (catalogue de l'institution)
+  zone_precise?: string | null;       // WKT, dessin optionnel propre à cette affectation
+  responsabilite?: string | null;     // Intitulé libre du périmètre de responsabilité
 }

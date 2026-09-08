@@ -123,6 +123,29 @@ class TestAffectationRoleOperationnelPermissions:
         assert response.status_code == status.HTTP_201_CREATED
         assert str(response.data["competence"]) == str(competence.id)
 
+    def test_create_with_zone_and_responsabilite(self, own_institution_client, institution, role_regulateur, create_user):
+        """Zone d'intervention (catalogue Zone de l'institution) et responsabilité (texte
+        libre) — onglet "Régulateurs / thèmes" des Institutions."""
+        from core.models import Zone
+
+        client, _ = own_institution_client
+        target = create_user(username="avec-zone@test.fr", email="avec-zone@test.fr", type="UTIL_SIMPLE")
+        zone = Zone.objects.create(institution=institution, nom="Quartier Nord")
+
+        response = client.post(
+            reverse('affectationroleoperationnel-list'),
+            {
+                "utilisateur": str(target.id), "institution": str(institution.id),
+                "role": str(role_regulateur.id), "zone": str(zone.id),
+                "responsabilite": "Coordination hébergement nord",
+            },
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert str(response.data["zone"]) == str(zone.id)
+        assert response.data["responsabilite"] == "Coordination hébergement nord"
+
     def test_simple_user_cannot_create(self, create_user, institution, role_regulateur):
         outsider = create_user(username="simple-affectation@test.fr", email="simple-affectation@test.fr", type="UTIL_SIMPLE")
         client = APIClient()

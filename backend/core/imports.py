@@ -144,3 +144,81 @@ def exemple_csv_personnel_communal() -> str:
     writer.writerow(["Jeanne", "Martin", "jeanne.martin@mairie-exemple.fr", "0600000000", "Maire"])
     writer.writerow(["Paul", "Durand", "paul.durand@mairie-exemple.fr", "0600000001", "Secrétaire de mairie"])
     return buffer.getvalue()
+
+
+CHAMPS_INSTITUTIONS = ["nom", "type", "description", "telephone", "email", "adresse"]
+
+LABELS_INSTITUTIONS = {
+    "nom": "Nom de l'institution",
+    "type": "Type (libellé exact déjà existant, ex: Mairie)",
+    "description": "Description",
+    "telephone": "Téléphone",
+    "email": "Email",
+    "adresse": "Adresse",
+}
+
+
+def importer_institutions(request, lignes, mapping):
+    """mapping : {champ_cible: colonne_source}, champ_cible parmi CHAMPS_INSTITUTIONS. nom et
+    type sont obligatoires ; type doit correspondre exactement (insensible à la casse) au
+    libellé d'un InstitutionType déjà existant — jamais créé à la volée depuis un import,
+    contrairement à Competence/InformationType : un type d'institution structure les
+    permissions/le niveau de secteur (voir SECTEUR_NIVEAU_PAR_TYPE_INSTITUTION), pas un simple
+    mot-clé. Une institution du même nom déjà existante (contrainte unique) est ignorée et
+    reportée en erreur plutôt que dupliquée ou écrasée silencieusement. La commune n'est
+    volontairement pas importable ici (pas de colonne dédiée) : trop fragile à résoudre en
+    masse depuis un simple nom sans confirmation humaine — se renseigne après coup dans le
+    formulaire d'édition de l'institution (autocomplete, même mécanisme que l'équipe)."""
+    from .audit import audit_log
+    from .models import Institution, InstitutionType
+    from .permissions import get_active_environment
+
+    environment = get_active_environment(request)
+    types_par_libelle = {t.libelle.strip().lower(): t for t in InstitutionType.objects.all()}
+
+    crees, erreurs = [], []
+    for numero, ligne in enumerate(lignes, start=2):  # ligne 1 = en-têtes, données à partir de 2
+        nom = _valeur(ligne, mapping, "nom")
+        type_libelle = _valeur(ligne, mapping, "type")
+
+        if not nom or not type_libelle:
+            erreurs.append({"ligne": numero, "message": "Nom et type sont obligatoires."})
+            continue
+
+        itype = types_par_libelle.get(type_libelle.strip().lower())
+        if itype is None:
+            erreurs.append({"ligne": numero, "message": f"Type d'institution inconnu : « {type_libelle} »."})
+            continue
+
+        if Institution.objects.filter(nom__iexact=nom).exists():
+            erreurs.append({"ligne": numero, "message": f"Une institution « {nom} » existe déjà."})
+            continue
+
+        Institution.objects.create(
+            nom=nom, type=itype,
+            description=_valeur(ligne, mapping, "description") or None,
+            telephone=_valeur(ligne, mapping, "telephone") or None,
+            email=_valeur(ligne, mapping, "email") or None,
+            adresse=_valeur(ligne, mapping, "adresse") or None,
+            environment=environment,
+        )
+        crees.append(nom)
+
+    audit_log(
+        request=request,
+        action_code="IMPORT_LISTE",
+        objet_type="Institution",
+        objet_id=None,
+        commentaire=f"Import d'institutions : {len(crees)} créée(s), {len(erreurs)} erreur(s)",
+    )
+    return {"crees": len(crees), "erreurs": erreurs}
+
+
+def exemple_csv_institutions() -> str:
+    """Fichier exemple téléchargeable à côté du formulaire d'import d'institutions."""
+    buffer = io.StringIO()
+    writer = csv.writer(buffer, delimiter=";")
+    writer.writerow(list(LABELS_INSTITUTIONS.values()))
+    writer.writerow(["Mairie d'Exemple-sur-Loire", "Mairie", "", "0100000000", "mairie@exemple.fr", "1 place de la Mairie"])
+    writer.writerow(["Croix-Rouge locale", "Association", "Antenne locale", "0100000001", "contact@croix-rouge-exemple.fr", ""])
+    return buffer.getvalue()

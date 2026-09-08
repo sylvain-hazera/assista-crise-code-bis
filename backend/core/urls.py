@@ -41,6 +41,8 @@ from .views import (
     ImportApercuView,
     ImportPersonnelCommunalView,
     ImportPersonnelCommunalExempleView,
+    ImportInstitutionsView,
+    ImportInstitutionsExempleView,
 )
 
 router = DefaultRouter()
@@ -165,6 +167,8 @@ urlpatterns = [
     path('imports/apercu/', ImportApercuView.as_view(), name='import_apercu'),
     path('imports/personnel-communal/', ImportPersonnelCommunalView.as_view(), name='import_personnel_communal'),
     path('imports/personnel-communal/exemple/', ImportPersonnelCommunalExempleView.as_view(), name='import_personnel_communal_exemple'),
+    path('imports/institutions/', ImportInstitutionsView.as_view(), name='import_institutions'),
+    path('imports/institutions/exemple/', ImportInstitutionsExempleView.as_view(), name='import_institutions_exemple'),
     path('ma-position/', MaPositionView.as_view(), name='ma_position'),
     path('positions-equipes/', PositionsEquipesView.as_view(), name='positions_equipes'),
     

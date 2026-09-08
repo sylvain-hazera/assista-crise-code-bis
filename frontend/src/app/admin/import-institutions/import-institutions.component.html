@@ -1,0 +1,101 @@
+<div class="import-page">
+
+  <header class="page-header">
+    <h1><span class="material-icons">upload_file</span> Import d'institutions</h1>
+    <p class="subtitle">Crée plusieurs institutions en une fois — le type doit correspondre à un type déjà existant.</p>
+  </header>
+
+  @if (errorMessage) {
+    <div class="alert-error">
+      <span class="material-icons">error_outline</span>
+      {{ errorMessage }}
+    </div>
+  }
+
+  @if (etape === 'selection') {
+    <section class="block">
+      <h2>1. Choisissez votre fichier</h2>
+      <p class="empty-text section-note">Formats acceptés : CSV ou XLSX (Excel). Une ligne par institution, la première ligne doit contenir les en-têtes de colonnes. La commune n'est pas importable ici — à préciser ensuite dans la fiche de chaque institution.</p>
+
+      <button type="button" class="btn-secondary" (click)="telechargerExemple()">
+        <span class="material-icons">download</span> Télécharger un fichier d'exemple
+      </button>
+
+      <div class="file-picker">
+        <input type="file" accept=".csv,.xlsx" (change)="onFichierChoisi($event)">
+        <button type="button" class="btn-primary" [disabled]="!fichier || isLoading" (click)="analyserFichier()">
+          {{ isLoading ? 'Analyse en cours…' : 'Analyser le fichier' }}
+        </button>
+      </div>
+    </section>
+  }
+
+  @if (etape === 'correspondance' && apercu) {
+    <section class="block">
+      <h2>2. Faites correspondre les colonnes</h2>
+      <p class="empty-text section-note">{{ apercu.total_lignes }} ligne(s) détectée(s) dans le fichier. Associez chaque champ à la colonne correspondante — Nom et Type sont obligatoires.</p>
+
+      <div class="mapping-grid">
+        @for (champ of champs; track champ) {
+          <label class="mapping-item">
+            <span>{{ labels[champ] }} @if (champsObligatoires.includes(champ)) { <span class="required">*</span> }</span>
+            <select class="form-select" [(ngModel)]="mapping[champ]">
+              <option value="">— Ne pas importer —</option>
+              @for (colonne of apercu.colonnes; track colonne) {
+                <option [value]="colonne">{{ colonne }}</option>
+              }
+            </select>
+          </label>
+        }
+      </div>
+
+      <h3 class="preview-title">Aperçu (10 premières lignes)</h3>
+      <div class="table-scroll">
+        <table class="data-table">
+          <thead>
+            <tr>
+              @for (colonne of apercu.colonnes; track colonne) { <th>{{ colonne }}</th> }
+            </tr>
+          </thead>
+          <tbody>
+            @for (ligne of apercu.apercu; track $index) {
+              <tr>
+                @for (colonne of apercu.colonnes; track colonne) { <td>{{ ligne[colonne] }}</td> }
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+
+      <div class="actions-row">
+        <button type="button" class="btn-ghost" (click)="recommencer()">Recommencer</button>
+        <button type="button" class="btn-primary" [disabled]="!mappingValide || isLoading" (click)="lancerImport()">
+          {{ isLoading ? 'Import en cours…' : 'Lancer l\'import' }}
+        </button>
+      </div>
+    </section>
+  }
+
+  @if (etape === 'resultat' && resultat) {
+    <section class="block">
+      <h2>Import terminé</h2>
+      <div class="resultat-summary">
+        <div class="resultat-chip resultat-crees">{{ resultat.crees }} institution(s) créée(s)</div>
+        @if (resultat.erreurs.length > 0) {
+          <div class="resultat-chip resultat-erreurs">{{ resultat.erreurs.length }} ligne(s) ignorée(s)</div>
+        }
+      </div>
+
+      @if (resultat.erreurs.length > 0) {
+        <ul class="erreurs-list">
+          @for (erreur of resultat.erreurs; track erreur.ligne) {
+            <li>Ligne {{ erreur.ligne }} : {{ erreur.message }}</li>
+          }
+        </ul>
+      }
+
+      <button type="button" class="btn-primary" (click)="recommencer()">Importer un autre fichier</button>
+    </section>
+  }
+
+</div>

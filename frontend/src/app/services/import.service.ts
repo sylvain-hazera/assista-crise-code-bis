@@ -11,7 +11,7 @@ export interface ImportApercu {
 
 export interface ImportResultat {
   crees: number;
-  rattaches: number;
+  rattaches?: number;   // absent pour l'import d'institutions (pas de notion de rattachement)
   erreurs: { ligne: number; message: string }[];
 }
 
@@ -45,5 +45,21 @@ export class ImportService {
    * de préparer son propre fichier. */
   telechargerExemplePersonnelCommunal(): Observable<Blob> {
     return this.http.get(`${this.url}/personnel-communal/exemple/`, { responseType: 'blob' });
+  }
+
+  /** POST /api/imports/institutions/ — crée des institutions en masse. `mapping` associe
+   * chaque champ cible (nom/type/description/telephone/email/adresse) à la colonne détectée.
+   * `type` doit correspondre au libellé exact d'un InstitutionType déjà existant. */
+  importerInstitutions(fichier: File, mapping: Record<string, string>): Observable<ImportResultat> {
+    const fd = new FormData();
+    fd.append('fichier', fichier);
+    Object.entries(mapping).forEach(([champ, colonne]) => {
+      if (colonne) fd.append(`mapping_${champ}`, colonne);
+    });
+    return this.http.post<ImportResultat>(`${this.url}/institutions/`, fd);
+  }
+
+  telechargerExempleInstitutions(): Observable<Blob> {
+    return this.http.get(`${this.url}/institutions/exemple/`, { responseType: 'blob' });
   }
 }

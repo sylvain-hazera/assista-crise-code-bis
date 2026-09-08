@@ -1013,6 +1013,18 @@ class Institution(EnvironmentScopedModel):
         null=True
     )
 
+    # Contrairement à commune_code/commune_nom (déjà renseignés à l'attachement d'un compte
+    # AUT_LOCALE), pas dénormalisé automatiquement — saisi manuellement quand une commune est
+    # choisie dans le formulaire d'édition de l'institution (voir InstitutionsComponent),
+    # jamais recalculé depuis le référentiel Commune interne (qui n'a pas ce champ).
+    commune_code_postal = models.CharField(
+        max_length=10,
+        blank=True,
+        null=True,
+        help_text="Code postal de la commune de l'institution — utile pour distinguer des "
+                   "communes homonymes, jamais recalculé automatiquement.",
+    )
+
     # Dénormalisés depuis commune_code (voir Institution.save()) : le secteur réel d'une
     # institution EPCI/département/région ne doit jamais être recalculé en base Commune à
     # chaque appel de vue_secteur — juste lu ici. Résolus une seule fois, à chaque changement
@@ -2357,6 +2369,26 @@ class AffectationRoleOperationnel(EnvironmentScopedModel):
     commentaire = models.TextField(
         blank=True,
         null=True
+    )
+
+    # Optionnels : zone d'intervention et responsabilité de la personne pour ce rôle, saisis
+    # dans l'onglet "Régulateurs / thèmes" des Institutions — réutilisent Zone (catalogue
+    # partagé de l'institution, voir Zone.__doc__) plutôt qu'un système de zone ad-hoc dupliqué
+    # ici, cohérent avec la zone d'intervention d'une équipe (Team.zone_precise en plus, pas
+    # dupliqué non plus : le dessin libre reste propre à chaque affectation via zone_precise
+    # ci-dessous).
+    zone = models.ForeignKey(
+        "Zone", on_delete=models.SET_NULL, null=True, blank=True, related_name="affectations_roles",
+    )
+    zone_precise = gis_models.PolygonField(
+        srid=4326, null=True, blank=True,
+        help_text="Dessin optionnel, propre à cette affectation — indépendant de Zone.zone_precise "
+                   "si `zone` est aussi renseignée (ex: un périmètre plus fin que la zone cataloguée).",
+    )
+    responsabilite = models.CharField(
+        max_length=255, blank=True, null=True,
+        help_text="Intitulé libre du périmètre de responsabilité (ex: \"Coordination hébergement "
+                   "secteur nord\") — distinct du rôle (fonction) et du thème (compétence).",
     )
 
     class Meta:
