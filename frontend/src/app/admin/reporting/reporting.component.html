@@ -290,6 +290,11 @@
                           <span class="material-icons">verified</span>
                         </span>
                       }
+                      @if (row.kind === 'Offer' && isOffreMateriel(row) && row.presencePhysique != null) {
+                        <span class="materiel-presence-badge" [class.avec-exploitant]="row.presencePhysique">
+                          {{ row.presencePhysique ? 'Avec exploitant' : 'Matériel seul' }}
+                        </span>
+                      }
                       @if (!row.actif) {
                         <span class="desactive-badge" title="Désactivé(e) — reste dans l'historique jusqu'à la clôture de la crise">Désactivé</span>
                       }

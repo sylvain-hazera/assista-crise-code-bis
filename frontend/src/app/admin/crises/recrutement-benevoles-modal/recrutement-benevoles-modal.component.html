@@ -97,7 +97,7 @@
               </tr>
             </thead>
             <tbody>
-              <tr class="headcount-row" [title]="'Bénévoles déjà présents dans l\'équipe par créneau (+ ceux que vous êtes en train d\'ajouter)'">
+              <tr class="headcount-row" [title]="'Bénévoles déjà présents dans l\'équipe par créneau (+ ceux que vous êtes en train d\'ajouter, voir le détail par bénévole ci-dessous)'">
                 <td class="col-check"></td>
                 <td [attr.colspan]="hasPointLocation ? 4 : 3">Déjà présents dans l'équipe</td>
                 <td class="col-dispo">
@@ -105,16 +105,12 @@
                     @for (jour of jours; track jour.date) {
                       <div class="dispo-mini-jour" [title]="jour.label">
                         @for (cr of jour.creneaux; track cr.creneau) {
-                          <label
-                            class="dispo-dot count"
-                            [class.checked]="isBatchCreneauChecked(jour.date, cr.creneau)"
-                            [class.has-count]="dejaAffectes(jour.date, cr.creneau) > 0">
-                            <input type="checkbox" [checked]="isBatchCreneauChecked(jour.date, cr.creneau)" (change)="toggleBatchCreneau(jour.date, cr.creneau)">
+                          <span class="dispo-dot count" [class.has-count]="dejaAffectes(jour.date, cr.creneau) > 0">
                             <span class="value">{{ dejaAffectes(jour.date, cr.creneau) }}</span>
                             @if (delta(jour.date, cr.creneau) > 0) {
                               <span class="delta">+{{ delta(jour.date, cr.creneau) }}</span>
                             }
-                          </label>
+                          </span>
                         }
                       </div>
                     }
@@ -174,14 +170,43 @@
         <div class="batch-bar">
           <h3>{{ selectedIds.size }} bénévole(s) sélectionné(s)</h3>
           <p class="hint">
-            Créneaux à couvrir cochés d'office selon les disponibilités des bénévoles
-            sélectionnés (décochez ce qui n'est pas nécessaire) — case à cocher tout en haut du
-            tableau, sur la ligne "Déjà présents dans l'équipe".
+            Créneaux à couvrir cochés d'office selon les disponibilités déclarées par chaque
+            bénévole — décochez/cochez individuellement ce qui n'est pas nécessaire ou manquant.
           </p>
 
-          @if (premierCreneau) {
-            <p class="hint">Premier créneau couvert : <strong>{{ premierCreneau.label }}</strong></p>
-          }
+          <div class="benevole-creneaux-list">
+            @for (candidat of selectedCandidatsList; track candidat.id) {
+              <details class="benevole-creneaux" open>
+                <summary>
+                  {{ candidat.first_name_offer }} {{ candidat.last_name_offer }}
+                  @if (premierCreneauFor(candidat.id)) {
+                    <span class="hint-inline">— premier créneau : {{ premierCreneauFor(candidat.id)?.label }}</span>
+                  } @else {
+                    <span class="hint-inline error">— aucun créneau coché</span>
+                  }
+                </summary>
+                <table class="creneau-grid">
+                  <thead>
+                    <tr><th></th><th>Matin</th><th>Midi</th><th>Soir</th><th>Nuit</th></tr>
+                  </thead>
+                  <tbody>
+                    @for (jour of jours; track jour.date) {
+                      <tr>
+                        <td class="jour-label">{{ jour.label }}</td>
+                        @for (cr of jour.creneaux; track cr.creneau) {
+                          <td>
+                            <input type="checkbox"
+                                   [checked]="isBenevoleCreneauChecked(candidat.id, jour.date, cr.creneau)"
+                                   (change)="toggleBenevoleCreneau(candidat.id, jour.date, cr.creneau)">
+                          </td>
+                        }
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </details>
+            }
+          </div>
 
           @if (transitPoints.length > 0) {
             <div class="form-group">

@@ -17,11 +17,15 @@ export interface AffectationPointBenevole {
   date_creation: string;
 }
 
-export interface InviterBenevolePayload {
-  offer_ids: string[];
+export interface InviterBenevoleAffectation {
+  offer_id: string;
   date_attendue: string;
-  point_transit_id?: string | null;
   creneaux: { date: string; creneau: 'MATIN' | 'MIDI' | 'SOIR' | 'NUIT' }[];
+}
+
+export interface InviterBenevolePayload {
+  affectations: InviterBenevoleAffectation[];
+  point_transit_id?: string | null;
 }
 
 export interface InviterBenevoleResponse {

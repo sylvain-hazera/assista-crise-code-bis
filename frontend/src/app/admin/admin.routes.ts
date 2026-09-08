@@ -1,6 +1,7 @@
 import { InstitutionsComponent } from './institutions/institutions.component';
 import { CrisesComponent } from './crises/crises.component';
 import { CentresComponent } from './centres/centres.component';
+import { StocksComparaisonComponent } from './stocks-comparaison/stocks-comparaison.component';
 import { ZonesComponent } from './zones/zones.component';
 import { PlansComponent } from './plans/plans.component';
 import { Routes } from '@angular/router';
@@ -42,6 +43,7 @@ export const ADMIN_ROUTES: Routes = [
   { path: 'equipes', component: TeamsComponent, canActivate: [institutionalEffectiveGuard] },
   { path: 'institutions', component: InstitutionsComponent, canActivate: [institutionalEffectiveGuard] },
   { path: 'crises', component: CrisesComponent, canActivate: [institutionalEffectiveGuard] },
+  { path: 'crises/:crisisId/stocks', component: StocksComparaisonComponent, canActivate: [institutionalEffectiveGuard] },
   { path: 'centres', component: CentresComponent, canActivate: [institutionalEffectiveGuard] },
   { path: 'zones', component: ZonesComponent, canActivate: [institutionalEffectiveGuard] },
   { path: 'plans', component: PlansComponent, canActivate: [institutionalEffectiveGuard] },

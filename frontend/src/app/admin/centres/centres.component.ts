@@ -27,7 +27,7 @@ import { PointModalComponent } from '../crises/point-modal/point-modal.component
 export class CentresComponent implements OnInit {
   points: PointOperationnel[] = [];
   pointTypes: PointType[] = [];
-  scope: 'mine' | 'all' = 'mine';
+  scope: 'mine' | 'all' | 'prevus' = 'mine';
   searchQuery = '';
   isLoading = true;
   errorMessage = '';
@@ -51,7 +51,7 @@ export class CentresComponent implements OnInit {
     return this.authService.getCurrentUser()?.type === UserRole.ADMIN;
   }
 
-  setScope(scope: 'mine' | 'all'): void {
+  setScope(scope: 'mine' | 'all' | 'prevus'): void {
     if (this.scope === scope) return;
     this.scope = scope;
     this.load();
@@ -60,7 +60,9 @@ export class CentresComponent implements OnInit {
   private load(): void {
     this.isLoading = true;
     this.errorMessage = '';
-    const points$ = this.scope === 'mine' ? this.pointService.getMine() : this.pointService.getAll();
+    const points$ = this.scope === 'mine' ? this.pointService.getMine()
+      : this.scope === 'prevus' ? this.pointService.getPrevus()
+      : this.pointService.getAll();
 
     forkJoin({ points: points$, pointTypes: this.pointTypeService.getAll() }).subscribe({
       next: ({ points, pointTypes }) => {

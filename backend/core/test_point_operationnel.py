@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 import pytest
 from django.urls import reverse
 from django.utils import timezone
@@ -296,6 +298,70 @@ class TestPointOperationnelMineFilter:
         response = client.get(reverse('pointoperationnel-list'))
 
         assert response.data == []
+
+
+@pytest.mark.django_db
+class TestPointOperationnelPrevusFilter:
+    """Liste "centres prévus" (CentresComponent) : PointOperationnel créés sans crise
+    rattachée (crise vide) — voir PointOperationnelViewSet.filterset_fields."""
+
+    def test_crise_isnull_true_returns_only_points_without_crisis(self, create_user, crisis, point_type):
+        admin = create_user(username="admin-prevus-point@test.fr", email="admin-prevus-point@test.fr", type="ADMIN")
+        client = APIClient()
+        client.force_authenticate(user=admin)
+        prevu = PointOperationnel.objects.create(nom="Point prévu", type=point_type, crise=None)
+        PointOperationnel.objects.create(nom="Point avec crise", type=point_type, crise=crisis)
+
+        response = client.get(reverse('pointoperationnel-list'), {"crise__isnull": "true"})
+
+        assert response.status_code == status.HTTP_200_OK
+        ids = {p["id"] for p in response.data}
+        assert ids == {str(prevu.id)}
+
+    def test_crise_isnull_false_excludes_points_without_crisis(self, create_user, crisis, point_type):
+        admin = create_user(username="admin-non-prevus-point@test.fr", email="admin-non-prevus-point@test.fr", type="ADMIN")
+        client = APIClient()
+        client.force_authenticate(user=admin)
+        PointOperationnel.objects.create(nom="Point prévu", type=point_type, crise=None)
+        avec_crise = PointOperationnel.objects.create(nom="Point avec crise", type=point_type, crise=crisis)
+
+        response = client.get(reverse('pointoperationnel-list'), {"crise__isnull": "false"})
+
+        ids = {p["id"] for p in response.data}
+        assert ids == {str(avec_crise.id)}
+
+
+@pytest.mark.django_db
+class TestPointOperationnelCommuneNom:
+    """commune_nom (PointOperationnelSerializer) : reverse-géocodage du point, même mécanisme
+    que le scoping zone — affiché dans les listes centres (CentresComponent/crises.component)."""
+
+    @patch("core.geo_lookup._fetch_json")
+    def test_serializer_exposes_commune_nom_from_location(self, mock_fetch, create_user, crisis, point_type):
+        mock_fetch.return_value = {
+            "features": [{"properties": {"city": "Grenoble", "citycode": "38185"}}],
+        }
+        admin = create_user(username="admin-commune-point@test.fr", email="admin-commune-point@test.fr", type="ADMIN")
+        client = APIClient()
+        client.force_authenticate(user=admin)
+        point = PointOperationnel.objects.create(
+            nom="Point avec commune", type=point_type, crise=crisis, location="POINT (5.7245 45.1885)",
+        )
+
+        response = client.get(reverse('pointoperationnel-detail', args=[point.id]))
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["commune_nom"] == "Grenoble"
+
+    def test_serializer_returns_none_without_location(self, create_user, crisis, point_type):
+        admin = create_user(username="admin-sans-commune-point@test.fr", email="admin-sans-commune-point@test.fr", type="ADMIN")
+        client = APIClient()
+        client.force_authenticate(user=admin)
+        point = PointOperationnel.objects.create(nom="Point sans localisation", type=point_type, crise=crisis)
+
+        response = client.get(reverse('pointoperationnel-detail', args=[point.id]))
+
+        assert response.data["commune_nom"] is None
 
 
 @pytest.mark.django_db

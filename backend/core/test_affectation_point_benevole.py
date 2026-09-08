@@ -74,10 +74,12 @@ class TestInviterBenevole:
         response = client.post(
             reverse('pointoperationnel-inviter-benevole', args=[point.id]),
             {
-                "offer_ids": [str(offer.id)],
-                "date_attendue": "2026-09-01T08:00:00Z",
                 "point_transit_id": str(point_transit.id),
-                "creneaux": [{"date": "2026-09-01", "creneau": "MATIN"}],
+                "affectations": [{
+                    "offer_id": str(offer.id),
+                    "date_attendue": "2026-09-01T08:00:00Z",
+                    "creneaux": [{"date": "2026-09-01", "creneau": "MATIN"}],
+                }],
             },
             format='json',
         )
@@ -109,7 +111,7 @@ class TestInviterBenevole:
 
         response = client.post(
             reverse('pointoperationnel-inviter-benevole', args=[point_sans_equipe.id]),
-            {"offer_ids": [str(offer.id)], "date_attendue": "2026-09-01T08:00:00Z"},
+            {"affectations": [{"offer_id": str(offer.id), "date_attendue": "2026-09-01T08:00:00Z"}]},
             format='json',
         )
 
@@ -122,7 +124,7 @@ class TestInviterBenevole:
 
         response = client.post(
             reverse('pointoperationnel-inviter-benevole', args=[point.id]),
-            {"offer_ids": [str(offer.id)], "date_attendue": "2026-09-01T08:00:00Z"},
+            {"affectations": [{"offer_id": str(offer.id), "date_attendue": "2026-09-01T08:00:00Z"}]},
             format='json',
         )
 
@@ -135,7 +137,7 @@ class TestInviterBenevole:
 
         response = client.post(
             reverse('pointoperationnel-inviter-benevole', args=[point.id]),
-            {"offer_ids": [str(offer.id)], "date_attendue": "2026-09-01T08:00:00Z"},
+            {"affectations": [{"offer_id": str(offer.id), "date_attendue": "2026-09-01T08:00:00Z"}]},
             format='json',
         )
 
@@ -149,7 +151,7 @@ class TestInviterBenevole:
 
         response = client.post(
             reverse('pointoperationnel-inviter-benevole', args=[point.id]),
-            {"offer_ids": [str(offer.id)], "date_attendue": "2026-09-01T08:00:00Z"},
+            {"affectations": [{"offer_id": str(offer.id), "date_attendue": "2026-09-01T08:00:00Z"}]},
             format='json',
         )
 
@@ -157,7 +159,7 @@ class TestInviterBenevole:
         affectation = AffectationPointBenevole.objects.get(id=response.data["created"][0]["id"])
         assert affectation.benevole_id == existing.id
 
-    def test_bulk_invite_creates_affectation_for_each_offer(self, responsable_client, point):
+    def test_bulk_invite_creates_affectation_for_each_offer_with_own_creneaux(self, responsable_client, point):
         client, _ = responsable_client
         offer_type = OfferType.objects.create(type="Bénévolat bulk test")
         offer1 = Offer.objects.create(
@@ -172,9 +174,16 @@ class TestInviterBenevole:
         response = client.post(
             reverse('pointoperationnel-inviter-benevole', args=[point.id]),
             {
-                "offer_ids": [str(offer1.id), str(offer2.id)],
-                "date_attendue": "2026-09-01T08:00:00Z",
-                "creneaux": [{"date": "2026-09-01", "creneau": "SOIR"}],
+                "affectations": [
+                    {
+                        "offer_id": str(offer1.id), "date_attendue": "2026-09-01T18:00:00Z",
+                        "creneaux": [{"date": "2026-09-01", "creneau": "SOIR"}],
+                    },
+                    {
+                        "offer_id": str(offer2.id), "date_attendue": "2026-09-02T08:00:00Z",
+                        "creneaux": [{"date": "2026-09-02", "creneau": "MATIN"}],
+                    },
+                ],
             },
             format='json',
         )
@@ -183,11 +192,11 @@ class TestInviterBenevole:
         assert len(response.data["created"]) == 2
         assert response.data["errors"] == []
         assert len(mail.outbox) == 2
-        assert point.equipe.members.filter(email="alice-bulk@test.fr").exists()
-        assert point.equipe.members.filter(email="bob-bulk@test.fr").exists()
-        for email in ("alice-bulk@test.fr", "bob-bulk@test.fr"):
-            benevole = point.equipe.members.get(email=email)
-            assert DisponibilitePointEquipe.objects.filter(point=point, membre=benevole, creneau="SOIR").exists()
+        alice = point.equipe.members.get(email="alice-bulk@test.fr")
+        bob = point.equipe.members.get(email="bob-bulk@test.fr")
+        assert DisponibilitePointEquipe.objects.filter(point=point, membre=alice, creneau="SOIR").exists()
+        assert DisponibilitePointEquipe.objects.filter(point=point, membre=bob, creneau="MATIN").exists()
+        assert not DisponibilitePointEquipe.objects.filter(point=point, membre=alice, creneau="MATIN").exists()
 
     def test_bulk_invite_partial_failure_reports_error_without_blocking_others(self, responsable_client, point, offer):
         client, _ = responsable_client
@@ -196,8 +205,10 @@ class TestInviterBenevole:
         response = client.post(
             reverse('pointoperationnel-inviter-benevole', args=[point.id]),
             {
-                "offer_ids": [str(offer.id), missing_id],
-                "date_attendue": "2026-09-01T08:00:00Z",
+                "affectations": [
+                    {"offer_id": str(offer.id), "date_attendue": "2026-09-01T08:00:00Z"},
+                    {"offer_id": missing_id, "date_attendue": "2026-09-01T08:00:00Z"},
+                ],
             },
             format='json',
         )
@@ -213,7 +224,7 @@ class TestInviterBenevole:
 
         response = client.post(
             reverse('pointoperationnel-inviter-benevole', args=[point.id]),
-            {"offer_ids": [missing_id], "date_attendue": "2026-09-01T08:00:00Z"},
+            {"affectations": [{"offer_id": missing_id, "date_attendue": "2026-09-01T08:00:00Z"}]},
             format='json',
         )
 
@@ -393,8 +404,10 @@ class TestEquipeActionEnrichie:
         client.post(
             reverse('pointoperationnel-inviter-benevole', args=[point.id]),
             {
-                "offer_ids": [str(offer.id)], "date_attendue": "2026-09-01T08:00:00Z",
-                "creneaux": [{"date": "2026-09-01", "creneau": "MATIN"}],
+                "affectations": [{
+                    "offer_id": str(offer.id), "date_attendue": "2026-09-01T08:00:00Z",
+                    "creneaux": [{"date": "2026-09-01", "creneau": "MATIN"}],
+                }],
             },
             format='json',
         )

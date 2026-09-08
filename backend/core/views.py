@@ -7019,7 +7019,9 @@ class PointOperationnelViewSet(
         PointOperationnelSerializer
     )
 
-    filterset_fields = ["crise"]
+    # crise__isnull=true : liste des centres "prévus" (créés hors contexte crise, cf. les
+    # Plans) — CentresComponent, 3e mode de la liste.
+    filterset_fields = {"crise": ["exact", "isnull"]}
 
     def get_queryset(self):
         """`?mine=true` restreint aux points dont l'utilisateur est responsable, leader ou
@@ -7269,9 +7271,13 @@ class PointOperationnelViewSet(
         groupée depuis le tableau de recrutement), et leur envoie à chacun un email de
         confirmation de disponibilité (lien oui/non). Nécessite que le point ait déjà une
         équipe assignée (chaque bénévole y est ajouté, condition déjà posée par
-        DisponibilitePointEquipeSerializer.validate pour créer ses créneaux). Les créneaux et
-        le point de transit sont communs à tout le lot (décidés par le régulateur), pas propres
-        à chaque bénévole. Un échec individuel (ex: offre introuvable) n'annule pas les autres."""
+        DisponibilitePointEquipeSerializer.validate pour créer ses créneaux). Les créneaux sont
+        propres à chaque bénévole (`affectations`, une entrée par offre avec ses propres
+        créneaux) — avant ce correctif, une seule grille de créneaux, commune à tout le lot,
+        était appliquée identiquement à tous les bénévoles sélectionnés, sans tenir compte de
+        leurs disponibilités individuelles réelles. Le point de transit reste commun au lot
+        (décidé une fois par le régulateur). Un échec individuel (ex: offre introuvable)
+        n'annule pas les autres."""
         point = self.get_object()
 
         if point.responsable_id != request.user.id and not (
@@ -7289,33 +7295,35 @@ class PointOperationnelViewSet(
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        offer_ids = request.data.get("offer_ids") or []
-        if not offer_ids:
-            return Response({"error": "offer_ids est requis (au moins un identifiant)."}, status=status.HTTP_400_BAD_REQUEST)
-
-        date_attendue = parse_datetime(request.data.get("date_attendue") or "")
-        if not date_attendue:
-            return Response({"error": "date_attendue est requis et doit être une date/heure valide (ISO 8601)."}, status=status.HTTP_400_BAD_REQUEST)
-        if timezone.is_naive(date_attendue):
-            date_attendue = timezone.make_aware(date_attendue)
+        affectations_payload = request.data.get("affectations") or []
+        if not affectations_payload:
+            return Response({"error": "affectations est requis (au moins une entrée)."}, status=status.HTTP_400_BAD_REQUEST)
 
         point_transit = None
         point_transit_id = request.data.get("point_transit_id")
         if point_transit_id:
             point_transit = get_object_or_404(PointOperationnel, pk=point_transit_id, crise=point.crise)
 
-        creneaux = request.data.get("creneaux", [])
-
+        offer_ids = [entry.get("offer_id") for entry in affectations_payload]
         offers_by_id = {str(o.id): o for o in Offer.objects.filter(pk__in=offer_ids)}
 
         created = []
         errors = []
 
-        for offer_id in offer_ids:
+        for entry in affectations_payload:
+            offer_id = entry.get("offer_id")
             offer = offers_by_id.get(str(offer_id))
             if not offer:
                 errors.append({"offer_id": offer_id, "error": "Offre introuvable."})
                 continue
+
+            creneaux = entry.get("creneaux") or []
+            date_attendue = parse_datetime(entry.get("date_attendue") or "")
+            if not date_attendue:
+                errors.append({"offer_id": offer_id, "error": "date_attendue est requis et doit être une date/heure valide (ISO 8601)."})
+                continue
+            if timezone.is_naive(date_attendue):
+                date_attendue = timezone.make_aware(date_attendue)
 
             benevole, _created = resolve_or_invite_benevole(offer, request)
             if not benevole:

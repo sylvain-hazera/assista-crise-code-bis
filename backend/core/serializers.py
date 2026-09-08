@@ -2182,12 +2182,18 @@ class PointOperationnelSerializer(
     equipes_ravitaillement_noms = serializers.SerializerMethodField()
     civils_accueillis = serializers.SerializerMethodField()
     peut_gerer = serializers.SerializerMethodField()
+    commune_nom = serializers.SerializerMethodField()
 
     class Meta:
 
         model = PointOperationnel
 
         fields = "__all__"
+
+    def get_commune_nom(self, obj):
+        # Même mécanisme de reverse-géocodage que le scoping zone (_filter_points_to_viewer_zone) —
+        # PointOperationnel n'a pas de commune_code dénormalisé, seulement un point GPS.
+        return commune_from_point(obj.location)
 
     def get_peut_gerer(self, obj):
         # Reflète exactement la règle déjà appliquée côté API (RegistrePresenceViewSet.

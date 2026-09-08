@@ -24,6 +24,7 @@ export interface PointOperationnel {
    * juste "point déjà créé". */
   peut_gerer?: boolean;
   adresse?: string | null;
+  commune_nom?: string | null;
   latitude?: number | null;
   longitude?: number | null;
   obligatoire: boolean;

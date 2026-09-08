@@ -63,6 +63,7 @@ export interface ReportRow {
   materielLivraison?: string | null;
   diplomeSecourisme?: boolean;
   confirmationReglementaire?: boolean;
+  presencePhysique?: boolean | null;
   organisationNom?: string | null;   // dépôt groupé : nom de l'entreprise/association déposante
   groupeId?: string | null;
   // Offer/Request/Information uniquement (voir la politique de désactivation) — toujours true
@@ -441,6 +442,7 @@ export class ReportingComponent implements OnInit, OnDestroy {
       materielLivraison: o.materiel_livraison ?? null,
       diplomeSecourisme: !!o.diplome_secourisme,
       confirmationReglementaire: !!o.confirmation_reglementaire,
+      presencePhysique: o.presence_physique ?? null,
       organisationNom: o.organisation_nom ?? null,
       groupeId: o.groupe_id ?? null,
       actif:     o.actif !== false,

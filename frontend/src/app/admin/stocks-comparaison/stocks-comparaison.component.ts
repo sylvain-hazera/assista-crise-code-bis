@@ -1,10 +1,11 @@
-import { Component, EventEmitter, Input, OnInit, Output } from '@angular/core';
+import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { ActivatedRoute, Router } from '@angular/router';
 
-import { CrisisService } from '../../../services/crisis.service';
-import { PointOperationnelService } from '../../../services/point-operationnel.service';
-import { StocksComparaison } from '../../../shared/models/materiel-point.model';
+import { CrisisService } from '../../services/crisis.service';
+import { PointOperationnelService } from '../../services/point-operationnel.service';
+import { StocksComparaison } from '../../shared/models/materiel-point.model';
 
 interface SelectedItem {
   materielPointId: string;
@@ -16,18 +17,20 @@ interface SelectedItem {
 /** Tableau comparatif des stocks (lignes = besoins du catalogue, colonnes = centres de la
  * crise) — pour repérer d'un coup d'œil où organiser une navette (ex: un centre "en trop" sur
  * l'eau pendant qu'un autre est "nul"). Sélection multiple sur UNE colonne (le centre source)
- * pour demander un transfert vers un autre centre — voir demanderTransfert(). */
+ * pour demander un transfert vers un autre centre — voir demanderTransfert().
+ *
+ * Page dédiée (route `/admin/crises/:crisisId/stocks`) plutôt qu'une modale imbriquée dans le
+ * détail du point (point-modal > point-inventaire-modal > cette modale) : le tableau, large par
+ * nature (une colonne par centre), était trop à l'étroit dans une modale contrainte. */
 @Component({
-  selector: 'app-stocks-comparaison-modal',
+  selector: 'app-stocks-comparaison',
   standalone: true,
   imports: [CommonModule, FormsModule],
-  templateUrl: './stocks-comparaison-modal.component.html',
-  styleUrl: './stocks-comparaison-modal.component.scss'
+  templateUrl: './stocks-comparaison.component.html',
+  styleUrl: './stocks-comparaison.component.scss'
 })
-export class StocksComparaisonModalComponent implements OnInit {
-  @Input({ required: true }) crisisId!: string;
-  @Output() closed = new EventEmitter<void>();
-
+export class StocksComparaisonComponent implements OnInit {
+  crisisId!: string;
   data: StocksComparaison | null = null;
   loading = true;
 
@@ -44,19 +47,22 @@ export class StocksComparaisonModalComponent implements OnInit {
   transferSuccess = '';
 
   constructor(
+    private route: ActivatedRoute,
+    private router: Router,
     private crisisService: CrisisService,
     private pointOperationnelService: PointOperationnelService,
   ) {}
 
   ngOnInit(): void {
+    this.crisisId = this.route.snapshot.paramMap.get('crisisId')!;
     this.crisisService.getStocksComparaison(this.crisisId).subscribe(data => {
       this.data = data;
       this.loading = false;
     });
   }
 
-  close(): void {
-    this.closed.emit();
+  goBack(): void {
+    this.router.navigate(['/admin/crises'], { queryParams: { id: this.crisisId } });
   }
 
   otherPoints(): { id: string; nom: string }[] {

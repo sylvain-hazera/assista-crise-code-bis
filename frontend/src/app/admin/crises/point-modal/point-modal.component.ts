@@ -20,7 +20,6 @@ import { AddressPickerComponent } from '../../../shared/components/common/addres
 import { PointPickerComponent } from '../../../shared/components/common/point-picker/point-picker.component';
 import { PointEquipeModalComponent } from '../point-equipe-modal/point-equipe-modal.component';
 import { PointInventaireModalComponent } from '../point-inventaire-modal/point-inventaire-modal.component';
-import { StocksComparaisonModalComponent } from '../stocks-comparaison-modal/stocks-comparaison-modal.component';
 import { PointSecretariatModalComponent } from '../point-secretariat-modal/point-secretariat-modal.component';
 import { PointVueOperationnelleModalComponent } from '../point-vue-operationnelle-modal/point-vue-operationnelle-modal.component';
 
@@ -34,7 +33,7 @@ import { PointVueOperationnelleModalComponent } from '../point-vue-operationnell
 @Component({
   selector: 'app-point-modal',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, FormsModule, AddressPickerComponent, PointPickerComponent, PointEquipeModalComponent, PointInventaireModalComponent, StocksComparaisonModalComponent, PointSecretariatModalComponent, PointVueOperationnelleModalComponent],
+  imports: [CommonModule, ReactiveFormsModule, FormsModule, AddressPickerComponent, PointPickerComponent, PointEquipeModalComponent, PointInventaireModalComponent, PointSecretariatModalComponent, PointVueOperationnelleModalComponent],
   templateUrl: './point-modal.component.html',
   styleUrl: './point-modal.component.scss'
 })
@@ -71,7 +70,6 @@ export class PointModalComponent implements OnChanges {
   myInstitutionId: string | null = null;
   equipeModalOpen = false;
   inventaireModalOpen = false;
-  comparaisonModalOpen = false;
   secretariatModalOpen = false;
   vueOperationnelleModalOpen = false;
 
@@ -313,12 +311,11 @@ export class PointModalComponent implements OnChanges {
     this.router.navigate(['/admin/signalements'], { queryParams: { pickForPoint: this.point.id } });
   }
 
+  /** Page dédiée plutôt qu'une modale de plus imbriquée dans celle-ci — le tableau (une
+   * colonne par centre de la crise) était à l'étroit dans une modale contrainte. */
   openComparaisonModal(): void {
-    this.comparaisonModalOpen = true;
-  }
-
-  closeComparaisonModal(): void {
-    this.comparaisonModalOpen = false;
+    if (!this.crisisId) return;
+    this.router.navigate(['/admin/crises', this.crisisId, 'stocks']);
   }
 
   openSecretariatModal(): void {

@@ -47,6 +47,12 @@ export class PointOperationnelService {
     return this.http.get<PointOperationnel[]>(`${this.apiUrl}/vue_mairie/`);
   }
 
+  /** Centres "prévus" : créés hors contexte crise (crise vide), en amont d'une crise réelle —
+   * page "Centres", 3e mode de la liste. */
+  getPrevus(): Observable<PointOperationnel[]> {
+    return this.http.get<PointOperationnel[]>(`${this.apiUrl}/`, { params: { crise__isnull: 'true' } });
+  }
+
   create(payload: PointOperationnelPayload): Observable<PointOperationnel> {
     return this.http.post<PointOperationnel>(`${this.apiUrl}/`, payload);
   }

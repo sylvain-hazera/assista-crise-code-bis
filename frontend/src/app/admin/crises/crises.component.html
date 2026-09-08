@@ -394,12 +394,13 @@
           <section class="section-block">
             <h3><span class="material-icons">volunteer_activism</span> Acteurs opérationnels</h3>
             <table class="data-table sm">
-              <thead><tr><th>Point</th><th>Type</th><th>Adresse</th><th>Responsable</th><th></th></tr></thead>
+              <thead><tr><th>Point</th><th>Type</th><th>Commune</th><th>Adresse</th><th>Responsable</th><th></th></tr></thead>
               <tbody>
                 @for (point of pointsFor(selectedCrisis.id); track point.id) {
                   <tr (click)="openPointModal(point)" class="clickable-row">
                     <td>{{ point.nom }}</td>
                     <td>{{ point.type_libelle || '—' }}</td>
+                    <td>{{ point.commune_nom || '—' }}</td>
                     <td>{{ point.adresse || '—' }}</td>
                     <td>{{ point.responsable_nom || '—' }}</td>
                     <td class="actions">
@@ -411,7 +412,7 @@
                     </td>
                   </tr>
                 } @empty {
-                  <tr><td colspan="5" class="empty">Aucun point opérationnel déclaré.</td></tr>
+                  <tr><td colspan="6" class="empty">Aucun point opérationnel déclaré.</td></tr>
                 }
               </tbody>
             </table>
