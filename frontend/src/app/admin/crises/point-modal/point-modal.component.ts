@@ -92,14 +92,47 @@ export class PointModalComponent implements OnChanges {
   ) {
     this.buildForm();
     this.myInstitutionId = this.authService.getCurrentUser()?.institution_id ?? null;
-    this.teamService.getAll().subscribe(teams => this.teams = teams);
-    const userParams = this.myInstitutionId ? { institution: this.myInstitutionId } : undefined;
-    this.userService.getAll(userParams).subscribe(users => {
-      this.users = users;
-      this.ensureAssignedUsersPresent();
+    this.teamService.getAll().subscribe(teams => {
+      this.teams = teams;
+      this.refreshCandidateUsers();
     });
     this.competenceService.getAll().subscribe(c => this.allCompetences = c);
     this.crisisService.getAll().subscribe(crises => this.crises = crises);
+  }
+
+  /** Candidats pour "Responsable"/"Responsables supplémentaires" : membres de l'institution
+   * responsable de CE point (via son équipe) ou de son institution déléguée — pas l'institution
+   * du compte connecté (ex: un admin dont l'institution personnelle n'a aucun rapport avec le
+   * point édité), sans quoi le sélecteur proposait soit les mauvaises personnes, soit personne
+   * du tout. Un admin peut désigner n'importe qui (aucun filtre) — seule exception au périmètre
+   * institutionnel, cohérent avec la validation équivalente côté serveur
+   * (PointOperationnelViewSet.perform_update). Un point sans équipe (donc sans institution
+   * déterminable) n'a pas de candidats proposés — le champ reste utilisable en tapant "Moi"
+   * (l'utilisateur assigné avant de choisir une équipe apparaît via ensureAssignedUsersPresent). */
+  private refreshCandidateUsers(): void {
+    if (this.isAdmin) {
+      this.userService.getAll().subscribe(users => {
+        this.users = users;
+        this.ensureAssignedUsersPresent();
+      });
+      return;
+    }
+
+    const equipeId = this.form?.get('equipe')?.value ?? this.point?.equipe ?? this.defaultEquipeId;
+    const equipe = this.teams.find(t => t.id === equipeId);
+    const institutionIds = [equipe?.institution, equipe?.institution_delegataire]
+      .filter((id): id is string => !!id);
+
+    if (institutionIds.length === 0) {
+      this.users = [];
+      this.ensureAssignedUsersPresent();
+      return;
+    }
+
+    this.userService.getAll({ institution: institutionIds }).subscribe(users => {
+      this.users = users;
+      this.ensureAssignedUsersPresent();
+    });
   }
 
   // Utilisateurs déjà rattachés (responsable historique ou responsables supplémentaires) mais
@@ -193,6 +226,12 @@ export class PointModalComponent implements OnChanges {
     this.selectedEquipesGestion = this.point?.equipes_gestion_ids ?? [];
     this.selectedEquipesRavitaillement = this.point?.equipes_ravitaillement_ids ?? [];
     this.selectedResponsables = this.point?.responsables_ids ?? [];
+
+    // Les candidats "Responsable" dépendent de l'équipe choisie (voir refreshCandidateUsers) —
+    // recalculés à chaque changement d'équipe, et une première fois ici (utile si `teams` est
+    // déjà chargé, ex: réouverture de la modale pour un autre point).
+    this.form.get('equipe')?.valueChanges.subscribe(() => this.refreshCandidateUsers());
+    this.refreshCandidateUsers();
   }
 
   toggleEquipeGestion(id: string): void {

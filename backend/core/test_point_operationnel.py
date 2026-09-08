@@ -477,3 +477,118 @@ class TestCreerEquipeEnEditantLePoint:
         assert Team.objects.count() == before
         assert response.data["equipe"] == existing_team.id
         assert not Team.objects.filter(name="Ne doit pas être créée").exists()
+
+
+@pytest.mark.django_db
+class TestPointResponsableInstitutionRestriction:
+    """Le responsable (et les responsables supplémentaires) d'un point doivent être membres de
+    l'institution responsable de l'équipe du point, ou de son institution déléguée — sauf pour
+    un administrateur, qui peut désigner n'importe qui (voir
+    PointOperationnelViewSet._valider_responsable)."""
+
+    def _institution(self, code, nom):
+        itype, _ = InstitutionType.objects.get_or_create(code=code, defaults={"libelle": "Mairie"})
+        return Institution.objects.create(nom=nom, type=itype)
+
+    def test_rejects_responsable_outside_institution(self, institutional_client, crisis, point_type, create_user):
+        client, _ = institutional_client
+        institution_point = self._institution("MAIRIE_RESP_A", "Mairie point A")
+        institution_etrangere = self._institution("MAIRIE_RESP_ETRANGERE", "Mairie étrangère")
+        team = Team.objects.create(name="Equipe resp test", institution=institution_point)
+        point = PointOperationnel.objects.create(nom="Point resp test", type=point_type, crise=crisis, equipe=team)
+        outsider = create_user(username="outsider-resp@test.fr", email="outsider-resp@test.fr", type="AUT_LOCALE")
+        ContactInstitution.objects.create(institution=institution_etrangere, utilisateur=outsider, actif=True)
+
+        response = client.patch(
+            reverse('pointoperationnel-detail', args=[point.id]),
+            {"responsable": str(outsider.id)},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        point.refresh_from_db()
+        assert point.responsable_id != outsider.id
+
+    def test_allows_responsable_from_own_institution(self, institutional_client, crisis, point_type, create_user):
+        client, _ = institutional_client
+        institution_point = self._institution("MAIRIE_RESP_B", "Mairie point B")
+        team = Team.objects.create(name="Equipe resp test 2", institution=institution_point)
+        point = PointOperationnel.objects.create(nom="Point resp test 2", type=point_type, crise=crisis, equipe=team)
+        membre = create_user(username="membre-resp@test.fr", email="membre-resp@test.fr", type="AUT_LOCALE")
+        ContactInstitution.objects.create(institution=institution_point, utilisateur=membre, actif=True)
+
+        response = client.patch(
+            reverse('pointoperationnel-detail', args=[point.id]),
+            {"responsable": str(membre.id)},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        point.refresh_from_db()
+        assert point.responsable_id == membre.id
+
+    def test_allows_responsable_from_delegated_institution(self, institutional_client, crisis, point_type, create_user):
+        client, _ = institutional_client
+        institution_point = self._institution("MAIRIE_RESP_C", "Mairie point C")
+        institution_deleguee = self._institution("MAIRIE_RESP_DELEGUEE", "Mairie déléguée")
+        team = Team.objects.create(
+            name="Equipe resp test 3", institution=institution_point, institution_delegataire=institution_deleguee,
+        )
+        point = PointOperationnel.objects.create(nom="Point resp test 3", type=point_type, crise=crisis, equipe=team)
+        membre = create_user(username="membre-deleg-resp@test.fr", email="membre-deleg-resp@test.fr", type="AUT_LOCALE")
+        ContactInstitution.objects.create(institution=institution_deleguee, utilisateur=membre, actif=True)
+
+        response = client.patch(
+            reverse('pointoperationnel-detail', args=[point.id]),
+            {"responsable": str(membre.id)},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+
+    def test_admin_can_assign_any_responsable(self, create_user, crisis, point_type):
+        admin = create_user(username="admin-resp-point@test.fr", email="admin-resp-point@test.fr", type="ADMIN")
+        client = APIClient()
+        client.force_authenticate(user=admin)
+        institution_point = self._institution("MAIRIE_RESP_D", "Mairie point D")
+        team = Team.objects.create(name="Equipe resp test 4", institution=institution_point)
+        point = PointOperationnel.objects.create(nom="Point resp test 4", type=point_type, crise=crisis, equipe=team)
+        outsider = create_user(username="outsider-admin-resp@test.fr", email="outsider-admin-resp@test.fr", type="AUT_LOCALE")
+
+        response = client.patch(
+            reverse('pointoperationnel-detail', args=[point.id]),
+            {"responsable": str(outsider.id)},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+
+    def test_point_without_team_is_unrestricted(self, institutional_client, crisis, point_type, create_user):
+        client, _ = institutional_client
+        point = PointOperationnel.objects.create(nom="Point sans equipe resp test", type=point_type, crise=crisis)
+        anyone = create_user(username="anyone-no-team-resp@test.fr", email="anyone-no-team-resp@test.fr", type="AUT_LOCALE")
+
+        response = client.patch(
+            reverse('pointoperationnel-detail', args=[point.id]),
+            {"responsable": str(anyone.id)},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+
+    def test_rejects_responsables_supplementaires_outside_institution(self, institutional_client, crisis, point_type, create_user):
+        client, _ = institutional_client
+        institution_point = self._institution("MAIRIE_RESP_E", "Mairie point E")
+        institution_etrangere = self._institution("MAIRIE_RESP_ETRANGERE_2", "Mairie étrangère 2")
+        team = Team.objects.create(name="Equipe resp test 5", institution=institution_point)
+        point = PointOperationnel.objects.create(nom="Point resp test 5", type=point_type, crise=crisis, equipe=team)
+        outsider = create_user(username="outsider-resps-supp@test.fr", email="outsider-resps-supp@test.fr", type="AUT_LOCALE")
+        ContactInstitution.objects.create(institution=institution_etrangere, utilisateur=outsider, actif=True)
+
+        response = client.patch(
+            reverse('pointoperationnel-detail', args=[point.id]),
+            {"responsables_ids": [str(outsider.id)]},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST

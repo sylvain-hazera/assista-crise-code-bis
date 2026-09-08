@@ -7331,7 +7331,50 @@ class PointOperationnelViewSet(
         ).select_related("type")
         return Response(PointOperationnelPublicSerializer(queryset, many=True).data)
 
+    def _valider_responsable(self, serializer):
+        """Le responsable (champ singulier) et les responsables (M2M) d'un point doivent être
+        membres de l'institution responsable de l'équipe du point, ou de son institution
+        déléguée — sauf pour un administrateur, qui peut désigner n'importe qui. Un point sans
+        équipe (donc sans institution déterminable) n'est pas contraint : rien à valider
+        contre. Avant ce correctif, ces deux champs acceptaient n'importe quel utilisateur de
+        la plateforme, sans lien avec l'institution du point."""
+        if get_effective_role(self.request) == UserRole.ADMINISTRATOR:
+            return
+
+        equipe = serializer.validated_data.get(
+            'equipe', serializer.instance.equipe if serializer.instance else None
+        )
+        if not equipe or not equipe.institution_id:
+            return
+
+        allowed_institution_ids = {equipe.institution_id}
+        if equipe.institution_delegataire_id:
+            allowed_institution_ids.add(equipe.institution_delegataire_id)
+
+        candidats_ids = set()
+        if 'responsable' in serializer.validated_data:
+            responsable = serializer.validated_data['responsable']
+            if responsable:
+                candidats_ids.add(responsable.id)
+        if 'responsables' in serializer.validated_data:
+            candidats_ids.update(u.id for u in serializer.validated_data['responsables'])
+
+        if not candidats_ids:
+            return
+
+        membres_autorises_ids = set(
+            ContactInstitution.objects.filter(
+                institution_id__in=allowed_institution_ids, actif=True,
+            ).values_list('utilisateur_id', flat=True)
+        )
+        if not candidats_ids.issubset(membres_autorises_ids):
+            raise ValidationError({
+                "responsable": "Le responsable d'un point doit être membre de l'institution "
+                "responsable de ce point ou de son institution déléguée."
+            })
+
     def perform_update(self, serializer):
+        self._valider_responsable(serializer)
         point = serializer.save()
         audit_log(
             request=self.request,
