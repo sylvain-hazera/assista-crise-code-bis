@@ -162,6 +162,12 @@
   padding: 1rem;
 }
 
+.origine-detail {
+  display: flex; gap: .75rem; flex-wrap: wrap;
+  app-minimap { display: block; width: 14rem; height: 10rem; border-radius: 8px; overflow: hidden; }
+  .origine-photo { width: 14rem; height: 10rem; object-fit: cover; border-radius: 8px; }
+}
+
 .detail-row {
   margin-bottom: 1rem;
   line-height: 1.5;

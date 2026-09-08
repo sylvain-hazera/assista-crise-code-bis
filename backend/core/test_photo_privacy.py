@@ -9,6 +9,8 @@ from core.models import (
     Crisis,
     Dossier,
     DossierParticipant,
+    Information,
+    InformationType,
     Offer,
     OfferType,
     Request,
@@ -36,6 +38,17 @@ def crisis_with_photo(db, create_user):
     return Crisis.objects.create(
         name="Crise test photo", type="INCENDIE", location="POINT (5.72 45.18)",
         author=author, photo=_fake_photo(),
+    )
+
+
+@pytest.fixture
+def information_with_photo(db):
+    itype, _ = InformationType.objects.get_or_create(type="Test photo privacy", defaults={"description": ""})
+    return Information.objects.create(
+        title="Signalement test photo", information_type=itype, location="POINT (5.72 45.18)",
+        first_name_information="A", last_name_information="B",
+        email_information="a@test.fr", phone_information="0600000000",
+        photo=_fake_photo(),
     )
 
 
@@ -165,3 +178,75 @@ class TestOfferAndRequestPhotoHidden:
 
         assert 'photo' not in response.data
         assert response.data['has_photo'] is True
+
+
+@pytest.mark.django_db
+class TestInformationPhotoDossierParticipant:
+    """InformationViewSet.preview n'accordait l'accès qu'à l'auteur/un institutionnel — pas à
+    un participant du dossier issu de ce signalement, contrairement à RequestViewSet.preview
+    (dossiers_field='dossiers'). Corrigé pour la symétrie."""
+
+    def test_dossier_participant_can_preview_information_photo(self, create_user, information_with_photo):
+        participant = create_user(username="info-photo-participant@test.fr", email="info-photo-participant@test.fr", type="UTIL_SIMPLE")
+        crisis = Crisis.objects.create(name="Crise photo info", type="INCENDIE", location="POINT (5.72 45.18)")
+        dossier = Dossier.objects.create(
+            numero="DOS-INFO-PHOTO-1", titre="Dossier signalement photo", description="",
+            crise=crisis, information=information_with_photo,
+        )
+        DossierParticipant.objects.create(dossier=dossier, utilisateur=participant)
+        client = APIClient()
+        client.force_authenticate(user=participant)
+
+        response = client.get(reverse('information-preview', args=[information_with_photo.id]))
+
+        assert response.status_code == status.HTTP_200_OK
+
+    def test_unrelated_user_still_forbidden(self, create_user, information_with_photo):
+        outsider = create_user(username="info-photo-outsider@test.fr", email="info-photo-outsider@test.fr", type="UTIL_SIMPLE")
+        client = APIClient()
+        client.force_authenticate(user=outsider)
+
+        response = client.get(reverse('information-preview', args=[information_with_photo.id]))
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+@pytest.mark.django_db
+class TestDossierHasPhoto:
+    """DossierSerializer.has_photo (nouveau) : indique côté frontend s'il faut tenter de charger
+    la photo de la demande/du signalement d'origine (voir dossiers.component.ts)."""
+
+    def test_true_when_origin_request_has_photo(self, create_user, request_type):
+        author = create_user(username="dossier-photo-author@test.fr", email="dossier-photo-author@test.fr", type="UTIL_SIMPLE")
+        demande = Request.objects.create(
+            title="Demande photo dossier", location="POINT (5.72 45.18)",
+            first_name_request="A", last_name_request="B", email_request="a@test.fr",
+            phone_request="0600000000", status="NON_TRAITEE", request_type=request_type, author=author,
+            photo=_fake_photo(),
+        )
+        crisis = Crisis.objects.create(name="Crise photo dossier", type="INCENDIE", location="POINT (5.72 45.18)")
+        dossier = Dossier.objects.create(numero="DOS-PHOTO-1", titre="Dossier photo", description="", crise=crisis, demande=demande)
+        admin = create_user(username="dossier-photo-admin@test.fr", email="dossier-photo-admin@test.fr", type="ADMIN")
+        client = APIClient()
+        client.force_authenticate(user=admin)
+
+        response = client.get(reverse('dossier-detail', args=[dossier.id]))
+
+        assert response.data['has_photo'] is True
+
+    def test_false_when_no_origin_photo(self, create_user, request_type):
+        author = create_user(username="dossier-nophoto-author@test.fr", email="dossier-nophoto-author@test.fr", type="UTIL_SIMPLE")
+        demande = Request.objects.create(
+            title="Demande sans photo", location="POINT (5.72 45.18)",
+            first_name_request="A", last_name_request="B", email_request="a@test.fr",
+            phone_request="0600000000", status="NON_TRAITEE", request_type=request_type, author=author,
+        )
+        crisis = Crisis.objects.create(name="Crise sans photo dossier", type="INCENDIE", location="POINT (5.72 45.18)")
+        dossier = Dossier.objects.create(numero="DOS-PHOTO-2", titre="Dossier sans photo", description="", crise=crisis, demande=demande)
+        admin = create_user(username="dossier-nophoto-admin@test.fr", email="dossier-nophoto-admin@test.fr", type="ADMIN")
+        client = APIClient()
+        client.force_authenticate(user=admin)
+
+        response = client.get(reverse('dossier-detail', args=[dossier.id]))
+
+        assert response.data['has_photo'] is False

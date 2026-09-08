@@ -7,9 +7,12 @@ import { DossierHistoriqueService } from '../../services/dossier-historique.serv
 import { AuthService } from '../../auth/services/auth.service';
 import { DocumentService } from '../../services/document.service';
 import { TeamService } from '../../services/team.service';
+import { RequestService } from '../../services/request.service';
+import { InformationService } from '../../services/information.service';
 import { Dossier } from '../../shared/models/dossier.model';
 import { Team } from '../../shared/models/team.model';
 import { UserRole } from '../../shared/models/user.model';
+import { MinimapComponent } from '../../shared/components/common/minimap/minimap.component';
 
 // Même mapping que mes-interventions/dossier-suivi (vocabulaire terrain) — affichage
 // uniquement, les valeurs de statut en base sont inchangées.
@@ -30,7 +33,7 @@ const STATUTS_MODIFIABLES = ['NOUVEAU', 'EN_ATTENTE_DISTRIBUTION', 'EN_ATTENTE_A
 @Component({
   selector: 'app-dossiers',
   standalone: true,
-  imports: [CommonModule, FormsModule, DatePipe],
+  imports: [CommonModule, FormsModule, DatePipe, MinimapComponent],
   templateUrl: './dossiers.component.html',
   styleUrls: ['./dossiers.component.scss']
 })
@@ -54,6 +57,10 @@ export class DossiersComponent implements OnInit {
   nouveauCommentaire = '';
   selectedFile: File | null = null;
   imagePopupUrl: string | null = null;
+  /** Photo de la demande/du signalement d'origine du dossier (voir DossierSerializer.
+   * has_photo/get_has_photo) — réutilise RequestViewSet.preview/InformationViewSet.preview,
+   * déjà accessibles à un participant du dossier (user_can_view_photo dossiers_field). */
+  origineDossierPhotoUrl: string | null = null;
 
   constructor(
     private dossierService: DossierService,
@@ -61,6 +68,8 @@ export class DossiersComponent implements OnInit {
     private historiqueService: DossierHistoriqueService,
     private documentService: DocumentService,
     private teamService: TeamService,
+    private requestService: RequestService,
+    private informationService: InformationService,
     private authService: AuthService
   ) {}
 
@@ -92,6 +101,7 @@ export class DossiersComponent implements OnInit {
   openDossier(dossier: Dossier): void {
 
     this.selectedDossier = dossier;
+    this.loadOrigineDossierPhoto(dossier);
 
     this.commentaireService.getAll()
       .subscribe(data => {
@@ -247,6 +257,21 @@ export class DossiersComponent implements OnInit {
 
   closeDossier(): void {
     this.selectedDossier = null;
+    if (this.origineDossierPhotoUrl) URL.revokeObjectURL(this.origineDossierPhotoUrl);
+    this.origineDossierPhotoUrl = null;
+  }
+
+  private loadOrigineDossierPhoto(dossier: Dossier): void {
+    if (this.origineDossierPhotoUrl) URL.revokeObjectURL(this.origineDossierPhotoUrl);
+    this.origineDossierPhotoUrl = null;
+    if (!dossier.has_photo) return;
+    const preview$ = dossier.demande
+      ? this.requestService.preview(dossier.demande)
+      : dossier.information ? this.informationService.preview(dossier.information) : null;
+    preview$?.subscribe({
+      next: (blob) => this.origineDossierPhotoUrl = URL.createObjectURL(blob),
+      error: () => {},
+    });
   }
 
   affecterEquipe(equipeId: string): void {

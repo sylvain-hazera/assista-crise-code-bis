@@ -1053,10 +1053,29 @@
                   {{ d.first_name_request }} {{ d.last_name_request }} · {{ fmtDate(d.created_at) }}
                 </span>
               </div>
+              <button type="button" class="icon-btn sm" title="Voir le détail" (click)="toggleExpandRequest(d, $event)">
+                <span class="material-icons">{{ expandedRequestId === d.id ? 'expand_less' : 'expand_more' }}</span>
+              </button>
               <span class="material-icons assign-check">
                 {{ isMissionAssigned(d.id, 'Request') ? 'check_box' : 'check_box_outline_blank' }}
               </span>
             </div>
+            @if (expandedRequestId === d.id) {
+              <div class="assign-detail" (click)="$event.stopPropagation()">
+                @if (d.latitude != null && d.longitude != null) {
+                  <app-minimap [latitude]="d.latitude" [longitude]="d.longitude" [zoom]="13"></app-minimap>
+                }
+                @if (requestPhotoUrls[d.id]) {
+                  <img class="assign-detail-photo" [src]="requestPhotoUrls[d.id]" alt="Photo jointe à la demande">
+                }
+                <div class="assign-detail-info">
+                  <p><span class="material-icons">phone</span> {{ d.phone_request || '—' }}</p>
+                  <p><span class="material-icons">mail</span> {{ d.email_request || '—' }}</p>
+                  @if (d.commune) { <p><span class="material-icons">place</span> {{ d.commune }}</p> }
+                  @if (d.description) { <p class="assign-detail-description">{{ d.description }}</p> }
+                </div>
+              </div>
+            }
           }
           @if (filteredRequests.length === 0) {
             <p class="empty-tab">Aucune demande disponible</p>

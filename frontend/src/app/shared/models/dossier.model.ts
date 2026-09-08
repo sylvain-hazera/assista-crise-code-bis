@@ -21,6 +21,7 @@ export interface Dossier {
 
   latitude?: number | null;
   longitude?: number | null;
+  has_photo?: boolean;
   commune?: string | null;
 
   contact_nom?: string | null;

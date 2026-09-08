@@ -724,8 +724,37 @@ export class TeamsComponent implements OnInit {
     return this.selectedTeam?.missions.some(m => m.id === id && m.kind === kind) ?? false;
   }
 
+  // ── DÉTAIL D'UNE DEMANDE (modal assign) ─────────────────────────
+  // Vue enrichie (minimap, photo, coordonnées, description complète) pour mieux choisir quoi
+  // assigner — avant ce correctif, la liste ne montrait que titre/nom/date. Repliée par défaut
+  // (une ligne par demande) pour rester scannable même avec beaucoup de demandes, dépliée au
+  // clic sur une seule à la fois plutôt que tout afficher en permanence.
+  expandedRequestId: string | null = null;
+  requestPhotoUrls: Record<string, string> = {};
+
+  toggleExpandRequest(request: Request, e: Event): void {
+    e.stopPropagation();
+    if (this.expandedRequestId === request.id) {
+      this.expandedRequestId = null;
+      return;
+    }
+    this.expandedRequestId = request.id;
+    if (request.has_photo && !this.requestPhotoUrls[request.id]) {
+      this.requestService.preview(request.id).subscribe({
+        next: (blob) => this.requestPhotoUrls[request.id] = URL.createObjectURL(blob),
+        error: () => {},
+      });
+    }
+  }
+
   // ── HELPERS ───────────────────────────────────────────────────
-  closeModal(): void { this.modal = 'none'; this.selectedTeam = null; }
+  closeModal(): void {
+    this.modal = 'none';
+    this.selectedTeam = null;
+    this.expandedRequestId = null;
+    Object.values(this.requestPhotoUrls).forEach(url => URL.revokeObjectURL(url));
+    this.requestPhotoUrls = {};
+  }
 
   getUserById(id: string): User | undefined {
     return this.users.find(u => u.id === id);

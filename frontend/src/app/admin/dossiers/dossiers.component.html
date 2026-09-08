@@ -157,6 +157,16 @@
         <strong>Description :</strong>
         {{ selectedDossier.description }}
       </div>
+
+      <div class="detail-row origine-detail" *ngIf="(selectedDossier.latitude != null && selectedDossier.longitude != null) || origineDossierPhotoUrl">
+        <app-minimap
+          *ngIf="selectedDossier.latitude != null && selectedDossier.longitude != null"
+          [latitude]="selectedDossier.latitude!"
+          [longitude]="selectedDossier.longitude!"
+          [zoom]="13">
+        </app-minimap>
+        <img *ngIf="origineDossierPhotoUrl" class="origine-photo" [src]="origineDossierPhotoUrl" alt="Photo jointe">
+      </div>
       <hr>
 
       <h3>Commentaires</h3>

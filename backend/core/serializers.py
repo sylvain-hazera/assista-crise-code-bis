@@ -1297,6 +1297,7 @@ class DossierSerializer(serializers.ModelSerializer):
 
     latitude = serializers.SerializerMethodField()
     longitude = serializers.SerializerMethodField()
+    has_photo = serializers.SerializerMethodField()
     commune = serializers.SerializerMethodField()
     contact_nom = serializers.SerializerMethodField()
     contact_telephone = serializers.SerializerMethodField()
@@ -1337,6 +1338,14 @@ class DossierSerializer(serializers.ModelSerializer):
     def get_longitude(self, obj):
         origine = self._origine(obj)
         return origine.location.x if origine and origine.location else None
+
+    def get_has_photo(self, obj):
+        # Sert à décider côté frontend s'il faut tenter RequestViewSet.preview /
+        # InformationViewSet.preview (même contrôle d'accès que la demande/le signalement
+        # d'origine, via user_can_view_photo(..., dossiers_field='dossiers') — un participant
+        # du dossier y a déjà droit) plutôt que d'appeler l'endpoint à l'aveugle.
+        origine = self._origine(obj)
+        return bool(origine and origine.photo)
 
     def get_commune(self, obj):
         origine = self._origine(obj)

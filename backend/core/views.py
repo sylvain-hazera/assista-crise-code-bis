@@ -4992,7 +4992,10 @@ class InformationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     @action(detail=True, methods=["get"])
     def preview(self, request, pk=None):
         info = self.get_object()
-        if not info.photo or not user_can_view_photo(request, info):
+        # dossiers_field='dossiers' : même garde que RequestViewSet.preview — sans lui, un
+        # participant du dossier issu de ce signalement (pas forcément l'auteur ni un
+        # institutionnel) ne pouvait pas voir la photo depuis le détail du dossier.
+        if not info.photo or not user_can_view_photo(request, info, dossiers_field='dossiers'):
             return Response(status=403)
         return FileResponse(open(info.photo.path, "rb"))
 
