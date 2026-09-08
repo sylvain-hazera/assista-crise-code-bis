@@ -1,12 +1,13 @@
 import pytest
 from django.contrib.gis.geos import Point
+from django.core import mail
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
 
 from core.models import (
     Besoin, ContactInstitution, Crisis, Institution, InstitutionType,
-    Plan, PointOperationnel, PointType, Team, Zone,
+    Notification, Plan, PointOperationnel, PointType, Team, Zone,
 )
 
 
@@ -257,6 +258,69 @@ class TestPlanActiver:
             format='json',
         )
         assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+@pytest.mark.django_db
+class TestPlanActiverNotifications:
+    """Avant ce correctif, PlanViewSet.activer n'écrivait qu'un audit_log : aucun responsable
+    (leader/régulateur d'équipe, responsable de point) n'était notifié des moyens effectivement
+    mobilisés sur la crise."""
+
+    def test_notifies_team_leader_and_regulateur(self, client_a, institution_a, create_user):
+        leader = create_user(username='leader-notif-plan@test.fr', email='leader-notif-plan@test.fr', type='AUT_LOCALE')
+        regulateur = create_user(username='regul-notif-plan@test.fr', email='regul-notif-plan@test.fr', type='AUT_LOCALE')
+        team = Team.objects.create(name='Equipe Notif', institution=institution_a, leader=leader, regulateur=regulateur)
+        plan = Plan.objects.create(institution=institution_a, nom='Plan notif équipe')
+        plan.equipes.add(team)
+        crise = Crisis.objects.create(name='Crise notif équipe', location=Point(5.7, 45.2, srid=4326))
+
+        response = client_a.post(
+            reverse('plan-activer', args=[plan.id]),
+            {'crise_id': str(crise.id), 'equipes': [{'team_id': str(team.id)}]},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        for user in (leader, regulateur):
+            assert Notification.objects.filter(utilisateur=user, crise=crise, titre__icontains='Plan activé').exists()
+            assert any(user.email in m.to for m in mail.outbox)
+
+    def test_notifies_point_responsable_and_responsables(self, client_a, institution_a, point_type, create_user):
+        responsable = create_user(username='resp-notif-plan@test.fr', email='resp-notif-plan@test.fr', type='AUT_LOCALE')
+        autre_responsable = create_user(username='resp2-notif-plan@test.fr', email='resp2-notif-plan@test.fr', type='AUT_LOCALE')
+        point = PointOperationnel.objects.create(nom='Point Notif', type=point_type, responsable=responsable)
+        point.responsables.add(autre_responsable)
+        plan = Plan.objects.create(institution=institution_a, nom='Plan notif point')
+        plan.points.add(point)
+        crise = Crisis.objects.create(name='Crise notif point', location=Point(5.7, 45.2, srid=4326))
+
+        response = client_a.post(
+            reverse('plan-activer', args=[plan.id]),
+            {'crise_id': str(crise.id), 'points': [str(point.id)]},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        for user in (responsable, autre_responsable):
+            assert Notification.objects.filter(utilisateur=user, crise=crise, titre__icontains='Plan activé').exists()
+            assert any(user.email in m.to for m in mail.outbox)
+
+    def test_no_notification_for_teams_or_points_not_activated(self, client_a, institution_a, create_user):
+        leader = create_user(username='leader-hors-plan@test.fr', email='leader-hors-plan@test.fr', type='AUT_LOCALE')
+        team_dans_plan = Team.objects.create(name='Equipe activée', institution=institution_a)
+        team_hors_plan = Team.objects.create(name='Equipe non activée', institution=institution_a, leader=leader)
+        plan = Plan.objects.create(institution=institution_a, nom='Plan partiel')
+        plan.equipes.add(team_dans_plan, team_hors_plan)
+        crise = Crisis.objects.create(name='Crise partielle', location=Point(5.7, 45.2, srid=4326))
+
+        response = client_a.post(
+            reverse('plan-activer', args=[plan.id]),
+            {'crise_id': str(crise.id), 'equipes': [{'team_id': str(team_dans_plan.id)}]},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert not Notification.objects.filter(utilisateur=leader, crise=crise).exists()
 
 
 @pytest.mark.django_db

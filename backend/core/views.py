@@ -3374,6 +3374,42 @@ class ZoneViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         instance.save(update_fields=['actif'])
 
 
+def _notifier_activation_plan_destinataire(request, user, titre, message, crise):
+    Notification.objects.create(
+        utilisateur=user, titre=titre, message=message, crise=crise, environment=crise.environment,
+    )
+    if user.email:
+        try:
+            send_mail_env_aware(
+                request, subject=titre, message=message, from_email=None,
+                recipient_list=[user.email], fail_silently=True,
+            )
+        except Exception as e:
+            print(f"Erreur envoi email activation plan : {e}")
+
+
+def _notifier_activation_plan(request, crise, equipes, points):
+    """Notification + email à chaque responsable concerné (leader/régulateur d'une équipe
+    activée, responsable(s) d'un point activé) — PlanViewSet.activer n'écrivait jusqu'ici qu'un
+    audit_log, sans notifier personne des moyens effectivement mobilisés sur la crise."""
+    titre = f"Plan activé sur la crise « {crise.name} »"
+
+    for team in equipes:
+        message = f"Votre équipe « {team.name} » a été activée sur la crise « {crise.name} »."
+        destinataires = {u.id: u for u in [team.leader, team.regulateur] if u}
+        for user in destinataires.values():
+            _notifier_activation_plan_destinataire(request, user, titre, message, crise)
+
+    for point in points:
+        message = f"Le point « {point.nom} » dont vous êtes responsable a été activé sur la crise « {crise.name} »."
+        responsables = list(point.responsables.all())
+        if point.responsable:
+            responsables.append(point.responsable)
+        destinataires = {u.id: u for u in responsables}
+        for user in destinataires.values():
+            _notifier_activation_plan_destinataire(request, user, titre, message, crise)
+
+
 class PlanViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     """Dispositif pré-enregistré d'une institution (voir Plan) : sous-ensemble d'équipes/points/
     zones déjà existants, activable en un geste sur une crise réelle (voir `activer`)."""
@@ -3481,6 +3517,8 @@ class PlanViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
                 f"({len(equipes_activees)} équipe(s), {len(points_actives)} point(s))"
             ),
         )
+
+        _notifier_activation_plan(request, crise, equipes_activees, points_actives)
 
         return Response({
             "crise": CrisisSerializer(crise).data,
