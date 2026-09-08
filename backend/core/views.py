@@ -1605,21 +1605,21 @@ class DashboardStatsView(APIView):
     def _scope_to_zone(self, querysets, zone):
         """Restreint chaque queryset à la zone (niveau, code) donnée. Offer/Request ont un code
         géo dénormalisé complet (commune_code/epci_code/departement_code/region_code, voir
-        SECTEUR_CHAMP_PAR_NIVEAU) ; Information n'a, elle, que commune_code (pas epci/
-        departement/region — vérifié sur le modèle) : filtrable seulement au niveau commune,
-        reste national au-delà pour ne pas lever une FieldError. Crisis n'a aucun code
-        dénormalisé (zone_communes/zone_departements, une crise pouvant couvrir plusieurs
-        secteurs) — approximé par containment sur ces listes pour les niveaux commune/
-        departement ; best-effort pour epci/region (aucune correspondance directe possible sans
-        agréger les communes membres), la carte "Crises" restant alors nationale."""
+        SECTEUR_CHAMP_PAR_NIVEAU) ; Information n'a que commune_code — voir
+        _information_zone_resolver, qui passe par le référentiel Commune pour les niveaux
+        epci/departement/region. Crisis n'a aucun code dénormalisé (zone_communes/
+        zone_departements, une crise pouvant couvrir plusieurs secteurs) — approximé par
+        containment sur ces listes pour les niveaux commune/departement ; best-effort pour
+        epci/region (aucune correspondance directe possible sans agréger les communes
+        membres), la carte "Crises" restant alors nationale pour ces deux niveaux-là."""
         niveau, code = zone
         result = dict(querysets)
         champ = SECTEUR_CHAMP_PAR_NIVEAU.get(niveau)
         if champ:
             for key in ("offres", "demandes", "benevoles"):
                 result[key] = result[key].filter(**{champ: code})
+        result["signalements"] = result["signalements"].filter(_information_zone_resolver(niveau, code))
         if niveau == "commune":
-            result["signalements"] = result["signalements"].filter(commune_code=code)
             result["crises"] = result["crises"].filter(zone_communes__contains=[code])
         elif niveau == "departement":
             result["crises"] = result["crises"].filter(zone_departements__contains=[code])
@@ -4678,6 +4678,22 @@ class DisponibiliteOffreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVie
             return [IsOfferOwnerOrInstitutional()]
         return [AllowAny()]
 
+def _information_zone_resolver(niveau, code):
+    """Resolver pour filter_queryset_to_viewer_zone(InformationViewSet) : Information n'a,
+    contrairement à Offer/Request, que commune_code (pas epci_code/departement_code/
+    region_code dénormalisés) — sans ce resolver, le filtre par défaut de zone_scoping.py
+    tentait `.filter(epci_code=...)` sur un champ inexistant et levait une FieldError pour
+    toute institution de niveau EPCI/département/région (reproduit en appelant la liste des
+    signalements avec un compte SDIS/préfecture). Résout la liste des communes membres du
+    secteur via le référentiel Commune (déjà utilisé ailleurs, ex: commune_secteur_codes)
+    plutôt que d'improviser une correspondance directe qui n'existe pas sur ce modèle."""
+    if niveau == "commune":
+        return Q(commune_code=code)
+    champ_commune = {"epci": "epci_code", "departement": "departement_code", "region": "region_code"}[niveau]
+    communes = Commune.objects.filter(**{champ_commune: code}).values_list("code", flat=True)
+    return Q(commune_code__in=communes)
+
+
 class InformationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     queryset = Information.objects.select_related('author', 'crisis')
     serializer_class = InformationSerializer
@@ -4716,7 +4732,7 @@ class InformationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             # les signalements hors de sa zone de compétence — l'accès public (anonyme/simple
             # utilisateur) à l'existence d'un signalement (titre/type/date, jamais la PII, déjà
             # masquée par InformationSerializer._location_visible) reste inchangé.
-            qs = filter_queryset_to_viewer_zone(self.request, qs)
+            qs = filter_queryset_to_viewer_zone(self.request, qs, resolver=_information_zone_resolver)
         return qs
 
     @action(detail=True, methods=["post"], permission_classes=[IsInstitutionalActor])
