@@ -331,6 +331,10 @@ h3 { margin: 0; font-size: .9rem; font-weight: 700; display: flex; align-items: 
   &:hover { background: #f8fafc; }
   &.selected { background: color-mix(in srgb, var(--ac, #3b82f6) 8%, white); border-color: var(--ac, #3b82f6); }
 }
+.up-role-select {
+  font-size: .78rem; padding: .3rem .5rem; border-radius: 7px; border: 1.5px solid var(--border);
+  background: white; color: var(--text); cursor: pointer; max-width: 9rem; flex-shrink: 0;
+}
 .chip-list { display: flex; flex-wrap: wrap; gap: .4rem; margin: .5rem 0; }
 .chip {
   display: inline-flex; align-items: center; gap: .35rem; background: #eff6ff; color: #1d4ed8;
@@ -346,6 +350,20 @@ h3 { margin: 0; font-size: .9rem; font-weight: 700; display: flex; align-items: 
   margin-bottom: .75rem;
   app-minimap { display: block; width: 100%; height: 180px; border-radius: 8px; overflow: hidden; }
   .section-hint { margin-top: .35rem; }
+}
+.dropdown-multiselect { position: relative; margin-bottom: .6rem; }
+.dropdown-panel {
+  position: absolute; z-index: 5; top: calc(100% + .3rem); left: 0; min-width: 16rem;
+  max-height: 16rem; overflow-y: auto; background: white; border: 1.5px solid var(--border);
+  border-radius: 9px; box-shadow: 0 8px 24px rgba(0,0,0,.12); padding: .4rem 0;
+}
+.dropdown-check-item {
+  display: flex; align-items: center; gap: .5rem; padding: .4rem .8rem; font-size: .85rem;
+  cursor: pointer;
+  &:hover { background: #f8fafc; }
+  &.parent-item { font-weight: 700; }
+  &.child-item { padding-left: 2rem; font-weight: 400; color: var(--muted); }
+  input[type="checkbox"] { cursor: pointer; }
 }
 .competence-chip-list { display: flex; flex-wrap: wrap; gap: .5rem; }
 .competence-chip {

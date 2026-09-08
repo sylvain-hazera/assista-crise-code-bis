@@ -82,8 +82,11 @@ export class TeamService {
 
   /** GET /api/teams/<id>/institutions-liees/ — institution délégataire + institutions
    * co-impliquées sur une même crise, utilisées pour élargir la recherche de membre à recruter
-   * au-delà de la seule institution de l'équipe (voir teams.component.ts, loadCandidateMembers). */
-  institutionsLiees(id: string): Observable<{ id: string; nom: string }[]> {
-    return this.http.get<{ id: string; nom: string }[]>(`${this.url}/${id}/institutions-liees/`);
+   * au-delà de la seule institution de l'équipe (voir teams.component.ts, loadCandidateMembers).
+   * `type: 'acteur'` restreint aux institutions ACTEUR (sélecteur "institution délégataire",
+   * voir institutionsDelegablesPourEquipe). */
+  institutionsLiees(id: string, type?: 'acteur'): Observable<{ id: string; nom: string }[]> {
+    const params = type ? { type } : undefined;
+    return this.http.get<{ id: string; nom: string }[]>(`${this.url}/${id}/institutions-liees/`, { params });
   }
 }

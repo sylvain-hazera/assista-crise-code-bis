@@ -866,6 +866,14 @@ class Competence(models.Model):
         default=True
     )
 
+    # Optionnel : regroupe des compétences plus fines sous un thème générique (ex: "Secourisme"
+    # -> "PSC1", "PSE1") pour l'affichage en menu déroulant côté équipe (voir TeamsComponent) —
+    # jamais plus d'un niveau (une sous-compétence ne peut pas elle-même avoir des enfants,
+    # non contraint en base pour rester simple, à respecter côté formulaire).
+    parent = models.ForeignKey(
+        "self", on_delete=models.SET_NULL, null=True, blank=True, related_name="sous_competences",
+    )
+
     def __str__(self):
         return self.nom
 

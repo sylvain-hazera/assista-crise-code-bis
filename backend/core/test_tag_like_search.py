@@ -98,6 +98,33 @@ class TestCompetenceKeywordSearch:
 
 
 @pytest.mark.django_db
+class TestCompetenceParent:
+    """Regroupement optionnel des compétences (sous-compétences), pour l'affichage en menu
+    déroulant côté équipe (voir TeamsComponent.competenceGroups)."""
+
+    def test_parent_is_writable_and_readable(self, authenticated_client):
+        client, _ = authenticated_client
+        parent = Competence.objects.create(nom="Secourisme")
+        enfant = Competence.objects.create(nom="PSC1")
+
+        response = client.patch(
+            reverse('competence-detail', args=[enfant.id]), {"parent": str(parent.id)}, format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["parent"] == parent.id
+        enfant.refresh_from_db()
+        assert enfant.parent_id == parent.id
+
+    def test_parent_defaults_to_null(self, authenticated_client):
+        client, _ = authenticated_client
+        response = client.post(reverse('competence-list'), {"nom": "Autonome"}, format='json')
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data["parent"] is None
+
+
+@pytest.mark.django_db
 class TestInformationTypeKeywordSearchAndPublicAccess:
 
     def test_anonymous_can_list_types(self):

@@ -371,3 +371,39 @@ class TestInstitutionsLiees:
         response = client.get(reverse('team-institutions-liees', args=[team_a.id]))
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+@pytest.mark.django_db
+class TestInstitutionsLieesTypeActeur:
+    """?type=acteur : sélecteur "institution délégataire" — avant ce correctif, teams.
+    component.ts proposait TOUTES les institutions de la plateforme comme délégataire (aucun
+    filtre côté frontend ni endpoint dédié côté backend), sans lien avec la crise de l'équipe."""
+
+    def test_excludes_implique_only_institution(self, mairie_client, team_a, institution_a, institution_b):
+        """IMPLIQUE (pas ACTEUR) : proposée pour le recrutement de membres (type par défaut),
+        mais pas comme délégataire."""
+        acteur_institution = _make_institution(nom='Mairie ACTEUR')
+        crisis = Crisis.objects.create(name='Crise acteur/implique', type='INCENDIE', location='POINT (5.72 45.18)')
+        ImplicationInstitution.objects.create(crise=crisis, institution=institution_a, type_implication='ACTEUR')
+        ImplicationInstitution.objects.create(crise=crisis, institution=institution_b, type_implication='IMPLIQUE')
+        ImplicationInstitution.objects.create(crise=crisis, institution=acteur_institution, type_implication='ACTEUR')
+        client, _ = mairie_client
+
+        response = client.get(reverse('team-institutions-liees', args=[team_a.id]), {'type': 'acteur'})
+
+        assert response.status_code == status.HTTP_200_OK
+        noms = {i['nom'] for i in response.data}
+        assert noms == {acteur_institution.nom}
+
+    def test_current_delegataire_always_included_even_if_not_acteur(self, mairie_client, team_a, institution_a, institution_b):
+        """Le délégataire déjà réglé (ex: posé avant ce correctif) reste visible dans le
+        sélecteur même s'il n'est plus ACTEUR sur aucune crise commune — pour ne pas le faire
+        disparaître silencieusement d'un formulaire d'édition."""
+        team_a.institution_delegataire = institution_b
+        team_a.save(update_fields=['institution_delegataire'])
+        client, _ = mairie_client
+
+        response = client.get(reverse('team-institutions-liees', args=[team_a.id]), {'type': 'acteur'})
+
+        assert response.status_code == status.HTTP_200_OK
+        assert {i['nom'] for i in response.data} == {institution_b.nom}

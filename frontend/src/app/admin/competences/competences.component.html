@@ -12,6 +12,7 @@
     <tr>
       <th>Nom</th>
       <th>Description</th>
+      <th>Regroupée sous</th>
       <th>Active</th>
       <th></th>
     </tr>
@@ -21,6 +22,12 @@
     <tr *ngFor="let c of competences">
       <td>{{ c.nom }}</td>
       <td>{{ c.description }}</td>
+      <td>
+        <select [ngModel]="c.parent ?? ''" (ngModelChange)="setParent(c, $event)">
+          <option value="">— Thème de premier niveau —</option>
+          <option *ngFor="let p of parentOptions(c)" [value]="p.id">{{ p.nom }}</option>
+        </select>
+      </td>
       <td>{{ c.active ? 'Oui' : 'Non' }}</td>
       <td><button type="button" (click)="toggleActive(c)">{{ c.active ? 'Désactiver' : 'Activer' }}</button></td>
     </tr>

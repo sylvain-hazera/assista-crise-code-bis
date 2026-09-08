@@ -17,6 +17,7 @@ import { DossierService } from '../../services/dossier.service';
 import { CompetenceService } from '../../services/competence.service';
 import { BesoinService } from '../../services/besoin.service';
 import { RoleOperationnelService } from '../../services/role-operationnel.service';
+import { AffectationRoleOperationnelService } from '../../services/affectation-role-operationnel.service';
 import { AuditLogService, AuditLogEntry } from '../../services/audit-log.service';
 import { DossierHistoriqueService } from '../../services/dossier-historique.service';
 import { PointOperationnelService } from '../../services/point-operationnel.service';
@@ -28,7 +29,7 @@ import { PointModalComponent } from '../crises/point-modal/point-modal.component
 
 import { Team, TeamMission }  from '../../shared/models/team.model';
 import { User }        from '../../shared/models/user.model';
-import { RoleOperationnel } from '../../shared/models/institution.model';
+import { RoleOperationnel, AffectationRoleOperationnel } from '../../shared/models/institution.model';
 import { Crisis }              from '../../shared/models/crisis.model';
 import { Offer }              from '../../shared/models/offer.model';
 import { Request }            from '../../shared/models/request.model';
@@ -64,6 +65,7 @@ export class TeamsComponent implements OnInit {
   competences: Competence[] = [];
   besoins: Besoin[] = [];
   roles: RoleOperationnel[] = [];
+  affectationsRoles: AffectationRoleOperationnel[] = [];
   institutions: Institution[] = [];
   points: PointOperationnel[] = [];
   pointTypes: PointType[] = [];
@@ -111,6 +113,7 @@ export class TeamsComponent implements OnInit {
     private competenceService: CompetenceService,
     private besoinService: BesoinService,
     private roleOperationnelService: RoleOperationnelService,
+    private affectationRoleService: AffectationRoleOperationnelService,
     private auditLogService: AuditLogService,
     private dossierHistoriqueService: DossierHistoriqueService,
     private pointOperationnelService: PointOperationnelService,
@@ -156,11 +159,12 @@ export class TeamsComponent implements OnInit {
       competences: this.competenceService.getAll(),
       besoins: this.besoinService.getAll(),
       roles: this.roleOperationnelService.getAll(),
+      affectationsRoles: this.affectationRoleService.getAll(),
       institutions: this.institutionService.getAll(),
       points: this.pointOperationnelService.getAll(),
       pointTypes: this.pointTypeService.getAll(),
     }).subscribe({
-      next: ({ users, crisis, offers, requests, teams, disponibilites, dossiers, competences, besoins, roles, institutions, points, pointTypes }) => {
+      next: ({ users, crisis, offers, requests, teams, disponibilites, dossiers, competences, besoins, roles, affectationsRoles, institutions, points, pointTypes }) => {
         this.users    = users;
         this.crisis   = crisis;
         this.offers   = offers;
@@ -170,6 +174,7 @@ export class TeamsComponent implements OnInit {
         this.competences = competences;
         this.besoins = besoins;
         this.roles = roles;
+        this.affectationsRoles = affectationsRoles;
         this.institutions = institutions;
         this.points = points;
         this.pointTypes = pointTypes;
@@ -283,6 +288,7 @@ export class TeamsComponent implements OnInit {
     this.showPointModal = false;
     this.showAttachTeamForm = false;
     this.loadCandidateMembers(team);
+    this.loadInstitutionsDelegables(team);
     this.loadHistory(team);
   }
 
@@ -392,11 +398,17 @@ export class TeamsComponent implements OnInit {
     });
   }
 
-  /** Institutions proposables comme délégataire : toutes sauf l'institution responsable
-   * actuelle (une équipe ne peut pas se déléguer à elle-même). */
-  get institutionsDelegablesPourEquipe(): Institution[] {
-    if (!this.selectedTeam) return this.institutions;
-    return this.institutions.filter(i => i.id !== this.selectedTeam!.institution);
+  /** Institutions proposables comme délégataire : ACTEUR sur une crise où l'institution de
+   * l'équipe est elle-même impliquée (TeamViewSet.institutions_liees?type=acteur), chargé dans
+   * openDetail — avant ce correctif, ce sélecteur proposait TOUTES les institutions de la
+   * plateforme, sans lien avec la crise de l'équipe. */
+  institutionsDelegables: { id: string; nom: string }[] = [];
+
+  private loadInstitutionsDelegables(team: Team): void {
+    if (!team.id) { this.institutionsDelegables = []; return; }
+    this.teamService.institutionsLiees(team.id, 'acteur').pipe(
+      catchError(() => of([] as { id: string; nom: string }[])),
+    ).subscribe(institutions => this.institutionsDelegables = institutions);
   }
 
   // ── ZONE D'INTERVENTION ─────────────────────────────────────────
@@ -538,6 +550,48 @@ export class TeamsComponent implements OnInit {
     return this.selectedTeam?.member_ids?.includes(userId) ?? false;
   }
 
+  /** Affectation de rôle opérationnel active de `userId` pour l'institution de l'équipe (le
+   * rôle est un concept d'institution, pas d'équipe — voir AffectationRoleOperationnel côté
+   * backend, déjà le même modèle utilisé par l'onglet "Régulateurs" des Institutions). `null`
+   * si aucun rôle affecté (ex: membre pas encore invité via ce formulaire). */
+  private memberRoleAffectation(userId: string): AffectationRoleOperationnel | null {
+    if (!this.selectedTeam?.institution) return null;
+    return this.affectationsRoles.find(a =>
+      a.utilisateur === userId && a.institution === this.selectedTeam!.institution && a.actif
+    ) ?? null;
+  }
+
+  memberRoleId(userId: string): string {
+    return this.memberRoleAffectation(userId)?.role ?? '';
+  }
+
+  /** Crée ou met à jour l'affectation de rôle d'un membre déjà présent dans l'équipe —
+   * jusqu'ici, le rôle ne pouvait être choisi qu'à l'invitation d'un nouveau membre, pas
+   * édité après coup pour un membre existant. roleId vide = retire le rôle (désactive
+   * l'affectation plutôt que de la supprimer, cohérent avec le reste du modèle). */
+  setMemberRole(userId: string, roleId: string): void {
+    if (!this.selectedTeam?.institution) return;
+    const institutionId = this.selectedTeam.institution;
+    const existing = this.memberRoleAffectation(userId);
+
+    if (existing?.id) {
+      // PUT (pas PATCH côté service) : utilisateur/institution/role sont requis dans le
+      // payload même pour ne changer que `actif` ou `role`.
+      this.affectationRoleService.update(existing.id, {
+        utilisateur: userId, institution: institutionId,
+        role: roleId || existing.role, actif: !!roleId,
+      }).subscribe(updated => {
+        this.affectationsRoles = this.affectationsRoles.map(a => a.id === updated.id ? updated : a);
+      });
+    } else if (roleId) {
+      this.affectationRoleService.create({
+        utilisateur: userId, institution: institutionId, role: roleId, actif: true,
+      }).subscribe(created => {
+        this.affectationsRoles = [...this.affectationsRoles, created];
+      });
+    }
+  }
+
   /** Invite un nouveau membre dans l'institution de l'équipe (nom/prénom/email/tél/rôle) et
    * l'ajoute directement à l'équipe — même s'il n'a pas encore activé son compte (voir
    * TeamViewSet.inviter_membre côté backend). */
@@ -563,6 +617,24 @@ export class TeamsComponent implements OnInit {
   }
 
   // ── THÈMES D'INTERVENTION ─────────────────────────────────────
+  competencesDropdownOpen = false;
+  themesDropdownOpen = false;
+
+  /** Groupe les compétences par parent (sous-compétences) pour l'affichage en menu déroulant —
+   * un thème de premier niveau (parent = null) forme un groupe avec ses enfants indentés en
+   * dessous ; chaque thème (parent compris) reste individuellement sélectionnable. */
+  get competenceGroups(): { parent: Competence; children: Competence[] }[] {
+    const topLevel = this.competences.filter(c => !c.parent);
+    return topLevel.map(parent => ({
+      parent,
+      children: this.competences.filter(c => c.parent === parent.id),
+    }));
+  }
+
+  get selectedCompetences(): Competence[] {
+    return this.competences.filter(c => this.hasCompetence(c.id));
+  }
+
   toggleCompetence(competenceId: string): void {
     if (!this.selectedTeam) return;
     const ids = this.selectedTeam.competence_ids ?? [];
@@ -605,6 +677,10 @@ export class TeamsComponent implements OnInit {
 
   hasTheme(themeId: string): boolean {
     return this.selectedTeam?.theme_ids?.includes(themeId) ?? false;
+  }
+
+  get selectedThemes(): Besoin[] {
+    return this.besoins.filter(b => this.hasTheme(b.id));
   }
 
   besoinHebergementId(): string {

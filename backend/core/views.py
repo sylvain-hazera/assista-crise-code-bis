@@ -3238,6 +3238,21 @@ def _institutions_liees(institution):
     return Institution.objects.filter(implications_crises__crise_id__in=crise_ids).exclude(pk=institution.pk).distinct()
 
 
+def _institutions_acteurs_liees(institution):
+    """Institutions ACTEUR sur au moins une crise où `institution` est elle-même impliquée
+    (IMPLIQUE ou ACTEUR) — périmètre retenu pour "institution délégataire" d'une équipe
+    (TeamViewSet.institutions_liees?type=acteur) : contrairement à _institutions_liees (plus
+    large, IMPLIQUE compris, pour le recrutement de membres), déléguer une compétence n'a de
+    sens que vers une institution réellement actrice de la crise — avant ce correctif, le
+    frontend proposait TOUTES les institutions de la plateforme comme délégataire, sans lien
+    avec la crise de l'équipe."""
+    crise_ids = ImplicationInstitution.objects.filter(institution=institution).values_list('crise_id', flat=True)
+    return Institution.objects.filter(
+        implications_crises__crise_id__in=crise_ids,
+        implications_crises__type_implication=TypeImplication.ACTEUR,
+    ).exclude(pk=institution.pk).distinct()
+
+
 def _resolve_institution_or_400(request):
     """Institution explicitement choisie dans le payload si l'appelant y a accès (ou est
     administrateur), sinon celle de son propre rattachement actif (ContactInstitution, la
@@ -3665,13 +3680,20 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         délégataire, et toute institution co-impliquée avec elle sur une même crise — le
         périmètre dans lequel le frontend va chercher des candidats à ajouter comme membre
         externe (voir teams.component.ts, loadCandidateMembers). Réservé aux gestionnaires de
-        cette équipe : ne pas révéler ce rattachement à un tiers sans lien avec elle."""
+        cette équipe : ne pas révéler ce rattachement à un tiers sans lien avec elle.
+
+        `?type=acteur` restreint aux institutions ACTEUR (voir _institutions_acteurs_liees) —
+        utilisé pour le sélecteur "institution délégataire", plus étroit que le périmètre par
+        défaut (recrutement de membres, IMPLIQUE compris)."""
         team = self.get_object()
         if team.institution_id and not _appartient_a_equipe(request, team) and get_effective_role(request) != UserRole.ADMINISTRATOR:
             raise PermissionDenied("Réservé aux gestionnaires de cette équipe.")
         if not team.institution_id:
             return Response([])
-        institutions = list(_institutions_liees(team.institution))
+        if request.query_params.get('type') == 'acteur':
+            institutions = list(_institutions_acteurs_liees(team.institution))
+        else:
+            institutions = list(_institutions_liees(team.institution))
         if team.institution_delegataire_id and team.institution_delegataire not in institutions:
             institutions.append(team.institution_delegataire)
         return Response([{"id": str(i.id), "nom": i.nom} for i in institutions])

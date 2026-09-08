@@ -261,7 +261,7 @@
               <select class="form-select" #delegationSelect
                 (change)="delegerA(delegationSelect.value); delegationSelect.value = ''">
                 <option value="" selected>— Déléguer à une institution —</option>
-                @for (inst of institutionsDelegablesPourEquipe; track inst.id) {
+                @for (inst of institutionsDelegables; track inst.id) {
                   <option [value]="inst.id">{{ inst.nom }}</option>
                 }
               </select>
@@ -352,6 +352,20 @@
                     </span>
                   }
                 </div>
+                @if (isMember(u.id)) {
+                  <select
+                    class="up-role-select"
+                    [ngModel]="memberRoleId(u.id)"
+                    (ngModelChange)="setMemberRole(u.id, $event)"
+                    (click)="$event.stopPropagation()"
+                    title="Rôle de ce membre dans l'équipe"
+                  >
+                    <option value="">— Rôle —</option>
+                    @for (r of roles; track r.id) {
+                      <option [value]="r.id">{{ r.libelle }}</option>
+                    }
+                  </select>
+                }
                 @if (u.id === selectedTeam.leader) {
                   <span class="leader-star" title="Chef d'équipe">
                     <span class="material-icons">star</span>
@@ -385,6 +399,32 @@
             <span class="section-hint">Cliquer pour ajouter / retirer</span>
           </div>
 
+          <div class="dropdown-multiselect">
+            <button type="button" class="btn-secondary sm" (click)="competencesDropdownOpen = !competencesDropdownOpen">
+              <span class="material-icons">{{ competencesDropdownOpen ? 'expand_less' : 'expand_more' }}</span>
+              Ajouter un thème
+            </button>
+            @if (competencesDropdownOpen) {
+              <div class="dropdown-panel">
+                @for (group of competenceGroups; track group.parent.id) {
+                  <label class="dropdown-check-item parent-item">
+                    <input type="checkbox" [checked]="hasCompetence(group.parent.id)" (change)="toggleCompetence(group.parent.id)">
+                    {{ group.parent.nom }}
+                  </label>
+                  @for (child of group.children; track child.id) {
+                    <label class="dropdown-check-item child-item">
+                      <input type="checkbox" [checked]="hasCompetence(child.id)" (change)="toggleCompetence(child.id)">
+                      {{ child.nom }}
+                    </label>
+                  }
+                }
+                @if (competences.length === 0) {
+                  <p class="empty-pick">Aucun thème/compétence défini.</p>
+                }
+              </div>
+            }
+          </div>
+
           <app-tag-search-input
             placeholder="Chercher ou créer un thème (ex: transport animaux)..."
             [searchFn]="competenceSearchFn"
@@ -393,17 +433,17 @@
           </app-tag-search-input>
 
           <div class="competence-chip-list">
-            @for (c of competences; track c.id) {
+            @for (c of selectedCompetences; track c.id) {
               <button type="button"
-                      class="competence-chip"
-                      [class.selected]="hasCompetence(c.id)"
+                      class="competence-chip selected"
                       [style.--ac]="selectedTeam.color"
-                      (click)="toggleCompetence(c.id)">
-                {{ c.nom }}
+                      (click)="toggleCompetence(c.id)"
+                      title="Retirer">
+                {{ c.nom }} ×
               </button>
             }
-            @if (competences.length === 0) {
-              <p class="empty-pick">Aucun thème/compétence défini.</p>
+            @if (selectedCompetences.length === 0) {
+              <p class="empty-pick">Aucun thème sélectionné.</p>
             }
           </div>
         </div>
@@ -419,15 +459,38 @@
             <span class="section-hint">Donne accès à un tableau de bord dédié (ex: Hébergement)</span>
           </div>
 
+          <div class="dropdown-multiselect">
+            <button type="button" class="btn-secondary sm" (click)="themesDropdownOpen = !themesDropdownOpen">
+              <span class="material-icons">{{ themesDropdownOpen ? 'expand_less' : 'expand_more' }}</span>
+              Ajouter une spécialité
+            </button>
+            @if (themesDropdownOpen) {
+              <div class="dropdown-panel">
+                @for (b of besoins; track b.id) {
+                  <label class="dropdown-check-item">
+                    <input type="checkbox" [checked]="hasTheme(b.id)" (change)="toggleTheme(b.id)">
+                    {{ b.nom }}
+                  </label>
+                }
+                @if (besoins.length === 0) {
+                  <p class="empty-pick">Aucune spécialité définie.</p>
+                }
+              </div>
+            }
+          </div>
+
           <div class="competence-chip-list">
-            @for (b of besoins; track b.id) {
+            @for (b of selectedThemes; track b.id) {
               <button type="button"
-                      class="competence-chip"
-                      [class.selected]="hasTheme(b.id)"
+                      class="competence-chip selected"
                       [style.--ac]="selectedTeam.color"
-                      (click)="toggleTheme(b.id)">
-                {{ b.nom }}
+                      (click)="toggleTheme(b.id)"
+                      title="Retirer">
+                {{ b.nom }} ×
               </button>
+            }
+            @if (selectedThemes.length === 0) {
+              <p class="empty-pick">Aucune spécialité sélectionnée.</p>
             }
           </div>
 
