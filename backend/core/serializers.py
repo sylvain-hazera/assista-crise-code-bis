@@ -838,6 +838,10 @@ class DeclarationSecuriteSerializer(serializers.ModelSerializer):
         model = DeclarationSecurite
         fields = '__all__'
         read_only_fields = ['id', 'date_declaration', 'declare_par', 'registre_presence']
+        # `crise` reste obligatoire en base (jamais nullable), mais optionnelle à la saisie :
+        # une entrée via le secrétariat d'un centre (voir DeclarationSecuriteViewSet.
+        # perform_create) la déduit de centre_accueil.crise plutôt que de la faire ressaisir.
+        extra_kwargs = {'crise': {'required': False}}
 
     def get_declare_par_nom(self, obj):
         if not obj.declare_par:

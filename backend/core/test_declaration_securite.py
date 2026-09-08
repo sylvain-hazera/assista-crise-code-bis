@@ -142,6 +142,46 @@ class TestDeclarationSecuriteOperateurCentre:
         assert registre.nombre == 10  # 4 adultes + 6 enfants
         assert registre.nom == "Sophie Leroy"
 
+    def test_crise_deduced_from_centre_when_omitted(self, authenticated_client):
+        """Le secrétariat d'un centre (PointSecretariatModalComponent côté frontend) n'envoie
+        jamais `crise` dans son payload — seulement `centre_accueil` — contrairement au
+        formulaire public "je suis en sécurité" qui la fait choisir explicitement. Sans
+        déduction serveur, la création échouait systématiquement en 400 pour ce cas d'usage
+        (reproduit puis corrigé, voir DeclarationSecuriteViewSet.perform_create)."""
+        client, _ = _make_admin(authenticated_client)
+        crisis = _make_crisis()
+        point = _make_point(crise=crisis)
+
+        response = client.post(
+            reverse('declarationsecurite-list'),
+            {
+                'type_declarant': 'PERSONNE_SEULE', 'nom_referent': 'Sans', 'prenom_referent': 'Crise',
+                'contact_referent': 'sanscrise@test.fr', 'nombre_adultes': 1, 'nombre_enfants': 0,
+                'centre_accueil': str(point.id),
+            },
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        declaration = DeclarationSecurite.objects.get(id=response.data['id'])
+        assert declaration.crise_id == crisis.id
+
+    def test_missing_crise_and_centre_rejected(self, authenticated_client):
+        """Sans centre pour la déduire, `crise` reste obligatoire (auto-déclaration générique
+        côté formulaire public, ou saisie secrétariat mal formée)."""
+        client, _ = _make_admin(authenticated_client)
+
+        response = client.post(
+            reverse('declarationsecurite-list'),
+            {
+                'type_declarant': 'PERSONNE_SEULE', 'nom_referent': 'Rejete', 'prenom_referent': 'X',
+                'contact_referent': 'rejete@test.fr', 'nombre_adultes': 1, 'nombre_enfants': 0,
+            },
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
     def test_regime_alimentaire_flag_is_relayed_as_warning_on_registre(self, authenticated_client):
         client, _ = _make_admin(authenticated_client)
         point = _make_point()

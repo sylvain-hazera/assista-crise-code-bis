@@ -7695,6 +7695,15 @@ class DeclarationSecuriteViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
 
     def perform_create(self, serializer):
         centre = serializer.validated_data.get('centre_accueil')
+        # Une entrée saisie depuis le secrétariat d'un centre n'envoie pas `crise` (le centre
+        # la détermine déjà sans ambiguïté) — contrairement au formulaire public "je suis en
+        # sécurité", qui la fait choisir explicitement. Sans cette déduction, la création
+        # échouait systématiquement en 400 pour toute saisie côté secrétariat (crise absente
+        # du payload, champ pourtant obligatoire en base).
+        if not serializer.validated_data.get('crise'):
+            if centre is None:
+                raise ValidationError({"crise": "Ce champ est obligatoire."})
+            serializer.validated_data['crise'] = centre.crise
         declare_par = self.request.user if self.request.user.is_authenticated else None
         declaration = serializer.save(
             declare_par=declare_par,
