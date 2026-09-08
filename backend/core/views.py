@@ -398,7 +398,15 @@ class CompetenceViewSet(TagLikeViewSetMixin, viewsets.ModelViewSet):
     # pas").
     queryset = Competence.objects.all()
     serializer_class = CompetenceSerializer
-    permission_classes = [AllowAny]
+
+    def get_permissions(self):
+        # AllowAny restreint à list/retrieve/create (voir commentaire de classe) : update/
+        # destroy doivent rester réservés aux comptes authentifiés, contrairement à avant où
+        # permission_classes=[AllowAny] s'appliquait à toute la classe et permettait à
+        # n'importe qui, sans compte, de modifier/supprimer une compétence.
+        if self.action in ('list', 'retrieve', 'create'):
+            return [AllowAny()]
+        return super().get_permissions()
 
     def get_search_queryset(self, queryset, query):
         # Élargit la recherche par mots-clés aux compétences reliées à un Besoin dont le nom
@@ -420,6 +428,18 @@ class CompetenceViewSet(TagLikeViewSetMixin, viewsets.ModelViewSet):
             objet_id=competence.id,
             commentaire=f"Création thème/compétence : {competence.nom}",
         )
+
+    def perform_destroy(self, instance):
+        # BesoinCompetence.competence et Dossier.competence sont en PROTECT : supprimer une
+        # compétence encore utilisée lève ProtectedError (500 non géré) au lieu d'un message
+        # exploitable.
+        nb = instance.besoins.count() + instance.dossiers.count()
+        if nb:
+            raise ValidationError(
+                f"Impossible de supprimer la compétence « {instance.nom} » : "
+                f"{nb} élément(s) (besoins/dossiers) l'utilisent encore."
+            )
+        instance.delete()
 
 class AffectationCompetenceViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     queryset = AffectationCompetence.objects.select_related('crise', 'competence', 'equipe')
@@ -4758,18 +4778,52 @@ class RequestTypeViewSet(viewsets.ModelViewSet):
     # InformationTypeViewSet pour le signalement, et déjà bon sur OfferTypeViewSet).
     queryset = RequestType.objects.all()
     serializer_class = RequestTypeSerializer
-    permission_classes = [AllowAny]
+
+    def get_permissions(self):
+        # AllowAny restreint à list/retrieve (voir commentaire de classe) : create/update/
+        # destroy doivent rester réservés aux comptes authentifiés, contrairement à avant où
+        # permission_classes=[AllowAny] s'appliquait à toute la classe et permettait à
+        # n'importe qui, sans compte, de créer/modifier/supprimer un type de demande.
+        if self.action in ('list', 'retrieve'):
+            return [AllowAny()]
+        return super().get_permissions()
 
     def get_queryset(self):
         return RequestType.objects.filter(actif=True)
 
+    def perform_destroy(self, instance):
+        # Request.request_type est en PROTECT : supprimer un type encore utilisé lève
+        # ProtectedError (500 non géré) au lieu d'un message exploitable.
+        nb = instance.requests.count()
+        if nb:
+            raise ValidationError(
+                f"Impossible de supprimer le type « {instance.type} » : "
+                f"{nb} demande(s) l'utilisent encore. Désactivez-le plutôt (champ « actif »)."
+            )
+        instance.delete()
+
 class OfferTypeViewSet(viewsets.ModelViewSet):
     queryset = OfferType.objects.all()
     serializer_class = OfferTypeSerializer
-    permission_classes = [AllowAny]
+
+    def get_permissions(self):
+        # AllowAny restreint à list/retrieve, même correctif que RequestTypeViewSet ci-dessus.
+        if self.action in ('list', 'retrieve'):
+            return [AllowAny()]
+        return super().get_permissions()
 
     def get_queryset(self):
         return OfferType.objects.filter(actif=True)
+
+    def perform_destroy(self, instance):
+        # Offer.offer_type est en PROTECT : même garde que RequestTypeViewSet ci-dessus.
+        nb = instance.offers.count()
+        if nb:
+            raise ValidationError(
+                f"Impossible de supprimer le type « {instance.type} » : "
+                f"{nb} offre(s) l'utilisent encore. Désactivez-le plutôt (champ « actif »)."
+            )
+        instance.delete()
 
 class InformationTypeViewSet(TagLikeViewSetMixin, viewsets.ModelViewSet):
     # AllowAny : la page de signalement (other-declaration-form) est accessible sans compte,
@@ -4778,8 +4832,16 @@ class InformationTypeViewSet(TagLikeViewSetMixin, viewsets.ModelViewSet):
     # les types existants ou en proposer un nouveau.
     queryset = InformationType.objects.all()
     serializer_class = InformationTypeSerializer
-    permission_classes = [AllowAny]
     tag_field = "type"
+
+    def get_permissions(self):
+        # AllowAny restreint à list/retrieve/create (voir commentaire de classe) : update/
+        # destroy doivent rester réservés aux comptes authentifiés, contrairement à avant où
+        # permission_classes=[AllowAny] s'appliquait à toute la classe et permettait à
+        # n'importe qui, sans compte, de modifier/supprimer un type de signalement.
+        if self.action in ('list', 'retrieve', 'create'):
+            return [AllowAny()]
+        return super().get_permissions()
 
     def perform_create(self, serializer):
         information_type = serializer.save()
@@ -4790,6 +4852,16 @@ class InformationTypeViewSet(TagLikeViewSetMixin, viewsets.ModelViewSet):
             objet_id=information_type.id,
             commentaire=f"Création type de signalement : {information_type.type}",
         )
+
+    def perform_destroy(self, instance):
+        # Information.information_type est en PROTECT : même garde que RequestType/OfferType.
+        nb = instance.informations.count()
+        if nb:
+            raise ValidationError(
+                f"Impossible de supprimer le type « {instance.type} » : "
+                f"{nb} signalement(s) l'utilisent encore."
+            )
+        instance.delete()
 
 # --- VUES POUR LA SUPPRESSION VIA TOKEN ---
 from django.views import View
@@ -6190,6 +6262,20 @@ class InstitutionTypeViewSet(
             commentaire=f"Création type d'institution : {institution_type.libelle}",
         )
 
+    def perform_destroy(self, instance):
+        # Institution.type est en PROTECT : la suppression d'un type encore utilisé
+        # lève ProtectedError (erreur 500 non gérée) au lieu d'un message exploitable.
+        # On renvoie plutôt un 400 indiquant combien d'institutions le référencent
+        # encore, pour guider une réaffectation avant suppression.
+        nb_institutions = instance.institutions.count()
+        if nb_institutions:
+            raise ValidationError(
+                f"Impossible de supprimer le type « {instance.libelle} » : "
+                f"{nb_institutions} institution(s) l'utilisent encore. "
+                "Réaffectez-les à un autre type avant de le supprimer."
+            )
+        instance.delete()
+
 class InstitutionViewSet(
     EnvironmentScopedViewSetMixin, viewsets.ModelViewSet
 ):
@@ -6288,6 +6374,18 @@ class InstitutionViewSet(
                     commentaire=f"Rattachement automatique du créateur à l'institution {institution.nom}",
                 )
 
+    def perform_destroy(self, instance):
+        # Zone.institution, Team.institution et Plan.institution sont en PROTECT : supprimer
+        # une institution encore rattachée à l'un de ces éléments lève ProtectedError (500 non
+        # géré) au lieu d'un message exploitable.
+        nb = instance.zones.count() + instance.teams.count() + instance.plans.count()
+        if nb:
+            raise ValidationError(
+                f"Impossible de supprimer l'institution « {instance.nom} » : "
+                f"{nb} élément(s) (zones/équipes/plans) y sont encore rattachés."
+            )
+        instance.delete()
+
 class RoleOperationnelViewSet(
     viewsets.ModelViewSet
 ):
@@ -6309,6 +6407,17 @@ class RoleOperationnelViewSet(
             objet_id=role.id,
             commentaire=f"Création rôle opérationnel : {role.libelle}",
         )
+
+    def perform_destroy(self, instance):
+        # Affectation.role est en PROTECT : supprimer un rôle encore affecté lève
+        # ProtectedError (500 non géré) au lieu d'un message exploitable.
+        nb = instance.affectations.count()
+        if nb:
+            raise ValidationError(
+                f"Impossible de supprimer le rôle « {instance.libelle} » : "
+                f"{nb} affectation(s) l'utilisent encore."
+            )
+        instance.delete()
 class InstitutionCompetenceViewSet(
     EnvironmentScopedViewSetMixin, viewsets.ModelViewSet
 ):
@@ -6607,6 +6716,18 @@ class PointTypeViewSet(
     serializer_class = (
         PointTypeSerializer
     )
+
+    def perform_destroy(self, instance):
+        # PointOperationnel.type est en PROTECT : supprimer un type encore utilisé lève
+        # ProtectedError (500 non géré) au lieu d'un message exploitable.
+        nb = instance.points.count()
+        if nb:
+            raise ValidationError(
+                f"Impossible de supprimer le type « {instance.libelle} » : "
+                f"{nb} point(s) opérationnel(s) l'utilisent encore."
+            )
+        instance.delete()
+
 class PointOperationnelViewSet(
     EnvironmentScopedViewSetMixin, viewsets.ModelViewSet
 ):
@@ -7268,7 +7389,15 @@ class MaterielCatalogueViewSet(TagLikeViewSetMixin, viewsets.ModelViewSet):
 
     queryset = MaterielCatalogue.objects.all()
     serializer_class = MaterielCatalogueSerializer
-    permission_classes = [AllowAny]
+
+    def get_permissions(self):
+        # AllowAny restreint à list/retrieve/create (voir docstring de classe) : update/
+        # destroy doivent rester réservés aux comptes authentifiés, contrairement à avant où
+        # permission_classes=[AllowAny] s'appliquait à toute la classe et permettait à
+        # n'importe qui, sans compte, de modifier/supprimer un item du catalogue.
+        if self.action in ('list', 'retrieve', 'create'):
+            return [AllowAny()]
+        return super().get_permissions()
 
     def get_queryset(self):
         queryset = super().get_queryset()
@@ -7276,6 +7405,17 @@ class MaterielCatalogueViewSet(TagLikeViewSetMixin, viewsets.ModelViewSet):
         if categorie:
             queryset = queryset.filter(categorie=categorie)
         return queryset
+
+    def perform_destroy(self, instance):
+        # MaterielPoint.item est en PROTECT : supprimer un item encore utilisé lève
+        # ProtectedError (500 non géré) au lieu d'un message exploitable.
+        nb = instance.stocks.count()
+        if nb:
+            raise ValidationError(
+                f"Impossible de supprimer l'item « {instance.nom} » : "
+                f"{nb} ligne(s) de stock l'utilisent encore."
+            )
+        instance.delete()
 
 
 def _peut_gerer_stock_point(request, point) -> bool:
