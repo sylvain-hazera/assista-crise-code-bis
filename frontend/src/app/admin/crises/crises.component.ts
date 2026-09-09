@@ -422,6 +422,19 @@ export class CrisesComponent implements OnInit {
     return this.authService.getCurrentUser()?.type === UserRole.ADMIN;
   }
 
+  /** Contrairement à isAdmin (toujours basé sur le rôle PROD réel, à dessein — voir
+   * AuthService.isAdmin), reflète le rôle EFFECTIVEMENT appliqué à la requête en cours (PROD ou
+   * DEMO selon la bascule active, voir AuthService.getEffectiveRole/backend get_effective_role).
+   * Utilisé spécifiquement pour les sélecteurs d'institution (selectableInstitutions) : un
+   * admin PROD dont le rôle démo est un simple AUT_LOCALE ne doit se voir proposer QUE ses
+   * propres institutions en zone DEMO, jamais toutes celles de la plateforme — avant ce
+   * correctif, le sélecteur en proposait la totalité (isAdmin restant vrai en DEMO), pour un
+   * backend qui rejetait ensuite (403) tout choix hors institution propre puisque
+   * get_effective_role y renvoie le rôle démo, pas ADMIN. */
+  get isAdminEffectif(): boolean {
+    return this.authService.getEffectiveRole() === UserRole.ADMIN;
+  }
+
   // ── Clôture de crise ─────────────────────────────────────────
   get canCloturerCrisis(): boolean {
     if (!this.selectedCrisis || this.selectedCrisis.is_open === false) return false;
@@ -516,7 +529,7 @@ export class CrisesComponent implements OnInit {
   /** Un admin peut déclarer/désigner un responsable pour n'importe quelle institution ; un
    * acteur institutionnel reste limité aux siennes. */
   get selectableInstitutions(): Institution[] {
-    return this.isAdmin ? this.institutions : this.myInstitutions;
+    return this.isAdminEffectif ? this.institutions : this.myInstitutions;
   }
 
   institutionName(id: string): string {
@@ -588,8 +601,21 @@ export class CrisesComponent implements OnInit {
         this.showSuccess('Institution déclarée actrice.');
         this.showActeurDirectForm = false;
       },
-      error: () => this.showError("Impossible d'enregistrer cette déclaration."),
+      error: (err) => this.showError(this.implicationErrorMessage(err, "Impossible d'enregistrer cette déclaration.")),
     });
+  }
+
+  /** Traduit les erreurs backend les plus courantes sur une déclaration d'implication en
+   * message exploitable — avant ce correctif, un message générique ("Impossible d'enregistrer
+   * cette déclaration.") s'affichait aussi bien pour un vrai problème que pour une institution
+   * déjà déclarée sur cette crise (contrainte d'unicité crise/institution/type_implication),
+   * cas fréquent et pourtant présenté comme un échec inexpliqué. */
+  private implicationErrorMessage(err: any, fallback: string): string {
+    const nonFieldErrors: string[] = err?.error?.non_field_errors ?? [];
+    if (nonFieldErrors.some(m => typeof m === 'string' && m.includes('must make a unique set'))) {
+      return 'Cette institution est déjà déclarée sur cette crise (voir la liste ci-dessus).';
+    }
+    return err?.error?.detail || fallback;
   }
 
   // ── Je suis impliqué ─────────────────────────────────────────
@@ -607,7 +633,7 @@ export class CrisesComponent implements OnInit {
         this.showSuccess('Institution déclarée impliquée.');
         this.showImpliqueForm = false;
       },
-      error: () => this.showError("Impossible d'enregistrer cette déclaration."),
+      error: (err) => this.showError(this.implicationErrorMessage(err, "Impossible d'enregistrer cette déclaration.")),
     });
   }
 

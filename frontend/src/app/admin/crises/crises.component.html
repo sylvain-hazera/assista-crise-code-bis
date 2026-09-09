@@ -275,12 +275,12 @@
             @if (selectableInstitutions.length > 0 && selectedCrisis.is_open !== false) {
               @if (!showImpliqueForm) {
                 <button class="btn-secondary sm" (click)="showImpliqueForm = true">
-                  <span class="material-icons">add</span> {{ isAdmin ? 'Déclarer une institution impliquée' : 'Je suis impliqué' }}
+                  <span class="material-icons">add</span> {{ isAdminEffectif ? 'Déclarer une institution impliquée' : 'Je suis impliqué' }}
                 </button>
               } @else {
                 <form class="inline-form" [formGroup]="impliqueForm" (ngSubmit)="submitImplique()">
                   <select formControlName="institution">
-                    <option [ngValue]="null">{{ isAdmin ? '— Institution —' : '— Mon institution —' }}</option>
+                    <option [ngValue]="null">{{ isAdminEffectif ? '— Institution —' : '— Mon institution —' }}</option>
                     @for (inst of selectableInstitutions; track inst.id) {
                       <option [ngValue]="inst.id">{{ inst.nom }}</option>
                     }
@@ -302,7 +302,7 @@
                   <div class="select-wrapper">
                     <select [ngModel]="acteurDirectInstitutionId" [ngModelOptions]="{standalone: true}"
                             (ngModelChange)="onActeurDirectInstitutionChange($event)">
-                      <option [ngValue]="null">{{ isAdmin ? '— Institution —' : '— Mon institution —' }}</option>
+                      <option [ngValue]="null">{{ isAdminEffectif ? '— Institution —' : '— Mon institution —' }}</option>
                       @for (inst of selectableInstitutions; track inst.id) {
                         <option [ngValue]="inst.id">{{ inst.nom }}</option>
                       }
@@ -419,7 +419,7 @@
 
             @if (selectableInstitutions.length > 0 && selectedCrisis.is_open !== false) {
               <button class="btn-secondary sm" (click)="openPointModal(null)">
-                <span class="material-icons">add_location_alt</span> {{ isAdmin ? 'Déclarer un point opérationnel' : 'Je suis acteur' }}
+                <span class="material-icons">add_location_alt</span> {{ isAdminEffectif ? 'Déclarer un point opérationnel' : 'Je suis acteur' }}
               </button>
             }
           </section>
@@ -557,7 +557,7 @@
       [crisisId]="selectedCrisis.id"
       [pointTypes]="pointTypes"
       [selectableInstitutions]="selectableInstitutions"
-      [isAdmin]="isAdmin"
+      [isAdmin]="isAdminEffectif"
       [point]="editingPoint"
       (saved)="onPointSaved($event)"
       (pointUpdated)="reloadPoints()"
