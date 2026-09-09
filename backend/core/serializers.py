@@ -2028,6 +2028,21 @@ class InstitutionSerializer(
 
         fields = "__all__"
 
+    def to_representation(self, instance):
+        # Une VRAIE institution (email/téléphone réels) reste visible en DEMO (voir
+        # InstitutionViewSet.get_queryset, règle à sens unique) pour permettre de s'appuyer sur
+        # les vraies mairies/collectivités dans une démonstration — mais ses coordonnées de
+        # contact ne doivent jamais apparaître à l'écran pendant cette démonstration, même
+        # principe que UserSerializer (email/téléphone masqués, nom laissé en clair : le nom
+        # d'une institution publique n'est pas une donnée sensible, contrairement à sa ligne
+        # directe). Masquage à l'affichage uniquement, jamais en base.
+        data = super().to_representation(instance)
+        request = self.context.get('request')
+        if request is not None and get_active_environment(request) == Environment.DEMO:
+            data['email'] = mask_email(data.get('email'))
+            data['telephone'] = mask_phone(data.get('telephone'))
+        return data
+
     def update(self, instance, validated_data):
         # secteur_override élargit potentiellement la visibilité jusqu'à "national" — jamais
         # laissé passer par la permission générale d'édition d'institution
@@ -2040,6 +2055,13 @@ class InstitutionSerializer(
             request = self.context.get("request")
             if not self._can_edit_secteur_override(request, instance):
                 validated_data.pop("secteur_override")
+        # Même garde-fou que UserSerializer/RequestSerializer/OfferSerializer/
+        # InformationSerializer : un formulaire d'édition affiche la version masquée
+        # (to_representation ci-dessus) et la renvoie telle quelle au save si aucun de ces deux
+        # champs n'a réellement changé — sans ce retrait, éditer une institution en DEMO
+        # écraserait silencieusement un vrai email/téléphone par son masque affiché.
+        request = self.context.get("request")
+        validated_data = strip_masked_fields_in_demo(request, validated_data, ('email', 'telephone'))
         return super().update(instance, validated_data)
 
     def _can_edit_secteur_override(self, request, institution):
@@ -2423,7 +2445,27 @@ class ContactInstitutionSerializer(
         if not obj.utilisateur:
             return None
         full_name = f"{obj.utilisateur.first_name} {obj.utilisateur.last_name}".strip()
-        return full_name or obj.utilisateur.email
+        if full_name:
+            return full_name
+        # Repli sur l'email seulement s'il y a un vrai nom à afficher à sa place — en DEMO,
+        # jamais l'email en clair (voir to_representation), même repli masqué que
+        # utilisateur_email pour ne pas fuiter l'adresse réelle par ce champ-ci.
+        request = self.context.get('request')
+        if request is not None and get_active_environment(request) == Environment.DEMO:
+            return mask_email(obj.utilisateur.email)
+        return obj.utilisateur.email
+
+    def to_representation(self, instance):
+        # Un VRAI contact (email réel) reste visible en DEMO (voir
+        # ContactInstitutionViewSet.get_queryset, même règle à sens unique que Institution) —
+        # mais son email ne doit jamais apparaître à l'écran pendant une démonstration, même
+        # principe que UserSerializer/InstitutionSerializer (nom laissé en clair, coordonnées
+        # masquées). Masquage à l'affichage uniquement, jamais en base.
+        data = super().to_representation(instance)
+        request = self.context.get('request')
+        if request is not None and get_active_environment(request) == Environment.DEMO:
+            data['utilisateur_email'] = mask_email(data.get('utilisateur_email'))
+        return data
 
 class InstitutionDomaineSerializer(
     serializers.ModelSerializer

@@ -6830,6 +6830,14 @@ class InstitutionViewSet(
             return qs
         if effective_role_or_none(self.request) == UserRole.ADMINISTRATOR:
             return qs
+        if environment == Environment.DEMO:
+            # Bac à sable : la restriction "chez moi + ma zone" ci-dessous protège la
+            # confidentialité des VRAIES institutions les unes envers les autres en PROD — enjeu
+            # qui disparaît en DEMO dès lors que les champs identifiants (email/téléphone) sont
+            # masqués à l'affichage (voir InstitutionSerializer.to_representation). Explorer
+            # librement les vraies institutions fait partie de l'usage prévu d'une démonstration
+            # (voir aussi ContactInstitutionViewSet, même règle pour les contacts rattachés).
+            return qs
 
         # AVANT ce correctif, list ne filtrait QUE par environnement : n'importe quel compte
         # authentifié listait TOUTES les institutions de la plateforme. Désormais "chez moi"
@@ -8517,7 +8525,7 @@ class ImplicationInstitutionViewSet(
         ).exists()
 
 class ContactInstitutionViewSet(
-    EnvironmentScopedViewSetMixin, viewsets.ModelViewSet
+    viewsets.ModelViewSet
 ):
 
     # utilisateur_nom/utilisateur_email déréférencent utilisateur (FK).
@@ -8528,6 +8536,17 @@ class ContactInstitutionViewSet(
     serializer_class = (
         ContactInstitutionSerializer
     )
+
+    def get_queryset(self):
+        """Même règle à sens unique que InstitutionViewSet.get_queryset (pas
+        EnvironmentScopedViewSetMixin, dont le filtrage strict masquerait les VRAIS contacts
+        d'une institution réelle dès qu'on consulte cette institution en DEMO) : les contacts
+        créés en PROD restent visibles en DEMO, jamais l'inverse. utilisateur_email est masqué
+        à l'affichage en DEMO (voir ContactInstitutionSerializer.to_representation)."""
+        qs = self.queryset
+        if get_active_environment(self.request) == Environment.DEMO:
+            return qs.filter(environment__in=[Environment.PROD, Environment.DEMO])
+        return qs.filter(environment=Environment.PROD)
 
     def perform_create(self, serializer):
         # "Un seul contact principal par institution" est appliqué par un index unique partiel

@@ -706,3 +706,133 @@ class TestInstitutionListZoneScoping:
         response = client.get(reverse('institution-detail', args=[autre.id]))
 
         assert response.status_code == status.HTTP_200_OK
+
+
+@pytest.mark.django_db
+class TestInstitutionAndContactVisibleAcrossEnvironmentsInDemo:
+    """En DEMO, la restriction "chez moi + ma zone" (TestInstitutionListZoneScoping ci-dessus,
+    toujours appliquée en PROD) est levée : une vraie institution reste utilisable pour une
+    démonstration même hors de la zone du compte démo, avec ses coordonnées masquées à
+    l'affichage (voir TestInstitutionAndContactPiiMaskedInDemo) — même règle pour ses contacts
+    (ContactInstitutionViewSet.get_queryset)."""
+
+    @pytest.fixture
+    def commune_a(self, db):
+        return Commune.objects.create(
+            code="38185", nom="Grenoble", departement_code="38", epci_code="200040715",
+            region_code="84", centre_latitude=45.18, centre_longitude=5.72,
+        )
+
+    @pytest.fixture
+    def commune_b(self, db):
+        return Commune.objects.create(
+            code="42218", nom="Saint-Étienne", departement_code="42", epci_code="244200770",
+            region_code="84", centre_latitude=45.43, centre_longitude=4.39,
+        )
+
+    def test_demo_sees_real_institution_outside_its_zone(self, create_user, commune_a, commune_b):
+        itype, _ = InstitutionType.objects.get_or_create(code="CG_DEMO_VISIBLE", defaults={"libelle": "Conseil départemental"})
+        ma_mairie = Institution.objects.create(nom="Ma mairie démo", type=itype, commune_code=commune_a.code)
+        institution_reelle_hors_zone = Institution.objects.create(
+            nom="Conseil départemental hors zone", type=itype, commune_code=commune_b.code,
+        )
+
+        user = create_user(username="demo-visible@test.fr", email="demo-visible@test.fr", type="AUT_LOCALE", demo_role="AUT_LOCALE")
+        user.institution = ma_mairie
+        user.save()
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        # En PROD (comportement inchangé) : hors zone, invisible.
+        response_prod = client.get(reverse('institution-list'), {"page_size": 100})
+        assert institution_reelle_hors_zone.nom not in {i["nom"] for i in response_prod.data["results"]}
+
+        # En DEMO : visible malgré la zone différente.
+        response_demo = client.get(reverse('institution-list'), {"page_size": 100}, HTTP_X_ENVIRONMENT="DEMO")
+        assert institution_reelle_hors_zone.nom in {i["nom"] for i in response_demo.data["results"]}
+
+    def test_demo_sees_real_contacts_of_that_institution(self, create_user, commune_a, commune_b):
+        itype, _ = InstitutionType.objects.get_or_create(code="CG_DEMO_CONTACT", defaults={"libelle": "Conseil départemental"})
+        ma_mairie = Institution.objects.create(nom="Ma mairie démo contact", type=itype, commune_code=commune_a.code)
+        institution_reelle = Institution.objects.create(nom="Institution avec contact réel", type=itype, commune_code=commune_b.code)
+        membre_reel = create_user(username="membre-reel@loire.fr", email="membre-reel@loire.fr", type="AUT_LOCALE")
+        contact = ContactInstitution.objects.create(institution=institution_reelle, utilisateur=membre_reel, environment="PROD")
+
+        user = create_user(username="demo-contact-view@test.fr", email="demo-contact-view@test.fr", type="AUT_LOCALE", demo_role="AUT_LOCALE")
+        user.institution = ma_mairie
+        user.save()
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        response = client.get(reverse('contactinstitution-list'), HTTP_X_ENVIRONMENT="DEMO")
+
+        assert response.status_code == status.HTTP_200_OK
+        ids = {c["id"] for c in response.data}
+        assert str(contact.id) in ids
+
+
+@pytest.mark.django_db
+class TestInstitutionAndContactPiiMaskedInDemo:
+    """Email/téléphone d'une vraie institution, et email de ses vrais contacts, ne doivent
+    jamais apparaître en clair en DEMO (voir InstitutionSerializer/ContactInstitutionSerializer.
+    to_representation) — même politique que UserSerializer (nom laissé en clair, coordonnées
+    masquées)."""
+
+    def test_institution_email_and_telephone_masked_in_demo(self, create_user, db):
+        itype, _ = InstitutionType.objects.get_or_create(code="CG_MASK", defaults={"libelle": "Conseil départemental"})
+        institution = Institution.objects.create(
+            nom="Institution PII test", type=itype, email="contact@loire.fr", telephone="0470000000",
+        )
+        user = create_user(username="mask-viewer@test.fr", email="mask-viewer@test.fr", type="ADMIN", demo_role="ADMIN")
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        response_prod = client.get(reverse('institution-detail', args=[institution.id]))
+        assert response_prod.data["email"] == "contact@loire.fr"
+        assert response_prod.data["telephone"] == "0470000000"
+
+        response_demo = client.get(reverse('institution-detail', args=[institution.id]), HTTP_X_ENVIRONMENT="DEMO")
+        assert response_demo.data["email"] != "contact@loire.fr"
+        assert response_demo.data["email"].endswith("@zone.demo")
+        assert response_demo.data["telephone"] != "0470000000"
+
+    def test_editing_institution_in_demo_does_not_overwrite_real_pii_with_mask(self, create_user, db):
+        # Même régression que UserSerializer/RequestSerializer (voir strip_masked_fields_in_demo) :
+        # un formulaire d'édition en DEMO affiche la version masquée, puis la renvoie telle
+        # quelle au PATCH même si seul un autre champ a changé.
+        itype, _ = InstitutionType.objects.get_or_create(code="CG_MASK_EDIT", defaults={"libelle": "Conseil départemental"})
+        institution = Institution.objects.create(
+            nom="Institution PII edit test", type=itype, email="reel@loire.fr", telephone="0470000001",
+        )
+        user = create_user(username="mask-editor@test.fr", email="mask-editor@test.fr", type="ADMIN", demo_role="ADMIN")
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        masked = client.get(reverse('institution-detail', args=[institution.id]), HTTP_X_ENVIRONMENT="DEMO").data
+
+        client.patch(
+            reverse('institution-detail', args=[institution.id]),
+            {"email": masked["email"], "telephone": masked["telephone"], "description": "MAJ démo"},
+            format="json", HTTP_X_ENVIRONMENT="DEMO",
+        )
+
+        institution.refresh_from_db()
+        assert institution.email == "reel@loire.fr"
+        assert institution.telephone == "0470000001"
+        assert institution.description == "MAJ démo"
+
+    def test_contact_email_masked_in_demo_nom_stays_visible(self, create_user, db):
+        itype, _ = InstitutionType.objects.get_or_create(code="CG_MASK_CONTACT", defaults={"libelle": "Conseil départemental"})
+        institution = Institution.objects.create(nom="Institution contact mask test", type=itype)
+        membre = create_user(username="frederic@loire.fr", email="frederic@loire.fr", type="AUT_LOCALE", first_name="Frédéric", last_name="Bouchet")
+        contact = ContactInstitution.objects.create(institution=institution, utilisateur=membre, environment="PROD")
+
+        user = create_user(username="mask-contact-viewer@test.fr", email="mask-contact-viewer@test.fr", type="ADMIN", demo_role="ADMIN")
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        response = client.get(reverse('contactinstitution-detail', args=[contact.id]), HTTP_X_ENVIRONMENT="DEMO")
+
+        assert response.data["utilisateur_email"] != "frederic@loire.fr"
+        assert response.data["utilisateur_email"].endswith("@zone.demo")
+        assert response.data["utilisateur_nom"] == "Frédéric Bouchet"
