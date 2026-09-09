@@ -25,6 +25,12 @@
           (itemSelected)="onCatalogueItemSelected($event)">
         </app-tag-search-input>
 
+        <app-materiel-categorie-picker
+          [excludedCategories]="categoriesExclues"
+          [existingItemIds]="existingItemIds"
+          (itemsAdded)="onCatalogueItemsAdded($event)">
+        </app-materiel-categorie-picker>
+
         <table class="data-table sm">
           <thead>
             <tr><th>Besoin</th><th>Niveau de stock</th><th>Quantité</th><th>Dernière mise à jour</th><th></th></tr>

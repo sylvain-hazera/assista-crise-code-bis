@@ -5,11 +5,13 @@ import { FormsModule } from '@angular/forms';
 import { MaterielPointService } from '../../../services/materiel-point.service';
 import { MaterielCatalogueService } from '../../../services/materiel-catalogue.service';
 import { ContributionMaterielService } from '../../../services/contribution-materiel.service';
+import { PointTypeService } from '../../../services/point-type.service';
 import { PointOperationnel } from '../../../shared/models/point-operationnel.model';
 import { MaterielPoint, NiveauStock } from '../../../shared/models/materiel-point.model';
 import { MaterielCatalogue } from '../../../shared/models/materiel-catalogue.model';
 import { ContributionMateriel } from '../../../shared/models/contribution-materiel.model';
 import { TagSearchInputComponent } from '../../../shared/components/common/tag-search-input/tag-search-input.component';
+import { MaterielCategoriePickerComponent } from '../../../shared/components/common/materiel-categorie-picker/materiel-categorie-picker.component';
 
 const NIVEAUX: { value: NiveauStock; label: string }[] = [
   { value: 'NUL', label: 'Nul' },
@@ -25,7 +27,7 @@ const NIVEAUX: { value: NiveauStock; label: string }[] = [
 @Component({
   selector: 'app-point-inventaire-modal',
   standalone: true,
-  imports: [CommonModule, FormsModule, TagSearchInputComponent],
+  imports: [CommonModule, FormsModule, TagSearchInputComponent, MaterielCategoriePickerComponent],
   templateUrl: './point-inventaire-modal.component.html',
   styleUrl: './point-inventaire-modal.component.scss'
 })
@@ -38,11 +40,16 @@ export class PointInventaireModalComponent implements OnInit {
   stocks: MaterielPoint[] = [];
   loading = true;
   savingItemId: string | null = null;
+  // Catégories du catalogue matériel masquées pour ce centre (voir PointType.
+  // categories_materiel_exclues) — résolu depuis le type du point, pas depuis le point
+  // lui-même (le type ne dénormalise que son code/libellé sur PointOperationnel).
+  categoriesExclues: string[] = [];
 
   constructor(
     private materielService: MaterielPointService,
     private catalogueService: MaterielCatalogueService,
     private contributionService: ContributionMaterielService,
+    private pointTypeService: PointTypeService,
   ) {}
 
   // ── Apports (ContributionMateriel) ────────────────────────────
@@ -112,6 +119,15 @@ export class PointInventaireModalComponent implements OnInit {
 
   ngOnInit(): void {
     this.load();
+    this.pointTypeService.getAll().subscribe(types => {
+      this.categoriesExclues = types.find(t => t.code === this.point.type_code)?.categories_materiel_exclues ?? [];
+    });
+  }
+
+  /** Ajout groupé depuis app-materiel-categorie-picker (une catégorie entière ou une
+   * sélection multiple) — même logique que onCatalogueItemSelected, répétée par item. */
+  onCatalogueItemsAdded(items: MaterielCatalogue[]): void {
+    for (const item of items) this.onCatalogueItemSelected(item);
   }
 
   private load(): void {
@@ -120,6 +136,10 @@ export class PointInventaireModalComponent implements OnInit {
       this.stocks = data;
       this.loading = false;
     });
+  }
+
+  get existingItemIds(): string[] {
+    return this.stocks.map(s => s.item);
   }
 
   niveauLabel(niveau: NiveauStock): string {

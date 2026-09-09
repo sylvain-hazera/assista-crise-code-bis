@@ -168,9 +168,9 @@ class TestMaterielCatalogueTagLike:
         assert search.status_code == status.HTTP_200_OK
         assert any(i["nom"] == "Lits de camp" for i in search.data)
 
-        created = client.post(reverse('materielcatalogue-list'), {"nom": "Groupe électrogène"}, format='json')
+        created = client.post(reverse('materielcatalogue-list'), {"nom": "Item test création anonyme"}, format='json')
         assert created.status_code == status.HTTP_201_CREATED
-        assert MaterielCatalogue.objects.filter(nom="Groupe électrogène").exists()
+        assert MaterielCatalogue.objects.filter(nom="Item test création anonyme").exists()
 
 
 @pytest.mark.django_db

@@ -7,6 +7,9 @@ export interface PointType {
   libelle: string;
   description?: string | null;
   actif: boolean;
+  /** Codes MaterielCatalogueCategorie à masquer dans le sélecteur de stock pour ce type de
+   * centre (ex: HEBERGEMENT exclut DEBLAI_MANUTENTION) — vide = aucune restriction. */
+  categories_materiel_exclues?: string[];
 }
 
 export interface PointOperationnel {

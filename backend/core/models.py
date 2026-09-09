@@ -2656,6 +2656,14 @@ class PointType(models.Model):
         default=True
     )
 
+    # Catégories du catalogue matériel (MaterielCatalogueCategorie) à masquer dans le
+    # sélecteur de stock pour les centres de ce type — ex: un centre d'accueil des personnes
+    # (HEBERGEMENT) n'a pas vocation à proposer des engins de déblaiement. Liste vide (défaut)
+    # = aucune restriction, comportement inchangé pour tous les types non explicitement seedés.
+    # Volontairement une liste d'EXCLUSION plutôt que d'autorisation : n'affecte que les
+    # catégories explicitement écartées, sans exiger de choix pour toutes les autres.
+    categories_materiel_exclues = models.JSONField(default=list, blank=True)
+
     def __str__(self):
         return self.libelle
 
@@ -2964,8 +2972,21 @@ class StatutMateriel(models.TextChoices):
 class MaterielCatalogueCategorie(models.TextChoices):
     """Regroupement optionnel d'entrées du catalogue pour des listes à cocher dédiées (voir
     propose-help-form, rubrique "Engins agricoles / chantiers / spéciaux") — un item sans
-    catégorie (None) reste un matériel "Autre" générique, cherché/ajouté normalement."""
+    catégorie (None) reste un matériel "Autre" générique, cherché/ajouté normalement.
+
+    ENGIN reste dédié au formulaire public (offre d'un particulier). Les 9 catégories
+    suivantes structurent le catalogue côté stock de centre (point-inventaire-modal) — voir
+    PointType.categories_materiel_exclues pour le filtrage par type de centre."""
     ENGIN = "ENGIN", "Engin agricole / chantier / spécial"
+    NETTOYAGE = "NETTOYAGE", "Nettoyage et remise en état"
+    POMPAGE = "POMPAGE", "Pompage et évacuation d'eau"
+    DEBLAI_MANUTENTION = "DEBLAI_MANUTENTION", "Déblaiement et manutention"
+    ENERGIE_ECLAIRAGE = "ENERGIE_ECLAIRAGE", "Énergie et éclairage"
+    PROTECTION_BATIMENTS = "PROTECTION_BATIMENTS", "Protection des bâtiments"
+    OUTILLAGE_TERRAIN = "OUTILLAGE_TERRAIN", "Outillage et équipement de terrain"
+    PROTECTION_INDIVIDUELLE = "PROTECTION_INDIVIDUELLE", "Protection individuelle"
+    ACCUEIL_HEBERGEMENT = "ACCUEIL_HEBERGEMENT", "Accueil et hébergement d'urgence"
+    DIVERS = "DIVERS", "Divers / consommables"
 
 
 class MaterielCatalogue(models.Model):
@@ -2980,7 +3001,7 @@ class MaterielCatalogue(models.Model):
 
     # Voir MaterielCatalogueCategorie — permet de proposer certaines entrées dans une liste à
     # cocher dédiée plutôt que dans la recherche générique "Autre matériel".
-    categorie = models.CharField(max_length=20, choices=MaterielCatalogueCategorie.choices, null=True, blank=True)
+    categorie = models.CharField(max_length=30, choices=MaterielCatalogueCategorie.choices, null=True, blank=True)
 
     date_creation = models.DateTimeField(auto_now_add=True)
 

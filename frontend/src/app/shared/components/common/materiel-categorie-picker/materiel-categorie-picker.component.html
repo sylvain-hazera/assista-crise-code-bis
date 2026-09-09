@@ -1,0 +1,56 @@
+<div class="categorie-picker">
+  <button type="button" class="btn-secondary sm toggle-btn" (click)="toggleOpen()">
+    <span class="material-icons">{{ open ? 'expand_less' : 'category' }}</span>
+    Parcourir par catégorie
+  </button>
+
+  @if (open) {
+    <div class="picker-panel">
+      @if (loading) {
+        <p class="muted">Chargement du catalogue…</p>
+      } @else if (groupes.length === 0) {
+        <p class="muted">Aucun besoin disponible à ajouter.</p>
+      } @else {
+        <ul class="categorie-list">
+          @for (groupe of groupes; track groupe.code) {
+            <li class="categorie-item">
+              <div class="categorie-header">
+                <input
+                  type="checkbox"
+                  [checked]="categorieState(groupe) === 'all'"
+                  [indeterminate]="categorieState(groupe) === 'some'"
+                  (click)="toggleCategorie(groupe)"
+                  [attr.aria-label]="'Sélectionner toute la catégorie ' + groupe.libelle">
+                <button type="button" class="categorie-label" (click)="toggleExpand(groupe.code)">
+                  <span class="material-icons chevron">{{ isExpanded(groupe.code) ? 'expand_more' : 'chevron_right' }}</span>
+                  {{ groupe.libelle }}
+                  <span class="count">({{ groupe.items.length }})</span>
+                </button>
+              </div>
+
+              @if (isExpanded(groupe.code)) {
+                <ul class="item-list">
+                  @for (item of groupe.items; track item.id) {
+                    <li class="item-row">
+                      <label>
+                        <input type="checkbox" [checked]="isItemSelected(item.id)" (change)="toggleItem(item)">
+                        {{ item.nom }}
+                      </label>
+                    </li>
+                  }
+                </ul>
+              }
+            </li>
+          }
+        </ul>
+
+        <div class="picker-footer">
+          <span class="muted">{{ selectedCount }} sélectionné(s)</span>
+          <button type="button" class="btn-primary sm" [disabled]="selectedCount === 0" (click)="confirmAdd()">
+            Ajouter au stock
+          </button>
+        </div>
+      }
+    </div>
+  }
+</div>
