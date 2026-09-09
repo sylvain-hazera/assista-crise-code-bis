@@ -1051,7 +1051,20 @@ class UserViewSet(viewsets.ModelViewSet):
                 try:
                     send_institution_account_email(request, user)
                 except Exception as e:
-                    print(f"Erreur envoi email institution : {e}")
+                    # send_mail_logged journalise déjà les échecs SMTP dans la main courante,
+                    # mais un échec AVANT cet appel (ex: build_magic_link) ne laissait jusqu'ici
+                    # aucune trace — juste un print() perdu dans les logs du conteneur, jamais
+                    # visible depuis l'app. Repéré en direct : un compte "Autorité locale" créé
+                    # sans que la personne ne reçoive jamais son lien d'activation, sans qu'un
+                    # administrateur n'ait aucun moyen de le savoir.
+                    audit_log(
+                        request=request,
+                        action_code="ENVOI_EMAIL",
+                        objet_type="Email",
+                        objet_id=user.id,
+                        commentaire=f'Envoi "Votre accès institutionnel Assista-Crise" à {user.email} : échec ({e})',
+                        succes=False,
+                    )
 
                 return Response({
                     'user': UserSerializer(user).data,
