@@ -10,7 +10,7 @@ from rest_framework.test import APIClient
 from django.contrib.auth import get_user_model
 from PIL import Image
 
-from core.models import Commune, Crisis, Dossier, DossierParticipant, Document, Institution, InstitutionType, Request, Team
+from core.models import Commune, Crisis, Dossier, DossierParticipant, Document, Information, InstitutionType, Institution, InformationType, Request, Team
 from core.serializers import DocumentSerializer
 from core.views import build_magic_link, extract_exif_metadata, resolve_or_invite_demandeur
 
@@ -226,6 +226,44 @@ class TestDossierAccessScoping:
         ids = {d["id"] for d in response.data}
         assert str(dossier_in.id) in ids
         assert str(dossier_out.id) not in ids
+
+    def test_institutional_actor_at_region_level_sees_dossier_linked_via_information(self, create_user, crisis):
+        """Régression : Information n'a, contrairement à Request/Team.institution, que
+        commune_code (pas epci_code/departement_code/region_code dénormalisés) — le résolveur
+        de zone de DossierViewSet.get_queryset filtrait directement `information__region_code`
+        (champ inexistant), levant une FieldError dès qu'un compte est scopé au-delà de la
+        commune (EPCI/département/région) — reproduit avec une institution secteur_override=
+        "region" : la liste des dossiers plantait alors que la liste des signalements
+        elle-même fonctionnait déjà (protégée par _information_zone_resolver)."""
+        commune = Commune.objects.create(
+            code="38185", nom="Grenoble", departement_code="38", epci_code="200040715",
+            region_code="84", centre_latitude=45.18, centre_longitude=5.72,
+        )
+        itype, _ = InstitutionType.objects.get_or_create(code="MAIRIE_DOSSIER_REGION", defaults={"libelle": "Mairie"})
+        institution = Institution.objects.create(
+            nom="Mairie dossier région", type=itype, commune_code=commune.code, secteur_override="region",
+        )
+        info_type, _ = InformationType.objects.get_or_create(type="Danger imminent")
+        information = Information.objects.create(
+            title="Arbre sur la chaussée", first_name_information="A", last_name_information="B",
+            email_information="a@test.fr", phone_information="0600000000",
+            location="POINT (5.72 45.18)", commune_code=commune.code,
+            information_type=info_type, crisis=crisis,
+        )
+        dossier = Dossier.objects.create(
+            numero="DOS-INFO-REGION", crise=crisis, information=information, titre="Depuis un signalement",
+        )
+
+        user = create_user(username="mairie-dossier-region@test.fr", email="mairie-dossier-region@test.fr", type="AUT_LOCALE")
+        user.institution = institution
+        user.save()
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        response = client.get(reverse('dossier-list'))
+
+        assert response.status_code == status.HTTP_200_OK
+        assert str(dossier.id) in {d["id"] for d in response.data}
 
 
 def _jpeg_with_gps_exif():

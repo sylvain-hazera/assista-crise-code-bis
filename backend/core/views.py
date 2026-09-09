@@ -587,13 +587,23 @@ class DossierViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             # non-lié = 403) — "mon institution doit être ACTEUR sur la crise", hors scope ici.
             qs = base.filter(environment=environment)
             if self.action == 'list':
+                def dossier_zone_resolver(niveau, code):
+                    champ = SECTEUR_CHAMP_PAR_NIVEAU[niveau]
+                    # Information n'a, contrairement à Request/Team.institution, que
+                    # commune_code (pas epci_code/departement_code/region_code dénormalisés) —
+                    # un filtre direct information__{champ} lève une FieldError dès que niveau
+                    # != "commune" (reproduit avec un compte scopé à la région : Mairie de
+                    # Tests, secteur_override="region" — la liste des DOSSIERS plante alors que
+                    # la liste des SIGNALEMENTS elle-même fonctionne, déjà protégée par
+                    # _information_zone_resolver). Même résolution via le référentiel Commune
+                    # que cette fonction, appliquée ici au sous-queryset Information joint.
+                    return (
+                        Q(**{f"demande__{champ}": code})
+                        | Q(information__in=Information.objects.filter(_information_zone_resolver(niveau, code)))
+                        | Q(**{f"equipe__institution__{champ}": code})
+                    )
                 return filter_queryset_to_viewer_zone(
-                    self.request, qs,
-                    resolver=lambda niveau, code: (
-                        Q(**{f"demande__{SECTEUR_CHAMP_PAR_NIVEAU[niveau]}": code})
-                        | Q(**{f"information__{SECTEUR_CHAMP_PAR_NIVEAU[niveau]}": code})
-                        | Q(**{f"equipe__institution__{SECTEUR_CHAMP_PAR_NIVEAU[niveau]}": code})
-                    ),
+                    self.request, qs, resolver=dossier_zone_resolver,
                 ).distinct()
             return qs
         # Un chef d'équipe de terrain (leader/régulateur d'une équipe) doit voir TOUS les
