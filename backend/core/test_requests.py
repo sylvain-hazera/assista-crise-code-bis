@@ -141,6 +141,65 @@ class TestAssignRequestToTeam:
 
 
 @pytest.mark.django_db
+class TestTeamPatchAssignedRequestsCreatesDossier:
+    """PATCH générique sur une équipe (assigned_request_ids) — voie utilisée par
+    teams.component, onglet "Demandes assignées" — doit créer le même dossier de suivi que
+    RequestViewSet.assign_team (voir TeamViewSet.perform_update). Avant ce correctif, ce
+    chemin ajoutait bien la demande à Team.assigned_requests mais ne créait jamais de dossier."""
+
+    def test_adding_request_via_team_patch_creates_dossier(self, local_authority_client, request_obj, team):
+        client, _ = local_authority_client
+
+        response = client.patch(
+            reverse('team-detail', args=[team.id]),
+            {"assigned_request_ids": [str(request_obj.id)]},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        dossier = Dossier.objects.get(demande=request_obj)
+        assert dossier.equipe == team
+        assert dossier.crise == request_obj.crisis
+        assert dossier.statut == Dossier.Statut.AFFECTE
+        assert team.assigned_requests.filter(pk=request_obj.pk).exists()
+
+    def test_patch_with_already_assigned_request_does_not_duplicate_dossier(self, local_authority_client, request_obj, team):
+        client, _ = local_authority_client
+        client.patch(reverse('team-detail', args=[team.id]), {"assigned_request_ids": [str(request_obj.id)]}, format='json')
+        assert Dossier.objects.filter(demande=request_obj).count() == 1
+
+        response = client.patch(
+            reverse('team-detail', args=[team.id]),
+            {"assigned_request_ids": [str(request_obj.id)]},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert Dossier.objects.filter(demande=request_obj).count() == 1
+
+    def test_removing_request_via_patch_does_not_delete_dossier(self, local_authority_client, request_obj, team):
+        client, _ = local_authority_client
+        client.patch(reverse('team-detail', args=[team.id]), {"assigned_request_ids": [str(request_obj.id)]}, format='json')
+        dossier = Dossier.objects.get(demande=request_obj)
+
+        response = client.patch(reverse('team-detail', args=[team.id]), {"assigned_request_ids": []}, format='json')
+
+        assert response.status_code == status.HTTP_200_OK
+        assert not team.assigned_requests.filter(pk=request_obj.pk).exists()
+        assert Dossier.objects.filter(id=dossier.id).exists()
+
+    def test_patch_unrelated_field_does_not_create_dossier(self, local_authority_client, request_obj, team):
+        """Changer un autre champ (ex: couleur) sans toucher assigned_request_ids ne doit rien
+        déclencher — assigned_requests n'est simplement pas dans validated_data."""
+        client, _ = local_authority_client
+
+        response = client.patch(reverse('team-detail', args=[team.id]), {"color": "#ff0000"}, format='json')
+
+        assert response.status_code == status.HTTP_200_OK
+        assert not Dossier.objects.filter(demande=request_obj).exists()
+
+
+@pytest.mark.django_db
 class TestNotificationApi:
 
     def test_user_only_sees_own_notifications(self, create_user):

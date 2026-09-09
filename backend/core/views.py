@@ -3854,6 +3854,23 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
                         "institution co-impliquée sur une même crise)."
                     })
 
+        # Une demande ajoutée à assigned_requests via ce PATCH générique (voir teams.component,
+        # onglet "Demandes assignées") doit créer son dossier de suivi exactement comme
+        # RequestViewSet.assign_team/bulk_assign_mission — avant ce correctif, ce chemin
+        # touchait directement le M2M (ModelSerializer.update() par défaut, aucune logique
+        # dédiée) sans jamais appeler _assign_request_to_team : la demande apparaissait bien
+        # dans "Demandes assignées" mais aucun dossier n'était créé, contrairement à ce que
+        # documente TeamsComponent (voir son commentaire sur assignedRequests) et à ce
+        # qu'affichent RequestViewSet.assign_team/bulk_assign_mission pour toute autre voie
+        # d'affectation. Calculé AVANT serializer.save() : _assign_request_to_team fait son
+        # propre `.add()` (idempotent), le `.set()` du serializer juste après retombe sur la
+        # même liste cible, sans effet une fois la demande déjà ajoutée ici.
+        previous_request_ids = set(instance.assigned_requests.values_list('id', flat=True))
+        if 'assigned_requests' in serializer.validated_data:
+            added_request_ids = {r.id for r in serializer.validated_data['assigned_requests']} - previous_request_ids
+            for demande in Request.objects.filter(id__in=added_request_ids):
+                _assign_request_to_team(demande, instance, self.request)
+
         # Ne notifier que les membres réellement NOUVEAUX (jamais ceux déjà présents avant
         # cette modification, pour ne pas ré-envoyer le mail à chaque édition de l'équipe qui
         # ne touche pas member_ids, ex: changement de couleur ou de zone).
