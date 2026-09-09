@@ -138,6 +138,38 @@ def object_in_viewer_zone(request, obj, champ_par_niveau=SECTEUR_CHAMP_PAR_NIVEA
     return getattr(obj, champ, None) == code
 
 
+def object_in_viewer_zone_via_commune(request, obj, commune_field="commune_code"):
+    """Variante de `object_in_viewer_zone` pour les modèles qui, comme `Information`, n'ont
+    QUE `commune_code` (pas d'epci_code/departement_code/region_code dénormalisés — voir
+    `_information_zone_resolver` dans views.py, même contrainte côté queryset). Utiliser
+    `object_in_viewer_zone` tel quel pour ces modèles renvoie toujours False dès que le niveau
+    naturel de l'appelant dépasse "commune" (`getattr(obj, "region_code", None)` vaut
+    toujours None sur un objet qui n'a pas ce champ) — bug constaté sur InformationSerializer.
+    _location_visible : masquait latitude/longitude (donc les faisait disparaître de la
+    carte) pour toute institution dont le secteur effectif est epci/département/région,
+    alors que le queryset `InformationViewSet.get_queryset` les incluait bien (lui utilise
+    déjà _information_zone_resolver). Résout via le référentiel Commune, comme au niveau
+    queryset, plutôt que de comparer un champ inexistant."""
+    if effective_role_or_none(request) == UserRole.ADMINISTRATOR:
+        return True
+    zone = viewer_zone_code(request)
+    if zone is None:
+        return False
+    niveau, code = zone
+    if niveau == "national":
+        return True
+    commune_code = getattr(obj, commune_field, None)
+    if not commune_code:
+        return False
+    if niveau == "commune":
+        return commune_code == code
+    champ_commune = SECTEUR_CHAMP_PAR_NIVEAU.get(niveau)
+    if not champ_commune:
+        return False
+    from .models import Commune
+    return Commune.objects.filter(code=commune_code, **{champ_commune: code}).exists()
+
+
 def apply_zone(queryset, zone, resolver=None, champ_par_niveau=SECTEUR_CHAMP_PAR_NIVEAU):
     """Applique un zone (niveau, code) déjà résolu — factorise le filtrage lui-même, pour les
     appelants qui ont leur propre logique de résolution (ex: widen_zone_from_request, pour les

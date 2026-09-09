@@ -11,7 +11,7 @@ from .permissions import (
     INSTITUTIONAL_TYPES, get_active_environment, effective_role_or_none, mask_email, mask_phone,
     strip_masked_fields_in_demo, _peut_gerer_stock_point,
 )
-from .zone_scoping import object_in_viewer_zone
+from .zone_scoping import object_in_viewer_zone, object_in_viewer_zone_via_commune
 from .models import (
     Environment,
     UserRole,
@@ -938,8 +938,13 @@ class InformationSerializer(serializers.ModelSerializer):
             return False
         # Même correctif que RequestSerializer._location_visible (voir son commentaire) : un
         # rôle institutionnel seul ne suffit plus, il faut aussi que le signalement soit dans
-        # la zone de compétence de l'acteur.
-        if effective_role_or_none(request) in INSTITUTIONAL_TYPES and object_in_viewer_zone(request, obj):
+        # la zone de compétence de l'acteur. object_in_viewer_zone_via_commune (pas
+        # object_in_viewer_zone) : Information n'a que commune_code, voir son docstring —
+        # sinon epci_code/departement_code/region_code inexistants sur ce modèle masquaient
+        # systématiquement latitude/longitude pour toute institution de secteur epci/
+        # département/région (ex: la carte "Signalements" restait vide malgré des
+        # signalements bien dans le queryset retourné).
+        if effective_role_or_none(request) in INSTITUTIONAL_TYPES and object_in_viewer_zone_via_commune(request, obj):
             return True
         return obj.dossiers.filter(participants__utilisateur=user).exists()
 

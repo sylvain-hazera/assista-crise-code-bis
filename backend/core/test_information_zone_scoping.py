@@ -124,3 +124,87 @@ class TestInformationZoneScoping:
         assert response.status_code == 200
         assert len(response.data) == 1  # seule Grenoble est dans la région 84 (Lille est en 32)
         assert response.data[0]["commune_code"] == commune_grenoble.code
+
+
+@pytest.mark.django_db
+class TestInformationLocationVisibleAcrossZoneLevels:
+    """InformationSerializer._location_visible appelait object_in_viewer_zone (pas
+    object_in_viewer_zone_via_commune) : ce prédicat compare getattr(obj, "epci_code"/
+    "departement_code"/"region_code", None) au code de la zone du viewer — des champs qui
+    n'existent pas sur Information (seul commune_code existe, voir _information_zone_resolver
+    plus haut). Résultat : latitude/longitude restaient toujours à None (donc invisibles sur
+    la carte) pour toute institution dont le secteur effectif dépasse "commune" (EPCI,
+    département, région), alors même que le signalement était bien dans le queryset renvoyé
+    par la liste (bug distinct de celui couvert par TestInformationZoneScoping ci-dessus, qui
+    ne vérifiait que commune_code, jamais latitude/longitude)."""
+
+    def test_epci_sees_location_of_information_in_its_intercommunalite(self, create_user, commune_grenoble):
+        commune_meylan = Commune.objects.create(
+            code="38229", nom="Meylan", departement_code="38", epci_code=commune_grenoble.epci_code,
+            centre_latitude=45.21, centre_longitude=5.77,
+        )
+        _make_information(commune_meylan)
+
+        institution = _make_institution("EPCI", commune_grenoble.code)
+        user = create_user(username="epci-loc@test.fr", email="epci-loc@test.fr", type="AUT_LOCALE", demo_role="AUT_LOCALE")
+        user.institution = institution
+        user.save()
+
+        client = APIClient()
+        client.force_authenticate(user=user)
+        response = client.get(reverse("information-list"), HTTP_X_ENVIRONMENT="DEMO")
+
+        assert response.status_code == 200
+        assert len(response.data) == 1
+        assert response.data[0]["latitude"] is not None
+        assert response.data[0]["longitude"] is not None
+
+    def test_sdis_sees_location_of_information_in_its_departement(self, create_user, commune_grenoble, commune_voiron):
+        _make_information(commune_voiron)
+
+        institution = _make_institution("SDIS", commune_grenoble.code)
+        user = create_user(username="sdis-loc@test.fr", email="sdis-loc@test.fr", type="AUT_LOCALE", demo_role="AUT_LOCALE")
+        user.institution = institution
+        user.save()
+
+        client = APIClient()
+        client.force_authenticate(user=user)
+        response = client.get(reverse("information-list"), HTTP_X_ENVIRONMENT="DEMO")
+
+        assert response.status_code == 200
+        assert len(response.data) == 1
+        assert response.data[0]["latitude"] is not None
+        assert response.data[0]["longitude"] is not None
+
+    def test_cr_sees_location_of_information_in_its_region(self, create_user, commune_grenoble):
+        _make_information(commune_grenoble)
+
+        institution = _make_institution("CR", commune_grenoble.code)
+        user = create_user(username="cr-loc@test.fr", email="cr-loc@test.fr", type="AUT_LOCALE", demo_role="AUT_LOCALE")
+        user.institution = institution
+        user.save()
+
+        client = APIClient()
+        client.force_authenticate(user=user)
+        response = client.get(reverse("information-list"), HTTP_X_ENVIRONMENT="DEMO")
+
+        assert response.status_code == 200
+        assert len(response.data) == 1
+        assert response.data[0]["latitude"] is not None
+        assert response.data[0]["longitude"] is not None
+
+    def test_cr_does_not_see_location_of_information_outside_its_region(self, create_user, commune_grenoble, commune_lille):
+        _make_information(commune_lille)
+
+        institution = _make_institution("CR", commune_grenoble.code)
+        user = create_user(username="cr-loc-out@test.fr", email="cr-loc-out@test.fr", type="AUT_LOCALE", demo_role="AUT_LOCALE")
+        user.institution = institution
+        user.save()
+
+        client = APIClient()
+        client.force_authenticate(user=user)
+        response = client.get(reverse("information-list"), HTTP_X_ENVIRONMENT="DEMO")
+
+        assert response.status_code == 200
+        # Hors zone dès le queryset (voir TestInformationZoneScoping) : n'apparaît pas du tout.
+        assert len(response.data) == 0

@@ -94,6 +94,12 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   private centresHebergementGeoJSON: FeatureCollection<Geometry> | null = null;
   private postesSecoursGeoJSON: FeatureCollection<Geometry> | null = null;
   private subscription: Subscription | null = null;
+  // MapLibre calcule la taille du canvas une seule fois à l'initialisation, à partir de la
+  // taille de .map-container à cet instant : sans resize() explicite, le canvas garde ensuite
+  // sa taille d'origine même quand le conteneur change (repli/dépli de la sidebar admin —
+  // grid-template-columns animé, voir admin-layout.component.scss — ou redimensionnement de
+  // la fenêtre), ce qui laissait la carte tronquée/mal cadrée par rapport à l'espace réel.
+  private resizeObserver: ResizeObserver | null = null;
 
   constructor(private crisisService: CrisisService,
               private requestService: RequestService,
@@ -245,10 +251,20 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
 
   ngAfterViewInit(): void { // Initialize the map after the view is initialized to ensure the container is available
     this.initializeMap();
+    this.observeContainerResize();
+  }
+
+  // Garde la taille du canvas MapLibre alignée sur celle réelle de .map-container à tout
+  // instant (pas seulement à l'initialisation) — voir le commentaire sur resizeObserver.
+  private observeContainerResize(): void {
+    if (typeof ResizeObserver === 'undefined') return; // pas de support (SSR/anciens navigateurs) : dégrade sans casser
+    this.resizeObserver = new ResizeObserver(() => this.map?.resize());
+    this.resizeObserver.observe(this.mapContainer.nativeElement);
   }
 
   ngOnDestroy(): void { // Clean up subscriptions and map instance to prevent memory leaks
     if (this.subscription) this.subscription.unsubscribe();
+    if (this.resizeObserver) this.resizeObserver.disconnect();
     if (this.map) this.map.remove();
   }
 
