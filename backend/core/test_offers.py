@@ -223,6 +223,21 @@ class TestOfferEngagementFields:
     def test_diplome_secourisme_defaults_to_false(self, offer):
         assert offer.diplome_secourisme is False
 
+    def test_declares_ancien_sapeur_pompier(self, api_client, offer_type):
+        payload = {
+            **OFFER_PAYLOAD,
+            "email_offer": "ancien-pompier@test.fr",
+            "offer_type": str(offer_type.id),
+            "ancien_sapeur_pompier": True,
+        }
+        response = api_client.post(reverse('offer-list'), payload, format='json')
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data['ancien_sapeur_pompier'] is True
+        assert Offer.objects.get(email_offer="ancien-pompier@test.fr").ancien_sapeur_pompier is True
+
+    def test_ancien_sapeur_pompier_defaults_to_false(self, offer):
+        assert offer.ancien_sapeur_pompier is False
+
     def test_declares_materiel_livraison_possible(self, api_client, offer_type):
         payload = {
             **OFFER_PAYLOAD,

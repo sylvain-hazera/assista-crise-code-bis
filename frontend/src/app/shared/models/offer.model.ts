@@ -55,6 +55,7 @@ export interface Offer {
   cuve_contenu?: string | null;
   soutien_type?: string | null;
   diplome_secourisme?: boolean;
+  ancien_sapeur_pompier?: boolean;
   materiel_livraison?: 'A_RECUPERER' | 'LIVRAISON_POSSIBLE' | null;
   confirmation_reglementaire?: boolean;
   immatriculation?: string | null;

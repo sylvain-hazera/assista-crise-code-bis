@@ -285,6 +285,11 @@
                           <span class="material-icons">medical_services</span>
                         </span>
                       }
+                      @if (row.kind === 'Offer' && row.ancienSapeurPompier) {
+                        <span class="ressource-badge" title="Ancien sapeur-pompier déclaré">
+                          <span class="material-icons">local_fire_department</span>
+                        </span>
+                      }
                       @if (row.kind === 'Offer' && row.confirmationReglementaire) {
                         <span class="ressource-badge" title="Conformité véhicule/engin confirmée">
                           <span class="material-icons">verified</span>

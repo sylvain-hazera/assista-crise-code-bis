@@ -407,16 +407,6 @@
                     </div>
                 }
 
-                <!-- Diplôme de secourisme : offres impliquant une présence en personne, sans
-                     champ de qualification déjà dédié (Soins/Soutien en ont un) -->
-                @if (showSecourisme(rg.get('type')?.value)) {
-                    <div class="form-group checkbox-group">
-                        <label class="checkbox-label">
-                            <input type="checkbox" formControlName="diplomeSecourisme" class="form-checkbox">
-                            <span class="checkbox-text">J'ai un diplôme ou une formation de secourisme (PSC1, SST...)</span>
-                        </label>
-                    </div>
-                }
 
                 <!-- Véhicule/engin (transport ou matériel roulant/motorisé), conduit par
                      l'offreur ou prêté seul : rappel des obligations légales -->
@@ -677,6 +667,23 @@
             </div>
 
             @if (proposeAideEnPersonne) {
+              <!-- Qualifications de la personne — déclarées ici UNE SEULE FOIS, quel que soit
+                   le nombre de lignes d'offre où elle est présente en personne (voir onSubmit,
+                   qui reporte ces deux valeurs sur chacune d'elles). -->
+              <div class="form-section">
+                  <h2 class="section-title">Vos qualifications</h2>
+                  <div class="form-group checkbox-group">
+                      <label class="checkbox-label">
+                          <input type="checkbox" formControlName="diplomeSecourisme" class="form-checkbox">
+                          <span class="checkbox-text">J'ai un diplôme ou une formation de secourisme (PSC1, SST...)</span>
+                      </label>
+                      <label class="checkbox-label">
+                          <input type="checkbox" formControlName="ancienSapeurPompier" class="form-checkbox">
+                          <span class="checkbox-text">Je suis ancien(ne) sapeur-pompier (professionnel ou volontaire)</span>
+                      </label>
+                  </div>
+              </div>
+
               <!-- Compétences que le bénévole peut apporter -->
               <div class="form-section">
                   <h2 class="section-title">Vos compétences</h2>
@@ -752,6 +759,25 @@
             }
 
       <app-rgpd-notice purpose="traiter votre offre d'aide"></app-rgpd-notice>
+
+      <!-- Acceptation des CGU (obligatoire) -->
+      <div class="form-group checkbox-group">
+          <label class="checkbox-label">
+              <input
+                type="checkbox"
+                formControlName="acceptCgu"
+                class="form-checkbox"
+                [class.invalid]="informationForm.get('acceptCgu')?.invalid && informationForm.get('acceptCgu')?.touched">
+              <span class="checkbox-text">
+                J'accepte les <a href="/cgu" target="_blank" class="link">conditions générales d'utilisation</a>,
+                et je m'engage notamment à ne réclamer aucune somme d'argent en contrepartie de l'aide proposée
+                <span class="required">*</span>
+              </span>
+          </label>
+          @if (informationForm.get('acceptCgu')?.invalid && informationForm.get('acceptCgu')?.touched) {
+              <div class="error-message">Vous devez accepter les conditions générales d'utilisation.</div>
+          }
+      </div>
 
       <app-validation-summary [errors]="formErrorsStep2"></app-validation-summary>
 

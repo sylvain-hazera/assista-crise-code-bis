@@ -55,11 +55,6 @@ const TYPES_PRESENCE_FORCEE_FAUSSE = [TYPE_HEBERGEMENT];
 const TYPES_PRESENCE_FORCEE_VRAIE = [TYPE_SOINS, TYPE_SOUTIEN, TYPE_AUTRE];
 const TYPES_PRESENCE_A_PRECISER = [TYPE_TRANSPORT, TYPE_MATERIEL, TYPE_NOURRITURE];
 
-// Types où l'offreur s'engage en personne mais n'a pas déjà de champ de qualification dédié
-// (Soins → numero_adeli_rpps, Soutien → soutien_type couvrent déjà ce besoin) : c'est là qu'une
-// case à cocher générique "diplôme de secourisme" apporte une information nouvelle.
-const TYPES_SECOURISME_GENERIQUE = [TYPE_HEBERGEMENT, TYPE_TRANSPORT, TYPE_AUTRE];
-
 /** La case de conformité (permis/CACES, assurance, CT, sobriété, plaque) n'est obligatoire que
  * sur les lignes où un véhicule/engin est en jeu (voir showConformiteVehicule) — sa validité
  * dépend donc du contrôle voisin `type`, pas d'elle-même. Angular ne réévalue pas
@@ -429,6 +424,14 @@ export class ProposeHelpFormComponent implements OnInit {
       email: [this.currentUser?.email, [Validators.required, Validators.email]],
       phoneNumber: [this.currentUser?.phone_number, [Validators.required, Validators.pattern(/^\+?[\d\s.-]{10,20}$/)]],
       organisationNom: [''],
+      // Qualifications de la personne — déclarées UNE SEULE FOIS ici (voir section "Vos
+      // qualifications"), et reportées sur chaque offre où elle est physiquement présente au
+      // moment de la soumission (voir onSubmit) : avant ce correctif, "diplôme de secourisme"
+      // était un champ PAR LIGNE D'OFFRE, dupliqué à l'identique (et pouvant être répondu
+      // différemment) à chaque fois qu'une ligne d'un type concerné était ajoutée.
+      diplomeSecourisme: [false],
+      ancienSapeurPompier: [false],
+      acceptCgu: [false, Validators.requiredTrue],
     });
   }
 
@@ -460,6 +463,7 @@ export class ProposeHelpFormComponent implements OnInit {
     if (f.get('firstName')?.invalid) errors.push('Le prénom est obligatoire.');
     if (f.get('email')?.invalid) errors.push('L\'email est obligatoire et doit être valide.');
     if (f.get('phoneNumber')?.invalid) errors.push('Le téléphone est obligatoire et doit être valide.');
+    if (f.get('acceptCgu')?.invalid) errors.push('Vous devez accepter les conditions générales d\'utilisation.');
     if (this.offerRows.invalid) errors.push('Complétez les informations sur votre offre (un ou plusieurs champs manquants ou invalides).');
     if (this.hasCheckedEngines && !this.engineConfirmationReglementaire) {
       errors.push('Confirmez être en règle (vous et les engins cochés) pour valider la rubrique Engins agricoles / chantiers / spéciaux.');
@@ -562,7 +566,12 @@ export class ProposeHelpFormComponent implements OnInit {
       if (v.type === TYPE_MATERIEL && v.unite) formData.append('unite', v.unite);
       if (v.type === TYPE_MATERIEL && v.materielLivraison) formData.append('materiel_livraison', v.materielLivraison);
       if (v.type === TYPE_SOUTIEN && v.soutienType) formData.append('soutien_type', v.soutienType);
-      if (this.showSecourisme(v.type)) formData.append('diplome_secourisme', String(!!v.diplomeSecourisme));
+      // Qualifications déclarées une seule fois pour la personne (voir "Vos qualifications" à
+      // l'étape 2) — reportées sur chaque offre où elle est physiquement présente.
+      if (v.presencePhysique === true) {
+        formData.append('diplome_secourisme', String(!!this.informationForm.get('diplomeSecourisme')?.value));
+        formData.append('ancien_sapeur_pompier', String(!!this.informationForm.get('ancienSapeurPompier')?.value));
+      }
       if (this.showConformiteVehicule(v.type, v.materielType)) {
         formData.append('confirmation_reglementaire', String(!!v.confirmationReglementaire));
         if (v.immatriculation) formData.append('immatriculation', v.immatriculation);
@@ -765,7 +774,6 @@ export class ProposeHelpFormComponent implements OnInit {
       quantite: [null],
       unite: [''],
       soutienType: [''],
-      diplomeSecourisme: [false],
       materielLivraison: [''],
       confirmationReglementaire: [false, confirmationReglementaireValidator],
       immatriculation: [''],
@@ -816,12 +824,6 @@ export class ProposeHelpFormComponent implements OnInit {
 
   removeOffer(index: number): void {
     this.offerRows.removeAt(index);
-  }
-
-  /** Cette ligne d'offre implique-t-elle une présence en personne sans déjà avoir son propre
-   * champ de qualification (Soins/Soutien) ? Voir TYPES_SECOURISME_GENERIQUE. */
-  showSecourisme(type: string | null | undefined): boolean {
-    return !!type && TYPES_SECOURISME_GENERIQUE.includes(type);
   }
 
   /** Transport (toujours un véhicule, conduit par l'offreur) et Matériel (peut être un engin

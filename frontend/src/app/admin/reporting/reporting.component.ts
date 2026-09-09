@@ -62,6 +62,7 @@ export interface ReportRow {
   // Offres uniquement — voir propose-help-form pour ce que ces champs signifient.
   materielLivraison?: string | null;
   diplomeSecourisme?: boolean;
+  ancienSapeurPompier?: boolean;
   confirmationReglementaire?: boolean;
   presencePhysique?: boolean | null;
   organisationNom?: string | null;   // dépôt groupé : nom de l'entreprise/association déposante
@@ -441,6 +442,7 @@ export class ReportingComponent implements OnInit, OnDestroy {
       description: o.description ?? null,
       materielLivraison: o.materiel_livraison ?? null,
       diplomeSecourisme: !!o.diplome_secourisme,
+      ancienSapeurPompier: !!o.ancien_sapeur_pompier,
       confirmationReglementaire: !!o.confirmation_reglementaire,
       presencePhysique: o.presence_physique ?? null,
       organisationNom: o.organisation_nom ?? null,

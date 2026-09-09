@@ -718,10 +718,19 @@ class Offer(HebergementDetailsMixin, EnvironmentScopedModel):
     unite = models.CharField(max_length=20, null=True, blank=True)
     soutien_type = models.CharField(max_length=20, choices=TypeSoutien.choices, null=True, blank=True)
 
-    # Déclaré pour les offres impliquant une présence en personne qui n'ont pas déjà leur propre
-    # qualification dédiée (Hébergement, Transport, Autre) — Soins et Soutien psychologique
-    # captent déjà cette information via numero_adeli_rpps/soutien_type, pas de doublon là.
+    # Déclaré une seule fois par l'offreur (case globale du formulaire public, voir
+    # ProposeHelpFormComponent "Vos qualifications") et reporté sur chacune de ses offres où il
+    # est physiquement présent — avant ce correctif, la case était répétée à l'identique sur
+    # chaque ligne d'offre concernée (Hébergement/Transport/Autre), pouvant apparaître plusieurs
+    # fois dans un même dépôt groupé sans que rien n'empêche des réponses contradictoires d'une
+    # ligne à l'autre pour une seule et même personne.
     diplome_secourisme = models.BooleanField(default=False)
+
+    # Même principe que diplome_secourisme ci-dessus : case globale côté formulaire, reportée
+    # sur chaque offre où l'offreur est physiquement présent. Une expérience de sapeur-pompier
+    # (même ancienne) est une information utile au régulateur, distincte d'un diplôme de
+    # secourisme grand public (PSC1/SST).
+    ancien_sapeur_pompier = models.BooleanField(default=False)
 
     # Uniquement pour une offre de type Matériel : le régulateur qui organise la collecte doit
     # savoir s'il faut envoyer quelqu'un chercher le matériel, ou si l'offreur peut lui-même le
