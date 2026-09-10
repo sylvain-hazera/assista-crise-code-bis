@@ -144,7 +144,7 @@ from .models import (
     AffectationPointBenevole, StatutAffectation,
     RecherchePersonne, RecherchePersonneCommentaire, Besoin, Notification, DossierParticipant,
     RecherchePersonneCommentairePhoto, RecherchePersonneLecture, RecherchePersonneLectureHistorique,
-    Document, DossierCommentaire, DossierHistorique, BesoinCompetence, Competence, Dossier, Mission,
+    Document, DossierCommentaire, DossierHistorique, BesoinCompetence, BesoinMateriel, Competence, Dossier, Mission,
     AuditLog, AuditAction,
     RecherchePersonneHistorique, RecherchePersonnePhoto,
     AffectationCompetence, RequestType, RequestTypeBesoin, OfferType, InformationType, Team,
@@ -309,6 +309,7 @@ from .serializers import (
     BesoinSerializer,
     RecherchePersonneHistoriqueSerializer,
     BesoinCompetenceSerializer,
+    BesoinMaterielSerializer,
     DernierePositionUtilisateurSerializer,
     ZoneSerializer,
     PlanSerializer,
@@ -392,6 +393,10 @@ class BesoinViewSet(TagLikeViewSetMixin, viewsets.ModelViewSet):
 class BesoinCompetenceViewSet(viewsets.ModelViewSet):
     queryset = BesoinCompetence.objects.select_related('besoin', 'competence').all()
     serializer_class = BesoinCompetenceSerializer
+
+class BesoinMaterielViewSet(viewsets.ModelViewSet):
+    queryset = BesoinMateriel.objects.select_related('besoin', 'materiel').all()
+    serializer_class = BesoinMaterielSerializer
 
 class RequestTypeBesoinViewSet(viewsets.ModelViewSet):
     queryset = RequestTypeBesoin.objects.select_related('request_type', 'besoin').all()
@@ -8075,13 +8080,19 @@ class MaterielCatalogueViewSet(TagLikeViewSetMixin, viewsets.ModelViewSet):
         return queryset
 
     def perform_destroy(self, instance):
-        # MaterielPoint.item est en PROTECT : supprimer un item encore utilisé lève
-        # ProtectedError (500 non géré) au lieu d'un message exploitable.
-        nb = instance.stocks.count()
-        if nb:
+        # MaterielPoint.item et BesoinMateriel.materiel sont en PROTECT : supprimer un item
+        # encore utilisé lève ProtectedError (500 non géré) au lieu d'un message exploitable.
+        nb_stocks = instance.stocks.count()
+        nb_besoins = instance.besoins.count()
+        if nb_stocks or nb_besoins:
+            messages = []
+            if nb_stocks:
+                messages.append(f"{nb_stocks} ligne(s) de stock")
+            if nb_besoins:
+                messages.append(f"{nb_besoins} correspondance(s) besoin")
             raise ValidationError(
                 f"Impossible de supprimer l'item « {instance.nom} » : "
-                f"{nb} ligne(s) de stock l'utilisent encore."
+                f"{' et '.join(messages)} l'utilisent encore."
             )
         instance.delete()
 

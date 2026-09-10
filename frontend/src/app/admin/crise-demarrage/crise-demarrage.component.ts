@@ -1,0 +1,181 @@
+import { Component, OnInit } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+
+import { CrisisService } from '../../services/crisis.service';
+import { PointOperationnelService } from '../../services/point-operationnel.service';
+import { PointTypeService } from '../../services/point-type.service';
+import { TeamService } from '../../services/team.service';
+import { Crisis } from '../../shared/models/crisis.model';
+import { PointOperationnel, PointType } from '../../shared/models/point-operationnel.model';
+import { Team } from '../../shared/models/team.model';
+
+interface EtapePoint {
+  code: 'CELLULE_CRISE' | 'HEBERGEMENT' | 'REGROUPEMENT_MOYENS';
+  titre: string;
+  description: string;
+  suggestions: string[];
+  nom: string;
+  skipped: boolean;
+  cree: boolean;
+  point: PointOperationnel | null;
+  equipeId: string | null;
+  nouvelleEquipeNom: string;
+}
+
+/** Wizard proposé juste après la déclaration d'une crise (ou depuis son détail, plus tard) pour
+ * poser rapidement ses éléments stratégiques — voir la demande utilisateur du 2026-09-10.
+ * Premier composant "multi-étapes" du projet : pas de librairie de stepper, juste un index
+ * `step` et des panneaux conditionnels, cohérent avec le reste du code. Réutilise entièrement
+ * des endpoints déjà existants (PointOperationnelViewSet, TeamViewSet) — aucune route backend
+ * dédiée. */
+@Component({
+  selector: 'app-crise-demarrage',
+  standalone: true,
+  imports: [CommonModule, FormsModule, RouterLink],
+  templateUrl: './crise-demarrage.component.html',
+  styleUrl: './crise-demarrage.component.scss',
+})
+export class CriseDemarrageComponent implements OnInit {
+
+  criseId!: string;
+  crise: Crisis | null = null;
+  pointTypes: PointType[] = [];
+  teams: Team[] = [];
+
+  step = 1; // 1..3 = points, 4 = équipes, 5 = récapitulatif
+  saving = false;
+  errorMessage = '';
+
+  etapes: EtapePoint[] = [
+    {
+      code: 'CELLULE_CRISE', titre: 'Cellule de crise',
+      description: "Le lieu depuis lequel la crise est pilotée.",
+      suggestions: ['Mairie'],
+      nom: 'Mairie', skipped: false, cree: false, point: null, equipeId: null, nouvelleEquipeNom: '',
+    },
+    {
+      code: 'HEBERGEMENT', titre: 'Centre d\'accueil des populations',
+      description: "Où les personnes évacuées ou sinistrées sont accueillies.",
+      suggestions: ['Salle des fêtes'],
+      nom: 'Salle des fêtes', skipped: false, cree: false, point: null, equipeId: null, nouvelleEquipeNom: '',
+    },
+    {
+      code: 'REGROUPEMENT_MOYENS', titre: 'Centre de regroupement des moyens',
+      description: "Où le matériel et les ressources mobilisées sont centralisés.",
+      suggestions: ['Salle des fêtes', 'Centre technique municipal'],
+      nom: 'Salle des fêtes', skipped: false, cree: false, point: null, equipeId: null, nouvelleEquipeNom: '',
+    },
+  ];
+
+  constructor(
+    private route: ActivatedRoute,
+    private router: Router,
+    private crisisService: CrisisService,
+    private pointService: PointOperationnelService,
+    private pointTypeService: PointTypeService,
+    private teamService: TeamService,
+  ) {}
+
+  ngOnInit(): void {
+    this.criseId = this.route.snapshot.paramMap.get('id')!;
+    this.crisisService.getById(this.criseId).subscribe(c => (this.crise = c));
+    this.pointTypeService.getAll().subscribe(types => (this.pointTypes = types));
+    this.teamService.vueMairie().subscribe(teams => (this.teams = teams));
+  }
+
+  get etapeCourante(): EtapePoint | null {
+    return this.step >= 1 && this.step <= 3 ? this.etapes[this.step - 1] : null;
+  }
+
+  private typeIdFor(code: string): string | null {
+    return this.pointTypes.find(t => t.code === code)?.id ?? null;
+  }
+
+  choisirSuggestion(etape: EtapePoint, nom: string): void {
+    etape.nom = nom;
+  }
+
+  passerEtape(etape: EtapePoint): void {
+    etape.skipped = true;
+    etape.cree = false;
+    etape.point = null;
+    this.step++;
+  }
+
+  validerEtape(etape: EtapePoint): void {
+    if (!etape.nom.trim()) {
+      return;
+    }
+    const typeId = this.typeIdFor(etape.code);
+    if (!typeId) {
+      this.errorMessage = `Type de point "${etape.code}" introuvable — contactez un administrateur.`;
+      return;
+    }
+    this.saving = true;
+    this.errorMessage = '';
+    this.pointService.create({ nom: etape.nom.trim(), type: typeId, crise: this.criseId }).subscribe({
+      next: (point) => {
+        etape.skipped = false;
+        etape.cree = true;
+        etape.point = point;
+        this.saving = false;
+        this.step++;
+      },
+      error: () => {
+        this.errorMessage = `Impossible de créer "${etape.nom}". Réessayez ou passez cette étape.`;
+        this.saving = false;
+      },
+    });
+  }
+
+  /** Points réellement créés à l'étape "équipes" (les étapes passées n'y figurent pas). */
+  get etapesAvecPoint(): EtapePoint[] {
+    return this.etapes.filter(e => e.cree && e.point);
+  }
+
+  creerEquipePour(etape: EtapePoint): void {
+    if (!etape.nouvelleEquipeNom.trim()) {
+      return;
+    }
+    this.teamService.create({ name: etape.nouvelleEquipeNom.trim() }).subscribe(team => {
+      this.teams = [...this.teams, team];
+      etape.equipeId = team.id ?? null;
+      etape.nouvelleEquipeNom = '';
+    });
+  }
+
+  terminerEtapeEquipes(): void {
+    const affectations = this.etapesAvecPoint.filter(e => e.equipeId && e.point);
+    if (affectations.length === 0) {
+      this.step = 5;
+      return;
+    }
+    this.saving = true;
+    let restant = affectations.length;
+    affectations.forEach(etape => {
+      this.pointService.update(etape.point!.id, { equipe: etape.equipeId }).subscribe({
+        next: (updated) => {
+          etape.point = updated;
+          restant--;
+          if (restant === 0) {
+            this.saving = false;
+            this.step = 5;
+          }
+        },
+        error: () => {
+          restant--;
+          if (restant === 0) {
+            this.saving = false;
+            this.step = 5;
+          }
+        },
+      });
+    });
+  }
+
+  terminer(): void {
+    this.router.navigate(['/admin/crises']);
+  }
+}

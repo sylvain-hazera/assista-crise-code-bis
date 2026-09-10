@@ -1,9 +1,16 @@
-<h2>Correspondances Besoin → Compétence</h2>
+<h2>Correspondances</h2>
+<p class="page-hint">
+  Pour chaque besoin, indique quelle(s) compétence(s) et/ou quel(s) matériel(s) permettent d'y
+  répondre. La liste des besoins proposée est filtrée selon leur nature (voir la page Besoins) —
+  un besoin non encore qualifié reste proposé dans les deux sections.
+</p>
+
+<h3>Besoin → Compétence</h3>
 
 <div class="create-row">
-  <select [(ngModel)]="selectedBesoinId">
+  <select [(ngModel)]="selectedBesoinIdCompetence">
     <option [ngValue]="null">— Besoin —</option>
-    <option *ngFor="let b of besoins" [ngValue]="b.id">{{ b.nom }}</option>
+    <option *ngFor="let b of besoinsPourCompetence()" [ngValue]="b.id">{{ b.nom }}</option>
   </select>
 
   <app-tag-search-input
@@ -15,7 +22,7 @@
 
   <span *ngIf="selectedCompetence" class="selected-competence">{{ selectedCompetence.nom }}</span>
 
-  <button type="button" [disabled]="!selectedBesoinId || !selectedCompetence" (click)="submit()">
+  <button type="button" [disabled]="!selectedBesoinIdCompetence || !selectedCompetence" (click)="submitCompetence()">
     Ajouter
   </button>
 </div>
@@ -30,10 +37,50 @@
   </thead>
 
   <tbody>
-    <tr *ngFor="let c of correspondances">
+    <tr *ngFor="let c of correspondancesCompetence">
       <td>{{ c.besoin_nom }}</td>
       <td>{{ c.competence_nom }}</td>
-      <td><button type="button" (click)="delete(c.id)">Supprimer</button></td>
+      <td><button type="button" (click)="deleteCompetence(c.id)">Supprimer</button></td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>Besoin → Matériel</h3>
+
+<div class="create-row">
+  <select [(ngModel)]="selectedBesoinIdMateriel">
+    <option [ngValue]="null">— Besoin —</option>
+    <option *ngFor="let b of besoinsPourMateriel()" [ngValue]="b.id">{{ b.nom }}</option>
+  </select>
+
+  <app-tag-search-input
+    placeholder="Chercher ou créer un matériel..."
+    [searchFn]="materielSearchFn"
+    [createFn]="materielCreateFn"
+    (itemSelected)="onMaterielSelected($event)">
+  </app-tag-search-input>
+
+  <span *ngIf="selectedMateriel" class="selected-competence">{{ selectedMateriel.nom }}</span>
+
+  <button type="button" [disabled]="!selectedBesoinIdMateriel || !selectedMateriel" (click)="submitMateriel()">
+    Ajouter
+  </button>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th>Besoin</th>
+      <th>Matériel</th>
+      <th></th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr *ngFor="let m of correspondancesMateriel">
+      <td>{{ m.besoin_nom }}</td>
+      <td>{{ m.materiel_nom }}</td>
+      <td><button type="button" (click)="deleteMateriel(m.id)">Supprimer</button></td>
     </tr>
   </tbody>
 </table>

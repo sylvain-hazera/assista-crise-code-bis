@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 
 import { BesoinService } from '../../services/besoin.service';
-import { Besoin } from '../../shared/models/besoin.model';
+import { Besoin, BesoinNature } from '../../shared/models/besoin.model';
 import { TagSearchInputComponent } from '../../shared/components/common/tag-search-input/tag-search-input.component';
 
 @Component({
@@ -15,6 +15,12 @@ import { TagSearchInputComponent } from '../../shared/components/common/tag-sear
 export class BesoinsComponent implements OnInit {
 
   besoins: Besoin[] = [];
+
+  readonly natureOptions: { value: BesoinNature; label: string }[] = [
+    { value: 'COMPETENCE', label: 'Compétence (savoir-faire humain)' },
+    { value: 'MATERIEL', label: 'Matériel' },
+    { value: 'MIXTE', label: 'Compétence et matériel' },
+  ];
 
   constructor(private besoinService: BesoinService) {}
 
@@ -52,6 +58,12 @@ export class BesoinsComponent implements OnInit {
 
   setParent(besoin: Besoin, parentId: string): void {
     this.besoinService.patch(besoin.id, { parent: parentId || null }).subscribe(updated => {
+      this.besoins = this.besoins.map(b => (b.id === updated.id ? updated : b));
+    });
+  }
+
+  setNature(besoin: Besoin, nature: string): void {
+    this.besoinService.patch(besoin.id, { nature: (nature || null) as BesoinNature | null }).subscribe(updated => {
       this.besoins = this.besoins.map(b => (b.id === updated.id ? updated : b));
     });
   }

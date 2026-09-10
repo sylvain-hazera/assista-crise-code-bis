@@ -1,0 +1,112 @@
+<div class="wizard">
+  <div class="page-header">
+    <h2>Démarrage de crise{{ crise ? ' — ' + crise.name : '' }}</h2>
+    <p class="page-hint">Pose rapidement les éléments stratégiques de cette crise. Chaque étape peut être passée si elle ne s'applique pas.</p>
+  </div>
+
+  <div class="steps-indicator">
+    <span class="step-dot" [class.active]="step === 1" [class.done]="step > 1">1. Cellule de crise</span>
+    <span class="step-dot" [class.active]="step === 2" [class.done]="step > 2">2. Accueil</span>
+    <span class="step-dot" [class.active]="step === 3" [class.done]="step > 3">3. Regroupement</span>
+    <span class="step-dot" [class.active]="step === 4" [class.done]="step > 4">4. Équipes</span>
+    <span class="step-dot" [class.active]="step === 5">5. Récap</span>
+  </div>
+
+  @if (errorMessage) {
+    <p class="error-message">{{ errorMessage }}</p>
+  }
+
+  @if (etapeCourante; as etape) {
+    <div class="step-panel">
+      <h3>{{ etape.titre }}</h3>
+      <p>{{ etape.description }}</p>
+
+      <div class="suggestions">
+        <span>Suggestion(s) :</span>
+        @for (s of etape.suggestions; track s) {
+          <button type="button" class="chip" [class.selected]="etape.nom === s" (click)="choisirSuggestion(etape, s)">{{ s }}</button>
+        }
+      </div>
+
+      <input type="text" class="form-input" [(ngModel)]="etape.nom" placeholder="Nom du point (ex: Mairie)">
+
+      <div class="step-actions">
+        <button type="button" class="btn-secondary" (click)="passerEtape(etape)" [disabled]="saving">
+          Laisser non pourvu pour l'instant
+        </button>
+        <button type="button" class="btn-primary" (click)="validerEtape(etape)" [disabled]="saving || !etape.nom.trim()">
+          Créer et continuer
+        </button>
+      </div>
+
+      @if (etape.skipped) {
+        <p class="disclaimer">
+          <span class="material-icons">warning</span>
+          Ce thème reste non pourvu — vous pourrez le créer plus tard depuis la page Centres.
+        </p>
+      }
+    </div>
+  }
+
+  @if (step === 4) {
+    <div class="step-panel">
+      <h3>Équipes</h3>
+      <p>Pour chaque point créé, choisissez une équipe existante ou créez-en une. Une même équipe peut être affectée à plusieurs points.</p>
+
+      @if (etapesAvecPoint.length === 0) {
+        <p class="disclaimer">
+          <span class="material-icons">warning</span>
+          Aucun point n'a été créé à l'étape précédente — rien à affecter, vous pouvez passer directement au récapitulatif.
+        </p>
+      }
+
+      @for (etape of etapesAvecPoint; track etape.code) {
+        <div class="team-row">
+          <strong>{{ etape.titre }}</strong> — {{ etape.nom }}
+
+          <select [(ngModel)]="etape.equipeId">
+            <option [ngValue]="null">— Aucune équipe pour l'instant —</option>
+            @for (t of teams; track t.id) {
+              <option [ngValue]="t.id">{{ t.name }}</option>
+            }
+          </select>
+
+          <span class="new-team">
+            <input type="text" class="form-input" [(ngModel)]="etape.nouvelleEquipeNom" placeholder="Nouvelle équipe...">
+            <button type="button" (click)="creerEquipePour(etape)" [disabled]="!etape.nouvelleEquipeNom.trim()">Créer</button>
+          </span>
+        </div>
+      }
+
+      <div class="step-actions">
+        <button type="button" class="btn-primary" (click)="terminerEtapeEquipes()" [disabled]="saving">
+          Continuer
+        </button>
+      </div>
+    </div>
+  }
+
+  @if (step === 5) {
+    <div class="step-panel">
+      <h3>Récapitulatif</h3>
+      <ul class="recap-list">
+        @for (etape of etapes; track etape.code) {
+          <li>
+            @if (etape.cree) {
+              <span class="material-icons ok">check_circle</span>
+              {{ etape.titre }} — {{ etape.nom }}
+              @if (etape.point?.equipe_nom) { (équipe : {{ etape.point?.equipe_nom }}) }
+            } @else {
+              <span class="material-icons skip">remove_circle_outline</span>
+              {{ etape.titre }} — non pourvu
+            }
+          </li>
+        }
+      </ul>
+
+      <div class="step-actions">
+        <button type="button" class="btn-primary" (click)="terminer()">Terminer</button>
+      </div>
+    </div>
+  }
+</div>

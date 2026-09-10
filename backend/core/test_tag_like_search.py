@@ -48,12 +48,18 @@ class TestCompetenceKeywordSearch:
 
     def test_no_query_returns_full_list(self, authenticated_client):
         client, _ = authenticated_client
-        Competence.objects.create(nom="Transport")
-        Competence.objects.create(nom="Nourriture")
+        # Ne pas supposer une table vide : les catégories groupantes (Secours & sécurité,
+        # Interprétariat / traduction...) sont seedées par une migration de données et
+        # existent donc aussi sur une base de test fraîche — voir migration 0139.
+        avant = Competence.objects.count()
+        Competence.objects.create(nom="Transport de bidons test")
+        Competence.objects.create(nom="Nourriture test")
 
         response = client.get(reverse('competence-list'))
 
-        assert len(response.data) == 2
+        assert len(response.data) == avant + 2
+        noms = {c["nom"] for c in response.data}
+        assert {"Transport de bidons test", "Nourriture test"} <= noms
 
     def test_create_reuses_case_insensitive_duplicate(self, authenticated_client):
         client, _ = authenticated_client

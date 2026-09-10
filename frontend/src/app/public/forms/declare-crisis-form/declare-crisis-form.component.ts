@@ -275,8 +275,19 @@ export class DeclareCrisisFormComponent implements OnInit{
         next: (response: any) => {
           console.log('Crisis créée:', response);
           this.declareInstitutionImplication(response.id);
-          alert('Votre crise a été enregistrée avec succès !');
-          this.router.navigate(['/accueil']);
+          // Propose d'enchaîner sur le démarrage de crise (cellule de crise, centre
+          // d'accueil, centre de regroupement des moyens) plutôt que de forcer un aller-
+          // retour ultérieur — voir CriseDemarrageComponent.
+          const configurerMaintenant = confirm(
+            "Votre crise a été enregistrée avec succès !\n\n" +
+            "Voulez-vous configurer maintenant ses éléments stratégiques (cellule de crise, " +
+            "centre d'accueil, centre de regroupement des moyens) ?"
+          );
+          if (configurerMaintenant) {
+            this.router.navigate(['/admin/crises', response.id, 'demarrage']);
+          } else {
+            this.router.navigate(['/accueil']);
+          }
         },
         error: (err) => {
           console.error('Erreur création crise:', err);

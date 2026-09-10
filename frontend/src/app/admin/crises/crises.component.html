@@ -76,6 +76,11 @@
                 <span class="material-icons">lock</span> Clôturer la crise
               </button>
             }
+            @if (selectedCrisis.is_open !== false) {
+              <a class="btn-secondary sm" [routerLink]="['/admin/crises', selectedCrisis.id, 'demarrage']">
+                <span class="material-icons">rocket_launch</span> Configurer les éléments stratégiques
+              </a>
+            }
             @if (isAdmin && selectedCrisis.is_open === false) {
               <button class="btn-secondary sm" (click)="reouvrirCrisis()">
                 <span class="material-icons">lock_open</span> Réouvrir

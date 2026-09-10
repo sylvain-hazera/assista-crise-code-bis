@@ -34,7 +34,7 @@ from .models import (
     RecherchePersonneLecture, RecherchePersonneLectureHistorique,
     Document, RecherchePersonnePhoto, RecherchePersonneCommentairePhoto,
     DossierCommentaire, RecherchePersonne, RecherchePersonneCommentaire, RecherchePersonneHistorique,
-    DossierHistorique, Besoin, BesoinCompetence,Dossier, Mission, RequestType, RequestTypeBesoin, OfferType, InformationType, Team, Competence, AffectationCompetence,
+    DossierHistorique, Besoin, BesoinCompetence, BesoinMateriel, Dossier, Mission, RequestType, RequestTypeBesoin, OfferType, InformationType, Team, Competence, AffectationCompetence,
     DernierePositionUtilisateur,
     DisponibiliteOffre,
     DisponibilitePointEquipe,
@@ -119,6 +119,22 @@ class BesoinCompetenceSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = BesoinCompetence
+        fields = "__all__"
+
+class BesoinMaterielSerializer(serializers.ModelSerializer):
+
+    besoin_nom = serializers.CharField(
+        source='besoin.nom',
+        read_only=True
+    )
+
+    materiel_nom = serializers.CharField(
+        source='materiel.nom',
+        read_only=True
+    )
+
+    class Meta:
+        model = BesoinMateriel
         fields = "__all__"
 
 class RequestTypeBesoinSerializer(serializers.ModelSerializer):

@@ -13,6 +13,7 @@
       <th>Nom</th>
       <th>Description</th>
       <th>Regroupé sous</th>
+      <th>Nature</th>
       <th>Actif</th>
       <th></th>
     </tr>
@@ -26,6 +27,12 @@
         <select [ngModel]="b.parent ?? ''" (ngModelChange)="setParent(b, $event)">
           <option value="">— Besoin de premier niveau —</option>
           <option *ngFor="let p of parentOptions(b)" [value]="p.id">{{ p.nom }}</option>
+        </select>
+      </td>
+      <td>
+        <select [ngModel]="b.nature ?? ''" (ngModelChange)="setNature(b, $event)">
+          <option value="">— Non qualifié —</option>
+          <option *ngFor="let n of natureOptions" [value]="n.value">{{ n.label }}</option>
         </select>
       </td>
       <td>{{ b.actif ? 'Oui' : 'Non' }}</td>

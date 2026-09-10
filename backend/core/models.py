@@ -958,6 +958,14 @@ class Competence(models.Model):
     def __str__(self):
         return self.nom
 
+class BesoinNature(models.TextChoices):
+    """Ce qu'un besoin mobilise pour être satisfait — sert à savoir quelle(s)
+    correspondance(s) proposer (BesoinCompetence et/ou BesoinMateriel)."""
+    COMPETENCE = "COMPETENCE", "Compétence (savoir-faire humain)"
+    MATERIEL = "MATERIEL", "Matériel"
+    MIXTE = "MIXTE", "Compétence et matériel"
+
+
 class Besoin(models.Model):
 
     id = models.UUIDField(
@@ -989,6 +997,14 @@ class Besoin(models.Model):
         "self", on_delete=models.SET_NULL, null=True, blank=True, related_name="sous_besoins",
     )
 
+    # Optionnel (beaucoup de besoins existants n'ont pas encore été qualifiés) : indique si le
+    # besoin se satisfait par une compétence humaine, du matériel, ou les deux — voir
+    # BesoinNature. Détermine quel(s) type(s) de correspondance (BesoinCompetence/BesoinMateriel)
+    # a du sens de proposer pour ce besoin dans la page admin "Correspondances".
+    nature = models.CharField(
+        max_length=20, choices=BesoinNature.choices, null=True, blank=True,
+    )
+
     def __str__(self):
         return self.nom
 
@@ -1017,6 +1033,33 @@ class BesoinCompetence(models.Model):
 
     def __str__(self):
         return f"{self.besoin.nom} -> {self.competence.nom}"
+
+class BesoinMateriel(models.Model):
+    """Correspondance besoin -> matériel de catalogue — équivalent de BesoinCompetence pour
+    les besoins de nature MATERIEL/MIXTE (voir BesoinNature)."""
+
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False
+    )
+
+    besoin = models.ForeignKey(
+        "Besoin",
+        on_delete=models.CASCADE,
+        related_name="materiels"
+    )
+
+    materiel = models.ForeignKey(
+        "MaterielCatalogue",
+        on_delete=models.PROTECT,
+        related_name="besoins",
+        null=True,
+        blank=True
+    )
+
+    def __str__(self):
+        return f"{self.besoin.nom} -> {self.materiel.nom}"
 
 class InstitutionType(models.Model):
 

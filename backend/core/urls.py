@@ -8,7 +8,7 @@ from .views import (
     RecherchePersonneCommentairePhotoViewSet,
     OfferViewSet, OfferPhotoViewSet, RequestPhotoViewSet, DisponibiliteOffreViewSet, InformationViewSet, RecherchePersonnePhotoViewSet,
     BesoinViewSet, RecherchePersonneCommentaireViewSet, RecherchePersonneViewSet,
-    BesoinCompetenceViewSet, RequestTypeBesoinViewSet, RequestTypeViewSet, OfferTypeViewSet, InformationTypeViewSet,
+    BesoinCompetenceViewSet, BesoinMaterielViewSet, RequestTypeBesoinViewSet, RequestTypeViewSet, OfferTypeViewSet, InformationTypeViewSet,
     DeleteRequestView, DeleteOfferView, DeleteInformationView, CompetenceViewSet,
     ConfirmerAffectationBenevoleView,
     EngagementRessourcePublicView,
@@ -133,6 +133,7 @@ router.register(r'dossiers', DossierViewSet)
 router.register(r'missions', MissionViewSet)
 router.register(r'besoins', BesoinViewSet)
 router.register(r'besoins-competences', BesoinCompetenceViewSet)
+router.register(r'besoins-materiels', BesoinMaterielViewSet)
 router.register(r'request-types-besoins', RequestTypeBesoinViewSet)
 router.register(r'documents', DocumentViewSet)
 router.register(r'dossier-commentaires', DossierCommentaireViewSet)
