@@ -91,6 +91,8 @@
     letter-spacing: .04em;
   }
   .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: .85em; }
+  .id-cell { cursor: pointer; color: #6b7280; }
+  .id-cell:hover { color: #2563eb; text-decoration: underline; }
   .empty { color: #9ca3af; text-align: center; }
 }
 

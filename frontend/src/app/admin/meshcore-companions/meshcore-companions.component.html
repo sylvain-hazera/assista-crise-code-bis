@@ -56,6 +56,7 @@
           <th>Adresse</th>
           <th>Statut</th>
           <th>Dernière connexion</th>
+          <th>ID (pour COMPAGNON_ID)</th>
           <th></th>
         </tr>
       </thead>
@@ -67,10 +68,11 @@
             <td class="mono">{{ adresse(c) }}</td>
             <td><span class="statut" [ngClass]="statutClass(c)">{{ c.dernier_etat || 'jamais connecté' }}</span></td>
             <td>{{ c.derniere_connexion ? (c.derniere_connexion | date:'short') : '—' }}</td>
+            <td class="mono id-cell" (click)="copierId(c)" title="Cliquer pour copier">{{ c.id }}</td>
             <td><button type="button" class="btn-danger-sm" (click)="supprimer(c)">Supprimer</button></td>
           </tr>
         } @empty {
-          <tr><td colspan="6" class="empty">Aucun companion déclaré pour l'instant.</td></tr>
+          <tr><td colspan="7" class="empty">Aucun companion déclaré pour l'instant.</td></tr>
         }
       </tbody>
     </table>

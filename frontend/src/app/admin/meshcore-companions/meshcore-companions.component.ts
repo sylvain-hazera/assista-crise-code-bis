@@ -101,4 +101,8 @@ export class MeshcoreCompanionsComponent implements OnInit {
     if (c.dernier_etat === 'ERREUR') return 'statut-erreur';
     return 'statut-inconnu';
   }
+
+  copierId(c: CompagnonMeshCore): void {
+    navigator.clipboard?.writeText(c.id).catch(() => {});
+  }
 }
