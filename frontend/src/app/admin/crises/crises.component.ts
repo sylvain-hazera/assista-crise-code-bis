@@ -26,6 +26,7 @@ import { Competence } from '../../shared/models/competence.model';
 import { DelegationCompetence } from '../../shared/models/delegation-competence.model';
 import { UserRole } from '../../shared/models/user.model';
 import { ZoneMapComponent } from '../../shared/components/common/zone-map/zone-map.component';
+import { MinimapComponent } from '../../shared/components/common/minimap/minimap.component';
 import { TagSearchInputComponent } from '../../shared/components/common/tag-search-input/tag-search-input.component';
 import { PointModalComponent } from './point-modal/point-modal.component';
 import { composeZoneSecteurs, toMultiPolygonWkt } from '../../shared/utils/crisis-zone-secteurs.util';
@@ -37,7 +38,7 @@ type ModalView = 'none' | 'detail';
 @Component({
   selector: 'app-crises',
   standalone: true,
-  imports: [CommonModule, FormsModule, ReactiveFormsModule, RouterLink, ZoneMapComponent, TagSearchInputComponent, PointModalComponent],
+  imports: [CommonModule, FormsModule, ReactiveFormsModule, RouterLink, ZoneMapComponent, MinimapComponent, TagSearchInputComponent, PointModalComponent],
   templateUrl: './crises.component.html',
   styleUrls: ['./crises.component.scss']
 })
@@ -271,11 +272,30 @@ export class CrisesComponent implements OnInit {
     this.zoneDepartementNoms = {};
     this.modal = 'detail';
     this.loadZoneSecteurLabels();
+    this.loadCrisisPhoto(crisis);
   }
 
   closeModal(): void {
     this.modal = 'none';
     this.selectedCrisis = null;
+    if (this.crisisPhotoUrl) URL.revokeObjectURL(this.crisisPhotoUrl);
+    this.crisisPhotoUrl = null;
+  }
+
+  // ── Photo (aperçu) ───────────────────────────────────────────
+  crisisPhotoUrl: string | null = null;
+
+  /** CrisisSerializer.photo est write_only (voir preview, gardé par user_can_view_photo) :
+   * même patron que dossiers.component.loadOrigineDossierPhoto, un blob récupéré à l'ouverture
+   * du détail plutôt qu'une URL directement utilisable dans un <img src>. */
+  private loadCrisisPhoto(crisis: Crisis): void {
+    if (this.crisisPhotoUrl) URL.revokeObjectURL(this.crisisPhotoUrl);
+    this.crisisPhotoUrl = null;
+    if (!crisis.has_photo) return;
+    this.crisisService.preview(crisis.id).subscribe({
+      next: (blob) => this.crisisPhotoUrl = URL.createObjectURL(blob),
+      error: () => {},
+    });
   }
 
   private defaultInstitutionId(): string | null {

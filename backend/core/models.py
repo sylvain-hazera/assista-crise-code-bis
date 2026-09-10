@@ -7,6 +7,55 @@ from django.db import models
 from core.validators import validate_image_file
 from .validators import validate_image_file
 
+# Nom de fichier stocké basé sur un UUID plutôt que le nom d'origine (même patron que
+# secure_document_path/secure_recherche_photo_path plus bas dans ce fichier, ici dupliqué par
+# champ pour rester une fonction top-level nommée — requis pour que Django sache sérialiser
+# `upload_to` dans les migrations) : jamais de collision, jamais de fuite d'information via le
+# nom déposé par l'utilisateur, et surtout plus jamais bloqué par FileField.max_length (100 par
+# défaut, jamais changé sur ces champs) quand le nom d'origine — souvent une longue description
+# exportée par un téléphone ou téléchargée depuis un site — dépasse cette limite. Repéré en
+# direct : dépôt de crise bloqué par « Ensure this filename has at most 100 characters » sur une
+# photo dont le nom en faisait 120.
+def secure_user_photo_path(instance, filename):
+    extension = os.path.splitext(filename)[1].lower()
+    return f"photos/{uuid.uuid4()}{extension}"
+
+
+def secure_crisis_photo_path(instance, filename):
+    extension = os.path.splitext(filename)[1].lower()
+    return f"photos/crises/{uuid.uuid4()}{extension}"
+
+
+def secure_demande_photo_path(instance, filename):
+    extension = os.path.splitext(filename)[1].lower()
+    return f"photos/demandes/{uuid.uuid4()}{extension}"
+
+
+def secure_demande_galerie_photo_path(instance, filename):
+    extension = os.path.splitext(filename)[1].lower()
+    return f"photos/demandes/galerie/{uuid.uuid4()}{extension}"
+
+
+def secure_information_photo_path(instance, filename):
+    extension = os.path.splitext(filename)[1].lower()
+    return f"photos/informations/{uuid.uuid4()}{extension}"
+
+
+def secure_offre_photo_path(instance, filename):
+    extension = os.path.splitext(filename)[1].lower()
+    return f"photos/offres/{uuid.uuid4()}{extension}"
+
+
+def secure_offre_galerie_photo_path(instance, filename):
+    extension = os.path.splitext(filename)[1].lower()
+    return f"photos/offres/galerie/{uuid.uuid4()}{extension}"
+
+
+def secure_recherche_personne_photo_path(instance, filename):
+    extension = os.path.splitext(filename)[1].lower()
+    return f"recherches/{uuid.uuid4()}{extension}"
+
+
 class UserRole(models.TextChoices):
     """Rôles des utilisateurs"""
     ADMINISTRATOR = "ADMIN", "Administrateur"
@@ -113,7 +162,7 @@ class User(AbstractUser):
     """Modèle utilisateur personnalisé"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     phone_number = models.CharField(max_length=20, null=True, blank=True)
-    photo = models.ImageField(upload_to="photos/", null=True, blank=True, validators=[validate_image_file])
+    photo = models.ImageField(upload_to=secure_user_photo_path, max_length=255, null=True, blank=True, validators=[validate_image_file])
     type = models.CharField(
         max_length=20,
         choices=UserRole.choices,
@@ -204,7 +253,7 @@ class Crisis(EnvironmentScopedModel):
         default=TypeCrise.AUTRE,
     )
     description = models.TextField(null=True, blank=True)
-    photo = models.ImageField(upload_to="photos/crises/", null=True, blank=True)
+    photo = models.ImageField(upload_to=secure_crisis_photo_path, max_length=255, null=True, blank=True)
     location = gis_models.PointField(srid=4326)
     radius = models.IntegerField(default=10)
     zone = gis_models.PolygonField(srid=4326, null=True, blank=True)
@@ -426,7 +475,7 @@ class Request(HebergementDetailsMixin, EnvironmentScopedModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     title = models.CharField(max_length=150)
     description = models.TextField(null=True, blank=True)
-    photo = models.ImageField(upload_to="photos/demandes/", null=True, blank=True, validators=[validate_image_file])
+    photo = models.ImageField(upload_to=secure_demande_photo_path, max_length=255, null=True, blank=True, validators=[validate_image_file])
     # Nullable (contrairement à l'origine) : une demande d'hébergement n'a pas d'adresse
     # précise à donner, seulement une zone de recherche (voir zone_recherche_communes) —
     # même assouplissement déjà fait pour Offer.location. team_zone_specificity et
@@ -503,7 +552,7 @@ class RequestPhoto(EnvironmentScopedModel):
 
     request = models.ForeignKey(Request, on_delete=models.CASCADE, related_name="photos")
 
-    image = models.ImageField(upload_to="photos/demandes/galerie/", validators=[validate_image_file])
+    image = models.ImageField(upload_to=secure_demande_galerie_photo_path, max_length=255, validators=[validate_image_file])
 
     ordre = models.PositiveIntegerField(default=0)
 
@@ -530,7 +579,7 @@ class Information(EnvironmentScopedModel):
     """Informations partagées"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     title = models.CharField(max_length=150)
-    photo = models.ImageField(upload_to="photos/informations/", null=True, blank=True, validators=[validate_image_file])
+    photo = models.ImageField(upload_to=secure_information_photo_path, max_length=255, null=True, blank=True, validators=[validate_image_file])
     first_name_information = models.CharField(max_length=60)
     last_name_information = models.CharField(max_length=80)
     email_information = models.EmailField()
@@ -636,7 +685,7 @@ class Offer(HebergementDetailsMixin, EnvironmentScopedModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     title = models.CharField(max_length=150)
     description = models.TextField(null=True, blank=True)
-    photo = models.ImageField(upload_to="photos/offres/", null=True, blank=True, validators=[validate_image_file])
+    photo = models.ImageField(upload_to=secure_offre_photo_path, max_length=255, null=True, blank=True, validators=[validate_image_file])
     location = gis_models.PointField(srid=4326, null=True, blank=True)
     # Résolus une seule fois à la création (voir OfferViewSet.perform_create), à partir de
     # `location` — même rôle que Request.commune_code/Information.commune_code, ajouté ici
@@ -817,7 +866,7 @@ class OfferPhoto(EnvironmentScopedModel):
 
     offer = models.ForeignKey(Offer, on_delete=models.CASCADE, related_name="photos")
 
-    image = models.ImageField(upload_to="photos/offres/galerie/", validators=[validate_image_file])
+    image = models.ImageField(upload_to=secure_offre_galerie_photo_path, max_length=255, validators=[validate_image_file])
 
     ordre = models.PositiveIntegerField(default=0)
 
@@ -1618,6 +1667,7 @@ class Document(EnvironmentScopedModel):
 
     fichier = models.FileField(
         upload_to=secure_document_path,
+        max_length=255,
         validators=[validate_image_file]
     )
 
@@ -2077,7 +2127,8 @@ class RecherchePersonne(EnvironmentScopedModel):
     age = models.IntegerField()
 
     photo = models.ImageField(
-        upload_to="recherches/",
+        upload_to=secure_recherche_personne_photo_path,
+        max_length=255,
         blank=True,
         null=True
     )
@@ -2249,6 +2300,7 @@ class RecherchePersonnePhoto(EnvironmentScopedModel):
 
     fichier = models.ImageField(
         upload_to=secure_recherche_photo_path,
+        max_length=255,
         validators=[validate_image_file]
     )
 
@@ -2293,6 +2345,7 @@ class RecherchePersonneCommentairePhoto(
 
     fichier = models.ImageField(
         upload_to=secure_recherche_photo_path,
+        max_length=255,
         validators=[validate_image_file]
     )
 

@@ -172,6 +172,35 @@
   margin: 0 0 1.25rem;
 }
 
+.crisis-apercu {
+  display: flex;
+  gap: .75rem;
+  flex-wrap: wrap;
+
+  .crisis-apercu-map {
+    flex: 1 1 260px;
+    min-width: 200px;
+  }
+
+  .crisis-apercu-photo {
+    flex: 1 1 260px;
+    min-width: 200px;
+    height: 220px;
+    border-radius: 8px;
+    border: 1px solid #e5e7eb;
+    object-fit: cover;
+  }
+
+  .crisis-apercu-photo-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #9ca3af;
+    font-size: .85rem;
+    background: #f9fafb;
+  }
+}
+
 .section-block {
   margin-bottom: 1.75rem;
 

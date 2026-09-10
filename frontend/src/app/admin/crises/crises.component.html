@@ -109,6 +109,25 @@
             </p>
           }
 
+          <!-- Aperçu : minimap centrée sur la crise + photo jointe à la déclaration -->
+          <section class="section-block crisis-apercu">
+            @if (selectedCrisis.latitude && selectedCrisis.longitude) {
+              <app-minimap
+                class="crisis-apercu-map"
+                [latitude]="selectedCrisis.latitude"
+                [longitude]="selectedCrisis.longitude"
+                [zoom]="12">
+              </app-minimap>
+            }
+            @if (selectedCrisis.has_photo) {
+              @if (crisisPhotoUrl) {
+                <img class="crisis-apercu-photo" [src]="crisisPhotoUrl" alt="Photo jointe à la déclaration de la crise">
+              } @else {
+                <div class="crisis-apercu-photo crisis-apercu-photo-loading">Chargement de la photo…</div>
+              }
+            }
+          </section>
+
           <!-- Zone précise -->
           <section class="section-block">
             <h3><span class="material-icons">draw</span> Zone précise</h3>

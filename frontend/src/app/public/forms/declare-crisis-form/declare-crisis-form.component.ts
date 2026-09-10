@@ -82,8 +82,19 @@ export class DeclareCrisisFormComponent implements OnInit{
 
   selectedAddress: AddressResult | null = null;
 
+  // Recentre/zoome la minimap de dessin de zone sur l'adresse choisie — champs dédiés (pas un
+  // getter réévalué à chaque cycle de détection de changement, qui recréerait un nouveau
+  // tableau [lon, lat] à chaque fois et redéclencherait le flyTo de ZoneMapComponent en boucle) :
+  // ne changent qu'au moment réel où selectedAddress change.
+  zoneMapCenter: [number, number] = [2.2137, 46.2276];
+  zoneMapZoom = 6;
+
   onAddressSelected(addr: AddressResult | null): void {
     this.selectedAddress = addr;
+    if (addr) {
+      this.zoneMapCenter = [addr.longitude, addr.latitude];
+      this.zoneMapZoom = 13;
+    }
   }
 
     eventTypeOptions: { value: string; label: string }[] = [

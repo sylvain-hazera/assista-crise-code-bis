@@ -1,6 +1,10 @@
+from io import BytesIO
+
 import pytest
 from django.core import mail
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
+from PIL import Image
 from rest_framework import status
 from rest_framework.test import APIClient
 
@@ -402,3 +406,34 @@ class TestCrisisAuthorAndLocationDisplay:
 
         assert response.status_code == status.HTTP_200_OK
         assert response.data['commune'] == 'Grenoble'
+
+
+@pytest.mark.django_db
+class TestCrisisPhotoLongFilename:
+    """Crisis.photo (comme User/Request/Information/Offer/RecherchePersonne.photo, voir
+    core.models.secure_crisis_photo_path) stocke désormais le fichier sous un nom généré
+    (UUID + extension), jamais le nom d'origine — reproduit en direct : le formulaire public de
+    déclaration de crise renvoyait 400 « Ensure this filename has at most 100 characters » dès
+    qu'une photo réelle (souvent un nom long exporté par un téléphone ou téléchargé depuis un
+    site) dépassait le max_length=100 par défaut de FileField, bloquant toute la déclaration de
+    crise pour une simple pièce jointe pourtant optionnelle (null=True, blank=True)."""
+
+    def test_photo_with_long_original_filename_no_longer_rejected(self, local_authority_client):
+        client, _ = local_authority_client
+        nom_fichier_long = "images inondation vallée du gier rive droite avant apres travaux 2026" + "x" * 50 + ".jpg"
+        assert len(nom_fichier_long) > 100
+
+        img = Image.new("RGB", (10, 10), color="blue")
+        buf = BytesIO()
+        img.save(buf, format="JPEG")
+        buf.seek(0)
+        photo = SimpleUploadedFile(nom_fichier_long, buf.getvalue(), content_type="image/jpeg")
+        payload = {**CRISIS_PAYLOAD, "photo": photo}
+
+        response = client.post(reverse('crisis-list'), payload, format='multipart')
+
+        assert response.status_code == status.HTTP_201_CREATED, response.data
+        crisis = Crisis.objects.get(id=response.data['id'])
+        assert crisis.photo.name != nom_fichier_long
+        assert crisis.photo.name.startswith('photos/crises/')
+        assert len(crisis.photo.name) <= 100

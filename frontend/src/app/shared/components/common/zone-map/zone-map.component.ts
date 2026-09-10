@@ -33,8 +33,15 @@ export class ZoneMapComponent implements AfterViewInit, OnChanges, OnDestroy {
   private draw: TerraDraw | null = null;
 
   ngOnChanges(changes: SimpleChanges): void {
-    if (changes['center'] && this.map && !changes['center'].firstChange) {
-      this.map.setCenter(this.center);
+    // this.map reste null tant que ngAfterViewInit n'a pas tourné (toujours après le tout
+    // premier ngOnChanges dans l'ordre du cycle de vie Angular) : condition suffisante pour
+    // ignorer ce premier appel sans avoir besoin de vérifier firstChange séparément sur
+    // chaque input. flyTo (animé) plutôt que setCenter seul : la carte doit aussi zoomer
+    // quand l'adresse saisie change (ex: commune choisie dans le formulaire de déclaration
+    // de crise), pas seulement se recentrer sans changer d'échelle.
+    if (!this.map) return;
+    if (changes['center'] || changes['zoom']) {
+      this.map.flyTo({ center: this.center, zoom: this.zoom });
     }
   }
 
