@@ -141,6 +141,7 @@ from .models import (
     StatutImplication,
     User, Crisis, TypeCrise, Request, RequestPhoto, Offer, OfferPhoto, OfferMessage, Information, DisponibiliteOffre, DisponibilitePointEquipe, MaterielPoint,
     MaterielCatalogue, ContributionMateriel, StatutMateriel, TypeMateriel, NiveauStock, RegistrePresence, TypePersonneAccueillie, DeclarationSecurite, SituationDeclarant,
+    CompagnonMeshCore, NoeudMeshUtilisateur, MessageMeshLog, DirectionMessageMesh, StatutMessageMesh,
     AffectationPointBenevole, StatutAffectation,
     RecherchePersonne, RecherchePersonneCommentaire, Besoin, Notification, DossierParticipant,
     RecherchePersonneCommentairePhoto, RecherchePersonneLecture, RecherchePersonneLectureHistorique,
@@ -293,6 +294,9 @@ from .serializers import (
     DisponibilitePointEquipeSerializer,
     MaterielPointSerializer,
     MaterielCatalogueSerializer,
+    CompagnonMeshCoreSerializer,
+    NoeudMeshUtilisateurSerializer,
+    MessageMeshLogSerializer,
     ContributionMaterielSerializer,
     RegistrePresenceSerializer,
     DeclarationSecuriteSerializer,
@@ -8707,3 +8711,112 @@ class InstitutionDomaineViewSet(
             commentaire=f"Création domaine institution : {domaine.domaine} pour {domaine.institution.nom}",
         )
 
+
+
+class CompagnonMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
+    """Nœuds MeshCore en rôle Companion utilisés comme passerelle radio (voir le service-pont
+    externe `meshcore-bridge/`, non hébergé dans ce dépôt Django). Phase de test (voir doc de
+    conception « Maillage Terrain ») : pas encore de scoping institution strict sur la lecture,
+    juste IsInstitutionalActor en écriture comme le reste des ressources d'infrastructure."""
+
+    queryset = CompagnonMeshCore.objects.select_related('institution').all()
+    serializer_class = CompagnonMeshCoreSerializer
+
+    def get_permissions(self):
+        if self.action in ('create', 'update', 'partial_update', 'destroy'):
+            return [IsInstitutionalActor()]
+        # `rapporter_etat` est appelé par le service-pont (compte de service authentifié,
+        # pas un acteur institutionnel) : authentifié suffit, voir docstring de l'action.
+        return [permissions.IsAuthenticated()]
+
+    def perform_create(self, serializer):
+        compagnon = serializer.save(environment=get_active_environment(self.request))
+        audit_log(
+            request=self.request,
+            action_code="CREATION",
+            objet_type="CompagnonMeshCore",
+            objet_id=compagnon.id,
+            commentaire=f"Création companion MeshCore : {compagnon.nom}",
+        )
+
+    @action(detail=True, methods=['post'], url_path='rapporter-etat')
+    def rapporter_etat(self, request, pk=None):
+        """Le service-pont appelle cette action à chaque changement de statut de connexion —
+        c'est ce qui alimente `dernier_etat`/`derniere_connexion` affichés côté admin, puisque
+        la connexion MeshCore elle-même vit dans un processus externe, jamais dans Django."""
+        compagnon = self.get_object()
+        etat = request.data.get('etat')
+        if etat not in ('CONNECTE', 'DECONNECTE', 'ERREUR'):
+            return Response({'detail': "etat doit être CONNECTE, DECONNECTE ou ERREUR."}, status=status.HTTP_400_BAD_REQUEST)
+
+        compagnon.dernier_etat = etat
+        if etat == 'CONNECTE':
+            compagnon.derniere_connexion = timezone.now()
+            compagnon.derniere_erreur = None
+            pubkey = request.data.get('pubkey_hex')
+            if pubkey:
+                compagnon.pubkey_hex = pubkey
+        elif etat == 'ERREUR':
+            compagnon.derniere_erreur = request.data.get('erreur', '')
+
+        compagnon.save(update_fields=['dernier_etat', 'derniere_connexion', 'derniere_erreur', 'pubkey_hex'])
+        return Response(CompagnonMeshCoreSerializer(compagnon).data)
+
+
+class NoeudMeshUtilisateurViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
+    """Correspondance clé publique MeshCore <-> compte utilisateur — voir docstring du modèle."""
+
+    queryset = NoeudMeshUtilisateur.objects.select_related('utilisateur').all()
+    serializer_class = NoeudMeshUtilisateurSerializer
+
+    def get_permissions(self):
+        if self.action in ('create', 'update', 'partial_update', 'destroy'):
+            return [IsInstitutionalActor()]
+        return [permissions.IsAuthenticated()]
+
+    def perform_create(self, serializer):
+        noeud = serializer.save(environment=get_active_environment(self.request))
+        audit_log(
+            request=self.request,
+            action_code="CREATION",
+            objet_type="NoeudMeshUtilisateur",
+            objet_id=noeud.id,
+            commentaire=f"Association nœud MeshCore {noeud.pubkey_hex[:12]}… -> {noeud.utilisateur.email}",
+        )
+
+
+class MessageMeshLogViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
+    """Journal de test des DM MeshCore — voir docstring du modèle sur les limites volontaires
+    de cette phase (pas de cloisonnement par équipe, c'est un banc de test, pas la fonctionnalité
+    définitive)."""
+
+    queryset = MessageMeshLog.objects.select_related('compagnon', 'expediteur').all()
+    serializer_class = MessageMeshLogSerializer
+
+    def get_permissions(self):
+        if self.action in ('list', 'retrieve'):
+            return [IsInstitutionalActor()]
+        # create/partial_update/a_envoyer : appelés par le service-pont (dépose un message
+        # entrant, met à jour le statut d'un message sortant après tentative d'envoi, ou
+        # interroge la file d'attente sortante) — compte de service authentifié, pas un acteur
+        # institutionnel humain.
+        return [permissions.IsAuthenticated()]
+
+    def perform_create(self, serializer):
+        message = serializer.save(environment=get_active_environment(self.request))
+        if message.direction == DirectionMessageMesh.ENTRANT and message.statut == StatutMessageMesh.EN_ATTENTE:
+            # Un message entrant est par définition déjà reçu, pas "en attente d'envoi" —
+            # filet de sécurité si le service-pont omet `statut` dans son POST.
+            message.statut = StatutMessageMesh.RECU
+            message.save(update_fields=['statut'])
+
+    @action(detail=False, methods=['get'], url_path='a-envoyer')
+    def a_envoyer(self, request):
+        """Messages sortants en attente pour un companion donné — le service-pont interroge
+        cette action à intervalle régulier (voir meshcore-bridge/bridge.py) plutôt que d'exposer
+        un port entrant sur le conteneur du pont, plus simple à opérer."""
+        compagnon_id = request.query_params.get('compagnon')
+        qs = self.get_queryset().filter(direction=DirectionMessageMesh.SORTANT, statut=StatutMessageMesh.EN_ATTENTE)
+        if compagnon_id:
+            qs = qs.filter(compagnon_id=compagnon_id)
+        return Response(MessageMeshLogSerializer(qs, many=True).data)

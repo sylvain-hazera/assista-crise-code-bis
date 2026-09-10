@@ -97,6 +97,31 @@ services:
     # volumes:
     #   - ./tileserver:/data
 
+  # Phase de test uniquement (voir meshcore-bridge/README.md) — pas de service équivalent
+  # dans docker-compose.prod.yml tant que le matériel n'a pas été validé.
+  meshcore-bridge:
+    build: ./meshcore-bridge
+    container_name: ac_meshcore_bridge
+    restart: unless-stopped
+    environment:
+      - DJANGO_API_URL=http://backend:8000/api
+      - DJANGO_BRIDGE_EMAIL=${MESHCORE_BRIDGE_EMAIL}
+      - DJANGO_BRIDGE_PASSWORD=${MESHCORE_BRIDGE_PASSWORD}
+      - COMPAGNON_ID=${MESHCORE_COMPAGNON_ID}
+      - MESHCORE_CONNEXION_TYPE=${MESHCORE_CONNEXION_TYPE:-TCP}
+      - MESHCORE_TCP_HOST=${MESHCORE_TCP_HOST}
+      - MESHCORE_TCP_PORT=${MESHCORE_TCP_PORT:-5000}
+      - MESHCORE_SERIE_DEVICE=${MESHCORE_SERIE_DEVICE}
+      - MESHCORE_BLE_ADRESSE=${MESHCORE_BLE_ADRESSE}
+      - LOG_LEVEL=${MESHCORE_LOG_LEVEL:-INFO}
+    # Pour une connexion série USB (décommenter et adapter) :
+    # devices:
+    #   - "/dev/ttyUSB0:/dev/ttyUSB0"
+    depends_on:
+      - backend
+    profiles:
+      - meshcore-test
+
   proxy:
     build: ./proxy
     container_name: ac_proxy

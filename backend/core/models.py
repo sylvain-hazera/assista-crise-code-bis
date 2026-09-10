@@ -3711,3 +3711,124 @@ class InstitutionDomaine(EnvironmentScopedModel):
         default=True
     )
 
+
+class MeshCoreConnexionType(models.TextChoices):
+    TCP = "TCP", "TCP (réseau)"
+    SERIE = "SERIE", "Série (USB)"
+    BLE = "BLE", "Bluetooth (BLE)"
+
+
+class CompagnonMeshCore(EnvironmentScopedModel):
+    """Nœud MeshCore en rôle Companion utilisé comme passerelle entre le mesh radio et
+    assista-crise, piloté par le service-pont (`meshcore-bridge/`, hors de ce dépôt Django,
+    service asyncio permanent utilisant `meshcore-py`) — PAS un nœud personnel de terrain, voir
+    NoeudMeshUtilisateur pour ça. Une institution peut avoir plusieurs companions (redondance,
+    ou un par poste de commandement) ; `principal` désigne celui utilisé par défaut pour les
+    envois. Phase de test (voir doc de conception « Maillage Terrain ») : `institution` reste
+    facultative pour permettre un premier companion de test non rattaché."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    institution = models.ForeignKey(
+        "Institution", on_delete=models.CASCADE, null=True, blank=True, related_name="compagnons_meshcore",
+    )
+
+    nom = models.CharField(max_length=100)
+
+    connexion_type = models.CharField(max_length=10, choices=MeshCoreConnexionType.choices)
+
+    # Un seul groupe de champs est renseigné selon connexion_type.
+    tcp_host = models.CharField(max_length=255, null=True, blank=True)
+    tcp_port = models.PositiveIntegerField(null=True, blank=True, default=5000)
+    serie_device = models.CharField(max_length=255, null=True, blank=True, help_text="ex: /dev/ttyUSB0")
+    ble_adresse = models.CharField(max_length=64, null=True, blank=True)
+
+    pubkey_hex = models.CharField(
+        max_length=64, null=True, blank=True,
+        help_text="Renseigné par le service-pont après la première connexion réussie.",
+    )
+
+    principal = models.BooleanField(default=False)
+    actif = models.BooleanField(default=True)
+
+    derniere_connexion = models.DateTimeField(null=True, blank=True)
+    dernier_etat = models.CharField(
+        max_length=20, null=True, blank=True,
+        help_text="Rapporté par le service-pont : CONNECTE / DECONNECTE / ERREUR.",
+    )
+    derniere_erreur = models.TextField(null=True, blank=True)
+
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.nom} ({self.connexion_type})"
+
+
+class NoeudMeshUtilisateur(EnvironmentScopedModel):
+    """Correspondance entre la clé publique d'un nœud MeshCore de terrain (Companion personnel)
+    et un compte utilisateur assista-crise — sans ça, le service-pont ne sait pas qui a envoyé
+    un message reçu sur le mesh."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    utilisateur = models.ForeignKey("User", on_delete=models.CASCADE, related_name="noeuds_meshcore")
+
+    pubkey_hex = models.CharField(max_length=64, unique=True)
+
+    nom_noeud = models.CharField(max_length=100, blank=True)
+
+    actif = models.BooleanField(default=True)
+
+    date_association = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.utilisateur.email} — {self.pubkey_hex[:12]}…"
+
+
+class DirectionMessageMesh(models.TextChoices):
+    ENTRANT = "ENTRANT", "Reçu du mesh"
+    SORTANT = "SORTANT", "Envoyé vers le mesh"
+
+
+class StatutMessageMesh(models.TextChoices):
+    EN_ATTENTE = "EN_ATTENTE", "En attente d'envoi"
+    ENVOYE = "ENVOYE", "Envoyé"
+    RECU = "RECU", "Reçu"
+    ECHEC = "ECHEC", "Échec"
+
+
+class MessageMeshLog(EnvironmentScopedModel):
+    """Journal des DM échangés via MeshCore — phase de test : un log plat, pas encore le
+    cloisonnement strict de visibilité par équipe prévu dans la conception définitive (voir doc
+    de conception « Maillage Terrain », principe « administrer un companion n'est pas lire les
+    messages ») puisqu'il n'y a pour l'instant qu'un usage de test, pas de vraies équipes
+    terrain sur le mesh."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    compagnon = models.ForeignKey(CompagnonMeshCore, on_delete=models.CASCADE, related_name="messages")
+
+    direction = models.CharField(max_length=10, choices=DirectionMessageMesh.choices)
+
+    contact_pubkey_hex = models.CharField(
+        max_length=64,
+        help_text="Clé publique du correspondant (émetteur si entrant, destinataire si sortant).",
+    )
+
+    expediteur = models.ForeignKey(
+        "User", on_delete=models.SET_NULL, null=True, blank=True, related_name="messages_meshcore_envoyes",
+        help_text="Résolu via NoeudMeshUtilisateur quand connu.",
+    )
+
+    contenu = models.TextField()
+
+    statut = models.CharField(max_length=12, choices=StatutMessageMesh.choices, default=StatutMessageMesh.EN_ATTENTE)
+
+    erreur = models.TextField(null=True, blank=True)
+
+    date_creation = models.DateTimeField(auto_now_add=True)
+    date_envoi = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f"[{self.direction}] {self.contact_pubkey_hex[:12]}… — {self.statut}"
+

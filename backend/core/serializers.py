@@ -40,6 +40,9 @@ from .models import (
     DisponibilitePointEquipe,
     MaterielPoint,
     MaterielCatalogue,
+    CompagnonMeshCore,
+    NoeudMeshUtilisateur,
+    MessageMeshLog,
     ContributionMateriel,
     StatutMateriel,
     RegistrePresence,
@@ -2492,5 +2495,42 @@ class InstitutionDomaineSerializer(
         model = InstitutionDomaine
 
         fields = "__all__"
+
+
+class CompagnonMeshCoreSerializer(serializers.ModelSerializer):
+    institution_nom = serializers.CharField(source='institution.nom', read_only=True, default=None)
+
+    class Meta:
+        model = CompagnonMeshCore
+        fields = "__all__"
+        # Renseignés uniquement par le service-pont (voir docstring du modèle), jamais par un
+        # appel humain via l'API.
+        read_only_fields = ['pubkey_hex', 'derniere_connexion', 'dernier_etat', 'derniere_erreur']
+
+
+class NoeudMeshUtilisateurSerializer(serializers.ModelSerializer):
+    utilisateur_nom = serializers.SerializerMethodField()
+
+    class Meta:
+        model = NoeudMeshUtilisateur
+        fields = "__all__"
+
+    def get_utilisateur_nom(self, obj):
+        return f"{obj.utilisateur.first_name} {obj.utilisateur.last_name}".strip() or obj.utilisateur.email
+
+
+class MessageMeshLogSerializer(serializers.ModelSerializer):
+    compagnon_nom = serializers.CharField(source='compagnon.nom', read_only=True)
+    expediteur_nom = serializers.SerializerMethodField()
+
+    class Meta:
+        model = MessageMeshLog
+        fields = "__all__"
+        read_only_fields = ['statut', 'erreur', 'date_envoi', 'expediteur']
+
+    def get_expediteur_nom(self, obj):
+        if not obj.expediteur_id:
+            return None
+        return f"{obj.expediteur.first_name} {obj.expediteur.last_name}".strip() or obj.expediteur.email
 
 
