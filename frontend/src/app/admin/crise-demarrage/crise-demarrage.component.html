@@ -104,6 +104,28 @@
         }
       </ul>
 
+      @if (etapesAvecPoint.length > 0) {
+        <div class="save-plan">
+          <p>
+            Pour retrouver ces centres et équipes en un clic lors d'une prochaine crise, vous
+            pouvez les enregistrer comme dispositif pré-enregistré (page « Plans »).
+          </p>
+          @if (planSaved) {
+            <p class="disclaimer ok">
+              <span class="material-icons">check_circle</span>
+              Dispositif enregistré — retrouvable et activable depuis la page « Plans ».
+            </p>
+          } @else {
+            <button type="button" class="btn-secondary" (click)="enregistrerCommeDispositif()" [disabled]="savingPlan">
+              <span class="material-icons">bookmark_add</span> Sauvegarder pour la prochaine fois
+            </button>
+          }
+          @if (planErrorMessage) {
+            <p class="error-message">{{ planErrorMessage }}</p>
+          }
+        </div>
+      }
+
       <div class="step-actions">
         <button type="button" class="btn-primary" (click)="terminer()">Terminer</button>
       </div>

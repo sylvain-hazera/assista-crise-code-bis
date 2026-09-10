@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 
 import { CrisisService } from '../../services/crisis.service';
+import { PlanService } from '../../services/plan.service';
 import { PointOperationnelService } from '../../services/point-operationnel.service';
 import { PointTypeService } from '../../services/point-type.service';
 import { TeamService } from '../../services/team.service';
@@ -48,6 +49,10 @@ export class CriseDemarrageComponent implements OnInit {
   saving = false;
   errorMessage = '';
 
+  savingPlan = false;
+  planSaved = false;
+  planErrorMessage = '';
+
   etapes: EtapePoint[] = [
     {
       code: 'CELLULE_CRISE', titre: 'Cellule de crise',
@@ -76,6 +81,7 @@ export class CriseDemarrageComponent implements OnInit {
     private pointService: PointOperationnelService,
     private pointTypeService: PointTypeService,
     private teamService: TeamService,
+    private planService: PlanService,
   ) {}
 
   ngOnInit(): void {
@@ -177,5 +183,38 @@ export class CriseDemarrageComponent implements OnInit {
 
   terminer(): void {
     this.router.navigate(['/admin/crises']);
+  }
+
+  /** Réutilise Plan (dispositif pré-enregistré) tel quel : on référence les équipes/points déjà
+   * créés (jamais de copie, voir docstring de Plan côté backend) sous un nom, pour pouvoir tout
+   * ré-activer en un geste sur une prochaine crise via PlanViewSet.activer. Les équipes gardent
+   * leur zone/compétences propres, le matériel reste attaché aux points eux-mêmes : rien à
+   * dupliquer, il suffit de les regrouper ici. */
+  enregistrerCommeDispositif(): void {
+    const points = this.etapesAvecPoint;
+    if (points.length === 0) {
+      return;
+    }
+    const nomParDefaut = `Dispositif${this.crise?.name ? ' — ' + this.crise.name : ''}`;
+    const nom = prompt('Nom du dispositif à sauvegarder pour la prochaine fois :', nomParDefaut);
+    if (!nom || !nom.trim()) {
+      return;
+    }
+
+    const pointsIds = points.map(e => e.point!.id);
+    const equipesIds = [...new Set(points.map(e => e.equipeId).filter((id): id is string => !!id))];
+
+    this.savingPlan = true;
+    this.planErrorMessage = '';
+    this.planService.create({ nom: nom.trim(), points_ids: pointsIds, equipes_ids: equipesIds }).subscribe({
+      next: () => {
+        this.savingPlan = false;
+        this.planSaved = true;
+      },
+      error: () => {
+        this.savingPlan = false;
+        this.planErrorMessage = "Impossible d'enregistrer ce dispositif. Réessayez depuis la page Plans.";
+      },
+    });
   }
 }
