@@ -205,6 +205,20 @@ class TestAssignerRessource:
         assert response.status_code == status.HTTP_200_OK
         assert team_a.members.filter(email__iexact='traducteur-benevole@test.fr').exists()
 
+    def test_marks_offer_unavailable_once_retained(self, mairie_client, team_a, offer):
+        """Une ressource retenue par une équipe ne doit plus apparaître disponible dans le
+        tableau des offres/bénévoles (recherche de moyens disponibles) — sinon deux équipes
+        pouvaient la retenir en même temps."""
+        assert offer.status == 'DISPONIBLE'
+        client, _ = mairie_client
+        client.post(reverse('team-definir-mission', args=[team_a.id]), {'titre': 'Mission'}, format='json')
+
+        response = client.post(reverse('team-assigner-ressource', args=[team_a.id]), {'offer_id': str(offer.id)}, format='json')
+
+        assert response.status_code == status.HTTP_200_OK
+        offer.refresh_from_db()
+        assert offer.status == 'INDISPONIBLE'
+
     def test_does_not_add_member_for_anonymous_material_only_offer(self, mairie_client, team_a, offer_type):
         """Matériel seul (presence_physique=False, ex: dépôt sans l'offreur) : toujours
         aucun membre ajouté, anonyme ou non — seule l'affectation de la ressource compte."""
@@ -238,6 +252,20 @@ class TestRetirerRessource:
         assert offer.mission_id is None
         assert not team_a.assigned_offers.filter(id=offer.id).exists()
 
+    def test_marks_offer_available_again_when_removed(self, mairie_client, team_a, offer):
+        """Symétrique de test_marks_offer_unavailable_once_retained : la retirer la rend de
+        nouveau disponible pour une autre équipe."""
+        client, _ = mairie_client
+        client.post(reverse('team-definir-mission', args=[team_a.id]), {'titre': 'Mission'}, format='json')
+        client.post(reverse('team-assigner-ressource', args=[team_a.id]), {'offer_id': str(offer.id)}, format='json')
+        offer.refresh_from_db()
+        assert offer.status == 'INDISPONIBLE'
+
+        client.post(reverse('team-retirer-ressource', args=[team_a.id]), {'offer_id': str(offer.id)}, format='json')
+
+        offer.refresh_from_db()
+        assert offer.status == 'DISPONIBLE'
+
     def test_does_not_clear_mission_link_of_a_different_team(self, mairie_client, team_a, offer, institution_a):
         client, _ = mairie_client
         other_team = Team.objects.create(name='Autre équipe', institution=institution_a)
@@ -252,3 +280,68 @@ class TestRetirerRessource:
         assert response.status_code == status.HTTP_200_OK
         offer.refresh_from_db()
         assert offer.mission_id == team_a.mission_active_id
+
+
+@pytest.mark.django_db
+class TestRessourcesMobilisees:
+    """Récapitulatif personnes/matériel mobilisés — voir TeamViewSet.ressources_mobilisees,
+    consommé par la page admin /admin/ressources-mobilisees."""
+
+    def test_lists_members_and_material_offers_with_context(self, mairie_client, team_a, offer_type, institution_a):
+        from core.models import AffectationRoleOperationnel, PointOperationnel, PointType, RoleOperationnel
+
+        client, user = mairie_client
+        team_a.members.add(user)
+        role, _ = RoleOperationnel.objects.get_or_create(code='RESSOURCES_TEST_ROLE', defaults={'libelle': 'Régulateur'})
+        AffectationRoleOperationnel.objects.create(utilisateur=user, institution=institution_a, role=role, actif=True)
+        point_type, _ = PointType.objects.get_or_create(code='RESSOURCES_TEST_PT', defaults={'libelle': 'Point test'})
+        PointOperationnel.objects.create(nom='Centre Ressources Test', type=point_type, equipe=team_a)
+
+        # materiel_type explicitement posé (contrairement au fixture `offer` générique, qui n'a
+        # aucune info matériel structurée) : c'est ce qui distingue une ligne "matériel" d'une
+        # simple offre de bénévolat pur côté ressources_mobilisees (voir est_materiel).
+        offer = Offer.objects.create(
+            title='Cuve à prêter avec matériel', first_name_offer='O', last_name_offer='Ffreur',
+            email_offer='offreur-materiel-test@test.fr', status='DISPONIBLE', offer_type=offer_type,
+            materiel_type='CUVE',
+        )
+
+        client.post(reverse('team-definir-mission', args=[team_a.id]), {'titre': 'Mission'}, format='json')
+        client.post(reverse('team-assigner-ressource', args=[team_a.id]), {'offer_id': str(offer.id)}, format='json')
+
+        response = client.get(reverse('team-ressources-mobilisees'))
+
+        assert response.status_code == status.HTTP_200_OK
+        personne_rows = [r for r in response.data if r['type'] == 'personne' and r['equipe_id'] == str(team_a.id)]
+        materiel_rows = [r for r in response.data if r['type'] == 'materiel' and r['equipe_id'] == str(team_a.id)]
+        assert any(r['nom'] == user.email or 'Régulateur' in (r['detail'] or '') for r in personne_rows)
+        assert any(r['nom'] == offer.title and r['centres'] == ['Centre Ressources Test'] for r in materiel_rows)
+        assert all(r['institution'] == institution_a.nom for r in personne_rows + materiel_rows)
+
+    def test_pure_benevolat_offer_not_duplicated_as_material(self, mairie_client, team_a, offer_type):
+        """Une offre de bénévolat pur (aucun matériel) ne doit pas apparaître une seconde fois
+        comme ligne "matériel" — la personne qui la porte est déjà comptée côté membre."""
+        client, _ = mairie_client
+        benevole = Offer.objects.create(
+            title='Bénévolat pur test', first_name_offer='A', last_name_offer='B',
+            email_offer='benevole-pur@test.fr', status='DISPONIBLE', offer_type=offer_type,
+        )
+        client.post(reverse('team-definir-mission', args=[team_a.id]), {'titre': 'Mission'}, format='json')
+        client.post(reverse('team-assigner-ressource', args=[team_a.id]), {'offer_id': str(benevole.id)}, format='json')
+
+        response = client.get(reverse('team-ressources-mobilisees'))
+
+        assert response.status_code == status.HTTP_200_OK
+        materiel_rows = [r for r in response.data if r['type'] == 'materiel' and r['equipe_id'] == str(team_a.id)]
+        assert materiel_rows == []
+
+    def test_requires_institutional_actor(self, api_client):
+        response = api_client.get(reverse('team-ressources-mobilisees'))
+        assert response.status_code in (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN)
+
+    def test_authenticated_non_institutional_user_is_forbidden(self, create_user):
+        user = create_user(username='simple-ress@test.fr', email='simple-ress@test.fr', type='UTIL_SIMPLE')
+        client = APIClient()
+        client.force_authenticate(user=user)
+        response = client.get(reverse('team-ressources-mobilisees'))
+        assert response.status_code == status.HTTP_403_FORBIDDEN

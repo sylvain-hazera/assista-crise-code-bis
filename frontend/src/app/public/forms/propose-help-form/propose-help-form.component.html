@@ -437,6 +437,25 @@
                     </div>
                 }
 
+                <!-- Matériel apporté ET exploité par l'offreur lui-même : dimensionne l'accueil
+                     de l'équipe mobilisée (une personne seule ou accompagnée n'a pas les mêmes
+                     besoins) -->
+                @if (rg.get('type')?.value === TYPE_MATERIEL && rg.get('presencePhysique')?.value === true) {
+                    <div class="form-group">
+                        <label class="form-label">Venez-vous seul(e) ou accompagné(e) ?</label>
+                        <label class="radio-label">
+                            <input type="radio" formControlName="accompagne" [value]="false"> Seul(e)
+                        </label>
+                        <label class="radio-label">
+                            <input type="radio" formControlName="accompagne" [value]="true"> Accompagné(e)
+                        </label>
+                        @if (rg.get('accompagne')?.value === true) {
+                            <input type="number" min="1" class="form-input" placeholder="Combien de personnes vous accompagnent ?"
+                                   formControlName="nombreAccompagnants">
+                        }
+                    </div>
+                }
+
 
                 <!-- Véhicule/engin (transport ou matériel roulant/motorisé), conduit par
                      l'offreur ou prêté seul : rappel des obligations légales -->

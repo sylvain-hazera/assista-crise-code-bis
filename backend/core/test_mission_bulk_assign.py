@@ -94,6 +94,10 @@ class TestBulkCreateTeamOffers:
         assert response.data['member_ids'] == [author.id]
         assert set(response.data['assigned_offer_ids']) == {offer1.id, offer2.id}
         assert response.data['regulateur'] == regulateur.id
+        offer1.refresh_from_db()
+        offer2.refresh_from_db()
+        assert offer1.status == 'INDISPONIBLE'
+        assert offer2.status == 'INDISPONIBLE'
 
     def test_bulk_create_team_notifies_each_offer_author(self, authenticated_client, offer_type):
         client, _ = _make_admin(authenticated_client)

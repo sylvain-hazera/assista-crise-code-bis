@@ -3739,6 +3739,7 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             'lier_point', 'delier_point',
             'rattacher_equipe', 'detacher_equipe',
             'definir_statut_ressource', 'reactiver', 'vue_mairie', 'institutions_liees',
+            'ressources_mobilisees',
         ):
             return [IsInstitutionalActor()]
         return [permissions.IsAuthenticated()]
@@ -3985,6 +3986,67 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             institutions.append(team.institution_delegataire)
         return Response([{"id": str(i.id), "nom": i.nom} for i in institutions])
 
+    @action(detail=False, methods=['get'], url_path='ressources-mobilisees', permission_classes=[IsInstitutionalActor])
+    def ressources_mobilisees(self, request):
+        """Récapitulatif des ressources mobilisées (personnes ET matériel), avec où (zone via
+        l'institution, centres rattachés) et avec quoi (compétences pour une personne, matériel
+        précis pour une offre) — pour la page de récap /admin/ressources-mobilisees. Une
+        personne apparaît une fois par équipe où elle est membre ; une offre de matériel (avec
+        ou sans l'offreur présent) apparaît une fois par équipe qui l'a retenue — une offre de
+        bénévolat pur (aucun matériel) n'apparaît PAS une seconde fois ici, la personne qui la
+        porte est déjà comptée côté "personne". Équipes actives uniquement (une équipe
+        désactivée n'est plus vraiment mobilisée)."""
+        teams = (
+            self.filter_queryset(self.get_queryset())
+            .filter(actif=True)
+            .prefetch_related(
+                'members__affectations_roles__competence', 'members__affectations_roles__role',
+                'assigned_offers__materiel_catalogue', 'assigned_crises', 'points_operationnels',
+            )
+        )
+
+        rows = []
+        for team in teams:
+            centres = [p.nom for p in team.points_operationnels.all()]
+            crises = [c.name for c in team.assigned_crises.all()]
+            institution_nom = team.institution.nom if team.institution_id else None
+
+            for membre in team.members.all():
+                competences = [
+                    f"{r.role.libelle} ({r.competence.nom})" if r.competence_id else r.role.libelle
+                    for r in membre.affectations_roles.filter(actif=True)
+                ]
+                rows.append({
+                    "type": "personne",
+                    "nom": f"{membre.first_name} {membre.last_name}".strip() or membre.email,
+                    "equipe_id": str(team.id),
+                    "equipe_nom": team.name,
+                    "institution": institution_nom,
+                    "crises": crises,
+                    "centres": centres,
+                    "detail": ", ".join(competences) if competences else None,
+                    "statut": None,
+                })
+
+            for offre in team.assigned_offers.all():
+                est_materiel = offre.materiel_type is not None or offre.materiel_catalogue_id is not None
+                if not est_materiel:
+                    continue
+                detail = offre.materiel_catalogue.nom if offre.materiel_catalogue_id else offre.get_materiel_type_display()
+                rows.append({
+                    "type": "materiel",
+                    "nom": offre.title,
+                    "equipe_id": str(team.id),
+                    "equipe_nom": team.name,
+                    "institution": institution_nom,
+                    "crises": crises,
+                    "centres": centres,
+                    "detail": detail,
+                    "statut": offre.get_status_display(),
+                })
+
+        return Response(rows)
+
     @action(detail=True, methods=['post'], url_path='inviter-membre')
     def inviter_membre(self, request, pk=None):
         """Invite un nouveau membre dans l'institution de l'équipe (nom/prénom/email/tél/rôle),
@@ -4215,8 +4277,13 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         except (Offer.DoesNotExist, ValueError, TypeError):
             return Response({"error": "Offre introuvable."}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Une ressource retenue (matériel avec ou sans l'offreur, ou bénévolat) ne doit plus
+        # apparaître comme disponible dans le tableau des offres/bénévoles pendant qu'un
+        # régulateur cherche des moyens — sinon deux équipes pouvaient la retenir en même
+        # temps. Symétrique avec retirer_ressource ci-dessous, qui la repasse disponible.
         offer.mission = team.mission_active
-        offer.save(update_fields=['mission'])
+        offer.status = Status.UNAVAILABLE
+        offer.save(update_fields=['mission', 'status'])
         team.assigned_offers.add(offer)
         # N'ajoute comme membre que si la présence physique n'est pas explicitement exclue
         # (ex: un simple prêteur de chambre) — None (offres antérieures à ce champ) garde
@@ -4273,7 +4340,12 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         team.assigned_offers.remove(offer)
         if team.mission_active_id and offer.mission_id == team.mission_active_id:
             offer.mission = None
-            offer.save(update_fields=['mission'])
+            # Redevient disponible pour une autre équipe — symétrique du passage à INDISPONIBLE
+            # dans assigner_ressource. Ne touche pas le statut si l'offre avait déjà été
+            # basculée ailleurs entre-temps (mission_id ne correspond alors plus à cette équipe,
+            # la condition ci-dessus ne serait pas entrée).
+            offer.status = Status.AVAILABLE
+            offer.save(update_fields=['mission', 'status'])
         EngagementRessource.objects.filter(offer=offer, team=team).delete()
 
         audit_log(
@@ -4938,6 +5010,9 @@ class OfferViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             environment=get_active_environment(request),
         )
         team.assigned_offers.set(offres)
+        # Retenues dans cette équipe : ne doivent plus apparaître disponibles ailleurs — même
+        # règle que assigner_ressource.
+        Offer.objects.filter(pk__in=[o.pk for o in offres]).update(status=Status.UNAVAILABLE)
         # Même garde que assigner_ressource : n'ajoute pas comme membre un offreur dont la
         # présence physique est explicitement exclue, et résout via resolve_or_invite_benevole
         # (pas juste offer.author_id, toujours None pour une offre anonyme du formulaire

@@ -825,6 +825,14 @@ class Offer(HebergementDetailsMixin, EnvironmentScopedModel):
     # par propose-help-form pour les nouvelles.
     presence_physique = models.BooleanField(null=True, blank=True)
 
+    # Uniquement pertinent pour du matériel apporté ET exploité par l'offreur lui-même (type
+    # Matériel, presence_physique=True) : combien de personnes viennent avec lui pour l'aider à
+    # l'exploiter — utile pour dimensionner l'accueil/hébergement de l'équipe mobilisée, pas
+    # juste du matériel seul. accompagne=None si la question ne s'est jamais posée (offre
+    # antérieure à ce champ, ou type/presence_physique ne la justifiant pas).
+    accompagne = models.BooleanField(null=True, blank=True)
+    nombre_accompagnants = models.PositiveIntegerField(null=True, blank=True)
+
     # Déclarées par le bénévole à la soumission de l'offre (propose-help-form) — permet de
     # filtrer les candidats lors du recrutement sur un point opérationnel (PointOperationnel.
     # competences_requises est le pendant côté besoin, celui-ci est côté offre).

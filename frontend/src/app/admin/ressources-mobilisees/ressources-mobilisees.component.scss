@@ -1,0 +1,118 @@
+.page-header {
+  margin-bottom: 1rem;
+
+  h2 { margin: 0 0 .3rem; }
+
+  .page-hint { color: #6b7280; font-size: .9rem; margin: 0; }
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: .75rem;
+  margin-bottom: 1rem;
+}
+
+.counts {
+  display: flex;
+  gap: .5rem;
+}
+
+.count-badge {
+  background: #f3f4f6;
+  color: #374151;
+  border-radius: 999px;
+  padding: .3rem .8rem;
+  font-size: .82rem;
+  font-weight: 600;
+}
+
+.filters {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  flex-wrap: wrap;
+
+  select, input {
+    padding: .4rem .6rem;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    font-size: .85rem;
+  }
+
+  input { min-width: 240px; }
+
+  button {
+    display: inline-flex;
+    align-items: center;
+    gap: .3rem;
+    padding: .4rem .8rem;
+    border-radius: 6px;
+    border: 1px solid #e5e7eb;
+    background: #f9fafb;
+    cursor: pointer;
+    font-size: .85rem;
+    color: #374151;
+
+    .material-icons { font-size: 18px; }
+
+    &.btn-primary {
+      background: #2563eb;
+      color: #fff;
+      border-color: #2563eb;
+    }
+  }
+}
+
+.table-wrapper {
+  overflow-x: auto;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .85rem;
+
+  th, td {
+    text-align: left;
+    padding: .55rem .7rem;
+    border-bottom: 1px solid #f0f0f0;
+    white-space: nowrap;
+  }
+
+  th {
+    color: #6b7280;
+    font-weight: 600;
+    font-size: .75rem;
+    text-transform: uppercase;
+    cursor: pointer;
+    user-select: none;
+
+    .sort-icon { font-size: 14px; vertical-align: middle; color: #9ca3af; }
+
+    &:hover { color: #374151; }
+  }
+
+  .empty { color: #9ca3af; text-align: center; white-space: normal; }
+}
+
+.type-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  padding: .2rem .6rem;
+  border-radius: 999px;
+  font-size: .78rem;
+  font-weight: 600;
+
+  .material-icons { font-size: 15px; }
+
+  &.type-personne { background: #eff6ff; color: #1d4ed8; }
+  &.type-materiel { background: #f0fdf4; color: #15803d; }
+}
+
+.error-message {
+  color: #dc3545;
+}

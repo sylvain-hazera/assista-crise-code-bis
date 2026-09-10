@@ -67,6 +67,8 @@ export class AdminLayoutComponent implements OnInit {
 
     { icon: 'inventory_2', label: 'Matériel', route: '/admin/materiel' },
 
+    { icon: 'groups', label: 'Ressources mobilisées', route: '/admin/ressources-mobilisees' },
+
     { icon: 'link', label: 'Correspondances', route: '/admin/correspondances' },
 
     { icon: 'assignment', label: 'Affectations', route: '/admin/affectations' },

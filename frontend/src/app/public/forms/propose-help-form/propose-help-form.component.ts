@@ -684,6 +684,10 @@ export class ProposeHelpFormComponent implements OnInit {
       if (v.type === TYPE_MATERIEL && v.quantite) formData.append('quantite', v.quantite);
       if (v.type === TYPE_MATERIEL && v.unite) formData.append('unite', v.unite);
       if (v.type === TYPE_MATERIEL && v.materielLivraison) formData.append('materiel_livraison', v.materielLivraison);
+      if (v.type === TYPE_MATERIEL && v.presencePhysique === true && v.accompagne !== null) {
+        formData.append('accompagne', String(!!v.accompagne));
+        if (v.accompagne && v.nombreAccompagnants) formData.append('nombre_accompagnants', String(v.nombreAccompagnants));
+      }
       if (v.type === TYPE_SOUTIEN && v.soutienType) formData.append('soutien_type', v.soutienType);
       // Qualifications déclarées une seule fois pour la personne (voir "Vos qualifications" à
       // l'étape 2) — reportées sur chaque offre où elle est physiquement présente.
@@ -898,6 +902,8 @@ export class ProposeHelpFormComponent implements OnInit {
       immatriculation: [''],
       renouvelable: [false],
       presencePhysique: [null as boolean | null, presencePhysiqueValidator],
+      accompagne: [null as boolean | null],
+      nombreAccompagnants: [null as number | null],
     });
     // Le type conditionne l'exigibilité de confirmationReglementaire (voir le validateur) :
     // sans cet abonnement, choisir Transport/Matériel APRÈS coup ne rendrait jamais la case

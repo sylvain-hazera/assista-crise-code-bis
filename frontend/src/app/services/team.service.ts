@@ -5,6 +5,7 @@ import { environment } from '../../environments/environment';
 import { Team } from '../shared/models/team.model';  // ← import unique
 import { Dossier } from '../shared/models/dossier.model';
 import { PointOperationnel } from '../shared/models/point-operationnel.model';
+import { RessourceMobilisee } from '../shared/models/ressource-mobilisee.model';
 
 @Injectable({ providedIn: 'root' })
 export class TeamService {
@@ -27,6 +28,9 @@ export class TeamService {
   reactiver(id: string):                   Observable<Team>    { return this.http.post<Team>(`${this.url}/${id}/reactiver/`, {}); }
   /** GET /api/teams/vue_mairie/ — équipes de l'institution de l'utilisateur appelant. */
   vueMairie():                              Observable<Team[]>  { return this.http.get<Team[]>(`${this.url}/vue_mairie/`); }
+  /** GET /api/teams/ressources-mobilisees/ — récap personnes/matériel mobilisés, voir
+   * RessourcesMobiliseesComponent. */
+  ressourcesMobilisees():                   Observable<RessourceMobilisee[]> { return this.http.get<RessourceMobilisee[]>(`${this.url}/ressources-mobilisees/`); }
 
   inviterMembre(id: string, data: {
     first_name: string; last_name: string; email: string; phone_number: string; role_code: string;

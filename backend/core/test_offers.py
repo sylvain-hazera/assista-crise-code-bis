@@ -457,6 +457,37 @@ class TestOfferPresencePhysique:
 
 
 @pytest.mark.django_db
+class TestOfferAccompagne:
+    """Matériel apporté ET exploité par l'offreur lui-même (presence_physique=True) : combien
+    de personnes viennent avec lui — voir propose-help-form, section affichée uniquement pour
+    ce cas précis."""
+
+    def test_accepts_accompagne_with_count(self, api_client, offer_type):
+        payload = {
+            **OFFER_PAYLOAD, "email_offer": "accompagne@test.fr", "offer_type": str(offer_type.id),
+            "presence_physique": True, "accompagne": True, "nombre_accompagnants": 3,
+        }
+        response = api_client.post(reverse('offer-list'), payload, format='json')
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data['accompagne'] is True
+        assert response.data['nombre_accompagnants'] == 3
+
+    def test_accepts_seul(self, api_client, offer_type):
+        payload = {
+            **OFFER_PAYLOAD, "email_offer": "seul@test.fr", "offer_type": str(offer_type.id),
+            "presence_physique": True, "accompagne": False,
+        }
+        response = api_client.post(reverse('offer-list'), payload, format='json')
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data['accompagne'] is False
+        assert response.data['nombre_accompagnants'] is None
+
+    def test_defaults_to_null_when_omitted(self, offer):
+        assert offer.accompagne is None
+        assert offer.nombre_accompagnants is None
+
+
+@pytest.mark.django_db
 class TestOfferHebergementDetails:
     """Critères détaillés du logement proposé (voir HebergementDetailsMixin, partagé avec
     Request) — tous optionnels, une seule offre couvre déjà hebergement_duree (existant)."""

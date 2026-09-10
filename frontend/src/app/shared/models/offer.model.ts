@@ -68,6 +68,8 @@ export interface Offer {
   unite?: string | null;
   renouvelable?: boolean;
   presence_physique?: boolean | null; // l'offreur est-il physiquement présent avec ce qu'il propose ? null = offre antérieure à ce champ, inconnu
+  accompagne?: boolean | null; // matériel apporté ET exploité par l'offreur : vient-il accompagné ?
+  nombre_accompagnants?: number | null;
   competences?: string[];
   competences_libelles?: string[];
   commune?: string | null;
