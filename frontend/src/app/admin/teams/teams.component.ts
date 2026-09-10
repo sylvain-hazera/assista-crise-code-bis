@@ -692,6 +692,72 @@ export class TeamsComponent implements OnInit {
     e?.stopPropagation();
     this.selectedTeam = team;
     this.modal        = 'assign';
+    // Sélection locale (voir toggleStagedRequest) : part de l'état réellement assigné, jamais
+    // vide au premier affichage.
+    this.stagedRequestIds = new Set(team.missions.filter(m => m.kind === 'Request').map(m => m.id));
+  }
+
+  // Sélection en attente de validation pour la liste "Ajouter des demandes" (modal assign) :
+  // cocher/décocher une ligne ne fait plus d'appel réseau immédiat (donc plus de création de
+  // dossier ni d'email envoyé à chaque clic, juste en parcourant la liste) — seul le bouton
+  // "Valider la sélection" applique réellement le changement, en un seul appel groupé.
+  stagedRequestIds = new Set<string>();
+  savingSelection = false;
+
+  toggleStagedRequest(id: string): void {
+    if (this.stagedRequestIds.has(id)) this.stagedRequestIds.delete(id);
+    else this.stagedRequestIds.add(id);
+  }
+
+  isRequestStaged(id: string): boolean {
+    return this.stagedRequestIds.has(id);
+  }
+
+  get stagedSelectionChanged(): boolean {
+    if (!this.selectedTeam) return false;
+    const current = new Set(this.selectedTeam.missions.filter(m => m.kind === 'Request').map(m => m.id));
+    if (current.size !== this.stagedRequestIds.size) return true;
+    for (const id of current) if (!this.stagedRequestIds.has(id)) return true;
+    return false;
+  }
+
+  /** Applique en un seul appel la sélection en attente — c'est ICI, et seulement ici, que se
+   * joue la vraie affectation (création de dossier, notification des régulateurs, email au
+   * demandeur, voir _assign_request_to_team côté backend). Crises/offres ne passent pas par
+   * cette liste (retrait immédiat depuis la section "Missions" du détail, voir toggleMission) :
+   * on renvoie leurs ids inchangés pour ne pas les affecter par erreur. */
+  validerSelectionDemandes(): void {
+    if (!this.selectedTeam || this.savingSelection) return;
+    const team = this.selectedTeam;
+    const crisisIds = team.missions.filter(m => m.kind === 'Crisis').map(m => m.id);
+    const offerIds  = team.missions.filter(m => m.kind === 'Offer').map(m => m.id);
+    const requestIds = Array.from(this.stagedRequestIds);
+
+    this.savingSelection = true;
+    this.teamService.patch(team.id!, {
+      assigned_crisis_ids:  crisisIds,
+      assigned_offer_ids:   offerIds,
+      assigned_request_ids: requestIds,
+    }).subscribe({
+      next: (updated) => {
+        const missions = [
+          ...team.missions.filter(m => m.kind !== 'Request'),
+          ...requestIds.map(id => {
+            const r = this.requests.find(r => r.id === id);
+            return { id, kind: 'Request' as const, titre: r?.title ?? '', statut: r?.status, date: r?.created_at };
+          }),
+        ];
+        this.selectedTeam = { ...updated, missions };
+        this.savingSelection = false;
+        this.reloadTeams();
+        this.showSuccess(
+          requestIds.length > 0
+            ? `${requestIds.length} demande${requestIds.length > 1 ? 's' : ''} affectée${requestIds.length > 1 ? 's' : ''} à l'équipe.`
+            : 'Sélection mise à jour : aucune demande affectée.'
+        );
+      },
+      error: () => { this.savingSelection = false; },
+    });
   }
 
   toggleMission(id: string, kind: TeamMission['kind'], titre: string, statut?: string, date?: string): void {

@@ -1042,8 +1042,8 @@
         <div class="assign-list">
 
           @for (d of filteredRequests; track d.id) {
-            <div class="assign-item" [class.selected]="isMissionAssigned(d.id, 'Request')"
-                 (click)="toggleMission(d.id, 'Request', d.title, d.status, d.created_at)">
+            <div class="assign-item" [class.selected]="isRequestStaged(d.id)"
+                 (click)="toggleStagedRequest(d.id)">
               <span class="mk-badge mk-request">
                 <span class="material-icons">emergency</span>
               </span>
@@ -1057,7 +1057,7 @@
                 <span class="material-icons">{{ expandedRequestId === d.id ? 'expand_less' : 'expand_more' }}</span>
               </button>
               <span class="material-icons assign-check">
-                {{ isMissionAssigned(d.id, 'Request') ? 'check_box' : 'check_box_outline_blank' }}
+                {{ isRequestStaged(d.id) ? 'check_box' : 'check_box_outline_blank' }}
               </span>
             </div>
             @if (expandedRequestId === d.id) {
@@ -1086,14 +1086,18 @@
 
       <div class="modal-footer">
         <span class="assign-count">
-          {{ selectedTeam.missions.length }}
-          mission{{ selectedTeam.missions.length > 1 ? 's' : '' }}
-          assignée{{ selectedTeam.missions.length > 1 ? 's' : '' }}
+          {{ stagedRequestIds.size }}
+          demande{{ stagedRequestIds.size > 1 ? 's' : '' }}
+          sélectionnée{{ stagedRequestIds.size > 1 ? 's' : '' }}
         </span>
         <button class="btn-ghost" (click)="modal = 'detail'">
           <span class="material-icons">arrow_back</span> Retour
         </button>
-        <button class="btn-primary" (click)="closeModal()">Fermer</button>
+        <button class="btn-primary" [disabled]="!stagedSelectionChanged || savingSelection" (click)="validerSelectionDemandes()">
+          <span class="material-icons">check</span>
+          {{ savingSelection ? 'Validation…' : 'Valider la sélection' }}
+        </button>
+        <button class="btn-secondary" (click)="closeModal()">Fermer</button>
       </div>
     </div>
   </div>
