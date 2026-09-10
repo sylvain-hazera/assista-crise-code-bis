@@ -242,23 +242,53 @@
                 <!-- Matériel : sous-type -->
                 @if (rg.get('type')?.value === TYPE_MATERIEL) {
                     <div class="form-group">
-                        <label for="materielType" class="form-label">Type de matériel</label>
-                        <div class="select-wrapper">
-                            <select id="materielType" class="form-select"
-                              [value]="rg.get('materielCatalogue')?.value ? (CATALOGUE_PREFIX + rg.get('materielCatalogue')?.value) : rg.get('materielType')?.value"
-                              (change)="onMaterielTypeDropdownChange(row, $any($event.target).value)">
-                                <option value="" disabled>— Choisir —</option>
-                                @for(option of materielTypeOptions; track option.value) {
-                                    @if (option.value && option.value !== 'AUTRE') {
-                                        <option [value]="option.value">{{ option.label }}</option>
+                        <label class="form-label">Type de matériel</label>
+                        <div class="theme-dropdown">
+                            <button type="button" class="theme-dropdown-toggle" (click)="toggleMaterielDropdown(row)">
+                                <span class="material-icons">{{ isMaterielDropdownOpen(row) ? 'expand_less' : 'expand_more' }}</span>
+                                {{ materielDisplayLabel(row) }}
+                            </button>
+                            @if (isMaterielDropdownOpen(row)) {
+                                <div class="theme-dropdown-panel">
+                                    @for (option of materielTypeOptions; track option.value) {
+                                        @if (option.value && option.value !== 'AUTRE') {
+                                            <div class="theme-check-item materiel-choice"
+                                                 [class.selected]="!rg.get('materielCatalogue')?.value && rg.get('materielType')?.value === option.value"
+                                                 (click)="selectMaterielType(row, option.value)">
+                                                {{ option.label }}
+                                            </div>
+                                        }
                                     }
-                                }
-                                @for (m of allMateriels; track m.id) {
-                                    <option [value]="CATALOGUE_PREFIX + m.id">{{ m.nom }}</option>
-                                }
-                                <option value="AUTRE">Autre (matériel non listé)</option>
-                            </select>
-                            <span class="material-icons select-arrow">arrow_drop_down</span>
+                                    @for (group of materielGroups; track group.parent.id) {
+                                        <div class="theme-check-item theme-parent-item">
+                                            @if (group.children.length > 0) {
+                                                <button type="button" class="theme-group-expand-btn" (click)="toggleMaterielGroupExpand(row, group.parent.id)"
+                                                        [attr.aria-label]="isMaterielGroupExpanded(row, group.parent.id) ? 'Replier' : 'Déplier'">
+                                                    <span class="material-icons">{{ isMaterielGroupExpanded(row, group.parent.id) ? 'expand_more' : 'chevron_right' }}</span>
+                                                </button>
+                                            }
+                                            <div class="materiel-choice" [class.selected]="rg.get('materielCatalogue')?.value === group.parent.id"
+                                                 (click)="selectMaterielCatalogueItemFromTree(row, group.parent)">
+                                                {{ group.parent.nom }}
+                                            </div>
+                                        </div>
+                                        @if (group.children.length > 0 && isMaterielGroupExpanded(row, group.parent.id)) {
+                                            @for (child of group.children; track child.id) {
+                                                <div class="theme-check-item theme-child-item materiel-choice"
+                                                     [class.selected]="rg.get('materielCatalogue')?.value === child.id"
+                                                     (click)="selectMaterielCatalogueItemFromTree(row, child)">
+                                                    {{ child.nom }}
+                                                </div>
+                                            }
+                                        }
+                                    }
+                                    <div class="theme-check-item materiel-choice"
+                                         [class.selected]="!rg.get('materielCatalogue')?.value && rg.get('materielType')?.value === 'AUTRE'"
+                                         (click)="selectMaterielType(row, 'AUTRE')">
+                                        Autre (matériel non listé)
+                                    </div>
+                                </div>
+                            }
                         </div>
                     </div>
 
@@ -691,16 +721,51 @@
                   Indiquez les compétences que vous pouvez apporter (secourisme, logistique...) —
                   utile pour être recruté sur les besoins qui vous correspondent.
                   </p>
-                  <select class="form-select"
-                    [(ngModel)]="competenceDropdownValue"
-                    [ngModelOptions]="{standalone: true}"
-                    (ngModelChange)="onCompetenceDropdownChange()">
-                    <option value="" disabled selected>— Choisir une compétence —</option>
-                    @for (c of allCompetences; track c.id) {
-                      <option [value]="c.id">{{ c.nom }}</option>
-                    }
-                    <option value="AUTRE">Autre (préciser)</option>
-                  </select>
+                  <div class="theme-dropdown">
+                      <button type="button" class="theme-dropdown-toggle" (click)="competencesDropdownOpen = !competencesDropdownOpen">
+                          <span class="material-icons">{{ competencesDropdownOpen ? 'expand_less' : 'expand_more' }}</span>
+                          {{ selectedCompetences.length > 0 ? (selectedCompetences.length + ' compétence(s) sélectionnée(s)') : 'Choisir des compétences' }}
+                      </button>
+                      @if (competencesDropdownOpen) {
+                          <div class="theme-dropdown-panel">
+                              @for (group of competenceGroups; track group.parent.id) {
+                                  <div class="theme-check-item theme-parent-item">
+                                      @if (group.children.length > 0) {
+                                          <button type="button" class="theme-group-expand-btn" (click)="toggleCompetenceGroupExpand(group.parent.id)"
+                                                  [attr.aria-label]="isCompetenceGroupExpanded(group.parent.id) ? 'Replier' : 'Déplier'">
+                                              <span class="material-icons">{{ isCompetenceGroupExpanded(group.parent.id) ? 'expand_more' : 'chevron_right' }}</span>
+                                          </button>
+                                      }
+                                      <label class="checkbox-label">
+                                          <input type="checkbox" class="form-checkbox"
+                                                 [checked]="competenceGroupState(group) === 'all'"
+                                                 [indeterminate]="competenceGroupState(group) === 'some'"
+                                                 (change)="toggleCompetenceGroupChecked(group)">
+                                          <span class="checkbox-text">{{ group.parent.nom }}</span>
+                                      </label>
+                                  </div>
+                                  @if (group.children.length > 0 && isCompetenceGroupExpanded(group.parent.id)) {
+                                      @for (child of group.children; track child.id) {
+                                          <label class="checkbox-label theme-check-item theme-child-item">
+                                              <input type="checkbox" class="form-checkbox"
+                                                     [checked]="isCompetenceChecked(child.id)"
+                                                     (change)="toggleCompetenceChecked(child)">
+                                              <span class="checkbox-text">{{ child.nom }}</span>
+                                          </label>
+                                      }
+                                  }
+                              }
+                              @if (allCompetences.length === 0) {
+                                  <p class="theme-empty">Aucune compétence définie.</p>
+                              }
+                              <div class="theme-check-item">
+                                  <button type="button" class="btn-link-invite" (click)="showCompetenceAutre = !showCompetenceAutre">
+                                      Autre (préciser)…
+                                  </button>
+                              </div>
+                          </div>
+                      }
+                  </div>
                   @if (showCompetenceAutre) {
                     <app-tag-search-input
                       placeholder="Chercher ou créer une compétence..."

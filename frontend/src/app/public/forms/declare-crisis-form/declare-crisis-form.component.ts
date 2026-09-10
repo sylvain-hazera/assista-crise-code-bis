@@ -80,6 +80,46 @@ export class DeclareCrisisFormComponent implements OnInit{
       : this.selectedThemes.filter(id => id !== besoinId);
   }
 
+  // ── Thèmes à l'écoute : menu déroulant pliable (même patron que "Thèmes d'intervention",
+  // voir teams.component.ts) — purement local ici (rien n'est envoyé avant la soumission du
+  // formulaire, contrairement à la fiche équipe qui PATCH à chaque coche).
+  besoinsDropdownOpen = false;
+  expandedBesoinGroups = new Set<string>();
+
+  get besoinGroups(): { parent: Besoin; children: Besoin[] }[] {
+    const topLevel = this.besoins.filter(b => !b.parent);
+    return topLevel.map(parent => ({
+      parent,
+      children: this.besoins.filter(b => b.parent === parent.id),
+    }));
+  }
+
+  toggleBesoinGroupExpand(parentId: string): void {
+    if (this.expandedBesoinGroups.has(parentId)) this.expandedBesoinGroups.delete(parentId);
+    else this.expandedBesoinGroups.add(parentId);
+  }
+
+  isBesoinGroupExpanded(parentId: string): boolean {
+    return this.expandedBesoinGroups.has(parentId);
+  }
+
+  besoinGroupState(group: { parent: Besoin; children: Besoin[] }): 'all' | 'some' | 'none' {
+    const ids = [group.parent.id, ...group.children.map(c => c.id)];
+    const selected = ids.filter(id => this.selectedThemes.includes(id)).length;
+    if (selected === 0) return 'none';
+    return selected === ids.length ? 'all' : 'some';
+  }
+
+  /** Coche/décoche le thème parent ET tous ses sous-thèmes (dégénère au comportement de
+   * toggleTheme pour un thème sans sous-catégorie). */
+  toggleBesoinGroup(group: { parent: Besoin; children: Besoin[] }): void {
+    const groupIds = [group.parent.id, ...group.children.map(c => c.id)];
+    const tout = groupIds.every(id => this.selectedThemes.includes(id));
+    this.selectedThemes = tout
+      ? this.selectedThemes.filter(id => !groupIds.includes(id))
+      : [...new Set([...this.selectedThemes, ...groupIds])];
+  }
+
   selectedAddress: AddressResult | null = null;
 
   // Recentre/zoome la minimap de dessin de zone sur l'adresse choisie — champs dédiés (pas un

@@ -38,6 +38,7 @@ const TYPE_MATERIEL = 'Matériel';
 const TYPE_SOUTIEN = 'Soutien psychologique';
 const TYPE_AUTRE = 'Autre';
 const TYPE_NOURRITURE = 'Nourriture et eau';
+const TYPE_BENEVOLAT = 'Bénévolat';
 
 // Valeur de materielType déclenchant la rubrique "Engins agricoles / chantiers / spéciaux"
 // (liste à cocher, voir engineLines) — un "pseudo-type" : cette ligne du formulaire ne devient
@@ -52,7 +53,12 @@ const ENGINS_AGRICOLES_VALUE = 'ENGINS_AGRICOLES';
 // jamais que l'offreur y réside ; à l'inverse, Soins/Soutien/Autre (bénévolat) SONT la
 // personne elle-même, la présence est toujours vraie.
 const TYPES_PRESENCE_FORCEE_FAUSSE = [TYPE_HEBERGEMENT];
-const TYPES_PRESENCE_FORCEE_VRAIE = [TYPE_SOINS, TYPE_SOUTIEN, TYPE_AUTRE];
+// TYPE_BENEVOLAT (offre de temps/compétences, sans matériel) n'était pas listé ici : une ligne
+// "Bénévolat" gardait presencePhysique à null (repli par défaut, voir addOffer()) sans jamais
+// le forcer à true — proposeAideEnPersonne restait donc toujours fausse pour ce type, cachant
+// à tort les sections "Vos compétences"/"Vos disponibilités", pourtant les plus pertinentes
+// pour un bénévole. Repéré en direct.
+const TYPES_PRESENCE_FORCEE_VRAIE = [TYPE_SOINS, TYPE_SOUTIEN, TYPE_AUTRE, TYPE_BENEVOLAT];
 const TYPES_PRESENCE_A_PRECISER = [TYPE_TRANSPORT, TYPE_MATERIEL, TYPE_NOURRITURE];
 
 /** La case de conformité (permis/CACES, assurance, CT, sobriété, plaque) n'est obligatoire que
@@ -296,6 +302,78 @@ export class ProposeHelpFormComponent implements OnInit {
     }
   }
 
+  // ── Type de matériel : menu catégorie/sous-catégorie pliable (choix unique, pas de case à
+  // cocher) — même principe que le menu des compétences ci-dessus, mais l'état ouvert/déplié
+  // est tenu PAR LIGNE (plusieurs offres possibles dans ce formulaire), indexé par l'instance
+  // du FormGroup de la ligne plutôt que par un identifiant stable (elle ne change jamais tant
+  // que la ligne existe).
+  private materielDropdownOpenRows = new Set<AbstractControl>();
+  private expandedMaterielGroupsByRow = new Map<AbstractControl, Set<string>>();
+
+  isMaterielDropdownOpen(row: AbstractControl): boolean {
+    return this.materielDropdownOpenRows.has(row);
+  }
+
+  toggleMaterielDropdown(row: AbstractControl): void {
+    if (this.materielDropdownOpenRows.has(row)) this.materielDropdownOpenRows.delete(row);
+    else this.materielDropdownOpenRows.add(row);
+  }
+
+  private materielExpandedSet(row: AbstractControl): Set<string> {
+    let set = this.expandedMaterielGroupsByRow.get(row);
+    if (!set) {
+      set = new Set<string>();
+      this.expandedMaterielGroupsByRow.set(row, set);
+    }
+    return set;
+  }
+
+  isMaterielGroupExpanded(row: AbstractControl, parentId: string): boolean {
+    return this.materielExpandedSet(row).has(parentId);
+  }
+
+  toggleMaterielGroupExpand(row: AbstractControl, parentId: string): void {
+    const set = this.materielExpandedSet(row);
+    if (set.has(parentId)) set.delete(parentId);
+    else set.add(parentId);
+  }
+
+  /** Catalogue organisé en catégorie/sous-catégorie (MaterielCatalogue.parent) — distinct de
+   * `categorie` (énumération fixe dédiée au stock des centres, jamais utilisée ici). Les
+   * entrées désactivées (actif=false, ex: un doublon d'un type structurel fixe comme "Pompe")
+   * n'apparaissent plus dans ce sélecteur public, contrairement à l'admin qui les garde
+   * visibles pour pouvoir les réactiver. */
+  get materielGroups(): { parent: MaterielCatalogue; children: MaterielCatalogue[] }[] {
+    const actifs = this.allMateriels.filter(m => m.actif !== false);
+    const topLevel = actifs.filter(m => !m.parent);
+    return topLevel.map(parent => ({
+      parent,
+      children: actifs.filter(m => m.parent === parent.id),
+    }));
+  }
+
+  materielDisplayLabel(row: AbstractControl): string {
+    const v = this.rowGroup(row).value;
+    if (v.materielCatalogue && v.materielCatalogueNom) return v.materielCatalogueNom;
+    const opt = this.materielTypeOptions.find(o => o.value === v.materielType);
+    return opt && opt.value ? opt.label : '— Choisir —';
+  }
+
+  selectMaterielType(row: AbstractControl, value: string): void {
+    this.onMaterielTypeDropdownChange(row, value);
+    this.materielDropdownOpenRows.delete(row);
+  }
+
+  selectMaterielCatalogueItemFromTree(row: AbstractControl, item: MaterielCatalogue): void {
+    // materielType doit valoir 'AUTRE' pour que ce choix soit soumis (voir onSubmit, qui
+    // n'envoie materiel_catalogue que si materielType === 'AUTRE') — jamais posé par
+    // onMaterielCatalogueSelected seul (appelée aussi depuis la recherche libre "Autre", où
+    // materielType vaut déjà 'AUTRE' à ce stade).
+    this.rowGroup(row).patchValue({ materielType: 'AUTRE' });
+    this.onMaterielCatalogueSelected(row, item);
+    this.materielDropdownOpenRows.delete(row);
+  }
+
   onCompetenceSelected(item: Competence): void {
     if (this.selectedCompetences.some(c => c.id === item.id)) return;
     this.selectedCompetences = [...this.selectedCompetences, item];
@@ -305,21 +383,62 @@ export class ProposeHelpFormComponent implements OnInit {
     this.selectedCompetences = this.selectedCompetences.filter(c => c.id !== id);
   }
 
-  // Liste déroulante des compétences déjà existantes (navigable sans avoir à taper), avec une
-  // option "Autre" qui révèle le champ de recherche/création libre ci-dessous — même patron
-  // que materielTypeOptions pour le matériel.
   allCompetences: Competence[] = [];
-  competenceDropdownValue = '';
+  // Un lien "Autre (préciser)" ouvre le champ de recherche/création libre en dessous de l'arbre
+  // — pour une compétence pas encore listée, jamais pour naviguer parmi celles qui existent
+  // déjà (voir competencesDropdownOpen/competenceGroups ci-dessous).
   showCompetenceAutre = false;
 
-  onCompetenceDropdownChange(): void {
-    if (this.competenceDropdownValue === 'AUTRE') {
-      this.showCompetenceAutre = true;
-    } else if (this.competenceDropdownValue) {
-      const comp = this.allCompetences.find(c => c.id === this.competenceDropdownValue);
-      if (comp) this.onCompetenceSelected(comp);
+  // ── Menu déroulant catégorie/sous-catégorie pliable (même principe que "Thèmes
+  // d'intervention" côté équipe et "Thèmes à l'écoute" côté déclaration de crise) — repose sur
+  // Competence.parent. Sélection multiple (contrairement au matériel plus bas) : une case
+  // cochée ajoute/retire la compétence de selectedCompetences.
+  competencesDropdownOpen = false;
+  expandedCompetenceGroups = new Set<string>();
+
+  get competenceGroups(): { parent: Competence; children: Competence[] }[] {
+    const topLevel = this.allCompetences.filter(c => !c.parent);
+    return topLevel.map(parent => ({
+      parent,
+      children: this.allCompetences.filter(c => c.parent === parent.id),
+    }));
+  }
+
+  toggleCompetenceGroupExpand(parentId: string): void {
+    if (this.expandedCompetenceGroups.has(parentId)) this.expandedCompetenceGroups.delete(parentId);
+    else this.expandedCompetenceGroups.add(parentId);
+  }
+
+  isCompetenceGroupExpanded(parentId: string): boolean {
+    return this.expandedCompetenceGroups.has(parentId);
+  }
+
+  isCompetenceChecked(id: string): boolean {
+    return this.selectedCompetences.some(c => c.id === id);
+  }
+
+  toggleCompetenceChecked(item: Competence): void {
+    if (this.isCompetenceChecked(item.id)) this.removeCompetence(item.id);
+    else this.onCompetenceSelected(item);
+  }
+
+  competenceGroupState(group: { parent: Competence; children: Competence[] }): 'all' | 'some' | 'none' {
+    const ids = [group.parent.id, ...group.children.map(c => c.id)];
+    const selected = ids.filter(id => this.isCompetenceChecked(id)).length;
+    if (selected === 0) return 'none';
+    return selected === ids.length ? 'all' : 'some';
+  }
+
+  /** Coche/décoche le thème parent ET tous ses sous-thèmes d'un coup (dégénère au comportement
+   * de toggleCompetenceChecked pour un thème sans sous-catégorie). */
+  toggleCompetenceGroupChecked(group: { parent: Competence; children: Competence[] }): void {
+    const groupItems = [group.parent, ...group.children];
+    const tout = groupItems.every(c => this.isCompetenceChecked(c.id));
+    for (const item of groupItems) {
+      const checked = this.isCompetenceChecked(item.id);
+      if (tout && checked) this.removeCompetence(item.id);
+      else if (!tout && !checked) this.onCompetenceSelected(item);
     }
-    this.competenceDropdownValue = '';
   }
 
   ngOnInit(): void {

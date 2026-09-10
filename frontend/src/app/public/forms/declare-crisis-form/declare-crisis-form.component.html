@@ -165,16 +165,48 @@
                 </div>
                 }
 
-                <div class="form-group checkbox-group">
+                <div class="form-group">
                     <label class="form-label">Thèmes à l'écoute</label>
-                    @for (besoin of besoins; track besoin.id) {
-                        <label class="checkbox-label">
-                            <input type="checkbox" class="form-checkbox"
-                                   [checked]="selectedThemes.includes(besoin.id)"
-                                   (change)="toggleTheme(besoin.id, $any($event.target).checked)">
-                            <span class="checkbox-text">{{ besoin.nom }}</span>
-                        </label>
-                    }
+                    <div class="theme-dropdown">
+                        <button type="button" class="theme-dropdown-toggle" (click)="besoinsDropdownOpen = !besoinsDropdownOpen">
+                            <span class="material-icons">{{ besoinsDropdownOpen ? 'expand_less' : 'expand_more' }}</span>
+                            {{ selectedThemes.length > 0 ? (selectedThemes.length + ' thème(s) sélectionné(s)') : 'Choisir des thèmes' }}
+                        </button>
+                        @if (besoinsDropdownOpen) {
+                            <div class="theme-dropdown-panel">
+                                @for (group of besoinGroups; track group.parent.id) {
+                                    <div class="theme-check-item theme-parent-item">
+                                        @if (group.children.length > 0) {
+                                            <button type="button" class="theme-group-expand-btn" (click)="toggleBesoinGroupExpand(group.parent.id)"
+                                                    [attr.aria-label]="isBesoinGroupExpanded(group.parent.id) ? 'Replier' : 'Déplier'">
+                                                <span class="material-icons">{{ isBesoinGroupExpanded(group.parent.id) ? 'expand_more' : 'chevron_right' }}</span>
+                                            </button>
+                                        }
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" class="form-checkbox"
+                                                   [checked]="besoinGroupState(group) === 'all'"
+                                                   [indeterminate]="besoinGroupState(group) === 'some'"
+                                                   (change)="toggleBesoinGroup(group)">
+                                            <span class="checkbox-text">{{ group.parent.nom }}</span>
+                                        </label>
+                                    </div>
+                                    @if (group.children.length > 0 && isBesoinGroupExpanded(group.parent.id)) {
+                                        @for (child of group.children; track child.id) {
+                                            <label class="checkbox-label theme-check-item theme-child-item">
+                                                <input type="checkbox" class="form-checkbox"
+                                                       [checked]="selectedThemes.includes(child.id)"
+                                                       (change)="toggleTheme(child.id, $any($event.target).checked)">
+                                                <span class="checkbox-text">{{ child.nom }}</span>
+                                            </label>
+                                        }
+                                    }
+                                }
+                                @if (besoins.length === 0) {
+                                    <p class="theme-empty">Aucun thème défini.</p>
+                                }
+                            </div>
+                        }
+                    </div>
                 </div>
 
                 <div class="form-group checkbox-group">

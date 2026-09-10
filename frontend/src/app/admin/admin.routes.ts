@@ -25,6 +25,7 @@ import { ImportInstitutionsComponent } from './import-institutions/import-instit
 import { DeclarationsSecuriteComponent } from './declarations-securite/declarations-securite.component';
 import { BesoinsComponent } from './besoins/besoins.component';
 import { BesoinsCompetencesComponent } from './besoins-competences/besoins-competences.component';
+import { MaterielComponent } from './materiel/materiel.component';
 import { RecherchesPersonnesComponent } from '../pages/recherches-personnes/recherches-personnes.component';
 import { RecherchePersonneCreateComponent } from '../pages/recherche-personne-create/recherche-personne-create.component';
 import { RecherchePersonneDetailComponent } from '../pages/recherche-personne-detail/recherche-personne-detail.component';
@@ -54,6 +55,7 @@ export const ADMIN_ROUTES: Routes = [
   { path: 'validations-comptes', component: AccountValidationsComponent, canActivate: [accountValidationGuard] },
   { path: 'competences', component: CompetencesComponent, canActivate: [institutionalEffectiveGuard] },
   { path: 'besoins', component: BesoinsComponent, canActivate: [institutionalEffectiveGuard] },
+  { path: 'materiel', component: MaterielComponent, canActivate: [institutionalEffectiveGuard] },
   { path: 'correspondances', component: BesoinsCompetencesComponent, canActivate: [institutionalEffectiveGuard] },
   { path: 'affectations', component: AffectationsComponent, canActivate: [institutionalEffectiveGuard] },
   { path: 'recherches-personnes', component: RecherchesPersonnesComponent, canActivate: [institutionalEffectiveGuard] },

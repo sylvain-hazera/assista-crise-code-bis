@@ -1,11 +1,20 @@
 <h2>Besoins</h2>
 
+<app-tag-search-input
+  placeholder="Chercher ou créer un besoin (ex: traduction anglais)..."
+  [searchFn]="searchFn"
+  [createFn]="createFn"
+  (itemSelected)="onCreated($event)">
+</app-tag-search-input>
+
 <table>
   <thead>
     <tr>
       <th>Nom</th>
       <th>Description</th>
+      <th>Regroupé sous</th>
       <th>Actif</th>
+      <th></th>
     </tr>
   </thead>
 
@@ -13,7 +22,14 @@
     <tr *ngFor="let b of besoins">
       <td>{{ b.nom }}</td>
       <td>{{ b.description }}</td>
+      <td>
+        <select [ngModel]="b.parent ?? ''" (ngModelChange)="setParent(b, $event)">
+          <option value="">— Besoin de premier niveau —</option>
+          <option *ngFor="let p of parentOptions(b)" [value]="p.id">{{ p.nom }}</option>
+        </select>
+      </td>
       <td>{{ b.actif ? 'Oui' : 'Non' }}</td>
+      <td><button type="button" (click)="toggleActif(b)">{{ b.actif ? 'Désactiver' : 'Activer' }}</button></td>
     </tr>
   </tbody>
 </table>

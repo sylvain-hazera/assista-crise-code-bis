@@ -2,6 +2,10 @@ export interface MaterielCatalogue {
   id: string;
   nom: string;
   categorie?: string | null;
+  /** Sous-matériel : regroupement libre optionnel (distinct de `categorie` ci-dessus, dédiée
+   * au stock des centres) — voir Besoin.parent/Competence.parent, même patron. */
+  parent?: string | null;
+  actif?: boolean;
   date_creation?: string;
 }
 

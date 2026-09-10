@@ -26,4 +26,16 @@ export class MaterielCatalogueService {
   create(data: Partial<MaterielCatalogue>): Observable<MaterielCatalogue> {
     return this.http.post<MaterielCatalogue>(`${this.url}/`, data);
   }
+
+  update(id: string, data: Partial<MaterielCatalogue>): Observable<MaterielCatalogue> {
+    return this.http.put<MaterielCatalogue>(`${this.url}/${id}/`, data);
+  }
+
+  patch(id: string, data: Partial<MaterielCatalogue>): Observable<MaterielCatalogue> {
+    return this.http.patch<MaterielCatalogue>(`${this.url}/${id}/`, data);
+  }
+
+  delete(id: string): Observable<void> {
+    return this.http.delete<void>(`${this.url}/${id}/`);
+  }
 }

@@ -173,7 +173,7 @@
   }
 }
 
-.checkbox-group {
+.checkbox-group, .theme-dropdown-panel {
   .checkbox-label {
     display: flex;
     align-items: center;
@@ -192,6 +192,87 @@
       color: #333;
     }
   }
+}
+
+// Même interaction que "Thèmes d'intervention" côté fiche équipe (menu déroulant pliable) :
+// menu fermé par défaut, sous-thèmes repliés tant qu'on ne clique pas la flèche du parent.
+.theme-dropdown {
+  position: relative;
+}
+
+.theme-dropdown-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: white;
+  font-size: 0.95rem;
+  color: #333;
+  cursor: pointer;
+
+  .material-icons { font-size: 20px; color: #666; }
+
+  &:hover { border-color: #4CAF50; }
+}
+
+.theme-dropdown-panel {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 0.3rem);
+  left: 0;
+  right: 0;
+  max-height: 18rem;
+  overflow-y: auto;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  padding: 0.4rem 0.6rem;
+}
+
+.theme-check-item {
+  padding: 0.35rem 0.2rem;
+}
+
+.theme-parent-item {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-weight: 600;
+}
+
+.theme-child-item {
+  padding-left: 2rem;
+  font-weight: 400;
+
+  .checkbox-text { color: #666; }
+}
+
+.theme-group-expand-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  margin-left: -0.3rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #666;
+
+  .material-icons { font-size: 18px; }
+
+  &:hover { color: #333; }
+}
+
+.theme-empty {
+  color: #999;
+  font-size: 0.9rem;
+  padding: 0.4rem 0.2rem;
 }
 
 .form-section {

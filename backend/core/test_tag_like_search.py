@@ -3,7 +3,7 @@ from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from core.models import Besoin, BesoinCompetence, Competence, InformationType
+from core.models import Besoin, BesoinCompetence, Competence, InformationType, MaterielCatalogue
 
 
 @pytest.mark.django_db
@@ -122,6 +122,128 @@ class TestCompetenceParent:
 
         assert response.status_code == status.HTTP_201_CREATED
         assert response.data["parent"] is None
+
+
+@pytest.mark.django_db
+class TestBesoinKeywordSearch:
+    """Même mécanisme TagLikeViewSetMixin que CompetenceViewSet (recherche par mots-clés,
+    dédoublonnage insensible à la casse à la création) — utilisé par l'admin Besoins
+    (app-tag-search-input, voir BesoinsComponent). Contrairement à Competence, reste réservé
+    aux comptes authentifiés (pas d'usage depuis un formulaire public anonyme)."""
+
+    def test_search_is_order_independent(self, authenticated_client):
+        # Noms distincts du seed applicatif (migration 0095, "Transport d'animaux" existe
+        # déjà) pour ne jamais entrer en collision avec les vrais besoins de référence.
+        client, _ = authenticated_client
+        Besoin.objects.create(nom="Transport de bidons test")
+        Besoin.objects.create(nom="Nourriture et eau test")
+
+        r1 = client.get(reverse('besoin-list'), {"q": "transport bidons"})
+        r2 = client.get(reverse('besoin-list'), {"q": "bidons transport"})
+
+        assert r1.status_code == status.HTTP_200_OK
+        names1 = {b["nom"] for b in r1.data}
+        names2 = {b["nom"] for b in r2.data}
+        assert names1 == names2 == {"Transport de bidons test"}
+
+    def test_create_reuses_case_insensitive_duplicate(self, authenticated_client):
+        client, _ = authenticated_client
+        existing = Besoin.objects.create(nom="traduction anglais")
+
+        response = client.post(reverse('besoin-list'), {"nom": "Traduction Anglais"}, format='json')
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["id"] == str(existing.id)
+        assert Besoin.objects.filter(nom__iexact="traduction anglais").count() == 1
+
+    def test_anonymous_cannot_list_besoins(self):
+        """Contrairement à Competence (AllowAny, formulaire public "Proposer mon aide") :
+        Besoin n'est consommé que côté déclaration de crise, déjà réservée aux comptes
+        institutionnels — jamais un accès anonyme à ouvrir ici."""
+        client = APIClient()
+        response = client.get(reverse('besoin-list'))
+        assert response.status_code in (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN)
+
+
+@pytest.mark.django_db
+class TestBesoinParent:
+    """Même patron que TestCompetenceParent (Competence.parent) : regroupement optionnel des
+    thèmes (sous-thèmes), pour l'affichage en menu déroulant pliable côté déclaration de crise
+    (voir DeclareCrisisFormComponent.besoinGroups)."""
+
+    def test_parent_is_writable_and_readable(self, authenticated_client):
+        client, _ = authenticated_client
+        parent = Besoin.objects.create(nom="Traducteur")
+        enfant = Besoin.objects.create(nom="traduction anglais")
+
+        response = client.patch(
+            reverse('besoin-detail', args=[enfant.id]), {"parent": str(parent.id)}, format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["parent"] == parent.id
+        enfant.refresh_from_db()
+        assert enfant.parent_id == parent.id
+
+    def test_parent_defaults_to_null(self, authenticated_client):
+        client, _ = authenticated_client
+        response = client.post(reverse('besoin-list'), {"nom": "Autonome"}, format='json')
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data["parent"] is None
+
+
+@pytest.mark.django_db
+class TestMaterielCatalogueParentAndActif:
+    """Même patron que TestCompetenceParent/TestBesoinParent (MaterielCatalogue.parent) —
+    organisation catégorie/sous-catégorie du catalogue matériel public, voir MaterielComponent
+    (admin) et ProposeHelpFormComponent.materielGroups. `actif` (nouveau lui aussi) permet de
+    retirer une entrée en doublon de la sélection sans la supprimer."""
+
+    def test_parent_is_writable_and_readable(self, authenticated_client):
+        client, _ = authenticated_client
+        parent = MaterielCatalogue.objects.create(nom="Matériel de chantier test")
+        enfant = MaterielCatalogue.objects.create(nom="Débroussailleuse test")
+
+        response = client.patch(
+            reverse('materielcatalogue-detail', args=[enfant.id]), {"parent": str(parent.id)}, format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["parent"] == parent.id
+        enfant.refresh_from_db()
+        assert enfant.parent_id == parent.id
+
+    def test_parent_and_actif_default(self, authenticated_client):
+        client, _ = authenticated_client
+        response = client.post(reverse('materielcatalogue-list'), {"nom": "Autonome test"}, format='json')
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data["parent"] is None
+        assert response.data["actif"] is True
+
+    def test_actif_is_patchable(self, authenticated_client):
+        client, _ = authenticated_client
+        item = MaterielCatalogue.objects.create(nom="Pompe en doublon test")
+
+        response = client.patch(
+            reverse('materielcatalogue-detail', args=[item.id]), {"actif": False}, format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["actif"] is False
+        item.refresh_from_db()
+        assert item.actif is False
+
+    def test_anonymous_cannot_patch_parent_or_actif(self, db):
+        """update reste réservé aux comptes authentifiés (AllowAny ne couvre que list/retrieve/
+        create, voir MaterielCatalogueViewSet.get_permissions) — inchangé par cet ajout."""
+        item = MaterielCatalogue.objects.create(nom="Item protege test")
+        client = APIClient()
+
+        response = client.patch(reverse('materielcatalogue-detail', args=[item.id]), {"actif": False}, format='json')
+
+        assert response.status_code in (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN)
 
 
 @pytest.mark.django_db

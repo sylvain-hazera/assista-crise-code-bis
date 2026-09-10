@@ -1,0 +1,38 @@
+<h2>Matériel</h2>
+<p>
+  Catalogue du matériel proposable depuis le formulaire public « Proposer mon aide ». Organisez-le
+  en catégories/sous-catégories ci-dessous — désactivez une entrée en doublon plutôt que la
+  supprimer (les offres déjà déposées avec ce matériel restent intactes).
+</p>
+
+<app-tag-search-input
+  placeholder="Chercher ou créer un matériel (ex: groupe électrogène)..."
+  [searchFn]="searchFn"
+  [createFn]="createFn"
+  (itemSelected)="onCreated($event)">
+</app-tag-search-input>
+
+<table>
+  <thead>
+    <tr>
+      <th>Nom</th>
+      <th>Regroupé sous</th>
+      <th>Actif</th>
+      <th></th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr *ngFor="let m of materiels">
+      <td>{{ m.nom }}</td>
+      <td>
+        <select [ngModel]="m.parent ?? ''" (ngModelChange)="setParent(m, $event)">
+          <option value="">— Matériel de premier niveau —</option>
+          <option *ngFor="let p of parentOptions(m)" [value]="p.id">{{ p.nom }}</option>
+        </select>
+      </td>
+      <td>{{ m.actif !== false ? 'Oui' : 'Non' }}</td>
+      <td><button type="button" (click)="toggleActif(m)">{{ m.actif !== false ? 'Désactiver' : 'Activer' }}</button></td>
+    </tr>
+  </tbody>
+</table>

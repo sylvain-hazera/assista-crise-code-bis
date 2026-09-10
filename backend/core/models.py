@@ -972,6 +972,15 @@ class Besoin(models.Model):
         default=True
     )
 
+    # Optionnel : regroupe des thèmes plus fins sous un thème générique — même patron que
+    # Competence.parent (voir TeamsComponent), pour l'affichage en menu déroulant pliable côté
+    # déclaration de crise (voir DeclareCrisisFormComponent, "Thèmes à l'écoute"). Jamais plus
+    # d'un niveau (un sous-thème ne peut pas lui-même avoir des enfants), non contraint en base
+    # pour rester simple, à respecter côté formulaire.
+    parent = models.ForeignKey(
+        "self", on_delete=models.SET_NULL, null=True, blank=True, related_name="sous_besoins",
+    )
+
     def __str__(self):
         return self.nom
 
@@ -3053,8 +3062,24 @@ class MaterielCatalogue(models.Model):
     nom = models.CharField(max_length=100, unique=True)
 
     # Voir MaterielCatalogueCategorie — permet de proposer certaines entrées dans une liste à
-    # cocher dédiée plutôt que dans la recherche générique "Autre matériel".
+    # cocher dédiée plutôt que dans la recherche générique "Autre matériel". Distinct de
+    # `parent` ci-dessous : cette énumération fixe sert au filtrage du STOCK des centres
+    # (point-inventaire-modal, PointType.categories_materiel_exclues), pas à l'organisation du
+    # catalogue public.
     categorie = models.CharField(max_length=30, choices=MaterielCatalogueCategorie.choices, null=True, blank=True)
+
+    # Regroupement libre optionnel (sous-matériel), pour l'administration du catalogue et
+    # l'affichage en menu déroulant pliable côté formulaire public "Proposer mon aide" — même
+    # patron que Besoin.parent/Competence.parent (voir MaterielComponent, admin). Jamais plus
+    # d'un niveau, non contraint en base pour rester simple, à respecter côté formulaire.
+    parent = models.ForeignKey(
+        "self", on_delete=models.SET_NULL, null=True, blank=True, related_name="sous_materiels",
+    )
+
+    # Permet de retirer une entrée obsolète/en doublon (ex: un nom qui duplique une des options
+    # structurelles fixes d'Offer.materiel_type) de la sélection publique sans la supprimer —
+    # les offres existantes qui la référencent (Offer.materiel_catalogue) restent intactes.
+    actif = models.BooleanField(default=True)
 
     date_creation = models.DateTimeField(auto_now_add=True)
 

@@ -17,4 +17,24 @@ export class BesoinService {
   getAll(): Observable<Besoin[]> {
     return this.http.get<Besoin[]>(`${this.url}/`);
   }
+
+  search(query: string): Observable<Besoin[]> {
+    return this.http.get<Besoin[]>(`${this.url}/`, { params: { q: query } });
+  }
+
+  create(data: Partial<Besoin>): Observable<Besoin> {
+    return this.http.post<Besoin>(`${this.url}/`, data);
+  }
+
+  update(id: string, data: Partial<Besoin>): Observable<Besoin> {
+    return this.http.put<Besoin>(`${this.url}/${id}/`, data);
+  }
+
+  patch(id: string, data: Partial<Besoin>): Observable<Besoin> {
+    return this.http.patch<Besoin>(`${this.url}/${id}/`, data);
+  }
+
+  delete(id: string): Observable<void> {
+    return this.http.delete<void>(`${this.url}/${id}/`);
+  }
 }

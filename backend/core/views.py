@@ -315,28 +315,6 @@ from .serializers import (
     PlanMissionModeleSerializer,
 )
 
-class BesoinViewSet(viewsets.ModelViewSet):
-    queryset = Besoin.objects.all()
-    serializer_class = BesoinSerializer
-
-    def perform_create(self, serializer):
-        besoin = serializer.save()
-        audit_log(
-            request=self.request,
-            action_code="CREATION",
-            objet_type="Besoin",
-            objet_id=besoin.id,
-            commentaire=f"Création besoin : {besoin}",
-        )
-
-class BesoinCompetenceViewSet(viewsets.ModelViewSet):
-    queryset = BesoinCompetence.objects.select_related('besoin', 'competence').all()
-    serializer_class = BesoinCompetenceSerializer
-
-class RequestTypeBesoinViewSet(viewsets.ModelViewSet):
-    queryset = RequestTypeBesoin.objects.select_related('request_type', 'besoin').all()
-    serializer_class = RequestTypeBesoinSerializer
-
 class TagLikeViewSetMixin:
     """Pour les modèles qui fonctionnent comme des hashtags réutilisables (Competence.nom,
     InformationType.type) : recherche par mots-clés indépendante de l'ordre (`?q=transport
@@ -344,7 +322,10 @@ class TagLikeViewSetMixin:
     silencieusement une entrée existante proche (comparaison insensible à la casse) au lieu
     de dupliquer un thème déjà là sous une casse différente — cohérent avec l'usage attendu
     d'un tag : n'importe qui doit pouvoir en "créer" un sans jamais fragmenter le vocabulaire
-    partagé par erreur de frappe sur la casse."""
+    partagé par erreur de frappe sur la casse. Déplacée ici (avant sa première utilisatrice,
+    BesoinViewSet) : une classe Python doit être définie avant d'être citée comme classe de
+    base — NameError sinon, repéré en direct en ajoutant BesoinViewSet(TagLikeViewSetMixin,
+    ...) alors que cette classe restait définie plus bas dans le fichier."""
 
     tag_field = "nom"
 
@@ -386,6 +367,35 @@ class TagLikeViewSetMixin:
 
         return super().create(request, *args, **kwargs)
 
+
+class BesoinViewSet(TagLikeViewSetMixin, viewsets.ModelViewSet):
+    # TagLikeViewSetMixin : recherche par mots-clés (?q=) et dédoublonnage insensible à la
+    # casse à la création — même mécanisme que CompetenceViewSet (voir TagLikeViewSetMixin),
+    # utilisé par l'admin Besoins (app-tag-search-input) pour créer/rattacher un nouveau
+    # thème sans dupliquer une entrée déjà proche sous une casse différente. Contrairement à
+    # CompetenceViewSet, reste authentifié uniquement (pas d'AllowAny) : Besoin n'est consommé
+    # que côté formulaire de déclaration de crise, déjà réservé aux acteurs institutionnels,
+    # jamais depuis un formulaire public anonyme.
+    queryset = Besoin.objects.all()
+    serializer_class = BesoinSerializer
+
+    def perform_create(self, serializer):
+        besoin = serializer.save()
+        audit_log(
+            request=self.request,
+            action_code="CREATION",
+            objet_type="Besoin",
+            objet_id=besoin.id,
+            commentaire=f"Création besoin : {besoin}",
+        )
+
+class BesoinCompetenceViewSet(viewsets.ModelViewSet):
+    queryset = BesoinCompetence.objects.select_related('besoin', 'competence').all()
+    serializer_class = BesoinCompetenceSerializer
+
+class RequestTypeBesoinViewSet(viewsets.ModelViewSet):
+    queryset = RequestTypeBesoin.objects.select_related('request_type', 'besoin').all()
+    serializer_class = RequestTypeBesoinSerializer
 
 class EnvironmentScopedViewSetMixin:
     """Point de passage unique pour isoler PROD et DEMO sur tout modèle "de contenu"
