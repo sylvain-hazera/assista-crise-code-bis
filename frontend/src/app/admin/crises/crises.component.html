@@ -116,6 +116,7 @@
                 class="crisis-apercu-map"
                 [latitude]="selectedCrisis.latitude"
                 [longitude]="selectedCrisis.longitude"
+                [zoneGeojson]="selectedCrisis.zone_geojson ?? null"
                 [zoom]="12">
               </app-minimap>
             }

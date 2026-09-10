@@ -1,12 +1,15 @@
 import { AfterViewInit, Component, ElementRef, Input, OnChanges, OnDestroy, SimpleChanges, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import maplibregl from 'maplibre-gl';
+import type { Polygon } from 'geojson';
 
 export interface MinimapPointInteret {
   latitude: number;
   longitude: number;
   label: string;
 }
+
+const ZONE_SOURCE_ID = 'minimap-zone';
 
 /**
  * Petite carte de localisation en lecture seule : un point + éventuellement une flèche
@@ -35,6 +38,9 @@ export class MinimapComponent implements AfterViewInit, OnChanges, OnDestroy {
   @Input() azimuth: number | null = null;
   @Input() zoom = 15;
   @Input() pointsInteret: MinimapPointInteret[] = [];
+  /** Contour précis (ex: Crisis.zone_geojson) — affiché en plus du point principal, la carte
+   * s'ajuste alors pour englober tout le polygone plutôt que de rester au zoom fixe. */
+  @Input() zoneGeojson: Polygon | null = null;
 
   private map: maplibregl.Map | null = null;
   private pointMarker: maplibregl.Marker | null = null;
@@ -50,7 +56,9 @@ export class MinimapComponent implements AfterViewInit, OnChanges, OnDestroy {
     if (changes['latitude'] || changes['longitude']) {
       this.pointMarker?.setLngLat([this.longitude, this.latitude]);
       this.arrowMarker?.setLngLat([this.longitude, this.latitude]);
-      if (this.pointsInteret.length > 0) {
+      if (this.zoneGeojson) {
+        this.fitToZone(this.zoneGeojson);
+      } else if (this.pointsInteret.length > 0) {
         this.fitToPoints();
       } else {
         this.map.setCenter([this.longitude, this.latitude]);
@@ -62,6 +70,9 @@ export class MinimapComponent implements AfterViewInit, OnChanges, OnDestroy {
     if (changes['pointsInteret']) {
       this.syncPoiMarkers();
       this.fitToPoints();
+    }
+    if (changes['zoneGeojson']) {
+      this.runWhenMapReady(() => this.syncZonePolygon());
     }
   }
 
@@ -81,7 +92,58 @@ export class MinimapComponent implements AfterViewInit, OnChanges, OnDestroy {
 
     this.syncArrowMarker();
     this.syncPoiMarkers();
-    this.fitToPoints();
+    if (this.zoneGeojson) {
+      this.runWhenMapReady(() => this.syncZonePolygon());
+    } else {
+      this.fitToPoints();
+    }
+  }
+
+  /** MapLibre ne rejoue jamais l'événement 'load' pour un listener attaché après coup — voir
+   * MapComponent.runWhenMapReady, même correctif ici : addSource/addLayer exigent le style
+   * chargé, contrairement aux Marker (point/flèche), ajoutables immédiatement. */
+  private runWhenMapReady(cb: () => void): void {
+    if (!this.map) return;
+    if (this.map.isStyleLoaded()) {
+      cb();
+    } else {
+      this.map.once('load', cb);
+    }
+  }
+
+  private syncZonePolygon(): void {
+    if (!this.map) return;
+    const source = this.map.getSource(ZONE_SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
+    const data: GeoJSON.Feature<Polygon> | GeoJSON.FeatureCollection = this.zoneGeojson
+      ? { type: 'Feature', properties: {}, geometry: this.zoneGeojson }
+      : { type: 'FeatureCollection', features: [] };
+
+    if (source) {
+      source.setData(data as any);
+    } else if (this.zoneGeojson) {
+      this.map.addSource(ZONE_SOURCE_ID, { type: 'geojson', data: data as any });
+      this.map.addLayer({
+        id: `${ZONE_SOURCE_ID}-fill`, type: 'fill', source: ZONE_SOURCE_ID,
+        paint: { 'fill-color': '#dc2626', 'fill-opacity': 0.15 },
+      });
+      this.map.addLayer({
+        id: `${ZONE_SOURCE_ID}-outline`, type: 'line', source: ZONE_SOURCE_ID,
+        paint: { 'line-color': '#dc2626', 'line-width': 2 },
+      });
+    }
+
+    if (this.zoneGeojson) this.fitToZone(this.zoneGeojson);
+  }
+
+  private fitToZone(polygon: Polygon): void {
+    if (!this.map) return;
+    const coords = polygon.coordinates[0];
+    if (!coords || coords.length === 0) return;
+    const bounds = coords.reduce(
+      (b, [lng, lat]) => b.extend([lng, lat] as [number, number]),
+      new maplibregl.LngLatBounds(coords[0] as [number, number], coords[0] as [number, number])
+    );
+    this.map.fitBounds(bounds, { padding: 30, maxZoom: this.zoom });
   }
 
   /** Sans point d'intérêt, comportement inchangé (centré sur le point principal au zoom
