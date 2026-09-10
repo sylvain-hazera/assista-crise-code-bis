@@ -120,6 +120,16 @@ export class DeclareCrisisFormComponent implements OnInit{
       : [...new Set([...this.selectedThemes, ...groupIds])];
   }
 
+  /** Même patron que allDisposChecked/toggleAllDispos (propose-help-form) : tout cocher/tout
+   * décocher en un clic plutôt que groupe par groupe. */
+  get allBesoinsChecked(): boolean {
+    return this.besoins.length > 0 && this.besoins.every(b => this.selectedThemes.includes(b.id));
+  }
+
+  toggleAllBesoins(): void {
+    this.selectedThemes = this.allBesoinsChecked ? [] : this.besoins.map(b => b.id);
+  }
+
   selectedAddress: AddressResult | null = null;
 
   // Recentre/zoome la minimap de dessin de zone sur l'adresse choisie — champs dédiés (pas un
