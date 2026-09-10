@@ -649,6 +649,46 @@ export class TeamsComponent implements OnInit {
     return this.selectedTeam?.competence_ids?.includes(competenceId) ?? false;
   }
 
+  // Repliés par défaut : une sous-catégorie (ex: "traduction anglais" sous "Traducteur") ne
+  // s'affiche qu'au clic sur la flèche à côté de son parent, pas en permanence — a vocation à
+  // grossir (plusieurs langues, etc.) sans alourdir la liste visible par défaut.
+  expandedCompetenceGroups = new Set<string>();
+
+  toggleCompetenceGroupExpand(parentId: string): void {
+    if (this.expandedCompetenceGroups.has(parentId)) this.expandedCompetenceGroups.delete(parentId);
+    else this.expandedCompetenceGroups.add(parentId);
+  }
+
+  isCompetenceGroupExpanded(parentId: string): boolean {
+    return this.expandedCompetenceGroups.has(parentId);
+  }
+
+  /** 'all' | 'some' | 'none' — pilote l'état (coché / indéterminé / décoché) de la case du
+   * thème parent, en tenant compte de ses sous-thèmes. */
+  competenceGroupState(group: { parent: Competence; children: Competence[] }): 'all' | 'some' | 'none' {
+    const ids = [group.parent.id, ...group.children.map(c => c.id)];
+    const selected = ids.filter(id => this.hasCompetence(id)).length;
+    if (selected === 0) return 'none';
+    return selected === ids.length ? 'all' : 'some';
+  }
+
+  /** Coche/décoche le thème parent ET tous ses sous-thèmes en un seul appel (dégénère au
+   * comportement de toggleCompetence pour un thème sans sous-catégorie). */
+  toggleCompetenceGroup(group: { parent: Competence; children: Competence[] }): void {
+    if (!this.selectedTeam) return;
+    const groupIds = [group.parent.id, ...group.children.map(c => c.id)];
+    const current = new Set(this.selectedTeam.competence_ids ?? []);
+    const tout = groupIds.every(id => current.has(id));
+    for (const id of groupIds) {
+      if (tout) current.delete(id);
+      else current.add(id);
+    }
+    this.teamService.patch(this.selectedTeam.id!, { competence_ids: Array.from(current) }).subscribe(updated => {
+      this.selectedTeam = { ...updated, missions: this.selectedTeam!.missions };
+      this.reloadTeams();
+    });
+  }
+
   competenceSearchFn = (q: string) => this.competenceService.search(q);
   competenceCreateFn = (nom: string) => this.competenceService.create({ nom });
 

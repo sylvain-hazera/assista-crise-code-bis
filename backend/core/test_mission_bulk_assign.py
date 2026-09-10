@@ -160,6 +160,32 @@ class TestBulkCreateTeamOffers:
         assert response.data['member_ids'] == [present_author.id]
         assert set(response.data['assigned_offer_ids']) == {offer_present.id, offer_absent.id}
 
+    def test_bulk_create_team_adds_members_for_anonymous_offers(self, authenticated_client, offer_type):
+        """La quasi-totalité des offres viennent du formulaire public (propose-help-form),
+        soumis sans compte : author reste None. resolve_or_invite_benevole doit créer/
+        retrouver un compte via email_offer, pas se limiter à offer.author_id (toujours None
+        ici) — repéré en direct : le compteur "Membres" restait à 0 quel que soit le cas
+        (personne seule, avec matériel, matériel seul)."""
+        client, _ = _make_admin(authenticated_client)
+        offer_personne = Offer.objects.create(
+            title='Offre anonyme personne', first_name_offer='A', last_name_offer='B',
+            email_offer='anon-personne@test.fr', offer_type=offer_type,
+        )
+        offer_materiel_seul = Offer.objects.create(
+            title='Offre anonyme matériel seul', first_name_offer='C', last_name_offer='D',
+            email_offer='anon-materiel@test.fr', offer_type=offer_type, presence_physique=False,
+        )
+
+        response = client.post(
+            reverse('offer-bulk-create-team'),
+            {'offer_ids': [str(offer_personne.id), str(offer_materiel_seul.id)], 'team_name': 'Equipe anonymes'},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        member_emails = set(User.objects.filter(id__in=response.data['member_ids']).values_list('email', flat=True))
+        assert member_emails == {'anon-personne@test.fr'}
+
     def test_bulk_create_team_requires_name(self, authenticated_client, offer_type):
         client, _ = _make_admin(authenticated_client)
         offer = Offer.objects.create(

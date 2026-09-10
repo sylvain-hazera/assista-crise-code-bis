@@ -4208,11 +4208,20 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         offer.mission = team.mission_active
         offer.save(update_fields=['mission'])
         team.assigned_offers.add(offer)
-        # N'ajoute l'auteur comme membre que si sa présence physique n'est pas explicitement
-        # exclue (ex: un simple prêteur de chambre) — None (offres antérieures à ce champ)
-        # garde l'ancien comportement, seul False l'exclut désormais.
-        if offer.author_id and offer.presence_physique is not False:
-            team.members.add(offer.author_id)
+        # N'ajoute comme membre que si la présence physique n'est pas explicitement exclue
+        # (ex: un simple prêteur de chambre) — None (offres antérieures à ce champ) garde
+        # l'ancien comportement, seul False l'exclut désormais. offer.author_id seul ne
+        # suffisait pas : la quasi-totalité des offres viennent du formulaire public
+        # (propose-help-form), soumis SANS compte — author restait alors toujours None,
+        # donc aucun bénévole n'était jamais ajouté comme membre en pratique (personne seule,
+        # avec matériel, ou matériel seul : le compteur "Membres" restait à 0 dans tous les
+        # cas). resolve_or_invite_benevole (déjà utilisé par PointOperationnelViewSet.
+        # inviter_benevole) résout aussi via email_offer/first_name_offer/last_name_offer,
+        # créant un compte à la volée si besoin — même principe que resolve_or_invite_demandeur.
+        if offer.presence_physique is not False:
+            benevole, _created = resolve_or_invite_benevole(offer, request)
+            if benevole:
+                team.members.add(benevole)
 
         # Un engagement neuf à chaque affectation — jamais partagé entre deux affectations
         # successives, comme offer.mission (une réaffectation ailleurs repart de zéro).
@@ -4920,8 +4929,16 @@ class OfferViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         )
         team.assigned_offers.set(offres)
         # Même garde que assigner_ressource : n'ajoute pas comme membre un offreur dont la
-        # présence physique est explicitement exclue.
-        members = {o.author for o in offres if o.author_id and o.presence_physique is not False}
+        # présence physique est explicitement exclue, et résout via resolve_or_invite_benevole
+        # (pas juste offer.author_id, toujours None pour une offre anonyme du formulaire
+        # public — le cas courant) pour que les bénévoles sans compte soient bien ajoutés.
+        members = set()
+        for o in offres:
+            if o.presence_physique is False:
+                continue
+            benevole, _created = resolve_or_invite_benevole(o, request)
+            if benevole:
+                members.add(benevole)
         if members:
             team.members.set(members)
 

@@ -407,15 +407,28 @@
             @if (competencesDropdownOpen) {
               <div class="dropdown-panel">
                 @for (group of competenceGroups; track group.parent.id) {
-                  <label class="dropdown-check-item parent-item">
-                    <input type="checkbox" [checked]="hasCompetence(group.parent.id)" (change)="toggleCompetence(group.parent.id)">
-                    {{ group.parent.nom }}
-                  </label>
-                  @for (child of group.children; track child.id) {
-                    <label class="dropdown-check-item child-item">
-                      <input type="checkbox" [checked]="hasCompetence(child.id)" (change)="toggleCompetence(child.id)">
-                      {{ child.nom }}
+                  <div class="dropdown-check-item parent-item">
+                    @if (group.children.length > 0) {
+                      <button type="button" class="group-expand-btn" (click)="toggleCompetenceGroupExpand(group.parent.id)"
+                              [attr.aria-label]="isCompetenceGroupExpanded(group.parent.id) ? 'Replier' : 'Déplier'">
+                        <span class="material-icons">{{ isCompetenceGroupExpanded(group.parent.id) ? 'expand_more' : 'chevron_right' }}</span>
+                      </button>
+                    }
+                    <label>
+                      <input type="checkbox"
+                             [checked]="competenceGroupState(group) === 'all'"
+                             [indeterminate]="competenceGroupState(group) === 'some'"
+                             (change)="toggleCompetenceGroup(group)">
+                      {{ group.parent.nom }}
                     </label>
+                  </div>
+                  @if (group.children.length > 0 && isCompetenceGroupExpanded(group.parent.id)) {
+                    @for (child of group.children; track child.id) {
+                      <label class="dropdown-check-item child-item">
+                        <input type="checkbox" [checked]="hasCompetence(child.id)" (change)="toggleCompetence(child.id)">
+                        {{ child.nom }}
+                      </label>
+                    }
                   }
                 }
                 @if (competences.length === 0) {

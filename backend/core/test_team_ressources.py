@@ -171,6 +171,57 @@ class TestAssignerRessource:
 
         assert team_a.members.filter(id=offer.author_id).exists()
 
+    def test_adds_member_via_email_for_anonymous_offer_with_material(self, mairie_client, team_a, offer_type):
+        """La quasi-totalité des offres viennent du formulaire public (propose-help-form),
+        soumis sans compte : author reste None. Repéré en direct (personne + matériel,
+        matériel seul, personne seule : le compteur "Membres" restait toujours à 0) —
+        resolve_or_invite_benevole doit créer/retrouver un compte via email_offer."""
+        offer = Offer.objects.create(
+            title='Tronçonneuse + moi-même', first_name_offer='Anna', last_name_offer='Nonyme',
+            email_offer='anna-nonyme@test.fr', status='DISPONIBLE', offer_type=offer_type,
+            author=None, presence_physique=True, materiel_type='AUTRE',
+        )
+        client, _ = mairie_client
+        client.post(reverse('team-definir-mission', args=[team_a.id]), {'titre': 'Mission'}, format='json')
+
+        response = client.post(reverse('team-assigner-ressource', args=[team_a.id]), {'offer_id': str(offer.id)}, format='json')
+
+        assert response.status_code == status.HTTP_200_OK
+        assert team_a.members.filter(email__iexact='anna-nonyme@test.fr').exists()
+
+    def test_adds_member_via_email_for_anonymous_offer_person_only(self, mairie_client, team_a, offer_type):
+        """Personne seule sans matériel (ex: traducteur) — même correctif, aucune raison que
+        ça se comporte différemment d'une offre avec matériel."""
+        offer = Offer.objects.create(
+            title='Traduction', first_name_offer='Traducteur', last_name_offer='Bénévole',
+            email_offer='traducteur-benevole@test.fr', status='DISPONIBLE', offer_type=offer_type,
+            author=None, presence_physique=True,
+        )
+        client, _ = mairie_client
+        client.post(reverse('team-definir-mission', args=[team_a.id]), {'titre': 'Mission'}, format='json')
+
+        response = client.post(reverse('team-assigner-ressource', args=[team_a.id]), {'offer_id': str(offer.id)}, format='json')
+
+        assert response.status_code == status.HTTP_200_OK
+        assert team_a.members.filter(email__iexact='traducteur-benevole@test.fr').exists()
+
+    def test_does_not_add_member_for_anonymous_material_only_offer(self, mairie_client, team_a, offer_type):
+        """Matériel seul (presence_physique=False, ex: dépôt sans l'offreur) : toujours
+        aucun membre ajouté, anonyme ou non — seule l'affectation de la ressource compte."""
+        offer = Offer.objects.create(
+            title='Groupe électrogène déposé', first_name_offer='Dépose', last_name_offer='Seul',
+            email_offer='depose-seul@test.fr', status='DISPONIBLE', offer_type=offer_type,
+            author=None, presence_physique=False, materiel_type='AUTRE',
+        )
+        client, _ = mairie_client
+        client.post(reverse('team-definir-mission', args=[team_a.id]), {'titre': 'Mission'}, format='json')
+
+        response = client.post(reverse('team-assigner-ressource', args=[team_a.id]), {'offer_id': str(offer.id)}, format='json')
+
+        assert response.status_code == status.HTTP_200_OK
+        assert team_a.assigned_offers.filter(id=offer.id).exists()
+        assert not team_a.members.filter(email__iexact='depose-seul@test.fr').exists()
+
 
 @pytest.mark.django_db
 class TestRetirerRessource:

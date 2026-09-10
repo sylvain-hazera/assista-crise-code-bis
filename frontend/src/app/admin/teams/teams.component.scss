@@ -362,9 +362,19 @@ h3 { margin: 0; font-size: .9rem; font-weight: 700; display: flex; align-items: 
   display: flex; align-items: center; gap: .5rem; padding: .4rem .8rem; font-size: .85rem;
   cursor: pointer;
   &:hover { background: #f8fafc; }
-  &.parent-item { font-weight: 700; }
+  &.parent-item {
+    font-weight: 700;
+    label { display: flex; align-items: center; gap: .5rem; cursor: pointer; }
+  }
   &.child-item { padding-left: 2rem; font-weight: 400; color: var(--muted); }
   input[type="checkbox"] { cursor: pointer; }
+}
+.group-expand-btn {
+  display: flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; padding: 0; margin-left: -.3rem;
+  background: none; border: none; cursor: pointer; color: var(--muted);
+  .material-icons { font-size: 18px; }
+  &:hover { color: var(--text); }
 }
 .competence-chip-list { display: flex; flex-wrap: wrap; gap: .5rem; }
 .competence-chip {
