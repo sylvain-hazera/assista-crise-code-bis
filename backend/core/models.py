@@ -3820,6 +3820,15 @@ class MessageMeshLog(EnvironmentScopedModel):
         help_text="Résolu via NoeudMeshUtilisateur quand connu.",
     )
 
+    # Équipe de l'expéditeur au moment de la réception — capturée à la création, pas
+    # recalculée dynamiquement (un message déjà journalisé garde son contexte même si la
+    # personne change d'équipe ensuite). C'est ce qui porte le cloisonnement de visibilité :
+    # administrer un companion n'est pas lire les messages (voir doc de conception « Maillage
+    # Terrain ») — seuls le leader et le régulateur de CETTE équipe voient ce message.
+    equipe = models.ForeignKey(
+        "Team", on_delete=models.SET_NULL, null=True, blank=True, related_name="messages_meshcore",
+    )
+
     contenu = models.TextField()
 
     statut = models.CharField(max_length=12, choices=StatutMessageMesh.choices, default=StatutMessageMesh.EN_ATTENTE)
@@ -3831,4 +3840,91 @@ class MessageMeshLog(EnvironmentScopedModel):
 
     def __str__(self):
         return f"[{self.direction}] {self.contact_pubkey_hex[:12]}… — {self.statut}"
+
+
+class RelaisMeshCore(EnvironmentScopedModel):
+    """Répéteur MeshCore (infrastructure pure — ne se pilote pas comme un Companion, ne se
+    connecte à rien : c'est un point fixe posé sur le terrain). Purement déclaratif : sa
+    position est saisie manuellement, pas remontée automatiquement (un répéteur ne dialogue
+    pas avec un serveur, voir doc de conception « Maillage Terrain », rôles MeshCore)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    institution = models.ForeignKey(
+        "Institution", on_delete=models.CASCADE, null=True, blank=True, related_name="relais_meshcore",
+    )
+
+    nom = models.CharField(max_length=100)
+
+    location = gis_models.PointField(srid=4326, null=True, blank=True)
+
+    pubkey_hex = models.CharField(max_length=64, null=True, blank=True)
+
+    actif = models.BooleanField(default=True)
+
+    commentaire = models.TextField(null=True, blank=True)
+
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.nom
+
+
+class CanalMeshCore(EnvironmentScopedModel):
+    """Canal MeshCore (clé partagée, diffusion à N destinataires) — visibilité large
+    (institution/crise), à la différence des DM privés (MessageMeshLog, cloisonnés par
+    équipe). Sert à la coordination générale, jamais à du contenu sensible : le chiffrement
+    par clé partagée est plus faible que le chiffrement par paire des DM (voir doc de
+    conception)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    institution = models.ForeignKey(
+        "Institution", on_delete=models.CASCADE, null=True, blank=True, related_name="canaux_meshcore",
+    )
+
+    crise = models.ForeignKey(
+        "Crisis", on_delete=models.SET_NULL, null=True, blank=True, related_name="canaux_meshcore",
+    )
+
+    nom = models.CharField(max_length=100)
+
+    # Clé partagée du canal — sensible mais nécessaire au service-pont pour déchiffrer/envoyer
+    # sur ce canal. Jamais renvoyée en clair par l'API (voir serializer, write_only).
+    cle_partagee_hex = models.CharField(max_length=64, null=True, blank=True)
+
+    actif = models.BooleanField(default=True)
+
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.nom
+
+
+class MessageCanalMeshCore(EnvironmentScopedModel):
+    """Message posté sur un canal partagé — visibilité alignée sur le canal lui-même
+    (institution/crise), pas de cloisonnement par équipe contrairement à MessageMeshLog."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    canal = models.ForeignKey(CanalMeshCore, on_delete=models.CASCADE, related_name="messages")
+
+    direction = models.CharField(max_length=10, choices=DirectionMessageMesh.choices)
+
+    expediteur = models.ForeignKey(
+        "User", on_delete=models.SET_NULL, null=True, blank=True, related_name="messages_canal_meshcore_envoyes",
+    )
+
+    contact_pubkey_hex = models.CharField(max_length=64, null=True, blank=True)
+
+    contenu = models.TextField()
+
+    statut = models.CharField(max_length=12, choices=StatutMessageMesh.choices, default=StatutMessageMesh.EN_ATTENTE)
+
+    erreur = models.TextField(null=True, blank=True)
+
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"[{self.canal.nom}] {self.contenu[:40]}"
 

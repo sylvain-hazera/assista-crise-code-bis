@@ -70,6 +70,7 @@ export class AdminLayoutComponent implements OnInit {
     { icon: 'groups', label: 'Ressources mobilisées', route: '/admin/ressources-mobilisees' },
 
     { icon: 'settings_input_antenna', label: 'Companions MeshCore (test)', route: '/admin/meshcore-companions' },
+    { icon: 'forum', label: 'Canaux MeshCore (test)', route: '/admin/meshcore-canaux' },
 
     { icon: 'link', label: 'Correspondances', route: '/admin/correspondances' },
 

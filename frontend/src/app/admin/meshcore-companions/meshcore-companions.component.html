@@ -78,3 +78,88 @@
     </table>
   </div>
 }
+
+<h2>Relais MeshCore</h2>
+<p class="page-hint">
+  Infrastructure pure — un relais ne se pilote pas, sa position est saisie ici manuellement
+  pour l'affichage sur la carte.
+</p>
+
+<div class="create-panel">
+  <h3>Ajouter un relais</h3>
+  <div class="form-row">
+    <input type="text" class="form-input" placeholder="Nom (ex: Relais clocher église)" [(ngModel)]="nouveauRelaisNom">
+    <input type="number" class="form-input form-input-sm" placeholder="Latitude" [(ngModel)]="nouveauRelaisLat" step="0.0001">
+    <input type="number" class="form-input form-input-sm" placeholder="Longitude" [(ngModel)]="nouveauRelaisLon" step="0.0001">
+  </div>
+  <button type="button" class="btn-primary" [disabled]="!formRelaisValide || creatingRelais" (click)="ajouterRelais()">
+    Ajouter ce relais
+  </button>
+</div>
+
+<div class="table-wrapper">
+  <table class="data-table">
+    <thead>
+      <tr><th>Nom</th><th>Latitude</th><th>Longitude</th><th>Actif</th><th></th></tr>
+    </thead>
+    <tbody>
+      @for (r of relais; track r.id) {
+        <tr>
+          <td>{{ r.nom }}</td>
+          <td class="mono">{{ r.latitude }}</td>
+          <td class="mono">{{ r.longitude }}</td>
+          <td>{{ r.actif ? 'Oui' : 'Non' }}</td>
+          <td><button type="button" class="btn-danger-sm" (click)="supprimerRelais(r)">Supprimer</button></td>
+        </tr>
+      } @empty {
+        <tr><td colspan="5" class="empty">Aucun relais déclaré pour l'instant.</td></tr>
+      }
+    </tbody>
+  </table>
+</div>
+
+<h2>Nœuds MeshCore des comptes utilisateurs</h2>
+<p class="page-hint">
+  Associe la clé publique du companion personnel d'une personne de terrain à son compte —
+  c'est ce qui permet de savoir qui a envoyé un message, et donc de quelle équipe il vient.
+</p>
+
+<div class="create-panel">
+  <h3>Associer un nœud</h3>
+  <div class="form-row">
+    <select [(ngModel)]="nouveauNoeudUtilisateurId">
+      <option value="">— Utilisateur —</option>
+      @for (u of utilisateurs; track u.id) {
+        <option [value]="u.id">{{ u.first_name }} {{ u.last_name }} ({{ u.email }})</option>
+      }
+    </select>
+  </div>
+  <div class="form-row">
+    <input type="text" class="form-input" placeholder="Clé publique (hex)" [(ngModel)]="nouveauNoeudPubkey">
+    <input type="text" class="form-input" placeholder="Nom du nœud (optionnel)" [(ngModel)]="nouveauNoeudNom">
+  </div>
+  <button type="button" class="btn-primary" [disabled]="!formNoeudValide || creatingNoeud" (click)="ajouterNoeud()">
+    Associer
+  </button>
+</div>
+
+<div class="table-wrapper">
+  <table class="data-table">
+    <thead>
+      <tr><th>Utilisateur</th><th>Nom du nœud</th><th>Clé publique</th><th>Actif</th><th></th></tr>
+    </thead>
+    <tbody>
+      @for (n of noeuds; track n.id) {
+        <tr>
+          <td>{{ n.utilisateur_nom }}</td>
+          <td>{{ n.nom_noeud || '—' }}</td>
+          <td class="mono">{{ n.pubkey_hex }}</td>
+          <td>{{ n.actif ? 'Oui' : 'Non' }}</td>
+          <td><button type="button" class="btn-danger-sm" (click)="supprimerNoeud(n)">Retirer</button></td>
+        </tr>
+      } @empty {
+        <tr><td colspan="5" class="empty">Aucun nœud associé pour l'instant.</td></tr>
+      }
+    </tbody>
+  </table>
+</div>

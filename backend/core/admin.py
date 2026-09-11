@@ -20,6 +20,9 @@ from .models import (
     CompagnonMeshCore,
     NoeudMeshUtilisateur,
     MessageMeshLog,
+    RelaisMeshCore,
+    CanalMeshCore,
+    MessageCanalMeshCore,
 )
 
 
@@ -92,3 +95,19 @@ class MessageMeshLogAdmin(admin.ModelAdmin):
     list_display = ('compagnon', 'direction', 'statut', 'contact_pubkey_hex', 'expediteur', 'date_creation')
     list_filter = ('direction', 'statut', 'compagnon')
     readonly_fields = ('date_creation',)
+
+
+@admin.register(RelaisMeshCore)
+class RelaisMeshCoreAdmin(GISModelAdmin):
+    list_display = ('nom', 'institution', 'actif', 'pubkey_hex')
+
+
+@admin.register(CanalMeshCore)
+class CanalMeshCoreAdmin(admin.ModelAdmin):
+    list_display = ('nom', 'institution', 'crise', 'actif')
+
+
+@admin.register(MessageCanalMeshCore)
+class MessageCanalMeshCoreAdmin(admin.ModelAdmin):
+    list_display = ('canal', 'direction', 'statut', 'expediteur', 'date_creation')
+    list_filter = ('direction', 'statut', 'canal')

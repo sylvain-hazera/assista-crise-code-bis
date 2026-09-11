@@ -3,7 +3,13 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 
 import { CompagnonMeshCoreService } from '../../services/compagnon-meshcore.service';
+import { RelaisMeshCoreService } from '../../services/relais-meshcore.service';
+import { NoeudMeshUtilisateurService } from '../../services/noeud-mesh-utilisateur.service';
+import { UserService } from '../../services/user.service';
 import { CompagnonMeshCore, MeshCoreConnexionType } from '../../shared/models/compagnon-meshcore.model';
+import { RelaisMeshCore } from '../../shared/models/relais-meshcore.model';
+import { NoeudMeshUtilisateur } from '../../shared/models/noeud-mesh-utilisateur.model';
+import { User } from '../../shared/models/user.model';
 
 /** Page de test MeshCore : juste de quoi déclarer un companion (nom + IP/port, ou device série,
  * ou adresse BLE) sans passer par le Django admin — voir meshcore-bridge/README.md pour le
@@ -31,10 +37,31 @@ export class MeshcoreCompanionsComponent implements OnInit {
   nouveauBle = '';
   creating = false;
 
-  constructor(private service: CompagnonMeshCoreService) {}
+  relais: RelaisMeshCore[] = [];
+  nouveauRelaisNom = '';
+  nouveauRelaisLat: number | null = null;
+  nouveauRelaisLon: number | null = null;
+  creatingRelais = false;
+
+  noeuds: NoeudMeshUtilisateur[] = [];
+  utilisateurs: User[] = [];
+  nouveauNoeudUtilisateurId = '';
+  nouveauNoeudPubkey = '';
+  nouveauNoeudNom = '';
+  creatingNoeud = false;
+
+  constructor(
+    private service: CompagnonMeshCoreService,
+    private relaisService: RelaisMeshCoreService,
+    private noeudService: NoeudMeshUtilisateurService,
+    private userService: UserService,
+  ) {}
 
   ngOnInit(): void {
     this.load();
+    this.loadRelais();
+    this.loadNoeuds();
+    this.userService.getAll().subscribe(data => { this.utilisateurs = data; });
   }
 
   load(): void {
@@ -43,6 +70,70 @@ export class MeshcoreCompanionsComponent implements OnInit {
     this.service.getAll().subscribe({
       next: (data) => { this.companions = data; this.loading = false; },
       error: () => { this.errorMessage = 'Impossible de charger les companions.'; this.loading = false; },
+    });
+  }
+
+  loadRelais(): void {
+    this.relaisService.getAll().subscribe(data => { this.relais = data; });
+  }
+
+  loadNoeuds(): void {
+    this.noeudService.getAll().subscribe(data => { this.noeuds = data; });
+  }
+
+  get formRelaisValide(): boolean {
+    return !!this.nouveauRelaisNom.trim() && this.nouveauRelaisLat != null && this.nouveauRelaisLon != null;
+  }
+
+  ajouterRelais(): void {
+    if (!this.formRelaisValide) return;
+    this.creatingRelais = true;
+    this.relaisService.create({
+      nom: this.nouveauRelaisNom.trim(), latitude: this.nouveauRelaisLat!, longitude: this.nouveauRelaisLon!,
+    }).subscribe({
+      next: (created) => {
+        this.relais = [created, ...this.relais];
+        this.nouveauRelaisNom = '';
+        this.nouveauRelaisLat = null;
+        this.nouveauRelaisLon = null;
+        this.creatingRelais = false;
+      },
+      error: () => { this.errorMessage = 'Impossible de créer ce relais.'; this.creatingRelais = false; },
+    });
+  }
+
+  supprimerRelais(relais: RelaisMeshCore): void {
+    if (!confirm(`Supprimer le relais « ${relais.nom} » ?`)) return;
+    this.relaisService.delete(relais.id).subscribe(() => {
+      this.relais = this.relais.filter(r => r.id !== relais.id);
+    });
+  }
+
+  get formNoeudValide(): boolean {
+    return !!this.nouveauNoeudUtilisateurId && !!this.nouveauNoeudPubkey.trim();
+  }
+
+  ajouterNoeud(): void {
+    if (!this.formNoeudValide) return;
+    this.creatingNoeud = true;
+    this.noeudService.create({
+      utilisateur: this.nouveauNoeudUtilisateurId, pubkey_hex: this.nouveauNoeudPubkey.trim(), nom_noeud: this.nouveauNoeudNom.trim(),
+    }).subscribe({
+      next: (created) => {
+        this.noeuds = [created, ...this.noeuds];
+        this.nouveauNoeudUtilisateurId = '';
+        this.nouveauNoeudPubkey = '';
+        this.nouveauNoeudNom = '';
+        this.creatingNoeud = false;
+      },
+      error: () => { this.errorMessage = "Impossible d'associer ce nœud (clé publique déjà utilisée ?)."; this.creatingNoeud = false; },
+    });
+  }
+
+  supprimerNoeud(noeud: NoeudMeshUtilisateur): void {
+    if (!confirm(`Retirer le nœud de « ${noeud.utilisateur_nom} » ?`)) return;
+    this.noeudService.delete(noeud.id).subscribe(() => {
+      this.noeuds = this.noeuds.filter(n => n.id !== noeud.id);
     });
   }
 

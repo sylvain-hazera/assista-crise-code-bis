@@ -43,6 +43,9 @@ from .models import (
     CompagnonMeshCore,
     NoeudMeshUtilisateur,
     MessageMeshLog,
+    RelaisMeshCore,
+    CanalMeshCore,
+    MessageCanalMeshCore,
     ContributionMateriel,
     StatutMateriel,
     RegistrePresence,
@@ -2522,11 +2525,72 @@ class NoeudMeshUtilisateurSerializer(serializers.ModelSerializer):
 class MessageMeshLogSerializer(serializers.ModelSerializer):
     compagnon_nom = serializers.CharField(source='compagnon.nom', read_only=True)
     expediteur_nom = serializers.SerializerMethodField()
+    equipe_nom = serializers.CharField(source='equipe.name', read_only=True, default=None)
 
     class Meta:
         model = MessageMeshLog
         fields = "__all__"
-        read_only_fields = ['statut', 'erreur', 'date_envoi', 'expediteur']
+        # equipe/expediteur sont résolus côté serveur depuis contact_pubkey_hex (voir
+        # MessageMeshLogViewSet.perform_create) — jamais posés par le client.
+        read_only_fields = ['statut', 'erreur', 'date_envoi', 'expediteur', 'equipe']
+
+    def get_expediteur_nom(self, obj):
+        if not obj.expediteur_id:
+            return None
+        return f"{obj.expediteur.first_name} {obj.expediteur.last_name}".strip() or obj.expediteur.email
+
+
+class RelaisMeshCoreSerializer(serializers.ModelSerializer):
+    institution_nom = serializers.CharField(source='institution.nom', read_only=True, default=None)
+    latitude = serializers.SerializerMethodField()
+    longitude = serializers.SerializerMethodField()
+
+    class Meta:
+        model = RelaisMeshCore
+        fields = "__all__"
+
+    def get_latitude(self, obj):
+        return obj.location.y if obj.location else None
+
+    def get_longitude(self, obj):
+        return obj.location.x if obj.location else None
+
+    def create(self, validated_data):
+        return self._avec_position(RelaisMeshCore(), validated_data)
+
+    def update(self, instance, validated_data):
+        return self._avec_position(instance, validated_data)
+
+    def _avec_position(self, instance, validated_data):
+        from django.contrib.gis.geos import Point
+        lat = self.initial_data.get('latitude')
+        lon = self.initial_data.get('longitude')
+        for champ, valeur in validated_data.items():
+            setattr(instance, champ, valeur)
+        if lat is not None and lon is not None:
+            instance.location = Point(float(lon), float(lat), srid=4326)
+        instance.save()
+        return instance
+
+
+class CanalMeshCoreSerializer(serializers.ModelSerializer):
+    institution_nom = serializers.CharField(source='institution.nom', read_only=True, default=None)
+    crise_nom = serializers.CharField(source='crise.name', read_only=True, default=None)
+
+    class Meta:
+        model = CanalMeshCore
+        fields = "__all__"
+        extra_kwargs = {'cle_partagee_hex': {'write_only': True}}
+
+
+class MessageCanalMeshCoreSerializer(serializers.ModelSerializer):
+    canal_nom = serializers.CharField(source='canal.nom', read_only=True)
+    expediteur_nom = serializers.SerializerMethodField()
+
+    class Meta:
+        model = MessageCanalMeshCore
+        fields = "__all__"
+        read_only_fields = ['statut', 'erreur', 'expediteur']
 
     def get_expediteur_nom(self, obj):
         if not obj.expediteur_id:

@@ -177,3 +177,149 @@ class TestMessageMeshLog:
         api_client.force_authenticate(user=user)
         response = api_client.get(reverse('messagemeshlog-list'))
         assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+@pytest.mark.django_db
+class TestMessageMeshLogResolutionEtVisibilite:
+    """L'expéditeur/l'équipe sont résolus côté serveur (jamais posés par le client), et la
+    visibilité des DM est cloisonnée à l'équipe (leader/régulateur) — voir doc de conception
+    « Maillage Terrain », principe « administrer un companion n'est pas lire les messages »."""
+
+    def test_message_entrant_resout_expediteur_et_equipe(self, api_client, compagnon, create_user, institution_a):
+        from core.models import NoeudMeshUtilisateur, Team
+        bridge_user = create_user(username='bridge-resolve@test.fr', email='bridge-resolve@test.fr', type='UTIL_SIMPLE')
+        terrain_user = create_user(username='terrain-resolve@test.fr', email='terrain-resolve@test.fr', type='UTIL_SIMPLE')
+        equipe = Team.objects.create(name='Équipe résolution test', institution=institution_a)
+        equipe.members.add(terrain_user)
+        NoeudMeshUtilisateur.objects.create(utilisateur=terrain_user, pubkey_hex='aabbccddeeff', actif=True)
+
+        api_client.force_authenticate(user=bridge_user)
+        response = api_client.post(reverse('messagemeshlog-list'), {
+            'compagnon': str(compagnon.id), 'direction': 'ENTRANT',
+            'contact_pubkey_hex': 'aabbccddeeff', 'contenu': 'Statut RAS',
+        }, format='json')
+
+        assert response.status_code == status.HTTP_201_CREATED
+        message = MessageMeshLog.objects.get(id=response.data['id'])
+        assert message.expediteur == terrain_user
+        assert message.equipe == equipe
+
+    def test_message_entrant_pubkey_inconnue_ne_resout_rien(self, api_client, compagnon, create_user):
+        bridge_user = create_user(username='bridge-inconnu@test.fr', email='bridge-inconnu@test.fr', type='UTIL_SIMPLE')
+        api_client.force_authenticate(user=bridge_user)
+        response = api_client.post(reverse('messagemeshlog-list'), {
+            'compagnon': str(compagnon.id), 'direction': 'ENTRANT',
+            'contact_pubkey_hex': 'ffffffffffff', 'contenu': 'Inconnu',
+        }, format='json')
+        assert response.status_code == status.HTTP_201_CREATED
+        message = MessageMeshLog.objects.get(id=response.data['id'])
+        assert message.expediteur is None
+        assert message.equipe is None
+
+    def test_message_sortant_expediteur_est_utilisateur_connecte(self, mairie_client, compagnon):
+        client, regulateur = mairie_client
+        response = client.post(reverse('messagemeshlog-list'), {
+            'compagnon': str(compagnon.id), 'direction': 'SORTANT',
+            'contact_pubkey_hex': 'aabbccddeeff', 'contenu': 'Rentrez à la base',
+        }, format='json')
+        assert response.status_code == status.HTTP_201_CREATED
+        message = MessageMeshLog.objects.get(id=response.data['id'])
+        assert message.expediteur == regulateur
+
+    def test_leader_equipe_voit_les_messages_de_son_equipe(self, create_user, institution_a, compagnon):
+        from core.models import NoeudMeshUtilisateur, Team
+        leader = create_user(username='leader-visib@test.fr', email='leader-visib@test.fr', type='AUT_LOCALE')
+        terrain_user = create_user(username='terrain-visib@test.fr', email='terrain-visib@test.fr', type='UTIL_SIMPLE')
+        equipe = Team.objects.create(name='Équipe visibilité test', institution=institution_a, leader=leader)
+        NoeudMeshUtilisateur.objects.create(utilisateur=terrain_user, pubkey_hex='1234567890ab', actif=True)
+        MessageMeshLog.objects.create(
+            compagnon=compagnon, direction='ENTRANT', statut='RECU',
+            contact_pubkey_hex='1234567890ab', contenu='RAS', expediteur=terrain_user, equipe=equipe,
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=leader)
+        response = client.get(reverse('messagemeshlog-list'))
+
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data) == 1
+        assert response.data[0]['contenu'] == 'RAS'
+
+    def test_regulateur_autre_equipe_ne_voit_pas(self, create_user, institution_a, compagnon):
+        from core.models import NoeudMeshUtilisateur, Team
+        leader = create_user(username='leader-autre@test.fr', email='leader-autre@test.fr', type='AUT_LOCALE')
+        autre_regulateur = create_user(username='regulateur-autre@test.fr', email='regulateur-autre@test.fr', type='AUT_LOCALE')
+        terrain_user = create_user(username='terrain-autre@test.fr', email='terrain-autre@test.fr', type='UTIL_SIMPLE')
+        equipe = Team.objects.create(name='Équipe A cloisonnement', institution=institution_a, leader=leader)
+        Team.objects.create(name='Équipe B cloisonnement', institution=institution_a, regulateur=autre_regulateur)
+        NoeudMeshUtilisateur.objects.create(utilisateur=terrain_user, pubkey_hex='deadbeefcafe', actif=True)
+        MessageMeshLog.objects.create(
+            compagnon=compagnon, direction='ENTRANT', statut='RECU',
+            contact_pubkey_hex='deadbeefcafe', contenu='Confidentiel équipe A', expediteur=terrain_user, equipe=equipe,
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=autre_regulateur)
+        response = client.get(reverse('messagemeshlog-list'))
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data == []
+
+    def test_administrateur_voit_tout(self, create_user, institution_a, compagnon):
+        from core.models import NoeudMeshUtilisateur, Team
+        admin = create_user(username='admin-visib@test.fr', email='admin-visib@test.fr', type='ADMIN')
+        leader = create_user(username='leader-admin-test@test.fr', email='leader-admin-test@test.fr', type='AUT_LOCALE')
+        terrain_user = create_user(username='terrain-admin-test@test.fr', email='terrain-admin-test@test.fr', type='UTIL_SIMPLE')
+        equipe = Team.objects.create(name='Équipe visible admin', institution=institution_a, leader=leader)
+        NoeudMeshUtilisateur.objects.create(utilisateur=terrain_user, pubkey_hex='0011223344aa', actif=True)
+        MessageMeshLog.objects.create(
+            compagnon=compagnon, direction='ENTRANT', statut='RECU',
+            contact_pubkey_hex='0011223344aa', contenu='Visible admin', expediteur=terrain_user, equipe=equipe,
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=admin)
+        response = client.get(reverse('messagemeshlog-list'))
+
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data) == 1
+
+
+@pytest.mark.django_db
+class TestRelaisMeshCore:
+
+    def test_institutional_actor_can_create(self, mairie_client, institution_a):
+        client, _ = mairie_client
+        response = client.post(reverse('relaismeshcore-list'), {
+            'nom': 'Relais clocher', 'institution': str(institution_a.id),
+            'latitude': 45.75, 'longitude': 4.85,
+        }, format='json')
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data['latitude'] == 45.75
+        assert response.data['longitude'] == 4.85
+
+    def test_non_institutional_cannot_create(self, create_user):
+        user = create_user(username='simple-relais@test.fr', email='simple-relais@test.fr', type='UTIL_SIMPLE')
+        client = APIClient()
+        client.force_authenticate(user=user)
+        response = client.post(reverse('relaismeshcore-list'), {'nom': 'Relais refuse'}, format='json')
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+@pytest.mark.django_db
+class TestCanalMeshCore:
+
+    def test_institutional_actor_can_create_canal_and_post_message(self, mairie_client, institution_a):
+        client, regulateur = mairie_client
+        canal_response = client.post(reverse('canalmeshcore-list'), {
+            'nom': 'Canal coordination générale', 'institution': str(institution_a.id),
+            'cle_partagee_hex': 'secretcanal01',
+        }, format='json')
+        assert canal_response.status_code == status.HTTP_201_CREATED
+        assert 'cle_partagee_hex' not in canal_response.data
+
+        message_response = client.post(reverse('messagecanalmeshcore-list'), {
+            'canal': canal_response.data['id'], 'direction': 'SORTANT', 'contenu': 'Point de situation général',
+        }, format='json')
+        assert message_response.status_code == status.HTTP_201_CREATED
+        assert message_response.data['expediteur_nom']

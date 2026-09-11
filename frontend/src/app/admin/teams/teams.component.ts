@@ -26,6 +26,7 @@ import { ZoneMapComponent } from '../../shared/components/common/zone-map/zone-m
 import { MinimapComponent } from '../../shared/components/common/minimap/minimap.component';
 import { TagSearchInputComponent } from '../../shared/components/common/tag-search-input/tag-search-input.component';
 import { PointModalComponent } from '../crises/point-modal/point-modal.component';
+import { EquipeMessagerieMeshComponent } from './equipe-messagerie-mesh/equipe-messagerie-mesh.component';
 
 import { Team, TeamMission }  from '../../shared/models/team.model';
 import { User }        from '../../shared/models/user.model';
@@ -48,7 +49,7 @@ const COLORS = ['#ef4444','#f97316','#eab308','#22c55e','#06b6d4','#3b82f6','#8b
 @Component({
   selector: 'app-teams',
   standalone: true,
-  imports: [CommonModule, FormsModule, ReactiveFormsModule, RouterLink, ZoneMapComponent, MinimapComponent, TagSearchInputComponent, PointModalComponent],
+  imports: [CommonModule, FormsModule, ReactiveFormsModule, RouterLink, ZoneMapComponent, MinimapComponent, TagSearchInputComponent, PointModalComponent, EquipeMessagerieMeshComponent],
   templateUrl: './teams.component.html',
   styleUrls: ['./teams.component.scss'],
 })

@@ -29,6 +29,7 @@ import { MaterielComponent } from './materiel/materiel.component';
 import { RessourcesMobiliseesComponent } from './ressources-mobilisees/ressources-mobilisees.component';
 import { CriseDemarrageComponent } from './crise-demarrage/crise-demarrage.component';
 import { MeshcoreCompanionsComponent } from './meshcore-companions/meshcore-companions.component';
+import { MeshcoreCanauxComponent } from './meshcore-canaux/meshcore-canaux.component';
 import { RecherchesPersonnesComponent } from '../pages/recherches-personnes/recherches-personnes.component';
 import { RecherchePersonneCreateComponent } from '../pages/recherche-personne-create/recherche-personne-create.component';
 import { RecherchePersonneDetailComponent } from '../pages/recherche-personne-detail/recherche-personne-detail.component';
@@ -50,6 +51,7 @@ export const ADMIN_ROUTES: Routes = [
   { path: 'crises/:crisisId/stocks', component: StocksComparaisonComponent, canActivate: [institutionalEffectiveGuard] },
   { path: 'crises/:id/demarrage', component: CriseDemarrageComponent, canActivate: [institutionalEffectiveGuard] },
   { path: 'meshcore-companions', component: MeshcoreCompanionsComponent, canActivate: [institutionalEffectiveGuard] },
+  { path: 'meshcore-canaux', component: MeshcoreCanauxComponent, canActivate: [institutionalEffectiveGuard] },
   { path: 'centres', component: CentresComponent, canActivate: [institutionalEffectiveGuard] },
   { path: 'zones', component: ZonesComponent, canActivate: [institutionalEffectiveGuard] },
   { path: 'plans', component: PlansComponent, canActivate: [institutionalEffectiveGuard] },

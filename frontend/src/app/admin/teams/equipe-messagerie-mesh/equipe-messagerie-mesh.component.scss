@@ -1,0 +1,80 @@
+.section-mesh {
+  margin-top: 1.5rem;
+  padding-top: 1.2rem;
+  border-top: 1px solid #e5e7eb;
+
+  h3 {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    font-size: 1rem;
+    margin: 0 0 .8rem;
+    .material-icons { font-size: 18px; color: #0891b2; }
+  }
+}
+
+.badge-test {
+  font-size: .65rem;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  font-weight: 700;
+  color: #92400e;
+  background: #fef3c7;
+  border-radius: 999px;
+  padding: .1rem .5rem;
+}
+
+.hint { color: #9ca3af; font-size: .85rem; }
+.erreur { color: #dc3545; font-size: .85rem; }
+
+.destinataire-row {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: .8rem;
+  flex-wrap: wrap;
+
+  label { display: flex; flex-direction: column; gap: .2rem; font-size: .78rem; color: #6b7280; }
+  select { padding: .35rem .5rem; border: 1px solid #e5e7eb; border-radius: 6px; font-size: .85rem; }
+}
+
+.messages {
+  max-height: 260px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+  margin-bottom: .8rem;
+  padding: .5rem;
+  background: #fafafa;
+  border-radius: 8px;
+}
+
+.message {
+  max-width: 75%;
+  background: #f3f4f6;
+  border-radius: 8px;
+  padding: .4rem .6rem;
+
+  &.sortant { align-self: flex-end; background: #dbeafe; }
+
+  .message-meta { font-size: .68rem; color: #6b7280; margin-bottom: .15rem; }
+  .message-contenu { font-size: .85rem; color: #1f2937; white-space: pre-wrap; }
+}
+
+.saisie {
+  display: flex;
+  gap: .5rem;
+
+  input { flex: 1; padding: .5rem .7rem; border: 1px solid #e5e7eb; border-radius: 6px; font-size: .85rem; }
+
+  button {
+    padding: .5rem 1rem;
+    border-radius: 6px;
+    border: 1px solid #2563eb;
+    background: #2563eb;
+    color: #fff;
+    cursor: pointer;
+    font-size: .85rem;
+    &:disabled { opacity: .5; cursor: not-allowed; }
+  }
+}

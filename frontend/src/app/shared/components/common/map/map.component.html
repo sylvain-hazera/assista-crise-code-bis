@@ -52,6 +52,11 @@
           Positions équipes
         </label>
         <label class="layer-toggle-item">
+          <input type="checkbox" [(ngModel)]="layerVisibility.relaisMeshCore" (ngModelChange)="onLayerToggle()">
+          <span class="layer-dot relais-meshcore-dot"></span>
+          Relais MeshCore (test)
+        </label>
+        <label class="layer-toggle-item">
           <input type="checkbox" [(ngModel)]="layerVisibility.personnelSecourisme" (ngModelChange)="onLayerToggle()">
           <span class="layer-dot personnel-dot"></span>
           Personnel secourisme

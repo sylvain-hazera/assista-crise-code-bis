@@ -142,6 +142,7 @@ from .models import (
     User, Crisis, TypeCrise, Request, RequestPhoto, Offer, OfferPhoto, OfferMessage, Information, DisponibiliteOffre, DisponibilitePointEquipe, MaterielPoint,
     MaterielCatalogue, ContributionMateriel, StatutMateriel, TypeMateriel, NiveauStock, RegistrePresence, TypePersonneAccueillie, DeclarationSecurite, SituationDeclarant,
     CompagnonMeshCore, NoeudMeshUtilisateur, MessageMeshLog, DirectionMessageMesh, StatutMessageMesh,
+    RelaisMeshCore, CanalMeshCore, MessageCanalMeshCore,
     AffectationPointBenevole, StatutAffectation,
     RecherchePersonne, RecherchePersonneCommentaire, Besoin, Notification, DossierParticipant,
     RecherchePersonneCommentairePhoto, RecherchePersonneLecture, RecherchePersonneLectureHistorique,
@@ -297,6 +298,9 @@ from .serializers import (
     CompagnonMeshCoreSerializer,
     NoeudMeshUtilisateurSerializer,
     MessageMeshLogSerializer,
+    RelaisMeshCoreSerializer,
+    CanalMeshCoreSerializer,
+    MessageCanalMeshCoreSerializer,
     ContributionMaterielSerializer,
     RegistrePresenceSerializer,
     DeclarationSecuriteSerializer,
@@ -8786,11 +8790,12 @@ class NoeudMeshUtilisateurViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelV
 
 
 class MessageMeshLogViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
-    """Journal de test des DM MeshCore — voir docstring du modèle sur les limites volontaires
-    de cette phase (pas de cloisonnement par équipe, c'est un banc de test, pas la fonctionnalité
-    définitive)."""
+    """DM MeshCore privés régulateur <-> équipe. Principe d'accès (voir doc de conception
+    « Maillage Terrain ») : administrer un companion n'est pas lire les messages qui y
+    transitent — la visibilité est cloisonnée à l'équipe de l'expéditeur, plus stricte que le
+    scoping institution/zone habituel de l'application."""
 
-    queryset = MessageMeshLog.objects.select_related('compagnon', 'expediteur').all()
+    queryset = MessageMeshLog.objects.select_related('compagnon', 'expediteur', 'equipe').all()
     serializer_class = MessageMeshLogSerializer
 
     def get_permissions(self):
@@ -8802,8 +8807,36 @@ class MessageMeshLogViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet
         # institutionnel humain.
         return [permissions.IsAuthenticated()]
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        equipe_id = self.request.query_params.get('equipe')
+        if equipe_id:
+            qs = qs.filter(equipe_id=equipe_id)
+        if self.action not in ('list', 'retrieve'):
+            return qs
+        if effective_role_or_none(self.request) == UserRole.ADMINISTRATOR:
+            return qs
+        user = self.request.user
+        return qs.filter(Q(equipe__leader=user) | Q(equipe__regulateur=user))
+
     def perform_create(self, serializer):
-        message = serializer.save(environment=get_active_environment(self.request))
+        contact_pubkey_hex = serializer.validated_data.get('contact_pubkey_hex')
+        direction = serializer.validated_data.get('direction')
+        expediteur = None
+        if direction == DirectionMessageMesh.ENTRANT and contact_pubkey_hex:
+            # Message reçu du mesh : l'expéditeur réel est la personne de terrain identifiée
+            # par sa clé publique — jamais le compte de service du pont, qui ne fait que
+            # relayer (voir NoeudMeshUtilisateur).
+            noeud = NoeudMeshUtilisateur.objects.filter(pubkey_hex=contact_pubkey_hex, actif=True).select_related('utilisateur').first()
+            expediteur = noeud.utilisateur if noeud else None
+        elif direction == DirectionMessageMesh.SORTANT:
+            # Message composé depuis l'interface : l'expéditeur est le régulateur connecté.
+            expediteur = self.request.user if self.request.user.is_authenticated else None
+        equipe = expediteur.teams.first() if expediteur is not None else None
+
+        message = serializer.save(
+            environment=get_active_environment(self.request), expediteur=expediteur, equipe=equipe,
+        )
         if message.direction == DirectionMessageMesh.ENTRANT and message.statut == StatutMessageMesh.EN_ATTENTE:
             # Un message entrant est par définition déjà reçu, pas "en attente d'envoi" —
             # filet de sécurité si le service-pont omet `statut` dans son POST.
@@ -8820,3 +8853,83 @@ class MessageMeshLogViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet
         if compagnon_id:
             qs = qs.filter(compagnon_id=compagnon_id)
         return Response(MessageMeshLogSerializer(qs, many=True).data)
+
+
+class RelaisMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
+    """Répéteurs MeshCore — infrastructure pure, purement déclarative (voir docstring du
+    modèle). Affichés sur la carte comme les autres points d'intérêt de l'app."""
+
+    queryset = RelaisMeshCore.objects.select_related('institution').all()
+    serializer_class = RelaisMeshCoreSerializer
+
+    def get_permissions(self):
+        if self.action in ('create', 'update', 'partial_update', 'destroy'):
+            return [IsInstitutionalActor()]
+        return [permissions.IsAuthenticated()]
+
+    def perform_create(self, serializer):
+        relais = serializer.save(environment=get_active_environment(self.request))
+        audit_log(
+            request=self.request,
+            action_code="CREATION",
+            objet_type="RelaisMeshCore",
+            objet_id=relais.id,
+            commentaire=f"Création relais MeshCore : {relais.nom}",
+        )
+
+
+class CanalMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
+    """Canaux MeshCore (coordination générale, visibilité large) — voir docstring du modèle."""
+
+    queryset = CanalMeshCore.objects.select_related('institution', 'crise').all()
+    serializer_class = CanalMeshCoreSerializer
+
+    def get_permissions(self):
+        if self.action in ('create', 'update', 'partial_update', 'destroy'):
+            return [IsInstitutionalActor()]
+        return [permissions.IsAuthenticated()]
+
+    def perform_create(self, serializer):
+        canal = serializer.save(environment=get_active_environment(self.request))
+        audit_log(
+            request=self.request,
+            action_code="CREATION",
+            objet_type="CanalMeshCore",
+            objet_id=canal.id,
+            commentaire=f"Création canal MeshCore : {canal.nom}",
+        )
+
+
+class MessageCanalMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
+    """Messages postés sur un canal MeshCore partagé — visibilité alignée sur le canal
+    (institution/crise), pas de cloisonnement par équipe (voir MessageMeshLogViewSet pour les
+    DM privés, qui eux le sont)."""
+
+    queryset = MessageCanalMeshCore.objects.select_related('canal', 'expediteur').all()
+    serializer_class = MessageCanalMeshCoreSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        canal_id = self.request.query_params.get('canal')
+        if canal_id:
+            qs = qs.filter(canal_id=canal_id)
+        return qs
+
+    def get_permissions(self):
+        if self.action in ('list', 'retrieve'):
+            return [IsInstitutionalActor()]
+        return [permissions.IsAuthenticated()]
+
+    def perform_create(self, serializer):
+        direction = serializer.validated_data.get('direction')
+        expediteur = self.request.user if direction == DirectionMessageMesh.SORTANT and self.request.user.is_authenticated else None
+        serializer.save(environment=get_active_environment(self.request), expediteur=expediteur)
+
+    @action(detail=False, methods=['get'], url_path='a-envoyer')
+    def a_envoyer(self, request):
+        """Même principe que MessageMeshLogViewSet.a_envoyer, pour les messages de canal."""
+        canal_id = request.query_params.get('canal')
+        qs = self.get_queryset().filter(direction=DirectionMessageMesh.SORTANT, statut=StatutMessageMesh.EN_ATTENTE)
+        if canal_id:
+            qs = qs.filter(canal_id=canal_id)
+        return Response(MessageCanalMeshCoreSerializer(qs, many=True).data)
