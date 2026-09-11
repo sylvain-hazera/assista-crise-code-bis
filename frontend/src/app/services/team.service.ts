@@ -76,6 +76,14 @@ export class TeamService {
     return this.http.post<void>(`${this.url}/${id}/delier-point/`, { point_id: pointId });
   }
 
+  /** POST /api/teams/<id>/assigner-crise/ — rattache l'équipe à une crise (additif, jamais un
+   * remplacement de Team.assigned_crises). Nécessaire en plus de lierPoint : lier un point
+   * n'ajoute pas automatiquement la crise à assigned_crises, or plusieurs vues s'appuient sur
+   * ce champ précisément (recrutement scopé, ressources mobilisées, matching hébergement). */
+  assignerCrise(id: string, criseId: string): Observable<Team> {
+    return this.http.post<Team>(`${this.url}/${id}/assigner-crise/`, { crise_id: criseId });
+  }
+
   rattacherEquipe(parentId: string, equipeId: string): Observable<Team> {
     return this.http.post<Team>(`${this.url}/${parentId}/rattacher-equipe/`, { equipe_id: equipeId });
   }

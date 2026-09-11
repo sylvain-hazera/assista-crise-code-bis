@@ -979,6 +979,39 @@ export class TeamsComponent implements OnInit {
     });
   }
 
+  // ── Crises rattachées : rattacher/afficher (Team.assigned_crises) ────
+  // Distinct de la mission active ci-dessus (Mission.crise) : lier un point ou définir une
+  // mission ne rattachent jamais automatiquement la crise elle-même à l'équipe, or plusieurs
+  // vues s'appuient spécifiquement sur ce champ (recrutement scopé, ressources mobilisées,
+  // matching hébergement) — voir TeamViewSet.assigner_crise. Avant ce contrôle, aucune vue
+  // n'exposait de moyen de le faire manuellement (le wizard de démarrage de crise est le seul
+  // autre endroit qui l'appelle, et seulement pour une crise en cours de création).
+  rattacherCriseId: string | null = null;
+
+  get crisesRattacheesTeam(): Crisis[] {
+    if (!this.selectedTeam) return [];
+    const ids = new Set(this.selectedTeam.assigned_crisis_ids ?? []);
+    return this.crisis.filter(c => ids.has(c.id));
+  }
+
+  get crisesRattachablesTeam(): Crisis[] {
+    const ids = new Set(this.selectedTeam?.assigned_crisis_ids ?? []);
+    return this.crisesOuvertes.filter(c => !ids.has(c.id));
+  }
+
+  submitRattacherCrise(): void {
+    if (!this.selectedTeam?.id || !this.rattacherCriseId) return;
+    this.teamService.assignerCrise(this.selectedTeam.id, this.rattacherCriseId).subscribe({
+      next: (updated) => {
+        this.selectedTeam = { ...updated, missions: this.buildMissions(updated) };
+        this.rattacherCriseId = null;
+        this.reloadTeams();
+        this.showSuccess('Crise rattachée à l\'équipe.');
+      },
+      error: (err) => this.showError(err?.error?.error || 'Erreur lors du rattachement de la crise.'),
+    });
+  }
+
   /** Crises ouvertes proposables pour la mission — une mission ne doit pas pouvoir se rattacher
    * à une crise déjà clôturée (voir validate_crisis_open côté backend). */
   get crisesOuvertes(): Crisis[] {

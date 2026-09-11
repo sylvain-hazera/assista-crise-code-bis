@@ -46,9 +46,32 @@ export class MinimapComponent implements AfterViewInit, OnChanges, OnDestroy {
   private pointMarker: maplibregl.Marker | null = null;
   private arrowMarker: maplibregl.Marker | null = null;
   private poiMarkers: maplibregl.Marker[] = [];
+  private resizeObserver: ResizeObserver | null = null;
 
   ngAfterViewInit(): void {
     this.initMap();
+    this.observeContainerResize();
+  }
+
+  /** Même correctif que MapComponent.observeContainerResize : MapLibre ne calcule la taille
+   * du canvas qu'une fois, à l'instant de la construction — si le conteneur n'a pas encore sa
+   * taille finale à ce moment (ex: une minimap dans une modale dont la mise en page n'est pas
+   * encore stabilisée), fitBounds/fitToZone se base sur un viewport erroné et la carte ne
+   * cadre pas correctement sur la zone. On réaligne le canvas ET on refait le cadrage une fois
+   * la taille réelle connue, pas juste resize() seul (qui ne corrigerait pas un fitBounds déjà
+   * calculé avec de mauvaises dimensions). */
+  private observeContainerResize(): void {
+    if (typeof ResizeObserver === 'undefined') return;
+    this.resizeObserver = new ResizeObserver(() => {
+      if (!this.map) return;
+      this.map.resize();
+      if (this.zoneGeojson) {
+        this.fitToZone(this.zoneGeojson);
+      } else if (this.pointsInteret.length > 0) {
+        this.fitToPoints();
+      }
+    });
+    this.resizeObserver.observe(this.mapContainer.nativeElement);
   }
 
   ngOnChanges(changes: SimpleChanges): void {
@@ -191,6 +214,7 @@ export class MinimapComponent implements AfterViewInit, OnChanges, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.resizeObserver?.disconnect();
     this.pointMarker?.remove();
     this.arrowMarker?.remove();
     this.poiMarkers.forEach(m => m.remove());

@@ -2348,11 +2348,21 @@ def department_code_from_commune_code(commune_code):
 def team_zone_specificity(team, demande):
     """Score de spécificité de la couverture géographique d'une équipe pour une demande :
     plus le nombre est élevé, plus la correspondance est précise. `None` si l'équipe a
-    déclaré une zone mais qu'elle ne couvre pas la demande — dans ce cas l'équipe est
-    exclue du matching. Une équipe n'ayant déclaré aucune zone (cas de toutes les équipes
-    existantes avant cette fonctionnalité) est considérée disponible partout, pour ne pas
-    régresser le comportement précédent."""
+    déclaré une zone (ou retombe sur celle de la crise, voir ci-dessous) qui ne couvre pas
+    la demande — dans ce cas l'équipe est exclue du matching.
+
+    Une équipe n'ayant déclaré AUCUNE zone (departements/communes/zone_precise) retombe sur
+    la zone de la crise elle-même : elle ne matche que les demandes situées dans
+    `crise.zone_secteurs`, pas n'importe où en France. Avant ce correctif, l'absence de zone
+    valait "disponible partout" sans distinction — trop large, une équipe non zonée
+    n'intervient en pratique que sur la crise à laquelle elle est rattachée. Si la crise
+    elle-même n'a pas de géométrie exploitable (zone_secteurs vide) ou que la demande n'a
+    pas de coordonnées, on retombe sur l'ancien comportement (disponible) plutôt que
+    d'exclure silencieusement faute de données."""
     if not (team.departements or team.communes or team.zone_precise):
+        crise = demande.crisis
+        if crise and crise.zone_secteurs and demande.location:
+            return 0 if crise.zone_secteurs.contains(demande.location) else None
         return 0
 
     if team.zone_precise and demande.location and team.zone_precise.contains(demande.location):
@@ -3753,7 +3763,7 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             'lier_point', 'delier_point',
             'rattacher_equipe', 'detacher_equipe',
             'definir_statut_ressource', 'reactiver', 'vue_mairie', 'institutions_liees',
-            'ressources_mobilisees',
+            'ressources_mobilisees', 'assigner_crise',
         ):
             return [IsInstitutionalActor()]
         return [permissions.IsAuthenticated()]
@@ -4518,6 +4528,40 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         )
 
         return Response(PointOperationnelSerializer(point, context=self.get_serializer_context()).data)
+
+    @action(detail=True, methods=['post'], url_path='assigner-crise')
+    def assigner_crise(self, request, pk=None):
+        """Rattache l'équipe à une crise (Team.assigned_crises) — purement additif (`.add()`,
+        jamais un `.set()` qui écraserait les crises déjà assignées), même geste que
+        PlanViewSet.activer. Nécessaire en plus de lier_point : une équipe peut être liée à un
+        point d'une crise (PointOperationnel.equipe) SANS que la crise elle-même apparaisse
+        dans Team.assigned_crises — deux champs distincts, or plusieurs vues s'appuient
+        spécifiquement sur ce second champ (recrutement scopé à la crise, ressources
+        mobilisées, matching hébergement) : un oubli ici les laisse silencieusement vides."""
+        team = self.get_object()
+        if not _appartient_a_equipe(request, team):
+            return Response(
+                {"error": "Vous ne pouvez assigner une crise qu'aux équipes de votre institution (ou de l'institution déléguée)."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        crise_id = request.data.get('crise_id')
+        try:
+            crise = Crisis.objects.get(id=crise_id)
+        except (Crisis.DoesNotExist, ValueError, TypeError):
+            return Response({"error": "Crise introuvable."}, status=status.HTTP_400_BAD_REQUEST)
+
+        team.assigned_crises.add(crise)
+
+        audit_log(
+            request=request,
+            action_code="MODIFICATION",
+            objet_type="Team",
+            objet_id=team.id,
+            commentaire=f"Crise assignée : « {crise.name} »",
+        )
+
+        return Response(TeamSerializer(team, context=self.get_serializer_context()).data)
 
     @action(detail=True, methods=['post'], url_path='delier-point')
     def delier_point(self, request, pk=None):

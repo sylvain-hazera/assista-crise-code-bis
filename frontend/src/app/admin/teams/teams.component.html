@@ -645,6 +645,47 @@
           }
         </div>
 
+        <!-- ── CRISES RATTACHÉES ─────────────────────────────── -->
+        <div class="detail-section">
+          <div class="section-header">
+            <h3>
+              <span class="material-icons">local_fire_department</span>
+              Crises rattachées
+              <span class="count-badge">{{ crisesRattacheesTeam.length }}</span>
+            </h3>
+          </div>
+
+          @if (crisesRattacheesTeam.length > 0) {
+            <div class="mission-list">
+              @for (c of crisesRattacheesTeam; track c.id) {
+                <div class="mission-row">
+                  <span class="mk-badge mk-crisis">
+                    <span class="material-icons">local_fire_department</span>
+                  </span>
+                  <div class="mission-info">
+                    <span class="mission-titre">{{ c.name }}</span>
+                    <span class="mission-meta">{{ fmtDate(c.start_date) }} @if (c.status) { · {{ c.status }} }</span>
+                  </div>
+                </div>
+              }
+            </div>
+          } @else {
+            <p class="no-missions">Aucune crise rattachée — les vues qui s'appuient sur ce champ (ressources mobilisées, recrutement scopé, matching hébergement) ne verront pas cette équipe tant que ce n'est pas fait.</p>
+          }
+
+          <div class="mission-active-bar">
+            <select class="form-select" [(ngModel)]="rattacherCriseId">
+              <option [ngValue]="null">Rattacher à une crise…</option>
+              @for (c of crisesRattachablesTeam; track c.id) {
+                <option [ngValue]="c.id">{{ c.name }}</option>
+              }
+            </select>
+            <button class="btn-secondary sm" [disabled]="!rattacherCriseId" (click)="submitRattacherCrise()">
+              <span class="material-icons">link</span> Rattacher
+            </button>
+          </div>
+        </div>
+
         <!-- ── DEMANDES ASSIGNÉES ────────────────────────────── -->
         <div class="detail-section">
           <div class="section-header">
