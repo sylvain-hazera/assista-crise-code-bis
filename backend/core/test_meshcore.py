@@ -178,6 +178,47 @@ class TestMessageMeshLog:
         response = api_client.get(reverse('messagemeshlog-list'))
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
+    def test_bridge_can_mark_message_sent_via_patch(self, api_client, compagnon, create_user):
+        """Régression : statut/erreur/date_envoi étaient marqués read_only sur le serializer,
+        rendant le PATCH du pont (DjangoClient.marquer_message, après une tentative d'envoi)
+        silencieusement sans effet — un message restait EN_ATTENTE indéfiniment, réessayé en
+        boucle par boucle_envoi, jamais marqué en échec ni en envoyé."""
+        bridge_user = create_user(username='bridge-mesh6@test.fr', email='bridge-mesh6@test.fr', type='UTIL_SIMPLE')
+        api_client.force_authenticate(user=bridge_user)
+        message = MessageMeshLog.objects.create(
+            compagnon=compagnon, direction='SORTANT', statut='EN_ATTENTE',
+            contact_pubkey_hex='ee', contenu='à envoyer',
+        )
+
+        response = api_client.patch(
+            reverse('messagemeshlog-detail', args=[message.id]), {'statut': 'ENVOYE'}, format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        message.refresh_from_db()
+        assert message.statut == 'ENVOYE'
+
+    def test_bridge_can_mark_message_failed_with_erreur_via_patch(self, api_client, compagnon, create_user):
+        bridge_user = create_user(username='bridge-mesh7@test.fr', email='bridge-mesh7@test.fr', type='UTIL_SIMPLE')
+        api_client.force_authenticate(user=bridge_user)
+        message = MessageMeshLog.objects.create(
+            compagnon=compagnon, direction='SORTANT', statut='EN_ATTENTE',
+            contact_pubkey_hex='ff', contenu='à envoyer',
+        )
+
+        response = api_client.patch(
+            reverse('messagemeshlog-detail', args=[message.id]),
+            {'statut': 'ECHEC', 'erreur': "{'reason': 'no_event_received'}"}, format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        message.refresh_from_db()
+        assert message.statut == 'ECHEC'
+        assert message.erreur == "{'reason': 'no_event_received'}"
+        # Un message marqué ECHEC ne doit plus jamais réapparaître dans la file d'attente.
+        response = api_client.get(reverse('messagemeshlog-a-envoyer'), {'compagnon': str(compagnon.id)})
+        assert response.data == []
+
 
 @pytest.mark.django_db
 class TestMessageMeshLogResolutionEtVisibilite:

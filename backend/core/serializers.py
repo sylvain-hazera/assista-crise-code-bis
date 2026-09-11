@@ -2533,7 +2533,14 @@ class MessageMeshLogSerializer(serializers.ModelSerializer):
         fields = "__all__"
         # equipe/expediteur sont résolus côté serveur depuis contact_pubkey_hex (voir
         # MessageMeshLogViewSet.perform_create) — jamais posés par le client.
-        read_only_fields = ['statut', 'erreur', 'date_envoi', 'expediteur', 'equipe']
+        #
+        # statut/erreur/date_envoi NE DOIVENT PAS être ici : le service-pont les met à jour
+        # via PATCH après une tentative d'envoi (voir DjangoClient.marquer_message côté pont,
+        # et le commentaire de MessageMeshLogViewSet.get_permissions qui documente déjà ce
+        # comportement) — les y avoir mis par erreur rendait ce PATCH silencieusement sans
+        # effet (DRF ignore un champ read_only reçu en entrée sans lever d'erreur) : un
+        # message resté EN_ATTENTE à jamais, réessayé en boucle, jamais marqué en échec.
+        read_only_fields = ['expediteur', 'equipe']
 
     def get_expediteur_nom(self, obj):
         if not obj.expediteur_id:

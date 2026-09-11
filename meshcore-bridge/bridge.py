@@ -38,6 +38,10 @@ BLE_ADRESSE = os.environ.get("MESHCORE_BLE_ADRESSE")
 
 POLL_INTERVAL_SECONDS = int(os.environ.get("POLL_INTERVAL_SECONDS", "15"))
 RECONNECT_DELAY_SECONDS = int(os.environ.get("RECONNECT_DELAY_SECONDS", "10"))
+# Nombre de tentatives d'envoi d'un DM avant abandon (voir boucle_envoi/send_msg_with_retry) —
+# un réseau maillé multi-saut perd couramment un premier essai, d'où plusieurs tentatives par
+# défaut plutôt qu'un aller simple.
+MESSAGE_SEND_MAX_ATTEMPTS = int(os.environ.get("MESSAGE_SEND_MAX_ATTEMPTS", "3"))
 CONTACTS_SYNC_INTERVAL_SECONDS = int(os.environ.get("CONTACTS_SYNC_INTERVAL_SECONDS", "300"))
 # Même cadence par défaut que la synchro de contacts : suivi de position actif pendant une
 # mission EN_COURS (voir boucle_positions_missions) — interroge activement (req_telemetry,
@@ -186,19 +190,35 @@ def enregistrer_ecouteurs(meshcore, django, compagnon_id, sur_deconnexion):
 
 async def boucle_envoi(meshcore, django, compagnon_id):
     """Interroge périodiquement l'API pour les messages sortants en attente plutôt que
-    d'exposer un port entrant sur ce conteneur — voir MessageMeshLogViewSet.a_envoyer."""
+    d'exposer un port entrant sur ce conteneur — voir MessageMeshLogViewSet.a_envoyer.
+
+    Utilise send_msg_with_retry plutôt que send_msg seul : send_msg ne fait qu'un aller simple
+    et n'attend qu'un accusé LOCAL (le companion a bien pris le message en charge), pas une
+    confirmation que le destinataire l'a réellement reçu — sur un réseau maillé multi-saut,
+    un seul essai échoue couramment (route pas encore établie, saut intermédiaire hors
+    portée...). send_msg_with_retry réessaie plusieurs fois, bascule en mode flood après
+    quelques échecs directs, et surtout attend un vrai EventType.ACK de bout en bout avant de
+    considérer l'envoi réussi (voir meshcore/commands/messaging.py) — un simple accusé local
+    ne suffisait pas à garantir que le message était vraiment arrivé, ce qui explique des
+    messages jamais reçus côté destinataire malgré un envoi local qui semblait aboutir."""
     while True:
         try:
             en_attente = await django.messages_a_envoyer(compagnon_id)
             for message in en_attente:
                 try:
-                    resultat = await meshcore.commands.send_msg(message["contact_pubkey_hex"], message["contenu"])
-                    if resultat and resultat.type == EventType.ERROR:
-                        await django.marquer_message(message["id"], "ECHEC", erreur=str(resultat.payload))
-                        logger.warning("Échec d'envoi du message %s : %r", message["id"], resultat.payload)
+                    resultat = await meshcore.commands.send_msg_with_retry(
+                        message["contact_pubkey_hex"], message["contenu"],
+                        max_attempts=MESSAGE_SEND_MAX_ATTEMPTS,
+                    )
+                    if resultat is None:
+                        await django.marquer_message(
+                            message["id"], "ECHEC",
+                            erreur=f"Aucun accusé de réception après {MESSAGE_SEND_MAX_ATTEMPTS} tentative(s).",
+                        )
+                        logger.warning("Échec d'envoi du message %s : pas d'accusé de réception après relances.", message["id"])
                     else:
                         await django.marquer_message(message["id"], "ENVOYE")
-                        logger.info("Message %s envoyé.", message["id"])
+                        logger.info("Message %s envoyé (accusé de réception reçu).", message["id"])
                 except Exception as exc:
                     logger.exception("Échec d'envoi du message %s.", message["id"])
                     try:
