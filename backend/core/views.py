@@ -9131,9 +9131,15 @@ class MessageMeshLogViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet
         if direction == DirectionMessageMesh.ENTRANT and contact_pubkey_hex:
             # Message reçu du mesh : l'expéditeur réel est la personne de terrain identifiée
             # par sa clé publique — jamais le compte de service du pont, qui ne fait que
-            # relayer (voir NoeudMeshUtilisateur).
-            noeud = NoeudMeshUtilisateur.objects.filter(pubkey_hex=contact_pubkey_hex, actif=True).select_related('utilisateur').first()
+            # relayer (voir NoeudMeshUtilisateur). Le pont ne transmet qu'un PRÉFIXE de clé
+            # (ce que la trame radio CONTACT_MSG_RECV porte réellement, pas la clé complète) —
+            # on la retrouve ici via le nœud déjà connu, et on normalise vers la clé complète
+            # pour que le filtre `contact_pubkey_hex` du fil de discussion (get_queryset
+            # ci-dessus, comparé à NoeudMeshUtilisateur.pubkey_hex côté front) matche.
+            noeud = NoeudMeshUtilisateur.objects.filter(pubkey_hex__startswith=contact_pubkey_hex, actif=True).select_related('utilisateur').first()
             expediteur = noeud.utilisateur if noeud else None
+            if noeud:
+                contact_pubkey_hex = noeud.pubkey_hex
         elif direction == DirectionMessageMesh.SORTANT:
             # Message composé depuis l'interface : l'expéditeur est le régulateur connecté.
             expediteur = self.request.user if self.request.user.is_authenticated else None
@@ -9141,6 +9147,7 @@ class MessageMeshLogViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet
 
         message = serializer.save(
             environment=get_active_environment(self.request), expediteur=expediteur, equipe=equipe,
+            contact_pubkey_hex=contact_pubkey_hex,
         )
         if message.direction == DirectionMessageMesh.ENTRANT and message.statut == StatutMessageMesh.EN_ATTENTE:
             # Un message entrant est par définition déjà reçu, pas "en attente d'envoi" —

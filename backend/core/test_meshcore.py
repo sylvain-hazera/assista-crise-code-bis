@@ -245,6 +245,33 @@ class TestMessageMeshLogResolutionEtVisibilite:
         assert message.expediteur == terrain_user
         assert message.equipe == equipe
 
+    def test_message_entrant_avec_prefixe_seul_resout_et_normalise_la_cle(self, api_client, compagnon, create_user, institution_a):
+        """Le pont ne transmet qu'un préfixe de clé publique (ce que la trame radio
+        CONTACT_MSG_RECV porte réellement — voir bridge.py, `_sur_message`), jamais la clé
+        complète. Le message doit malgré tout être rattaché au bon nœud, ET stocker la clé
+        COMPLÈTE (pas le préfixe reçu) pour que le filtre `contact_pubkey_hex` du fil de
+        discussion (qui compare à NoeudMeshUtilisateur.pubkey_hex, toujours complet côté
+        front) le retrouve ensuite."""
+        from core.models import NoeudMeshUtilisateur, Team
+        bridge_user = create_user(username='bridge-prefixe@test.fr', email='bridge-prefixe@test.fr', type='UTIL_SIMPLE')
+        terrain_user = create_user(username='terrain-prefixe@test.fr', email='terrain-prefixe@test.fr', type='UTIL_SIMPLE')
+        equipe = Team.objects.create(name='Équipe préfixe test', institution=institution_a)
+        equipe.members.add(terrain_user)
+        cle_complete = '1b35564956a504311b888d53c0fba492a54e480bdab23ced45b10a271909c361'
+        NoeudMeshUtilisateur.objects.create(utilisateur=terrain_user, pubkey_hex=cle_complete, actif=True)
+
+        api_client.force_authenticate(user=bridge_user)
+        response = api_client.post(reverse('messagemeshlog-list'), {
+            'compagnon': str(compagnon.id), 'direction': 'ENTRANT',
+            'contact_pubkey_hex': '1b35564956a5', 'contenu': 'fghj',
+        }, format='json')
+
+        assert response.status_code == status.HTTP_201_CREATED
+        message = MessageMeshLog.objects.get(id=response.data['id'])
+        assert message.expediteur == terrain_user
+        assert message.equipe == equipe
+        assert message.contact_pubkey_hex == cle_complete
+
     def test_message_entrant_pubkey_inconnue_ne_resout_rien(self, api_client, compagnon, create_user):
         bridge_user = create_user(username='bridge-inconnu@test.fr', email='bridge-inconnu@test.fr', type='UTIL_SIMPLE')
         api_client.force_authenticate(user=bridge_user)
