@@ -81,21 +81,10 @@
 
 <h2>Relais MeshCore</h2>
 <p class="page-hint">
-  Infrastructure pure — un relais ne se pilote pas, sa position est saisie ici manuellement
-  pour l'affichage sur la carte.
+  Infrastructure pure — un relais ne se pilote pas. Sa position est importée et tenue à jour
+  automatiquement dès qu'il apparaît, avec ses coordonnées GPS, dans le répertoire du
+  companion (synchronisé régulièrement par le service-pont).
 </p>
-
-<div class="create-panel">
-  <h3>Ajouter un relais</h3>
-  <div class="form-row">
-    <input type="text" class="form-input" placeholder="Nom (ex: Relais clocher église)" [(ngModel)]="nouveauRelaisNom">
-    <input type="number" class="form-input form-input-sm" placeholder="Latitude" [(ngModel)]="nouveauRelaisLat" step="0.0001">
-    <input type="number" class="form-input form-input-sm" placeholder="Longitude" [(ngModel)]="nouveauRelaisLon" step="0.0001">
-  </div>
-  <button type="button" class="btn-primary" [disabled]="!formRelaisValide || creatingRelais" (click)="ajouterRelais()">
-    Ajouter ce relais
-  </button>
-</div>
 
 <div class="table-wrapper">
   <table class="data-table">
@@ -112,21 +101,23 @@
           <td><button type="button" class="btn-danger-sm" (click)="supprimerRelais(r)">Supprimer</button></td>
         </tr>
       } @empty {
-        <tr><td colspan="5" class="empty">Aucun relais déclaré pour l'instant.</td></tr>
+        <tr><td colspan="5" class="empty">Aucun relais détecté pour l'instant.</td></tr>
       }
     </tbody>
   </table>
 </div>
 
-@if (relaisDetectes.length > 0) {
-  <div class="banner-info">
-    <span class="material-icons">wifi_tethering</span>
-    {{ relaisDetectes.length }} répéteur(s) détecté(s) via le répertoire du companion, avec position GPS, pas encore déclaré(s) ici.
-    <button type="button" class="btn-secondary-sm" [disabled]="importingRelais" (click)="importerRelaisDetectes()">
-      Importer
-    </button>
+<details class="create-panel manual-fallback">
+  <summary>Ajouter manuellement (relais pas encore détecté par un companion)</summary>
+  <div class="form-row">
+    <input type="text" class="form-input" placeholder="Nom (ex: Relais clocher église)" [(ngModel)]="nouveauRelaisNom">
+    <input type="number" class="form-input form-input-sm" placeholder="Latitude" [(ngModel)]="nouveauRelaisLat" step="0.0001">
+    <input type="number" class="form-input form-input-sm" placeholder="Longitude" [(ngModel)]="nouveauRelaisLon" step="0.0001">
   </div>
-}
+  <button type="button" class="btn-primary" [disabled]="!formRelaisValide || creatingRelais" (click)="ajouterRelais()">
+    Ajouter ce relais
+  </button>
+</details>
 
 <h2>Nœuds MeshCore des comptes utilisateurs</h2>
 <p class="page-hint">

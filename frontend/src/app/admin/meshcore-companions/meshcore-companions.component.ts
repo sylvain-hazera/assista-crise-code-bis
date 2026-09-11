@@ -53,7 +53,6 @@ export class MeshcoreCompanionsComponent implements OnInit {
   creatingNoeud = false;
 
   contacts: ContactMeshCore[] = [];
-  importingRelais = false;
 
   constructor(
     private service: CompagnonMeshCoreService,
@@ -83,34 +82,6 @@ export class MeshcoreCompanionsComponent implements OnInit {
     return this.contacts.filter(c => c.type_contact === 'COMPANION' && !c.deja_associe);
   }
 
-  get relaisDetectes(): ContactMeshCore[] {
-    const nomsRelaisExistants = new Set(this.relais.map(r => r.nom));
-    return this.contacts.filter(c => c.type_contact === 'REPEATER' && c.latitude != null && !nomsRelaisExistants.has(c.nom));
-  }
-
-  importerRelaisDetectes(): void {
-    const aImporter = this.relaisDetectes;
-    if (aImporter.length === 0) return;
-    this.importingRelais = true;
-    let restant = aImporter.length;
-    aImporter.forEach(contact => {
-      this.relaisService.create({
-        nom: contact.nom || `Relais ${contact.pubkey_hex.slice(0, 8)}`,
-        latitude: contact.latitude!, longitude: contact.longitude!,
-        pubkey_hex: contact.pubkey_hex,
-      }).subscribe({
-        next: (created) => {
-          this.relais = [created, ...this.relais];
-          restant--;
-          if (restant === 0) this.importingRelais = false;
-        },
-        error: () => {
-          restant--;
-          if (restant === 0) this.importingRelais = false;
-        },
-      });
-    });
-  }
 
   load(): void {
     this.loading = true;

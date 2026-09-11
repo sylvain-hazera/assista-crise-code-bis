@@ -3844,9 +3844,11 @@ class MessageMeshLog(EnvironmentScopedModel):
 
 class RelaisMeshCore(EnvironmentScopedModel):
     """Répéteur MeshCore (infrastructure pure — ne se pilote pas comme un Companion, ne se
-    connecte à rien : c'est un point fixe posé sur le terrain). Purement déclaratif : sa
-    position est saisie manuellement, pas remontée automatiquement (un répéteur ne dialogue
-    pas avec un serveur, voir doc de conception « Maillage Terrain », rôles MeshCore)."""
+    connecte à rien : c'est un point fixe posé sur le terrain). Sa position est le plus souvent
+    importée automatiquement (voir CompagnonMeshCoreViewSet.synchroniser_contacts : un
+    répéteur détecté dans le répertoire du companion, avec position GPS connue, crée/met à
+    jour directement l'entrée ici, identifiée par pubkey_hex — plus besoin du bouton "Importer"
+    manuel) ; peut aussi être saisie manuellement pour un répéteur pas encore détecté."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
@@ -3858,7 +3860,10 @@ class RelaisMeshCore(EnvironmentScopedModel):
 
     location = gis_models.PointField(srid=4326, null=True, blank=True)
 
-    pubkey_hex = models.CharField(max_length=64, null=True, blank=True)
+    # unique (NULL excepté, comportement standard SQL) : un répéteur détecté deux fois via
+    # synchroniser_contacts (compagnons différents, ou resynchronisation) ne doit jamais créer
+    # de doublon — l'import automatique s'appuie dessus (get_or_create par pubkey_hex).
+    pubkey_hex = models.CharField(max_length=64, null=True, blank=True, unique=True)
 
     actif = models.BooleanField(default=True)
 

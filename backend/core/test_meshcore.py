@@ -405,6 +405,70 @@ class TestContactMeshCore:
         assert relais.type_contact == 'REPEATER'
         assert relais.location is not None
 
+    def test_synchroniser_contacts_auto_importe_repeteur_detecte(self, api_client, compagnon, institution_a, create_user):
+        """Avant ce correctif, importer un répéteur détecté nécessitait un clic manuel côté
+        front, sans protection anti-doublon — voir la migration 0145 qui a dû dédupliquer des
+        répéteurs importés jusqu'à 9 fois en base. Désormais automatique dès la synchro."""
+        from core.models import RelaisMeshCore
+        bridge_user = create_user(username='bridge-relais1@test.fr', email='bridge-relais1@test.fr', type='UTIL_SIMPLE')
+        api_client.force_authenticate(user=bridge_user)
+
+        response = api_client.post(
+            reverse('compagnonmeshcore-synchroniser-contacts', args=[compagnon.id]),
+            {'contacts': [{'pubkey_hex': 'repeat-aa', 'nom': 'Relais Clocher', 'type_contact': 'REPEATER', 'latitude': 45.75, 'longitude': 4.85}]},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        relais = RelaisMeshCore.objects.get(pubkey_hex='repeat-aa')
+        assert relais.nom == 'Relais Clocher'
+        assert relais.location is not None
+        assert relais.institution_id == institution_a.id
+
+    def test_synchroniser_contacts_repeteur_ne_duplique_jamais(self, api_client, compagnon, create_user):
+        from core.models import RelaisMeshCore
+        bridge_user = create_user(username='bridge-relais2@test.fr', email='bridge-relais2@test.fr', type='UTIL_SIMPLE')
+        api_client.force_authenticate(user=bridge_user)
+
+        payload = {'contacts': [{'pubkey_hex': 'repeat-bb', 'nom': 'Relais Mairie', 'type_contact': 'REPEATER', 'latitude': 45.1, 'longitude': 5.2}]}
+        for _ in range(3):
+            api_client.post(reverse('compagnonmeshcore-synchroniser-contacts', args=[compagnon.id]), payload, format='json')
+
+        assert RelaisMeshCore.objects.filter(pubkey_hex='repeat-bb').count() == 1
+
+    def test_synchroniser_contacts_repeteur_position_suit_les_mises_a_jour(self, api_client, compagnon, create_user):
+        from core.models import RelaisMeshCore
+        bridge_user = create_user(username='bridge-relais3@test.fr', email='bridge-relais3@test.fr', type='UTIL_SIMPLE')
+        api_client.force_authenticate(user=bridge_user)
+
+        api_client.post(
+            reverse('compagnonmeshcore-synchroniser-contacts', args=[compagnon.id]),
+            {'contacts': [{'pubkey_hex': 'repeat-cc', 'nom': 'Relais Mobile', 'type_contact': 'REPEATER', 'latitude': 45.1, 'longitude': 5.2}]},
+            format='json',
+        )
+        api_client.post(
+            reverse('compagnonmeshcore-synchroniser-contacts', args=[compagnon.id]),
+            {'contacts': [{'pubkey_hex': 'repeat-cc', 'nom': 'Relais Mobile', 'type_contact': 'REPEATER', 'latitude': 46.2, 'longitude': 6.3}]},
+            format='json',
+        )
+
+        relais = RelaisMeshCore.objects.get(pubkey_hex='repeat-cc')
+        assert relais.location.y == pytest.approx(46.2)
+        assert relais.location.x == pytest.approx(6.3)
+
+    def test_synchroniser_contacts_ne_cree_pas_de_relais_pour_un_companion(self, api_client, compagnon, create_user):
+        from core.models import RelaisMeshCore
+        bridge_user = create_user(username='bridge-relais4@test.fr', email='bridge-relais4@test.fr', type='UTIL_SIMPLE')
+        api_client.force_authenticate(user=bridge_user)
+
+        api_client.post(
+            reverse('compagnonmeshcore-synchroniser-contacts', args=[compagnon.id]),
+            {'contacts': [{'pubkey_hex': 'not-a-repeater', 'nom': 'Alice', 'type_contact': 'COMPANION', 'latitude': 45.1, 'longitude': 5.2}]},
+            format='json',
+        )
+
+        assert not RelaisMeshCore.objects.filter(pubkey_hex='not-a-repeater').exists()
+
     def test_synchroniser_contacts_est_idempotent(self, api_client, compagnon, create_user):
         from core.models import ContactMeshCore
         bridge_user = create_user(username='bridge-contacts2@test.fr', email='bridge-contacts2@test.fr', type='UTIL_SIMPLE')

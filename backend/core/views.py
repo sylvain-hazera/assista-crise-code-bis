@@ -8940,6 +8940,23 @@ class CompagnonMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelView
             )
             synchronises += 1
 
+            # Import automatique des répéteurs détectés — avant ce correctif, il fallait
+            # cliquer "Importer" manuellement (voir relaisDetectes côté front), sans protection
+            # anti-doublon : chaque clic recréait une ligne identique (jusqu'à 9 doublons
+            # trouvés en base pour un même répéteur avant la migration 0145). update_or_create
+            # par pubkey_hex (désormais unique) évite ça ET tient la position à jour à chaque
+            # synchro si le répéteur a bougé, plutôt qu'un import figé une seule fois.
+            if defaults.get('type_contact') == TypeContactMeshCore.REPEATER and 'location' in defaults:
+                RelaisMeshCore.objects.update_or_create(
+                    pubkey_hex=pubkey_hex,
+                    defaults={
+                        'nom': defaults.get('nom') or f"Répéteur {pubkey_hex[:8]}",
+                        'location': defaults['location'],
+                        'institution': compagnon.institution,
+                        'environment': get_active_environment(request),
+                    },
+                )
+
         return Response({'synchronises': synchronises})
 
     @action(detail=True, methods=['get'], url_path='pubkeys-a-suivre')
