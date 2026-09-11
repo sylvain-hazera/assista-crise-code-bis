@@ -17,7 +17,11 @@ Routage :
     client avant la réponse au 1er déroute un appareil embarqué qui ne traite qu'une commande
     à la fois (constaté : ça cassait la connexion réelle en pratique, pas juste en théorie).
   - trame du companion -> clients :
-      - code < 0x80  : livrée uniquement au client dont la commande est actuellement en vol.
+      - code < 0x80  : livrée uniquement au client dont la commande est actuellement en vol —
+        SAUF CONTACT_MSG_RECV/CHANNEL_MSG_RECV (0x07/0x08, voir CODES_MESSAGE_RECU) : un message
+        reçu n'est délivré par le companion qu'UNE fois, au premier qui le demande après un
+        MESSAGES_WAITING ; sans diffusion à tous, seul le client "gagnant" de la course
+        (ex: Home Assistant) le verrait, jamais l'autre (ex: assista-crise).
       - code >= 0x80 : diffusée à TOUS les clients connectés (personne n'a demandé, tout le
         monde doit voir).
 
@@ -39,6 +43,12 @@ LISTEN_PORT = int(os.environ.get("PROXY_LISTEN_PORT", "5050"))
 RECONNECT_DELAY_SECONDS = int(os.environ.get("RECONNECT_DELAY_SECONDS", "5"))
 
 PUSH_THRESHOLD = 0x80
+# CONTACT_MSG_RECV, CHANNEL_MSG_RECV (meshcore/packets.py) : un message reçu par le companion
+# n'est délivré qu'UNE fois, au premier client qui appelle get_msg() après le push
+# MESSAGES_WAITING — sans ce traitement spécial, seul le client "gagnant" de la course voit le
+# contenu (constaté : avec Home Assistant ET assista-crise connectés, l'autre ne reçoit jamais
+# rien). On diffuse donc ces deux codes à tous les clients, pas seulement au demandeur.
+CODES_MESSAGE_RECU = {0x07, 0x08}
 SILENCE_FIN_REPONSE = 0.3  # secondes de silence avant de considérer une réponse (mono ou multi-trames) terminée
 TIMEOUT_MAX_REPONSE = 8.0  # garde-fou si le companion ne répond jamais du tout
 
@@ -89,6 +99,8 @@ class ProxyMeshCore:
         self.frames_reponse: list[bytes] = []
         self.evenement_fin_reponse: asyncio.Event | None = None
         self.minuteur_silence: asyncio.TimerHandle | None = None
+        # Client dont la commande est actuellement en vol — voir CODES_MESSAGE_RECU ci-dessous.
+        self.client_en_vol: asyncio.StreamWriter | None = None
 
     async def demarrer(self):
         asyncio.create_task(self._boucle_upstream())
@@ -123,6 +135,10 @@ class ProxyMeshCore:
         code = payload[0] if payload else 0
         trame = b"\x3e" + len(payload).to_bytes(2, "little") + payload
         if code < PUSH_THRESHOLD:
+            if code in CODES_MESSAGE_RECU:
+                for client in list(self.clients):
+                    if client is not self.client_en_vol:
+                        await self._envoyer(client, trame)
             if self.collecte_active:
                 self.frames_reponse.append(trame)
                 self._reprogrammer_silence()
@@ -186,6 +202,7 @@ class ProxyMeshCore:
             self.frames_reponse = []
             self.evenement_fin_reponse = asyncio.Event()
             self.collecte_active = True
+            self.client_en_vol = writer
             self._reprogrammer_silence()
             self.upstream_writer.write(trame)
             await self.upstream_writer.drain()
@@ -195,6 +212,7 @@ class ProxyMeshCore:
                 logger.warning("Pas de réponse du companion réel dans le délai — %d trame(s) tout de même livrée(s).", len(self.frames_reponse))
             finally:
                 self.collecte_active = False
+                self.client_en_vol = None
                 if self.minuteur_silence is not None:
                     self.minuteur_silence.cancel()
                     self.minuteur_silence = None
