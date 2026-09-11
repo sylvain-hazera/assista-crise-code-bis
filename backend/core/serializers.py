@@ -1092,6 +1092,15 @@ class TeamSerializer(serializers.ModelSerializer):
     equipe_parente_nom = serializers.CharField(source='equipe_parente.name', read_only=True, default=None)
     sous_equipes_info = serializers.SerializerMethodField()
     commune_centre = serializers.SerializerMethodField()
+    # Canal MeshCore privé de l'équipe (voir TeamViewSet.provisionner_canal_meshcore) — permet
+    # à la fiche équipe d'afficher son statut sans appel API séparé.
+    canal_meshcore_id = serializers.CharField(source='canal_meshcore.id', read_only=True, default=None)
+    canal_meshcore_nom = serializers.CharField(source='canal_meshcore.nom', read_only=True, default=None)
+    canal_meshcore_provisionne = serializers.SerializerMethodField()
+
+    def get_canal_meshcore_provisionne(self, obj):
+        canal = getattr(obj, 'canal_meshcore', None)
+        return canal is not None and canal.canal_idx is not None
 
     def get_commune_centre(self, obj):
         # Centre la minimap de la fiche équipe sur la commune de son institution — repli
@@ -2584,11 +2593,16 @@ class RelaisMeshCoreSerializer(serializers.ModelSerializer):
 class CanalMeshCoreSerializer(serializers.ModelSerializer):
     institution_nom = serializers.CharField(source='institution.nom', read_only=True, default=None)
     crise_nom = serializers.CharField(source='crise.name', read_only=True, default=None)
+    equipe_nom = serializers.CharField(source='equipe.name', read_only=True, default=None)
+    provisionne = serializers.SerializerMethodField()
 
     class Meta:
         model = CanalMeshCore
         fields = "__all__"
         extra_kwargs = {'cle_partagee_hex': {'write_only': True}}
+
+    def get_provisionne(self, obj):
+        return obj.canal_idx is not None
 
 
 class ContactMeshCoreSerializer(serializers.ModelSerializer):
@@ -2615,12 +2629,20 @@ class ContactMeshCoreSerializer(serializers.ModelSerializer):
 
 class MessageCanalMeshCoreSerializer(serializers.ModelSerializer):
     canal_nom = serializers.CharField(source='canal.nom', read_only=True)
+    # Nécessaire au pont pour appeler send_chan_msg (qui prend un index local, pas une clé) —
+    # voir CanalMeshCore.canal_idx, provisionné par CompagnonMeshCoreViewSet.
+    # rapporter_canal_provisionne.
+    canal_idx = serializers.IntegerField(source='canal.canal_idx', read_only=True)
     expediteur_nom = serializers.SerializerMethodField()
 
     class Meta:
         model = MessageCanalMeshCore
         fields = "__all__"
-        read_only_fields = ['statut', 'erreur', 'expediteur']
+        # Même correctif que MessageMeshLogSerializer : statut/erreur doivent rester
+        # modifiables par le PATCH que le pont envoie après une tentative d'envoi, sinon un
+        # message de canal reste EN_ATTENTE pour toujours (voir MessageCanalMeshCoreViewSet.
+        # get_permissions, qui documente déjà ce comportement attendu côté pont).
+        read_only_fields = ['expediteur']
 
     def get_expediteur_nom(self, obj):
         if not obj.expediteur_id:

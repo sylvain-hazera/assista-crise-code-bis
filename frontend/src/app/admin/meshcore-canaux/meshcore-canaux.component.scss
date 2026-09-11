@@ -32,44 +32,38 @@
 
 .chat-layout {
   display: grid;
-  grid-template-columns: 260px 1fr;
+  grid-template-columns: 280px 1fr;
   gap: 1rem;
-  height: 60vh;
-  min-height: 420px;
+  height: 65vh;
+  min-height: 460px;
 }
 
-.liste-canaux {
+.liste-conversations {
   border: 1px solid #e5e7eb;
   border-radius: 8px;
   padding: .8rem;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: .8rem;
+  gap: .3rem;
 }
 
-.create-canal {
-  display: flex;
-  flex-direction: column;
-  gap: .4rem;
+.section-titre {
+  margin: .8rem 0 .2rem;
+  font-size: .72rem;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: #9ca3af;
+  font-weight: 700;
 
-  .form-input { padding: .4rem .5rem; border: 1px solid #e5e7eb; border-radius: 6px; font-size: .82rem; }
-
-  button {
-    padding: .4rem .6rem;
-    border-radius: 6px;
-    border: 1px solid #2563eb;
-    background: #2563eb;
-    color: #fff;
-    cursor: pointer;
-    font-size: .82rem;
-    &:disabled { opacity: .5; cursor: not-allowed; }
-  }
+  &:first-child { margin-top: 0; }
 }
 
-.canaux {
+.chargement { color: #9ca3af; font-size: .85rem; }
+
+.conversations {
   list-style: none;
-  margin: 0;
+  margin: 0 0 .4rem;
   padding: 0;
   display: flex;
   flex-direction: column;
@@ -78,20 +72,34 @@
   li {
     display: flex;
     align-items: center;
-    gap: .4rem;
+    gap: .5rem;
     padding: .5rem .6rem;
     border-radius: 6px;
     cursor: pointer;
     font-size: .88rem;
     color: #374151;
 
-    .material-icons { font-size: 16px; color: #9ca3af; }
+    > .material-icons { font-size: 18px; color: #9ca3af; flex-shrink: 0; }
 
     &:hover { background: #f9fafb; }
-    &.actif { background: #eff6ff; color: #1d4ed8; font-weight: 600; }
-    &.actif .material-icons { color: #1d4ed8; }
+    &.actif { background: #eff6ff; color: #1d4ed8; }
+    &.actif > .material-icons { color: #1d4ed8; }
+    &.vide { color: #9ca3af; cursor: default; font-size: .82rem; }
   }
 }
+
+.conv-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+.conv-nom {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  .actif & { font-weight: 600; }
+}
+.conv-meta { font-size: .72rem; color: #9ca3af; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conv-attente { font-size: 16px !important; color: #d97706 !important; }
 
 .fil-messages {
   border: 1px solid #e5e7eb;
@@ -100,8 +108,12 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
+}
 
-  h3 { margin: 0 0 .8rem; }
+.fil-header {
+  margin-bottom: .8rem;
+  h3 { margin: 0; }
+  .fil-soustitre { margin: .15rem 0 0; font-size: .78rem; color: #9ca3af; }
 }
 
 .messages {
@@ -125,13 +137,29 @@
   .message-contenu { font-size: .88rem; color: #1f2937; white-space: pre-wrap; }
 }
 
+.message-statut {
+  display: flex;
+  align-items: center;
+  gap: .2rem;
+  font-size: .68rem;
+  margin-top: .3rem;
+  justify-content: flex-end;
+
+  .material-icons { font-size: 13px; }
+
+  &.statut-attente { color: #9ca3af; }
+  &.statut-envoye { color: #6b7280; }
+  &.statut-recu { color: #16a34a; }
+  &.statut-echec { color: #dc2626; }
+}
+
 .saisie {
   display: flex;
   gap: .5rem;
 
   .form-input { flex: 1; padding: .55rem .7rem; border: 1px solid #e5e7eb; border-radius: 6px; }
 
-  button {
+  .btn-primary {
     padding: .55rem 1.1rem;
     border-radius: 6px;
     border: 1px solid #2563eb;

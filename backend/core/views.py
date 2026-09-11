@@ -3763,7 +3763,7 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             'lier_point', 'delier_point',
             'rattacher_equipe', 'detacher_equipe',
             'definir_statut_ressource', 'reactiver', 'vue_mairie', 'institutions_liees',
-            'ressources_mobilisees', 'assigner_crise',
+            'ressources_mobilisees', 'assigner_crise', 'provisionner_canal_meshcore',
         ):
             return [IsInstitutionalActor()]
         return [permissions.IsAuthenticated()]
@@ -4562,6 +4562,92 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         )
 
         return Response(TeamSerializer(team, context=self.get_serializer_context()).data)
+
+    @action(detail=True, methods=['post'], url_path='provisionner-canal-meshcore')
+    def provisionner_canal_meshcore(self, request, pk=None):
+        """Crée (ou régénère) LE canal MeshCore privé de cette équipe, et envoie ses
+        informations (nom + clé) en DM à chaque membre équipé d'un nœud MeshCore personnel
+        actif — répond au problème de routage des DM (MessageMeshLog.equipe résolu via
+        `expediteur.teams.first()`, arbitraire dès qu'un utilisateur appartient à plusieurs
+        équipes) : un message de canal, lui, appartient sans ambiguïté à l'équipe du canal.
+
+        `regenerer=true` génère une nouvelle clé (l'ancienne cesse de fonctionner pour qui l'a
+        déjà) et la renvoie à tous les membres ACTUELS uniquement — c'est le mécanisme de
+        révocation : retirer un membre problématique de l'équipe puis régénérer coupe son
+        accès, sans avoir à suivre individuellement qui a reçu quelle clé.
+
+        Ne pousse rien à distance sur les nœuds personnels (impossible : un canal MeshCore se
+        configure localement sur chaque appareil, voir docstring de CanalMeshCore) — le
+        destinataire du DM doit configurer le canal lui-même sur son propre nœud. Le
+        service-pont, en revanche, provisionne automatiquement sa copie du canal sur le
+        companion partagé (voir CompagnonMeshCoreViewSet.canaux_a_provisionner et
+        boucle_provisionnement_canaux côté pont), pour pouvoir y envoyer/recevoir en son nom."""
+        team = self.get_object()
+        if not _appartient_a_equipe(request, team):
+            return Response(
+                {"error": "Vous ne pouvez provisionner un canal MeshCore que pour les équipes de votre institution (ou de l'institution déléguée)."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        regenerer = bool(request.data.get('regenerer'))
+        canal = getattr(team, 'canal_meshcore', None)
+        canal_nouveau = canal is None
+        if canal is None:
+            canal = CanalMeshCore.objects.create(
+                equipe=team, institution=team.institution,
+                nom=f"Équipe {team.name}"[:32],
+                cle_partagee_hex=secrets.token_hex(16),
+                environment=get_active_environment(request),
+            )
+        elif regenerer:
+            canal.cle_partagee_hex = secrets.token_hex(16)
+            # La clé change : l'ancien provisionnement local (compagnon/canal_idx) ne
+            # correspond plus à rien, le pont doit reconfigurer son slot avec la nouvelle clé
+            # avant de pouvoir renvoyer/recevoir dessus (voir canaux_a_provisionner, qui
+            # sélectionne aussi sur canal_idx vide).
+            canal.canal_idx = None
+            canal.compagnon = None
+            canal.save(update_fields=['cle_partagee_hex', 'canal_idx', 'compagnon'])
+
+        compagnon = CompagnonMeshCore.objects.filter(actif=True, principal=True).first() \
+            or CompagnonMeshCore.objects.filter(actif=True).first()
+
+        destinataires = []
+        if compagnon is not None:
+            noeuds = NoeudMeshUtilisateur.objects.filter(utilisateur__in=team.members.all(), actif=True).select_related('utilisateur')
+            for noeud in noeuds:
+                MessageMeshLog.objects.create(
+                    compagnon=compagnon,
+                    direction=DirectionMessageMesh.SORTANT,
+                    contact_pubkey_hex=noeud.pubkey_hex,
+                    contenu=(
+                        f"Canal d'équipe « {canal.nom} » — à configurer sur votre nœud "
+                        f"(nom exact : {canal.nom} / clé : {canal.cle_partagee_hex})."
+                    ),
+                    statut=StatutMessageMesh.EN_ATTENTE,
+                    expediteur=request.user,
+                    equipe=team,
+                    environment=get_active_environment(request),
+                )
+                destinataires.append(noeud.utilisateur_id)
+
+        audit_log(
+            request=request,
+            action_code="CREATION" if canal_nouveau else "MODIFICATION",
+            objet_type="CanalMeshCore",
+            objet_id=canal.id,
+            commentaire=(
+                f"Canal MeshCore {'régénéré' if regenerer else 'provisionné'} pour l'équipe « {team.name} » "
+                f"— clé envoyée à {len(destinataires)} membre(s) équipé(s)."
+            ),
+        )
+
+        return Response({
+            "canal_id": str(canal.id),
+            "nom": canal.nom,
+            "destinataires": len(destinataires),
+            "compagnon_disponible": compagnon is not None,
+        })
 
     @action(detail=True, methods=['post'], url_path='delier-point')
     def delier_point(self, request, pk=None):
@@ -8878,6 +8964,42 @@ class CompagnonMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelView
         )
         return Response({'pubkeys': sorted(pubkeys_cibles)})
 
+    @action(detail=True, methods=['get'], url_path='canaux-a-provisionner')
+    def canaux_a_provisionner(self, request, pk=None):
+        """Le service-pont appelle ceci périodiquement pour savoir quels canaux d'équipe
+        (voir TeamViewSet.provisionner_canal_meshcore) ne sont pas encore configurés
+        localement sur CE companion (canal_idx vide, ou provisionné sur un autre companion —
+        voir docstring de CanalMeshCore : un canal se configure appareil par appareil, jamais
+        à distance). Expose la clé en clair : action réservée au compte de service du pont,
+        seul habilité à appeler set_channel."""
+        compagnon = self.get_object()
+        canaux = CanalMeshCore.objects.filter(actif=True, equipe__isnull=False).filter(
+            Q(canal_idx__isnull=True) | ~Q(compagnon=compagnon)
+        )
+        return Response([
+            {"id": str(c.id), "nom": c.nom, "cle_partagee_hex": c.cle_partagee_hex}
+            for c in canaux
+        ])
+
+    @action(detail=True, methods=['post'], url_path='rapporter-canal-provisionne')
+    def rapporter_canal_provisionne(self, request, pk=None):
+        """Le service-pont appelle ceci après avoir configuré avec succès un canal localement
+        (set_channel) — enregistre l'index de slot attribué sur CE companion, nécessaire pour
+        envoyer/recevoir dessus ensuite (send_chan_msg prend un index local, pas une clé)."""
+        compagnon = self.get_object()
+        canal_id = request.data.get('canal_id')
+        canal_idx = request.data.get('canal_idx')
+        if canal_id is None or canal_idx is None:
+            return Response({"detail": "canal_id et canal_idx sont requis."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            canal = CanalMeshCore.objects.get(id=canal_id)
+        except (CanalMeshCore.DoesNotExist, ValueError, TypeError):
+            return Response({"detail": "Canal introuvable."}, status=status.HTTP_404_NOT_FOUND)
+        canal.compagnon = compagnon
+        canal.canal_idx = canal_idx
+        canal.save(update_fields=['compagnon', 'canal_idx'])
+        return Response({"ok": True})
+
 
 class NoeudMeshUtilisateurViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     """Correspondance clé publique MeshCore <-> compte utilisateur — voir docstring du modèle."""
@@ -8972,6 +9094,12 @@ class MessageMeshLogViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet
         equipe_id = self.request.query_params.get('equipe')
         if equipe_id:
             qs = qs.filter(equipe_id=equipe_id)
+        # Fil de discussion avec UNE personne précise (voir la vue chat unifiée côté front) —
+        # distinct du filtre équipe ci-dessus, qui mélangerait les messages de tous les
+        # membres équipés d'une même équipe dans un seul fil.
+        contact_pubkey_hex = self.request.query_params.get('contact_pubkey_hex')
+        if contact_pubkey_hex:
+            qs = qs.filter(contact_pubkey_hex=contact_pubkey_hex)
         if self.action not in ('list', 'retrieve'):
             return qs
         if effective_role_or_none(self.request) == UserRole.ADMINISTRATOR:

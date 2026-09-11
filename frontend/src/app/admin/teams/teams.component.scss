@@ -58,7 +58,13 @@
   padding: .65rem 1.2rem; font-size: .9rem; font-weight: 600; cursor: pointer;
   .material-icons { font-size: 18px; }
   &:hover { background: #b91c1c; }
+  &.sm { padding: .45rem .9rem; font-size: .82rem; }
+  &:disabled { opacity: .5; cursor: not-allowed; }
 }
+
+.canal-ok { color: #16a34a; font-weight: 600; }
+.canal-attente { color: var(--muted); font-style: italic; }
+.mission-active-label .material-icons.statut-ok { color: #16a34a; }
 
 .icon-btn {
   background: transparent; border: 1px solid var(--border); border-radius: 8px;

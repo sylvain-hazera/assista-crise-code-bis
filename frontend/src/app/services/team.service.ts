@@ -84,6 +84,16 @@ export class TeamService {
     return this.http.post<Team>(`${this.url}/${id}/assigner-crise/`, { crise_id: criseId });
   }
 
+  /** POST /api/teams/<id>/provisionner-canal-meshcore/ — crée (ou récupère) le canal MeshCore
+   * privé de l'équipe et envoie ses infos (nom + clé) en DM à chaque membre équipé d'un nœud.
+   * `regenerer: true` change la clé et ne la renvoie qu'aux membres ACTUELS — le mécanisme de
+   * révocation (retirer un membre problématique de l'équipe, puis régénérer). */
+  provisionnerCanalMeshCore(id: string, regenerer = false): Observable<{ canal_id: string; nom: string; destinataires: number; compagnon_disponible: boolean }> {
+    return this.http.post<{ canal_id: string; nom: string; destinataires: number; compagnon_disponible: boolean }>(
+      `${this.url}/${id}/provisionner-canal-meshcore/`, { regenerer },
+    );
+  }
+
   rattacherEquipe(parentId: string, equipeId: string): Observable<Team> {
     return this.http.post<Team>(`${this.url}/${parentId}/rattacher-equipe/`, { equipe_id: equipeId });
   }

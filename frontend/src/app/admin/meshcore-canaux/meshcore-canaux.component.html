@@ -1,12 +1,15 @@
 <div class="page-header">
-  <h2>Canaux MeshCore <span class="badge-test">test</span></h2>
-  <p class="page-hint">Coordination générale sur un canal partagé.</p>
+  <h2>Messages MeshCore <span class="badge-test">test</span></h2>
+  <p class="page-hint">
+    Canaux d'équipe (coordination générale) et messages privés (1 personne), dans un seul
+    endroit. Un canal se crée depuis la fiche de l'équipe concernée.
+  </p>
 </div>
 
 <div class="bandeau-confidentialite">
   <span class="material-icons">warning</span>
-  Canal partagé (clé commune) — chiffrement plus faible qu'un message privé. N'y mettez aucune
-  donnée personnelle ou sensible.
+  Un canal (clé partagée) a un chiffrement plus faible qu'un message privé — n'y mettez aucune
+  donnée personnelle ou sensible. Pour un échange confidentiel, utilisez un message privé.
 </div>
 
 @if (errorMessage) {
@@ -14,51 +17,74 @@
 }
 
 <div class="chat-layout">
-  <aside class="liste-canaux">
-    <div class="create-canal">
-      <input type="text" class="form-input" placeholder="Nouveau canal (nom)" [(ngModel)]="nouveauCanalNom">
-      <input type="text" class="form-input" placeholder="Clé partagée (hex, optionnel)" [(ngModel)]="nouveauCanalCle">
-      <button type="button" class="btn-primary" [disabled]="!formCanalValide || creatingCanal" (click)="creerCanal()">
-        Créer
-      </button>
-    </div>
-
-    @if (loadingCanaux) {
-      <p>Chargement…</p>
+  <aside class="liste-conversations">
+    @if (loadingSidebar) {
+      <p class="chargement">Chargement…</p>
     } @else {
-      <ul class="canaux">
+
+      <h4 class="section-titre">Canaux d'équipe</h4>
+      <ul class="conversations">
         @for (c of canaux; track c.id) {
-          <li [class.actif]="canalSelectionne?.id === c.id" (click)="selectionnerCanal(c)">
+          <li [class.actif]="estConversationActive({type: 'canal', canal: c})" (click)="selectionnerCanal(c)">
             <span class="material-icons">tag</span>
-            {{ c.nom }}
+            <span class="conv-info">
+              <span class="conv-nom">{{ c.nom }}</span>
+              @if (c.equipe_nom) { <span class="conv-meta">{{ c.equipe_nom }}</span> }
+            </span>
+            @if (!c.provisionne) {
+              <span class="material-icons conv-attente" title="En attente de provisionnement par le pont">hourglass_empty</span>
+            }
           </li>
         } @empty {
-          <li class="empty">Aucun canal pour l'instant.</li>
+          <li class="vide">Aucun canal — créez-en un depuis la fiche d'une équipe.</li>
+        }
+      </ul>
+
+      <h4 class="section-titre">Messages privés</h4>
+      <ul class="conversations">
+        @for (n of noeuds; track n.id) {
+          <li [class.actif]="estConversationActive({type: 'dm', noeud: n})" (click)="selectionnerDm(n)">
+            <span class="material-icons">person</span>
+            <span class="conv-info">
+              <span class="conv-nom">{{ n.nom_noeud || n.utilisateur_nom }}</span>
+              @if (n.nom_noeud && n.utilisateur_nom) { <span class="conv-meta">{{ n.utilisateur_nom }}</span> }
+            </span>
+          </li>
+        } @empty {
+          <li class="vide">Aucun nœud personnel associé pour l'instant.</li>
         }
       </ul>
     }
   </aside>
 
   <section class="fil-messages">
-    @if (!canalSelectionne) {
-      <p class="empty">Sélectionnez ou créez un canal.</p>
+    @if (!conversationSelectionnee) {
+      <p class="empty">Sélectionnez une conversation.</p>
     } @else {
-      <h3>{{ canalSelectionne.nom }}</h3>
+      <div class="fil-header">
+        <h3>{{ titreConversation(conversationSelectionnee) }}</h3>
+        <p class="fil-soustitre">{{ sousTitreConversation(conversationSelectionnee) }}</p>
+      </div>
 
       @if (loadingMessages) {
-        <p>Chargement…</p>
+        <p class="chargement">Chargement…</p>
       } @else {
         <div class="messages">
-          @for (m of messages; track m.id) {
+          @for (m of messagesAffiches; track m.id) {
             <div class="message" [class.sortant]="m.direction === 'SORTANT'">
               <div class="message-meta">
-                {{ m.direction === 'SORTANT' ? (m.expediteur_nom || 'Moi') : (m.contact_pubkey_hex || 'Mesh') }}
-                · {{ m.date_creation | date:'short' }}
+                {{ auteurMessage(m, conversationSelectionnee) }} · {{ m.date_creation | date:'short' }}
               </div>
               <div class="message-contenu">{{ m.contenu }}</div>
+              @if (m.direction === 'SORTANT') {
+                <div class="message-statut" [class]="statutClasse(m.statut)" [title]="m.erreur || statutLibelle(m.statut)">
+                  <span class="material-icons">{{ statutIcone(m.statut) }}</span>
+                  {{ statutLibelle(m.statut) }}
+                </div>
+              }
             </div>
           } @empty {
-            <p class="empty">Aucun message sur ce canal.</p>
+            <p class="empty">Aucun message pour l'instant.</p>
           }
         </div>
       }

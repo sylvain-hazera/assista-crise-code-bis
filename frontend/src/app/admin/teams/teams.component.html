@@ -686,6 +686,41 @@
           </div>
         </div>
 
+        <!-- ── CANAL MESHCORE ─────────────────────────────────── -->
+        <div class="detail-section">
+          <div class="section-header">
+            <h3>
+              <span class="material-icons">tag</span>
+              Canal MeshCore
+            </h3>
+          </div>
+
+          @if (!selectedTeam.canal_meshcore_id) {
+            <p class="no-missions">Aucun canal MeshCore — les membres équipés d'un nœud personnel n'ont pas de canal d'équipe pour recevoir/envoyer des messages de coordination.</p>
+            <button class="btn-secondary sm" [disabled]="provisionnantCanal" (click)="provisionnerCanal()">
+              <span class="material-icons">add</span> Créer le canal et informer les membres équipés
+            </button>
+          } @else {
+            <div class="mission-active-bar">
+              <span class="mission-active-label">
+                <span class="material-icons" [class.statut-ok]="selectedTeam.canal_meshcore_provisionne">tag</span>
+                {{ selectedTeam.canal_meshcore_nom }}
+                @if (selectedTeam.canal_meshcore_provisionne) {
+                  · <span class="canal-ok">actif</span>
+                } @else {
+                  · <span class="canal-attente">en attente de provisionnement par le pont</span>
+                }
+              </span>
+              <button class="btn-secondary sm" [disabled]="provisionnantCanal" (click)="provisionnerCanal()">
+                Renvoyer les infos aux membres équipés
+              </button>
+              <button class="btn-danger sm" [disabled]="provisionnantCanal" (click)="regenererCanal()" title="Génère une nouvelle clé — révoque l'accès de tout ancien détenteur non membre actuel">
+                Régénérer la clé
+              </button>
+            </div>
+          }
+        </div>
+
         <!-- ── DEMANDES ASSIGNÉES ────────────────────────────── -->
         <div class="detail-section">
           <div class="section-header">

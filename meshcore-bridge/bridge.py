@@ -48,6 +48,13 @@ CONTACTS_SYNC_INTERVAL_SECONDS = int(os.environ.get("CONTACTS_SYNC_INTERVAL_SECO
 # BinaryReqType.TELEMETRY) chaque nœud personnel concerné, ce qui sollicite sa radio/batterie,
 # d'où un intervalle prudent plutôt qu'un rafraîchissement continu.
 POSITIONS_MISSIONS_POLL_INTERVAL_SECONDS = int(os.environ.get("POSITIONS_MISSIONS_POLL_INTERVAL_SECONDS", "300"))
+# Canaux d'équipe (voir TeamViewSet.provisionner_canal_meshcore) : un canal se configure
+# localement sur l'appareil (set_channel), jamais à distance — ce pont doit donc le faire pour
+# le companion partagé auquel il est connecté. Slots 1..CANAL_IDX_MAX sondés pour trouver un
+# index libre (0 réservé, généralement "Public" par défaut sur le firmware) — non vérifié sur
+# matériel réel, comme le reste de ce fichier (voir avertissement en tête).
+CANAUX_POLL_INTERVAL_SECONDS = int(os.environ.get("CANAUX_POLL_INTERVAL_SECONDS", "60"))
+CANAL_IDX_MAX = int(os.environ.get("CANAL_IDX_MAX", "8"))
 POSITIONS_MISSIONS_REQ_TIMEOUT_SECONDS = int(os.environ.get("POSITIONS_MISSIONS_REQ_TIMEOUT_SECONDS", "20"))
 
 # Miroir de AdvType (meshcore/packets.py) -> TypeContactMeshCore côté Django (voir models.py).
@@ -128,6 +135,33 @@ class DjangoClient:
             payload["erreur"] = erreur
         await self._request("PATCH", f"/messages-meshcore/{message_id}/", json=payload)
 
+    async def canaux_a_provisionner(self, compagnon_id):
+        """Canaux d'équipe pas encore configurés localement sur ce companion — voir
+        CompagnonMeshCoreViewSet.canaux_a_provisionner."""
+        response = await self._request("GET", f"/compagnons-meshcore/{compagnon_id}/canaux-a-provisionner/")
+        return response.json()
+
+    async def rapporter_canal_provisionne(self, compagnon_id, canal_id, canal_idx):
+        await self._request(
+            "POST", f"/compagnons-meshcore/{compagnon_id}/rapporter-canal-provisionne/",
+            json={"canal_id": canal_id, "canal_idx": canal_idx},
+        )
+
+    async def messages_canal_a_envoyer(self):
+        response = await self._request("GET", "/messages-canal-meshcore/a-envoyer/")
+        return response.json()
+
+    async def logger_message_canal_entrant(self, canal_id, contenu):
+        await self._request("POST", "/messages-canal-meshcore/", json={
+            "canal": canal_id, "direction": "ENTRANT", "contenu": contenu,
+        })
+
+    async def marquer_message_canal(self, message_id, statut, erreur=None):
+        payload = {"statut": statut}
+        if erreur:
+            payload["erreur"] = erreur
+        await self._request("PATCH", f"/messages-canal-meshcore/{message_id}/", json=payload)
+
     async def aclose(self):
         await self._client.aclose()
 
@@ -167,7 +201,11 @@ async def obtenir_pubkey(meshcore):
     return None
 
 
-def enregistrer_ecouteurs(meshcore, django, compagnon_id, sur_deconnexion):
+def enregistrer_ecouteurs(meshcore, django, compagnon_id, sur_deconnexion, canaux_idx_map):
+    """`canaux_idx_map` (dict canal_idx -> canal_id, partagé avec boucle_provisionnement_canaux)
+    permet de rattacher un message de canal entrant au bon CanalMeshCore — un canal n'a pas
+    d'identité serveur à ce niveau protocolaire, seulement un index local (voir
+    PacketType.CHANNEL_MSG_RECV, aucun champ clé/id de canal dans la trame)."""
 
     async def _sur_message(event):
         payload = event.payload or {}
@@ -180,11 +218,27 @@ def enregistrer_ecouteurs(meshcore, django, compagnon_id, sur_deconnexion):
         except Exception:
             logger.exception("Échec de journalisation d'un message entrant côté API.")
 
+    async def _sur_message_canal(event):
+        payload = event.payload or {}
+        logger.debug("Événement CHANNEL_MSG_RECV brut : %r", payload)
+        canal_idx = payload.get("channel_idx")
+        texte = payload.get("text", "")
+        canal_id = canaux_idx_map.get(canal_idx)
+        if canal_id is None:
+            logger.warning("Message reçu sur le canal local %s, non rattaché à un CanalMeshCore connu — ignoré.", canal_idx)
+            return
+        logger.info("Message reçu sur le canal %s (%d caractères).", canal_id, len(texte))
+        try:
+            await django.logger_message_canal_entrant(canal_id, texte)
+        except Exception:
+            logger.exception("Échec de journalisation d'un message de canal entrant côté API.")
+
     async def _sur_deconnexion(event):
         logger.warning("Déconnecté du companion MeshCore.")
         sur_deconnexion.set()
 
     meshcore.subscribe(EventType.CONTACT_MSG_RECV, _sur_message)
+    meshcore.subscribe(EventType.CHANNEL_MSG_RECV, _sur_message_canal)
     meshcore.subscribe(EventType.DISCONNECTED, _sur_deconnexion)
 
 
@@ -308,6 +362,90 @@ async def boucle_positions_missions(meshcore, django, compagnon_id):
         await asyncio.sleep(POSITIONS_MISSIONS_POLL_INTERVAL_SECONDS)
 
 
+async def _trouver_slot_canal_libre(meshcore):
+    """Sonde les index de canal locaux (1..CANAL_IDX_MAX, 0 réservé — généralement "Public"
+    par défaut sur le firmware) pour trouver le premier non configuré. Non vérifié sur
+    matériel réel : on traite comme libre à la fois une absence de nom ET une erreur
+    protocolaire sur get_channel, faute de savoir laquelle des deux le firmware renvoie
+    réellement pour un slot vide."""
+    for idx in range(1, CANAL_IDX_MAX + 1):
+        try:
+            resultat = await meshcore.commands.get_channel(idx)
+        except Exception:
+            logger.exception("Échec de lecture du canal local %s.", idx)
+            continue
+        if resultat is None or resultat.type == EventType.ERROR:
+            return idx
+        nom_existant = (resultat.payload or {}).get("channel_name", "")
+        if not nom_existant:
+            return idx
+    return None
+
+
+async def boucle_provisionnement_canaux(meshcore, django, compagnon_id, canaux_idx_map):
+    """Configure localement (set_channel) les canaux d'équipe pas encore présents sur CE
+    companion — voir docstring de CanalMeshCore : impossible de pousser cette configuration à
+    distance sur le nœud d'un membre, mais le pont peut le faire pour son propre companion
+    partagé, afin de pouvoir y envoyer/recevoir en son nom."""
+    while True:
+        try:
+            a_provisionner = await django.canaux_a_provisionner(compagnon_id)
+            for canal in a_provisionner:
+                canal_id, nom, cle_hex = canal["id"], canal["nom"], canal.get("cle_partagee_hex")
+                if not cle_hex:
+                    logger.warning("Canal %s sans clé partagée, provisionnement ignoré.", canal_id)
+                    continue
+                idx = await _trouver_slot_canal_libre(meshcore)
+                if idx is None:
+                    logger.error("Aucun slot de canal local disponible (max %d) pour provisionner « %s ».", CANAL_IDX_MAX, nom)
+                    continue
+                try:
+                    secret = bytes.fromhex(cle_hex)
+                    resultat = await meshcore.commands.set_channel(idx, nom, secret)
+                except Exception:
+                    logger.exception("Échec de configuration locale du canal « %s » (slot %s).", nom, idx)
+                    continue
+                if resultat and resultat.type == EventType.ERROR:
+                    logger.error("Échec de configuration locale du canal « %s » (slot %s) : %r", nom, idx, resultat.payload)
+                    continue
+                canaux_idx_map[idx] = canal_id
+                await django.rapporter_canal_provisionne(compagnon_id, canal_id, idx)
+                logger.info("Canal « %s » configuré localement sur le slot %s.", nom, idx)
+        except Exception:
+            logger.exception("Échec du cycle de provisionnement des canaux.")
+        await asyncio.sleep(CANAUX_POLL_INTERVAL_SECONDS)
+
+
+async def boucle_envoi_canaux(meshcore, django):
+    """Même principe que boucle_envoi, pour les messages de canal — nécessite que le canal
+    soit déjà provisionné localement (canal_idx connu, voir boucle_provisionnement_canaux) ;
+    un message dont le canal n'est pas encore prêt est simplement resservi au cycle suivant."""
+    while True:
+        try:
+            en_attente = await django.messages_canal_a_envoyer()
+            for message in en_attente:
+                canal_idx = message.get("canal_idx")
+                if canal_idx is None:
+                    continue
+                try:
+                    resultat = await meshcore.commands.send_chan_msg(canal_idx, message["contenu"])
+                    if resultat and resultat.type == EventType.ERROR:
+                        await django.marquer_message_canal(message["id"], "ECHEC", erreur=str(resultat.payload))
+                        logger.warning("Échec d'envoi du message de canal %s : %r", message["id"], resultat.payload)
+                    else:
+                        await django.marquer_message_canal(message["id"], "ENVOYE")
+                        logger.info("Message de canal %s envoyé.", message["id"])
+                except Exception as exc:
+                    logger.exception("Échec d'envoi du message de canal %s.", message["id"])
+                    try:
+                        await django.marquer_message_canal(message["id"], "ECHEC", erreur=str(exc))
+                    except Exception:
+                        logger.exception("Échec de la mise à jour de statut après échec d'envoi de canal.")
+        except Exception:
+            logger.exception("Échec de récupération des messages de canal en attente.")
+        await asyncio.sleep(POLL_INTERVAL_SECONDS)
+
+
 async def executer_une_session(django):
     try:
         meshcore = await connecter_meshcore()
@@ -321,17 +459,24 @@ async def executer_une_session(django):
     logger.info("Connecté au companion MeshCore (pubkey=%s).", pubkey or "inconnue")
 
     deconnecte = asyncio.Event()
-    enregistrer_ecouteurs(meshcore, django, COMPAGNON_ID, deconnecte)
+    # canal_idx (local) -> canal_id (Django) : peuplé par boucle_provisionnement_canaux, lu
+    # par le listener CHANNEL_MSG_RECV pour rattacher un message entrant à son CanalMeshCore.
+    canaux_idx_map = {}
+    enregistrer_ecouteurs(meshcore, django, COMPAGNON_ID, deconnecte, canaux_idx_map)
 
     tache_envoi = asyncio.create_task(boucle_envoi(meshcore, django, COMPAGNON_ID))
     tache_contacts = asyncio.create_task(boucle_contacts(meshcore, django, COMPAGNON_ID))
     tache_positions = asyncio.create_task(boucle_positions_missions(meshcore, django, COMPAGNON_ID))
+    tache_canaux_provisionnement = asyncio.create_task(boucle_provisionnement_canaux(meshcore, django, COMPAGNON_ID, canaux_idx_map))
+    tache_canaux_envoi = asyncio.create_task(boucle_envoi_canaux(meshcore, django))
     try:
         await deconnecte.wait()
     finally:
         tache_envoi.cancel()
         tache_contacts.cancel()
         tache_positions.cancel()
+        tache_canaux_provisionnement.cancel()
+        tache_canaux_envoi.cancel()
         try:
             await django.rapporter_etat(COMPAGNON_ID, "DECONNECTE")
         except Exception:

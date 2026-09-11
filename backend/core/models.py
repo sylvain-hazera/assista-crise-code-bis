@@ -3875,7 +3875,24 @@ class CanalMeshCore(EnvironmentScopedModel):
     (institution/crise), à la différence des DM privés (MessageMeshLog, cloisonnés par
     équipe). Sert à la coordination générale, jamais à du contenu sensible : le chiffrement
     par clé partagée est plus faible que le chiffrement par paire des DM (voir doc de
-    conception)."""
+    conception).
+
+    `equipe` (optionnel) fait de ce canal LE canal privé d'une équipe — la réponse au problème
+    de routage des DM (MessageMeshLog.equipe résolu via `expediteur.teams.first()`, arbitraire
+    dès qu'un utilisateur appartient à plusieurs équipes) : un message de canal appartient sans
+    ambiguïté à l'équipe du canal sur lequel il est arrivé. La clé elle-même reste distribuée
+    en privé (DM, jamais un nom de canal préfixé `#` dont la clé serait dérivable par tout le
+    monde) — voir TeamViewSet.provisionner_canal_meshcore. Un DM direct régulateur <-> personne
+    reste possible en plus (MessageMeshLog), pour du contenu vraiment 1-à-1.
+
+    `compagnon`/`canal_idx` : un canal MeshCore se configure localement sur CHAQUE appareil qui
+    doit y participer (firmware, commande set_channel — pas une simple donnée serveur qui se
+    propagerait sur le mesh) — impossible de le pousser à distance sur le nœud personnel d'un
+    membre, qui doit configurer lui-même canal_idx/nom/clé reçus par DM. Le service-pont, lui,
+    provisionne automatiquement CE champ sur le companion partagé auquel il est connecté (voir
+    boucle_provisionnement_canaux côté pont) afin de pouvoir envoyer/recevoir sur ce canal en
+    son nom — un seul companion actif dans cette phase de test, donc un seul (compagnon,
+    canal_idx) par canal suffit."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
@@ -3887,11 +3904,22 @@ class CanalMeshCore(EnvironmentScopedModel):
         "Crisis", on_delete=models.SET_NULL, null=True, blank=True, related_name="canaux_meshcore",
     )
 
+    equipe = models.OneToOneField(
+        "Team", on_delete=models.CASCADE, null=True, blank=True, related_name="canal_meshcore",
+    )
+
     nom = models.CharField(max_length=100)
 
     # Clé partagée du canal — sensible mais nécessaire au service-pont pour déchiffrer/envoyer
-    # sur ce canal. Jamais renvoyée en clair par l'API (voir serializer, write_only).
+    # sur ce canal. Jamais renvoyée en clair par l'API (voir serializer, write_only). 16 octets
+    # (32 hex) imposés par le firmware (voir set_channel côté pont) pour un canal privé — pas
+    # dérivée d'un nom public comme le fait le firmware pour un canal préfixé `#`.
     cle_partagee_hex = models.CharField(max_length=64, null=True, blank=True)
+
+    compagnon = models.ForeignKey(
+        "CompagnonMeshCore", on_delete=models.SET_NULL, null=True, blank=True, related_name="canaux_provisionnes",
+    )
+    canal_idx = models.PositiveSmallIntegerField(null=True, blank=True)
 
     actif = models.BooleanField(default=True)
 

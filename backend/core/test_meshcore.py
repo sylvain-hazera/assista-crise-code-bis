@@ -325,6 +325,22 @@ class TestMessageMeshLogResolutionEtVisibilite:
         assert response.status_code == status.HTTP_200_OK
         assert len(response.data) == 1
 
+    def test_filters_by_contact_pubkey_hex_for_a_single_thread(self, create_user, institution_a, compagnon):
+        """Fil de discussion avec UNE personne précise — distinct du filtre équipe, qui
+        mélangerait les messages de tous les membres équipés d'une même équipe."""
+        admin = create_user(username='admin-thread@test.fr', email='admin-thread@test.fr', type='ADMIN')
+        MessageMeshLog.objects.create(compagnon=compagnon, direction='ENTRANT', statut='RECU', contact_pubkey_hex='pers-a', contenu='De A')
+        MessageMeshLog.objects.create(compagnon=compagnon, direction='SORTANT', statut='ENVOYE', contact_pubkey_hex='pers-a', contenu='Vers A')
+        MessageMeshLog.objects.create(compagnon=compagnon, direction='ENTRANT', statut='RECU', contact_pubkey_hex='pers-b', contenu='De B')
+
+        client = APIClient()
+        client.force_authenticate(user=admin)
+        response = client.get(reverse('messagemeshlog-list'), {'contact_pubkey_hex': 'pers-a'})
+
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data) == 2
+        assert all(m['contact_pubkey_hex'] == 'pers-a' for m in response.data)
+
 
 @pytest.mark.django_db
 class TestRelaisMeshCore:
@@ -551,3 +567,142 @@ class TestPositionsMissionEnCours:
         api_client.force_authenticate(user=user)
         response = api_client.get(reverse('noeudmeshutilisateur-positions-en-mission'))
         assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+@pytest.mark.django_db
+class TestCanalMeshCoreEquipe:
+    """Canal MeshCore privé d'une équipe — répond au problème de routage des DM
+    (MessageMeshLog.equipe résolu via expediteur.teams.first(), arbitraire pour un
+    utilisateur multi-équipes) : voir TeamViewSet.provisionner_canal_meshcore."""
+
+    def test_provisionner_creates_canal_and_sends_dm_to_equipped_members(self, mairie_client, institution_a, compagnon, create_user):
+        from core.models import CanalMeshCore, MessageMeshLog, Team
+        client, _ = mairie_client
+        equipe = Team.objects.create(name='Équipe canal', institution=institution_a)
+        membre_equipe = create_user(username='membre-canal@test.fr', email='membre-canal@test.fr', type='UTIL_SIMPLE')
+        equipe.members.add(membre_equipe)
+        NoeudMeshUtilisateur.objects.create(utilisateur=membre_equipe, pubkey_hex='canal-aa')
+        compagnon.principal = True
+        compagnon.save(update_fields=['principal'])
+
+        response = client.post(reverse('team-provisionner-canal-meshcore', args=[equipe.id]))
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['destinataires'] == 1
+        canal = CanalMeshCore.objects.get(equipe=equipe)
+        assert canal.cle_partagee_hex
+        assert canal.nom
+        dm = MessageMeshLog.objects.get(equipe=equipe, contact_pubkey_hex='canal-aa')
+        assert canal.nom in dm.contenu
+        assert canal.cle_partagee_hex in dm.contenu
+        assert dm.statut == 'EN_ATTENTE'
+
+    def test_provisionner_is_idempotent_without_regenerer(self, mairie_client, institution_a, compagnon):
+        from core.models import CanalMeshCore, Team
+        client, _ = mairie_client
+        equipe = Team.objects.create(name='Équipe canal stable', institution=institution_a)
+
+        client.post(reverse('team-provisionner-canal-meshcore', args=[equipe.id]))
+        canal_avant = CanalMeshCore.objects.get(equipe=equipe)
+        cle_avant = canal_avant.cle_partagee_hex
+
+        client.post(reverse('team-provisionner-canal-meshcore', args=[equipe.id]))
+        canal_apres = CanalMeshCore.objects.get(equipe=equipe)
+
+        assert canal_apres.id == canal_avant.id
+        assert canal_apres.cle_partagee_hex == cle_avant
+
+    def test_regenerer_changes_key_and_resets_provisioning(self, mairie_client, institution_a, compagnon):
+        from core.models import CanalMeshCore, Team
+        client, _ = mairie_client
+        equipe = Team.objects.create(name='Équipe canal révoquée', institution=institution_a)
+        client.post(reverse('team-provisionner-canal-meshcore', args=[equipe.id]))
+        canal = CanalMeshCore.objects.get(equipe=equipe)
+        canal.canal_idx = 3
+        canal.compagnon = compagnon
+        canal.save(update_fields=['canal_idx', 'compagnon'])
+        ancienne_cle = canal.cle_partagee_hex
+
+        response = client.post(reverse('team-provisionner-canal-meshcore', args=[equipe.id]), {'regenerer': True}, format='json')
+
+        assert response.status_code == status.HTTP_200_OK
+        canal.refresh_from_db()
+        assert canal.cle_partagee_hex != ancienne_cle
+        assert canal.canal_idx is None
+        assert canal.compagnon is None
+
+    def test_provisionner_requires_belonging_to_team_institution(self, create_user, institution_a):
+        from core.models import Team
+        autre_institution = _make_institution(nom='Mairie canal B')
+        autre_user = create_user(username='autre-canal@test.fr', email='autre-canal@test.fr', type='AUT_LOCALE')
+        ContactInstitution.objects.create(institution=autre_institution, utilisateur=autre_user, actif=True)
+        client = APIClient()
+        client.force_authenticate(user=autre_user)
+        equipe = Team.objects.create(name='Équipe canal protégée', institution=institution_a)
+
+        response = client.post(reverse('team-provisionner-canal-meshcore', args=[equipe.id]))
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_canaux_a_provisionner_excludes_already_provisioned_for_this_compagnon(self, api_client, compagnon, institution_a, create_user):
+        from core.models import CanalMeshCore, Team
+        equipe = Team.objects.create(name='Équipe canal provisionnement', institution=institution_a)
+        canal_pret = CanalMeshCore.objects.create(equipe=equipe, nom='Prêt', cle_partagee_hex='aa' * 16, compagnon=compagnon, canal_idx=2)
+        autre_equipe = Team.objects.create(name='Équipe canal à faire', institution=institution_a)
+        canal_a_faire = CanalMeshCore.objects.create(equipe=autre_equipe, nom='À faire', cle_partagee_hex='bb' * 16)
+
+        bridge_user = create_user(username='bridge-canal1@test.fr', email='bridge-canal1@test.fr', type='UTIL_SIMPLE')
+        api_client.force_authenticate(user=bridge_user)
+        response = api_client.get(reverse('compagnonmeshcore-canaux-a-provisionner', args=[compagnon.id]))
+
+        assert response.status_code == status.HTTP_200_OK
+        ids = {c['id'] for c in response.data}
+        assert str(canal_pret.id) not in ids
+        assert str(canal_a_faire.id) in ids
+        entree = next(c for c in response.data if c['id'] == str(canal_a_faire.id))
+        assert entree['cle_partagee_hex'] == 'bb' * 16
+
+    def test_rapporter_canal_provisionne_updates_canal(self, api_client, compagnon, institution_a, create_user):
+        from core.models import CanalMeshCore, Team
+        equipe = Team.objects.create(name='Équipe canal rapportée', institution=institution_a)
+        canal = CanalMeshCore.objects.create(equipe=equipe, nom='Test', cle_partagee_hex='cc' * 16)
+
+        bridge_user = create_user(username='bridge-canal2@test.fr', email='bridge-canal2@test.fr', type='UTIL_SIMPLE')
+        api_client.force_authenticate(user=bridge_user)
+        response = api_client.post(
+            reverse('compagnonmeshcore-rapporter-canal-provisionne', args=[compagnon.id]),
+            {'canal_id': str(canal.id), 'canal_idx': 4}, format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        canal.refresh_from_db()
+        assert canal.canal_idx == 4
+        assert canal.compagnon_id == compagnon.id
+
+    def test_bridge_can_mark_channel_message_sent_via_patch(self, api_client, compagnon, institution_a, create_user):
+        """Même régression que MessageMeshLogSerializer, côté canal."""
+        from core.models import CanalMeshCore, MessageCanalMeshCore, Team
+        equipe = Team.objects.create(name='Équipe canal msg', institution=institution_a)
+        canal = CanalMeshCore.objects.create(equipe=equipe, nom='Test msg', cle_partagee_hex='dd' * 16, compagnon=compagnon, canal_idx=1)
+        message = MessageCanalMeshCore.objects.create(canal=canal, direction='SORTANT', statut='EN_ATTENTE', contenu='Salut équipe')
+
+        bridge_user = create_user(username='bridge-canal3@test.fr', email='bridge-canal3@test.fr', type='UTIL_SIMPLE')
+        api_client.force_authenticate(user=bridge_user)
+        response = api_client.patch(reverse('messagecanalmeshcore-detail', args=[message.id]), {'statut': 'ENVOYE'}, format='json')
+
+        assert response.status_code == status.HTTP_200_OK
+        message.refresh_from_db()
+        assert message.statut == 'ENVOYE'
+
+    def test_messages_canal_a_envoyer_exposes_canal_idx(self, api_client, compagnon, institution_a, create_user):
+        from core.models import CanalMeshCore, MessageCanalMeshCore, Team
+        equipe = Team.objects.create(name='Équipe canal idx', institution=institution_a)
+        canal = CanalMeshCore.objects.create(equipe=equipe, nom='Test idx', cle_partagee_hex='ee' * 16, compagnon=compagnon, canal_idx=5)
+        MessageCanalMeshCore.objects.create(canal=canal, direction='SORTANT', statut='EN_ATTENTE', contenu='Message')
+
+        bridge_user = create_user(username='bridge-canal4@test.fr', email='bridge-canal4@test.fr', type='UTIL_SIMPLE')
+        api_client.force_authenticate(user=bridge_user)
+        response = api_client.get(reverse('messagecanalmeshcore-a-envoyer'))
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data[0]['canal_idx'] == 5
