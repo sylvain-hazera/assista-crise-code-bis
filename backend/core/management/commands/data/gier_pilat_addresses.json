@@ -1,0 +1,4221 @@
+{
+  "zone": {
+    "42186": {
+      "nom": "Rive-de-Gier",
+      "adresses": [
+        {
+          "label": "3 Place Chipier 42800 Rive-de-Gier",
+          "street": "Place Chipier",
+          "housenumber": "3",
+          "postcode": "42800",
+          "city": "Rive-de-Gier",
+          "citycode": "42186",
+          "lon": 4.627237,
+          "lat": 45.53249
+        },
+        {
+          "label": "6 Place Chipier 42800 Rive-de-Gier",
+          "street": "Place Chipier",
+          "housenumber": "6",
+          "postcode": "42800",
+          "city": "Rive-de-Gier",
+          "citycode": "42186",
+          "lon": 4.62678,
+          "lat": 45.532441
+        },
+        {
+          "label": "8 Place Chipier 42800 Rive-de-Gier",
+          "street": "Place Chipier",
+          "housenumber": "8",
+          "postcode": "42800",
+          "city": "Rive-de-Gier",
+          "citycode": "42186",
+          "lon": 4.626721,
+          "lat": 45.532269
+        },
+        {
+          "label": "6bis Place Chipier 42800 Rive-de-Gier",
+          "street": "Place Chipier",
+          "housenumber": "6bis",
+          "postcode": "42800",
+          "city": "Rive-de-Gier",
+          "citycode": "42186",
+          "lon": 4.626738,
+          "lat": 45.532512
+        },
+        {
+          "label": "4 Place Chipier 42800 Rive-de-Gier",
+          "street": "Place Chipier",
+          "housenumber": "4",
+          "postcode": "42800",
+          "city": "Rive-de-Gier",
+          "citycode": "42186",
+          "lon": 4.62668,
+          "lat": 45.53261
+        },
+        {
+          "label": "142 Chemin des Châtaigniers 42800 Châteauneuf",
+          "street": "Chemin des Châtaigniers",
+          "housenumber": "142",
+          "postcode": "42800",
+          "city": "Châteauneuf",
+          "citycode": "42053",
+          "lon": 4.616146,
+          "lat": 45.502799
+        },
+        {
+          "label": "140 Chemin des Châtaigniers 42800 Châteauneuf",
+          "street": "Chemin des Châtaigniers",
+          "housenumber": "140",
+          "postcode": "42800",
+          "city": "Châteauneuf",
+          "citycode": "42053",
+          "lon": 4.616041,
+          "lat": 45.502854
+        },
+        {
+          "label": "138 Chemin des Châtaigniers 42800 Châteauneuf",
+          "street": "Chemin des Châtaigniers",
+          "housenumber": "138",
+          "postcode": "42800",
+          "city": "Châteauneuf",
+          "citycode": "42053",
+          "lon": 4.616117,
+          "lat": 45.50292
+        },
+        {
+          "label": "245 Route du Sorbier 42800 Châteauneuf",
+          "street": "Route du Sorbier",
+          "housenumber": "245",
+          "postcode": "42800",
+          "city": "Châteauneuf",
+          "citycode": "42053",
+          "lon": 4.618737,
+          "lat": 45.508489
+        },
+        {
+          "label": "185 Route du Sorbier 42800 Châteauneuf",
+          "street": "Route du Sorbier",
+          "housenumber": "185",
+          "postcode": "42800",
+          "city": "Châteauneuf",
+          "citycode": "42053",
+          "lon": 4.618839,
+          "lat": 45.508877
+        },
+        {
+          "label": "47 Chemin Richardon 42800 Châteauneuf",
+          "street": "Chemin Richardon",
+          "housenumber": "47",
+          "postcode": "42800",
+          "city": "Châteauneuf",
+          "citycode": "42053",
+          "lon": 4.619428,
+          "lat": 45.508578
+        },
+        {
+          "label": "182 Route du Sorbier 42800 Châteauneuf",
+          "street": "Route du Sorbier",
+          "housenumber": "182",
+          "postcode": "42800",
+          "city": "Châteauneuf",
+          "citycode": "42053",
+          "lon": 4.618914,
+          "lat": 45.508964
+        },
+        {
+          "label": "212 Rue de Granay 42800 Châteauneuf",
+          "street": "Rue de Granay",
+          "housenumber": "212",
+          "postcode": "42800",
+          "city": "Châteauneuf",
+          "citycode": "42053",
+          "lon": 4.617982,
+          "lat": 45.508621
+        },
+        {
+          "label": "142 Route du Sorbier 42800 Châteauneuf",
+          "street": "Route du Sorbier",
+          "housenumber": "142",
+          "postcode": "42800",
+          "city": "Châteauneuf",
+          "citycode": "42053",
+          "lon": 4.618974,
+          "lat": 45.509149
+        },
+        {
+          "label": "148 Rue de Granay 42800 Châteauneuf",
+          "street": "Rue de Granay",
+          "housenumber": "148",
+          "postcode": "42800",
+          "city": "Châteauneuf",
+          "citycode": "42053",
+          "lon": 4.618173,
+          "lat": 45.509052
+        },
+        {
+          "label": "115 Rue de Granay 42800 Châteauneuf",
+          "street": "Rue de Granay",
+          "housenumber": "115",
+          "postcode": "42800",
+          "city": "Châteauneuf",
+          "citycode": "42053",
+          "lon": 4.618214,
+          "lat": 45.509136
+        },
+        {
+          "label": "4a Chemin de Sainte-barbe 42800 Rive-de-Gier",
+          "street": "Chemin de Sainte-barbe",
+          "housenumber": "4a",
+          "postcode": "42800",
+          "city": "Rive-de-Gier",
+          "citycode": "42186",
+          "lon": 4.607347,
+          "lat": 45.521736
+        },
+        {
+          "label": "4 Chemin de Sainte-barbe 42800 Rive-de-Gier",
+          "street": "Chemin de Sainte-barbe",
+          "housenumber": "4",
+          "postcode": "42800",
+          "city": "Rive-de-Gier",
+          "citycode": "42186",
+          "lon": 4.60736,
+          "lat": 45.521754
+        },
+        {
+          "label": "36 Rue du Marthoret 42800 Rive-de-Gier",
+          "street": "Rue du Marthoret",
+          "housenumber": "36",
+          "postcode": "42800",
+          "city": "Rive-de-Gier",
+          "citycode": "42186",
+          "lon": 4.607674,
+          "lat": 45.521128
+        },
+        {
+          "label": "34 Rue du Marthoret 42800 Rive-de-Gier",
+          "street": "Rue du Marthoret",
+          "housenumber": "34",
+          "postcode": "42800",
+          "city": "Rive-de-Gier",
+          "citycode": "42186",
+          "lon": 4.608082,
+          "lat": 45.521507
+        },
+        {
+          "label": "2 Chemin de Sainte-barbe 42800 Rive-de-Gier",
+          "street": "Chemin de Sainte-barbe",
+          "housenumber": "2",
+          "postcode": "42800",
+          "city": "Rive-de-Gier",
+          "citycode": "42186",
+          "lon": 4.606429,
+          "lat": 45.521135
+        },
+        {
+          "label": "31 Rue du Marthoret 42800 Rive-de-Gier",
+          "street": "Rue du Marthoret",
+          "housenumber": "31",
+          "postcode": "42800",
+          "city": "Rive-de-Gier",
+          "citycode": "42186",
+          "lon": 4.608099,
+          "lat": 45.521404
+        },
+        {
+          "label": "32 Rue du Marthoret 42800 Rive-de-Gier",
+          "street": "Rue du Marthoret",
+          "housenumber": "32",
+          "postcode": "42800",
+          "city": "Rive-de-Gier",
+          "citycode": "42186",
+          "lon": 4.608251,
+          "lat": 45.521811
+        },
+        {
+          "label": "3 Chemin de Sainte-barbe 42800 Rive-de-Gier",
+          "street": "Chemin de Sainte-barbe",
+          "housenumber": "3",
+          "postcode": "42800",
+          "city": "Rive-de-Gier",
+          "citycode": "42186",
+          "lon": 4.60684,
+          "lat": 45.520861
+        },
+        {
+          "label": "30 Rue du Marthoret 42800 Rive-de-Gier",
+          "street": "Rue du Marthoret",
+          "housenumber": "30",
+          "postcode": "42800",
+          "city": "Rive-de-Gier",
+          "citycode": "42186",
+          "lon": 4.608234,
+          "lat": 45.522099
+        },
+        {
+          "label": "2 Route de Frigerin 42800 Saint-Joseph",
+          "street": "Route de Frigerin",
+          "housenumber": "2",
+          "postcode": "42800",
+          "city": "Saint-Joseph",
+          "citycode": "42242",
+          "lon": 4.629714,
+          "lat": 45.535788
+        },
+        {
+          "label": "27 Rue des Peschures 42800 Rive-de-Gier",
+          "street": "Rue des Peschures",
+          "housenumber": "27",
+          "postcode": "42800",
+          "city": "Rive-de-Gier",
+          "citycode": "42186",
+          "lon": 4.630882,
+          "lat": 45.535548
+        },
+        {
+          "label": "1 Route de la Ferme 42800 Saint-Joseph",
+          "street": "Route de la Ferme",
+          "housenumber": "1",
+          "postcode": "42800",
+          "city": "Saint-Joseph",
+          "citycode": "42242",
+          "lon": 4.630255,
+          "lat": 45.536207
+        },
+        {
+          "label": "37b Rue des Peschures 42800 Rive-de-Gier",
+          "street": "Rue des Peschures",
+          "housenumber": "37b",
+          "postcode": "42800",
+          "city": "Rive-de-Gier",
+          "citycode": "42186",
+          "lon": 4.629991,
+          "lat": 45.535257
+        },
+        {
+          "label": "37a Rue des Peschures 42800 Rive-de-Gier",
+          "street": "Rue des Peschures",
+          "housenumber": "37a",
+          "postcode": "42800",
+          "city": "Rive-de-Gier",
+          "citycode": "42186",
+          "lon": 4.629991,
+          "lat": 45.535257
+        },
+        {
+          "label": "25 Rue des Peschures 42800 Rive-de-Gier",
+          "street": "Rue des Peschures",
+          "housenumber": "25",
+          "postcode": "42800",
+          "city": "Rive-de-Gier",
+          "citycode": "42186",
+          "lon": 4.629991,
+          "lat": 45.535257
+        },
+        {
+          "label": "14 Rue des Peschures 42800 Rive-de-Gier",
+          "street": "Rue des Peschures",
+          "housenumber": "14",
+          "postcode": "42800",
+          "city": "Rive-de-Gier",
+          "citycode": "42186",
+          "lon": 4.630177,
+          "lat": 45.535196
+        },
+        {
+          "label": "1 Route de Frigerin 42800 Saint-Joseph",
+          "street": "Route de Frigerin",
+          "housenumber": "1",
+          "postcode": "42800",
+          "city": "Saint-Joseph",
+          "citycode": "42242",
+          "lon": 4.629504,
+          "lat": 45.535903
+        },
+        {
+          "label": "1 Chemin des Peschures 42800 Rive-de-Gier",
+          "street": "Chemin des Peschures",
+          "housenumber": "1",
+          "postcode": "42800",
+          "city": "Rive-de-Gier",
+          "citycode": "42186",
+          "lon": 4.629451,
+          "lat": 45.53578
+        },
+        {
+          "label": "2b Route de Frigerin 42800 Saint-Joseph",
+          "street": "Route de Frigerin",
+          "housenumber": "2b",
+          "postcode": "42800",
+          "city": "Saint-Joseph",
+          "citycode": "42242",
+          "lon": 4.629668,
+          "lat": 45.536108
+        },
+        {
+          "label": "29 Chemin du Grand Féloin 42800 Saint-Martin-la-Plaine",
+          "street": "Chemin du Grand Féloin",
+          "housenumber": "29",
+          "postcode": "42800",
+          "city": "Saint-Martin-la-Plaine",
+          "citycode": "42259",
+          "lon": 4.610254,
+          "lat": 45.53636
+        },
+        {
+          "label": "44 Chemin du Grand Féloin 42800 Rive-de-Gier",
+          "street": "Chemin du Grand Féloin",
+          "housenumber": "44",
+          "postcode": "42800",
+          "city": "Rive-de-Gier",
+          "citycode": "42186",
+          "lon": 4.610653,
+          "lat": 45.536131
+        },
+        {
+          "label": "46 Chemin du Grand Féloin 42800 Rive-de-Gier",
+          "street": "Chemin du Grand Féloin",
+          "housenumber": "46",
+          "postcode": "42800",
+          "city": "Rive-de-Gier",
+          "citycode": "42186",
+          "lon": 4.610746,
+          "lat": 45.536248
+        },
+        {
+          "label": "42 Chemin du Grand Féloin 42800 Rive-de-Gier",
+          "street": "Chemin du Grand Féloin",
+          "housenumber": "42",
+          "postcode": "42800",
+          "city": "Rive-de-Gier",
+          "citycode": "42186",
+          "lon": 4.610638,
+          "lat": 45.535992
+        },
+        {
+          "label": "40 Chemin du Grand Féloin 42800 Rive-de-Gier",
+          "street": "Chemin du Grand Féloin",
+          "housenumber": "40",
+          "postcode": "42800",
+          "city": "Rive-de-Gier",
+          "citycode": "42186",
+          "lon": 4.610593,
+          "lat": 45.535787
+        },
+        {
+          "label": "50 Chemin du Grand Féloin 42800 Rive-de-Gier",
+          "street": "Chemin du Grand Féloin",
+          "housenumber": "50",
+          "postcode": "42800",
+          "city": "Rive-de-Gier",
+          "citycode": "42186",
+          "lon": 4.610918,
+          "lat": 45.536429
+        },
+        {
+          "label": "36a Chemin du Grand Féloin 42800 Rive-de-Gier",
+          "street": "Chemin du Grand Féloin",
+          "housenumber": "36a",
+          "postcode": "42800",
+          "city": "Rive-de-Gier",
+          "citycode": "42186",
+          "lon": 4.611002,
+          "lat": 45.536501
+        },
+        {
+          "label": "23 Chemin du Grand Féloin 42800 Saint-Martin-la-Plaine",
+          "street": "Chemin du Grand Féloin",
+          "housenumber": "23",
+          "postcode": "42800",
+          "city": "Saint-Martin-la-Plaine",
+          "citycode": "42259",
+          "lon": 4.610532,
+          "lat": 45.535616
+        },
+        {
+          "label": "36 Chemin du Grand Féloin 42800 Rive-de-Gier",
+          "street": "Chemin du Grand Féloin",
+          "housenumber": "36",
+          "postcode": "42800",
+          "city": "Rive-de-Gier",
+          "citycode": "42186",
+          "lon": 4.610625,
+          "lat": 45.535605
+        },
+        {
+          "label": "52 Chemin du Grand Féloin 42800 Rive-de-Gier",
+          "street": "Chemin du Grand Féloin",
+          "housenumber": "52",
+          "postcode": "42800",
+          "city": "Rive-de-Gier",
+          "citycode": "42186",
+          "lon": 4.611149,
+          "lat": 45.536655
+        }
+      ]
+    },
+    "42207": {
+      "nom": "Saint-Chamond",
+      "adresses": [
+        {
+          "label": "23 Route de la chabure 42400 Saint-Chamond",
+          "street": "Route de la chabure",
+          "housenumber": "23",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.493017,
+          "lat": 45.458917
+        },
+        {
+          "label": "23bis Route de la chabure 42400 Saint-Chamond",
+          "street": "Route de la chabure",
+          "housenumber": "23bis",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.492961,
+          "lat": 45.459139
+        },
+        {
+          "label": "4 Chemin de bujarret 42400 Saint-Chamond",
+          "street": "Chemin de bujarret",
+          "housenumber": "4",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.49332,
+          "lat": 45.457687
+        },
+        {
+          "label": "25bis Route de la chabure 42400 Saint-Chamond",
+          "street": "Route de la chabure",
+          "housenumber": "25bis",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.492728,
+          "lat": 45.459049
+        },
+        {
+          "label": "17 Route de la chabure 42400 Saint-Chamond",
+          "street": "Route de la chabure",
+          "housenumber": "17",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.495579,
+          "lat": 45.460087
+        },
+        {
+          "label": "25 Route de la chabure 42400 Saint-Chamond",
+          "street": "Route de la chabure",
+          "housenumber": "25",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.492676,
+          "lat": 45.459272
+        },
+        {
+          "label": "8 Route de la chabure 42400 Saint-Chamond",
+          "street": "Route de la chabure",
+          "housenumber": "8",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.493253,
+          "lat": 45.459944
+        },
+        {
+          "label": "27 Route de la chabure 42400 Saint-Chamond",
+          "street": "Route de la chabure",
+          "housenumber": "27",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.492413,
+          "lat": 45.458999
+        },
+        {
+          "label": "4 Route de la chabure 42400 Saint-Chamond",
+          "street": "Route de la chabure",
+          "housenumber": "4",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.494345,
+          "lat": 45.460318
+        },
+        {
+          "label": "7 Chemin de la chapelle-bujarret 42400 Saint-Chamond",
+          "street": "Chemin de la chapelle-bujarret",
+          "housenumber": "7",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.493184,
+          "lat": 45.455148
+        },
+        {
+          "label": "9 Chemin de la chapelle-bujarret 42400 Saint-Chamond",
+          "street": "Chemin de la chapelle-bujarret",
+          "housenumber": "9",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.492803,
+          "lat": 45.454978
+        },
+        {
+          "label": "4 Chemin de la chapelle-bujarret 42400 Saint-Chamond",
+          "street": "Chemin de la chapelle-bujarret",
+          "housenumber": "4",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.493938,
+          "lat": 45.45589
+        },
+        {
+          "label": "2ter Chemin de la chapelle-bujarret 42400 Saint-Chamond",
+          "street": "Chemin de la chapelle-bujarret",
+          "housenumber": "2ter",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.493319,
+          "lat": 45.456162
+        },
+        {
+          "label": "41 Route de fouay 42400 Saint-Chamond",
+          "street": "Route de fouay",
+          "housenumber": "41",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.492439,
+          "lat": 45.455955
+        },
+        {
+          "label": "39 Route de fouay 42400 Saint-Chamond",
+          "street": "Route de fouay",
+          "housenumber": "39",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.492751,
+          "lat": 45.456147
+        },
+        {
+          "label": "2bis Chemin de la chapelle-bujarret 42400 Saint-Chamond",
+          "street": "Chemin de la chapelle-bujarret",
+          "housenumber": "2bis",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.493961,
+          "lat": 45.45613
+        },
+        {
+          "label": "1 Rue du parterre 42400 Saint-Chamond",
+          "street": "Rue du parterre",
+          "housenumber": "1",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.504046,
+          "lat": 45.481739
+        },
+        {
+          "label": "3 Rue du parterre 42400 Saint-Chamond",
+          "street": "Rue du parterre",
+          "housenumber": "3",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.504,
+          "lat": 45.481806
+        },
+        {
+          "label": "12 Rue du parterre 42400 Saint-Chamond",
+          "street": "Rue du parterre",
+          "housenumber": "12",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.504292,
+          "lat": 45.481598
+        },
+        {
+          "label": "5 Rue du parterre 42400 Saint-Chamond",
+          "street": "Rue du parterre",
+          "housenumber": "5",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.503875,
+          "lat": 45.481798
+        },
+        {
+          "label": "10 Rue du parterre 42400 Saint-Chamond",
+          "street": "Rue du parterre",
+          "housenumber": "10",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.504413,
+          "lat": 45.481636
+        },
+        {
+          "label": "8 Rue du parterre 42400 Saint-Chamond",
+          "street": "Rue du parterre",
+          "housenumber": "8",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.504523,
+          "lat": 45.481729
+        },
+        {
+          "label": "7 Rue du parterre 42400 Saint-Chamond",
+          "street": "Rue du parterre",
+          "housenumber": "7",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.503815,
+          "lat": 45.481866
+        },
+        {
+          "label": "14 Rue du parterre 42400 Saint-Chamond",
+          "street": "Rue du parterre",
+          "housenumber": "14",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.504243,
+          "lat": 45.481458
+        },
+        {
+          "label": "6 Rue du parterre 42400 Saint-Chamond",
+          "street": "Rue du parterre",
+          "housenumber": "6",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.504584,
+          "lat": 45.481796
+        },
+        {
+          "label": "16 Rue du parterre 42400 Saint-Chamond",
+          "street": "Rue du parterre",
+          "housenumber": "16",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.504187,
+          "lat": 45.481385
+        },
+        {
+          "label": "1 Chemin des petites bruyères 42400 Saint-Chamond",
+          "street": "Chemin des petites bruyères",
+          "housenumber": "1",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.485037,
+          "lat": 45.473859
+        },
+        {
+          "label": "3 Chemin des petites bruyères 42400 Saint-Chamond",
+          "street": "Chemin des petites bruyères",
+          "housenumber": "3",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.484806,
+          "lat": 45.473722
+        },
+        {
+          "label": "6 Rue Voltaire 42400 Saint-Chamond",
+          "street": "Rue Voltaire",
+          "housenumber": "6",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.502799,
+          "lat": 45.475556
+        },
+        {
+          "label": "6bis Rue Voltaire 42400 Saint-Chamond",
+          "street": "Rue Voltaire",
+          "housenumber": "6bis",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.502606,
+          "lat": 45.475615
+        },
+        {
+          "label": "2 Rue Voltaire 42400 Saint-Chamond",
+          "street": "Rue Voltaire",
+          "housenumber": "2",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.503873,
+          "lat": 45.475733
+        },
+        {
+          "label": "6 Square de lavieu 42400 Saint-Chamond",
+          "street": "Square de lavieu",
+          "housenumber": "6",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.503696,
+          "lat": 45.475318
+        },
+        {
+          "label": "7 Square de lavieu 42400 Saint-Chamond",
+          "street": "Square de lavieu",
+          "housenumber": "7",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.503644,
+          "lat": 45.475205
+        },
+        {
+          "label": "3 Rue Voltaire 42400 Saint-Chamond",
+          "street": "Rue Voltaire",
+          "housenumber": "3",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.502557,
+          "lat": 45.475181
+        },
+        {
+          "label": "8 Square de lavieu 42400 Saint-Chamond",
+          "street": "Square de lavieu",
+          "housenumber": "8",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.503511,
+          "lat": 45.475059
+        },
+        {
+          "label": "3 Impasse Auguste Rodin 42400 Saint-Chamond",
+          "street": "Impasse Auguste Rodin",
+          "housenumber": "3",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.503261,
+          "lat": 45.476456
+        },
+        {
+          "label": "5 Square de lavieu 42400 Saint-Chamond",
+          "street": "Square de lavieu",
+          "housenumber": "5",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.503812,
+          "lat": 45.4751
+        },
+        {
+          "label": "1bis Route de la chabure 42400 Saint-Chamond",
+          "street": "Route de la chabure",
+          "housenumber": "1bis",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.502859,
+          "lat": 45.462254
+        },
+        {
+          "label": "1 Route de la chabure 42400 Saint-Chamond",
+          "street": "Route de la chabure",
+          "housenumber": "1",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.503082,
+          "lat": 45.462198
+        },
+        {
+          "label": "2 Impasse Blériot 42400 Saint-Chamond",
+          "street": "Impasse Blériot",
+          "housenumber": "2",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.503026,
+          "lat": 45.461906
+        },
+        {
+          "label": "4 Impasse Blériot 42400 Saint-Chamond",
+          "street": "Impasse Blériot",
+          "housenumber": "4",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.502507,
+          "lat": 45.461982
+        },
+        {
+          "label": "2bis Impasse Blériot 42400 Saint-Chamond",
+          "street": "Impasse Blériot",
+          "housenumber": "2bis",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.502756,
+          "lat": 45.461818
+        },
+        {
+          "label": "1 Rue Renée Peillon 42400 Saint-Chamond",
+          "street": "Rue Renée Peillon",
+          "housenumber": "1",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.503313,
+          "lat": 45.46184
+        },
+        {
+          "label": "1c Route de la chabure 42400 Saint-Chamond",
+          "street": "Route de la chabure",
+          "housenumber": "1c",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.502215,
+          "lat": 45.462222
+        },
+        {
+          "label": "4 Rue Galliéni 42400 Saint-Chamond",
+          "street": "Rue Galliéni",
+          "housenumber": "4",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.503843,
+          "lat": 45.462045
+        },
+        {
+          "label": "76 Rue Sibert 42400 Saint-Chamond",
+          "street": "Rue Sibert",
+          "housenumber": "76",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.504502,
+          "lat": 45.467085
+        },
+        {
+          "label": "77 Rue Sibert 42400 Saint-Chamond",
+          "street": "Rue Sibert",
+          "housenumber": "77",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.504622,
+          "lat": 45.46693
+        },
+        {
+          "label": "79 Rue Sibert 42400 Saint-Chamond",
+          "street": "Rue Sibert",
+          "housenumber": "79",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.504573,
+          "lat": 45.46682
+        },
+        {
+          "label": "81 Rue Sibert 42400 Saint-Chamond",
+          "street": "Rue Sibert",
+          "housenumber": "81",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.504543,
+          "lat": 45.466734
+        },
+        {
+          "label": "83 Rue Sibert 42400 Saint-Chamond",
+          "street": "Rue Sibert",
+          "housenumber": "83",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.504512,
+          "lat": 45.466645
+        },
+        {
+          "label": "87 Rue Sibert 42400 Saint-Chamond",
+          "street": "Rue Sibert",
+          "housenumber": "87",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.504419,
+          "lat": 45.466428
+        },
+        {
+          "label": "86 Rue Sibert 42400 Saint-Chamond",
+          "street": "Rue Sibert",
+          "housenumber": "86",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.504179,
+          "lat": 45.466434
+        },
+        {
+          "label": "89 Rue Sibert 42400 Saint-Chamond",
+          "street": "Rue Sibert",
+          "housenumber": "89",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.504373,
+          "lat": 45.466322
+        },
+        {
+          "label": "90 Rue Sibert 42400 Saint-Chamond",
+          "street": "Rue Sibert",
+          "housenumber": "90",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.504151,
+          "lat": 45.466252
+        },
+        {
+          "label": "20 Rue Royet de la Bastie 42400 Saint-Chamond",
+          "street": "Rue Royet de la Bastie",
+          "housenumber": "20",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.50535,
+          "lat": 45.46658
+        },
+        {
+          "label": "2 Rue du clos marquet 42400 Saint-Chamond",
+          "street": "Rue du clos marquet",
+          "housenumber": "2",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.517091,
+          "lat": 45.486685
+        },
+        {
+          "label": "7 Allée Alessandro Volta 42400 Saint-Chamond",
+          "street": "Allée Alessandro Volta",
+          "housenumber": "7",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.517842,
+          "lat": 45.48562
+        },
+        {
+          "label": "36 Rue font rozet 42400 Saint-Chamond",
+          "street": "Rue font rozet",
+          "housenumber": "36",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.517605,
+          "lat": 45.485469
+        },
+        {
+          "label": "5 Allée Alessandro Volta 42400 Saint-Chamond",
+          "street": "Allée Alessandro Volta",
+          "housenumber": "5",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.518111,
+          "lat": 45.485696
+        },
+        {
+          "label": "3 Allée Alessandro Volta 42400 Saint-Chamond",
+          "street": "Allée Alessandro Volta",
+          "housenumber": "3",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.518193,
+          "lat": 45.485745
+        },
+        {
+          "label": "27 Rue Galliéni 42400 Saint-Chamond",
+          "street": "Rue Galliéni",
+          "housenumber": "27",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.50272,
+          "lat": 45.459819
+        },
+        {
+          "label": "2 Rue Antoine Dumaine 42400 Saint-Chamond",
+          "street": "Rue Antoine Dumaine",
+          "housenumber": "2",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.502887,
+          "lat": 45.459796
+        },
+        {
+          "label": "5 Rue Antoine Dumaine 42400 Saint-Chamond",
+          "street": "Rue Antoine Dumaine",
+          "housenumber": "5",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.503187,
+          "lat": 45.459869
+        },
+        {
+          "label": "3 Rue Antoine Dumaine 42400 Saint-Chamond",
+          "street": "Rue Antoine Dumaine",
+          "housenumber": "3",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.503141,
+          "lat": 45.460041
+        },
+        {
+          "label": "1 Rue Antoine Dumaine 42400 Saint-Chamond",
+          "street": "Rue Antoine Dumaine",
+          "housenumber": "1",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.503011,
+          "lat": 45.460173
+        },
+        {
+          "label": "12 Rue Galliéni 42400 Saint-Chamond",
+          "street": "Rue Galliéni",
+          "housenumber": "12",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.502354,
+          "lat": 45.460045
+        },
+        {
+          "label": "5 Cité des tilleuls 42400 Saint-Chamond",
+          "street": "Cité des tilleuls",
+          "housenumber": "5",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.502624,
+          "lat": 45.460223
+        },
+        {
+          "label": "7 Rue Antoine Dumaine 42400 Saint-Chamond",
+          "street": "Rue Antoine Dumaine",
+          "housenumber": "7",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.503235,
+          "lat": 45.459734
+        },
+        {
+          "label": "14 Rue Galliéni 42400 Saint-Chamond",
+          "street": "Rue Galliéni",
+          "housenumber": "14",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.502249,
+          "lat": 45.459852
+        },
+        {
+          "label": "9 Rue Antoine Dumaine 42400 Saint-Chamond",
+          "street": "Rue Antoine Dumaine",
+          "housenumber": "9",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.503283,
+          "lat": 45.459657
+        },
+        {
+          "label": "9 Rue du 19 mars 1962 42400 Saint-Chamond",
+          "street": "Rue du 19 mars 1962",
+          "housenumber": "9",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.495379,
+          "lat": 45.46962
+        },
+        {
+          "label": "7 Rue du 19 mars 1962 42400 Saint-Chamond",
+          "street": "Rue du 19 mars 1962",
+          "housenumber": "7",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.495377,
+          "lat": 45.469705
+        },
+        {
+          "label": "5 Rue du 19 mars 1962 42400 Saint-Chamond",
+          "street": "Rue du 19 mars 1962",
+          "housenumber": "5",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.495302,
+          "lat": 45.469807
+        },
+        {
+          "label": "3 Rue du 19 mars 1962 42400 Saint-Chamond",
+          "street": "Rue du 19 mars 1962",
+          "housenumber": "3",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.495314,
+          "lat": 45.469885
+        },
+        {
+          "label": "28 Chemin de l'Ollagnière 42400 Saint-Chamond",
+          "street": "Chemin de l'Ollagnière",
+          "housenumber": "28",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.496033,
+          "lat": 45.4703
+        },
+        {
+          "label": "1 Rue du 19 mars 1962 42400 Saint-Chamond",
+          "street": "Rue du 19 mars 1962",
+          "housenumber": "1",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.495229,
+          "lat": 45.46995
+        },
+        {
+          "label": "32 Chemin de l'Ollagnière 42400 Saint-Chamond",
+          "street": "Chemin de l'Ollagnière",
+          "housenumber": "32",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.495733,
+          "lat": 45.470301
+        },
+        {
+          "label": "26 Chemin de l'Ollagnière 42400 Saint-Chamond",
+          "street": "Chemin de l'Ollagnière",
+          "housenumber": "26",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.496475,
+          "lat": 45.470343
+        },
+        {
+          "label": "34 Chemin de l'Ollagnière 42400 Saint-Chamond",
+          "street": "Chemin de l'Ollagnière",
+          "housenumber": "34",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.495522,
+          "lat": 45.470271
+        },
+        {
+          "label": "11 Rue du 19 mars 1962 42400 Saint-Chamond",
+          "street": "Rue du 19 mars 1962",
+          "housenumber": "11",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.495039,
+          "lat": 45.469608
+        },
+        {
+          "label": "5 Cité Gillet 42400 Saint-Chamond",
+          "street": "Cité Gillet",
+          "housenumber": "5",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.502408,
+          "lat": 45.457812
+        },
+        {
+          "label": "4 Cité Gillet 42400 Saint-Chamond",
+          "street": "Cité Gillet",
+          "housenumber": "4",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.502417,
+          "lat": 45.458025
+        },
+        {
+          "label": "7 Cité Gillet 42400 Saint-Chamond",
+          "street": "Cité Gillet",
+          "housenumber": "7",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.502171,
+          "lat": 45.457619
+        },
+        {
+          "label": "3 Cité Gillet 42400 Saint-Chamond",
+          "street": "Cité Gillet",
+          "housenumber": "3",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.502732,
+          "lat": 45.458024
+        },
+        {
+          "label": "7 Chemin de grange badet 42400 Saint-Chamond",
+          "street": "Chemin de grange badet",
+          "housenumber": "7",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.501921,
+          "lat": 45.457881
+        },
+        {
+          "label": "5 Chemin de grange badet 42400 Saint-Chamond",
+          "street": "Chemin de grange badet",
+          "housenumber": "5",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.502006,
+          "lat": 45.458056
+        },
+        {
+          "label": "9 Chemin de grange badet 42400 Saint-Chamond",
+          "street": "Chemin de grange badet",
+          "housenumber": "9",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.501845,
+          "lat": 45.457658
+        },
+        {
+          "label": "2 Cité Gillet 42400 Saint-Chamond",
+          "street": "Cité Gillet",
+          "housenumber": "2",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.502736,
+          "lat": 45.458317
+        },
+        {
+          "label": "12 Chemin de grange badet 42400 Saint-Chamond",
+          "street": "Chemin de grange badet",
+          "housenumber": "12",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.501701,
+          "lat": 45.457958
+        },
+        {
+          "label": "14 Route de bagnarat 42400 Saint-Chamond",
+          "street": "Route de bagnarat",
+          "housenumber": "14",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.512552,
+          "lat": 45.453432
+        },
+        {
+          "label": "13 Chemin de lachal 42400 Saint-Chamond",
+          "street": "Chemin de lachal",
+          "housenumber": "13",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.510547,
+          "lat": 45.453996
+        },
+        {
+          "label": "12 Route de bagnarat 42400 Saint-Chamond",
+          "street": "Route de bagnarat",
+          "housenumber": "12",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.512548,
+          "lat": 45.453692
+        },
+        {
+          "label": "10 Route de bagnarat 42400 Saint-Chamond",
+          "street": "Route de bagnarat",
+          "housenumber": "10",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.512501,
+          "lat": 45.453848
+        },
+        {
+          "label": "11 Chemin de lachal 42400 Saint-Chamond",
+          "street": "Chemin de lachal",
+          "housenumber": "11",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.510336,
+          "lat": 45.454131
+        },
+        {
+          "label": "16 Route de bagnarat 42400 Saint-Chamond",
+          "street": "Route de bagnarat",
+          "housenumber": "16",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.513093,
+          "lat": 45.453648
+        },
+        {
+          "label": "9 Chemin de lachal 42400 Saint-Chamond",
+          "street": "Chemin de lachal",
+          "housenumber": "9",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.510288,
+          "lat": 45.454308
+        },
+        {
+          "label": "8 Route de bagnarat 42400 Saint-Chamond",
+          "street": "Route de bagnarat",
+          "housenumber": "8",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.512789,
+          "lat": 45.453966
+        },
+        {
+          "label": "6 Chemin des roches 42400 Saint-Chamond",
+          "street": "Chemin des roches",
+          "housenumber": "6",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.510288,
+          "lat": 45.451284
+        },
+        {
+          "label": "7 Rue de la sabotte 42400 Saint-Chamond",
+          "street": "Rue de la sabotte",
+          "housenumber": "7",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.502847,
+          "lat": 45.454679
+        },
+        {
+          "label": "20d Rue François Gillet 42400 Saint-Chamond",
+          "street": "Rue François Gillet",
+          "housenumber": "20d",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.50339,
+          "lat": 45.454452
+        },
+        {
+          "label": "20c Rue François Gillet 42400 Saint-Chamond",
+          "street": "Rue François Gillet",
+          "housenumber": "20c",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.5034,
+          "lat": 45.454655
+        },
+        {
+          "label": "20b Rue François Gillet 42400 Saint-Chamond",
+          "street": "Rue François Gillet",
+          "housenumber": "20b",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.503289,
+          "lat": 45.454815
+        },
+        {
+          "label": "20e Rue François Gillet 42400 Saint-Chamond",
+          "street": "Rue François Gillet",
+          "housenumber": "20e",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.503562,
+          "lat": 45.454306
+        },
+        {
+          "label": "5 Rue de la sabotte 42400 Saint-Chamond",
+          "street": "Rue de la sabotte",
+          "housenumber": "5",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.502764,
+          "lat": 45.455126
+        },
+        {
+          "label": "18 Rue François Gillet 42400 Saint-Chamond",
+          "street": "Rue François Gillet",
+          "housenumber": "18",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.503538,
+          "lat": 45.453749
+        },
+        {
+          "label": "20a Rue François Gillet 42400 Saint-Chamond",
+          "street": "Rue François Gillet",
+          "housenumber": "20a",
+          "postcode": "42400",
+          "city": "Saint-Chamond",
+          "citycode": "42207",
+          "lon": 4.504002,
+          "lat": 45.454362
+        }
+      ]
+    },
+    "42110": {
+      "nom": "L'Horme",
+      "adresses": [
+        {
+          "label": "4 Allée des Pins 42152 L'Horme",
+          "street": "Allée des Pins",
+          "housenumber": "4",
+          "postcode": "42152",
+          "city": "L'Horme",
+          "citycode": "42110",
+          "lon": 4.532711,
+          "lat": 45.488401
+        },
+        {
+          "label": "5 Allée des Pins 42152 L'Horme",
+          "street": "Allée des Pins",
+          "housenumber": "5",
+          "postcode": "42152",
+          "city": "L'Horme",
+          "citycode": "42110",
+          "lon": 4.532766,
+          "lat": 45.488394
+        },
+        {
+          "label": "16 Allée des Charmes 42152 L'Horme",
+          "street": "Allée des Charmes",
+          "housenumber": "16",
+          "postcode": "42152",
+          "city": "L'Horme",
+          "citycode": "42110",
+          "lon": 4.532364,
+          "lat": 45.489011
+        },
+        {
+          "label": "3 Allée des Pins 42152 L'Horme",
+          "street": "Allée des Pins",
+          "housenumber": "3",
+          "postcode": "42152",
+          "city": "L'Horme",
+          "citycode": "42110",
+          "lon": 4.532434,
+          "lat": 45.488341
+        },
+        {
+          "label": "5bis Allée des Pins 42152 L'Horme",
+          "street": "Allée des Pins",
+          "housenumber": "5bis",
+          "postcode": "42152",
+          "city": "L'Horme",
+          "citycode": "42110",
+          "lon": 4.532762,
+          "lat": 45.488324
+        },
+        {
+          "label": "17 Allée des Charmes 42152 L'Horme",
+          "street": "Allée des Charmes",
+          "housenumber": "17",
+          "postcode": "42152",
+          "city": "L'Horme",
+          "citycode": "42110",
+          "lon": 4.532143,
+          "lat": 45.488987
+        },
+        {
+          "label": "15 Allée des Charmes 42152 L'Horme",
+          "street": "Allée des Charmes",
+          "housenumber": "15",
+          "postcode": "42152",
+          "city": "L'Horme",
+          "citycode": "42110",
+          "lon": 4.532609,
+          "lat": 45.489118
+        },
+        {
+          "label": "39c Route de l'Aérodrome 42152 L'Horme",
+          "street": "Route de l'Aérodrome",
+          "housenumber": "39c",
+          "postcode": "42152",
+          "city": "L'Horme",
+          "citycode": "42110",
+          "lon": 4.53321,
+          "lat": 45.488759
+        },
+        {
+          "label": "6 Allée des Pins 42152 L'Horme",
+          "street": "Allée des Pins",
+          "housenumber": "6",
+          "postcode": "42152",
+          "city": "L'Horme",
+          "citycode": "42110",
+          "lon": 4.532547,
+          "lat": 45.488221
+        },
+        {
+          "label": "31 Chemin du Ruisseau 42152 L'Horme",
+          "street": "Chemin du Ruisseau",
+          "housenumber": "31",
+          "postcode": "42152",
+          "city": "L'Horme",
+          "citycode": "42110",
+          "lon": 4.536191,
+          "lat": 45.494528
+        },
+        {
+          "label": "31a Chemin du Ruisseau 42152 L'Horme",
+          "street": "Chemin du Ruisseau",
+          "housenumber": "31a",
+          "postcode": "42152",
+          "city": "L'Horme",
+          "citycode": "42110",
+          "lon": 4.536064,
+          "lat": 45.49453
+        },
+        {
+          "label": "24 Rue de la Libération 42152 L'Horme",
+          "street": "Rue de la Libération",
+          "housenumber": "24",
+          "postcode": "42152",
+          "city": "L'Horme",
+          "citycode": "42110",
+          "lon": 4.552447,
+          "lat": 45.48744
+        },
+        {
+          "label": "15 Rue de la Libération 42152 L'Horme",
+          "street": "Rue de la Libération",
+          "housenumber": "15",
+          "postcode": "42152",
+          "city": "L'Horme",
+          "citycode": "42110",
+          "lon": 4.552338,
+          "lat": 45.487506
+        },
+        {
+          "label": "11bis Rue de la Libération 42152 L'Horme",
+          "street": "Rue de la Libération",
+          "housenumber": "11bis",
+          "postcode": "42152",
+          "city": "L'Horme",
+          "citycode": "42110",
+          "lon": 4.552009,
+          "lat": 45.487668
+        }
+      ]
+    },
+    "42123": {
+      "nom": "Lorette",
+      "adresses": [
+        {
+          "label": "1 Impasse Chapard 42320 La Grand-Croix",
+          "street": "Impasse Chapard",
+          "housenumber": "1",
+          "postcode": "42320",
+          "city": "La Grand-Croix",
+          "citycode": "42103",
+          "lon": 4.571187,
+          "lat": 45.505819
+        },
+        {
+          "label": "32 Rue Jean Jaurès 42320 La Grand-Croix",
+          "street": "Rue Jean Jaurès",
+          "housenumber": "32",
+          "postcode": "42320",
+          "city": "La Grand-Croix",
+          "citycode": "42103",
+          "lon": 4.570796,
+          "lat": 45.506016
+        },
+        {
+          "label": "2 Rue Pétrus Tourton 42320 La Grand-Croix",
+          "street": "Rue Pétrus Tourton",
+          "housenumber": "2",
+          "postcode": "42320",
+          "city": "La Grand-Croix",
+          "citycode": "42103",
+          "lon": 4.571026,
+          "lat": 45.506105
+        },
+        {
+          "label": "30 Rue Jean Jaurès 42320 La Grand-Croix",
+          "street": "Rue Jean Jaurès",
+          "housenumber": "30",
+          "postcode": "42320",
+          "city": "La Grand-Croix",
+          "citycode": "42103",
+          "lon": 4.570736,
+          "lat": 45.505921
+        },
+        {
+          "label": "34 Rue Jean Jaurès 42320 La Grand-Croix",
+          "street": "Rue Jean Jaurès",
+          "housenumber": "34",
+          "postcode": "42320",
+          "city": "La Grand-Croix",
+          "citycode": "42103",
+          "lon": 4.570878,
+          "lat": 45.506111
+        },
+        {
+          "label": "28 Rue Jean Jaurès 42320 La Grand-Croix",
+          "street": "Rue Jean Jaurès",
+          "housenumber": "28",
+          "postcode": "42320",
+          "city": "La Grand-Croix",
+          "citycode": "42103",
+          "lon": 4.570671,
+          "lat": 45.505821
+        },
+        {
+          "label": "28bis Rue de Burlat 42320 La Grand-Croix",
+          "street": "Rue de Burlat",
+          "housenumber": "28bis",
+          "postcode": "42320",
+          "city": "La Grand-Croix",
+          "citycode": "42103",
+          "lon": 4.571374,
+          "lat": 45.505734
+        },
+        {
+          "label": "26 Rue Jean Jaurès 42320 La Grand-Croix",
+          "street": "Rue Jean Jaurès",
+          "housenumber": "26",
+          "postcode": "42320",
+          "city": "La Grand-Croix",
+          "citycode": "42103",
+          "lon": 4.5706,
+          "lat": 45.505734
+        },
+        {
+          "label": "120b Rue Jean Jaures 42420 Lorette",
+          "street": "Rue Jean Jaures",
+          "housenumber": "120b",
+          "postcode": "42420",
+          "city": "Lorette",
+          "citycode": "42123",
+          "lon": 4.577186,
+          "lat": 45.511647
+        },
+        {
+          "label": "175 Rue du Canal 42320 La Grand-Croix",
+          "street": "Rue du Canal",
+          "housenumber": "175",
+          "postcode": "42320",
+          "city": "La Grand-Croix",
+          "citycode": "42103",
+          "lon": 4.568975,
+          "lat": 45.505303
+        },
+        {
+          "label": "5 Place Charles de Gaulle 42320 La Grand-Croix",
+          "street": "Place Charles de Gaulle",
+          "housenumber": "5",
+          "postcode": "42320",
+          "city": "La Grand-Croix",
+          "citycode": "42103",
+          "lon": 4.569486,
+          "lat": 45.505256
+        },
+        {
+          "label": "215 Rue du Canal 42320 La Grand-Croix",
+          "street": "Rue du Canal",
+          "housenumber": "215",
+          "postcode": "42320",
+          "city": "La Grand-Croix",
+          "citycode": "42103",
+          "lon": 4.569312,
+          "lat": 45.505737
+        },
+        {
+          "label": "7 Place Charles de Gaulle 42320 La Grand-Croix",
+          "street": "Place Charles de Gaulle",
+          "housenumber": "7",
+          "postcode": "42320",
+          "city": "La Grand-Croix",
+          "citycode": "42103",
+          "lon": 4.569602,
+          "lat": 45.505408
+        },
+        {
+          "label": "3 Place Charles de Gaulle 42320 La Grand-Croix",
+          "street": "Place Charles de Gaulle",
+          "housenumber": "3",
+          "postcode": "42320",
+          "city": "La Grand-Croix",
+          "citycode": "42103",
+          "lon": 4.569514,
+          "lat": 45.505121
+        },
+        {
+          "label": "225 Rue du Canal 42320 La Grand-Croix",
+          "street": "Rue du Canal",
+          "housenumber": "225",
+          "postcode": "42320",
+          "city": "La Grand-Croix",
+          "citycode": "42103",
+          "lon": 4.569387,
+          "lat": 45.505787
+        },
+        {
+          "label": "9 Place Charles de Gaulle 42320 La Grand-Croix",
+          "street": "Place Charles de Gaulle",
+          "housenumber": "9",
+          "postcode": "42320",
+          "city": "La Grand-Croix",
+          "citycode": "42103",
+          "lon": 4.569726,
+          "lat": 45.505571
+        },
+        {
+          "label": "9 Rue Jean Jaurès 42320 La Grand-Croix",
+          "street": "Rue Jean Jaurès",
+          "housenumber": "9",
+          "postcode": "42320",
+          "city": "La Grand-Croix",
+          "citycode": "42103",
+          "lon": 4.569392,
+          "lat": 45.504937
+        },
+        {
+          "label": "239 Rue du Canal 42320 La Grand-Croix",
+          "street": "Rue du Canal",
+          "housenumber": "239",
+          "postcode": "42320",
+          "city": "La Grand-Croix",
+          "citycode": "42103",
+          "lon": 4.569454,
+          "lat": 45.505866
+        }
+      ]
+    },
+    "42103": {
+      "nom": "La Grand-Croix",
+      "adresses": [
+        {
+          "label": "86 Rue de Burlat 42320 La Grand-Croix",
+          "street": "Rue de Burlat",
+          "housenumber": "86",
+          "postcode": "42320",
+          "city": "La Grand-Croix",
+          "citycode": "42103",
+          "lon": 4.5703,
+          "lat": 45.499294
+        },
+        {
+          "label": "84 Rue de Burlat 42320 La Grand-Croix",
+          "street": "Rue de Burlat",
+          "housenumber": "84",
+          "postcode": "42320",
+          "city": "La Grand-Croix",
+          "citycode": "42103",
+          "lon": 4.570307,
+          "lat": 45.499427
+        },
+        {
+          "label": "88 Rue de Burlat 42320 La Grand-Croix",
+          "street": "Rue de Burlat",
+          "housenumber": "88",
+          "postcode": "42320",
+          "city": "La Grand-Croix",
+          "citycode": "42103",
+          "lon": 4.570327,
+          "lat": 45.499177
+        },
+        {
+          "label": "90 Rue de Burlat 42320 La Grand-Croix",
+          "street": "Rue de Burlat",
+          "housenumber": "90",
+          "postcode": "42320",
+          "city": "La Grand-Croix",
+          "citycode": "42103",
+          "lon": 4.57039,
+          "lat": 45.499059
+        },
+        {
+          "label": "59 Rue de Burlat 42320 La Grand-Croix",
+          "street": "Rue de Burlat",
+          "housenumber": "59",
+          "postcode": "42320",
+          "city": "La Grand-Croix",
+          "citycode": "42103",
+          "lon": 4.570537,
+          "lat": 45.499421
+        },
+        {
+          "label": "82 Rue de Burlat 42320 La Grand-Croix",
+          "street": "Rue de Burlat",
+          "housenumber": "82",
+          "postcode": "42320",
+          "city": "La Grand-Croix",
+          "citycode": "42103",
+          "lon": 4.570033,
+          "lat": 45.49984
+        },
+        {
+          "label": "23 Rue du Repos 42320 La Grand-Croix",
+          "street": "Rue du Repos",
+          "housenumber": "23",
+          "postcode": "42320",
+          "city": "La Grand-Croix",
+          "citycode": "42103",
+          "lon": 4.568974,
+          "lat": 45.49927
+        },
+        {
+          "label": "59ter Rue de Burlat 42320 La Grand-Croix",
+          "street": "Rue de Burlat",
+          "housenumber": "59ter",
+          "postcode": "42320",
+          "city": "La Grand-Croix",
+          "citycode": "42103",
+          "lon": 4.570631,
+          "lat": 45.499217
+        },
+        {
+          "label": "92 Rue de Burlat 42320 La Grand-Croix",
+          "street": "Rue de Burlat",
+          "housenumber": "92",
+          "postcode": "42320",
+          "city": "La Grand-Croix",
+          "citycode": "42103",
+          "lon": 4.570364,
+          "lat": 45.498758
+        },
+        {
+          "label": "33 Rue des Anciens combattants et Victimes Guerre 42320 La Grand-Croix",
+          "street": "Rue des Anciens combattants et Victimes Guerre",
+          "housenumber": "33",
+          "postcode": "42320",
+          "city": "La Grand-Croix",
+          "citycode": "42103",
+          "lon": 4.569321,
+          "lat": 45.499932
+        },
+        {
+          "label": "1 Rue du Puits Saint Antoine 42320 La Grand-Croix",
+          "street": "Rue du Puits Saint Antoine",
+          "housenumber": "1",
+          "postcode": "42320",
+          "city": "La Grand-Croix",
+          "citycode": "42103",
+          "lon": 4.556428,
+          "lat": 45.499095
+        },
+        {
+          "label": "3 Rue du Puits Saint Antoine 42320 La Grand-Croix",
+          "street": "Rue du Puits Saint Antoine",
+          "housenumber": "3",
+          "postcode": "42320",
+          "city": "La Grand-Croix",
+          "citycode": "42103",
+          "lon": 4.556308,
+          "lat": 45.498951
+        },
+        {
+          "label": "48 Rue du Puits Saint Antoine 42320 La Grand-Croix",
+          "street": "Rue du Puits Saint Antoine",
+          "housenumber": "48",
+          "postcode": "42320",
+          "city": "La Grand-Croix",
+          "citycode": "42103",
+          "lon": 4.557073,
+          "lat": 45.499397
+        },
+        {
+          "label": "5 Rue du Puits Saint Antoine 42320 La Grand-Croix",
+          "street": "Rue du Puits Saint Antoine",
+          "housenumber": "5",
+          "postcode": "42320",
+          "city": "La Grand-Croix",
+          "citycode": "42103",
+          "lon": 4.556086,
+          "lat": 45.498767
+        },
+        {
+          "label": "11 Rue du Puits Saint Antoine 42320 La Grand-Croix",
+          "street": "Rue du Puits Saint Antoine",
+          "housenumber": "11",
+          "postcode": "42320",
+          "city": "La Grand-Croix",
+          "citycode": "42103",
+          "lon": 4.556214,
+          "lat": 45.499212
+        },
+        {
+          "label": "21 Rue du Puits Saint Antoine 42320 La Grand-Croix",
+          "street": "Rue du Puits Saint Antoine",
+          "housenumber": "21",
+          "postcode": "42320",
+          "city": "La Grand-Croix",
+          "citycode": "42103",
+          "lon": 4.556858,
+          "lat": 45.499517
+        },
+        {
+          "label": "46 Rue du Puits Saint Antoine 42320 La Grand-Croix",
+          "street": "Rue du Puits Saint Antoine",
+          "housenumber": "46",
+          "postcode": "42320",
+          "city": "La Grand-Croix",
+          "citycode": "42103",
+          "lon": 4.557194,
+          "lat": 45.499529
+        },
+        {
+          "label": "1290 Rue de la Peronniere 42320 La Grand-Croix",
+          "street": "Rue de la Peronniere",
+          "housenumber": "1290",
+          "postcode": "42320",
+          "city": "La Grand-Croix",
+          "citycode": "42103",
+          "lon": 4.557701,
+          "lat": 45.498339
+        },
+        {
+          "label": "9 Rue du Puits Saint Antoine 42320 La Grand-Croix",
+          "street": "Rue du Puits Saint Antoine",
+          "housenumber": "9",
+          "postcode": "42320",
+          "city": "La Grand-Croix",
+          "citycode": "42103",
+          "lon": 4.556034,
+          "lat": 45.499058
+        },
+        {
+          "label": "13 Rue du Puits Saint Antoine 42320 La Grand-Croix",
+          "street": "Rue du Puits Saint Antoine",
+          "housenumber": "13",
+          "postcode": "42320",
+          "city": "La Grand-Croix",
+          "citycode": "42103",
+          "lon": 4.55639,
+          "lat": 45.49941
+        }
+      ]
+    },
+    "42225": {
+      "nom": "Genilac",
+      "adresses": [
+        {
+          "label": "61 Allée des Cerisiers 42800 Genilac",
+          "street": "Allée des Cerisiers",
+          "housenumber": "61",
+          "postcode": "42800",
+          "city": "Genilac",
+          "citycode": "42225",
+          "lon": 4.580964,
+          "lat": 45.532517
+        },
+        {
+          "label": "85 Allée des Cerisiers 42800 Genilac",
+          "street": "Allée des Cerisiers",
+          "housenumber": "85",
+          "postcode": "42800",
+          "city": "Genilac",
+          "citycode": "42225",
+          "lon": 4.581092,
+          "lat": 45.53274
+        },
+        {
+          "label": "88 Allée des Cerisiers 42800 Genilac",
+          "street": "Allée des Cerisiers",
+          "housenumber": "88",
+          "postcode": "42800",
+          "city": "Genilac",
+          "citycode": "42225",
+          "lon": 4.581099,
+          "lat": 45.532585
+        },
+        {
+          "label": "76 Rue Saint-ennemond 42800 Genilac",
+          "street": "Rue Saint-ennemond",
+          "housenumber": "76",
+          "postcode": "42800",
+          "city": "Genilac",
+          "citycode": "42225",
+          "lon": 4.580418,
+          "lat": 45.532489
+        },
+        {
+          "label": "74 Rue Saint-ennemond 42800 Genilac",
+          "street": "Rue Saint-ennemond",
+          "housenumber": "74",
+          "postcode": "42800",
+          "city": "Genilac",
+          "citycode": "42225",
+          "lon": 4.580369,
+          "lat": 45.532492
+        },
+        {
+          "label": "68 Rue Saint-ennemond 42800 Genilac",
+          "street": "Rue Saint-ennemond",
+          "housenumber": "68",
+          "postcode": "42800",
+          "city": "Genilac",
+          "citycode": "42225",
+          "lon": 4.580416,
+          "lat": 45.532449
+        },
+        {
+          "label": "78 Rue Saint-ennemond 42800 Genilac",
+          "street": "Rue Saint-ennemond",
+          "housenumber": "78",
+          "postcode": "42800",
+          "city": "Genilac",
+          "citycode": "42225",
+          "lon": 4.580327,
+          "lat": 45.53253
+        },
+        {
+          "label": "60 Rue Saint-ennemond 42800 Genilac",
+          "street": "Rue Saint-ennemond",
+          "housenumber": "60",
+          "postcode": "42800",
+          "city": "Genilac",
+          "citycode": "42225",
+          "lon": 4.580459,
+          "lat": 45.532406
+        },
+        {
+          "label": "88 Rue Saint-ennemond 42800 Genilac",
+          "street": "Rue Saint-ennemond",
+          "housenumber": "88",
+          "postcode": "42800",
+          "city": "Genilac",
+          "citycode": "42225",
+          "lon": 4.580274,
+          "lat": 45.532576
+        },
+        {
+          "label": "54 Rue Saint-ennemond 42800 Genilac",
+          "street": "Rue Saint-ennemond",
+          "housenumber": "54",
+          "postcode": "42800",
+          "city": "Genilac",
+          "citycode": "42225",
+          "lon": 4.580491,
+          "lat": 45.532361
+        },
+        {
+          "label": "682 Route de Tapigneux 42800 Genilac",
+          "street": "Route de Tapigneux",
+          "housenumber": "682",
+          "postcode": "42800",
+          "city": "Genilac",
+          "citycode": "42225",
+          "lon": 4.566373,
+          "lat": 45.540114
+        },
+        {
+          "label": "719 Route de Tapigneux 42800 Genilac",
+          "street": "Route de Tapigneux",
+          "housenumber": "719",
+          "postcode": "42800",
+          "city": "Genilac",
+          "citycode": "42225",
+          "lon": 4.566062,
+          "lat": 45.540234
+        },
+        {
+          "label": "658 Route de Tapigneux 42800 Genilac",
+          "street": "Route de Tapigneux",
+          "housenumber": "658",
+          "postcode": "42800",
+          "city": "Genilac",
+          "citycode": "42225",
+          "lon": 4.56674,
+          "lat": 45.540071
+        },
+        {
+          "label": "634 Route de Tapigneux 42800 Genilac",
+          "street": "Route de Tapigneux",
+          "housenumber": "634",
+          "postcode": "42800",
+          "city": "Genilac",
+          "citycode": "42225",
+          "lon": 4.566752,
+          "lat": 45.539809
+        },
+        {
+          "label": "646 Route de Tapigneux 42800 Genilac",
+          "street": "Route de Tapigneux",
+          "housenumber": "646",
+          "postcode": "42800",
+          "city": "Genilac",
+          "citycode": "42225",
+          "lon": 4.566761,
+          "lat": 45.539796
+        },
+        {
+          "label": "646a Route de Tapigneux 42800 Genilac",
+          "street": "Route de Tapigneux",
+          "housenumber": "646a",
+          "postcode": "42800",
+          "city": "Genilac",
+          "citycode": "42225",
+          "lon": 4.566786,
+          "lat": 45.539777
+        },
+        {
+          "label": "69 Rue du Gelay 42800 Genilac",
+          "street": "Rue du Gelay",
+          "housenumber": "69",
+          "postcode": "42800",
+          "city": "Genilac",
+          "citycode": "42225",
+          "lon": 4.565815,
+          "lat": 45.540606
+        },
+        {
+          "label": "18 Chemin de Toux 42800 Genilac",
+          "street": "Chemin de Toux",
+          "housenumber": "18",
+          "postcode": "42800",
+          "city": "Genilac",
+          "citycode": "42225",
+          "lon": 4.565529,
+          "lat": 45.540166
+        },
+        {
+          "label": "643 Route de Tapigneux 42800 Genilac",
+          "street": "Route de Tapigneux",
+          "housenumber": "643",
+          "postcode": "42800",
+          "city": "Genilac",
+          "citycode": "42225",
+          "lon": 4.566721,
+          "lat": 45.539682
+        },
+        {
+          "label": "67 Rue du Gelay 42800 Genilac",
+          "street": "Rue du Gelay",
+          "housenumber": "67",
+          "postcode": "42800",
+          "city": "Genilac",
+          "citycode": "42225",
+          "lon": 4.565796,
+          "lat": 45.540637
+        }
+      ]
+    },
+    "42271": {
+      "nom": "Saint-Paul-en-Jarez",
+      "adresses": [
+        {
+          "label": "620 Route de Vergelas 42740 Saint-Paul-en-Jarez",
+          "street": "Route de Vergelas",
+          "housenumber": "620",
+          "postcode": "42740",
+          "city": "Saint-Paul-en-Jarez",
+          "citycode": "42271",
+          "lon": 4.588455,
+          "lat": 45.475356
+        },
+        {
+          "label": "585 Route de Vergelas 42740 Saint-Paul-en-Jarez",
+          "street": "Route de Vergelas",
+          "housenumber": "585",
+          "postcode": "42740",
+          "city": "Saint-Paul-en-Jarez",
+          "citycode": "42271",
+          "lon": 4.588606,
+          "lat": 45.475248
+        },
+        {
+          "label": "1628 Route des Bergeries 42740 La Terrasse-sur-Dorlay",
+          "street": "Route des Bergeries",
+          "housenumber": "1628",
+          "postcode": "42740",
+          "city": "La Terrasse-sur-Dorlay",
+          "citycode": "42308",
+          "lon": 4.581299,
+          "lat": 45.463611
+        },
+        {
+          "label": "1545 Route des Bergeries 42740 La Terrasse-sur-Dorlay",
+          "street": "Route des Bergeries",
+          "housenumber": "1545",
+          "postcode": "42740",
+          "city": "La Terrasse-sur-Dorlay",
+          "citycode": "42308",
+          "lon": 4.580666,
+          "lat": 45.463971
+        },
+        {
+          "label": "388 Chemin de la Galoche 42740 Saint-Paul-en-Jarez",
+          "street": "Chemin de la Galoche",
+          "housenumber": "388",
+          "postcode": "42740",
+          "city": "Saint-Paul-en-Jarez",
+          "citycode": "42271",
+          "lon": 4.585146,
+          "lat": 45.479383
+        },
+        {
+          "label": "396 Chemin de la Galoche 42740 Saint-Paul-en-Jarez",
+          "street": "Chemin de la Galoche",
+          "housenumber": "396",
+          "postcode": "42740",
+          "city": "Saint-Paul-en-Jarez",
+          "citycode": "42271",
+          "lon": 4.585194,
+          "lat": 45.479341
+        },
+        {
+          "label": "420 Chemin de la Galoche 42740 Saint-Paul-en-Jarez",
+          "street": "Chemin de la Galoche",
+          "housenumber": "420",
+          "postcode": "42740",
+          "city": "Saint-Paul-en-Jarez",
+          "citycode": "42271",
+          "lon": 4.585248,
+          "lat": 45.479278
+        },
+        {
+          "label": "460 Chemin de la Galoche 42740 Saint-Paul-en-Jarez",
+          "street": "Chemin de la Galoche",
+          "housenumber": "460",
+          "postcode": "42740",
+          "city": "Saint-Paul-en-Jarez",
+          "citycode": "42271",
+          "lon": 4.585335,
+          "lat": 45.479211
+        },
+        {
+          "label": "410 Chemin de la Galoche 42740 Saint-Paul-en-Jarez",
+          "street": "Chemin de la Galoche",
+          "housenumber": "410",
+          "postcode": "42740",
+          "city": "Saint-Paul-en-Jarez",
+          "citycode": "42271",
+          "lon": 4.584996,
+          "lat": 45.479399
+        },
+        {
+          "label": "490 Chemin de la Galoche 42740 Saint-Paul-en-Jarez",
+          "street": "Chemin de la Galoche",
+          "housenumber": "490",
+          "postcode": "42740",
+          "city": "Saint-Paul-en-Jarez",
+          "citycode": "42271",
+          "lon": 4.585574,
+          "lat": 45.478966
+        },
+        {
+          "label": "380 Chemin de la Galoche 42740 Saint-Paul-en-Jarez",
+          "street": "Chemin de la Galoche",
+          "housenumber": "380",
+          "postcode": "42740",
+          "city": "Saint-Paul-en-Jarez",
+          "citycode": "42271",
+          "lon": 4.584853,
+          "lat": 45.479263
+        },
+        {
+          "label": "510 Chemin de la Galoche 42740 Saint-Paul-en-Jarez",
+          "street": "Chemin de la Galoche",
+          "housenumber": "510",
+          "postcode": "42740",
+          "city": "Saint-Paul-en-Jarez",
+          "citycode": "42271",
+          "lon": 4.585728,
+          "lat": 45.478807
+        },
+        {
+          "label": "390 Chemin de la Galoche 42740 Saint-Paul-en-Jarez",
+          "street": "Chemin de la Galoche",
+          "housenumber": "390",
+          "postcode": "42740",
+          "city": "Saint-Paul-en-Jarez",
+          "citycode": "42271",
+          "lon": 4.584868,
+          "lat": 45.479172
+        }
+      ]
+    },
+    "42242": {
+      "nom": "Saint-Joseph",
+      "adresses": [
+        {
+          "label": "2 Route de Milissieux 42800 Saint-Joseph",
+          "street": "Route de Milissieux",
+          "housenumber": "2",
+          "postcode": "42800",
+          "city": "Saint-Joseph",
+          "citycode": "42242",
+          "lon": 4.622056,
+          "lat": 45.551964
+        },
+        {
+          "label": "4 Route de Milissieux 42800 Saint-Joseph",
+          "street": "Route de Milissieux",
+          "housenumber": "4",
+          "postcode": "42800",
+          "city": "Saint-Joseph",
+          "citycode": "42242",
+          "lon": 4.622115,
+          "lat": 45.552053
+        },
+        {
+          "label": "6 Route de Milissieux 42800 Saint-Joseph",
+          "street": "Route de Milissieux",
+          "housenumber": "6",
+          "postcode": "42800",
+          "city": "Saint-Joseph",
+          "citycode": "42242",
+          "lon": 4.622315,
+          "lat": 45.552502
+        },
+        {
+          "label": "7 Lotissement les Varennes 42800 Saint-Joseph",
+          "street": "Lotissement les Varennes",
+          "housenumber": "7",
+          "postcode": "42800",
+          "city": "Saint-Joseph",
+          "citycode": "42242",
+          "lon": 4.614066,
+          "lat": 45.556906
+        },
+        {
+          "label": "3 Lotissement les Varennes 42800 Saint-Joseph",
+          "street": "Lotissement les Varennes",
+          "housenumber": "3",
+          "postcode": "42800",
+          "city": "Saint-Joseph",
+          "citycode": "42242",
+          "lon": 4.614267,
+          "lat": 45.557122
+        },
+        {
+          "label": "6 Lotissement les Varennes 42800 Saint-Joseph",
+          "street": "Lotissement les Varennes",
+          "housenumber": "6",
+          "postcode": "42800",
+          "city": "Saint-Joseph",
+          "citycode": "42242",
+          "lon": 4.614159,
+          "lat": 45.557232
+        },
+        {
+          "label": "8 Lotissement les Varennes 42800 Saint-Joseph",
+          "street": "Lotissement les Varennes",
+          "housenumber": "8",
+          "postcode": "42800",
+          "city": "Saint-Joseph",
+          "citycode": "42242",
+          "lon": 4.61417,
+          "lat": 45.556695
+        },
+        {
+          "label": "4d Lotissement les Varennes 42800 Saint-Joseph",
+          "street": "Lotissement les Varennes",
+          "housenumber": "4d",
+          "postcode": "42800",
+          "city": "Saint-Joseph",
+          "citycode": "42242",
+          "lon": 4.614323,
+          "lat": 45.557263
+        },
+        {
+          "label": "4c Lotissement les Varennes 42800 Saint-Joseph",
+          "street": "Lotissement les Varennes",
+          "housenumber": "4c",
+          "postcode": "42800",
+          "city": "Saint-Joseph",
+          "citycode": "42242",
+          "lon": 4.61434,
+          "lat": 45.557316
+        },
+        {
+          "label": "5 Lotissement les Varennes 42800 Saint-Joseph",
+          "street": "Lotissement les Varennes",
+          "housenumber": "5",
+          "postcode": "42800",
+          "city": "Saint-Joseph",
+          "citycode": "42242",
+          "lon": 4.614249,
+          "lat": 45.557427
+        },
+        {
+          "label": "2 Lotissement les Varennes 42800 Saint-Joseph",
+          "street": "Lotissement les Varennes",
+          "housenumber": "2",
+          "postcode": "42800",
+          "city": "Saint-Joseph",
+          "citycode": "42242",
+          "lon": 4.614661,
+          "lat": 45.556706
+        },
+        {
+          "label": "4b Lotissement les Varennes 42800 Saint-Joseph",
+          "street": "Lotissement les Varennes",
+          "housenumber": "4b",
+          "postcode": "42800",
+          "city": "Saint-Joseph",
+          "citycode": "42242",
+          "lon": 4.614411,
+          "lat": 45.557482
+        }
+      ]
+    },
+    "42053": {
+      "nom": "Châteauneuf",
+      "adresses": [
+        {
+          "label": "1682 Route de Madinay 42800 Châteauneuf",
+          "street": "Route de Madinay",
+          "housenumber": "1682",
+          "postcode": "42800",
+          "city": "Châteauneuf",
+          "citycode": "42053",
+          "lon": 4.633956,
+          "lat": 45.522694
+        },
+        {
+          "label": "1705 Route de Madinay 42800 Châteauneuf",
+          "street": "Route de Madinay",
+          "housenumber": "1705",
+          "postcode": "42800",
+          "city": "Châteauneuf",
+          "citycode": "42053",
+          "lon": 4.634185,
+          "lat": 45.522508
+        },
+        {
+          "label": "298 Cote Barot 42800 Châteauneuf",
+          "street": "Cote Barot",
+          "housenumber": "298",
+          "postcode": "42800",
+          "city": "Châteauneuf",
+          "citycode": "42053",
+          "lon": 4.635118,
+          "lat": 45.515304
+        },
+        {
+          "label": "336 Cote Barot 42800 Châteauneuf",
+          "street": "Cote Barot",
+          "housenumber": "336",
+          "postcode": "42800",
+          "city": "Châteauneuf",
+          "citycode": "42053",
+          "lon": 4.635118,
+          "lat": 45.515304
+        },
+        {
+          "label": "63 Cote Barot 42800 Châteauneuf",
+          "street": "Cote Barot",
+          "housenumber": "63",
+          "postcode": "42800",
+          "city": "Châteauneuf",
+          "citycode": "42053",
+          "lon": 4.635118,
+          "lat": 45.515304
+        },
+        {
+          "label": "242 Cote Barot 42800 Châteauneuf",
+          "street": "Cote Barot",
+          "housenumber": "242",
+          "postcode": "42800",
+          "city": "Châteauneuf",
+          "citycode": "42053",
+          "lon": 4.635118,
+          "lat": 45.515304
+        },
+        {
+          "label": "242b Cote Barot 42800 Châteauneuf",
+          "street": "Cote Barot",
+          "housenumber": "242b",
+          "postcode": "42800",
+          "city": "Châteauneuf",
+          "citycode": "42053",
+          "lon": 4.635491,
+          "lat": 45.51544
+        }
+      ]
+    },
+    "42168": {
+      "nom": "Pélussin",
+      "adresses": [
+        {
+          "label": "2 La Rivory 42410 Pélussin",
+          "street": "La Rivory",
+          "housenumber": "2",
+          "postcode": "42410",
+          "city": "Pélussin",
+          "citycode": "42168",
+          "lon": 4.653617,
+          "lat": 45.430206
+        },
+        {
+          "label": "4 Lieu Dit la Bonnetarie 42410 Pélussin",
+          "street": "Lieu Dit la Bonnetarie",
+          "housenumber": "4",
+          "postcode": "42410",
+          "city": "Pélussin",
+          "citycode": "42168",
+          "lon": 4.662043,
+          "lat": 45.431328
+        },
+        {
+          "label": "10 Lieu Dit la Bonnetarie 42410 Pélussin",
+          "street": "Lieu Dit la Bonnetarie",
+          "housenumber": "10",
+          "postcode": "42410",
+          "city": "Pélussin",
+          "citycode": "42168",
+          "lon": 4.662345,
+          "lat": 45.431346
+        },
+        {
+          "label": "8 Lieu Dit la Bonnetarie 42410 Pélussin",
+          "street": "Lieu Dit la Bonnetarie",
+          "housenumber": "8",
+          "postcode": "42410",
+          "city": "Pélussin",
+          "citycode": "42168",
+          "lon": 4.662229,
+          "lat": 45.431403
+        },
+        {
+          "label": "2 Lieu Dit la Bonnetarie 42410 Pélussin",
+          "street": "Lieu Dit la Bonnetarie",
+          "housenumber": "2",
+          "postcode": "42410",
+          "city": "Pélussin",
+          "citycode": "42168",
+          "lon": 4.664765,
+          "lat": 45.430103
+        },
+        {
+          "label": "6 Lieu Dit la Bonnetarie 42410 Pélussin",
+          "street": "Lieu Dit la Bonnetarie",
+          "housenumber": "6",
+          "postcode": "42410",
+          "city": "Pélussin",
+          "citycode": "42168",
+          "lon": 4.662012,
+          "lat": 45.4315
+        },
+        {
+          "label": "1 Impasse du Roule 42410 Pélussin",
+          "street": "Impasse du Roule",
+          "housenumber": "1",
+          "postcode": "42410",
+          "city": "Pélussin",
+          "citycode": "42168",
+          "lon": 4.664981,
+          "lat": 45.424502
+        },
+        {
+          "label": "3 Impasse du Roule 42410 Pélussin",
+          "street": "Impasse du Roule",
+          "housenumber": "3",
+          "postcode": "42410",
+          "city": "Pélussin",
+          "citycode": "42168",
+          "lon": 4.665111,
+          "lat": 45.424728
+        },
+        {
+          "label": "30 Rue du Roule 42410 Pélussin",
+          "street": "Rue du Roule",
+          "housenumber": "30",
+          "postcode": "42410",
+          "city": "Pélussin",
+          "citycode": "42168",
+          "lon": 4.664153,
+          "lat": 45.423869
+        },
+        {
+          "label": "35 Rue du Roule 42410 Pélussin",
+          "street": "Rue du Roule",
+          "housenumber": "35",
+          "postcode": "42410",
+          "city": "Pélussin",
+          "citycode": "42168",
+          "lon": 4.664006,
+          "lat": 45.423627
+        },
+        {
+          "label": "10 Vaubertrand 42410 Pélussin",
+          "street": "Vaubertrand",
+          "housenumber": "10",
+          "postcode": "42410",
+          "city": "Pélussin",
+          "citycode": "42168",
+          "lon": 4.661889,
+          "lat": 45.426275
+        },
+        {
+          "label": "14 Vaubertrand 42410 Pélussin",
+          "street": "Vaubertrand",
+          "housenumber": "14",
+          "postcode": "42410",
+          "city": "Pélussin",
+          "citycode": "42168",
+          "lon": 4.661858,
+          "lat": 45.426378
+        },
+        {
+          "label": "7 Vaubertrand 42410 Pélussin",
+          "street": "Vaubertrand",
+          "housenumber": "7",
+          "postcode": "42410",
+          "city": "Pélussin",
+          "citycode": "42168",
+          "lon": 4.661807,
+          "lat": 45.426229
+        },
+        {
+          "label": "16 Vaubertrand 42410 Pélussin",
+          "street": "Vaubertrand",
+          "housenumber": "16",
+          "postcode": "42410",
+          "city": "Pélussin",
+          "citycode": "42168",
+          "lon": 4.661791,
+          "lat": 45.426533
+        },
+        {
+          "label": "18 Vaubertrand 42410 Pélussin",
+          "street": "Vaubertrand",
+          "housenumber": "18",
+          "postcode": "42410",
+          "city": "Pélussin",
+          "citycode": "42168",
+          "lon": 4.661865,
+          "lat": 45.42666
+        },
+        {
+          "label": "24 Vaubertrand 42410 Pélussin",
+          "street": "Vaubertrand",
+          "housenumber": "24",
+          "postcode": "42410",
+          "city": "Pélussin",
+          "citycode": "42168",
+          "lon": 4.661989,
+          "lat": 45.426786
+        },
+        {
+          "label": "15 Vaubertrand 42410 Pélussin",
+          "street": "Vaubertrand",
+          "housenumber": "15",
+          "postcode": "42410",
+          "city": "Pélussin",
+          "citycode": "42168",
+          "lon": 4.661855,
+          "lat": 45.42669
+        },
+        {
+          "label": "5 Vaubertrand 42410 Pélussin",
+          "street": "Vaubertrand",
+          "housenumber": "5",
+          "postcode": "42410",
+          "city": "Pélussin",
+          "citycode": "42168",
+          "lon": 4.661737,
+          "lat": 45.426023
+        },
+        {
+          "label": "22 Vaubertrand 42410 Pélussin",
+          "street": "Vaubertrand",
+          "housenumber": "22",
+          "postcode": "42410",
+          "city": "Pélussin",
+          "citycode": "42168",
+          "lon": 4.661927,
+          "lat": 45.426795
+        }
+      ]
+    },
+    "42023": {
+      "nom": "Bourg-Argental",
+      "adresses": [
+        {
+          "label": "17 Chemin de la Celle 42220 Bourg-Argental",
+          "street": "Chemin de la Celle",
+          "housenumber": "17",
+          "postcode": "42220",
+          "city": "Bourg-Argental",
+          "citycode": "42023",
+          "lon": 4.558449,
+          "lat": 45.301452
+        },
+        {
+          "label": "1 Route de Graix 42220 Bourg-Argental",
+          "street": "Route de Graix",
+          "housenumber": "1",
+          "postcode": "42220",
+          "city": "Bourg-Argental",
+          "citycode": "42023",
+          "lon": 4.556332,
+          "lat": 45.302178
+        },
+        {
+          "label": "71 Grande Rue de Cotaviol 42220 Bourg-Argental",
+          "street": "Grande Rue de Cotaviol",
+          "housenumber": "71",
+          "postcode": "42220",
+          "city": "Bourg-Argental",
+          "citycode": "42023",
+          "lon": 4.567607,
+          "lat": 45.30001
+        },
+        {
+          "label": "6 Chemin de la Baraque 42220 Bourg-Argental",
+          "street": "Chemin de la Baraque",
+          "housenumber": "6",
+          "postcode": "42220",
+          "city": "Bourg-Argental",
+          "citycode": "42023",
+          "lon": 4.566636,
+          "lat": 45.300011
+        },
+        {
+          "label": "24 Grande Rue de Cotaviol 42220 Bourg-Argental",
+          "street": "Grande Rue de Cotaviol",
+          "housenumber": "24",
+          "postcode": "42220",
+          "city": "Bourg-Argental",
+          "citycode": "42023",
+          "lon": 4.568026,
+          "lat": 45.299928
+        },
+        {
+          "label": "69 Grande Rue de Cotaviol 42220 Bourg-Argental",
+          "street": "Grande Rue de Cotaviol",
+          "housenumber": "69",
+          "postcode": "42220",
+          "city": "Bourg-Argental",
+          "citycode": "42023",
+          "lon": 4.567128,
+          "lat": 45.29956
+        },
+        {
+          "label": "26 Grande Rue de Cotaviol 42220 Bourg-Argental",
+          "street": "Grande Rue de Cotaviol",
+          "housenumber": "26",
+          "postcode": "42220",
+          "city": "Bourg-Argental",
+          "citycode": "42023",
+          "lon": 4.568353,
+          "lat": 45.300017
+        },
+        {
+          "label": "67 Grande Rue de Cotaviol 42220 Bourg-Argental",
+          "street": "Grande Rue de Cotaviol",
+          "housenumber": "67",
+          "postcode": "42220",
+          "city": "Bourg-Argental",
+          "citycode": "42023",
+          "lon": 4.566867,
+          "lat": 45.299485
+        }
+      ]
+    },
+    "42172": {
+      "nom": "Planfoy",
+      "adresses": [
+        {
+          "label": "365 Chemin Bayon 42660 Planfoy",
+          "street": "Chemin Bayon",
+          "housenumber": "365",
+          "postcode": "42660",
+          "city": "Planfoy",
+          "citycode": "42172",
+          "lon": 4.430629,
+          "lat": 45.387321
+        },
+        {
+          "label": "2024 Route du Guizay 42660 Planfoy",
+          "street": "Route du Guizay",
+          "housenumber": "2024",
+          "postcode": "42660",
+          "city": "Planfoy",
+          "citycode": "42172",
+          "lon": 4.423727,
+          "lat": 45.389132
+        },
+        {
+          "label": "264 Chemin Bayon 42660 Planfoy",
+          "street": "Chemin Bayon",
+          "housenumber": "264",
+          "postcode": "42660",
+          "city": "Planfoy",
+          "citycode": "42172",
+          "lon": 4.427538,
+          "lat": 45.387539
+        },
+        {
+          "label": "87 Chemin Bayon 42660 Planfoy",
+          "street": "Chemin Bayon",
+          "housenumber": "87",
+          "postcode": "42660",
+          "city": "Planfoy",
+          "citycode": "42172",
+          "lon": 4.425343,
+          "lat": 45.388859
+        },
+        {
+          "label": "140 Chemin Bayon 42660 Planfoy",
+          "street": "Chemin Bayon",
+          "housenumber": "140",
+          "postcode": "42660",
+          "city": "Planfoy",
+          "citycode": "42172",
+          "lon": 4.4264,
+          "lat": 45.388811
+        },
+        {
+          "label": "20 Impasse de Bayon 42660 Planfoy",
+          "street": "Impasse de Bayon",
+          "housenumber": "20",
+          "postcode": "42660",
+          "city": "Planfoy",
+          "citycode": "42172",
+          "lon": 4.426212,
+          "lat": 45.388546
+        },
+        {
+          "label": "29 Impasse de Bayon 42660 Planfoy",
+          "street": "Impasse de Bayon",
+          "housenumber": "29",
+          "postcode": "42660",
+          "city": "Planfoy",
+          "citycode": "42172",
+          "lon": 4.426139,
+          "lat": 45.388502
+        },
+        {
+          "label": "1720 Route du Guizay 42660 Planfoy",
+          "street": "Route du Guizay",
+          "housenumber": "1720",
+          "postcode": "42660",
+          "city": "Planfoy",
+          "citycode": "42172",
+          "lon": 4.427161,
+          "lat": 45.389215
+        },
+        {
+          "label": "53 Impasse de Bayon 42660 Planfoy",
+          "street": "Impasse de Bayon",
+          "housenumber": "53",
+          "postcode": "42660",
+          "city": "Planfoy",
+          "citycode": "42172",
+          "lon": 4.426044,
+          "lat": 45.388293
+        }
+      ]
+    },
+    "42306": {
+      "nom": "Tarentaise",
+      "adresses": [
+        {
+          "label": "370 Chemin de Prarouet 42660 Tarentaise",
+          "street": "Chemin de Prarouet",
+          "housenumber": "370",
+          "postcode": "42660",
+          "city": "Tarentaise",
+          "citycode": "42306",
+          "lon": 4.498372,
+          "lat": 45.362741
+        },
+        {
+          "label": "1948 Route du Pont Souvignet 42660 Tarentaise",
+          "street": "Route du Pont Souvignet",
+          "housenumber": "1948",
+          "postcode": "42660",
+          "city": "Tarentaise",
+          "citycode": "42306",
+          "lon": 4.484242,
+          "lat": 45.358983
+        },
+        {
+          "label": "35 Chemin du Bouchet 42660 Tarentaise",
+          "street": "Chemin du Bouchet",
+          "housenumber": "35",
+          "postcode": "42660",
+          "city": "Tarentaise",
+          "citycode": "42306",
+          "lon": 4.487568,
+          "lat": 45.360699
+        },
+        {
+          "label": "89 Chemin du Bouchet 42660 Tarentaise",
+          "street": "Chemin du Bouchet",
+          "housenumber": "89",
+          "postcode": "42660",
+          "city": "Tarentaise",
+          "citycode": "42306",
+          "lon": 4.487908,
+          "lat": 45.360484
+        },
+        {
+          "label": "1060 Route des Palais 42660 Tarentaise",
+          "street": "Route des Palais",
+          "housenumber": "1060",
+          "postcode": "42660",
+          "city": "Tarentaise",
+          "citycode": "42306",
+          "lon": 4.496598,
+          "lat": 45.366966
+        },
+        {
+          "label": "1100 Route des Palais 42660 Tarentaise",
+          "street": "Route des Palais",
+          "housenumber": "1100",
+          "postcode": "42660",
+          "city": "Tarentaise",
+          "citycode": "42306",
+          "lon": 4.497117,
+          "lat": 45.36702
+        }
+      ]
+    },
+    "42246": {
+      "nom": "Saint-Julien-Molin-Molette",
+      "adresses": [
+        {
+          "label": "5 Montée du Calvaire 42220 Saint-Julien-Molin-Molette",
+          "street": "Montée du Calvaire",
+          "housenumber": "5",
+          "postcode": "42220",
+          "city": "Saint-Julien-Molin-Molette",
+          "citycode": "42246",
+          "lon": 4.61401,
+          "lat": 45.320157
+        },
+        {
+          "label": "7 Montée du Calvaire 42220 Saint-Julien-Molin-Molette",
+          "street": "Montée du Calvaire",
+          "housenumber": "7",
+          "postcode": "42220",
+          "city": "Saint-Julien-Molin-Molette",
+          "citycode": "42246",
+          "lon": 4.614027,
+          "lat": 45.320353
+        },
+        {
+          "label": "9 Montée du Calvaire 42220 Saint-Julien-Molin-Molette",
+          "street": "Montée du Calvaire",
+          "housenumber": "9",
+          "postcode": "42220",
+          "city": "Saint-Julien-Molin-Molette",
+          "citycode": "42246",
+          "lon": 4.613434,
+          "lat": 45.320096
+        },
+        {
+          "label": "11 Montée du Calvaire 42220 Saint-Julien-Molin-Molette",
+          "street": "Montée du Calvaire",
+          "housenumber": "11",
+          "postcode": "42220",
+          "city": "Saint-Julien-Molin-Molette",
+          "citycode": "42246",
+          "lon": 4.613402,
+          "lat": 45.320373
+        },
+        {
+          "label": "6 Montée du Calvaire 42220 Saint-Julien-Molin-Molette",
+          "street": "Montée du Calvaire",
+          "housenumber": "6",
+          "postcode": "42220",
+          "city": "Saint-Julien-Molin-Molette",
+          "citycode": "42246",
+          "lon": 4.613808,
+          "lat": 45.32065
+        },
+        {
+          "label": "13 Montée du Calvaire 42220 Saint-Julien-Molin-Molette",
+          "street": "Montée du Calvaire",
+          "housenumber": "13",
+          "postcode": "42220",
+          "city": "Saint-Julien-Molin-Molette",
+          "citycode": "42246",
+          "lon": 4.613487,
+          "lat": 45.320546
+        },
+        {
+          "label": "3 Montée du Calvaire 42220 Saint-Julien-Molin-Molette",
+          "street": "Montée du Calvaire",
+          "housenumber": "3",
+          "postcode": "42220",
+          "city": "Saint-Julien-Molin-Molette",
+          "citycode": "42246",
+          "lon": 4.614816,
+          "lat": 45.320248
+        },
+        {
+          "label": "4 Montée du Calvaire 42220 Saint-Julien-Molin-Molette",
+          "street": "Montée du Calvaire",
+          "housenumber": "4",
+          "postcode": "42220",
+          "city": "Saint-Julien-Molin-Molette",
+          "citycode": "42246",
+          "lon": 4.614859,
+          "lat": 45.320381
+        },
+        {
+          "label": "1 Montée du Calvaire 42220 Saint-Julien-Molin-Molette",
+          "street": "Montée du Calvaire",
+          "housenumber": "1",
+          "postcode": "42220",
+          "city": "Saint-Julien-Molin-Molette",
+          "citycode": "42246",
+          "lon": 4.614919,
+          "lat": 45.320118
+        }
+      ]
+    },
+    "42101": {
+      "nom": "Graix",
+      "adresses": [
+        {
+          "label": "2360 Route de la Rebatte 42220 Graix",
+          "street": "Route de la Rebatte",
+          "housenumber": "2360",
+          "postcode": "42220",
+          "city": "Graix",
+          "citycode": "42101",
+          "lon": 4.551124,
+          "lat": 45.363316
+        },
+        {
+          "label": "103b Chemin des Hautes Gouttes 42220 Graix",
+          "street": "Chemin des Hautes Gouttes",
+          "housenumber": "103b",
+          "postcode": "42220",
+          "city": "Graix",
+          "citycode": "42101",
+          "lon": 4.552021,
+          "lat": 45.363702
+        },
+        {
+          "label": "103a Chemin des Hautes Gouttes 42220 Graix",
+          "street": "Chemin des Hautes Gouttes",
+          "housenumber": "103a",
+          "postcode": "42220",
+          "city": "Graix",
+          "citycode": "42101",
+          "lon": 4.551769,
+          "lat": 45.363578
+        },
+        {
+          "label": "289 Chemin de la Vourzie 42220 Graix",
+          "street": "Chemin de la Vourzie",
+          "housenumber": "289",
+          "postcode": "42220",
+          "city": "Graix",
+          "citycode": "42101",
+          "lon": 4.559955,
+          "lat": 45.358351
+        },
+        {
+          "label": "308 Chemin de la Vourzie 42220 Graix",
+          "street": "Chemin de la Vourzie",
+          "housenumber": "308",
+          "postcode": "42220",
+          "city": "Graix",
+          "citycode": "42101",
+          "lon": 4.559571,
+          "lat": 45.358682
+        },
+        {
+          "label": "541 Chemin des Gouttes 42220 Graix",
+          "street": "Chemin des Gouttes",
+          "housenumber": "541",
+          "postcode": "42220",
+          "city": "Graix",
+          "citycode": "42101",
+          "lon": 4.550698,
+          "lat": 45.361421
+        },
+        {
+          "label": "555 Chemin des Gouttes 42220 Graix",
+          "street": "Chemin des Gouttes",
+          "housenumber": "555",
+          "postcode": "42220",
+          "city": "Graix",
+          "citycode": "42101",
+          "lon": 4.551043,
+          "lat": 45.361448
+        },
+        {
+          "label": "586 Chemin des Gouttes 42220 Graix",
+          "street": "Chemin des Gouttes",
+          "housenumber": "586",
+          "postcode": "42220",
+          "city": "Graix",
+          "citycode": "42101",
+          "lon": 4.551361,
+          "lat": 45.361265
+        },
+        {
+          "label": "579 Chemin des Gouttes 42220 Graix",
+          "street": "Chemin des Gouttes",
+          "housenumber": "579",
+          "postcode": "42220",
+          "city": "Graix",
+          "citycode": "42101",
+          "lon": 4.55132,
+          "lat": 45.361331
+        }
+      ]
+    },
+    "42139": {
+      "nom": "Marlhes",
+      "adresses": [
+        {
+          "label": "365 Chemin de Malcablière 42660 Marlhes",
+          "street": "Chemin de Malcablière",
+          "housenumber": "365",
+          "postcode": "42660",
+          "city": "Marlhes",
+          "citycode": "42139",
+          "lon": 4.391201,
+          "lat": 45.293025
+        },
+        {
+          "label": "95 Chemin de la Collière Haute 42660 Marlhes",
+          "street": "Chemin de la Collière Haute",
+          "housenumber": "95",
+          "postcode": "42660",
+          "city": "Marlhes",
+          "citycode": "42139",
+          "lon": 4.386643,
+          "lat": 45.293094
+        },
+        {
+          "label": "515 Chemin du Grangeage 42660 Marlhes",
+          "street": "Chemin du Grangeage",
+          "housenumber": "515",
+          "postcode": "42660",
+          "city": "Marlhes",
+          "citycode": "42139",
+          "lon": 4.400811,
+          "lat": 45.290464
+        },
+        {
+          "label": "14 Lotissement le Pied des Saints 42660 Marlhes",
+          "street": "Lotissement le Pied des Saints",
+          "housenumber": "14",
+          "postcode": "42660",
+          "city": "Marlhes",
+          "citycode": "42139",
+          "lon": 4.391427,
+          "lat": 45.286062
+        },
+        {
+          "label": "535 Chemin du Grangeage 42660 Marlhes",
+          "street": "Chemin du Grangeage",
+          "housenumber": "535",
+          "postcode": "42660",
+          "city": "Marlhes",
+          "citycode": "42139",
+          "lon": 4.401066,
+          "lat": 45.290591
+        },
+        {
+          "label": "110 Impasse de la Madone 42660 Marlhes",
+          "street": "Impasse de la Madone",
+          "housenumber": "110",
+          "postcode": "42660",
+          "city": "Marlhes",
+          "citycode": "42139",
+          "lon": 4.392019,
+          "lat": 45.285589
+        },
+        {
+          "label": "12 Lotissement le Pied des Saints 42660 Marlhes",
+          "street": "Lotissement le Pied des Saints",
+          "housenumber": "12",
+          "postcode": "42660",
+          "city": "Marlhes",
+          "citycode": "42139",
+          "lon": 4.391437,
+          "lat": 45.28582
+        },
+        {
+          "label": "11 Lotissement le Pied des Saints 42660 Marlhes",
+          "street": "Lotissement le Pied des Saints",
+          "housenumber": "11",
+          "postcode": "42660",
+          "city": "Marlhes",
+          "citycode": "42139",
+          "lon": 4.391107,
+          "lat": 45.286059
+        },
+        {
+          "label": "10 Lotissement le Pied des Saints 42660 Marlhes",
+          "street": "Lotissement le Pied des Saints",
+          "housenumber": "10",
+          "postcode": "42660",
+          "city": "Marlhes",
+          "citycode": "42139",
+          "lon": 4.39124,
+          "lat": 45.285693
+        },
+        {
+          "label": "9 Lotissement le Pied des Saints 42660 Marlhes",
+          "street": "Lotissement le Pied des Saints",
+          "housenumber": "9",
+          "postcode": "42660",
+          "city": "Marlhes",
+          "citycode": "42139",
+          "lon": 4.390994,
+          "lat": 45.285828
+        }
+      ]
+    },
+    "42322": {
+      "nom": "La Valla-en-Gier",
+      "adresses": [
+        {
+          "label": "2769 Route de la Croix de Chaubouret 42131 La Valla-en-Gier",
+          "street": "Route de la Croix de Chaubouret",
+          "housenumber": "2769",
+          "postcode": "42131",
+          "city": "La Valla-en-Gier",
+          "citycode": "42322",
+          "lon": 4.52904,
+          "lat": 45.406412
+        },
+        {
+          "label": "2803 Route de la Croix de Chaubouret 42131 La Valla-en-Gier",
+          "street": "Route de la Croix de Chaubouret",
+          "housenumber": "2803",
+          "postcode": "42131",
+          "city": "La Valla-en-Gier",
+          "citycode": "42322",
+          "lon": 4.529288,
+          "lat": 45.406095
+        },
+        {
+          "label": "167 Chemin de la Croix du Sabot 42131 La Valla-en-Gier",
+          "street": "Chemin de la Croix du Sabot",
+          "housenumber": "167",
+          "postcode": "42131",
+          "city": "La Valla-en-Gier",
+          "citycode": "42322",
+          "lon": 4.528593,
+          "lat": 45.403816
+        },
+        {
+          "label": "165 Chemin de la Croix du Sabot 42131 La Valla-en-Gier",
+          "street": "Chemin de la Croix du Sabot",
+          "housenumber": "165",
+          "postcode": "42131",
+          "city": "La Valla-en-Gier",
+          "citycode": "42322",
+          "lon": 4.528763,
+          "lat": 45.403808
+        },
+        {
+          "label": "47 Route de la Pervenche 42131 La Valla-en-Gier",
+          "street": "Route de la Pervenche",
+          "housenumber": "47",
+          "postcode": "42131",
+          "city": "La Valla-en-Gier",
+          "citycode": "42322",
+          "lon": 4.529975,
+          "lat": 45.405277
+        },
+        {
+          "label": "75 Route de la Pervenche 42131 La Valla-en-Gier",
+          "street": "Route de la Pervenche",
+          "housenumber": "75",
+          "postcode": "42131",
+          "city": "La Valla-en-Gier",
+          "citycode": "42322",
+          "lon": 4.530184,
+          "lat": 45.405117
+        }
+      ]
+    },
+    "42067": {
+      "nom": "Colombier",
+      "adresses": [
+        {
+          "label": "891 Chemin de Goutagout 42220 Colombier",
+          "street": "Chemin de Goutagout",
+          "housenumber": "891",
+          "postcode": "42220",
+          "city": "Colombier",
+          "citycode": "42067",
+          "lon": 4.597556,
+          "lat": 45.353264
+        },
+        {
+          "label": "61 Impasse des Framboisiers 42220 Colombier",
+          "street": "Impasse des Framboisiers",
+          "housenumber": "61",
+          "postcode": "42220",
+          "city": "Colombier",
+          "citycode": "42067",
+          "lon": 4.597801,
+          "lat": 45.348651
+        },
+        {
+          "label": "42 Impasse des Framboisiers 42220 Colombier",
+          "street": "Impasse des Framboisiers",
+          "housenumber": "42",
+          "postcode": "42220",
+          "city": "Colombier",
+          "citycode": "42067",
+          "lon": 4.597649,
+          "lat": 45.348827
+        },
+        {
+          "label": "40 Impasse des Framboisiers 42220 Colombier",
+          "street": "Impasse des Framboisiers",
+          "housenumber": "40",
+          "postcode": "42220",
+          "city": "Colombier",
+          "citycode": "42067",
+          "lon": 4.598241,
+          "lat": 45.348741
+        },
+        {
+          "label": "1409 Chemin de Goutagout 42220 Colombier",
+          "street": "Chemin de Goutagout",
+          "housenumber": "1409",
+          "postcode": "42220",
+          "city": "Colombier",
+          "citycode": "42067",
+          "lon": 4.598958,
+          "lat": 45.348812
+        },
+        {
+          "label": "1333 Chemin de Goutagout 42220 Colombier",
+          "street": "Chemin de Goutagout",
+          "housenumber": "1333",
+          "postcode": "42220",
+          "city": "Colombier",
+          "citycode": "42067",
+          "lon": 4.599036,
+          "lat": 45.34927
+        },
+        {
+          "label": "1294 Chemin de Goutagout 42220 Colombier",
+          "street": "Chemin de Goutagout",
+          "housenumber": "1294",
+          "postcode": "42220",
+          "city": "Colombier",
+          "citycode": "42067",
+          "lon": 4.598765,
+          "lat": 45.349486
+        }
+      ]
+    },
+    "42085": {
+      "nom": "Doizieux",
+      "adresses": [
+        {
+          "label": "674 Impasse de La Touche 42740 Doizieux",
+          "street": "Impasse de La Touche",
+          "housenumber": "674",
+          "postcode": "42740",
+          "city": "Doizieux",
+          "citycode": "42085",
+          "lon": 4.579002,
+          "lat": 45.414612
+        },
+        {
+          "label": "818 Impasse de La Touche 42740 Doizieux",
+          "street": "Impasse de La Touche",
+          "housenumber": "818",
+          "postcode": "42740",
+          "city": "Doizieux",
+          "citycode": "42085",
+          "lon": 4.579245,
+          "lat": 45.413449
+        },
+        {
+          "label": "148 Lieu-dit Les Scies 42740 Doizieux",
+          "street": "Lieu-dit Les Scies",
+          "housenumber": "148",
+          "postcode": "42740",
+          "city": "Doizieux",
+          "citycode": "42085",
+          "lon": 4.589483,
+          "lat": 45.410548
+        },
+        {
+          "label": "106 Lieu-dit Les Scies 42740 Doizieux",
+          "street": "Lieu-dit Les Scies",
+          "housenumber": "106",
+          "postcode": "42740",
+          "city": "Doizieux",
+          "citycode": "42085",
+          "lon": 4.589195,
+          "lat": 45.41074
+        },
+        {
+          "label": "82 Lieu-dit Les Scies 42740 Doizieux",
+          "street": "Lieu-dit Les Scies",
+          "housenumber": "82",
+          "postcode": "42740",
+          "city": "Doizieux",
+          "citycode": "42085",
+          "lon": 4.589045,
+          "lat": 45.410916
+        },
+        {
+          "label": "699 Impasse de La Touche 42740 Doizieux",
+          "street": "Impasse de La Touche",
+          "housenumber": "699",
+          "postcode": "42740",
+          "city": "Doizieux",
+          "citycode": "42085",
+          "lon": 4.579027,
+          "lat": 45.414135
+        },
+        {
+          "label": "1 Lieu-dit Le Mayossey 42740 Doizieux",
+          "street": "Lieu-dit Le Mayossey",
+          "housenumber": "1",
+          "postcode": "42740",
+          "city": "Doizieux",
+          "citycode": "42085",
+          "lon": 4.582656,
+          "lat": 45.41441
+        }
+      ]
+    }
+  },
+  "hors_zone": {
+    "42218": {
+      "nom": "Saint-Étienne",
+      "adresses": [
+        {
+          "label": "23 Rue Claudius Racodon 42000 Saint-Étienne",
+          "street": "Rue Claudius Racodon",
+          "housenumber": "23",
+          "postcode": "42000",
+          "city": "Saint-Étienne",
+          "citycode": "42218",
+          "lon": 4.367282,
+          "lat": 45.434654
+        },
+        {
+          "label": "28 Rue Claudius Racodon 42000 Saint-Étienne",
+          "street": "Rue Claudius Racodon",
+          "housenumber": "28",
+          "postcode": "42000",
+          "city": "Saint-Étienne",
+          "citycode": "42218",
+          "lon": 4.367161,
+          "lat": 45.434868
+        },
+        {
+          "label": "21 Rue Claudius Racodon 42000 Saint-Étienne",
+          "street": "Rue Claudius Racodon",
+          "housenumber": "21",
+          "postcode": "42000",
+          "city": "Saint-Étienne",
+          "citycode": "42218",
+          "lon": 4.367176,
+          "lat": 45.435107
+        },
+        {
+          "label": "2 Rue du Millepertuis 42150 La Ricamarie",
+          "street": "Rue du Millepertuis",
+          "housenumber": "2",
+          "postcode": "42150",
+          "city": "La Ricamarie",
+          "citycode": "42183",
+          "lon": 4.36019,
+          "lat": 45.41386
+        },
+        {
+          "label": "1 Rue du Millepertuis 42150 La Ricamarie",
+          "street": "Rue du Millepertuis",
+          "housenumber": "1",
+          "postcode": "42150",
+          "city": "La Ricamarie",
+          "citycode": "42183",
+          "lon": 4.360367,
+          "lat": 45.413793
+        },
+        {
+          "label": "4 Rue du Millepertuis 42150 La Ricamarie",
+          "street": "Rue du Millepertuis",
+          "housenumber": "4",
+          "postcode": "42150",
+          "city": "La Ricamarie",
+          "citycode": "42183",
+          "lon": 4.360187,
+          "lat": 45.413753
+        },
+        {
+          "label": "3 Rue du Millepertuis 42150 La Ricamarie",
+          "street": "Rue du Millepertuis",
+          "housenumber": "3",
+          "postcode": "42150",
+          "city": "La Ricamarie",
+          "citycode": "42183",
+          "lon": 4.360392,
+          "lat": 45.413661
+        },
+        {
+          "label": "58 Rue Emile Deschanel 42000 Saint-Étienne",
+          "street": "Rue Emile Deschanel",
+          "housenumber": "58",
+          "postcode": "42000",
+          "city": "Saint-Étienne",
+          "citycode": "42218",
+          "lon": 4.368203,
+          "lat": 45.432673
+        },
+        {
+          "label": "3 Rue Henri Simon Faure 42100 Saint-Étienne",
+          "street": "Rue Henri Simon Faure",
+          "housenumber": "3",
+          "postcode": "42100",
+          "city": "Saint-Étienne",
+          "citycode": "42218",
+          "lon": 4.372444,
+          "lat": 45.432534
+        },
+        {
+          "label": "5 Rue Henri Simon Faure 42100 Saint-Étienne",
+          "street": "Rue Henri Simon Faure",
+          "housenumber": "5",
+          "postcode": "42100",
+          "city": "Saint-Étienne",
+          "citycode": "42218",
+          "lon": 4.372487,
+          "lat": 45.432432
+        },
+        {
+          "label": "8 Rue Henri Simon Faure 42100 Saint-Étienne",
+          "street": "Rue Henri Simon Faure",
+          "housenumber": "8",
+          "postcode": "42100",
+          "city": "Saint-Étienne",
+          "citycode": "42218",
+          "lon": 4.372342,
+          "lat": 45.432515
+        },
+        {
+          "label": "1 Rue Henri Simon Faure 42100 Saint-Étienne",
+          "street": "Rue Henri Simon Faure",
+          "housenumber": "1",
+          "postcode": "42100",
+          "city": "Saint-Étienne",
+          "citycode": "42218",
+          "lon": 4.372337,
+          "lat": 45.432686
+        },
+        {
+          "label": "10 Rue Henri Simon Faure 42100 Saint-Étienne",
+          "street": "Rue Henri Simon Faure",
+          "housenumber": "10",
+          "postcode": "42100",
+          "city": "Saint-Étienne",
+          "citycode": "42218",
+          "lon": 4.372399,
+          "lat": 45.432361
+        },
+        {
+          "label": "7 Rue Henri Simon Faure 42100 Saint-Étienne",
+          "street": "Rue Henri Simon Faure",
+          "housenumber": "7",
+          "postcode": "42100",
+          "city": "Saint-Étienne",
+          "citycode": "42218",
+          "lon": 4.372511,
+          "lat": 45.432315
+        },
+        {
+          "label": "6 Rue Henri Simon Faure 42100 Saint-Étienne",
+          "street": "Rue Henri Simon Faure",
+          "housenumber": "6",
+          "postcode": "42100",
+          "city": "Saint-Étienne",
+          "citycode": "42218",
+          "lon": 4.372247,
+          "lat": 45.432648
+        },
+        {
+          "label": "4 Rue Jean-Baptiste Marsaut 42100 Saint-Étienne",
+          "street": "Rue Jean-Baptiste Marsaut",
+          "housenumber": "4",
+          "postcode": "42100",
+          "city": "Saint-Étienne",
+          "citycode": "42218",
+          "lon": 4.373107,
+          "lat": 45.432657
+        },
+        {
+          "label": "6 Rue Jean-Baptiste Marsaut 42100 Saint-Étienne",
+          "street": "Rue Jean-Baptiste Marsaut",
+          "housenumber": "6",
+          "postcode": "42100",
+          "city": "Saint-Étienne",
+          "citycode": "42218",
+          "lon": 4.373125,
+          "lat": 45.432509
+        }
+      ]
+    },
+    "69091": {
+      "nom": "Givors",
+      "adresses": [
+        {
+          "label": "5 Rue de l'Industrie 69700 Givors",
+          "street": "Rue de l'Industrie",
+          "housenumber": "5",
+          "postcode": "69700",
+          "city": "Givors",
+          "citycode": "69091",
+          "lon": 4.742409,
+          "lat": 45.581606
+        },
+        {
+          "label": "3 Rue de l'Industrie 69700 Givors",
+          "street": "Rue de l'Industrie",
+          "housenumber": "3",
+          "postcode": "69700",
+          "city": "Givors",
+          "citycode": "69091",
+          "lon": 4.742637,
+          "lat": 45.5817
+        },
+        {
+          "label": "6 Rue de l'Industrie 69700 Givors",
+          "street": "Rue de l'Industrie",
+          "housenumber": "6",
+          "postcode": "69700",
+          "city": "Givors",
+          "citycode": "69091",
+          "lon": 4.742639,
+          "lat": 45.581624
+        },
+        {
+          "label": "8 Rue de l'Industrie 69700 Givors",
+          "street": "Rue de l'Industrie",
+          "housenumber": "8",
+          "postcode": "69700",
+          "city": "Givors",
+          "citycode": "69091",
+          "lon": 4.74232,
+          "lat": 45.581489
+        },
+        {
+          "label": "7 Rue de l'Industrie 69700 Givors",
+          "street": "Rue de l'Industrie",
+          "housenumber": "7",
+          "postcode": "69700",
+          "city": "Givors",
+          "citycode": "69091",
+          "lon": 4.742117,
+          "lat": 45.581482
+        },
+        {
+          "label": "10 Rue de l'Industrie 69700 Givors",
+          "street": "Rue de l'Industrie",
+          "housenumber": "10",
+          "postcode": "69700",
+          "city": "Givors",
+          "citycode": "69091",
+          "lon": 4.742132,
+          "lat": 45.581409
+        },
+        {
+          "label": "4 Rue de l'Industrie 69700 Givors",
+          "street": "Rue de l'Industrie",
+          "housenumber": "4",
+          "postcode": "69700",
+          "city": "Givors",
+          "citycode": "69091",
+          "lon": 4.743076,
+          "lat": 45.581807
+        },
+        {
+          "label": "9 Rue de l'Industrie 69700 Givors",
+          "street": "Rue de l'Industrie",
+          "housenumber": "9",
+          "postcode": "69700",
+          "city": "Givors",
+          "citycode": "69091",
+          "lon": 4.741675,
+          "lat": 45.581295
+        },
+        {
+          "label": "25 Montée de la Châtelaine 69700 Givors",
+          "street": "Montée de la Châtelaine",
+          "housenumber": "25",
+          "postcode": "69700",
+          "city": "Givors",
+          "citycode": "69091",
+          "lon": 4.75323,
+          "lat": 45.592189
+        },
+        {
+          "label": "19 Montée de la Châtelaine 69700 Givors",
+          "street": "Montée de la Châtelaine",
+          "housenumber": "19",
+          "postcode": "69700",
+          "city": "Givors",
+          "citycode": "69091",
+          "lon": 4.753642,
+          "lat": 45.592191
+        },
+        {
+          "label": "23 Montée de la Châtelaine 69700 Givors",
+          "street": "Montée de la Châtelaine",
+          "housenumber": "23",
+          "postcode": "69700",
+          "city": "Givors",
+          "citycode": "69091",
+          "lon": 4.753203,
+          "lat": 45.591896
+        },
+        {
+          "label": "21 Montée de la Châtelaine 69700 Givors",
+          "street": "Montée de la Châtelaine",
+          "housenumber": "21",
+          "postcode": "69700",
+          "city": "Givors",
+          "citycode": "69091",
+          "lon": 4.753276,
+          "lat": 45.591869
+        },
+        {
+          "label": "33 Route de Varissan 69700 Givors",
+          "street": "Route de Varissan",
+          "housenumber": "33",
+          "postcode": "69700",
+          "city": "Givors",
+          "citycode": "69091",
+          "lon": 4.753632,
+          "lat": 45.592556
+        },
+        {
+          "label": "1 Chemin de la Châtelaine 69700 Givors",
+          "street": "Chemin de la Châtelaine",
+          "housenumber": "1",
+          "postcode": "69700",
+          "city": "Givors",
+          "citycode": "69091",
+          "lon": 4.752535,
+          "lat": 45.592159
+        },
+        {
+          "label": "5 Rue de Montagny 69700 Givors",
+          "street": "Rue de Montagny",
+          "housenumber": "5",
+          "postcode": "69700",
+          "city": "Givors",
+          "citycode": "69091",
+          "lon": 4.752205,
+          "lat": 45.591814
+        }
+      ]
+    },
+    "38544": {
+      "nom": "Vienne",
+      "adresses": [
+        {
+          "label": "7 Rue Simeon Gouet 38200 Vienne",
+          "street": "Rue Simeon Gouet",
+          "housenumber": "7",
+          "postcode": "38200",
+          "city": "Vienne",
+          "citycode": "38544",
+          "lon": 4.875966,
+          "lat": 45.526764
+        },
+        {
+          "label": "5 Rue Simeon Gouet 38200 Vienne",
+          "street": "Rue Simeon Gouet",
+          "housenumber": "5",
+          "postcode": "38200",
+          "city": "Vienne",
+          "citycode": "38544",
+          "lon": 4.875871,
+          "lat": 45.526781
+        },
+        {
+          "label": "9 Rue Simeon Gouet 38200 Vienne",
+          "street": "Rue Simeon Gouet",
+          "housenumber": "9",
+          "postcode": "38200",
+          "city": "Vienne",
+          "citycode": "38544",
+          "lon": 4.876016,
+          "lat": 45.526753
+        },
+        {
+          "label": "4 Rue Simeon Gouet 38200 Vienne",
+          "street": "Rue Simeon Gouet",
+          "housenumber": "4",
+          "postcode": "38200",
+          "city": "Vienne",
+          "citycode": "38544",
+          "lon": 4.875915,
+          "lat": 45.526721
+        },
+        {
+          "label": "4ter Rue Simeon Gouet 38200 Vienne",
+          "street": "Rue Simeon Gouet",
+          "housenumber": "4ter",
+          "postcode": "38200",
+          "city": "Vienne",
+          "citycode": "38544",
+          "lon": 4.875996,
+          "lat": 45.52671
+        },
+        {
+          "label": "3 Impasse Quinquinet 38200 Vienne",
+          "street": "Impasse Quinquinet",
+          "housenumber": "3",
+          "postcode": "38200",
+          "city": "Vienne",
+          "citycode": "38544",
+          "lon": 4.876064,
+          "lat": 45.527007
+        },
+        {
+          "label": "3 Rue Simeon Gouet 38200 Vienne",
+          "street": "Rue Simeon Gouet",
+          "housenumber": "3",
+          "postcode": "38200",
+          "city": "Vienne",
+          "citycode": "38544",
+          "lon": 4.875777,
+          "lat": 45.526772
+        },
+        {
+          "label": "11 Rue Simeon Gouet 38200 Vienne",
+          "street": "Rue Simeon Gouet",
+          "housenumber": "11",
+          "postcode": "38200",
+          "city": "Vienne",
+          "citycode": "38544",
+          "lon": 4.876142,
+          "lat": 45.526751
+        },
+        {
+          "label": "38 Montée Saint Marcel 38200 Vienne",
+          "street": "Montée Saint Marcel",
+          "housenumber": "38",
+          "postcode": "38200",
+          "city": "Vienne",
+          "citycode": "38544",
+          "lon": 4.88136,
+          "lat": 45.522531
+        },
+        {
+          "label": "36 Montée Saint Marcel 38200 Vienne",
+          "street": "Montée Saint Marcel",
+          "housenumber": "36",
+          "postcode": "38200",
+          "city": "Vienne",
+          "citycode": "38544",
+          "lon": 4.88133,
+          "lat": 45.522602
+        },
+        {
+          "label": "38bis Montée Saint Marcel 38200 Vienne",
+          "street": "Montée Saint Marcel",
+          "housenumber": "38bis",
+          "postcode": "38200",
+          "city": "Vienne",
+          "citycode": "38544",
+          "lon": 4.881505,
+          "lat": 45.522231
+        },
+        {
+          "label": "38ter Montée Saint Marcel 38200 Vienne",
+          "street": "Montée Saint Marcel",
+          "housenumber": "38ter",
+          "postcode": "38200",
+          "city": "Vienne",
+          "citycode": "38544",
+          "lon": 4.881585,
+          "lat": 45.52232
+        },
+        {
+          "label": "21 Montée Saint Marcel 38200 Vienne",
+          "street": "Montée Saint Marcel",
+          "housenumber": "21",
+          "postcode": "38200",
+          "city": "Vienne",
+          "citycode": "38544",
+          "lon": 4.88141,
+          "lat": 45.522674
+        },
+        {
+          "label": "23 Montée Saint Marcel 38200 Vienne",
+          "street": "Montée Saint Marcel",
+          "housenumber": "23",
+          "postcode": "38200",
+          "city": "Vienne",
+          "citycode": "38544",
+          "lon": 4.881681,
+          "lat": 45.522374
+        },
+        {
+          "label": "40 Montée Saint Marcel 38200 Vienne",
+          "street": "Montée Saint Marcel",
+          "housenumber": "40",
+          "postcode": "38200",
+          "city": "Vienne",
+          "citycode": "38544",
+          "lon": 4.881725,
+          "lat": 45.522199
+        },
+        {
+          "label": "25 Montée Saint Marcel 38200 Vienne",
+          "street": "Montée Saint Marcel",
+          "housenumber": "25",
+          "postcode": "38200",
+          "city": "Vienne",
+          "citycode": "38544",
+          "lon": 4.881758,
+          "lat": 45.522315
+        },
+        {
+          "label": "34 Montée Saint Marcel 38200 Vienne",
+          "street": "Montée Saint Marcel",
+          "housenumber": "34",
+          "postcode": "38200",
+          "city": "Vienne",
+          "citycode": "38544",
+          "lon": 4.881126,
+          "lat": 45.522863
+        },
+        {
+          "label": "27 Montée Saint Marcel 38200 Vienne",
+          "street": "Montée Saint Marcel",
+          "housenumber": "27",
+          "postcode": "38200",
+          "city": "Vienne",
+          "citycode": "38544",
+          "lon": 4.881834,
+          "lat": 45.522242
+        }
+      ]
+    },
+    "42096": {
+      "nom": "Firminy",
+      "adresses": [
+        {
+          "label": "184 Chemin de Prajalas 42140 Fontanès",
+          "street": "Chemin de Prajalas",
+          "housenumber": "184",
+          "postcode": "42140",
+          "city": "Fontanès",
+          "citycode": "42096",
+          "lon": 4.440925,
+          "lat": 45.539993
+        },
+        {
+          "label": "553 Rue Fontanésium 42140 Fontanès",
+          "street": "Rue Fontanésium",
+          "housenumber": "553",
+          "postcode": "42140",
+          "city": "Fontanès",
+          "citycode": "42096",
+          "lon": 4.437029,
+          "lat": 45.548333
+        },
+        {
+          "label": "571 Rue Fontanésium 42140 Fontanès",
+          "street": "Rue Fontanésium",
+          "housenumber": "571",
+          "postcode": "42140",
+          "city": "Fontanès",
+          "citycode": "42096",
+          "lon": 4.436995,
+          "lat": 45.54848
+        },
+        {
+          "label": "579 Rue Fontanésium 42140 Fontanès",
+          "street": "Rue Fontanésium",
+          "housenumber": "579",
+          "postcode": "42140",
+          "city": "Fontanès",
+          "citycode": "42096",
+          "lon": 4.43697,
+          "lat": 45.548599
+        },
+        {
+          "label": "531 Rue Fontanésium 42140 Fontanès",
+          "street": "Rue Fontanésium",
+          "housenumber": "531",
+          "postcode": "42140",
+          "city": "Fontanès",
+          "citycode": "42096",
+          "lon": 4.437083,
+          "lat": 45.548122
+        },
+        {
+          "label": "589 Rue Fontanésium 42140 Fontanès",
+          "street": "Rue Fontanésium",
+          "housenumber": "589",
+          "postcode": "42140",
+          "city": "Fontanès",
+          "citycode": "42096",
+          "lon": 4.43696,
+          "lat": 45.548661
+        },
+        {
+          "label": "1 Rue du Plâtre 42140 Fontanès",
+          "street": "Rue du Plâtre",
+          "housenumber": "1",
+          "postcode": "42140",
+          "city": "Fontanès",
+          "citycode": "42096",
+          "lon": 4.437527,
+          "lat": 45.548246
+        },
+        {
+          "label": "617 Rue Fontanésium 42140 Fontanès",
+          "street": "Rue Fontanésium",
+          "housenumber": "617",
+          "postcode": "42140",
+          "city": "Fontanès",
+          "citycode": "42096",
+          "lon": 4.436884,
+          "lat": 45.548892
+        },
+        {
+          "label": "1 Rue du Cadran Solaire 42140 Fontanès",
+          "street": "Rue du Cadran Solaire",
+          "housenumber": "1",
+          "postcode": "42140",
+          "city": "Fontanès",
+          "citycode": "42096",
+          "lon": 4.43759,
+          "lat": 45.548749
+        },
+        {
+          "label": "624 Rue Fontanésium 42140 Fontanès",
+          "street": "Rue Fontanésium",
+          "housenumber": "624",
+          "postcode": "42140",
+          "city": "Fontanès",
+          "citycode": "42096",
+          "lon": 4.437093,
+          "lat": 45.548947
+        },
+        {
+          "label": "856 Chemin du Rivollier 42140 Fontanès",
+          "street": "Chemin du Rivollier",
+          "housenumber": "856",
+          "postcode": "42140",
+          "city": "Fontanès",
+          "citycode": "42096",
+          "lon": 4.426529,
+          "lat": 45.533539
+        },
+        {
+          "label": "237 Chemin de la Brosse 42140 Fontanès",
+          "street": "Chemin de la Brosse",
+          "housenumber": "237",
+          "postcode": "42140",
+          "city": "Fontanès",
+          "citycode": "42096",
+          "lon": 4.438592,
+          "lat": 45.552827
+        },
+        {
+          "label": "216 Chemin de la Brosse 42140 Fontanès",
+          "street": "Chemin de la Brosse",
+          "housenumber": "216",
+          "postcode": "42140",
+          "city": "Fontanès",
+          "citycode": "42096",
+          "lon": 4.438453,
+          "lat": 45.552592
+        },
+        {
+          "label": "239 Chemin de la Brosse 42140 Fontanès",
+          "street": "Chemin de la Brosse",
+          "housenumber": "239",
+          "postcode": "42140",
+          "city": "Fontanès",
+          "citycode": "42096",
+          "lon": 4.438737,
+          "lat": 45.552796
+        },
+        {
+          "label": "9 Chemin de la Roche 42140 Fontanès",
+          "street": "Chemin de la Roche",
+          "housenumber": "9",
+          "postcode": "42140",
+          "city": "Fontanès",
+          "citycode": "42096",
+          "lon": 4.422871,
+          "lat": 45.543556
+        }
+      ]
+    }
+  }
+}
