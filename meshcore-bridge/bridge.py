@@ -463,6 +463,11 @@ async def executer_une_session(django):
     # par le listener CHANNEL_MSG_RECV pour rattacher un message entrant à son CanalMeshCore.
     canaux_idx_map = {}
     enregistrer_ecouteurs(meshcore, django, COMPAGNON_ID, deconnecte, canaux_idx_map)
+    # Le firmware ne pousse jamais un message reçu de lui-même : il émet juste un événement
+    # MESSAGES_WAITING, et CONTACT_MSG_RECV/CHANNEL_MSG_RECV ne sont émis qu'en réponse à une
+    # commande explicite get_msg(). Sans cet appel, les écouteurs ci-dessus ne se déclenchent
+    # jamais, quel que soit le nombre de messages réellement reçus par le companion.
+    await meshcore.start_auto_message_fetching()
 
     tache_envoi = asyncio.create_task(boucle_envoi(meshcore, django, COMPAGNON_ID))
     tache_contacts = asyncio.create_task(boucle_contacts(meshcore, django, COMPAGNON_ID))
