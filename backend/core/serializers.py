@@ -1143,6 +1143,9 @@ class TeamSerializer(serializers.ModelSerializer):
             'communes',
             'zone_precise',
             'zone_precise_geojson',
+            'canal_meshcore_id',
+            'canal_meshcore_nom',
+            'canal_meshcore_provisionne',
         ]
         # institution_delegataire/equipe_parente ne sont pas modifiables ici : elles ne doivent
         # changer que via les actions dédiées (definir_delegation/retirer_delegation,
