@@ -53,7 +53,6 @@ export class MeshcoreCompanionsComponent implements OnInit {
   creatingNoeud = false;
 
   contacts: ContactMeshCore[] = [];
-  contactSelectionneId = '';
   importingRelais = false;
 
   constructor(
@@ -87,13 +86,6 @@ export class MeshcoreCompanionsComponent implements OnInit {
   get relaisDetectes(): ContactMeshCore[] {
     const nomsRelaisExistants = new Set(this.relais.map(r => r.nom));
     return this.contacts.filter(c => c.type_contact === 'REPEATER' && c.latitude != null && !nomsRelaisExistants.has(c.nom));
-  }
-
-  choisirContact(): void {
-    const contact = this.contacts.find(c => c.id === this.contactSelectionneId);
-    if (!contact) return;
-    this.nouveauNoeudPubkey = contact.pubkey_hex;
-    this.nouveauNoeudNom = contact.nom;
   }
 
   importerRelaisDetectes(): void {
@@ -169,6 +161,32 @@ export class MeshcoreCompanionsComponent implements OnInit {
     return !!this.nouveauNoeudUtilisateurId && !!this.nouveauNoeudPubkey.trim();
   }
 
+  /** Utilisateur choisi pour chaque contact détecté non associé, en attente d'attribution —
+   * un choix par ligne du tableau (voir attributionsPubkeys ci-dessous), plutôt qu'un unique
+   * formulaire séquentiel (choisir un contact, puis l'utilisateur, puis valider). */
+  attributionsParContact: Record<string, string> = {};
+  attribuingContactId: string | null = null;
+
+  attribuerContact(contact: ContactMeshCore): void {
+    const utilisateurId = this.attributionsParContact[contact.id];
+    if (!utilisateurId) return;
+    this.attribuingContactId = contact.id;
+    this.noeudService.create({
+      utilisateur: utilisateurId, pubkey_hex: contact.pubkey_hex, nom_noeud: contact.nom,
+    }).subscribe({
+      next: (created) => {
+        this.noeuds = [created, ...this.noeuds];
+        delete this.attributionsParContact[contact.id];
+        this.attribuingContactId = null;
+        this.loadContacts();
+      },
+      error: () => {
+        this.errorMessage = "Impossible d'attribuer ce nœud (clé publique déjà utilisée ?).";
+        this.attribuingContactId = null;
+      },
+    });
+  }
+
   ajouterNoeud(): void {
     if (!this.formNoeudValide) return;
     this.creatingNoeud = true;
@@ -180,7 +198,6 @@ export class MeshcoreCompanionsComponent implements OnInit {
         this.nouveauNoeudUtilisateurId = '';
         this.nouveauNoeudPubkey = '';
         this.nouveauNoeudNom = '';
-        this.contactSelectionneId = '';
         this.creatingNoeud = false;
         this.loadContacts();
       },

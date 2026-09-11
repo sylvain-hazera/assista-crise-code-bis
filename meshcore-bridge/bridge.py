@@ -39,6 +39,12 @@ BLE_ADRESSE = os.environ.get("MESHCORE_BLE_ADRESSE")
 POLL_INTERVAL_SECONDS = int(os.environ.get("POLL_INTERVAL_SECONDS", "15"))
 RECONNECT_DELAY_SECONDS = int(os.environ.get("RECONNECT_DELAY_SECONDS", "10"))
 CONTACTS_SYNC_INTERVAL_SECONDS = int(os.environ.get("CONTACTS_SYNC_INTERVAL_SECONDS", "300"))
+# Même cadence par défaut que la synchro de contacts : suivi de position actif pendant une
+# mission EN_COURS (voir boucle_positions_missions) — interroge activement (req_telemetry,
+# BinaryReqType.TELEMETRY) chaque nœud personnel concerné, ce qui sollicite sa radio/batterie,
+# d'où un intervalle prudent plutôt qu'un rafraîchissement continu.
+POSITIONS_MISSIONS_POLL_INTERVAL_SECONDS = int(os.environ.get("POSITIONS_MISSIONS_POLL_INTERVAL_SECONDS", "300"))
+POSITIONS_MISSIONS_REQ_TIMEOUT_SECONDS = int(os.environ.get("POSITIONS_MISSIONS_REQ_TIMEOUT_SECONDS", "20"))
 
 # Miroir de AdvType (meshcore/packets.py) -> TypeContactMeshCore côté Django (voir models.py).
 TYPE_CONTACT_PAR_ADV_TYPE = {
@@ -86,6 +92,13 @@ class DjangoClient:
 
     async def synchroniser_contacts(self, compagnon_id, contacts):
         await self._request("POST", f"/compagnons-meshcore/{compagnon_id}/synchroniser-contacts/", json={"contacts": contacts})
+
+    async def pubkeys_a_suivre(self, compagnon_id):
+        """Clés publiques des nœuds personnels à interroger activement maintenant — voir
+        CompagnonMeshCoreViewSet.pubkeys_a_suivre : uniquement les nœuds d'utilisateurs
+        membres d'une équipe dont la mission courante est EN_COURS, jamais en dehors."""
+        response = await self._request("GET", f"/compagnons-meshcore/{compagnon_id}/pubkeys-a-suivre/")
+        return response.json().get("pubkeys", [])
 
     async def rapporter_etat(self, compagnon_id, etat, pubkey_hex=None, erreur=None):
         payload = {"etat": etat}
@@ -227,6 +240,54 @@ async def boucle_contacts(meshcore, django, compagnon_id):
         await asyncio.sleep(CONTACTS_SYNC_INTERVAL_SECONDS)
 
 
+async def boucle_positions_missions(meshcore, django, compagnon_id):
+    """Suivi de position actif d'un nœud personnel, UNIQUEMENT pendant qu'une mission de
+    l'équipe de son porteur est EN_COURS (voir doc de conception « Maillage Terrain » —
+    demande explicite : jamais de suivi en continu, seulement pendant une mission active).
+
+    Interroge la télémétrie du nœud (BinaryReqType.TELEMETRY, req_telemetry_sync) : plus
+    fraîche qu'une simple annonce périodique, mais sollicite sa radio/batterie à chaque appel
+    — d'où l'intervalle prudent (POSITIONS_MISSIONS_POLL_INTERVAL_SECONDS) plutôt qu'un
+    rafraîchissement continu. `req_telemetry_sync` accepte directement la clé publique en
+    hexadécimal comme destination (voir meshcore/commands/base.py, _validate_destination) —
+    pas besoin de retrouver l'objet contact complet. La position, si présente, est le canal
+    LPP de type "gps" (channel/type/value avec latitude/longitude/altitude — voir
+    meshcore/lpp_json_encoder.py) : absente si le nœud interrogé n'a pas de GPS ou ne l'a pas
+    activé en télémétrie, auquel cas ce nœud est silencieusement ignoré pour ce passage."""
+    while True:
+        try:
+            pubkeys = await django.pubkeys_a_suivre(compagnon_id)
+            if pubkeys:
+                logger.info("Suivi de position actif pendant mission : %d nœud(s) à interroger.", len(pubkeys))
+            contacts_rafraichis = []
+            for pubkey_hex in pubkeys:
+                try:
+                    lpp = await meshcore.commands.req_telemetry_sync(
+                        pubkey_hex, timeout=POSITIONS_MISSIONS_REQ_TIMEOUT_SECONDS, min_timeout=5,
+                    )
+                except Exception:
+                    logger.exception("Échec de la requête de télémétrie pour %s.", pubkey_hex)
+                    continue
+                if not lpp:
+                    logger.debug("Pas de réponse de télémétrie pour %s (nœud hors portée ?).", pubkey_hex)
+                    continue
+                position = next((canal for canal in lpp if canal.get("type") == "gps"), None)
+                if not position or not isinstance(position.get("value"), dict):
+                    logger.debug("Télémétrie reçue de %s sans canal GPS.", pubkey_hex)
+                    continue
+                lat = position["value"].get("latitude")
+                lon = position["value"].get("longitude")
+                if lat and lon:
+                    contacts_rafraichis.append({"pubkey_hex": pubkey_hex, "latitude": lat, "longitude": lon})
+
+            if contacts_rafraichis:
+                await django.synchroniser_contacts(compagnon_id, contacts_rafraichis)
+                logger.info("Position rafraîchie pour %d nœud(s) en mission.", len(contacts_rafraichis))
+        except Exception:
+            logger.exception("Échec du cycle de suivi de position en mission.")
+        await asyncio.sleep(POSITIONS_MISSIONS_POLL_INTERVAL_SECONDS)
+
+
 async def executer_une_session(django):
     try:
         meshcore = await connecter_meshcore()
@@ -244,11 +305,13 @@ async def executer_une_session(django):
 
     tache_envoi = asyncio.create_task(boucle_envoi(meshcore, django, COMPAGNON_ID))
     tache_contacts = asyncio.create_task(boucle_contacts(meshcore, django, COMPAGNON_ID))
+    tache_positions = asyncio.create_task(boucle_positions_missions(meshcore, django, COMPAGNON_ID))
     try:
         await deconnecte.wait()
     finally:
         tache_envoi.cancel()
         tache_contacts.cancel()
+        tache_positions.cancel()
         try:
             await django.rapporter_etat(COMPAGNON_ID, "DECONNECTE")
         except Exception:

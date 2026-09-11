@@ -8828,10 +8828,17 @@ class CompagnonMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelView
             pubkey_hex = contact.get('pubkey_hex')
             if not pubkey_hex:
                 continue
-            defaults = {
-                'nom': contact.get('nom', '') or '',
-                'type_contact': contact.get('type_contact') or TypeContactMeshCore.INCONNU,
-            }
+            # N'inclure `nom`/`type_contact` que si réellement fournis : un appel de
+            # rafraîchissement de position seule (voir CompagnonMeshCoreViewSet.
+            # pubkeys_a_suivre, appelé par le pont pendant une mission EN_COURS) n'a que
+            # pubkey_hex/latitude/longitude — les inclure avec un fallback vide/INCONNU
+            # écraserait silencieusement le nom et le type déjà connus de ce contact à
+            # chaque rafraîchissement de position.
+            defaults = {}
+            if 'nom' in contact:
+                defaults['nom'] = contact.get('nom') or ''
+            if 'type_contact' in contact:
+                defaults['type_contact'] = contact.get('type_contact') or TypeContactMeshCore.INCONNU
             lat, lon = contact.get('latitude'), contact.get('longitude')
             if lat and lon:
                 from django.contrib.gis.geos import Point
@@ -8849,6 +8856,28 @@ class CompagnonMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelView
 
         return Response({'synchronises': synchronises})
 
+    @action(detail=True, methods=['get'], url_path='pubkeys-a-suivre')
+    def pubkeys_a_suivre(self, request, pk=None):
+        """Le service-pont appelle ceci périodiquement pour savoir quels contacts DÉJÀ connus
+        de ce companion (voir synchroniser_contacts) méritent une interrogation active de
+        position (req_telemetry/send_statusreq côté pont — plus frais qu'une simple annonce
+        périodique, mais sollicite la radio/batterie du nœud terrain) : uniquement les nœuds
+        d'utilisateurs membres d'une équipe dont la mission courante est EN_COURS. En dehors
+        d'une mission, aucun nœud personnel n'est suivi activement — voir doc de conception
+        « Maillage Terrain »."""
+        compagnon = self.get_object()
+        pubkeys_connus = compagnon.contacts.values_list('pubkey_hex', flat=True)
+        pubkeys_cibles = (
+            NoeudMeshUtilisateur.objects.filter(
+                actif=True,
+                pubkey_hex__in=list(pubkeys_connus),
+                utilisateur__teams__mission_active__statut=Mission.Statut.EN_COURS,
+            )
+            .values_list('pubkey_hex', flat=True)
+            .distinct()
+        )
+        return Response({'pubkeys': sorted(pubkeys_cibles)})
+
 
 class NoeudMeshUtilisateurViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     """Correspondance clé publique MeshCore <-> compte utilisateur — voir docstring du modèle."""
@@ -8857,7 +8886,7 @@ class NoeudMeshUtilisateurViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelV
     serializer_class = NoeudMeshUtilisateurSerializer
 
     def get_permissions(self):
-        if self.action in ('create', 'update', 'partial_update', 'destroy'):
+        if self.action in ('create', 'update', 'partial_update', 'destroy', 'positions_en_mission'):
             return [IsInstitutionalActor()]
         return [permissions.IsAuthenticated()]
 
@@ -8870,6 +8899,54 @@ class NoeudMeshUtilisateurViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelV
             objet_id=noeud.id,
             commentaire=f"Association nœud MeshCore {noeud.pubkey_hex[:12]}… -> {noeud.utilisateur.email}",
         )
+
+    @action(detail=False, methods=['get'], url_path='positions-en-mission')
+    def positions_en_mission(self, request):
+        """Positions actuelles des nœuds personnels d'utilisateurs membres d'une équipe dont
+        la mission courante est EN_COURS — jamais en dehors d'une mission (voir demande
+        produit « Maillage Terrain » : la position d'un bénévole n'est affichée sur la carte
+        que pendant une mission active, pas en continu). La fraîcheur de ces positions est
+        entretenue côté pont par une interrogation active pendant qu'une mission tourne (voir
+        CompagnonMeshCoreViewSet.pubkeys_a_suivre) — ici on ne fait que lire la dernière
+        position connue (ContactMeshCore), quelle que soit sa source (annonce passive ou
+        interrogation active)."""
+        noeuds = (
+            NoeudMeshUtilisateur.objects.filter(
+                actif=True,
+                utilisateur__teams__mission_active__statut=Mission.Statut.EN_COURS,
+            )
+            .select_related('utilisateur')
+            .distinct()
+        )
+
+        resultats = []
+        for noeud in noeuds:
+            contact = (
+                ContactMeshCore.objects.filter(pubkey_hex=noeud.pubkey_hex, location__isnull=False)
+                .order_by('-dernier_advert')
+                .first()
+            )
+            if not contact:
+                continue
+            equipe = noeud.utilisateur.teams.filter(mission_active__statut=Mission.Statut.EN_COURS).first()
+            resultats.append({
+                'noeud_id': str(noeud.id),
+                'utilisateur_id': str(noeud.utilisateur_id),
+                'utilisateur_nom': (
+                    f"{noeud.utilisateur.first_name} {noeud.utilisateur.last_name}".strip()
+                    or noeud.utilisateur.email
+                ),
+                'nom_noeud': noeud.nom_noeud,
+                'pubkey_hex': noeud.pubkey_hex,
+                'latitude': contact.location.y,
+                'longitude': contact.location.x,
+                'dernier_advert': contact.dernier_advert,
+                'equipe_id': str(equipe.id) if equipe else None,
+                'equipe_nom': equipe.name if equipe else None,
+                'mission_id': str(equipe.mission_active_id) if equipe and equipe.mission_active_id else None,
+                'mission_titre': equipe.mission_active.titre if equipe and equipe.mission_active else None,
+            })
+        return Response(resultats)
 
 
 class MessageMeshLogViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):

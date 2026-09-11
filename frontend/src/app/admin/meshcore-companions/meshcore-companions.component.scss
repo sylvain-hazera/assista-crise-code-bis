@@ -60,6 +60,19 @@
   font-size: .88rem;
 
   &:disabled { opacity: .5; cursor: not-allowed; }
+
+  &.sm { padding: .3rem .7rem; font-size: .8rem; }
+}
+
+.manual-fallback {
+  margin-top: 1rem;
+  summary {
+    cursor: pointer;
+    font-size: .85rem;
+    color: var(--muted, #6b7280);
+    font-weight: 600;
+  }
+  &[open] summary { margin-bottom: .75rem; }
 }
 
 .btn-danger-sm {

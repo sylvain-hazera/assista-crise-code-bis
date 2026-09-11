@@ -130,14 +130,48 @@
 
 <h2>Nœuds MeshCore des comptes utilisateurs</h2>
 <p class="page-hint">
-  Associe la clé publique du companion personnel d'une personne de terrain à son compte —
-  c'est ce qui permet de savoir qui a envoyé un message, et donc de quelle équipe il vient.
-  Le répertoire de contacts déjà connu du companion (synchronisé régulièrement par le
-  service-pont) facilite la sélection ci-dessous, plutôt que de retaper la clé à la main.
+  Attribue le companion personnel d'une personne de terrain à son compte — c'est ce qui
+  permet de savoir qui a envoyé un message (et de quelle équipe il vient), et d'afficher sa
+  position sur la carte pendant une mission active. Les nœuds ci-dessous sont déjà détectés
+  automatiquement via le répertoire de contacts du companion (synchronisé régulièrement par
+  le service-pont) : il suffit de choisir l'utilisateur et de cliquer "Attribuer", pas besoin
+  de retaper une clé publique à la main.
 </p>
 
-<div class="create-panel">
-  <h3>Associer un nœud</h3>
+@if (contactsDisponibles.length > 0) {
+  <div class="table-wrapper">
+    <h3>Nœuds détectés, pas encore attribués</h3>
+    <table class="data-table">
+      <thead>
+        <tr><th>Nom annoncé</th><th>Clé publique</th><th>Attribuer à…</th><th></th></tr>
+      </thead>
+      <tbody>
+        @for (c of contactsDisponibles; track c.id) {
+          <tr>
+            <td>{{ c.nom || '—' }}</td>
+            <td class="mono">{{ c.pubkey_hex.slice(0, 16) }}…</td>
+            <td>
+              <select [(ngModel)]="attributionsParContact[c.id]">
+                <option value="">— Utilisateur —</option>
+                @for (u of utilisateurs; track u.id) {
+                  <option [value]="u.id">{{ u.first_name }} {{ u.last_name }} ({{ u.email }})</option>
+                }
+              </select>
+            </td>
+            <td>
+              <button type="button" class="btn-primary sm" [disabled]="!attributionsParContact[c.id] || attribuingContactId === c.id" (click)="attribuerContact(c)">
+                Attribuer
+              </button>
+            </td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+}
+
+<details class="create-panel manual-fallback">
+  <summary>Associer manuellement (nœud jamais détecté par un companion)</summary>
   <div class="form-row">
     <select [(ngModel)]="nouveauNoeudUtilisateurId">
       <option value="">— Utilisateur —</option>
@@ -146,16 +180,6 @@
       }
     </select>
   </div>
-  @if (contactsDisponibles.length > 0) {
-    <div class="form-row">
-      <select [(ngModel)]="contactSelectionneId" (ngModelChange)="choisirContact()">
-        <option value="">— Choisir dans les contacts connus du companion —</option>
-        @for (c of contactsDisponibles; track c.id) {
-          <option [value]="c.id">{{ c.nom || c.pubkey_hex.slice(0, 12) }} ({{ c.pubkey_hex.slice(0, 8) }}…)</option>
-        }
-      </select>
-    </div>
-  }
   <div class="form-row">
     <input type="text" class="form-input" placeholder="Clé publique (hex)" [(ngModel)]="nouveauNoeudPubkey">
     <input type="text" class="form-input" placeholder="Nom du nœud (optionnel)" [(ngModel)]="nouveauNoeudNom">
@@ -163,7 +187,7 @@
   <button type="button" class="btn-primary" [disabled]="!formNoeudValide || creatingNoeud" (click)="ajouterNoeud()">
     Associer
   </button>
-</div>
+</details>
 
 <div class="table-wrapper">
   <table class="data-table">

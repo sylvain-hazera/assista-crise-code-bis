@@ -7,11 +7,14 @@ import { MissionService } from '../../services/mission.service';
 import { TeamService } from '../../services/team.service';
 import { CrisisService } from '../../services/crisis.service';
 import { DossierService } from '../../services/dossier.service';
+import { NoeudMeshUtilisateurService } from '../../services/noeud-mesh-utilisateur.service';
 
 import { Mission } from '../../shared/models/mission.model';
 import { Team } from '../../shared/models/team.model';
 import { Crisis } from '../../shared/models/crisis.model';
 import { Dossier } from '../../shared/models/dossier.model';
+import { PositionNoeudMission } from '../../shared/models/position-noeud-mission.model';
+import { MinimapComponent, MinimapPointInteret } from '../../shared/components/common/minimap/minimap.component';
 
 type ModalView = 'none' | 'create' | 'edit' | 'delete' | 'detail';
 type FilterCrisis = string | 'ALL';
@@ -20,7 +23,7 @@ type FilterStatut = Mission['statut'] | 'ALL';
 @Component({
   selector: 'app-missions',
   standalone: true,
-  imports: [CommonModule, FormsModule, ReactiveFormsModule],
+  imports: [CommonModule, FormsModule, ReactiveFormsModule, MinimapComponent],
   templateUrl: './missions.component.html',
   styleUrls: ['./missions.component.scss'],
 })
@@ -30,6 +33,9 @@ export class MissionsComponent implements OnInit {
   teams: Team[] = [];
   crises: Crisis[] = [];
   dossiers: Dossier[] = [];
+  /** Positions des nœuds MeshCore personnels des équipes en mission EN_COURS — voir
+   * NoeudMeshUtilisateurViewSet.positions_en_mission, jamais renvoyé hors mission active. */
+  positionsMesh: PositionNoeudMission[] = [];
 
   isLoading = true;
   isSaving = false;
@@ -58,6 +64,7 @@ export class MissionsComponent implements OnInit {
     private teamService: TeamService,
     private crisisService: CrisisService,
     private dossierService: DossierService,
+    private noeudMeshService: NoeudMeshUtilisateurService,
   ) {}
 
   ngOnInit(): void {
@@ -95,6 +102,34 @@ export class MissionsComponent implements OnInit {
         this.isLoading = false;
       },
     });
+
+    // Séparé du forkJoin principal : purement additif (carte de suivi terrain), ne doit
+    // jamais faire échouer le chargement des missions si MeshCore n'est pas configuré ou
+    // que l'appelant n'a pas les droits dessus.
+    this.noeudMeshService.positionsEnMission().subscribe({
+      next: (positions) => { this.positionsMesh = positions; },
+      error: () => { this.positionsMesh = []; },
+    });
+  }
+
+  // ── Suivi de position MeshCore (missions EN_COURS uniquement) ───────
+
+  positionsPourMission(missionId: string): PositionNoeudMission[] {
+    return this.positionsMesh.filter(p => p.mission_id === missionId);
+  }
+
+  /** Premier nœud suivi = point principal de la mini-carte, les autres en points
+   * d'intérêt — MinimapComponent ajuste alors le cadrage pour tous les englober (voir
+   * MinimapComponent.fitToPoints). */
+  pointPrincipalPourMission(missionId: string): PositionNoeudMission | null {
+    return this.positionsPourMission(missionId)[0] ?? null;
+  }
+
+  pointsInteretPourMission(missionId: string): MinimapPointInteret[] {
+    return this.positionsPourMission(missionId).slice(1).map(p => ({
+      latitude: p.latitude, longitude: p.longitude,
+      label: p.nom_noeud || p.utilisateur_nom,
+    }));
   }
 
   // ── Filtrage / affichage liste ──────────────────────────────

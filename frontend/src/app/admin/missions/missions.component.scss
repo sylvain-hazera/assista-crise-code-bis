@@ -234,3 +234,14 @@ table {
   th { text-align: left; padding: .5rem; color: var(--muted); font-size: .74rem; text-transform: uppercase; border-bottom: 1px solid var(--border); }
   td { padding: .5rem; border-bottom: 1px solid #f1f5f9; }
 }
+
+// ── Détail : suivi terrain MeshCore ────────────────────────────────────────────
+.mesh-position-list {
+  list-style: none; margin: .6rem 0 0; padding: 0;
+  li {
+    display: flex; align-items: center; gap: .4rem; padding: .35rem 0;
+    font-size: .85rem; border-bottom: 1px solid #f1f5f9;
+    .material-icons { font-size: 18px; color: var(--muted); }
+  }
+}
+.mesh-position-meta { margin-left: auto; font-size: .74rem; color: var(--muted); }

@@ -359,6 +359,31 @@ class TestContactMeshCore:
 
         assert ContactMeshCore.objects.filter(compagnon=compagnon, pubkey_hex='cc33').count() == 1
 
+    def test_synchroniser_contacts_position_only_preserves_nom_et_type(self, api_client, compagnon, create_user):
+        """Régression : un rafraîchissement de position seule (pubkey_hex/latitude/longitude,
+        sans nom ni type_contact — voir la boucle de suivi actif pendant une mission côté
+        pont) ne doit jamais écraser le nom/type déjà connus de ce contact."""
+        from core.models import ContactMeshCore
+        bridge_user = create_user(username='bridge-contacts3@test.fr', email='bridge-contacts3@test.fr', type='UTIL_SIMPLE')
+        api_client.force_authenticate(user=bridge_user)
+
+        api_client.post(
+            reverse('compagnonmeshcore-synchroniser-contacts', args=[compagnon.id]),
+            {'contacts': [{'pubkey_hex': 'gg77', 'nom': 'Alice Terrain', 'type_contact': 'COMPANION'}]},
+            format='json',
+        )
+
+        api_client.post(
+            reverse('compagnonmeshcore-synchroniser-contacts', args=[compagnon.id]),
+            {'contacts': [{'pubkey_hex': 'gg77', 'latitude': 45.75, 'longitude': 4.85}]},
+            format='json',
+        )
+
+        contact = ContactMeshCore.objects.get(compagnon=compagnon, pubkey_hex='gg77')
+        assert contact.nom == 'Alice Terrain'
+        assert contact.type_contact == 'COMPANION'
+        assert contact.location is not None
+
     def test_list_requires_institutional_actor(self, api_client, create_user):
         user = create_user(username='simple-contacts@test.fr', email='simple-contacts@test.fr', type='UTIL_SIMPLE')
         api_client.force_authenticate(user=user)
@@ -379,3 +404,109 @@ class TestContactMeshCore:
         par_pubkey = {c['pubkey_hex']: c['deja_associe'] for c in response.data}
         assert par_pubkey['dd44'] is True
         assert par_pubkey['ee55'] is False
+
+
+@pytest.mark.django_db
+class TestPositionsMissionEnCours:
+    """Suivi de position pendant une mission : uniquement les nœuds d'utilisateurs membres
+    d'une équipe dont la mission courante est EN_COURS, jamais en dehors — voir
+    NoeudMeshUtilisateurViewSet.positions_en_mission et
+    CompagnonMeshCoreViewSet.pubkeys_a_suivre."""
+
+    def _equipe_en_mission(self, utilisateur, statut='EN_COURS'):
+        from core.models import Mission, Team
+        equipe = Team.objects.create(name=f"Equipe {utilisateur.email}", description='', color='#3b82f6')
+        equipe.members.add(utilisateur)
+        mission = Mission.objects.create(titre='Reconnaissance secteur nord', statut=statut)
+        equipe.mission_active = mission
+        equipe.save(update_fields=['mission_active'])
+        return equipe, mission
+
+    def test_pubkeys_a_suivre_only_returns_nodes_on_mission_en_cours(self, api_client, compagnon, create_user):
+        from core.models import ContactMeshCore
+
+        user_en_mission = create_user(username='terrain-mission@test.fr', email='terrain-mission@test.fr', type='UTIL_SIMPLE')
+        self._equipe_en_mission(user_en_mission, statut='EN_COURS')
+        NoeudMeshUtilisateur.objects.create(utilisateur=user_en_mission, pubkey_hex='mission-en-cours')
+        ContactMeshCore.objects.create(compagnon=compagnon, pubkey_hex='mission-en-cours', type_contact='COMPANION')
+
+        user_sans_mission = create_user(username='terrain-repos@test.fr', email='terrain-repos@test.fr', type='UTIL_SIMPLE')
+        NoeudMeshUtilisateur.objects.create(utilisateur=user_sans_mission, pubkey_hex='sans-mission')
+        ContactMeshCore.objects.create(compagnon=compagnon, pubkey_hex='sans-mission', type_contact='COMPANION')
+
+        user_mission_terminee = create_user(username='terrain-fini@test.fr', email='terrain-fini@test.fr', type='UTIL_SIMPLE')
+        self._equipe_en_mission(user_mission_terminee, statut='TERMINEE')
+        NoeudMeshUtilisateur.objects.create(utilisateur=user_mission_terminee, pubkey_hex='mission-finie')
+        ContactMeshCore.objects.create(compagnon=compagnon, pubkey_hex='mission-finie', type_contact='COMPANION')
+
+        bridge_user = create_user(username='bridge-positions@test.fr', email='bridge-positions@test.fr', type='UTIL_SIMPLE')
+        api_client.force_authenticate(user=bridge_user)
+
+        response = api_client.get(reverse('compagnonmeshcore-pubkeys-a-suivre', args=[compagnon.id]))
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['pubkeys'] == ['mission-en-cours']
+
+    def test_pubkeys_a_suivre_ignores_contacts_unknown_to_this_compagnon(self, api_client, institution_a, create_user):
+        """Le pont ne doit interroger que SES propres contacts connus — un nœud rattaché à un
+        autre companion (institution différente) n'a pas de sens à suivre ici."""
+        autre_compagnon = CompagnonMeshCore.objects.create(
+            nom='Autre companion', connexion_type='TCP', tcp_host='127.0.0.1', tcp_port=5001, institution=institution_a,
+        )
+        compagnon_a_interroger = CompagnonMeshCore.objects.create(
+            nom='Companion à interroger', connexion_type='TCP', tcp_host='127.0.0.1', tcp_port=5002, institution=institution_a,
+        )
+        user = create_user(username='terrain-autre-compagnon@test.fr', email='terrain-autre-compagnon@test.fr', type='UTIL_SIMPLE')
+        self._equipe_en_mission(user, statut='EN_COURS')
+        NoeudMeshUtilisateur.objects.create(utilisateur=user, pubkey_hex='vue-par-autre')
+
+        from core.models import ContactMeshCore
+        ContactMeshCore.objects.create(compagnon=autre_compagnon, pubkey_hex='vue-par-autre', type_contact='COMPANION')
+
+        bridge_user = create_user(username='bridge-positions2@test.fr', email='bridge-positions2@test.fr', type='UTIL_SIMPLE')
+        api_client.force_authenticate(user=bridge_user)
+
+        response = api_client.get(reverse('compagnonmeshcore-pubkeys-a-suivre', args=[compagnon_a_interroger.id]))
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['pubkeys'] == []
+
+    def test_positions_en_mission_returns_latest_known_location(self, mairie_client, compagnon, create_user):
+        from core.models import ContactMeshCore
+
+        client, _ = mairie_client
+        user = create_user(username='terrain-position@test.fr', email='terrain-position@test.fr', type='UTIL_SIMPLE')
+        equipe, mission = self._equipe_en_mission(user, statut='EN_COURS')
+        NoeudMeshUtilisateur.objects.create(utilisateur=user, pubkey_hex='position-connue', nom_noeud='Radio Bob')
+        ContactMeshCore.objects.create(
+            compagnon=compagnon, pubkey_hex='position-connue', type_contact='COMPANION',
+            location='POINT (5.72 45.18)',
+        )
+
+        response = client.get(reverse('noeudmeshutilisateur-positions-en-mission'))
+
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data) == 1
+        resultat = response.data[0]
+        assert resultat['pubkey_hex'] == 'position-connue'
+        assert resultat['latitude'] == pytest.approx(45.18)
+        assert resultat['longitude'] == pytest.approx(5.72)
+        assert resultat['equipe_nom'] == equipe.name
+        assert resultat['mission_titre'] == mission.titre
+
+    def test_positions_en_mission_excludes_nodes_without_known_location(self, mairie_client, create_user):
+        user = create_user(username='terrain-sans-position@test.fr', email='terrain-sans-position@test.fr', type='UTIL_SIMPLE')
+        self._equipe_en_mission(user, statut='EN_COURS')
+        NoeudMeshUtilisateur.objects.create(utilisateur=user, pubkey_hex='jamais-vu')
+
+        client, _ = mairie_client
+        response = client.get(reverse('noeudmeshutilisateur-positions-en-mission'))
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data == []
+
+    def test_positions_en_mission_requires_institutional_actor(self, api_client, create_user):
+        user = create_user(username='simple-positions@test.fr', email='simple-positions@test.fr', type='UTIL_SIMPLE')
+        api_client.force_authenticate(user=user)
+        response = api_client.get(reverse('noeudmeshutilisateur-positions-en-mission'))
+        assert response.status_code == status.HTTP_403_FORBIDDEN
