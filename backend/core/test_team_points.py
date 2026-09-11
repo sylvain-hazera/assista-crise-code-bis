@@ -108,3 +108,63 @@ class TestDelierPoint:
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         point.refresh_from_db()
         assert point.equipe_id == other_team.id
+
+
+@pytest.mark.django_db
+class TestAssignerCrise:
+    """Rattache l'équipe à une crise (Team.assigned_crises) — distinct de lier_point, qui ne
+    touche jamais ce champ (voir docstring de l'action) : gap réel trouvé sur une crise démo
+    où des équipes liées à des points restaient invisibles des vues scopées par crise."""
+
+    def test_assigns_crisis_additively(self, mairie_client, team):
+        from core.models import Crisis
+        client, _ = mairie_client
+        crise = Crisis.objects.create(name='Crise test assigner', location='POINT (5.72 45.18)')
+
+        response = client.post(reverse('team-assigner-crise', args=[team.id]), {'crise_id': str(crise.id)}, format='json')
+
+        assert response.status_code == status.HTTP_200_OK
+        assert crise.id in team.assigned_crises.values_list('id', flat=True)
+
+    def test_does_not_wipe_other_assigned_crises(self, mairie_client, team):
+        from core.models import Crisis
+        client, _ = mairie_client
+        crise_1 = Crisis.objects.create(name='Crise test assigner 1', location='POINT (5.72 45.18)')
+        crise_2 = Crisis.objects.create(name='Crise test assigner 2', location='POINT (5.72 45.18)')
+        team.assigned_crises.add(crise_1)
+
+        response = client.post(reverse('team-assigner-crise', args=[team.id]), {'crise_id': str(crise_2.id)}, format='json')
+
+        assert response.status_code == status.HTTP_200_OK
+        ids = set(team.assigned_crises.values_list('id', flat=True))
+        assert ids == {crise_1.id, crise_2.id}
+
+    def test_is_idempotent(self, mairie_client, team):
+        from core.models import Crisis
+        client, _ = mairie_client
+        crise = Crisis.objects.create(name='Crise test assigner idempotent', location='POINT (5.72 45.18)')
+
+        client.post(reverse('team-assigner-crise', args=[team.id]), {'crise_id': str(crise.id)}, format='json')
+        response = client.post(reverse('team-assigner-crise', args=[team.id]), {'crise_id': str(crise.id)}, format='json')
+
+        assert response.status_code == status.HTTP_200_OK
+        assert team.assigned_crises.count() == 1
+
+    def test_rejects_unknown_crisis(self, mairie_client, team):
+        client, _ = mairie_client
+        response = client.post(
+            reverse('team-assigner-crise', args=[team.id]),
+            {'crise_id': '00000000-0000-0000-0000-000000000000'}, format='json',
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_requires_own_institution(self, create_user, other_team):
+        from core.models import Crisis
+        outsider = create_user(username='outsider-assigner@test.fr', email='outsider-assigner@test.fr', type='AUT_LOCALE')
+        client = APIClient()
+        client.force_authenticate(user=outsider)
+        crise = Crisis.objects.create(name='Crise test assigner interdit', location='POINT (5.72 45.18)')
+
+        response = client.post(reverse('team-assigner-crise', args=[other_team.id]), {'crise_id': str(crise.id)}, format='json')
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN

@@ -160,23 +160,25 @@ export class CriseDemarrageComponent implements OnInit {
     }
     this.saving = true;
     let restant = affectations.length;
+    const terminerSiFini = () => {
+      restant--;
+      if (restant === 0) {
+        // Lier le point à l'équipe (ci-dessus) n'ajoute jamais la crise à
+        // Team.assigned_crises — sans cet appel, l'équipe reste invisible dans les vues qui
+        // s'appuient spécifiquement sur ce champ (ressources mobilisées, recrutement scopé,
+        // matching hébergement), même si elle est bien affectée aux points de la crise.
+        const equipesUniques = [...new Set(affectations.map(a => a.equipeId!))];
+        equipesUniques.forEach(equipeId => {
+          this.teamService.assignerCrise(equipeId, this.criseId).subscribe({ error: () => {} });
+        });
+        this.saving = false;
+        this.step = 5;
+      }
+    };
     affectations.forEach(etape => {
       this.pointService.update(etape.point!.id, { equipe: etape.equipeId }).subscribe({
-        next: (updated) => {
-          etape.point = updated;
-          restant--;
-          if (restant === 0) {
-            this.saving = false;
-            this.step = 5;
-          }
-        },
-        error: () => {
-          restant--;
-          if (restant === 0) {
-            this.saving = false;
-            this.step = 5;
-          }
-        },
+        next: (updated) => { etape.point = updated; terminerSiFini(); },
+        error: () => terminerSiFini(),
       });
     });
   }

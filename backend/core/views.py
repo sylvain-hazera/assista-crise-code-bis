@@ -3744,7 +3744,7 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             'lier_point', 'delier_point',
             'rattacher_equipe', 'detacher_equipe',
             'definir_statut_ressource', 'reactiver', 'vue_mairie', 'institutions_liees',
-            'ressources_mobilisees',
+            'ressources_mobilisees', 'assigner_crise',
         ):
             return [IsInstitutionalActor()]
         return [permissions.IsAuthenticated()]
@@ -4509,6 +4509,40 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         )
 
         return Response(PointOperationnelSerializer(point, context=self.get_serializer_context()).data)
+
+    @action(detail=True, methods=['post'], url_path='assigner-crise')
+    def assigner_crise(self, request, pk=None):
+        """Rattache l'équipe à une crise (Team.assigned_crises) — purement additif (`.add()`,
+        jamais un `.set()` qui écraserait les crises déjà assignées), même geste que
+        PlanViewSet.activer. Nécessaire en plus de lier_point : une équipe peut être liée à un
+        point d'une crise (PointOperationnel.equipe) SANS que la crise elle-même apparaisse
+        dans Team.assigned_crises — deux champs distincts, or plusieurs vues s'appuient
+        spécifiquement sur ce second champ (recrutement scopé à la crise, ressources
+        mobilisées, matching hébergement) : un oubli ici les laisse silencieusement vides."""
+        team = self.get_object()
+        if not _appartient_a_equipe(request, team):
+            return Response(
+                {"error": "Vous ne pouvez assigner une crise qu'aux équipes de votre institution (ou de l'institution déléguée)."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        crise_id = request.data.get('crise_id')
+        try:
+            crise = Crisis.objects.get(id=crise_id)
+        except (Crisis.DoesNotExist, ValueError, TypeError):
+            return Response({"error": "Crise introuvable."}, status=status.HTTP_400_BAD_REQUEST)
+
+        team.assigned_crises.add(crise)
+
+        audit_log(
+            request=request,
+            action_code="MODIFICATION",
+            objet_type="Team",
+            objet_id=team.id,
+            commentaire=f"Crise assignée : « {crise.name} »",
+        )
+
+        return Response(TeamSerializer(team, context=self.get_serializer_context()).data)
 
     @action(detail=True, methods=['post'], url_path='delier-point')
     def delier_point(self, request, pk=None):
