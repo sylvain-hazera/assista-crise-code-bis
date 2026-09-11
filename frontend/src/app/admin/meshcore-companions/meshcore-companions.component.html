@@ -118,10 +118,22 @@
   </table>
 </div>
 
+@if (relaisDetectes.length > 0) {
+  <div class="banner-info">
+    <span class="material-icons">wifi_tethering</span>
+    {{ relaisDetectes.length }} répéteur(s) détecté(s) via le répertoire du companion, avec position GPS, pas encore déclaré(s) ici.
+    <button type="button" class="btn-secondary-sm" [disabled]="importingRelais" (click)="importerRelaisDetectes()">
+      Importer
+    </button>
+  </div>
+}
+
 <h2>Nœuds MeshCore des comptes utilisateurs</h2>
 <p class="page-hint">
   Associe la clé publique du companion personnel d'une personne de terrain à son compte —
   c'est ce qui permet de savoir qui a envoyé un message, et donc de quelle équipe il vient.
+  Le répertoire de contacts déjà connu du companion (synchronisé régulièrement par le
+  service-pont) facilite la sélection ci-dessous, plutôt que de retaper la clé à la main.
 </p>
 
 <div class="create-panel">
@@ -134,6 +146,16 @@
       }
     </select>
   </div>
+  @if (contactsDisponibles.length > 0) {
+    <div class="form-row">
+      <select [(ngModel)]="contactSelectionneId" (ngModelChange)="choisirContact()">
+        <option value="">— Choisir dans les contacts connus du companion —</option>
+        @for (c of contactsDisponibles; track c.id) {
+          <option [value]="c.id">{{ c.nom || c.pubkey_hex.slice(0, 12) }} ({{ c.pubkey_hex.slice(0, 8) }}…)</option>
+        }
+      </select>
+    </div>
+  }
   <div class="form-row">
     <input type="text" class="form-input" placeholder="Clé publique (hex)" [(ngModel)]="nouveauNoeudPubkey">
     <input type="text" class="form-input" placeholder="Nom du nœud (optionnel)" [(ngModel)]="nouveauNoeudNom">

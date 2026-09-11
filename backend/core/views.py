@@ -142,7 +142,7 @@ from .models import (
     User, Crisis, TypeCrise, Request, RequestPhoto, Offer, OfferPhoto, OfferMessage, Information, DisponibiliteOffre, DisponibilitePointEquipe, MaterielPoint,
     MaterielCatalogue, ContributionMateriel, StatutMateriel, TypeMateriel, NiveauStock, RegistrePresence, TypePersonneAccueillie, DeclarationSecurite, SituationDeclarant,
     CompagnonMeshCore, NoeudMeshUtilisateur, MessageMeshLog, DirectionMessageMesh, StatutMessageMesh,
-    RelaisMeshCore, CanalMeshCore, MessageCanalMeshCore,
+    RelaisMeshCore, CanalMeshCore, MessageCanalMeshCore, ContactMeshCore, TypeContactMeshCore,
     AffectationPointBenevole, StatutAffectation,
     RecherchePersonne, RecherchePersonneCommentaire, Besoin, Notification, DossierParticipant,
     RecherchePersonneCommentairePhoto, RecherchePersonneLecture, RecherchePersonneLectureHistorique,
@@ -301,6 +301,7 @@ from .serializers import (
     RelaisMeshCoreSerializer,
     CanalMeshCoreSerializer,
     MessageCanalMeshCoreSerializer,
+    ContactMeshCoreSerializer,
     ContributionMaterielSerializer,
     RegistrePresenceSerializer,
     DeclarationSecuriteSerializer,
@@ -8766,6 +8767,44 @@ class CompagnonMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelView
         compagnon.save(update_fields=['dernier_etat', 'derniere_connexion', 'derniere_erreur', 'pubkey_hex'])
         return Response(CompagnonMeshCoreSerializer(compagnon).data)
 
+    @action(detail=True, methods=['post'], url_path='synchroniser-contacts')
+    def synchroniser_contacts(self, request, pk=None):
+        """Le service-pont appelle cette action périodiquement (voir bridge.py) avec le
+        répertoire de contacts déjà tenu par le firmware du companion (EventType.CONTACTS) —
+        upsert par (compagnon, pubkey_hex), jamais de suppression ici : un contact qui
+        n'apparaît plus dans une synchro reste visible (peut-être juste hors de portée
+        temporairement), un nettoyage explicite serait un choix produit à part."""
+        compagnon = self.get_object()
+        contacts = request.data.get('contacts', [])
+        if not isinstance(contacts, list):
+            return Response({'detail': "'contacts' doit être une liste."}, status=status.HTTP_400_BAD_REQUEST)
+
+        synchronises = 0
+        for contact in contacts:
+            pubkey_hex = contact.get('pubkey_hex')
+            if not pubkey_hex:
+                continue
+            defaults = {
+                'nom': contact.get('nom', '') or '',
+                'type_contact': contact.get('type_contact') or TypeContactMeshCore.INCONNU,
+            }
+            lat, lon = contact.get('latitude'), contact.get('longitude')
+            if lat and lon:
+                from django.contrib.gis.geos import Point
+                defaults['location'] = Point(float(lon), float(lat), srid=4326)
+            dernier_advert = contact.get('dernier_advert')
+            if dernier_advert:
+                from datetime import datetime, timezone as dt_timezone
+                defaults['dernier_advert'] = datetime.fromtimestamp(dernier_advert, tz=dt_timezone.utc)
+
+            ContactMeshCore.objects.update_or_create(
+                compagnon=compagnon, pubkey_hex=pubkey_hex,
+                defaults={**defaults, 'environment': get_active_environment(request)},
+            )
+            synchronises += 1
+
+        return Response({'synchronises': synchronises})
+
 
 class NoeudMeshUtilisateurViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     """Correspondance clé publique MeshCore <-> compte utilisateur — voir docstring du modèle."""
@@ -8933,3 +8972,21 @@ class MessageCanalMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelV
         if canal_id:
             qs = qs.filter(canal_id=canal_id)
         return Response(MessageCanalMeshCoreSerializer(qs, many=True).data)
+
+
+class ContactMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ReadOnlyModelViewSet):
+    """Répertoire de contacts déjà connu du firmware d'un companion (voir
+    CompagnonMeshCoreViewSet.synchroniser_contacts) — lecture seule ici, jamais créé/modifié
+    à la main : sert à faciliter les associations (NoeudMeshUtilisateur) et la découverte de
+    répéteurs, pas à être édité côté site."""
+
+    queryset = ContactMeshCore.objects.select_related('compagnon').all()
+    serializer_class = ContactMeshCoreSerializer
+    permission_classes = [IsInstitutionalActor]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        compagnon_id = self.request.query_params.get('compagnon')
+        if compagnon_id:
+            qs = qs.filter(compagnon_id=compagnon_id)
+        return qs

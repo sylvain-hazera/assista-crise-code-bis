@@ -46,6 +46,7 @@ from .models import (
     RelaisMeshCore,
     CanalMeshCore,
     MessageCanalMeshCore,
+    ContactMeshCore,
     ContributionMateriel,
     StatutMateriel,
     RegistrePresence,
@@ -2581,6 +2582,28 @@ class CanalMeshCoreSerializer(serializers.ModelSerializer):
         model = CanalMeshCore
         fields = "__all__"
         extra_kwargs = {'cle_partagee_hex': {'write_only': True}}
+
+
+class ContactMeshCoreSerializer(serializers.ModelSerializer):
+    compagnon_nom = serializers.CharField(source='compagnon.nom', read_only=True)
+    latitude = serializers.SerializerMethodField()
+    longitude = serializers.SerializerMethodField()
+    # Déjà utilisé ailleurs (NoeudMeshUtilisateur) pour indiquer qu'un contact est déjà associé
+    # à un compte — évite un aller-retour supplémentaire côté frontend pour filtrer la liste.
+    deja_associe = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ContactMeshCore
+        fields = "__all__"
+
+    def get_latitude(self, obj):
+        return obj.location.y if obj.location else None
+
+    def get_longitude(self, obj):
+        return obj.location.x if obj.location else None
+
+    def get_deja_associe(self, obj):
+        return NoeudMeshUtilisateur.objects.filter(pubkey_hex=obj.pubkey_hex).exists()
 
 
 class MessageCanalMeshCoreSerializer(serializers.ModelSerializer):

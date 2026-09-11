@@ -5,10 +5,12 @@ import { FormsModule } from '@angular/forms';
 import { CompagnonMeshCoreService } from '../../services/compagnon-meshcore.service';
 import { RelaisMeshCoreService } from '../../services/relais-meshcore.service';
 import { NoeudMeshUtilisateurService } from '../../services/noeud-mesh-utilisateur.service';
+import { ContactMeshCoreService } from '../../services/contact-meshcore.service';
 import { UserService } from '../../services/user.service';
 import { CompagnonMeshCore, MeshCoreConnexionType } from '../../shared/models/compagnon-meshcore.model';
 import { RelaisMeshCore } from '../../shared/models/relais-meshcore.model';
 import { NoeudMeshUtilisateur } from '../../shared/models/noeud-mesh-utilisateur.model';
+import { ContactMeshCore } from '../../shared/models/contact-meshcore.model';
 import { User } from '../../shared/models/user.model';
 
 /** Page de test MeshCore : juste de quoi déclarer un companion (nom + IP/port, ou device série,
@@ -50,10 +52,15 @@ export class MeshcoreCompanionsComponent implements OnInit {
   nouveauNoeudNom = '';
   creatingNoeud = false;
 
+  contacts: ContactMeshCore[] = [];
+  contactSelectionneId = '';
+  importingRelais = false;
+
   constructor(
     private service: CompagnonMeshCoreService,
     private relaisService: RelaisMeshCoreService,
     private noeudService: NoeudMeshUtilisateurService,
+    private contactService: ContactMeshCoreService,
     private userService: UserService,
   ) {}
 
@@ -61,7 +68,56 @@ export class MeshcoreCompanionsComponent implements OnInit {
     this.load();
     this.loadRelais();
     this.loadNoeuds();
+    this.loadContacts();
     this.userService.getAll().subscribe(data => { this.utilisateurs = data; });
+  }
+
+  loadContacts(): void {
+    this.contactService.getAll().subscribe(data => { this.contacts = data; });
+  }
+
+  /** Contacts de type Companion, pas encore associés à un compte — c'est ce qui alimente le
+   * sélecteur de l'étape « Associer un nœud » ci-dessous, à la place d'une saisie manuelle de
+   * clé publique. Répertoire déjà tenu par le firmware, synchronisé par le pont — voir
+   * bridge.py, boucle_contacts. */
+  get contactsDisponibles(): ContactMeshCore[] {
+    return this.contacts.filter(c => c.type_contact === 'COMPANION' && !c.deja_associe);
+  }
+
+  get relaisDetectes(): ContactMeshCore[] {
+    const nomsRelaisExistants = new Set(this.relais.map(r => r.nom));
+    return this.contacts.filter(c => c.type_contact === 'REPEATER' && c.latitude != null && !nomsRelaisExistants.has(c.nom));
+  }
+
+  choisirContact(): void {
+    const contact = this.contacts.find(c => c.id === this.contactSelectionneId);
+    if (!contact) return;
+    this.nouveauNoeudPubkey = contact.pubkey_hex;
+    this.nouveauNoeudNom = contact.nom;
+  }
+
+  importerRelaisDetectes(): void {
+    const aImporter = this.relaisDetectes;
+    if (aImporter.length === 0) return;
+    this.importingRelais = true;
+    let restant = aImporter.length;
+    aImporter.forEach(contact => {
+      this.relaisService.create({
+        nom: contact.nom || `Relais ${contact.pubkey_hex.slice(0, 8)}`,
+        latitude: contact.latitude!, longitude: contact.longitude!,
+        pubkey_hex: contact.pubkey_hex,
+      }).subscribe({
+        next: (created) => {
+          this.relais = [created, ...this.relais];
+          restant--;
+          if (restant === 0) this.importingRelais = false;
+        },
+        error: () => {
+          restant--;
+          if (restant === 0) this.importingRelais = false;
+        },
+      });
+    });
   }
 
   load(): void {
@@ -124,7 +180,9 @@ export class MeshcoreCompanionsComponent implements OnInit {
         this.nouveauNoeudUtilisateurId = '';
         this.nouveauNoeudPubkey = '';
         this.nouveauNoeudNom = '';
+        this.contactSelectionneId = '';
         this.creatingNoeud = false;
+        this.loadContacts();
       },
       error: () => { this.errorMessage = "Impossible d'associer ce nœud (clé publique déjà utilisée ?)."; this.creatingNoeud = false; },
     });

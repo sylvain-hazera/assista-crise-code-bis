@@ -3928,3 +3928,46 @@ class MessageCanalMeshCore(EnvironmentScopedModel):
     def __str__(self):
         return f"[{self.canal.nom}] {self.contenu[:40]}"
 
+
+class TypeContactMeshCore(models.TextChoices):
+    """Miroir de AdvType côté firmware MeshCore (packets.py) — valeurs entières d'origine
+    conservées en commentaire pour retrouver la correspondance."""
+    INCONNU = "INCONNU", "Inconnu"          # 0x00 NONE
+    COMPANION = "COMPANION", "Companion"     # 0x01 CHAT
+    REPEATER = "REPEATER", "Répéteur"        # 0x02 REPEATER
+    ROOM = "ROOM", "Room server"             # 0x03 ROOM
+    SENSOR = "SENSOR", "Capteur"             # 0x04 SENSOR
+
+
+class ContactMeshCore(EnvironmentScopedModel):
+    """Contact tel que connu par UN companion donné (table de contacts déjà tenue par le
+    firmware lui-même — voir EventType.CONTACTS dans la lib meshcore, dispatché en fin de
+    CONTACT_END avec nom/type/position). Synchronisée périodiquement par le service-pont
+    (meshcore-bridge/bridge.py), jamais saisie à la main : c'est le répertoire brut découvert
+    sur le mesh, à distinguer de NoeudMeshUtilisateur (association explicite à un compte) et de
+    RelaisMeshCore (déclaration manuelle) — sert justement à faciliter ces deux associations."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    compagnon = models.ForeignKey(CompagnonMeshCore, on_delete=models.CASCADE, related_name="contacts")
+
+    pubkey_hex = models.CharField(max_length=64)
+
+    nom = models.CharField(max_length=100, blank=True)
+
+    type_contact = models.CharField(max_length=12, choices=TypeContactMeshCore.choices, default=TypeContactMeshCore.INCONNU)
+
+    location = gis_models.PointField(srid=4326, null=True, blank=True)
+
+    dernier_advert = models.DateTimeField(null=True, blank=True)
+
+    date_synchronisation = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["compagnon", "pubkey_hex"], name="uq_contact_meshcore_compagnon_pubkey"),
+        ]
+
+    def __str__(self):
+        return f"{self.nom or self.pubkey_hex[:12]} ({self.type_contact})"
+

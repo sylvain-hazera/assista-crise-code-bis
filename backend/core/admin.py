@@ -23,6 +23,7 @@ from .models import (
     RelaisMeshCore,
     CanalMeshCore,
     MessageCanalMeshCore,
+    ContactMeshCore,
 )
 
 
@@ -111,3 +112,9 @@ class CanalMeshCoreAdmin(admin.ModelAdmin):
 class MessageCanalMeshCoreAdmin(admin.ModelAdmin):
     list_display = ('canal', 'direction', 'statut', 'expediteur', 'date_creation')
     list_filter = ('direction', 'statut', 'canal')
+
+
+@admin.register(ContactMeshCore)
+class ContactMeshCoreAdmin(GISModelAdmin):
+    list_display = ('nom', 'type_contact', 'compagnon', 'pubkey_hex', 'date_synchronisation')
+    list_filter = ('type_contact', 'compagnon')

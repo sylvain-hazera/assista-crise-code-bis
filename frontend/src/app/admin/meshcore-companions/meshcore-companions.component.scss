@@ -108,3 +108,30 @@
 }
 
 .error-message { color: #dc3545; margin-bottom: 1rem; }
+
+.banner-info {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  background: #ecfeff;
+  color: #0e7490;
+  border: 1px solid #a5f3fc;
+  border-radius: 8px;
+  padding: .7rem 1rem;
+  font-size: .85rem;
+  margin-bottom: 1.5rem;
+
+  .material-icons { font-size: 18px; }
+
+  .btn-secondary-sm {
+    margin-left: auto;
+    padding: .3rem .8rem;
+    border-radius: 6px;
+    border: 1px solid #0891b2;
+    background: #fff;
+    color: #0891b2;
+    cursor: pointer;
+    font-size: .8rem;
+    &:disabled { opacity: .5; cursor: not-allowed; }
+  }
+}

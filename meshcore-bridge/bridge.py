@@ -38,6 +38,16 @@ BLE_ADRESSE = os.environ.get("MESHCORE_BLE_ADRESSE")
 
 POLL_INTERVAL_SECONDS = int(os.environ.get("POLL_INTERVAL_SECONDS", "15"))
 RECONNECT_DELAY_SECONDS = int(os.environ.get("RECONNECT_DELAY_SECONDS", "10"))
+CONTACTS_SYNC_INTERVAL_SECONDS = int(os.environ.get("CONTACTS_SYNC_INTERVAL_SECONDS", "300"))
+
+# Miroir de AdvType (meshcore/packets.py) -> TypeContactMeshCore côté Django (voir models.py).
+TYPE_CONTACT_PAR_ADV_TYPE = {
+    0: "INCONNU",
+    1: "COMPANION",
+    2: "REPEATER",
+    3: "ROOM",
+    4: "SENSOR",
+}
 
 
 class DjangoClient:
@@ -73,6 +83,9 @@ class DjangoClient:
             response = await self._client.request(method, f"{self._base_url}{path}", headers=headers, **kwargs)
         response.raise_for_status()
         return response
+
+    async def synchroniser_contacts(self, compagnon_id, contacts):
+        await self._request("POST", f"/compagnons-meshcore/{compagnon_id}/synchroniser-contacts/", json={"contacts": contacts})
 
     async def rapporter_etat(self, compagnon_id, etat, pubkey_hex=None, erreur=None):
         payload = {"etat": etat}
@@ -184,6 +197,36 @@ async def boucle_envoi(meshcore, django, compagnon_id):
         await asyncio.sleep(POLL_INTERVAL_SECONDS)
 
 
+async def boucle_contacts(meshcore, django, compagnon_id):
+    """Le firmware du companion tient déjà son propre répertoire de contacts (nom, type,
+    position pour les répéteurs) — on le relit périodiquement plutôt que de le reconstruire :
+    voir EventType.CONTACTS, dispatché par la lib avec le dict complet en fin de CONTACT_END."""
+    while True:
+        try:
+            resultat = await meshcore.commands.get_contacts()
+            if resultat and resultat.type == EventType.CONTACTS:
+                contacts_bruts = resultat.payload or {}
+                contacts = []
+                for pubkey_hex, c in contacts_bruts.items():
+                    contact = {
+                        "pubkey_hex": pubkey_hex,
+                        "nom": c.get("adv_name", ""),
+                        "type_contact": TYPE_CONTACT_PAR_ADV_TYPE.get(c.get("type"), "INCONNU"),
+                    }
+                    lat, lon = c.get("adv_lat"), c.get("adv_lon")
+                    if lat and lon:  # (0, 0) = pas de position GPS valide côté firmware
+                        contact["latitude"], contact["longitude"] = lat, lon
+                    if c.get("last_advert"):
+                        contact["dernier_advert"] = c["last_advert"]
+                    contacts.append(contact)
+                if contacts:
+                    await django.synchroniser_contacts(compagnon_id, contacts)
+                    logger.info("Contacts synchronisés : %d.", len(contacts))
+        except Exception:
+            logger.exception("Échec de synchronisation des contacts.")
+        await asyncio.sleep(CONTACTS_SYNC_INTERVAL_SECONDS)
+
+
 async def executer_une_session(django):
     try:
         meshcore = await connecter_meshcore()
@@ -200,10 +243,12 @@ async def executer_une_session(django):
     enregistrer_ecouteurs(meshcore, django, COMPAGNON_ID, deconnecte)
 
     tache_envoi = asyncio.create_task(boucle_envoi(meshcore, django, COMPAGNON_ID))
+    tache_contacts = asyncio.create_task(boucle_contacts(meshcore, django, COMPAGNON_ID))
     try:
         await deconnecte.wait()
     finally:
         tache_envoi.cancel()
+        tache_contacts.cancel()
         try:
             await django.rapporter_etat(COMPAGNON_ID, "DECONNECTE")
         except Exception:

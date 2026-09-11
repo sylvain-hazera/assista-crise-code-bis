@@ -323,3 +323,59 @@ class TestCanalMeshCore:
         }, format='json')
         assert message_response.status_code == status.HTTP_201_CREATED
         assert message_response.data['expediteur_nom']
+
+
+@pytest.mark.django_db
+class TestContactMeshCore:
+
+    def test_synchroniser_contacts_upserts(self, api_client, compagnon, create_user):
+        from core.models import ContactMeshCore
+        bridge_user = create_user(username='bridge-contacts@test.fr', email='bridge-contacts@test.fr', type='UTIL_SIMPLE')
+        api_client.force_authenticate(user=bridge_user)
+
+        response = api_client.post(
+            reverse('compagnonmeshcore-synchroniser-contacts', args=[compagnon.id]),
+            {'contacts': [
+                {'pubkey_hex': 'aa11', 'nom': 'Alice Terrain', 'type_contact': 'COMPANION'},
+                {'pubkey_hex': 'bb22', 'nom': 'Relais Clocher', 'type_contact': 'REPEATER', 'latitude': 45.75, 'longitude': 4.85},
+            ]}, format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['synchronises'] == 2
+        assert ContactMeshCore.objects.filter(compagnon=compagnon, pubkey_hex='aa11', nom='Alice Terrain').exists()
+        relais = ContactMeshCore.objects.get(compagnon=compagnon, pubkey_hex='bb22')
+        assert relais.type_contact == 'REPEATER'
+        assert relais.location is not None
+
+    def test_synchroniser_contacts_est_idempotent(self, api_client, compagnon, create_user):
+        from core.models import ContactMeshCore
+        bridge_user = create_user(username='bridge-contacts2@test.fr', email='bridge-contacts2@test.fr', type='UTIL_SIMPLE')
+        api_client.force_authenticate(user=bridge_user)
+
+        payload = {'contacts': [{'pubkey_hex': 'cc33', 'nom': 'Bob', 'type_contact': 'COMPANION'}]}
+        api_client.post(reverse('compagnonmeshcore-synchroniser-contacts', args=[compagnon.id]), payload, format='json')
+        api_client.post(reverse('compagnonmeshcore-synchroniser-contacts', args=[compagnon.id]), payload, format='json')
+
+        assert ContactMeshCore.objects.filter(compagnon=compagnon, pubkey_hex='cc33').count() == 1
+
+    def test_list_requires_institutional_actor(self, api_client, create_user):
+        user = create_user(username='simple-contacts@test.fr', email='simple-contacts@test.fr', type='UTIL_SIMPLE')
+        api_client.force_authenticate(user=user)
+        response = api_client.get(reverse('contactmeshcore-list'))
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_deja_associe_reflects_noeud_utilisateur(self, mairie_client, compagnon, create_user):
+        from core.models import ContactMeshCore, NoeudMeshUtilisateur
+        client, _ = mairie_client
+        terrain_user = create_user(username='terrain-contacts@test.fr', email='terrain-contacts@test.fr', type='UTIL_SIMPLE')
+        NoeudMeshUtilisateur.objects.create(utilisateur=terrain_user, pubkey_hex='dd44')
+        ContactMeshCore.objects.create(compagnon=compagnon, pubkey_hex='dd44', nom='Déjà associé', type_contact='COMPANION')
+        ContactMeshCore.objects.create(compagnon=compagnon, pubkey_hex='ee55', nom='Pas encore', type_contact='COMPANION')
+
+        response = client.get(reverse('contactmeshcore-list'), {'compagnon': str(compagnon.id)})
+
+        assert response.status_code == status.HTTP_200_OK
+        par_pubkey = {c['pubkey_hex']: c['deja_associe'] for c in response.data}
+        assert par_pubkey['dd44'] is True
+        assert par_pubkey['ee55'] is False
