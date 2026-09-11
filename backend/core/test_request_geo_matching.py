@@ -55,19 +55,42 @@ class TestDepartmentCodeFromCommuneCode:
 @pytest.mark.django_db
 class TestTeamZoneSpecificity:
 
-    def test_no_zone_declared_matches_everywhere(self, db):
+    def test_no_zone_declared_and_no_crisis_matches_everywhere(self, db):
+        """Filet de sécurité historique : sans zone d'équipe NI crise exploitable (demande
+        hors contexte, ex: appel direct de la fonction hors création de Request), l'équipe
+        reste disponible plutôt qu'exclue faute de données."""
         team = Team.objects.create(name="Sans zone", description="", color="#3b82f6")
-        demande = type("D", (), {"location": None, "commune_code": "38185"})()
+        demande = type("D", (), {"location": None, "commune_code": "38185", "crisis": None})()
         assert team_zone_specificity(team, demande) == 0
+
+    def test_no_zone_declared_defaults_to_crisis_zone_inside(self, db):
+        from django.contrib.gis.geos import GEOSGeometry
+        crisis = Crisis.objects.create(
+            name="Crise zonée", location=GEOSGeometry("POINT (5.72 45.18)"),
+            zone_secteurs=GEOSGeometry("MULTIPOLYGON(((5.7 45.1, 5.8 45.1, 5.8 45.2, 5.7 45.2, 5.7 45.1)))"),
+        )
+        team = Team.objects.create(name="Sans zone", description="", color="#3b82f6")
+        demande = type("D", (), {"location": GEOSGeometry("POINT (5.72 45.18)"), "commune_code": None, "crisis": crisis})()
+        assert team_zone_specificity(team, demande) == 0
+
+    def test_no_zone_declared_defaults_to_crisis_zone_outside_excludes_team(self, db):
+        from django.contrib.gis.geos import GEOSGeometry
+        crisis = Crisis.objects.create(
+            name="Crise zonée", location=GEOSGeometry("POINT (5.72 45.18)"),
+            zone_secteurs=GEOSGeometry("MULTIPOLYGON(((5.7 45.1, 5.8 45.1, 5.8 45.2, 5.7 45.2, 5.7 45.1)))"),
+        )
+        team = Team.objects.create(name="Sans zone", description="", color="#3b82f6")
+        demande = type("D", (), {"location": GEOSGeometry("POINT (0.0 0.0)"), "commune_code": None, "crisis": crisis})()
+        assert team_zone_specificity(team, demande) is None
 
     def test_department_match(self, db):
         team = Team.objects.create(name="Dept", description="", color="#3b82f6", departements=["38"])
-        demande = type("D", (), {"location": None, "commune_code": "38185"})()
+        demande = type("D", (), {"location": None, "commune_code": "38185", "crisis": None})()
         assert team_zone_specificity(team, demande) == 1
 
     def test_department_mismatch_excludes_team(self, db):
         team = Team.objects.create(name="Dept", description="", color="#3b82f6", departements=["73"])
-        demande = type("D", (), {"location": None, "commune_code": "38185"})()
+        demande = type("D", (), {"location": None, "commune_code": "38185", "crisis": None})()
         assert team_zone_specificity(team, demande) is None
 
     def test_commune_match_outscores_department(self, db):
@@ -75,7 +98,7 @@ class TestTeamZoneSpecificity:
             name="Commune", description="", color="#3b82f6",
             departements=["38"], communes=["38185"],
         )
-        demande = type("D", (), {"location": None, "commune_code": "38185"})()
+        demande = type("D", (), {"location": None, "commune_code": "38185", "crisis": None})()
         assert team_zone_specificity(team, demande) == 2
 
     def test_precise_zone_match(self, db):
@@ -83,7 +106,7 @@ class TestTeamZoneSpecificity:
         polygon = GEOSGeometry("POLYGON((5.7 45.1, 5.8 45.1, 5.8 45.2, 5.7 45.2, 5.7 45.1))")
         team = Team.objects.create(name="Precise", description="", color="#3b82f6", zone_precise=polygon)
         point = GEOSGeometry("POINT (5.72 45.18)")
-        demande = type("D", (), {"location": point, "commune_code": None})()
+        demande = type("D", (), {"location": point, "commune_code": None, "crisis": None})()
         assert team_zone_specificity(team, demande) == 3
 
     def test_precise_zone_outside_excludes_team(self, db):
@@ -91,7 +114,7 @@ class TestTeamZoneSpecificity:
         polygon = GEOSGeometry("POLYGON((5.7 45.1, 5.8 45.1, 5.8 45.2, 5.7 45.2, 5.7 45.1))")
         team = Team.objects.create(name="Precise", description="", color="#3b82f6", zone_precise=polygon)
         point = GEOSGeometry("POINT (0.0 0.0)")
-        demande = type("D", (), {"location": point, "commune_code": None})()
+        demande = type("D", (), {"location": point, "commune_code": None, "crisis": None})()
         assert team_zone_specificity(team, demande) is None
 
 

@@ -2339,11 +2339,21 @@ def department_code_from_commune_code(commune_code):
 def team_zone_specificity(team, demande):
     """Score de spécificité de la couverture géographique d'une équipe pour une demande :
     plus le nombre est élevé, plus la correspondance est précise. `None` si l'équipe a
-    déclaré une zone mais qu'elle ne couvre pas la demande — dans ce cas l'équipe est
-    exclue du matching. Une équipe n'ayant déclaré aucune zone (cas de toutes les équipes
-    existantes avant cette fonctionnalité) est considérée disponible partout, pour ne pas
-    régresser le comportement précédent."""
+    déclaré une zone (ou retombe sur celle de la crise, voir ci-dessous) qui ne couvre pas
+    la demande — dans ce cas l'équipe est exclue du matching.
+
+    Une équipe n'ayant déclaré AUCUNE zone (departements/communes/zone_precise) retombe sur
+    la zone de la crise elle-même : elle ne matche que les demandes situées dans
+    `crise.zone_secteurs`, pas n'importe où en France. Avant ce correctif, l'absence de zone
+    valait "disponible partout" sans distinction — trop large, une équipe non zonée
+    n'intervient en pratique que sur la crise à laquelle elle est rattachée. Si la crise
+    elle-même n'a pas de géométrie exploitable (zone_secteurs vide) ou que la demande n'a
+    pas de coordonnées, on retombe sur l'ancien comportement (disponible) plutôt que
+    d'exclure silencieusement faute de données."""
     if not (team.departements or team.communes or team.zone_precise):
+        crise = demande.crisis
+        if crise and crise.zone_secteurs and demande.location:
+            return 0 if crise.zone_secteurs.contains(demande.location) else None
         return 0
 
     if team.zone_precise and demande.location and team.zone_precise.contains(demande.location):
