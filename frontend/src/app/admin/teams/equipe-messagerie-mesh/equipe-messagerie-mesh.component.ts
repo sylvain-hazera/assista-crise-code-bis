@@ -9,20 +9,7 @@ import { MessageMeshService } from '../../../services/message-mesh.service';
 import { CanalMeshCoreService } from '../../../services/canal-meshcore.service';
 import { NoeudMeshUtilisateur } from '../../../shared/models/noeud-mesh-utilisateur.model';
 import { CompagnonMeshCore } from '../../../shared/models/compagnon-meshcore.model';
-import { MessageMeshLog, MessageCanalMeshCore, StatutMessageMesh } from '../../../shared/models/canal-meshcore.model';
-
-/** Message unifié canal + DM, pour un seul fil chronologique — privilégie les deux sources
- * demandées explicitement (canal d'équipe ET DM des intervenants) plutôt que de forcer une
- * navigation séparée vers la page Canaux MeshCore pour voir le canal. */
-interface MessageAffiche {
-  id: string;
-  source: 'canal' | 'dm';
-  direction: 'ENTRANT' | 'SORTANT';
-  expediteur_nom?: string | null;
-  contenu: string;
-  statut: StatutMessageMesh;
-  date_creation: string;
-}
+import { MessageMeshLog, MessageCanalMeshCore } from '../../../shared/models/canal-meshcore.model';
 
 /** DM privés régulateur <-> équipe, uniquement si au moins un membre de l'équipe a un
  * companion MeshCore personnel associé (voir /admin/meshcore-companions, section « Nœuds »).
@@ -114,23 +101,6 @@ export class EquipeMessagerieMeshComponent implements OnChanges, OnDestroy {
         error: () => { this.chargement = false; },
       });
     }
-  }
-
-  /** Fusionne canal + DM en un seul fil chronologique — demandé explicitement ("privilégier
-   * les messages du canal d'équipe et les DM des intervenants") plutôt que deux listes
-   * séparées ou un renvoi vers la page Canaux MeshCore. */
-  get messagesAffiches(): MessageAffiche[] {
-    const canal: MessageAffiche[] = this.messagesCanal.map(m => ({
-      id: m.id, source: 'canal', direction: m.direction,
-      expediteur_nom: m.direction === 'SORTANT' ? (m.expediteur_nom || 'Moi') : 'Canal équipe',
-      contenu: m.contenu, statut: m.statut, date_creation: m.date_creation,
-    }));
-    const dm: MessageAffiche[] = this.messagesDm.map(m => ({
-      id: m.id, source: 'dm', direction: m.direction,
-      expediteur_nom: m.direction === 'SORTANT' ? (m.expediteur_nom || 'Moi') : (m.expediteur_nom || 'Terrain'),
-      contenu: m.contenu, statut: m.statut, date_creation: m.date_creation,
-    }));
-    return [...canal, ...dm].sort((a, b) => a.date_creation.localeCompare(b.date_creation));
   }
 
   get destinatairePubkey(): string | null {

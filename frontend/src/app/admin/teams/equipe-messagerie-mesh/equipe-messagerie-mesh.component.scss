@@ -24,6 +24,14 @@
   padding: .1rem .5rem;
 }
 
+.sous-titre {
+  display: flex; align-items: center; gap: .35rem;
+  font-size: .8rem; font-weight: 700; color: #4b5563;
+  text-transform: uppercase; letter-spacing: .03em;
+  margin: .9rem 0 .4rem;
+  .material-icons { font-size: 15px; }
+}
+
 .hint { color: #9ca3af; font-size: .85rem; }
 .erreur { color: #dc3545; font-size: .85rem; }
 
@@ -38,7 +46,7 @@
 }
 
 .messages {
-  max-height: 260px;
+  max-height: 160px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;

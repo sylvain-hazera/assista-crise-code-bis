@@ -13,19 +13,35 @@
       <p class="erreur">{{ erreur }}</p>
     }
 
-    <div class="messages">
-      @for (m of messagesAffiches; track m.id) {
-        <div class="message" [class.sortant]="m.direction === 'SORTANT'" [class.canal]="m.source === 'canal'">
-          <div class="message-meta">
-            <span class="material-icons source-icon">{{ m.source === 'canal' ? 'tag' : 'person' }}</span>
-            {{ m.expediteur_nom }} · {{ m.date_creation | date:'short' }}
+    <!-- Deux fils bien séparés (jamais mélangés) : celui qui lit doit savoir immédiatement
+         d'où vient chaque message, canal d'équipe ou message privé — remarque explicite. -->
+    @if (canalId) {
+      <h4 class="sous-titre"><span class="material-icons">tag</span> Canal d'équipe</h4>
+      <div class="messages">
+        @for (m of messagesCanal; track m.id) {
+          <div class="message canal" [class.sortant]="m.direction === 'SORTANT'">
+            <div class="message-meta">{{ m.direction === 'SORTANT' ? (m.expediteur_nom || 'Moi') : 'Canal équipe' }} · {{ m.date_creation | date:'short' }}</div>
+            <div class="message-contenu">{{ m.contenu }}</div>
           </div>
-          <div class="message-contenu">{{ m.contenu }}</div>
-        </div>
-      } @empty {
-        <p class="hint">Aucun message (canal ou privé) pour cette équipe pour l'instant.</p>
-      }
-    </div>
+        } @empty {
+          <p class="hint">Aucun message sur le canal pour l'instant.</p>
+        }
+      </div>
+    }
+
+    @if (equipee) {
+      <h4 class="sous-titre"><span class="material-icons">person</span> Messages privés (DM)</h4>
+      <div class="messages">
+        @for (m of messagesDm; track m.id) {
+          <div class="message" [class.sortant]="m.direction === 'SORTANT'">
+            <div class="message-meta">{{ m.direction === 'SORTANT' ? (m.expediteur_nom || 'Moi') : (m.expediteur_nom || 'Terrain') }} · {{ m.date_creation | date:'short' }}</div>
+            <div class="message-contenu">{{ m.contenu }}</div>
+          </div>
+        } @empty {
+          <p class="hint">Aucun message privé échangé avec cette équipe pour l'instant.</p>
+        }
+      </div>
+    }
 
     @if (equipee) {
       <div class="destinataire-row">
