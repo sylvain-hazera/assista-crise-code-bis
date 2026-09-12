@@ -228,6 +228,14 @@ export class MissionsComponent implements OnInit {
     });
   }
 
+  demarrerMission(mission: Mission, e?: Event): void {
+    e?.stopPropagation();
+    this.missionService.patch(mission.id!, { statut: 'EN_COURS' }).subscribe({
+      next: () => { this.loadAll(); this.showSuccess('Mission passée en cours.'); },
+      error: () => this.showError('Erreur lors du changement de statut.'),
+    });
+  }
+
   cloturerMission(mission: Mission, e?: Event): void {
     e?.stopPropagation();
     this.missionService.patch(mission.id!, { statut: 'TERMINEE', date_cloture: new Date().toISOString() }).subscribe({

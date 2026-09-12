@@ -82,6 +82,11 @@
                 <button class="btn-icon-sm" (click)="openEdit(m, $event)" title="Modifier">
                   <span class="material-icons">edit</span>
                 </button>
+                @if (m.statut === 'EN_PREPARATION') {
+                  <button class="btn-icon-sm" (click)="demarrerMission(m, $event)" title="Démarrer (passer en cours)">
+                    <span class="material-icons">play_circle</span>
+                  </button>
+                }
                 @if (m.statut !== 'TERMINEE') {
                   <button class="btn-icon-sm" (click)="cloturerMission(m, $event)" title="Clôturer">
                     <span class="material-icons">task_alt</span>
