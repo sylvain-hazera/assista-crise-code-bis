@@ -51,10 +51,13 @@ POSITIONS_MISSIONS_POLL_INTERVAL_SECONDS = int(os.environ.get("POSITIONS_MISSION
 # Canaux d'équipe (voir TeamViewSet.provisionner_canal_meshcore) : un canal se configure
 # localement sur l'appareil (set_channel), jamais à distance — ce pont doit donc le faire pour
 # le companion partagé auquel il est connecté. Slots 1..CANAL_IDX_MAX sondés pour trouver un
-# index libre (0 réservé, généralement "Public" par défaut sur le firmware) — non vérifié sur
-# matériel réel, comme le reste de ce fichier (voir avertissement en tête).
+# index libre (0 réservé, "Public Channel" par défaut sur le firmware). Vérifié sur matériel
+# réel (FR33BORD_SH1, 12/09) : le firmware accepte les index 0 à 39 (40 refuse avec
+# ERR_CODE_NOT_FOUND) — soit 39 slots utilisables au-delà du public, chiffrés ou non (un canal
+# "#nom" non chiffré occupe un slot exactement comme un canal privé, seule la dérivation de la
+# clé diffère). 8 était une valeur bridée arbitrairement, jamais la vraie limite matérielle.
 CANAUX_POLL_INTERVAL_SECONDS = int(os.environ.get("CANAUX_POLL_INTERVAL_SECONDS", "60"))
-CANAL_IDX_MAX = int(os.environ.get("CANAL_IDX_MAX", "8"))
+CANAL_IDX_MAX = int(os.environ.get("CANAL_IDX_MAX", "39"))
 POSITIONS_MISSIONS_REQ_TIMEOUT_SECONDS = int(os.environ.get("POSITIONS_MISSIONS_REQ_TIMEOUT_SECONDS", "20"))
 
 # Miroir de AdvType (meshcore/packets.py) -> TypeContactMeshCore côté Django (voir models.py).
@@ -362,12 +365,15 @@ async def boucle_positions_missions(meshcore, django, compagnon_id):
         await asyncio.sleep(POSITIONS_MISSIONS_POLL_INTERVAL_SECONDS)
 
 
-async def _trouver_slot_canal_libre(meshcore):
-    """Sonde les index de canal locaux (1..CANAL_IDX_MAX, 0 réservé — généralement "Public"
-    par défaut sur le firmware) pour trouver le premier non configuré. Non vérifié sur
-    matériel réel : on traite comme libre à la fois une absence de nom ET une erreur
-    protocolaire sur get_channel, faute de savoir laquelle des deux le firmware renvoie
-    réellement pour un slot vide."""
+async def _trouver_canal_existant_ou_libre(meshcore, secret):
+    """Sonde les index de canal locaux (1..CANAL_IDX_MAX, 0 réservé au "Public Channel" par
+    défaut du firmware). Cherche D'ABORD si `secret` est déjà configuré sur un slot — recovery
+    nécessaire après un `rapporter_canal_provisionne` resté sans réponse (ex: backend
+    redémarré au mauvais moment) : `set_channel` avait réussi localement mais Django ne l'a
+    jamais su, donc le canal restait "à provisionner" indéfiniment et se faisait reconfigurer
+    sur un NOUVEAU slot à chaque cycle — constaté en pratique (8 slots identiques gaspillés en
+    une soirée avant que celui-ci ne les épuise tous). Retourne (idx, deja_configure)."""
+    idx_libre = None
     for idx in range(1, CANAL_IDX_MAX + 1):
         try:
             resultat = await meshcore.commands.get_channel(idx)
@@ -375,11 +381,15 @@ async def _trouver_slot_canal_libre(meshcore):
             logger.exception("Échec de lecture du canal local %s.", idx)
             continue
         if resultat is None or resultat.type == EventType.ERROR:
-            return idx
-        nom_existant = (resultat.payload or {}).get("channel_name", "")
-        if not nom_existant:
-            return idx
-    return None
+            if idx_libre is None:
+                idx_libre = idx
+            continue
+        payload = resultat.payload or {}
+        if payload.get("channel_secret") == secret:
+            return idx, True
+        if not payload.get("channel_name") and idx_libre is None:
+            idx_libre = idx
+    return idx_libre, False
 
 
 async def boucle_provisionnement_canaux(meshcore, django, compagnon_id, canaux_idx_map):
@@ -395,22 +405,33 @@ async def boucle_provisionnement_canaux(meshcore, django, compagnon_id, canaux_i
                 if not cle_hex:
                     logger.warning("Canal %s sans clé partagée, provisionnement ignoré.", canal_id)
                     continue
-                idx = await _trouver_slot_canal_libre(meshcore)
+                secret = bytes.fromhex(cle_hex)
+                idx, deja_configure = await _trouver_canal_existant_ou_libre(meshcore, secret)
                 if idx is None:
                     logger.error("Aucun slot de canal local disponible (max %d) pour provisionner « %s ».", CANAL_IDX_MAX, nom)
                     continue
-                try:
-                    secret = bytes.fromhex(cle_hex)
-                    resultat = await meshcore.commands.set_channel(idx, nom, secret)
-                except Exception:
-                    logger.exception("Échec de configuration locale du canal « %s » (slot %s).", nom, idx)
-                    continue
-                if resultat and resultat.type == EventType.ERROR:
-                    logger.error("Échec de configuration locale du canal « %s » (slot %s) : %r", nom, idx, resultat.payload)
-                    continue
+                if not deja_configure:
+                    try:
+                        resultat = await meshcore.commands.set_channel(idx, nom, secret)
+                    except Exception:
+                        logger.exception("Échec de configuration locale du canal « %s » (slot %s).", nom, idx)
+                        continue
+                    if resultat and resultat.type == EventType.ERROR:
+                        logger.error("Échec de configuration locale du canal « %s » (slot %s) : %r", nom, idx, resultat.payload)
+                        continue
                 canaux_idx_map[idx] = canal_id
-                await django.rapporter_canal_provisionne(compagnon_id, canal_id, idx)
-                logger.info("Canal « %s » configuré localement sur le slot %s.", nom, idx)
+                try:
+                    await django.rapporter_canal_provisionne(compagnon_id, canal_id, idx)
+                except Exception:
+                    # Le canal EST déjà configuré localement (slot idx) — le prochain cycle le
+                    # retrouvera via `deja_configure` ci-dessus plutôt que d'en gaspiller un
+                    # nouveau, contrairement à avant ce correctif.
+                    logger.exception("Échec du rapport de provisionnement pour « %s » (slot %s déjà configuré, sera retrouvé au prochain cycle).", nom, idx)
+                    continue
+                logger.info(
+                    "Canal « %s » %s sur le slot %s.", nom,
+                    "déjà configuré, statut resynchronisé" if deja_configure else "configuré localement", idx,
+                )
         except Exception:
             logger.exception("Échec du cycle de provisionnement des canaux.")
         await asyncio.sleep(CANAUX_POLL_INTERVAL_SECONDS)
