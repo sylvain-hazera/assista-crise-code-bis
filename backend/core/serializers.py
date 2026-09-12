@@ -1094,6 +1094,9 @@ class TeamSerializer(serializers.ModelSerializer):
     mission_active_titre = serializers.CharField(source='mission_active.titre', read_only=True, default=None)
     mission_active_crise_id = serializers.CharField(source='mission_active.crise_id', read_only=True, default=None)
     mission_active_crise_nom = serializers.CharField(source='mission_active.crise.name', read_only=True, default=None)
+    # Permet d'afficher/déclencher le bouton "Démarrer" (EN_PREPARATION -> EN_COURS)
+    # directement depuis la fiche équipe, sans devoir passer par la page Missions séparée.
+    mission_active_statut = serializers.CharField(source='mission_active.statut', read_only=True, default=None)
     equipe_parente_nom = serializers.CharField(source='equipe_parente.name', read_only=True, default=None)
     sous_equipes_info = serializers.SerializerMethodField()
     commune_centre = serializers.SerializerMethodField()
@@ -1125,6 +1128,7 @@ class TeamSerializer(serializers.ModelSerializer):
             'mission_active_titre',
             'mission_active_crise_id',
             'mission_active_crise_nom',
+            'mission_active_statut',
             'member_ids',
             'members_info',
             'vehicules_count',
