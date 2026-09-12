@@ -15,7 +15,7 @@ export interface User {
   last_name: string;                    // AbstractUser
   phone_number: string | null;
   postal_code: string | null;
-  photo: string | null;                 // URL relative (ex: /media/photos/xxx.jpg)
+  photo_url: string | null;             // URL de prévisualisation contrôlée (/api/users/{id}/preview/) — jamais un chemin /media/ direct
   type: UserRole;
   institution_nom?: string | null;      // Nom de l'institution active de l'utilisateur (lecture seule)
   institution_id?: string | null;       // UUID de l'institution active de l'utilisateur (lecture seule)

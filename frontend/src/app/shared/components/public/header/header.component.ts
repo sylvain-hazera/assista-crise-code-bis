@@ -3,11 +3,13 @@ import { Router, RouterModule } from '@angular/router';
 import { AuthService } from '../../../../auth/services/auth.service';
 import { User, UserRole } from '../../../models/user.model';
 import { TeamService } from '../../../../services/team.service';
+import { UserAvatarComponent } from '../../common/user-avatar/user-avatar.component';
 
 @Component({
   selector: 'app-header',
   imports: [
-    RouterModule
+    RouterModule,
+    UserAvatarComponent,
   ],
   templateUrl: './header.component.html',
   styleUrl: './header.component.scss',

@@ -34,6 +34,13 @@ export class UserService {
     return this.http.delete<void>(`${this.apiUrl}/users/${id}/`);
   }
 
+  /** GET /api/users/<id>/preview/ — soi-même ou acteur institutionnel (voir photo_url,
+   * jamais un chemin /media/ direct). Même patron que CrisisService.preview : un blob à
+   * transformer en object URL, pas une URL directement utilisable dans un <img src>. */
+  preview(id: string): Observable<Blob> {
+    return this.http.get(`${this.apiUrl}/users/${id}/preview/`, { responseType: 'blob' });
+  }
+
   /** POST /api/users/<id>/reactiver/ — réactive un compte désactivé (voir delete). */
   reactiver(id: string): Observable<User> {
     return this.http.post<User>(`${this.apiUrl}/users/${id}/reactiver/`, {});

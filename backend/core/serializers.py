@@ -164,6 +164,18 @@ class UserSerializer(serializers.ModelSerializer):
     institution_id = serializers.SerializerMethodField()
     needs_institution_setup = serializers.SerializerMethodField()
     ma_zone = serializers.SerializerMethodField()
+    # `photo` reste écrivable mais jamais renvoyée telle quelle (voir extra_kwargs plus bas) —
+    # contrairement à tous les autres modèles à photo du site (Crisis/Request/Offer/
+    # Information/RecherchePersonne), elle n'était pas write_only : n'importe quel compte
+    # institutionnel listant les utilisateurs récupérait une URL /media/ publique et
+    # définitive, jamais réévaluée. `photo_url` passe désormais par une action `preview`
+    # qui vérifie les droits à chaque appel (voir UserViewSet.preview).
+    photo_url = serializers.SerializerMethodField()
+
+    def get_photo_url(self, obj):
+        if not obj.photo:
+            return None
+        return f"/api/users/{obj.id}/preview/"
 
     def _active_contact(self, obj):
         # institution_nom et institution_id faisaient chacun leur propre requête pour le même
@@ -218,7 +230,7 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['id', 'username', 'email', 'first_name', 'last_name', 'type', 'demo_role',
-                  'photo', 'phone_number', 'password', 'postal_code', 'enabled', 'is_active',
+                  'photo', 'photo_url', 'phone_number', 'password', 'postal_code', 'enabled', 'is_active',
                   'institution_name', 'institution_type', 'commune_name', 'commune_code',
                   'institution_nom', 'institution_id', 'needs_institution_setup', 'ma_zone']
         extra_kwargs = {
@@ -226,7 +238,7 @@ class UserSerializer(serializers.ModelSerializer):
             'first_name': {'required': False},
             'last_name': {'required': False},
             'phone_number': {'required': False},
-            'photo': {'required': False},
+            'photo': {'required': False, 'write_only': True},
             'postal_code': {'required': False},
             'enabled': {'required': False},
             'demo_role': {'required': False},

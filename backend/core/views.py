@@ -1005,7 +1005,20 @@ class UserViewSet(viewsets.ModelViewSet):
             return [IsSelfOrInstitutional()]
         if self.action in ('reactiver', 'actualiser_risques'):
             return [IsInstitutionalActor()]
+        if self.action == 'preview':
+            return [permissions.IsAuthenticated()]
         return [permissions.IsAuthenticated()]
+
+    @action(detail=True, methods=["get"])
+    def preview(self, request, pk=None):
+        """Photo de profil, jamais servie en clair (voir UserSerializer.photo_url) : soi-même,
+        ou un acteur institutionnel — jamais un compte tiers quelconque."""
+        user = self.get_object()
+        if not user.photo:
+            return Response(status=404)
+        if not (request.user.id == user.id or get_effective_role(request) in INSTITUTIONAL_TYPES):
+            return Response(status=403)
+        return FileResponse(open(user.photo.path, "rb"))
 
     @action(detail=False, methods=["post"], url_path="actualiser-risques")
     def actualiser_risques(self, request):
@@ -1996,6 +2009,11 @@ class CrisisViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         Request.objects.filter(crisis=crise, actif=False).delete()
         Information.objects.filter(crisis=crise, actif=False).delete()
 
+        _notifier_institutions_impliquees_crise(
+            request, crise, f"Crise clôturée : {crise.name}",
+            f"La crise « {crise.name} » a été clôturée par {user.email}.",
+        )
+
         return Response({"status": "ok", "end_date": crise.end_date})
 
     @action(detail=True, methods=["post"], permission_classes=[IsAdministrator])
@@ -2018,6 +2036,10 @@ class CrisisViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             ancien_etat="CLOTUREE",
             nouvel_etat="OUVERTE",
             commentaire=f"Crise {crise.name} réouverte par {request.user.email}",
+        )
+        _notifier_institutions_impliquees_crise(
+            request, crise, f"Crise réouverte : {crise.name}",
+            f"La crise « {crise.name} » a été réouverte par {request.user.email}.",
         )
 
         return Response({"status": "ok"})
@@ -3198,6 +3220,35 @@ class RequestPhotoViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         return FileResponse(open(photo.image.path, "rb"))
 
 
+def _notifier_membres_equipe(request, team, titre, message, exclure_acteur=True):
+    """Angle mort relevé en audit : definir-mission/definir-delegation/retirer-delegation/
+    lier-point/delier-point/assigner-crise ne notifiaient jamais personne (contrairement à
+    assigner_ressource/provisionner_canal_meshcore sur le même ViewSet). Notifie chaque
+    membre de l'équipe, sauf l'auteur de l'action lui-même."""
+    membres = team.members.all()
+    if exclure_acteur:
+        membres = membres.exclude(id=request.user.id)
+    for membre in membres:
+        Notification.objects.create(
+            utilisateur=membre, titre=titre, message=message,
+            environment=get_active_environment(request),
+        )
+
+
+def _notifier_contacts_institution(request, institution, titre, message):
+    """Notifie chaque contact actif d'une institution (ex: institution délégataire) —
+    variante de _notifier_membres_equipe pour les notifications qui concernent une
+    institution entière plutôt que les seuls membres d'une équipe."""
+    contacts = ContactInstitution.objects.filter(institution=institution, actif=True)
+    for contact in contacts:
+        if contact.utilisateur_id == request.user.id:
+            continue
+        Notification.objects.create(
+            utilisateur=contact.utilisateur, titre=titre, message=message,
+            environment=get_active_environment(request),
+        )
+
+
 def _notify_institution_referent_of_team(team, institution, request):
     """Prévient le référent de l'institution qu'une équipe vient d'être créée sous son
     rattachement — le référent est le contact principal (ContactInstitution.contact_principal)
@@ -3327,6 +3378,24 @@ def _appartient_a_equipe(request, team) -> bool:
         return True
     return bool(team.institution_delegataire_id) and _appartient_a_institution(
         request, team.institution_delegataire
+    )
+
+
+def _assurer_implication_impliquee(request, institution_id, crise):
+    """Garantit qu'une institution assignée à une crise (équipe rattachée via
+    assigner_crise/definir_mission) y a au moins un statut officiel — IMPLIQUE, toujours
+    auto-validée (voir ImplicationInstitutionViewSet.perform_create), jamais un mandat ACTEUR.
+    N'écrase jamais une implication existante (IMPLIQUE ou ACTEUR), ne fait qu'en garantir
+    une au minimum. Doublon structurel relevé en audit : sans ça, une équipe pouvait
+    apparaître opérationnelle sur une crise sans que son institution y ait le moindre statut."""
+    if not institution_id:
+        return
+    if ImplicationInstitution.objects.filter(crise=crise, institution_id=institution_id).exists():
+        return
+    ImplicationInstitution.objects.create(
+        crise=crise, institution_id=institution_id, type_implication=TypeImplication.IMPLIQUE,
+        statut=StatutImplication.VALIDEE, utilisateur=request.user, actif=True,
+        environment=get_active_environment(request),
     )
 
 
@@ -4200,6 +4269,13 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         # stats qui filtrent dessus (voir doc de conception, doublon relevé explicitement).
         if crise:
             team.assigned_crises.add(crise)
+            _assurer_implication_impliquee(request, team.institution_id, crise)
+
+        _notifier_membres_equipe(
+            request, team, "Nouvelle mission",
+            f"Votre équipe a une nouvelle mission : « {mission.titre} »"
+            + (f" (crise : {crise.name})" if crise else "") + ".",
+        )
 
         audit_log(
             request=request,
@@ -4256,6 +4332,14 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             objet_id=team.id,
             commentaire=f"Équipe déléguée à {institution.nom}",
         )
+        _notifier_contacts_institution(
+            request, institution, "Délégation d'équipe",
+            f"Votre institution a été désignée pour gérer l'équipe « {team.name} ».",
+        )
+        _notifier_membres_equipe(
+            request, team, "Équipe déléguée",
+            f"Votre équipe est désormais gérée par {institution.nom}.",
+        )
 
         return Response(TeamSerializer(team, context=self.get_serializer_context()).data)
 
@@ -4284,6 +4368,14 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             objet_type="Team",
             objet_id=team.id,
             commentaire=f"Délégation à {ancienne.nom} retirée",
+        )
+        _notifier_contacts_institution(
+            request, ancienne, "Fin de délégation d'équipe",
+            f"Votre institution n'est plus en charge de l'équipe « {team.name} ».",
+        )
+        _notifier_membres_equipe(
+            request, team, "Fin de délégation",
+            f"{ancienne.nom} ne gère plus votre équipe.",
         )
 
         return Response(TeamSerializer(team, context=self.get_serializer_context()).data)
@@ -4439,6 +4531,25 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             commentaire=f"Ressource « {offer.title} » — statut : {engagement.get_statut_display()}",
         )
 
+        # Angle mort relevé en audit : contrairement à assigner_ressource (email systématique
+        # via send_engagement_confirmation_email), un changement de statut manuel ultérieur ne
+        # notifiait jamais la personne/l'entreprise ayant proposé la ressource.
+        destinataire_email = offer.author.email if offer.author_id else offer.email_offer
+        titre = f"Ressource « {offer.title} » : statut mis à jour"
+        message = f"Le statut de votre ressource « {offer.title} » est désormais : {engagement.get_statut_display()}."
+        if offer.author_id:
+            Notification.objects.create(
+                utilisateur=offer.author, titre=titre, message=message, environment=engagement.environment,
+            )
+        if destinataire_email:
+            try:
+                send_mail_env_aware(
+                    request, subject=titre, message=message, from_email=None,
+                    recipient_list=[destinataire_email], fail_silently=True,
+                )
+            except Exception as e:
+                print(f"Erreur envoi email statut ressource : {e}")
+
         return Response(TeamSerializer(team, context=self.get_serializer_context()).data)
 
     @action(detail=True, methods=['post'], url_path='creer-dossier')
@@ -4529,6 +4640,9 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
 
         point.equipe = team
         point.save(update_fields=['equipe'])
+        if point.crise_id:
+            team.assigned_crises.add(point.crise)
+            _assurer_implication_impliquee(request, team.institution_id, point.crise)
 
         audit_log(
             request=request,
@@ -4536,6 +4650,10 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             objet_type="Team",
             objet_id=team.id,
             commentaire=f"Point lié : « {point.nom} » ({point.type.libelle})",
+        )
+        _notifier_membres_equipe(
+            request, team, "Point rattaché à votre équipe",
+            f"Le point « {point.nom} » ({point.type.libelle}) est désormais rattaché à votre équipe.",
         )
 
         return Response(PointOperationnelSerializer(point, context=self.get_serializer_context()).data)
@@ -4563,6 +4681,11 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             return Response({"error": "Crise introuvable."}, status=status.HTTP_400_BAD_REQUEST)
 
         team.assigned_crises.add(crise)
+        _assurer_implication_impliquee(request, team.institution_id, crise)
+        _notifier_membres_equipe(
+            request, team, "Équipe rattachée à une crise",
+            f"Votre équipe est désormais rattachée à la crise « {crise.name} ».",
+        )
 
         audit_log(
             request=request,
@@ -4602,6 +4725,10 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             objet_type="Team",
             objet_id=team.id,
             commentaire=f"Point délié : « {point.nom} »",
+        )
+        _notifier_membres_equipe(
+            request, team, "Point détaché de votre équipe",
+            f"Le point « {point.nom} » n'est plus rattaché à votre équipe.",
         )
 
         return Response(status=status.HTTP_204_NO_CONTENT)
@@ -6501,6 +6628,23 @@ class NotificationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             utilisateur=self.request.user, environment=get_active_environment(self.request)
         ).order_by('-date_creation')
 
+def _notifier_lecteurs_et_createur_recherche(request, recherche, titre, message):
+    """Notifie le créateur de la fiche et toute personne l'ayant consultée
+    (RecherchePersonneLecture), sauf l'auteur de l'action — utilisé par retrouver/archiver
+    (angles morts relevés en audit : jusqu'ici, seul l'historique interne était mis à jour)."""
+    destinataires_ids = set(
+        RecherchePersonneLecture.objects.filter(recherche=recherche)
+        .values_list('utilisateur_id', flat=True)
+    )
+    if recherche.createur_id:
+        destinataires_ids.add(recherche.createur_id)
+    destinataires_ids.discard(request.user.id)
+    for user_id in destinataires_ids:
+        Notification.objects.create(
+            utilisateur_id=user_id, titre=titre, message=message, environment=recherche.environment,
+        )
+
+
 class RecherchePersonneViewSet(
     EnvironmentScopedViewSetMixin, viewsets.ModelViewSet
 ):
@@ -6584,6 +6728,10 @@ class RecherchePersonneViewSet(
             objet_id=recherche.id,
             commentaire="Consultation recherche personne"
         )
+        _notifier_lecteurs_et_createur_recherche(
+            request, recherche, f"Recherche archivée : {recherche.prenom} {recherche.nom}",
+            f"La fiche de recherche concernant {recherche.prenom} {recherche.nom} a été archivée.",
+        )
         return Response({"status": "ok"})
 
     @action(
@@ -6634,21 +6782,10 @@ class RecherchePersonneViewSet(
         # Angle mort relevé en audit : jusqu'ici, ni le créateur de la fiche ni les
         # intervenants qui l'ont consultée n'apprenaient le dénouement autrement qu'en
         # rouvrant l'écran — sur le module le plus sensible humainement du site.
-        destinataires_ids = set(
-            RecherchePersonneLecture.objects.filter(recherche=recherche)
-            .values_list('utilisateur_id', flat=True)
+        _notifier_lecteurs_et_createur_recherche(
+            request, recherche, f"{recherche.prenom} {recherche.nom} a été retrouvé(e)",
+            f"La recherche concernant {recherche.prenom} {recherche.nom} est close : la personne a été retrouvée.",
         )
-        if recherche.createur_id:
-            destinataires_ids.add(recherche.createur_id)
-        destinataires_ids.discard(request.user.id)
-        titre = f"{recherche.prenom} {recherche.nom} a été retrouvé(e)"
-        for user_id in destinataires_ids:
-            Notification.objects.create(
-                utilisateur_id=user_id,
-                titre=titre,
-                message=f"La recherche concernant {recherche.prenom} {recherche.nom} est close : la personne a été retrouvée.",
-                environment=recherche.environment,
-            )
 
         return Response(
             {"status": "ok"}
@@ -6882,7 +7019,12 @@ class RecherchePersonnePhotoViewSet(
 
         photo = self.get_object()
 
-        if not request.user.is_authenticated:
+        # Avant ce correctif : "authentifié" seul (déjà garanti par permission_classes,
+        # donc sans filtrage réel) — n'importe quel compte de la plateforme pouvait
+        # consulter les photos de galerie de n'importe quelle personne recherchée. Même
+        # règle que la photo principale (RecherchePersonneViewSet.preview) : créateur ou
+        # acteur institutionnel.
+        if not user_can_view_photo(request, photo.recherche, author_field='createur'):
             return Response(status=403)
 
         return FileResponse(
@@ -6919,7 +7061,8 @@ class RecherchePersonneCommentairePhotoViewSet(
 
         photo = self.get_object()
 
-        if not request.user.is_authenticated:
+        # Même correctif que RecherchePersonnePhotoViewSet.preview ci-dessus.
+        if not user_can_view_photo(request, photo.commentaire.recherche, author_field='createur'):
             return Response(status=403)
 
         return FileResponse(
@@ -7635,6 +7778,12 @@ class PointOperationnelViewSet(
                 point, nouvelle_equipe_nom, self._resolve_institution_for_new_team(), self.request
             )
 
+        # Même correctif qu'en création (voir perform_create) : couvre aussi le cas d'une
+        # crise ou d'une équipe ajoutée/changée après coup sur un point déjà existant.
+        if point.crise_id and point.equipe_id:
+            point.equipe.assigned_crises.add(point.crise)
+            _assurer_implication_impliquee(self.request, point.equipe.institution_id, point.crise)
+
     def _resolve_institution_for_new_team(self):
         """Institution à rattacher à une équipe créée à la volée (voir perform_create/
         perform_update) : celle explicitement choisie dans le payload si l'appelant y a accès,
@@ -7680,7 +7829,7 @@ class PointOperationnelViewSet(
         # AVANT la création du point, pas après : le mandat doit précéder l'action, pas la
         # suivre. Une institution publique, ou déjà mandatée (implication ACTEUR VALIDEE
         # existante), n'est pas concernée.
-        if crise and institution and not getattr(institution.type, "est_public", False):
+        if crise and institution and not _institution_est_publique(institution):
             deja_mandatee = ImplicationInstitution.objects.filter(
                 crise=crise, institution=institution, type_implication=TypeImplication.ACTEUR,
                 statut=StatutImplication.VALIDEE, actif=True,
@@ -7710,7 +7859,7 @@ class PointOperationnelViewSet(
                 type_implication=TypeImplication.ACTEUR,
                 defaults={
                     "utilisateur": self.request.user, "actif": True, "environment": point.environment,
-                    "statut": StatutImplication.VALIDEE if getattr(institution.type, "est_public", False) else StatutImplication.EN_ATTENTE,
+                    "statut": StatutImplication.VALIDEE if _institution_est_publique(institution) else StatutImplication.EN_ATTENTE,
                 },
             )
             if created:
@@ -7734,6 +7883,14 @@ class PointOperationnelViewSet(
         # équipe malgré tout.
         if nouvelle_equipe_nom and not point.equipe_id:
             _creer_equipe_pour_point(point, nouvelle_equipe_nom, institution, self.request)
+
+        # Doublon structurel relevé en audit : PointOperationnel.crise n'était jamais recoupé
+        # avec equipe.assigned_crises — un point pouvait être lié à une crise à laquelle son
+        # équipe titulaire n'était jamais formellement assignée. Couvre les deux cas : équipe
+        # créée à la volée juste au-dessus, ou équipe existante choisie directement au payload.
+        if point.crise_id and point.equipe_id:
+            point.equipe.assigned_crises.add(point.crise)
+            _assurer_implication_impliquee(self.request, point.equipe.institution_id, point.crise)
 
     HEURES_PAR_CRENEAU = 6  # MATIN/MIDI/SOIR/NUIT ≈ 4 créneaux de 6h sur 24h — approximation
     # affichée telle quelle (voir décision : affichage seul, pas de blocage automatique).
@@ -8477,6 +8634,11 @@ class DeclarationSecuriteViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
                 + (f" — centre {centre.nom}" if centre else " — auto-déclaration")
             ),
         )
+        _notifier_institutions_impliquees_crise(
+            self.request, declaration.crise, "Nouvelle déclaration de sécurité",
+            f"{declaration.prenom_referent} {declaration.nom_referent} s'est déclaré(e) en sécurité"
+            + (f" au centre {centre.nom}" if centre else "") + ".",
+        )
 
     def perform_update(self, serializer):
         """Permet à l'auteur de faire évoluer sa propre situation (arrivée/départ d'un centre
@@ -8518,6 +8680,10 @@ class DeclarationSecuriteViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
                 f" — {declaration.get_situation_display()}"
             ),
         )
+        _notifier_institutions_impliquees_crise(
+            self.request, declaration.crise, "Déclaration de sécurité mise à jour",
+            f"{declaration.prenom_referent} {declaration.nom_referent} : {declaration.get_situation_display()}.",
+        )
 
     @action(detail=False, methods=["get"], permission_classes=[IsInstitutionalActor])
     def vue_mairie(self, request):
@@ -8558,6 +8724,34 @@ def _institution_est_autorite_locale(institution) -> bool:
     ImplicationInstitutionViewSet.perform_create/valider/refuser)."""
     type_code = (getattr(institution.type, 'code', '') or '').upper()
     return type_code in {"MAIRIE", "EPCI"}
+
+
+def _institution_est_publique(institution) -> bool:
+    """Une institution est publique — pas de mandat requis pour agir sur une crise — si son
+    type est explicitement marqué `est_public` (voir InstitutionType.est_public, seedé pour
+    les codes connus par la migration 0141) OU s'il s'agit d'une mairie/EPCI au sens de
+    `_institution_est_autorite_locale` (code non seedé, ex: créé dynamiquement depuis
+    l'annuaire officiel sous une casse/orthographe différente, ou institution de test) — les
+    deux critères se complètent, aucun des deux seuls ne couvre tous les cas réels."""
+    return bool(getattr(institution.type, "est_public", False)) or _institution_est_autorite_locale(institution)
+
+
+def _notifier_institutions_impliquees_crise(request, crise, titre, message):
+    """Angle mort relevé en audit : clôture/réouverture d'une crise ne notifiait personne
+    (seul un audit_log était écrit) — les équipes/institutions impliquées l'apprenaient en
+    rouvrant l'écran. Notifie chaque contact actif de chaque institution ayant une
+    implication (IMPLIQUE ou ACTEUR, tout statut confondu) sur cette crise."""
+    institution_ids = ImplicationInstitution.objects.filter(
+        crise=crise, actif=True,
+    ).values_list('institution_id', flat=True).distinct()
+    contacts = ContactInstitution.objects.filter(institution_id__in=institution_ids, actif=True)
+    for contact in contacts:
+        if contact.utilisateur_id == request.user.id:
+            continue
+        Notification.objects.create(
+            utilisateur=contact.utilisateur, titre=titre, message=message,
+            environment=crise.environment, crise=crise,
+        )
 
 
 def _regulateurs_aut_locale_de_la_crise(crise):
@@ -8675,7 +8869,7 @@ class ImplicationInstitutionViewSet(
         # institution publique restent auto-validés (statut VALIDEE, valeur par défaut du modèle).
         statut = StatutImplication.VALIDEE
         type_implication = serializer.validated_data.get("type_implication")
-        if type_implication == TypeImplication.ACTEUR and not getattr(institution.type, "est_public", False):
+        if type_implication == TypeImplication.ACTEUR and not _institution_est_publique(institution):
             statut = StatutImplication.EN_ATTENTE
 
         implication = serializer.save(

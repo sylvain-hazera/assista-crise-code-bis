@@ -121,10 +121,10 @@
             <td class="user-cell">
               <div class="user-info">
                 <div class="user-avatar">
-                  <img *ngIf="user.photo" [src]="user.photo" alt="Avatar">
-                  <span *ngIf="!user.photo" class="avatar-placeholder">
-                    {{ user.first_name?.charAt(0) }}{{ user.last_name?.charAt(0) }}
-                  </span>
+                  <app-user-avatar
+                    [photoUrl]="user.photo_url"
+                    [initiales]="(user.first_name?.charAt(0) || '') + (user.last_name?.charAt(0) || '')">
+                  </app-user-avatar>
                 </div>
                 <div class="user-details">
                   <strong>{{ user.first_name }} {{ user.last_name }}</strong>

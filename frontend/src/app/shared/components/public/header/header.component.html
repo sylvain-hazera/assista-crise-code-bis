@@ -77,13 +77,10 @@
             <span class="material-icons">account_circle</span>
           } @else {
             <span class="user-avatar">
-              @if(currentUser?.photo) {
-                <img [src]="currentUser!.photo" alt="Avatar">
-              } @else {
-                <span class="avatar-placeholder">
-                  {{ currentUser?.first_name?.charAt(0) || ''}}{{ currentUser?.last_name?.charAt(0) || ''}}
-                </span>
-              }
+              <app-user-avatar
+                [photoUrl]="currentUser?.photo_url"
+                [initiales]="(currentUser?.first_name?.charAt(0) || '') + (currentUser?.last_name?.charAt(0) || '')">
+              </app-user-avatar>
             </span>
             <span class="user-button-label">Mon compte</span>
             <span class="material-icons dropdown-caret">expand_more</span>

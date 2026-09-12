@@ -18,6 +18,7 @@ import re
 
 from django.conf import settings
 from django.contrib import admin
+from django.http import HttpResponseForbidden
 from django.urls import path, re_path, include
 from django.views.static import serve as serve_static
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
@@ -33,16 +34,33 @@ urlpatterns = [
     path('api/docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
 ]
 
+# Préfixes sous MEDIA_ROOT qui ne doivent JAMAIS être servis en direct — chacun n'est
+# accessible qu'via une action /api/.../preview|download/ qui vérifie les droits à chaque
+# appel (user_can_view_photo / check_document_access). Miroir exact des `location
+# /media/photos|documents|recherches/ { return 403; }` de proxy/nginx.conf : nginx est déjà
+# censé bloquer ces chemins en prod, cette route Django fait la même chose en défense en
+# profondeur (dev sans nginx devant, ou nginx un jour mal reconfiguré — déjà arrivé sur ce
+# projet). Aujourd'hui, TOUT champ à fichier du site tombe sous l'un de ces trois préfixes
+# (voir secure_*_path dans core/models.py) : rien n'est plus jamais requis en accès direct.
+PREFIXES_MEDIA_PROTEGES = ('photos/', 'documents/', 'recherches/')
+
+
+def serve_media(request, path, document_root=None):
+    if path.startswith(PREFIXES_MEDIA_PROTEGES):
+        return HttpResponseForbidden()
+    return serve_static(request, path, document_root=document_root)
+
+
 # Route média montée inconditionnellement : nginx proxifie /media/ vers le backend
 # plutôt que de servir les fichiers lui-même, donc cette route doit fonctionner même
 # hors DEBUG. Le helper `django.conf.urls.static.static()` ne convient pas ici : il a
 # sa propre garde interne sur `settings.DEBUG` et ne génère aucune route quand DEBUG
 # est faux, quoi qu'on fasse autour de son appel — on enregistre donc directement la
-# vue `django.views.static.serve` sous-jacente.
+# vue `serve_media` ci-dessus (elle-même basée sur `django.views.static.serve`).
 urlpatterns += [
     re_path(
         r'^%s(?P<path>.*)$' % re.escape(settings.MEDIA_URL.lstrip('/')),
-        serve_static,
+        serve_media,
         {'document_root': settings.MEDIA_ROOT},
     ),
 ]

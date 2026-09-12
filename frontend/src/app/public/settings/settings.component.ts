@@ -10,6 +10,7 @@ import { CrisisService } from '../../services/crisis.service';
 import { InformationService } from '../../services/information.service';
 import { DeclarationSecuriteService } from '../../services/declaration-securite.service';
 import { DossierService } from '../../services/dossier.service';
+import { UserService } from '../../services/user.service';
 import { Request } from '../../shared/models/request.model';
 import { Offer } from '../../shared/models/offer.model';
 import { Crisis } from '../../shared/models/crisis.model';
@@ -83,13 +84,22 @@ export class SettingsComponent implements OnInit {
     private informationService: InformationService,
     private declarationService: DeclarationSecuriteService,
     private dossierService: DossierService,
+    private userService: UserService,
     private router: Router,
     private route: ActivatedRoute,
   ) {}
 
   ngOnInit(): void {
     this.currentUser = this.authService.getCurrentUser();
-    this.previewUrl = this.currentUser?.photo ?? null;
+    // currentUser.photo n'est plus renvoyée en clair (write_only, voir photo_url) : on
+    // récupère l'aperçu de la photo existante en blob.
+    this.previewUrl = null;
+    if (this.currentUser?.photo_url) {
+      this.userService.preview(this.currentUser.id).subscribe({
+        next: (blob) => this.previewUrl = URL.createObjectURL(blob),
+        error: () => {},
+      });
+    }
     this.initForms();
     this.loadAll();
 

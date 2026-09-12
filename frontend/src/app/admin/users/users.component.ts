@@ -6,11 +6,12 @@ import { Subject, takeUntil, debounceTime, distinctUntilChanged } from 'rxjs';
 import { UserService } from '../../services/user.service';
 import { User, UserRole } from '../../shared/models/user.model';
 import { AuthService } from '../../auth/services/auth.service';
+import { UserAvatarComponent } from '../../shared/components/common/user-avatar/user-avatar.component';
 
 @Component({
   selector: 'app-users',
   standalone: true,
-  imports: [CommonModule, FormsModule, ReactiveFormsModule, RouterLink],
+  imports: [CommonModule, FormsModule, ReactiveFormsModule, RouterLink, UserAvatarComponent],
   templateUrl: './users.component.html',
   styleUrls: ['./users.component.scss']
 })
@@ -242,7 +243,15 @@ export class UsersComponent implements OnInit, OnDestroy {
     this.userForm.get('password')?.updateValueAndValidity();
     this.userForm.get('confirmPassword')?.updateValueAndValidity();
     
-    this.previewUrl = user.photo ? user.photo : null;
+    // user.photo n'est plus renvoyée en clair (write_only, voir photo_url) : on récupère
+    // l'aperçu de la photo existante en blob, comme app-user-avatar.
+    this.previewUrl = null;
+    if (user.photo_url) {
+      this.userService.preview(user.id).subscribe({
+        next: (blob) => this.previewUrl = URL.createObjectURL(blob),
+        error: () => {},
+      });
+    }
     this.selectedFile = null;
     this.showUserModal = true;
   }

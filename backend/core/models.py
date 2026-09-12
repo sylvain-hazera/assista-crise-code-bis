@@ -253,7 +253,7 @@ class Crisis(EnvironmentScopedModel):
         default=TypeCrise.AUTRE,
     )
     description = models.TextField(null=True, blank=True)
-    photo = models.ImageField(upload_to=secure_crisis_photo_path, max_length=255, null=True, blank=True)
+    photo = models.ImageField(upload_to=secure_crisis_photo_path, max_length=255, null=True, blank=True, validators=[validate_image_file])
     location = gis_models.PointField(srid=4326)
     radius = models.IntegerField(default=10)
     zone = gis_models.PolygonField(srid=4326, null=True, blank=True)
@@ -2197,7 +2197,8 @@ class RecherchePersonne(EnvironmentScopedModel):
         upload_to=secure_recherche_personne_photo_path,
         max_length=255,
         blank=True,
-        null=True
+        null=True,
+        validators=[validate_image_file],
     )
 
     description = models.TextField(
