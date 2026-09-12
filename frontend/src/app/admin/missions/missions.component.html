@@ -182,7 +182,9 @@
     <div class="modal modal-lg" (click)="$event.stopPropagation()">
       <div class="modal-header">
         <div>
-          <h2>{{ selectedMission.titre }}</h2>
+          <h2>{{ selectedMission.titre }}
+            <span class="statut-chip" [class]="statutClass(selectedMission.statut)">{{ statutLabel(selectedMission.statut) }}</span>
+          </h2>
           <p class="subtitle">{{ selectedMission.crise_nom || crisisName(selectedMission.crise) }}</p>
         </div>
         <button class="btn-icon-sm" (click)="closeModal()"><span class="material-icons">close</span></button>
@@ -259,6 +261,16 @@
       </div>
       <div class="modal-footer">
         <button class="btn-ghost" (click)="closeModal()">Fermer</button>
+        @if (selectedMission.statut === 'EN_PREPARATION') {
+          <button class="btn-primary" (click)="demarrerMission(selectedMission); closeModal()">
+            <span class="material-icons">play_circle</span> Démarrer
+          </button>
+        }
+        @if (selectedMission.statut !== 'TERMINEE') {
+          <button class="btn-ghost" (click)="cloturerMission(selectedMission); closeModal()">
+            <span class="material-icons">task_alt</span> Clôturer
+          </button>
+        }
         <button class="btn-primary" (click)="closeModal(); openEdit(selectedMission)">
           <span class="material-icons">edit</span> Modifier
         </button>
