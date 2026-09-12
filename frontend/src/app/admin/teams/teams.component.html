@@ -673,15 +673,18 @@
             <p class="no-missions">Aucune crise rattachée — les vues qui s'appuient sur ce champ (ressources mobilisées, recrutement scopé, matching hébergement) ne verront pas cette équipe tant que ce n'est pas fait.</p>
           }
 
+          <!-- Un seul sélecteur de crise pour toute la section (Rattacher ET Définir/Changer
+               la mission juste en dessous) — deux sélecteurs séparés demandaient la même
+               information deux fois, remarque directe de l'utilisateur. -->
           <div class="mission-active-bar">
             <select class="form-select" [(ngModel)]="rattacherCriseId">
-              <option [ngValue]="null">Rattacher à une crise…</option>
-              @for (c of crisesRattachablesTeam; track c.id) {
+              <option [ngValue]="null">Choisir une crise…</option>
+              @for (c of crisesOuvertes; track c.id) {
                 <option [ngValue]="c.id">{{ c.name }}</option>
               }
             </select>
             <button class="btn-secondary sm" [disabled]="!rattacherCriseId" (click)="submitRattacherCrise()">
-              <span class="material-icons">link</span> Rattacher
+              <span class="material-icons">link</span> Rattacher l'équipe
             </button>
           </div>
 
@@ -708,13 +711,7 @@
               <span class="mission-active-label muted">Aucune mission définie pour cette équipe.</span>
             }
             <input type="text" placeholder="Nouvelle mission (texte libre)…" [(ngModel)]="missionTitreInput" />
-            <select class="form-select" [(ngModel)]="missionCriseId">
-              <option [ngValue]="null">Assigner à une crise (optionnel)</option>
-              @for (c of crisesOuvertes; track c.id) {
-                <option [ngValue]="c.id">{{ c.name }}</option>
-              }
-            </select>
-            <button class="btn-secondary sm" (click)="submitDefinirMission()">
+            <button class="btn-secondary sm" (click)="submitDefinirMission()" title="Utilise la crise choisie ci-dessus (optionnel)">
               {{ selectedTeam.mission_active_titre ? 'Changer' : 'Définir' }}
             </button>
           </div>

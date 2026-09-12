@@ -965,7 +965,6 @@ export class TeamsComponent implements OnInit {
 
   // ── Ressources : mission active + ajout/retrait ──────────────
   missionTitreInput = '';
-  missionCriseId: string | null = null;
 
   /** Passe la mission active de l'équipe en "En cours" directement depuis sa fiche — sans
    * ça, il fallait retrouver la mission sur la page Missions séparée pour déclencher le
@@ -984,11 +983,13 @@ export class TeamsComponent implements OnInit {
 
   submitDefinirMission(): void {
     if (!this.selectedTeam?.id || !this.missionTitreInput.trim()) return;
-    this.teamService.definirMission(this.selectedTeam.id, this.missionTitreInput.trim(), this.missionCriseId ?? undefined).subscribe({
+    // Même sélecteur de crise que "Rattacher" juste au-dessus (voir rattacherCriseId) — on ne
+    // demande plus la crise deux fois dans la même section, remarque directe de
+    // l'utilisateur ("tu ne peux pas demander 2 fois la crise assignée").
+    this.teamService.definirMission(this.selectedTeam.id, this.missionTitreInput.trim(), this.rattacherCriseId ?? undefined).subscribe({
       next: (updated) => {
         this.selectedTeam = { ...updated, missions: this.selectedTeam!.missions };
         this.missionTitreInput = '';
-        this.missionCriseId = null;
         this.reloadTeams();
         this.showSuccess('Mission de l\'équipe définie.');
       },
@@ -1011,17 +1012,14 @@ export class TeamsComponent implements OnInit {
     return this.crisis.filter(c => ids.has(c.id));
   }
 
-  get crisesRattachablesTeam(): Crisis[] {
-    const ids = new Set(this.selectedTeam?.assigned_crisis_ids ?? []);
-    return this.crisesOuvertes.filter(c => !ids.has(c.id));
-  }
-
   submitRattacherCrise(): void {
     if (!this.selectedTeam?.id || !this.rattacherCriseId) return;
     this.teamService.assignerCrise(this.selectedTeam.id, this.rattacherCriseId).subscribe({
       next: (updated) => {
+        // rattacherCriseId volontairement PAS remis à null : la même crise sélectionnée sert
+        // aussi au bouton "Définir/Changer" la mission juste en dessous (un seul sélecteur de
+        // crise partagé pour toute la section, plus deux comme avant).
         this.selectedTeam = { ...updated, missions: this.buildMissions(updated) };
-        this.rattacherCriseId = null;
         this.reloadTeams();
         this.showSuccess('Crise rattachée à l\'équipe.');
       },
