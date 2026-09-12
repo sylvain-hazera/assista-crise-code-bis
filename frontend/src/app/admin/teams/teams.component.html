@@ -650,7 +650,7 @@
           <div class="section-header">
             <h3>
               <span class="material-icons">local_fire_department</span>
-              Crises rattachées
+              Crise &amp; mission
               <span class="count-badge">{{ crisesRattacheesTeam.length }}</span>
             </h3>
           </div>
@@ -682,6 +682,40 @@
             </select>
             <button class="btn-secondary sm" [disabled]="!rattacherCriseId" (click)="submitRattacherCrise()">
               <span class="material-icons">link</span> Rattacher
+            </button>
+          </div>
+
+          <!-- Mission active : regroupée ici avec la crise plutôt que dans "Ressources
+               assignées" — les deux parlaient de la même crise à deux endroits séparés par
+               le canal MeshCore, remarque directe de l'utilisateur ("ce n'est pas intuitif"). -->
+          <div class="mission-active-bar">
+            @if (selectedTeam.mission_active_titre) {
+              <span class="mission-active-label">
+                <span class="material-icons">flag</span> Mission : {{ selectedTeam.mission_active_titre }}
+                @if (selectedTeam.mission_active_crise_nom) {
+                  · <span class="material-icons">local_fire_department</span> {{ selectedTeam.mission_active_crise_nom }}
+                }
+                @if (selectedTeam.mission_active_statut === 'EN_COURS') {
+                  · <span class="material-icons statut-ok">check_circle</span> En cours
+                }
+              </span>
+              @if (selectedTeam.mission_active_statut === 'EN_PREPARATION') {
+                <button class="btn-secondary sm" (click)="demarrerMissionActive()" title="Démarrer (passer en cours)">
+                  <span class="material-icons">play_circle</span> Démarrer
+                </button>
+              }
+            } @else {
+              <span class="mission-active-label muted">Aucune mission définie pour cette équipe.</span>
+            }
+            <input type="text" placeholder="Nouvelle mission (texte libre)…" [(ngModel)]="missionTitreInput" />
+            <select class="form-select" [(ngModel)]="missionCriseId">
+              <option [ngValue]="null">Assigner à une crise (optionnel)</option>
+              @for (c of crisesOuvertes; track c.id) {
+                <option [ngValue]="c.id">{{ c.name }}</option>
+              }
+            </select>
+            <button class="btn-secondary sm" (click)="submitDefinirMission()">
+              {{ selectedTeam.mission_active_titre ? 'Changer' : 'Définir' }}
             </button>
           </div>
         </div>
@@ -777,37 +811,6 @@
               Ressources assignées
               <span class="count-badge">{{ resourcesForSelectedTeam.length }}</span>
             </h3>
-          </div>
-
-          <div class="mission-active-bar">
-            @if (selectedTeam.mission_active_titre) {
-              <span class="mission-active-label">
-                <span class="material-icons">flag</span> Mission : {{ selectedTeam.mission_active_titre }}
-                @if (selectedTeam.mission_active_crise_nom) {
-                  · <span class="material-icons">local_fire_department</span> {{ selectedTeam.mission_active_crise_nom }}
-                }
-                @if (selectedTeam.mission_active_statut === 'EN_COURS') {
-                  · <span class="material-icons statut-ok">check_circle</span> En cours
-                }
-              </span>
-              @if (selectedTeam.mission_active_statut === 'EN_PREPARATION') {
-                <button class="btn-secondary sm" (click)="demarrerMissionActive()" title="Démarrer (passer en cours)">
-                  <span class="material-icons">play_circle</span> Démarrer
-                </button>
-              }
-            } @else {
-              <span class="mission-active-label muted">Aucune mission définie pour cette équipe.</span>
-            }
-            <input type="text" placeholder="Nouvelle mission (texte libre)…" [(ngModel)]="missionTitreInput" />
-            <select class="form-select" [(ngModel)]="missionCriseId">
-              <option [ngValue]="null">Assigner à une crise (optionnel)</option>
-              @for (c of crisesOuvertes; track c.id) {
-                <option [ngValue]="c.id">{{ c.name }}</option>
-              }
-            </select>
-            <button class="btn-secondary sm" (click)="submitDefinirMission()">
-              {{ selectedTeam.mission_active_titre ? 'Changer' : 'Définir' }}
-            </button>
           </div>
 
           @if (resourcesForSelectedTeam.length > 0) {
