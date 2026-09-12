@@ -4791,6 +4791,26 @@ class MissionViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             return qs
         return qs.filter(equipes__members=self.request.user).distinct()
 
+    def _synchroniser_equipes(self, mission):
+        """Même correctif que TeamViewSet.definir_mission/assigner_crise/lier_point (doublon
+        structurel relevé en audit) — mais manquait ici, sur le chemin de création/édition
+        générique de la page Missions, qui contourne entièrement ces actions. Sans ça, une
+        mission créée ou éditée directement ici pouvait avoir une crise et des équipes sans
+        que Team.assigned_crises ne le reflète jamais."""
+        if not mission.crise_id:
+            return
+        for team in mission.equipes.all():
+            team.assigned_crises.add(mission.crise_id)
+            _assurer_implication_impliquee(self.request, team.institution_id, mission.crise)
+
+    def perform_create(self, serializer):
+        mission = serializer.save(environment=get_active_environment(self.request))
+        self._synchroniser_equipes(mission)
+
+    def perform_update(self, serializer):
+        mission = serializer.save()
+        self._synchroniser_equipes(mission)
+
 def _apply_rayon_km(request, queryset):
     """Filtre `queryset` (Offer) par rayon en kilomètres autour de la commune de l'institution
     de l'appelant — élargissement plus fin que l'échelle commune/epci/departement/region,
