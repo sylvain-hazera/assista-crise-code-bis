@@ -442,6 +442,7 @@ h3 { margin: 0; font-size: .9rem; font-weight: 700; display: flex; align-items: 
     display: flex; align-items: center; gap: .3rem; font-size: .85rem; font-weight: 600;
     .material-icons { font-size: 16px; color: var(--primary); }
     &.muted { color: var(--muted); font-weight: 400; }
+    .material-icons.statut-ok { color: #16a34a; }
   }
   input, select.form-select {
     flex: 1; min-width: 160px; padding: .4rem .6rem; border: 1px solid var(--border);

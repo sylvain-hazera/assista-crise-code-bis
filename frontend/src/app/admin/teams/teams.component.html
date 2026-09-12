@@ -786,7 +786,15 @@
                 @if (selectedTeam.mission_active_crise_nom) {
                   · <span class="material-icons">local_fire_department</span> {{ selectedTeam.mission_active_crise_nom }}
                 }
+                @if (selectedTeam.mission_active_statut === 'EN_COURS') {
+                  · <span class="material-icons statut-ok">check_circle</span> En cours
+                }
               </span>
+              @if (selectedTeam.mission_active_statut === 'EN_PREPARATION') {
+                <button class="btn-secondary sm" (click)="demarrerMissionActive()" title="Démarrer (passer en cours)">
+                  <span class="material-icons">play_circle</span> Démarrer
+                </button>
+              }
             } @else {
               <span class="mission-active-label muted">Aucune mission définie pour cette équipe.</span>
             }

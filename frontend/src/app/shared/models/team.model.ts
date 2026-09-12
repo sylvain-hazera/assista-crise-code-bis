@@ -30,6 +30,7 @@ export interface Team {
   mission_active_titre?: string | null;
   mission_active_crise_id?: string | null;
   mission_active_crise_nom?: string | null;
+  mission_active_statut?: 'EN_PREPARATION' | 'EN_COURS' | 'TERMINEE' | null;
   institution?:         string | null;      // UUID de l'institution responsable (auto-complétée à la création si absente)
   institution_nom?:     string | null;
   institution_delegataire?:     string | null; // UUID de l'institution délégataire courante (lecture seule, voir TeamService.definirDelegation/retirerDelegation)
