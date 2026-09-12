@@ -859,6 +859,20 @@ class DossierViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             ancien_etat=ancien_statut, nouvel_etat=nouveau_statut,
             commentaire=f"Statut du dossier {dossier.numero} changé : {ancien_statut} → {nouveau_statut}",
         )
+        # Angle mort relevé en audit : un changement de statut intermédiaire ne notifiait
+        # personne, contrairement à marquer_important/cloturer sur le même ViewSet — même
+        # motif que DossierCommentaireViewSet.perform_create (tous les participants, sauf
+        # l'auteur du changement).
+        for participant in dossier.participants.all():
+            if participant.utilisateur_id == request.user.id:
+                continue
+            Notification.objects.create(
+                utilisateur=participant.utilisateur,
+                dossier=dossier,
+                titre="Statut du dossier modifié",
+                message=f"Le dossier {dossier.numero} ({dossier.titre}) est passé au statut « {dossier.get_statut_display()} ».",
+                environment=dossier.environment,
+            )
         return Response(DossierSerializer(dossier, context=self.get_serializer_context()).data)
 
     @action(detail=True, methods=["post"], permission_classes=[IsInstitutionalActor])
@@ -4180,6 +4194,12 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         mission.equipes.add(team)
         team.mission_active = mission
         team.save(update_fields=['mission_active'])
+        # Synchronise le chemin d'écriture équipe<->crise séparé (assigned_crises, voir
+        # TeamViewSet.assigner_crise) — sans ça, une équipe affectée à une mission d'une crise
+        # peut rester absente de assigned_crises, invisible du recrutement/matching hébergement/
+        # stats qui filtrent dessus (voir doc de conception, doublon relevé explicitement).
+        if crise:
+            team.assigned_crises.add(crise)
 
         audit_log(
             request=request,
@@ -6611,6 +6631,25 @@ class RecherchePersonneViewSet(
             environment=recherche.environment,
         )
 
+        # Angle mort relevé en audit : jusqu'ici, ni le créateur de la fiche ni les
+        # intervenants qui l'ont consultée n'apprenaient le dénouement autrement qu'en
+        # rouvrant l'écran — sur le module le plus sensible humainement du site.
+        destinataires_ids = set(
+            RecherchePersonneLecture.objects.filter(recherche=recherche)
+            .values_list('utilisateur_id', flat=True)
+        )
+        if recherche.createur_id:
+            destinataires_ids.add(recherche.createur_id)
+        destinataires_ids.discard(request.user.id)
+        titre = f"{recherche.prenom} {recherche.nom} a été retrouvé(e)"
+        for user_id in destinataires_ids:
+            Notification.objects.create(
+                utilisateur_id=user_id,
+                titre=titre,
+                message=f"La recherche concernant {recherche.prenom} {recherche.nom} est close : la personne a été retrouvée.",
+                environment=recherche.environment,
+            )
+
         return Response(
             {"status": "ok"}
         )
@@ -7620,6 +7659,39 @@ class PointOperationnelViewSet(
         return institution
 
     def perform_create(self, serializer):
+        # Devenir responsable d'un point sur une crise vaut déclaration "acteur" pour
+        # l'institution — pas besoin de le déclarer une seconde fois. `institution` n'est pas un
+        # champ de PointOperationnel : c'est un choix fait dans le formulaire de création, lu
+        # directement depuis le payload. Si l'utilisateur n'a pas le droit de déclarer pour cette
+        # institution (pas contact, pas admin), on retombe sur l'ancienne heuristique (son propre
+        # rattachement) plutôt que d'échouer silencieusement. Résolue même sans crise : sert
+        # aussi à rattacher la nouvelle équipe créée avec le point (voir plus bas), qui n'exige
+        # pas de crise.
+        nouvelle_equipe_nom = (self.request.data.get('nouvelle_equipe_nom') or '').strip()
+        crise = serializer.validated_data.get('crise')
+        institution = None
+        if crise or nouvelle_equipe_nom:
+            institution = self._resolve_institution_for_new_team()
+
+        # Une institution privée (association, entreprise, AASC) ne peut pas obtenir un mandat
+        # d'acteur opérationnel par ce simple raccourci — sans quoi la validation par un
+        # régulateur AUT_LOCALE (ImplicationInstitutionViewSet.valider) serait entièrement
+        # contournable en créant directement un point plutôt qu'en déclarant "acteur". Vérifié
+        # AVANT la création du point, pas après : le mandat doit précéder l'action, pas la
+        # suivre. Une institution publique, ou déjà mandatée (implication ACTEUR VALIDEE
+        # existante), n'est pas concernée.
+        if crise and institution and not getattr(institution.type, "est_public", False):
+            deja_mandatee = ImplicationInstitution.objects.filter(
+                crise=crise, institution=institution, type_implication=TypeImplication.ACTEUR,
+                statut=StatutImplication.VALIDEE, actif=True,
+            ).exists()
+            if not deja_mandatee:
+                raise PermissionDenied(
+                    "Votre institution doit être mandatée par un régulateur de cette crise "
+                    "(déclaration \"acteur opérationnel\" validée, onglet Institutions de la "
+                    "crise) avant de pouvoir créer un point opérationnel dessus."
+                )
+
         point = serializer.save(responsable=self.request.user, environment=get_active_environment(self.request))
 
         audit_log(
@@ -7631,44 +7703,37 @@ class PointOperationnelViewSet(
             commentaire=f"Création point opérationnel : {point.nom}",
         )
 
-        # Devenir responsable d'un point sur une crise vaut déclaration "acteur" pour
-        # l'institution — pas besoin de le déclarer une seconde fois. `institution` n'est pas un
-        # champ de PointOperationnel : c'est un choix fait dans le formulaire de création, lu
-        # directement depuis le payload. Si l'utilisateur n'a pas le droit de déclarer pour cette
-        # institution (pas contact, pas admin), on retombe sur l'ancienne heuristique (son propre
-        # rattachement) plutôt que d'échouer silencieusement. Résolue même sans crise : sert
-        # aussi à rattacher la nouvelle équipe créée avec le point (voir plus bas), qui n'exige
-        # pas de crise.
-        nouvelle_equipe_nom = (self.request.data.get('nouvelle_equipe_nom') or '').strip()
-        if point.crise_id or nouvelle_equipe_nom:
-            institution = self._resolve_institution_for_new_team()
-
-            if point.crise_id and institution:
-                implication, created = ImplicationInstitution.objects.get_or_create(
+        if point.crise_id and institution:
+            implication, created = ImplicationInstitution.objects.get_or_create(
+                crise=point.crise,
+                institution=institution,
+                type_implication=TypeImplication.ACTEUR,
+                defaults={
+                    "utilisateur": self.request.user, "actif": True, "environment": point.environment,
+                    "statut": StatutImplication.VALIDEE if getattr(institution.type, "est_public", False) else StatutImplication.EN_ATTENTE,
+                },
+            )
+            if created:
+                audit_log(
+                    request=self.request,
+                    action_code="CREATION",
+                    objet_type="ImplicationInstitution",
+                    objet_id=implication.id,
                     crise=point.crise,
-                    institution=institution,
-                    type_implication=TypeImplication.ACTEUR,
-                    defaults={"utilisateur": self.request.user, "actif": True, "environment": point.environment},
+                    commentaire=(
+                        f"{institution.nom} déclarée acteur sur la crise "
+                        f"{point.crise.name} (gestion de {point.nom})"
+                    ),
                 )
-                if created:
-                    audit_log(
-                        request=self.request,
-                        action_code="CREATION",
-                        objet_type="ImplicationInstitution",
-                        objet_id=implication.id,
-                        crise=point.crise,
-                        commentaire=(
-                            f"{institution.nom} déclarée acteur sur la crise "
-                            f"{point.crise.name} (gestion de {point.nom})"
-                        ),
-                    )
 
-            # Créer une équipe en même temps que le point, plutôt que d'obliger à en créer une
-            # séparément avant de pouvoir en assigner une — seulement si aucune équipe n'a déjà
-            # été choisie dans le formulaire (mutuellement exclusifs côté frontend). Même
-            # mécanisme réutilisé depuis perform_update pour un point déjà existant.
-            if nouvelle_equipe_nom and not point.equipe_id:
-                _creer_equipe_pour_point(point, nouvelle_equipe_nom, institution, self.request)
+        # Créer une équipe en même temps que le point, plutôt que d'obliger à en créer une
+        # séparément avant de pouvoir en assigner une — seulement si aucune équipe n'a déjà
+        # été choisie dans le formulaire (mutuellement exclusifs côté frontend). Même mécanisme
+        # réutilisé depuis perform_update pour un point déjà existant. Indépendant du bloc
+        # ci-dessus : un point sans crise (nouvelle_equipe_nom seul) doit pouvoir créer son
+        # équipe malgré tout.
+        if nouvelle_equipe_nom and not point.equipe_id:
+            _creer_equipe_pour_point(point, nouvelle_equipe_nom, institution, self.request)
 
     HEURES_PAR_CRENEAU = 6  # MATIN/MIDI/SOIR/NUIT ≈ 4 créneaux de 6h sur 24h — approximation
     # affichée telle quelle (voir décision : affichage seul, pas de blocage automatique).
@@ -8534,6 +8599,36 @@ def _notifier_demande_validation_implication(request, implication):
                 print(f"Erreur envoi email validation implication : {e}")
 
 
+def _notifier_verdict_implication(request, implication, valide: bool):
+    """Angle mort relevé en audit : l'institution déclarante était notifiée à la soumission
+    (_notifier_demande_validation_implication) mais jamais du verdict — elle devait revenir
+    vérifier elle-même. Notifie chaque contact actif de l'institution déclarante."""
+    verbe = "validée" if valide else "refusée"
+    titre = f"Votre déclaration acteur sur « {implication.crise.name} » a été {verbe}"
+    message = (
+        f"La déclaration acteur opérationnel de {implication.institution.nom} sur la crise "
+        f"« {implication.crise.name} » a été {verbe} par un régulateur."
+    )
+    destinataires = User.objects.filter(
+        id__in=ContactInstitution.objects.filter(
+            institution=implication.institution, actif=True,
+        ).values_list('utilisateur_id', flat=True),
+    )
+    for user in destinataires:
+        Notification.objects.create(
+            utilisateur=user, titre=titre, message=message, environment=implication.environment,
+            crise=implication.crise,
+        )
+        if user.email:
+            try:
+                send_mail_env_aware(
+                    request, subject=titre, message=message, from_email=None,
+                    recipient_list=[user.email], fail_silently=True,
+                )
+            except Exception as e:
+                print(f"Erreur envoi email verdict implication : {e}")
+
+
 class ImplicationInstitutionViewSet(
     EnvironmentScopedViewSetMixin, viewsets.ModelViewSet
 ):
@@ -8573,13 +8668,14 @@ class ImplicationInstitutionViewSet(
                 responsable_id, responsable_email, institution, self.request
             )
 
-        # Une institution non-AUT_LOCALE (association, AASC...) qui se déclare acteur
-        # opérationnel reste en attente jusqu'à validation par un régulateur AUT_LOCALE de la
-        # crise — IMPLIQUE et ACTEUR déclaré par une AUT_LOCALE restent auto-validés (statut
-        # VALIDEE, valeur par défaut du modèle).
+        # Une institution privée (association, entreprise, AASC — voir InstitutionType.est_public)
+        # qui se déclare acteur opérationnel reste en attente jusqu'à validation par un
+        # régulateur AUT_LOCALE de la crise : c'est le mandat légal exigé d'une association
+        # n'intervenant pas sur délégation d'une collectivité. IMPLIQUE et ACTEUR déclaré par une
+        # institution publique restent auto-validés (statut VALIDEE, valeur par défaut du modèle).
         statut = StatutImplication.VALIDEE
         type_implication = serializer.validated_data.get("type_implication")
-        if type_implication == TypeImplication.ACTEUR and not _institution_est_autorite_locale(institution):
+        if type_implication == TypeImplication.ACTEUR and not getattr(institution.type, "est_public", False):
             statut = StatutImplication.EN_ATTENTE
 
         implication = serializer.save(
@@ -8626,6 +8722,7 @@ class ImplicationInstitutionViewSet(
             crise=implication.crise,
             commentaire=f"Déclaration acteur de {implication.institution.nom} validée par {request.user.email}.",
         )
+        _notifier_verdict_implication(request, implication, valide=True)
         return Response(self.get_serializer(implication).data)
 
     @action(detail=True, methods=['post'])
@@ -8648,6 +8745,7 @@ class ImplicationInstitutionViewSet(
             crise=implication.crise,
             commentaire=f"Déclaration acteur de {implication.institution.nom} refusée par {request.user.email}.",
         )
+        _notifier_verdict_implication(request, implication, valide=False)
         return Response(self.get_serializer(implication).data)
 
     def perform_destroy(self, instance):

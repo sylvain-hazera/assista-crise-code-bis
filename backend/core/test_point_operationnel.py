@@ -30,7 +30,7 @@ def point_type(db):
 
 @pytest.fixture
 def institution(db):
-    itype = InstitutionType.objects.create(code="MAIRIE_POINT_TEST", libelle="Mairie")
+    itype = InstitutionType.objects.create(code="MAIRIE_POINT_TEST", libelle="Mairie", est_public=True)
     return Institution.objects.create(nom="Mairie point test", type=itype)
 
 

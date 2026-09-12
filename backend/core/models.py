@@ -1087,6 +1087,13 @@ class InstitutionType(models.Model):
         default=True
     )
 
+    # Faux par défaut (fail-closed) : une association/entreprise n'est réputée mandatée sur une
+    # crise qu'après validation explicite d'un régulateur AUT_LOCALE (voir
+    # ImplicationInstitutionViewSet.perform_create et PointOperationnelViewSet.perform_create),
+    # jamais par défaut. Vrai pour les collectivités/services publics (mairie, EPCI, préfecture,
+    # SDIS...), qui n'ont pas besoin de mandat pour agir sur une crise.
+    est_public = models.BooleanField(default=False)
+
     def __str__(self):
         return self.libelle
 

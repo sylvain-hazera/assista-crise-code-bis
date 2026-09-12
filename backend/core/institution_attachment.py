@@ -54,9 +54,11 @@ def find_or_create_institution_from_annuaire(user, annuaire_match, request=None)
     nom = annuaire_match.get('nom') or domain
     type_code = (annuaire_match.get('type_service_local') or 'autre').strip().lower() or 'autre'
 
+    # Un type trouvé dans l'annuaire officiel des collectivités désigne un service public réel —
+    # marqué public par défaut, sauf le repli 'autre' (annuaire muet sur le type, on ne sait pas).
     institution_type, _ = InstitutionType.objects.get_or_create(
         code=type_code,
-        defaults={'libelle': type_code.title()},
+        defaults={'libelle': type_code.title(), 'est_public': type_code != 'autre'},
     )
 
     institution, institution_created = Institution.objects.get_or_create(

@@ -1338,6 +1338,20 @@ class DossierSerializer(serializers.ModelSerializer):
             'date_signalement_important': {'read_only': True},
         }
 
+    def validate(self, attrs):
+        # Empêche un Dossier.crise de diverger silencieusement de Dossier.mission.crise (doublon
+        # structurel relevé en audit : rien d'autre dans le code ne garantissait cette
+        # cohérence, un simple PATCH pouvait rattacher un dossier à une mission d'une autre
+        # crise). Tolère un `mission.crise` nul (mission pas encore rattachée à une crise
+        # précise) — seule une divergence explicite entre deux crises différentes est bloquée.
+        crise = attrs.get('crise', getattr(self.instance, 'crise', None))
+        mission = attrs.get('mission', getattr(self.instance, 'mission', None))
+        if crise and mission and mission.crise_id and mission.crise_id != crise.id:
+            raise serializers.ValidationError({
+                'mission': "Cette mission appartient à une autre crise que celle du dossier.",
+            })
+        return attrs
+
     def _origine(self, obj):
         return obj.demande or obj.information
 
