@@ -4620,10 +4620,12 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
                     compagnon=compagnon,
                     direction=DirectionMessageMesh.SORTANT,
                     contact_pubkey_hex=noeud.pubkey_hex,
-                    contenu=(
-                        f"Canal d'équipe « {canal.nom} » — à configurer sur votre nœud "
-                        f"(nom exact : {canal.nom} / clé : {canal.cle_partagee_hex})."
-                    ),
+                    # Clé en premier (copier-coller plus facile, demande explicite) et message
+                    # volontairement court : un message plus long échoue nettement plus souvent
+                    # en LoRa (temps d'antenne plus long = plus exposé aux collisions/erreurs),
+                    # constaté en pratique ce soir — 0% de réussite au-delà de ~75 octets contre
+                    # ~50% pour un message très court, dans les mêmes conditions radio.
+                    contenu=f"{canal.cle_partagee_hex} - {canal.nom}",
                     statut=StatutMessageMesh.EN_ATTENTE,
                     expediteur=request.user,
                     equipe=team,

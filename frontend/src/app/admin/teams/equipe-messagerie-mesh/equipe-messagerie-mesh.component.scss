@@ -56,8 +56,13 @@
   padding: .4rem .6rem;
 
   &.sortant { align-self: flex-end; background: #dbeafe; }
+  &.canal:not(.sortant) { background: #ecfdf5; }
 
-  .message-meta { font-size: .68rem; color: #6b7280; margin-bottom: .15rem; }
+  .message-meta {
+    font-size: .68rem; color: #6b7280; margin-bottom: .15rem;
+    display: flex; align-items: center; gap: .2rem;
+    .source-icon { font-size: 13px; }
+  }
   .message-contenu { font-size: .85rem; color: #1f2937; white-space: pre-wrap; }
 }
 

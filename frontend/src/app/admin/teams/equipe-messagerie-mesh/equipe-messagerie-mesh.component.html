@@ -6,51 +6,53 @@
 
   @if (chargement) {
     <p class="hint">Vérification de l'équipement MeshCore de l'équipe…</p>
-  } @else if (!equipee) {
-    <p class="hint">Aucun membre de cette équipe n'a de nœud MeshCore associé — voir « Companions MeshCore » &gt; Nœuds.</p>
+  } @else if (!equipee && !canalId) {
+    <p class="hint">Aucun canal ni membre équipé d'un nœud MeshCore pour cette équipe — voir « Companions MeshCore » &gt; Nœuds.</p>
   } @else {
     @if (erreur) {
       <p class="erreur">{{ erreur }}</p>
     }
 
-    <div class="destinataire-row">
-      <label>
-        Destinataire
-        <select [(ngModel)]="destinataireId">
-          @for (n of noeudsEquipe; track n.id) {
-            <option [value]="n.id">{{ n.utilisateur_nom }} ({{ n.nom_noeud || n.pubkey_hex.slice(0, 8) }})</option>
-          }
-        </select>
-      </label>
-      @if (compagnons.length > 1) {
-        <label>
-          Via
-          <select [(ngModel)]="compagnonId">
-            @for (c of compagnons; track c.id) {
-              <option [value]="c.id">{{ c.nom }}</option>
-            }
-          </select>
-        </label>
-      }
-    </div>
-
     <div class="messages">
-      @for (m of messages; track m.id) {
-        <div class="message" [class.sortant]="m.direction === 'SORTANT'">
+      @for (m of messagesAffiches; track m.id) {
+        <div class="message" [class.sortant]="m.direction === 'SORTANT'" [class.canal]="m.source === 'canal'">
           <div class="message-meta">
-            {{ m.direction === 'SORTANT' ? (m.expediteur_nom || 'Moi') : (m.expediteur_nom || 'Terrain') }}
-            · {{ m.date_creation | date:'short' }}
+            <span class="material-icons source-icon">{{ m.source === 'canal' ? 'tag' : 'person' }}</span>
+            {{ m.expediteur_nom }} · {{ m.date_creation | date:'short' }}
           </div>
           <div class="message-contenu">{{ m.contenu }}</div>
         </div>
       } @empty {
-        <p class="hint">Aucun message échangé avec cette équipe pour l'instant.</p>
+        <p class="hint">Aucun message (canal ou privé) pour cette équipe pour l'instant.</p>
       }
     </div>
 
-    <div class="saisie">
-      <input type="text" placeholder="Écrire un message privé..." [(ngModel)]="nouveauMessage" (keyup.enter)="envoyer()">
-      <button type="button" [disabled]="!nouveauMessage.trim() || envoiEnCours" (click)="envoyer()">Envoyer</button>
-    </div>
+    @if (equipee) {
+      <div class="destinataire-row">
+        <label>
+          DM à
+          <select [(ngModel)]="destinataireId">
+            @for (n of noeudsEquipe; track n.id) {
+              <option [value]="n.id">{{ n.utilisateur_nom }} ({{ n.nom_noeud || n.pubkey_hex.slice(0, 8) }})</option>
+            }
+          </select>
+        </label>
+        @if (compagnons.length > 1) {
+          <label>
+            Via
+            <select [(ngModel)]="compagnonId">
+              @for (c of compagnons; track c.id) {
+                <option [value]="c.id">{{ c.nom }}</option>
+              }
+            </select>
+          </label>
+        }
+      </div>
+
+      <div class="saisie">
+        <input type="text" placeholder="Écrire un message privé..." [(ngModel)]="nouveauMessage" (keyup.enter)="envoyer()">
+        <button type="button" [disabled]="!nouveauMessage.trim() || envoiEnCours" (click)="envoyer()">Envoyer</button>
+      </div>
+    }
   }
 </div>

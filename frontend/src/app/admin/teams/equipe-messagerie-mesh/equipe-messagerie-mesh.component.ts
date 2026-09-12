@@ -6,9 +6,23 @@ import { TeamService } from '../../../services/team.service';
 import { NoeudMeshUtilisateurService } from '../../../services/noeud-mesh-utilisateur.service';
 import { CompagnonMeshCoreService } from '../../../services/compagnon-meshcore.service';
 import { MessageMeshService } from '../../../services/message-mesh.service';
+import { CanalMeshCoreService } from '../../../services/canal-meshcore.service';
 import { NoeudMeshUtilisateur } from '../../../shared/models/noeud-mesh-utilisateur.model';
 import { CompagnonMeshCore } from '../../../shared/models/compagnon-meshcore.model';
-import { MessageMeshLog } from '../../../shared/models/canal-meshcore.model';
+import { MessageMeshLog, MessageCanalMeshCore, StatutMessageMesh } from '../../../shared/models/canal-meshcore.model';
+
+/** Message unifié canal + DM, pour un seul fil chronologique — privilégie les deux sources
+ * demandées explicitement (canal d'équipe ET DM des intervenants) plutôt que de forcer une
+ * navigation séparée vers la page Canaux MeshCore pour voir le canal. */
+interface MessageAffiche {
+  id: string;
+  source: 'canal' | 'dm';
+  direction: 'ENTRANT' | 'SORTANT';
+  expediteur_nom?: string | null;
+  contenu: string;
+  statut: StatutMessageMesh;
+  date_creation: string;
+}
 
 /** DM privés régulateur <-> équipe, uniquement si au moins un membre de l'équipe a un
  * companion MeshCore personnel associé (voir /admin/meshcore-companions, section « Nœuds »).
@@ -25,12 +39,16 @@ import { MessageMeshLog } from '../../../shared/models/canal-meshcore.model';
 export class EquipeMessagerieMeshComponent implements OnChanges, OnDestroy {
 
   @Input() equipeId!: string;
+  /** Canal d'équipe (voir TeamViewSet.provisionner_canal_meshcore) — ses messages sont
+   * fusionnés avec les DM dans le même fil, si fourni. */
+  @Input() canalId?: string | null;
 
   chargement = true;
   equipee = false;
   noeudsEquipe: NoeudMeshUtilisateur[] = [];
   compagnons: CompagnonMeshCore[] = [];
-  messages: MessageMeshLog[] = [];
+  messagesDm: MessageMeshLog[] = [];
+  messagesCanal: MessageCanalMeshCore[] = [];
   erreur = '';
 
   destinataireId = '';
@@ -45,6 +63,7 @@ export class EquipeMessagerieMeshComponent implements OnChanges, OnDestroy {
     private noeudService: NoeudMeshUtilisateurService,
     private compagnonService: CompagnonMeshCoreService,
     private messageService: MessageMeshService,
+    private canalService: CanalMeshCoreService,
   ) {}
 
   ngOnChanges(changes: SimpleChanges): void {
@@ -72,11 +91,11 @@ export class EquipeMessagerieMeshComponent implements OnChanges, OnDestroy {
             this.compagnonService.getAll().subscribe(compagnons => {
               this.compagnons = compagnons.filter(c => c.actif);
               this.compagnonId = this.compagnons.find(c => c.principal)?.id || this.compagnons[0]?.id || '';
-              this.chargerMessages(true);
             });
-          } else {
-            this.chargement = false;
           }
+          // Le canal d'équipe reste affiché même sans membre équipé d'un nœud personnel —
+          // seule la composition d'un DM (destinataire) en dépend.
+          this.chargerMessages(true);
         });
       },
       error: () => { this.erreur = "Impossible de vérifier l'équipement MeshCore de cette équipe."; this.chargement = false; },
@@ -86,9 +105,32 @@ export class EquipeMessagerieMeshComponent implements OnChanges, OnDestroy {
   chargerMessages(avecSpinner: boolean): void {
     if (avecSpinner) this.chargement = true;
     this.messageService.getPourEquipe(this.equipeId).subscribe({
-      next: (data) => { this.messages = data; this.chargement = false; },
-      error: () => { if (avecSpinner) this.chargement = false; },
+      next: (data) => { this.messagesDm = data; if (!this.canalId) this.chargement = false; },
+      error: () => { if (avecSpinner && !this.canalId) this.chargement = false; },
     });
+    if (this.canalId) {
+      this.canalService.getMessages(this.canalId).subscribe({
+        next: (data) => { this.messagesCanal = data; this.chargement = false; },
+        error: () => { this.chargement = false; },
+      });
+    }
+  }
+
+  /** Fusionne canal + DM en un seul fil chronologique — demandé explicitement ("privilégier
+   * les messages du canal d'équipe et les DM des intervenants") plutôt que deux listes
+   * séparées ou un renvoi vers la page Canaux MeshCore. */
+  get messagesAffiches(): MessageAffiche[] {
+    const canal: MessageAffiche[] = this.messagesCanal.map(m => ({
+      id: m.id, source: 'canal', direction: m.direction,
+      expediteur_nom: m.direction === 'SORTANT' ? (m.expediteur_nom || 'Moi') : 'Canal équipe',
+      contenu: m.contenu, statut: m.statut, date_creation: m.date_creation,
+    }));
+    const dm: MessageAffiche[] = this.messagesDm.map(m => ({
+      id: m.id, source: 'dm', direction: m.direction,
+      expediteur_nom: m.direction === 'SORTANT' ? (m.expediteur_nom || 'Moi') : (m.expediteur_nom || 'Terrain'),
+      contenu: m.contenu, statut: m.statut, date_creation: m.date_creation,
+    }));
+    return [...canal, ...dm].sort((a, b) => a.date_creation.localeCompare(b.date_creation));
   }
 
   get destinatairePubkey(): string | null {
@@ -100,7 +142,7 @@ export class EquipeMessagerieMeshComponent implements OnChanges, OnDestroy {
     this.envoiEnCours = true;
     this.messageService.envoyer(this.compagnonId, this.destinatairePubkey, this.nouveauMessage.trim()).subscribe({
       next: (message) => {
-        this.messages = [...this.messages, message];
+        this.messagesDm = [...this.messagesDm, message];
         this.nouveauMessage = '';
         this.envoiEnCours = false;
       },

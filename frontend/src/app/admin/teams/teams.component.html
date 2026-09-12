@@ -750,6 +750,12 @@
               </button>
             </div>
           }
+
+          <!-- Messages du canal + DM des intervenants juste ici, plutôt qu'en bas de fiche
+               (loin, après Historique) — demandé explicitement pour privilégier leur
+               visibilité au même endroit que le statut du canal. -->
+          <app-equipe-messagerie-mesh [equipeId]="selectedTeam.id!" [canalId]="selectedTeam.canal_meshcore_id">
+          </app-equipe-messagerie-mesh>
         </div>
 
         <!-- ── DEMANDES ASSIGNÉES ────────────────────────────── -->
@@ -1039,8 +1045,6 @@
             </div>
           }
         </div>
-
-        <app-equipe-messagerie-mesh [equipeId]="selectedTeam.id!"></app-equipe-messagerie-mesh>
 
       </div>
 
