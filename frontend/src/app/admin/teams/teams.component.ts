@@ -981,21 +981,6 @@ export class TeamsComponent implements OnInit {
     });
   }
 
-  /** Passe la mission active de l'équipe en "En cours" directement depuis sa fiche — sans
-   * ça, il fallait retrouver la mission sur la page Missions séparée pour déclencher le
-   * suivi de position MeshCore (Mission.statut EN_COURS), demandé explicitement ici. */
-  demarrerMissionActive(): void {
-    if (!this.selectedTeam?.mission_active) return;
-    this.missionService.patch(this.selectedTeam.mission_active, { statut: 'EN_COURS' }).subscribe({
-      next: () => {
-        this.selectedTeam = { ...this.selectedTeam!, mission_active_statut: 'EN_COURS' };
-        this.reloadTeams();
-        this.showSuccess('Mission passée en cours.');
-      },
-      error: () => this.showError('Erreur lors du changement de statut de la mission.'),
-    });
-  }
-
   submitDefinirMission(): void {
     if (!this.selectedTeam?.id || !this.missionTitreInput.trim()) return;
     // Même sélecteur de crise que "Rattacher" juste au-dessus (voir rattacherCriseId) — on ne
