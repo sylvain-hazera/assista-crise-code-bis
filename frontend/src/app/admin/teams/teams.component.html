@@ -758,6 +758,44 @@
           </app-equipe-messagerie-mesh>
         </div>
 
+        <!-- ── CANAL MESHTASTIC ───────────────────────────────── -->
+        <div class="detail-section">
+          <div class="section-header">
+            <h3>
+              <span class="material-icons">tag</span>
+              Canal Meshtastic <span class="badge-test">test</span>
+            </h3>
+          </div>
+
+          @if (!selectedTeam.canal_meshtastic_id) {
+            <p class="no-missions">
+              Aucun canal Meshtastic — créé automatiquement dès qu'un membre équipé d'un nœud
+              Meshtastic personnel rejoint l'équipe, ou manuellement ici.
+            </p>
+            <button class="btn-secondary sm" [disabled]="provisionnantCanalMeshtastic" (click)="provisionnerCanalMeshtastic()">
+              <span class="material-icons">add</span> Créer le canal et informer les membres équipés
+            </button>
+          } @else {
+            <div class="mission-active-bar">
+              <span class="mission-active-label">
+                <span class="material-icons statut-ok">tag</span>
+                {{ selectedTeam.canal_meshtastic_nom }}
+              </span>
+              <button class="btn-secondary sm" [disabled]="provisionnantCanalMeshtastic" (click)="provisionnerCanalMeshtastic()">
+                Renvoyer les infos aux membres équipés
+              </button>
+              <button class="btn-danger sm" [disabled]="provisionnantCanalMeshtastic" (click)="regenererCanalMeshtastic()" title="Génère une nouvelle clé — révoque l'accès de tout ancien détenteur non membre actuel">
+                Régénérer la clé
+              </button>
+            </div>
+            <p class="page-hint">
+              Le DM envoyé à chaque membre est chiffré par clé publique (PKI) dès qu'elle est
+              connue pour lui, sinon par la PSK du canal principal — voir la page
+              « Messages Meshtastic » pour la conversation.
+            </p>
+          }
+        </div>
+
         <!-- ── DEMANDES ASSIGNÉES ────────────────────────────── -->
         <div class="detail-section">
           <div class="section-header">

@@ -1106,6 +1106,12 @@ class TeamSerializer(serializers.ModelSerializer):
     canal_meshcore_id = serializers.CharField(source='canal_meshcore.id', read_only=True, default=None)
     canal_meshcore_nom = serializers.CharField(source='canal_meshcore.nom', read_only=True, default=None)
     canal_meshcore_provisionne = serializers.SerializerMethodField()
+    # Idem pour Meshtastic (voir TeamViewSet.provisionner_canal_meshtastic) — pas d'équivalent
+    # "provisionne" ici : contrairement à MeshCore (canal_idx tenu par le pont sur SON
+    # companion), un canal Meshtastic n'a pas d'état de configuration observable côté serveur,
+    # chaque destinataire le configure lui-même sur son propre appareil.
+    canal_meshtastic_id = serializers.CharField(source='canal_meshtastic.id', read_only=True, default=None)
+    canal_meshtastic_nom = serializers.CharField(source='canal_meshtastic.nom', read_only=True, default=None)
 
     def get_canal_meshcore_provisionne(self, obj):
         canal = getattr(obj, 'canal_meshcore', None)
@@ -1156,6 +1162,8 @@ class TeamSerializer(serializers.ModelSerializer):
             'canal_meshcore_id',
             'canal_meshcore_nom',
             'canal_meshcore_provisionne',
+            'canal_meshtastic_id',
+            'canal_meshtastic_nom',
         ]
         # institution_delegataire/equipe_parente ne sont pas modifiables ici : elles ne doivent
         # changer que via les actions dédiées (definir_delegation/retirer_delegation,

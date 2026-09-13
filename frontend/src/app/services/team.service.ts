@@ -94,6 +94,15 @@ export class TeamService {
     );
   }
 
+  /** POST /api/teams/<id>/provisionner-canal-meshtastic/ — équivalent Meshtastic de
+   * provisionnerCanalMeshCore. Le DM envoyé à chaque membre est automatiquement chiffré par
+   * clé publique (PKI) dès qu'elle est connue pour lui, sinon repli sur le canal principal. */
+  provisionnerCanalMeshtastic(id: string, regenerer = false): Observable<{ canal_id: string; nom: string; destinataires: number; compagnon_disponible: boolean }> {
+    return this.http.post<{ canal_id: string; nom: string; destinataires: number; compagnon_disponible: boolean }>(
+      `${this.url}/${id}/provisionner-canal-meshtastic/`, { regenerer },
+    );
+  }
+
   rattacherEquipe(parentId: string, equipeId: string): Observable<Team> {
     return this.http.post<Team>(`${this.url}/${parentId}/rattacher-equipe/`, { equipe_id: equipeId });
   }

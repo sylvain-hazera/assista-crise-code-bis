@@ -41,6 +41,8 @@ export interface Team {
   canal_meshcore_id?:           string | null;
   canal_meshcore_nom?:          string | null;
   canal_meshcore_provisionne?:  boolean;
+  canal_meshtastic_id?:         string | null;
+  canal_meshtastic_nom?:        string | null;
   member_ids:           string[];
   members_info?:        TeamMemberInfo[];
   vehicules_count?:     number;            // Offres de type Transport affectées à l'équipe (lecture seule)

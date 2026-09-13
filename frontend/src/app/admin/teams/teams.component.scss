@@ -423,6 +423,19 @@ h3 { margin: 0; font-size: .9rem; font-weight: 700; display: flex; align-items: 
 }
 .mission-meta  { font-size: .75rem; color: var(--muted); }
 .no-missions   { font-size: .87rem; color: var(--muted); margin: 0; }
+.page-hint     { font-size: .87rem; color: var(--muted); margin: .4rem 0 0; max-width: 68ch; }
+.badge-test {
+  font-size: .7rem;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  font-weight: 700;
+  color: #92400e;
+  background: #fef3c7;
+  border-radius: 999px;
+  padding: .15rem .6rem;
+  margin-left: .4rem;
+  vertical-align: middle;
+}
 
 .resource-detail {
   display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .1rem;

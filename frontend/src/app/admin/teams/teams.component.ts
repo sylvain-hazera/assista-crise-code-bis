@@ -1066,6 +1066,45 @@ export class TeamsComponent implements OnInit {
     });
   }
 
+  // ── Canal Meshtastic de l'équipe ──────────────────────────────────────
+  provisionnantCanalMeshtastic = false;
+
+  provisionnerCanalMeshtastic(): void {
+    if (!this.selectedTeam?.id) return;
+    this.provisionnantCanalMeshtastic = true;
+    this.teamService.provisionnerCanalMeshtastic(this.selectedTeam.id).subscribe({
+      next: (resultat) => {
+        this.provisionnantCanalMeshtastic = false;
+        this.reloadTeams();
+        if (this.selectedTeam) {
+          this.selectedTeam = {
+            ...this.selectedTeam,
+            canal_meshtastic_id: resultat.canal_id, canal_meshtastic_nom: resultat.nom,
+          };
+        }
+        this.showSuccess(
+          resultat.compagnon_disponible
+            ? `Canal « ${resultat.nom} » prêt — infos envoyées à ${resultat.destinataires} membre(s) équipé(s) d'un nœud Meshtastic.`
+            : `Canal « ${resultat.nom} » créé, mais aucun companion actif pour envoyer les infos aux membres pour l'instant.`,
+        );
+      },
+      error: () => { this.provisionnantCanalMeshtastic = false; this.showError('Erreur lors du provisionnement du canal Meshtastic.'); },
+    });
+  }
+
+  regenererCanalMeshtastic(): void {
+    if (!this.selectedTeam?.id) return;
+    if (!confirm("Régénérer la clé du canal Meshtastic ? Les anciens détenteurs (y compris un membre retiré) ne pourront plus l'utiliser — la nouvelle clé n'est renvoyée qu'aux membres actuels.")) return;
+    this.provisionnantCanalMeshtastic = true;
+    this.teamService.provisionnerCanalMeshtastic(this.selectedTeam.id, true).subscribe({
+      next: (resultat) => {
+        this.provisionnantCanalMeshtastic = false;
+        this.showSuccess(`Clé régénérée et renvoyée à ${resultat.destinataires} membre(s).`);
+      },
+      error: () => { this.provisionnantCanalMeshtastic = false; this.showError('Erreur lors de la régénération du canal Meshtastic.'); },
+    });
+  }
+
   /** Crises ouvertes proposables pour la mission — une mission ne doit pas pouvoir se rattacher
    * à une crise déjà clôturée (voir validate_crisis_open côté backend). */
   get crisesOuvertes(): Crisis[] {

@@ -3333,6 +3333,55 @@ def _appartient_a_equipe(request, team) -> bool:
     )
 
 
+def _nom_canal_meshtastic_equipe(team) -> str:
+    """"Equipe" + nom d'équipe, sans le doubler quand le nom de l'équipe commence déjà par
+    "Équipe"/"Equipe" (convention de nommage très répandue côté équipes, ex: "Équipe Voirie —
+    Points de transit" aurait sinon donné "EquipeÉquipe Voirie..."). Tronqué à 20 caractères :
+    au-delà, certains firmwares Meshtastic affichent mal le nom du canal."""
+    nom_equipe = team.name.strip()
+    prefixe_deja_present = nom_equipe.lower().startswith(('équipe', 'equipe'))
+    base = nom_equipe if prefixe_deja_present else f"Equipe{nom_equipe}"
+    return base[:20]
+
+
+def _assurer_canal_meshtastic_et_notifier(request, team, user):
+    """Si `user` a un nœud Meshtastic personnel actif, s'assure que l'équipe a déjà un canal
+    Meshtastic (le crée s'il n'existe pas encore — ne le régénère JAMAIS ici, contrairement à
+    TeamViewSet.provisionner_canal_meshtastic qui, lui, notifie tous les membres à la fois) et
+    envoie ses informations en DM à CE seul membre — c'est le déclenchement automatique "à
+    l'affectation" (voir docstring de provisionner_canal_meshtastic pour le détail du
+    fonctionnement PKI/repli canal principal, identique ici)."""
+    noeud = NoeudUtilisateurMeshtastic.objects.filter(utilisateur=user, actif=True).first()
+    if noeud is None:
+        return
+
+    canal = getattr(team, 'canal_meshtastic', None)
+    if canal is None:
+        canal = CanalMeshtastic.objects.create(
+            equipe=team, institution=team.institution,
+            nom=_nom_canal_meshtastic_equipe(team),
+            psk_hex=secrets.token_hex(16),
+            environment=get_active_environment(request),
+        )
+
+    compagnon = CompagnonMeshtastic.objects.filter(actif=True, principal=True).first() \
+        or CompagnonMeshtastic.objects.filter(actif=True).first()
+    if compagnon is None:
+        return
+
+    MessageMeshtasticLog.objects.create(
+        compagnon=compagnon,
+        canal=None,
+        direction=DirectionMessageMesh.SORTANT,
+        contact_node_num=noeud.node_num,
+        contenu=f"{canal.psk_hex} - {canal.nom}",
+        statut=StatutMessageMesh.EN_ATTENTE,
+        expediteur=request.user if request.user.is_authenticated else None,
+        equipe=team,
+        environment=get_active_environment(request),
+    )
+
+
 def _institutions_liees(team):
     """Institutions considérées comme "déjà liées" à l'institution de `team` : celles co-
     impliquées avec elle (ImplicationInstitution, au sens le plus large — peu importe le type
@@ -3772,6 +3821,7 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             'rattacher_equipe', 'detacher_equipe',
             'definir_statut_ressource', 'reactiver', 'vue_mairie', 'institutions_liees',
             'ressources_mobilisees', 'assigner_crise', 'provisionner_canal_meshcore',
+            'provisionner_canal_meshtastic',
         ):
             return [IsInstitutionalActor()]
         return [permissions.IsAuthenticated()]
@@ -4147,6 +4197,7 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             defaults={'actif': True},
         )
         team.members.add(user)
+        _assurer_canal_meshtastic_et_notifier(request, team, user)
 
         if invited:
             # Le lien "vue équipe" de _notify_new_team_member est un lien de connexion magique :
@@ -4648,6 +4699,85 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             objet_id=canal.id,
             commentaire=(
                 f"Canal MeshCore {'régénéré' if regenerer else 'provisionné'} pour l'équipe « {team.name} » "
+                f"— clé envoyée à {len(destinataires)} membre(s) équipé(s)."
+            ),
+        )
+
+        return Response({
+            "canal_id": str(canal.id),
+            "nom": canal.nom,
+            "destinataires": len(destinataires),
+            "compagnon_disponible": compagnon is not None,
+        })
+
+    @action(detail=True, methods=['post'], url_path='provisionner-canal-meshtastic')
+    def provisionner_canal_meshtastic(self, request, pk=None):
+        """Équivalent Meshtastic de provisionner_canal_meshcore : crée (ou régénère) LE canal
+        Meshtastic privé de cette équipe (PSK partagée), et envoie ses informations (clé
+        d'abord, nom ensuite — copier-coller plus facile) en DM à chaque membre équipé d'un
+        nœud Meshtastic personnel actif.
+
+        Différence importante avec MeshCore : le DM lui-même est envoyé chiffré par clé
+        publique (PKI) dès qu'on connaît déjà celle du destinataire (voir ContactMeshtastic.
+        public_key_hex, captée passivement via son NodeInfo — voir meshtastic-bridge/
+        crypto.py) — bien plus fiable et confidentiel qu'un DM chiffré par la PSK d'un canal
+        partagé, repli automatique si la clé publique n'est pas encore connue (voir
+        MessageMeshtasticLogViewSet.a_envoyer). Le CANAL D'ÉQUIPE annoncé dans le message,
+        lui, reste toujours une PSK partagée classique : Meshtastic n'a pas d'équivalent PKI
+        pour une conversation de GROUPE (le PKI n'est que point-à-point), le destinataire doit
+        donc toujours configurer ce canal lui-même sur son propre appareil, exactement comme
+        pour MeshCore (voir docstring de CanalMeshtastic)."""
+        team = self.get_object()
+        if not _appartient_a_equipe(request, team):
+            return Response(
+                {"error": "Vous ne pouvez provisionner un canal Meshtastic que pour les équipes de votre institution (ou de l'institution déléguée)."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        regenerer = bool(request.data.get('regenerer'))
+        canal = getattr(team, 'canal_meshtastic', None)
+        canal_nouveau = canal is None
+        if canal is None:
+            canal = CanalMeshtastic.objects.create(
+                equipe=team, institution=team.institution,
+                nom=_nom_canal_meshtastic_equipe(team),
+                psk_hex=secrets.token_hex(16),
+                environment=get_active_environment(request),
+            )
+        elif regenerer:
+            canal.psk_hex = secrets.token_hex(16)
+            canal.save(update_fields=['psk_hex'])
+
+        compagnon = CompagnonMeshtastic.objects.filter(actif=True, principal=True).first() \
+            or CompagnonMeshtastic.objects.filter(actif=True).first()
+
+        destinataires = []
+        if compagnon is not None:
+            noeuds = NoeudUtilisateurMeshtastic.objects.filter(utilisateur__in=team.members.all(), actif=True).select_related('utilisateur')
+            for noeud in noeuds:
+                MessageMeshtasticLog.objects.create(
+                    compagnon=compagnon,
+                    # None : laisse le pont choisir automatiquement PKI (si la clé publique du
+                    # destinataire est déjà connue) ou le canal principal en repli — voir
+                    # docstring ci-dessus et MessageMeshtasticLogViewSet.a_envoyer.
+                    canal=None,
+                    direction=DirectionMessageMesh.SORTANT,
+                    contact_node_num=noeud.node_num,
+                    contenu=f"{canal.psk_hex} - {canal.nom}",
+                    statut=StatutMessageMesh.EN_ATTENTE,
+                    expediteur=request.user,
+                    equipe=team,
+                    environment=get_active_environment(request),
+                )
+                destinataires.append(noeud.utilisateur_id)
+
+        audit_log(
+            request=request,
+            action_code="CREATION" if canal_nouveau else "MODIFICATION",
+            objet_type="CanalMeshtastic",
+            objet_id=canal.id,
+            commentaire=(
+                f"Canal Meshtastic {'régénéré' if regenerer else 'provisionné'} pour l'équipe « {team.name} » "
                 f"— clé envoyée à {len(destinataires)} membre(s) équipé(s)."
             ),
         )
