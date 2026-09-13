@@ -14,6 +14,7 @@ import { GeolocationService } from '../../../../services/geolocation.service';
 import { PositionEquipeService } from '../../../../services/position-equipe.service';
 import { RelaisMeshCoreService } from '../../../../services/relais-meshcore.service';
 import { CompagnonMeshCoreService } from '../../../../services/compagnon-meshcore.service';
+import { NoeudMeshUtilisateurService } from '../../../../services/noeud-mesh-utilisateur.service';
 import { PointOperationnelService } from '../../../../services/point-operationnel.service';
 import type { FeatureCollection, Geometry, Polygon } from 'geojson';
 import { AuthService } from '../../../../auth/services/auth.service';
@@ -33,6 +34,7 @@ interface LayerVisibility {
   benevolesPompiers: boolean;
   relaisMeshCore: boolean;
   compagnonsMeshCore: boolean;
+  noeudsMeshCore: boolean;
 }
 
 // Codes/libellés déjà utilisés côté offre/point pour repérer secourisme/soins — voir
@@ -90,6 +92,10 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     // Companions MeshCore (poste de commandement, véhicule...) : position saisie manuellement,
     // optionnelle — visible par défaut comme les relais.
     compagnonsMeshCore: true,
+    // Nœuds personnels MeshCore (porteur de terrain) : position réelle du firmware (annonce ou
+    // télémétrie pendant une mission active, voir bridge.py boucle_positions_missions) —
+    // visible par défaut, comme les relais/companions.
+    noeudsMeshCore: true,
   };
 
   private map: maplibregl.Map | null = null;
@@ -100,6 +106,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   private teamPositionsGeoJSON: FeatureCollection<Geometry> | null = null;
   private relaisMeshCoreGeoJSON: FeatureCollection<Geometry> | null = null;
   private compagnonsMeshCoreGeoJSON: FeatureCollection<Geometry> | null = null;
+  private noeudsMeshCoreGeoJSON: FeatureCollection<Geometry> | null = null;
   private personnelSecourismeGeoJSON: FeatureCollection<Geometry> | null = null;
   private benevolesPompiersGeoJSON: FeatureCollection<Geometry> | null = null;
   private centresTousGeoJSON: FeatureCollection<Geometry> | null = null;
@@ -122,6 +129,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
               private pointOperationnelService: PointOperationnelService,
               private relaisMeshCoreService: RelaisMeshCoreService,
               private compagnonMeshCoreService: CompagnonMeshCoreService,
+              private noeudMeshUtilisateurService: NoeudMeshUtilisateurService,
               private authService: AuthService) {}
   ngOnInit(): void {
     this.isInstitutional = this.authService.isAdmin();
@@ -152,6 +160,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     if (this.isInstitutional) {
       this.loadRelaisMeshCore();
       this.loadCompagnonsMeshCore();
+      this.loadNoeudsMeshCore();
     }
   }
 
@@ -171,6 +180,8 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     this.applyLayerVisibility('relais-meshcore-label', this.layerVisibility.relaisMeshCore);
     this.applyLayerVisibility('compagnons-meshcore-layer', this.layerVisibility.compagnonsMeshCore);
     this.applyLayerVisibility('compagnons-meshcore-label', this.layerVisibility.compagnonsMeshCore);
+    this.applyLayerVisibility('noeuds-meshcore-layer', this.layerVisibility.noeudsMeshCore);
+    this.applyLayerVisibility('noeuds-meshcore-label', this.layerVisibility.noeudsMeshCore);
     this.applyLayerVisibility('location-radius', this.layerVisibility.crises);
     this.applyLayerVisibility('personnel-secourisme-layer', this.layerVisibility.personnelSecourisme);
     this.applyLayerVisibility('centres-tous-layer', this.layerVisibility.centresTous);
@@ -634,6 +645,79 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     });
     this.map.on('mouseenter', 'compagnons-meshcore-layer', () => { this.map!.getCanvas().style.cursor = 'pointer'; });
     this.map.on('mouseleave', 'compagnons-meshcore-layer', () => { this.map!.getCanvas().style.cursor = ''; });
+  }
+
+  /** Nœuds personnels MeshCore (porteur de terrain, ex: SH1) : uniquement pendant qu'une
+   * mission de l'équipe du porteur est EN_COURS — jamais de suivi continu hors mission (voir
+   * NoeudMeshUtilisateurViewSet.positions_en_mission, qui applique déjà cette règle côté
+   * serveur ; la fraîcheur de la position est entretenue par bridge.py
+   * boucle_positions_missions pendant ce temps). */
+  loadNoeudsMeshCore(): void {
+    this.noeudMeshUtilisateurService.positionsEnMission().subscribe({
+      next: (positions) => {
+        this.noeudsMeshCoreGeoJSON = {
+          type: 'FeatureCollection',
+          features: positions.map(p => ({
+            type: 'Feature',
+            geometry: { type: 'Point', coordinates: [Number(p.longitude), Number(p.latitude)] },
+            properties: { nom: p.utilisateur_nom || p.nom_noeud },
+          })),
+        };
+        this.runWhenMapReady(() => this.addOrUpdateNoeudsMeshCoreLayer());
+      },
+      error: (err) => console.error('Erreur chargement nœuds MeshCore:', err),
+    });
+  }
+
+  private addOrUpdateNoeudsMeshCoreLayer(): void {
+    if (!this.map || !this.noeudsMeshCoreGeoJSON) return;
+
+    const existingSource = this.map.getSource('noeuds-meshcore') as maplibregl.GeoJSONSource | undefined;
+    if (existingSource) {
+      existingSource.setData(this.noeudsMeshCoreGeoJSON);
+      return;
+    }
+
+    this.map.addSource('noeuds-meshcore', { type: 'geojson', data: this.noeudsMeshCoreGeoJSON });
+
+    const visibility = this.layerVisibility.noeudsMeshCore ? 'visible' : 'none';
+
+    this.map.addLayer({
+      id: 'noeuds-meshcore-layer',
+      type: 'circle',
+      source: 'noeuds-meshcore',
+      layout: { visibility },
+      paint: {
+        'circle-color': '#16a34a',
+        'circle-radius': 6,
+        'circle-stroke-width': 2,
+        'circle-stroke-color': '#fff',
+      },
+    });
+
+    this.map.addLayer({
+      id: 'noeuds-meshcore-label',
+      type: 'symbol',
+      source: 'noeuds-meshcore',
+      layout: {
+        visibility,
+        'text-field': ['get', 'nom'],
+        'text-size': 11,
+        'text-offset': [0, 1.2],
+        'text-anchor': 'top',
+      },
+      paint: { 'text-color': '#15803d', 'text-halo-color': '#fff', 'text-halo-width': 1 },
+    });
+
+    this.map.on('click', 'noeuds-meshcore-layer', (e) => {
+      if (!e.features || e.features.length === 0) return;
+      const geometry = e.features[0].geometry as GeoJSON.Point;
+      const coordinates = geometry.coordinates.slice() as [number, number];
+      const nom = e.features[0].properties?.['nom'] || 'Nœud';
+      new maplibregl.Popup().setLngLat(coordinates).setHTML(`<strong>${nom}</strong><br>Nœud MeshCore personnel`).addTo(this.map!);
+    });
+    this.map.on('mouseenter', 'noeuds-meshcore-layer', () => { this.map!.getCanvas().style.cursor = 'pointer'; });
+    this.map.on('mouseleave', 'noeuds-meshcore-layer', () => { this.map!.getCanvas().style.cursor = ''; });
   }
 
   private addOrUpdatePersonnelSecourismeLayer(): void {
