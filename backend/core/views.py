@@ -143,6 +143,8 @@ from .models import (
     MaterielCatalogue, ContributionMateriel, StatutMateriel, TypeMateriel, NiveauStock, RegistrePresence, TypePersonneAccueillie, DeclarationSecurite, SituationDeclarant,
     CompagnonMeshCore, NoeudMeshUtilisateur, MessageMeshLog, DirectionMessageMesh, StatutMessageMesh,
     RelaisMeshCore, CanalMeshCore, MessageCanalMeshCore, ContactMeshCore, TypeContactMeshCore,
+    CompagnonMeshtastic, NoeudUtilisateurMeshtastic, MessageMeshtasticLog,
+    CanalMeshtastic, MessageCanalMeshtastic, ContactMeshtastic,
     AffectationPointBenevole, StatutAffectation,
     RecherchePersonne, RecherchePersonneCommentaire, Besoin, Notification, DossierParticipant,
     RecherchePersonneCommentairePhoto, RecherchePersonneLecture, RecherchePersonneLectureHistorique,
@@ -302,6 +304,12 @@ from .serializers import (
     CanalMeshCoreSerializer,
     MessageCanalMeshCoreSerializer,
     ContactMeshCoreSerializer,
+    CompagnonMeshtasticSerializer,
+    NoeudUtilisateurMeshtasticSerializer,
+    MessageMeshtasticLogSerializer,
+    CanalMeshtasticSerializer,
+    MessageCanalMeshtasticSerializer,
+    ContactMeshtasticSerializer,
     ContributionMaterielSerializer,
     RegistrePresenceSerializer,
     DeclarationSecuriteSerializer,
@@ -9277,6 +9285,296 @@ class ContactMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ReadOnlyMod
 
     queryset = ContactMeshCore.objects.select_related('compagnon').all()
     serializer_class = ContactMeshCoreSerializer
+    permission_classes = [IsInstitutionalActor]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        compagnon_id = self.request.query_params.get('compagnon')
+        if compagnon_id:
+            qs = qs.filter(compagnon_id=compagnon_id)
+        return qs
+
+
+class CompagnonMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
+    """Identités de nœud Meshtastic logicielles utilisées comme passerelle via un broker MQTT
+    tiers (voir docstring du modèle et `meshtastic-bridge/`, hors de ce dépôt Django). Même
+    posture que CompagnonMeshCoreViewSet : phase de test, IsInstitutionalActor en écriture."""
+
+    queryset = CompagnonMeshtastic.objects.select_related('institution').all()
+    serializer_class = CompagnonMeshtasticSerializer
+
+    def get_permissions(self):
+        if self.action in ('create', 'update', 'partial_update', 'destroy'):
+            return [IsInstitutionalActor()]
+        return [permissions.IsAuthenticated()]
+
+    def perform_create(self, serializer):
+        compagnon = serializer.save(environment=get_active_environment(self.request))
+        audit_log(
+            request=self.request,
+            action_code="CREATION",
+            objet_type="CompagnonMeshtastic",
+            objet_id=compagnon.id,
+            commentaire=f"Création companion Meshtastic : {compagnon.nom}",
+        )
+
+    @action(detail=True, methods=['post'], url_path='rapporter-etat')
+    def rapporter_etat(self, request, pk=None):
+        """Même rôle que CompagnonMeshCoreViewSet.rapporter_etat : le pont appelle ceci à
+        chaque changement d'état de sa connexion MQTT."""
+        compagnon = self.get_object()
+        etat = request.data.get('etat')
+        if etat not in ('CONNECTE', 'DECONNECTE', 'ERREUR'):
+            return Response({'detail': "etat doit être CONNECTE, DECONNECTE ou ERREUR."}, status=status.HTTP_400_BAD_REQUEST)
+
+        compagnon.dernier_etat = etat
+        if etat == 'CONNECTE':
+            compagnon.derniere_connexion = timezone.now()
+            compagnon.derniere_erreur = None
+        elif etat == 'ERREUR':
+            compagnon.derniere_erreur = request.data.get('erreur', '')
+
+        compagnon.save(update_fields=['dernier_etat', 'derniere_connexion', 'derniere_erreur'])
+        return Response(CompagnonMeshtasticSerializer(compagnon).data)
+
+    @action(detail=True, methods=['post'], url_path='synchroniser-contacts')
+    def synchroniser_contacts(self, request, pk=None):
+        """Le pont appelle ceci avec les nœuds Meshtastic découverts passivement sur MQTT
+        (paquets NodeInfo/Position décodés) — upsert par (compagnon, node_num), même logique
+        que CompagnonMeshCoreViewSet.synchroniser_contacts (jamais de suppression : un nœud qui
+        n'apparaît plus reste visible, juste potentiellement hors de portée)."""
+        compagnon = self.get_object()
+        contacts = request.data.get('contacts', [])
+        if not isinstance(contacts, list):
+            return Response({'detail': "'contacts' doit être une liste."}, status=status.HTTP_400_BAD_REQUEST)
+
+        synchronises = 0
+        for contact in contacts:
+            node_num = contact.get('node_num')
+            if node_num is None:
+                continue
+            defaults = {}
+            if 'long_name' in contact:
+                defaults['long_name'] = contact.get('long_name') or ''
+            if 'short_name' in contact:
+                defaults['short_name'] = contact.get('short_name') or ''
+            if 'hardware_model' in contact:
+                defaults['hardware_model'] = contact.get('hardware_model') or None
+            lat, lon = contact.get('latitude'), contact.get('longitude')
+            if lat and lon:
+                from django.contrib.gis.geos import Point
+                defaults['location'] = Point(float(lon), float(lat), srid=4326)
+            dernier_advert = contact.get('dernier_advert')
+            if dernier_advert:
+                from datetime import datetime, timezone as dt_timezone
+                defaults['dernier_advert'] = datetime.fromtimestamp(dernier_advert, tz=dt_timezone.utc)
+
+            ContactMeshtastic.objects.update_or_create(
+                compagnon=compagnon, node_num=node_num,
+                defaults={**defaults, 'environment': get_active_environment(request)},
+            )
+            synchronises += 1
+
+        return Response({'synchronises': synchronises})
+
+
+class NoeudUtilisateurMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
+    """Correspondance node_num Meshtastic <-> compte utilisateur — voir docstring du modèle."""
+
+    queryset = NoeudUtilisateurMeshtastic.objects.select_related('utilisateur').all()
+    serializer_class = NoeudUtilisateurMeshtasticSerializer
+
+    def get_permissions(self):
+        if self.action in ('create', 'update', 'partial_update', 'destroy', 'positions_en_mission'):
+            return [IsInstitutionalActor()]
+        return [permissions.IsAuthenticated()]
+
+    def perform_create(self, serializer):
+        noeud = serializer.save(environment=get_active_environment(self.request))
+        audit_log(
+            request=self.request,
+            action_code="CREATION",
+            objet_type="NoeudUtilisateurMeshtastic",
+            objet_id=noeud.id,
+            commentaire=f"Association nœud Meshtastic {noeud.node_num:08x} -> {noeud.utilisateur.email}",
+        )
+
+    @action(detail=False, methods=['get'], url_path='positions-en-mission')
+    def positions_en_mission(self, request):
+        """Même règle produit que NoeudMeshUtilisateurViewSet.positions_en_mission : la
+        position d'un nœud personnel n'est affichée sur la carte que pendant une mission EN_COURS
+        de l'équipe de son porteur — même si Meshtastic diffuse nativement sa position en
+        continu sur le mesh (propriété du protocole qu'on ne peut pas changer), on ne la SURFACE
+        jamais sur la carte assista-crise en dehors de ce cadre, par cohérence avec MeshCore."""
+        noeuds = (
+            NoeudUtilisateurMeshtastic.objects.filter(
+                actif=True,
+                utilisateur__teams__mission_active__statut=Mission.Statut.EN_COURS,
+            )
+            .select_related('utilisateur')
+            .distinct()
+        )
+
+        resultats = []
+        for noeud in noeuds:
+            contact = (
+                ContactMeshtastic.objects.filter(node_num=noeud.node_num, location__isnull=False)
+                .order_by('-dernier_advert')
+                .first()
+            )
+            if not contact:
+                continue
+            equipe = noeud.utilisateur.teams.filter(mission_active__statut=Mission.Statut.EN_COURS).first()
+            resultats.append({
+                'noeud_id': str(noeud.id),
+                'utilisateur_id': str(noeud.utilisateur_id),
+                'utilisateur_nom': (
+                    f"{noeud.utilisateur.first_name} {noeud.utilisateur.last_name}".strip()
+                    or noeud.utilisateur.email
+                ),
+                'nom_noeud': noeud.nom_noeud,
+                'node_num': noeud.node_num,
+                'latitude': contact.location.y,
+                'longitude': contact.location.x,
+                'dernier_advert': contact.dernier_advert,
+                'equipe_id': str(equipe.id) if equipe else None,
+                'equipe_nom': equipe.name if equipe else None,
+                'mission_id': str(equipe.mission_active_id) if equipe and equipe.mission_active_id else None,
+                'mission_titre': equipe.mission_active.titre if equipe and equipe.mission_active else None,
+            })
+        return Response(resultats)
+
+
+class MessageMeshtasticLogViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
+    """DM Meshtastic privés régulateur <-> équipe — même principe de cloisonnement que
+    MessageMeshLogViewSet (MeshCore) : administrer un companion n'est pas lire les messages."""
+
+    queryset = MessageMeshtasticLog.objects.select_related('compagnon', 'expediteur', 'equipe', 'canal').all()
+    serializer_class = MessageMeshtasticLogSerializer
+
+    def get_permissions(self):
+        if self.action in ('list', 'retrieve'):
+            return [IsInstitutionalActor()]
+        return [permissions.IsAuthenticated()]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        equipe_id = self.request.query_params.get('equipe')
+        if equipe_id:
+            qs = qs.filter(equipe_id=equipe_id)
+        contact_node_num = self.request.query_params.get('contact_node_num')
+        if contact_node_num:
+            qs = qs.filter(contact_node_num=contact_node_num)
+        if self.action not in ('list', 'retrieve'):
+            return qs
+        if effective_role_or_none(self.request) == UserRole.ADMINISTRATOR:
+            return qs
+        user = self.request.user
+        return qs.filter(Q(equipe__leader=user) | Q(equipe__regulateur=user))
+
+    def perform_create(self, serializer):
+        contact_node_num = serializer.validated_data.get('contact_node_num')
+        direction = serializer.validated_data.get('direction')
+        expediteur = None
+        if direction == DirectionMessageMesh.ENTRANT and contact_node_num is not None:
+            noeud = NoeudUtilisateurMeshtastic.objects.filter(node_num=contact_node_num, actif=True).select_related('utilisateur').first()
+            expediteur = noeud.utilisateur if noeud else None
+        elif direction == DirectionMessageMesh.SORTANT:
+            expediteur = self.request.user if self.request.user.is_authenticated else None
+        equipe = expediteur.teams.first() if expediteur is not None else None
+
+        message = serializer.save(
+            environment=get_active_environment(self.request), expediteur=expediteur, equipe=equipe,
+        )
+        if message.direction == DirectionMessageMesh.ENTRANT and message.statut == StatutMessageMesh.EN_ATTENTE:
+            message.statut = StatutMessageMesh.RECU
+            message.save(update_fields=['statut'])
+
+    @action(detail=False, methods=['get'], url_path='a-envoyer')
+    def a_envoyer(self, request):
+        """Même principe que MessageMeshLogViewSet.a_envoyer."""
+        compagnon_id = request.query_params.get('compagnon')
+        qs = self.get_queryset().filter(direction=DirectionMessageMesh.SORTANT, statut=StatutMessageMesh.EN_ATTENTE)
+        if compagnon_id:
+            qs = qs.filter(compagnon_id=compagnon_id)
+        return Response(MessageMeshtasticLogSerializer(qs, many=True).data)
+
+
+class CanalMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
+    """Canaux Meshtastic (coordination générale, visibilité large) — voir docstring du modèle."""
+
+    queryset = CanalMeshtastic.objects.select_related('institution', 'crise').all()
+    serializer_class = CanalMeshtasticSerializer
+
+    def get_permissions(self):
+        if self.action in ('create', 'update', 'partial_update', 'destroy'):
+            return [IsInstitutionalActor()]
+        return [permissions.IsAuthenticated()]
+
+    def perform_create(self, serializer):
+        canal = serializer.save(environment=get_active_environment(self.request))
+        audit_log(
+            request=self.request,
+            action_code="CREATION",
+            objet_type="CanalMeshtastic",
+            objet_id=canal.id,
+            commentaire=f"Création canal Meshtastic : {canal.nom}",
+        )
+
+    @action(detail=False, methods=['get'], url_path='avec-cle')
+    def avec_cle(self, request):
+        """Canaux actifs avec leur PSK EN CLAIR — le pont en a besoin pour chiffrer/déchiffrer
+        (voir meshtastic-bridge/crypto.py), contrairement à la sérialisation normale
+        (psk_hex en write_only). Même principe que CanalMeshCoreViewSet.canaux_a_provisionner :
+        réservé au compte de service du pont (IsAuthenticated suffit, pas besoin d'être
+        institutionnel), jamais exposé par la sérialisation standard."""
+        canaux = self.get_queryset().filter(actif=True)
+        return Response([
+            {"id": str(c.id), "nom": c.nom, "psk_hex": c.psk_hex}
+            for c in canaux
+        ])
+
+
+class MessageCanalMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
+    """Messages postés sur un canal Meshtastic partagé — même principe que
+    MessageCanalMeshCoreViewSet."""
+
+    queryset = MessageCanalMeshtastic.objects.select_related('canal', 'expediteur').all()
+    serializer_class = MessageCanalMeshtasticSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        canal_id = self.request.query_params.get('canal')
+        if canal_id:
+            qs = qs.filter(canal_id=canal_id)
+        return qs
+
+    def get_permissions(self):
+        if self.action in ('list', 'retrieve'):
+            return [IsInstitutionalActor()]
+        return [permissions.IsAuthenticated()]
+
+    def perform_create(self, serializer):
+        direction = serializer.validated_data.get('direction')
+        expediteur = self.request.user if direction == DirectionMessageMesh.SORTANT and self.request.user.is_authenticated else None
+        serializer.save(environment=get_active_environment(self.request), expediteur=expediteur)
+
+    @action(detail=False, methods=['get'], url_path='a-envoyer')
+    def a_envoyer(self, request):
+        """Même principe que MessageCanalMeshCoreViewSet.a_envoyer."""
+        canal_id = request.query_params.get('canal')
+        qs = self.get_queryset().filter(direction=DirectionMessageMesh.SORTANT, statut=StatutMessageMesh.EN_ATTENTE)
+        if canal_id:
+            qs = qs.filter(canal_id=canal_id)
+        return Response(MessageCanalMeshtasticSerializer(qs, many=True).data)
+
+
+class ContactMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ReadOnlyModelViewSet):
+    """Répertoire de nœuds Meshtastic découverts passivement sur MQTT — lecture seule, voir
+    CompagnonMeshtasticViewSet.synchroniser_contacts."""
+
+    queryset = ContactMeshtastic.objects.select_related('compagnon').all()
+    serializer_class = ContactMeshtasticSerializer
     permission_classes = [IsInstitutionalActor]
 
     def get_queryset(self):

@@ -47,6 +47,12 @@ from .models import (
     CanalMeshCore,
     MessageCanalMeshCore,
     ContactMeshCore,
+    CompagnonMeshtastic,
+    CanalMeshtastic,
+    MessageMeshtasticLog,
+    MessageCanalMeshtastic,
+    ContactMeshtastic,
+    NoeudUtilisateurMeshtastic,
     ContributionMateriel,
     StatutMateriel,
     RegistrePresence,
@@ -2659,6 +2665,87 @@ class ContactMeshCoreSerializer(serializers.ModelSerializer):
 
     def get_deja_associe(self, obj):
         return NoeudMeshUtilisateur.objects.filter(pubkey_hex=obj.pubkey_hex).exists()
+
+
+class CompagnonMeshtasticSerializer(serializers.ModelSerializer):
+    institution_nom = serializers.CharField(source='institution.nom', read_only=True, default=None)
+
+    class Meta:
+        model = CompagnonMeshtastic
+        fields = "__all__"
+
+
+class CanalMeshtasticSerializer(serializers.ModelSerializer):
+    institution_nom = serializers.CharField(source='institution.nom', read_only=True, default=None)
+    crise_nom = serializers.CharField(source='crise.name', read_only=True, default=None)
+    equipe_nom = serializers.CharField(source='equipe.name', read_only=True, default=None)
+
+    class Meta:
+        model = CanalMeshtastic
+        fields = "__all__"
+        extra_kwargs = {'psk_hex': {'write_only': True}}
+
+
+class ContactMeshtasticSerializer(serializers.ModelSerializer):
+    compagnon_nom = serializers.CharField(source='compagnon.nom', read_only=True)
+    latitude = serializers.SerializerMethodField()
+    longitude = serializers.SerializerMethodField()
+    deja_associe = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ContactMeshtastic
+        fields = "__all__"
+
+    def get_latitude(self, obj):
+        return obj.location.y if obj.location else None
+
+    def get_longitude(self, obj):
+        return obj.location.x if obj.location else None
+
+    def get_deja_associe(self, obj):
+        return NoeudUtilisateurMeshtastic.objects.filter(node_num=obj.node_num).exists()
+
+
+class NoeudUtilisateurMeshtasticSerializer(serializers.ModelSerializer):
+    utilisateur_nom = serializers.SerializerMethodField()
+
+    class Meta:
+        model = NoeudUtilisateurMeshtastic
+        fields = "__all__"
+
+    def get_utilisateur_nom(self, obj):
+        return f"{obj.utilisateur.first_name} {obj.utilisateur.last_name}".strip() or obj.utilisateur.email
+
+
+class MessageMeshtasticLogSerializer(serializers.ModelSerializer):
+    compagnon_nom = serializers.CharField(source='compagnon.nom', read_only=True)
+    expediteur_nom = serializers.SerializerMethodField()
+    equipe_nom = serializers.CharField(source='equipe.name', read_only=True, default=None)
+
+    class Meta:
+        model = MessageMeshtasticLog
+        fields = "__all__"
+        read_only_fields = ['expediteur', 'equipe']
+
+    def get_expediteur_nom(self, obj):
+        if not obj.expediteur_id:
+            return None
+        return f"{obj.expediteur.first_name} {obj.expediteur.last_name}".strip() or obj.expediteur.email
+
+
+class MessageCanalMeshtasticSerializer(serializers.ModelSerializer):
+    canal_nom = serializers.CharField(source='canal.nom', read_only=True)
+    expediteur_nom = serializers.SerializerMethodField()
+
+    class Meta:
+        model = MessageCanalMeshtastic
+        fields = "__all__"
+        read_only_fields = ['expediteur']
+
+    def get_expediteur_nom(self, obj):
+        if not obj.expediteur_id:
+            return None
+        return f"{obj.expediteur.first_name} {obj.expediteur.last_name}".strip() or obj.expediteur.email
 
 
 class MessageCanalMeshCoreSerializer(serializers.ModelSerializer):

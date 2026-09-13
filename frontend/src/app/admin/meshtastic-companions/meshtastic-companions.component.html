@@ -1,0 +1,188 @@
+<div class="page-header">
+  <h2>Companions Meshtastic <span class="badge-test">test</span></h2>
+  <p class="page-hint">
+    Ce companion n'est PAS un appareil réel : c'est une identité de nœud logicielle qui se
+    connecte directement au broker MQTT d'un réseau tiers (ex: Gaulix, mqtt.gaulix.fr) — voir
+    meshtastic-bridge/README.md. Chiffrement réimplémenté à la main, non encore vérifié sur du
+    vrai matériel : à manier avec précaution.
+  </p>
+</div>
+
+<div class="create-panel">
+  <h3>Ajouter un companion</h3>
+  <div class="form-row">
+    <input type="text" class="form-input" placeholder="Nom (ex: Pont Gaulix test)" [(ngModel)]="nouveauNom">
+  </div>
+  <div class="form-row">
+    <input type="number" class="form-input" placeholder="node_num (identifiant 32 bits)" [(ngModel)]="nouveauNodeNum">
+    <button type="button" class="btn-secondary" (click)="genererNodeNum()">Générer</button>
+  </div>
+  <div class="form-row">
+    <input type="text" class="form-input form-input-sm" placeholder="Long name" [(ngModel)]="nouveauLongName">
+    <input type="text" class="form-input form-input-sm" placeholder="Short name (4 car.)" maxlength="4" [(ngModel)]="nouveauShortName">
+  </div>
+  <div class="form-row">
+    <input type="text" class="form-input" placeholder="Broker MQTT" [(ngModel)]="nouveauBrokerHost">
+    <input type="number" class="form-input form-input-sm" placeholder="Port" [(ngModel)]="nouveauBrokerPort">
+  </div>
+  <div class="form-row">
+    <input type="text" class="form-input" placeholder="Racine de topic (ex: msh/EU_868)" [(ngModel)]="nouveauTopicRacine">
+  </div>
+
+  <button type="button" class="btn-primary" [disabled]="!formValide || creating" (click)="ajouter()">
+    Ajouter ce companion
+  </button>
+</div>
+
+@if (errorMessage) {
+  <p class="error-message">{{ errorMessage }}</p>
+}
+
+@if (loading) {
+  <p>Chargement…</p>
+} @else {
+  <div class="table-wrapper">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Nom</th>
+          <th>node_num</th>
+          <th>Broker</th>
+          <th>Statut</th>
+          <th>Dernière connexion</th>
+          <th>ID (pour COMPAGNON_ID)</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (c of companions; track c.id) {
+          <tr>
+            <td>{{ c.nom }}</td>
+            <td class="mono">{{ nodeNumHex(c.node_num) }}</td>
+            <td class="mono">{{ c.broker_host }}:{{ c.broker_port }}</td>
+            <td><span class="statut" [ngClass]="statutClass(c)">{{ c.dernier_etat || 'jamais connecté' }}</span></td>
+            <td>{{ c.derniere_connexion ? (c.derniere_connexion | date:'short') : '—' }}</td>
+            <td class="mono id-cell" (click)="copierId(c)" title="Cliquer pour copier">{{ c.id }}</td>
+            <td><button type="button" class="btn-danger-sm" (click)="supprimer(c)">Supprimer</button></td>
+          </tr>
+        } @empty {
+          <tr><td colspan="7" class="empty">Aucun companion déclaré pour l'instant.</td></tr>
+        }
+      </tbody>
+    </table>
+  </div>
+}
+
+<h2>Canaux Meshtastic</h2>
+<p class="page-hint">
+  Le nom DOIT correspondre exactement à un canal déjà configuré sur les appareils cibles — c'est
+  lui qui identifie le canal dans le topic MQTT. La PSK n'est jamais réaffichée une fois
+  enregistrée.
+</p>
+
+<div class="create-panel">
+  <div class="form-row">
+    <input type="text" class="form-input" placeholder="Nom du canal (ex: Fr_Balise)" [(ngModel)]="nouveauCanalNom">
+    <input type="text" class="form-input" placeholder="PSK hex (vide = pas de chiffrement)" [(ngModel)]="nouveauCanalPsk">
+  </div>
+  <button type="button" class="btn-primary" [disabled]="!formCanalValide || creatingCanal" (click)="ajouterCanal()">
+    Ajouter ce canal
+  </button>
+</div>
+
+<div class="table-wrapper">
+  <table class="data-table">
+    <thead>
+      <tr><th>Nom</th><th>Chiffré</th><th>Actif</th></tr>
+    </thead>
+    <tbody>
+      @for (c of canaux; track c.id) {
+        <tr>
+          <td>{{ c.nom }}</td>
+          <td>{{ c.psk_hex ? 'Oui' : 'Non' }}</td>
+          <td>{{ c.actif ? 'Oui' : 'Non' }}</td>
+        </tr>
+      } @empty {
+        <tr><td colspan="3" class="empty">Aucun canal déclaré pour l'instant.</td></tr>
+      }
+    </tbody>
+  </table>
+</div>
+
+<h2>Nœuds Meshtastic des comptes utilisateurs</h2>
+<p class="page-hint">
+  Attribue le nœud personnel d'une personne de terrain à son compte — permet de savoir qui a
+  envoyé un message, et d'afficher sa position sur la carte pendant une mission active.
+</p>
+
+@if (contactsDisponibles.length > 0) {
+  <div class="table-wrapper">
+    <h3>Nœuds détectés, pas encore attribués</h3>
+    <table class="data-table">
+      <thead>
+        <tr><th>Nom annoncé</th><th>node_num</th><th>Attribuer à…</th><th></th></tr>
+      </thead>
+      <tbody>
+        @for (c of contactsDisponibles; track c.id) {
+          <tr>
+            <td>{{ c.long_name || c.short_name || '—' }}</td>
+            <td class="mono">{{ nodeNumHex(c.node_num) }}</td>
+            <td>
+              <select [(ngModel)]="attributionsParContact[c.id]">
+                <option value="">— Utilisateur —</option>
+                @for (u of utilisateurs; track u.id) {
+                  <option [value]="u.id">{{ u.first_name }} {{ u.last_name }} ({{ u.email }})</option>
+                }
+              </select>
+            </td>
+            <td>
+              <button type="button" class="btn-primary sm" [disabled]="!attributionsParContact[c.id] || attribuingContactId === c.id" (click)="attribuerContact(c)">
+                Attribuer
+              </button>
+            </td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+}
+
+<details class="create-panel manual-fallback">
+  <summary>Associer manuellement (nœud jamais détecté)</summary>
+  <div class="form-row">
+    <select [(ngModel)]="nouveauNoeudUtilisateurId">
+      <option value="">— Utilisateur —</option>
+      @for (u of utilisateurs; track u.id) {
+        <option [value]="u.id">{{ u.first_name }} {{ u.last_name }} ({{ u.email }})</option>
+      }
+    </select>
+  </div>
+  <div class="form-row">
+    <input type="number" class="form-input" placeholder="node_num" [(ngModel)]="nouveauNoeudNodeNum">
+    <input type="text" class="form-input" placeholder="Nom du nœud (optionnel)" [(ngModel)]="nouveauNoeudNom">
+  </div>
+  <button type="button" class="btn-primary" [disabled]="!formNoeudValide || creatingNoeud" (click)="ajouterNoeud()">
+    Associer
+  </button>
+</details>
+
+<div class="table-wrapper">
+  <table class="data-table">
+    <thead>
+      <tr><th>Utilisateur</th><th>Nom du nœud</th><th>node_num</th><th>Actif</th><th></th></tr>
+    </thead>
+    <tbody>
+      @for (n of noeuds; track n.id) {
+        <tr>
+          <td>{{ n.utilisateur_nom }}</td>
+          <td>{{ n.nom_noeud || '—' }}</td>
+          <td class="mono">{{ nodeNumHex(n.node_num) }}</td>
+          <td>{{ n.actif ? 'Oui' : 'Non' }}</td>
+          <td><button type="button" class="btn-danger-sm" (click)="supprimerNoeud(n)">Retirer</button></td>
+        </tr>
+      } @empty {
+        <tr><td colspan="5" class="empty">Aucun nœud associé pour l'instant.</td></tr>
+      }
+    </tbody>
+  </table>
+</div>

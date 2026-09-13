@@ -15,6 +15,7 @@ import { PositionEquipeService } from '../../../../services/position-equipe.serv
 import { RelaisMeshCoreService } from '../../../../services/relais-meshcore.service';
 import { CompagnonMeshCoreService } from '../../../../services/compagnon-meshcore.service';
 import { NoeudMeshUtilisateurService } from '../../../../services/noeud-mesh-utilisateur.service';
+import { NoeudUtilisateurMeshtasticService } from '../../../../services/noeud-utilisateur-meshtastic.service';
 import { PointOperationnelService } from '../../../../services/point-operationnel.service';
 import type { FeatureCollection, Geometry, Polygon } from 'geojson';
 import { AuthService } from '../../../../auth/services/auth.service';
@@ -35,6 +36,7 @@ interface LayerVisibility {
   relaisMeshCore: boolean;
   compagnonsMeshCore: boolean;
   noeudsMeshCore: boolean;
+  noeudsMeshtastic: boolean;
 }
 
 // Codes/libellés déjà utilisés côté offre/point pour repérer secourisme/soins — voir
@@ -96,6 +98,9 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     // télémétrie pendant une mission active, voir bridge.py boucle_positions_missions) —
     // visible par défaut, comme les relais/companions.
     noeudsMeshCore: true,
+    // Nœuds personnels Meshtastic — même règle mission-active que noeudsMeshCore, voir
+    // NoeudUtilisateurMeshtasticViewSet.positions_en_mission.
+    noeudsMeshtastic: true,
   };
 
   private map: maplibregl.Map | null = null;
@@ -107,6 +112,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   private relaisMeshCoreGeoJSON: FeatureCollection<Geometry> | null = null;
   private compagnonsMeshCoreGeoJSON: FeatureCollection<Geometry> | null = null;
   private noeudsMeshCoreGeoJSON: FeatureCollection<Geometry> | null = null;
+  private noeudsMeshtasticGeoJSON: FeatureCollection<Geometry> | null = null;
   private personnelSecourismeGeoJSON: FeatureCollection<Geometry> | null = null;
   private benevolesPompiersGeoJSON: FeatureCollection<Geometry> | null = null;
   private centresTousGeoJSON: FeatureCollection<Geometry> | null = null;
@@ -130,6 +136,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
               private relaisMeshCoreService: RelaisMeshCoreService,
               private compagnonMeshCoreService: CompagnonMeshCoreService,
               private noeudMeshUtilisateurService: NoeudMeshUtilisateurService,
+              private noeudUtilisateurMeshtasticService: NoeudUtilisateurMeshtasticService,
               private authService: AuthService) {}
   ngOnInit(): void {
     this.isInstitutional = this.authService.isAdmin();
@@ -161,6 +168,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
       this.loadRelaisMeshCore();
       this.loadCompagnonsMeshCore();
       this.loadNoeudsMeshCore();
+      this.loadNoeudsMeshtastic();
     }
   }
 
@@ -182,6 +190,8 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     this.applyLayerVisibility('compagnons-meshcore-label', this.layerVisibility.compagnonsMeshCore);
     this.applyLayerVisibility('noeuds-meshcore-layer', this.layerVisibility.noeudsMeshCore);
     this.applyLayerVisibility('noeuds-meshcore-label', this.layerVisibility.noeudsMeshCore);
+    this.applyLayerVisibility('noeuds-meshtastic-layer', this.layerVisibility.noeudsMeshtastic);
+    this.applyLayerVisibility('noeuds-meshtastic-label', this.layerVisibility.noeudsMeshtastic);
     this.applyLayerVisibility('location-radius', this.layerVisibility.crises);
     this.applyLayerVisibility('personnel-secourisme-layer', this.layerVisibility.personnelSecourisme);
     this.applyLayerVisibility('centres-tous-layer', this.layerVisibility.centresTous);
@@ -718,6 +728,77 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     });
     this.map.on('mouseenter', 'noeuds-meshcore-layer', () => { this.map!.getCanvas().style.cursor = 'pointer'; });
     this.map.on('mouseleave', 'noeuds-meshcore-layer', () => { this.map!.getCanvas().style.cursor = ''; });
+  }
+
+  /** Nœuds personnels Meshtastic — même règle mission-active que loadNoeudsMeshCore, voir
+   * NoeudUtilisateurMeshtasticViewSet.positions_en_mission. Couleur distincte (bleu plutôt que
+   * vert) pour ne pas confondre les deux protocoles sur la carte. */
+  loadNoeudsMeshtastic(): void {
+    this.noeudUtilisateurMeshtasticService.positionsEnMission().subscribe({
+      next: (positions) => {
+        this.noeudsMeshtasticGeoJSON = {
+          type: 'FeatureCollection',
+          features: positions.map(p => ({
+            type: 'Feature',
+            geometry: { type: 'Point', coordinates: [Number(p.longitude), Number(p.latitude)] },
+            properties: { nom: p.utilisateur_nom || p.nom_noeud },
+          })),
+        };
+        this.runWhenMapReady(() => this.addOrUpdateNoeudsMeshtasticLayer());
+      },
+      error: (err) => console.error('Erreur chargement nœuds Meshtastic:', err),
+    });
+  }
+
+  private addOrUpdateNoeudsMeshtasticLayer(): void {
+    if (!this.map || !this.noeudsMeshtasticGeoJSON) return;
+
+    const existingSource = this.map.getSource('noeuds-meshtastic') as maplibregl.GeoJSONSource | undefined;
+    if (existingSource) {
+      existingSource.setData(this.noeudsMeshtasticGeoJSON);
+      return;
+    }
+
+    this.map.addSource('noeuds-meshtastic', { type: 'geojson', data: this.noeudsMeshtasticGeoJSON });
+
+    const visibility = this.layerVisibility.noeudsMeshtastic ? 'visible' : 'none';
+
+    this.map.addLayer({
+      id: 'noeuds-meshtastic-layer',
+      type: 'circle',
+      source: 'noeuds-meshtastic',
+      layout: { visibility },
+      paint: {
+        'circle-color': '#2563eb',
+        'circle-radius': 6,
+        'circle-stroke-width': 2,
+        'circle-stroke-color': '#fff',
+      },
+    });
+
+    this.map.addLayer({
+      id: 'noeuds-meshtastic-label',
+      type: 'symbol',
+      source: 'noeuds-meshtastic',
+      layout: {
+        visibility,
+        'text-field': ['get', 'nom'],
+        'text-size': 11,
+        'text-offset': [0, 1.2],
+        'text-anchor': 'top',
+      },
+      paint: { 'text-color': '#1d4ed8', 'text-halo-color': '#fff', 'text-halo-width': 1 },
+    });
+
+    this.map.on('click', 'noeuds-meshtastic-layer', (e) => {
+      if (!e.features || e.features.length === 0) return;
+      const geometry = e.features[0].geometry as GeoJSON.Point;
+      const coordinates = geometry.coordinates.slice() as [number, number];
+      const nom = e.features[0].properties?.['nom'] || 'Nœud';
+      new maplibregl.Popup().setLngLat(coordinates).setHTML(`<strong>${nom}</strong><br>Nœud Meshtastic personnel`).addTo(this.map!);
+    });
+    this.map.on('mouseenter', 'noeuds-meshtastic-layer', () => { this.map!.getCanvas().style.cursor = 'pointer'; });
+    this.map.on('mouseleave', 'noeuds-meshtastic-layer', () => { this.map!.getCanvas().style.cursor = ''; });
   }
 
   private addOrUpdatePersonnelSecourismeLayer(): void {

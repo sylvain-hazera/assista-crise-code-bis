@@ -1,0 +1,4 @@
+meshtastic
+paho-mqtt
+httpx>=0.27
+cryptography

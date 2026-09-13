@@ -67,6 +67,11 @@
           Nœuds personnels MeshCore (test)
         </label>
         <label class="layer-toggle-item">
+          <input type="checkbox" [(ngModel)]="layerVisibility.noeudsMeshtastic" (ngModelChange)="onLayerToggle()">
+          <span class="layer-dot noeuds-meshtastic-dot"></span>
+          Nœuds personnels Meshtastic (test)
+        </label>
+        <label class="layer-toggle-item">
           <input type="checkbox" [(ngModel)]="layerVisibility.personnelSecourisme" (ngModelChange)="onLayerToggle()">
           <span class="layer-dot personnel-dot"></span>
           Personnel secourisme
