@@ -64,7 +64,7 @@
         <div class="team-row">
           <strong>{{ etape.titre }}</strong> — {{ etape.nom }}
 
-          <select [(ngModel)]="etape.equipeId">
+          <select [(ngModel)]="etape.equipeId" [disabled]="!!etape.nouvelleEquipeNom.trim()">
             <option [ngValue]="null">— Aucune équipe pour l'instant —</option>
             @for (t of teams; track t.id) {
               <option [ngValue]="t.id">{{ t.name }}</option>
@@ -72,11 +72,17 @@
           </select>
 
           <span class="new-team">
-            <input type="text" class="form-input" [(ngModel)]="etape.nouvelleEquipeNom" placeholder="Nouvelle équipe...">
-            <button type="button" (click)="creerEquipePour(etape)" [disabled]="!etape.nouvelleEquipeNom.trim()">Créer</button>
+            <input type="text" class="form-input" [(ngModel)]="etape.nouvelleEquipeNom"
+                   [disabled]="!!etape.equipeId" placeholder="ou nom d'une nouvelle équipe...">
           </span>
         </div>
       }
+
+      <p class="page-hint">
+        Une équipe créée ici (nom saisi) sera créée à la validation, avec son institution
+        déclarée actrice de la crise — vous pourrez compléter zone, thème et responsable
+        depuis sa fiche au récapitulatif.
+      </p>
 
       <div class="step-actions">
         <button type="button" class="btn-primary" (click)="terminerEtapeEquipes()" [disabled]="saving">
@@ -95,7 +101,13 @@
             @if (etape.cree) {
               <span class="material-icons ok">check_circle</span>
               {{ etape.titre }} — {{ etape.nom }}
-              @if (etape.point?.equipe_nom) { (équipe : {{ etape.point?.equipe_nom }}) }
+              @if (etape.point?.equipe_nom) {
+                (équipe : {{ etape.point?.equipe_nom }})
+                <a [routerLink]="['/admin/equipes']" [queryParams]="{openTeam: etape.point?.equipe}"
+                   class="recap-team-link">
+                  Compléter la fiche équipe (zone, thème, responsable, canal radio…)
+                </a>
+              }
             } @else {
               <span class="material-icons skip">remove_circle_outline</span>
               {{ etape.titre }} — non pourvu

@@ -141,25 +141,20 @@ export class CriseDemarrageComponent implements OnInit {
     return this.etapes.filter(e => e.cree && e.point);
   }
 
-  creerEquipePour(etape: EtapePoint): void {
-    if (!etape.nouvelleEquipeNom.trim()) {
-      return;
-    }
-    this.teamService.create({ name: etape.nouvelleEquipeNom.trim() }).subscribe(team => {
-      this.teams = [...this.teams, team];
-      etape.equipeId = team.id ?? null;
-      etape.nouvelleEquipeNom = '';
-    });
-  }
-
+  /** Un point n'a une équipe "complète" que si elle passe par le même mécanisme serveur que
+   * partout ailleurs (point-modal, `nouvelle_equipe_nom` sur le create/update du point) : ça
+   * déclare l'institution comme actrice de la crise (ImplicationInstitution), notifie son
+   * référent et journalise le tout — un simple `TeamService.create({name})` fait ici avant ce
+   * correctif ne faisait rien de tout ça (voir _creer_equipe_pour_point côté backend). */
   terminerEtapeEquipes(): void {
-    const affectations = this.etapesAvecPoint.filter(e => e.equipeId && e.point);
+    const affectations = this.etapesAvecPoint.filter(e => e.point && (e.equipeId || e.nouvelleEquipeNom.trim()));
     if (affectations.length === 0) {
       this.step = 5;
       return;
     }
     this.saving = true;
     let restant = affectations.length;
+    const equipesACrise = new Set<string>();
     const terminerSiFini = () => {
       restant--;
       if (restant === 0) {
@@ -167,8 +162,7 @@ export class CriseDemarrageComponent implements OnInit {
         // Team.assigned_crises — sans cet appel, l'équipe reste invisible dans les vues qui
         // s'appuient spécifiquement sur ce champ (ressources mobilisées, recrutement scopé,
         // matching hébergement), même si elle est bien affectée aux points de la crise.
-        const equipesUniques = [...new Set(affectations.map(a => a.equipeId!))];
-        equipesUniques.forEach(equipeId => {
+        equipesACrise.forEach(equipeId => {
           this.teamService.assignerCrise(equipeId, this.criseId).subscribe({ error: () => {} });
         });
         this.saving = false;
@@ -176,8 +170,19 @@ export class CriseDemarrageComponent implements OnInit {
       }
     };
     affectations.forEach(etape => {
-      this.pointService.update(etape.point!.id, { equipe: etape.equipeId }).subscribe({
-        next: (updated) => { etape.point = updated; terminerSiFini(); },
+      const nomNouvelleEquipe = etape.nouvelleEquipeNom.trim();
+      const payload = nomNouvelleEquipe && !etape.equipeId
+        ? { nouvelle_equipe_nom: nomNouvelleEquipe }
+        : { equipe: etape.equipeId };
+      this.pointService.update(etape.point!.id, payload).subscribe({
+        next: (updated) => {
+          etape.point = updated;
+          if (updated.equipe) {
+            etape.equipeId = updated.equipe;
+            equipesACrise.add(updated.equipe);
+          }
+          terminerSiFini();
+        },
         error: () => terminerSiFini(),
       });
     });

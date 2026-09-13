@@ -6,8 +6,9 @@
   margin-bottom: 1rem;
 
   h2 { margin: 0 0 .3rem; }
-  .page-hint { color: #6b7280; font-size: .9rem; margin: 0; }
 }
+
+.page-hint { color: #6b7280; font-size: .9rem; margin: 0; }
 
 .steps-indicator {
   display: flex;
@@ -175,6 +176,7 @@
   li {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: .5rem;
     padding: .4rem 0;
 
@@ -182,4 +184,10 @@
     .ok { color: #15803d; }
     .skip { color: #9ca3af; }
   }
+}
+
+.recap-team-link {
+  font-size: .82rem;
+  color: #2563eb;
+  text-decoration: underline;
 }

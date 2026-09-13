@@ -3238,6 +3238,31 @@ def _notify_institution_referent_of_team(team, institution, request):
         print(f"Erreur envoi email référent institution (équipe) : {e}")
 
 
+def _declarer_institution_acteur_via_point(crise, institution, point, request):
+    """Crée l'ImplicationInstitution (ACTEUR) si nécessaire quand une institution devient
+    responsable d'un point sur une crise — factorisé entre PointOperationnelViewSet.
+    perform_create et perform_update (avant ce correctif, seule la création de point déclarait
+    l'implication ; une équipe créée à la volée lors de l'ÉDITION d'un point déjà existant, ex:
+    depuis le wizard de démarrage de crise, ne déclarait jamais son institution comme actrice)."""
+    if not (crise and institution):
+        return
+    implication, created = ImplicationInstitution.objects.get_or_create(
+        crise=crise,
+        institution=institution,
+        type_implication=TypeImplication.ACTEUR,
+        defaults={"utilisateur": request.user, "actif": True, "environment": point.environment},
+    )
+    if created:
+        audit_log(
+            request=request,
+            action_code="CREATION",
+            objet_type="ImplicationInstitution",
+            objet_id=implication.id,
+            crise=crise,
+            commentaire=f"{institution.nom} déclarée acteur sur la crise {crise.name} (gestion de {point.nom})",
+        )
+
+
 def _creer_equipe_pour_point(point, nom, institution, request):
     """Crée une équipe et l'assigne à ce point — factorisé entre la création du point
     (PointOperationnelViewSet.perform_create) et son édition ultérieure (perform_update),
@@ -7842,14 +7867,19 @@ class PointOperationnelViewSet(
         # Même mécanisme qu'à la création (voir perform_create) : un point déjà existant mais
         # encore sans équipe pouvait jusqu'ici seulement se voir assigner une équipe EXISTANTE
         # (select "Équipe responsable") — créer une équipe à la volée n'était possible qu'au
-        # moment de la création du point, obligeant sinon un aller-retour par l'écran équipes.
-        # Ignoré si le point a déjà une équipe : remplacer l'équipe en place n'est pas le rôle
-        # de ce paramètre (utiliser le select existant pour ça).
+        # moment de la création du point, obligeant sinon un aller-retour par l'écran équipes
+        # (ex: wizard de démarrage de crise, qui crée d'abord le point puis y attache une
+        # équipe à l'étape suivante). Ignoré si le point a déjà une équipe : remplacer
+        # l'équipe en place n'est pas le rôle de ce paramètre (utiliser le select existant).
         nouvelle_equipe_nom = (self.request.data.get('nouvelle_equipe_nom') or '').strip()
         if nouvelle_equipe_nom and not point.equipe_id:
-            _creer_equipe_pour_point(
-                point, nouvelle_equipe_nom, self._resolve_institution_for_new_team(), self.request
-            )
+            institution = self._resolve_institution_for_new_team()
+            # Avant ce correctif, seule la création de point déclarait l'institution comme
+            # actrice de la crise (voir perform_create) — une équipe créée à la volée ici
+            # (édition) ne le faisait jamais, laissant le point "cadré" mais l'institution non
+            # déclarée sur la crise malgré tout.
+            _declarer_institution_acteur_via_point(point.crise, institution, point, self.request)
+            _creer_equipe_pour_point(point, nouvelle_equipe_nom, institution, self.request)
 
     def _resolve_institution_for_new_team(self):
         """Institution à rattacher à une équipe créée à la volée (voir perform_create/
@@ -7897,26 +7927,7 @@ class PointOperationnelViewSet(
         nouvelle_equipe_nom = (self.request.data.get('nouvelle_equipe_nom') or '').strip()
         if point.crise_id or nouvelle_equipe_nom:
             institution = self._resolve_institution_for_new_team()
-
-            if point.crise_id and institution:
-                implication, created = ImplicationInstitution.objects.get_or_create(
-                    crise=point.crise,
-                    institution=institution,
-                    type_implication=TypeImplication.ACTEUR,
-                    defaults={"utilisateur": self.request.user, "actif": True, "environment": point.environment},
-                )
-                if created:
-                    audit_log(
-                        request=self.request,
-                        action_code="CREATION",
-                        objet_type="ImplicationInstitution",
-                        objet_id=implication.id,
-                        crise=point.crise,
-                        commentaire=(
-                            f"{institution.nom} déclarée acteur sur la crise "
-                            f"{point.crise.name} (gestion de {point.nom})"
-                        ),
-                    )
+            _declarer_institution_acteur_via_point(point.crise, institution, point, self.request)
 
             # Créer une équipe en même temps que le point, plutôt que d'obliger à en créer une
             # séparément avant de pouvoir en assigner une — seulement si aucune équipe n'a déjà

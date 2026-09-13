@@ -14,7 +14,6 @@ import { ContactInstitutionService } from '../../../services/contact-institution
 import { InstitutionService } from '../../../services/institution.service';
 import { BesoinService } from '../../../services/besoin.service';
 import { ImplicationService } from '../../../services/implication.service';
-import { TeamService } from '../../../services/team.service';
 import { ContactInstitution, Institution } from '../../../shared/models/institution.model';
 import { Besoin } from '../../../shared/models/besoin.model';
 import { UserRole } from '../../../shared/models/user.model';
@@ -59,12 +58,6 @@ export class DeclareCrisisFormComponent implements OnInit{
   responsableMode: ResponsableMode = 'moi';
   responsableContactId: string | null = null;
   responsableEmail = '';
-
-  // Créer une équipe pour son institution en même temps que la crise — évite d'avoir à
-  // recréer une équipe séparément depuis /admin/crises juste après (même logique que pour un
-  // point opérationnel, voir point-modal.component).
-  creerEquipe = false;
-  nouvelleEquipeNom = '';
 
   onInstitutionChange(id: string): void {
     this.selectedInstitutionId = id || null;
@@ -165,7 +158,6 @@ export class DeclareCrisisFormComponent implements OnInit{
     private institutionService: InstitutionService,
     private besoinService: BesoinService,
     private implicationService: ImplicationService,
-    private teamService: TeamService,
   ) {}
 
   ngOnInit() {
@@ -338,25 +330,7 @@ export class DeclareCrisisFormComponent implements OnInit{
     }
 
     this.implicationService.create(payload).subscribe({
-      next: () => this.creerEquipeSiDemandee(crisisId),
       error: (err) => console.error("Erreur lors de la déclaration de l'implication :", err),
-    });
-  }
-
-  /** Crée une équipe pour l'institution déclarante, déjà rattachée à cette crise — seulement
-   * si demandé et une fois l'implication de l'institution confirmée. Un échec ici n'annule
-   * rien de ce qui précède : l'équipe peut toujours être créée séparément depuis /admin/crises. */
-  private creerEquipeSiDemandee(crisisId: string): void {
-    const nom = this.nouvelleEquipeNom.trim();
-    if (!this.creerEquipe || !nom || !this.selectedInstitutionId) {
-      return;
-    }
-    this.teamService.create({
-      name: nom,
-      institution: this.selectedInstitutionId,
-      assigned_crisis_ids: [crisisId],
-    }).subscribe({
-      error: (err) => console.error("Erreur lors de la création de l'équipe :", err),
     });
   }
 
