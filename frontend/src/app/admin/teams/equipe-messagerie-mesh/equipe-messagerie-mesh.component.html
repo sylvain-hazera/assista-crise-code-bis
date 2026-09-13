@@ -34,7 +34,7 @@
       <div class="messages">
         @for (m of messagesDm; track m.id) {
           <div class="message" [class.sortant]="m.direction === 'SORTANT'">
-            <div class="message-meta">{{ m.direction === 'SORTANT' ? (m.expediteur_nom || 'Moi') : (m.expediteur_nom || 'Terrain') }} · {{ m.date_creation | date:'short' }}</div>
+            <div class="message-meta">{{ attributionDm(m) }} · {{ m.date_creation | date:'short' }}</div>
             <div class="message-contenu">{{ m.contenu }}</div>
           </div>
         } @empty {

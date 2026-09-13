@@ -107,6 +107,22 @@ export class EquipeMessagerieMeshComponent implements OnChanges, OnDestroy {
     return this.noeudsEquipe.find(n => n.id === this.destinataireId)?.pubkey_hex || null;
   }
 
+  /** Nom lisible de la personne de terrain associée à ce nœud — utilisé pour afficher
+   * clairement "à qui" un DM sortant a été adressé et "qui" a répondu, un fil de DM
+   * d'équipe mélangeant potentiellement plusieurs membres équipés d'un nœud personnel. */
+  private nomPourPubkey(pubkeyHex: string): string {
+    const noeud = this.noeudsEquipe.find(n => n.pubkey_hex === pubkeyHex);
+    return noeud?.utilisateur_nom || noeud?.nom_noeud || pubkeyHex.slice(0, 8);
+  }
+
+  /** Ligne d'attribution d'un DM : "Moi → <destinataire>" (sortant) ou "<expéditeur> → Moi"
+   * (entrant) — remarque explicite : sans ça, impossible de savoir à qui un message sortant
+   * était adressé, ou qui a répondu, dès que l'équipe a plus d'un membre équipé. */
+  attributionDm(m: MessageMeshLog): string {
+    const autre = this.nomPourPubkey(m.contact_pubkey_hex);
+    return m.direction === 'SORTANT' ? `Moi → ${autre}` : `${m.expediteur_nom || autre} → Moi`;
+  }
+
   envoyer(): void {
     if (!this.nouveauMessage.trim() || !this.compagnonId || !this.destinatairePubkey) return;
     this.envoiEnCours = true;
