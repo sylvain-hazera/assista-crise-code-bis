@@ -4,6 +4,7 @@ djangorestframework-simplejwt
 psycopg2-binary
 meshtastic
 paho-mqtt
+cryptography
 psycopg2-binary>=2.9
 django-cors-headers>=4.3.1
 Pillow>=10.2.0

@@ -1,0 +1,74 @@
+<div class="section-mesh">
+  <h3>
+    <span class="material-icons">settings_input_antenna</span>
+    Messagerie MeshCore <span class="badge-test">test</span>
+  </h3>
+
+  @if (chargement) {
+    <p class="hint">Vérification de l'équipement MeshCore de l'équipe…</p>
+  } @else if (!equipee && !canalId) {
+    <p class="hint">Aucun canal ni membre équipé d'un nœud MeshCore pour cette équipe — voir « Companions MeshCore » &gt; Nœuds.</p>
+  } @else {
+    @if (erreur) {
+      <p class="erreur">{{ erreur }}</p>
+    }
+
+    <!-- Deux fils bien séparés (jamais mélangés) : celui qui lit doit savoir immédiatement
+         d'où vient chaque message, canal d'équipe ou message privé — remarque explicite. -->
+    @if (canalId) {
+      <h4 class="sous-titre"><span class="material-icons">tag</span> Canal d'équipe</h4>
+      <div class="messages">
+        @for (m of messagesCanal; track m.id) {
+          <div class="message canal" [class.sortant]="m.direction === 'SORTANT'">
+            <div class="message-meta">{{ m.direction === 'SORTANT' ? (m.expediteur_nom || 'Moi') : 'Canal équipe' }} · {{ m.date_creation | date:'short' }}</div>
+            <div class="message-contenu">{{ m.contenu }}</div>
+          </div>
+        } @empty {
+          <p class="hint">Aucun message sur le canal pour l'instant.</p>
+        }
+      </div>
+    }
+
+    @if (equipee) {
+      <h4 class="sous-titre"><span class="material-icons">person</span> Messages privés (DM)</h4>
+      <div class="messages">
+        @for (m of messagesDm; track m.id) {
+          <div class="message" [class.sortant]="m.direction === 'SORTANT'">
+            <div class="message-meta">{{ attributionDm(m) }} · {{ m.date_creation | date:'short' }}</div>
+            <div class="message-contenu">{{ m.contenu }}</div>
+          </div>
+        } @empty {
+          <p class="hint">Aucun message privé échangé avec cette équipe pour l'instant.</p>
+        }
+      </div>
+    }
+
+    @if (equipee) {
+      <div class="destinataire-row">
+        <label>
+          DM à
+          <select [(ngModel)]="destinataireId">
+            @for (n of noeudsEquipe; track n.id) {
+              <option [value]="n.id">{{ n.utilisateur_nom }} ({{ n.nom_noeud || n.pubkey_hex.slice(0, 8) }})</option>
+            }
+          </select>
+        </label>
+        @if (compagnons.length > 1) {
+          <label>
+            Via
+            <select [(ngModel)]="compagnonId">
+              @for (c of compagnons; track c.id) {
+                <option [value]="c.id">{{ c.nom }}</option>
+              }
+            </select>
+          </label>
+        }
+      </div>
+
+      <div class="saisie">
+        <input type="text" placeholder="Écrire un message privé..." [(ngModel)]="nouveauMessage" (keyup.enter)="envoyer()">
+        <button type="button" [disabled]="!nouveauMessage.trim() || envoiEnCours" (click)="envoyer()">Envoyer</button>
+      </div>
+    }
+  }
+</div>

@@ -38,6 +38,11 @@ export interface Team {
   equipe_parente?:              string | null; // UUID de l'équipe de tête à laquelle celle-ci est rattachée comme ressource (lecture seule, voir TeamService.rattacherEquipe/detacherEquipe)
   equipe_parente_nom?:          string | null;
   sous_equipes_info?:           { id: string; nom: string }[];
+  canal_meshcore_id?:           string | null;
+  canal_meshcore_nom?:          string | null;
+  canal_meshcore_provisionne?:  boolean;
+  canal_meshtastic_id?:         string | null;
+  canal_meshtastic_nom?:        string | null;
   member_ids:           string[];
   members_info?:        TeamMemberInfo[];
   vehicules_count?:     number;            // Offres de type Transport affectées à l'équipe (lecture seule)

@@ -1,0 +1,111 @@
+<div class="page-header">
+  <h2>Messages Meshtastic <span class="badge-test">test</span></h2>
+  <p class="page-hint">
+    Canaux (PSK partagée) et messages privés, dans un seul endroit — via un broker MQTT tiers
+    (ex: Gaulix). Un canal se crée depuis « Companions Meshtastic ».
+  </p>
+</div>
+
+<div class="bandeau-confidentialite">
+  <span class="material-icons">warning</span>
+  Un DM Meshtastic est chiffré avec la PSK d'un canal partagé, pas une clé propre au
+  destinataire (voir doc de conception) — n'y mettez rien qui ne devrait pas être lisible par
+  quiconque connaît ce canal.
+</div>
+
+@if (errorMessage) {
+  <p class="error-message">{{ errorMessage }}</p>
+}
+
+<div class="chat-layout">
+  <aside class="liste-conversations">
+    @if (loadingSidebar) {
+      <p class="chargement">Chargement…</p>
+    } @else {
+
+      <h4 class="section-titre">Canaux</h4>
+      <ul class="conversations">
+        @for (c of canaux; track c.id) {
+          <li [class.actif]="estConversationActive({type: 'canal', canal: c})" (click)="selectionnerCanal(c)">
+            <span class="material-icons">tag</span>
+            <span class="conv-info">
+              <span class="conv-nom">{{ c.nom }}</span>
+              @if (c.equipe_nom) { <span class="conv-meta">{{ c.equipe_nom }}</span> }
+            </span>
+          </li>
+        } @empty {
+          <li class="vide">Aucun canal — créez-en un depuis « Companions Meshtastic ».</li>
+        }
+      </ul>
+
+      <h4 class="section-titre">Messages privés</h4>
+      <ul class="conversations">
+        @for (n of noeuds; track n.id) {
+          <li [class.actif]="estConversationActive({type: 'dm', noeud: n})" (click)="selectionnerDm(n)">
+            <span class="material-icons">person</span>
+            <span class="conv-info">
+              <span class="conv-nom">{{ n.nom_noeud || n.utilisateur_nom }}</span>
+              @if (n.nom_noeud && n.utilisateur_nom) { <span class="conv-meta">{{ n.utilisateur_nom }}</span> }
+            </span>
+          </li>
+        } @empty {
+          <li class="vide">Aucun nœud personnel associé pour l'instant.</li>
+        }
+      </ul>
+    }
+  </aside>
+
+  <section class="fil-messages">
+    @if (!conversationSelectionnee) {
+      <p class="empty">Sélectionnez une conversation.</p>
+    } @else {
+      <div class="fil-header">
+        <h3>{{ titreConversation(conversationSelectionnee) }}</h3>
+        <p class="fil-soustitre">{{ sousTitreConversation(conversationSelectionnee) }}</p>
+      </div>
+
+      @if (loadingMessages) {
+        <p class="chargement">Chargement…</p>
+      } @else {
+        <div class="messages">
+          @for (m of messagesAffiches; track m.id) {
+            <div class="message" [class.sortant]="m.direction === 'SORTANT'">
+              <div class="message-meta">
+                {{ auteurMessage(m, conversationSelectionnee) }} · {{ m.date_creation | date:'short' }}
+              </div>
+              <div class="message-contenu">{{ m.contenu }}</div>
+              @if (m.direction === 'SORTANT') {
+                <div class="message-statut" [class]="statutClasse(m.statut)" [title]="m.erreur || statutLibelle(m.statut)">
+                  <span class="material-icons">{{ statutIcone(m.statut) }}</span>
+                  {{ statutLibelle(m.statut) }}
+                </div>
+              }
+            </div>
+          } @empty {
+            <p class="empty">Aucun message pour l'instant.</p>
+          }
+        </div>
+      }
+
+      @if (conversationSelectionnee.type === 'dm') {
+        <div class="form-row">
+          <label>
+            Canal utilisé pour chiffrer ce DM
+            <select [(ngModel)]="canalPourEnvoiId">
+              @for (c of canaux; track c.id) {
+                <option [value]="c.id">{{ c.nom }}</option>
+              }
+            </select>
+          </label>
+        </div>
+      }
+
+      <div class="saisie">
+        <input type="text" class="form-input" placeholder="Écrire un message..." [(ngModel)]="nouveauMessage" (keyup.enter)="envoyer()">
+        <button type="button" class="btn-primary" [disabled]="!nouveauMessage.trim() || envoiEnCours" (click)="envoyer()">
+          Envoyer
+        </button>
+      </div>
+    }
+  </section>
+</div>

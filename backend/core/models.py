@@ -3719,3 +3719,553 @@ class InstitutionDomaine(EnvironmentScopedModel):
         default=True
     )
 
+
+class MeshCoreConnexionType(models.TextChoices):
+    TCP = "TCP", "TCP (réseau)"
+    SERIE = "SERIE", "Série (USB)"
+    BLE = "BLE", "Bluetooth (BLE)"
+
+
+class CompagnonMeshCore(EnvironmentScopedModel):
+    """Nœud MeshCore en rôle Companion utilisé comme passerelle entre le mesh radio et
+    assista-crise, piloté par le service-pont (`meshcore-bridge/`, hors de ce dépôt Django,
+    service asyncio permanent utilisant `meshcore-py`) — PAS un nœud personnel de terrain, voir
+    NoeudMeshUtilisateur pour ça. Une institution peut avoir plusieurs companions (redondance,
+    ou un par poste de commandement) ; `principal` désigne celui utilisé par défaut pour les
+    envois. Phase de test (voir doc de conception « Maillage Terrain ») : `institution` reste
+    facultative pour permettre un premier companion de test non rattaché."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    institution = models.ForeignKey(
+        "Institution", on_delete=models.CASCADE, null=True, blank=True, related_name="compagnons_meshcore",
+    )
+
+    nom = models.CharField(max_length=100)
+
+    connexion_type = models.CharField(max_length=10, choices=MeshCoreConnexionType.choices)
+
+    # Un seul groupe de champs est renseigné selon connexion_type.
+    tcp_host = models.CharField(max_length=255, null=True, blank=True)
+    tcp_port = models.PositiveIntegerField(null=True, blank=True, default=5000)
+    serie_device = models.CharField(max_length=255, null=True, blank=True, help_text="ex: /dev/ttyUSB0")
+    ble_adresse = models.CharField(max_length=64, null=True, blank=True)
+
+    pubkey_hex = models.CharField(
+        max_length=64, null=True, blank=True,
+        help_text="Renseigné par le service-pont après la première connexion réussie.",
+    )
+
+    # Position du companion physique (poste de commandement, véhicule...) — saisie manuelle,
+    # pour l'afficher sur la carte au même titre que les répéteurs (RelaisMeshCore) et servir
+    # plus tard à choisir automatiquement le companion le plus proche d'un destinataire quand
+    # plusieurs passerelles seront réparties sur le territoire (voir doc de conception).
+    location = gis_models.PointField(srid=4326, null=True, blank=True)
+
+    principal = models.BooleanField(default=False)
+    actif = models.BooleanField(default=True)
+
+    derniere_connexion = models.DateTimeField(null=True, blank=True)
+    dernier_etat = models.CharField(
+        max_length=20, null=True, blank=True,
+        help_text="Rapporté par le service-pont : CONNECTE / DECONNECTE / ERREUR.",
+    )
+    derniere_erreur = models.TextField(null=True, blank=True)
+
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.nom} ({self.connexion_type})"
+
+
+class NoeudMeshUtilisateur(EnvironmentScopedModel):
+    """Correspondance entre la clé publique d'un nœud MeshCore de terrain (Companion personnel)
+    et un compte utilisateur assista-crise — sans ça, le service-pont ne sait pas qui a envoyé
+    un message reçu sur le mesh."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    utilisateur = models.ForeignKey("User", on_delete=models.CASCADE, related_name="noeuds_meshcore")
+
+    pubkey_hex = models.CharField(max_length=64, unique=True)
+
+    nom_noeud = models.CharField(max_length=100, blank=True)
+
+    actif = models.BooleanField(default=True)
+
+    date_association = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.utilisateur.email} — {self.pubkey_hex[:12]}…"
+
+
+class DirectionMessageMesh(models.TextChoices):
+    ENTRANT = "ENTRANT", "Reçu du mesh"
+    SORTANT = "SORTANT", "Envoyé vers le mesh"
+
+
+class StatutMessageMesh(models.TextChoices):
+    EN_ATTENTE = "EN_ATTENTE", "En attente d'envoi"
+    ENVOYE = "ENVOYE", "Envoyé"
+    RECU = "RECU", "Reçu"
+    ECHEC = "ECHEC", "Échec"
+
+
+class MessageMeshLog(EnvironmentScopedModel):
+    """Journal des DM échangés via MeshCore — phase de test : un log plat, pas encore le
+    cloisonnement strict de visibilité par équipe prévu dans la conception définitive (voir doc
+    de conception « Maillage Terrain », principe « administrer un companion n'est pas lire les
+    messages ») puisqu'il n'y a pour l'instant qu'un usage de test, pas de vraies équipes
+    terrain sur le mesh."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    compagnon = models.ForeignKey(CompagnonMeshCore, on_delete=models.CASCADE, related_name="messages")
+
+    direction = models.CharField(max_length=10, choices=DirectionMessageMesh.choices)
+
+    contact_pubkey_hex = models.CharField(
+        max_length=64,
+        help_text="Clé publique du correspondant (émetteur si entrant, destinataire si sortant).",
+    )
+
+    expediteur = models.ForeignKey(
+        "User", on_delete=models.SET_NULL, null=True, blank=True, related_name="messages_meshcore_envoyes",
+        help_text="Résolu via NoeudMeshUtilisateur quand connu.",
+    )
+
+    # Équipe de l'expéditeur au moment de la réception — capturée à la création, pas
+    # recalculée dynamiquement (un message déjà journalisé garde son contexte même si la
+    # personne change d'équipe ensuite). C'est ce qui porte le cloisonnement de visibilité :
+    # administrer un companion n'est pas lire les messages (voir doc de conception « Maillage
+    # Terrain ») — seuls le leader et le régulateur de CETTE équipe voient ce message.
+    equipe = models.ForeignKey(
+        "Team", on_delete=models.SET_NULL, null=True, blank=True, related_name="messages_meshcore",
+    )
+
+    contenu = models.TextField()
+
+    statut = models.CharField(max_length=12, choices=StatutMessageMesh.choices, default=StatutMessageMesh.EN_ATTENTE)
+
+    erreur = models.TextField(null=True, blank=True)
+
+    date_creation = models.DateTimeField(auto_now_add=True)
+    date_envoi = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f"[{self.direction}] {self.contact_pubkey_hex[:12]}… — {self.statut}"
+
+
+class RelaisMeshCore(EnvironmentScopedModel):
+    """Répéteur MeshCore (infrastructure pure — ne se pilote pas comme un Companion, ne se
+    connecte à rien : c'est un point fixe posé sur le terrain). Sa position est le plus souvent
+    importée automatiquement (voir CompagnonMeshCoreViewSet.synchroniser_contacts : un
+    répéteur détecté dans le répertoire du companion, avec position GPS connue, crée/met à
+    jour directement l'entrée ici, identifiée par pubkey_hex — plus besoin du bouton "Importer"
+    manuel) ; peut aussi être saisie manuellement pour un répéteur pas encore détecté."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    institution = models.ForeignKey(
+        "Institution", on_delete=models.CASCADE, null=True, blank=True, related_name="relais_meshcore",
+    )
+
+    nom = models.CharField(max_length=100)
+
+    location = gis_models.PointField(srid=4326, null=True, blank=True)
+
+    # unique (NULL excepté, comportement standard SQL) : un répéteur détecté deux fois via
+    # synchroniser_contacts (compagnons différents, ou resynchronisation) ne doit jamais créer
+    # de doublon — l'import automatique s'appuie dessus (get_or_create par pubkey_hex).
+    pubkey_hex = models.CharField(max_length=64, null=True, blank=True, unique=True)
+
+    actif = models.BooleanField(default=True)
+
+    commentaire = models.TextField(null=True, blank=True)
+
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.nom
+
+
+class CanalMeshCore(EnvironmentScopedModel):
+    """Canal MeshCore (clé partagée, diffusion à N destinataires) — visibilité large
+    (institution/crise), à la différence des DM privés (MessageMeshLog, cloisonnés par
+    équipe). Sert à la coordination générale, jamais à du contenu sensible : le chiffrement
+    par clé partagée est plus faible que le chiffrement par paire des DM (voir doc de
+    conception).
+
+    `equipe` (optionnel) fait de ce canal LE canal privé d'une équipe — la réponse au problème
+    de routage des DM (MessageMeshLog.equipe résolu via `expediteur.teams.first()`, arbitraire
+    dès qu'un utilisateur appartient à plusieurs équipes) : un message de canal appartient sans
+    ambiguïté à l'équipe du canal sur lequel il est arrivé. La clé elle-même reste distribuée
+    en privé (DM, jamais un nom de canal préfixé `#` dont la clé serait dérivable par tout le
+    monde) — voir TeamViewSet.provisionner_canal_meshcore. Un DM direct régulateur <-> personne
+    reste possible en plus (MessageMeshLog), pour du contenu vraiment 1-à-1.
+
+    `compagnon`/`canal_idx` : un canal MeshCore se configure localement sur CHAQUE appareil qui
+    doit y participer (firmware, commande set_channel — pas une simple donnée serveur qui se
+    propagerait sur le mesh) — impossible de le pousser à distance sur le nœud personnel d'un
+    membre, qui doit configurer lui-même canal_idx/nom/clé reçus par DM. Le service-pont, lui,
+    provisionne automatiquement CE champ sur le companion partagé auquel il est connecté (voir
+    boucle_provisionnement_canaux côté pont) afin de pouvoir envoyer/recevoir sur ce canal en
+    son nom — un seul companion actif dans cette phase de test, donc un seul (compagnon,
+    canal_idx) par canal suffit."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    institution = models.ForeignKey(
+        "Institution", on_delete=models.CASCADE, null=True, blank=True, related_name="canaux_meshcore",
+    )
+
+    crise = models.ForeignKey(
+        "Crisis", on_delete=models.SET_NULL, null=True, blank=True, related_name="canaux_meshcore",
+    )
+
+    equipe = models.OneToOneField(
+        "Team", on_delete=models.CASCADE, null=True, blank=True, related_name="canal_meshcore",
+    )
+
+    nom = models.CharField(max_length=100)
+
+    # Clé partagée du canal — sensible mais nécessaire au service-pont pour déchiffrer/envoyer
+    # sur ce canal. Jamais renvoyée en clair par l'API (voir serializer, write_only). 16 octets
+    # (32 hex) imposés par le firmware (voir set_channel côté pont) pour un canal privé — pas
+    # dérivée d'un nom public comme le fait le firmware pour un canal préfixé `#`.
+    cle_partagee_hex = models.CharField(max_length=64, null=True, blank=True)
+
+    compagnon = models.ForeignKey(
+        "CompagnonMeshCore", on_delete=models.SET_NULL, null=True, blank=True, related_name="canaux_provisionnes",
+    )
+    canal_idx = models.PositiveSmallIntegerField(null=True, blank=True)
+
+    actif = models.BooleanField(default=True)
+
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.nom
+
+
+class MessageCanalMeshCore(EnvironmentScopedModel):
+    """Message posté sur un canal partagé — visibilité alignée sur le canal lui-même
+    (institution/crise), pas de cloisonnement par équipe contrairement à MessageMeshLog."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    canal = models.ForeignKey(CanalMeshCore, on_delete=models.CASCADE, related_name="messages")
+
+    direction = models.CharField(max_length=10, choices=DirectionMessageMesh.choices)
+
+    expediteur = models.ForeignKey(
+        "User", on_delete=models.SET_NULL, null=True, blank=True, related_name="messages_canal_meshcore_envoyes",
+    )
+
+    contact_pubkey_hex = models.CharField(max_length=64, null=True, blank=True)
+
+    contenu = models.TextField()
+
+    statut = models.CharField(max_length=12, choices=StatutMessageMesh.choices, default=StatutMessageMesh.EN_ATTENTE)
+
+    erreur = models.TextField(null=True, blank=True)
+
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"[{self.canal.nom}] {self.contenu[:40]}"
+
+
+class TypeContactMeshCore(models.TextChoices):
+    """Miroir de AdvType côté firmware MeshCore (packets.py) — valeurs entières d'origine
+    conservées en commentaire pour retrouver la correspondance."""
+    INCONNU = "INCONNU", "Inconnu"          # 0x00 NONE
+    COMPANION = "COMPANION", "Companion"     # 0x01 CHAT
+    REPEATER = "REPEATER", "Répéteur"        # 0x02 REPEATER
+    ROOM = "ROOM", "Room server"             # 0x03 ROOM
+    SENSOR = "SENSOR", "Capteur"             # 0x04 SENSOR
+
+
+class ContactMeshCore(EnvironmentScopedModel):
+    """Contact tel que connu par UN companion donné (table de contacts déjà tenue par le
+    firmware lui-même — voir EventType.CONTACTS dans la lib meshcore, dispatché en fin de
+    CONTACT_END avec nom/type/position). Synchronisée périodiquement par le service-pont
+    (meshcore-bridge/bridge.py), jamais saisie à la main : c'est le répertoire brut découvert
+    sur le mesh, à distinguer de NoeudMeshUtilisateur (association explicite à un compte) et de
+    RelaisMeshCore (déclaration manuelle) — sert justement à faciliter ces deux associations."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    compagnon = models.ForeignKey(CompagnonMeshCore, on_delete=models.CASCADE, related_name="contacts")
+
+    pubkey_hex = models.CharField(max_length=64)
+
+    nom = models.CharField(max_length=100, blank=True)
+
+    type_contact = models.CharField(max_length=12, choices=TypeContactMeshCore.choices, default=TypeContactMeshCore.INCONNU)
+
+    location = gis_models.PointField(srid=4326, null=True, blank=True)
+
+    dernier_advert = models.DateTimeField(null=True, blank=True)
+
+    date_synchronisation = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["compagnon", "pubkey_hex"], name="uq_contact_meshcore_compagnon_pubkey"),
+        ]
+
+    def __str__(self):
+        return f"{self.nom or self.pubkey_hex[:12]} ({self.type_contact})"
+
+
+class CompagnonMeshtastic(EnvironmentScopedModel):
+    """Identité de nœud Meshtastic PUREMENT LOGICIELLE (aucun appareil radio réel) utilisée
+    comme passerelle assista-crise <-> réseau Meshtastic via un broker MQTT tiers (ex: Gaulix,
+    `mqtt.gaulix.fr` — réseau communautaire français, voir meshtastic-bridge/README.md), pilotée
+    par meshtastic-bridge/bridge.py. Contrairement à CompagnonMeshCore (toujours un vrai
+    appareil en série/BLE/TCP), il n'y a ici ni firmware ni radio : `node_num` est un identifiant
+    32 bits que NOUS choisissons nous-mêmes pour cette identité logicielle, et le chiffrement
+    (AES-CTR par canal) est réimplémenté côté pont — voir meshtastic-bridge/crypto.py, dérivé du
+    firmware officiel (CryptoEngine.cpp, Channels.cpp) car la lib Python `meshtastic` ne fait que
+    piloter un vrai appareil et ne chiffre jamais elle-même."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    institution = models.ForeignKey(
+        "Institution", on_delete=models.CASCADE, null=True, blank=True, related_name="compagnons_meshtastic",
+    )
+
+    nom = models.CharField(max_length=100)
+
+    node_num = models.PositiveBigIntegerField(
+        unique=True,
+        help_text="Identifiant 32 bits de cette identité logicielle sur le mesh Meshtastic (choisi à la création, pas dérivé d'un matériel).",
+    )
+    long_name = models.CharField(max_length=40, blank=True)
+    short_name = models.CharField(max_length=4, blank=True)
+
+    broker_host = models.CharField(max_length=255, default="mqtt.gaulix.fr")
+    broker_port = models.PositiveIntegerField(default=1883)
+    # Racine de topic MQTT Meshtastic (ex: "msh/EU_868") — dépend de la région radio du réseau
+    # relayé, PAS de notre propre matériel puisqu'on n'en a pas : celle du réseau qu'on rejoint.
+    # "Traitement/msh/EU_868" et pas "msh/EU_868" pour Gaulix — vérifié en sniffant leur broker
+    # en direct (topics réels observés), contrairement à leur documentation publique qui
+    # n'indique que la racine "msh/EU_868". Racine différente probable pour un autre réseau.
+    topic_racine = models.CharField(max_length=100, default="Traitement/msh/EU_868")
+
+    principal = models.BooleanField(default=False)
+    actif = models.BooleanField(default=True)
+
+    # Paire de clés X25519 (DM chiffrés par clé publique, firmware 2.5+ — voir crypto.py) —
+    # générée automatiquement à la création (save()), jamais fournie par le client. La clé
+    # privée n'est JAMAIS exposée par l'API (voir CompagnonMeshtasticSerializer, exclue des
+    # fields) ; seule la publique est dérivée et montrée pour être communiquée au correspondant.
+    x25519_private_key_hex = models.CharField(max_length=64, blank=True, editable=False)
+
+    derniere_connexion = models.DateTimeField(null=True, blank=True)
+    dernier_etat = models.CharField(
+        max_length=20, null=True, blank=True,
+        help_text="Rapporté par le service-pont : CONNECTE / DECONNECTE / ERREUR.",
+    )
+    derniere_erreur = models.TextField(null=True, blank=True)
+
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    def save(self, *args, **kwargs):
+        if not self.x25519_private_key_hex:
+            from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+            from cryptography.hazmat.primitives import serialization
+            cle_privee = X25519PrivateKey.generate()
+            self.x25519_private_key_hex = cle_privee.private_bytes(
+                encoding=serialization.Encoding.Raw,
+                format=serialization.PrivateFormat.Raw,
+                encryption_algorithm=serialization.NoEncryption(),
+            ).hex()
+        super().save(*args, **kwargs)
+
+    @property
+    def x25519_public_key_hex(self):
+        from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+        from cryptography.hazmat.primitives import serialization
+        cle_privee = X25519PrivateKey.from_private_bytes(bytes.fromhex(self.x25519_private_key_hex))
+        return cle_privee.public_key().public_bytes(
+            encoding=serialization.Encoding.Raw, format=serialization.PublicFormat.Raw,
+        ).hex()
+
+    def __str__(self):
+        return f"{self.nom} (#{self.node_num:08x})"
+
+
+class CanalMeshtastic(EnvironmentScopedModel):
+    """Canal Meshtastic (PSK partagée par canal, comme CanalMeshCore) sur lequel notre companion
+    logiciel écoute/publie. `nom` DOIT correspondre exactement au nom du canal configuré sur les
+    vrais appareils (c'est lui qui compose le topic MQTT : `<topic_racine>/2/e/<nom>/<node_id>`),
+    pas une simple étiquette libre côté assista-crise.
+
+    `psk_hex` : vide = pas de chiffrement (canal "public" en clair) ; sinon soit 32 caractères
+    hex (PSK complète 16 octets = AES128) ou 64 (32 octets = AES256), soit un octet unique 01-0A
+    représentant l'index de PSK "par défaut" du firmware (voir meshtastic-bridge/crypto.py —
+    valeurs officielles du protocole, PAS une clé secrète propre à assista-crise). Jamais
+    renvoyée en clair par l'API (write_only, comme CanalMeshCore.cle_partagee_hex)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    institution = models.ForeignKey(
+        "Institution", on_delete=models.CASCADE, null=True, blank=True, related_name="canaux_meshtastic",
+    )
+    crise = models.ForeignKey(
+        "Crisis", on_delete=models.SET_NULL, null=True, blank=True, related_name="canaux_meshtastic",
+    )
+    equipe = models.OneToOneField(
+        "Team", on_delete=models.CASCADE, null=True, blank=True, related_name="canal_meshtastic",
+    )
+
+    nom = models.CharField(max_length=100)
+    psk_hex = models.CharField(max_length=64, null=True, blank=True)
+
+    compagnon = models.ForeignKey(
+        CompagnonMeshtastic, on_delete=models.SET_NULL, null=True, blank=True, related_name="canaux",
+    )
+
+    # Canal utilisé par défaut pour le nommage du topic MQTT d'un DM chiffré par clé publique
+    # (PKI) : dans ce mode le canal ne sert à RIEN pour le chiffrement ni la conversation (voir
+    # crypto.py), juste une contrainte technique du protocole (le topic MQTT a besoin d'un nom
+    # de canal) — l'utilisateur ne doit pas avoir à en choisir un pour un DM PKI, le pont prend
+    # celui-ci automatiquement. Un seul principal actif à la fois (pas de contrainte DB stricte,
+    # comme CompagnonMeshtastic.principal).
+    principal = models.BooleanField(default=False)
+
+    actif = models.BooleanField(default=True)
+
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.nom
+
+
+class ContactMeshtastic(EnvironmentScopedModel):
+    """Nœud Meshtastic découvert passivement en écoutant le MQTT (paquets NodeInfo/Position
+    décodés — jamais saisi à la main), répertoire brut équivalent à ContactMeshCore."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    compagnon = models.ForeignKey(CompagnonMeshtastic, on_delete=models.CASCADE, related_name="contacts")
+
+    node_num = models.PositiveBigIntegerField()
+
+    long_name = models.CharField(max_length=40, blank=True)
+    short_name = models.CharField(max_length=4, blank=True)
+    hardware_model = models.CharField(max_length=40, null=True, blank=True)
+    # Clé publique X25519 annoncée par CE nœud (paquet NodeInfo, champ User.public_key) —
+    # nécessaire pour lui envoyer un DM réellement chiffré par clé publique (PKI, firmware
+    # 2.5+) plutôt qu'un DM "classique" chiffré avec la PSK d'un canal partagé. Vide si le
+    # nœud n'a jamais annoncé de clé (PKI non activé côté firmware) ou pas encore vu.
+    public_key_hex = models.CharField(max_length=64, blank=True)
+
+    location = gis_models.PointField(srid=4326, null=True, blank=True)
+
+    dernier_advert = models.DateTimeField(null=True, blank=True)
+
+    date_synchronisation = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["compagnon", "node_num"], name="uq_contact_meshtastic_compagnon_node_num"),
+        ]
+
+    def __str__(self):
+        return f"{self.long_name or self.short_name or format(self.node_num, '08x')}"
+
+
+class NoeudUtilisateurMeshtastic(EnvironmentScopedModel):
+    """Correspondance entre un node_num Meshtastic de terrain et un compte utilisateur
+    assista-crise, miroir de NoeudMeshUtilisateur (MeshCore)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    utilisateur = models.ForeignKey("User", on_delete=models.CASCADE, related_name="noeuds_meshtastic")
+
+    node_num = models.PositiveBigIntegerField(unique=True)
+
+    nom_noeud = models.CharField(max_length=100, blank=True)
+
+    actif = models.BooleanField(default=True)
+
+    date_association = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.utilisateur.email} — {self.node_num:08x}"
+
+
+class MessageMeshtasticLog(EnvironmentScopedModel):
+    """Journal des DM Meshtastic — miroir de MessageMeshLog. Un DM Meshtastic « classique »
+    (avant PKC) est un MeshPacket adressé (`to`) à un node_num précis mais chiffré avec la PSK
+    du canal utilisé (voir `canal`) : la confidentialité vient de l'adressage applicatif, pas
+    d'une clé propre au destinataire — quiconque a la PSK du canal peut déchiffrer le contenu
+    brut, seul le node visé l'affiche comme un message qui lui est destiné. Le PKC (clé publique
+    par nœud, firmware 2.5+) n'est pas encore implémenté ici (voir meshtastic-bridge/crypto.py)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    compagnon = models.ForeignKey(CompagnonMeshtastic, on_delete=models.CASCADE, related_name="messages")
+
+    canal = models.ForeignKey(
+        CanalMeshtastic, on_delete=models.SET_NULL, null=True, blank=True, related_name="messages_dm",
+        help_text="Canal dont la PSK a servi à chiffrer ce DM.",
+    )
+
+    direction = models.CharField(max_length=10, choices=DirectionMessageMesh.choices)
+
+    contact_node_num = models.PositiveBigIntegerField(
+        help_text="Node num du correspondant (émetteur si entrant, destinataire si sortant).",
+    )
+
+    expediteur = models.ForeignKey(
+        "User", on_delete=models.SET_NULL, null=True, blank=True, related_name="messages_meshtastic_envoyes",
+        help_text="Résolu via NoeudUtilisateurMeshtastic quand connu.",
+    )
+
+    equipe = models.ForeignKey(
+        "Team", on_delete=models.SET_NULL, null=True, blank=True, related_name="messages_meshtastic",
+    )
+
+    contenu = models.TextField()
+
+    statut = models.CharField(max_length=12, choices=StatutMessageMesh.choices, default=StatutMessageMesh.EN_ATTENTE)
+
+    erreur = models.TextField(null=True, blank=True)
+
+    date_creation = models.DateTimeField(auto_now_add=True)
+    date_envoi = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f"[{self.direction}] {self.contact_node_num:08x} — {self.statut}"
+
+
+class MessageCanalMeshtastic(EnvironmentScopedModel):
+    """Message posté sur un canal Meshtastic partagé — miroir de MessageCanalMeshCore."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    canal = models.ForeignKey(CanalMeshtastic, on_delete=models.CASCADE, related_name="messages")
+
+    direction = models.CharField(max_length=10, choices=DirectionMessageMesh.choices)
+
+    expediteur = models.ForeignKey(
+        "User", on_delete=models.SET_NULL, null=True, blank=True, related_name="messages_canal_meshtastic_envoyes",
+    )
+
+    contact_node_num = models.PositiveBigIntegerField(null=True, blank=True)
+
+    contenu = models.TextField()
+
+    statut = models.CharField(max_length=12, choices=StatutMessageMesh.choices, default=StatutMessageMesh.EN_ATTENTE)
+
+    erreur = models.TextField(null=True, blank=True)
+
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"[{self.canal.nom}] {self.contenu[:40]}"
+

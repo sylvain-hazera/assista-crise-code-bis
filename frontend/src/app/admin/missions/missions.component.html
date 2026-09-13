@@ -82,6 +82,11 @@
                 <button class="btn-icon-sm" (click)="openEdit(m, $event)" title="Modifier">
                   <span class="material-icons">edit</span>
                 </button>
+                @if (m.statut === 'EN_PREPARATION') {
+                  <button class="btn-icon-sm" (click)="demarrerMission(m, $event)" title="Démarrer (passer en cours)">
+                    <span class="material-icons">play_circle</span>
+                  </button>
+                }
                 @if (m.statut !== 'TERMINEE') {
                   <button class="btn-icon-sm" (click)="cloturerMission(m, $event)" title="Clôturer">
                     <span class="material-icons">task_alt</span>
@@ -177,7 +182,9 @@
     <div class="modal modal-lg" (click)="$event.stopPropagation()">
       <div class="modal-header">
         <div>
-          <h2>{{ selectedMission.titre }}</h2>
+          <h2>{{ selectedMission.titre }}
+            <span class="statut-chip" [class]="statutClass(selectedMission.statut)">{{ statutLabel(selectedMission.statut) }}</span>
+          </h2>
           <p class="subtitle">{{ selectedMission.crise_nom || crisisName(selectedMission.crise) }}</p>
         </div>
         <button class="btn-icon-sm" (click)="closeModal()"><span class="material-icons">close</span></button>
@@ -208,6 +215,31 @@
           </div>
         }
 
+        @if (selectedMission.statut === 'EN_COURS') {
+          <h3>
+            <span class="material-icons">satellite_alt</span> Suivi terrain (MeshCore)
+          </h3>
+          @if (positionsPourMission(selectedMission.id!).length === 0) {
+            <p class="empty-text">Aucun nœud MeshCore personnel suivi pour cette mission pour l'instant — position affichée uniquement pour les membres d'équipe équipés d'un nœud et suivie uniquement pendant que la mission est en cours.</p>
+          } @else {
+            <app-minimap
+              [latitude]="pointPrincipalPourMission(selectedMission.id!)!.latitude"
+              [longitude]="pointPrincipalPourMission(selectedMission.id!)!.longitude"
+              [pointsInteret]="pointsInteretPourMission(selectedMission.id!)"
+              [zoom]="13">
+            </app-minimap>
+            <ul class="mesh-position-list">
+              @for (p of positionsPourMission(selectedMission.id!); track p.noeud_id) {
+                <li>
+                  <span class="material-icons">person_pin_circle</span>
+                  {{ p.nom_noeud || p.utilisateur_nom }}
+                  <span class="mesh-position-meta">{{ p.equipe_nom }} · {{ p.dernier_advert ? (p.dernier_advert | date:'short') : 'position inconnue' }}</span>
+                </li>
+              }
+            </ul>
+          }
+        }
+
         <h3>Dossiers de cette mission</h3>
         @if (dossiersForMission(selectedMission.id!).length === 0) {
           <p class="empty-text">Aucun dossier rattaché pour l'instant.</p>
@@ -229,6 +261,16 @@
       </div>
       <div class="modal-footer">
         <button class="btn-ghost" (click)="closeModal()">Fermer</button>
+        @if (selectedMission.statut === 'EN_PREPARATION') {
+          <button class="btn-primary" (click)="demarrerMission(selectedMission); closeModal()">
+            <span class="material-icons">play_circle</span> Démarrer
+          </button>
+        }
+        @if (selectedMission.statut !== 'TERMINEE') {
+          <button class="btn-ghost" (click)="cloturerMission(selectedMission); closeModal()">
+            <span class="material-icons">task_alt</span> Clôturer
+          </button>
+        }
         <button class="btn-primary" (click)="closeModal(); openEdit(selectedMission)">
           <span class="material-icons">edit</span> Modifier
         </button>

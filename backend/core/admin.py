@@ -17,6 +17,13 @@ from .models import (
     PointOperationnel,
     AuditAction,
     AuditLog,
+    CompagnonMeshCore,
+    NoeudMeshUtilisateur,
+    MessageMeshLog,
+    RelaisMeshCore,
+    CanalMeshCore,
+    MessageCanalMeshCore,
+    ContactMeshCore,
 )
 
 
@@ -67,3 +74,47 @@ admin.site.register(AuditLog)
 admin.site.register(ContactInstitution)
 admin.site.register(InstitutionDomaine)
 
+
+
+@admin.register(CompagnonMeshCore)
+class CompagnonMeshCoreAdmin(admin.ModelAdmin):
+    """Config rapide pour la phase de test MeshCore (voir meshcore-bridge/) — pas encore de
+    page Angular dédiée tant que le matériel n'a pas confirmé l'usage."""
+    list_display = ('nom', 'connexion_type', 'institution', 'actif', 'dernier_etat', 'derniere_connexion')
+    list_filter = ('connexion_type', 'actif', 'dernier_etat')
+    readonly_fields = ('pubkey_hex', 'derniere_connexion', 'dernier_etat', 'derniere_erreur', 'date_creation')
+
+
+@admin.register(NoeudMeshUtilisateur)
+class NoeudMeshUtilisateurAdmin(admin.ModelAdmin):
+    list_display = ('pubkey_hex', 'utilisateur', 'nom_noeud', 'actif')
+    search_fields = ('pubkey_hex', 'utilisateur__email', 'nom_noeud')
+
+
+@admin.register(MessageMeshLog)
+class MessageMeshLogAdmin(admin.ModelAdmin):
+    list_display = ('compagnon', 'direction', 'statut', 'contact_pubkey_hex', 'expediteur', 'date_creation')
+    list_filter = ('direction', 'statut', 'compagnon')
+    readonly_fields = ('date_creation',)
+
+
+@admin.register(RelaisMeshCore)
+class RelaisMeshCoreAdmin(GISModelAdmin):
+    list_display = ('nom', 'institution', 'actif', 'pubkey_hex')
+
+
+@admin.register(CanalMeshCore)
+class CanalMeshCoreAdmin(admin.ModelAdmin):
+    list_display = ('nom', 'institution', 'crise', 'actif')
+
+
+@admin.register(MessageCanalMeshCore)
+class MessageCanalMeshCoreAdmin(admin.ModelAdmin):
+    list_display = ('canal', 'direction', 'statut', 'expediteur', 'date_creation')
+    list_filter = ('direction', 'statut', 'canal')
+
+
+@admin.register(ContactMeshCore)
+class ContactMeshCoreAdmin(GISModelAdmin):
+    list_display = ('nom', 'type_contact', 'compagnon', 'pubkey_hex', 'date_synchronisation')
+    list_filter = ('type_contact', 'compagnon')

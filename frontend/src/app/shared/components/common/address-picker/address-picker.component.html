@@ -27,10 +27,13 @@
 
   @if (showDropdown && suggestions.length > 0) {
     <div class="ap-dropdown">
-      @for (addr of suggestions; track addr.label) {
+      @for (addr of suggestions; track addr.citycode + '|' + addr.label + '|' + $index) {
         <div class="ap-item" (click)="selectSuggestion(addr)">
           <span class="material-icons">place</span>
-          <span>{{ addr.label }}</span>
+          <span class="ap-item-label">{{ addr.label }}</span>
+          @if (addr.postcode) {
+            <span class="ap-item-postcode">{{ addr.postcode }}</span>
+          }
         </div>
       }
     </div>

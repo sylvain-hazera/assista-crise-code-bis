@@ -58,7 +58,13 @@
   padding: .65rem 1.2rem; font-size: .9rem; font-weight: 600; cursor: pointer;
   .material-icons { font-size: 18px; }
   &:hover { background: #b91c1c; }
+  &.sm { padding: .45rem .9rem; font-size: .82rem; }
+  &:disabled { opacity: .5; cursor: not-allowed; }
 }
+
+.canal-ok { color: #16a34a; font-weight: 600; }
+.canal-attente { color: var(--muted); font-style: italic; }
+.mission-active-label .material-icons.statut-ok { color: #16a34a; }
 
 .icon-btn {
   background: transparent; border: 1px solid var(--border); border-radius: 8px;
@@ -417,6 +423,19 @@ h3 { margin: 0; font-size: .9rem; font-weight: 700; display: flex; align-items: 
 }
 .mission-meta  { font-size: .75rem; color: var(--muted); }
 .no-missions   { font-size: .87rem; color: var(--muted); margin: 0; }
+.page-hint     { font-size: .87rem; color: var(--muted); margin: .4rem 0 0; max-width: 68ch; }
+.badge-test {
+  font-size: .7rem;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  font-weight: 700;
+  color: #92400e;
+  background: #fef3c7;
+  border-radius: 999px;
+  padding: .15rem .6rem;
+  margin-left: .4rem;
+  vertical-align: middle;
+}
 
 .resource-detail {
   display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .1rem;

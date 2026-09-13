@@ -27,6 +27,7 @@ import { ZoneMapComponent } from '../../shared/components/common/zone-map/zone-m
 import { MinimapComponent } from '../../shared/components/common/minimap/minimap.component';
 import { TagSearchInputComponent } from '../../shared/components/common/tag-search-input/tag-search-input.component';
 import { PointModalComponent } from '../crises/point-modal/point-modal.component';
+import { EquipeMessagerieMeshComponent } from './equipe-messagerie-mesh/equipe-messagerie-mesh.component';
 
 import { Team, TeamMission }  from '../../shared/models/team.model';
 import { User }        from '../../shared/models/user.model';
@@ -49,7 +50,7 @@ const COLORS = ['#ef4444','#f97316','#eab308','#22c55e','#06b6d4','#3b82f6','#8b
 @Component({
   selector: 'app-teams',
   standalone: true,
-  imports: [CommonModule, FormsModule, ReactiveFormsModule, RouterLink, ZoneMapComponent, MinimapComponent, TagSearchInputComponent, PointModalComponent],
+  imports: [CommonModule, FormsModule, ReactiveFormsModule, RouterLink, ZoneMapComponent, MinimapComponent, TagSearchInputComponent, PointModalComponent, EquipeMessagerieMeshComponent],
   templateUrl: './teams.component.html',
   styleUrls: ['./teams.component.scss'],
 })
@@ -964,7 +965,21 @@ export class TeamsComponent implements OnInit {
 
   // ── Ressources : mission active + ajout/retrait ──────────────
   missionTitreInput = '';
-  missionCriseId: string | null = null;
+
+  /** Passe la mission active de l'équipe en "En cours" directement depuis sa fiche — sans
+   * ça, il fallait retrouver la mission sur la page Missions séparée pour déclencher le
+   * suivi de position MeshCore (Mission.statut EN_COURS), demandé explicitement ici. */
+  demarrerMissionActive(): void {
+    if (!this.selectedTeam?.mission_active) return;
+    this.missionService.patch(this.selectedTeam.mission_active, { statut: 'EN_COURS' }).subscribe({
+      next: () => {
+        this.selectedTeam = { ...this.selectedTeam!, mission_active_statut: 'EN_COURS' };
+        this.reloadTeams();
+        this.showSuccess('Mission passée en cours.');
+      },
+      error: () => this.showError('Erreur lors du changement de statut de la mission.'),
+    });
+  }
 
   /** Passe la mission active de l'équipe en "En cours" directement depuis sa fiche — sans
    * ça, il fallait retrouver la mission sur la page Missions séparée pour déclencher le
@@ -983,11 +998,13 @@ export class TeamsComponent implements OnInit {
 
   submitDefinirMission(): void {
     if (!this.selectedTeam?.id || !this.missionTitreInput.trim()) return;
-    this.teamService.definirMission(this.selectedTeam.id, this.missionTitreInput.trim(), this.missionCriseId ?? undefined).subscribe({
+    // Même sélecteur de crise que "Rattacher" juste au-dessus (voir rattacherCriseId) — on ne
+    // demande plus la crise deux fois dans la même section, remarque directe de
+    // l'utilisateur ("tu ne peux pas demander 2 fois la crise assignée").
+    this.teamService.definirMission(this.selectedTeam.id, this.missionTitreInput.trim(), this.rattacherCriseId ?? undefined).subscribe({
       next: (updated) => {
         this.selectedTeam = { ...updated, missions: this.selectedTeam!.missions };
         this.missionTitreInput = '';
-        this.missionCriseId = null;
         this.reloadTeams();
         this.showSuccess('Mission de l\'équipe définie.');
       },
@@ -1010,21 +1027,96 @@ export class TeamsComponent implements OnInit {
     return this.crisis.filter(c => ids.has(c.id));
   }
 
-  get crisesRattachablesTeam(): Crisis[] {
-    const ids = new Set(this.selectedTeam?.assigned_crisis_ids ?? []);
-    return this.crisesOuvertes.filter(c => !ids.has(c.id));
-  }
-
   submitRattacherCrise(): void {
     if (!this.selectedTeam?.id || !this.rattacherCriseId) return;
     this.teamService.assignerCrise(this.selectedTeam.id, this.rattacherCriseId).subscribe({
       next: (updated) => {
+        // rattacherCriseId volontairement PAS remis à null : la même crise sélectionnée sert
+        // aussi au bouton "Définir/Changer" la mission juste en dessous (un seul sélecteur de
+        // crise partagé pour toute la section, plus deux comme avant).
         this.selectedTeam = { ...updated, missions: this.buildMissions(updated) };
-        this.rattacherCriseId = null;
         this.reloadTeams();
         this.showSuccess('Crise rattachée à l\'équipe.');
       },
       error: (err) => this.showError(err?.error?.error || 'Erreur lors du rattachement de la crise.'),
+    });
+  }
+
+  // ── Canal MeshCore de l'équipe ────────────────────────────────────────
+  provisionnantCanal = false;
+
+  provisionnerCanal(): void {
+    if (!this.selectedTeam?.id) return;
+    this.provisionnantCanal = true;
+    this.teamService.provisionnerCanalMeshCore(this.selectedTeam.id).subscribe({
+      next: (resultat) => {
+        this.provisionnantCanal = false;
+        this.reloadTeams();
+        if (this.selectedTeam) {
+          this.selectedTeam = {
+            ...this.selectedTeam,
+            canal_meshcore_id: resultat.canal_id, canal_meshcore_nom: resultat.nom,
+          };
+        }
+        this.showSuccess(
+          resultat.compagnon_disponible
+            ? `Canal « ${resultat.nom} » prêt — infos envoyées à ${resultat.destinataires} membre(s) équipé(s) d'un nœud MeshCore.`
+            : `Canal « ${resultat.nom} » créé, mais aucun companion actif pour envoyer les infos aux membres pour l'instant.`,
+        );
+      },
+      error: () => { this.provisionnantCanal = false; this.showError('Erreur lors du provisionnement du canal MeshCore.'); },
+    });
+  }
+
+  regenererCanal(): void {
+    if (!this.selectedTeam?.id) return;
+    if (!confirm("Régénérer la clé du canal ? Les anciens détenteurs de la clé (y compris un membre retiré) ne pourront plus l'utiliser — la nouvelle clé n'est renvoyée qu'aux membres actuels.")) return;
+    this.provisionnantCanal = true;
+    this.teamService.provisionnerCanalMeshCore(this.selectedTeam.id, true).subscribe({
+      next: (resultat) => {
+        this.provisionnantCanal = false;
+        this.showSuccess(`Clé régénérée et renvoyée à ${resultat.destinataires} membre(s).`);
+      },
+      error: () => { this.provisionnantCanal = false; this.showError('Erreur lors de la régénération du canal.'); },
+    });
+  }
+
+  // ── Canal Meshtastic de l'équipe ──────────────────────────────────────
+  provisionnantCanalMeshtastic = false;
+
+  provisionnerCanalMeshtastic(): void {
+    if (!this.selectedTeam?.id) return;
+    this.provisionnantCanalMeshtastic = true;
+    this.teamService.provisionnerCanalMeshtastic(this.selectedTeam.id).subscribe({
+      next: (resultat) => {
+        this.provisionnantCanalMeshtastic = false;
+        this.reloadTeams();
+        if (this.selectedTeam) {
+          this.selectedTeam = {
+            ...this.selectedTeam,
+            canal_meshtastic_id: resultat.canal_id, canal_meshtastic_nom: resultat.nom,
+          };
+        }
+        this.showSuccess(
+          resultat.compagnon_disponible
+            ? `Canal « ${resultat.nom} » prêt — infos envoyées à ${resultat.destinataires} membre(s) équipé(s) d'un nœud Meshtastic.`
+            : `Canal « ${resultat.nom} » créé, mais aucun companion actif pour envoyer les infos aux membres pour l'instant.`,
+        );
+      },
+      error: () => { this.provisionnantCanalMeshtastic = false; this.showError('Erreur lors du provisionnement du canal Meshtastic.'); },
+    });
+  }
+
+  regenererCanalMeshtastic(): void {
+    if (!this.selectedTeam?.id) return;
+    if (!confirm("Régénérer la clé du canal Meshtastic ? Les anciens détenteurs (y compris un membre retiré) ne pourront plus l'utiliser — la nouvelle clé n'est renvoyée qu'aux membres actuels.")) return;
+    this.provisionnantCanalMeshtastic = true;
+    this.teamService.provisionnerCanalMeshtastic(this.selectedTeam.id, true).subscribe({
+      next: (resultat) => {
+        this.provisionnantCanalMeshtastic = false;
+        this.showSuccess(`Clé régénérée et renvoyée à ${resultat.destinataires} membre(s).`);
+      },
+      error: () => { this.provisionnantCanalMeshtastic = false; this.showError('Erreur lors de la régénération du canal Meshtastic.'); },
     });
   }
 

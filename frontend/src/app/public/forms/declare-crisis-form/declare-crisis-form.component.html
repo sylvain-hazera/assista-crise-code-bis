@@ -253,20 +253,6 @@
                                [(ngModel)]="responsableEmail" [ngModelOptions]="{standalone: true}">
                     }
                 </div>
-
-                @if (selectedInstitutionId) {
-                    <div class="form-group checkbox-group">
-                        <label class="checkbox-label">
-                            <input type="checkbox" class="form-checkbox"
-                                   [checked]="creerEquipe" (change)="creerEquipe = $any($event.target).checked">
-                            <span class="checkbox-text">Créer une équipe pour mon institution sur cette crise</span>
-                        </label>
-                        @if (creerEquipe) {
-                            <input type="text" class="form-input" placeholder="Nom de la nouvelle équipe"
-                                   [(ngModel)]="nouvelleEquipeNom" [ngModelOptions]="{standalone: true}">
-                        }
-                    </div>
-                }
             </div>
             }
 

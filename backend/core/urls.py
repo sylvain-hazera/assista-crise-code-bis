@@ -21,6 +21,10 @@ from .views import (
     InstitutionViewSet,
     ContactInstitutionViewSet,
     InstitutionDomaineViewSet,
+    CompagnonMeshCoreViewSet, NoeudMeshUtilisateurViewSet, MessageMeshLogViewSet,
+    RelaisMeshCoreViewSet, CanalMeshCoreViewSet, MessageCanalMeshCoreViewSet, ContactMeshCoreViewSet,
+    CompagnonMeshtasticViewSet, NoeudUtilisateurMeshtasticViewSet, MessageMeshtasticLogViewSet,
+    CanalMeshtasticViewSet, MessageCanalMeshtasticViewSet, ContactMeshtasticViewSet,
     RoleOperationnelViewSet,
     InstitutionCompetenceViewSet,
     AffectationRoleOperationnelViewSet,
@@ -77,6 +81,21 @@ router.register(
     r'institutions-domaines',
     InstitutionDomaineViewSet
 )
+
+router.register(r'compagnons-meshcore', CompagnonMeshCoreViewSet)
+router.register(r'noeuds-meshcore', NoeudMeshUtilisateurViewSet)
+router.register(r'messages-meshcore', MessageMeshLogViewSet)
+router.register(r'relais-meshcore', RelaisMeshCoreViewSet)
+router.register(r'canaux-meshcore', CanalMeshCoreViewSet)
+router.register(r'messages-canal-meshcore', MessageCanalMeshCoreViewSet)
+router.register(r'contacts-meshcore', ContactMeshCoreViewSet)
+
+router.register(r'compagnons-meshtastic', CompagnonMeshtasticViewSet)
+router.register(r'noeuds-meshtastic', NoeudUtilisateurMeshtasticViewSet)
+router.register(r'messages-meshtastic', MessageMeshtasticLogViewSet)
+router.register(r'canaux-meshtastic', CanalMeshtasticViewSet)
+router.register(r'messages-canal-meshtastic', MessageCanalMeshtasticViewSet)
+router.register(r'contacts-meshtastic', ContactMeshtasticViewSet)
 
 
 router.register(

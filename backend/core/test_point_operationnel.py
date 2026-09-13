@@ -10,11 +10,13 @@ from core.models import (
     Competence,
     ContactInstitution,
     Crisis,
+    ImplicationInstitution,
     Institution,
     InstitutionType,
     PointOperationnel,
     PointType,
     Team,
+    TypeImplication,
 )
 
 
@@ -477,6 +479,26 @@ class TestCreerEquipeEnEditantLePoint:
         assert Team.objects.count() == before
         assert response.data["equipe"] == existing_team.id
         assert not Team.objects.filter(name="Ne doit pas être créée").exists()
+
+    def test_declares_institution_as_acteur_on_the_crisis(self, institutional_client, crisis, point_type, institution):
+        """Avant correctif : créer une équipe à la volée en ÉDITANT un point (ex: étape
+        "Équipes" du wizard de démarrage de crise, qui crée d'abord le point puis lui attache
+        une équipe) ne déclarait jamais l'institution comme actrice de la crise, contrairement
+        au même geste fait à la CRÉATION du point (voir TestCreerEquipeAvecPoint)."""
+        client, user = institutional_client
+        ContactInstitution.objects.create(institution=institution, utilisateur=user, actif=True)
+        point = PointOperationnel.objects.create(nom="Point sans équipe", type=point_type, crise=crisis)
+
+        response = client.patch(
+            reverse('pointoperationnel-detail', args=[point.id]),
+            {"nouvelle_equipe_nom": "Équipe wizard"},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert ImplicationInstitution.objects.filter(
+            crise=crisis, institution=institution, type_implication=TypeImplication.ACTEUR,
+        ).exists()
 
 
 @pytest.mark.django_db

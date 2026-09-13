@@ -1,0 +1,213 @@
+<div class="page-header">
+  <h2>Companions MeshCore <span class="badge-test">test</span></h2>
+  <p class="page-hint">
+    Déclarez ici l'adresse de votre companion (IP/port en TCP, chemin série, ou adresse BLE) —
+    le service-pont s'y connecte ensuite pour relayer les messages. Page de test, réservée à la
+    branche de développement du réseau radio.
+  </p>
+</div>
+
+<div class="create-panel">
+  <h3>Ajouter un companion</h3>
+  <div class="form-row">
+    <input type="text" class="form-input" placeholder="Nom (ex: Poste de commandement)" [(ngModel)]="nouveauNom">
+    <select [(ngModel)]="nouveauType">
+      <option value="TCP">TCP (IP/port)</option>
+      <option value="SERIE">Série (USB)</option>
+      <option value="BLE">Bluetooth (BLE)</option>
+    </select>
+  </div>
+
+  @if (nouveauType === 'TCP') {
+    <div class="form-row">
+      <input type="text" class="form-input" placeholder="Adresse IP (ex: 192.168.1.50)" [(ngModel)]="nouveauHost">
+      <input type="number" class="form-input form-input-sm" placeholder="Port" [(ngModel)]="nouveauPort">
+    </div>
+  }
+  @if (nouveauType === 'SERIE') {
+    <div class="form-row">
+      <input type="text" class="form-input" placeholder="/dev/ttyUSB0" [(ngModel)]="nouveauDevice">
+    </div>
+  }
+  @if (nouveauType === 'BLE') {
+    <div class="form-row">
+      <input type="text" class="form-input" placeholder="Adresse MAC (ex: 12:34:56:78:90:AB)" [(ngModel)]="nouveauBle">
+    </div>
+  }
+
+  <div class="form-row">
+    <input type="number" class="form-input form-input-sm" placeholder="Latitude (optionnel)" [(ngModel)]="nouveauLat">
+    <input type="number" class="form-input form-input-sm" placeholder="Longitude (optionnel)" [(ngModel)]="nouveauLon">
+  </div>
+  <p class="page-hint">
+    Position optionnelle (poste de commandement, véhicule...) — permet d'afficher ce companion
+    sur la carte, comme un relais.
+  </p>
+
+  <button type="button" class="btn-primary" [disabled]="!formValide || creating" (click)="ajouter()">
+    Ajouter ce companion
+  </button>
+</div>
+
+@if (errorMessage) {
+  <p class="error-message">{{ errorMessage }}</p>
+}
+
+@if (loading) {
+  <p>Chargement…</p>
+} @else {
+  <div class="table-wrapper">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Nom</th>
+          <th>Type</th>
+          <th>Adresse</th>
+          <th>Position</th>
+          <th>Statut</th>
+          <th>Dernière connexion</th>
+          <th>ID (pour COMPAGNON_ID)</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (c of companions; track c.id) {
+          <tr>
+            <td>{{ c.nom }}</td>
+            <td>{{ c.connexion_type }}</td>
+            <td class="mono">{{ adresse(c) }}</td>
+            <td class="mono">{{ (c.latitude != null && c.longitude != null) ? (c.latitude | number:'1.4-4') + ', ' + (c.longitude | number:'1.4-4') : '—' }}</td>
+            <td><span class="statut" [ngClass]="statutClass(c)">{{ c.dernier_etat || 'jamais connecté' }}</span></td>
+            <td>{{ c.derniere_connexion ? (c.derniere_connexion | date:'short') : '—' }}</td>
+            <td class="mono id-cell" (click)="copierId(c)" title="Cliquer pour copier">{{ c.id }}</td>
+            <td><button type="button" class="btn-danger-sm" (click)="supprimer(c)">Supprimer</button></td>
+          </tr>
+        } @empty {
+          <tr><td colspan="8" class="empty">Aucun companion déclaré pour l'instant.</td></tr>
+        }
+      </tbody>
+    </table>
+  </div>
+}
+
+<h2>Relais MeshCore</h2>
+<p class="page-hint">
+  Infrastructure pure — un relais ne se pilote pas. Sa position est importée et tenue à jour
+  automatiquement dès qu'il apparaît, avec ses coordonnées GPS, dans le répertoire du
+  companion (synchronisé régulièrement par le service-pont).
+</p>
+
+<div class="table-wrapper">
+  <table class="data-table">
+    <thead>
+      <tr><th>Nom</th><th>Latitude</th><th>Longitude</th><th>Actif</th><th></th></tr>
+    </thead>
+    <tbody>
+      @for (r of relais; track r.id) {
+        <tr>
+          <td>{{ r.nom }}</td>
+          <td class="mono">{{ r.latitude }}</td>
+          <td class="mono">{{ r.longitude }}</td>
+          <td>{{ r.actif ? 'Oui' : 'Non' }}</td>
+          <td><button type="button" class="btn-danger-sm" (click)="supprimerRelais(r)">Supprimer</button></td>
+        </tr>
+      } @empty {
+        <tr><td colspan="5" class="empty">Aucun relais détecté pour l'instant.</td></tr>
+      }
+    </tbody>
+  </table>
+</div>
+
+<details class="create-panel manual-fallback">
+  <summary>Ajouter manuellement (relais pas encore détecté par un companion)</summary>
+  <div class="form-row">
+    <input type="text" class="form-input" placeholder="Nom (ex: Relais clocher église)" [(ngModel)]="nouveauRelaisNom">
+    <input type="number" class="form-input form-input-sm" placeholder="Latitude" [(ngModel)]="nouveauRelaisLat" step="0.0001">
+    <input type="number" class="form-input form-input-sm" placeholder="Longitude" [(ngModel)]="nouveauRelaisLon" step="0.0001">
+  </div>
+  <button type="button" class="btn-primary" [disabled]="!formRelaisValide || creatingRelais" (click)="ajouterRelais()">
+    Ajouter ce relais
+  </button>
+</details>
+
+<h2>Nœuds MeshCore des comptes utilisateurs</h2>
+<p class="page-hint">
+  Attribue le companion personnel d'une personne de terrain à son compte — c'est ce qui
+  permet de savoir qui a envoyé un message (et de quelle équipe il vient), et d'afficher sa
+  position sur la carte pendant une mission active. Les nœuds ci-dessous sont déjà détectés
+  automatiquement via le répertoire de contacts du companion (synchronisé régulièrement par
+  le service-pont) : il suffit de choisir l'utilisateur et de cliquer "Attribuer", pas besoin
+  de retaper une clé publique à la main.
+</p>
+
+@if (contactsDisponibles.length > 0) {
+  <div class="table-wrapper">
+    <h3>Nœuds détectés, pas encore attribués</h3>
+    <table class="data-table">
+      <thead>
+        <tr><th>Nom annoncé</th><th>Clé publique</th><th>Attribuer à…</th><th></th></tr>
+      </thead>
+      <tbody>
+        @for (c of contactsDisponibles; track c.id) {
+          <tr>
+            <td>{{ c.nom || '—' }}</td>
+            <td class="mono">{{ c.pubkey_hex.slice(0, 16) }}…</td>
+            <td>
+              <select [(ngModel)]="attributionsParContact[c.id]">
+                <option value="">— Utilisateur —</option>
+                @for (u of utilisateurs; track u.id) {
+                  <option [value]="u.id">{{ u.first_name }} {{ u.last_name }} ({{ u.email }})</option>
+                }
+              </select>
+            </td>
+            <td>
+              <button type="button" class="btn-primary sm" [disabled]="!attributionsParContact[c.id] || attribuingContactId === c.id" (click)="attribuerContact(c)">
+                Attribuer
+              </button>
+            </td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+}
+
+<details class="create-panel manual-fallback">
+  <summary>Associer manuellement (nœud jamais détecté par un companion)</summary>
+  <div class="form-row">
+    <select [(ngModel)]="nouveauNoeudUtilisateurId">
+      <option value="">— Utilisateur —</option>
+      @for (u of utilisateurs; track u.id) {
+        <option [value]="u.id">{{ u.first_name }} {{ u.last_name }} ({{ u.email }})</option>
+      }
+    </select>
+  </div>
+  <div class="form-row">
+    <input type="text" class="form-input" placeholder="Clé publique (hex)" [(ngModel)]="nouveauNoeudPubkey">
+    <input type="text" class="form-input" placeholder="Nom du nœud (optionnel)" [(ngModel)]="nouveauNoeudNom">
+  </div>
+  <button type="button" class="btn-primary" [disabled]="!formNoeudValide || creatingNoeud" (click)="ajouterNoeud()">
+    Associer
+  </button>
+</details>
+
+<div class="table-wrapper">
+  <table class="data-table">
+    <thead>
+      <tr><th>Utilisateur</th><th>Nom du nœud</th><th>Clé publique</th><th>Actif</th><th></th></tr>
+    </thead>
+    <tbody>
+      @for (n of noeuds; track n.id) {
+        <tr>
+          <td>{{ n.utilisateur_nom }}</td>
+          <td>{{ n.nom_noeud || '—' }}</td>
+          <td class="mono">{{ n.pubkey_hex }}</td>
+          <td>{{ n.actif ? 'Oui' : 'Non' }}</td>
+          <td><button type="button" class="btn-danger-sm" (click)="supprimerNoeud(n)">Retirer</button></td>
+        </tr>
+      } @empty {
+        <tr><td colspan="5" class="empty">Aucun nœud associé pour l'instant.</td></tr>
+      }
+    </tbody>
+  </table>
+</div>

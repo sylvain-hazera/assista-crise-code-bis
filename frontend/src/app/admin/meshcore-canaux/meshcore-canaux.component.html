@@ -1,0 +1,100 @@
+<div class="page-header">
+  <h2>Messages MeshCore <span class="badge-test">test</span></h2>
+  <p class="page-hint">
+    Canaux d'équipe (coordination générale) et messages privés (1 personne), dans un seul
+    endroit. Un canal se crée depuis la fiche de l'équipe concernée.
+  </p>
+</div>
+
+<div class="bandeau-confidentialite">
+  <span class="material-icons">warning</span>
+  Un canal (clé partagée) a un chiffrement plus faible qu'un message privé — n'y mettez aucune
+  donnée personnelle ou sensible. Pour un échange confidentiel, utilisez un message privé.
+</div>
+
+@if (errorMessage) {
+  <p class="error-message">{{ errorMessage }}</p>
+}
+
+<div class="chat-layout">
+  <aside class="liste-conversations">
+    @if (loadingSidebar) {
+      <p class="chargement">Chargement…</p>
+    } @else {
+
+      <h4 class="section-titre">Canaux d'équipe</h4>
+      <ul class="conversations">
+        @for (c of canaux; track c.id) {
+          <li [class.actif]="estConversationActive({type: 'canal', canal: c})" (click)="selectionnerCanal(c)">
+            <span class="material-icons">tag</span>
+            <span class="conv-info">
+              <span class="conv-nom">{{ c.nom }}</span>
+              @if (c.equipe_nom) { <span class="conv-meta">{{ c.equipe_nom }}</span> }
+            </span>
+            @if (!c.provisionne) {
+              <span class="material-icons conv-attente" title="En attente de provisionnement par le pont">hourglass_empty</span>
+            }
+          </li>
+        } @empty {
+          <li class="vide">Aucun canal — créez-en un depuis la fiche d'une équipe.</li>
+        }
+      </ul>
+
+      <h4 class="section-titre">Messages privés</h4>
+      <ul class="conversations">
+        @for (n of noeuds; track n.id) {
+          <li [class.actif]="estConversationActive({type: 'dm', noeud: n})" (click)="selectionnerDm(n)">
+            <span class="material-icons">person</span>
+            <span class="conv-info">
+              <span class="conv-nom">{{ n.nom_noeud || n.utilisateur_nom }}</span>
+              @if (n.nom_noeud && n.utilisateur_nom) { <span class="conv-meta">{{ n.utilisateur_nom }}</span> }
+            </span>
+          </li>
+        } @empty {
+          <li class="vide">Aucun nœud personnel associé pour l'instant.</li>
+        }
+      </ul>
+    }
+  </aside>
+
+  <section class="fil-messages">
+    @if (!conversationSelectionnee) {
+      <p class="empty">Sélectionnez une conversation.</p>
+    } @else {
+      <div class="fil-header">
+        <h3>{{ titreConversation(conversationSelectionnee) }}</h3>
+        <p class="fil-soustitre">{{ sousTitreConversation(conversationSelectionnee) }}</p>
+      </div>
+
+      @if (loadingMessages) {
+        <p class="chargement">Chargement…</p>
+      } @else {
+        <div class="messages">
+          @for (m of messagesAffiches; track m.id) {
+            <div class="message" [class.sortant]="m.direction === 'SORTANT'">
+              <div class="message-meta">
+                {{ auteurMessage(m, conversationSelectionnee) }} · {{ m.date_creation | date:'short' }}
+              </div>
+              <div class="message-contenu">{{ m.contenu }}</div>
+              @if (m.direction === 'SORTANT') {
+                <div class="message-statut" [class]="statutClasse(m.statut)" [title]="m.erreur || statutLibelle(m.statut)">
+                  <span class="material-icons">{{ statutIcone(m.statut) }}</span>
+                  {{ statutLibelle(m.statut) }}
+                </div>
+              }
+            </div>
+          } @empty {
+            <p class="empty">Aucun message pour l'instant.</p>
+          }
+        </div>
+      }
+
+      <div class="saisie">
+        <input type="text" class="form-input" placeholder="Écrire un message..." [(ngModel)]="nouveauMessage" (keyup.enter)="envoyer()">
+        <button type="button" class="btn-primary" [disabled]="!nouveauMessage.trim() || envoiEnCours" (click)="envoyer()">
+          Envoyer
+        </button>
+      </div>
+    }
+  </section>
+</div>

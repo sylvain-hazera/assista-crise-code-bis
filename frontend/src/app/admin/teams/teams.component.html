@@ -650,7 +650,7 @@
           <div class="section-header">
             <h3>
               <span class="material-icons">local_fire_department</span>
-              Crises rattachées
+              Crise &amp; mission
               <span class="count-badge">{{ crisesRattacheesTeam.length }}</span>
             </h3>
           </div>
@@ -673,17 +673,127 @@
             <p class="no-missions">Aucune crise rattachée — les vues qui s'appuient sur ce champ (ressources mobilisées, recrutement scopé, matching hébergement) ne verront pas cette équipe tant que ce n'est pas fait.</p>
           }
 
+          <!-- Un seul sélecteur de crise pour toute la section (Rattacher ET Définir/Changer
+               la mission juste en dessous) — deux sélecteurs séparés demandaient la même
+               information deux fois, remarque directe de l'utilisateur. -->
           <div class="mission-active-bar">
             <select class="form-select" [(ngModel)]="rattacherCriseId">
-              <option [ngValue]="null">Rattacher à une crise…</option>
-              @for (c of crisesRattachablesTeam; track c.id) {
+              <option [ngValue]="null">Choisir une crise…</option>
+              @for (c of crisesOuvertes; track c.id) {
                 <option [ngValue]="c.id">{{ c.name }}</option>
               }
             </select>
             <button class="btn-secondary sm" [disabled]="!rattacherCriseId" (click)="submitRattacherCrise()">
-              <span class="material-icons">link</span> Rattacher
+              <span class="material-icons">link</span> Rattacher l'équipe
             </button>
           </div>
+
+          <!-- Mission active : regroupée ici avec la crise plutôt que dans "Ressources
+               assignées" — les deux parlaient de la même crise à deux endroits séparés par
+               le canal MeshCore, remarque directe de l'utilisateur ("ce n'est pas intuitif"). -->
+          <div class="mission-active-bar">
+            @if (selectedTeam.mission_active_titre) {
+              <span class="mission-active-label">
+                <span class="material-icons">flag</span> Mission : {{ selectedTeam.mission_active_titre }}
+                @if (selectedTeam.mission_active_crise_nom) {
+                  · <span class="material-icons">local_fire_department</span> {{ selectedTeam.mission_active_crise_nom }}
+                }
+                @if (selectedTeam.mission_active_statut === 'EN_COURS') {
+                  · <span class="material-icons statut-ok">check_circle</span> En cours
+                }
+              </span>
+              @if (selectedTeam.mission_active_statut === 'EN_PREPARATION') {
+                <button class="btn-secondary sm" (click)="demarrerMissionActive()" title="Démarrer (passer en cours)">
+                  <span class="material-icons">play_circle</span> Démarrer
+                </button>
+              }
+            } @else {
+              <span class="mission-active-label muted">Aucune mission définie pour cette équipe.</span>
+            }
+            <input type="text" placeholder="Nouvelle mission (texte libre)…" [(ngModel)]="missionTitreInput" />
+            <button class="btn-secondary sm" (click)="submitDefinirMission()" title="Utilise la crise choisie ci-dessus (optionnel)">
+              {{ selectedTeam.mission_active_titre ? 'Changer' : 'Définir' }}
+            </button>
+          </div>
+        </div>
+
+        <!-- ── CANAL MESHCORE ─────────────────────────────────── -->
+        <div class="detail-section">
+          <div class="section-header">
+            <h3>
+              <span class="material-icons">tag</span>
+              Canal MeshCore
+            </h3>
+          </div>
+
+          @if (!selectedTeam.canal_meshcore_id) {
+            <p class="no-missions">Aucun canal MeshCore — les membres équipés d'un nœud personnel n'ont pas de canal d'équipe pour recevoir/envoyer des messages de coordination.</p>
+            <button class="btn-secondary sm" [disabled]="provisionnantCanal" (click)="provisionnerCanal()">
+              <span class="material-icons">add</span> Créer le canal et informer les membres équipés
+            </button>
+          } @else {
+            <div class="mission-active-bar">
+              <span class="mission-active-label">
+                <span class="material-icons" [class.statut-ok]="selectedTeam.canal_meshcore_provisionne">tag</span>
+                {{ selectedTeam.canal_meshcore_nom }}
+                @if (selectedTeam.canal_meshcore_provisionne) {
+                  · <span class="canal-ok">actif</span>
+                } @else {
+                  · <span class="canal-attente">en attente de provisionnement par le pont</span>
+                }
+              </span>
+              <button class="btn-secondary sm" [disabled]="provisionnantCanal" (click)="provisionnerCanal()">
+                Renvoyer les infos aux membres équipés
+              </button>
+              <button class="btn-danger sm" [disabled]="provisionnantCanal" (click)="regenererCanal()" title="Génère une nouvelle clé — révoque l'accès de tout ancien détenteur non membre actuel">
+                Régénérer la clé
+              </button>
+            </div>
+          }
+
+          <!-- Messages du canal + DM des intervenants juste ici, plutôt qu'en bas de fiche
+               (loin, après Historique) — demandé explicitement pour privilégier leur
+               visibilité au même endroit que le statut du canal. -->
+          <app-equipe-messagerie-mesh [equipeId]="selectedTeam.id!" [canalId]="selectedTeam.canal_meshcore_id">
+          </app-equipe-messagerie-mesh>
+        </div>
+
+        <!-- ── CANAL MESHTASTIC ───────────────────────────────── -->
+        <div class="detail-section">
+          <div class="section-header">
+            <h3>
+              <span class="material-icons">tag</span>
+              Canal Meshtastic <span class="badge-test">test</span>
+            </h3>
+          </div>
+
+          @if (!selectedTeam.canal_meshtastic_id) {
+            <p class="no-missions">
+              Aucun canal Meshtastic — créé automatiquement dès qu'un membre équipé d'un nœud
+              Meshtastic personnel rejoint l'équipe, ou manuellement ici.
+            </p>
+            <button class="btn-secondary sm" [disabled]="provisionnantCanalMeshtastic" (click)="provisionnerCanalMeshtastic()">
+              <span class="material-icons">add</span> Créer le canal et informer les membres équipés
+            </button>
+          } @else {
+            <div class="mission-active-bar">
+              <span class="mission-active-label">
+                <span class="material-icons statut-ok">tag</span>
+                {{ selectedTeam.canal_meshtastic_nom }}
+              </span>
+              <button class="btn-secondary sm" [disabled]="provisionnantCanalMeshtastic" (click)="provisionnerCanalMeshtastic()">
+                Renvoyer les infos aux membres équipés
+              </button>
+              <button class="btn-danger sm" [disabled]="provisionnantCanalMeshtastic" (click)="regenererCanalMeshtastic()" title="Génère une nouvelle clé — révoque l'accès de tout ancien détenteur non membre actuel">
+                Régénérer la clé
+              </button>
+            </div>
+            <p class="page-hint">
+              Le DM envoyé à chaque membre est chiffré par clé publique (PKI) dès qu'elle est
+              connue pour lui, sinon par la PSK du canal principal — voir la page
+              « Messages Meshtastic » pour la conversation.
+            </p>
+          }
         </div>
 
         <!-- ── DEMANDES ASSIGNÉES ────────────────────────────── -->
@@ -742,37 +852,6 @@
               Ressources assignées
               <span class="count-badge">{{ resourcesForSelectedTeam.length }}</span>
             </h3>
-          </div>
-
-          <div class="mission-active-bar">
-            @if (selectedTeam.mission_active_titre) {
-              <span class="mission-active-label">
-                <span class="material-icons">flag</span> Mission : {{ selectedTeam.mission_active_titre }}
-                @if (selectedTeam.mission_active_crise_nom) {
-                  · <span class="material-icons">local_fire_department</span> {{ selectedTeam.mission_active_crise_nom }}
-                }
-                @if (selectedTeam.mission_active_statut === 'EN_COURS') {
-                  · <span class="material-icons statut-ok">check_circle</span> En cours
-                }
-              </span>
-              @if (selectedTeam.mission_active_statut === 'EN_PREPARATION') {
-                <button class="btn-secondary sm" (click)="demarrerMissionActive()" title="Démarrer (passer en cours)">
-                  <span class="material-icons">play_circle</span> Démarrer
-                </button>
-              }
-            } @else {
-              <span class="mission-active-label muted">Aucune mission définie pour cette équipe.</span>
-            }
-            <input type="text" placeholder="Nouvelle mission (texte libre)…" [(ngModel)]="missionTitreInput" />
-            <select class="form-select" [(ngModel)]="missionCriseId">
-              <option [ngValue]="null">Assigner à une crise (optionnel)</option>
-              @for (c of crisesOuvertes; track c.id) {
-                <option [ngValue]="c.id">{{ c.name }}</option>
-              }
-            </select>
-            <button class="btn-secondary sm" (click)="submitDefinirMission()">
-              {{ selectedTeam.mission_active_titre ? 'Changer' : 'Définir' }}
-            </button>
           </div>
 
           @if (resourcesForSelectedTeam.length > 0) {

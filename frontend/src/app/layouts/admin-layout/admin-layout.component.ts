@@ -43,6 +43,11 @@ export class AdminLayoutComponent implements OnInit {
 
     { icon: 'groups', label: 'Équipes', route: '/admin/equipes' },
 
+    // Absente du menu jusqu'ici (page atteignable seulement en connaissant son URL exacte,
+    // même défaut que 'Vue Ma Collectivité' ci-dessus) — c'est pourtant ici qu'on démarre/
+    // clôture une mission (Team.mission_active), condition du suivi de position MeshCore.
+    { icon: 'flag_circle', label: 'Missions', route: '/admin/missions' },
+
     // Route publique (hors /admin) volontairement : un chef d'équipe de terrain peut être un
     // simple citoyen (UTIL_SIMPLE), pas forcément un acteur institutionnel — contrairement au
     // reste de cette barre, cette rubrique reste visible/accessible même sans rôle effectif
@@ -68,6 +73,9 @@ export class AdminLayoutComponent implements OnInit {
     { icon: 'inventory_2', label: 'Matériel', route: '/admin/materiel' },
 
     { icon: 'groups', label: 'Ressources mobilisées', route: '/admin/ressources-mobilisees' },
+
+    { icon: 'settings_input_antenna', label: 'Companions MeshCore (test)', route: '/admin/meshcore-companions' },
+    { icon: 'forum', label: 'Canaux MeshCore (test)', route: '/admin/meshcore-canaux' },
 
     { icon: 'link', label: 'Correspondances', route: '/admin/correspondances' },
 

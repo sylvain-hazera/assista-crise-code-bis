@@ -52,6 +52,26 @@
           Positions équipes
         </label>
         <label class="layer-toggle-item">
+          <input type="checkbox" [(ngModel)]="layerVisibility.relaisMeshCore" (ngModelChange)="onLayerToggle()">
+          <span class="layer-dot relais-meshcore-dot"></span>
+          Relais MeshCore (test)
+        </label>
+        <label class="layer-toggle-item">
+          <input type="checkbox" [(ngModel)]="layerVisibility.compagnonsMeshCore" (ngModelChange)="onLayerToggle()">
+          <span class="layer-dot compagnons-meshcore-dot"></span>
+          Companions MeshCore (test)
+        </label>
+        <label class="layer-toggle-item">
+          <input type="checkbox" [(ngModel)]="layerVisibility.noeudsMeshCore" (ngModelChange)="onLayerToggle()">
+          <span class="layer-dot noeuds-meshcore-dot"></span>
+          Nœuds personnels MeshCore (test)
+        </label>
+        <label class="layer-toggle-item">
+          <input type="checkbox" [(ngModel)]="layerVisibility.noeudsMeshtastic" (ngModelChange)="onLayerToggle()">
+          <span class="layer-dot noeuds-meshtastic-dot"></span>
+          Nœuds personnels Meshtastic (test)
+        </label>
+        <label class="layer-toggle-item">
           <input type="checkbox" [(ngModel)]="layerVisibility.personnelSecourisme" (ngModelChange)="onLayerToggle()">
           <span class="layer-dot personnel-dot"></span>
           Personnel secourisme
