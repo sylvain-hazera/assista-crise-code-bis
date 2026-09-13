@@ -20,9 +20,13 @@ Sources (protocole officiel, pas une déduction) :
 
 from __future__ import annotations
 
+import os
 import struct
 
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives.ciphers.aead import AESCCM
+from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X25519PublicKey
+from cryptography.hazmat.primitives import hashes, serialization
 
 # Clé PSK "par défaut" du protocole Meshtastic (16 octets, AES128) — publiée dans le protobuf
 # officiel channel.proto, pas un secret : sert uniquement de base pour les raccourcis d'index
@@ -100,3 +104,74 @@ def hash_canal(nom: str, psk: bytes) -> int:
     récepteur même si le chiffrement est par ailleurs correct."""
     cle = deriver_cle(psk) or b""
     return (_xor_octets(nom.encode("utf-8")) ^ _xor_octets(cle)) & 0xFF
+
+
+# ── PKC (DM chiffrés par clé publique, firmware 2.5+) ──────────────────────────────────────
+#
+# Reproduit CryptoEngine::encryptCurve25519/decryptCurve25519 (firmware officiel,
+# CryptoEngine.cpp) — contrairement au chiffrement par canal ci-dessus, JAMAIS testé contre du
+# vrai matériel au moment de l'écriture (le PSK par canal, lui, a été validé en déchiffrant du
+# trafic réel Gaulix). À manier avec précaution, premier test à faire avec un message très
+# court vers un correspondant qui peut confirmer la réception en clair.
+#
+# - Échange Diffie-Hellman X25519 entre notre clé privée et la clé publique du correspondant
+#   (Curve25519::dh2 dans le firmware — X25519 standard RFC 7748, pas une variante).
+# - Clé partagée = SHA256(secret_dh) — 32 octets, utilisée directement comme clé AES-256.
+# - AEAD = AES-CCM, tag d'authentification de 8 octets (pas 16, la valeur par défaut usuelle).
+# - Nonce : même construction que le mode PSK (8 octets packet_id LE + 4 octets from_node LE +
+#   4 octets "extraNonce"), MAIS extraNonce est ICI un tirage aléatoire 32 bits par message (PAS
+#   zéro), et le nonce n'est passé à AES-CCM que TRONQUÉ à 13 octets (paramétrage CCM du
+#   firmware, L=2) — les 3 derniers octets du buffer de 16 (soit les 3 derniers octets
+#   d'extraNonce) ne participent donc PAS au calcul cryptographique, uniquement le premier.
+# - Mise en forme du paquet sur le fil : [ciphertext][tag d'authentification, 8 octets]
+#   [extraNonce COMPLET, 4 octets] — le récepteur relit extraNonce depuis la fin pour
+#   reconstruire le même nonce, exactement comme le packet_id/from_node sont déjà connus par
+#   ailleurs (champs en clair du MeshPacket).
+PKC_TAG_LENGTH = 8
+PKC_NONCE_LENGTH_CCM = 13
+
+
+def cle_publique_depuis_privee_hex(cle_privee_hex: str) -> str:
+    cle_privee = X25519PrivateKey.from_private_bytes(bytes.fromhex(cle_privee_hex))
+    return cle_privee.public_key().public_bytes(
+        encoding=serialization.Encoding.Raw, format=serialization.PublicFormat.Raw,
+    ).hex()
+
+
+def _cle_partagee_pkc(notre_cle_privee_hex: str, leur_cle_publique_hex: str) -> bytes:
+    notre_cle_privee = X25519PrivateKey.from_private_bytes(bytes.fromhex(notre_cle_privee_hex))
+    leur_cle_publique = X25519PublicKey.from_public_bytes(bytes.fromhex(leur_cle_publique_hex))
+    secret_dh = notre_cle_privee.exchange(leur_cle_publique)
+    digest = hashes.Hash(hashes.SHA256())
+    digest.update(secret_dh)
+    return digest.finalize()
+
+
+def chiffrer_pkc(notre_cle_privee_hex: str, leur_cle_publique_hex: str, packet_id: int, from_node: int, texte_clair: bytes) -> bytes:
+    cle_partagee = _cle_partagee_pkc(notre_cle_privee_hex, leur_cle_publique_hex)
+    extra_nonce = int.from_bytes(os.urandom(4), "little")
+    nonce16 = construire_nonce_avec_extra(packet_id, from_node, extra_nonce)
+    aesccm = AESCCM(cle_partagee, tag_length=PKC_TAG_LENGTH)
+    chiffre_et_tag = aesccm.encrypt(nonce16[:PKC_NONCE_LENGTH_CCM], texte_clair, None)
+    return chiffre_et_tag + struct.pack("<I", extra_nonce)
+
+
+def dechiffrer_pkc(notre_cle_privee_hex: str, leur_cle_publique_hex: str, packet_id: int, from_node: int, texte_chiffre: bytes) -> bytes:
+    if len(texte_chiffre) < 4 + PKC_TAG_LENGTH:
+        raise ValueError("Paquet PKC trop court pour contenir tag + extraNonce.")
+    extra_nonce = struct.unpack("<I", texte_chiffre[-4:])[0]
+    chiffre_et_tag = texte_chiffre[:-4]
+    cle_partagee = _cle_partagee_pkc(notre_cle_privee_hex, leur_cle_publique_hex)
+    nonce16 = construire_nonce_avec_extra(packet_id, from_node, extra_nonce)
+    aesccm = AESCCM(cle_partagee, tag_length=PKC_TAG_LENGTH)
+    return aesccm.decrypt(nonce16[:PKC_NONCE_LENGTH_CCM], chiffre_et_tag, None)
+
+
+def construire_nonce_avec_extra(packet_id: int, from_node: int, extra_nonce: int) -> bytes:
+    """Comme construire_nonce, mais avec un extraNonce explicite (0 par défaut en mode PSK,
+    aléatoire en mode PKC — voir docstring de la section PKC)."""
+    return (
+        struct.pack("<Q", packet_id & 0xFFFFFFFFFFFFFFFF)
+        + struct.pack("<I", from_node & 0xFFFFFFFF)
+        + struct.pack("<I", extra_nonce & 0xFFFFFFFF)
+    )

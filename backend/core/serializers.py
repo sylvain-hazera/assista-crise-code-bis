@@ -2669,10 +2669,16 @@ class ContactMeshCoreSerializer(serializers.ModelSerializer):
 
 class CompagnonMeshtasticSerializer(serializers.ModelSerializer):
     institution_nom = serializers.CharField(source='institution.nom', read_only=True, default=None)
+    # Dérivée de x25519_private_key_hex, jamais l'inverse — à communiquer au correspondant pour
+    # qu'il puisse nous envoyer un DM chiffré par clé publique en retour (voir crypto.py).
+    x25519_public_key_hex = serializers.CharField(read_only=True)
 
     class Meta:
         model = CompagnonMeshtastic
-        fields = "__all__"
+        # x25519_private_key_hex EXCLU explicitement (pas __all__ telle quelle) : c'est la
+        # seule chose qui protège l'identité de ce companion, jamais exposée par l'API sous
+        # aucun prétexte, contrairement au reste des champs.
+        exclude = ['x25519_private_key_hex']
 
 
 class CanalMeshtasticSerializer(serializers.ModelSerializer):

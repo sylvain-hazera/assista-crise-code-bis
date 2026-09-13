@@ -93,6 +93,13 @@ class DjangoClient:
         response = await self._request("GET", f"/compagnons-meshtastic/{compagnon_id}/")
         return response.json()
 
+    async def get_companion_avec_cle_privee(self, compagnon_id):
+        """Contrairement à get_companion, expose x25519_private_key_hex — nécessaire au calcul
+        de l'échange Diffie-Hellman d'un DM chiffré par clé publique (PKI), jamais renvoyé par
+        la sérialisation normale."""
+        response = await self._request("GET", f"/compagnons-meshtastic/{compagnon_id}/avec-cle-privee/")
+        return response.json()
+
     async def synchroniser_contacts(self, compagnon_id, contacts):
         if not contacts:
             return
@@ -180,7 +187,7 @@ class TamponContacts:
     def __init__(self):
         self._par_node_num = {}
 
-    def maj_identite(self, node_num, long_name=None, short_name=None, hardware_model=None):
+    def maj_identite(self, node_num, long_name=None, short_name=None, hardware_model=None, public_key_hex=None):
         entree = self._par_node_num.setdefault(node_num, {"node_num": node_num})
         if long_name is not None:
             entree["long_name"] = long_name
@@ -188,6 +195,8 @@ class TamponContacts:
             entree["short_name"] = short_name
         if hardware_model is not None:
             entree["hardware_model"] = hardware_model
+        if public_key_hex:
+            entree["public_key_hex"] = public_key_hex
 
     def maj_position(self, node_num, latitude, longitude):
         entree = self._par_node_num.setdefault(node_num, {"node_num": node_num})
@@ -239,6 +248,7 @@ def _traiter_paquet_dechiffre(payload, node_num, to_node, canal_id, canal_nom, t
         tampon.maj_identite(
             node_num, long_name=user.long_name, short_name=user.short_name,
             hardware_model=_nom_hardware(user.hw_model),
+            public_key_hex=bytes(user.public_key).hex() if user.public_key else None,
         )
         return None
 
@@ -252,7 +262,7 @@ def _traiter_paquet_dechiffre(payload, node_num, to_node, canal_id, canal_nom, t
     return None
 
 
-def demarrer_mqtt(compagnon, registre, tampon, django, boucle, file_a_planifier):
+def demarrer_mqtt(compagnon, registre, tampon, django, boucle, file_a_planifier, cle_privee_hex):
     """paho-mqtt tourne dans son propre thread (loop_start) — chaque callback poste les
     coroutines réseau à exécuter dans la boucle asyncio principale via
     call_soon_threadsafe, jamais d'appel réseau direct depuis le thread MQTT."""
@@ -284,22 +294,34 @@ def demarrer_mqtt(compagnon, registre, tampon, django, boucle, file_a_planifier)
             paquet = enveloppe.packet
             canal_nom = enveloppe.channel_id
             canal = registre.get(canal_nom)
-            if canal is None:
-                return  # Canal qu'on ne connaît pas (pas la clé) : rien à faire pour nous.
 
             node_num = getattr(paquet, "from")
             to_node = paquet.to
             packet_id = paquet.id
+            canal_id = canal["id"] if canal else None
 
             if paquet.HasField("decoded"):
                 payload = paquet.decoded.SerializeToString()
-            elif paquet.HasField("encrypted") and paquet.encrypted:
+            elif paquet.pki_encrypted:
+                # DM chiffré par clé publique (PKI, firmware 2.5+) — indépendant de tout canal,
+                # voir crypto.py. On ne peut de toute façon déchiffrer que ce qui nous est
+                # adressé (il faudrait NOTRE clé privée, jamais celle d'un tiers).
+                if to_node != compagnon["node_num"] or not paquet.encrypted or not paquet.public_key:
+                    return
+                try:
+                    payload = crypto.dechiffrer_pkc(
+                        cle_privee_hex, bytes(paquet.public_key).hex(), packet_id, node_num, bytes(paquet.encrypted),
+                    )
+                except Exception:
+                    logger.exception("Échec de déchiffrement PKI depuis %08x.", node_num)
+                    return
+            elif canal is not None and paquet.HasField("encrypted") and paquet.encrypted:
                 payload = crypto.dechiffrer(canal["psk"], packet_id, node_num, bytes(paquet.encrypted))
             else:
-                return
+                return  # Canal qu'on ne connaît pas (pas la clé) : rien à faire pour nous.
 
             coro = _traiter_paquet_dechiffre(
-                payload, node_num, to_node, canal["id"], canal_nom, tampon, django, {"id": compagnon["id"], "node_num": compagnon["node_num"]}, boucle,
+                payload, node_num, to_node, canal_id, canal_nom, tampon, django, {"id": compagnon["id"], "node_num": compagnon["node_num"]}, boucle,
             )
             if coro is not None:
                 boucle.call_soon_threadsafe(file_a_planifier.put_nowait, coro)
@@ -326,7 +348,7 @@ async def boucle_execution_planifiee(file_a_planifier):
             logger.exception("Échec d'une tâche planifiée depuis le thread MQTT.")
 
 
-async def boucle_envoi_dm(mqtt_client, compagnon, registre, django):
+async def boucle_envoi_dm(mqtt_client, compagnon, registre, django, cle_privee_hex):
     while True:
         try:
             for message in await django.dm_a_envoyer(compagnon["id"]):
@@ -351,11 +373,25 @@ async def boucle_envoi_dm(mqtt_client, compagnon, registre, django):
                 paquet.hop_limit = 3
                 paquet.want_ack = True
 
-                chiffre = crypto.chiffrer(canal["psk"], packet_id, compagnon["node_num"], data.SerializeToString())
-                if chiffre is None:
-                    paquet.decoded.CopyFrom(data)
+                # DM chiffré par clé publique (PKI) si on connaît déjà celle du destinataire
+                # (voir MessageMeshtasticLogViewSet.a_envoyer, contact_public_key_hex) — sinon
+                # repli sur la PSK du canal choisi, moins confidentiel (voir README) mais
+                # utilisable dès la première conversation, avant tout NodeInfo échangé.
+                destinataire_pubkey_hex = message.get("contact_public_key_hex")
+                if destinataire_pubkey_hex:
+                    paquet.pki_encrypted = True
+                    paquet.public_key = bytes.fromhex(crypto.cle_publique_depuis_privee_hex(cle_privee_hex))
+                    paquet.encrypted = crypto.chiffrer_pkc(
+                        cle_privee_hex, destinataire_pubkey_hex, packet_id, compagnon["node_num"], data.SerializeToString(),
+                    )
+                    mode = "PKI"
                 else:
-                    paquet.encrypted = chiffre
+                    chiffre = crypto.chiffrer(canal["psk"], packet_id, compagnon["node_num"], data.SerializeToString())
+                    if chiffre is None:
+                        paquet.decoded.CopyFrom(data)
+                    else:
+                        paquet.encrypted = chiffre
+                    mode = "PSK canal"
 
                 enveloppe = mqtt_pb2.ServiceEnvelope(
                     packet=paquet, channel_id=canal_nom, gateway_id=f"!{compagnon['node_num']:08x}",
@@ -365,7 +401,7 @@ async def boucle_envoi_dm(mqtt_client, compagnon, registre, django):
                 info.wait_for_publish(timeout=10)
 
                 await django.marquer_dm(message["id"], "ENVOYE")
-                logger.info("DM Meshtastic publié vers %08x sur '%s'.", message["contact_node_num"], canal_nom)
+                logger.info("DM Meshtastic (%s) publié vers %08x sur '%s'.", mode, message["contact_node_num"], canal_nom)
         except Exception:
             logger.exception("Échec du cycle d'envoi des DM.")
         await asyncio.sleep(POLL_INTERVAL_SECONDS)
@@ -410,7 +446,12 @@ async def main():
 
     django = DjangoClient(DJANGO_API_URL, DJANGO_EMAIL, DJANGO_PASSWORD)
     compagnon = await django.get_companion(COMPAGNON_ID)
-    logger.info("Companion Meshtastic '%s' (node_num=%08x).", compagnon["nom"], compagnon["node_num"])
+    cle_privee = await django.get_companion_avec_cle_privee(COMPAGNON_ID)
+    cle_privee_hex = cle_privee["x25519_private_key_hex"]
+    logger.info(
+        "Companion Meshtastic '%s' (node_num=%08x, clé publique X25519 %s...).",
+        compagnon["nom"], compagnon["node_num"], cle_privee["x25519_public_key_hex"][:12],
+    )
 
     registre = RegistreCanaux()
     registre.mettre_a_jour(await django.canaux_avec_cle())
@@ -419,14 +460,14 @@ async def main():
     boucle = asyncio.get_running_loop()
     file_a_planifier = asyncio.Queue()
 
-    mqtt_client = demarrer_mqtt(compagnon, registre, tampon, django, boucle, file_a_planifier)
+    mqtt_client = demarrer_mqtt(compagnon, registre, tampon, django, boucle, file_a_planifier, cle_privee_hex)
 
     try:
         await asyncio.gather(
             boucle_execution_planifiee(file_a_planifier),
             boucle_rafraichissement_canaux(django, registre),
             boucle_flush_contacts(django, COMPAGNON_ID, tampon),
-            boucle_envoi_dm(mqtt_client, compagnon, registre, django),
+            boucle_envoi_dm(mqtt_client, compagnon, registre, django, cle_privee_hex),
             boucle_envoi_canaux(mqtt_client, compagnon, registre, django),
         )
     finally:

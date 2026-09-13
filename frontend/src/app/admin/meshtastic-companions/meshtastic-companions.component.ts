@@ -36,7 +36,9 @@ export class MeshtasticCompanionsComponent implements OnInit {
   nouveauShortName = '';
   nouveauBrokerHost = 'mqtt.gaulix.fr';
   nouveauBrokerPort = 1883;
-  nouveauTopicRacine = 'msh/EU_868';
+  // "Traitement/msh/EU_868" et pas "msh/EU_868" pour Gaulix — vérifié en sniffant leur broker
+  // en direct, contrairement à leur documentation publique (voir CompagnonMeshtastic.topic_racine).
+  nouveauTopicRacine = 'Traitement/msh/EU_868';
   creating = false;
 
   canaux: CanalMeshtastic[] = [];
@@ -217,6 +219,10 @@ export class MeshtasticCompanionsComponent implements OnInit {
 
   copierId(c: CompagnonMeshtastic): void {
     navigator.clipboard?.writeText(c.id).catch(() => {});
+  }
+
+  copierClePublique(c: CompagnonMeshtastic): void {
+    if (c.x25519_public_key_hex) navigator.clipboard?.writeText(c.x25519_public_key_hex).catch(() => {});
   }
 
   nodeNumHex(n: number): string {

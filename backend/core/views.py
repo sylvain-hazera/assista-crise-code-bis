@@ -9337,6 +9337,18 @@ class CompagnonMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
         compagnon.save(update_fields=['dernier_etat', 'derniere_connexion', 'derniere_erreur'])
         return Response(CompagnonMeshtasticSerializer(compagnon).data)
 
+    @action(detail=True, methods=['get'], url_path='avec-cle-privee')
+    def avec_cle_privee(self, request, pk=None):
+        """Expose la clé privée X25519 EN CLAIR — jamais via la sérialisation normale (voir
+        CompagnonMeshtasticSerializer, qui l'exclut explicitement). Réservé au pont, qui en a
+        besoin pour calculer l'échange Diffie-Hellman d'un DM chiffré par clé publique (PKI) —
+        même principe que CanalMeshtasticViewSet.avec_cle pour les PSK de canal."""
+        compagnon = self.get_object()
+        return Response({
+            'id': str(compagnon.id), 'x25519_private_key_hex': compagnon.x25519_private_key_hex,
+            'x25519_public_key_hex': compagnon.x25519_public_key_hex,
+        })
+
     @action(detail=True, methods=['post'], url_path='synchroniser-contacts')
     def synchroniser_contacts(self, request, pk=None):
         """Le pont appelle ceci avec les nœuds Meshtastic découverts passivement sur MQTT
@@ -9360,6 +9372,8 @@ class CompagnonMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
                 defaults['short_name'] = contact.get('short_name') or ''
             if 'hardware_model' in contact:
                 defaults['hardware_model'] = contact.get('hardware_model') or None
+            if contact.get('public_key_hex'):
+                defaults['public_key_hex'] = contact['public_key_hex']
             lat, lon = contact.get('latitude'), contact.get('longitude')
             if lat and lon:
                 from django.contrib.gis.geos import Point
@@ -9492,12 +9506,24 @@ class MessageMeshtasticLogViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelV
 
     @action(detail=False, methods=['get'], url_path='a-envoyer')
     def a_envoyer(self, request):
-        """Même principe que MessageMeshLogViewSet.a_envoyer."""
+        """Même principe que MessageMeshLogViewSet.a_envoyer — augmenté de
+        `contact_public_key_hex` (clé publique X25519 du destinataire si on l'a déjà captée,
+        voir ContactMeshtastic.public_key_hex) : c'est ce qui permet au pont de choisir un DM
+        chiffré par clé publique (PKI) plutôt que par PSK de canal quand c'est possible."""
         compagnon_id = request.query_params.get('compagnon')
         qs = self.get_queryset().filter(direction=DirectionMessageMesh.SORTANT, statut=StatutMessageMesh.EN_ATTENTE)
         if compagnon_id:
             qs = qs.filter(compagnon_id=compagnon_id)
-        return Response(MessageMeshtasticLogSerializer(qs, many=True).data)
+        data = MessageMeshtasticLogSerializer(qs, many=True).data
+        for message in data:
+            contact = (
+                ContactMeshtastic.objects.filter(node_num=message['contact_node_num'])
+                .exclude(public_key_hex='')
+                .order_by('-date_synchronisation')
+                .first()
+            )
+            message['contact_public_key_hex'] = contact.public_key_hex if contact else None
+        return Response(data)
 
 
 class CanalMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):

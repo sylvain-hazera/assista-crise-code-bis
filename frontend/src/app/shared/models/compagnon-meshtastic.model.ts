@@ -6,6 +6,10 @@ export interface CompagnonMeshtastic {
   node_num: number;
   long_name?: string;
   short_name?: string;
+  /** Clé publique X25519 dérivée côté serveur (jamais la privée, jamais exposée) — à
+   * communiquer au correspondant si on veut qu'il déclare aussi notre clé de son côté, pour
+   * un DM chiffré par clé publique dans les deux sens (PKI, firmware 2.5+). */
+  x25519_public_key_hex?: string;
 
   broker_host: string;
   broker_port: number;

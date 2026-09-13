@@ -23,18 +23,24 @@ officiel (`github.com/meshtastic/firmware`, `CryptoEngine.cpp` et `Channels.cpp`
   charge, voir `crypto.deriver_cle`).
 - Hash de canal (`MeshPacket.channel`) = XOR du nom ^ XOR de la clé résolue.
 
-Le PKC (chiffrement par clé publique/privée pour les DM, firmware 2.5+) **n'est pas implémenté**
-— seuls les DM "classiques" (chiffrés avec la PSK d'un canal partagé, adressés à un `node_num`
-précis) et les messages de canal sont supportés pour l'instant.
+Le PKC (chiffrement par clé publique/privée pour les DM, firmware 2.5+) **est implémenté**
+(`crypto.chiffrer_pkc`/`dechiffrer_pkc` — X25519 + SHA256 + AES-CCM, tag 8 octets, dérivé de
+`CryptoEngine::encryptCurve25519`) et utilisé automatiquement dès qu'on connaît la clé publique
+du destinataire (captée passivement via ses paquets NodeInfo, voir `ContactMeshtastic.
+public_key_hex`) — sinon repli sur le DM "classique" chiffré avec la PSK d'un canal partagé.
+Chaque `CompagnonMeshtastic` génère sa propre paire de clés X25519 à la création (clé privée
+jamais exposée par l'API, voir `CompagnonMeshtasticSerializer`).
 
 ## ⚠️ Non vérifié sur matériel réel
 
-Le chiffrement a été testé en aller-retour (chiffrer puis déchiffrer avec la même clé donne bien
-le texte d'origine) mais **jamais confirmé contre un vrai appareil Meshtastic** — un test
-autoconsistant ne prouve pas l'interopérabilité réelle (un décalage d'ordre d'octets, par
-exemple, donnerait quand même un aller-retour correct tout en étant incompréhensible pour un
-vrai nœud). Premier test à faire avec un message très court, vers un nœud que vous contrôlez et
-pouvez inspecter directement (voir les logs de l'appareil ou l'app companion), avant toute
+Le chiffrement PSK par canal a été validé en DÉCHIFFRANT du vrai trafic Gaulix en direct
+(NodeInfo/Position de dizaines de nœuds réels décodés correctement) — un test bien plus solide
+qu'un simple aller-retour, puisqu'il prouve l'interopérabilité avec du matériel qu'on ne
+contrôle pas. **Le PKC, lui, n'a été testé qu'en aller-retour local** (chiffrer avec une clé,
+déchiffrer avec l'autre donne bien le texte d'origine, et l'échange Diffie-Hellman est bien
+symétrique dans les deux sens) — jamais confirmé contre un vrai appareil, faute d'avoir encore
+capté la clé publique d'un nœud réel au moment de l'écriture. Premier test réel à faire avec un
+message très court, vers un nœud que vous contrôlez et pouvez inspecter directement, avant toute
 utilisation réelle.
 
 Autres limites connues :
@@ -68,7 +74,7 @@ Autres limites connues :
 | `LOG_LEVEL` | non (def. INFO) | `DEBUG` pour plus de détails |
 
 L'adresse du broker (`mqtt.gaulix.fr`, port 1883 par défaut) et la racine de topic
-(`msh/EU_868`) sont des champs du `CompagnonMeshtastic` lui-même, pas des variables
+(`Traitement/msh/EU_868` pour Gaulix — pas `msh/EU_868` comme documenté publiquement, vérifié en sniffant leur broker) sont des champs du `CompagnonMeshtastic` lui-même, pas des variables
 d'environnement — récupérés via l'API au démarrage.
 
 ## Lancer en local (sans Docker)

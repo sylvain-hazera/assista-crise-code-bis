@@ -4041,10 +4041,19 @@ class CompagnonMeshtastic(EnvironmentScopedModel):
     broker_port = models.PositiveIntegerField(default=1883)
     # Racine de topic MQTT Meshtastic (ex: "msh/EU_868") — dépend de la région radio du réseau
     # relayé, PAS de notre propre matériel puisqu'on n'en a pas : celle du réseau qu'on rejoint.
-    topic_racine = models.CharField(max_length=100, default="msh/EU_868")
+    # "Traitement/msh/EU_868" et pas "msh/EU_868" pour Gaulix — vérifié en sniffant leur broker
+    # en direct (topics réels observés), contrairement à leur documentation publique qui
+    # n'indique que la racine "msh/EU_868". Racine différente probable pour un autre réseau.
+    topic_racine = models.CharField(max_length=100, default="Traitement/msh/EU_868")
 
     principal = models.BooleanField(default=False)
     actif = models.BooleanField(default=True)
+
+    # Paire de clés X25519 (DM chiffrés par clé publique, firmware 2.5+ — voir crypto.py) —
+    # générée automatiquement à la création (save()), jamais fournie par le client. La clé
+    # privée n'est JAMAIS exposée par l'API (voir CompagnonMeshtasticSerializer, exclue des
+    # fields) ; seule la publique est dérivée et montrée pour être communiquée au correspondant.
+    x25519_private_key_hex = models.CharField(max_length=64, blank=True, editable=False)
 
     derniere_connexion = models.DateTimeField(null=True, blank=True)
     dernier_etat = models.CharField(
@@ -4054,6 +4063,27 @@ class CompagnonMeshtastic(EnvironmentScopedModel):
     derniere_erreur = models.TextField(null=True, blank=True)
 
     date_creation = models.DateTimeField(auto_now_add=True)
+
+    def save(self, *args, **kwargs):
+        if not self.x25519_private_key_hex:
+            from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+            from cryptography.hazmat.primitives import serialization
+            cle_privee = X25519PrivateKey.generate()
+            self.x25519_private_key_hex = cle_privee.private_bytes(
+                encoding=serialization.Encoding.Raw,
+                format=serialization.PrivateFormat.Raw,
+                encryption_algorithm=serialization.NoEncryption(),
+            ).hex()
+        super().save(*args, **kwargs)
+
+    @property
+    def x25519_public_key_hex(self):
+        from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+        from cryptography.hazmat.primitives import serialization
+        cle_privee = X25519PrivateKey.from_private_bytes(bytes.fromhex(self.x25519_private_key_hex))
+        return cle_privee.public_key().public_bytes(
+            encoding=serialization.Encoding.Raw, format=serialization.PublicFormat.Raw,
+        ).hex()
 
     def __str__(self):
         return f"{self.nom} (#{self.node_num:08x})"
@@ -4111,6 +4141,11 @@ class ContactMeshtastic(EnvironmentScopedModel):
     long_name = models.CharField(max_length=40, blank=True)
     short_name = models.CharField(max_length=4, blank=True)
     hardware_model = models.CharField(max_length=40, null=True, blank=True)
+    # Clé publique X25519 annoncée par CE nœud (paquet NodeInfo, champ User.public_key) —
+    # nécessaire pour lui envoyer un DM réellement chiffré par clé publique (PKI, firmware
+    # 2.5+) plutôt qu'un DM "classique" chiffré avec la PSK d'un canal partagé. Vide si le
+    # nœud n'a jamais annoncé de clé (PKI non activé côté firmware) ou pas encore vu.
+    public_key_hex = models.CharField(max_length=64, blank=True)
 
     location = gis_models.PointField(srid=4326, null=True, blank=True)
 
