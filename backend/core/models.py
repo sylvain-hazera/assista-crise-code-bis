@@ -4030,7 +4030,7 @@ class CompagnonMeshtastic(EnvironmentScopedModel):
 
     nom = models.CharField(max_length=100)
 
-    node_num = models.PositiveIntegerField(
+    node_num = models.PositiveBigIntegerField(
         unique=True,
         help_text="Identifiant 32 bits de cette identité logicielle sur le mesh Meshtastic (choisi à la création, pas dérivé d'un matériel).",
     )
@@ -4106,7 +4106,7 @@ class ContactMeshtastic(EnvironmentScopedModel):
 
     compagnon = models.ForeignKey(CompagnonMeshtastic, on_delete=models.CASCADE, related_name="contacts")
 
-    node_num = models.PositiveIntegerField()
+    node_num = models.PositiveBigIntegerField()
 
     long_name = models.CharField(max_length=40, blank=True)
     short_name = models.CharField(max_length=4, blank=True)
@@ -4135,7 +4135,7 @@ class NoeudUtilisateurMeshtastic(EnvironmentScopedModel):
 
     utilisateur = models.ForeignKey("User", on_delete=models.CASCADE, related_name="noeuds_meshtastic")
 
-    node_num = models.PositiveIntegerField(unique=True)
+    node_num = models.PositiveBigIntegerField(unique=True)
 
     nom_noeud = models.CharField(max_length=100, blank=True)
 
@@ -4166,7 +4166,7 @@ class MessageMeshtasticLog(EnvironmentScopedModel):
 
     direction = models.CharField(max_length=10, choices=DirectionMessageMesh.choices)
 
-    contact_node_num = models.PositiveIntegerField(
+    contact_node_num = models.PositiveBigIntegerField(
         help_text="Node num du correspondant (émetteur si entrant, destinataire si sortant).",
     )
 
@@ -4205,7 +4205,7 @@ class MessageCanalMeshtastic(EnvironmentScopedModel):
         "User", on_delete=models.SET_NULL, null=True, blank=True, related_name="messages_canal_meshtastic_envoyes",
     )
 
-    contact_node_num = models.PositiveIntegerField(null=True, blank=True)
+    contact_node_num = models.PositiveBigIntegerField(null=True, blank=True)
 
     contenu = models.TextField()
 
