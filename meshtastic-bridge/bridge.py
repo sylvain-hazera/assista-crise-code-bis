@@ -394,61 +394,65 @@ async def boucle_envoi_dm(mqtt_client, compagnon, registre, django, cle_privee_h
             for message in await django.dm_a_envoyer(compagnon["id"]):
                 canal_id = message.get("canal")
                 canal_nom = registre.nom_par_id(canal_id) if canal_id else None
-                if canal_nom is None:
-                    # Plus de repli PKI ici (voir ENVOI_PKI_ACTIF ci-dessous) : un DM a
-                    # toujours besoin d'un canal, résolu sur le principal si non précisé.
-                    canal_nom = registre.nom_principal()
-                if canal_nom is None:
-                    await django.marquer_dm(message["id"], "ECHEC", erreur="Aucun canal disponible pour ce DM.")
-                    continue
+                destinataire_pubkey_hex = message.get("contact_public_key_hex")
 
-                canal = registre.get(canal_nom)
                 packet_id = random.randint(1, 0xFFFFFFFF)
                 data = mesh_pb2.Data(portnum=portnums_pb2.PortNum.TEXT_MESSAGE_APP, payload=message["contenu"].encode("utf-8"))
                 paquet = mesh_pb2.MeshPacket()
                 setattr(paquet, "from", compagnon["node_num"])
                 paquet.to = message["contact_node_num"]
                 paquet.id = packet_id
-                paquet.channel = crypto.hash_canal(canal_nom, canal["psk"])
                 paquet.hop_limit = 7
                 paquet.hop_start = 7
                 paquet.want_ack = True
 
-                # PKI DÉSACTIVÉ À L'ENVOI (voir ENVOI_PKI_ACTIF) : test comparatif en
-                # conditions réelles (13/09) — un DM chiffré PSK de canal (test3) est arrivé
-                # à destination et a été confirmé par le destinataire, un DM PKI envoyé
-                # dans la foulée vers la MÊME personne, sur le MÊME canal, ne l'a jamais
-                # été (test5). Cause exacte non identifiée (comparaison structurelle avec
-                # une lib de référence externe n'a rien révélé d'anormal côté construction
-                # du paquet) — possiblement lié à comment Gaulix ou une passerelle
-                # intermédiaire traite les paquets `encrypted`/`pki_encrypted` qu'elle ne
-                # peut pas classifier. En recevant, on reste capable de déchiffrer un PKI
-                # reçu (voir on_message) — seul l'ENVOI proactif est mis en retrait.
-                destinataire_pubkey_hex = message.get("contact_public_key_hex")
+                # Un vrai DM 1-à-1 chiffré DOIT passer par PKI : le firmware officiel rejette
+                # délibérément un texte adressé (`to=`) déchiffré via la PSK *partagée* d'un
+                # canal ("Rejecting legacy DM", Router.cpp::perhapsDecode) — seul un broadcast
+                # ou un message non adressé peut utiliser la PSK de canal. Trouvé le 13/09 en
+                # lisant le firmware officiel (github.com/meshtastic/firmware), après un test
+                # comparatif contrôlé qui avait montré un DM PSK canal confirmé reçu (test3)
+                # contre un DM PKI jamais confirmé (test5) envoyés dans les mêmes conditions.
                 if ENVOI_PKI_ACTIF and destinataire_pubkey_hex:
+                    # Deuxième bug trouvé le même jour : le firmware ne tente le déchiffrement
+                    # PKI que si `packet.channel == 0` (Router.cpp::perhapsDecode) et publie/
+                    # attend le topic/channel_id MQTT littéral "PKI", pas un nom de canal
+                    # (MQTT.cpp::onSend) — avant ce correctif on laissait le hash du canal
+                    # classique dans `channel`, donc aucun destinataire ne tentait jamais le
+                    # déchiffrement PKI de nos paquets.
+                    paquet.channel = 0
                     paquet.pki_encrypted = True
                     paquet.public_key = bytes.fromhex(crypto.cle_publique_depuis_privee_hex(cle_privee_hex))
                     paquet.encrypted = crypto.chiffrer_pkc(
                         cle_privee_hex, destinataire_pubkey_hex, packet_id, compagnon["node_num"], data.SerializeToString(),
                     )
+                    canal_id_mqtt = "PKI"
                     mode = "PKI"
                 else:
+                    if canal_nom is None:
+                        canal_nom = registre.nom_principal()
+                    if canal_nom is None:
+                        await django.marquer_dm(message["id"], "ECHEC", erreur="Aucun canal disponible pour ce DM.")
+                        continue
+                    canal = registre.get(canal_nom)
+                    paquet.channel = crypto.hash_canal(canal_nom, canal["psk"])
                     chiffre = crypto.chiffrer(canal["psk"], packet_id, compagnon["node_num"], data.SerializeToString())
                     if chiffre is None:
                         paquet.decoded.CopyFrom(data)
                     else:
                         paquet.encrypted = chiffre
+                    canal_id_mqtt = canal_nom
                     mode = "PSK canal"
 
                 enveloppe = mqtt_pb2.ServiceEnvelope(
-                    packet=paquet, channel_id=canal_nom, gateway_id=f"!{compagnon['node_num']:08x}",
+                    packet=paquet, channel_id=canal_id_mqtt, gateway_id=f"!{compagnon['node_num']:08x}",
                 )
-                topic = f"{compagnon['topic_racine']}/2/e/{canal_nom}/!{compagnon['node_num']:08x}"
+                topic = f"{compagnon['topic_racine']}/2/e/{canal_id_mqtt}/!{compagnon['node_num']:08x}"
                 info = mqtt_client.publish(topic, enveloppe.SerializeToString())
                 info.wait_for_publish(timeout=10)
 
                 await django.marquer_dm(message["id"], "ENVOYE")
-                logger.info("DM Meshtastic (%s) publié vers %08x sur '%s'.", mode, message["contact_node_num"], canal_nom)
+                logger.info("DM Meshtastic (%s) publié vers %08x sur '%s'.", mode, message["contact_node_num"], canal_id_mqtt)
         except Exception:
             logger.exception("Échec du cycle d'envoi des DM.")
         await asyncio.sleep(POLL_INTERVAL_SECONDS)

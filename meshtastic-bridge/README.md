@@ -26,19 +26,43 @@ officiel (`github.com/meshtastic/firmware`, `CryptoEngine.cpp` et `Channels.cpp`
 Le PKC (chiffrement par clé publique/privée pour les DM, firmware 2.5+) **est implémenté**
 (`crypto.chiffrer_pkc`/`dechiffrer_pkc` — X25519 + SHA256 + AES-CCM, tag 8 octets, dérivé de
 `CryptoEngine::encryptCurve25519`) mais **désactivé à l'ENVOI par défaut** (`ENVOI_PKI_ACTIF=0`,
-voir plus bas) — un DM chiffré PSK de canal, lui, est confirmé arriver à destination en
-conditions réelles ; un DM PKI envoyé dans la foulée, vers la même personne et le même canal,
-ne l'a jamais été (comparaison contrôlée le 13/09). Cause exacte non identifiée : la
-construction du paquet a été comparée en détail à une lib externe de référence activement
-maintenue (`pdxlocations/mmqtt`) sans trouver de divergence. On reste capable de DÉCHIFFRER un
-DM PKI reçu de quelqu'un d'autre (voir `on_message`) — seul l'envoi proactif est mis en retrait.
+voir plus bas). On reste capable de DÉCHIFFRER un DM PKI reçu de quelqu'un d'autre (voir
+`on_message`) — seul l'envoi proactif est mis en retrait.
 Chaque `CompagnonMeshtastic` génère quand même sa propre paire de clés X25519 à la création
-(clé privée jamais exposée par l'API, voir `CompagnonMeshtasticSerializer`), prêt à réactiver
-l'envoi PKI une fois la cause trouvée.
+(clé privée jamais exposée par l'API, voir `CompagnonMeshtasticSerializer`).
+
+### Pourquoi le chiffré ne marche pas via Gaulix (conclusion du 13/09)
+
+Deux vrais bugs identifiés et corrigés côté pont en lisant le firmware officiel
+(`github.com/meshtastic/firmware`, tag exact du firmware testé — pas seulement `master`) :
+
+- **DM classique (PSK de canal) rejeté par le firmware récent** : `Router.cpp::perhapsDecode`
+  refuse explicitement un texte adressé (`to=`) déchiffré via la PSK *partagée* d'un canal
+  ("Rejecting legacy DM") — mesure anti-usurpation, un vrai DM privé nécessite le PKI. C'est
+  pour ça qu'un DM doit rester en clair (`decoded`) pour être accepté : ce filtre ne s'applique
+  qu'à la branche `encrypted`.
+- **PKI jamais tenté côté récepteur** : `Router.cpp::perhapsDecode` ne tente le déchiffrement
+  PKI que si `packet.channel == 0`, et `MQTT.cpp::onSend` publie/attend le topic/`channel_id`
+  littéral `"PKI"`, pas un nom de canal. Le pont laissait `channel` au hash du canal classique
+  et publiait sous le nom du canal — corrigé (`paquet.channel = 0`, `channel_id="PKI"` dans
+  `boucle_envoi_dm`).
+
+Malgré ces deux corrections, **aucun contenu chiffré (PSK classique ou PKI, DM ou broadcast,
+canal custom ou canal `Fr_Balise` d'origine jamais modifié) n'a pu être confirmé reçu par un
+vrai appareil (SH2) via le broker Gaulix**, alors que le calcul de hash de canal a été revérifié
+byte-à-byte contre la config live de l'appareil et contre le tag de firmware exact qu'il fait
+tourner (2.6.11.60ec05e) — tout correspond sur le papier. Le clair (`decoded`), lui, arrive
+systématiquement, DM comme broadcast. Conclusion retenue : **Gaulix (le broker MQTT, ou un
+composant intermédiaire) bloque ou filtre le trafic Meshtastic chiffré** — sans accès aux logs
+internes de l'appareil (pas de console série, seulement l'API TCP), impossible d'aller plus
+loin dans ce diagnostic. Le correctif PKI reste dans le code (correct et réutilisable si un jour
+testé sur un autre relais MQTT), mais **le clair reste la seule voie confirmée fonctionnelle sur
+Gaulix**, DM comme canal.
 
 ## Recette validée en conditions réelles (13/09)
 
-DM chiffré avec la PSK d'un canal PARTAGÉ (pas PKI) — confirmé reçu à trois reprises, vers deux
+DM **en clair** (`Fr_BlaBla`, canal sans PSK — pas de chiffrement du tout, voir plus haut
+pourquoi le chiffré ne passe pas via Gaulix) — confirmé reçu à trois reprises, vers deux
 destinataires distincts, dont un à plusieurs centaines de km (département 42) nécessitant un
 relais LoRa intermédiaire :
 - `hop_limit` ET `hop_start` réglés à la même valeur (7, le maximum du protocole) — **manquer
@@ -50,13 +74,14 @@ relais LoRa intermédiaire :
   à la création du DM) : `Fr_BlaBla`, sans PSK — c'est la config par défaut de ce pont
   désormais, aucun paramètre à passer pour la reproduire.
 
-## ⚠️ Non vérifié sur matériel réel
+## ⚠️ Le chiffré ne fonctionne pas via Gaulix (ni PSK de canal, ni PKI)
 
-Le chiffrement PSK par canal a été validé en DÉCHIFFRANT du vrai trafic Gaulix en direct
-(NodeInfo/Position de dizaines de nœuds réels décodés correctement) ET en ENVOYANT (voir recette
-ci-dessus, confirmée par les destinataires réels). **Le PKC, lui, reste non confirmé en
-conditions réelles** malgré un aller-retour local correct (chiffrer avec une clé, déchiffrer
-avec l'autre donne le texte d'origine, échange Diffie-Hellman symétrique) — voir plus haut.
+Voir la section plus haut « Pourquoi le chiffré ne marche pas via Gaulix » pour le détail :
+déchiffrer du trafic chiffré déjà présent sur Gaulix fonctionne très bien (NodeInfo/Position de
+dizaines de nœuds réels décodés correctement), mais **envoyer** du contenu chiffré (PSK de
+canal ou PKI, DM ou broadcast) et le faire confirmer reçu par un vrai appareil n'a jamais
+fonctionné, y compris sur le canal `Fr_Balise` d'origine avec sa PSK par défaut. Le clair est la
+seule voie confirmée de bout en bout.
 
 Autres limites connues :
 - Pas de confirmation de réception automatique : `ENVOYE` signifie seulement "publié sur le
