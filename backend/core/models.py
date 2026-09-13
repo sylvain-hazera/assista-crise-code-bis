@@ -3748,6 +3748,12 @@ class CompagnonMeshCore(EnvironmentScopedModel):
         help_text="Renseigné par le service-pont après la première connexion réussie.",
     )
 
+    # Position du companion physique (poste de commandement, véhicule...) — saisie manuelle,
+    # pour l'afficher sur la carte au même titre que les répéteurs (RelaisMeshCore) et servir
+    # plus tard à choisir automatiquement le companion le plus proche d'un destinataire quand
+    # plusieurs passerelles seront réparties sur le territoire (voir doc de conception).
+    location = gis_models.PointField(srid=4326, null=True, blank=True)
+
     principal = models.BooleanField(default=False)
     actif = models.BooleanField(default=True)
 

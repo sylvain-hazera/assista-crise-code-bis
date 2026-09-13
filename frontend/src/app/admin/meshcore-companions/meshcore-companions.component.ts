@@ -37,6 +37,10 @@ export class MeshcoreCompanionsComponent implements OnInit {
   nouveauPort = 5000;
   nouveauDevice = '/dev/ttyUSB0';
   nouveauBle = '';
+  // Position du companion physique (poste de commandement, véhicule...) : optionnelle, pour
+  // l'afficher sur la carte au même titre qu'un relais (voir map.component.ts).
+  nouveauLat: number | null = null;
+  nouveauLon: number | null = null;
   creating = false;
 
   relais: RelaisMeshCore[] = [];
@@ -206,6 +210,10 @@ export class MeshcoreCompanionsComponent implements OnInit {
     } else if (this.nouveauType === 'BLE') {
       payload.ble_adresse = this.nouveauBle.trim();
     }
+    if (this.nouveauLat != null && this.nouveauLon != null) {
+      payload.latitude = this.nouveauLat;
+      payload.longitude = this.nouveauLon;
+    }
 
     this.creating = true;
     this.service.create(payload).subscribe({
@@ -214,6 +222,8 @@ export class MeshcoreCompanionsComponent implements OnInit {
         this.nouveauNom = '';
         this.nouveauHost = '';
         this.nouveauBle = '';
+        this.nouveauLat = null;
+        this.nouveauLon = null;
         this.creating = false;
       },
       error: () => { this.errorMessage = "Impossible de créer ce companion."; this.creating = false; },

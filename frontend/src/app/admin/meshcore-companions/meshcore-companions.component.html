@@ -35,6 +35,15 @@
     </div>
   }
 
+  <div class="form-row">
+    <input type="number" class="form-input form-input-sm" placeholder="Latitude (optionnel)" [(ngModel)]="nouveauLat">
+    <input type="number" class="form-input form-input-sm" placeholder="Longitude (optionnel)" [(ngModel)]="nouveauLon">
+  </div>
+  <p class="page-hint">
+    Position optionnelle (poste de commandement, véhicule...) — permet d'afficher ce companion
+    sur la carte, comme un relais.
+  </p>
+
   <button type="button" class="btn-primary" [disabled]="!formValide || creating" (click)="ajouter()">
     Ajouter ce companion
   </button>
@@ -54,6 +63,7 @@
           <th>Nom</th>
           <th>Type</th>
           <th>Adresse</th>
+          <th>Position</th>
           <th>Statut</th>
           <th>Dernière connexion</th>
           <th>ID (pour COMPAGNON_ID)</th>
@@ -66,13 +76,14 @@
             <td>{{ c.nom }}</td>
             <td>{{ c.connexion_type }}</td>
             <td class="mono">{{ adresse(c) }}</td>
+            <td class="mono">{{ (c.latitude != null && c.longitude != null) ? (c.latitude | number:'1.4-4') + ', ' + (c.longitude | number:'1.4-4') : '—' }}</td>
             <td><span class="statut" [ngClass]="statutClass(c)">{{ c.dernier_etat || 'jamais connecté' }}</span></td>
             <td>{{ c.derniere_connexion ? (c.derniere_connexion | date:'short') : '—' }}</td>
             <td class="mono id-cell" (click)="copierId(c)" title="Cliquer pour copier">{{ c.id }}</td>
             <td><button type="button" class="btn-danger-sm" (click)="supprimer(c)">Supprimer</button></td>
           </tr>
         } @empty {
-          <tr><td colspan="7" class="empty">Aucun companion déclaré pour l'instant.</td></tr>
+          <tr><td colspan="8" class="empty">Aucun companion déclaré pour l'instant.</td></tr>
         }
       </tbody>
     </table>

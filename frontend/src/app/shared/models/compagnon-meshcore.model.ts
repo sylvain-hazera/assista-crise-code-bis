@@ -5,6 +5,11 @@ export interface CompagnonMeshCore {
   nom: string;
   connexion_type: MeshCoreConnexionType;
 
+  /** Position du companion physique (poste de commandement, véhicule...), saisie manuelle —
+   * affichée sur la carte au même titre qu'un RelaisMeshCore, voir map.component.ts. */
+  latitude?: number | null;
+  longitude?: number | null;
+
   tcp_host?: string | null;
   tcp_port?: number | null;
   serie_device?: string | null;

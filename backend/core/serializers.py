@@ -2519,6 +2519,8 @@ class InstitutionDomaineSerializer(
 
 class CompagnonMeshCoreSerializer(serializers.ModelSerializer):
     institution_nom = serializers.CharField(source='institution.nom', read_only=True, default=None)
+    latitude = serializers.SerializerMethodField()
+    longitude = serializers.SerializerMethodField()
 
     class Meta:
         model = CompagnonMeshCore
@@ -2526,6 +2528,31 @@ class CompagnonMeshCoreSerializer(serializers.ModelSerializer):
         # Renseignés uniquement par le service-pont (voir docstring du modèle), jamais par un
         # appel humain via l'API.
         read_only_fields = ['pubkey_hex', 'derniere_connexion', 'dernier_etat', 'derniere_erreur']
+
+    def get_latitude(self, obj):
+        return obj.location.y if obj.location else None
+
+    def get_longitude(self, obj):
+        return obj.location.x if obj.location else None
+
+    # Même patron que RelaisMeshCoreSerializer._avec_position : latitude/longitude reçues à
+    # plat (pas un WKT), converties en Point ici plutôt que côté frontend.
+    def create(self, validated_data):
+        return self._avec_position(CompagnonMeshCore(), validated_data)
+
+    def update(self, instance, validated_data):
+        return self._avec_position(instance, validated_data)
+
+    def _avec_position(self, instance, validated_data):
+        from django.contrib.gis.geos import Point
+        lat = self.initial_data.get('latitude')
+        lon = self.initial_data.get('longitude')
+        for champ, valeur in validated_data.items():
+            setattr(instance, champ, valeur)
+        if lat is not None and lon is not None:
+            instance.location = Point(float(lon), float(lat), srid=4326)
+        instance.save()
+        return instance
 
 
 class NoeudMeshUtilisateurSerializer(serializers.ModelSerializer):

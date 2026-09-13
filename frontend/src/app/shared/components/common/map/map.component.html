@@ -57,6 +57,11 @@
           Relais MeshCore (test)
         </label>
         <label class="layer-toggle-item">
+          <input type="checkbox" [(ngModel)]="layerVisibility.compagnonsMeshCore" (ngModelChange)="onLayerToggle()">
+          <span class="layer-dot compagnons-meshcore-dot"></span>
+          Companions MeshCore (test)
+        </label>
+        <label class="layer-toggle-item">
           <input type="checkbox" [(ngModel)]="layerVisibility.personnelSecourisme" (ngModelChange)="onLayerToggle()">
           <span class="layer-dot personnel-dot"></span>
           Personnel secourisme

@@ -13,6 +13,7 @@ import { Request } from '../../../models/request.model';
 import { GeolocationService } from '../../../../services/geolocation.service';
 import { PositionEquipeService } from '../../../../services/position-equipe.service';
 import { RelaisMeshCoreService } from '../../../../services/relais-meshcore.service';
+import { CompagnonMeshCoreService } from '../../../../services/compagnon-meshcore.service';
 import { PointOperationnelService } from '../../../../services/point-operationnel.service';
 import type { FeatureCollection, Geometry, Polygon } from 'geojson';
 import { AuthService } from '../../../../auth/services/auth.service';
@@ -31,6 +32,7 @@ interface LayerVisibility {
   postesSecours: boolean;
   benevolesPompiers: boolean;
   relaisMeshCore: boolean;
+  compagnonsMeshCore: boolean;
 }
 
 // Codes/libellés déjà utilisés côté offre/point pour repérer secourisme/soins — voir
@@ -85,6 +87,9 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     // Répéteurs MeshCore (voir doc de conception « Maillage Terrain ») : infrastructure pure,
     // peu nombreuse en pratique — visible par défaut, contrairement à l'annuaire bénévoles.
     relaisMeshCore: true,
+    // Companions MeshCore (poste de commandement, véhicule...) : position saisie manuellement,
+    // optionnelle — visible par défaut comme les relais.
+    compagnonsMeshCore: true,
   };
 
   private map: maplibregl.Map | null = null;
@@ -94,6 +99,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   private informationsGeoJSON: FeatureCollection<Geometry> | null = null;
   private teamPositionsGeoJSON: FeatureCollection<Geometry> | null = null;
   private relaisMeshCoreGeoJSON: FeatureCollection<Geometry> | null = null;
+  private compagnonsMeshCoreGeoJSON: FeatureCollection<Geometry> | null = null;
   private personnelSecourismeGeoJSON: FeatureCollection<Geometry> | null = null;
   private benevolesPompiersGeoJSON: FeatureCollection<Geometry> | null = null;
   private centresTousGeoJSON: FeatureCollection<Geometry> | null = null;
@@ -115,6 +121,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
               private positionEquipeService: PositionEquipeService,
               private pointOperationnelService: PointOperationnelService,
               private relaisMeshCoreService: RelaisMeshCoreService,
+              private compagnonMeshCoreService: CompagnonMeshCoreService,
               private authService: AuthService) {}
   ngOnInit(): void {
     this.isInstitutional = this.authService.isAdmin();
@@ -139,6 +146,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     this.loadCentresPublics();
     if (this.isInstitutional) {
       this.loadRelaisMeshCore();
+      this.loadCompagnonsMeshCore();
     }
   }
 
@@ -150,6 +158,8 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     this.applyLayerVisibility('team-positions-label', this.layerVisibility.positions);
     this.applyLayerVisibility('relais-meshcore-layer', this.layerVisibility.relaisMeshCore);
     this.applyLayerVisibility('relais-meshcore-label', this.layerVisibility.relaisMeshCore);
+    this.applyLayerVisibility('compagnons-meshcore-layer', this.layerVisibility.compagnonsMeshCore);
+    this.applyLayerVisibility('compagnons-meshcore-label', this.layerVisibility.compagnonsMeshCore);
     this.applyLayerVisibility('location-radius', this.layerVisibility.crises);
     this.applyLayerVisibility('personnel-secourisme-layer', this.layerVisibility.personnelSecourisme);
     this.applyLayerVisibility('centres-tous-layer', this.layerVisibility.centresTous);
@@ -535,6 +545,80 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     });
     this.map.on('mouseenter', 'relais-meshcore-layer', () => { this.map!.getCanvas().style.cursor = 'pointer'; });
     this.map.on('mouseleave', 'relais-meshcore-layer', () => { this.map!.getCanvas().style.cursor = ''; });
+  }
+
+  /** Companions MeshCore (poste de commandement, véhicule...) : position saisie manuellement,
+   * optionnelle — voir /admin/meshcore-companions. Même logique que les relais, mais distincts
+   * visuellement (ce sont des postes de commandement/passerelles, pas de l'infrastructure
+   * passive), et seuls ceux ayant une position renseignée apparaissent. */
+  loadCompagnonsMeshCore(): void {
+    this.compagnonMeshCoreService.getAll().subscribe({
+      next: (compagnons) => {
+        this.compagnonsMeshCoreGeoJSON = {
+          type: 'FeatureCollection',
+          features: compagnons
+            .filter(c => c.actif && c.latitude != null && c.longitude != null)
+            .map(c => ({
+              type: 'Feature',
+              geometry: { type: 'Point', coordinates: [Number(c.longitude), Number(c.latitude)] },
+              properties: { nom: c.nom },
+            })),
+        };
+        this.runWhenMapReady(() => this.addOrUpdateCompagnonsMeshCoreLayer());
+      },
+      error: (err) => console.error('Erreur chargement companions MeshCore:', err),
+    });
+  }
+
+  private addOrUpdateCompagnonsMeshCoreLayer(): void {
+    if (!this.map || !this.compagnonsMeshCoreGeoJSON) return;
+
+    const existingSource = this.map.getSource('compagnons-meshcore') as maplibregl.GeoJSONSource | undefined;
+    if (existingSource) {
+      existingSource.setData(this.compagnonsMeshCoreGeoJSON);
+      return;
+    }
+
+    this.map.addSource('compagnons-meshcore', { type: 'geojson', data: this.compagnonsMeshCoreGeoJSON });
+
+    const visibility = this.layerVisibility.compagnonsMeshCore ? 'visible' : 'none';
+
+    this.map.addLayer({
+      id: 'compagnons-meshcore-layer',
+      type: 'circle',
+      source: 'compagnons-meshcore',
+      layout: { visibility },
+      paint: {
+        'circle-color': '#ea580c',
+        'circle-radius': 7,
+        'circle-stroke-width': 2,
+        'circle-stroke-color': '#fff',
+      },
+    });
+
+    this.map.addLayer({
+      id: 'compagnons-meshcore-label',
+      type: 'symbol',
+      source: 'compagnons-meshcore',
+      layout: {
+        visibility,
+        'text-field': ['get', 'nom'],
+        'text-size': 11,
+        'text-offset': [0, 1.2],
+        'text-anchor': 'top',
+      },
+      paint: { 'text-color': '#c2410c', 'text-halo-color': '#fff', 'text-halo-width': 1 },
+    });
+
+    this.map.on('click', 'compagnons-meshcore-layer', (e) => {
+      if (!e.features || e.features.length === 0) return;
+      const geometry = e.features[0].geometry as GeoJSON.Point;
+      const coordinates = geometry.coordinates.slice() as [number, number];
+      const nom = e.features[0].properties?.['nom'] || 'Companion';
+      new maplibregl.Popup().setLngLat(coordinates).setHTML(`<strong>${nom}</strong><br>Companion MeshCore`).addTo(this.map!);
+    });
+    this.map.on('mouseenter', 'compagnons-meshcore-layer', () => { this.map!.getCanvas().style.cursor = 'pointer'; });
+    this.map.on('mouseleave', 'compagnons-meshcore-layer', () => { this.map!.getCanvas().style.cursor = ''; });
   }
 
   private addOrUpdatePersonnelSecourismeLayer(): void {
