@@ -24,7 +24,10 @@ export class MessageMeshtasticService {
     return this.http.get<MessageMeshtasticLog[]>(`${this.url}/`, { params: { contact_node_num: String(nodeNum) } });
   }
 
-  envoyer(compagnonId: string, canalId: string, contactNodeNum: number, contenu: string): Observable<MessageMeshtasticLog> {
+  /** canalId : null quand le destinataire a une clé publique connue (PKI) — le canal n'a alors
+   * aucun rôle dans le chiffrement ni la conversation, le pont en choisit un automatiquement
+   * pour le seul besoin technique du topic MQTT (voir CanalMeshtastic.principal). */
+  envoyer(compagnonId: string, canalId: string | null, contactNodeNum: number, contenu: string): Observable<MessageMeshtasticLog> {
     return this.http.post<MessageMeshtasticLog>(`${this.url}/`, {
       compagnon: compagnonId, canal: canalId, direction: 'SORTANT', contact_node_num: contactNodeNum, contenu,
     });

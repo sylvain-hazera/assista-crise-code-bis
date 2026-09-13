@@ -42,6 +42,23 @@ CANAUX_REFRESH_INTERVAL_SECONDS = int(os.environ.get("CANAUX_REFRESH_INTERVAL_SE
 CONTACTS_FLUSH_INTERVAL_SECONDS = int(os.environ.get("CONTACTS_FLUSH_INTERVAL_SECONDS", "30"))
 RECONNECT_DELAY_SECONDS = int(os.environ.get("RECONNECT_DELAY_SECONDS", "10"))
 
+# Annonce périodique de notre propre position (Position_APP) — voir boucle_annonce_position.
+# Hypothèse à vérifier : Gaulix semble router les BROADCASTS (diffusion à tout un canal) vers
+# une "bulle" locale déterminée par la position/département connus de l'ÉMETTEUR (voir leur
+# doc "Logique de routage MQTT"), contrairement aux messages adressés à un node_num précis qui
+# sont bien arrivés sans qu'on ait jamais annoncé de position — un companion logiciel sans GPS
+# n'a jusqu'ici jamais donné à Gaulix de quoi nous placer géographiquement.
+POSITION_ANNONCE_INTERVAL_SECONDS = int(os.environ.get("POSITION_ANNONCE_INTERVAL_SECONDS", "900"))
+POSITION_ANNONCE_LATITUDE = float(os.environ.get("POSITION_ANNONCE_LATITUDE", "0")) or None
+POSITION_ANNONCE_LONGITUDE = float(os.environ.get("POSITION_ANNONCE_LONGITUDE", "0")) or None
+POSITION_ANNONCE_CANAL = os.environ.get("POSITION_ANNONCE_CANAL", "Fr_Tech")
+
+# Annonce de notre propre identité (NodeInfo : long_name/short_name/clé publique) sur TOUS les
+# canaux connus — sans ça, aucun appareil réel ne nous a jamais "rencontrés" et peut ignorer nos
+# paquets comme venant d'un nœud jamais annoncé (voir doc de conception, remarque explicite :
+# un vrai client Meshtastic diffuse systématiquement son NodeInfo, jamais juste des messages).
+NODEINFO_ANNONCE_INTERVAL_SECONDS = int(os.environ.get("NODEINFO_ANNONCE_INTERVAL_SECONDS", "300"))
+
 BROADCAST_NUM = 0xFFFFFFFF
 
 # Miroir de HardwareModel (meshtastic.protobuf.mesh_pb2) -> texte lisible, best-effort.
@@ -160,7 +177,7 @@ class RegistreCanaux:
             except ValueError:
                 logger.warning("PSK invalide (hex) pour le canal %s, ignoré.", c["nom"])
                 continue
-            nouveau[c["nom"]] = {"id": c["id"], "psk": psk}
+            nouveau[c["nom"]] = {"id": c["id"], "psk": psk, "principal": bool(c.get("principal"))}
         self._par_nom = nouveau
 
     def get(self, nom):
@@ -168,6 +185,23 @@ class RegistreCanaux:
 
     def tous(self):
         return dict(self._par_nom)
+
+    def nom_par_id(self, canal_id):
+        for nom, infos in self._par_nom.items():
+            if infos["id"] == canal_id:
+                return nom
+        return None
+
+    def nom_principal(self):
+        """Canal utilisé par défaut pour le nommage du topic MQTT d'un DM chiffré par clé
+        publique (PKI) — dans ce mode le canal ne sert à rien pour le chiffrement ni la
+        conversation, juste une contrainte technique du protocole (voir docstring du modèle
+        Django CanalMeshtastic.principal). Retombe sur le premier canal connu si aucun n'est
+        marqué principal, plutôt que de bloquer un DM PKI pour un simple oubli de configuration."""
+        for nom, infos in self._par_nom.items():
+            if infos["principal"]:
+                return nom
+        return next(iter(self._par_nom), None)
 
 
 async def boucle_rafraichissement_canaux(django, registre):
@@ -352,15 +386,19 @@ async def boucle_envoi_dm(mqtt_client, compagnon, registre, django, cle_privee_h
     while True:
         try:
             for message in await django.dm_a_envoyer(compagnon["id"]):
+                destinataire_pubkey_hex = message.get("contact_public_key_hex")
                 canal_id = message.get("canal")
-                canal_nom = None
-                for nom, infos in registre.tous().items():
-                    if infos["id"] == canal_id:
-                        canal_nom = nom
-                        break
+                canal_nom = registre.nom_par_id(canal_id) if canal_id else None
+
                 if canal_nom is None:
-                    await django.marquer_dm(message["id"], "ECHEC", erreur="Aucun canal (donc aucune clé) associé à ce DM.")
-                    continue
+                    if destinataire_pubkey_hex:
+                        # PKI : le canal ne sert à rien pour le chiffrement ni la conversation,
+                        # juste au nommage du topic MQTT (contrainte technique) — voir docstring
+                        # de CanalMeshtastic.principal. On ne bloque pas ce DM pour ça.
+                        canal_nom = registre.nom_principal()
+                    if canal_nom is None:
+                        await django.marquer_dm(message["id"], "ECHEC", erreur="Aucun canal (donc aucune clé) associé à ce DM, et aucune clé publique connue pour ce destinataire.")
+                        continue
 
                 canal = registre.get(canal_nom)
                 packet_id = random.randint(1, 0xFFFFFFFF)
@@ -377,7 +415,6 @@ async def boucle_envoi_dm(mqtt_client, compagnon, registre, django, cle_privee_h
                 # (voir MessageMeshtasticLogViewSet.a_envoyer, contact_public_key_hex) — sinon
                 # repli sur la PSK du canal choisi, moins confidentiel (voir README) mais
                 # utilisable dès la première conversation, avant tout NodeInfo échangé.
-                destinataire_pubkey_hex = message.get("contact_public_key_hex")
                 if destinataire_pubkey_hex:
                     paquet.pki_encrypted = True
                     paquet.public_key = bytes.fromhex(crypto.cle_publique_depuis_privee_hex(cle_privee_hex))
@@ -441,6 +478,93 @@ async def boucle_envoi_canaux(mqtt_client, compagnon, registre, django):
         await asyncio.sleep(POLL_INTERVAL_SECONDS)
 
 
+def _publier_paquet(mqtt_client, compagnon, canal_nom, canal, paquet):
+    enveloppe = mqtt_pb2.ServiceEnvelope(
+        packet=paquet, channel_id=canal_nom, gateway_id=f"!{compagnon['node_num']:08x}",
+    )
+    topic = f"{compagnon['topic_racine']}/2/e/{canal_nom}/!{compagnon['node_num']:08x}"
+    info = mqtt_client.publish(topic, enveloppe.SerializeToString())
+    info.wait_for_publish(timeout=10)
+
+
+async def boucle_annonce_position(mqtt_client, compagnon, registre):
+    """Annonce périodiquement notre position sur POSITION_ANNONCE_CANAL — voir le commentaire
+    de POSITION_ANNONCE_INTERVAL_SECONDS : hypothèse que Gaulix a besoin de nous savoir
+    localisés pour router correctement nos BROADCASTS vers la bonne bulle locale (les messages
+    adressés à un node_num précis, eux, sont déjà arrivés sans cette annonce)."""
+    if POSITION_ANNONCE_LATITUDE is None or POSITION_ANNONCE_LONGITUDE is None:
+        logger.info("Annonce de position désactivée (POSITION_ANNONCE_LATITUDE/LONGITUDE non renseignées).")
+        return
+    while True:
+        try:
+            canal = registre.get(POSITION_ANNONCE_CANAL)
+            if canal is None:
+                logger.warning("Canal d'annonce de position '%s' inconnu, annonce ignorée.", POSITION_ANNONCE_CANAL)
+            else:
+                packet_id = random.randint(1, 0xFFFFFFFF)
+                position = mesh_pb2.Position(
+                    latitude_i=int(POSITION_ANNONCE_LATITUDE * 1e7),
+                    longitude_i=int(POSITION_ANNONCE_LONGITUDE * 1e7),
+                )
+                data = mesh_pb2.Data(portnum=portnums_pb2.PortNum.POSITION_APP, payload=position.SerializeToString())
+                paquet = mesh_pb2.MeshPacket()
+                setattr(paquet, "from", compagnon["node_num"])
+                paquet.to = BROADCAST_NUM
+                paquet.id = packet_id
+                paquet.channel = crypto.hash_canal(POSITION_ANNONCE_CANAL, canal["psk"])
+                paquet.hop_limit = 3
+
+                chiffre = crypto.chiffrer(canal["psk"], packet_id, compagnon["node_num"], data.SerializeToString())
+                if chiffre is None:
+                    paquet.decoded.CopyFrom(data)
+                else:
+                    paquet.encrypted = chiffre
+
+                _publier_paquet(mqtt_client, compagnon, POSITION_ANNONCE_CANAL, canal, paquet)
+                logger.info(
+                    "Position annoncée (%.4f, %.4f) sur '%s'.",
+                    POSITION_ANNONCE_LATITUDE, POSITION_ANNONCE_LONGITUDE, POSITION_ANNONCE_CANAL,
+                )
+        except Exception:
+            logger.exception("Échec de l'annonce de position.")
+        await asyncio.sleep(POSITION_ANNONCE_INTERVAL_SECONDS)
+
+
+async def boucle_annonce_identite(mqtt_client, compagnon, registre, cle_publique_hex):
+    """Diffuse notre NodeInfo (long_name/short_name/clé publique) sur TOUS les canaux connus,
+    périodiquement — voir le commentaire de NODEINFO_ANNONCE_INTERVAL_SECONDS."""
+    while True:
+        try:
+            for canal_nom, canal in registre.tous().items():
+                packet_id = random.randint(1, 0xFFFFFFFF)
+                user = mesh_pb2.User(
+                    id=f"!{compagnon['node_num']:08x}",
+                    long_name=compagnon.get("long_name") or compagnon["nom"],
+                    short_name=(compagnon.get("short_name") or compagnon["nom"])[:4],
+                    hw_model=mesh_pb2.HardwareModel.PRIVATE_HW,
+                    public_key=bytes.fromhex(cle_publique_hex),
+                )
+                data = mesh_pb2.Data(portnum=portnums_pb2.PortNum.NODEINFO_APP, payload=user.SerializeToString())
+                paquet = mesh_pb2.MeshPacket()
+                setattr(paquet, "from", compagnon["node_num"])
+                paquet.to = BROADCAST_NUM
+                paquet.id = packet_id
+                paquet.channel = crypto.hash_canal(canal_nom, canal["psk"])
+                paquet.hop_limit = 3
+
+                chiffre = crypto.chiffrer(canal["psk"], packet_id, compagnon["node_num"], data.SerializeToString())
+                if chiffre is None:
+                    paquet.decoded.CopyFrom(data)
+                else:
+                    paquet.encrypted = chiffre
+
+                _publier_paquet(mqtt_client, compagnon, canal_nom, canal, paquet)
+                logger.info("NodeInfo annoncé sur '%s'.", canal_nom)
+        except Exception:
+            logger.exception("Échec de l'annonce NodeInfo.")
+        await asyncio.sleep(NODEINFO_ANNONCE_INTERVAL_SECONDS)
+
+
 async def main():
     logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
 
@@ -469,6 +593,8 @@ async def main():
             boucle_flush_contacts(django, COMPAGNON_ID, tampon),
             boucle_envoi_dm(mqtt_client, compagnon, registre, django, cle_privee_hex),
             boucle_envoi_canaux(mqtt_client, compagnon, registre, django),
+            boucle_annonce_position(mqtt_client, compagnon, registre),
+            boucle_annonce_identite(mqtt_client, compagnon, registre, cle_privee["x25519_public_key_hex"]),
         )
     finally:
         mqtt_client.loop_stop()

@@ -9556,7 +9556,7 @@ class CanalMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSe
         institutionnel), jamais exposé par la sérialisation standard."""
         canaux = self.get_queryset().filter(actif=True)
         return Response([
-            {"id": str(c.id), "nom": c.nom, "psk_hex": c.psk_hex}
+            {"id": str(c.id), "nom": c.nom, "psk_hex": c.psk_hex, "principal": c.principal}
             for c in canaux
         ])
 

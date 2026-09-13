@@ -44,6 +44,7 @@ export class MeshtasticCompanionsComponent implements OnInit {
   canaux: CanalMeshtastic[] = [];
   nouveauCanalNom = '';
   nouveauCanalPsk = '';
+  nouveauCanalPrincipal = false;
   creatingCanal = false;
 
   noeuds: NoeudUtilisateurMeshtastic[] = [];
@@ -148,11 +149,13 @@ export class MeshtasticCompanionsComponent implements OnInit {
     this.canalService.create({
       nom: this.nouveauCanalNom.trim(),
       psk_hex: this.nouveauCanalPsk.trim() || undefined,
+      principal: this.nouveauCanalPrincipal,
     }).subscribe({
       next: (created) => {
         this.canaux = [created, ...this.canaux];
         this.nouveauCanalNom = '';
         this.nouveauCanalPsk = '';
+        this.nouveauCanalPrincipal = false;
         this.creatingCanal = false;
       },
       error: () => { this.errorMessage = 'Impossible de créer ce canal.'; this.creatingCanal = false; },

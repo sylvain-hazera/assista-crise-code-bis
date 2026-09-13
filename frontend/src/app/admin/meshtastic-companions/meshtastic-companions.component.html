@@ -81,7 +81,8 @@
 <p class="page-hint">
   Le nom DOIT correspondre exactement à un canal déjà configuré sur les appareils cibles — c'est
   lui qui identifie le canal dans le topic MQTT. La PSK n'est jamais réaffichée une fois
-  enregistrée.
+  enregistrée. Le canal "principal" sert uniquement au nommage du topic d'un DM chiffré par clé
+  publique (PKI) — il n'a alors aucun rôle dans le chiffrement ni la conversation.
 </p>
 
 <div class="create-panel">
@@ -89,6 +90,10 @@
     <input type="text" class="form-input" placeholder="Nom du canal (ex: Fr_Balise)" [(ngModel)]="nouveauCanalNom">
     <input type="text" class="form-input" placeholder="PSK hex (vide = pas de chiffrement)" [(ngModel)]="nouveauCanalPsk">
   </div>
+  <label class="checkbox-row">
+    <input type="checkbox" [(ngModel)]="nouveauCanalPrincipal">
+    Canal principal (par défaut pour les DM chiffrés par clé publique)
+  </label>
   <button type="button" class="btn-primary" [disabled]="!formCanalValide || creatingCanal" (click)="ajouterCanal()">
     Ajouter ce canal
   </button>
@@ -97,17 +102,18 @@
 <div class="table-wrapper">
   <table class="data-table">
     <thead>
-      <tr><th>Nom</th><th>Chiffré</th><th>Actif</th></tr>
+      <tr><th>Nom</th><th>Chiffré</th><th>Principal</th><th>Actif</th></tr>
     </thead>
     <tbody>
       @for (c of canaux; track c.id) {
         <tr>
           <td>{{ c.nom }}</td>
           <td>{{ c.psk_hex ? 'Oui' : 'Non' }}</td>
+          <td>{{ c.principal ? 'Oui' : 'Non' }}</td>
           <td>{{ c.actif ? 'Oui' : 'Non' }}</td>
         </tr>
       } @empty {
-        <tr><td colspan="3" class="empty">Aucun canal déclaré pour l'instant.</td></tr>
+        <tr><td colspan="4" class="empty">Aucun canal déclaré pour l'instant.</td></tr>
       }
     </tbody>
   </table>

@@ -4120,6 +4120,14 @@ class CanalMeshtastic(EnvironmentScopedModel):
         CompagnonMeshtastic, on_delete=models.SET_NULL, null=True, blank=True, related_name="canaux",
     )
 
+    # Canal utilisé par défaut pour le nommage du topic MQTT d'un DM chiffré par clé publique
+    # (PKI) : dans ce mode le canal ne sert à RIEN pour le chiffrement ni la conversation (voir
+    # crypto.py), juste une contrainte technique du protocole (le topic MQTT a besoin d'un nom
+    # de canal) — l'utilisateur ne doit pas avoir à en choisir un pour un DM PKI, le pont prend
+    # celui-ci automatiquement. Un seul principal actif à la fois (pas de contrainte DB stricte,
+    # comme CompagnonMeshtastic.principal).
+    principal = models.BooleanField(default=False)
+
     actif = models.BooleanField(default=True)
 
     date_creation = models.DateTimeField(auto_now_add=True)
