@@ -139,7 +139,12 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     if (this.isInstitutional) {
       this.loadTeamPositions();
       this.loadCentres();
-      this.loadBenevolesPompiers();
+      // Pas de chargement ici : voir onLayerToggle() — l'annuaire de bénévoles peut compter
+      // plusieurs centaines à ~1300 fiches pour une institution à secteur région/département
+      // (mesuré : jusqu'à 1,1s de sérialisation côté serveur, avant même le transfert et le
+      // parsing JS), pour un calque masqué par défaut : le charger inconditionnellement ici
+      // ralentissait l'affichage initial de la carte pour TOUT compte institutionnel, même
+      // ceux qui n'ouvrent jamais ce calque.
     }
     // Centres d'accueil et postes de secours : visibles sans authentification (contrairement
     // aux deux calques ci-dessus), voir PointOperationnelViewSet.carte_publique.
@@ -151,8 +156,14 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   /** Appelé par les checkbox du panneau de calques (voir template) : ré-applique la
-   * visibilité sur les couches déjà ajoutées à la carte, sans jamais recharger les données. */
+   * visibilité sur les couches déjà ajoutées à la carte, sans jamais recharger les données —
+   * sauf l'annuaire bénévoles/pompiers, chargé à la demande à la première activation (voir
+   * ngOnInit et loadBenevolesPompiers). */
   onLayerToggle(): void {
+    if (this.layerVisibility.benevolesPompiers && !this.benevolesPompiersCharges) {
+      this.benevolesPompiersCharges = true;
+      this.loadBenevolesPompiers();
+    }
     this.applyClusterVisibility();
     this.applyLayerVisibility('team-positions-layer', this.layerVisibility.positions);
     this.applyLayerVisibility('team-positions-label', this.layerVisibility.positions);
@@ -372,6 +383,10 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
    * renseignée, ou dont l'institution n'est pas encore rattachée (User.institution vide),
    * n'a sinon aucun moyen de comprendre pourquoi le calque reste vide une fois coché. */
   benevolesPompiersError: string | null = null;
+  // Chargé une seule fois, à la première activation du calque (voir onLayerToggle) — jusqu'à
+  // ~1300 fiches pour une institution à secteur région, coûteux à charger pour rien tant que
+  // l'utilisateur n'a jamais coché la case.
+  private benevolesPompiersCharges = false;
 
   loadBenevolesPompiers(): void {
     this.offerService.vueSecteur().subscribe({
