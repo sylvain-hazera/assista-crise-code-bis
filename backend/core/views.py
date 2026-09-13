@@ -3910,13 +3910,19 @@ class PlanMissionModeleViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelView
 class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     # TeamSerializer déréférence aussi institution/institution_delegataire/regulateur (FK) et
     # themes/competences/assigned_informations (M2M) en plus de ce qui était déjà prefetch —
-    # 77 requêtes mesurées pour 13 équipes DEMO avant cet ajout.
+    # 77 requêtes mesurées pour 13 équipes DEMO avant cet ajout. mission_active(.crise)/
+    # canal_meshcore/canal_meshtastic ajoutés avec les fonctionnalités du même nom (voir
+    # TeamSerializer) — sans ça, chacun requêtait une fois par équipe (régression mesurée par
+    # test_query_optimization.py).
     queryset           = Team.objects.prefetch_related(
         'members',
         Prefetch('assigned_offers', queryset=Offer.objects.select_related('offer_type')),
         'assigned_crises', 'assigned_requests', 'sous_equipes',
         'themes', 'competences', 'assigned_informations',
-    ).select_related('leader', 'equipe_parente', 'institution', 'institution_delegataire', 'regulateur').all()
+    ).select_related(
+        'leader', 'equipe_parente', 'institution', 'institution_delegataire', 'regulateur',
+        'mission_active', 'mission_active__crise', 'canal_meshcore', 'canal_meshtastic',
+    ).all()
     serializer_class   = TeamSerializer
 
     def get_permissions(self):
