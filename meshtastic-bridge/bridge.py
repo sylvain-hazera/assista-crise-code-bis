@@ -409,6 +409,7 @@ async def boucle_envoi_dm(mqtt_client, compagnon, registre, django, cle_privee_h
                 paquet.id = packet_id
                 paquet.channel = crypto.hash_canal(canal_nom, canal["psk"])
                 paquet.hop_limit = 3
+                paquet.hop_start = 3
                 paquet.want_ack = True
 
                 # DM chiffré par clé publique (PKI) si on connaît déjà celle du destinataire
@@ -457,6 +458,7 @@ async def boucle_envoi_canaux(mqtt_client, compagnon, registre, django):
                     paquet.id = packet_id
                     paquet.channel = crypto.hash_canal(canal_nom, canal["psk"])
                     paquet.hop_limit = 3
+                    paquet.hop_start = 3
 
                     chiffre = crypto.chiffrer(canal["psk"], packet_id, compagnon["node_num"], data.SerializeToString())
                     if chiffre is None:
@@ -513,6 +515,7 @@ async def boucle_annonce_position(mqtt_client, compagnon, registre):
                 paquet.id = packet_id
                 paquet.channel = crypto.hash_canal(POSITION_ANNONCE_CANAL, canal["psk"])
                 paquet.hop_limit = 3
+                paquet.hop_start = 3
 
                 chiffre = crypto.chiffrer(canal["psk"], packet_id, compagnon["node_num"], data.SerializeToString())
                 if chiffre is None:
@@ -551,6 +554,7 @@ async def boucle_annonce_identite(mqtt_client, compagnon, registre, cle_publique
                 paquet.id = packet_id
                 paquet.channel = crypto.hash_canal(canal_nom, canal["psk"])
                 paquet.hop_limit = 3
+                paquet.hop_start = 3
 
                 chiffre = crypto.chiffrer(canal["psk"], packet_id, compagnon["node_num"], data.SerializeToString())
                 if chiffre is None:
