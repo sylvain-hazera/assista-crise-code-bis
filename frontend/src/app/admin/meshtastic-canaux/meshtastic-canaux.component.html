@@ -87,10 +87,10 @@
         </div>
       }
 
-      @if (conversationSelectionnee.type === 'dm' && !aClePubliqueConnue(conversationSelectionnee.noeud)) {
+      @if (conversationSelectionnee.type === 'dm') {
         <div class="form-row">
           <label>
-            Canal utilisé pour chiffrer ce DM (pas de clé publique connue pour ce nœud)
+            Canal utilisé pour chiffrer ce DM
             <select [(ngModel)]="canalPourEnvoiId">
               @for (c of canaux; track c.id) {
                 <option [value]="c.id">{{ c.nom }}</option>

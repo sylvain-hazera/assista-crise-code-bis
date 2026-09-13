@@ -59,6 +59,12 @@ POSITION_ANNONCE_CANAL = os.environ.get("POSITION_ANNONCE_CANAL", "Fr_Tech")
 # un vrai client Meshtastic diffuse systématiquement son NodeInfo, jamais juste des messages).
 NODEINFO_ANNONCE_INTERVAL_SECONDS = int(os.environ.get("NODEINFO_ANNONCE_INTERVAL_SECONDS", "300"))
 
+# Désactivé par défaut (13/09) : voir le commentaire détaillé dans boucle_envoi_dm. Un DM
+# chiffré par clé publique envoyé par nous n'a jamais été confirmé reçu en conditions réelles,
+# contrairement à un DM chiffré par PSK de canal, testé et confirmé à deux reprises vers deux
+# destinataires différents. Repasser à "1" pour ré-expérimenter une fois la cause identifiée.
+ENVOI_PKI_ACTIF = os.environ.get("ENVOI_PKI_ACTIF", "0") == "1"
+
 BROADCAST_NUM = 0xFFFFFFFF
 
 # Miroir de HardwareModel (meshtastic.protobuf.mesh_pb2) -> texte lisible, best-effort.
@@ -386,19 +392,15 @@ async def boucle_envoi_dm(mqtt_client, compagnon, registre, django, cle_privee_h
     while True:
         try:
             for message in await django.dm_a_envoyer(compagnon["id"]):
-                destinataire_pubkey_hex = message.get("contact_public_key_hex")
                 canal_id = message.get("canal")
                 canal_nom = registre.nom_par_id(canal_id) if canal_id else None
-
                 if canal_nom is None:
-                    if destinataire_pubkey_hex:
-                        # PKI : le canal ne sert à rien pour le chiffrement ni la conversation,
-                        # juste au nommage du topic MQTT (contrainte technique) — voir docstring
-                        # de CanalMeshtastic.principal. On ne bloque pas ce DM pour ça.
-                        canal_nom = registre.nom_principal()
-                    if canal_nom is None:
-                        await django.marquer_dm(message["id"], "ECHEC", erreur="Aucun canal (donc aucune clé) associé à ce DM, et aucune clé publique connue pour ce destinataire.")
-                        continue
+                    # Plus de repli PKI ici (voir ENVOI_PKI_ACTIF ci-dessous) : un DM a
+                    # toujours besoin d'un canal, résolu sur le principal si non précisé.
+                    canal_nom = registre.nom_principal()
+                if canal_nom is None:
+                    await django.marquer_dm(message["id"], "ECHEC", erreur="Aucun canal disponible pour ce DM.")
+                    continue
 
                 canal = registre.get(canal_nom)
                 packet_id = random.randint(1, 0xFFFFFFFF)
@@ -412,11 +414,18 @@ async def boucle_envoi_dm(mqtt_client, compagnon, registre, django, cle_privee_h
                 paquet.hop_start = 7
                 paquet.want_ack = True
 
-                # DM chiffré par clé publique (PKI) si on connaît déjà celle du destinataire
-                # (voir MessageMeshtasticLogViewSet.a_envoyer, contact_public_key_hex) — sinon
-                # repli sur la PSK du canal choisi, moins confidentiel (voir README) mais
-                # utilisable dès la première conversation, avant tout NodeInfo échangé.
-                if destinataire_pubkey_hex:
+                # PKI DÉSACTIVÉ À L'ENVOI (voir ENVOI_PKI_ACTIF) : test comparatif en
+                # conditions réelles (13/09) — un DM chiffré PSK de canal (test3) est arrivé
+                # à destination et a été confirmé par le destinataire, un DM PKI envoyé
+                # dans la foulée vers la MÊME personne, sur le MÊME canal, ne l'a jamais
+                # été (test5). Cause exacte non identifiée (comparaison structurelle avec
+                # une lib de référence externe n'a rien révélé d'anormal côté construction
+                # du paquet) — possiblement lié à comment Gaulix ou une passerelle
+                # intermédiaire traite les paquets `encrypted`/`pki_encrypted` qu'elle ne
+                # peut pas classifier. En recevant, on reste capable de déchiffrer un PKI
+                # reçu (voir on_message) — seul l'ENVOI proactif est mis en retrait.
+                destinataire_pubkey_hex = message.get("contact_public_key_hex")
+                if ENVOI_PKI_ACTIF and destinataire_pubkey_hex:
                     paquet.pki_encrypted = True
                     paquet.public_key = bytes.fromhex(crypto.cle_publique_depuis_privee_hex(cle_privee_hex))
                     paquet.encrypted = crypto.chiffrer_pkc(
