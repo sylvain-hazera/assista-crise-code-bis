@@ -234,6 +234,14 @@ export class MeshtasticCompanionsComponent implements OnInit {
     });
   }
 
+  supprimerCanal(canal: CanalMeshtastic): void {
+    if (!confirm(`Supprimer le canal « ${canal.nom} » ?`)) return;
+    this.canalService.delete(canal.id).subscribe({
+      next: () => { this.canaux = this.canaux.filter(c => c.id !== canal.id); },
+      error: () => { this.errorMessage = 'Impossible de supprimer ce canal.'; },
+    });
+  }
+
   get formNoeudValide(): boolean {
     return !!this.nouveauNoeudUtilisateurId && this.nouveauNoeudNodeNum != null;
   }

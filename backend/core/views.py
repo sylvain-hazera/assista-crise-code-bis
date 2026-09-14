@@ -10117,6 +10117,16 @@ class CanalMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSe
             commentaire=f"Création canal Meshtastic : {canal.nom}",
         )
 
+    def perform_destroy(self, instance):
+        audit_log(
+            request=self.request,
+            action_code="SUPPRESSION",
+            objet_type="CanalMeshtastic",
+            objet_id=instance.id,
+            commentaire=f"Suppression canal Meshtastic : {instance.nom}",
+        )
+        instance.delete()
+
     @action(detail=False, methods=['get'], url_path='avec-cle')
     def avec_cle(self, request):
         """Canaux actifs avec leur PSK EN CLAIR — le pont en a besoin pour chiffrer/déchiffrer

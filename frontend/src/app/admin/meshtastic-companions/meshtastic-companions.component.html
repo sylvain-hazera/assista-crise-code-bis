@@ -175,7 +175,7 @@
 <div class="table-wrapper">
   <table class="data-table">
     <thead>
-      <tr><th>Nom</th><th>Broker</th><th>Chiffré</th><th>Principal</th><th>Actif</th></tr>
+      <tr><th>Nom</th><th>Broker</th><th>Chiffré</th><th>Principal</th><th>Actif</th><th></th></tr>
     </thead>
     <tbody>
       @for (c of canaux; track c.id) {
@@ -185,9 +185,10 @@
           <td>{{ c.psk_hex ? 'Oui' : 'Non' }}</td>
           <td>{{ c.principal ? 'Oui' : 'Non' }}</td>
           <td>{{ c.actif ? 'Oui' : 'Non' }}</td>
+          <td><button type="button" class="btn-danger-sm" (click)="supprimerCanal(c)">Supprimer</button></td>
         </tr>
       } @empty {
-        <tr><td colspan="5" class="empty">Aucun canal déclaré pour l'instant.</td></tr>
+        <tr><td colspan="6" class="empty">Aucun canal déclaré pour l'instant.</td></tr>
       }
     </tbody>
   </table>

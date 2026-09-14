@@ -21,6 +21,10 @@ export class CanalMeshtasticService {
     return this.http.post<CanalMeshtastic>(`${this.url}/`, data);
   }
 
+  delete(id: string): Observable<void> {
+    return this.http.delete<void>(`${this.url}/${id}/`);
+  }
+
   getMessages(canalId: string): Observable<MessageCanalMeshtastic[]> {
     return this.http.get<MessageCanalMeshtastic[]>(`${this.urlMessages}/`, { params: { canal: canalId } });
   }

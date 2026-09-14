@@ -160,3 +160,23 @@ class TestCanauxAvecCleFiltragePartBroker:
         response = client.get(reverse('canalmeshtastic-avec-cle'))
         assert response.status_code == status.HTTP_200_OK
         assert len(response.data) == 2
+
+
+@pytest.mark.django_db
+class TestSuppressionCanal:
+
+    def test_institutional_actor_can_delete(self, institutional_client, compagnon):
+        client, _ = institutional_client
+        canal = CanalMeshtastic.objects.create(nom='Fr_Balise', compagnon=compagnon)
+        response = client.delete(reverse('canalmeshtastic-detail', args=[canal.id]))
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        assert not CanalMeshtastic.objects.filter(id=canal.id).exists()
+
+    def test_non_institutional_cannot_delete(self, create_user, compagnon):
+        user = create_user(username='simple@test.fr', email='simple@test.fr', type='UTIL_SIMPLE')
+        client = APIClient()
+        client.force_authenticate(user=user)
+        canal = CanalMeshtastic.objects.create(nom='Fr_Balise', compagnon=compagnon)
+        response = client.delete(reverse('canalmeshtastic-detail', args=[canal.id]))
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert CanalMeshtastic.objects.filter(id=canal.id).exists()
