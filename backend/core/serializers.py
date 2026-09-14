@@ -2594,6 +2594,19 @@ class CompagnonMeshCoreSerializer(serializers.ModelSerializer):
         instance.save()
         return instance
 
+    def to_representation(self, instance):
+        """En zone DEMO, la topologie réseau réelle du pont (tcp_host/tcp_port/serie_device/
+        ble_adresse/pubkey_hex) ne doit jamais apparaître à l'écran — masquage à l'affichage
+        uniquement (même principe que UserSerializer pour email/téléphone), jamais en base : la
+        lecture (list/retrieve) reste sinon possible pour que la démo composition d'un DM reste
+        possible (voir CompagnonMeshCoreViewSet)."""
+        data = super().to_representation(instance)
+        request = self.context.get('request')
+        if request is not None and get_active_environment(request) == Environment.DEMO:
+            for champ in ('tcp_host', 'tcp_port', 'serie_device', 'ble_adresse', 'pubkey_hex'):
+                data[champ] = None
+        return data
+
 
 class NoeudMeshUtilisateurSerializer(serializers.ModelSerializer):
     utilisateur_nom = serializers.SerializerMethodField()
@@ -2603,7 +2616,22 @@ class NoeudMeshUtilisateurSerializer(serializers.ModelSerializer):
         fields = "__all__"
 
     def get_utilisateur_nom(self, obj):
+        request = self.context.get('request')
+        if request is not None and get_active_environment(request) == Environment.DEMO:
+            return "Nœud de terrain"
         return f"{obj.utilisateur.first_name} {obj.utilisateur.last_name}".strip() or obj.utilisateur.email
+
+    def to_representation(self, instance):
+        """Qui est rattaché à quel nœud reste privé en zone DEMO — utilisateur_nom masqué
+        ci-dessus, `utilisateur` (l'id du compte réel) masqué ici. pubkey_hex reste présent :
+        indispensable pour qu'un nœud reste adressable par message (voir docstring de la
+        classe). Masquage à l'affichage uniquement, jamais en base — même principe que
+        CompagnonMeshCoreSerializer/UserSerializer."""
+        data = super().to_representation(instance)
+        request = self.context.get('request')
+        if request is not None and get_active_environment(request) == Environment.DEMO:
+            data['utilisateur'] = None
+        return data
 
 
 class MessageMeshLogSerializer(serializers.ModelSerializer):

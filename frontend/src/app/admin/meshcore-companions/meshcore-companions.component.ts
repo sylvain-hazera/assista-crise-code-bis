@@ -7,6 +7,7 @@ import { RelaisMeshCoreService } from '../../services/relais-meshcore.service';
 import { NoeudMeshUtilisateurService } from '../../services/noeud-mesh-utilisateur.service';
 import { ContactMeshCoreService } from '../../services/contact-meshcore.service';
 import { UserService } from '../../services/user.service';
+import { AuthService } from '../../auth/services/auth.service';
 import { CompagnonMeshCore, MeshCoreConnexionType } from '../../shared/models/compagnon-meshcore.model';
 import { RelaisMeshCore } from '../../shared/models/relais-meshcore.model';
 import { NoeudMeshUtilisateur } from '../../shared/models/noeud-mesh-utilisateur.model';
@@ -58,15 +59,29 @@ export class MeshcoreCompanionsComponent implements OnInit {
 
   contacts: ContactMeshCore[] = [];
 
+  /** Paramétrage/affectation MeshCore jamais consultable ni modifiable depuis la zone DEMO
+   * (voir BlockedInDemoMixin côté serveur, CompagnonMeshCoreViewSet/NoeudMeshUtilisateurViewSet
+   * — demande explicite du 14/09) : on évite même d'émettre les requêtes (403 systématique)
+   * pour afficher un message clair plutôt qu'un chargement qui échoue silencieusement. Les
+   * nœuds restent néanmoins bien affectés et joignables ailleurs (carte, messagerie d'équipe),
+   * seule CETTE page de configuration est bloquée. */
+  isDemo = false;
+
   constructor(
     private service: CompagnonMeshCoreService,
     private relaisService: RelaisMeshCoreService,
     private noeudService: NoeudMeshUtilisateurService,
     private contactService: ContactMeshCoreService,
     private userService: UserService,
+    private authService: AuthService,
   ) {}
 
   ngOnInit(): void {
+    this.isDemo = this.authService.getEnvironment() === 'DEMO';
+    if (this.isDemo) {
+      this.loading = false;
+      return;
+    }
     this.load();
     this.loadRelais();
     this.loadNoeuds();

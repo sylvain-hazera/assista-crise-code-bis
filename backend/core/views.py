@@ -47,7 +47,7 @@ from .institution_attachment import (
 from .permissions import (
     IsInstitutionalActor, IsAdministrator, IsOwnDeclarationOrInstitutional, IsOwnerOrInstitutional,
     IsSelfOrInstitutional, IsInstitutionMemberOrAdministrator, IsOfferOwnerOrInstitutional,
-    INSTITUTIONAL_TYPES, user_can_view_photo,
+    INSTITUTIONAL_TYPES, user_can_view_photo, DenyInDemo,
     get_active_environment, get_effective_role, effective_role_or_none, mask_email, mask_phone,
     send_mail_env_aware, _peut_gerer_stock_point, is_regulateur_aut_locale_de_la_crise,
 )
@@ -418,6 +418,7 @@ class BesoinMaterielViewSet(viewsets.ModelViewSet):
 class RequestTypeBesoinViewSet(viewsets.ModelViewSet):
     queryset = RequestTypeBesoin.objects.select_related('request_type', 'besoin').all()
     serializer_class = RequestTypeBesoinSerializer
+
 
 class EnvironmentScopedViewSetMixin:
     """Point de passage unique pour isoler PROD et DEMO sur tout modèle "de contenu"
@@ -9327,17 +9328,43 @@ class CompagnonMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelView
     """Nœuds MeshCore en rôle Companion utilisés comme passerelle radio (voir le service-pont
     externe `meshcore-bridge/`, non hébergé dans ce dépôt Django). Phase de test (voir doc de
     conception « Maillage Terrain ») : pas encore de scoping institution strict sur la lecture,
-    juste IsInstitutionalActor en écriture comme le reste des ressources d'infrastructure."""
+    juste IsInstitutionalActor en écriture comme le reste des ressources d'infrastructure.
+
+    Modification (create/update/destroy) refusée en zone DEMO (DenyInDemo, demande explicite
+    du 14/09). La LECTURE reste volontairement possible ET N'EST PAS scopée par environnement
+    (get_queryset ci-dessous, contrairement à EnvironmentScopedViewSetMixin ailleurs) : le
+    companion réel (créé en PROD, relié au vrai matériel) doit rester choisissable pour envoyer
+    un message même en consultant depuis la zone DEMO, sans quoi `envoyables` ne renverrait
+    jamais rien en démo. CompagnonMeshCoreSerializer masque tcp_host/tcp_port/serie_device/
+    ble_adresse/pubkey_hex à l'affichage en DEMO (même principe que UserSerializer pour email/
+    téléphone), pour qu'un DM reste composable sans exposer la topologie réseau réelle du pont.
+    `envoyables` offre en plus un résumé minimal (id/nom/principal) pour ce cas précis."""
 
     queryset = CompagnonMeshCore.objects.select_related('institution').all()
     serializer_class = CompagnonMeshCoreSerializer
 
+    def get_queryset(self):
+        # Volontairement PAS super().get_queryset() : voir docstring de la classe.
+        return self.queryset
+
     def get_permissions(self):
         if self.action in ('create', 'update', 'partial_update', 'destroy'):
-            return [IsInstitutionalActor()]
+            return [IsInstitutionalActor(), DenyInDemo()]
         # `rapporter_etat` est appelé par le service-pont (compte de service authentifié,
         # pas un acteur institutionnel) : authentifié suffit, voir docstring de l'action.
         return [permissions.IsAuthenticated()]
+
+    @action(detail=False, methods=['get'])
+    def envoyables(self, request):
+        """Résumé minimal des companions actifs — id/nom/principal seulement, jamais la config
+        réseau (tcp_host/pubkey_hex/...) — pour choisir un émetteur de DM sans consulter la
+        configuration du pont (voir docstring de la classe). Pas de filtre `environment` :
+        même raison que get_queryset ci-dessus."""
+        compagnons = CompagnonMeshCore.objects.filter(actif=True).order_by('-principal', 'nom')
+        return Response([
+            {"id": str(c.id), "nom": c.nom, "principal": c.principal}
+            for c in compagnons
+        ])
 
     def perform_create(self, serializer):
         compagnon = serializer.save(environment=get_active_environment(self.request))
@@ -9494,15 +9521,58 @@ class CompagnonMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelView
 
 
 class NoeudMeshUtilisateurViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
-    """Correspondance clé publique MeshCore <-> compte utilisateur — voir docstring du modèle."""
+    """Correspondance clé publique MeshCore <-> compte utilisateur — voir docstring du modèle.
+
+    Modification de l'affectation (create/update/destroy) refusée en zone DEMO (DenyInDemo,
+    demande explicite du 14/09). L'affectation elle-même n'est PAS scopée par environnement
+    (pas de filtre `environment` ici, contrairement à EnvironmentScopedViewSetMixin ailleurs) :
+    un nœud personnel reste rattaché à son utilisateur quelle que soit la zone consultée, et
+    continue d'alimenter la carte et le routage des messages en DEMO. La LECTURE reste
+    volontairement possible : NoeudMeshUtilisateurSerializer masque utilisateur/utilisateur_nom
+    à l'affichage en DEMO (même principe que UserSerializer pour email/téléphone) mais garde
+    pubkey_hex — indispensable pour qu'un nœud reste adressable par message. `positions_en_mission`
+    (carte) et `messageables` (choix du destinataire d'un DM d'équipe, voir
+    EquipeMessagerieMeshComponent) appliquent la même anonymisation pour leurs propres champs."""
 
     queryset = NoeudMeshUtilisateur.objects.select_related('utilisateur').all()
     serializer_class = NoeudMeshUtilisateurSerializer
 
+    def get_queryset(self):
+        # Volontairement PAS super().get_queryset() (EnvironmentScopedViewSetMixin filtrerait
+        # par environment) : un nœud personnel reste rattaché à son utilisateur quelle que soit
+        # la zone consultée, voir docstring de la classe.
+        return self.queryset
+
     def get_permissions(self):
-        if self.action in ('create', 'update', 'partial_update', 'destroy', 'positions_en_mission'):
+        if self.action in ('create', 'update', 'partial_update', 'destroy'):
+            return [IsInstitutionalActor(), DenyInDemo()]
+        if self.action == 'positions_en_mission':
             return [IsInstitutionalActor()]
         return [permissions.IsAuthenticated()]
+
+    @action(detail=False, methods=['get'])
+    def messageables(self, request):
+        """Nœuds personnels actifs d'une équipe, résumé minimal pour composer un DM — jamais
+        l'utilisateur_id/utilisateur_nom réels en zone DEMO (voir docstring de la classe), le
+        pubkey_hex reste présent (indispensable pour adresser le message)."""
+        equipe_id = request.query_params.get('equipe')
+        if not equipe_id:
+            return Response({"detail": "Le paramètre 'equipe' est requis."}, status=status.HTTP_400_BAD_REQUEST)
+        est_demo = get_active_environment(request) == Environment.DEMO
+        noeuds = NoeudMeshUtilisateur.objects.filter(
+            actif=True, utilisateur__teams__id=equipe_id,
+        ).select_related('utilisateur').distinct()
+        return Response([
+            {
+                "id": str(n.id),
+                "pubkey_hex": n.pubkey_hex,
+                "nom_noeud": n.nom_noeud,
+                "utilisateur_nom": "Nœud de terrain" if est_demo else (
+                    f"{n.utilisateur.first_name} {n.utilisateur.last_name}".strip() or n.utilisateur.email
+                ),
+            }
+            for n in noeuds
+        ])
 
     def perform_create(self, serializer):
         noeud = serializer.save(environment=get_active_environment(self.request))
@@ -9532,6 +9602,11 @@ class NoeudMeshUtilisateurViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelV
             .select_related('utilisateur')
             .distinct()
         )
+        # En zone DEMO : la position et le pubkey (nécessaire pour rester "joignable pour les
+        # messages", voir MessageMeshLogViewSet) restent exposés, mais jamais le lien vers la
+        # vraie identité (utilisateur_id/nom) ni le nom d'équipe/mission réels — demande
+        # explicite du 14/09, même principe que le blocage de NoeudMeshUtilisateurViewSet.
+        est_demo = get_active_environment(request) == Environment.DEMO
 
         resultats = []
         for noeud in noeuds:
@@ -9545,8 +9620,8 @@ class NoeudMeshUtilisateurViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelV
             equipe = noeud.utilisateur.teams.filter(mission_active__statut=Mission.Statut.EN_COURS).first()
             resultats.append({
                 'noeud_id': str(noeud.id),
-                'utilisateur_id': str(noeud.utilisateur_id),
-                'utilisateur_nom': (
+                'utilisateur_id': None if est_demo else str(noeud.utilisateur_id),
+                'utilisateur_nom': "Nœud de terrain" if est_demo else (
                     f"{noeud.utilisateur.first_name} {noeud.utilisateur.last_name}".strip()
                     or noeud.utilisateur.email
                 ),
@@ -9555,12 +9630,30 @@ class NoeudMeshUtilisateurViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelV
                 'latitude': contact.location.y,
                 'longitude': contact.location.x,
                 'dernier_advert': contact.dernier_advert,
-                'equipe_id': str(equipe.id) if equipe else None,
-                'equipe_nom': equipe.name if equipe else None,
-                'mission_id': str(equipe.mission_active_id) if equipe and equipe.mission_active_id else None,
-                'mission_titre': equipe.mission_active.titre if equipe and equipe.mission_active else None,
+                'equipe_id': None if est_demo else (str(equipe.id) if equipe else None),
+                'equipe_nom': None if est_demo else (equipe.name if equipe else None),
+                'mission_id': None if est_demo else (str(equipe.mission_active_id) if equipe and equipe.mission_active_id else None),
+                'mission_titre': None if est_demo else (equipe.mission_active.titre if equipe and equipe.mission_active else None),
             })
         return Response(resultats)
+
+
+# Un message MeshCore sortant composé depuis la zone DEMO part vers du vrai matériel radio tenu
+# par de vraies personnes (voir CompagnonMeshCoreViewSet) — jamais un message long ou ambigu :
+# toujours préfixé (le destinataire sait immédiatement qu'il ne s'agit pas d'une vraie
+# communication de crise) et gardé court (les messages MeshCore réels le sont de toute façon,
+# la radio LoRa a un payload limité). Demande explicite du 14/09.
+DEMO_MESH_MESSAGE_PREFIX = "[démo] "
+DEMO_MESH_MESSAGE_MAX_LEN = 100
+
+
+def _contenu_message_mesh_demo(contenu: str) -> str:
+    contenu = (contenu or "").strip()
+    prefix = "" if contenu.lower().startswith("[démo]") else DEMO_MESH_MESSAGE_PREFIX
+    disponible = DEMO_MESH_MESSAGE_MAX_LEN - len(prefix)
+    if len(contenu) > disponible:
+        contenu = contenu[:max(disponible - 1, 0)].rstrip() + "…"
+    return prefix + contenu
 
 
 class MessageMeshLogViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
@@ -9619,11 +9712,16 @@ class MessageMeshLogViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet
             # Message composé depuis l'interface : l'expéditeur est le régulateur connecté.
             expediteur = self.request.user if self.request.user.is_authenticated else None
         equipe = expediteur.teams.first() if expediteur is not None else None
+        environment = get_active_environment(self.request)
 
-        message = serializer.save(
-            environment=get_active_environment(self.request), expediteur=expediteur, equipe=equipe,
+        save_kwargs = dict(
+            environment=environment, expediteur=expediteur, equipe=equipe,
             contact_pubkey_hex=contact_pubkey_hex,
         )
+        if direction == DirectionMessageMesh.SORTANT and environment == Environment.DEMO:
+            save_kwargs['contenu'] = _contenu_message_mesh_demo(serializer.validated_data.get('contenu'))
+
+        message = serializer.save(**save_kwargs)
         if message.direction == DirectionMessageMesh.ENTRANT and message.statut == StatutMessageMesh.EN_ATTENTE:
             # Un message entrant est par définition déjà reçu, pas "en attente d'envoi" —
             # filet de sécurité si le service-pont omet `statut` dans son POST.
@@ -9710,7 +9808,13 @@ class MessageCanalMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelV
     def perform_create(self, serializer):
         direction = serializer.validated_data.get('direction')
         expediteur = self.request.user if direction == DirectionMessageMesh.SORTANT and self.request.user.is_authenticated else None
-        serializer.save(environment=get_active_environment(self.request), expediteur=expediteur)
+        environment = get_active_environment(self.request)
+
+        save_kwargs = dict(environment=environment, expediteur=expediteur)
+        if direction == DirectionMessageMesh.SORTANT and environment == Environment.DEMO:
+            save_kwargs['contenu'] = _contenu_message_mesh_demo(serializer.validated_data.get('contenu'))
+
+        serializer.save(**save_kwargs)
 
     @action(detail=False, methods=['get'], url_path='a-envoyer')
     def a_envoyer(self, request):

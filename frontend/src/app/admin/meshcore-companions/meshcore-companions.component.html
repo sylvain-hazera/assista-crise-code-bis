@@ -7,6 +7,14 @@
   </p>
 </div>
 
+@if (isDemo) {
+  <div class="bandeau-confidentialite">
+    <span class="material-icons">lock</span>
+    Configuration MeshCore indisponible depuis la zone de démonstration — les nœuds personnels
+    restent affectés, visibles sur la carte et joignables par message ailleurs dans
+    l'application, mais leur paramétrage ne se consulte ni ne se modifie qu'en zone réelle.
+  </div>
+} @else {
 <div class="create-panel">
   <h3>Ajouter un companion</h3>
   <div class="form-row">
@@ -211,3 +219,4 @@
     </tbody>
   </table>
 </div>
+}

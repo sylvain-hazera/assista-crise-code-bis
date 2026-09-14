@@ -15,6 +15,20 @@ INSTITUTIONAL_TYPES = {
 }
 
 
+class DenyInDemo(BasePermission):
+    """Refuse toute action en zone DEMO — pour les écritures sur des ressources dont la
+    configuration/affectation ne doit jamais être modifiable depuis la démo (ex: companion/
+    nœud personnel MeshCore, voir CompagnonMeshCoreViewSet/NoeudMeshUtilisateurViewSet,
+    demande explicite du 14/09). La LECTURE (list/retrieve) de ces mêmes ressources reste
+    volontairement possible mais masquée au niveau du serializer (même principe que
+    UserSerializer.to_representation pour email/téléphone) : jamais cette permission sur
+    list/retrieve, qui doivent continuer à alimenter la carte et la messagerie en démo."""
+    message = "Indisponible depuis la zone de démonstration."
+
+    def has_permission(self, request, view):
+        return get_active_environment(request) != Environment.DEMO
+
+
 def get_active_environment(request):
     """Zone active de la requête (PROD par défaut), choisie par le frontend via l'en-tête
     X-Environment (bascule "kill switch"). Cette valeur ne fait que sélectionner laquelle de

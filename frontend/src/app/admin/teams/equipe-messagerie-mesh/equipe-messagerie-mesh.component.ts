@@ -2,7 +2,6 @@ import { Component, Input, OnChanges, OnDestroy, SimpleChanges } from '@angular/
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 
-import { TeamService } from '../../../services/team.service';
 import { NoeudMeshUtilisateurService } from '../../../services/noeud-mesh-utilisateur.service';
 import { CompagnonMeshCoreService } from '../../../services/compagnon-meshcore.service';
 import { MessageMeshService } from '../../../services/message-mesh.service';
@@ -46,7 +45,6 @@ export class EquipeMessagerieMeshComponent implements OnChanges, OnDestroy {
   private intervalRafraichissement: ReturnType<typeof setInterval> | null = null;
 
   constructor(
-    private teamService: TeamService,
     private noeudService: NoeudMeshUtilisateurService,
     private compagnonService: CompagnonMeshCoreService,
     private messageService: MessageMeshService,
@@ -67,23 +65,23 @@ export class EquipeMessagerieMeshComponent implements OnChanges, OnDestroy {
 
   private charger(): void {
     this.chargement = true;
-    this.teamService.getById(this.equipeId).subscribe({
-      next: (equipe) => {
-        const membresIds = new Set((equipe.members_info || []).map(m => m.id));
-        this.noeudService.getAll().subscribe(noeuds => {
-          this.noeudsEquipe = noeuds.filter(n => n.actif && membresIds.has(n.utilisateur));
-          this.equipee = this.noeudsEquipe.length > 0;
-          if (this.equipee) {
-            this.destinataireId = this.noeudsEquipe[0].id;
-            this.compagnonService.getAll().subscribe(compagnons => {
-              this.compagnons = compagnons.filter(c => c.actif);
-              this.compagnonId = this.compagnons.find(c => c.principal)?.id || this.compagnons[0]?.id || '';
-            });
-          }
-          // Le canal d'équipe reste affiché même sans membre équipé d'un nœud personnel —
-          // seule la composition d'un DM (destinataire) en dépend.
-          this.chargerMessages(true);
-        });
+    // messageables()/envoyables() (résumés minimaux, jamais l'identité réelle en zone DEMO)
+    // plutôt que getAll() (bloqué en zone DEMO, voir NoeudMeshUtilisateurViewSet/
+    // CompagnonMeshCoreViewSet) — le filtrage par équipe se fait déjà côté serveur.
+    this.noeudService.messageables(this.equipeId).subscribe({
+      next: (noeuds) => {
+        this.noeudsEquipe = noeuds as NoeudMeshUtilisateur[];
+        this.equipee = this.noeudsEquipe.length > 0;
+        if (this.equipee) {
+          this.destinataireId = this.noeudsEquipe[0].id;
+          this.compagnonService.envoyables().subscribe(compagnons => {
+            this.compagnons = compagnons as CompagnonMeshCore[];
+            this.compagnonId = this.compagnons.find(c => c.principal)?.id || this.compagnons[0]?.id || '';
+          });
+        }
+        // Le canal d'équipe reste affiché même sans membre équipé d'un nœud personnel —
+        // seule la composition d'un DM (destinataire) en dépend.
+        this.chargerMessages(true);
       },
       error: () => { this.erreur = "Impossible de vérifier l'équipement MeshCore de cette équipe."; this.chargement = false; },
     });

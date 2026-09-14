@@ -797,3 +797,369 @@ class TestCanalMeshCoreEquipe:
 
         assert response.status_code == status.HTTP_200_OK
         assert response.data[0]['canal_idx'] == 5
+
+
+# ── Zone DEMO : nœuds/companions restent affectés, joignables et sur la carte, mais leur
+# paramétrage/affectation n'est ni consultable ni modifiable — messages sortants systématiquement
+# préfixés et raccourcis. Demande explicite du 14/09, suite à l'incident de fuite d'identité
+# constaté en testant le déploiement .114. ──────────────────────────────────────────────────
+
+def _institutional_demo_user(create_user, institution, **kwargs):
+    """Un compte institutionnel ET habilité en DEMO (demo_role) — sans demo_role, le rôle
+    EFFECTIF en zone DEMO (voir get_effective_role) n'est pas institutionnel du tout, et un 403
+    ne prouverait rien de spécifique à DenyInDemo (voir test_user_demo_masking.py, même
+    piège)."""
+    defaults = {'type': 'AUT_LOCALE', 'demo_role': 'AUT_LOCALE'}
+    defaults.update(kwargs)
+    user = create_user(**defaults)
+    ContactInstitution.objects.create(institution=institution, utilisateur=user, actif=True)
+    return user
+
+
+@pytest.mark.django_db
+class TestDemoZoneBlocksMeshCoreWrites:
+    """DenyInDemo : create/update/destroy sur CompagnonMeshCore et NoeudMeshUtilisateur
+    refusés en zone DEMO, même pour un compte par ailleurs institutionnel."""
+
+    def test_create_compagnon_denied_in_demo(self, create_user, institution_a):
+        user = _institutional_demo_user(create_user, institution_a, username='demo-create-compagnon@test.fr', email='demo-create-compagnon@test.fr')
+        client = APIClient()
+        client.force_authenticate(user=user)
+        client.credentials(HTTP_X_ENVIRONMENT='DEMO')
+
+        response = client.post(reverse('compagnonmeshcore-list'), {
+            'nom': 'Companion demo', 'connexion_type': 'TCP', 'tcp_host': '10.0.0.1', 'tcp_port': 5000,
+            'institution': str(institution_a.id),
+        }, format='json')
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert not CompagnonMeshCore.objects.filter(nom='Companion demo').exists()
+
+    def test_update_compagnon_denied_in_demo(self, create_user, institution_a, compagnon):
+        user = _institutional_demo_user(create_user, institution_a, username='demo-update-compagnon@test.fr', email='demo-update-compagnon@test.fr')
+        client = APIClient()
+        client.force_authenticate(user=user)
+        client.credentials(HTTP_X_ENVIRONMENT='DEMO')
+
+        response = client.patch(reverse('compagnonmeshcore-detail', args=[compagnon.id]), {'nom': 'Renommé depuis la démo'}, format='json')
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        compagnon.refresh_from_db()
+        assert compagnon.nom != 'Renommé depuis la démo'
+
+    def test_create_compagnon_allowed_in_prod(self, mairie_client, institution_a):
+        client, _ = mairie_client
+        response = client.post(reverse('compagnonmeshcore-list'), {
+            'nom': 'Companion prod', 'connexion_type': 'TCP', 'tcp_host': '10.0.0.2', 'tcp_port': 5000,
+            'institution': str(institution_a.id),
+        }, format='json')
+        assert response.status_code == status.HTTP_201_CREATED
+
+    def test_create_noeud_denied_in_demo(self, create_user, institution_a):
+        user = _institutional_demo_user(create_user, institution_a, username='demo-create-noeud@test.fr', email='demo-create-noeud@test.fr')
+        terrain = create_user(username='terrain-demo-noeud@test.fr', email='terrain-demo-noeud@test.fr', type='UTIL_SIMPLE')
+        client = APIClient()
+        client.force_authenticate(user=user)
+        client.credentials(HTTP_X_ENVIRONMENT='DEMO')
+
+        response = client.post(reverse('noeudmeshutilisateur-list'), {
+            'utilisateur': str(terrain.id), 'pubkey_hex': 'demo-write-blocked',
+        }, format='json')
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert not NoeudMeshUtilisateur.objects.filter(pubkey_hex='demo-write-blocked').exists()
+
+    def test_destroy_noeud_denied_in_demo(self, create_user, institution_a):
+        user = _institutional_demo_user(create_user, institution_a, username='demo-destroy-noeud@test.fr', email='demo-destroy-noeud@test.fr')
+        terrain = create_user(username='terrain-demo-destroy@test.fr', email='terrain-demo-destroy@test.fr', type='UTIL_SIMPLE')
+        noeud = NoeudMeshUtilisateur.objects.create(utilisateur=terrain, pubkey_hex='demo-destroy-target')
+        client = APIClient()
+        client.force_authenticate(user=user)
+        client.credentials(HTTP_X_ENVIRONMENT='DEMO')
+
+        response = client.delete(reverse('noeudmeshutilisateur-detail', args=[noeud.id]))
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert NoeudMeshUtilisateur.objects.filter(id=noeud.id).exists()
+
+
+@pytest.mark.django_db
+class TestDemoZoneRedactsMeshCoreReads:
+    """La LECTURE (list/retrieve) reste volontairement accessible en zone DEMO — sans ça, la
+    messagerie d'équipe (EquipeMessagerieMeshComponent) casserait — mais les champs qui
+    révèlent la vraie identité/topologie réseau sont masqués à l'affichage, jamais en base."""
+
+    def test_compagnon_network_config_masked_in_demo(self, create_user, institution_a, compagnon):
+        user = _institutional_demo_user(create_user, institution_a, username='demo-read-compagnon@test.fr', email='demo-read-compagnon@test.fr')
+        client = APIClient()
+        client.force_authenticate(user=user)
+        client.credentials(HTTP_X_ENVIRONMENT='DEMO')
+
+        response = client.get(reverse('compagnonmeshcore-detail', args=[compagnon.id]))
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['tcp_host'] is None
+        assert response.data['tcp_port'] is None
+        assert response.data['nom'] == compagnon.nom
+
+    def test_compagnon_network_config_visible_in_prod(self, mairie_client, compagnon):
+        client, _ = mairie_client
+        response = client.get(reverse('compagnonmeshcore-detail', args=[compagnon.id]))
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['tcp_host'] == compagnon.tcp_host
+
+    def test_noeud_identity_masked_in_demo(self, create_user, institution_a):
+        user = _institutional_demo_user(create_user, institution_a, username='demo-read-noeud@test.fr', email='demo-read-noeud@test.fr')
+        terrain = create_user(
+            username='terrain-redact@test.fr', email='terrain-redact@test.fr', type='UTIL_SIMPLE',
+            first_name='Alice', last_name='Terrain',
+        )
+        noeud = NoeudMeshUtilisateur.objects.create(utilisateur=terrain, pubkey_hex='redactme123', nom_noeud='Radio Alice')
+        client = APIClient()
+        client.force_authenticate(user=user)
+        client.credentials(HTTP_X_ENVIRONMENT='DEMO')
+
+        response = client.get(reverse('noeudmeshutilisateur-detail', args=[noeud.id]))
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['utilisateur'] is None
+        assert response.data['utilisateur_nom'] == 'Nœud de terrain'
+        assert 'Alice' not in response.data['utilisateur_nom']
+        # Le pubkey reste présent : sans lui, le nœud ne serait plus adressable par message.
+        assert response.data['pubkey_hex'] == 'redactme123'
+
+    def test_noeud_identity_visible_in_prod(self, mairie_client, create_user):
+        client, _ = mairie_client
+        terrain = create_user(
+            username='terrain-visible@test.fr', email='terrain-visible@test.fr', type='UTIL_SIMPLE',
+            first_name='Bob', last_name='Terrain',
+        )
+        noeud = NoeudMeshUtilisateur.objects.create(utilisateur=terrain, pubkey_hex='visible123')
+
+        response = client.get(reverse('noeudmeshutilisateur-detail', args=[noeud.id]))
+
+        assert response.status_code == status.HTTP_200_OK
+        assert str(response.data['utilisateur']) == str(terrain.id)
+        assert 'Bob' in response.data['utilisateur_nom']
+
+
+@pytest.mark.django_db
+class TestDemoZoneMinimalEndpoints:
+    """envoyables()/messageables() : résumés minimaux utilisés par la messagerie d'équipe pour
+    composer un DM sans jamais passer par la lecture complète — fonctionnent aussi bien en
+    zone DEMO (anonymisés) qu'en PROD (identité réelle)."""
+
+    def test_envoyables_hides_network_config(self, mairie_client, compagnon):
+        client, _ = mairie_client
+        response = client.get(reverse('compagnonmeshcore-envoyables'))
+        assert response.status_code == status.HTTP_200_OK
+        entry = next(c for c in response.data if c['id'] == str(compagnon.id))
+        assert set(entry.keys()) == {'id', 'nom', 'principal'}
+
+    def test_envoyables_excludes_inactive(self, mairie_client, compagnon):
+        compagnon.actif = False
+        compagnon.save(update_fields=['actif'])
+        client, _ = mairie_client
+        response = client.get(reverse('compagnonmeshcore-envoyables'))
+        assert response.data == []
+
+    def test_messageables_requires_equipe_param(self, mairie_client):
+        client, _ = mairie_client
+        response = client.get(reverse('noeudmeshutilisateur-messageables'))
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_messageables_anonymizes_in_demo_keeps_pubkey(self, create_user, institution_a):
+        from core.models import Team
+
+        user = _institutional_demo_user(create_user, institution_a, username='demo-messageables@test.fr', email='demo-messageables@test.fr')
+        terrain = create_user(
+            username='terrain-messageables@test.fr', email='terrain-messageables@test.fr', type='UTIL_SIMPLE',
+            first_name='Carole', last_name='Terrain',
+        )
+        equipe = Team.objects.create(name='Équipe messageables', institution=institution_a)
+        equipe.members.add(terrain)
+        NoeudMeshUtilisateur.objects.create(utilisateur=terrain, pubkey_hex='messageable-pubkey', nom_noeud='Radio Carole')
+
+        client = APIClient()
+        client.force_authenticate(user=user)
+        client.credentials(HTTP_X_ENVIRONMENT='DEMO')
+        response = client.get(reverse('noeudmeshutilisateur-messageables'), {'equipe': str(equipe.id)})
+
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data) == 1
+        assert response.data[0]['pubkey_hex'] == 'messageable-pubkey'
+        assert response.data[0]['utilisateur_nom'] == 'Nœud de terrain'
+        assert 'Carole' not in response.data[0]['utilisateur_nom']
+
+    def test_messageables_shows_real_name_in_prod(self, mairie_client, create_user, institution_a):
+        from core.models import Team
+
+        client, _ = mairie_client
+        terrain = create_user(
+            username='terrain-messageables-prod@test.fr', email='terrain-messageables-prod@test.fr', type='UTIL_SIMPLE',
+            first_name='Denis', last_name='Terrain',
+        )
+        equipe = Team.objects.create(name='Équipe messageables prod', institution=institution_a)
+        equipe.members.add(terrain)
+        NoeudMeshUtilisateur.objects.create(utilisateur=terrain, pubkey_hex='messageable-prod-pubkey')
+
+        response = client.get(reverse('noeudmeshutilisateur-messageables'), {'equipe': str(equipe.id)})
+
+        assert response.status_code == status.HTTP_200_OK
+        assert 'Denis' in response.data[0]['utilisateur_nom']
+
+
+@pytest.mark.django_db
+class TestDemoZonePositionsEnMissionRedaction:
+    """positions_en_mission (carte) : même anonymisation que messageables en zone DEMO, la
+    position elle-même reste exposée (voir NoeudMeshUtilisateurViewSet)."""
+
+    def _equipe_en_mission(self, utilisateur, institution, statut='EN_COURS'):
+        from core.models import Mission, Team
+        equipe = Team.objects.create(name=f"Equipe demo {utilisateur.email}", institution=institution)
+        equipe.members.add(utilisateur)
+        mission = Mission.objects.create(titre='Reconnaissance démo', statut=statut)
+        equipe.mission_active = mission
+        equipe.save(update_fields=['mission_active'])
+        return equipe, mission
+
+    def test_position_anonymized_in_demo(self, create_user, institution_a, compagnon):
+        from core.models import ContactMeshCore
+
+        user = _institutional_demo_user(create_user, institution_a, username='demo-position@test.fr', email='demo-position@test.fr')
+        terrain = create_user(
+            username='terrain-position-demo@test.fr', email='terrain-position-demo@test.fr', type='UTIL_SIMPLE',
+            first_name='Eve', last_name='Terrain',
+        )
+        equipe, mission = self._equipe_en_mission(terrain, institution_a, statut='EN_COURS')
+        NoeudMeshUtilisateur.objects.create(utilisateur=terrain, pubkey_hex='position-demo', nom_noeud='Radio Eve')
+        ContactMeshCore.objects.create(
+            compagnon=compagnon, pubkey_hex='position-demo', type_contact='COMPANION',
+            location='POINT (5.72 45.18)',
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=user)
+        client.credentials(HTTP_X_ENVIRONMENT='DEMO')
+        response = client.get(reverse('noeudmeshutilisateur-positions-en-mission'))
+
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data) == 1
+        resultat = response.data[0]
+        # La position/le pubkey restent exposés : c'est ce qui fait apparaître le nœud sur la
+        # carte et le garde joignable par message.
+        assert resultat['pubkey_hex'] == 'position-demo'
+        assert resultat['latitude'] == pytest.approx(45.18)
+        assert resultat['longitude'] == pytest.approx(5.72)
+        # L'identité réelle et le contexte équipe/mission, eux, sont masqués.
+        assert resultat['utilisateur_id'] is None
+        assert resultat['utilisateur_nom'] == 'Nœud de terrain'
+        assert resultat['equipe_id'] is None
+        assert resultat['equipe_nom'] is None
+        assert resultat['mission_titre'] is None
+
+    def test_position_shows_real_identity_in_prod(self, mairie_client, create_user, institution_a, compagnon):
+        from core.models import ContactMeshCore
+
+        client, _ = mairie_client
+        terrain = create_user(
+            username='terrain-position-prod@test.fr', email='terrain-position-prod@test.fr', type='UTIL_SIMPLE',
+            first_name='Farid', last_name='Terrain',
+        )
+        equipe, mission = self._equipe_en_mission(terrain, institution_a, statut='EN_COURS')
+        NoeudMeshUtilisateur.objects.create(utilisateur=terrain, pubkey_hex='position-prod')
+        ContactMeshCore.objects.create(
+            compagnon=compagnon, pubkey_hex='position-prod', type_contact='COMPANION',
+            location='POINT (5.72 45.18)',
+        )
+
+        response = client.get(reverse('noeudmeshutilisateur-positions-en-mission'))
+
+        assert response.status_code == status.HTTP_200_OK
+        resultat = response.data[0]
+        assert 'Farid' in resultat['utilisateur_nom']
+        assert resultat['utilisateur_id'] == str(terrain.id)
+        assert resultat['equipe_nom'] == equipe.name
+        assert resultat['mission_titre'] == mission.titre
+
+
+@pytest.mark.django_db
+class TestDemoZoneMessageContent:
+    """Un message MeshCore sortant composé depuis la zone DEMO part vers du vrai matériel radio
+    tenu par de vraies personnes : toujours préfixé "[démo] " et raccourci — voir
+    _contenu_message_mesh_demo dans views.py."""
+
+    def test_dm_sortant_prefixed_and_truncated_in_demo(self, create_user, institution_a, compagnon):
+        user = _institutional_demo_user(create_user, institution_a, username='demo-dm-send@test.fr', email='demo-dm-send@test.fr')
+        client = APIClient()
+        client.force_authenticate(user=user)
+        client.credentials(HTTP_X_ENVIRONMENT='DEMO')
+
+        contenu_long = 'x' * 200
+        response = client.post(reverse('messagemeshlog-list'), {
+            'compagnon': str(compagnon.id), 'direction': 'SORTANT',
+            'contact_pubkey_hex': 'demo-dm-target', 'contenu': contenu_long,
+        }, format='json')
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data['contenu'].startswith('[démo] ')
+        assert len(response.data['contenu']) <= 100
+
+    def test_dm_sortant_not_double_prefixed_in_demo(self, create_user, institution_a, compagnon):
+        user = _institutional_demo_user(create_user, institution_a, username='demo-dm-doubleprefix@test.fr', email='demo-dm-doubleprefix@test.fr')
+        client = APIClient()
+        client.force_authenticate(user=user)
+        client.credentials(HTTP_X_ENVIRONMENT='DEMO')
+
+        response = client.post(reverse('messagemeshlog-list'), {
+            'compagnon': str(compagnon.id), 'direction': 'SORTANT',
+            'contact_pubkey_hex': 'demo-dm-target2', 'contenu': '[démo] déjà préfixé',
+        }, format='json')
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data['contenu'] == '[démo] déjà préfixé'
+        assert response.data['contenu'].count('[démo]') == 1
+
+    def test_dm_sortant_not_prefixed_in_prod(self, mairie_client, compagnon):
+        client, _ = mairie_client
+        response = client.post(reverse('messagemeshlog-list'), {
+            'compagnon': str(compagnon.id), 'direction': 'SORTANT',
+            'contact_pubkey_hex': 'prod-dm-target', 'contenu': 'Message de production, pas raccourci du tout',
+        }, format='json')
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data['contenu'] == 'Message de production, pas raccourci du tout'
+
+    def test_dm_entrant_never_altered_in_demo(self, api_client, compagnon, create_user):
+        """Un message ENTRANT (déposé par le pont, jamais composé par un humain) ne doit
+        jamais être réécrit, même si le pont tourne avec X-Environment: DEMO (ne devrait pas
+        arriver en pratique, mais la fonction ne doit s'appliquer qu'à SORTANT)."""
+        bridge_user = create_user(username='bridge-demo-entrant@test.fr', email='bridge-demo-entrant@test.fr', type='UTIL_SIMPLE')
+        api_client.force_authenticate(user=bridge_user)
+        api_client.credentials(HTTP_X_ENVIRONMENT='DEMO')
+
+        response = api_client.post(reverse('messagemeshlog-list'), {
+            'compagnon': str(compagnon.id), 'direction': 'ENTRANT',
+            'contact_pubkey_hex': 'entrant-demo', 'contenu': 'Message entrant réel, inchangé',
+        }, format='json')
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data['contenu'] == 'Message entrant réel, inchangé'
+
+    def test_canal_message_prefixed_in_demo(self, create_user, institution_a, compagnon):
+        from core.models import CanalMeshCore, Team
+
+        user = _institutional_demo_user(create_user, institution_a, username='demo-canal-send@test.fr', email='demo-canal-send@test.fr')
+        equipe = Team.objects.create(name='Équipe canal démo', institution=institution_a)
+        canal = CanalMeshCore.objects.create(equipe=equipe, nom='Canal démo', cle_partagee_hex='ab' * 16, compagnon=compagnon, canal_idx=2)
+
+        client = APIClient()
+        client.force_authenticate(user=user)
+        client.credentials(HTTP_X_ENVIRONMENT='DEMO')
+        response = client.post(reverse('messagecanalmeshcore-list'), {
+            'canal': str(canal.id), 'direction': 'SORTANT', 'contenu': 'y' * 200,
+        }, format='json')
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data['contenu'].startswith('[démo] ')
+        assert len(response.data['contenu']) <= 100

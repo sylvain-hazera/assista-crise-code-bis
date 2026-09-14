@@ -24,6 +24,15 @@ export class NoeudMeshUtilisateurService {
     return this.http.get<PositionNoeudMission[]>(`${this.url}/positions-en-mission/`);
   }
 
+  /** GET /api/noeuds-meshcore/messageables/?equipe=<id> — résumé minimal (jamais
+   * utilisateur/utilisateur_id) des nœuds équipés de cette équipe, pour composer un DM sans
+   * passer par getAll() (bloqué en zone DEMO, voir NoeudMeshUtilisateurViewSet). */
+  messageables(equipeId: string): Observable<Pick<NoeudMeshUtilisateur, 'id' | 'pubkey_hex' | 'nom_noeud' | 'utilisateur_nom'>[]> {
+    return this.http.get<Pick<NoeudMeshUtilisateur, 'id' | 'pubkey_hex' | 'nom_noeud' | 'utilisateur_nom'>[]>(
+      `${this.url}/messageables/`, { params: { equipe: equipeId } },
+    );
+  }
+
   create(data: Partial<NoeudMeshUtilisateur>): Observable<NoeudMeshUtilisateur> {
     return this.http.post<NoeudMeshUtilisateur>(`${this.url}/`, data);
   }

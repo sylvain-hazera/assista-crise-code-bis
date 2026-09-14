@@ -16,6 +16,13 @@ export class CompagnonMeshCoreService {
     return this.http.get<CompagnonMeshCore[]>(`${this.url}/`);
   }
 
+  /** GET /api/compagnons-meshcore/envoyables/ — résumé minimal (id/nom/principal, jamais la
+   * config réseau) pour choisir un émetteur de DM sans passer par getAll() (bloqué en zone
+   * DEMO, voir CompagnonMeshCoreViewSet). */
+  envoyables(): Observable<Pick<CompagnonMeshCore, 'id' | 'nom' | 'principal'>[]> {
+    return this.http.get<Pick<CompagnonMeshCore, 'id' | 'nom' | 'principal'>[]>(`${this.url}/envoyables/`);
+  }
+
   create(data: Partial<CompagnonMeshCore>): Observable<CompagnonMeshCore> {
     return this.http.post<CompagnonMeshCore>(`${this.url}/`, data);
   }
