@@ -4019,16 +4019,25 @@ class ContactMeshCore(EnvironmentScopedModel):
         return f"{self.nom or self.pubkey_hex[:12]} ({self.type_contact})"
 
 
+class MeshtasticConnexionType(models.TextChoices):
+    MQTT = "MQTT", "Broker MQTT (réseau tiers, ex: Gaulix)"
+    # Connexion locale directe à un VRAI appareil (API TCP native du firmware, port 4403 par
+    # défaut) — via la lib officielle `meshtastic` (TCPInterface), pas le chiffrement fait
+    # maison de crypto.py : c'est le firmware lui-même qui gère le PSK/PKI, comme le fait
+    # l'appli officielle en WiFi local. Pensé pour l'usage offline (PC sans accès internet,
+    # donc sans broker MQTT joignable) — voir meshtastic-bridge/bridge.py:demarrer_tcp.
+    TCP = "TCP", "Connexion locale directe (réseau, sans internet)"
+
+
 class CompagnonMeshtastic(EnvironmentScopedModel):
-    """Identité de nœud Meshtastic PUREMENT LOGICIELLE (aucun appareil radio réel) utilisée
-    comme passerelle assista-crise <-> réseau Meshtastic via un broker MQTT tiers (ex: Gaulix,
-    `mqtt.gaulix.fr` — réseau communautaire français, voir meshtastic-bridge/README.md), pilotée
-    par meshtastic-bridge/bridge.py. Contrairement à CompagnonMeshCore (toujours un vrai
-    appareil en série/BLE/TCP), il n'y a ici ni firmware ni radio : `node_num` est un identifiant
-    32 bits que NOUS choisissons nous-mêmes pour cette identité logicielle, et le chiffrement
-    (AES-CTR par canal) est réimplémenté côté pont — voir meshtastic-bridge/crypto.py, dérivé du
-    firmware officiel (CryptoEngine.cpp, Channels.cpp) car la lib Python `meshtastic` ne fait que
-    piloter un vrai appareil et ne chiffre jamais elle-même."""
+    """Identité de nœud Meshtastic — soit PUREMENT LOGICIELLE relayée par un broker MQTT tiers
+    (ex: Gaulix, `mqtt.gaulix.fr`), soit un VRAI appareil joint en direct par IP locale
+    (`connexion_type=TCP`, voir MeshtasticConnexionType) — pilotée par
+    meshtastic-bridge/bridge.py. En mode MQTT, il n'y a ni firmware ni radio : `node_num` est un
+    identifiant 32 bits que NOUS choisissons nous-mêmes, et le chiffrement (AES-CTR par canal)
+    est réimplémenté côté pont — voir meshtastic-bridge/crypto.py, dérivé du firmware officiel
+    (CryptoEngine.cpp, Channels.cpp). En mode TCP, `node_num`/le chiffrement sont sans objet
+    pour NOUS : le firmware du vrai appareil connecté s'en charge lui-même."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
@@ -4037,6 +4046,10 @@ class CompagnonMeshtastic(EnvironmentScopedModel):
     )
 
     nom = models.CharField(max_length=100)
+
+    connexion_type = models.CharField(max_length=10, choices=MeshtasticConnexionType.choices, default=MeshtasticConnexionType.MQTT)
+    tcp_host = models.CharField(max_length=255, null=True, blank=True, help_text="IP/hostname du vrai appareil (mode TCP local uniquement).")
+    tcp_port = models.PositiveIntegerField(null=True, blank=True, default=4403)
 
     node_num = models.PositiveBigIntegerField(
         unique=True,

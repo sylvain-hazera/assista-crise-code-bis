@@ -615,20 +615,95 @@ async def boucle_annonce_identite(mqtt_client, compagnon, registre, cle_publique
 
 
 async def demarrer_pour_compagnon(django, compagnon):
-    """Boucle de surveillance d'UN companion/broker : relance _executer_compagnon indéfiniment
-    en cas d'échec (broker injoignable, déconnexion...) SANS jamais laisser une exception
-    remonter jusqu'au asyncio.gather() de main() — sinon un seul broker en panne ferait planter
-    tout le pont, y compris les autres brokers qui fonctionnent (demande explicite du 14/09 :
-    plusieurs brokers actifs en parallèle, donc isolés les uns des autres)."""
+    """Boucle de surveillance d'UN companion : relance l'exécution indéfiniment en cas
+    d'échec (broker/appareil injoignable, déconnexion...) SANS jamais laisser une exception
+    remonter jusqu'au asyncio.gather() de main() — sinon un seul companion en panne ferait
+    planter tout le pont, y compris les autres qui fonctionnent (demande explicite du 14/09 :
+    plusieurs companions actifs en parallèle, donc isolés les uns des autres). Deux modes
+    possibles (voir CompagnonMeshtastic.connexion_type côté Django) : MQTT (broker tiers, ex:
+    Gaulix, chiffrement fait maison) ou TCP (connexion locale directe à un vrai appareil, lib
+    officielle `meshtastic`, pensé pour l'usage offline sans internet)."""
+    executer = _executer_compagnon_tcp if compagnon.get("connexion_type") == "TCP" else _executer_compagnon_mqtt
     while True:
         try:
-            await _executer_compagnon(django, compagnon)
+            await executer(django, compagnon)
         except Exception:
-            logger.exception("Échec du companion '%s' (%s) — nouvelle tentative dans %ds.", compagnon["nom"], compagnon["broker_host"], RECONNECT_DELAY_SECONDS)
+            logger.exception("Échec du companion '%s' — nouvelle tentative dans %ds.", compagnon["nom"], RECONNECT_DELAY_SECONDS)
         await asyncio.sleep(RECONNECT_DELAY_SECONDS)
 
 
-async def _executer_compagnon(django, compagnon):
+async def _executer_compagnon_tcp(django, compagnon):
+    """Connexion locale directe à un VRAI appareil (API TCP native du firmware, lib officielle
+    `meshtastic`) — contrairement au mode MQTT, le firmware gère lui-même le PSK/PKI, comme le
+    fait l'appli officielle en WiFi local : aucun chiffrement fait maison ici. Limité en v1 aux
+    DM (envoi/réception) et à la réception de messages de canal — pas d'envoi sur un canal
+    précis : les canaux d'un vrai appareil sont déjà configurés dessus (PSK gérées par son
+    propre firmware), pas par CanalMeshtastic (pensé pour le mode MQTT logiciel)."""
+    from pubsub import pub
+    from meshtastic.tcp_interface import TCPInterface
+
+    boucle = asyncio.get_running_loop()
+    file_a_planifier = asyncio.Queue()
+    node_num = {"valeur": compagnon["node_num"]}
+
+    def on_receive(packet, interface):
+        try:
+            decoded = packet.get("decoded") or {}
+            if decoded.get("portnum") != "TEXT_MESSAGE_APP":
+                return
+            texte = decoded.get("text")
+            if texte is None:
+                return
+            expediteur = packet.get("from")
+            destinataire = packet.get("to", BROADCAST_NUM)
+            if destinataire == node_num["valeur"]:
+                coro = django.logger_dm_entrant(compagnon["id"], None, expediteur, texte)
+            elif destinataire == BROADCAST_NUM:
+                coro = django.logger_canal_entrant(None, expediteur, texte)
+            else:
+                return
+            boucle.call_soon_threadsafe(file_a_planifier.put_nowait, coro)
+        except Exception:
+            logger.exception("Échec de traitement d'un paquet TCP entrant (%s).", compagnon["nom"])
+
+    def on_connection(interface, topic=None):
+        if interface.myInfo is not None:
+            node_num["valeur"] = interface.myInfo.my_node_num
+        boucle.call_soon_threadsafe(file_a_planifier.put_nowait, django.rapporter_etat(compagnon["id"], "CONNECTE"))
+
+    def on_lost(interface):
+        boucle.call_soon_threadsafe(file_a_planifier.put_nowait, django.rapporter_etat(compagnon["id"], "DECONNECTE"))
+
+    pub.subscribe(on_receive, "meshtastic.receive")
+    pub.subscribe(on_connection, "meshtastic.connection.established")
+    pub.subscribe(on_lost, "meshtastic.connection.lost")
+
+    logger.info("Companion Meshtastic '%s' — connexion TCP locale à %s:%s...", compagnon["nom"], compagnon["tcp_host"], compagnon["tcp_port"])
+    iface = TCPInterface(hostname=compagnon["tcp_host"], portNumber=compagnon["tcp_port"])
+
+    async def boucle_envoi_dm_tcp():
+        while True:
+            try:
+                for message in await django.dm_a_envoyer(compagnon["id"]):
+                    iface.sendText(message["contenu"], destinationId=message["contact_node_num"])
+                    await django.marquer_dm(message["id"], "ENVOYE")
+            except Exception:
+                logger.exception("Échec du cycle d'envoi des DM (TCP, %s).", compagnon["nom"])
+            await asyncio.sleep(POLL_INTERVAL_SECONDS)
+
+    try:
+        await asyncio.gather(
+            boucle_execution_planifiee(file_a_planifier),
+            boucle_envoi_dm_tcp(),
+        )
+    finally:
+        pub.unsubscribe(on_receive, "meshtastic.receive")
+        pub.unsubscribe(on_connection, "meshtastic.connection.established")
+        pub.unsubscribe(on_lost, "meshtastic.connection.lost")
+        iface.close()
+
+
+async def _executer_compagnon_mqtt(django, compagnon):
     cle_privee_hex = compagnon["x25519_private_key_hex"]
     logger.info(
         "Companion Meshtastic '%s' (node_num=%08x, broker %s:%s, clé publique X25519 %s...).",

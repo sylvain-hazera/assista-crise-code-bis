@@ -1,14 +1,23 @@
+export type MeshtasticConnexionType = 'MQTT' | 'TCP';
+
 export interface CompagnonMeshtastic {
   id: string;
   nom: string;
-  /** Identifiant 32 bits de cette identité logicielle sur le mesh Meshtastic (choisi à la
-   * création, pas dérivé d'un matériel réel — ce companion n'est pas un appareil physique). */
+  /** MQTT (broker tiers, ex: Gaulix) ou TCP (connexion locale directe à un vrai appareil,
+   * usage offline sans internet — voir MeshtasticConnexionType côté Django). */
+  connexion_type: MeshtasticConnexionType;
+  /** IP/hostname du vrai appareil (mode TCP local uniquement, port par défaut 4403). */
+  tcp_host?: string | null;
+  tcp_port?: number | null;
+  /** Identifiant 32 bits — en mode MQTT, choisi par nous (identité logicielle) ; en mode TCP,
+   * le vrai numéro de l'appareil connecté, lu automatiquement à la détection. */
   node_num: number;
   long_name?: string;
   short_name?: string;
   /** Clé publique X25519 dérivée côté serveur (jamais la privée, jamais exposée) — à
    * communiquer au correspondant si on veut qu'il déclare aussi notre clé de son côté, pour
-   * un DM chiffré par clé publique dans les deux sens (PKI, firmware 2.5+). */
+   * un DM chiffré par clé publique dans les deux sens (PKI, firmware 2.5+). Sans objet en
+   * mode TCP (le firmware du vrai appareil gère son propre chiffrement). */
   x25519_public_key_hex?: string;
 
   broker_host: string;

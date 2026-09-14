@@ -16,6 +16,29 @@
   </div>
 } @else {
 <div class="create-panel">
+  <h3>Connexion locale directe (détection automatique)</h3>
+  <p class="page-hint">
+    Pour l'usage hors ligne (PC sans internet) : donnez juste l'IP et le port d'un vrai
+    appareil sur le réseau local — la connexion est essayée automatiquement, le protocole
+    (Meshtastic ou MeshCore) est détecté tout seul, et le bon companion est créé.
+  </p>
+  <div class="form-row">
+    <input type="text" class="form-input" placeholder="Adresse IP (ex: 192.168.1.42)" [(ngModel)]="detectIp">
+    <input type="number" class="form-input form-input-sm" placeholder="Port" [(ngModel)]="detectPort">
+    <input type="text" class="form-input" placeholder="Nom (optionnel)" [(ngModel)]="detectNom">
+  </div>
+  @if (detectError) {
+    <p class="error-message">{{ detectError }}</p>
+  }
+  @if (detectResultat) {
+    <p class="success-message">{{ detectResultat }}</p>
+  }
+  <button type="button" class="btn-primary" [disabled]="!formDetectValide || detecting" (click)="detecterEtCreer()">
+    {{ detecting ? 'Détection en cours…' : 'Détecter et connecter' }}
+  </button>
+</div>
+
+<div class="create-panel">
   <h3>Ajouter un companion</h3>
   <div class="form-row">
     <input type="text" class="form-input" placeholder="Nom (ex: Poste de commandement)" [(ngModel)]="nouveauNom">

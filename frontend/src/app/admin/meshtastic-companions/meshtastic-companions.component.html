@@ -11,6 +11,30 @@
 </div>
 
 <div class="create-panel">
+  <h3>Connexion locale directe (détection automatique)</h3>
+  <p class="page-hint">
+    Pour l'usage hors ligne (PC sans internet) : donnez juste l'IP et le port d'un vrai
+    appareil sur le réseau local — la connexion est essayée automatiquement, le protocole
+    (Meshtastic ou MeshCore) est détecté tout seul, et le bon companion est créé (port par
+    défaut de l'API locale Meshtastic : 4403).
+  </p>
+  <div class="form-row">
+    <input type="text" class="form-input" placeholder="Adresse IP (ex: 192.168.1.42)" [(ngModel)]="detectIp">
+    <input type="number" class="form-input form-input-sm" placeholder="Port" [(ngModel)]="detectPort">
+    <input type="text" class="form-input" placeholder="Nom (optionnel)" [(ngModel)]="detectNom">
+  </div>
+  @if (detectError) {
+    <p class="error-message">{{ detectError }}</p>
+  }
+  @if (detectResultat) {
+    <p class="success-message">{{ detectResultat }}</p>
+  }
+  <button type="button" class="btn-primary" [disabled]="!formDetectValide || detecting" (click)="detecterEtCreer()">
+    {{ detecting ? 'Détection en cours…' : 'Détecter et connecter' }}
+  </button>
+</div>
+
+<div class="create-panel">
   <h3>Ajouter une connexion MQTT</h3>
   <div class="form-row">
     <input type="text" class="form-input" placeholder="Nom (ex: Gaulix)" [(ngModel)]="nouveauNom">
@@ -112,9 +136,13 @@
               <td>{{ c.nom }}</td>
               <td class="mono">{{ nodeNumHex(c.node_num) }}</td>
               <td class="mono">
-                {{ c.broker_host }}:{{ c.broker_port }}
-                @if (c.mqtt_use_tls) { <span title="SSL/TLS">🔒</span> }
-                @if (c.mqtt_username) { <span [title]="'Authentifié (' + c.mqtt_username + ')'">🔑</span> }
+                @if (c.connexion_type === 'TCP') {
+                  <span title="Connexion locale directe">📡</span> {{ c.tcp_host }}:{{ c.tcp_port }}
+                } @else {
+                  {{ c.broker_host }}:{{ c.broker_port }}
+                  @if (c.mqtt_use_tls) { <span title="SSL/TLS">🔒</span> }
+                  @if (c.mqtt_username) { <span [title]="'Authentifié (' + c.mqtt_username + ')'">🔑</span> }
+                }
               </td>
               <td>
                 <span class="statut" [ngClass]="c.chiffrement_supporte ? 'statut-ok' : 'statut-inconnu'">

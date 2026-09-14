@@ -45,6 +45,24 @@ class TestChiffrementSupporte:
     def test_default_false(self, compagnon):
         assert compagnon.chiffrement_supporte is False
 
+
+@pytest.mark.django_db
+class TestConnexionTypeTcpLocal:
+
+    def test_default_mqtt(self, compagnon):
+        assert compagnon.connexion_type == 'MQTT'
+        assert compagnon.tcp_host is None
+
+    def test_can_create_tcp_companion(self, institutional_client):
+        client, _ = institutional_client
+        response = client.post(reverse('compagnonmeshtastic-list'), {
+            'nom': 'Nœud local', 'node_num': 999999,
+            'connexion_type': 'TCP', 'tcp_host': '192.168.1.10', 'tcp_port': 4403,
+        }, format='json')
+        assert response.status_code == status.HTTP_201_CREATED, response.data
+        assert response.data['connexion_type'] == 'TCP'
+        assert response.data['tcp_host'] == '192.168.1.10'
+
     def test_exposed_and_writable_via_create(self, institutional_client):
         client, _ = institutional_client
         response = client.post(reverse('compagnonmeshtastic-list'), {

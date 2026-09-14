@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 
 import { CompagnonMeshCoreService } from '../../services/compagnon-meshcore.service';
+import { MeshLocalDetecterService } from '../../services/mesh-local-detecter.service';
 import { RelaisMeshCoreService } from '../../services/relais-meshcore.service';
 import { NoeudMeshUtilisateurService } from '../../services/noeud-mesh-utilisateur.service';
 import { ContactMeshCoreService } from '../../services/contact-meshcore.service';
@@ -44,6 +45,16 @@ export class MeshcoreCompanionsComponent implements OnInit {
   nouveauLon: number | null = null;
   creating = false;
 
+  // Détection automatique (usage offline, sans internet) : on donne juste IP + port d'un vrai
+  // appareil, le serveur essaie une vraie connexion Meshtastic puis MeshCore et crée le
+  // companion correspondant tout seul — voir MeshLocalDetecterService.
+  detectIp = '';
+  detectPort = 5000;
+  detectNom = '';
+  detecting = false;
+  detectError = '';
+  detectResultat = '';
+
   relais: RelaisMeshCore[] = [];
   nouveauRelaisNom = '';
   nouveauRelaisLat: number | null = null;
@@ -69,6 +80,7 @@ export class MeshcoreCompanionsComponent implements OnInit {
 
   constructor(
     private service: CompagnonMeshCoreService,
+    private detecterService: MeshLocalDetecterService,
     private relaisService: RelaisMeshCoreService,
     private noeudService: NoeudMeshUtilisateurService,
     private contactService: ContactMeshCoreService,
@@ -208,6 +220,34 @@ export class MeshcoreCompanionsComponent implements OnInit {
     if (this.nouveauType === 'SERIE') return !!this.nouveauDevice.trim();
     if (this.nouveauType === 'BLE') return !!this.nouveauBle.trim();
     return false;
+  }
+
+  get formDetectValide(): boolean {
+    return !!this.detectIp.trim() && this.detectPort > 0;
+  }
+
+  detecterEtCreer(): void {
+    if (!this.formDetectValide) return;
+    this.detecting = true;
+    this.detectError = '';
+    this.detectResultat = '';
+    this.detecterService.detecter(this.detectIp.trim(), this.detectPort, this.detectNom.trim()).subscribe({
+      next: resultat => {
+        this.detecting = false;
+        if (resultat.type === 'meshcore') {
+          this.detectResultat = `Nœud MeshCore détecté et ajouté : « ${resultat.nom} ».`;
+          this.detectIp = '';
+          this.detectNom = '';
+          this.load();
+        } else {
+          this.detectResultat = `Nœud Meshtastic détecté (pas MeshCore) — ajouté dans « Companions Meshtastic ».`;
+        }
+      },
+      error: err => {
+        this.detecting = false;
+        this.detectError = err.error?.detail || "Aucun protocole n'a pu être identifié sur cette adresse.";
+      },
+    });
   }
 
   ajouter(): void {

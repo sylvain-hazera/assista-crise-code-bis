@@ -143,6 +143,7 @@ from .models import (
     MaterielCatalogue, ContributionMateriel, StatutMateriel, TypeMateriel, NiveauStock, RegistrePresence, TypePersonneAccueillie, DeclarationSecurite, SituationDeclarant,
     CompagnonMeshCore, NoeudMeshUtilisateur, MessageMeshLog, DirectionMessageMesh, StatutMessageMesh,
     RelaisMeshCore, CanalMeshCore, MessageCanalMeshCore, ContactMeshCore, TypeContactMeshCore,
+    MeshCoreConnexionType, MeshtasticConnexionType,
     CompagnonMeshtastic, NoeudUtilisateurMeshtastic, MessageMeshtasticLog,
     CanalMeshtastic, MessageCanalMeshtastic, ContactMeshtastic,
     AffectationPointBenevole, StatutAffectation,
@@ -9324,6 +9325,131 @@ class InstitutionDomaineViewSet(
 
 
 
+def _detecter_meshtastic_local(ip, port, delai):
+    """Tente une vraie connexion Meshtastic (lib officielle `meshtastic`, TCPInterface) — le
+    firmware gère lui-même le PSK/PKI, aucun chiffrement fait maison ici contrairement au
+    chemin MQTT (voir CompagnonMeshtastic.chiffrement_supporte). Bornée dans un thread : la
+    lib bloque potentiellement très longtemps (timeout par défaut 300s) si l'appareil en face
+    ne parle pas ce protocole (cas attendu si c'est en fait un nœud MeshCore)."""
+    import threading
+    from meshtastic.tcp_interface import TCPInterface
+
+    resultat = {}
+
+    def _essai():
+        iface = None
+        try:
+            iface = TCPInterface(hostname=ip, portNumber=port, timeout=delai)
+            info = iface.myInfo
+            if info is not None and getattr(info, 'my_node_num', None):
+                user = (iface.getMyUser() or {}) if hasattr(iface, 'getMyUser') else {}
+                resultat['node_num'] = info.my_node_num
+                resultat['long_name'] = user.get('longName', '') if isinstance(user, dict) else ''
+                resultat['short_name'] = user.get('shortName', '') if isinstance(user, dict) else ''
+        except Exception:
+            pass
+        finally:
+            if iface is not None:
+                try:
+                    iface.close()
+                except Exception:
+                    pass
+
+    thread = threading.Thread(target=_essai, daemon=True)
+    thread.start()
+    thread.join(timeout=delai)
+    return resultat if resultat.get('node_num') else None
+
+
+def _detecter_meshcore_local(ip, port, delai):
+    """Même principe côté MeshCore : lib officielle `meshcore`, async — voir
+    meshcore-bridge/bridge.py:obtenir_pubkey pour le précédent exact (send_appstart /
+    EventType.SELF_INFO)."""
+    import asyncio
+    from meshcore import MeshCore, EventType
+
+    async def _essai():
+        mc = await MeshCore.create_tcp(ip, port, default_timeout=delai)
+        try:
+            resultat = await mc.commands.send_appstart()
+            if resultat and resultat.type == EventType.SELF_INFO:
+                payload = resultat.payload or {}
+                pubkey = payload.get('public_key') or payload.get('pubkey')
+                if pubkey:
+                    return {'pubkey_hex': pubkey}
+        finally:
+            await mc.disconnect()
+        return None
+
+    try:
+        return asyncio.run(asyncio.wait_for(_essai(), timeout=delai + 2))
+    except Exception:
+        return None
+
+
+class MeshLocalDetecterView(APIView):
+    """Auto-service admin (page Companions MeshCore/Meshtastic, usage offline sans internet
+    prévu) : on saisit juste IP + port d'un VRAI appareil sur le réseau local, cette vue
+    détecte tout seule s'il parle Meshtastic ou MeshCore (essaie les deux vraies connexions,
+    dans cet ordre, chacune bornée dans le temps) et crée directement le bon Companion —
+    jamais besoin de savoir soi-même de quel protocole il s'agit. Contrairement au mode MQTT
+    Meshtastic (broker tiers, ex: Gaulix), ce mode ne nécessite aucun accès internet : la
+    connexion est directe, locale, gérée par les libs officielles (le firmware de l'appareil
+    fait le chiffrement lui-même, voir MeshtasticConnexionType.TCP)."""
+    permission_classes = [IsInstitutionalActor]
+
+    def post(self, request):
+        ip = (request.data.get('ip') or '').strip()
+        try:
+            port = int(request.data.get('port'))
+        except (TypeError, ValueError):
+            port = 0
+        nom = (request.data.get('nom') or '').strip() or f"{ip}:{port}"
+        if not ip or not port:
+            return Response({'detail': "ip et port requis."}, status=status.HTTP_400_BAD_REQUEST)
+
+        import socket as socket_module
+        try:
+            with socket_module.create_connection((ip, port), timeout=3):
+                pass
+        except OSError:
+            return Response({'detail': "Aucun service ne répond sur cette adresse/port."}, status=status.HTTP_400_BAD_REQUEST)
+
+        environment = get_active_environment(request)
+
+        meshtastic_info = _detecter_meshtastic_local(ip, port, delai=6)
+        if meshtastic_info:
+            compagnon = CompagnonMeshtastic.objects.create(
+                nom=nom, connexion_type=MeshtasticConnexionType.TCP, tcp_host=ip, tcp_port=port,
+                node_num=meshtastic_info['node_num'],
+                long_name=meshtastic_info.get('long_name', ''), short_name=meshtastic_info.get('short_name', ''),
+                environment=environment,
+            )
+            audit_log(
+                request=request, action_code="CREATION", objet_type="CompagnonMeshtastic", objet_id=compagnon.id,
+                commentaire=f"Companion Meshtastic créé par détection locale ({ip}:{port})",
+            )
+            return Response({'type': 'meshtastic', 'id': str(compagnon.id), 'nom': compagnon.nom}, status=status.HTTP_201_CREATED)
+
+        meshcore_info = _detecter_meshcore_local(ip, port, delai=6)
+        if meshcore_info:
+            compagnon = CompagnonMeshCore.objects.create(
+                nom=nom, connexion_type=MeshCoreConnexionType.TCP, tcp_host=ip, tcp_port=port,
+                pubkey_hex=meshcore_info.get('pubkey_hex') or None,
+                environment=environment,
+            )
+            audit_log(
+                request=request, action_code="CREATION", objet_type="CompagnonMeshCore", objet_id=compagnon.id,
+                commentaire=f"Companion MeshCore créé par détection locale ({ip}:{port})",
+            )
+            return Response({'type': 'meshcore', 'id': str(compagnon.id), 'nom': compagnon.nom}, status=status.HTTP_201_CREATED)
+
+        return Response(
+            {'detail': "Le protocole n'a pas pu être identifié (ni Meshtastic ni MeshCore n'ont répondu)."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+
 class CompagnonMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     """Nœuds MeshCore en rôle Companion utilisés comme passerelle radio (voir le service-pont
     externe `meshcore-bridge/`, non hébergé dans ce dépôt Django). Phase de test (voir doc de
@@ -9998,10 +10124,12 @@ class CompagnonMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
         return Response([
             {
                 'id': str(c.id), 'nom': c.nom, 'node_num': c.node_num,
+                'connexion_type': c.connexion_type,
                 'broker_host': c.broker_host, 'broker_port': c.broker_port,
                 'topic_racine': c.topic_racine,
                 'mqtt_username': c.mqtt_username, 'mqtt_password': c.mqtt_password,
                 'mqtt_use_tls': c.mqtt_use_tls,
+                'tcp_host': c.tcp_host, 'tcp_port': c.tcp_port,
                 'chiffrement_supporte': c.chiffrement_supporte,
                 'x25519_private_key_hex': c.x25519_private_key_hex,
                 'x25519_public_key_hex': c.x25519_public_key_hex,

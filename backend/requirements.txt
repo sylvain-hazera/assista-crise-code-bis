@@ -3,6 +3,7 @@ djangorestframework
 djangorestframework-simplejwt
 psycopg2-binary
 meshtastic
+meshcore
 paho-mqtt
 cryptography
 psycopg2-binary>=2.9
