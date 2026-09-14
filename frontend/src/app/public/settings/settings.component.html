@@ -59,6 +59,10 @@
         <span class="material-icons">folder</span>
         <span class="tab-text">Mon dossier</span>
       </button>
+      <button class="tab-button" [class.active]="activeTab === 'radio'" (click)="setActiveTab('radio')">
+        <span class="material-icons">settings_input_antenna</span>
+        <span class="tab-text">Mes radios</span>
+      </button>
     </div>
 
     <div class="tab-content">
@@ -543,8 +547,114 @@
           }
         </div>
       }
+
+      <!-- RADIO (MESHCORE / MESHTASTIC) TAB -->
+      @if (activeTab === 'radio') {
+        <div class="tab-panel">
+          <p class="tab-hint">
+            Réclame ton propre boîtier radio (MeshCore ou Meshtastic) pour qu'il soit rattaché à
+            ton compte — assista-crise saura alors que les messages qui en proviennent sont les
+            tiens, et t'enverra un message de bienvenue une fois réclamé.
+          </p>
+
+          <!-- MESHCORE -->
+          <h3 class="radio-zone-title">MeshCore</h3>
+          <div class="form-group">
+            <label for="meshcorePubkey" class="form-label">Clé publique de mon nœud</label>
+            <input type="text" id="meshcorePubkey" class="form-input" placeholder="Clé publique (hex)" [(ngModel)]="reclamerMeshCorePubkey">
+          </div>
+          <div class="form-group">
+            <label for="meshcoreNom" class="form-label">Nom (optionnel)</label>
+            <input type="text" id="meshcoreNom" class="form-input" placeholder="ex: Talkie de terrain" [(ngModel)]="reclamerMeshCoreNom">
+          </div>
+          @if (reclamerMeshCoreErreur) {
+            <div class="alert alert-error"><span class="material-icons">warning</span> {{ reclamerMeshCoreErreur }}</div>
+          }
+          <button type="button" class="btn btn-primary" [disabled]="!formReclamerMeshCoreValide || reclamerMeshCoreEnCours" (click)="reclamerMeshCore()">
+            Réclamer ce nœud
+          </button>
+
+          @if (mesNoeudsMeshCore.length > 0) {
+            <div class="table-responsive radio-table">
+              <table class="data-table">
+                <thead>
+                  <tr><th>Nom</th><th>Clé publique</th><th>Actions</th></tr>
+                </thead>
+                <tbody>
+                  @for (n of mesNoeudsMeshCore; track n.id) {
+                    <tr>
+                      <td>{{ n.nom_noeud || '—' }}</td>
+                      <td class="mono">{{ n.pubkey_hex.slice(0, 16) }}…</td>
+                      <td><button type="button" class="btn btn-danger-sm" (click)="libererMeshCore(n)">Libérer</button></td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          } @else if (!isLoadingRadio) {
+            <p class="empty-message">Aucun nœud MeshCore réclamé pour l'instant.</p>
+          }
+
+          <!-- MESHTASTIC -->
+          <h3 class="radio-zone-title">Meshtastic</h3>
+          <div class="form-group">
+            <label for="meshtasticNodeNum" class="form-label">Identifiant de mon nœud (node_num)</label>
+            <input type="number" id="meshtasticNodeNum" class="form-input" placeholder="ex: 3735928559" [(ngModel)]="reclamerMeshtasticNodeNum">
+          </div>
+          <div class="form-group">
+            <label for="meshtasticNom" class="form-label">Nom (optionnel)</label>
+            <input type="text" id="meshtasticNom" class="form-input" placeholder="ex: Talkie de terrain" [(ngModel)]="reclamerMeshtasticNom">
+          </div>
+
+          @if (meshtasticBrokerRequis) {
+            <div class="form-group">
+              <label for="meshtasticBroker" class="form-label">
+                Ce nœud a été vu sur plusieurs brokers (ou jamais) : précise lequel est le tien
+              </label>
+              <select id="meshtasticBroker" class="form-input" [(ngModel)]="meshtasticBrokerChoisi">
+                <option value="">— Choisir un broker —</option>
+                @for (b of meshtasticBrokerRequis; track b.id) {
+                  <option [value]="b.id">{{ b.nom }}</option>
+                }
+              </select>
+              <button type="button" class="btn-link" (click)="annulerChoixBrokerMeshtastic()">Annuler</button>
+            </div>
+          }
+
+          @if (reclamerMeshtasticErreur) {
+            <div class="alert alert-error"><span class="material-icons">warning</span> {{ reclamerMeshtasticErreur }}</div>
+          }
+          <button
+            type="button" class="btn btn-primary"
+            [disabled]="!formReclamerMeshtasticValide || reclamerMeshtasticEnCours || (meshtasticBrokerRequis && !meshtasticBrokerChoisi)"
+            (click)="reclamerMeshtastic()">
+            Réclamer ce nœud
+          </button>
+
+          @if (mesNoeudsMeshtastic.length > 0) {
+            <div class="table-responsive radio-table">
+              <table class="data-table">
+                <thead>
+                  <tr><th>Nom</th><th>node_num</th><th>Actions</th></tr>
+                </thead>
+                <tbody>
+                  @for (n of mesNoeudsMeshtastic; track n.id) {
+                    <tr>
+                      <td>{{ n.nom_noeud || '—' }}</td>
+                      <td class="mono">{{ nodeNumHex(n.node_num) }}</td>
+                      <td><button type="button" class="btn btn-danger-sm" (click)="libererMeshtastic(n)">Libérer</button></td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          } @else if (!isLoadingRadio) {
+            <p class="empty-message">Aucun nœud Meshtastic réclamé pour l'instant.</p>
+          }
+        </div>
+      }
     </div>
-    
+
     <!-- DETAIL MODAL -->
     @if ((showDetailRequest || showDetailOffer || showDetailCrisis || showDetailInformation || showDetailDeclaration) && selectedReport) {
       <div class="modal-overlay" (click)="closeDetail()">

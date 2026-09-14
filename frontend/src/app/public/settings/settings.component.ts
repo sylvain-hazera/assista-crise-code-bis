@@ -1,6 +1,6 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FormBuilder, FormGroup, Validators, ReactiveFormsModule } from '@angular/forms';
+import { FormBuilder, FormGroup, Validators, ReactiveFormsModule, FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { User } from '../../shared/models/user.model';
 import { AuthService } from '../../auth/services/auth.service';
@@ -18,11 +18,16 @@ import { Information } from '../../shared/models/information.model';
 import { DeclarationSecurite } from '../../shared/models/declaration-securite.model';
 import { Dossier } from '../../shared/models/dossier.model';
 import { Status } from '../../shared/models/status.model';
+import { NoeudMeshUtilisateurService } from '../../services/noeud-mesh-utilisateur.service';
+import { NoeudUtilisateurMeshtasticService } from '../../services/noeud-utilisateur-meshtastic.service';
+import { CompagnonMeshtasticService } from '../../services/compagnon-meshtastic.service';
+import { NoeudMeshUtilisateur } from '../../shared/models/noeud-mesh-utilisateur.model';
+import { NoeudUtilisateurMeshtastic, ReclamerMeshtasticBrokerRequis } from '../../shared/models/noeud-utilisateur-meshtastic.model';
 
 @Component({
   selector: 'app-settings',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule],
+  imports: [CommonModule, ReactiveFormsModule, FormsModule],
   templateUrl: './settings.component.html',
   styleUrls: ['./settings.component.scss']
 })
@@ -62,7 +67,7 @@ export class SettingsComponent implements OnInit {
     return this._errorMessage;
   }
 
-  activeTab: 'profile' | 'password' | 'offer' | 'request' | 'crisis' | 'declaration' | 'information' | 'dossier' = 'profile';
+  activeTab: 'profile' | 'password' | 'offer' | 'request' | 'crisis' | 'declaration' | 'information' | 'dossier' | 'radio' = 'profile';
 
   allCrisis:  Crisis[]   = [];  filteredCrisis:  Crisis[]   = [];  isLoadingCrisis  = false;
   allOffers:  Offer[]   = [];  filteredOffers:  Offer[]   = [];  isLoadingOffers  = false;
@@ -74,6 +79,29 @@ export class SettingsComponent implements OnInit {
   showDetailCrisis = false;  showDetailOffer  = false;  showDetailRequest = false;
   showDetailInformation = false; showDetailDeclaration = false;
   selectedReport: Crisis | Offer | Request | Information | DeclarationSecurite | null = null;
+
+  // ── Radio (MeshCore / Meshtastic) ───────────────────────────────
+  mesNoeudsMeshCore: NoeudMeshUtilisateur[] = [];
+  mesNoeudsMeshtastic: NoeudUtilisateurMeshtastic[] = [];
+  isLoadingRadio = false;
+
+  reclamerMeshCorePubkey = '';
+  reclamerMeshCoreNom = '';
+  reclamerMeshCoreEnCours = false;
+  reclamerMeshCoreErreur = '';
+
+  reclamerMeshtasticNodeNum: number | null = null;
+  reclamerMeshtasticNom = '';
+  reclamerMeshtasticEnCours = false;
+  reclamerMeshtasticErreur = '';
+  /** Non-null uniquement quand le backend n'a pas pu déduire le broker tout seul (jamais
+   * détecté, ou détecté sur plusieurs à la fois) — voir NoeudUtilisateurMeshtasticViewSet.
+   * reclamer. */
+  meshtasticBrokerRequis: { id: string; nom: string }[] | null = null;
+  meshtasticBrokerChoisi = '';
+  /** Tous les brokers actifs, chargés seulement si compagnons_candidats revient vide (nœud
+   * jamais détecté nulle part) — inutile de tout charger tant qu'on n'en a pas besoin. */
+  tousLesBrokersMeshtastic: { id: string; nom: string; broker_host: string }[] = [];
 
   constructor(
     private fb: FormBuilder,
@@ -87,6 +115,9 @@ export class SettingsComponent implements OnInit {
     private userService: UserService,
     private router: Router,
     private route: ActivatedRoute,
+    private noeudMeshCoreService: NoeudMeshUtilisateurService,
+    private noeudMeshtasticService: NoeudUtilisateurMeshtasticService,
+    private compagnonMeshtasticService: CompagnonMeshtasticService,
   ) {}
 
   ngOnInit(): void {
@@ -108,7 +139,7 @@ export class SettingsComponent implements OnInit {
     // réutilise la même instance de ce composant d'un tab à l'autre puisque la route ne change
     // pas, donc ngOnInit ne se relance jamais. Sans cet abonnement, cliquer sur ces liens
     // depuis l'écran /settings lui-même ne changeait jamais l'onglet affiché.
-    const validTabs: (typeof this.activeTab)[] = ['profile', 'password', 'offer', 'request', 'crisis', 'declaration', 'information', 'dossier'];
+    const validTabs: (typeof this.activeTab)[] = ['profile', 'password', 'offer', 'request', 'crisis', 'declaration', 'information', 'dossier', 'radio'];
     this.route.queryParamMap.subscribe(params => {
       const requestedTab = params.get('tab');
       if (requestedTab && (validTabs as string[]).includes(requestedTab)) {
@@ -147,6 +178,113 @@ export class SettingsComponent implements OnInit {
     this.loadDeclarations();
     this.loadInformations();
     this.loadDossiers();
+    this.loadMesNoeuds();
+  }
+
+  // ── Radio (MeshCore / Meshtastic) ───────────────────────────────
+
+  private loadMesNoeuds(): void {
+    this.isLoadingRadio = true;
+    this.noeudMeshCoreService.mesNoeuds().subscribe({
+      next: list => { this.mesNoeudsMeshCore = list; this.isLoadingRadio = false; },
+      error: () => (this.isLoadingRadio = false),
+    });
+    this.noeudMeshtasticService.mesNoeuds().subscribe({
+      next: list => { this.mesNoeudsMeshtastic = list; },
+    });
+  }
+
+  get formReclamerMeshCoreValide(): boolean {
+    return this.reclamerMeshCorePubkey.trim().length > 0;
+  }
+
+  reclamerMeshCore(): void {
+    if (!this.formReclamerMeshCoreValide) return;
+    this.reclamerMeshCoreEnCours = true;
+    this.reclamerMeshCoreErreur = '';
+    this.noeudMeshCoreService.reclamer(this.reclamerMeshCorePubkey.trim(), this.reclamerMeshCoreNom.trim()).subscribe({
+      next: () => {
+        this.reclamerMeshCorePubkey = '';
+        this.reclamerMeshCoreNom = '';
+        this.reclamerMeshCoreEnCours = false;
+        this.loadMesNoeuds();
+      },
+      error: err => {
+        this.reclamerMeshCoreErreur = err.error?.detail || 'Impossible de réclamer ce nœud.';
+        this.reclamerMeshCoreEnCours = false;
+      },
+    });
+  }
+
+  libererMeshCore(noeud: NoeudMeshUtilisateur): void {
+    if (!confirm(`Libérer le nœud « ${noeud.nom_noeud || noeud.pubkey_hex.slice(0, 12) + '…'} » ?`)) return;
+    this.noeudMeshCoreService.liberer(noeud.pubkey_hex).subscribe({
+      next: () => { this.mesNoeudsMeshCore = this.mesNoeudsMeshCore.filter(n => n.id !== noeud.id); },
+      error: err => { this.reclamerMeshCoreErreur = err.error?.detail || 'Impossible de libérer ce nœud.'; },
+    });
+  }
+
+  get formReclamerMeshtasticValide(): boolean {
+    return this.reclamerMeshtasticNodeNum != null;
+  }
+
+  reclamerMeshtastic(): void {
+    if (!this.formReclamerMeshtasticValide) return;
+    this.reclamerMeshtasticEnCours = true;
+    this.reclamerMeshtasticErreur = '';
+    this.noeudMeshtasticService.reclamer(
+      this.reclamerMeshtasticNodeNum!, this.reclamerMeshtasticNom.trim(),
+      this.meshtasticBrokerRequis ? this.meshtasticBrokerChoisi : undefined,
+    ).subscribe({
+      next: () => {
+        this.reclamerMeshtasticNodeNum = null;
+        this.reclamerMeshtasticNom = '';
+        this.meshtasticBrokerRequis = null;
+        this.meshtasticBrokerChoisi = '';
+        this.reclamerMeshtasticEnCours = false;
+        this.loadMesNoeuds();
+      },
+      error: err => {
+        const body = err.error as ReclamerMeshtasticBrokerRequis | { detail?: string };
+        if (body && 'compagnon_requis' in body && body.compagnon_requis) {
+          // Broker déduit impossible : soit plusieurs candidats renvoyés directement, soit
+          // aucun (nœud jamais détecté) — dans ce dernier cas on charge tous les brokers actifs.
+          if (body.compagnons_candidats) {
+            this.meshtasticBrokerRequis = body.compagnons_candidats;
+            this.reclamerMeshtasticEnCours = false;
+          } else {
+            this.compagnonMeshtasticService.envoyables().subscribe({
+              next: brokers => {
+                this.tousLesBrokersMeshtastic = brokers;
+                this.meshtasticBrokerRequis = brokers.map(b => ({ id: b.id, nom: `${b.nom} (${b.broker_host})` }));
+                this.reclamerMeshtasticEnCours = false;
+              },
+              error: () => { this.reclamerMeshtasticEnCours = false; },
+            });
+          }
+        } else {
+          this.reclamerMeshtasticErreur = (body as { detail?: string })?.detail || 'Impossible de réclamer ce nœud.';
+          this.reclamerMeshtasticEnCours = false;
+        }
+      },
+    });
+  }
+
+  annulerChoixBrokerMeshtastic(): void {
+    this.meshtasticBrokerRequis = null;
+    this.meshtasticBrokerChoisi = '';
+  }
+
+  libererMeshtastic(noeud: NoeudUtilisateurMeshtastic): void {
+    if (!confirm(`Libérer le nœud « ${noeud.nom_noeud || this.nodeNumHex(noeud.node_num)} » ?`)) return;
+    this.noeudMeshtasticService.liberer(noeud.node_num).subscribe({
+      next: () => { this.mesNoeudsMeshtastic = this.mesNoeudsMeshtastic.filter(n => n.id !== noeud.id); },
+      error: err => { this.reclamerMeshtasticErreur = err.error?.detail || 'Impossible de libérer ce nœud.'; },
+    });
+  }
+
+  nodeNumHex(n: number): string {
+    return '!' + n.toString(16).padStart(8, '0');
   }
 
   private loadDeclarations(): void {

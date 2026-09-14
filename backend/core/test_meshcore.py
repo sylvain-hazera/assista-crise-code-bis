@@ -1163,3 +1163,86 @@ class TestDemoZoneMessageContent:
         assert response.status_code == status.HTTP_201_CREATED
         assert response.data['contenu'].startswith('[démo] ')
         assert len(response.data['contenu']) <= 100
+
+
+@pytest.mark.django_db
+class TestReclamerLibererMeshCore:
+    """Auto-service page Paramètres du compte : réclamer/libérer SON PROPRE nœud, ouvert à
+    n'importe quel utilisateur authentifié (pas besoin d'être acteur institutionnel)."""
+
+    def test_simple_user_can_claim_own_node(self, create_user, compagnon):
+        user = create_user(username='benevole@test.fr', email='benevole@test.fr', type='UTIL_SIMPLE')
+        client = APIClient()
+        client.force_authenticate(user=user)
+        response = client.post(reverse('noeudmeshutilisateur-reclamer'), {
+            'pubkey_hex': 'AA' * 32, 'nom_noeud': 'Mon talkie',
+        }, format='json')
+        assert response.status_code == status.HTTP_201_CREATED, response.data
+        noeud = NoeudMeshUtilisateur.objects.get(pubkey_hex='aa' * 32)
+        assert noeud.utilisateur_id == user.id
+        assert noeud.nom_noeud == 'Mon talkie'
+
+    def test_claim_sends_welcome_message(self, create_user, compagnon):
+        user = create_user(username='b2@test.fr', email='b2@test.fr', type='UTIL_SIMPLE')
+        client = APIClient()
+        client.force_authenticate(user=user)
+        client.post(reverse('noeudmeshutilisateur-reclamer'), {'pubkey_hex': 'bb' * 32}, format='json')
+        message = MessageMeshLog.objects.get(contact_pubkey_hex='bb' * 32)
+        assert message.contenu == 'Bienvenue dans assista-crise !'
+        assert message.compagnon_id == compagnon.id
+
+    def test_cannot_claim_node_owned_by_someone_else(self, create_user, compagnon):
+        owner = create_user(username='owner@test.fr', email='owner@test.fr', type='UTIL_SIMPLE')
+        NoeudMeshUtilisateur.objects.create(utilisateur=owner, pubkey_hex='cc' * 32)
+        other = create_user(username='other@test.fr', email='other@test.fr', type='UTIL_SIMPLE')
+        client = APIClient()
+        client.force_authenticate(user=other)
+        response = client.post(reverse('noeudmeshutilisateur-reclamer'), {'pubkey_hex': 'cc' * 32}, format='json')
+        assert response.status_code == status.HTTP_409_CONFLICT
+
+    def test_claim_idempotent_for_owner_no_duplicate_welcome(self, create_user, compagnon):
+        user = create_user(username='b3@test.fr', email='b3@test.fr', type='UTIL_SIMPLE')
+        client = APIClient()
+        client.force_authenticate(user=user)
+        client.post(reverse('noeudmeshutilisateur-reclamer'), {'pubkey_hex': 'dd' * 32}, format='json')
+        response = client.post(reverse('noeudmeshutilisateur-reclamer'), {'pubkey_hex': 'dd' * 32}, format='json')
+        assert response.status_code == status.HTTP_200_OK
+        assert MessageMeshLog.objects.filter(contact_pubkey_hex='dd' * 32).count() == 1
+
+    def test_release_own_node(self, create_user, compagnon):
+        user = create_user(username='b4@test.fr', email='b4@test.fr', type='UTIL_SIMPLE')
+        client = APIClient()
+        client.force_authenticate(user=user)
+        client.post(reverse('noeudmeshutilisateur-reclamer'), {'pubkey_hex': 'ee' * 32}, format='json')
+        response = client.post(reverse('noeudmeshutilisateur-liberer'), {'pubkey_hex': 'ee' * 32}, format='json')
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        assert not NoeudMeshUtilisateur.objects.filter(pubkey_hex='ee' * 32).exists()
+
+    def test_cannot_release_someone_elses_node(self, create_user, compagnon):
+        owner = create_user(username='owner2@test.fr', email='owner2@test.fr', type='UTIL_SIMPLE')
+        NoeudMeshUtilisateur.objects.create(utilisateur=owner, pubkey_hex='ff' * 32)
+        other = create_user(username='other2@test.fr', email='other2@test.fr', type='UTIL_SIMPLE')
+        client = APIClient()
+        client.force_authenticate(user=other)
+        response = client.post(reverse('noeudmeshutilisateur-liberer'), {'pubkey_hex': 'ff' * 32}, format='json')
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert NoeudMeshUtilisateur.objects.filter(pubkey_hex='ff' * 32).exists()
+
+    def test_mes_noeuds_returns_only_own(self, create_user, compagnon):
+        user = create_user(username='b5@test.fr', email='b5@test.fr', type='UTIL_SIMPLE')
+        other = create_user(username='other3@test.fr', email='other3@test.fr', type='UTIL_SIMPLE')
+        NoeudMeshUtilisateur.objects.create(utilisateur=user, pubkey_hex='11' * 32)
+        NoeudMeshUtilisateur.objects.create(utilisateur=other, pubkey_hex='22' * 32)
+        client = APIClient()
+        client.force_authenticate(user=user)
+        response = client.get(reverse('noeudmeshutilisateur-mes-noeuds'))
+        assert response.status_code == status.HTTP_200_OK
+        assert [n['pubkey_hex'] for n in response.data] == ['11' * 32]
+
+    def test_claim_blocked_in_demo(self, create_user, compagnon):
+        user = create_user(username='b6@test.fr', email='b6@test.fr', type='UTIL_SIMPLE')
+        client = APIClient()
+        client.force_authenticate(user=user)
+        client.credentials(HTTP_X_ENVIRONMENT='DEMO')
+        response = client.post(reverse('noeudmeshutilisateur-reclamer'), {'pubkey_hex': '33' * 32}, format='json')
+        assert response.status_code == status.HTTP_403_FORBIDDEN

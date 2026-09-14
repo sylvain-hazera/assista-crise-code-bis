@@ -40,4 +40,20 @@ export class NoeudMeshUtilisateurService {
   delete(id: string): Observable<void> {
     return this.http.delete<void>(`${this.url}/${id}/`);
   }
+
+  /** GET /api/noeuds-meshcore/mes-noeuds/ — mes propres nœuds réclamés (page Paramètres du
+   * compte), ouvert à tout utilisateur authentifié. */
+  mesNoeuds(): Observable<NoeudMeshUtilisateur[]> {
+    return this.http.get<NoeudMeshUtilisateur[]>(`${this.url}/mes-noeuds/`);
+  }
+
+  /** POST /api/noeuds-meshcore/reclamer/ — auto-service, voir NoeudMeshUtilisateurViewSet.reclamer. */
+  reclamer(pubkeyHex: string, nomNoeud?: string): Observable<NoeudMeshUtilisateur> {
+    return this.http.post<NoeudMeshUtilisateur>(`${this.url}/reclamer/`, { pubkey_hex: pubkeyHex, nom_noeud: nomNoeud || '' });
+  }
+
+  /** POST /api/noeuds-meshcore/liberer/ — ne peut libérer que son propre nœud. */
+  liberer(pubkeyHex: string): Observable<void> {
+    return this.http.post<void>(`${this.url}/liberer/`, { pubkey_hex: pubkeyHex });
+  }
 }

@@ -9584,6 +9584,84 @@ class NoeudMeshUtilisateurViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelV
             commentaire=f"Association nœud MeshCore {noeud.pubkey_hex[:12]}… -> {noeud.utilisateur.email}",
         )
 
+    @action(detail=False, methods=['get'], url_path='mes-noeuds')
+    def mes_noeuds(self, request):
+        """Auto-service (page Paramètres du compte) : mes propres nœuds MeshCore réclamés, pas
+        besoin d'être acteur institutionnel — get_permissions retombe sur IsAuthenticated pour
+        toute action non listée ci-dessus."""
+        noeuds = self.get_queryset().filter(utilisateur=request.user)
+        return Response(NoeudMeshUtilisateurSerializer(noeuds, many=True, context={'request': request}).data)
+
+    @action(detail=False, methods=['post'], url_path='reclamer')
+    def reclamer(self, request):
+        """Auto-service : n'importe quel utilisateur authentifié réclame SON PROPRE nœud
+        MeshCore par sa clé publique — pas besoin d'un acteur institutionnel pour l'attribuer à
+        sa place (contrairement à create, réservé à l'admin). Bloqué en zone DEMO comme le
+        reste des écritures sur ces nœuds (voir docstring de la classe) : DenyInDemo ne
+        s'applique qu'aux actions listées dans get_permissions, vérifié ici à la main."""
+        if get_active_environment(request) == Environment.DEMO:
+            return Response({'detail': "Indisponible depuis la zone de démonstration."}, status=status.HTTP_403_FORBIDDEN)
+        pubkey_hex = (request.data.get('pubkey_hex') or '').strip().lower()
+        if not pubkey_hex:
+            return Response({'detail': "pubkey_hex requis."}, status=status.HTTP_400_BAD_REQUEST)
+
+        existant = NoeudMeshUtilisateur.objects.filter(pubkey_hex=pubkey_hex).first()
+        if existant is not None and existant.utilisateur_id != request.user.id:
+            return Response({'detail': "Ce nœud est déjà réclamé par un autre compte."}, status=status.HTTP_409_CONFLICT)
+
+        cree = existant is None
+        if cree:
+            noeud = NoeudMeshUtilisateur.objects.create(
+                utilisateur=request.user, pubkey_hex=pubkey_hex,
+                nom_noeud=(request.data.get('nom_noeud') or '').strip(),
+                environment=get_active_environment(request),
+            )
+        else:
+            noeud = existant
+            noeud.actif = True
+            if request.data.get('nom_noeud'):
+                noeud.nom_noeud = request.data['nom_noeud'].strip()
+            noeud.save(update_fields=['actif', 'nom_noeud'])
+
+        audit_log(
+            request=request, action_code="CREATION" if cree else "MODIFICATION",
+            objet_type="NoeudMeshUtilisateur", objet_id=noeud.id,
+            commentaire=f"{'Réclamation' if cree else 'Ré-activation'} auto-service du nœud MeshCore {pubkey_hex[:12]}… par {request.user.email}",
+        )
+        if cree:
+            compagnon = CompagnonMeshCore.objects.filter(actif=True, principal=True).first() \
+                or CompagnonMeshCore.objects.filter(actif=True).first()
+            if compagnon is not None:
+                MessageMeshLog.objects.create(
+                    compagnon=compagnon, direction=DirectionMessageMesh.SORTANT,
+                    contact_pubkey_hex=pubkey_hex, expediteur=request.user,
+                    contenu="Bienvenue dans assista-crise !",
+                    statut=StatutMessageMesh.EN_ATTENTE,
+                    environment=get_active_environment(request),
+                )
+        return Response(
+            NoeudMeshUtilisateurSerializer(noeud, context={'request': request}).data,
+            status=status.HTTP_201_CREATED if cree else status.HTTP_200_OK,
+        )
+
+    @action(detail=False, methods=['post'], url_path='liberer')
+    def liberer(self, request):
+        """Auto-service : ne peut libérer que SON PROPRE nœud (filtré par utilisateur=request.user,
+        jamais celui de quelqu'un d'autre même en connaissant sa clé publique)."""
+        if get_active_environment(request) == Environment.DEMO:
+            return Response({'detail': "Indisponible depuis la zone de démonstration."}, status=status.HTTP_403_FORBIDDEN)
+        pubkey_hex = (request.data.get('pubkey_hex') or '').strip().lower()
+        noeud = NoeudMeshUtilisateur.objects.filter(pubkey_hex=pubkey_hex, utilisateur=request.user).first()
+        if noeud is None:
+            return Response({'detail': "Nœud introuvable parmi les vôtres."}, status=status.HTTP_404_NOT_FOUND)
+        audit_log(
+            request=request, action_code="SUPPRESSION",
+            objet_type="NoeudMeshUtilisateur", objet_id=noeud.id,
+            commentaire=f"Libération auto-service du nœud MeshCore {pubkey_hex[:12]}… par {request.user.email}",
+        )
+        noeud.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
     @action(detail=False, methods=['get'], url_path='positions-en-mission')
     def positions_en_mission(self, request):
         """Positions actuelles des nœuds personnels d'utilisateurs membres d'une équipe dont
@@ -9857,6 +9935,18 @@ class CompagnonMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
             return [IsInstitutionalActor()]
         return [permissions.IsAuthenticated()]
 
+    @action(detail=False, methods=['get'], url_path='envoyables')
+    def envoyables(self, request):
+        """Résumé minimal (id/nom/broker_host, jamais mqtt_username/mqtt_password) des brokers
+        actifs — pour choisir lequel dans le sélecteur de réclamation de nœud (page Paramètres
+        du compte) sans passer par actifs-avec-identifiants (réservé au pont, expose les
+        identifiants en clair)."""
+        compagnons = self.get_queryset().filter(actif=True)
+        return Response([
+            {"id": str(c.id), "nom": c.nom, "broker_host": c.broker_host}
+            for c in compagnons
+        ])
+
     def perform_create(self, serializer):
         compagnon = serializer.save(environment=get_active_environment(self.request))
         audit_log(
@@ -9982,6 +10072,107 @@ class NoeudUtilisateurMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.
             objet_id=noeud.id,
             commentaire=f"Association nœud Meshtastic {noeud.node_num:08x} -> {noeud.utilisateur.email}",
         )
+
+    @action(detail=False, methods=['get'], url_path='mes-noeuds')
+    def mes_noeuds(self, request):
+        """Auto-service (page Paramètres du compte) : mes propres nœuds Meshtastic réclamés."""
+        noeuds = self.get_queryset().filter(utilisateur=request.user)
+        return Response(NoeudUtilisateurMeshtasticSerializer(noeuds, many=True, context={'request': request}).data)
+
+    @action(detail=False, methods=['post'], url_path='reclamer')
+    def reclamer(self, request):
+        """Auto-service : réclame SON PROPRE nœud Meshtastic par node_num. Contrairement à
+        MeshCore (un seul companion par relais physique), plusieurs brokers MQTT peuvent être
+        actifs en même temps (voir CompagnonMeshtasticViewSet.actifs_avec_identifiants) : un
+        même node_num peut avoir été vu sur plusieurs d'entre eux. On déduit le broker tout
+        seul via ContactMeshtastic quand c'est possible (un seul détecté), sinon on force le
+        choix (`compagnon` requis dans le payload) — jamais deviné au hasard."""
+        if get_active_environment(request) == Environment.DEMO:
+            return Response({'detail': "Indisponible depuis la zone de démonstration."}, status=status.HTTP_403_FORBIDDEN)
+        try:
+            node_num = int(request.data.get('node_num'))
+        except (TypeError, ValueError):
+            return Response({'detail': "node_num requis (entier)."}, status=status.HTTP_400_BAD_REQUEST)
+
+        existant = NoeudUtilisateurMeshtastic.objects.filter(node_num=node_num).first()
+        if existant is not None and existant.utilisateur_id != request.user.id:
+            return Response({'detail': "Ce nœud est déjà réclamé par un autre compte."}, status=status.HTTP_409_CONFLICT)
+
+        compagnon_id = request.data.get('compagnon')
+        if compagnon_id:
+            compagnon = CompagnonMeshtastic.objects.filter(id=compagnon_id, actif=True).first()
+            if compagnon is None:
+                return Response({'detail': "Broker MQTT introuvable ou inactif."}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            candidats_ids = list(
+                ContactMeshtastic.objects.filter(node_num=node_num).values_list('compagnon_id', flat=True).distinct()
+            )
+            if len(candidats_ids) == 1:
+                compagnon = CompagnonMeshtastic.objects.get(id=candidats_ids[0])
+            elif len(candidats_ids) == 0:
+                return Response({
+                    'detail': "Ce nœud n'a encore été détecté sur aucun broker : précisez lequel.",
+                    'compagnon_requis': True, 'compagnons_candidats': None,
+                }, status=status.HTTP_400_BAD_REQUEST)
+            else:
+                candidats = CompagnonMeshtastic.objects.filter(id__in=candidats_ids)
+                return Response({
+                    'detail': "Ce nœud a été détecté sur plusieurs brokers : précisez lequel.",
+                    'compagnon_requis': True,
+                    'compagnons_candidats': [{'id': str(c.id), 'nom': c.nom} for c in candidats],
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+        cree = existant is None
+        if cree:
+            noeud = NoeudUtilisateurMeshtastic.objects.create(
+                utilisateur=request.user, node_num=node_num,
+                nom_noeud=(request.data.get('nom_noeud') or '').strip(),
+                environment=get_active_environment(request),
+            )
+        else:
+            noeud = existant
+            noeud.actif = True
+            if request.data.get('nom_noeud'):
+                noeud.nom_noeud = request.data['nom_noeud'].strip()
+            noeud.save(update_fields=['actif', 'nom_noeud'])
+
+        audit_log(
+            request=request, action_code="CREATION" if cree else "MODIFICATION",
+            objet_type="NoeudUtilisateurMeshtastic", objet_id=noeud.id,
+            commentaire=f"{'Réclamation' if cree else 'Ré-activation'} auto-service du nœud Meshtastic {node_num:08x} par {request.user.email} (broker {compagnon.nom}).",
+        )
+        if cree:
+            MessageMeshtasticLog.objects.create(
+                compagnon=compagnon, canal=None, direction=DirectionMessageMesh.SORTANT,
+                contact_node_num=node_num, expediteur=request.user,
+                contenu="Bienvenue dans assista-crise !",
+                statut=StatutMessageMesh.EN_ATTENTE,
+                environment=get_active_environment(request),
+            )
+        return Response(
+            NoeudUtilisateurMeshtasticSerializer(noeud, context={'request': request}).data,
+            status=status.HTTP_201_CREATED if cree else status.HTTP_200_OK,
+        )
+
+    @action(detail=False, methods=['post'], url_path='liberer')
+    def liberer(self, request):
+        """Auto-service : ne peut libérer que SON PROPRE nœud."""
+        if get_active_environment(request) == Environment.DEMO:
+            return Response({'detail': "Indisponible depuis la zone de démonstration."}, status=status.HTTP_403_FORBIDDEN)
+        try:
+            node_num = int(request.data.get('node_num'))
+        except (TypeError, ValueError):
+            return Response({'detail': "node_num requis (entier)."}, status=status.HTTP_400_BAD_REQUEST)
+        noeud = NoeudUtilisateurMeshtastic.objects.filter(node_num=node_num, utilisateur=request.user).first()
+        if noeud is None:
+            return Response({'detail': "Nœud introuvable parmi les vôtres."}, status=status.HTTP_404_NOT_FOUND)
+        audit_log(
+            request=request, action_code="SUPPRESSION",
+            objet_type="NoeudUtilisateurMeshtastic", objet_id=noeud.id,
+            commentaire=f"Libération auto-service du nœud Meshtastic {node_num:08x} par {request.user.email}",
+        )
+        noeud.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=False, methods=['get'], url_path='positions-en-mission')
     def positions_en_mission(self, request):

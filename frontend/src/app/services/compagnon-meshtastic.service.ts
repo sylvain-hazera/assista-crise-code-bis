@@ -16,6 +16,12 @@ export class CompagnonMeshtasticService {
     return this.http.get<CompagnonMeshtastic[]>(`${this.url}/`);
   }
 
+  /** GET /api/compagnons-meshtastic/envoyables/ — résumé minimal (id/nom/broker_host, jamais
+   * les identifiants MQTT) pour le sélecteur de broker lors d'une réclamation de nœud. */
+  envoyables(): Observable<Pick<CompagnonMeshtastic, 'id' | 'nom' | 'broker_host'>[]> {
+    return this.http.get<Pick<CompagnonMeshtastic, 'id' | 'nom' | 'broker_host'>[]>(`${this.url}/envoyables/`);
+  }
+
   create(data: Partial<CompagnonMeshtastic>): Observable<CompagnonMeshtastic> {
     return this.http.post<CompagnonMeshtastic>(`${this.url}/`, data);
   }

@@ -721,3 +721,57 @@
     }
   }
 }
+
+.tab-hint {
+  color: #666;
+  font-size: 0.9rem;
+  max-width: 68ch;
+  margin: 0 0 1.5rem;
+}
+
+.radio-zone-title {
+  margin: 2rem 0 1rem;
+  font-size: 1.05rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid #eee;
+
+  &:first-of-type {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+  }
+}
+
+.radio-table {
+  margin-top: 1.25rem;
+}
+
+.mono {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.85em;
+}
+
+.btn-danger-sm {
+  padding: 0.35rem 0.8rem;
+  border-radius: 6px;
+  border: 1px solid #eee;
+  background: #fff;
+  color: #b91c1c;
+  cursor: pointer;
+  font-size: 0.8rem;
+
+  &:hover {
+    background: #fef2f2;
+  }
+}
+
+.btn-link {
+  margin-left: 0.75rem;
+  background: none;
+  border: none;
+  color: #666;
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 0;
+}
