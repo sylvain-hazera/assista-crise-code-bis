@@ -1,4 +1,5 @@
 import json
+import threading
 import urllib.parse
 import urllib.request
 
@@ -11,6 +12,37 @@ from django.utils import timezone
 # qu'une adresse nouvellement répertoriée finisse par se résoudre, assez long pour ne jamais
 # dominer le temps de réponse d'une liste.
 RETRY_COOLDOWN = timezone.timedelta(hours=6)
+
+# Le cooldown ci-dessus borne la fréquence de RE-tentative d'une commune/point déjà vu, mais
+# rien ne bornait combien de communes/points JAMAIS vus une seule requête pouvait résoudre —
+# trouvé en direct le 14/09 : importer 6747 offres nationales (donc autant de nouvelles
+# communes jamais résolues) a fait enchaîner /api/offres/vue_secteur/ sur des milliers
+# d'appels HTTP synchrones (jusqu'à 5s de timeout chacun), dépassant le timeout du worker
+# gunicorn et faisant planter tout endpoint qui en dépend. Budget posé une fois par requête
+# HTTP (voir GeoResolutionBudgetMiddleware) : au-delà, une commune/point reste simplement non
+# résolu pour CETTE requête (sans déclencher le cooldown, donc retenté dès la prochaine) —
+# jamais d'erreur, juste un `commune` à None le temps que ça se résorbe sur plusieurs requêtes.
+# Illimité hors contexte requête (management command, shell), le budget n'étant alors jamais
+# posé. Valeur choisie en fonction du timeout gunicorn (30s par défaut, jamais surchargé ici,
+# voir backend/Dockerfile) : à 5s de timeout par appel externe (_fetch_json), 5 appels
+# représentent au pire 25s — la requête reste sous le timeout worker même si TOUS échouent
+# (panne de geo.api.gouv.fr par exemple), avec de la marge pour le reste du traitement.
+_budget = threading.local()
+DEFAULT_RESOLUTION_BUDGET = 5
+
+
+def reset_resolution_budget(n: int = DEFAULT_RESOLUTION_BUDGET) -> None:
+    _budget.remaining = n
+
+
+def _consume_budget() -> bool:
+    remaining = getattr(_budget, "remaining", None)
+    if remaining is None:
+        return True
+    if remaining <= 0:
+        return False
+    _budget.remaining = remaining - 1
+    return True
 
 
 def _fetch_json(url: str):
@@ -36,6 +68,8 @@ def _resolve_commune(commune) -> None:
     has_centre = commune.centre_latitude is not None or commune.centre_longitude is not None
     has_secteur = commune.departement_code is not None and commune.region_code is not None
     if (has_nom and has_centre and has_secteur) or not _should_attempt(commune.derniere_tentative):
+        return
+    if not _consume_budget():
         return
     url = (
         f"https://geo.api.gouv.fr/communes/{urllib.parse.quote(commune.code)}"
@@ -102,6 +136,8 @@ def _resolve_risques(commune, force: bool = False) -> None:
     le cooldown — un rafraîchissement demandé explicitement par l'utilisateur ne doit jamais
     être silencieusement ignoré."""
     if not force and (commune.risques_territoire or not _should_attempt(commune.derniere_tentative_risques)):
+        return
+    if not force and not _consume_budget():
         return
     url = f"https://georisques.gouv.fr/api/v1/gaspar/risques?code_insee={urllib.parse.quote(commune.code)}&page_size=50"
     data = _fetch_json(url)
@@ -187,7 +223,7 @@ def _reverse_geocode_point(point) -> dict:
         return {"nom": None, "citycode": None}
     lat, lon = round(point.y, 4), round(point.x, 4)
     point_commune, _ = PointCommune.objects.select_related("commune").get_or_create(lat=lat, lon=lon)
-    if point_commune.commune_id is None and _should_attempt(point_commune.derniere_tentative):
+    if point_commune.commune_id is None and _should_attempt(point_commune.derniere_tentative) and _consume_budget():
         url = f"https://api-adresse.data.gouv.fr/reverse/?lon={lon}&lat={lat}"
         data = _fetch_json(url)
         point_commune.derniere_tentative = timezone.now()

@@ -6,7 +6,7 @@ from django.utils import timezone
 
 from core.geo_lookup import (
     RETRY_COOLDOWN, commune_center_from_code, commune_code_from_point, commune_from_code,
-    commune_from_point,
+    commune_from_point, reset_resolution_budget,
 )
 from core.models import Commune, PointCommune
 
@@ -155,3 +155,70 @@ class TestReverseGeocodePoint:
             "features": [{"properties": {"city": "Grenoble", "citycode": "38185"}}]
         }
         assert commune_code_from_point(Point(5.7245, 45.1885, srid=4326)) == "38185"
+
+
+@pytest.mark.django_db
+class TestResolutionBudget:
+    """Incident du 14/09 : importer 6747 offres réparties sur des milliers de communes jamais
+    vues a fait enchaîner /api/offres/vue_secteur/ sur autant d'appels HTTP synchrones,
+    dépassant le timeout du worker. reset_resolution_budget() (posé une fois par requête par
+    GeoResolutionBudgetMiddleware) borne ce nombre — au-delà, une commune/point reste
+    simplement non résolu pour cette requête, sans jamais planter."""
+
+    def _clear_budget(self):
+        # Le budget est un threading.local — sans ça, une valeur posée par CE test (ou par un
+        # autre test de la suite passant par le client Django, donc par
+        # GeoResolutionBudgetMiddleware) contaminerait le suivant (django_db ne réinitialise
+        # que la base, pas cet état process). Appelé avant ET après chaque test : avant, pour
+        # ne pas hériter d'un résidu laissé par un test antérieur dans la même suite.
+        from core.geo_lookup import _budget
+        if hasattr(_budget, "remaining"):
+            del _budget.remaining
+
+    def setup_method(self, method):
+        self._clear_budget()
+
+    def teardown_method(self, method):
+        self._clear_budget()
+
+    @patch("core.geo_lookup._fetch_json")
+    def test_unlimited_outside_a_request_context(self, mock_fetch):
+        mock_fetch.return_value = {"nom": "Grenoble"}
+        for i in range(30):
+            commune_from_code(f"3818{i}")
+        assert mock_fetch.call_count == 30
+
+    @patch("core.geo_lookup._fetch_json")
+    def test_stops_resolving_new_communes_once_budget_exhausted(self, mock_fetch):
+        mock_fetch.return_value = {"nom": "Grenoble"}
+        reset_resolution_budget(3)
+        resolus = [commune_from_code(f"3818{i}") for i in range(5)]
+
+        assert mock_fetch.call_count == 3
+        assert resolus[:3] == ["Grenoble", "Grenoble", "Grenoble"]
+        assert resolus[3:] == [None, None]
+
+    @patch("core.geo_lookup._fetch_json")
+    def test_budget_exhaustion_does_not_trigger_the_retry_cooldown(self, mock_fetch):
+        # Contrairement à un échec réel (pas de correspondance), être bloqué par le budget ne
+        # doit jamais poser derniere_tentative — sinon la commune resterait non résolue pendant
+        # RETRY_COOLDOWN entier au lieu d'être retentée dès la requête suivante.
+        mock_fetch.return_value = {"nom": "Grenoble"}
+        reset_resolution_budget(0)
+        assert commune_from_code("38185") is None
+
+        commune = Commune.objects.get(code="38185")
+        assert commune.derniere_tentative is None
+
+        reset_resolution_budget(5)
+        assert commune_from_code("38185") == "Grenoble"
+
+    @patch("core.geo_lookup._fetch_json")
+    def test_already_resolved_communes_ignore_the_budget(self, mock_fetch):
+        mock_fetch.return_value = {"nom": "Grenoble"}
+        assert commune_from_code("38185") == "Grenoble"
+
+        reset_resolution_budget(0)
+        # Déjà résolue : lue en base, aucun appel externe, donc jamais bloquée par un budget épuisé.
+        assert commune_from_code("38185") == "Grenoble"
+        assert mock_fetch.call_count == 1

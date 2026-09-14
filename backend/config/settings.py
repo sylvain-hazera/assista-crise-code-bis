@@ -90,6 +90,7 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'core.middleware.NoCacheApiMiddleware',
     'core.middleware.AuditTraceMiddleware',
+    'core.middleware.GeoResolutionBudgetMiddleware',
 ]
 
 ROOT_URLCONF = 'config.urls'

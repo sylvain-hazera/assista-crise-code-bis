@@ -3,6 +3,21 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+class GeoResolutionBudgetMiddleware:
+    """Pose une seule fois par requête le budget de résolutions géo externes (voir
+    core.geo_lookup.reset_resolution_budget) — évite qu'une liste touchant des milliers de
+    communes/points jamais vus enchaîne autant d'appels HTTP synchrones et fasse dépasser le
+    timeout du worker (voir le commentaire détaillé dans geo_lookup.py, incident du 14/09)."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        from .geo_lookup import reset_resolution_budget
+        reset_resolution_budget()
+        return self.get_response(request)
+
+
 class AuditTraceMiddleware:
     """Filet de sécurité de la main courante (AuditLog) : garantit qu'AUCUNE requête /api/ ne
     reste sans trace, quelle que soit la méthode HTTP — pas seulement les endpoints où un
