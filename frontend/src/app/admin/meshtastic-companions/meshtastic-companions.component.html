@@ -28,6 +28,10 @@
   <div class="form-row">
     <input type="text" class="form-input" placeholder="Racine de topic (ex: Traitement/msh/EU_868)" [(ngModel)]="nouveauTopicRacine">
   </div>
+  <label class="checkbox-row">
+    <input type="checkbox" [(ngModel)]="nouveauChiffrementSupporte">
+    Ce broker relaie le chiffrement (sinon le pont force l'envoi en clair)
+  </label>
 
   <button type="button" class="btn-primary" [disabled]="!formValide || creating" (click)="ajouter()">
     Ajouter ce companion
@@ -48,6 +52,7 @@
           <th>Nom</th>
           <th>node_num</th>
           <th>Broker</th>
+          <th>Chiffrement</th>
           <th>Clé publique X25519</th>
           <th>Statut</th>
           <th>Dernière connexion</th>
@@ -57,20 +62,58 @@
       </thead>
       <tbody>
         @for (c of companions; track c.id) {
-          <tr>
-            <td>{{ c.nom }}</td>
-            <td class="mono">{{ nodeNumHex(c.node_num) }}</td>
-            <td class="mono">{{ c.broker_host }}:{{ c.broker_port }}</td>
-            <td class="mono id-cell" (click)="copierClePublique(c)" [title]="c.x25519_public_key_hex || ''">
-              {{ c.x25519_public_key_hex ? (c.x25519_public_key_hex.slice(0, 12) + '…') : '—' }}
-            </td>
-            <td><span class="statut" [ngClass]="statutClass(c)">{{ c.dernier_etat || 'jamais connecté' }}</span></td>
-            <td>{{ c.derniere_connexion ? (c.derniere_connexion | date:'short') : '—' }}</td>
-            <td class="mono id-cell" (click)="copierId(c)" title="Cliquer pour copier">{{ c.id }}</td>
-            <td><button type="button" class="btn-danger-sm" (click)="supprimer(c)">Supprimer</button></td>
-          </tr>
+          @if (editingCompanionId === c.id) {
+            <tr class="edit-row">
+              <td><input type="text" class="form-input form-input-sm" [(ngModel)]="editNom"></td>
+              <td class="mono">{{ nodeNumHex(c.node_num) }}</td>
+              <td>
+                <input type="text" class="form-input form-input-sm" placeholder="Broker" [(ngModel)]="editBrokerHost">
+                <input type="number" class="form-input form-input-sm" placeholder="Port" [(ngModel)]="editBrokerPort">
+              </td>
+              <td>
+                <label class="checkbox-row">
+                  <input type="checkbox" [(ngModel)]="editChiffrementSupporte">
+                  Supporté
+                </label>
+              </td>
+              <td colspan="2">
+                <input type="text" class="form-input form-input-sm" placeholder="Racine de topic" [(ngModel)]="editTopicRacine">
+                <label class="checkbox-row">
+                  <input type="checkbox" [(ngModel)]="editActif">
+                  Actif
+                </label>
+              </td>
+              <td></td>
+              <td class="mono id-cell">{{ c.id }}</td>
+              <td>
+                <button type="button" class="btn-primary sm" [disabled]="saving" (click)="enregistrerEdition(c)">Enregistrer</button>
+                <button type="button" class="btn-secondary sm" [disabled]="saving" (click)="annulerEdition()">Annuler</button>
+              </td>
+            </tr>
+          } @else {
+            <tr>
+              <td>{{ c.nom }}</td>
+              <td class="mono">{{ nodeNumHex(c.node_num) }}</td>
+              <td class="mono">{{ c.broker_host }}:{{ c.broker_port }}</td>
+              <td>
+                <span class="statut" [ngClass]="c.chiffrement_supporte ? 'statut-ok' : 'statut-inconnu'">
+                  {{ c.chiffrement_supporte ? 'Supporté' : 'Clair forcé' }}
+                </span>
+              </td>
+              <td class="mono id-cell" (click)="copierClePublique(c)" [title]="c.x25519_public_key_hex || ''">
+                {{ c.x25519_public_key_hex ? (c.x25519_public_key_hex.slice(0, 12) + '…') : '—' }}
+              </td>
+              <td><span class="statut" [ngClass]="statutClass(c)">{{ c.dernier_etat || 'jamais connecté' }}</span></td>
+              <td>{{ c.derniere_connexion ? (c.derniere_connexion | date:'short') : '—' }}</td>
+              <td class="mono id-cell" (click)="copierId(c)" title="Cliquer pour copier">{{ c.id }}</td>
+              <td>
+                <button type="button" class="btn-secondary sm" (click)="commencerEdition(c)">Modifier</button>
+                <button type="button" class="btn-danger-sm" (click)="supprimer(c)">Supprimer</button>
+              </td>
+            </tr>
+          }
         } @empty {
-          <tr><td colspan="8" class="empty">Aucun companion déclaré pour l'instant.</td></tr>
+          <tr><td colspan="9" class="empty">Aucun companion déclaré pour l'instant.</td></tr>
         }
       </tbody>
     </table>

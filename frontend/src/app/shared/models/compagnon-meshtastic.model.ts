@@ -22,6 +22,10 @@ export interface CompagnonMeshtastic {
 
   principal: boolean;
   actif: boolean;
+  /** Décoché par défaut (cas Gaulix, jamais confirmé relayer un paquet chiffré) : le pont force
+   * alors l'envoi en clair pour ce broker, quel que soit le canal/la clé configurés — purement
+   * informatif ici, l'application réelle est faite côté meshtastic-bridge/bridge.py. */
+  chiffrement_supporte: boolean;
 
   /** Renseignés uniquement par le service-pont (meshtastic-bridge/), jamais éditables ici. */
   derniere_connexion?: string | null;

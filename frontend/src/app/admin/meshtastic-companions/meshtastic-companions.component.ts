@@ -13,10 +13,11 @@ import { ContactMeshtastic } from '../../shared/models/contact-meshtastic.model'
 import { NoeudUtilisateurMeshtastic } from '../../shared/models/noeud-utilisateur-meshtastic.model';
 import { User } from '../../shared/models/user.model';
 
-/** Page de test Meshtastic : déclarer une identité de nœud logicielle (companion, sans matériel
- * — voir meshtastic-bridge/README.md), des canaux (PSK partagée), et associer les nœuds
- * détectés sur le mesh à des comptes utilisateurs. Reste sur feature/meshtastic-poc, jamais
- * déployée sur .114 tant que le chiffrement n'est pas validé sur du vrai matériel. */
+/** Page de paramétrage Meshtastic : déclarer une identité de nœud logicielle (companion, sans
+ * matériel — voir meshtastic-bridge/README.md), des canaux (PSK partagée), et associer les
+ * nœuds détectés sur le mesh à des comptes utilisateurs. Le chiffrement (PSK canal, PKI) est
+ * réimplémenté à la main et non fiable sur tous les brokers (ex: Gaulix, voir
+ * CompagnonMeshtastic.chiffrement_supporte) : à manier avec précaution. */
 @Component({
   selector: 'app-meshtastic-companions',
   standalone: true,
@@ -39,7 +40,17 @@ export class MeshtasticCompanionsComponent implements OnInit {
   // "Traitement/msh/EU_868" et pas "msh/EU_868" pour Gaulix — vérifié en sniffant leur broker
   // en direct, contrairement à leur documentation publique (voir CompagnonMeshtastic.topic_racine).
   nouveauTopicRacine = 'Traitement/msh/EU_868';
+  nouveauChiffrementSupporte = false;
   creating = false;
+
+  editingCompanionId: string | null = null;
+  editNom = '';
+  editBrokerHost = '';
+  editBrokerPort = 1883;
+  editTopicRacine = '';
+  editChiffrementSupporte = false;
+  editActif = true;
+  saving = false;
 
   canaux: CanalMeshtastic[] = [];
   nouveauCanalNom = '';
@@ -119,6 +130,7 @@ export class MeshtasticCompanionsComponent implements OnInit {
       broker_host: this.nouveauBrokerHost.trim(),
       broker_port: this.nouveauBrokerPort,
       topic_racine: this.nouveauTopicRacine.trim(),
+      chiffrement_supporte: this.nouveauChiffrementSupporte,
     }).subscribe({
       next: (created) => {
         this.companions = [created, ...this.companions];
@@ -126,6 +138,7 @@ export class MeshtasticCompanionsComponent implements OnInit {
         this.nouveauNodeNum = null;
         this.nouveauLongName = '';
         this.nouveauShortName = '';
+        this.nouveauChiffrementSupporte = false;
         this.creating = false;
       },
       error: () => { this.errorMessage = 'Impossible de créer ce companion (node_num déjà utilisé ?).'; this.creating = false; },
@@ -136,6 +149,39 @@ export class MeshtasticCompanionsComponent implements OnInit {
     if (!confirm(`Supprimer le companion « ${companion.nom} » ?`)) return;
     this.service.delete(companion.id).subscribe(() => {
       this.companions = this.companions.filter(c => c.id !== companion.id);
+    });
+  }
+
+  commencerEdition(c: CompagnonMeshtastic): void {
+    this.editingCompanionId = c.id;
+    this.editNom = c.nom;
+    this.editBrokerHost = c.broker_host;
+    this.editBrokerPort = c.broker_port;
+    this.editTopicRacine = c.topic_racine;
+    this.editChiffrementSupporte = c.chiffrement_supporte;
+    this.editActif = c.actif;
+  }
+
+  annulerEdition(): void {
+    this.editingCompanionId = null;
+  }
+
+  enregistrerEdition(companion: CompagnonMeshtastic): void {
+    this.saving = true;
+    this.service.update(companion.id, {
+      nom: this.editNom.trim(),
+      broker_host: this.editBrokerHost.trim(),
+      broker_port: this.editBrokerPort,
+      topic_racine: this.editTopicRacine.trim(),
+      chiffrement_supporte: this.editChiffrementSupporte,
+      actif: this.editActif,
+    }).subscribe({
+      next: (updated) => {
+        this.companions = this.companions.map(c => c.id === updated.id ? updated : c);
+        this.editingCompanionId = null;
+        this.saving = false;
+      },
+      error: () => { this.errorMessage = 'Impossible de modifier ce companion.'; this.saving = false; },
     });
   }
 

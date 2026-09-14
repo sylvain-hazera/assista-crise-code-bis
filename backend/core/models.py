@@ -4054,6 +4054,18 @@ class CompagnonMeshtastic(EnvironmentScopedModel):
     # n'indique que la racine "msh/EU_868". Racine différente probable pour un autre réseau.
     topic_racine = models.CharField(max_length=100, default="Traitement/msh/EU_868")
 
+    # Faux par défaut (fail-closed) : validé en conditions réelles le 13/09 que Gaulix ne relaie
+    # de façon fiable QUE le contenu en clair (`decoded`) — un DM/canal chiffré (PSK classique ou
+    # PKI) n'a jamais été confirmé reçu par un vrai appareil, cause exacte non identifiée malgré
+    # investigation poussée (voir meshtastic-bridge/README.md). Purement déclaratif par broker :
+    # tant que ce n'est pas coché, le pont force le clair pour CE companion quoi qu'il arrive,
+    # plutôt que de compter sur un admin qui s'en souvient — voir boucle_envoi_dm/boucle_envoi_canaux.
+    chiffrement_supporte = models.BooleanField(
+        default=False,
+        help_text="Décoché par défaut (cas Gaulix) : le pont force alors l'envoi en clair pour "
+                   "ce broker, quel que soit le canal/la clé configurés.",
+    )
+
     principal = models.BooleanField(default=False)
     actif = models.BooleanField(default=True)
 

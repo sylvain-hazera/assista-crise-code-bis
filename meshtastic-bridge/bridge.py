@@ -389,6 +389,10 @@ async def boucle_execution_planifiee(file_a_planifier):
 
 
 async def boucle_envoi_dm(mqtt_client, compagnon, registre, django, cle_privee_hex):
+    # Compagnon jamais rafraîchi après le démarrage (comme broker_host/topic_racine) : la valeur
+    # de chiffrement_supporte est donc figée pour la durée du process, un redémarrage du pont
+    # suffit à prendre en compte un changement fait en admin.
+    chiffrement_supporte = bool(compagnon.get("chiffrement_supporte"))
     while True:
         try:
             for message in await django.dm_a_envoyer(compagnon["id"]):
@@ -406,6 +410,20 @@ async def boucle_envoi_dm(mqtt_client, compagnon, registre, django, cle_privee_h
                 paquet.hop_start = 7
                 paquet.want_ack = True
 
+                if not chiffrement_supporte:
+                    # CompagnonMeshtastic.chiffrement_supporte décoché (cas Gaulix, jamais
+                    # confirmé relayer un paquet chiffré PSK ou PKI) : on force le clair pour CE
+                    # broker quoi qu'il arrive, sans même tenter PKI/PSK — voir modèle Django.
+                    if canal_nom is None:
+                        canal_nom = registre.nom_principal()
+                    if canal_nom is None:
+                        await django.marquer_dm(message["id"], "ECHEC", erreur="Aucun canal disponible pour ce DM.")
+                        continue
+                    canal = registre.get(canal_nom)
+                    paquet.channel = crypto.hash_canal(canal_nom, canal["psk"]) if canal else 0
+                    paquet.decoded.CopyFrom(data)
+                    canal_id_mqtt = canal_nom
+                    mode = "clair (forcé, chiffrement non supporté par ce broker)"
                 # Un vrai DM 1-à-1 chiffré DOIT passer par PKI : le firmware officiel rejette
                 # délibérément un texte adressé (`to=`) déchiffré via la PSK *partagée* d'un
                 # canal ("Rejecting legacy DM", Router.cpp::perhapsDecode) — seul un broadcast
@@ -413,7 +431,7 @@ async def boucle_envoi_dm(mqtt_client, compagnon, registre, django, cle_privee_h
                 # lisant le firmware officiel (github.com/meshtastic/firmware), après un test
                 # comparatif contrôlé qui avait montré un DM PSK canal confirmé reçu (test3)
                 # contre un DM PKI jamais confirmé (test5) envoyés dans les mêmes conditions.
-                if ENVOI_PKI_ACTIF and destinataire_pubkey_hex:
+                elif ENVOI_PKI_ACTIF and destinataire_pubkey_hex:
                     # Deuxième bug trouvé le même jour : le firmware ne tente le déchiffrement
                     # PKI que si `packet.channel == 0` (Router.cpp::perhapsDecode) et publie/
                     # attend le topic/channel_id MQTT littéral "PKI", pas un nom de canal
@@ -459,6 +477,7 @@ async def boucle_envoi_dm(mqtt_client, compagnon, registre, django, cle_privee_h
 
 
 async def boucle_envoi_canaux(mqtt_client, compagnon, registre, django):
+    chiffrement_supporte = bool(compagnon.get("chiffrement_supporte"))
     while True:
         try:
             for canal_nom, canal in registre.tous().items():
@@ -473,7 +492,12 @@ async def boucle_envoi_canaux(mqtt_client, compagnon, registre, django):
                     paquet.hop_limit = 7
                     paquet.hop_start = 7
 
-                    chiffre = crypto.chiffrer(canal["psk"], packet_id, compagnon["node_num"], data.SerializeToString())
+                    # chiffrement_supporte décoché : on ne tente même pas crypto.chiffrer, même
+                    # logique de fail-closed que boucle_envoi_dm (voir modèle Django).
+                    chiffre = (
+                        crypto.chiffrer(canal["psk"], packet_id, compagnon["node_num"], data.SerializeToString())
+                        if chiffrement_supporte else None
+                    )
                     if chiffre is None:
                         paquet.decoded.CopyFrom(data)
                     else:
