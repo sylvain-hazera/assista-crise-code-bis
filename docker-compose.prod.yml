@@ -40,6 +40,7 @@ services:
     networks:
       - front
       - back
+      - db
 
   # NB : ce fichier n'est plus la source de vérité du déploiement réel (.113/.114 sont
   # relancés à la main, voir les scripts de déploiement) — laissé ici pour une éventuelle
@@ -49,6 +50,10 @@ services:
   # identifiants applicatifs à droits restreints. Une fois la base initialisée, refaire la même
   # séparation superuser (bootstrap) / rôle applicatif à droits limités que sur .113/.114
   # (rôles svc_dbmaint / assista_app).
+  #
+  # Réseau : ac_db est isolé sur son propre réseau "db", que seul backend rejoint (en plus de
+  # "front"/"back") — aucun autre conteneur (proxy, ponts Meshtastic/MeshCore) ne doit jamais
+  # pouvoir résoudre/atteindre ac_db, cf. .113/.114 (assista-db).
   db:
     image: postgis/postgis:15-3.3
     container_name: ac_db
@@ -65,7 +70,7 @@ services:
       retries: 5
     restart: always
     networks:
-      - back
+      - db
 
   mosquitto:
     image: eclipse-mosquitto
@@ -118,6 +123,7 @@ services:
 networks:
   front:
   back:
+  db:
 
 volumes:
   postgres_data:
