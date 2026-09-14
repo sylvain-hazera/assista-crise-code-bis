@@ -28,6 +28,10 @@ const STATUT_LABELS: Record<string, string> = {
   CLOTURE: 'Terminé',
 };
 
+// Mêmes statuts modifiables et même garde backend (DossierViewSet.definir_statut) que
+// mes-interventions.component.ts : CLOTURE/RESOLU restent en lecture seule, gérés ailleurs.
+const STATUTS_MODIFIABLES = ['NOUVEAU', 'EN_ATTENTE_DISTRIBUTION', 'EN_ATTENTE_AFFECTATION', 'AFFECTE', 'EN_COURS'];
+
 const MAX_PHOTO_SIZE = 5 * 1024 * 1024;
 const VALID_PHOTO_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
 
@@ -52,8 +56,11 @@ export class DossierSuiviComponent implements OnInit, OnDestroy {
   uploadingPhoto = false;
   uploadError = '';
   markingImportant = false;
+  savingStatut = false;
   selectedPhoto: DossierDocument | null = null;
   pointsInteret: MinimapPointInteret[] = [];
+
+  readonly statutModifiableOptions = STATUTS_MODIFIABLES.map(value => ({ value, label: STATUT_LABELS[value] }));
 
   private dossierId = '';
 
@@ -156,6 +163,15 @@ export class DossierSuiviComponent implements OnInit, OnDestroy {
       error: () => {
         this.markingImportant = false;
       }
+    });
+  }
+
+  onStatutChange(statut: string): void {
+    if (!this.dossier || this.savingStatut) return;
+    this.savingStatut = true;
+    this.dossierService.definirStatut(this.dossierId, statut).subscribe({
+      next: dossier => { this.dossier = dossier; this.savingStatut = false; },
+      error: () => { this.savingStatut = false; },
     });
   }
 

@@ -22,7 +22,20 @@
               <span class="material-icons">priority_high</span> Important
             </span>
           }
-          <span class="statut-badge">{{ statutLabel(dossier.statut) }}</span>
+          @if (dossier.statut === 'CLOTURE' || dossier.statut === 'RESOLU') {
+            <span class="statut-badge" [attr.data-statut]="dossier.statut">{{ statutLabel(dossier.statut) }}</span>
+          } @else {
+            <select
+              class="statut-select"
+              [attr.data-statut]="dossier.statut"
+              [ngModel]="dossier.statut"
+              [disabled]="savingStatut"
+              (ngModelChange)="onStatutChange($event)">
+              @for (opt of statutModifiableOptions; track opt.value) {
+                <option [value]="opt.value">{{ opt.label }}</option>
+              }
+            </select>
+          }
         </div>
       </div>
 
@@ -44,6 +57,28 @@
       <div class="meta-row" *ngIf="dossier.equipe_nom">
         <strong>Équipe en charge :</strong> {{ dossier.equipe_nom }}
       </div>
+
+      @if (dossier.description_origine || dossier.contact_nom || dossier.contact_telephone || dossier.contact_email) {
+        <div class="logistique-box">
+          <h3><span class="material-icons">description</span> Rappel de la demande initiale</h3>
+          @if (dossier.description_origine) {
+            <div class="logistique-row demande-origine">{{ dossier.description_origine }}</div>
+          }
+          @if (dossier.contact_nom) {
+            <div class="logistique-row"><strong>Contact :</strong> {{ dossier.contact_nom }}</div>
+          }
+          @if (dossier.contact_telephone) {
+            <div class="logistique-row">
+              <strong>Téléphone :</strong> <a [href]="'tel:' + dossier.contact_telephone">{{ dossier.contact_telephone }}</a>
+            </div>
+          }
+          @if (dossier.contact_email) {
+            <div class="logistique-row">
+              <strong>Email :</strong> <a [href]="'mailto:' + dossier.contact_email">{{ dossier.contact_email }}</a>
+            </div>
+          }
+        </div>
+      }
 
       @if (dossier.commune || dossier.latitude != null || (dossier.regulateurs?.length ?? 0) > 0) {
         <div class="logistique-box">

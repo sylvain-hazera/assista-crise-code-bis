@@ -74,6 +74,22 @@
   white-space: nowrap;
 }
 
+.statut-select {
+  background: #eef1ff;
+  color: #4c51bf;
+  padding: 0.3rem 1.5rem 0.3rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+  border: 1px solid transparent;
+  cursor: pointer;
+
+  &[data-statut="EN_COURS"] { background: #dbeafe; color: #1d4ed8; }
+  &[data-statut="AFFECTE"] { background: #fef3c7; color: #92400e; }
+  &:disabled { opacity: 0.6; cursor: not-allowed; }
+}
+
 .important-badge {
   display: inline-flex;
   align-items: center;
@@ -161,6 +177,12 @@
   gap: 0.4rem;
 
   &:last-child { margin-bottom: 0; }
+}
+
+.demande-origine {
+  display: block;
+  font-style: italic;
+  color: #555;
 }
 
 .logistique-minimap {
