@@ -77,6 +77,11 @@ export class AdminLayoutComponent implements OnInit {
     { icon: 'settings_input_antenna', label: 'Companions MeshCore (test)', route: '/admin/meshcore-companions' },
     { icon: 'forum', label: 'Canaux MeshCore (test)', route: '/admin/meshcore-canaux' },
 
+    // Jamais ajouté au menu jusqu'ici (même défaut que MeshCore avant correction) : page
+    // atteignable seulement en connaissant son URL exacte.
+    { icon: 'settings_input_antenna', label: 'Companions Meshtastic (test)', route: '/admin/meshtastic-companions' },
+    { icon: 'forum', label: 'Canaux Meshtastic (test)', route: '/admin/meshtastic-canaux' },
+
     { icon: 'link', label: 'Correspondances', route: '/admin/correspondances' },
 
     { icon: 'assignment', label: 'Affectations', route: '/admin/affectations' },
