@@ -16,9 +16,10 @@ Chiffrement testé en aller-retour localement mais jamais confirmé reçu par un
 Faux, fail-closed) qui force le pont à envoyer en clair tant que ce n'est pas explicitement
 validé pour SON broker.
 
-La liste des companions actifs (et leurs identifiants MQTT/canaux) est chargée UNE FOIS au
-démarrage — ajouter/modifier/désactiver un companion depuis l'admin nécessite de redémarrer ce
-service pour être pris en compte, comme le reste de sa config (broker_host, topic_racine...).
+Autonome : boucle_reconciliation_compagnons repolle périodiquement la liste des companions
+actifs (COMPAGNONS_REFRESH_INTERVAL_SECONDS, 30s par défaut) et ouvre/ferme les connexions MQTT
+en conséquence — ajouter/modifier/désactiver un broker depuis l'admin est pris en compte tout
+seul, sans redémarrage du service (demande explicite du 14/09).
 """
 
 import asyncio
@@ -41,6 +42,8 @@ DJANGO_PASSWORD = os.environ["DJANGO_BRIDGE_PASSWORD"]
 
 POLL_INTERVAL_SECONDS = int(os.environ.get("POLL_INTERVAL_SECONDS", "15"))
 CANAUX_REFRESH_INTERVAL_SECONDS = int(os.environ.get("CANAUX_REFRESH_INTERVAL_SECONDS", "60"))
+# Détection d'un broker ajouté/modifié/retiré depuis l'admin — voir boucle_reconciliation_compagnons.
+COMPAGNONS_REFRESH_INTERVAL_SECONDS = int(os.environ.get("COMPAGNONS_REFRESH_INTERVAL_SECONDS", "30"))
 CONTACTS_FLUSH_INTERVAL_SECONDS = int(os.environ.get("CONTACTS_FLUSH_INTERVAL_SECONDS", "30"))
 RECONNECT_DELAY_SECONDS = int(os.environ.get("RECONNECT_DELAY_SECONDS", "10"))
 
@@ -657,17 +660,51 @@ async def _executer_compagnon(django, compagnon):
         mqtt_client.disconnect()
 
 
+async def boucle_reconciliation_compagnons(django, taches):
+    """Repolle périodiquement /compagnons-meshtastic/actifs-avec-identifiants/ et
+    démarre/arrête une tâche par broker en fonction des changements faits en admin (ajout,
+    suppression, désactivation, modification broker/canal/PSK/mot de passe) — sans jamais
+    toucher aux brokers non concernés par le changement (demande explicite du 14/09 : ajouter
+    un broker doit se connecter tout seul, pas nécessiter de redémarrage manuel du pont).
+
+    `taches` : dict compagnon_id -> (asyncio.Task, config au moment du dernier (re)démarrage) —
+    permet de détecter une modification (la config actuelle diffère de celle en cours
+    d'exécution) sans dépendre d'un état "modifié le" côté Django."""
+    while True:
+        try:
+            compagnons = await django.compagnons_actifs()
+            actifs_par_id = {c["id"]: c for c in compagnons}
+
+            for compagnon_id in list(taches):
+                if compagnon_id not in actifs_par_id:
+                    logger.info("Companion %s désactivé/supprimé — arrêt de sa connexion MQTT.", compagnon_id)
+                    tache, _ = taches.pop(compagnon_id)
+                    tache.cancel()
+
+            for compagnon_id, compagnon in actifs_par_id.items():
+                tache_existante = taches.get(compagnon_id)
+                if tache_existante is not None:
+                    if tache_existante[1] == compagnon:
+                        continue  # Rien n'a changé depuis le dernier (re)démarrage.
+                    logger.info("Companion '%s' modifié — reconnexion.", compagnon["nom"])
+                    tache_existante[0].cancel()
+                    try:
+                        await tache_existante[0]
+                    except asyncio.CancelledError:
+                        pass
+                else:
+                    logger.info("Nouveau companion actif détecté : '%s'.", compagnon["nom"])
+                taches[compagnon_id] = (asyncio.create_task(demarrer_pour_compagnon(django, compagnon)), compagnon)
+        except Exception:
+            logger.exception("Échec de la reconciliation des companions actifs.")
+        await asyncio.sleep(COMPAGNONS_REFRESH_INTERVAL_SECONDS)
+
+
 async def main():
     logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
 
     django = DjangoClient(DJANGO_API_URL, DJANGO_EMAIL, DJANGO_PASSWORD)
-    compagnons = await django.compagnons_actifs()
-    if not compagnons:
-        logger.warning("Aucun companion Meshtastic actif — rien à faire, le pont attend.")
-        while True:
-            await asyncio.sleep(3600)
-
-    await asyncio.gather(*(demarrer_pour_compagnon(django, c) for c in compagnons))
+    await boucle_reconciliation_compagnons(django, {})
 
 
 if __name__ == "__main__":
