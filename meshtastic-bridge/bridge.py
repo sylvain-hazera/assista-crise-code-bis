@@ -1,21 +1,24 @@
-"""Service-pont Meshtastic <-> assista-crise — phase de test (voir doc de conception
-« Maillage Terrain » et meshcore-bridge/ pour le pont équivalent MeshCore).
+"""Service-pont Meshtastic <-> assista-crise (voir doc de conception « Maillage Terrain » et
+meshcore-bridge/ pour le pont équivalent MeshCore).
 
 Contrairement à meshcore-bridge, il n'y a ici NI matériel radio NI connexion série/BLE : ce
-service se connecte directement en tant que CLIENT MQTT à un broker tiers (ex: Gaulix,
-mqtt.gaulix.fr — réseau communautaire Meshtastic français) et se comporte comme un nœud
-Meshtastic purement logiciel. La lib officielle `meshtastic` (PyPI) ne sert ici QUE pour ses
-définitions protobuf (meshtastic.protobuf.*) — elle ne pilote aucun appareil, et surtout ne
-chiffre/déchiffre jamais elle-même (c'est le firmware qui fait ça normalement) : voir crypto.py,
-qui réimplémente cette partie à partir du firmware officiel open-source.
+service se connecte en tant que CLIENT MQTT à un ou plusieurs brokers tiers (ex: Gaulix,
+mqtt.gaulix.fr — réseau communautaire Meshtastic français) et se comporte comme autant de nœuds
+Meshtastic purement logiciels — UNE connexion MQTT par CompagnonMeshtastic actif, toutes en
+parallèle (demande explicite du 14/09 : plusieurs brokers utilisables en même temps, pas un
+seul à la fois). La lib officielle `meshtastic` (PyPI) ne sert ici QUE pour ses définitions
+protobuf (meshtastic.protobuf.*) — elle ne pilote aucun appareil, et surtout ne chiffre/
+déchiffre jamais elle-même (c'est le firmware qui fait ça normalement) : voir crypto.py, qui
+réimplémente cette partie à partir du firmware officiel open-source.
 
-IMPORTANT — non vérifié sur matériel réel : le chiffrement (nonce, dérivation de clé, hash de
-canal) est dérivé directement du code source du firmware officiel (github.com/meshtastic/
-firmware) et testé en aller-retour localement, mais PAS encore contre un vrai appareil. Premier
-test réel à faire avec précaution (voir README.md de ce dossier) avant de considérer ce pont
-fiable.
+Chiffrement testé en aller-retour localement mais jamais confirmé reçu par un vrai appareil
+(voir README.md) — chaque companion a son propre drapeau `chiffrement_supporte` (par défaut
+Faux, fail-closed) qui force le pont à envoyer en clair tant que ce n'est pas explicitement
+validé pour SON broker.
 
-Ne PAS déployer ce service sur .114 avant d'avoir validé le matériel.
+La liste des companions actifs (et leurs identifiants MQTT/canaux) est chargée UNE FOIS au
+démarrage — ajouter/modifier/désactiver un companion depuis l'admin nécessite de redémarrer ce
+service pour être pris en compte, comme le reste de sa config (broker_host, topic_racine...).
 """
 
 import asyncio
@@ -35,7 +38,6 @@ logger = logging.getLogger("meshtastic-bridge")
 DJANGO_API_URL = os.environ["DJANGO_API_URL"]
 DJANGO_EMAIL = os.environ["DJANGO_BRIDGE_EMAIL"]
 DJANGO_PASSWORD = os.environ["DJANGO_BRIDGE_PASSWORD"]
-COMPAGNON_ID = os.environ["COMPAGNON_ID"]
 
 POLL_INTERVAL_SECONDS = int(os.environ.get("POLL_INTERVAL_SECONDS", "15"))
 CANAUX_REFRESH_INTERVAL_SECONDS = int(os.environ.get("CANAUX_REFRESH_INTERVAL_SECONDS", "60"))
@@ -112,15 +114,11 @@ class DjangoClient:
             payload["erreur"] = erreur
         await self._request("POST", f"/compagnons-meshtastic/{compagnon_id}/rapporter-etat/", json=payload)
 
-    async def get_companion(self, compagnon_id):
-        response = await self._request("GET", f"/compagnons-meshtastic/{compagnon_id}/")
-        return response.json()
-
-    async def get_companion_avec_cle_privee(self, compagnon_id):
-        """Contrairement à get_companion, expose x25519_private_key_hex — nécessaire au calcul
-        de l'échange Diffie-Hellman d'un DM chiffré par clé publique (PKI), jamais renvoyé par
-        la sérialisation normale."""
-        response = await self._request("GET", f"/compagnons-meshtastic/{compagnon_id}/avec-cle-privee/")
+    async def compagnons_actifs(self):
+        """Config complète (mqtt_password, x25519_private_key_hex inclus) de tous les
+        companions actifs — remplace l'ancien COMPAGNON_ID unique : une connexion MQTT est
+        ouverte pour CHACUN, en parallèle (voir demarrer_pour_compagnon)."""
+        response = await self._request("GET", "/compagnons-meshtastic/actifs-avec-identifiants/")
         return response.json()
 
     async def synchroniser_contacts(self, compagnon_id, contacts):
@@ -128,8 +126,11 @@ class DjangoClient:
             return
         await self._request("POST", f"/compagnons-meshtastic/{compagnon_id}/synchroniser-contacts/", json={"contacts": contacts})
 
-    async def canaux_avec_cle(self):
-        response = await self._request("GET", "/canaux-meshtastic/avec-cle/")
+    async def canaux_avec_cle(self, compagnon_id):
+        """Filtré par companion : les noms de canal (ex: "Fr_Balise" chez Gaulix, "LongFast"
+        ailleurs) sont propres à chaque broker, pas un référentiel global (voir
+        CanalMeshtasticViewSet.avec_cle côté Django)."""
+        response = await self._request("GET", "/canaux-meshtastic/avec-cle/", params={"compagnon": compagnon_id})
         return response.json()
 
     async def dm_a_envoyer(self, compagnon_id):
@@ -210,10 +211,10 @@ class RegistreCanaux:
         return next(iter(self._par_nom), None)
 
 
-async def boucle_rafraichissement_canaux(django, registre):
+async def boucle_rafraichissement_canaux(django, registre, compagnon_id):
     while True:
         try:
-            registre.mettre_a_jour(await django.canaux_avec_cle())
+            registre.mettre_a_jour(await django.canaux_avec_cle(compagnon_id))
         except Exception:
             logger.exception("Échec du rafraîchissement des canaux.")
         await asyncio.sleep(CANAUX_REFRESH_INTERVAL_SECONDS)
@@ -372,6 +373,10 @@ def demarrer_mqtt(compagnon, registre, tampon, django, boucle, file_a_planifier,
     client.on_connect = on_connect
     client.on_disconnect = on_disconnect
     client.on_message = on_message
+    if compagnon.get("mqtt_username"):
+        client.username_pw_set(compagnon["mqtt_username"], compagnon.get("mqtt_password") or None)
+    if compagnon.get("mqtt_use_tls"):
+        client.tls_set()
     client.connect(compagnon["broker_host"], compagnon["broker_port"], keepalive=60)
     client.loop_start()
     return client
@@ -606,20 +611,30 @@ async def boucle_annonce_identite(mqtt_client, compagnon, registre, cle_publique
         await asyncio.sleep(NODEINFO_ANNONCE_INTERVAL_SECONDS)
 
 
-async def main():
-    logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
+async def demarrer_pour_compagnon(django, compagnon):
+    """Boucle de surveillance d'UN companion/broker : relance _executer_compagnon indéfiniment
+    en cas d'échec (broker injoignable, déconnexion...) SANS jamais laisser une exception
+    remonter jusqu'au asyncio.gather() de main() — sinon un seul broker en panne ferait planter
+    tout le pont, y compris les autres brokers qui fonctionnent (demande explicite du 14/09 :
+    plusieurs brokers actifs en parallèle, donc isolés les uns des autres)."""
+    while True:
+        try:
+            await _executer_compagnon(django, compagnon)
+        except Exception:
+            logger.exception("Échec du companion '%s' (%s) — nouvelle tentative dans %ds.", compagnon["nom"], compagnon["broker_host"], RECONNECT_DELAY_SECONDS)
+        await asyncio.sleep(RECONNECT_DELAY_SECONDS)
 
-    django = DjangoClient(DJANGO_API_URL, DJANGO_EMAIL, DJANGO_PASSWORD)
-    compagnon = await django.get_companion(COMPAGNON_ID)
-    cle_privee = await django.get_companion_avec_cle_privee(COMPAGNON_ID)
-    cle_privee_hex = cle_privee["x25519_private_key_hex"]
+
+async def _executer_compagnon(django, compagnon):
+    cle_privee_hex = compagnon["x25519_private_key_hex"]
     logger.info(
-        "Companion Meshtastic '%s' (node_num=%08x, clé publique X25519 %s...).",
-        compagnon["nom"], compagnon["node_num"], cle_privee["x25519_public_key_hex"][:12],
+        "Companion Meshtastic '%s' (node_num=%08x, broker %s:%s, clé publique X25519 %s...).",
+        compagnon["nom"], compagnon["node_num"], compagnon["broker_host"], compagnon["broker_port"],
+        compagnon["x25519_public_key_hex"][:12],
     )
 
     registre = RegistreCanaux()
-    registre.mettre_a_jour(await django.canaux_avec_cle())
+    registre.mettre_a_jour(await django.canaux_avec_cle(compagnon["id"]))
     tampon = TamponContacts()
 
     boucle = asyncio.get_running_loop()
@@ -630,16 +645,29 @@ async def main():
     try:
         await asyncio.gather(
             boucle_execution_planifiee(file_a_planifier),
-            boucle_rafraichissement_canaux(django, registre),
-            boucle_flush_contacts(django, COMPAGNON_ID, tampon),
+            boucle_rafraichissement_canaux(django, registre, compagnon["id"]),
+            boucle_flush_contacts(django, compagnon["id"], tampon),
             boucle_envoi_dm(mqtt_client, compagnon, registre, django, cle_privee_hex),
             boucle_envoi_canaux(mqtt_client, compagnon, registre, django),
             boucle_annonce_position(mqtt_client, compagnon, registre),
-            boucle_annonce_identite(mqtt_client, compagnon, registre, cle_privee["x25519_public_key_hex"]),
+            boucle_annonce_identite(mqtt_client, compagnon, registre, compagnon["x25519_public_key_hex"]),
         )
     finally:
         mqtt_client.loop_stop()
         mqtt_client.disconnect()
+
+
+async def main():
+    logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
+
+    django = DjangoClient(DJANGO_API_URL, DJANGO_EMAIL, DJANGO_PASSWORD)
+    compagnons = await django.compagnons_actifs()
+    if not compagnons:
+        logger.warning("Aucun companion Meshtastic actif — rien à faire, le pont attend.")
+        while True:
+            await asyncio.sleep(3600)
+
+    await asyncio.gather(*(demarrer_pour_compagnon(django, c) for c in compagnons))
 
 
 if __name__ == "__main__":

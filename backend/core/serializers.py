@@ -2741,12 +2741,14 @@ class CompagnonMeshtasticSerializer(serializers.ModelSerializer):
         # seule chose qui protège l'identité de ce companion, jamais exposée par l'API sous
         # aucun prétexte, contrairement au reste des champs.
         exclude = ['x25519_private_key_hex']
+        extra_kwargs = {'mqtt_password': {'write_only': True}}
 
 
 class CanalMeshtasticSerializer(serializers.ModelSerializer):
     institution_nom = serializers.CharField(source='institution.nom', read_only=True, default=None)
     crise_nom = serializers.CharField(source='crise.name', read_only=True, default=None)
     equipe_nom = serializers.CharField(source='equipe.name', read_only=True, default=None)
+    compagnon_nom = serializers.CharField(source='compagnon.nom', read_only=True, default=None)
 
     class Meta:
         model = CanalMeshtastic

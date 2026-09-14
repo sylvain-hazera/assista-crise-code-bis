@@ -5,6 +5,11 @@ export interface CanalMeshtastic {
   /** DOIT correspondre exactement au nom du canal configuré sur les appareils cibles — c'est
    * lui qui compose le topic MQTT (voir meshtastic-bridge/bridge.py), pas une étiquette libre. */
   nom: string;
+  /** Broker auquel ce canal est rattaché — les noms de canal sont propres à chaque broker
+   * (ex: "Fr_Balise" chez Gaulix, "LongFast"/"LongModerate" ailleurs), pas un référentiel
+   * global. Laisser vide = canal "partagé", visible/utilisable par tous les brokers. */
+  compagnon?: string | null;
+  compagnon_nom?: string | null;
   institution?: string | null;
   institution_nom?: string | null;
   crise?: string | null;

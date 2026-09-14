@@ -17,6 +17,12 @@ export interface CompagnonMeshtastic {
    * relayé (Gaulix...), pas d'un matériel qu'on ne possède pas. */
   topic_racine: string;
 
+  /** Vide = pas d'authentification (certains brokers publics n'en demandent pas). */
+  mqtt_username?: string;
+  /** write_only côté API — jamais renvoyé par le serveur une fois enregistré. */
+  mqtt_password?: string;
+  mqtt_use_tls: boolean;
+
   institution?: string | null;
   institution_nom?: string | null;
 

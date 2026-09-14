@@ -4054,6 +4054,12 @@ class CompagnonMeshtastic(EnvironmentScopedModel):
     # n'indique que la racine "msh/EU_868". Racine différente probable pour un autre réseau.
     topic_racine = models.CharField(max_length=100, default="Traitement/msh/EU_868")
 
+    mqtt_username = models.CharField(max_length=100, blank=True)
+    # write_only côté serializer (comme x25519_private_key_hex) — jamais renvoyé en clair par
+    # l'API une fois enregistré. Vide = pas d'authentification (cas de certains brokers publics).
+    mqtt_password = models.CharField(max_length=255, blank=True)
+    mqtt_use_tls = models.BooleanField(default=False)
+
     # Faux par défaut (fail-closed) : validé en conditions réelles le 13/09 que Gaulix ne relaie
     # de façon fiable QUE le contenu en clair (`decoded`) — un DM/canal chiffré (PSK classique ou
     # PKI) n'a jamais été confirmé reçu par un vrai appareil, cause exacte non identifiée malgré

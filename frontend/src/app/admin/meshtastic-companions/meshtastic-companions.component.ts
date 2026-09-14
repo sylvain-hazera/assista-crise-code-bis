@@ -41,6 +41,9 @@ export class MeshtasticCompanionsComponent implements OnInit {
   // en direct, contrairement à leur documentation publique (voir CompagnonMeshtastic.topic_racine).
   nouveauTopicRacine = 'Traitement/msh/EU_868';
   nouveauChiffrementSupporte = false;
+  nouveauMqttUsername = '';
+  nouveauMqttPassword = '';
+  nouveauMqttUseTls = false;
   creating = false;
 
   editingCompanionId: string | null = null;
@@ -50,12 +53,16 @@ export class MeshtasticCompanionsComponent implements OnInit {
   editTopicRacine = '';
   editChiffrementSupporte = false;
   editActif = true;
+  editMqttUsername = '';
+  editMqttPassword = '';
+  editMqttUseTls = false;
   saving = false;
 
   canaux: CanalMeshtastic[] = [];
   nouveauCanalNom = '';
   nouveauCanalPsk = '';
   nouveauCanalPrincipal = false;
+  nouveauCanalCompagnonId = '';
   creatingCanal = false;
 
   noeuds: NoeudUtilisateurMeshtastic[] = [];
@@ -131,6 +138,9 @@ export class MeshtasticCompanionsComponent implements OnInit {
       broker_port: this.nouveauBrokerPort,
       topic_racine: this.nouveauTopicRacine.trim(),
       chiffrement_supporte: this.nouveauChiffrementSupporte,
+      mqtt_username: this.nouveauMqttUsername.trim(),
+      mqtt_password: this.nouveauMqttPassword,
+      mqtt_use_tls: this.nouveauMqttUseTls,
     }).subscribe({
       next: (created) => {
         this.companions = [created, ...this.companions];
@@ -139,6 +149,9 @@ export class MeshtasticCompanionsComponent implements OnInit {
         this.nouveauLongName = '';
         this.nouveauShortName = '';
         this.nouveauChiffrementSupporte = false;
+        this.nouveauMqttUsername = '';
+        this.nouveauMqttPassword = '';
+        this.nouveauMqttUseTls = false;
         this.creating = false;
       },
       error: () => { this.errorMessage = 'Impossible de créer ce companion (node_num déjà utilisé ?).'; this.creating = false; },
@@ -160,6 +173,11 @@ export class MeshtasticCompanionsComponent implements OnInit {
     this.editTopicRacine = c.topic_racine;
     this.editChiffrementSupporte = c.chiffrement_supporte;
     this.editActif = c.actif;
+    this.editMqttUsername = c.mqtt_username || '';
+    // Le mot de passe n'est jamais renvoyé par l'API (write_only) — laissé vide, non modifié
+    // à l'enregistrement sauf saisie explicite (voir enregistrerEdition).
+    this.editMqttPassword = '';
+    this.editMqttUseTls = c.mqtt_use_tls;
   }
 
   annulerEdition(): void {
@@ -168,14 +186,20 @@ export class MeshtasticCompanionsComponent implements OnInit {
 
   enregistrerEdition(companion: CompagnonMeshtastic): void {
     this.saving = true;
-    this.service.update(companion.id, {
+    const payload: Partial<CompagnonMeshtastic> = {
       nom: this.editNom.trim(),
       broker_host: this.editBrokerHost.trim(),
       broker_port: this.editBrokerPort,
       topic_racine: this.editTopicRacine.trim(),
       chiffrement_supporte: this.editChiffrementSupporte,
       actif: this.editActif,
-    }).subscribe({
+      mqtt_username: this.editMqttUsername.trim(),
+      mqtt_use_tls: this.editMqttUseTls,
+    };
+    // Omis si non ressaisi : un PATCH sans la clé laisse le mot de passe enregistré inchangé
+    // côté serveur, plutôt que de l'écraser par une chaîne vide à chaque édition.
+    if (this.editMqttPassword) payload.mqtt_password = this.editMqttPassword;
+    this.service.update(companion.id, payload).subscribe({
       next: (updated) => {
         this.companions = this.companions.map(c => c.id === updated.id ? updated : c);
         this.editingCompanionId = null;
@@ -196,12 +220,14 @@ export class MeshtasticCompanionsComponent implements OnInit {
       nom: this.nouveauCanalNom.trim(),
       psk_hex: this.nouveauCanalPsk.trim() || undefined,
       principal: this.nouveauCanalPrincipal,
+      compagnon: this.nouveauCanalCompagnonId || null,
     }).subscribe({
       next: (created) => {
         this.canaux = [created, ...this.canaux];
         this.nouveauCanalNom = '';
         this.nouveauCanalPsk = '';
         this.nouveauCanalPrincipal = false;
+        this.nouveauCanalCompagnonId = '';
         this.creatingCanal = false;
       },
       error: () => { this.errorMessage = 'Impossible de créer ce canal.'; this.creatingCanal = false; },

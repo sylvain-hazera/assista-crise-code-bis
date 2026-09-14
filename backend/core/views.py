@@ -9898,6 +9898,27 @@ class CompagnonMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
             'x25519_public_key_hex': compagnon.x25519_public_key_hex,
         })
 
+    @action(detail=False, methods=['get'], url_path='actifs-avec-identifiants')
+    def actifs_avec_identifiants(self, request):
+        """Config complète (mqtt_password, x25519_private_key_hex) de tous les companions actifs
+        — jamais via la sérialisation normale. Le pont s'en sert au démarrage pour ouvrir UNE
+        connexion MQTT par broker configuré, en parallèle (plusieurs brokers actifs en même
+        temps, demande explicite du 14/09), plutôt que d'être épinglé à un seul COMPAGNON_ID."""
+        compagnons = self.get_queryset().filter(actif=True)
+        return Response([
+            {
+                'id': str(c.id), 'nom': c.nom, 'node_num': c.node_num,
+                'broker_host': c.broker_host, 'broker_port': c.broker_port,
+                'topic_racine': c.topic_racine,
+                'mqtt_username': c.mqtt_username, 'mqtt_password': c.mqtt_password,
+                'mqtt_use_tls': c.mqtt_use_tls,
+                'chiffrement_supporte': c.chiffrement_supporte,
+                'x25519_private_key_hex': c.x25519_private_key_hex,
+                'x25519_public_key_hex': c.x25519_public_key_hex,
+            }
+            for c in compagnons
+        ])
+
     @action(detail=True, methods=['post'], url_path='synchroniser-contacts')
     def synchroniser_contacts(self, request, pk=None):
         """Le pont appelle ceci avec les nœuds Meshtastic découverts passivement sur MQTT
@@ -10102,8 +10123,16 @@ class CanalMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSe
         (voir meshtastic-bridge/crypto.py), contrairement à la sérialisation normale
         (psk_hex en write_only). Même principe que CanalMeshCoreViewSet.canaux_a_provisionner :
         réservé au compte de service du pont (IsAuthenticated suffit, pas besoin d'être
-        institutionnel), jamais exposé par la sérialisation standard."""
+        institutionnel), jamais exposé par la sérialisation standard.
+
+        Filtré par ?compagnon=<id> : les noms de canal (ex: "Fr_Balise" chez Gaulix, "LongFast"
+        ailleurs) sont propres à chaque broker, pas un référentiel global — un canal SANS
+        compagnon rattaché reste inclus pour tout le monde (canal "partagé", ex: celui d'une
+        équipe créé indépendamment d'un broker précis)."""
         canaux = self.get_queryset().filter(actif=True)
+        compagnon_id = request.query_params.get('compagnon')
+        if compagnon_id:
+            canaux = canaux.filter(Q(compagnon_id=compagnon_id) | Q(compagnon__isnull=True))
         return Response([
             {"id": str(c.id), "nom": c.nom, "psk_hex": c.psk_hex, "principal": c.principal}
             for c in canaux

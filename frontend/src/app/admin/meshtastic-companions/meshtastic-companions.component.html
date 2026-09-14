@@ -1,17 +1,19 @@
 <div class="page-header">
-  <h2>Companions Meshtastic <span class="badge-test">test</span></h2>
+  <h2>Connexions MQTT Meshtastic <span class="badge-test">test</span></h2>
   <p class="page-hint">
-    Ce companion n'est PAS un appareil réel : c'est une identité de nœud logicielle qui se
-    connecte directement au broker MQTT d'un réseau tiers (ex: Gaulix, mqtt.gaulix.fr) — voir
-    meshtastic-bridge/README.md. Chiffrement réimplémenté à la main, non encore vérifié sur du
-    vrai matériel : à manier avec précaution.
+    Chaque companion = une connexion à un broker MQTT tiers (ex: Gaulix, mqtt.gaulix.fr) —
+    plusieurs brokers peuvent être actifs en même temps. Une fois connecté, le pont peuple
+    automatiquement les nœuds détectés sur ce réseau (voir "Nœuds détectés" plus bas) : c'est
+    dans cette liste qu'on choisit ceux à attribuer à un compte utilisateur, comme pour MeshCore.
+    Chiffrement réimplémenté à la main, non encore vérifié sur du vrai matériel — voir
+    meshtastic-bridge/README.md.
   </p>
 </div>
 
 <div class="create-panel">
-  <h3>Ajouter un companion</h3>
+  <h3>Ajouter une connexion MQTT</h3>
   <div class="form-row">
-    <input type="text" class="form-input" placeholder="Nom (ex: Pont Gaulix test)" [(ngModel)]="nouveauNom">
+    <input type="text" class="form-input" placeholder="Nom (ex: Gaulix)" [(ngModel)]="nouveauNom">
   </div>
   <div class="form-row">
     <input type="number" class="form-input" placeholder="node_num (identifiant 32 bits)" [(ngModel)]="nouveauNodeNum">
@@ -22,8 +24,16 @@
     <input type="text" class="form-input form-input-sm" placeholder="Short name (4 car.)" maxlength="4" [(ngModel)]="nouveauShortName">
   </div>
   <div class="form-row">
-    <input type="text" class="form-input" placeholder="Broker MQTT" [(ngModel)]="nouveauBrokerHost">
+    <input type="text" class="form-input" placeholder="FQDN du broker (ex: mqtt.gaulix.fr)" [(ngModel)]="nouveauBrokerHost">
     <input type="number" class="form-input form-input-sm" placeholder="Port" [(ngModel)]="nouveauBrokerPort">
+  </div>
+  <label class="checkbox-row">
+    <input type="checkbox" [(ngModel)]="nouveauMqttUseTls">
+    Connexion SSL/TLS
+  </label>
+  <div class="form-row">
+    <input type="text" class="form-input" placeholder="Login MQTT (optionnel selon le broker)" [(ngModel)]="nouveauMqttUsername">
+    <input type="password" class="form-input" placeholder="Mot de passe MQTT (optionnel)" [(ngModel)]="nouveauMqttPassword">
   </div>
   <div class="form-row">
     <input type="text" class="form-input" placeholder="Racine de topic (ex: Traitement/msh/EU_868)" [(ngModel)]="nouveauTopicRacine">
@@ -34,7 +44,7 @@
   </label>
 
   <button type="button" class="btn-primary" [disabled]="!formValide || creating" (click)="ajouter()">
-    Ajouter ce companion
+    Ajouter cette connexion
   </button>
 </div>
 
@@ -56,7 +66,7 @@
           <th>Clé publique X25519</th>
           <th>Statut</th>
           <th>Dernière connexion</th>
-          <th>ID (pour COMPAGNON_ID)</th>
+          <th>ID</th>
           <th></th>
         </tr>
       </thead>
@@ -82,8 +92,15 @@
                   <input type="checkbox" [(ngModel)]="editActif">
                   Actif
                 </label>
+                <label class="checkbox-row">
+                  <input type="checkbox" [(ngModel)]="editMqttUseTls">
+                  SSL/TLS
+                </label>
               </td>
-              <td></td>
+              <td>
+                <input type="text" class="form-input form-input-sm" placeholder="Login MQTT" [(ngModel)]="editMqttUsername">
+                <input type="password" class="form-input form-input-sm" placeholder="Mot de passe (laisser vide = inchangé)" [(ngModel)]="editMqttPassword">
+              </td>
               <td class="mono id-cell">{{ c.id }}</td>
               <td>
                 <button type="button" class="btn-primary sm" [disabled]="saving" (click)="enregistrerEdition(c)">Enregistrer</button>
@@ -94,7 +111,11 @@
             <tr>
               <td>{{ c.nom }}</td>
               <td class="mono">{{ nodeNumHex(c.node_num) }}</td>
-              <td class="mono">{{ c.broker_host }}:{{ c.broker_port }}</td>
+              <td class="mono">
+                {{ c.broker_host }}:{{ c.broker_port }}
+                @if (c.mqtt_use_tls) { <span title="SSL/TLS">🔒</span> }
+                @if (c.mqtt_username) { <span [title]="'Authentifié (' + c.mqtt_username + ')'">🔑</span> }
+              </td>
               <td>
                 <span class="statut" [ngClass]="c.chiffrement_supporte ? 'statut-ok' : 'statut-inconnu'">
                   {{ c.chiffrement_supporte ? 'Supporté' : 'Clair forcé' }}
@@ -122,16 +143,25 @@
 
 <h2>Canaux Meshtastic</h2>
 <p class="page-hint">
-  Le nom DOIT correspondre exactement à un canal déjà configuré sur les appareils cibles — c'est
-  lui qui identifie le canal dans le topic MQTT. La PSK n'est jamais réaffichée une fois
-  enregistrée. Le canal "principal" sert uniquement au nommage du topic d'un DM chiffré par clé
-  publique (PKI) — il n'a alors aucun rôle dans le chiffrement ni la conversation.
+  Le nom DOIT correspondre exactement au canal attendu par le broker — chaque broker impose les
+  siens (ex: "Fr_Balise" chez Gaulix, "LongFast"/"LongModerate" ailleurs), pas un référentiel
+  commun. Rattache un canal à un broker précis, ou laisse "tous les brokers" pour un canal
+  partagé. La PSK n'est jamais réaffichée une fois enregistrée. Le canal "principal" sert au
+  nommage du topic d'un DM chiffré par clé publique (PKI) — aucun rôle dans le chiffrement sinon.
 </p>
 
 <div class="create-panel">
   <div class="form-row">
     <input type="text" class="form-input" placeholder="Nom du canal (ex: Fr_Balise)" [(ngModel)]="nouveauCanalNom">
     <input type="text" class="form-input" placeholder="PSK hex (vide = pas de chiffrement)" [(ngModel)]="nouveauCanalPsk">
+  </div>
+  <div class="form-row">
+    <select [(ngModel)]="nouveauCanalCompagnonId">
+      <option value="">— Tous les brokers (canal partagé) —</option>
+      @for (c of companions; track c.id) {
+        <option [value]="c.id">{{ c.nom }} ({{ c.broker_host }})</option>
+      }
+    </select>
   </div>
   <label class="checkbox-row">
     <input type="checkbox" [(ngModel)]="nouveauCanalPrincipal">
@@ -145,18 +175,19 @@
 <div class="table-wrapper">
   <table class="data-table">
     <thead>
-      <tr><th>Nom</th><th>Chiffré</th><th>Principal</th><th>Actif</th></tr>
+      <tr><th>Nom</th><th>Broker</th><th>Chiffré</th><th>Principal</th><th>Actif</th></tr>
     </thead>
     <tbody>
       @for (c of canaux; track c.id) {
         <tr>
           <td>{{ c.nom }}</td>
+          <td>{{ c.compagnon_nom || 'Tous les brokers' }}</td>
           <td>{{ c.psk_hex ? 'Oui' : 'Non' }}</td>
           <td>{{ c.principal ? 'Oui' : 'Non' }}</td>
           <td>{{ c.actif ? 'Oui' : 'Non' }}</td>
         </tr>
       } @empty {
-        <tr><td colspan="4" class="empty">Aucun canal déclaré pour l'instant.</td></tr>
+        <tr><td colspan="5" class="empty">Aucun canal déclaré pour l'instant.</td></tr>
       }
     </tbody>
   </table>
