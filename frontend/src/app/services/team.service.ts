@@ -26,8 +26,11 @@ export class TeamService {
   delete(id: string):                      Observable<void>    { return this.http.delete<void>(`${this.url}/${id}/`); }
   /** POST /api/teams/<id>/reactiver/ — réactive une équipe désactivée (voir delete). */
   reactiver(id: string):                   Observable<Team>    { return this.http.post<Team>(`${this.url}/${id}/reactiver/`, {}); }
-  /** GET /api/teams/vue_mairie/ — équipes de l'institution de l'utilisateur appelant. */
+  /** GET /api/teams/vue_mairie/ — équipes de toute la commune (toutes institutions). */
   vueMairie():                              Observable<Team[]>  { return this.http.get<Team[]>(`${this.url}/vue_mairie/`); }
+  /** GET /api/teams/equipes-institution/ — équipes de la SEULE institution de l'appelant
+   * (contrairement à vueMairie, toute la commune, et mesEquipes, celles dont on est membre). */
+  equipesInstitution():                     Observable<Team[]>  { return this.http.get<Team[]>(`${this.url}/equipes-institution/`); }
   /** GET /api/teams/ressources-mobilisees/ — récap personnes/matériel mobilisés, voir
    * RessourcesMobiliseesComponent. */
   ressourcesMobilisees():                   Observable<RessourceMobilisee[]> { return this.http.get<RessourceMobilisee[]>(`${this.url}/ressources-mobilisees/`); }

@@ -103,10 +103,47 @@
               {{ etape.titre }} — {{ etape.nom }}
               @if (etape.point?.equipe_nom) {
                 (équipe : {{ etape.point?.equipe_nom }})
-                <a [routerLink]="['/admin/equipes']" [queryParams]="{openTeam: etape.point?.equipe}"
-                   class="recap-team-link">
-                  Compléter la fiche équipe (zone, thème, responsable, canal radio…)
-                </a>
+
+                @if (etape.nouvelleEquipeNom.trim() && !etape.responsableDone && !etape.responsableSkipped) {
+                  <div class="responsable-form">
+                    <p class="page-hint">Un contact joignable pour cette équipe (le minimum nécessaire) :</p>
+                    <div class="form-row">
+                      <input type="text" class="form-input" [(ngModel)]="etape.responsable.prenom" placeholder="Prénom">
+                      <input type="text" class="form-input" [(ngModel)]="etape.responsable.nom" placeholder="Nom">
+                    </div>
+                    <div class="form-row">
+                      <input type="email" class="form-input" [(ngModel)]="etape.responsable.email" placeholder="Email">
+                      <input type="tel" class="form-input" [(ngModel)]="etape.responsable.telephone" placeholder="Téléphone">
+                    </div>
+                    <select class="form-input" [(ngModel)]="etape.responsable.roleCode">
+                      <option [ngValue]="null">— Rôle dans l'équipe —</option>
+                      @for (r of roles; track r.id) {
+                        <option [ngValue]="r.code">{{ r.libelle }}</option>
+                      }
+                    </select>
+                    @if (etape.responsableError) {
+                      <p class="error-message">{{ etape.responsableError }}</p>
+                    }
+                    <div class="step-actions">
+                      <button type="button" class="btn-secondary" (click)="passerResponsable(etape)" [disabled]="etape.responsableSaving">
+                        Plus tard
+                      </button>
+                      <button type="button" class="btn-primary" (click)="ajouterResponsable(etape)" [disabled]="etape.responsableSaving">
+                        Ajouter
+                      </button>
+                    </div>
+                  </div>
+                } @else if (etape.responsableDone) {
+                  <p class="disclaimer ok">
+                    <span class="material-icons">check_circle</span>
+                    Contact ajouté à l'équipe.
+                  </p>
+                } @else {
+                  <a [routerLink]="['/admin/equipes']" [queryParams]="{openTeam: etape.point?.equipe}"
+                     class="recap-team-link">
+                    Compléter la fiche équipe (zone, thème, canal radio…)
+                  </a>
+                }
               }
             } @else {
               <span class="material-icons skip">remove_circle_outline</span>

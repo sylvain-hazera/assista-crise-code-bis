@@ -191,3 +191,23 @@
   color: #2563eb;
   text-decoration: underline;
 }
+
+.responsable-form {
+  flex: 1 1 100%;
+  margin: .5rem 0 0;
+  padding: .8rem;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+
+  .page-hint { margin-bottom: .6rem; }
+  .form-input { margin-bottom: .6rem; }
+  .step-actions { margin-top: 0; }
+
+  .form-row {
+    display: flex;
+    gap: .6rem;
+
+    .form-input { flex: 1; min-width: 0; }
+  }
+}

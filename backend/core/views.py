@@ -3941,7 +3941,7 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             'definir_delegation', 'retirer_delegation', 'creer_dossier',
             'lier_point', 'delier_point',
             'rattacher_equipe', 'detacher_equipe',
-            'definir_statut_ressource', 'reactiver', 'vue_mairie', 'institutions_liees',
+            'definir_statut_ressource', 'reactiver', 'vue_mairie', 'equipes_institution', 'institutions_liees',
             'ressources_mobilisees', 'assigner_crise', 'provisionner_canal_meshcore',
             'provisionner_canal_meshtastic',
         ):
@@ -3983,13 +3983,31 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"], permission_classes=[IsInstitutionalActor])
     def vue_mairie(self, request):
-        """Équipes de l'institution de l'utilisateur appelant (typiquement une mairie) —
-        interprété comme "mes équipes", pas la notion plus large de zone d'intervention
-        couvrant cette commune (communes/departements/zone_precise, hors périmètre ici)."""
+        """Toutes les équipes de la commune de l'institution appelante, toutes institutions
+        confondues (mairie + associations/AASC locales) — alimente le tableau de bord "Vue
+        collectivité", volontairement large. Pour "mes équipes au sens strict" (une seule
+        institution, ex: le wizard de démarrage de crise), voir equipes_institution ci-dessous."""
         commune_code = _institution_commune_or_400(request)
         if isinstance(commune_code, Response):
             return commune_code
         queryset = self.get_queryset().filter(institution__commune_code=commune_code)
+        return Response(self.get_serializer(queryset, many=True).data)
+
+    @action(detail=False, methods=["get"], url_path='equipes-institution', permission_classes=[IsInstitutionalActor])
+    def equipes_institution(self, request):
+        """Équipes de la SEULE institution de l'utilisateur appelant — contrairement à
+        vue_mairie (toutes les institutions de la commune) et à mes_equipes (équipes dont
+        l'utilisateur est membre/chef/régulateur, tous établissements confondus), utilisé là où
+        on veut retrouver strictement les équipes déjà créées PAR sa propre institution (ex:
+        étape "Équipes" du wizard de démarrage de crise, pour ne proposer que les équipes
+        pré-enregistrées de l'appelant, sans mélanger celles d'autres institutions)."""
+        institution = getattr(request.user, 'institution', None)
+        if institution is None:
+            return Response(
+                {"error": "Aucune institution associée à votre compte : contactez un administrateur."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        queryset = self.get_queryset().filter(institution=institution)
         return Response(self.get_serializer(queryset, many=True).data)
 
     def perform_destroy(self, instance):

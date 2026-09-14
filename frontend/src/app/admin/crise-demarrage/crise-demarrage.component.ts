@@ -8,9 +8,11 @@ import { PlanService } from '../../services/plan.service';
 import { PointOperationnelService } from '../../services/point-operationnel.service';
 import { PointTypeService } from '../../services/point-type.service';
 import { TeamService } from '../../services/team.service';
+import { RoleOperationnelService } from '../../services/role-operationnel.service';
 import { Crisis } from '../../shared/models/crisis.model';
 import { PointOperationnel, PointType } from '../../shared/models/point-operationnel.model';
 import { Team } from '../../shared/models/team.model';
+import { RoleOperationnel } from '../../shared/models/institution.model';
 
 interface EtapePoint {
   code: 'CELLULE_CRISE' | 'HEBERGEMENT' | 'REGROUPEMENT_MOYENS';
@@ -23,6 +25,14 @@ interface EtapePoint {
   point: PointOperationnel | null;
   equipeId: string | null;
   nouvelleEquipeNom: string;
+  // Renseigné directement au récap (étape 5) pour une équipe tout juste créée — voir demande
+  // utilisateur du 2026-09-15 : "pas un lien vers l'équipe", juste le nécessaire (un contact
+  // joignable), pas question de rouvrir toute la fiche équipe (zone/thème/canal radio) ici.
+  responsable: { prenom: string; nom: string; email: string; telephone: string; roleCode: string | null };
+  responsableSaving: boolean;
+  responsableDone: boolean;
+  responsableSkipped: boolean;
+  responsableError: string;
 }
 
 /** Wizard proposé juste après la déclaration d'une crise (ou depuis son détail, plus tard) pour
@@ -44,6 +54,7 @@ export class CriseDemarrageComponent implements OnInit {
   crise: Crisis | null = null;
   pointTypes: PointType[] = [];
   teams: Team[] = [];
+  roles: RoleOperationnel[] = [];
 
   step = 1; // 1..3 = points, 4 = équipes, 5 = récapitulatif
   saving = false;
@@ -53,24 +64,34 @@ export class CriseDemarrageComponent implements OnInit {
   planSaved = false;
   planErrorMessage = '';
 
+  private extrasEtape(): Pick<EtapePoint, 'responsable' | 'responsableSaving' | 'responsableDone' | 'responsableSkipped' | 'responsableError'> {
+    return {
+      responsable: { prenom: '', nom: '', email: '', telephone: '', roleCode: null },
+      responsableSaving: false, responsableDone: false, responsableSkipped: false, responsableError: '',
+    };
+  }
+
   etapes: EtapePoint[] = [
     {
       code: 'CELLULE_CRISE', titre: 'Cellule de crise',
       description: "Le lieu depuis lequel la crise est pilotée.",
       suggestions: ['Mairie'],
       nom: 'Mairie', skipped: false, cree: false, point: null, equipeId: null, nouvelleEquipeNom: '',
+      ...this.extrasEtape(),
     },
     {
       code: 'HEBERGEMENT', titre: 'Centre d\'accueil des populations',
       description: "Où les personnes évacuées ou sinistrées sont accueillies.",
       suggestions: ['Salle des fêtes'],
       nom: 'Salle des fêtes', skipped: false, cree: false, point: null, equipeId: null, nouvelleEquipeNom: '',
+      ...this.extrasEtape(),
     },
     {
       code: 'REGROUPEMENT_MOYENS', titre: 'Centre de regroupement des moyens',
       description: "Où le matériel et les ressources mobilisées sont centralisés.",
       suggestions: ['Salle des fêtes', 'Centre technique municipal'],
       nom: 'Salle des fêtes', skipped: false, cree: false, point: null, equipeId: null, nouvelleEquipeNom: '',
+      ...this.extrasEtape(),
     },
   ];
 
@@ -82,13 +103,15 @@ export class CriseDemarrageComponent implements OnInit {
     private pointTypeService: PointTypeService,
     private teamService: TeamService,
     private planService: PlanService,
+    private roleOperationnelService: RoleOperationnelService,
   ) {}
 
   ngOnInit(): void {
     this.criseId = this.route.snapshot.paramMap.get('id')!;
     this.crisisService.getById(this.criseId).subscribe(c => (this.crise = c));
     this.pointTypeService.getAll().subscribe(types => (this.pointTypes = types));
-    this.teamService.vueMairie().subscribe(teams => (this.teams = teams));
+    this.teamService.equipesInstitution().subscribe(teams => (this.teams = teams));
+    this.roleOperationnelService.getAll().subscribe(roles => (this.roles = roles));
   }
 
   get etapeCourante(): EtapePoint | null {
@@ -190,6 +213,40 @@ export class CriseDemarrageComponent implements OnInit {
 
   terminer(): void {
     this.router.navigate(['/admin/crises']);
+  }
+
+  /** Ajoute directement un contact joignable (nom/tél/rôle) sur une équipe tout juste créée par
+   * ce wizard — réutilise inviter-membre tel quel (même mécanisme que la fiche équipe), mais
+   * posé ici en une étape au lieu de renvoyer vers une autre page (demande utilisateur du
+   * 2026-09-15 : "directement, pas un lien vers l'équipe"). Le minimum nécessaire seulement :
+   * pas de zone/thème/canal radio ici, ça reste sur la fiche équipe complète si besoin plus
+   * tard. */
+  ajouterResponsable(etape: EtapePoint): void {
+    if (!etape.equipeId) { return; }
+    const r = etape.responsable;
+    if (!r.prenom.trim() || !r.nom.trim() || !r.email.trim() || !r.roleCode) {
+      etape.responsableError = 'Prénom, nom, email et rôle sont nécessaires.';
+      return;
+    }
+    etape.responsableSaving = true;
+    etape.responsableError = '';
+    this.teamService.inviterMembre(etape.equipeId, {
+      first_name: r.prenom.trim(), last_name: r.nom.trim(),
+      email: r.email.trim(), phone_number: r.telephone.trim(), role_code: r.roleCode,
+    }).subscribe({
+      next: () => {
+        etape.responsableSaving = false;
+        etape.responsableDone = true;
+      },
+      error: () => {
+        etape.responsableSaving = false;
+        etape.responsableError = "Impossible d'ajouter ce contact. Réessayez, ou complétez-le plus tard depuis la fiche équipe.";
+      },
+    });
+  }
+
+  passerResponsable(etape: EtapePoint): void {
+    etape.responsableSkipped = true;
   }
 
   /** Réutilise Plan (dispositif pré-enregistré) tel quel : on référence les équipes/points déjà
