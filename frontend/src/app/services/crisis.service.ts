@@ -129,6 +129,12 @@ export class CrisisService {
     return this.http.get<StocksComparaison>(`${this.apiUrl}/${id}/stocks-comparaison/`);
   }
 
+  /** GET /api/crises/<id>/commune/ — code commune INSEE résolu par reverse-géocodage depuis la
+   * localisation de la crise (pas un champ dénormalisé, calculé à la demande — voir la vue). */
+  getCommune(id: string): Observable<{ commune_code: string | null }> {
+    return this.http.get<{ commune_code: string | null }>(`${this.apiUrl}/${id}/commune/`);
+  }
+
   // ── PRIVÉ ────────────────────────────────────────────────────
 
   /**

@@ -1964,7 +1964,25 @@ class CrisisViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             return [permissions.IsAuthenticated()]
         if self.action == "stocks_comparaison":
             return [permissions.IsAuthenticated()]
+        if self.action == "commune":
+            return [permissions.IsAuthenticated()]
         return [AllowAny()]
+
+    @action(detail=True, methods=["get"])
+    def commune(self, request, pk=None):
+        """Code commune INSEE résolu par reverse-géocodage depuis `location` (voir
+        geo_lookup.commune_code_from_point, résultat mis en cache en base — jamais recalculé à
+        chaque lecture). Volontairement une action dédiée, pas un champ du serializer par
+        défaut : Crisis n'a pas de commune_code dénormalisé (une crise peut couvrir plusieurs
+        secteurs, voir _crisis_zone_resolver) et ajouter un reverse-géocodage à CHAQUE
+        sérialisation aurait ralenti les listes (carte publique, page Crises) — voir
+        _reverse_geocode_point. Utilisé par le wizard de démarrage de crise pour proposer par
+        défaut, comme zone d'intervention d'une équipe créée à la volée, le territoire communal
+        de LA CRISE elle-même (pas celui de l'institution qui la pilote, qui peut être plus
+        large ou différent) — demande utilisateur du 2026-09-15."""
+        crise = self.get_object()
+        code = commune_code_from_point(crise.location)
+        return Response({"commune_code": code})
 
     def perform_create(self, serializer):
         crise = serializer.save(author=self.request.user, environment=get_active_environment(self.request))

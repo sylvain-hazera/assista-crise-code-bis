@@ -12,13 +12,11 @@ import { TeamService } from '../../services/team.service';
 import { RoleOperationnelService } from '../../services/role-operationnel.service';
 import { BesoinService } from '../../services/besoin.service';
 import { CompetenceService } from '../../services/competence.service';
-import { InstitutionService } from '../../services/institution.service';
 import { UserService } from '../../services/user.service';
-import { AuthService } from '../../auth/services/auth.service';
 import { Crisis } from '../../shared/models/crisis.model';
 import { PointOperationnel, PointType } from '../../shared/models/point-operationnel.model';
 import { Team } from '../../shared/models/team.model';
-import { RoleOperationnel, Institution } from '../../shared/models/institution.model';
+import { RoleOperationnel } from '../../shared/models/institution.model';
 import { Besoin } from '../../shared/models/besoin.model';
 import { Competence } from '../../shared/models/competence.model';
 import { User } from '../../shared/models/user.model';
@@ -41,7 +39,7 @@ interface EtapePoint {
   nouvelleEquipeNom: string;
   // Renseigné directement au récap pour une équipe tout juste créée — voir demandes
   // utilisateur du 2026-09-15 : "pas un lien vers l'équipe", tout se fait ici (contact,
-  // thèmes, spécialité, mission), zone déduite en silence du territoire de l'institution.
+  // thèmes, spécialité, mission), zone déduite en silence du territoire communal de la crise.
   responsable: { prenom: string; nom: string; email: string; telephone: string; roleCode: string | null; membreExistantId: string | null };
   membresAjoutes: string[];
   themeIds: string[];
@@ -51,6 +49,11 @@ interface EtapePoint {
   infosDone: boolean;
   infosSkipped: boolean;
   infosError: string;
+  // Membres candidats résolus depuis l'institution RÉELLE de l'équipe tout juste créée (relue
+  // via l'équipe elle-même, jamais depuis "mon" institution en cache côté frontend) — un
+  // compte lié à plusieurs institutions (ex: admin de test) pouvait sinon proposer la mauvaise
+  // liste, silencieusement — voir bug rapporté le 2026-09-15.
+  candidateMembers: User[];
 }
 
 /** Wizard proposé juste après la déclaration d'une crise (ou depuis son détail, plus tard) pour
@@ -75,9 +78,10 @@ export class CriseDemarrageComponent implements OnInit {
   roles: RoleOperationnel[] = [];
   besoins: Besoin[] = [];
   competences: Competence[] = [];
-  candidateMembers: User[] = [];
-  monInstitutionId: string | null = null;
-  monInstitution: Institution | null = null;
+  // Territoire communal de LA CRISE elle-même (pas de l'institution qui la pilote, qui peut
+  // être plus large ou différente) — demande utilisateur du 2026-09-15, proposé par défaut
+  // comme zone d'intervention de toute équipe créée à la volée dans ce wizard.
+  criseCommuneCode: string | null = null;
 
   step = 1; // 1 = points, 2 = équipes, 3 = récapitulatif
   saving = false;
@@ -89,12 +93,13 @@ export class CriseDemarrageComponent implements OnInit {
 
   private extrasEtape(): Pick<EtapePoint,
     'responsable' | 'membresAjoutes' | 'themeIds' | 'competenceIds' | 'missionDescription' |
-    'infosSaving' | 'infosDone' | 'infosSkipped' | 'infosError'
+    'infosSaving' | 'infosDone' | 'infosSkipped' | 'infosError' | 'candidateMembers'
   > {
     return {
       responsable: { prenom: '', nom: '', email: '', telephone: '', roleCode: null, membreExistantId: null },
       membresAjoutes: [], themeIds: [], competenceIds: [], missionDescription: '',
       infosSaving: false, infosDone: false, infosSkipped: false, infosError: '',
+      candidateMembers: [],
     };
   }
 
@@ -133,25 +138,37 @@ export class CriseDemarrageComponent implements OnInit {
     private roleOperationnelService: RoleOperationnelService,
     private besoinService: BesoinService,
     private competenceService: CompetenceService,
-    private institutionService: InstitutionService,
     private userService: UserService,
-    private authService: AuthService,
   ) {}
 
   ngOnInit(): void {
     this.criseId = this.route.snapshot.paramMap.get('id')!;
     this.crisisService.getById(this.criseId).subscribe(c => (this.crise = c));
+    this.crisisService.getCommune(this.criseId).subscribe({
+      next: (res) => (this.criseCommuneCode = res.commune_code),
+      error: () => {},
+    });
     this.pointTypeService.getAll().subscribe(types => (this.pointTypes = types));
     this.teamService.equipesInstitution().subscribe(teams => (this.teams = teams));
     this.roleOperationnelService.getAll().subscribe(roles => (this.roles = roles));
     this.besoinService.getAll().subscribe(besoins => (this.besoins = besoins));
     this.competenceService.getAll().subscribe(competences => (this.competences = competences));
+  }
 
-    this.monInstitutionId = this.authService.getCurrentUser()?.institution_id ?? null;
-    if (this.monInstitutionId) {
-      this.institutionService.getById(this.monInstitutionId).subscribe(inst => (this.monInstitution = inst));
-      this.userService.getAll({ institution: [this.monInstitutionId] }).subscribe(users => (this.candidateMembers = users));
-    }
+  /** Résout les membres candidats depuis l'institution RÉELLE de l'équipe tout juste créée
+   * (relue via l'équipe elle-même), jamais depuis "mon" institution mise en cache côté
+   * frontend — un compte lié à plusieurs institutions (admin de test, multi-mandats...)
+   * pouvait sinon résoudre une institution différente de celle qui vient réellement de
+   * recevoir l'équipe, laissant la liste de membres silencieusement vide (bug rapporté le
+   * 2026-09-15). */
+  private chargerContexteEquipe(etape: EtapePoint): void {
+    if (!etape.equipeId) { return; }
+    this.teamService.getById(etape.equipeId).subscribe(team => {
+      if (!team.institution) { return; }
+      this.userService.getAll({ institution: [team.institution] }).subscribe(users => {
+        etape.candidateMembers = users;
+      });
+    });
   }
 
   private typeIdFor(code: string): string | null {
@@ -265,6 +282,7 @@ export class CriseDemarrageComponent implements OnInit {
           if (updated.equipe) {
             etape.equipeId = updated.equipe;
             equipesACrise.add(updated.equipe);
+            if (nomNouvelleEquipe) { this.chargerContexteEquipe(etape); }
           }
           terminerSiFini();
         },
@@ -289,7 +307,7 @@ export class CriseDemarrageComponent implements OnInit {
    * aux mécanismes d'automatisation de la plateforme de fonctionner (matching hébergement,
    * recrutement scopé...) sans repasser par la fiche équipe — demande utilisateur du
    * 2026-09-15 : contact (existant ou invité), thèmes d'intervention, spécialité, mission
-   * confiée, et la zone d'intervention déduite EN SILENCE du territoire de l'institution
+   * confiée, et la zone d'intervention déduite EN SILENCE du territoire communal de la crise
    * (jamais demandée). Le point et la crise sont déjà affectés depuis terminerEtapeEquipes. */
   enregistrerEquipe(etape: EtapePoint): void {
     if (!etape.equipeId) { return; }
@@ -302,7 +320,7 @@ export class CriseDemarrageComponent implements OnInit {
     const patchPayload: Partial<Team> = {
       theme_ids: etape.themeIds,
       competence_ids: etape.competenceIds,
-      communes: this.monInstitution?.commune_code ? [this.monInstitution.commune_code] : [],
+      communes: this.criseCommuneCode ? [this.criseCommuneCode] : [],
     };
     if (r.membreExistantId) {
       patchPayload.member_ids = [...etape.membresAjoutes, r.membreExistantId];
@@ -337,8 +355,8 @@ export class CriseDemarrageComponent implements OnInit {
    * l'utilisateur revienne compléter la fiche équipe pour ça. */
   passerEquipe(etape: EtapePoint): void {
     etape.infosSkipped = true;
-    if (etape.equipeId && this.monInstitution?.commune_code) {
-      this.teamService.patch(etape.equipeId, { communes: [this.monInstitution.commune_code] }).subscribe({ error: () => {} });
+    if (etape.equipeId && this.criseCommuneCode) {
+      this.teamService.patch(etape.equipeId, { communes: [this.criseCommuneCode] }).subscribe({ error: () => {} });
     }
   }
 

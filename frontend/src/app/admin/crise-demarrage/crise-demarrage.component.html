@@ -117,13 +117,13 @@
 
                 @if (etape.nouvelleEquipeNom.trim() && !etape.infosDone && !etape.infosSkipped) {
                   <div class="responsable-form">
-                    <p class="page-hint">Informations de l'équipe (le minimum nécessaire — la zone d'intervention est déduite automatiquement du territoire de votre institution) :</p>
+                    <p class="page-hint">Informations de l'équipe (le minimum nécessaire — la zone d'intervention est déduite automatiquement du territoire communal de la crise) :</p>
 
                     <label class="form-label">Contact</label>
                     <select class="form-input" [(ngModel)]="etape.responsable.membreExistantId"
                             [disabled]="!!(etape.responsable.prenom || etape.responsable.nom || etape.responsable.email)">
                       <option [ngValue]="null">— Sélectionner un membre existant de mon institution —</option>
-                      @for (m of candidateMembers; track m.id) {
+                      @for (m of etape.candidateMembers; track m.id) {
                         <option [ngValue]="m.id">{{ m.first_name }} {{ m.last_name }}</option>
                       }
                     </select>
