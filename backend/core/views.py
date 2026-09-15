@@ -1985,7 +1985,17 @@ class CrisisViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         return Response({"commune_code": code})
 
     def perform_create(self, serializer):
-        crise = serializer.save(author=self.request.user, environment=get_active_environment(self.request))
+        # Une mairie couvre un territoire bien plus resserré qu'une intercommunalité/préfecture
+        # : 1 km de rayon par défaut pour la zone composée (zone_secteurs) plutôt que les 10 km
+        # génériques, uniquement si l'appelant n'a pas déjà précisé le sien — demande
+        # utilisateur du 2026-09-15. Reste un simple défaut : modifiable ensuite comme toujours
+        # depuis la fiche crise (updateZoneRadius).
+        save_kwargs = {'author': self.request.user, 'environment': get_active_environment(self.request)}
+        if 'radius' not in serializer.validated_data:
+            institution = getattr(self.request.user, 'institution', None)
+            if institution is not None and institution.type_id and institution.type.code == 'MAIRIE':
+                save_kwargs['radius'] = 1
+        crise = serializer.save(**save_kwargs)
         audit_log(
             request=self.request,
             action_code="CREATION",
