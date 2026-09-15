@@ -177,12 +177,16 @@ export class DeclareCrisisFormComponent implements OnInit{
         this.besoins = besoins;
         const me = this.authService.getCurrentUser();
         this.isAdmin = me?.type === UserRole.ADMIN;
-        const myInstitutionIds = new Set(
-          contacts.filter(c => c.utilisateur === me?.id && c.actif).map(c => c.institution)
-        );
+        const mesContacts = contacts.filter(c => c.utilisateur === me?.id && c.actif);
+        const myInstitutionIds = new Set(mesContacts.map(c => c.institution));
         this.myInstitutions = institutions.filter(i => myInstitutionIds.has(i.id!));
-        if (!this.isAdmin && this.myInstitutions.length === 1) {
-          this.onInstitutionChange(this.myInstitutions[0].id!);
+        // Un non-admin ne choisit jamais son institution (forcément la ou les siennes) : on la
+        // déduit toujours en silence, y compris s'il en a plusieurs (contact principal en
+        // priorité, sinon la première) — voir demande utilisateur du 2026-09-15, le menu
+        // déroulant "Institution" ne doit exister que pour un admin.
+        if (!this.isAdmin && this.myInstitutions.length > 0) {
+          const principal = mesContacts.find(c => c.contact_principal);
+          this.onInstitutionChange(principal?.institution ?? this.myInstitutions[0].id!);
         }
       },
       error: (err) => console.error('Erreur chargement contexte institution:', err),
