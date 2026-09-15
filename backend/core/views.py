@@ -4000,8 +4000,15 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         l'utilisateur est membre/chef/régulateur, tous établissements confondus), utilisé là où
         on veut retrouver strictement les équipes déjà créées PAR sa propre institution (ex:
         étape "Équipes" du wizard de démarrage de crise, pour ne proposer que les équipes
-        pré-enregistrées de l'appelant, sans mélanger celles d'autres institutions)."""
-        institution = getattr(request.user, 'institution', None)
+        pré-enregistrées de l'appelant, sans mélanger celles d'autres institutions). Résolue via
+        ContactInstitution (actif, le premier trouvé) — même source que _resolve_institution_for_new_team
+        et UserSerializer.get_institution_id, pour que "mes équipes" corresponde exactement à
+        l'institution qui recevra une équipe créée à la volée depuis ce même wizard, jamais le
+        FK User.institution brut qui peut diverger."""
+        contact = ContactInstitution.objects.filter(
+            utilisateur=request.user, actif=True
+        ).select_related("institution").first()
+        institution = contact.institution if contact else None
         if institution is None:
             return Response(
                 {"error": "Aucune institution associée à votre compte : contactez un administrateur."},

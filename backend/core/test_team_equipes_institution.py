@@ -2,7 +2,7 @@ import pytest
 from django.urls import reverse
 from rest_framework import status
 
-from core.models import Institution, InstitutionType, Team, User
+from core.models import ContactInstitution, Institution, InstitutionType, Team, User
 
 
 def _make_institution(nom, commune_code="38185"):
@@ -11,9 +11,13 @@ def _make_institution(nom, commune_code="38185"):
 
 
 def _make_user(email, institution):
-    return User.objects.create_user(
+    # equipes_institution se résout via ContactInstitution (actif), pas le FK User.institution
+    # brut — voir la docstring de l'action côté vue : ContactInstitution fait autorité.
+    user = User.objects.create_user(
         username=email, email=email, password="Test1234!", type="AUT_LOCALE", institution=institution,
     )
+    ContactInstitution.objects.create(institution=institution, utilisateur=user, actif=True)
+    return user
 
 
 @pytest.mark.django_db

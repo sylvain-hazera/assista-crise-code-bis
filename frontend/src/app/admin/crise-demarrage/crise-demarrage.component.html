@@ -5,50 +5,61 @@
   </div>
 
   <div class="steps-indicator">
-    <span class="step-dot" [class.active]="step === 1" [class.done]="step > 1">1. Cellule de crise</span>
-    <span class="step-dot" [class.active]="step === 2" [class.done]="step > 2">2. Accueil</span>
-    <span class="step-dot" [class.active]="step === 3" [class.done]="step > 3">3. Regroupement</span>
-    <span class="step-dot" [class.active]="step === 4" [class.done]="step > 4">4. Équipes</span>
-    <span class="step-dot" [class.active]="step === 5">5. Récap</span>
+    <span class="step-dot" [class.active]="step === 1" [class.done]="step > 1">1. Points stratégiques</span>
+    <span class="step-dot" [class.active]="step === 2" [class.done]="step > 2">2. Équipes</span>
+    <span class="step-dot" [class.active]="step === 3">3. Récap</span>
   </div>
 
   @if (errorMessage) {
     <p class="error-message">{{ errorMessage }}</p>
   }
 
-  @if (etapeCourante; as etape) {
+  @if (step === 1) {
     <div class="step-panel">
-      <h3>{{ etape.titre }}</h3>
-      <p>{{ etape.description }}</p>
+      <h3>Points stratégiques</h3>
+      <p>Trois points sont proposés par défaut — retirez ceux qui ne s'appliquent pas, ou ajoutez-en autant que nécessaire.</p>
 
-      <div class="suggestions">
-        <span>Suggestion(s) :</span>
-        @for (s of etape.suggestions; track s) {
-          <button type="button" class="chip" [class.selected]="etape.nom === s" (click)="choisirSuggestion(etape, s)">{{ s }}</button>
-        }
-      </div>
+      @for (etape of etapes; track etape) {
+        <div class="point-card">
+          <button type="button" class="btn-retirer" (click)="retirerPoint(etape)" title="Retirer ce point">
+            <span class="material-icons">close</span>
+          </button>
 
-      <input type="text" class="form-input" [(ngModel)]="etape.nom" placeholder="Nom du point (ex: Mairie)">
+          @if (etape.isDefault) {
+            <h4>{{ etape.titre }}</h4>
+            <p class="point-description">{{ etape.description }}</p>
+            <div class="suggestions">
+              <span>Suggestion(s) :</span>
+              @for (s of etape.suggestions; track s) {
+                <button type="button" class="chip" [class.selected]="etape.nom === s" (click)="choisirSuggestion(etape, s)">{{ s }}</button>
+              }
+            </div>
+          } @else {
+            <select class="form-input" [(ngModel)]="etape.pointTypeCode">
+              <option [ngValue]="null">— Type de point —</option>
+              @for (t of pointTypes; track t.id) {
+                <option [ngValue]="t.code">{{ t.libelle }}</option>
+              }
+            </select>
+          }
+
+          <input type="text" class="form-input" [(ngModel)]="etape.nom" placeholder="Nom du point (laisser vide = non pourvu)">
+        </div>
+      }
+
+      <button type="button" class="btn-ajouter-point" (click)="ajouterPoint()">
+        <span class="material-icons">add</span> Ajouter un point
+      </button>
 
       <div class="step-actions">
-        <button type="button" class="btn-secondary" (click)="passerEtape(etape)" [disabled]="saving">
-          Laisser non pourvu pour l'instant
-        </button>
-        <button type="button" class="btn-primary" (click)="validerEtape(etape)" [disabled]="saving || !etape.nom.trim()">
-          Créer et continuer
+        <button type="button" class="btn-primary" (click)="terminerEtapePoints()" [disabled]="saving">
+          Continuer
         </button>
       </div>
-
-      @if (etape.skipped) {
-        <p class="disclaimer">
-          <span class="material-icons">warning</span>
-          Ce thème reste non pourvu — vous pourrez le créer plus tard depuis la page Centres.
-        </p>
-      }
     </div>
   }
 
-  @if (step === 4) {
+  @if (step === 2) {
     <div class="step-panel">
       <h3>Équipes</h3>
       <p>Pour chaque point créé, choisissez une équipe existante ou créez-en une. Une même équipe peut être affectée à plusieurs points.</p>
@@ -60,9 +71,9 @@
         </p>
       }
 
-      @for (etape of etapesAvecPoint; track etape.code) {
+      @for (etape of etapesAvecPoint; track etape) {
         <div class="team-row">
-          <strong>{{ etape.titre }}</strong> — {{ etape.nom }}
+          <strong>{{ etape.isDefault ? etape.titre : pointTypeLibelle(etape.pointTypeCode) }}</strong> — {{ etape.nom }}
 
           <select [(ngModel)]="etape.equipeId" [disabled]="!!etape.nouvelleEquipeNom.trim()">
             <option [ngValue]="null">— Aucune équipe pour l'instant —</option>
@@ -79,9 +90,9 @@
       }
 
       <p class="page-hint">
-        Une équipe créée ici (nom saisi) sera créée à la validation, avec son institution
-        déclarée actrice de la crise — vous pourrez compléter zone, thème et responsable
-        depuis sa fiche au récapitulatif.
+        Les équipes existantes proposées sont celles de votre institution. Une équipe créée ici
+        (nom saisi) sera créée à la validation, avec son institution déclarée actrice de la
+        crise — vous compléterez directement ses informations au récapitulatif.
       </p>
 
       <div class="step-actions">
@@ -92,28 +103,42 @@
     </div>
   }
 
-  @if (step === 5) {
+  @if (step === 3) {
     <div class="step-panel">
       <h3>Récapitulatif</h3>
       <ul class="recap-list">
-        @for (etape of etapes; track etape.code) {
+        @for (etape of etapes; track etape) {
           <li>
             @if (etape.cree) {
               <span class="material-icons ok">check_circle</span>
-              {{ etape.titre }} — {{ etape.nom }}
+              {{ etape.isDefault ? etape.titre : pointTypeLibelle(etape.pointTypeCode) }} — {{ etape.nom }}
               @if (etape.point?.equipe_nom) {
                 (équipe : {{ etape.point?.equipe_nom }})
 
-                @if (etape.nouvelleEquipeNom.trim() && !etape.responsableDone && !etape.responsableSkipped) {
+                @if (etape.nouvelleEquipeNom.trim() && !etape.infosDone && !etape.infosSkipped) {
                   <div class="responsable-form">
-                    <p class="page-hint">Un contact joignable pour cette équipe (le minimum nécessaire) :</p>
+                    <p class="page-hint">Informations de l'équipe (le minimum nécessaire — la zone d'intervention est déduite automatiquement du territoire de votre institution) :</p>
+
+                    <label class="form-label">Contact</label>
+                    <select class="form-input" [(ngModel)]="etape.responsable.membreExistantId"
+                            [disabled]="!!(etape.responsable.prenom || etape.responsable.nom || etape.responsable.email)">
+                      <option [ngValue]="null">— Sélectionner un membre existant de mon institution —</option>
+                      @for (m of candidateMembers; track m.id) {
+                        <option [ngValue]="m.id">{{ m.first_name }} {{ m.last_name }}</option>
+                      }
+                    </select>
+                    <p class="page-hint sep">— ou inviter un nouveau contact —</p>
                     <div class="form-row">
-                      <input type="text" class="form-input" [(ngModel)]="etape.responsable.prenom" placeholder="Prénom">
-                      <input type="text" class="form-input" [(ngModel)]="etape.responsable.nom" placeholder="Nom">
+                      <input type="text" class="form-input" [(ngModel)]="etape.responsable.prenom" placeholder="Prénom"
+                             [disabled]="!!etape.responsable.membreExistantId">
+                      <input type="text" class="form-input" [(ngModel)]="etape.responsable.nom" placeholder="Nom"
+                             [disabled]="!!etape.responsable.membreExistantId">
                     </div>
                     <div class="form-row">
-                      <input type="email" class="form-input" [(ngModel)]="etape.responsable.email" placeholder="Email">
-                      <input type="tel" class="form-input" [(ngModel)]="etape.responsable.telephone" placeholder="Téléphone">
+                      <input type="email" class="form-input" [(ngModel)]="etape.responsable.email" placeholder="Email"
+                             [disabled]="!!etape.responsable.membreExistantId">
+                      <input type="tel" class="form-input" [(ngModel)]="etape.responsable.telephone" placeholder="Téléphone"
+                             [disabled]="!!etape.responsable.membreExistantId">
                     </div>
                     <select class="form-input" [(ngModel)]="etape.responsable.roleCode">
                       <option [ngValue]="null">— Rôle dans l'équipe —</option>
@@ -121,33 +146,62 @@
                         <option [ngValue]="r.code">{{ r.libelle }}</option>
                       }
                     </select>
-                    @if (etape.responsableError) {
-                      <p class="error-message">{{ etape.responsableError }}</p>
+
+                    <label class="form-label">Thèmes d'intervention</label>
+                    <div class="checklist-box">
+                      @for (b of besoins; track b.id) {
+                        <label class="checkbox-label">
+                          <input type="checkbox" class="form-checkbox"
+                                 [checked]="etape.themeIds.includes(b.id)"
+                                 (change)="toggleThemeFor(etape, b.id, $any($event.target).checked)">
+                          <span class="checkbox-text">{{ b.nom }}</span>
+                        </label>
+                      }
+                    </div>
+
+                    <label class="form-label">Spécialité de l'équipe</label>
+                    <div class="checklist-box">
+                      @for (c of competences; track c.id) {
+                        <label class="checkbox-label">
+                          <input type="checkbox" class="form-checkbox"
+                                 [checked]="etape.competenceIds.includes(c.id)"
+                                 (change)="toggleCompetenceFor(etape, c.id, $any($event.target).checked)">
+                          <span class="checkbox-text">{{ c.nom }}</span>
+                        </label>
+                      }
+                    </div>
+
+                    <label class="form-label">Mission confiée</label>
+                    <textarea class="form-input" rows="2" [(ngModel)]="etape.missionDescription"
+                              placeholder="Ex : Accueillir et recenser les personnes évacuées"></textarea>
+
+                    @if (etape.infosError) {
+                      <p class="error-message">{{ etape.infosError }}</p>
                     }
                     <div class="step-actions">
-                      <button type="button" class="btn-secondary" (click)="passerResponsable(etape)" [disabled]="etape.responsableSaving">
+                      <button type="button" class="btn-secondary" (click)="passerEquipe(etape)" [disabled]="etape.infosSaving">
                         Plus tard
                       </button>
-                      <button type="button" class="btn-primary" (click)="ajouterResponsable(etape)" [disabled]="etape.responsableSaving">
-                        Ajouter
+                      <button type="button" class="btn-primary" (click)="enregistrerEquipe(etape)" [disabled]="etape.infosSaving">
+                        Enregistrer
                       </button>
                     </div>
                   </div>
-                } @else if (etape.responsableDone) {
+                } @else if (etape.infosDone) {
                   <p class="disclaimer ok">
                     <span class="material-icons">check_circle</span>
-                    Contact ajouté à l'équipe.
+                    Informations enregistrées pour cette équipe.
                   </p>
                 } @else {
                   <a [routerLink]="['/admin/equipes']" [queryParams]="{openTeam: etape.point?.equipe}"
                      class="recap-team-link">
-                    Compléter la fiche équipe (zone, thème, canal radio…)
+                    Compléter la fiche équipe (canal radio, délégation…)
                   </a>
                 }
               }
             } @else {
               <span class="material-icons skip">remove_circle_outline</span>
-              {{ etape.titre }} — non pourvu
+              {{ etape.isDefault ? etape.titre : pointTypeLibelle(etape.pointTypeCode) }} — non pourvu
             }
           </li>
         }
