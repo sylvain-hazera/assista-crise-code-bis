@@ -34,7 +34,29 @@ import asyncio
 import logging
 import os
 
+from meshcore.packets import CommandType, BinaryReqType
+
 logger = logging.getLogger("meshcore-proxy")
+
+_NOMS_COMMANDES = {c.value: c.name for c in CommandType}
+_NOMS_REQ_BINAIRES = {r.value: r.name for r in BinaryReqType}
+
+
+def _decrire_commande(payload: bytes) -> str:
+    """Résumé lisible d'une commande cliente pour le log — code CommandType, et pour un
+    BINARY_REQ (50, ex: req_status_sync/req_telemetry_sync — voir meshcore/commands/base.py
+    send_binary_req) la pubkey destinataire complète (payload[1:33]) et le type de requête
+    binaire (payload[33]), seule façon de savoir QUI un client interroge sans dupliquer tout
+    le parsing de la lib meshcore ici."""
+    if not payload:
+        return "(payload vide)"
+    code = payload[0]
+    nom = _NOMS_COMMANDES.get(code, f"code={code}")
+    if code == CommandType.BINARY_REQ.value and len(payload) >= 34:
+        dst_pubkey = payload[1:33].hex()
+        type_req = _NOMS_REQ_BINAIRES.get(payload[33], f"type={payload[33]}")
+        return f"{nom} dst={dst_pubkey} req_type={type_req}"
+    return f"{nom} ({len(payload)} octet(s))"
 
 UPSTREAM_HOST = os.environ["MESHCORE_TCP_HOST"]
 UPSTREAM_PORT = int(os.environ.get("MESHCORE_TCP_PORT", "5000"))
@@ -49,7 +71,14 @@ PUSH_THRESHOLD = 0x80
 # contenu (constaté : avec Home Assistant ET assista-crise connectés, l'autre ne reçoit jamais
 # rien). On diffuse donc ces deux codes à tous les clients, pas seulement au demandeur.
 CODES_MESSAGE_RECU = {0x07, 0x08}
-SILENCE_FIN_REPONSE = 0.3  # secondes de silence avant de considérer une réponse (mono ou multi-trames) terminée
+# 0.3s à l'origine : trop court sous charge réelle (plusieurs clients partageant la même
+# connexion companion, dont un qui sonde la batterie toutes les 5s) — une rafale multi-trames
+# (ex: CHANNEL_INFO, une par canal) qui dépasse ce délai de silence se fait couper en cours de
+# route : le proxy livre ce qu'il a déjà reçu et referme la fenêtre, puis les trames arrivant
+# après sont journalisées "reçue sans commande en attente, ignorée" et jetées — jamais
+# transmises à personne. Constaté en direct le 2026-09-16 (CHANNEL_INFO perdu 20s après la
+# connexion d'un client, pendant qu'un autre pollait GET_BATT_AND_STORAGE toutes les 5s).
+SILENCE_FIN_REPONSE = 0.9  # secondes de silence avant de considérer une réponse (mono ou multi-trames) terminée
 TIMEOUT_MAX_REPONSE = 8.0  # garde-fou si le companion ne répond jamais du tout
 
 
@@ -199,6 +228,7 @@ class ProxyMeshCore:
                 logger.warning("Companion réel déconnecté juste avant l'envoi, commande abandonnée.")
                 return
             trame = b"\x3c" + len(payload).to_bytes(2, "little") + payload
+            logger.info("Commande de %s : %s", writer.get_extra_info("peername"), _decrire_commande(payload))
             self.frames_reponse = []
             self.evenement_fin_reponse = asyncio.Event()
             self.collecte_active = True
