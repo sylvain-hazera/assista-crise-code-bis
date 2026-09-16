@@ -557,6 +557,14 @@
             tiens, et t'enverra un message de bienvenue une fois réclamé.
           </p>
 
+          @if (isDemoZone) {
+            <div class="alert alert-info">
+              <span class="material-icons">info</span>
+              Réclamer ou libérer un nœud est indisponible depuis la zone de démonstration —
+              basculez en zone réelle pour gérer vos nœuds.
+            </div>
+          }
+
           <!-- MESHCORE -->
           <h3 class="radio-zone-title">MeshCore</h3>
           <div class="form-group">
@@ -570,10 +578,16 @@
           @if (reclamerMeshCoreErreur) {
             <div class="alert alert-error"><span class="material-icons">warning</span> {{ reclamerMeshCoreErreur }}</div>
           }
-          <button type="button" class="btn btn-primary" [disabled]="!formReclamerMeshCoreValide || reclamerMeshCoreEnCours" (click)="reclamerMeshCore()">
+          <button type="button" class="btn btn-primary" [disabled]="!formReclamerMeshCoreValide || reclamerMeshCoreEnCours || isDemoZone" (click)="reclamerMeshCore()">
             Réclamer ce nœud
           </button>
 
+          @if (libererMeshCoreErreur) {
+            <div class="alert alert-error"><span class="material-icons">warning</span> {{ libererMeshCoreErreur }}</div>
+          }
+          @if (libererMeshCoreSucces) {
+            <div class="alert alert-success"><span class="material-icons">check_circle</span> {{ libererMeshCoreSucces }}</div>
+          }
           @if (mesNoeudsMeshCore.length > 0) {
             <div class="table-responsive radio-table">
               <table class="data-table">
@@ -585,7 +599,7 @@
                     <tr>
                       <td>{{ n.nom_noeud || '—' }}</td>
                       <td class="mono">{{ n.pubkey_hex.slice(0, 16) }}…</td>
-                      <td><button type="button" class="btn btn-danger-sm" (click)="libererMeshCore(n)">Libérer</button></td>
+                      <td><button type="button" class="btn btn-danger-sm" [disabled]="isDemoZone" (click)="libererMeshCore(n)">Libérer</button></td>
                     </tr>
                   }
                 </tbody>
@@ -626,11 +640,17 @@
           }
           <button
             type="button" class="btn btn-primary"
-            [disabled]="!formReclamerMeshtasticValide || reclamerMeshtasticEnCours || (meshtasticBrokerRequis && !meshtasticBrokerChoisi)"
+            [disabled]="!formReclamerMeshtasticValide || reclamerMeshtasticEnCours || (meshtasticBrokerRequis && !meshtasticBrokerChoisi) || isDemoZone"
             (click)="reclamerMeshtastic()">
             Réclamer ce nœud
           </button>
 
+          @if (libererMeshtasticErreur) {
+            <div class="alert alert-error"><span class="material-icons">warning</span> {{ libererMeshtasticErreur }}</div>
+          }
+          @if (libererMeshtasticSucces) {
+            <div class="alert alert-success"><span class="material-icons">check_circle</span> {{ libererMeshtasticSucces }}</div>
+          }
           @if (mesNoeudsMeshtastic.length > 0) {
             <div class="table-responsive radio-table">
               <table class="data-table">
@@ -642,7 +662,7 @@
                     <tr>
                       <td>{{ n.nom_noeud || '—' }}</td>
                       <td class="mono">{{ nodeNumHex(n.node_num) }}</td>
-                      <td><button type="button" class="btn btn-danger-sm" (click)="libererMeshtastic(n)">Libérer</button></td>
+                      <td><button type="button" class="btn btn-danger-sm" [disabled]="isDemoZone" (click)="libererMeshtastic(n)">Libérer</button></td>
                     </tr>
                   }
                 </tbody>

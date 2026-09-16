@@ -84,16 +84,26 @@ export class SettingsComponent implements OnInit {
   mesNoeudsMeshCore: NoeudMeshUtilisateur[] = [];
   mesNoeudsMeshtastic: NoeudUtilisateurMeshtastic[] = [];
   isLoadingRadio = false;
+  // Réclamer/Libérer sont refusés côté serveur en zone DEMO (DenyInDemo côté écriture — voir
+  // NoeudMeshUtilisateurViewSet) : affiché ici pour ne pas laisser croire que le bouton
+  // "Libérer" ne fait rien quand en réalité il est bloqué (le message d'erreur renvoyé par le
+  // serveur passait auparavant inaperçu, réutilisant la zone d'erreur du formulaire "Réclamer"
+  // tout en haut, loin du bouton "Libérer" réellement cliqué) — bug rapporté le 2026-09-16.
+  isDemoZone = false;
 
   reclamerMeshCorePubkey = '';
   reclamerMeshCoreNom = '';
   reclamerMeshCoreEnCours = false;
   reclamerMeshCoreErreur = '';
+  libererMeshCoreErreur = '';
+  libererMeshCoreSucces = '';
 
   reclamerMeshtasticNodeNum: number | null = null;
   reclamerMeshtasticNom = '';
   reclamerMeshtasticEnCours = false;
   reclamerMeshtasticErreur = '';
+  libererMeshtasticErreur = '';
+  libererMeshtasticSucces = '';
   /** Non-null uniquement quand le backend n'a pas pu déduire le broker tout seul (jamais
    * détecté, ou détecté sur plusieurs à la fois) — voir NoeudUtilisateurMeshtasticViewSet.
    * reclamer. */
@@ -122,6 +132,7 @@ export class SettingsComponent implements OnInit {
 
   ngOnInit(): void {
     this.currentUser = this.authService.getCurrentUser();
+    this.isDemoZone = this.authService.getEnvironment() === 'DEMO';
     // currentUser.photo n'est plus renvoyée en clair (write_only, voir photo_url) : on
     // récupère l'aperçu de la photo existante en blob.
     this.previewUrl = null;
@@ -218,9 +229,14 @@ export class SettingsComponent implements OnInit {
 
   libererMeshCore(noeud: NoeudMeshUtilisateur): void {
     if (!confirm(`Libérer le nœud « ${noeud.nom_noeud || noeud.pubkey_hex.slice(0, 12) + '…'} » ?`)) return;
+    this.libererMeshCoreErreur = '';
+    this.libererMeshCoreSucces = '';
     this.noeudMeshCoreService.liberer(noeud.pubkey_hex).subscribe({
-      next: () => { this.mesNoeudsMeshCore = this.mesNoeudsMeshCore.filter(n => n.id !== noeud.id); },
-      error: err => { this.reclamerMeshCoreErreur = err.error?.detail || 'Impossible de libérer ce nœud.'; },
+      next: () => {
+        this.mesNoeudsMeshCore = this.mesNoeudsMeshCore.filter(n => n.id !== noeud.id);
+        this.libererMeshCoreSucces = 'Nœud libéré.';
+      },
+      error: err => { this.libererMeshCoreErreur = err.error?.detail || 'Impossible de libérer ce nœud.'; },
     });
   }
 
@@ -277,9 +293,14 @@ export class SettingsComponent implements OnInit {
 
   libererMeshtastic(noeud: NoeudUtilisateurMeshtastic): void {
     if (!confirm(`Libérer le nœud « ${noeud.nom_noeud || this.nodeNumHex(noeud.node_num)} » ?`)) return;
+    this.libererMeshtasticErreur = '';
+    this.libererMeshtasticSucces = '';
     this.noeudMeshtasticService.liberer(noeud.node_num).subscribe({
-      next: () => { this.mesNoeudsMeshtastic = this.mesNoeudsMeshtastic.filter(n => n.id !== noeud.id); },
-      error: err => { this.reclamerMeshtasticErreur = err.error?.detail || 'Impossible de libérer ce nœud.'; },
+      next: () => {
+        this.mesNoeudsMeshtastic = this.mesNoeudsMeshtastic.filter(n => n.id !== noeud.id);
+        this.libererMeshtasticSucces = 'Nœud libéré.';
+      },
+      error: err => { this.libererMeshtasticErreur = err.error?.detail || 'Impossible de libérer ce nœud.'; },
     });
   }
 
