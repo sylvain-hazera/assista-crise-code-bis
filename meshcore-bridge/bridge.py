@@ -165,6 +165,18 @@ class DjangoClient:
             payload["erreur"] = erreur
         await self._request("PATCH", f"/messages-canal-meshcore/{message_id}/", json=payload)
 
+    async def commandes_a_executer(self, compagnon_id):
+        """Commandes ponctuelles en attente pour ce companion (advert/flood advert pour
+        l'instant) — voir CommandeMeshCoreViewSet.a_executer."""
+        response = await self._request("GET", "/commandes-meshcore/a-executer/", params={"compagnon": compagnon_id})
+        return response.json()
+
+    async def marquer_commande(self, commande_id, statut, erreur=None):
+        payload = {"statut": statut}
+        if erreur:
+            payload["erreur"] = erreur
+        await self._request("PATCH", f"/commandes-meshcore/{commande_id}/", json=payload)
+
     async def aclose(self):
         await self._client.aclose()
 
@@ -284,6 +296,34 @@ async def boucle_envoi(meshcore, django, compagnon_id):
                         logger.exception("Échec de la mise à jour de statut après échec d'envoi.")
         except Exception:
             logger.exception("Échec de récupération des messages en attente auprès de l'API.")
+        await asyncio.sleep(POLL_INTERVAL_SECONDS)
+
+
+async def boucle_commandes(meshcore, django, compagnon_id):
+    """Interroge périodiquement l'API pour les commandes ponctuelles en attente (advert/flood
+    advert pour l'instant) — même principe que boucle_envoi, voir
+    CommandeMeshCoreViewSet.a_executer. N'agit que sur CE companion (l'appareil directement
+    connecté) : piloter un relais distant est hors du périmètre de cette file, voir docstring
+    du modèle CommandeMeshCore côté Django."""
+    while True:
+        try:
+            en_attente = await django.commandes_a_executer(compagnon_id)
+            for commande in en_attente:
+                try:
+                    if commande["type_commande"] == "FLOOD_ADVERT":
+                        await meshcore.commands.send_advert(flood=True)
+                    else:
+                        await meshcore.commands.send_advert(flood=False)
+                    await django.marquer_commande(commande["id"], "EXECUTEE")
+                    logger.info("Commande %s (%s) exécutée.", commande["id"], commande["type_commande"])
+                except Exception as exc:
+                    logger.exception("Échec d'exécution de la commande %s.", commande["id"])
+                    try:
+                        await django.marquer_commande(commande["id"], "ECHEC", erreur=str(exc))
+                    except Exception:
+                        logger.exception("Échec de la mise à jour de statut après échec d'exécution.")
+        except Exception:
+            logger.exception("Échec de récupération des commandes en attente auprès de l'API.")
         await asyncio.sleep(POLL_INTERVAL_SECONDS)
 
 
@@ -491,6 +531,7 @@ async def executer_une_session(django):
     await meshcore.start_auto_message_fetching()
 
     tache_envoi = asyncio.create_task(boucle_envoi(meshcore, django, COMPAGNON_ID))
+    tache_commandes = asyncio.create_task(boucle_commandes(meshcore, django, COMPAGNON_ID))
     tache_contacts = asyncio.create_task(boucle_contacts(meshcore, django, COMPAGNON_ID))
     tache_positions = asyncio.create_task(boucle_positions_missions(meshcore, django, COMPAGNON_ID))
     tache_canaux_provisionnement = asyncio.create_task(boucle_provisionnement_canaux(meshcore, django, COMPAGNON_ID, canaux_idx_map))
@@ -499,6 +540,7 @@ async def executer_une_session(django):
         await deconnecte.wait()
     finally:
         tache_envoi.cancel()
+        tache_commandes.cancel()
         tache_contacts.cancel()
         tache_positions.cancel()
         tache_canaux_provisionnement.cancel()

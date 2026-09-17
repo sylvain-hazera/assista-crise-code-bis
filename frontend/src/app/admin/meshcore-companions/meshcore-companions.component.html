@@ -84,6 +84,13 @@
   <p class="error-message">{{ errorMessage }}</p>
 }
 
+@if (advertMessage) {
+  <p class="success-message">{{ advertMessage }}</p>
+}
+@if (advertErreur) {
+  <p class="error-message">{{ advertErreur }}</p>
+}
+
 @if (loading) {
   <p>Chargement…</p>
 } @else {
@@ -98,6 +105,7 @@
           <th>Statut</th>
           <th>Dernière connexion</th>
           <th>ID (pour COMPAGNON_ID)</th>
+          <th>Advert</th>
           <th></th>
         </tr>
       </thead>
@@ -111,10 +119,18 @@
             <td><span class="statut" [ngClass]="statutClass(c)">{{ c.dernier_etat || 'jamais connecté' }}</span></td>
             <td>{{ c.derniere_connexion ? (c.derniere_connexion | date:'short') : '—' }}</td>
             <td class="mono id-cell" (click)="copierId(c)" title="Cliquer pour copier">{{ c.id }}</td>
+            <td>
+              <button type="button" class="btn-secondary-sm" [disabled]="advertEnCours === c.id" (click)="envoyerAdvert(c, false)" title="Annonce de présence zero-hop">
+                Advert
+              </button>
+              <button type="button" class="btn-secondary-sm" [disabled]="advertEnCours === c.id" (click)="envoyerAdvert(c, true)" title="Annonce propagée sur le mesh (flood)">
+                Flood
+              </button>
+            </td>
             <td><button type="button" class="btn-danger-sm" (click)="supprimer(c)">Supprimer</button></td>
           </tr>
         } @empty {
-          <tr><td colspan="8" class="empty">Aucun companion déclaré pour l'instant.</td></tr>
+          <tr><td colspan="9" class="empty">Aucun companion déclaré pour l'instant.</td></tr>
         }
       </tbody>
     </table>

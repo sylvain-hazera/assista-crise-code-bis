@@ -3856,6 +3856,38 @@ class MessageMeshLog(EnvironmentScopedModel):
         return f"[{self.direction}] {self.contact_pubkey_hex[:12]}… — {self.statut}"
 
 
+class TypeCommandeMeshCore(models.TextChoices):
+    ADVERT = "ADVERT", "Advert (annonce de présence)"
+    FLOOD_ADVERT = "FLOOD_ADVERT", "Flood advert (annonce propagée)"
+
+
+class StatutCommandeMeshCore(models.TextChoices):
+    EN_ATTENTE = "EN_ATTENTE", "En attente"
+    EXECUTEE = "EXECUTEE", "Exécutée"
+    ECHEC = "ECHEC", "Échec"
+
+
+class CommandeMeshCore(EnvironmentScopedModel):
+    """Commande ponctuelle à exécuter par le pont sur SON PROPRE companion (ex: annoncer sa
+    présence sur le mesh) — même mécanisme de file d'attente que MessageMeshLog (le pont
+    interroge périodiquement plutôt que d'exposer un port entrant sur son conteneur, voir
+    meshcore-bridge/bridge.py:boucle_commandes), pour des actions qui ne sont pas des messages.
+    Volontairement limité à l'appareil directement connecté : piloter un relais distant (ex:
+    un répéteur) nécessite une authentification déportée (login administrateur du relais,
+    protocole différent) hors du périmètre de cette file pour l'instant."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    compagnon = models.ForeignKey(CompagnonMeshCore, on_delete=models.CASCADE, related_name="commandes")
+    type_commande = models.CharField(max_length=20, choices=TypeCommandeMeshCore.choices)
+    statut = models.CharField(max_length=12, choices=StatutCommandeMeshCore.choices, default=StatutCommandeMeshCore.EN_ATTENTE)
+    erreur = models.TextField(null=True, blank=True)
+    date_creation = models.DateTimeField(auto_now_add=True)
+    date_execution = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f"{self.get_type_commande_display()} — {self.compagnon.nom} ({self.statut})"
+
+
 class RelaisMeshCore(EnvironmentScopedModel):
     """Répéteur MeshCore (infrastructure pure — ne se pilote pas comme un Companion, ne se
     connecte à rien : c'est un point fixe posé sur le terrain). Sa position est le plus souvent

@@ -142,6 +142,7 @@ from .models import (
     User, Crisis, TypeCrise, Request, RequestPhoto, Offer, OfferPhoto, OfferMessage, Information, DisponibiliteOffre, DisponibilitePointEquipe, MaterielPoint,
     MaterielCatalogue, ContributionMateriel, StatutMateriel, TypeMateriel, NiveauStock, RegistrePresence, TypePersonneAccueillie, DeclarationSecurite, SituationDeclarant,
     CompagnonMeshCore, NoeudMeshUtilisateur, MessageMeshLog, DirectionMessageMesh, StatutMessageMesh,
+    CommandeMeshCore, TypeCommandeMeshCore, StatutCommandeMeshCore,
     RelaisMeshCore, CanalMeshCore, MessageCanalMeshCore, ContactMeshCore, TypeContactMeshCore,
     MeshCoreConnexionType, MeshtasticConnexionType,
     CompagnonMeshtastic, NoeudUtilisateurMeshtastic, MessageMeshtasticLog,
@@ -301,6 +302,7 @@ from .serializers import (
     CompagnonMeshCoreSerializer,
     NoeudMeshUtilisateurSerializer,
     MessageMeshLogSerializer,
+    CommandeMeshCoreSerializer,
     RelaisMeshCoreSerializer,
     CanalMeshCoreSerializer,
     MessageCanalMeshCoreSerializer,
@@ -9527,11 +9529,32 @@ class CompagnonMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelView
         return self.queryset
 
     def get_permissions(self):
-        if self.action in ('create', 'update', 'partial_update', 'destroy'):
+        if self.action in ('create', 'update', 'partial_update', 'destroy', 'envoyer_advert'):
             return [IsInstitutionalActor(), DenyInDemo()]
         # `rapporter_etat` est appelé par le service-pont (compte de service authentifié,
         # pas un acteur institutionnel) : authentifié suffit, voir docstring de l'action.
         return [permissions.IsAuthenticated()]
+
+    @action(detail=True, methods=['post'], url_path='envoyer-advert')
+    def envoyer_advert(self, request, pk=None):
+        """Programme l'envoi d'un advert (annonce de présence sur le mesh) par CE companion —
+        le pont l'exécutera à son prochain cycle d'interrogation (voir
+        CommandeMeshCoreViewSet.a_executer et meshcore-bridge/bridge.py:boucle_commandes).
+        `flood=true` propage l'annonce plus loin sur le mesh (plus coûteux en temps d'antenne),
+        sinon annonce zero-hop classique. Refusé en zone DEMO (voir get_permissions) : une
+        annonce réelle sur du vrai matériel radio n'a pas sa place en démonstration."""
+        compagnon = self.get_object()
+        flood = bool(request.data.get('flood'))
+        commande = CommandeMeshCore.objects.create(
+            compagnon=compagnon,
+            type_commande=TypeCommandeMeshCore.FLOOD_ADVERT if flood else TypeCommandeMeshCore.ADVERT,
+            environment=get_active_environment(request),
+        )
+        audit_log(
+            request=request, action_code="CREATION", objet_type="CommandeMeshCore", objet_id=commande.id,
+            commentaire=f"{'Flood advert' if flood else 'Advert'} programmé pour {compagnon.nom}",
+        )
+        return Response(CommandeMeshCoreSerializer(commande).data, status=status.HTTP_201_CREATED)
 
     @action(detail=False, methods=['get'])
     def envoyables(self, request):
@@ -9995,6 +10018,45 @@ class MessageMeshLogViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet
         if compagnon_id:
             qs = qs.filter(compagnon_id=compagnon_id)
         return Response(MessageMeshLogSerializer(qs, many=True).data)
+
+
+class CommandeMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
+    """File d'attente de commandes ponctuelles (advert/flood advert pour l'instant) à exécuter
+    par le service-pont sur son propre companion — voir docstring du modèle. Créées uniquement
+    via CompagnonMeshCoreViewSet.envoyer_advert (jamais un create() direct exposé ici : ça
+    éviterait un client de fabriquer une commande pour un companion qu'il n'a pas le droit de
+    piloter)."""
+
+    queryset = CommandeMeshCore.objects.select_related('compagnon').all()
+    serializer_class = CommandeMeshCoreSerializer
+    http_method_names = ['get', 'patch', 'head', 'options']
+
+    def get_permissions(self):
+        if self.action in ('list', 'retrieve'):
+            return [IsInstitutionalActor()]
+        # partial_update/a_executer : appelés par le service-pont (compte de service
+        # authentifié, pas un acteur institutionnel) — même principe que MessageMeshLogViewSet.
+        return [permissions.IsAuthenticated()]
+
+    @action(detail=False, methods=['get'], url_path='a-executer')
+    def a_executer(self, request):
+        """Commandes en attente pour un companion donné — le service-pont interroge cette
+        action à intervalle régulier, même principe que MessageMeshLogViewSet.a_envoyer."""
+        compagnon_id = request.query_params.get('compagnon')
+        qs = self.get_queryset().filter(statut=StatutCommandeMeshCore.EN_ATTENTE)
+        if compagnon_id:
+            qs = qs.filter(compagnon_id=compagnon_id)
+        return Response(CommandeMeshCoreSerializer(qs, many=True).data)
+
+    def perform_update(self, serializer):
+        # Horodate automatiquement le passage EN_ATTENTE -> (EXECUTEE|ECHEC), plutôt que de
+        # compter sur le pont pour le faire lui-même (voir MessageMeshLog.date_envoi, jamais
+        # renseigné faute de ça).
+        nouveau_statut = serializer.validated_data.get('statut')
+        if nouveau_statut and nouveau_statut != StatutCommandeMeshCore.EN_ATTENTE:
+            serializer.save(date_execution=timezone.now())
+        else:
+            serializer.save()
 
 
 class RelaisMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):

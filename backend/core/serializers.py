@@ -43,6 +43,7 @@ from .models import (
     CompagnonMeshCore,
     NoeudMeshUtilisateur,
     MessageMeshLog,
+    CommandeMeshCore,
     RelaisMeshCore,
     CanalMeshCore,
     MessageCanalMeshCore,
@@ -2657,6 +2658,19 @@ class MessageMeshLogSerializer(serializers.ModelSerializer):
         if not obj.expediteur_id:
             return None
         return f"{obj.expediteur.first_name} {obj.expediteur.last_name}".strip() or obj.expediteur.email
+
+
+class CommandeMeshCoreSerializer(serializers.ModelSerializer):
+    compagnon_nom = serializers.CharField(source='compagnon.nom', read_only=True)
+    type_commande_libelle = serializers.CharField(source='get_type_commande_display', read_only=True)
+
+    class Meta:
+        model = CommandeMeshCore
+        fields = "__all__"
+        # statut/erreur/date_execution ne doivent PAS être en read_only : le service-pont les
+        # met à jour via PATCH après tentative d'exécution (même piège déjà rencontré sur
+        # MessageMeshLogSerializer — un champ read_only reçu en entrée est silencieusement
+        # ignoré par DRF, sans erreur, laissant la commande EN_ATTENTE pour toujours).
 
 
 class RelaisMeshCoreSerializer(serializers.ModelSerializer):

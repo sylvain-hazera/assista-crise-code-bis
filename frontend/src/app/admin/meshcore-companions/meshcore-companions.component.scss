@@ -100,6 +100,20 @@
   font-size: .8rem;
 }
 
+.btn-secondary-sm {
+  padding: .3rem .6rem;
+  border-radius: 6px;
+  border: 1px solid #d1d5db;
+  background: #f9fafb;
+  color: #374151;
+  cursor: pointer;
+  font-size: .78rem;
+  margin-right: .3rem;
+
+  &:disabled { opacity: .5; cursor: not-allowed; }
+  &:hover:not(:disabled) { border-color: #2563eb; color: #2563eb; }
+}
+
 .table-wrapper { overflow-x: auto; }
 
 .data-table {

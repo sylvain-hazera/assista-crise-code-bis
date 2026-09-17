@@ -34,4 +34,12 @@ export class CompagnonMeshCoreService {
   delete(id: string): Observable<void> {
     return this.http.delete<void>(`${this.url}/${id}/`);
   }
+
+  /** POST /api/compagnons-meshcore/<id>/envoyer-advert/ — programme l'envoi d'un advert
+   * (annonce de présence) par CE companion ; `flood=true` pour une annonce propagée sur le
+   * mesh. Exécuté par le pont à son prochain cycle (quelques secondes), pas immédiat. Refusé
+   * en zone DEMO. */
+  envoyerAdvert(id: string, flood: boolean): Observable<{ id: string; statut: string }> {
+    return this.http.post<{ id: string; statut: string }>(`${this.url}/${id}/envoyer-advert/`, { flood });
+  }
 }

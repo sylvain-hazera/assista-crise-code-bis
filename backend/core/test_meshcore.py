@@ -4,7 +4,7 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from core.models import (
-    CompagnonMeshCore, ContactInstitution, Institution, InstitutionType,
+    CompagnonMeshCore, CommandeMeshCore, ContactInstitution, Institution, InstitutionType,
     MessageMeshLog, NoeudMeshUtilisateur,
 )
 
@@ -1246,3 +1246,72 @@ class TestReclamerLibererMeshCore:
         client.credentials(HTTP_X_ENVIRONMENT='DEMO')
         response = client.post(reverse('noeudmeshutilisateur-reclamer'), {'pubkey_hex': '33' * 32}, format='json')
         assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+@pytest.mark.django_db
+class TestCommandeMeshCore:
+    """Advert/flood advert : l'institutionnel programme une commande via l'action dédiée,
+    jamais un create() direct exposé sur CommandeMeshCoreViewSet (voir sa docstring). Le
+    service-pont l'exécute ensuite via a_executer/PATCH — même principe de file d'attente
+    que MessageMeshLog."""
+
+    def test_envoyer_advert_creates_commande(self, mairie_client, compagnon):
+        client, _ = mairie_client
+        response = client.post(reverse('compagnonmeshcore-envoyer-advert', args=[compagnon.id]), {}, format='json')
+        assert response.status_code == status.HTTP_201_CREATED, response.data
+        commande = CommandeMeshCore.objects.get(compagnon=compagnon)
+        assert commande.type_commande == 'ADVERT'
+        assert commande.statut == 'EN_ATTENTE'
+
+    def test_envoyer_flood_advert_creates_commande(self, mairie_client, compagnon):
+        client, _ = mairie_client
+        response = client.post(reverse('compagnonmeshcore-envoyer-advert', args=[compagnon.id]), {'flood': True}, format='json')
+        assert response.status_code == status.HTTP_201_CREATED, response.data
+        commande = CommandeMeshCore.objects.get(compagnon=compagnon)
+        assert commande.type_commande == 'FLOOD_ADVERT'
+
+    def test_envoyer_advert_denied_in_demo(self, create_user, institution_a, compagnon):
+        user = _institutional_demo_user(create_user, institution_a, username='demo-advert@test.fr', email='demo-advert@test.fr')
+        client = APIClient()
+        client.force_authenticate(user=user)
+        client.credentials(HTTP_X_ENVIRONMENT='DEMO')
+
+        response = client.post(reverse('compagnonmeshcore-envoyer-advert', args=[compagnon.id]), {}, format='json')
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert not CommandeMeshCore.objects.filter(compagnon=compagnon).exists()
+
+    def test_requires_institutional_actor(self, create_user, compagnon):
+        user = create_user(username='simple-advert@test.fr', email='simple-advert@test.fr', type='UTIL_SIMPLE')
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        response = client.post(reverse('compagnonmeshcore-envoyer-advert', args=[compagnon.id]), {}, format='json')
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_a_executer_returns_only_pending_for_compagnon(self, mairie_client, compagnon, institution_a):
+        client, _ = mairie_client
+        autre_compagnon = CompagnonMeshCore.objects.create(nom='Autre companion advert', connexion_type='TCP', institution=institution_a)
+        cmd_attente = CommandeMeshCore.objects.create(compagnon=compagnon, type_commande='ADVERT')
+        CommandeMeshCore.objects.create(compagnon=compagnon, type_commande='ADVERT', statut='EXECUTEE')
+        CommandeMeshCore.objects.create(compagnon=autre_compagnon, type_commande='ADVERT')
+
+        response = client.get(reverse('commandemeshcore-a-executer'), {'compagnon': str(compagnon.id)})
+
+        assert response.status_code == status.HTTP_200_OK
+        assert [c['id'] for c in response.data] == [str(cmd_attente.id)]
+
+    def test_bridge_can_mark_commande_executed(self, compagnon):
+        commande = CommandeMeshCore.objects.create(compagnon=compagnon, type_commande='ADVERT')
+        from core.models import User
+        pont = User.objects.create_user(username='pont-test@test.fr', email='pont-test@test.fr', type='UTIL_SIMPLE')
+        client = APIClient()
+        client.force_authenticate(user=pont)
+
+        response = client.patch(reverse('commandemeshcore-detail', args=[commande.id]), {'statut': 'EXECUTEE'}, format='json')
+
+        assert response.status_code == status.HTTP_200_OK, response.data
+        commande.refresh_from_db()
+        assert commande.statut == 'EXECUTEE'
+        assert commande.date_execution is not None

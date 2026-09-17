@@ -307,4 +307,28 @@ export class MeshcoreCompanionsComponent implements OnInit {
   copierId(c: CompagnonMeshCore): void {
     navigator.clipboard?.writeText(c.id).catch(() => {});
   }
+
+  // Advert / flood advert : programme la commande côté API, exécutée par le pont à son
+  // prochain cycle d'interrogation (quelques secondes, pas immédiat) — voir
+  // CompagnonMeshCoreService.envoyerAdvert. Un seul en vol à la fois par companion pour
+  // désactiver le bouton pendant l'attente, pas pour empêcher plusieurs companions en //.
+  advertEnCours: string | null = null;
+  advertMessage = '';
+  advertErreur = '';
+
+  envoyerAdvert(companion: CompagnonMeshCore, flood: boolean): void {
+    this.advertEnCours = companion.id;
+    this.advertMessage = '';
+    this.advertErreur = '';
+    this.service.envoyerAdvert(companion.id, flood).subscribe({
+      next: () => {
+        this.advertEnCours = null;
+        this.advertMessage = `${flood ? 'Flood advert' : 'Advert'} programmé pour « ${companion.nom} » — exécuté par le pont dans les prochaines secondes.`;
+      },
+      error: (err) => {
+        this.advertEnCours = null;
+        this.advertErreur = err.error?.detail || "Impossible de programmer cet advert.";
+      },
+    });
+  }
 }
