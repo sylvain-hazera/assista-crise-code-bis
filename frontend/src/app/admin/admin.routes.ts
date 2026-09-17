@@ -12,7 +12,7 @@ import { MapComponent } from '../shared/components/common/map/map.component';
 import { ResultsComponent } from './results/results.component';
 import { UsersComponent } from './users/users.component';
 import { AuditLogsComponent } from './audit-logs/audit-logs.component';
-import { sysAdminGuard, institutionalEffectiveGuard, accountValidationGuard } from '../core/guards/admin.guard';
+import { sysAdminGuard, institutionalEffectiveGuard, accountValidationGuard, zonesGuard } from '../core/guards/admin.guard';
 import { AccesRefuseComponent } from './acces-refuse/acces-refuse.component';
 import { AccountValidationsComponent } from './account-validations/account-validations.component';
 import { CompetencesComponent } from './competences/competences.component';
@@ -57,7 +57,7 @@ export const ADMIN_ROUTES: Routes = [
   { path: 'meshtastic-companions', component: MeshtasticCompanionsComponent, canActivate: [institutionalEffectiveGuard] },
   { path: 'meshtastic-canaux', component: MeshtasticCanauxComponent, canActivate: [institutionalEffectiveGuard] },
   { path: 'centres', component: CentresComponent, canActivate: [institutionalEffectiveGuard] },
-  { path: 'zones', component: ZonesComponent, canActivate: [institutionalEffectiveGuard] },
+  { path: 'zones', component: ZonesComponent, canActivate: [institutionalEffectiveGuard, zonesGuard] },
   { path: 'plans', component: PlansComponent, canActivate: [institutionalEffectiveGuard] },
   { path: 'carte', component: MapComponent, canActivate: [institutionalEffectiveGuard] },
   { path: 'resultats', component: ResultsComponent, canActivate: [institutionalEffectiveGuard] },

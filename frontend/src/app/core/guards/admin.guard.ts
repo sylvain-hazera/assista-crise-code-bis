@@ -76,6 +76,24 @@ export const accountValidationGuard: CanActivateFn = (route, state) => {
   );
 };
 
+/** Zones = découpage PCS/PICS, réservé aux mairies/intercommunalités (voir
+ * AuthService.isAutoriteLocaleCommunale, même critère que _institution_est_autorite_locale
+ * côté backend qui bloque déjà la création). Sans ce garde, la page restait accessible en
+ * navigation directe à n'importe quel acteur institutionnel — juste inutilisable une fois
+ * ouverte (création refusée en 403 par l'API). */
+export const zonesGuard: CanActivateFn = (route, state) => {
+  const authService = inject(AuthService);
+  const router = inject(Router);
+
+  if (!authService.getToken()) {
+    return router.parseUrl('/accueil');
+  }
+  return authService.fetchMe().pipe(
+    map(() => authService.isAutoriteLocaleCommunale() ? true : router.parseUrl('/admin/acces-refuse')),
+    catchError(() => of(router.parseUrl('/admin/acces-refuse'))),
+  );
+};
+
 
 
 

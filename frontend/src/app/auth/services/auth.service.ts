@@ -471,6 +471,15 @@ export class AuthService {
       role === UserRole.ADMIN || role === UserRole.REGULATEUR;
   }
 
+  /** Zones = découpage PCS/PICS, réservé aux mairies/intercommunalités — même critère que
+   * _institution_est_autorite_locale côté backend (core/views.py), qui bloque déjà la
+   * création côté API. Un admin (rôle PROD réel, voir isAdmin) voit toujours tout. */
+  isAutoriteLocaleCommunale(): boolean {
+    if (this.isAdmin()) return true;
+    const code = this.getCurrentUser()?.institution_type_code;
+    return code === 'MAIRIE' || code === 'EPCI';
+  }
+
   /** Utilisé par adminGuard. Un compte n'ayant reçu qu'un accès démo (demo_role réglé, type
    * PROD resté simple) ne doit JAMAIS pouvoir entrer dans /admin tant qu'il est en zone PROD
    * — même si le backend refuse déjà les données (get_effective_role), la mise en page/le

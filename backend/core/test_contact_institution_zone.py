@@ -128,3 +128,26 @@ class TestZoneCreationRestrictedToLocalAuthority:
         response = client.post(reverse('zone-list'), {"nom": "Zone EPCI"}, format='json')
 
         assert response.status_code == status.HTTP_201_CREATED
+
+
+@pytest.mark.django_db
+class TestUserInstitutionTypeCodeExposedForFrontendZonesGuard:
+    """Le frontend (AuthService.isAutoriteLocaleCommunale, zonesGuard) masque/bloque l'accès à
+    la vue Zones pour toute institution qui n'est pas mairie/EPCI — il a besoin de connaître le
+    type de l'institution active de l'utilisateur, exposé ici sur UserSerializer."""
+
+    def test_institution_type_code_exposed_on_me(self, own_institution_client):
+        client, _ = own_institution_client
+        response = client.get(reverse('auth_me'))
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["institution_type_code"] == "MAIRIE"
+
+    def test_institution_type_code_none_without_active_contact(self, create_user):
+        user = create_user(username="sans-institution-zone@test.fr", email="sans-institution-zone@test.fr", type="UTIL_SIMPLE")
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        response = client.get(reverse('auth_me'))
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["institution_type_code"] is None

@@ -216,6 +216,9 @@ export class AdminLayoutComponent implements OnInit {
       const role = this.authService.getEffectiveRole();
       return role === UserRole.ADMIN || role === UserRole.LOCAL_AUTH;
     }
+    // Zones = découpage PCS/PICS, réservé aux mairies/EPCI (voir zonesGuard, qui protège
+    // aussi l'accès direct par URL) — inutile de montrer une entrée qui mènerait à un refus.
+    if (item.label === 'Zones') return this.authService.isAutoriteLocaleCommunale();
     return this.isInstitutionalEffective;
   }
 

@@ -176,6 +176,7 @@ class UserSerializer(serializers.ModelSerializer):
     commune_code = serializers.CharField(write_only=True, required=False, allow_blank=True)
     institution_nom = serializers.SerializerMethodField()
     institution_id = serializers.SerializerMethodField()
+    institution_type_code = serializers.SerializerMethodField()
     needs_institution_setup = serializers.SerializerMethodField()
     ma_zone = serializers.SerializerMethodField()
     # `photo` reste écrivable mais jamais renvoyée telle quelle (voir extra_kwargs plus bas) —
@@ -198,13 +199,20 @@ class UserSerializer(serializers.ModelSerializer):
         cached = getattr(obj, '_active_contact_cache', 'unset')
         if cached != 'unset':
             return cached
-        contact = obj.institutions.filter(actif=True).select_related('institution').first()
+        contact = obj.institutions.filter(actif=True).select_related('institution__type').first()
         obj._active_contact_cache = contact
         return contact
 
     def get_institution_nom(self, obj):
         contact = self._active_contact(obj)
         return contact.institution.nom if contact else None
+
+    def get_institution_type_code(self, obj):
+        # Utilisé côté frontend pour réserver certaines rubriques (ex: Zones) aux mairies/EPCI
+        # — même critère que _institution_est_autorite_locale côté backend (core/views.py),
+        # jamais dupliqué en dur côté frontend.
+        contact = self._active_contact(obj)
+        return contact.institution.type.code if contact and contact.institution.type else None
 
     def get_institution_id(self, obj):
         # Utilisé côté frontend pour restreindre les sélecteurs de responsables/équipes d'un
@@ -246,7 +254,8 @@ class UserSerializer(serializers.ModelSerializer):
         fields = ['id', 'username', 'email', 'first_name', 'last_name', 'type', 'demo_role',
                   'photo', 'photo_url', 'phone_number', 'password', 'postal_code', 'enabled', 'is_active',
                   'institution_name', 'institution_type', 'commune_name', 'commune_code',
-                  'institution_nom', 'institution_id', 'needs_institution_setup', 'ma_zone']
+                  'institution_nom', 'institution_id', 'institution_type_code',
+                  'needs_institution_setup', 'ma_zone']
         extra_kwargs = {
             'password': {'write_only': True},
             'first_name': {'required': False},

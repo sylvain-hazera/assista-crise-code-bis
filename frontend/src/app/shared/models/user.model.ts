@@ -19,6 +19,8 @@ export interface User {
   type: UserRole;
   institution_nom?: string | null;      // Nom de l'institution active de l'utilisateur (lecture seule)
   institution_id?: string | null;       // UUID de l'institution active de l'utilisateur (lecture seule)
+  institution_type_code?: string | null; // Code type (MAIRIE/EPCI/SDIS/...) de l'institution active — voir AuthService.isAutoriteLocaleCommunale
+
   needs_institution_setup?: boolean;    // Compte Autorité locale activé mais pas encore rattaché à une institution
   ma_zone?: {
     niveau: string;
