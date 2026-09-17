@@ -33,16 +33,28 @@ volontaire du même companion physique entre les deux sites, pas une fuite de co
 
 ## Bascule vers l'assista-crise local (satellite, profil Full)
 
-Ajouté le 2026-09-17 : si `LOCAL_API_URL` est renseignée, `DjangoClient` bascule automatiquement
-dessus quand `satellite/etat_connectivite.py` signale le central `assista-crise.fr` hors-ligne
-(lu depuis `FICHIER_ETAT_CONNECTIVITE`, un fichier partagé — ce pont ne refait jamais sa propre
+Ajouté le 2026-09-17 : `DjangoClient` bascule automatiquement vers une cible locale quand
+`satellite/etat_connectivite.py` signale le central `assista-crise.fr` hors-ligne (lu depuis
+`FICHIER_ETAT_CONNECTIVITE`, un fichier partagé — ce pont ne refait jamais sa propre
 vérification réseau). Absent = comportement historique inchangé (central uniquement), c'est le
 cas de `.113`/`.114` et de tout satellite GW seul sans profil Full colocalisé.
 
+**Comment le pont trouve l'adresse du backend local** (`resoudre_url_locale`, résolu une seule
+fois au démarrage, pas re-sondé en boucle) — trois niveaux, dans cet ordre :
+1. `LOCAL_API_URL` renseignée à la main dans `.env` → utilisée telle quelle, aucune détection.
+   Utile si mDNS est bloqué sur le réseau, ou pour fixer une IP précise explicitement.
+2. Sinon, test direct de `localhost:8000` — cas le plus courant : pont et backend Full sur le
+   MÊME Raspberry Pi, pas besoin de réseau pour se trouver.
+3. Sinon, découverte mDNS (`_ac-local._tcp.local.`) — satellite à 2 Pi sur le même site (un Pi
+   GW seul + un Pi Full séparé, voir le cadrage "Chantier B") : le backend local s'annonce
+   lui-même via `satellite/annoncer_backend_local.py`.
+4. Si rien de tout ça ne répond → pas de repli local, comportement historique (central
+   uniquement).
+
 | Variable | Obligatoire | Exemple |
 |---|---|---|
-| `LOCAL_API_URL` | non | `http://localhost:8000/api` (le backend local, voir `satellite/docker-compose.yml`) |
-| `LOCAL_BRIDGE_EMAIL` / `LOCAL_BRIDGE_PASSWORD` | si `LOCAL_API_URL` | identifiants valides sur CE backend local (réutilise en pratique `DJANGO_SUPERUSER_EMAIL`/`PASSWORD`) |
+| `LOCAL_API_URL` | non | `http://192.168.1.50:8000/api` — force l'étape 1, saute la détection |
+| `LOCAL_BRIDGE_EMAIL` / `LOCAL_BRIDGE_PASSWORD` | oui si une cible locale existe | identifiants valides sur CE backend local (réutilise en pratique `DJANGO_SUPERUSER_EMAIL`/`PASSWORD`) |
 | `FICHIER_ETAT_CONNECTIVITE` | non (def. `/var/run/satellite/etat_connectivite.json`) | — |
 
 **Limite connue, non résolue à ce jour** : un `CompagnonMeshCore`/message n'a de sens des deux

@@ -19,6 +19,7 @@ import asyncio
 import json
 import logging
 import os
+import socket
 import sys
 
 import httpx
@@ -78,6 +79,82 @@ TYPE_CONTACT_PAR_ADV_TYPE = {
     3: "ROOM",
     4: "SENSOR",
 }
+
+
+async def _tester_localhost_backend(port=8000, timeout=2.0):
+    """Cas le plus courant : ce pont et le backend local tournent sur le MÊME Pi (profil Full,
+    voir satellite/docker-compose.yml) — pas besoin de mDNS, un simple test de port suffit."""
+    try:
+        _, writer = await asyncio.wait_for(asyncio.open_connection("127.0.0.1", port), timeout=timeout)
+    except (OSError, asyncio.TimeoutError):
+        return False
+    writer.close()
+    try:
+        await writer.wait_closed()
+    except OSError:
+        pass
+    return True
+
+
+async def _decouvrir_backend_local_mdns(duree_s=5.0):
+    """Satellite à 2 Pi (GW séparé du Pi Full sur le même site, voir le cadrage "Chantier B") :
+    le backend local s'annonce lui-même (satellite/annoncer_backend_local.py, service
+    _ac-local._tcp.local.) — renvoie son URL API si trouvé dans le délai, None sinon.
+    Best-effort : zeroconf absent -> None, jamais une exception qui remonte."""
+    try:
+        from zeroconf import Zeroconf, ServiceBrowser
+    except ImportError:
+        return None
+
+    trouve = {}
+
+    class _Listener:
+        def add_service(self, zc, type_, name):
+            info = zc.get_service_info(type_, name)
+            if info and info.addresses:
+                trouve["ip"] = socket.inet_ntoa(info.addresses[0])
+                trouve["port"] = info.port
+
+        def remove_service(self, zc, type_, name):
+            pass
+
+        def update_service(self, zc, type_, name):
+            pass
+
+    zc = Zeroconf()
+    try:
+        ServiceBrowser(zc, "_ac-local._tcp.local.", _Listener())
+        await asyncio.sleep(duree_s)
+    finally:
+        zc.close()
+
+    if trouve:
+        return f"http://{trouve['ip']}:{trouve['port']}/api"
+    return None
+
+
+async def resoudre_url_locale():
+    """Ordre de résolution, une seule fois au démarrage (pas re-sondé en boucle — voir
+    DjangoClient, qui bascule ensuite central/local via etat_connectivite.py sans jamais
+    revérifier CETTE résolution) :
+      1. LOCAL_API_URL renseignée à la main -> utilisée telle quelle, AUCUNE détection (voir
+         satellite/README.md : c'est la voie "je sais déjà, ne cherche pas", prioritaire sur
+         tout le reste par construction).
+      2. localhost:8000 répond -> même machine (profil Full colocalisé), cas le plus courant.
+      3. mDNS -> satellite à 2 Pi, GW et Full séparés sur le même site.
+      4. Rien -> pas de repli local, comportement historique (central uniquement)."""
+    if LOCAL_API_URL:
+        logger.info("URL locale configurée manuellement : %s", LOCAL_API_URL)
+        return LOCAL_API_URL
+    if await _tester_localhost_backend():
+        logger.info("Backend local détecté sur localhost:8000 (même machine).")
+        return "http://localhost:8000/api"
+    url_mdns = await _decouvrir_backend_local_mdns()
+    if url_mdns:
+        logger.info("Backend local découvert en mDNS : %s", url_mdns)
+        return url_mdns
+    logger.info("Aucun assista-crise local détecté au démarrage — central uniquement.")
+    return None
 
 
 class _CibleAuth:
@@ -607,9 +684,10 @@ async def executer_une_session(django):
 
 
 async def main():
+    url_locale = await resoudre_url_locale()
     django = DjangoClient(
         DJANGO_API_URL, DJANGO_EMAIL, DJANGO_PASSWORD,
-        local_url=LOCAL_API_URL, local_email=LOCAL_BRIDGE_EMAIL, local_password=LOCAL_BRIDGE_PASSWORD,
+        local_url=url_locale, local_email=LOCAL_BRIDGE_EMAIL, local_password=LOCAL_BRIDGE_PASSWORD,
     )
     logger.info(
         "Démarrage du service-pont MeshCore — companion %s, connexion %s.",

@@ -86,11 +86,14 @@ services:
       - DJANGO_BRIDGE_PASSWORD=${SATELLITE_PASSWORD}
       - COMPAGNON_ID=${MESHCORE_COMPAGNON_ID}
       # Bascule vers l'assista-crise local si le central passe hors-ligne (voir
-      # DjangoClient._cible_actuelle, meshcore-bridge/bridge.py) — vides en profil gw seul
-      # (pas de Full colocalisé, comportement inchangé : central uniquement). Réutilise le
+      # DjangoClient._cible_actuelle, meshcore-bridge/bridge.py) — LOCAL_API_URL vide par
+      # défaut : le pont se débrouille tout seul (resoudre_url_locale : localhost:8000 si
+      # même machine, sinon mDNS si un Pi Full séparé l'annonce sur le site, voir le service
+      # annoncer-backend-local plus bas) — ne remplir LOCAL_API_URL à la main que pour forcer
+      # une IP précise (réseau qui bloque mDNS, ou préférence explicite). Réutilise le
       # superuser local déjà provisionné (DJANGO_SUPERUSER_EMAIL/PASSWORD, service `backend`
-      # ci-dessous) plutôt que créer un nouveau mécanisme de provisioning.
-      - LOCAL_API_URL=${SATELLITE_PROFIL_FULL:+http://localhost:8000/api}
+      # ci-dessous) comme identifiants du pont sur le backend local.
+      - LOCAL_API_URL=${LOCAL_API_URL:-}
       - LOCAL_BRIDGE_EMAIL=${DJANGO_SUPERUSER_EMAIL}
       - LOCAL_BRIDGE_PASSWORD=${DJANGO_SUPERUSER_PASSWORD}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
@@ -115,8 +118,9 @@ services:
       - DJANGO_BRIDGE_EMAIL=${SATELLITE_EMAIL}
       - DJANGO_BRIDGE_PASSWORD=${SATELLITE_PASSWORD}
       # Bascule vers l'assista-crise local si le central passe hors-ligne — même mécanisme que
-      # meshcore-bridge ci-dessus, voir son commentaire.
-      - LOCAL_API_URL=${SATELLITE_PROFIL_FULL:+http://localhost:8000/api}
+      # meshcore-bridge ci-dessus, voir son commentaire (détection automatique localhost/mDNS,
+      # LOCAL_API_URL à ne remplir que pour forcer une IP précise).
+      - LOCAL_API_URL=${LOCAL_API_URL:-}
       - LOCAL_BRIDGE_EMAIL=${DJANGO_SUPERUSER_EMAIL}
       - LOCAL_BRIDGE_PASSWORD=${DJANGO_SUPERUSER_PASSWORD}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
@@ -171,12 +175,14 @@ services:
 
   backend:
     build: ../backend
-    # Publié sur l'hôte (localhost seulement) pour que meshcore-bridge/meshtastic-bridge (en
-    # network_mode: host, voir plus haut) puissent le joindre en cas de bascule locale — voir
-    # LOCAL_API_URL ci-dessus. Sans lien avec la résolution interne "backend" que frontend/
-    # mosquitto continuent d'utiliser normalement (réseau Compose par défaut, inchangé).
+    # Publié sur TOUTES les interfaces (pas juste localhost) : un satellite GW SÉPARÉ sur le
+    # même site (modèle à 2 Pi, voir le cadrage "Chantier B") doit pouvoir le joindre par le
+    # LAN, pas seulement ce Pi lui-même en localhost — voir annoncer-backend-local ci-dessous
+    # et resoudre_url_locale côté pont (meshcore-bridge/bridge.py). Sans lien avec la
+    # résolution interne "backend" que frontend/mosquitto continuent d'utiliser normalement
+    # (réseau Compose par défaut, inchangé).
     ports:
-      - "127.0.0.1:8000:8000"
+      - "8000:8000"
     volumes:
       - media_volume:/app/media
     environment:
@@ -194,6 +200,23 @@ services:
         condition: service_healthy
       mosquitto:
         condition: service_started
+    restart: unless-stopped
+    profiles: ["full"]
+
+  # Permet à un satellite GW SÉPARÉ sur le même site (modèle à 2 Pi) de trouver ce backend
+  # local sans IP configurée à la main — voir satellite/annoncer_backend_local.py et
+  # resoudre_url_locale côté pont. --network host pour la même raison que meshcore-proxy plus
+  # haut : une annonce mDNS depuis un réseau Docker isolé porterait une IP interne, pas
+  # joignable depuis le vrai LAN.
+  annoncer-backend-local:
+    build:
+      context: .
+      dockerfile: Dockerfile.annonce
+    network_mode: host
+    environment:
+      - SATELLITE_NOM=${SATELLITE_NOM:-satellite-assista-crise}
+      - BACKEND_PORT=8000
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
     restart: unless-stopped
     profiles: ["full"]
 

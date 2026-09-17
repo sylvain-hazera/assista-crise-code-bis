@@ -27,6 +27,7 @@ import json
 import logging
 import os
 import random
+import socket
 import time
 
 import httpx
@@ -87,6 +88,73 @@ def _nom_hardware(valeur: int) -> str | None:
         return mesh_pb2.HardwareModel.Name(valeur)
     except ValueError:
         return None
+
+
+async def _tester_localhost_backend(port=8000, timeout=2.0):
+    """Voir meshcore-bridge/bridge.py, même fonction : cas le plus courant, ce pont et le
+    backend local sur le MÊME Pi (profil Full)."""
+    try:
+        _, writer = await asyncio.wait_for(asyncio.open_connection("127.0.0.1", port), timeout=timeout)
+    except (OSError, asyncio.TimeoutError):
+        return False
+    writer.close()
+    try:
+        await writer.wait_closed()
+    except OSError:
+        pass
+    return True
+
+
+async def _decouvrir_backend_local_mdns(duree_s=5.0):
+    """Voir meshcore-bridge/bridge.py, même fonction : satellite à 2 Pi, backend local
+    annoncé par satellite/annoncer_backend_local.py (_ac-local._tcp.local.)."""
+    try:
+        from zeroconf import Zeroconf, ServiceBrowser
+    except ImportError:
+        return None
+
+    trouve = {}
+
+    class _Listener:
+        def add_service(self, zc, type_, name):
+            info = zc.get_service_info(type_, name)
+            if info and info.addresses:
+                trouve["ip"] = socket.inet_ntoa(info.addresses[0])
+                trouve["port"] = info.port
+
+        def remove_service(self, zc, type_, name):
+            pass
+
+        def update_service(self, zc, type_, name):
+            pass
+
+    zc = Zeroconf()
+    try:
+        ServiceBrowser(zc, "_ac-local._tcp.local.", _Listener())
+        await asyncio.sleep(duree_s)
+    finally:
+        zc.close()
+
+    if trouve:
+        return f"http://{trouve['ip']}:{trouve['port']}/api"
+    return None
+
+
+async def resoudre_url_locale():
+    """Voir meshcore-bridge/bridge.py, même fonction et même ordre de résolution (manuel ->
+    localhost -> mDNS -> aucun repli), résolu une seule fois au démarrage."""
+    if LOCAL_API_URL:
+        logger.info("URL locale configurée manuellement : %s", LOCAL_API_URL)
+        return LOCAL_API_URL
+    if await _tester_localhost_backend():
+        logger.info("Backend local détecté sur localhost:8000 (même machine).")
+        return "http://localhost:8000/api"
+    url_mdns = await _decouvrir_backend_local_mdns()
+    if url_mdns:
+        logger.info("Backend local découvert en mDNS : %s", url_mdns)
+        return url_mdns
+    logger.info("Aucun assista-crise local détecté au démarrage — central uniquement.")
+    return None
 
 
 class _CibleAuth:
@@ -844,9 +912,10 @@ async def boucle_reconciliation_compagnons(django, taches):
 async def main():
     logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
 
+    url_locale = await resoudre_url_locale()
     django = DjangoClient(
         DJANGO_API_URL, DJANGO_EMAIL, DJANGO_PASSWORD,
-        local_url=LOCAL_API_URL, local_email=LOCAL_BRIDGE_EMAIL, local_password=LOCAL_BRIDGE_PASSWORD,
+        local_url=url_locale, local_email=LOCAL_BRIDGE_EMAIL, local_password=LOCAL_BRIDGE_PASSWORD,
     )
     await boucle_reconciliation_compagnons(django, {})
 

@@ -31,6 +31,7 @@ administrateur valide → identifiants affichés **une seule fois**) — voir
 | `db`, `mosquitto`, `backend`, `frontend` | full | Instance assista-crise locale, identique au déploiement central. |
 | `telecharger-tuiles` | full | Conteneur one-shot : télécharge les tuiles du département + limitrophes (`telecharger_tuiles.py`). |
 | `tileserver` | full | Sert les tuiles téléchargées — même image que le central (`maptiler/tileserver-gl`). |
+| `annoncer-backend-local` | full | Annonce ce backend en mDNS sur le LAN, pour qu'un satellite GW séparé sur le même site le trouve sans IP configurée à la main. |
 | `meshtastic-bridge` | gw, full | Optionnel — pilote un ou plusieurs `CompagnonMeshtastic` (MQTT, TCP ou SERIE) ; voir la note ci-dessous. |
 
 ## Nœuds branchés en USB/série
@@ -112,6 +113,19 @@ lit ce fichier plutôt que de refaire sa propre requête réseau.
 ```bash
 python3 etat_connectivite.py
 cat /var/run/satellite/etat_connectivite.json
+```
+
+## `annoncer_backend_local.py`
+
+S'annonce en mDNS (`_ac-local._tcp.local.`, `role=backend-local`) sur le LAN — permet à un
+satellite GW SÉPARÉ sur le même site (modèle à 2 Pi) de trouver ce backend local sans IP
+configurée à la main (voir `meshcore-bridge/README.md`, section "Bascule vers l'assista-crise
+local", pour l'ordre de résolution complet côté pont). N'annonce que — le backend Django
+lui-même tourne dans son propre conteneur et écoute déjà sur son port, ce script ne fait
+transiter aucune donnée.
+
+```bash
+python3 annoncer_backend_local.py
 ```
 
 ## Installer les dépendances et lancer les tests
