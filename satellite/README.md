@@ -8,6 +8,22 @@ déjà éprouvées du reste du projet.
 
 ## Démarrage rapide
 
+### Via le wizard (`installer.sh`), recommandé
+
+```bash
+# 1. Un administrateur génère un jeton depuis la page Satellites du central, vous le communique.
+./installer.sh enroler <jeton> <nom-du-satellite> gw   # ou "full"
+# 2. Un administrateur valide ce satellite depuis la même page, vous communique
+#    l'email + mot de passe affichés à cet instant (une seule fois).
+./installer.sh demarrer   # installe Docker si besoin, pose les questions restantes, démarre
+```
+
+Testé pour de vrai contre `.113` le 2026-09-17 (voir le commit qui l'introduit) : l'enrôlement
+API fonctionne de bout en bout. **Non testé sur un vrai Raspberry Pi** — l'installation Docker
+et la détection série sont les points à vérifier en priorité au premier essai réel.
+
+### Manuellement
+
 ```bash
 cp .env.example .env    # compléter : identifiants du compte de service, device série, etc.
 docker compose --profile gw up -d      # pont + proxy MeshCore + détecteur de connectivité
