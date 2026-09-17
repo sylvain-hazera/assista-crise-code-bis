@@ -4,8 +4,10 @@ Connecte assista-crise à UN companion MeshCore réel (série USB, BLE ou TCP), 
 matériel avant de construire la fonctionnalité définitive décrite dans le document de conception
 « Maillage Terrain ». Voir `bridge.py` pour les détails et les limites connues.
 
-**Ce service n'est volontairement pas déployé sur .114** — il vit sur la branche git
-`feature/meshcore-poc`, pas sur `main`, tant que le matériel n'a pas été validé.
+Le proxy (`ac_meshcore_proxy` sur `.113`) sert plusieurs clients à la fois sur le même
+companion réel : Home Assistant, un téléphone de test, le pont `ac_meshcore_bridge` de `.113`
+lui-même, **et le pont de `.114` (site démonstration), qui s'y connecte à distance** — partage
+volontaire du même companion physique entre les deux sites, pas une fuite de configuration.
 
 ## Préparer un companion de test
 
@@ -42,10 +44,57 @@ En plus de `MESHCORE_TCP_HOST`/`MESHCORE_TCP_PORT` (le companion réel) et `LOG_
 | `PROXY_MDNS_NOM` | non (def. hostname du conteneur) | nom d'instance mDNS — à fixer explicitement si le hostname Docker change à chaque recréation |
 
 Le proxy s'annonce en mDNS (`_meshcore._tcp.local.`, `properties={"role": "proxy"}`) comme le
-ferait un vrai nœud MeshCore sur le LAN — voir `satellite/decouverte_lan.py`. **Sur un
-déploiement Docker avec un réseau isolé (ex: `assista-back`), l'IP annoncée est l'IP interne du
-conteneur, pas joignable depuis le vrai LAN** — le conteneur doit tourner en `--network host`
-(ou équivalent) pour que cette annonce serve à quelque chose en dehors de Docker lui-même.
+ferait un vrai nœud MeshCore sur le LAN — voir `satellite/decouverte_lan.py`. Sur un déploiement
+Docker avec un réseau isolé (ex: `assista-back`), l'IP annoncée serait l'IP interne du
+conteneur, pas joignable depuis le vrai LAN — c'est pourquoi `ac_meshcore_proxy` tourne
+**en `--network host` sur `.113`**, voir ci-dessous.
+
+## Déploiement réel sur `.113` (`ac_meshcore_proxy` + `ac_meshcore_bridge`)
+
+Ces deux conteneurs ne sont **pas gérés par docker-compose** (contrairement au reste du projet)
+— recréés manuellement à chaque changement de code, même image `assista-crise-code-bis-meshcore-bridge:latest`
+pour les deux, `Cmd` différent :
+
+```bash
+# Rebuild après un changement de code (bridge.py, proxy.py ou requirements.txt) :
+docker build -t assista-crise-code-bis-meshcore-bridge:latest -f meshcore-bridge/Dockerfile meshcore-bridge/
+
+docker stop ac_meshcore_proxy ac_meshcore_bridge && docker rm ac_meshcore_proxy ac_meshcore_bridge
+
+docker run -d --name ac_meshcore_proxy --network host \
+  -e LOG_LEVEL=DEBUG -e MESHCORE_TCP_HOST=172.16.1.58 -e MESHCORE_TCP_PORT=5000 -e PROXY_LISTEN_PORT=5050 \
+  --restart unless-stopped \
+  assista-crise-code-bis-meshcore-bridge:latest python -u proxy.py
+
+docker run -d --name ac_meshcore_bridge --network assista-back \
+  -e MESHCORE_CONNEXION_TYPE=TCP -e MESHCORE_TCP_HOST=172.16.1.113 -e MESHCORE_TCP_PORT=5050 \
+  -e LOG_LEVEL=DEBUG \
+  -e DJANGO_API_URL=http://backend:8000/api \
+  -e DJANGO_BRIDGE_EMAIL=<voir le compte de service existant> \
+  -e DJANGO_BRIDGE_PASSWORD=<voir le compte de service existant> \
+  -e COMPAGNON_ID=<UUID du CompagnonMeshCore> \
+  --restart unless-stopped \
+  assista-crise-code-bis-meshcore-bridge:latest python -u bridge.py
+```
+
+**`ac_meshcore_proxy` DOIT rester en `--network host`** (pas `assista-back`) pour que l'annonce
+mDNS porte une IP réellement joignable sur le LAN (voir plus haut) — `ac_meshcore_bridge`, lui,
+reste sur `assista-back` (il doit aussi joindre `backend:8000`) et se connecte au proxy via
+l'IP LAN de `.113`, pas via le nom de conteneur Docker (qui ne résout plus une fois le proxy
+sorti du réseau `assista-back`).
+
+**Prérequis pare-feu (déjà en place sur `.113`, à ne pas oublier lors d'une réinstallation)** :
+`ufw` bloque par défaut tout le trafic entrant, et un conteneur en `--network host` est vu par
+le noyau comme un simple process de l'hôte — il lui faut donc une règle **`ALLOW IN`**, pas
+`ALLOW FWD` (celle-ci ne vaut que pour la publication de port classique d'un conteneur en
+réseau bridge, `docker run -p`, qui traverse le hôte plutôt que de s'y terminer) :
+```bash
+sudo ufw allow in 5050/tcp
+```
+Erreur rencontrée le 2026-09-17 : une règle `ALLOW FWD` avait été ajoutée par réflexe (le
+schéma habituel pour un port docker publié), ce qui ne débloquait rien puisque le trafic vers ce
+port en mode host ne "traverse" pas l'hôte, il s'y termine directement — `ufw status verbose`
+doit montrer `5050/tcp ALLOW IN`, pas `FWD`.
 
 ## Lancer en local (sans Docker)
 
