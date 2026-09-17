@@ -82,6 +82,9 @@ export class AdminLayoutComponent implements OnInit {
     { icon: 'settings_input_antenna', label: 'Companions Meshtastic (test)', route: '/admin/meshtastic-companions' },
     { icon: 'forum', label: 'Canaux Meshtastic (test)', route: '/admin/meshtastic-canaux' },
 
+    // Boîtiers Raspberry Pi déployés sur site — voir le cadrage "Chantier B" (plan).
+    { icon: 'router', label: 'Satellites', route: '/admin/satellites' },
+
     { icon: 'link', label: 'Correspondances', route: '/admin/correspondances' },
 
     { icon: 'assignment', label: 'Affectations', route: '/admin/affectations' },

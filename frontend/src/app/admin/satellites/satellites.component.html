@@ -1,0 +1,118 @@
+<div class="page-header">
+  <h2>Satellites</h2>
+  <p class="page-hint">
+    Boîtiers déployés sur site (Raspberry Pi) hébergeant le pont MeshCore/Meshtastic local et,
+    pour certains, une instance assista-crise complète utilisable même sans internet. Générez un
+    jeton pour votre institution, communiquez-le au responsable du satellite lors de son
+    installation, puis validez son apparition ci-dessous.
+  </p>
+</div>
+
+@if (isDemo) {
+  <div class="bandeau-confidentialite">
+    <span class="material-icons">lock</span>
+    Lecture seule depuis la zone de démonstration — génération de jeton, validation et
+    révocation sont réservées à la zone réelle.
+  </div>
+}
+
+@if (identifiantsAffiches) {
+  <div class="identifiants-panel">
+    <h3>
+      <span class="material-icons">vpn_key</span>
+      Identifiants du satellite « {{ identifiantsAffiches.satelliteNom }} »
+    </h3>
+    <p class="page-hint">
+      Affichés une seule fois — notez-les maintenant, ils ne seront plus jamais consultables
+      ensuite. À saisir dans la configuration du satellite lors de sa mise en service.
+    </p>
+    <div class="identifiant-row">
+      <span class="identifiant-label">Email</span>
+      <code>{{ identifiantsAffiches.identifiants.email }}</code>
+      <button type="button" class="btn-secondary-sm" (click)="copier(identifiantsAffiches.identifiants.email)">Copier</button>
+    </div>
+    <div class="identifiant-row">
+      <span class="identifiant-label">Mot de passe</span>
+      <code>{{ identifiantsAffiches.identifiants.password }}</code>
+      <button type="button" class="btn-secondary-sm" (click)="copier(identifiantsAffiches.identifiants.password)">Copier</button>
+    </div>
+    <button type="button" class="btn-primary sm" (click)="fermerIdentifiants()">J'ai noté ces identifiants</button>
+  </div>
+}
+
+@if (!isDemo) {
+  <div class="create-panel">
+    <h3>Générer un jeton d'enrôlement</h3>
+    <p class="page-hint">
+      Jeton à usage unique, valable 24h, pour votre institution — le satellite s'en sert une
+      seule fois pour prendre contact et apparaître ci-dessous en attente de validation.
+    </p>
+    <button type="button" class="btn-primary" [disabled]="genererJetonEnCours" (click)="genererJeton()">
+      {{ genererJetonEnCours ? 'Génération…' : "Générer un jeton" }}
+    </button>
+
+    @if (dernierJeton) {
+      <div class="identifiant-row jeton-genere">
+        <span class="identifiant-label">Jeton</span>
+        <code>{{ dernierJeton.jeton }}</code>
+        <button type="button" class="btn-secondary-sm" (click)="copier(dernierJeton.jeton)">Copier</button>
+        <span class="page-hint">expire le {{ dernierJeton.expiration | date:'dd/MM/yyyy HH:mm' }}</span>
+      </div>
+    }
+  </div>
+}
+
+@if (errorMessage) {
+  <p class="error-message">{{ errorMessage }}</p>
+}
+
+<div class="table-wrapper">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Nom</th>
+        <th>Institution</th>
+        <th>Profil</th>
+        <th>Enrôlement</th>
+        <th>État</th>
+        <th>Dernier contact</th>
+        <th>Version</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      @if (loading) {
+        <tr><td colspan="8" class="empty">Chargement…</td></tr>
+      } @else if (satellites.length === 0) {
+        <tr><td colspan="8" class="empty">Aucun satellite pour l'instant.</td></tr>
+      } @else {
+        @for (satellite of satellites; track satellite.id) {
+          <tr>
+            <td>{{ satellite.nom }}</td>
+            <td>{{ satellite.institution_nom }}</td>
+            <td>{{ satellite.profil_libelle }}</td>
+            <td>{{ satellite.statut_enrolement_libelle }}</td>
+            <td><span class="statut" [ngClass]="etatClass(satellite)">{{ etatLabel(satellite) }}</span></td>
+            <td>{{ satellite.dernier_contact ? (satellite.dernier_contact | date:'dd/MM/yyyy HH:mm') : '—' }}</td>
+            <td class="mono">{{ satellite.version_logicielle || '—' }}</td>
+            <td>
+              @if (!isDemo && satellite.statut_enrolement === 'EN_ATTENTE') {
+                <button type="button" class="btn-secondary-sm" [disabled]="actionEnCours === satellite.id" (click)="valider(satellite)">
+                  Valider
+                </button>
+              }
+              @if (!isDemo && satellite.statut_enrolement === 'APPROUVE') {
+                <button type="button" class="btn-danger-sm" [disabled]="actionEnCours === satellite.id" (click)="revoquer(satellite)">
+                  Révoquer
+                </button>
+              }
+              @if (satellite.statut_enrolement === 'REVOQUE') {
+                <span class="page-hint">—</span>
+              }
+            </td>
+          </tr>
+        }
+      }
+    </tbody>
+  </table>
+</div>
