@@ -10705,7 +10705,7 @@ class SatelliteViewSet(
     def get_permissions(self):
         if self.action == 'enroler':
             return [AllowAny()]
-        if self.action == 'contact':
+        if self.action in ('contact', 'donnees'):
             return [permissions.IsAuthenticated()]
         if self.action in ('generer_jeton', 'valider', 'revoquer'):
             return [IsInstitutionalActor(), DenyInDemo()]
@@ -10713,7 +10713,7 @@ class SatelliteViewSet(
 
     def get_queryset(self):
         qs = super().get_queryset()
-        if self.action == 'contact':
+        if self.action in ('contact', 'donnees'):
             # Le contrôle d'identité se fait dans l'action elle-même (compte_service ==
             # request.user) — le compte de service d'un satellite n'a volontairement aucun
             # ContactInstitution (voir SatelliteViewSet.valider), donc le filtrage par
@@ -10833,12 +10833,10 @@ class SatelliteViewSet(
         """Appelé périodiquement par le satellite lui-même (compte de service authentifié) —
         met à jour dernier_contact, base de l'état Actif/Inactif/Perdu (voir
         SatelliteSerializer.get_etat). Pas de heartbeat séparé : tout futur endpoint de
-        synchronisation de données devra faire de même (voir docstring du modèle)."""
+        synchronisation de données devra faire de même (voir docstring du modèle, et donnees()
+        ci-dessous)."""
         satellite = self.get_object()
-        if satellite.compte_service_id != request.user.id:
-            raise PermissionDenied("Ce compte n'est pas le compte de service de ce satellite.")
-        if satellite.statut_enrolement != StatutEnrolementSatellite.APPROUVE:
-            raise PermissionDenied("Ce satellite n'est pas (ou plus) approuvé.")
+        self._exiger_compte_service(request, satellite)
 
         satellite.dernier_contact = timezone.now()
         update_fields = ['dernier_contact']
@@ -10849,6 +10847,58 @@ class SatelliteViewSet(
         satellite.save(update_fields=update_fields)
 
         return Response(SatelliteSerializer(satellite).data)
+
+    def _exiger_compte_service(self, request, satellite):
+        """Garde commune à contact()/donnees() : seul le compte de service DE CE satellite,
+        approuvé, peut appeler ces actions — voir docstring de contact()."""
+        if satellite.compte_service_id != request.user.id:
+            raise PermissionDenied("Ce compte n'est pas le compte de service de ce satellite.")
+        if satellite.statut_enrolement != StatutEnrolementSatellite.APPROUVE:
+            raise PermissionDenied("Ce satellite n'est pas (ou plus) approuvé.")
+
+    @action(detail=True, methods=['get'], url_path='donnees')
+    def donnees(self, request, pk=None):
+        """Rafraîchissement périodique central -> local (voir cadrage "Chantier B" section 4) :
+        renvoie, scopées à la zone de l'institution du satellite via filter_queryset_to_viewer_
+        zone (le compte de service a bien `institution` renseignée, donc ce même mécanisme déjà
+        utilisé par les vues admin s'applique tel quel — aucune logique de zone dupliquée ici),
+        les crises actives et ce qui les concerne : demandes d'aide, offres et signalements —
+        y compris ceux soumis par un citoyen directement au site public, qui n'atteindraient
+        sinon jamais un satellite resté hors-ligne au moment de leur arrivée. Limité aux données
+        rattachées à une crise active (`crisis__isnull=True` inclus : pas encore triées) — pas
+        les données de référence (équipes, catalogue), à ajouter dans un futur endpoint dédié.
+        Même mise à jour de dernier_contact que contact() : cet appel EST un contact."""
+        satellite = self.get_object()
+        self._exiger_compte_service(request, satellite)
+
+        satellite.dernier_contact = timezone.now()
+        satellite.save(update_fields=['dernier_contact'])
+
+        env = get_active_environment(request)
+        crises_qs = filter_queryset_to_viewer_zone(
+            request, Crisis.objects.filter(environment=env, end_date__isnull=True),
+            resolver=_crisis_zone_resolver,
+        )
+        crise_ids = list(crises_qs.values_list('id', flat=True))
+        filtre_crise = Q(crisis_id__in=crise_ids) | Q(crisis__isnull=True)
+
+        demandes_qs = filter_queryset_to_viewer_zone(
+            request, Request.objects.filter(environment=env, actif=True).filter(filtre_crise)
+        )
+        offres_qs = filter_queryset_to_viewer_zone(
+            request, Offer.objects.filter(environment=env, actif=True).filter(filtre_crise)
+        )
+        signalements_qs = filter_queryset_to_viewer_zone(
+            request, Information.objects.filter(environment=env).filter(filtre_crise),
+            resolver=_information_zone_resolver,
+        )
+
+        return Response({
+            "crises": CrisisSerializer(crises_qs, many=True).data,
+            "demandes": RequestSerializer(demandes_qs, many=True, context={'request': request}).data,
+            "offres": OfferSerializer(offres_qs, many=True, context={'request': request}).data,
+            "signalements": InformationSerializer(signalements_qs, many=True, context={'request': request}).data,
+        })
 
     @action(detail=False, methods=['get'], url_path='supervision')
     def supervision(self, request):
