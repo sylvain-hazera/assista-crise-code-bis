@@ -5,7 +5,7 @@ from rest_framework.test import APIClient
 
 from core.models import (
     CanalMeshtastic, CompagnonMeshtastic, ContactMeshtastic, Institution, InstitutionType,
-    MessageMeshtasticLog, NoeudUtilisateurMeshtastic,
+    MessageMeshtasticLog, NoeudUtilisateurMeshtastic, Satellite, StatutEnrolementSatellite, User,
 )
 
 
@@ -37,6 +37,21 @@ def compagnon(institution_a):
         nom='Pont Gaulix test', node_num=1234, broker_host='mqtt.gaulix.fr',
         institution=institution_a,
     )
+
+
+@pytest.fixture
+def satellite_client(institution_a):
+    compte = User.objects.create_user(
+        username='satellite-meshtastic@service.fr', email='satellite-meshtastic@service.fr',
+        password='x', type='UTIL_SIMPLE', institution=institution_a,
+    )
+    Satellite.objects.create(
+        institution=institution_a, nom='Satellite meshtastic test', profil='GW',
+        statut_enrolement=StatutEnrolementSatellite.APPROUVE, compte_service=compte,
+    )
+    client = APIClient()
+    client.force_authenticate(user=compte)
+    return client
 
 
 @pytest.mark.django_db
@@ -334,4 +349,51 @@ class TestReclamerLibererMeshtastic:
         response = client.post(reverse('noeudutilisateurmeshtastic-reclamer'), {
             'node_num': 2005, 'compagnon': str(compagnon.id),
         }, format='json')
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+@pytest.mark.django_db
+class TestEnregistrerDepuisSatellite:
+
+    def test_cree_un_nouveau_companion(self, satellite_client, institution_a):
+        response = satellite_client.post(
+            reverse('compagnonmeshtastic-enregistrer-depuis-satellite'),
+            {"node_num": 777777, "nom": "Nœud USB", "connexion_type": "SERIE", "serie_device": "/dev/ttyACM0"},
+            format='json',
+        )
+        assert response.status_code == status.HTTP_201_CREATED, response.data
+        assert response.data["cree"] is True
+        compagnon = CompagnonMeshtastic.objects.get(pk=response.data["id"])
+        assert compagnon.institution_id == institution_a.id
+        assert compagnon.node_num == 777777
+        assert compagnon.serie_device == "/dev/ttyACM0"
+
+    def test_idempotent_reutilise_la_meme_fiche(self, satellite_client):
+        premier = satellite_client.post(
+            reverse('compagnonmeshtastic-enregistrer-depuis-satellite'),
+            {"node_num": 777777, "serie_device": "/dev/ttyACM0"}, format='json',
+        )
+        second = satellite_client.post(
+            reverse('compagnonmeshtastic-enregistrer-depuis-satellite'),
+            {"node_num": 777777, "serie_device": "/dev/ttyACM1"}, format='json',
+        )
+        assert second.status_code == status.HTTP_200_OK
+        assert second.data["cree"] is False
+        assert second.data["id"] == premier.data["id"]
+        compagnon = CompagnonMeshtastic.objects.get(pk=premier.data["id"])
+        assert compagnon.serie_device == "/dev/ttyACM1"
+        assert CompagnonMeshtastic.objects.filter(node_num=777777).count() == 1
+
+    def test_sans_node_num_refuse(self, satellite_client):
+        response = satellite_client.post(
+            reverse('compagnonmeshtastic-enregistrer-depuis-satellite'), {}, format='json',
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_acteur_institutionnel_humain_refuse(self, institutional_client):
+        client, _ = institutional_client
+        response = client.post(
+            reverse('compagnonmeshtastic-enregistrer-depuis-satellite'),
+            {"node_num": 777777}, format='json',
+        )
         assert response.status_code == status.HTTP_403_FORBIDDEN

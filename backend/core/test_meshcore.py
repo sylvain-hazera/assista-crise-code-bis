@@ -5,7 +5,7 @@ from rest_framework.test import APIClient
 
 from core.models import (
     CompagnonMeshCore, CommandeMeshCore, ContactInstitution, Institution, InstitutionType,
-    MessageMeshLog, NoeudMeshUtilisateur,
+    MessageMeshLog, NoeudMeshUtilisateur, Satellite, StatutEnrolementSatellite, User,
 )
 
 
@@ -28,6 +28,21 @@ def mairie_client(create_user, institution_a):
     client = APIClient()
     client.force_authenticate(user=user)
     return client, user
+
+
+@pytest.fixture
+def satellite_client(institution_a):
+    compte = User.objects.create_user(
+        username='satellite-meshcore@service.fr', email='satellite-meshcore@service.fr',
+        password='x', type='UTIL_SIMPLE', institution=institution_a,
+    )
+    Satellite.objects.create(
+        institution=institution_a, nom='Satellite meshcore test', profil='GW',
+        statut_enrolement=StatutEnrolementSatellite.APPROUVE, compte_service=compte,
+    )
+    client = APIClient()
+    client.force_authenticate(user=compte)
+    return client
 
 
 @pytest.fixture
@@ -1315,3 +1330,67 @@ class TestCommandeMeshCore:
         commande.refresh_from_db()
         assert commande.statut == 'EXECUTEE'
         assert commande.date_execution is not None
+
+
+@pytest.mark.django_db
+class TestEnregistrerDepuisSatellite:
+
+    def test_cree_un_nouveau_companion(self, satellite_client, institution_a):
+        response = satellite_client.post(
+            reverse('compagnonmeshcore-enregistrer-depuis-satellite'),
+            {"pubkey_hex": "abc123", "nom": "Nœud USB", "connexion_type": "SERIE", "serie_device": "/dev/ttyUSB0"},
+            format='json',
+        )
+        assert response.status_code == status.HTTP_201_CREATED, response.data
+        assert response.data["cree"] is True
+        compagnon = CompagnonMeshCore.objects.get(pk=response.data["id"])
+        assert compagnon.institution_id == institution_a.id
+        assert compagnon.pubkey_hex == "abc123"
+        assert compagnon.serie_device == "/dev/ttyUSB0"
+
+    def test_idempotent_reutilise_la_meme_fiche(self, satellite_client):
+        premier = satellite_client.post(
+            reverse('compagnonmeshcore-enregistrer-depuis-satellite'),
+            {"pubkey_hex": "abc123", "serie_device": "/dev/ttyUSB0"}, format='json',
+        )
+        second = satellite_client.post(
+            reverse('compagnonmeshcore-enregistrer-depuis-satellite'),
+            {"pubkey_hex": "abc123", "serie_device": "/dev/ttyUSB1"}, format='json',
+        )
+        assert second.status_code == status.HTTP_200_OK
+        assert second.data["cree"] is False
+        assert second.data["id"] == premier.data["id"]
+        compagnon = CompagnonMeshCore.objects.get(pk=premier.data["id"])
+        assert compagnon.serie_device == "/dev/ttyUSB1"
+        assert CompagnonMeshCore.objects.filter(pubkey_hex="abc123").count() == 1
+
+    def test_sans_pubkey_refuse(self, satellite_client):
+        response = satellite_client.post(
+            reverse('compagnonmeshcore-enregistrer-depuis-satellite'), {}, format='json',
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_acteur_institutionnel_humain_refuse(self, mairie_client):
+        client, _ = mairie_client
+        response = client.post(
+            reverse('compagnonmeshcore-enregistrer-depuis-satellite'),
+            {"pubkey_hex": "abc123"}, format='json',
+        )
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_satellite_non_approuve_refuse(self, institution_a):
+        compte = User.objects.create_user(
+            username='satellite-attente@service.fr', email='satellite-attente@service.fr',
+            password='x', type='UTIL_SIMPLE', institution=institution_a,
+        )
+        Satellite.objects.create(
+            institution=institution_a, nom='Satellite en attente', profil='GW',
+            statut_enrolement=StatutEnrolementSatellite.EN_ATTENTE, compte_service=compte,
+        )
+        client = APIClient()
+        client.force_authenticate(user=compte)
+        response = client.post(
+            reverse('compagnonmeshcore-enregistrer-depuis-satellite'),
+            {"pubkey_hex": "abc123"}, format='json',
+        )
+        assert response.status_code == status.HTTP_403_FORBIDDEN

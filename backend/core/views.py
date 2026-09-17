@@ -9509,6 +9509,22 @@ class MeshLocalDetecterView(APIView):
         )
 
 
+def _satellite_appelant_ou_403(request):
+    """Résout le Satellite dont le compte de service authentifie CETTE requête — utilisé par
+    les actions d'auto-enregistrement de companion (CompagnonMeshCoreViewSet/
+    CompagnonMeshtasticViewSet.enregistrer_depuis_satellite, voir satellite/
+    detecter_noeud_serie.py) : seul le compte de service d'un satellite APPROUVE peut
+    s'auto-enregistrer un companion pour SA PROPRE institution, jamais un acteur institutionnel
+    humain (qui utilise déjà le POST générique, IsInstitutionalActor) ni un satellite pas
+    encore validé."""
+    satellite = Satellite.objects.filter(
+        compte_service=request.user, statut_enrolement=StatutEnrolementSatellite.APPROUVE,
+    ).select_related('institution').first()
+    if satellite is None:
+        raise PermissionDenied("Cette action est réservée au compte de service d'un satellite approuvé.")
+    return satellite
+
+
 class CompagnonMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     """Nœuds MeshCore en rôle Companion utilisés comme passerelle radio (voir le service-pont
     externe `meshcore-bridge/`, non hébergé dans ce dépôt Django). Phase de test (voir doc de
@@ -9559,6 +9575,38 @@ class CompagnonMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelView
             commentaire=f"{'Flood advert' if flood else 'Advert'} programmé pour {compagnon.nom}",
         )
         return Response(CommandeMeshCoreSerializer(commande).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=['post'], url_path='enregistrer-depuis-satellite')
+    def enregistrer_depuis_satellite(self, request):
+        """Auto-enregistrement idempotent d'un companion détecté par un satellite (voir
+        satellite/detecter_noeud_serie.py) — identifié par sa clé publique (unique par appareil
+        physique, contrairement à tcp_host/serie_device qui peuvent changer, ex: le device
+        Linux se renomme /dev/ttyUSB1 après un redémarrage) : rappelé à chaque
+        démarrage/redécouverte, met à jour la même fiche plutôt que d'en créer une nouvelle."""
+        satellite = _satellite_appelant_ou_403(request)
+        pubkey_hex = (request.data.get('pubkey_hex') or '').strip()
+        if not pubkey_hex:
+            return Response({"error": "pubkey_hex requis."}, status=status.HTTP_400_BAD_REQUEST)
+
+        defaults = {
+            "nom": request.data.get('nom') or f"Satellite {satellite.nom}",
+            "connexion_type": request.data.get('connexion_type', MeshCoreConnexionType.SERIE),
+            "serie_device": request.data.get('serie_device'),
+            "tcp_host": request.data.get('tcp_host'),
+            "tcp_port": request.data.get('tcp_port'),
+        }
+        compagnon, cree = CompagnonMeshCore.objects.update_or_create(
+            institution=satellite.institution, pubkey_hex=pubkey_hex, defaults=defaults,
+        )
+        audit_log(
+            request=request, action_code="CREATION" if cree else "MODIFICATION", objet_type="CompagnonMeshCore",
+            objet_id=compagnon.id,
+            commentaire=f"Companion MeshCore {'créé' if cree else 'mis à jour'} automatiquement par le satellite {satellite.nom}.",
+        )
+        return Response(
+            {"id": str(compagnon.id), "cree": cree},
+            status=status.HTTP_201_CREATED if cree else status.HTTP_200_OK,
+        )
 
     @action(detail=False, methods=['get'])
     def envoyables(self, request):
@@ -10179,6 +10227,39 @@ class CompagnonMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
         if self.action in ('create', 'update', 'partial_update', 'destroy'):
             return [IsInstitutionalActor()]
         return [permissions.IsAuthenticated()]
+
+    @action(detail=False, methods=['post'], url_path='enregistrer-depuis-satellite')
+    def enregistrer_depuis_satellite(self, request):
+        """Auto-enregistrement idempotent d'un companion détecté par un satellite (voir
+        satellite/detecter_noeud_serie.py et CompagnonMeshCoreViewSet.enregistrer_depuis_satellite,
+        même principe) — identifié par node_num (unique en base, contrairement à serie_device
+        qui peut changer). node_num n'est connu qu'APRÈS une première connexion réussie au vrai
+        appareil (assigné par son firmware, pas choisi par nous comme en mode MQTT) : le
+        satellite doit se connecter une fois avant de pouvoir appeler cette action."""
+        satellite = _satellite_appelant_ou_403(request)
+        try:
+            node_num = int(request.data.get('node_num'))
+        except (TypeError, ValueError):
+            return Response({"error": "node_num (entier) requis."}, status=status.HTTP_400_BAD_REQUEST)
+
+        defaults = {
+            "institution": satellite.institution,
+            "nom": request.data.get('nom') or f"Satellite {satellite.nom}",
+            "connexion_type": request.data.get('connexion_type', MeshtasticConnexionType.SERIE),
+            "serie_device": request.data.get('serie_device'),
+            "tcp_host": request.data.get('tcp_host'),
+            "tcp_port": request.data.get('tcp_port'),
+        }
+        compagnon, cree = CompagnonMeshtastic.objects.update_or_create(node_num=node_num, defaults=defaults)
+        audit_log(
+            request=request, action_code="CREATION" if cree else "MODIFICATION", objet_type="CompagnonMeshtastic",
+            objet_id=compagnon.id,
+            commentaire=f"Companion Meshtastic {'créé' if cree else 'mis à jour'} automatiquement par le satellite {satellite.nom}.",
+        )
+        return Response(
+            {"id": str(compagnon.id), "cree": cree},
+            status=status.HTTP_201_CREATED if cree else status.HTTP_200_OK,
+        )
 
     @action(detail=False, methods=['get'], url_path='envoyables')
     def envoyables(self, request):
