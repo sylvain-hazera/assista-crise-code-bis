@@ -1,9 +1,13 @@
 """Découverte des nœuds MeshCore/Meshtastic sur le réseau local d'un satellite, à
 l'installation — voir le cadrage "Chantier B" (plan) et sa note du 2026-09-17. Combine deux
 méthodes complémentaires, ni l'une ni l'autre fiable seule :
-  - mDNS (zeroconf) : un nœud peut s'annoncer sur le réseau — le nom de service exact dépend
-    du firmware, PAS confirmé sur du vrai matériel à ce stade (voir SERVICE_TYPES_MDNS
-    ci-dessous, à ajuster une fois testé en conditions réelles).
+  - mDNS (zeroconf) : un vrai nœud MeshCore/Meshtastic peut s'annoncer sur le réseau — le nom
+    de service exact dépend du firmware, PAS confirmé sur du vrai matériel à ce stade (voir
+    SERVICE_TYPES_MDNS ci-dessous, à ajuster une fois testé en conditions réelles). En
+    revanche, `_meshcore._tcp.local.` EST déjà garanti trouvable pour un ac_meshcore_proxy
+    (meshcore-bridge/proxy.py, qui s'annonce désormais lui-même sous ce type de service,
+    `properties={"role": "proxy", ...}` pour le distinguer d'un vrai nœud) — pas de
+    handshake protocolaire nécessaire pour reconnaître CE cas précis.
   - Scan TCP du port 5000 (port MeshCore par défaut) sur le sous-réseau local : protocole-
     agnostique, plus lent mais ne dépend d'aucune annonce.
 
@@ -91,7 +95,17 @@ def decouvrir_mdns(duree_s=5.0):
         def add_service(self, zc, type_, name):
             info = zc.get_service_info(type_, name)
             if info and info.addresses:
-                trouves.append({"nom": name, "ip": socket.inet_ntoa(info.addresses[0]), "port": info.port})
+                # properties : {b"role": b"proxy", ...} pour un ac_meshcore_proxy (voir
+                # meshcore-bridge/proxy.py) — absent ou différent pour un vrai nœud, dont le
+                # firmware ne connaît rien de cette convention propre à assista-crise.
+                proprietes = {
+                    k.decode(errors="replace"): v.decode(errors="replace") if isinstance(v, bytes) else v
+                    for k, v in (info.properties or {}).items()
+                }
+                trouves.append({
+                    "nom": name, "ip": socket.inet_ntoa(info.addresses[0]), "port": info.port,
+                    "role": proprietes.get("role"),
+                })
 
         def remove_service(self, zc, type_, name):
             pass
@@ -120,12 +134,13 @@ async def decouvrir_noeuds_lan(cidr=None, duree_mdns_s=5.0):
     for entree in mdns_resultats:
         par_ip[entree["ip"]] = {
             "ip": entree["ip"], "port": entree["port"], "nom_mdns": entree["nom"], "source": "mdns",
+            "role": entree.get("role"),
         }
     for ip in scan_resultats:
         if ip in par_ip:
             par_ip[ip]["source"] = "mdns+scan"
         else:
-            par_ip[ip] = {"ip": ip, "port": PORT_MESHCORE_DEFAUT, "nom_mdns": None, "source": "scan"}
+            par_ip[ip] = {"ip": ip, "port": PORT_MESHCORE_DEFAUT, "nom_mdns": None, "source": "scan", "role": None}
     return sorted(par_ip.values(), key=lambda e: e["ip"])
 
 

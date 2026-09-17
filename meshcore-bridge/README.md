@@ -29,6 +29,24 @@ matériel avant de construire la fonctionnalité définitive décrite dans le do
 | `POLL_INTERVAL_SECONDS` | non (def. 15) | fréquence d'interrogation des messages à envoyer |
 | `LOG_LEVEL` | non (def. INFO) | passer en `DEBUG` pour voir les payloads bruts des événements |
 
+## `proxy.py` — variables d'environnement propres au proxy
+
+En plus de `MESHCORE_TCP_HOST`/`MESHCORE_TCP_PORT` (le companion réel) et `LOG_LEVEL` ci-dessus :
+
+| Variable | Obligatoire | Exemple |
+|---|---|---|
+| `PROXY_LISTEN_HOST` | non (def. `0.0.0.0`) | interface d'écoute locale |
+| `PROXY_LISTEN_PORT` | non (def. `5050`) | port local partagé par plusieurs clients (HA, ce pont, etc.) |
+| `RECONNECT_DELAY_SECONDS` | non (def. `5`) | délai avant nouvelle tentative si le companion réel se déconnecte |
+| `PROXY_MDNS_ANNONCE` | non (def. `true`) | `false` pour désactiver l'annonce mDNS du proxy sur le LAN |
+| `PROXY_MDNS_NOM` | non (def. hostname du conteneur) | nom d'instance mDNS — à fixer explicitement si le hostname Docker change à chaque recréation |
+
+Le proxy s'annonce en mDNS (`_meshcore._tcp.local.`, `properties={"role": "proxy"}`) comme le
+ferait un vrai nœud MeshCore sur le LAN — voir `satellite/decouverte_lan.py`. **Sur un
+déploiement Docker avec un réseau isolé (ex: `assista-back`), l'IP annoncée est l'IP interne du
+conteneur, pas joignable depuis le vrai LAN** — le conteneur doit tourner en `--network host`
+(ou équivalent) pour que cette annonce serve à quelque chose en dehors de Docker lui-même.
+
 ## Lancer en local (sans Docker)
 
 ```

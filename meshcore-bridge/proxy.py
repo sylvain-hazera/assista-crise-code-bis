@@ -33,8 +33,16 @@ directe que le companion n'accepte pas, et rien n'est résolu.
 import asyncio
 import logging
 import os
+import socket
 
 from meshcore.packets import CommandType, BinaryReqType
+
+try:
+    from zeroconf import ServiceInfo
+    from zeroconf.asyncio import AsyncZeroconf
+except ImportError:
+    ServiceInfo = None
+    AsyncZeroconf = None
 
 logger = logging.getLogger("meshcore-proxy")
 
@@ -81,6 +89,16 @@ CODES_MESSAGE_RECU = {0x07, 0x08}
 SILENCE_FIN_REPONSE = 0.9  # secondes de silence avant de considérer une réponse (mono ou multi-trames) terminée
 TIMEOUT_MAX_REPONSE = 8.0  # garde-fou si le companion ne répond jamais du tout
 
+# Annonce mDNS : ce proxy expose un port TCP local partagé, exactement comme le ferait un vrai
+# nœud MeshCore sur le LAN — utile pour que satellite/decouverte_lan.py (ou tout autre outil de
+# découverte) le trouve automatiquement sans IP codée en dur. Nom de service choisi ici même
+# (pas deviné depuis un firmware réel, contrairement aux nœuds physiques — voir la note du
+# cadrage "Chantier B" sur SERVICE_TYPES_MDNS) : "role"=proxy dans les properties permet de le
+# distinguer d'un vrai nœud si jamais les deux finissaient par partager le même type de service.
+MDNS_SERVICE_TYPE = "_meshcore._tcp.local."
+MDNS_ACTIF = os.environ.get("PROXY_MDNS_ANNONCE", "true").strip().lower() not in ("0", "false", "non")
+MDNS_NOM_INSTANCE = os.environ.get("PROXY_MDNS_NOM", socket.gethostname())
+
 
 def _lire_trames(tampon: bytearray, marqueur: int):
     """Extrait toutes les trames complètes disponibles dans `tampon` (mutable, vidé au fur et à
@@ -108,9 +126,27 @@ def _lire_trames(tampon: bytearray, marqueur: int):
     return trames
 
 
+def _ip_locale_annoncable() -> str | None:
+    """IP à annoncer en mDNS : celle configurée explicitement si PROXY_LISTEN_HOST n'est pas un
+    joker, sinon devinée via une connexion UDP factice (aucun paquet réellement envoyé) — même
+    technique que satellite/decouverte_lan.reseau_local_cidr."""
+    if LISTEN_HOST not in ("0.0.0.0", "::", ""):
+        return LISTEN_HOST
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("8.8.8.8", 80))
+        return s.getsockname()[0]
+    except OSError:
+        return None
+    finally:
+        s.close()
+
+
 class ProxyMeshCore:
     def __init__(self):
         self.upstream_writer: asyncio.StreamWriter | None = None
+        self._mdns_zeroconf: "AsyncZeroconf | None" = None
+        self._mdns_info: "ServiceInfo | None" = None
         self.clients: set[asyncio.StreamWriter] = set()
         # Un companion embarqué ne traite qu'une commande à la fois — envoyer la commande d'un
         # 2e client avant d'avoir reçu la réponse de la 1re (ce que faisait la version
@@ -133,10 +169,58 @@ class ProxyMeshCore:
 
     async def demarrer(self):
         asyncio.create_task(self._boucle_upstream())
+        await self._annoncer_mdns()
         serveur = await asyncio.start_server(self._gerer_client, LISTEN_HOST, LISTEN_PORT)
         logger.info("Proxy en écoute sur %s:%s (companion réel : %s:%s)", LISTEN_HOST, LISTEN_PORT, UPSTREAM_HOST, UPSTREAM_PORT)
-        async with serveur:
-            await serveur.serve_forever()
+        try:
+            async with serveur:
+                await serveur.serve_forever()
+        finally:
+            await self._retirer_annonce_mdns()
+
+    async def _annoncer_mdns(self):
+        """Annonce ce proxy en mDNS, comme le ferait un vrai nœud MeshCore sur le LAN —
+        best-effort : zeroconf absent, réseau sans multicast, ou IP non déterminable ->
+        le proxy continue de fonctionner normalement, juste non découvrable automatiquement
+        (PROXY_MDNS_ANNONCE=false pour désactiver explicitement)."""
+        if AsyncZeroconf is None:
+            logger.warning("zeroconf non installé — annonce mDNS désactivée.")
+            return
+        if not MDNS_ACTIF:
+            logger.info("Annonce mDNS désactivée (PROXY_MDNS_ANNONCE=false).")
+            return
+        ip = _ip_locale_annoncable()
+        if ip is None:
+            logger.warning("Impossible de déterminer une IP locale à annoncer — mDNS désactivé.")
+            return
+        nom_service = f"{MDNS_NOM_INSTANCE}.{MDNS_SERVICE_TYPE}"
+        info = ServiceInfo(
+            MDNS_SERVICE_TYPE, nom_service,
+            addresses=[socket.inet_aton(ip)], port=LISTEN_PORT,
+            server=f"{MDNS_NOM_INSTANCE}.local.",
+            properties={"role": "proxy", "protocole": "meshcore"},
+        )
+        zc = AsyncZeroconf()
+        try:
+            await zc.async_register_service(info)
+        except Exception:
+            logger.exception("Échec de l'annonce mDNS — le proxy continue sans.")
+            await zc.async_close()
+            return
+        self._mdns_zeroconf = zc
+        self._mdns_info = info
+        logger.info("Annoncé en mDNS : %s (%s:%s)", nom_service, ip, LISTEN_PORT)
+
+    async def _retirer_annonce_mdns(self):
+        if self._mdns_zeroconf is None:
+            return
+        try:
+            await self._mdns_zeroconf.async_unregister_service(self._mdns_info)
+        except Exception:
+            logger.exception("Échec du retrait de l'annonce mDNS.")
+        finally:
+            await self._mdns_zeroconf.async_close()
+            self._mdns_zeroconf = None
 
     async def _boucle_upstream(self):
         while True:
