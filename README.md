@@ -3,6 +3,27 @@
 Application de gestion de crise et d'entraide citoyenne.
 Plateforme web permettant la mise en relation entre citoyens et autorités locales lors de catastrophes (incendies, inondations), incluant une cartographie en temps réel.
 
+## Avertissement — un outil complémentaire, pas un substitut
+
+Assista-Crise est un outil d'appui à la gestion de crise. Il ne remplace **en aucun cas** le
+Plan Communal de Sauvegarde (PCS) ni le Plan Intercommunal de Sauvegarde (PICS) d'une
+collectivité. Une collectivité locale doit conserver ses procédures établies sur support
+papier et être en mesure de gérer une crise sans dépendre de la disponibilité du site —
+celui-ci vient en complément de ces procédures, jamais en substitution.
+
+## Nom et marque
+
+« Assista-Crise », son nom et son logo sont réservés à leur auteur (Sylvain Hazera). Toute
+redistribution ou fork doit être clairement renommé(e) et ne doit pas laisser entendre un
+lien ou un soutien avec le projet original.
+
+## Licence
+
+Ce projet est distribué sous licence **AGPL-3.0** (GNU Affero General Public License v3.0) —
+voir le fichier [LICENSE](LICENSE). En résumé : le code est libre, réutilisable et modifiable,
+y compris à l'étranger, mais toute version modifiée exploitée comme service en ligne doit
+republier ses modifications sous la même licence.
+
 ## Stack Technique
 
 * **Backend :** Django 5 + Django REST Framework (Python)
