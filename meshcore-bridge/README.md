@@ -33,7 +33,14 @@ volontaire du même companion physique entre les deux sites, pas une fuite de co
 
 ## `proxy.py` — variables d'environnement propres au proxy
 
-En plus de `MESHCORE_TCP_HOST`/`MESHCORE_TCP_PORT` (le companion réel) et `LOG_LEVEL` ci-dessus :
+Comme `bridge.py`, accepte `MESHCORE_CONNEXION_TYPE` = `TCP` (def., companion sur le LAN) ou
+`SERIE` (companion branché en USB directement sur l'hôte du proxy — cas d'un satellite
+Raspberry Pi, voir `satellite/docker-compose.yml`). Pas de BLE ici, contrairement à
+`bridge.py` : ce proxy tourne sans interaction humaine pour l'appairage. En SERIE, utilise
+`MESHCORE_SERIE_DEVICE` (voir plus haut) et `MESHCORE_SERIE_BAUDRATE` (non listé plus haut,
+propre au proxy — def. `115200`), pas `MESHCORE_TCP_HOST`/`PORT`.
+
+En plus de `LOG_LEVEL` ci-dessus :
 
 | Variable | Obligatoire | Exemple |
 |---|---|---|

@@ -44,6 +44,11 @@ except ImportError:
     ServiceInfo = None
     AsyncZeroconf = None
 
+try:
+    import serial_asyncio_fast
+except ImportError:
+    serial_asyncio_fast = None
+
 logger = logging.getLogger("meshcore-proxy")
 
 _NOMS_COMMANDES = {c.value: c.name for c in CommandType}
@@ -66,8 +71,22 @@ def _decrire_commande(payload: bytes) -> str:
         return f"{nom} dst={dst_pubkey} req_type={type_req}"
     return f"{nom} ({len(payload)} octet(s))"
 
-UPSTREAM_HOST = os.environ["MESHCORE_TCP_HOST"]
+# CONNEXION_TYPE : TCP (compagnon distant sur le LAN, historique) ou SERIE (compagnon branché
+# en USB directement sur l'hôte du proxy — cas d'un satellite Raspberry Pi, voir satellite/
+# docker-compose.yml). Pas de BLE ici : contrairement à bridge.py, ce proxy tourne sans
+# interaction humaine pour l'appairage, et BLE n'apporte rien qu'USB ne fasse déjà en local.
+CONNEXION_TYPE = os.environ.get("MESHCORE_CONNEXION_TYPE", "TCP").upper()
+UPSTREAM_HOST = os.environ.get("MESHCORE_TCP_HOST")
 UPSTREAM_PORT = int(os.environ.get("MESHCORE_TCP_PORT", "5000"))
+SERIE_DEVICE = os.environ.get("MESHCORE_SERIE_DEVICE")
+SERIE_BAUDRATE = int(os.environ.get("MESHCORE_SERIE_BAUDRATE", "115200"))
+
+if CONNEXION_TYPE == "TCP" and not UPSTREAM_HOST:
+    raise RuntimeError("MESHCORE_TCP_HOST est requis pour une connexion TCP (MESHCORE_CONNEXION_TYPE=TCP).")
+if CONNEXION_TYPE == "SERIE" and not SERIE_DEVICE:
+    raise RuntimeError("MESHCORE_SERIE_DEVICE est requis pour une connexion série (ex: /dev/ttyUSB0).")
+if CONNEXION_TYPE not in ("TCP", "SERIE"):
+    raise RuntimeError(f"MESHCORE_CONNEXION_TYPE inconnu : {CONNEXION_TYPE!r} (attendu TCP ou SERIE).")
 LISTEN_HOST = os.environ.get("PROXY_LISTEN_HOST", "0.0.0.0")
 LISTEN_PORT = int(os.environ.get("PROXY_LISTEN_PORT", "5050"))
 RECONNECT_DELAY_SECONDS = int(os.environ.get("RECONNECT_DELAY_SECONDS", "5"))
@@ -171,7 +190,8 @@ class ProxyMeshCore:
         asyncio.create_task(self._boucle_upstream())
         await self._annoncer_mdns()
         serveur = await asyncio.start_server(self._gerer_client, LISTEN_HOST, LISTEN_PORT)
-        logger.info("Proxy en écoute sur %s:%s (companion réel : %s:%s)", LISTEN_HOST, LISTEN_PORT, UPSTREAM_HOST, UPSTREAM_PORT)
+        libelle_upstream = SERIE_DEVICE if CONNEXION_TYPE == "SERIE" else f"{UPSTREAM_HOST}:{UPSTREAM_PORT}"
+        logger.info("Proxy en écoute sur %s:%s (companion réel, %s : %s)", LISTEN_HOST, LISTEN_PORT, CONNEXION_TYPE, libelle_upstream)
         try:
             async with serveur:
                 await serveur.serve_forever()
@@ -222,11 +242,19 @@ class ProxyMeshCore:
             await self._mdns_zeroconf.async_close()
             self._mdns_zeroconf = None
 
+    async def _ouvrir_connexion_upstream(self):
+        if CONNEXION_TYPE == "SERIE":
+            if serial_asyncio_fast is None:
+                raise RuntimeError("pyserial-asyncio-fast non installé — requis pour MESHCORE_CONNEXION_TYPE=SERIE.")
+            return await serial_asyncio_fast.open_serial_connection(url=SERIE_DEVICE, baudrate=SERIE_BAUDRATE)
+        return await asyncio.open_connection(UPSTREAM_HOST, UPSTREAM_PORT)
+
     async def _boucle_upstream(self):
+        libelle = SERIE_DEVICE if CONNEXION_TYPE == "SERIE" else f"{UPSTREAM_HOST}:{UPSTREAM_PORT}"
         while True:
             try:
-                logger.info("Connexion au companion réel %s:%s...", UPSTREAM_HOST, UPSTREAM_PORT)
-                reader, writer = await asyncio.open_connection(UPSTREAM_HOST, UPSTREAM_PORT)
+                logger.info("Connexion au companion réel (%s) : %s...", CONNEXION_TYPE, libelle)
+                reader, writer = await self._ouvrir_connexion_upstream()
                 self.upstream_writer = writer
                 logger.info("Connecté au companion réel.")
                 tampon = bytearray()

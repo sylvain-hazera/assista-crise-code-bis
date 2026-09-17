@@ -30,6 +30,8 @@ ENV/
 backend/db.sqlite3
 __pycache__/
 *.pyc
+.pytest_cache/
+satellite/.env
 *.pyo
 *.pyd
 

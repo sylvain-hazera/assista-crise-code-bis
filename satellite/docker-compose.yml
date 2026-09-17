@@ -1,0 +1,172 @@
+# Docker + docker-compose sur Raspberry Pi OS standard — décision du 2026-09-17, PAS une image
+# disque pré-construite (voir le cadrage "Chantier B" : réutilise directement les images déjà
+# éprouvées du reste du projet, aucune nouvelle chaîne de fabrication d'image à maintenir).
+#
+# Deux profils :
+#   gw   : pont + proxy MeshCore + détecteur de connectivité — le minimum pour relayer la radio
+#          vers le central (ou un satellite Full local, si les deux Pi coexistent sur le site).
+#   full : gw + assista-crise complet (backend/frontend/db) + serveur de tuiles offline —
+#          utilisable même sans internet.
+#
+# Usage : cp .env.example .env, compléter, puis `docker compose --profile gw up -d` (ou
+# `--profile full`).
+#
+# Manque à ce jour : Meshtastic. meshtastic-bridge/ ne sait parler qu'à un broker MQTT tiers
+# (Gaulix) — voir meshtastic-bridge/README.md, "aucun matériel radio, aucune connexion
+# série/BLE" — donc pas de service ici tant qu'un nœud Meshtastic ne peut pas être branché en
+# USB/série comme MeshCore. Ajouter ce support à meshtastic-bridge (la lib officielle
+# `meshtastic` le permet nativement) est un préalable, pas fait dans ce chantier.
+
+services:
+
+  # --- Commun aux deux profils ---
+
+  meshcore-proxy:
+    build:
+      context: ../meshcore-bridge
+    command: ["python", "-u", "proxy.py"]
+    # --network host, pas un réseau Docker isolé : requis pour que l'annonce mDNS
+    # (_meshcore._tcp.local., voir meshcore-bridge/proxy.py) porte une IP réellement joignable
+    # sur le LAN — vérifié en conditions réelles sur .113 le 2026-09-17 (voir
+    # meshcore-bridge/README.md). Sur un satellite dédié (pas de conflit de port avec d'autres
+    # services), ça ne coûte rien contrairement à .113.
+    network_mode: host
+    environment:
+      - MESHCORE_CONNEXION_TYPE=${MESHCORE_CONNEXION_TYPE:-SERIE}
+      - MESHCORE_TCP_HOST=${MESHCORE_TCP_HOST:-}
+      - MESHCORE_TCP_PORT=${MESHCORE_TCP_PORT:-5000}
+      - MESHCORE_SERIE_DEVICE=${MESHCORE_SERIE_DEVICE:-/dev/ttyUSB0}
+      - PROXY_LISTEN_PORT=${MESHCORE_PROXY_PORT:-5050}
+      - PROXY_MDNS_NOM=${SATELLITE_NOM:-satellite-assista-crise}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    devices:
+      - "${MESHCORE_SERIE_DEVICE:-/dev/ttyUSB0}:${MESHCORE_SERIE_DEVICE:-/dev/ttyUSB0}"
+    restart: unless-stopped
+    profiles: ["gw", "full"]
+
+  meshcore-bridge:
+    build:
+      context: ../meshcore-bridge
+    command: ["python", "-u", "bridge.py"]
+    # Rejoint le proxy via 127.0.0.1 (même network_mode: host) — voir la même logique que
+    # .113/ac_meshcore_bridge -> ac_meshcore_proxy, en plus simple ici (pas de réseau Docker
+    # séparé à faire communiquer, un satellite est mono-usage).
+    network_mode: host
+    environment:
+      - MESHCORE_CONNEXION_TYPE=TCP
+      - MESHCORE_TCP_HOST=127.0.0.1
+      - MESHCORE_TCP_PORT=${MESHCORE_PROXY_PORT:-5050}
+      - DJANGO_API_URL=${CENTRAL_URL:-https://assista-crise.fr}/api
+      - DJANGO_BRIDGE_EMAIL=${SATELLITE_EMAIL}
+      - DJANGO_BRIDGE_PASSWORD=${SATELLITE_PASSWORD}
+      - COMPAGNON_ID=${MESHCORE_COMPAGNON_ID}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    depends_on:
+      - meshcore-proxy
+    restart: unless-stopped
+    profiles: ["gw", "full"]
+
+  etat-connectivite:
+    build:
+      context: .
+      dockerfile: Dockerfile.etat
+    # Source de vérité partagée pour tout composant qui doit savoir si le central est joignable
+    # (bannière future, écran TFT futur) — voir satellite/etat_connectivite.py. Volume nommé
+    # plutôt qu'un bind mount : un futur composant qui en a besoin monte le même volume, pas
+    # besoin qu'il tourne sur l'hôte directement.
+    environment:
+      - CENTRAL_URL=${CENTRAL_URL:-https://assista-crise.fr}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - etat_satellite:/var/run/satellite
+    restart: unless-stopped
+    profiles: ["gw", "full"]
+
+  # --- Profil "full" uniquement : instance assista-crise locale, utilisable sans internet ---
+
+  db:
+    image: postgis/postgis:15-3.3
+    environment:
+      - POSTGRES_DB=assista-db
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASS}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d assista-db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    profiles: ["full"]
+
+  mosquitto:
+    image: eclipse-mosquitto
+    volumes:
+      - ./mosquitto-config:/mosquitto/config
+      - mosquitto_data:/mosquitto/data
+    restart: unless-stopped
+    profiles: ["full"]
+
+  backend:
+    build: ../backend
+    volumes:
+      - media_volume:/app/media
+    environment:
+      - SECRET_KEY=${SECRET_KEY}
+      - DEBUG=False
+      - DB_HOST=db
+      - DB_NAME=assista-db
+      - DB_USER=${DB_USER}
+      - DB_PASS=${DB_PASS}
+      - MQTT_BROKER=mosquitto
+      - DJANGO_SUPERUSER_EMAIL=${DJANGO_SUPERUSER_EMAIL}
+      - DJANGO_SUPERUSER_PASSWORD=${DJANGO_SUPERUSER_PASSWORD}
+    depends_on:
+      db:
+        condition: service_healthy
+      mosquitto:
+        condition: service_started
+    restart: unless-stopped
+    profiles: ["full"]
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile.prod
+    depends_on:
+      - backend
+    restart: unless-stopped
+    profiles: ["full"]
+
+  # Conteneur "one-shot" : télécharge le fond de carte puis s'arrête (pas de restart policy) —
+  # à relancer manuellement (`docker compose run --rm telecharger-tuiles`) pour régénérer les
+  # tuiles (changement de département, mise à jour du fond de carte). Voir
+  # telecharger_tuiles.py — département + limitrophes, pas juste la commune.
+  telecharger-tuiles:
+    build:
+      context: .
+      dockerfile: Dockerfile.tuiles
+    command: ["${SATELLITE_DEPARTEMENT}", "--sortie", "/data/tuiles.pmtiles"]
+    environment:
+      - PMTILES_SOURCE=${PMTILES_SOURCE}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - tuiles_data:/data
+    profiles: ["full"]
+
+  tileserver:
+    image: maptiler/tileserver-gl
+    volumes:
+      - tuiles_data:/data
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    profiles: ["full"]
+
+volumes:
+  etat_satellite:
+  postgres_data:
+  mosquitto_data:
+  media_volume:
+  tuiles_data:
