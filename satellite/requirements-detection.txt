@@ -1,0 +1,3 @@
+meshcore
+meshtastic
+httpx>=0.27

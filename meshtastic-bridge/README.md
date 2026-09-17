@@ -145,6 +145,11 @@ L'adresse du broker (`mqtt.gaulix.fr`, port 1883 par défaut) et la racine de to
 (`Traitement/msh/EU_868` pour Gaulix — pas `msh/EU_868` comme documenté publiquement, vérifié en sniffant leur broker) sont des champs du `CompagnonMeshtastic` lui-même, pas des variables
 d'environnement — récupérés via l'API au démarrage.
 
+**Bascule vers l'assista-crise local (satellite, profil Full)** : `LOCAL_API_URL`/
+`LOCAL_BRIDGE_EMAIL`/`LOCAL_BRIDGE_PASSWORD`/`FICHIER_ETAT_CONNECTIVITE`, ajoutés le 2026-09-17
+— même mécanisme que `meshcore-bridge/README.md` (voir cette section pour le détail et la
+limite connue sur la réconciliation UUID), pas dupliqué ici.
+
 ## Lancer en local (sans Docker)
 
 ```

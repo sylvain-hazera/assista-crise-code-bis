@@ -21,6 +21,29 @@
 
 services:
 
+  # Outil d'installation, PAS un service qui tourne en continu — à lancer une fois à
+  # l'installation (ou après un changement de matériel) avec :
+  #   docker compose --profile outillage run --rm detecter-noeud
+  # /dev entier monté (plutôt qu'un device précis) : le but est justement de trouver LEQUEL
+  # brancher avant de le savoir — accès large temporaire, le temps de cette seule commande, pas
+  # celui des services qui tournent en continu (meshcore-proxy/meshtastic-bridge, eux, ne
+  # montent que le device déjà identifié). Écrit le résultat dans le volume `etat_satellite`,
+  # relu par le reste (voir detecter_noeud_serie.py :FICHIER_ETAT_NOEUD_SERIE).
+  detecter-noeud:
+    build:
+      context: .
+      dockerfile: Dockerfile.detection
+    volumes:
+      - /dev:/dev
+      - etat_satellite:/var/run/satellite
+    environment:
+      - CENTRAL_URL=${CENTRAL_URL:-https://assista-crise.fr}
+      - SATELLITE_EMAIL=${SATELLITE_EMAIL}
+      - SATELLITE_PASSWORD=${SATELLITE_PASSWORD}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    privileged: true
+    profiles: ["outillage"]
+
   # --- Commun aux deux profils ---
 
   meshcore-proxy:
@@ -62,7 +85,17 @@ services:
       - DJANGO_BRIDGE_EMAIL=${SATELLITE_EMAIL}
       - DJANGO_BRIDGE_PASSWORD=${SATELLITE_PASSWORD}
       - COMPAGNON_ID=${MESHCORE_COMPAGNON_ID}
+      # Bascule vers l'assista-crise local si le central passe hors-ligne (voir
+      # DjangoClient._cible_actuelle, meshcore-bridge/bridge.py) — vides en profil gw seul
+      # (pas de Full colocalisé, comportement inchangé : central uniquement). Réutilise le
+      # superuser local déjà provisionné (DJANGO_SUPERUSER_EMAIL/PASSWORD, service `backend`
+      # ci-dessous) plutôt que créer un nouveau mécanisme de provisioning.
+      - LOCAL_API_URL=${SATELLITE_PROFIL_FULL:+http://localhost:8000/api}
+      - LOCAL_BRIDGE_EMAIL=${DJANGO_SUPERUSER_EMAIL}
+      - LOCAL_BRIDGE_PASSWORD=${DJANGO_SUPERUSER_PASSWORD}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - etat_satellite:/var/run/satellite:ro
     depends_on:
       - meshcore-proxy
     restart: unless-stopped
@@ -81,9 +114,16 @@ services:
       - DJANGO_API_URL=${CENTRAL_URL:-https://assista-crise.fr}/api
       - DJANGO_BRIDGE_EMAIL=${SATELLITE_EMAIL}
       - DJANGO_BRIDGE_PASSWORD=${SATELLITE_PASSWORD}
+      # Bascule vers l'assista-crise local si le central passe hors-ligne — même mécanisme que
+      # meshcore-bridge ci-dessus, voir son commentaire.
+      - LOCAL_API_URL=${SATELLITE_PROFIL_FULL:+http://localhost:8000/api}
+      - LOCAL_BRIDGE_EMAIL=${DJANGO_SUPERUSER_EMAIL}
+      - LOCAL_BRIDGE_PASSWORD=${DJANGO_SUPERUSER_PASSWORD}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
     devices:
       - "${MESHTASTIC_SERIE_DEVICE:-/dev/ttyACM0}:${MESHTASTIC_SERIE_DEVICE:-/dev/ttyACM0}"
+    volumes:
+      - etat_satellite:/var/run/satellite:ro
     restart: unless-stopped
     profiles: ["gw", "full"]
 
@@ -131,6 +171,12 @@ services:
 
   backend:
     build: ../backend
+    # Publié sur l'hôte (localhost seulement) pour que meshcore-bridge/meshtastic-bridge (en
+    # network_mode: host, voir plus haut) puissent le joindre en cas de bascule locale — voir
+    # LOCAL_API_URL ci-dessus. Sans lien avec la résolution interne "backend" que frontend/
+    # mosquitto continuent d'utiliser normalement (réseau Compose par défaut, inchangé).
+    ports:
+      - "127.0.0.1:8000:8000"
     volumes:
       - media_volume:/app/media
     environment:

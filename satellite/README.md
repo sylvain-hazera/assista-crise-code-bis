@@ -24,8 +24,9 @@ administrateur valide → identifiants affichés **une seule fois**) — voir
 
 | Service | Profil | Rôle |
 |---|---|---|
+| `detecter-noeud` | outillage (un coup, pas en continu) | Détecte et différencie MeshCore/Meshtastic sur les devices série candidats, enregistre le nœud auprès du central. |
 | `meshcore-proxy` | gw, full | Détient la connexion réelle au nœud MeshCore (USB/série ou TCP), s'annonce en mDNS sur le LAN — voir `meshcore-bridge/proxy.py`. |
-| `meshcore-bridge` | gw, full | Relaie les messages entre le proxy et `assista-crise.fr` (ou le central configuré). |
+| `meshcore-bridge` | gw, full | Relaie les messages entre le proxy et `assista-crise.fr` (ou le central configuré). Bascule vers l'assista-crise local si le central passe hors-ligne (profil full, voir `meshcore-bridge/README.md`). |
 | `etat-connectivite` | gw, full | Vérifie périodiquement si le central répond, écrit l'état dans un volume partagé (`etat_connectivite.py`) — source de vérité unique pour tout futur composant qui en a besoin (bannière, écran de statut). |
 | `db`, `mosquitto`, `backend`, `frontend` | full | Instance assista-crise locale, identique au déploiement central. |
 | `telecharger-tuiles` | full | Conteneur one-shot : télécharge les tuiles du département + limitrophes (`telecharger_tuiles.py`). |
@@ -66,6 +67,23 @@ Ne fait pas le handshake protocolaire de confirmation — réutilisable depuis
 ```bash
 python3 decouverte_lan.py
 ```
+
+## `detecter_noeud_serie.py`
+
+Détecte quel protocole (MeshCore ou Meshtastic) répond sur chaque device `/dev/ttyUSB*`/
+`/dev/ttyACM*` à l'installation (réutilise exactement les mêmes techniques de sondage que
+`MeshLocalDetecterView` côté Django, déjà validées en TCP), puis enregistre le nœud auprès du
+central (`CompagnonMeshCoreViewSet`/`CompagnonMeshtasticViewSet`.`enregistrer_depuis_satellite`
+— idempotent, identifié par la clé publique/le node_num du nœud, PAS par le chemin du device
+qui peut changer après un redémarrage). Une fois un device confirmé, **la config est persistée
+et réutilisée telle quelle tant qu'il répond** — pas de re-sondage à chaque démarrage :
+
+```bash
+docker compose --profile outillage run --rm detecter-noeud
+```
+
+Si le central est injoignable au moment du sondage, la détection locale reste valable
+(persistée quand même) — seul l'enregistrement central est différé au prochain passage.
 
 ## `telecharger_tuiles.py`
 

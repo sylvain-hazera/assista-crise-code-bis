@@ -23,6 +23,7 @@ seul, sans redémarrage du service (demande explicite du 14/09).
 """
 
 import asyncio
+import json
 import logging
 import os
 import random
@@ -39,6 +40,14 @@ logger = logging.getLogger("meshtastic-bridge")
 DJANGO_API_URL = os.environ["DJANGO_API_URL"]
 DJANGO_EMAIL = os.environ["DJANGO_BRIDGE_EMAIL"]
 DJANGO_PASSWORD = os.environ["DJANGO_BRIDGE_PASSWORD"]
+
+# Bascule vers l'assista-crise LOCAL si le central devient injoignable — même mécanisme que
+# meshcore-bridge/bridge.py:DjangoClient (voir son docstring pour le détail et la limite
+# connue sur la réconciliation UUID). Tous optionnels : absents = comportement historique.
+LOCAL_API_URL = os.environ.get("LOCAL_API_URL")
+LOCAL_BRIDGE_EMAIL = os.environ.get("LOCAL_BRIDGE_EMAIL")
+LOCAL_BRIDGE_PASSWORD = os.environ.get("LOCAL_BRIDGE_PASSWORD")
+FICHIER_ETAT_CONNECTIVITE = os.environ.get("FICHIER_ETAT_CONNECTIVITE", "/var/run/satellite/etat_connectivite.json")
 
 POLL_INTERVAL_SECONDS = int(os.environ.get("POLL_INTERVAL_SECONDS", "15"))
 CANAUX_REFRESH_INTERVAL_SECONDS = int(os.environ.get("CANAUX_REFRESH_INTERVAL_SECONDS", "60"))
@@ -80,34 +89,64 @@ def _nom_hardware(valeur: int) -> str | None:
         return None
 
 
-class DjangoClient:
-    """Même patron que meshcore-bridge/bridge.py:DjangoClient (JWT, ré-authentification
-    automatique sur 401)."""
+class _CibleAuth:
+    """Une cible (central OU local) avec son propre token — voir meshcore-bridge/bridge.py,
+    même classe."""
 
     def __init__(self, base_url, email, password):
-        self._base_url = base_url.rstrip("/")
-        self._email = email
-        self._password = password
-        self._access_token = None
+        self.base_url = base_url.rstrip("/")
+        self.email = email
+        self.password = password
+        self.access_token = None
+
+
+class DjangoClient:
+    """Même patron que meshcore-bridge/bridge.py:DjangoClient (JWT, ré-authentification
+    automatique sur 401, bascule vers une cible LOCALE si le central est signalé hors-ligne —
+    voir son docstring pour le détail complet et la limite connue sur la réconciliation UUID)."""
+
+    def __init__(self, central_url, central_email, central_password,
+                 local_url=None, local_email=None, local_password=None,
+                 fichier_etat_connectivite=None):
+        self._central = _CibleAuth(central_url, central_email, central_password)
+        self._local = _CibleAuth(local_url, local_email, local_password) if local_url else None
+        self._fichier_etat_connectivite = fichier_etat_connectivite or FICHIER_ETAT_CONNECTIVITE
+        self._cible_precedente = None
         self._client = httpx.AsyncClient(timeout=15)
 
-    async def _authenticate(self):
+    def _cible_actuelle(self):
+        cible = self._central
+        if self._local is not None:
+            try:
+                with open(self._fichier_etat_connectivite, encoding="utf-8") as f:
+                    etat = json.load(f)
+                if etat.get("en_ligne") is False:
+                    cible = self._local
+            except (OSError, ValueError):
+                pass
+        if cible is not self._cible_precedente:
+            logger.info("Cible API : %s (%s).", cible.base_url, "local" if cible is self._local else "central")
+            self._cible_precedente = cible
+        return cible
+
+    async def _authenticate(self, cible):
         response = await self._client.post(
-            f"{self._base_url}/token/", json={"email": self._email, "password": self._password}
+            f"{cible.base_url}/token/", json={"email": cible.email, "password": cible.password}
         )
         response.raise_for_status()
-        self._access_token = response.json()["access"]
-        logger.info("Authentifié auprès de l'API assista-crise.")
+        cible.access_token = response.json()["access"]
+        logger.info("Authentifié auprès de %s.", cible.base_url)
 
     async def _request(self, method, path, **kwargs):
-        if self._access_token is None:
-            await self._authenticate()
-        headers = {"Authorization": f"Bearer {self._access_token}"}
-        response = await self._client.request(method, f"{self._base_url}{path}", headers=headers, **kwargs)
+        cible = self._cible_actuelle()
+        if cible.access_token is None:
+            await self._authenticate(cible)
+        headers = {"Authorization": f"Bearer {cible.access_token}"}
+        response = await self._client.request(method, f"{cible.base_url}{path}", headers=headers, **kwargs)
         if response.status_code == 401:
-            await self._authenticate()
-            headers = {"Authorization": f"Bearer {self._access_token}"}
-            response = await self._client.request(method, f"{self._base_url}{path}", headers=headers, **kwargs)
+            await self._authenticate(cible)
+            headers = {"Authorization": f"Bearer {cible.access_token}"}
+            response = await self._client.request(method, f"{cible.base_url}{path}", headers=headers, **kwargs)
         response.raise_for_status()
         return response
 
@@ -805,7 +844,10 @@ async def boucle_reconciliation_compagnons(django, taches):
 async def main():
     logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
 
-    django = DjangoClient(DJANGO_API_URL, DJANGO_EMAIL, DJANGO_PASSWORD)
+    django = DjangoClient(
+        DJANGO_API_URL, DJANGO_EMAIL, DJANGO_PASSWORD,
+        local_url=LOCAL_API_URL, local_email=LOCAL_BRIDGE_EMAIL, local_password=LOCAL_BRIDGE_PASSWORD,
+    )
     await boucle_reconciliation_compagnons(django, {})
 
 

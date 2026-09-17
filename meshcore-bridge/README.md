@@ -31,6 +31,26 @@ volontaire du même companion physique entre les deux sites, pas une fuite de co
 | `POLL_INTERVAL_SECONDS` | non (def. 15) | fréquence d'interrogation des messages à envoyer |
 | `LOG_LEVEL` | non (def. INFO) | passer en `DEBUG` pour voir les payloads bruts des événements |
 
+## Bascule vers l'assista-crise local (satellite, profil Full)
+
+Ajouté le 2026-09-17 : si `LOCAL_API_URL` est renseignée, `DjangoClient` bascule automatiquement
+dessus quand `satellite/etat_connectivite.py` signale le central `assista-crise.fr` hors-ligne
+(lu depuis `FICHIER_ETAT_CONNECTIVITE`, un fichier partagé — ce pont ne refait jamais sa propre
+vérification réseau). Absent = comportement historique inchangé (central uniquement), c'est le
+cas de `.113`/`.114` et de tout satellite GW seul sans profil Full colocalisé.
+
+| Variable | Obligatoire | Exemple |
+|---|---|---|
+| `LOCAL_API_URL` | non | `http://localhost:8000/api` (le backend local, voir `satellite/docker-compose.yml`) |
+| `LOCAL_BRIDGE_EMAIL` / `LOCAL_BRIDGE_PASSWORD` | si `LOCAL_API_URL` | identifiants valides sur CE backend local (réutilise en pratique `DJANGO_SUPERUSER_EMAIL`/`PASSWORD`) |
+| `FICHIER_ETAT_CONNECTIVITE` | non (def. `/var/run/satellite/etat_connectivite.json`) | — |
+
+**Limite connue, non résolue à ce jour** : un `CompagnonMeshCore`/message n'a de sens des deux
+côtés que s'il existe avec le MÊME UUID dans les deux bases (centrale et locale) — pas garanti
+tant que la synchro locale -> centrale (cadrage "Chantier B") n'est pas construite. Cette
+bascule évite au pont de rester bloqué sur un central injoignable ; elle ne résout pas encore
+la réconciliation des données écrites pendant la coupure.
+
 ## `proxy.py` — variables d'environnement propres au proxy
 
 Comme `bridge.py`, accepte `MESHCORE_CONNEXION_TYPE` = `TCP` (def., companion sur le LAN) ou
