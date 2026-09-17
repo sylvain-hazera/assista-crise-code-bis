@@ -1,9 +1,11 @@
 # Service-pont Meshtastic — phase de test
 
-Connecte assista-crise au réseau Meshtastic via un broker MQTT tiers (ex: Gaulix,
-`mqtt.gaulix.fr`), en se comportant comme un **nœud Meshtastic purement logiciel** — aucun
-matériel radio, aucune connexion série/BLE, contrairement à `meshcore-bridge/`. Voir `bridge.py`
-et `crypto.py` pour les détails.
+Connecte assista-crise au réseau Meshtastic soit via un broker MQTT tiers (ex: Gaulix,
+`mqtt.gaulix.fr`, en se comportant comme un **nœud Meshtastic purement logiciel**, sans
+matériel radio), soit en pilotant un **vrai appareil** connecté en TCP local ou en série/USB
+(`CompagnonMeshtastic.connexion_type` = `TCP`/`SERIE`, voir plus bas) — dans ce dernier cas,
+c'est le firmware de l'appareil qui gère lui-même le chiffrement, comme `meshcore-bridge/`.
+Voir `bridge.py` et `crypto.py` (mode MQTT uniquement) pour les détails.
 
 **Ce service n'est volontairement pas déployé sur .114** — il vit sur la branche git
 `feature/meshtastic-poc`, séparée de `feature/meshcore-poc` (deux protocoles distincts), tant
@@ -58,6 +60,32 @@ internes de l'appareil (pas de console série, seulement l'API TCP), impossible 
 loin dans ce diagnostic. Le correctif PKI reste dans le code (correct et réutilisable si un jour
 testé sur un autre relais MQTT), mais **le clair reste la seule voie confirmée fonctionnelle sur
 Gaulix**, DM comme canal.
+
+## Connexion directe à un vrai appareil (TCP ou série) — pas de crypto.py ici
+
+Tout ce qui précède (chiffrement fait maison, PKI, hash de canal) ne concerne QUE le mode
+MQTT (`connexion_type=MQTT`, la valeur par défaut). Un `CompagnonMeshtastic` peut aussi piloter
+un vrai appareil directement, comme `meshcore-bridge/` le fait pour MeshCore — le firmware gère
+alors lui-même le chiffrement, `crypto.py` n'est jamais appelé :
+
+- `connexion_type=TCP` : appareil sur le LAN, API TCP native du firmware (`tcp_host`/`tcp_port`,
+  port 4403 par défaut) — `meshtastic.tcp_interface.TCPInterface`.
+- `connexion_type=SERIE` : appareil branché en USB directement sur l'hôte du pont —
+  `serie_device` (ex: `/dev/ttyUSB0`) — `meshtastic.serial_interface.SerialInterface`. Cas
+  d'un satellite Raspberry Pi, voir `satellite/docker-compose.yml`. Ajouté le 2026-09-17, en
+  miroir exact du mode TCP (voir `_executer_compagnon_interface_locale` dans `bridge.py`, qui
+  factorise les deux — seule la construction de l'interface diffère).
+
+Les deux modes sont limités en v1 aux DM (envoi/réception) et à la réception de messages de
+canal — pas d'envoi sur un canal précis : les canaux d'un vrai appareil sont déjà configurés
+dessus (PSK gérées par son propre firmware), pas par `CanalMeshtastic` (pensé pour le mode MQTT
+logiciel). `node_num` reste néanmoins requis à la création du `CompagnonMeshtastic` même dans
+ces deux modes (mis à jour automatiquement dès la connexion à la vraie valeur de l'appareil,
+voir `on_connection` dans `bridge.py`) — la contrainte `unique=True` du modèle l'exige.
+
+**Non testé sur du vrai matériel série à ce jour** (contrairement au mode TCP, validé le
+13/09 — voir plus bas) : la construction `SerialInterface(devPath=...)` et le dispatch sont
+vérifiés par un test isolé (mock), pas encore contre un appareil réel branché en USB.
 
 ## Recette validée en conditions réelles (13/09)
 

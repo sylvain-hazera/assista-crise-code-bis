@@ -30,20 +30,24 @@ administrateur valide → identifiants affichés **une seule fois**) — voir
 | `db`, `mosquitto`, `backend`, `frontend` | full | Instance assista-crise locale, identique au déploiement central. |
 | `telecharger-tuiles` | full | Conteneur one-shot : télécharge les tuiles du département + limitrophes (`telecharger_tuiles.py`). |
 | `tileserver` | full | Sert les tuiles téléchargées — même image que le central (`maptiler/tileserver-gl`). |
-
-**Manque à ce jour : Meshtastic.** `meshtastic-bridge/` ne sait parler qu'à un broker MQTT
-tiers (Gaulix) — voir son README, « aucun matériel radio, aucune connexion série/BLE ». Pas de
-service Meshtastic ici tant qu'un nœud ne peut pas être branché en USB/série comme MeshCore ;
-ajouter ce support (la lib officielle `meshtastic` le permet nativement) est un préalable non
-fait dans ce chantier.
+| `meshtastic-bridge` | gw, full | Optionnel — pilote un ou plusieurs `CompagnonMeshtastic` (MQTT, TCP ou SERIE) ; voir la note ci-dessous. |
 
 ## Nœuds branchés en USB/série
 
-`MESHCORE_CONNEXION_TYPE=SERIE` + `MESHCORE_SERIE_DEVICE=/dev/ttyUSB0` (ou `/dev/ttyACM0`,
-voir `ls /dev/tty*` une fois le nœud branché) — `meshcore-proxy` détient alors directement la
-connexion série, exactement comme il détenait une connexion TCP sur `.113`. Support ajouté le
-2026-09-17 à `meshcore-bridge/proxy.py` (`serial_asyncio_fast`, même bibliothèque que
-`bridge.py` utilise déjà en interne via la lib `meshcore`).
+**MeshCore** : `MESHCORE_CONNEXION_TYPE=SERIE` + `MESHCORE_SERIE_DEVICE=/dev/ttyUSB0` (ou
+`/dev/ttyACM0`, voir `ls /dev/tty*` une fois le nœud branché) — `meshcore-proxy` détient alors
+directement la connexion série, exactement comme il détenait une connexion TCP sur `.113`.
+Support ajouté le 2026-09-17 à `meshcore-bridge/proxy.py` (`serial_asyncio_fast`, même
+bibliothèque que `bridge.py` utilise déjà en interne via la lib `meshcore`).
+
+**Meshtastic** : support série ajouté le 2026-09-17 à `meshtastic-bridge/bridge.py`, en miroir
+exact du mode TCP déjà validé (`_executer_compagnon_interface_locale`, lib officielle
+`meshtastic`) — voir `meshtastic-bridge/README.md`. Contrairement à MeshCore, le
+`connexion_type` (MQTT/TCP/SERIE) et le `serie_device` se règlent **par `CompagnonMeshtastic`
+côté Django**, pas par variable d'environnement du conteneur — `MESHTASTIC_SERIE_DEVICE` dans
+`.env` ne sert qu'au passage du périphérique Docker (`devices:`), doit correspondre exactement
+à la valeur choisie côté Django. **Non testé sur du vrai matériel série à ce jour**, contrairement
+au mode TCP.
 
 ## `decouverte_lan.py`
 

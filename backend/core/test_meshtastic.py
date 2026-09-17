@@ -63,6 +63,16 @@ class TestConnexionTypeTcpLocal:
         assert response.data['connexion_type'] == 'TCP'
         assert response.data['tcp_host'] == '192.168.1.10'
 
+    def test_can_create_serie_companion(self, institutional_client):
+        client, _ = institutional_client
+        response = client.post(reverse('compagnonmeshtastic-list'), {
+            'nom': 'Nœud USB', 'node_num': 888888,
+            'connexion_type': 'SERIE', 'serie_device': '/dev/ttyACM0',
+        }, format='json')
+        assert response.status_code == status.HTTP_201_CREATED, response.data
+        assert response.data['connexion_type'] == 'SERIE'
+        assert response.data['serie_device'] == '/dev/ttyACM0'
+
     def test_exposed_and_writable_via_create(self, institutional_client):
         client, _ = institutional_client
         response = client.post(reverse('compagnonmeshtastic-list'), {
@@ -150,6 +160,7 @@ class TestCompagnonsActifsAvecIdentifiants:
         entry = next(c for c in response.data if c['id'] == str(compagnon.id))
         assert entry['mqtt_password'] == 'secret'
         assert entry['x25519_private_key_hex'] == compagnon.x25519_private_key_hex
+        assert 'serie_device' in entry
 
     def test_empty_when_no_active_companion(self, institutional_client):
         client, _ = institutional_client

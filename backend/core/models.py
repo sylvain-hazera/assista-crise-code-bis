@@ -4057,8 +4057,12 @@ class MeshtasticConnexionType(models.TextChoices):
     # défaut) — via la lib officielle `meshtastic` (TCPInterface), pas le chiffrement fait
     # maison de crypto.py : c'est le firmware lui-même qui gère le PSK/PKI, comme le fait
     # l'appli officielle en WiFi local. Pensé pour l'usage offline (PC sans accès internet,
-    # donc sans broker MQTT joignable) — voir meshtastic-bridge/bridge.py:demarrer_tcp.
+    # donc sans broker MQTT joignable) — voir meshtastic-bridge/bridge.py:_executer_compagnon_tcp.
     TCP = "TCP", "Connexion locale directe (réseau, sans internet)"
+    # Même principe que TCP mais l'appareil est branché en USB directement sur l'hôte du pont
+    # (cas d'un satellite Raspberry Pi, voir satellite/docker-compose.yml) — lib officielle
+    # `meshtastic` (SerialInterface), voir meshtastic-bridge/bridge.py:_executer_compagnon_serie.
+    SERIE = "SERIE", "Connexion série (USB, sans internet)"
 
 
 class CompagnonMeshtastic(EnvironmentScopedModel):
@@ -4082,6 +4086,7 @@ class CompagnonMeshtastic(EnvironmentScopedModel):
     connexion_type = models.CharField(max_length=10, choices=MeshtasticConnexionType.choices, default=MeshtasticConnexionType.MQTT)
     tcp_host = models.CharField(max_length=255, null=True, blank=True, help_text="IP/hostname du vrai appareil (mode TCP local uniquement).")
     tcp_port = models.PositiveIntegerField(null=True, blank=True, default=4403)
+    serie_device = models.CharField(max_length=255, null=True, blank=True, help_text="ex: /dev/ttyUSB0 (mode SERIE uniquement).")
 
     node_num = models.PositiveBigIntegerField(
         unique=True,

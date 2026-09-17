@@ -10249,6 +10249,7 @@ class CompagnonMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
                 'mqtt_username': c.mqtt_username, 'mqtt_password': c.mqtt_password,
                 'mqtt_use_tls': c.mqtt_use_tls,
                 'tcp_host': c.tcp_host, 'tcp_port': c.tcp_port,
+                'serie_device': c.serie_device,
                 'chiffrement_supporte': c.chiffrement_supporte,
                 'x25519_private_key_hex': c.x25519_private_key_hex,
                 'x25519_public_key_hex': c.x25519_public_key_hex,

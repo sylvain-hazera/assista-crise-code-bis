@@ -619,11 +619,13 @@ async def demarrer_pour_compagnon(django, compagnon):
     d'échec (broker/appareil injoignable, déconnexion...) SANS jamais laisser une exception
     remonter jusqu'au asyncio.gather() de main() — sinon un seul companion en panne ferait
     planter tout le pont, y compris les autres qui fonctionnent (demande explicite du 14/09 :
-    plusieurs companions actifs en parallèle, donc isolés les uns des autres). Deux modes
+    plusieurs companions actifs en parallèle, donc isolés les uns des autres). Trois modes
     possibles (voir CompagnonMeshtastic.connexion_type côté Django) : MQTT (broker tiers, ex:
-    Gaulix, chiffrement fait maison) ou TCP (connexion locale directe à un vrai appareil, lib
-    officielle `meshtastic`, pensé pour l'usage offline sans internet)."""
-    executer = _executer_compagnon_tcp if compagnon.get("connexion_type") == "TCP" else _executer_compagnon_mqtt
+    Gaulix, chiffrement fait maison), TCP ou SERIE (connexion locale directe à un vrai
+    appareil, lib officielle `meshtastic`, pensé pour l'usage offline sans internet — SERIE
+    pour un satellite avec le nœud branché en USB)."""
+    executeurs_locaux = {"TCP": _executer_compagnon_tcp, "SERIE": _executer_compagnon_serie}
+    executer = executeurs_locaux.get(compagnon.get("connexion_type"), _executer_compagnon_mqtt)
     while True:
         try:
             await executer(django, compagnon)
@@ -632,15 +634,16 @@ async def demarrer_pour_compagnon(django, compagnon):
         await asyncio.sleep(RECONNECT_DELAY_SECONDS)
 
 
-async def _executer_compagnon_tcp(django, compagnon):
-    """Connexion locale directe à un VRAI appareil (API TCP native du firmware, lib officielle
-    `meshtastic`) — contrairement au mode MQTT, le firmware gère lui-même le PSK/PKI, comme le
-    fait l'appli officielle en WiFi local : aucun chiffrement fait maison ici. Limité en v1 aux
-    DM (envoi/réception) et à la réception de messages de canal — pas d'envoi sur un canal
-    précis : les canaux d'un vrai appareil sont déjà configurés dessus (PSK gérées par son
-    propre firmware), pas par CanalMeshtastic (pensé pour le mode MQTT logiciel)."""
+async def _executer_compagnon_interface_locale(django, compagnon, construire_interface, libelle_connexion):
+    """Factorise TCP et SERIE (voir les deux wrappers ci-dessous) : dans les deux cas un VRAI
+    appareil est joint directement via la lib officielle `meshtastic` (TCPInterface ou
+    SerialInterface, seule la construction diffère) — le firmware gère lui-même le PSK/PKI,
+    comme le fait l'appli officielle en WiFi local ou en USB : aucun chiffrement fait maison
+    ici, contrairement au mode MQTT. Limité en v1 aux DM (envoi/réception) et à la réception de
+    messages de canal — pas d'envoi sur un canal précis : les canaux d'un vrai appareil sont
+    déjà configurés dessus (PSK gérées par son propre firmware), pas par CanalMeshtastic
+    (pensé pour le mode MQTT logiciel)."""
     from pubsub import pub
-    from meshtastic.tcp_interface import TCPInterface
 
     boucle = asyncio.get_running_loop()
     file_a_planifier = asyncio.Queue()
@@ -664,7 +667,7 @@ async def _executer_compagnon_tcp(django, compagnon):
                 return
             boucle.call_soon_threadsafe(file_a_planifier.put_nowait, coro)
         except Exception:
-            logger.exception("Échec de traitement d'un paquet TCP entrant (%s).", compagnon["nom"])
+            logger.exception("Échec de traitement d'un paquet %s entrant (%s).", libelle_connexion, compagnon["nom"])
 
     def on_connection(interface, topic=None):
         if interface.myInfo is not None:
@@ -678,29 +681,53 @@ async def _executer_compagnon_tcp(django, compagnon):
     pub.subscribe(on_connection, "meshtastic.connection.established")
     pub.subscribe(on_lost, "meshtastic.connection.lost")
 
-    logger.info("Companion Meshtastic '%s' — connexion TCP locale à %s:%s...", compagnon["nom"], compagnon["tcp_host"], compagnon["tcp_port"])
-    iface = TCPInterface(hostname=compagnon["tcp_host"], portNumber=compagnon["tcp_port"])
+    iface = construire_interface()
 
-    async def boucle_envoi_dm_tcp():
+    async def boucle_envoi_dm():
         while True:
             try:
                 for message in await django.dm_a_envoyer(compagnon["id"]):
                     iface.sendText(message["contenu"], destinationId=message["contact_node_num"])
                     await django.marquer_dm(message["id"], "ENVOYE")
             except Exception:
-                logger.exception("Échec du cycle d'envoi des DM (TCP, %s).", compagnon["nom"])
+                logger.exception("Échec du cycle d'envoi des DM (%s, %s).", libelle_connexion, compagnon["nom"])
             await asyncio.sleep(POLL_INTERVAL_SECONDS)
 
     try:
         await asyncio.gather(
             boucle_execution_planifiee(file_a_planifier),
-            boucle_envoi_dm_tcp(),
+            boucle_envoi_dm(),
         )
     finally:
         pub.unsubscribe(on_receive, "meshtastic.receive")
         pub.unsubscribe(on_connection, "meshtastic.connection.established")
         pub.unsubscribe(on_lost, "meshtastic.connection.lost")
         iface.close()
+
+
+async def _executer_compagnon_tcp(django, compagnon):
+    from meshtastic.tcp_interface import TCPInterface
+
+    logger.info("Companion Meshtastic '%s' — connexion TCP locale à %s:%s...", compagnon["nom"], compagnon["tcp_host"], compagnon["tcp_port"])
+    await _executer_compagnon_interface_locale(
+        django, compagnon,
+        construire_interface=lambda: TCPInterface(hostname=compagnon["tcp_host"], portNumber=compagnon["tcp_port"]),
+        libelle_connexion="TCP",
+    )
+
+
+async def _executer_compagnon_serie(django, compagnon):
+    """Appareil branché en USB directement sur l'hôte du pont — cas d'un satellite Raspberry
+    Pi (voir satellite/docker-compose.yml). Même principe que TCP, voir
+    _executer_compagnon_interface_locale."""
+    from meshtastic.serial_interface import SerialInterface
+
+    logger.info("Companion Meshtastic '%s' — connexion série locale à %s...", compagnon["nom"], compagnon["serie_device"])
+    await _executer_compagnon_interface_locale(
+        django, compagnon,
+        construire_interface=lambda: SerialInterface(devPath=compagnon["serie_device"]),
+        libelle_connexion="série",
+    )
 
 
 async def _executer_compagnon_mqtt(django, compagnon):
