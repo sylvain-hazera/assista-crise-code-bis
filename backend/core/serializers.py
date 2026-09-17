@@ -2,7 +2,9 @@
 import json
 import os
 import re
+from django.conf import settings
 from django.db.models import Sum
+from django.utils import timezone
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from .auth_validation import InstitutionEmailValidator
@@ -45,6 +47,8 @@ from .models import (
     MessageMeshLog,
     CommandeMeshCore,
     RelaisMeshCore,
+    Satellite,
+    JetonEnrolementSatellite,
     CanalMeshCore,
     MessageCanalMeshCore,
     ContactMeshCore,
@@ -2862,5 +2866,42 @@ class MessageCanalMeshCoreSerializer(serializers.ModelSerializer):
         if not obj.expediteur_id:
             return None
         return f"{obj.expediteur.first_name} {obj.expediteur.last_name}".strip() or obj.expediteur.email
+
+
+class SatelliteSerializer(serializers.ModelSerializer):
+    institution_nom = serializers.CharField(source='institution.nom', read_only=True)
+    profil_libelle = serializers.CharField(source='get_profil_display', read_only=True)
+    statut_enrolement_libelle = serializers.CharField(source='get_statut_enrolement_display', read_only=True)
+    etat = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Satellite
+        fields = "__all__"
+        # compte_service n'est jamais écrivable depuis ce serializer : posé uniquement par
+        # SatelliteViewSet.valider (qui génère le compte de service et renvoie ses identifiants
+        # une seule fois dans sa propre réponse, jamais relisible ensuite) — jamais via un
+        # create/update générique sur ce endpoint.
+        read_only_fields = ['statut_enrolement', 'compte_service', 'dernier_contact']
+
+    def get_etat(self, obj):
+        # Actif/Inactif/Perdu dérivé de dernier_contact à la lecture (jamais stocké) — voir
+        # Satellite.__doc__ et les seuils SATELLITE_SEUIL_INACTIF_MINUTES/
+        # SATELLITE_SEUIL_PERDU_MINUTES (settings). None tant qu'aucun contact n'a encore eu
+        # lieu (satellite tout juste enrôlé, ou pas encore approuvé).
+        if obj.dernier_contact is None:
+            return None
+        silence_minutes = (timezone.now() - obj.dernier_contact).total_seconds() / 60
+        if silence_minutes > settings.SATELLITE_SEUIL_PERDU_MINUTES:
+            return "PERDU"
+        if silence_minutes > settings.SATELLITE_SEUIL_INACTIF_MINUTES:
+            return "INACTIF"
+        return "ACTIF"
+
+
+class JetonEnrolementSatelliteSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = JetonEnrolementSatellite
+        fields = ['id', 'institution', 'jeton', 'expiration', 'utilise', 'date_creation']
+        read_only_fields = fields
 
 

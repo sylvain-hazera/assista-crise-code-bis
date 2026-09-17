@@ -4332,3 +4332,91 @@ class MessageCanalMeshtastic(EnvironmentScopedModel):
     def __str__(self):
         return f"[{self.canal.nom}] {self.contenu[:40]}"
 
+
+class ProfilSatellite(models.TextChoices):
+    GW = "GW", "Passerelle uniquement"
+    FULL = "FULL", "Suite complète"
+
+
+class StatutEnrolementSatellite(models.TextChoices):
+    EN_ATTENTE = "EN_ATTENTE", "En attente de validation"
+    APPROUVE = "APPROUVE", "Approuvé"
+    REVOQUE = "REVOQUE", "Révoqué"
+
+
+class JetonEnrolementSatellite(EnvironmentScopedModel):
+    """Jeton court, à usage unique, permettant à un satellite (Raspberry Pi déployé sur site,
+    voir Satellite) de prendre contact une première fois avec le central — généré par un
+    administrateur/acteur institutionnel pour SON institution, communiqué hors-bande (affiché
+    à l'écran, saisi manuellement lors de l'installation du Pi). Ne sert qu'à créer l'entrée
+    Satellite (statut EN_ATTENTE, voir SatelliteViewSet.enroler) : les identifiants durables du
+    satellite (compte de service dédié) ne sont générés qu'après validation explicite d'un
+    administrateur, jamais à ce stade — double validation, même principe que le workflow
+    d'acceptation ACTEUR non-AUT_LOCALE (ImplicationInstitutionViewSet)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    institution = models.ForeignKey(
+        Institution, on_delete=models.CASCADE, related_name="jetons_enrolement_satellite",
+    )
+
+    jeton = models.CharField(max_length=64, unique=True)
+
+    expiration = models.DateTimeField()
+
+    utilise = models.BooleanField(default=False)
+
+    cree_par = models.ForeignKey(
+        "User", on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+    )
+
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Jeton enrôlement {self.institution.nom} ({'utilisé' if self.utilise else 'en attente'})"
+
+
+class Satellite(EnvironmentScopedModel):
+    """Boîtier déployé sur site (Raspberry Pi) hébergeant, selon son profil, le pont/proxy
+    MeshCore/Meshtastic local (GW) et/ou une instance assista-crise complète utilisable même
+    sans internet (FULL) — voir le cadrage "Chantier B" (plan). Initie toujours lui-même la
+    connexion sortante vers le central (jamais l'inverse, aucun port entrant à ouvrir sur le
+    site distant).
+
+    Pas de mécanisme de heartbeat séparé : `dernier_contact` est mis à jour par tout appel
+    authentifié réussi du satellite (voir SatelliteViewSet.contact, futur point d'entrée
+    commun des endpoints de synchronisation à venir) — c'est ce même champ, comparé aux seuils
+    `SATELLITE_SEUIL_INACTIF_MINUTES`/`SATELLITE_SEUIL_PERDU_MINUTES` (settings), qui dérive
+    l'état Actif/Inactif/Perdu exposé par le serializer (jamais stocké tel quel : recalculé à
+    la lecture, pour ne jamais avoir un état figé qui ment si personne ne l'a recalculé)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    institution = models.ForeignKey(Institution, on_delete=models.CASCADE, related_name="satellites")
+
+    nom = models.CharField(max_length=100)
+
+    profil = models.CharField(max_length=4, choices=ProfilSatellite.choices)
+
+    statut_enrolement = models.CharField(
+        max_length=12, choices=StatutEnrolementSatellite.choices,
+        default=StatutEnrolementSatellite.EN_ATTENTE,
+    )
+
+    # Compte de service dédié à CE satellite (jamais partagé) — créé uniquement à
+    # l'approbation (SatelliteViewSet.valider), authentifié en JWT par le satellite exactement
+    # comme le pont MeshCore le fait déjà auprès de l'API (voir meshcore-bridge/bridge.py:
+    # DjangoClient) : aucun nouveau mécanisme d'auth introduit ici.
+    compte_service = models.OneToOneField(
+        "User", on_delete=models.SET_NULL, null=True, blank=True, related_name="satellite",
+    )
+
+    dernier_contact = models.DateTimeField(null=True, blank=True)
+
+    version_logicielle = models.CharField(max_length=50, blank=True)
+
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.nom} ({self.institution.nom}) — {self.statut_enrolement}"
+

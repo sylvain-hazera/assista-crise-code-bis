@@ -147,6 +147,7 @@ from .models import (
     MeshCoreConnexionType, MeshtasticConnexionType,
     CompagnonMeshtastic, NoeudUtilisateurMeshtastic, MessageMeshtasticLog,
     CanalMeshtastic, MessageCanalMeshtastic, ContactMeshtastic,
+    Satellite, JetonEnrolementSatellite, ProfilSatellite, StatutEnrolementSatellite,
     AffectationPointBenevole, StatutAffectation,
     RecherchePersonne, RecherchePersonneCommentaire, Besoin, Notification, DossierParticipant,
     RecherchePersonneCommentairePhoto, RecherchePersonneLecture, RecherchePersonneLectureHistorique,
@@ -304,6 +305,8 @@ from .serializers import (
     MessageMeshLogSerializer,
     CommandeMeshCoreSerializer,
     RelaisMeshCoreSerializer,
+    SatelliteSerializer,
+    JetonEnrolementSatelliteSerializer,
     CanalMeshCoreSerializer,
     MessageCanalMeshCoreSerializer,
     ContactMeshCoreSerializer,
@@ -10631,3 +10634,168 @@ class ContactMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ReadOnlyM
         if compagnon_id:
             qs = qs.filter(compagnon_id=compagnon_id)
         return qs
+
+
+class SatelliteViewSet(
+    EnvironmentScopedViewSetMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet
+):
+    """Boîtiers déployés sur site (Raspberry Pi) — voir docstring du modèle Satellite et le
+    cadrage "Chantier B" (plan). Aucun create/update/destroy générique exposé (ListModelMixin/
+    RetrieveModelMixin seulement) : l'enrôlement se fait en 3 temps par les actions dédiées
+    ci-dessous — un acteur institutionnel génère un jeton pour son institution
+    (generer_jeton), le satellite le consomme pour créer sa propre entrée (enroler, AllowAny —
+    il n'a par définition aucun identifiant à ce stade), puis un acteur institutionnel valide
+    explicitement (valider) avant que le satellite reçoive un compte de service durable —
+    jamais de compte actif sans cette double validation, même principe que le workflow
+    d'acceptation ACTEUR non-AUT_LOCALE (ImplicationInstitutionViewSet)."""
+
+    queryset = Satellite.objects.select_related('institution', 'compte_service').all()
+    serializer_class = SatelliteSerializer
+
+    def get_permissions(self):
+        if self.action == 'enroler':
+            return [AllowAny()]
+        if self.action == 'contact':
+            return [permissions.IsAuthenticated()]
+        if self.action in ('generer_jeton', 'valider', 'revoquer'):
+            return [IsInstitutionalActor(), DenyInDemo()]
+        return [IsInstitutionalActor()]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if self.action == 'contact':
+            # Le contrôle d'identité se fait dans l'action elle-même (compte_service ==
+            # request.user) — le compte de service d'un satellite n'a volontairement aucun
+            # ContactInstitution (voir SatelliteViewSet.valider), donc le filtrage par
+            # institution ci-dessous l'exclurait à tort de sa PROPRE fiche.
+            return qs
+        if get_effective_role(self.request) == UserRole.ADMINISTRATOR:
+            return qs
+        mes_institutions = ContactInstitution.objects.filter(
+            utilisateur=self.request.user, actif=True
+        ).values_list('institution_id', flat=True)
+        return qs.filter(institution_id__in=mes_institutions)
+
+    @action(detail=False, methods=['post'], url_path='generer-jeton')
+    def generer_jeton(self, request):
+        institution = _resolve_institution_or_400(request)
+        if isinstance(institution, Response):
+            return institution
+        jeton = JetonEnrolementSatellite.objects.create(
+            institution=institution,
+            jeton=secrets.token_urlsafe(32),
+            expiration=timezone.now() + datetime.timedelta(hours=24),
+            cree_par=request.user,
+            environment=get_active_environment(request),
+        )
+        audit_log(
+            request=request, action_code="CREATION", objet_type="JetonEnrolementSatellite",
+            objet_id=jeton.id,
+            commentaire=f"Jeton d'enrôlement satellite généré pour {institution.nom}.",
+        )
+        return Response(JetonEnrolementSatelliteSerializer(jeton).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=['post'], url_path='enroler')
+    def enroler(self, request):
+        """Le satellite consomme le jeton reçu hors-bande pour créer sa propre entrée — AllowAny
+        car il n'a par définition aucun identifiant à ce stade (voir docstring de la classe)."""
+        jeton_valeur = request.data.get('jeton')
+        nom = request.data.get('nom')
+        profil = request.data.get('profil')
+        if not jeton_valeur or not nom or profil not in ProfilSatellite.values:
+            return Response(
+                {"error": "jeton, nom et profil (GW/FULL) sont requis."}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+        jeton = JetonEnrolementSatellite.objects.filter(jeton=jeton_valeur, utilise=False).first()
+        if not jeton or jeton.expiration < timezone.now():
+            return Response({"error": "Jeton invalide, déjà utilisé ou expiré."}, status=status.HTTP_400_BAD_REQUEST)
+
+        satellite = Satellite.objects.create(
+            institution=jeton.institution, nom=nom, profil=profil,
+            version_logicielle=request.data.get('version_logicielle', ''),
+            environment=jeton.environment,
+        )
+        jeton.utilise = True
+        jeton.save(update_fields=['utilise'])
+
+        return Response(
+            {"satellite_id": str(satellite.id), "statut_enrolement": satellite.statut_enrolement},
+            status=status.HTTP_201_CREATED,
+        )
+
+    @action(detail=True, methods=['post'], url_path='valider')
+    def valider(self, request, pk=None):
+        satellite = self.get_object()
+        if satellite.statut_enrolement != StatutEnrolementSatellite.EN_ATTENTE:
+            return Response(
+                {"error": "Ce satellite n'est pas en attente de validation."}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Compte de service dédié, jamais partagé — authentifié en JWT par le satellite
+        # exactement comme le pont MeshCore le fait déjà (meshcore-bridge/bridge.py:
+        # DjangoClient), aucun ContactInstitution créé (ce n'est pas un membre humain de
+        # l'institution, voir get_queryset ci-dessus).
+        mot_de_passe = secrets.token_urlsafe(24)
+        email_service = f"satellite-{satellite.id}@service.assista-crise.local"
+        compte_service = User.objects.create_user(
+            username=email_service, email=email_service, password=mot_de_passe,
+            type=UserRole.SIMPLE_USER, institution=satellite.institution,
+            enabled=True, is_active=True,
+        )
+        satellite.compte_service = compte_service
+        satellite.statut_enrolement = StatutEnrolementSatellite.APPROUVE
+        satellite.save(update_fields=['compte_service', 'statut_enrolement'])
+
+        audit_log(
+            request=request, action_code="MODIFICATION", objet_type="Satellite", objet_id=satellite.id,
+            commentaire=f"Satellite {satellite.nom} ({satellite.institution.nom}) approuvé — compte de service créé.",
+        )
+
+        return Response({
+            **SatelliteSerializer(satellite).data,
+            # Identifiants renvoyés UNE SEULE FOIS ici — le mot de passe n'est jamais stocké en
+            # clair (User.set_password via create_user) et n'est plus jamais relisible ensuite.
+            "identifiants_compte_service": {"email": email_service, "password": mot_de_passe},
+        })
+
+    @action(detail=True, methods=['post'], url_path='revoquer')
+    def revoquer(self, request, pk=None):
+        satellite = self.get_object()
+        if satellite.statut_enrolement == StatutEnrolementSatellite.REVOQUE:
+            return Response({"error": "Ce satellite est déjà révoqué."}, status=status.HTTP_400_BAD_REQUEST)
+
+        satellite.statut_enrolement = StatutEnrolementSatellite.REVOQUE
+        if satellite.compte_service:
+            satellite.compte_service.enabled = False
+            satellite.compte_service.is_active = False
+            satellite.compte_service.save(update_fields=['enabled', 'is_active'])
+        satellite.save(update_fields=['statut_enrolement'])
+
+        audit_log(
+            request=request, action_code="DESACTIVATION", objet_type="Satellite", objet_id=satellite.id,
+            commentaire=f"Satellite {satellite.nom} ({satellite.institution.nom}) révoqué.",
+        )
+        return Response(SatelliteSerializer(satellite).data)
+
+    @action(detail=True, methods=['post'], url_path='contact')
+    def contact(self, request, pk=None):
+        """Appelé périodiquement par le satellite lui-même (compte de service authentifié) —
+        met à jour dernier_contact, base de l'état Actif/Inactif/Perdu (voir
+        SatelliteSerializer.get_etat). Pas de heartbeat séparé : tout futur endpoint de
+        synchronisation de données devra faire de même (voir docstring du modèle)."""
+        satellite = self.get_object()
+        if satellite.compte_service_id != request.user.id:
+            raise PermissionDenied("Ce compte n'est pas le compte de service de ce satellite.")
+        if satellite.statut_enrolement != StatutEnrolementSatellite.APPROUVE:
+            raise PermissionDenied("Ce satellite n'est pas (ou plus) approuvé.")
+
+        satellite.dernier_contact = timezone.now()
+        update_fields = ['dernier_contact']
+        version = request.data.get('version_logicielle')
+        if version:
+            satellite.version_logicielle = version
+            update_fields.append('version_logicielle')
+        satellite.save(update_fields=update_fields)
+
+        return Response(SatelliteSerializer(satellite).data)

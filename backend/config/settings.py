@@ -276,6 +276,14 @@ SERVER_URL = os.environ.get(
 # purgées par `python manage.py purge_audit_logs` (principe de minimisation RGPD).
 AUDIT_LOG_RETENTION_DAYS = int(os.environ.get('AUDIT_LOG_RETENTION_DAYS', 30))
 
+# Seuils de dérivation de l'état Actif/Inactif/Perdu d'un Satellite (voir Satellite.etat,
+# core/serializers.py) à partir de `dernier_contact` — chaque appel authentifié réussi d'un
+# satellite (pas de heartbeat séparé) met à jour ce champ. Volontairement configurables plutôt
+# qu'en dur : le bon réglage dépendra du retour terrain, comme cela a été le cas pour
+# SILENCE_FIN_REPONSE côté proxy MeshCore.
+SATELLITE_SEUIL_INACTIF_MINUTES = int(os.environ.get('SATELLITE_SEUIL_INACTIF_MINUTES', 15))
+SATELLITE_SEUIL_PERDU_MINUTES = int(os.environ.get('SATELLITE_SEUIL_PERDU_MINUTES', 120))
+
 USE_X_FORWARDED_HOST = True
 
 SECURE_PROXY_SSL_HEADER = (
