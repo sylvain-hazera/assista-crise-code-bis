@@ -62,8 +62,12 @@ l'installation (utile pour un nœud resté en TCP plutôt que branché en série
 - **Scan TCP du port 5000** (port MeshCore par défaut) sur le sous-réseau local —
   protocole-agnostique, indépendant de toute annonce.
 
-Ne fait pas le handshake protocolaire de confirmation — réutilisable depuis
-`MeshLocalDetecterView` côté Django (`_detecter_meshcore_local`/`_detecter_meshtastic_local`).
+**Handshake protocolaire de confirmation** (ajouté le 2026-09-17, `confirmer_protocole_tcp`) :
+vraie connexion MeshCore puis Meshtastic sur chaque candidat (même technique que
+`MeshLocalDetecterView` côté Django) — dit si `ip:port` est vraiment MeshCore/Meshtastic, pas
+juste "quelque chose y écoute". Coûte plusieurs secondes réelles par candidat, désactivé par
+défaut dans `decouvrir_noeuds_lan()` (`confirmer=True` pour l'activer), mais utilisé par défaut
+par le CLI ci-dessous.
 
 ```bash
 python3 decouverte_lan.py

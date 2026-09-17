@@ -88,3 +88,82 @@ async def test_decouvrir_noeuds_lan_fusionne_et_deduplique(monkeypatch):
 def test_reseau_local_cidr_renvoie_un_reseau_slash_24_ou_none():
     resultat = decouverte_lan.reseau_local_cidr()
     assert resultat is None or resultat.endswith("/24")
+
+
+@pytest.mark.asyncio
+async def test_confirmer_protocole_tcp_meshcore_prioritaire(monkeypatch):
+    async def fake_meshcore(ip, port, delai):
+        return {"pubkey_hex": "abc"}
+    monkeypatch.setattr(decouverte_lan, "_confirmer_meshcore_tcp", fake_meshcore)
+    monkeypatch.setattr(decouverte_lan, "_confirmer_meshtastic_tcp", lambda ip, port, delai: (_ for _ in ()).throw(AssertionError("ne doit pas être appelé")))
+
+    resultat = await decouverte_lan.confirmer_protocole_tcp("10.0.0.5", 5000)
+
+    assert resultat == {"protocole": "meshcore", "pubkey_hex": "abc"}
+
+
+@pytest.mark.asyncio
+async def test_confirmer_protocole_tcp_bascule_sur_meshtastic(monkeypatch):
+    async def fake_meshcore(ip, port, delai):
+        return None
+    monkeypatch.setattr(decouverte_lan, "_confirmer_meshcore_tcp", fake_meshcore)
+    monkeypatch.setattr(decouverte_lan, "_confirmer_meshtastic_tcp", lambda ip, port, delai: {"node_num": 42})
+
+    resultat = await decouverte_lan.confirmer_protocole_tcp("10.0.0.5", 5000)
+
+    assert resultat == {"protocole": "meshtastic", "node_num": 42}
+
+
+@pytest.mark.asyncio
+async def test_confirmer_protocole_tcp_rien_ne_repond(monkeypatch):
+    async def fake_meshcore(ip, port, delai):
+        return None
+    monkeypatch.setattr(decouverte_lan, "_confirmer_meshcore_tcp", fake_meshcore)
+    monkeypatch.setattr(decouverte_lan, "_confirmer_meshtastic_tcp", lambda ip, port, delai: None)
+
+    assert await decouverte_lan.confirmer_protocole_tcp("10.0.0.5", 5000) is None
+
+
+@pytest.mark.asyncio
+async def test_decouvrir_noeuds_lan_avec_confirmation_peuple_le_protocole(monkeypatch):
+    async def fake_scanner_port_tcp(cidr=None, port=decouverte_lan.PORT_MESHCORE_DEFAUT, timeout=0.5, concurrence=64):
+        return ["10.0.0.5"]
+
+    def fake_decouvrir_mdns(duree_s=5.0):
+        return []
+
+    async def fake_confirmer(ip, port, delai=6):
+        return {"protocole": "meshcore", "pubkey_hex": "abc"}
+
+    monkeypatch.setattr(decouverte_lan, "scanner_port_tcp", fake_scanner_port_tcp)
+    monkeypatch.setattr(decouverte_lan, "decouvrir_mdns", fake_decouvrir_mdns)
+    monkeypatch.setattr(decouverte_lan, "confirmer_protocole_tcp", fake_confirmer)
+
+    resultats = await decouverte_lan.decouvrir_noeuds_lan(confirmer=True)
+
+    assert resultats[0]["protocole"] == "meshcore"
+    assert resultats[0]["pubkey_hex"] == "abc"
+
+
+@pytest.mark.asyncio
+async def test_decouvrir_noeuds_lan_ne_confirme_pas_un_proxy_deja_certain(monkeypatch):
+    async def fake_scanner_port_tcp(cidr=None, port=decouverte_lan.PORT_MESHCORE_DEFAUT, timeout=0.5, concurrence=64):
+        return []
+
+    def fake_decouvrir_mdns(duree_s=5.0):
+        return [{"nom": "ac-proxy._meshcore._tcp.local.", "ip": "10.0.0.9", "port": 5050, "role": "proxy"}]
+
+    appel = []
+
+    async def fake_confirmer(ip, port, delai=6):
+        appel.append(ip)
+        return None
+
+    monkeypatch.setattr(decouverte_lan, "scanner_port_tcp", fake_scanner_port_tcp)
+    monkeypatch.setattr(decouverte_lan, "decouvrir_mdns", fake_decouvrir_mdns)
+    monkeypatch.setattr(decouverte_lan, "confirmer_protocole_tcp", fake_confirmer)
+
+    resultats = await decouverte_lan.decouvrir_noeuds_lan(confirmer=True)
+
+    assert resultats[0]["protocole"] == "meshcore"
+    assert appel == []

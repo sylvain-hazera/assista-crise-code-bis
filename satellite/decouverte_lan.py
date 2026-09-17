@@ -11,10 +11,13 @@ méthodes complémentaires, ni l'une ni l'autre fiable seule :
   - Scan TCP du port 5000 (port MeshCore par défaut) sur le sous-réseau local : protocole-
     agnostique, plus lent mais ne dépend d'aucune annonce.
 
-Ne fait PAS le handshake protocolaire de confirmation (MeshCore vs Meshtastic vs rien du
-tout) — seulement une liste de candidats "quelque chose écoute ici". La confirmation
-réutilise la même logique que MeshLocalDetecterView côté Django (backend/core/views.py :
-_detecter_meshcore_local/_detecter_meshtastic_local), pas dupliquée ici."""
+Handshake protocolaire de confirmation disponible (voir confirmer_protocole_tcp,
+decouvrir_noeuds_lan(confirmer=True)) — désactivé par défaut dans decouvrir_noeuds_lan (coûte
+plusieurs secondes réelles par candidat), mais utilisé par défaut par le CLI (__main__) où
+l'attente est acceptable. Réutilise la même logique que MeshLocalDetecterView côté Django
+(backend/core/views.py : _detecter_meshcore_local/_detecter_meshtastic_local, déjà validées en
+conditions réelles), réécrite ici (pas un import direct : ce module tourne côté satellite,
+hors du process Django)."""
 import asyncio
 import ipaddress
 import logging
@@ -122,9 +125,16 @@ def decouvrir_mdns(duree_s=5.0):
     return trouves
 
 
-async def decouvrir_noeuds_lan(cidr=None, duree_mdns_s=5.0):
+async def decouvrir_noeuds_lan(cidr=None, duree_mdns_s=5.0, confirmer=False, delai_confirmation=6):
     """Combine mDNS + scan de port, dédoublonné par IP — un candidat trouvé par les deux
-    méthodes n'apparaît qu'une fois, avec `source` valant "mdns", "scan" ou "mdns+scan"."""
+    méthodes n'apparaît qu'une fois, avec `source` valant "mdns", "scan" ou "mdns+scan".
+
+    `confirmer=True` ajoute un vrai handshake protocolaire (voir confirmer_protocole_tcp) sur
+    chaque candidat dont le protocole n'est pas déjà connu (un ac_meshcore_proxy, `role=proxy`,
+    est déjà certain — pas la peine de le re-confirmer) : peuple `protocole` ("meshcore"/
+    "meshtastic"/None) au lieu de laisser "quelque chose écoute sur ce port" sans réponse.
+    Coûte du temps réel (`delai_confirmation` secondes par candidat par protocole essayé) —
+    désactivé par défaut, à activer explicitement une fois la liste de candidats déjà réduite."""
     loop = asyncio.get_running_loop()
     mdns_task = loop.run_in_executor(None, decouvrir_mdns, duree_mdns_s)
     scan_task = scanner_port_tcp(cidr)
@@ -141,13 +151,94 @@ async def decouvrir_noeuds_lan(cidr=None, duree_mdns_s=5.0):
             par_ip[ip]["source"] = "mdns+scan"
         else:
             par_ip[ip] = {"ip": ip, "port": PORT_MESHCORE_DEFAUT, "nom_mdns": None, "source": "scan", "role": None}
-    return sorted(par_ip.values(), key=lambda e: e["ip"])
+
+    resultats = sorted(par_ip.values(), key=lambda e: e["ip"])
+    if confirmer:
+        for candidat in resultats:
+            if candidat.get("role") == "proxy":
+                candidat["protocole"] = "meshcore"  # déjà certain, voir docstring
+                continue
+            identite = await confirmer_protocole_tcp(candidat["ip"], candidat["port"], delai=delai_confirmation)
+            candidat["protocole"] = identite["protocole"] if identite else None
+            if identite:
+                candidat.update({k: v for k, v in identite.items() if k != "protocole"})
+    return resultats
+
+
+async def confirmer_protocole_tcp(ip, port, delai=6):
+    """Handshake réel pour savoir si `ip:port` parle MeshCore ou Meshtastic — même technique
+    que MeshLocalDetecterView côté Django (backend/core/views.py :
+    _detecter_meshcore_local/_detecter_meshtastic_local, déjà validées en conditions réelles),
+    réécrite ici car ce module tourne côté satellite, hors du process Django. MeshCore d'abord
+    (async natif, plus rapide à écarter), Meshtastic ensuite (thread bloquant, la lib peut
+    attendre longtemps si l'appareil en face ne parle pas ce protocole)."""
+    meshcore_info = await _confirmer_meshcore_tcp(ip, port, delai)
+    if meshcore_info:
+        return {"protocole": "meshcore", **meshcore_info}
+    meshtastic_info = await loop_run_in_executor(_confirmer_meshtastic_tcp, ip, port, delai)
+    if meshtastic_info:
+        return {"protocole": "meshtastic", **meshtastic_info}
+    return None
+
+
+async def loop_run_in_executor(fonction, *args):
+    return await asyncio.get_running_loop().run_in_executor(None, fonction, *args)
+
+
+async def _confirmer_meshcore_tcp(ip, port, delai):
+    try:
+        from meshcore import MeshCore, EventType
+    except ImportError:
+        logger.warning("Lib meshcore non installée — confirmation MeshCore impossible.")
+        return None
+
+    async def _essai():
+        mc = await MeshCore.create_tcp(ip, port, default_timeout=delai)
+        try:
+            resultat = await mc.commands.send_appstart()
+            if resultat and resultat.type == EventType.SELF_INFO:
+                payload = resultat.payload or {}
+                pubkey = payload.get("public_key") or payload.get("pubkey")
+                if pubkey:
+                    return {"pubkey_hex": pubkey}
+        finally:
+            await mc.disconnect()
+        return None
+
+    try:
+        return await asyncio.wait_for(_essai(), timeout=delai + 2)
+    except Exception:
+        return None
+
+
+def _confirmer_meshtastic_tcp(ip, port, delai):
+    """Synchrone à dessein (la lib `meshtastic` bloque) — appelé via loop_run_in_executor pour
+    ne pas geler la boucle asyncio pendant potentiellement plusieurs secondes."""
+    try:
+        from meshtastic.tcp_interface import TCPInterface
+    except ImportError:
+        logger.warning("Lib meshtastic non installée — confirmation Meshtastic impossible.")
+        return None
+
+    resultat = {}
+    try:
+        iface = TCPInterface(hostname=ip, portNumber=port, timeout=delai)
+        try:
+            info = iface.myInfo
+            if info is not None and getattr(info, "my_node_num", None):
+                resultat["node_num"] = info.my_node_num
+        finally:
+            iface.close()
+    except Exception:
+        pass
+    return resultat if resultat.get("node_num") else None
 
 
 if __name__ == "__main__":
-    resultats = asyncio.run(decouvrir_noeuds_lan())
+    resultats = asyncio.run(decouvrir_noeuds_lan(confirmer=True))
     if not resultats:
         print("Aucun candidat trouvé sur le réseau local.")
     for candidat in resultats:
         etiquette = f" ({candidat['nom_mdns']})" if candidat["nom_mdns"] else ""
-        print(f"{candidat['ip']}:{candidat['port']}{etiquette} — {candidat['source']}")
+        protocole = candidat.get("protocole") or "non identifié"
+        print(f"{candidat['ip']}:{candidat['port']}{etiquette} — {candidat['source']} — {protocole}")
