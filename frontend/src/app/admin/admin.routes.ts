@@ -30,6 +30,7 @@ import { RessourcesMobiliseesComponent } from './ressources-mobilisees/ressource
 import { CriseDemarrageComponent } from './crise-demarrage/crise-demarrage.component';
 import { MeshcoreCompanionsComponent } from './meshcore-companions/meshcore-companions.component';
 import { SatellitesComponent } from './satellites/satellites.component';
+import { SupervisionPcCriseComponent } from './supervision-pc-crise/supervision-pc-crise.component';
 import { MeshcoreCanauxComponent } from './meshcore-canaux/meshcore-canaux.component';
 import { MeshtasticCompanionsComponent } from './meshtastic-companions/meshtastic-companions.component';
 import { MeshtasticCanauxComponent } from './meshtastic-canaux/meshtastic-canaux.component';
@@ -55,6 +56,7 @@ export const ADMIN_ROUTES: Routes = [
   { path: 'crises/:id/demarrage', component: CriseDemarrageComponent, canActivate: [institutionalEffectiveGuard] },
   { path: 'meshcore-companions', component: MeshcoreCompanionsComponent, canActivate: [institutionalEffectiveGuard] },
   { path: 'satellites', component: SatellitesComponent, canActivate: [institutionalEffectiveGuard] },
+  { path: 'supervision-pc-crise', component: SupervisionPcCriseComponent, canActivate: [institutionalEffectiveGuard] },
   { path: 'meshcore-canaux', component: MeshcoreCanauxComponent, canActivate: [institutionalEffectiveGuard] },
   { path: 'meshtastic-companions', component: MeshtasticCompanionsComponent, canActivate: [institutionalEffectiveGuard] },
   { path: 'meshtastic-canaux', component: MeshtasticCanauxComponent, canActivate: [institutionalEffectiveGuard] },

@@ -31,3 +31,24 @@ export interface IdentifiantsCompteServiceSatellite {
   email: string;
   password: string;
 }
+
+export interface ContactSecours {
+  nom: string;
+  fonction: string;
+  telephone: string | null;
+  email: string;
+}
+
+/** Une ligne = une crise active + une institution mairie/EPCI actrice (PC Crise) dans le
+ * périmètre de supervision du viewer (communes voisines -> préfecture) — voir
+ * SatelliteViewSet.supervision. */
+export interface LigneSupervision {
+  crise_id: string;
+  crise_nom: string;
+  institution_id: string;
+  institution_nom: string;
+  satellite_id: string | null;
+  satellite_etat: EtatSatellite;
+  satellite_dernier_contact: string | null;
+  contacts_secours: ContactSecours[];
+}

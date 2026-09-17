@@ -84,6 +84,7 @@ export class AdminLayoutComponent implements OnInit {
 
     // Boîtiers Raspberry Pi déployés sur site — voir le cadrage "Chantier B" (plan).
     { icon: 'router', label: 'Satellites', route: '/admin/satellites' },
+    { icon: 'visibility', label: 'Supervision PC Crise', route: '/admin/supervision-pc-crise' },
 
     { icon: 'link', label: 'Correspondances', route: '/admin/correspondances' },
 

@@ -32,6 +32,7 @@ import io
 import datetime
 import os
 import secrets
+import math
 import uuid
 import hashlib
 from django.core.files.base import ContentFile
@@ -10636,6 +10637,55 @@ class ContactMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ReadOnlyM
         return qs
 
 
+def _haversine_km(lat1, lon1, lat2, lon2):
+    rayon_terre_km = 6371.0
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlambda = math.radians(lon2 - lon1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
+    return 2 * rayon_terre_km * math.asin(math.sqrt(a))
+
+
+def _communes_visibles_supervision(request):
+    """Codes commune INSEE visibles par l'appelant pour la vue de supervision inter-
+    collectivités (voir SatelliteViewSet.supervision et le cadrage "Chantier B" section 5) —
+    plus large que filter_queryset_to_viewer_zone (limité à SA PROPRE zone) : une institution
+    EPCI/département/région voit automatiquement toutes ses communes membres (mêmes champs
+    dénormalisés que zone_scoping.py), une institution communale voit en plus les communes
+    proches (approximation par distance de centroïde — le référentiel Commune ne conserve pas
+    de géométrie précise, voir son docstring et SATELLITE_SUPERVISION_RAYON_LIMITROPHE_KM).
+    None = pas de filtre (administrateur, voit tout) ; ensemble vide = rien de visible (institution
+    sans commune connue) — jamais None par défaut faute de zone résolvable."""
+    if get_effective_role(request) == UserRole.ADMINISTRATOR:
+        return None
+    institution = getattr(request.user, 'institution', None)
+    if institution is None or not institution.commune_code:
+        return set()
+
+    niveau = institution.secteur_niveau_effectif
+    if niveau == 'epci' and institution.epci_code:
+        return set(Commune.objects.filter(epci_code=institution.epci_code).values_list('code', flat=True))
+    if niveau == 'departement' and institution.departement_code:
+        return set(Commune.objects.filter(departement_code=institution.departement_code).values_list('code', flat=True))
+    if niveau == 'region' and institution.region_code:
+        return set(Commune.objects.filter(region_code=institution.region_code).values_list('code', flat=True))
+    if niveau == 'commune':
+        propre = Commune.objects.filter(code=institution.commune_code).first()
+        visibles = {institution.commune_code}
+        if propre and propre.centre_latitude is not None and propre.centre_longitude is not None:
+            candidates = Commune.objects.filter(departement_code=propre.departement_code).exclude(
+                code=propre.code
+            ).exclude(centre_latitude__isnull=True).exclude(centre_longitude__isnull=True)
+            rayon = settings.SATELLITE_SUPERVISION_RAYON_LIMITROPHE_KM
+            for commune in candidates:
+                if _haversine_km(
+                    propre.centre_latitude, propre.centre_longitude, commune.centre_latitude, commune.centre_longitude
+                ) <= rayon:
+                    visibles.add(commune.code)
+        return visibles
+    return set()
+
+
 class SatelliteViewSet(
     EnvironmentScopedViewSetMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet
 ):
@@ -10799,3 +10849,54 @@ class SatelliteViewSet(
         satellite.save(update_fields=update_fields)
 
         return Response(SatelliteSerializer(satellite).data)
+
+    @action(detail=False, methods=['get'], url_path='supervision')
+    def supervision(self, request):
+        """Vue de supervision inter-collectivités (communes voisines -> préfecture) : pour
+        chaque crise active dans le périmètre du viewer (voir _communes_visibles_supervision),
+        l'état du/des PC Crise (satellite) de(s) institution(s) mairie/EPCI actrice(s), et les
+        contacts de secours de l'institution dès que ce PC Crise n'est pas Actif — cadrage
+        "Chantier B" section 5."""
+        communes_visibles = _communes_visibles_supervision(request)
+        crises_qs = Crisis.objects.filter(environment=get_active_environment(request), end_date__isnull=True)
+        if communes_visibles is None:
+            crises = list(crises_qs)
+        elif not communes_visibles:
+            crises = []
+        else:
+            crises = [c for c in crises_qs if any(code in communes_visibles for code in c.zone_communes)]
+
+        resultats = []
+        for crise in crises:
+            implications = ImplicationInstitution.objects.filter(
+                crise=crise, type_implication=TypeImplication.ACTEUR, statut=StatutImplication.VALIDEE,
+            ).select_related('institution', 'institution__type')
+            for implication in implications:
+                institution = implication.institution
+                if (institution.type.code or '').upper() not in ('MAIRIE', 'EPCI'):
+                    continue
+                satellite = Satellite.objects.filter(
+                    institution=institution, statut_enrolement=StatutEnrolementSatellite.APPROUVE,
+                ).order_by('-dernier_contact').first()
+                etat = SatelliteSerializer(satellite).data['etat'] if satellite else None
+                contacts = []
+                if etat != 'ACTIF':
+                    contacts = [
+                        {
+                            "nom": f"{c.utilisateur.first_name} {c.utilisateur.last_name}".strip() or c.utilisateur.email,
+                            "fonction": c.fonction,
+                            "telephone": c.utilisateur.phone_number,
+                            "email": c.utilisateur.email,
+                        }
+                        for c in ContactInstitution.objects.filter(institution=institution, actif=True)
+                        .select_related('utilisateur').order_by('-contact_principal')
+                    ]
+                resultats.append({
+                    "crise_id": str(crise.id), "crise_nom": crise.name,
+                    "institution_id": str(institution.id), "institution_nom": institution.nom,
+                    "satellite_id": str(satellite.id) if satellite else None,
+                    "satellite_etat": etat,
+                    "satellite_dernier_contact": satellite.dernier_contact if satellite else None,
+                    "contacts_secours": contacts,
+                })
+        return Response(resultats)

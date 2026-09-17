@@ -1,0 +1,58 @@
+.page-header {
+  margin-bottom: 1.2rem;
+
+  h2 { display: flex; align-items: center; gap: .6rem; margin: 0 0 .3rem; }
+  .page-hint { color: #6b7280; font-size: .9rem; margin: 0; max-width: 68ch; }
+}
+
+.crise-groupe {
+  margin-bottom: 2rem;
+
+  h3 { margin: 0 0 .6rem; font-size: 1.05rem; }
+}
+
+.table-wrapper { overflow-x: auto; }
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .88rem;
+
+  th, td {
+    text-align: left;
+    padding: .6rem .8rem;
+    border-bottom: 1px solid #f0f0f0;
+    vertical-align: top;
+  }
+  th {
+    color: #6b7280;
+    font-size: .74rem;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+  }
+}
+
+.statut {
+  padding: .2rem .6rem;
+  border-radius: 999px;
+  font-size: .78rem;
+  font-weight: 600;
+  white-space: nowrap;
+
+  &.statut-ok { background: #dcfce7; color: #15803d; }
+  &.statut-attention { background: #fef3c7; color: #92400e; }
+  &.statut-erreur { background: #fee2e2; color: #b91c1c; }
+  &.statut-inconnu { background: #f3f4f6; color: #6b7280; }
+}
+
+.contacts-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: .85em;
+
+  li { margin-bottom: .5rem; }
+  li:last-child { margin-bottom: 0; }
+}
+
+.error-message { color: #dc3545; margin-bottom: 1rem; }

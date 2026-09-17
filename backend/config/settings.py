@@ -284,6 +284,14 @@ AUDIT_LOG_RETENTION_DAYS = int(os.environ.get('AUDIT_LOG_RETENTION_DAYS', 30))
 SATELLITE_SEUIL_INACTIF_MINUTES = int(os.environ.get('SATELLITE_SEUIL_INACTIF_MINUTES', 15))
 SATELLITE_SEUIL_PERDU_MINUTES = int(os.environ.get('SATELLITE_SEUIL_PERDU_MINUTES', 120))
 
+# Rayon (km) utilisé par SatelliteViewSet.supervision pour approximer les communes
+# "limitrophes" d'une institution communale — le référentiel Commune ne conserve que des
+# centroïdes (voir Commune.__doc__), pas de géométrie précise, donc pas de vraie adjacence de
+# polygones possible ici : distance de centroïde à centroïde, candidates restreintes au même
+# département. Approximation assumée, à affiner si des géométries communales précises entrent
+# un jour en base.
+SATELLITE_SUPERVISION_RAYON_LIMITROPHE_KM = int(os.environ.get('SATELLITE_SUPERVISION_RAYON_LIMITROPHE_KM', 15))
+
 USE_X_FORWARDED_HOST = True
 
 SECURE_PROXY_SSL_HEADER = (

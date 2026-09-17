@@ -3,7 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 
 import { environment } from '../../environments/environment';
-import { Satellite, JetonEnrolementSatellite, IdentifiantsCompteServiceSatellite } from '../shared/models/satellite.model';
+import { Satellite, JetonEnrolementSatellite, IdentifiantsCompteServiceSatellite, LigneSupervision } from '../shared/models/satellite.model';
 
 @Injectable({ providedIn: 'root' })
 export class SatelliteService {
@@ -33,5 +33,13 @@ export class SatelliteService {
 
   revoquer(id: string): Observable<Satellite> {
     return this.http.post<Satellite>(`${this.url}/${id}/revoquer/`, {});
+  }
+
+  /** GET /api/satellites/supervision/ — crises actives dans le périmètre de supervision du
+   * viewer (communes voisines -> préfecture, EPCI/département/région voient automatiquement
+   * leurs communes membres) avec l'état du PC Crise de chaque institution actrice, et ses
+   * contacts de secours dès qu'il n'est pas Actif. */
+  supervision(): Observable<LigneSupervision[]> {
+    return this.http.get<LigneSupervision[]>(`${this.url}/supervision/`);
   }
 }

@@ -1,0 +1,63 @@
+<div class="page-header">
+  <h2>Supervision PC Crise</h2>
+  <p class="page-hint">
+    Communes voisines, EPCI, département et région voient ici l'état du poste de commandement
+    (satellite) des communes dans leur périmètre — pour repérer d'un coup d'œil lesquelles ont
+    perdu le contact pendant un événement large, et retrouver un contact humain de secours.
+  </p>
+</div>
+
+@if (errorMessage) {
+  <p class="error-message">{{ errorMessage }}</p>
+}
+
+@if (loading) {
+  <p class="page-hint">Chargement…</p>
+} @else if (groupes.length === 0) {
+  <p class="page-hint">Aucune crise active dans votre périmètre de supervision pour l'instant.</p>
+} @else {
+  @for (groupe of groupes; track groupe.crise_id) {
+    <div class="crise-groupe">
+      <h3>{{ groupe.crise_nom }}</h3>
+      <div class="table-wrapper">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Commune / Institution</th>
+              <th>PC Crise</th>
+              <th>Dernier contact</th>
+              <th>Contacts de secours</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (ligne of groupe.lignes; track ligne.institution_id) {
+              <tr>
+                <td>{{ ligne.institution_nom }}</td>
+                <td><span class="statut" [ngClass]="etatClass(ligne)">{{ etatLabel(ligne) }}</span></td>
+                <td>{{ ligne.satellite_dernier_contact ? (ligne.satellite_dernier_contact | date:'dd/MM/yyyy HH:mm') : '—' }}</td>
+                <td>
+                  @if (ligne.contacts_secours.length === 0) {
+                    <span class="page-hint">—</span>
+                  } @else {
+                    <ul class="contacts-list">
+                      @for (contact of ligne.contacts_secours; track contact.email) {
+                        <li>
+                          <strong>{{ contact.nom }}</strong>
+                          @if (contact.fonction) { <span> — {{ contact.fonction }}</span> }
+                          <br>
+                          @if (contact.telephone) { <span>{{ contact.telephone }}</span> }
+                          @if (contact.telephone && contact.email) { <span> · </span> }
+                          <span>{{ contact.email }}</span>
+                        </li>
+                      }
+                    </ul>
+                  }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  }
+}
