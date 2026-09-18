@@ -12,8 +12,8 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from core.models import (
-    Commune, ContactInstitution, Crisis, ImplicationInstitution, Institution, InstitutionType,
-    Satellite, StatutImplication, TypeImplication,
+    AuditAction, AuditLog, Commune, ContactInstitution, Crisis, ImplicationInstitution, Institution,
+    InstitutionType, Satellite, StatutImplication, TypeImplication,
 )
 
 
@@ -215,3 +215,41 @@ class TestContenuSupervision:
         assert len(ligne["contacts_secours"]) == 1
         assert ligne["contacts_secours"][0]["nom"] == "Jean Dupont"
         assert ligne["contacts_secours"][0]["telephone"] == "0600000000"
+
+    def test_derniere_activite_humaine_null_si_aucun_audit_log(
+        self, create_user, institution_a, institution_b, implication_a, crisis_a
+    ):
+        client, _ = _client_for(create_user, institution_b, "voisine-b-sansactivite@test.fr")
+        response = client.get(reverse('satellite-supervision'))
+        ligne = next(r for r in response.data if r["institution_id"] == str(institution_a.id))
+        assert ligne["derniere_activite_humaine"] is None
+
+    def test_derniere_activite_humaine_reflete_le_dernier_audit_log_de_l_institution(
+        self, create_user, institution_a, institution_b, implication_a, crisis_a
+    ):
+        """Distincte de satellite_dernier_contact (synchronisation machine) : la plus récente
+        ligne de main courante posée par n'importe quel membre de l'institution, tous objets
+        confondus (voir AuditTraceMiddleware, qui journalise même une simple consultation)."""
+        action = AuditAction.objects.get(code="LECTURE")
+        membre = create_user(username="membre-a@test.fr", email="membre-a@test.fr", institution=institution_a)
+
+        ancien = AuditLog.objects.create(
+            utilisateur=membre, institution=institution_a, action=action, objet_type="Crisis",
+        )
+        ancien.date_action = timezone.now() - datetime.timedelta(hours=3)
+        ancien.save(update_fields=["date_action"])
+
+        recent = AuditLog.objects.create(
+            utilisateur=membre, institution=institution_a, action=action, objet_type="Crisis",
+        )
+        recent.date_action = timezone.now() - datetime.timedelta(minutes=10)
+        recent.save(update_fields=["date_action"])
+
+        client, _ = _client_for(create_user, institution_b, "voisine-b-activite@test.fr")
+        response = client.get(reverse('satellite-supervision'))
+        ligne = next(r for r in response.data if r["institution_id"] == str(institution_a.id))
+
+        # response.data (client de test DRF) expose les valeurs Python brutes, pas encore
+        # sérialisées en JSON — un datetime reste un datetime, inutile de le reparser.
+        assert ligne["derniere_activite_humaine"] is not None
+        assert abs((ligne["derniere_activite_humaine"] - recent.date_action).total_seconds()) < 1

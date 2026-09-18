@@ -4,6 +4,10 @@
     Communes voisines, EPCI, département et région voient ici l'état du poste de commandement
     (satellite) des communes dans leur périmètre — pour repérer d'un coup d'œil lesquelles ont
     perdu le contact pendant un événement large, et retrouver un contact humain de secours.
+    « Dernier contact (satellite) » est une synchronisation machine, pas une preuve que quelqu'un
+    suit la crise — « Dernière activité (collectivité) » reflète une vraie action humaine sur la
+    plateforme (consultation ou modification, tous rôles confondus) et se signale en alerte
+    au-delà de 8h de silence.
   </p>
 </div>
 
@@ -25,7 +29,8 @@
             <tr>
               <th>Commune / Institution</th>
               <th>PC Crise</th>
-              <th>Dernier contact</th>
+              <th>Dernier contact (satellite)</th>
+              <th>Dernière activité (collectivité)</th>
               <th>Contacts de secours</th>
             </tr>
           </thead>
@@ -35,6 +40,14 @@
                 <td>{{ ligne.institution_nom }}</td>
                 <td><span class="statut" [ngClass]="etatClass(ligne)">{{ etatLabel(ligne) }}</span></td>
                 <td>{{ ligne.satellite_dernier_contact ? (ligne.satellite_dernier_contact | date:'dd/MM/yyyy HH:mm') : '—' }}</td>
+                <td>
+                  <span [class.activite-warning]="activiteWarning(ligne)">
+                    {{ ligne.derniere_activite_humaine ? (ligne.derniere_activite_humaine | date:'dd/MM/yyyy HH:mm') : 'Aucune activité connue' }}
+                  </span>
+                  @if (activiteWarning(ligne)) {
+                    <span class="material-icons warning-icon" title="Aucune activité humaine détectée depuis plus de 8h sur cette collectivité">warning</span>
+                  }
+                </td>
                 <td>
                   @if (ligne.contacts_secours.length === 0) {
                     <span class="page-hint">—</span>

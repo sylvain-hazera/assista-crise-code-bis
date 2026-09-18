@@ -11405,6 +11405,23 @@ class SatelliteViewSet(
             crises = [c for c in crises_qs if any(code in communes_visibles for code in c.zone_communes)]
 
         resultats = []
+        # Dernière activité HUMAINE (distincte du dernier contact SATELLITE ci-dessus, qui n'est
+        # qu'une synchronisation machine) : dernière ligne de main courante (AuditLog) posée par
+        # n'importe quel utilisateur de cette institution, tous objets confondus — pas restreint
+        # à CETTE crise précise, car la quasi-totalité des requêtes de consultation (LECTURE,
+        # voir AuditTraceMiddleware) ne portent pas de `crise` explicite ; ça resterait un
+        # indicateur honnête de "quelqu'un de cette collectivité utilise la plateforme en ce
+        # moment", ce qui est le besoin exprimé, plutôt qu'un traçage précis par crise. Mis en
+        # cache par institution le temps de la requête : plusieurs crises peuvent partager la
+        # même institution actrice.
+        cache_derniere_activite = {}
+
+        def derniere_activite_humaine(institution):
+            if institution.id not in cache_derniere_activite:
+                dernier_log = AuditLog.objects.filter(institution=institution).order_by('-date_action').first()
+                cache_derniere_activite[institution.id] = dernier_log.date_action if dernier_log else None
+            return cache_derniere_activite[institution.id]
+
         for crise in crises:
             implications = ImplicationInstitution.objects.filter(
                 crise=crise, type_implication=TypeImplication.ACTEUR, statut=StatutImplication.VALIDEE,
@@ -11435,6 +11452,7 @@ class SatelliteViewSet(
                     "satellite_id": str(satellite.id) if satellite else None,
                     "satellite_etat": etat,
                     "satellite_dernier_contact": satellite.dernier_contact if satellite else None,
+                    "derniere_activite_humaine": derniere_activite_humaine(institution),
                     "contacts_secours": contacts,
                 })
         return Response(resultats)

@@ -69,4 +69,20 @@ export class SupervisionPcCriseComponent implements OnInit {
     if (ligne.satellite_etat === 'PERDU') return 'Perdu';
     return 'Pas de satellite';
   }
+
+  // Seuil d'alerte "personne ne suit visiblement cette crise" — toutes les crises listées ici
+  // sont ouvertes par construction (voir SatelliteViewSet.supervision, filtre end_date__isnull),
+  // donc pas besoin de vérifier ce point en plus : seule l'ancienneté de l'activité compte.
+  private static readonly SEUIL_ALERTE_HEURES = 8;
+
+  /** Vrai si personne de cette institution n'a d'activité récente sur la plateforme (aucune
+   * ligne de main courante depuis SEUIL_ALERTE_HEURES) — pas une "session navigateur ouverte"
+   * au sens strict (l'authentification JWT de ce projet ne garde aucune notion de session
+   * serveur), mais le meilleur proxy disponible : une personne qui consulte ou modifie quoi que
+   * ce soit sur le site laisse une trace récente, voir derniere_activite_humaine. */
+  activiteWarning(ligne: LigneSupervision): boolean {
+    if (!ligne.derniere_activite_humaine) return true;
+    const heures = (Date.now() - new Date(ligne.derniere_activite_humaine).getTime()) / 3_600_000;
+    return heures >= SupervisionPcCriseComponent.SEUIL_ALERTE_HEURES;
+  }
 }
