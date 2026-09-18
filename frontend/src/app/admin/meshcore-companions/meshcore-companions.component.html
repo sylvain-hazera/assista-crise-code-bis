@@ -103,24 +103,27 @@
 @if (loading) {
   <p>Chargement…</p>
 } @else {
+  <div class="table-toolbar">
+    <input type="text" class="form-input" placeholder="Rechercher un companion (nom, adresse)…" [(ngModel)]="companionRecherche">
+  </div>
   <div class="table-wrapper">
     <table class="data-table">
       <thead>
         <tr>
-          <th>Nom</th>
+          <th class="sortable" (click)="trierCompagnons('nom')">Nom {{ indicateurTri(companionTri, 'nom', companionDirection) }}</th>
           <th>Type</th>
           <th>Adresse</th>
           <th>Position</th>
           <th>Région</th>
           <th>Statut</th>
-          <th>Dernière connexion</th>
+          <th class="sortable" (click)="trierCompagnons('derniere_connexion')">Dernière connexion {{ indicateurTri(companionTri, 'derniere_connexion', companionDirection) }}</th>
           <th>ID (pour COMPAGNON_ID)</th>
           <th>Advert</th>
           <th></th>
         </tr>
       </thead>
       <tbody>
-        @for (c of companions; track c.id) {
+        @for (c of companionsAffiches; track c.id) {
           <tr>
             <td>{{ c.nom }}</td>
             <td>{{ c.connexion_type }}</td>
@@ -160,29 +163,55 @@
   </div>
 }
 
-<h2>Relais MeshCore</h2>
+<h2>Répéteurs &amp; infrastructure MeshCore</h2>
 <p class="page-hint">
-  Infrastructure pure — un relais ne se pilote pas. Sa position est importée et tenue à jour
-  automatiquement dès qu'il apparaît, avec ses coordonnées GPS, dans le répertoire du
-  companion (synchronisé régulièrement par le service-pont).
+  Répéteurs, room servers et capteurs détectés — infrastructure pure, jamais attribuable à un
+  compte utilisateur (voir "Nœuds MeshCore des comptes utilisateurs" ci-dessous pour les
+  companions personnels). Position, dernier contact, sauts et région dès que connus,
+  synchronisés régulièrement par le service-pont. Une ligne sans position (ex: room server sans
+  module GPS) peut ne jamais afficher de coordonnées, ça reste normal — le nombre de sauts
+  reste vide (« — ») tant qu'aucun message n'a encore été routé via ce nœud (le firmware ne le
+  connaît qu'après un chemin réellement confirmé, pas juste une annonce reçue directement) ; la
+  région, elle, n'est jamais devinée automatiquement — c'est une étiquette libre à poser à la
+  main ci-dessous.
 </p>
+
+<div class="table-toolbar">
+  <input type="text" class="form-input" placeholder="Rechercher (nom, clé publique, région)…" [(ngModel)]="infraRecherche">
+</div>
 
 <div class="table-wrapper">
   <table class="data-table">
     <thead>
-      <tr><th>Nom</th><th>Latitude</th><th>Longitude</th><th>Actif</th><th></th></tr>
+      <tr>
+        <th class="sortable" (click)="trierInfrastructure('nom')">Nom {{ indicateurTri(infraTri, 'nom', infraDirection) }}</th>
+        <th>Rôle</th>
+        <th>Position</th>
+        <th class="sortable" (click)="trierInfrastructure('dernierContact')">Dernier contact {{ indicateurTri(infraTri, 'dernierContact', infraDirection) }}</th>
+        <th class="sortable" (click)="trierInfrastructure('nombreSauts')">Sauts {{ indicateurTri(infraTri, 'nombreSauts', infraDirection) }}</th>
+        <th>Région</th>
+        <th>Actif</th>
+        <th></th>
+      </tr>
     </thead>
     <tbody>
-      @for (r of relais; track r.id) {
+      @for (l of lignesInfrastructure; track l.id) {
         <tr>
-          <td>{{ r.nom }}</td>
-          <td class="mono">{{ r.latitude }}</td>
-          <td class="mono">{{ r.longitude }}</td>
-          <td>{{ r.actif ? 'Oui' : 'Non' }}</td>
-          <td><button type="button" class="btn-danger-sm" (click)="supprimerRelais(r)">Supprimer</button></td>
+          <td>{{ l.nom }}</td>
+          <td>{{ l.typeLabel }}</td>
+          <td class="mono">{{ (l.latitude != null && l.longitude != null) ? (l.latitude | number:'1.4-4') + ', ' + (l.longitude | number:'1.4-4') : '—' }}</td>
+          <td>{{ l.dernierContact ? (l.dernierContact | date:'short') : '—' }}</td>
+          <td>{{ l.nombreSauts != null ? l.nombreSauts : '—' }}</td>
+          <td>{{ l.regionTag || '—' }}</td>
+          <td>{{ l.actif == null ? '—' : (l.actif ? 'Oui' : 'Non') }}</td>
+          <td>
+            @if (l.relaisId) {
+              <button type="button" class="btn-danger-sm" (click)="supprimerLigneInfrastructure(l)">Supprimer</button>
+            }
+          </td>
         </tr>
       } @empty {
-        <tr><td colspan="5" class="empty">Aucun relais détecté pour l'instant.</td></tr>
+        <tr><td colspan="8" class="empty">Aucun répéteur ni infrastructure détecté pour l'instant.</td></tr>
       }
     </tbody>
   </table>
@@ -212,7 +241,7 @@
 
 @if (contactsDisponibles.length > 0) {
   <div class="table-wrapper">
-    <h3>Nœuds détectés, pas encore attribués</h3>
+    <h3>Companions personnels détectés, pas encore attribués</h3>
     <table class="data-table">
       <thead>
         <tr><th>Nom annoncé</th><th>Rôle</th><th>Clé publique</th><th>Dernier contact</th><th>Sauts</th><th>Région</th><th>Attribuer à…</th><th></th></tr>
