@@ -1,0 +1,240 @@
+<div class="legal-page">
+  <div class="legal-wrapper">
+    <h1>Convention de sous-traitance (article 28 du RGPD)</h1>
+    <p class="legal-updated">Version du {{ version }}</p>
+
+    <div class="legal-notice legal-notice-warning">
+      <span class="material-icons">warning</span>
+      <p>
+        <strong>[À valider avant publication]</strong> Ce texte est construit à partir des
+        clauses contractuelles types proposées par la CNIL pour la sous-traitance (article 28.3
+        du RGPD), adaptées au fonctionnement réel de la plateforme. Il n'a pas été relu par un
+        juriste. Les délais et engagements chiffrés (notification de violation, restitution des
+        données...) sont des propositions raisonnables, pas des valeurs négociées — à confirmer
+        avant tout déploiement au-delà d'un usage expérimental. Voir aussi notre
+        <a routerLink="/rgpd">politique de confidentialité</a> (section 1), qui pose le modèle
+        général (chaque collectivité = responsable de traitement, {{ contactNom }} =
+        sous-traitant).
+      </p>
+    </div>
+
+    <section>
+      <h2>Préambule</h2>
+      <p>
+        La présente convention est conclue entre :
+      </p>
+      <ul>
+        <li>
+          <strong>La collectivité utilisatrice</strong> (mairie, EPCI, service de secours) qui
+          active un compte institutionnel sur la plateforme Assista Crise — ci-après le
+          <strong>« responsable de traitement »</strong> ;
+        </li>
+        <li>
+          <strong>{{ contactNom }}</strong>, {{ contactAdresse }},
+          <a [href]="'mailto:' + contactEmail">{{ contactEmail }}</a>, qui développe et héberge
+          la plateforme — ci-après le <strong>« sous-traitant »</strong>.
+        </li>
+      </ul>
+      <p>
+        L'acceptation de cette convention, au moment de l'activation du compte de la
+        collectivité, vaut signature électronique des deux parties au sens des présentes.
+      </p>
+    </section>
+
+    <section>
+      <h2>I. Objet</h2>
+      <p>
+        La présente convention a pour objet de définir les conditions dans lesquelles le
+        sous-traitant s'engage à effectuer, pour le compte du responsable de traitement, les
+        opérations de traitement de données à caractère personnel définies ci-après.
+      </p>
+    </section>
+
+    <section>
+      <h2>II. Description du traitement faisant l'objet de la sous-traitance</h2>
+      <ul>
+        <li>
+          <strong>Prestation à l'origine de la sous-traitance</strong> : mise à disposition et
+          hébergement de la plateforme Assista Crise, utilisée par le responsable de traitement
+          pour coordonner la réponse à une ou plusieurs crises sur son territoire.
+        </li>
+        <li>
+          <strong>Nature des opérations réalisées</strong> : collecte, enregistrement,
+          conservation, consultation, modification et suppression des données décrites
+          ci-dessous, via les fonctionnalités de la plateforme utilisées par le responsable de
+          traitement ou soumises directement par des citoyens sur son territoire.
+        </li>
+        <li>
+          <strong>Finalité(s)</strong> : coordination opérationnelle de la réponse à une crise
+          (demandes d'aide, offres d'aide, signalements, déclarations "je suis en sécurité",
+          recherches de personnes évacuées, gestion des équipes et des missions) — voir le détail
+          par fonctionnalité dans notre <a routerLink="/rgpd">politique de confidentialité</a>
+          (section 2).
+        </li>
+        <li>
+          <strong>Catégories de données à caractère personnel traitées</strong> : identité,
+          coordonnées (email, téléphone), localisation, photographies, composition du foyer,
+          indicateur de régime alimentaire spécifique, commentaires saisis par les personnes
+          concernées ou par les opérateurs de la collectivité, données relatives à une personne
+          recherchée (photographie, description physique). Le sous-traitant n'a pas connaissance
+          de données de santé, d'appartenance religieuse ou d'opinion politique au sens de
+          l'article 9 du RGPD en tant que telles ; ces catégories peuvent néanmoins apparaître de
+          façon incidente dans un champ de commentaire libre (voir la politique de
+          confidentialité, section 2), auquel cas les obligations propres à l'article 9
+          s'appliquent au responsable de traitement.
+        </li>
+        <li>
+          <strong>Catégories de personnes concernées</strong> : citoyens du territoire de la
+          collectivité sollicitant ou proposant de l'aide, signalant un événement, se déclarant
+          en sécurité ou recherchés ; agents, élus et bénévoles de la collectivité utilisant la
+          plateforme.
+        </li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>III. Durée</h2>
+      <p>
+        La présente convention prend effet à la date d'acceptation par le responsable de
+        traitement, lors de l'activation de son compte, et reste applicable tant que la
+        collectivité dispose d'un compte actif sur la plateforme. Elle peut être résiliée à tout
+        moment par la suppression du compte, sans préjudice des obligations de conservation ou de
+        restitution des données prévues à l'article IV.12.
+      </p>
+    </section>
+
+    <section>
+      <h2>IV. Obligations du sous-traitant</h2>
+      <p>Le sous-traitant s'engage à :</p>
+      <ol>
+        <li>
+          traiter les données uniquement pour la ou les finalités qui font l'objet de la
+          sous-traitance (article II) ;
+        </li>
+        <li>
+          traiter les données conformément aux instructions documentées du responsable de
+          traitement, telles qu'exprimées par son utilisation normale de la plateforme
+          (paramétrage d'une crise, gestion des accès, clôture d'une crise) — s'il considère
+          qu'une instruction constitue une violation du RGPD, en informer immédiatement le
+          responsable de traitement ;
+        </li>
+        <li>
+          garantir la confidentialité des données à caractère personnel traitées dans le cadre de
+          la présente convention ;
+        </li>
+        <li>
+          veiller à ce que toute personne autorisée à traiter les données dans le cadre de la
+          présente convention s'engage à la confidentialité ou soit soumise à une obligation
+          légale de confidentialité appropriée ;
+        </li>
+        <li>
+          prendre en compte, s'agissant de ses outils, produits, applications ou services, les
+          principes de protection des données dès la conception et de protection des données par
+          défaut ;
+        </li>
+        <li>
+          <strong>ne recourir à aucun sous-traitant ultérieur sans l'autorisation préalable,
+          écrite, spécifique ou générale, du responsable de traitement.</strong> À ce jour, le
+          sous-traitant n'a recours à aucun sous-traitant ultérieur : l'hébergement est assuré
+          directement par lui-même (voir nos <a routerLink="/mentions-legales">mentions
+          légales</a>). Si un sous-traitant ultérieur devait être introduit, le responsable de
+          traitement en serait informé préalablement par écrit, avec la faculté de s'y opposer ;
+        </li>
+        <li>
+          <strong>information des personnes concernées</strong> : le responsable de traitement
+          est en charge de fournir l'information aux personnes concernées au moment de la
+          collecte de leurs données — le sous-traitant met à disposition, sur chaque formulaire
+          concerné, une mention d'information avec un lien vers la politique de confidentialité
+          (voir <code>app-rgpd-notice</code>) ;
+        </li>
+        <li>
+          assister le responsable de traitement pour répondre aux demandes d'exercice des droits
+          des personnes concernées (accès, rectification, effacement, limitation, opposition,
+          portabilité) dans les meilleurs délais suivant la réception d'une demande transmise par
+          le responsable de traitement ;
+        </li>
+        <li>
+          notifier au responsable de traitement toute violation de données à caractère personnel
+          dans un délai maximum de <strong>72 heures</strong> après en avoir eu connaissance, en
+          fournissant, dans la mesure du possible, une description de la nature de la violation,
+          les catégories et le nombre approximatif de personnes concernées, les conséquences
+          probables et les mesures prises ou proposées pour y remédier ;
+        </li>
+        <li>
+          assister le responsable de traitement dans la réalisation d'analyses d'impact relatives
+          à la protection des données, le cas échéant, ainsi que dans la consultation préalable de
+          la CNIL qui pourrait en résulter ;
+        </li>
+        <li>
+          mettre en œuvre les mesures de sécurité décrites dans notre
+          <a routerLink="/rgpd">politique de confidentialité</a> (section 8) : connexion
+          exclusivement chiffrée (HTTPS), mots de passe stockés de façon irréversible, accès aux
+          données de contact et de localisation précises restreints par rôle, sauvegardes de la
+          base de données conservées avec des droits d'accès restreints ;
+        </li>
+        <li>
+          au choix du responsable de traitement à la fin de la relation contractuelle, détruire
+          ou lui restituer les données à caractère personnel de ses crises, dans un délai
+          raisonnable suivant la désactivation du compte, sauf obligation légale de conservation
+          plus longue ;
+        </li>
+        <li>
+          communiquer au responsable de traitement les coordonnées du délégué à la protection des
+          données du sous-traitant, indiquées dans notre <a routerLink="/rgpd">politique de
+          confidentialité</a> (section 1) ;
+        </li>
+        <li>
+          tenir un registre des catégories d'activités de traitement réalisées pour le compte du
+          responsable de traitement ;
+        </li>
+        <li>
+          mettre à la disposition du responsable de traitement la documentation nécessaire pour
+          démontrer le respect de l'ensemble de ses obligations et pour permettre la réalisation
+          d'audits, y compris des inspections, menés par le responsable de traitement ou un
+          auditeur qu'il a mandaté, moyennant un préavis raisonnable.
+        </li>
+      </ol>
+    </section>
+
+    <section>
+      <h2>V. Obligations du responsable de traitement</h2>
+      <p>Le responsable de traitement s'engage à :</p>
+      <ol>
+        <li>fournir au sous-traitant les données décrites à l'article II ;</li>
+        <li>
+          documenter par écrit toute instruction concernant le traitement des données par le
+          sous-traitant (paramétrage d'une crise, gestion des accès de ses agents) ;
+        </li>
+        <li>
+          veiller, au préalable et pendant toute la durée du traitement, au respect des
+          obligations prévues par le RGPD de la part du sous-traitant ;
+        </li>
+        <li>
+          superviser le traitement, y compris réaliser les audits et les inspections auprès du
+          sous-traitant.
+        </li>
+      </ol>
+    </section>
+
+    <section>
+      <h2>VI. Sort des données et fin de la convention</h2>
+      <p>
+        À la fin de la relation contractuelle (désactivation du compte de la collectivité), le
+        sous-traitant, selon le choix exprimé par le responsable de traitement, détruit ou
+        restitue l'ensemble des données à caractère personnel traitées pour son compte. La
+        restitution s'accompagne de la destruction de toute copie existant dans les systèmes du
+        sous-traitant, sauf obligation légale de conservation contraire.
+      </p>
+    </section>
+
+    <section>
+      <h2>VII. Responsabilité et droit applicable</h2>
+      <p>
+        Chaque partie est responsable des dommages causés par un manquement à ses obligations au
+        titre du RGPD et de la présente convention. Les présentes sont soumises au droit
+        français ; à défaut de résolution amiable, les tribunaux français compétents seront seuls
+        saisis.
+      </p>
+    </section>
+  </div>
+</div>

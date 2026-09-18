@@ -2121,6 +2121,16 @@ class InstitutionSerializer(
         model = Institution
 
         fields = "__all__"
+        # Jamais assignables directement par le payload entrant (create/update) : ces 3 champs ne
+        # doivent être posés que par _traiter_acceptation_convention (backend/core/views.py), pour
+        # qu'un payload de création/édition d'institution ne puisse pas se déclarer lui-même
+        # "convention déjà acceptée" et contourner ainsi la case à cocher obligatoire — voir
+        # core/convention_sous_traitance.py.
+        read_only_fields = [
+            "convention_sous_traitance_acceptee_le",
+            "convention_sous_traitance_acceptee_par",
+            "convention_sous_traitance_version",
+        ]
 
     def to_representation(self, instance):
         # Une VRAIE institution (email/téléphone réels) reste visible en DEMO (voir

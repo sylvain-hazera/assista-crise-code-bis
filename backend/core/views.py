@@ -240,6 +240,50 @@ def send_institution_account_email(request, user):
     )
 
 
+def _traiter_acceptation_convention(request, institution, user):
+    """Appelée APRÈS avoir résolu/créé l'institution mais AVANT le rattachement effectif de
+    l'utilisateur (attach_user_with_role) — voir UserViewSet.confirmer_institution/
+    creer_mon_institution (ce dernier dans un bloc transaction.atomic() : lève une
+    ValidationError plutôt que de renvoyer une Response, pour que Django annule aussi la
+    création de l'institution qui vient d'avoir lieu si la convention est refusée — jamais
+    d'institution "orpheline" créée sans qu'aucune convention n'ait été acceptée pour elle)."""
+    from .convention_sous_traitance import CONVENTION_VERSION, construire_texte_convention, institution_necessite_convention
+
+    if not institution_necessite_convention(institution):
+        return
+    if request.data.get('convention_acceptee') is not True:
+        raise ValidationError({
+            "convention_acceptee": "Vous devez accepter la convention de sous-traitance (RGPD, "
+                                    "article 28) pour activer un compte mairie/EPCI/service de "
+                                    "secours — voir /convention-sous-traitance.",
+        })
+
+    maintenant = timezone.now()
+    institution.convention_sous_traitance_acceptee_le = maintenant
+    institution.convention_sous_traitance_acceptee_par = user
+    institution.convention_sous_traitance_version = CONVENTION_VERSION
+    institution.save(update_fields=[
+        'convention_sous_traitance_acceptee_le', 'convention_sous_traitance_acceptee_par',
+        'convention_sous_traitance_version',
+    ])
+    audit_log(
+        request=request, action_code="MODIFICATION", objet_type="Institution", objet_id=institution.id,
+        commentaire=f"Convention de sous-traitance RGPD (v{CONVENTION_VERSION}) acceptée par "
+                    f"{user.email} au nom de {institution.nom}.",
+    )
+
+    texte = construire_texte_convention(institution, user, maintenant, settings.SERVER_URL)
+    send_mail_logged(
+        request,
+        subject=f"Convention de sous-traitance RGPD — {institution.nom}",
+        message=texte,
+        from_email=None,
+        recipient_list=[user.email],
+        fail_silently=False,
+    )
+    return None
+
+
 def send_crisis_regulateur_invite_email(request, user, crisis, institution):
     activation_link = build_magic_link(request, user, "activate-account")
     login_link = build_magic_link(request, user, "magic-login")
@@ -1249,8 +1293,14 @@ class UserViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         institution = find_institution_for_pending_user(user, request)
+        from .convention_sous_traitance import institution_necessite_convention
         return Response({
             "institution": InstitutionSerializer(institution, context=self.get_serializer_context()).data if institution else None,
+            # True si cette institution doit encore accepter la convention de sous-traitance
+            # RGPD (voir _traiter_acceptation_convention) — permet au frontend de n'afficher la
+            # case à cocher que quand elle est réellement requise (jamais si déjà acceptée par
+            # un membre précédent de la même institution).
+            "convention_requise": institution_necessite_convention(institution),
             # Pour préremplir le formulaire de création si rien n'est trouvé (voir
             # creer_mon_institution) — ces champs sont write_only sur UserSerializer, donc pas
             # récupérables autrement par le frontend une fois soumis à l'inscription.
@@ -1280,6 +1330,7 @@ class UserViewSet(viewsets.ModelViewSet):
                 {"error": "Aucune institution trouvée — utilisez creer_mon_institution pour la créer."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        _traiter_acceptation_convention(request, institution, user)
         try:
             attach_user_with_role(user, institution, role_code, request)
         except ValueError as exc:
@@ -1302,22 +1353,29 @@ class UserViewSet(viewsets.ModelViewSet):
         if not role_code:
             return Response({"error": "role_code est requis."}, status=status.HTTP_400_BAD_REQUEST)
 
-        institution_serializer = InstitutionSerializer(data=request.data, context=self.get_serializer_context())
-        institution_serializer.is_valid(raise_exception=True)
-        institution = institution_serializer.save(environment=get_active_environment(request))
-        audit_log(
-            request=request,
-            action_code="CREATION",
-            objet_type="Institution",
-            objet_id=institution.id,
-            commentaire=f"Création institution par {user.email} lors de la finalisation d'inscription : {institution.nom}",
-        )
-
+        # transaction.atomic() : si la convention de sous-traitance est refusée (ValidationError
+        # levée par _traiter_acceptation_convention) ou que le rattachement échoue, la création
+        # de l'institution ci-dessous est annulée elle aussi — jamais d'institution "orpheline"
+        # créée (nom unique déjà "consommé") sans qu'aucun membre n'ait pu s'y rattacher.
         try:
-            attach_user_with_role(
-                user, institution, role_code, request,
-                fonction='Créateur', contact_principal=True,
-            )
+            with transaction.atomic():
+                institution_serializer = InstitutionSerializer(data=request.data, context=self.get_serializer_context())
+                institution_serializer.is_valid(raise_exception=True)
+                institution = institution_serializer.save(environment=get_active_environment(request))
+                audit_log(
+                    request=request,
+                    action_code="CREATION",
+                    objet_type="Institution",
+                    objet_id=institution.id,
+                    commentaire=f"Création institution par {user.email} lors de la finalisation d'inscription : {institution.nom}",
+                )
+
+                _traiter_acceptation_convention(request, institution, user)
+
+                attach_user_with_role(
+                    user, institution, role_code, request,
+                    fonction='Créateur', contact_principal=True,
+                )
         except ValueError as exc:
             return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 

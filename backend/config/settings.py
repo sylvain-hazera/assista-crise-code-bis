@@ -317,6 +317,16 @@ SATELLITE_ID = os.environ.get('SATELLITE_ID', '')
 SATELLITE_EMAIL = os.environ.get('SATELLITE_EMAIL', '')
 SATELLITE_PASSWORD = os.environ.get('SATELLITE_PASSWORD', '')
 
+# Identité du sous-traitant pour le corps de l'email envoyé à l'acceptation de la convention de
+# sous-traitance RGPD (voir core/convention_sous_traitance.py) — mêmes coordonnées que /rgpd et
+# /mentions-legales côté frontend (protégées d'une lecture directe côté client, mais un email
+# adressé nommément à son destinataire n'a pas cette contrainte : le contenu doit être lisible).
+CONVENTION_SOUS_TRAITANT_NOM = os.environ.get('CONVENTION_SOUS_TRAITANT_NOM', 'Sylvain HAZERA')
+CONVENTION_SOUS_TRAITANT_ADRESSE = os.environ.get(
+    'CONVENTION_SOUS_TRAITANT_ADRESSE', '5 place Gabriel Fauré, 33200 Bordeaux',
+)
+CONVENTION_SOUS_TRAITANT_EMAIL = os.environ.get('CONVENTION_SOUS_TRAITANT_EMAIL', 'contact@assista-crise.fr')
+
 USE_X_FORWARDED_HOST = True
 
 SECURE_PROXY_SSL_HEADER = (

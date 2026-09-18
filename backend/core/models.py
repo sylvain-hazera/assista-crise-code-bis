@@ -1265,6 +1265,21 @@ class Institution(EnvironmentScopedModel):
         auto_now_add=True
     )
 
+    # Convention de sous-traitance RGPD (article 28) — voir core/convention_sous_traitance.py
+    # et frontend/.../convention-sous-traitance. Exigée une seule fois PAR INSTITUTION (pas par
+    # utilisateur : la convention lie la collectivité en tant que personne morale, un second
+    # membre qui la rejoint ensuite n'a pas à re-signer) au moment où le PREMIER compte
+    # "Autorité locale" (mairie/EPCI/SDIS) rejoint ou crée cette institution — voir
+    # UserViewSet.confirmer_institution/creer_mon_institution. `convention_version` mémorise le
+    # texte réellement accepté (voir CONVENTION_VERSION) pour ne jamais prétendre couvrir une
+    # future révision sans nouvelle acceptation explicite.
+    convention_sous_traitance_acceptee_le = models.DateTimeField(null=True, blank=True)
+    convention_sous_traitance_acceptee_par = models.ForeignKey(
+        "User", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="conventions_sous_traitance_acceptees",
+    )
+    convention_sous_traitance_version = models.CharField(max_length=10, blank=True)
+
     def __str__(self):
         return self.nom
 

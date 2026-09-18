@@ -1,7 +1,7 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 
 import { UserService } from '../../../services/user.service';
 import { RoleOperationnelService } from '../../../services/role-operationnel.service';
@@ -10,6 +10,11 @@ import { RoleOperationnel, InstitutionType } from '../../../shared/models/instit
 import { AuthService } from '../../services/auth.service';
 
 type Etape = 'chargement' | 'confirmation' | 'creation' | 'erreur';
+
+// Codes de type d'institution pour lesquels la convention de sous-traitance RGPD (article 28)
+// est exigée à l'activation — voir CODES_TYPES_COLLECTIVITE (backend/core/
+// convention_sous_traitance.py), à garder synchronisé.
+const CODES_TYPES_COLLECTIVITE = ['mairie', 'epci', 'sdis'];
 
 /**
  * Écran affiché juste après l'activation d'un compte "Autorité locale" (mairie, préfecture,
@@ -23,7 +28,7 @@ type Etape = 'chargement' | 'confirmation' | 'creation' | 'erreur';
 @Component({
   selector: 'app-completer-inscription',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule],
+  imports: [CommonModule, ReactiveFormsModule, RouterLink],
   templateUrl: './completer-inscription.component.html',
   styleUrl: './completer-inscription.component.scss',
 })
@@ -35,6 +40,12 @@ export class CompleterInscriptionComponent implements OnInit {
   institutionTrouvee: { id: string; nom: string; type_libelle?: string | null } | null = null;
   roles: RoleOperationnel[] = [];
   institutionTypes: InstitutionType[] = [];
+
+  // Convention de sous-traitance RGPD (article 28) : côté "confirmation", connu directement par
+  // institutionSuggestion (l'institution est déjà déterminée) ; côté "création", recalculé à
+  // chaque changement de type sélectionné (voir onTypeChange).
+  conventionRequisePourConfirmation = false;
+  conventionRequisePourCreation = false;
 
   roleForm!: FormGroup;
   creationForm!: FormGroup;
@@ -49,7 +60,10 @@ export class CompleterInscriptionComponent implements OnInit {
   ) {}
 
   ngOnInit(): void {
-    this.roleForm = this.fb.group({ role_code: ['', Validators.required] });
+    this.roleForm = this.fb.group({
+      role_code: ['', Validators.required],
+      convention_acceptee: [false],
+    });
     this.creationForm = this.fb.group({
       nom: ['', [Validators.required, Validators.minLength(2)]],
       type: [null, Validators.required],
@@ -60,14 +74,21 @@ export class CompleterInscriptionComponent implements OnInit {
       commune_code: [''],
       commune_nom: [''],
       role_code: ['', Validators.required],
+      convention_acceptee: [false],
     });
 
+    this.creationForm.get('type')!.valueChanges.subscribe(() => this.onTypeChange());
+
     this.roleService.getAll().subscribe(roles => this.roles = roles);
-    this.institutionTypeService.getAll().subscribe(types => this.institutionTypes = types);
+    this.institutionTypeService.getAll().subscribe(types => {
+      this.institutionTypes = types;
+      this.onTypeChange();
+    });
 
     this.userService.institutionSuggestion().subscribe({
       next: (res) => {
         this.institutionTrouvee = res.institution;
+        this.conventionRequisePourConfirmation = res.convention_requise;
         if (res.institution) {
           this.etape = 'confirmation';
         } else {
@@ -86,6 +107,17 @@ export class CompleterInscriptionComponent implements OnInit {
     });
   }
 
+  /** Recalcule si le type sélectionné dans creationForm exige la convention de sous-traitance
+   * RGPD (mairie/EPCI/SDIS) — appelé au changement de type et une fois les types chargés. */
+  private onTypeChange(): void {
+    const typeId = this.creationForm?.get('type')?.value;
+    const type = this.institutionTypes.find(t => t.id === typeId);
+    this.conventionRequisePourCreation = !!type && CODES_TYPES_COLLECTIVITE.includes(type.code.toLowerCase());
+    if (!this.conventionRequisePourCreation) {
+      this.creationForm.patchValue({ convention_acceptee: false }, { emitEvent: false });
+    }
+  }
+
   /** Bascule vers la création si, finalement, l'institution proposée n'est pas la bonne. */
   passerALaCreation(): void {
     this.etape = 'creation';
@@ -96,15 +128,21 @@ export class CompleterInscriptionComponent implements OnInit {
       this.roleForm.markAllAsTouched();
       return;
     }
+    if (this.conventionRequisePourConfirmation && !this.roleForm.value.convention_acceptee) {
+      this.errorMessage = "Vous devez accepter la convention de sous-traitance pour continuer.";
+      return;
+    }
     this.submitting = true;
     this.errorMessage = '';
-    this.userService.confirmerInstitution(this.roleForm.value.role_code).subscribe({
+    this.userService.confirmerInstitution(
+      this.roleForm.value.role_code, this.roleForm.value.convention_acceptee,
+    ).subscribe({
       next: () => {
         this.authService.fetchMe().subscribe(() => this.router.navigate(['/accueil']));
       },
       error: (err) => {
         this.submitting = false;
-        this.errorMessage = err.error?.error || "Impossible de confirmer ce rattachement.";
+        this.errorMessage = err.error?.error || err.error?.convention_acceptee || "Impossible de confirmer ce rattachement.";
       },
     });
   }
@@ -112,6 +150,10 @@ export class CompleterInscriptionComponent implements OnInit {
   creer(): void {
     if (this.creationForm.invalid) {
       this.creationForm.markAllAsTouched();
+      return;
+    }
+    if (this.conventionRequisePourCreation && !this.creationForm.value.convention_acceptee) {
+      this.errorMessage = "Vous devez accepter la convention de sous-traitance pour continuer.";
       return;
     }
     this.submitting = true;
@@ -122,7 +164,7 @@ export class CompleterInscriptionComponent implements OnInit {
       },
       error: (err) => {
         this.submitting = false;
-        this.errorMessage = err.error?.error || err.error?.nom?.[0] || "Impossible de créer cette institution.";
+        this.errorMessage = err.error?.error || err.error?.convention_acceptee || err.error?.nom?.[0] || "Impossible de créer cette institution.";
       },
     });
   }

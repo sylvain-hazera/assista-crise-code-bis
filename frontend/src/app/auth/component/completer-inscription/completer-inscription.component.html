@@ -35,6 +35,17 @@
             </select>
           </div>
 
+          @if (conventionRequisePourConfirmation) {
+            <div class="form-group form-check">
+              <label>
+                <input type="checkbox" formControlName="convention_acceptee">
+                J'accepte, au nom de cette institution, la
+                <a routerLink="/convention-sous-traitance" target="_blank">convention de sous-traitance RGPD</a>
+                (article 28).
+              </label>
+            </div>
+          }
+
           @if (errorMessage) {
             <p class="error-message">{{ errorMessage }}</p>
           }
@@ -105,6 +116,17 @@
               }
             </select>
           </div>
+
+          @if (conventionRequisePourCreation) {
+            <div class="form-group form-check">
+              <label>
+                <input type="checkbox" formControlName="convention_acceptee">
+                J'accepte, au nom de cette institution, la
+                <a routerLink="/convention-sous-traitance" target="_blank">convention de sous-traitance RGPD</a>
+                (article 28).
+              </label>
+            </div>
+          }
 
           @if (errorMessage) {
             <p class="error-message">{{ errorMessage }}</p>

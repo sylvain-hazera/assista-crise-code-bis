@@ -115,6 +115,11 @@ export const PUBLIC_ROUTES: Routes = [
           .then(m => m.MentionsLegalesComponent)
       },
       {
+        path: 'convention-sous-traitance',
+        loadComponent: () => import('./legal/convention-sous-traitance/convention-sous-traitance.component')
+          .then(m => m.ConventionSousTraitanceComponent)
+      },
+      {
         path: 'cgu',
         loadComponent: () => import('./legal/cgu/cgu.component')
           .then(m => m.CguComponent)

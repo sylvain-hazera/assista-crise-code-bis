@@ -249,7 +249,9 @@ class TestInstitutionAutoAttachment:
         assert suggestion_response.data["institution"]["id"] == str(institution.id)
 
         confirm_response = api_client.post(
-            reverse('user-confirmer-institution'), {"role_code": "REGULATEUR"}, format='json',
+            reverse('user-confirmer-institution'),
+            {"role_code": "REGULATEUR", "convention_acceptee": True},
+            format='json',
         )
 
         assert confirm_response.status_code == status.HTTP_200_OK
@@ -283,7 +285,11 @@ class TestInstitutionAutoAttachment:
         # confirmer_institution) refuserait un second appel avec 400 — reproduit volontairement
         # côté serveur pour vérifier qu'aucun doublon n'est possible même en cas de double-clic
         # côté client avant que l'UI ait eu le temps de se mettre à jour.
-        api_client.post(reverse('user-confirmer-institution'), {"role_code": "RESPONSABLE"}, format='json')
+        api_client.post(
+            reverse('user-confirmer-institution'),
+            {"role_code": "RESPONSABLE", "convention_acceptee": True},
+            format='json',
+        )
         second_response = api_client.post(reverse('user-confirmer-institution'), {"role_code": "RESPONSABLE"}, format='json')
 
         assert second_response.status_code == status.HTTP_400_BAD_REQUEST
@@ -315,6 +321,7 @@ class TestInstitutionAutoAttachment:
                 "nom": "Mairie Créée Par Elle-Même",
                 "type": str(institution_type.id),
                 "role_code": "RESPONSABLE",
+                "convention_acceptee": True,
             }, format='json')
 
         assert create_response.status_code == status.HTTP_201_CREATED
@@ -375,7 +382,11 @@ class TestInstitutionAutoAttachment:
         activation_response = self._activate_and_authenticate(api_client, user)
         assert activation_response.data["user"]["needs_institution_setup"] is True
 
-        api_client.post(reverse('user-confirmer-institution'), {"role_code": "RESPONSABLE"}, format='json')
+        api_client.post(
+            reverse('user-confirmer-institution'),
+            {"role_code": "RESPONSABLE", "convention_acceptee": True},
+            format='json',
+        )
         me_response = api_client.get(reverse('auth_me'))
         assert me_response.data["needs_institution_setup"] is False
 

@@ -71,6 +71,10 @@ export class UserService {
    * créer soi-même, voir creerMonInstitution). */
   institutionSuggestion(): Observable<{
     institution: { id: string; nom: string; type_libelle?: string | null } | null;
+    // True si l'institution retrouvée (mairie/EPCI/SDIS) doit encore accepter la convention de
+    // sous-traitance RGPD (voir /convention-sous-traitance) — jamais si déjà acceptée par un
+    // membre précédent de la même institution, voir UserViewSet.institution_suggestion.
+    convention_requise: boolean;
     pending_institution_name: string | null;
     pending_commune_name: string | null;
     pending_commune_code: string | null;
@@ -79,18 +83,24 @@ export class UserService {
   }
 
   /** POST /api/users/confirmer-institution/ — rattache le compte connecté à l'institution
-   * retrouvée par institutionSuggestion, avec le rôle choisi. */
-  confirmerInstitution(roleCode: string): Observable<User> {
-    return this.http.post<User>(`${this.apiUrl}/users/confirmer-institution/`, { role_code: roleCode });
+   * retrouvée par institutionSuggestion, avec le rôle choisi. `conventionAcceptee` n'est exigé
+   * que si institutionSuggestion a renvoyé `convention_requise: true` (voir
+   * _traiter_acceptation_convention côté backend, qui renvoie 400 sinon). */
+  confirmerInstitution(roleCode: string, conventionAcceptee = false): Observable<User> {
+    return this.http.post<User>(`${this.apiUrl}/users/confirmer-institution/`, {
+      role_code: roleCode,
+      convention_acceptee: conventionAcceptee,
+    });
   }
 
   /** POST /api/users/creer-mon-institution/ — quand institutionSuggestion ne renvoie rien :
    * crée l'institution (mêmes champs que le formulaire admin) et y rattache le compte connecté
-   * comme créateur, avec le rôle choisi. */
+   * comme créateur, avec le rôle choisi. `convention_acceptee` n'est exigé que si le type choisi
+   * est mairie/EPCI/SDIS (voir CODES_TYPES_COLLECTIVITE côté backend). */
   creerMonInstitution(data: {
     nom: string; type: string; description?: string; telephone?: string;
     email?: string; adresse?: string; commune_code?: string; commune_nom?: string;
-    role_code: string;
+    role_code: string; convention_acceptee?: boolean;
   }): Observable<User> {
     return this.http.post<User>(`${this.apiUrl}/users/creer-mon-institution/`, data);
   }
