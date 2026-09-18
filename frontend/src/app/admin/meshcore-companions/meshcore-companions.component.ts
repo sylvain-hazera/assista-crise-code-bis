@@ -105,12 +105,15 @@ export class MeshcoreCompanionsComponent implements OnInit {
     this.contactService.getAll().subscribe(data => { this.contacts = data; });
   }
 
-  /** Contacts de type Companion, pas encore associés à un compte — c'est ce qui alimente le
-   * sélecteur de l'étape « Associer un nœud » ci-dessous, à la place d'une saisie manuelle de
-   * clé publique. Répertoire déjà tenu par le firmware, synchronisé par le pont — voir
-   * bridge.py, boucle_contacts. */
+  /** Contacts pas encore associés à un compte, tous rôles confondus (companion/répéteur/room
+   * server/capteur — décision utilisateur du 2026-09-18 : la visibilité "dernier contact" doit
+   * couvrir tout le mesh, pas seulement les companions personnels) — alimente à la fois la
+   * vue de supervision et le sélecteur de l'étape « Associer un nœud » ci-dessous (attribuer
+   * un rôle non-COMPANION à un utilisateur n'a pas vraiment de sens, mais rester un seul
+   * tableau plutôt que d'en dupliquer un second identique était le choix retenu). Répertoire
+   * déjà tenu par le firmware, synchronisé par le pont — voir bridge.py, boucle_contacts. */
   get contactsDisponibles(): ContactMeshCore[] {
-    return this.contacts.filter(c => c.type_contact === 'COMPANION' && !c.deja_associe);
+    return this.contacts.filter(c => !c.deja_associe);
   }
 
 
@@ -187,6 +190,14 @@ export class MeshcoreCompanionsComponent implements OnInit {
         this.attribuingContactId = null;
       },
     });
+  }
+
+  typeContactLabel(type: ContactMeshCore['type_contact']): string {
+    const libelles: Record<ContactMeshCore['type_contact'], string> = {
+      COMPANION: 'Companion', REPEATER: 'Répéteur', ROOM: 'Room server',
+      SENSOR: 'Capteur', INCONNU: 'Inconnu',
+    };
+    return libelles[type] ?? type;
   }
 
   ajouterNoeud(): void {

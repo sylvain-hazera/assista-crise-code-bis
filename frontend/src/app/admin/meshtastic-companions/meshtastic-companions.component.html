@@ -233,7 +233,7 @@
     <h3>Nœuds détectés, pas encore attribués</h3>
     <table class="data-table">
       <thead>
-        <tr><th>Nom annoncé</th><th>node_num</th><th>Clé publique</th><th>Attribuer à…</th><th></th></tr>
+        <tr><th>Nom annoncé</th><th>node_num</th><th>Clé publique</th><th>Dernier contact</th><th>Attribuer à…</th><th></th></tr>
       </thead>
       <tbody>
         @for (c of contactsDisponibles; track c.id) {
@@ -241,6 +241,7 @@
             <td>{{ c.long_name || c.short_name || '—' }}</td>
             <td class="mono">{{ nodeNumHex(c.node_num) }}</td>
             <td>{{ c.public_key_hex ? 'Oui (PKI possible)' : 'Non (PSK canal seulement)' }}</td>
+            <td>{{ c.dernier_advert ? (c.dernier_advert | date:'short') : '—' }}</td>
             <td>
               <select [(ngModel)]="attributionsParContact[c.id]">
                 <option value="">— Utilisateur —</option>

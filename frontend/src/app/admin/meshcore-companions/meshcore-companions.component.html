@@ -192,13 +192,15 @@
     <h3>Nœuds détectés, pas encore attribués</h3>
     <table class="data-table">
       <thead>
-        <tr><th>Nom annoncé</th><th>Clé publique</th><th>Attribuer à…</th><th></th></tr>
+        <tr><th>Nom annoncé</th><th>Rôle</th><th>Clé publique</th><th>Dernier contact</th><th>Attribuer à…</th><th></th></tr>
       </thead>
       <tbody>
         @for (c of contactsDisponibles; track c.id) {
           <tr>
             <td>{{ c.nom || '—' }}</td>
+            <td>{{ typeContactLabel(c.type_contact) }}</td>
             <td class="mono">{{ c.pubkey_hex.slice(0, 16) }}…</td>
+            <td>{{ c.dernier_advert ? (c.dernier_advert | date:'short') : '—' }}</td>
             <td>
               <select [(ngModel)]="attributionsParContact[c.id]">
                 <option value="">— Utilisateur —</option>
