@@ -234,6 +234,34 @@ services:
     restart: unless-stopped
     profiles: ["full"]
 
+  # Sens inverse de sync-sortant : applique localement le rafraîchissement central -> local
+  # pour Dossier/Mission (voir backend/core/management/commands/synchroniser_entrant.py) — un
+  # objet avec une écriture locale encore EN_ATTENTE est ignoré (jamais écrasé silencieusement),
+  # et un conflit déjà tranché côté central (ConflitSynchronisationViewSet.resoudre) redescend
+  # enfin vers la copie locale au passage suivant. Crisis/Request/Offer/Information (aussi
+  # renvoyés par /donnees/) restent hors périmètre de cette commande, voir sa docstring.
+  sync-entrant:
+    build: ../backend
+    command: ["sh", "-c", "while true; do python manage.py synchroniser_entrant; sleep ${SATELLITE_SYNC_ENTRANT_INTERVALLE_S:-300}; done"]
+    environment:
+      - DB_HOST=db
+      - DB_NAME=assista-db
+      - DB_USER=${DB_USER}
+      - DB_PASS=${DB_PASS}
+      - SECRET_KEY=${SECRET_KEY}
+      - SATELLITE_CENTRAL_URL=${CENTRAL_URL:-https://assista-crise.fr}
+      - SATELLITE_ID=${SATELLITE_ID}
+      - SATELLITE_EMAIL=${SATELLITE_EMAIL}
+      - SATELLITE_PASSWORD=${SATELLITE_PASSWORD}
+      # SANS INSTANCE_SATELLITE_LOCALE : ce conteneur ne doit jamais peupler la file sortante
+      # lui-même (le marqueur _synchronisation_entrante suffirait déjà à l'empêcher, voir
+      # sync_outbox.py, mais autant ne pas dépendre uniquement de ce garde-fou applicatif).
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles: ["full"]
+
   # Permet à un satellite GW SÉPARÉ sur le même site (modèle à 2 Pi) de trouver ce backend
   # local sans IP configurée à la main — voir satellite/annoncer_backend_local.py et
   # resoudre_url_locale côté pont. --network host pour la même raison que meshcore-proxy plus

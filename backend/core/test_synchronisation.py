@@ -4,6 +4,7 @@ settings.INSTANCE_SATELLITE_LOCALE) et SatelliteViewSet.synchroniser (applicatio
 central, upsert pour les modèles append-only, détection de conflit pour les modèles mutables
 Dossier/Mission via `modifie_le`)."""
 import pytest
+from django.apps import apps as django_apps
 from django.contrib.gis.geos import Point
 from django.core.management import call_command
 from django.urls import reverse
@@ -11,6 +12,7 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient
 
+from core.management.commands.synchroniser_entrant import appliquer_objet_mutable
 from core.models import (
     ContactInstitution, ConflitSynchronisation, Crisis, Dossier, DossierCommentaire,
     EtatEvenementSynchronisation, EvenementSynchronisation, Institution, InstitutionType,
@@ -353,3 +355,117 @@ class TestCommandeSynchroniserSortant:
 
         ev.refresh_from_db()
         assert ev.etat == "EN_ATTENTE"
+
+
+@pytest.mark.django_db
+class TestDonneesIncluDossierEtMission:
+    def test_dossiers_et_missions_presents_avec_modifie_le(self, satellite_client, satellite, dossier):
+        response = satellite_client.get(reverse('satellite-donnees', args=[satellite.id]))
+        assert response.status_code == status.HTTP_200_OK
+        dossiers = {d["id"]: d for d in response.data["dossiers"]}
+        assert str(dossier.id) in dossiers
+        item = dossiers[str(dossier.id)]
+        assert item["modifie_le"] == dossier.modifie_le.isoformat()
+        assert item["environment"] == dossier.environment
+        assert "missions" in response.data
+
+
+@pytest.mark.django_db
+class TestAppliquerObjetMutable:
+    def test_met_a_jour_avec_le_modifie_le_central_pas_maintenant(self, dossier):
+        modifie_le_central = "2020-01-01T00:00:00+00:00"
+        resultat = appliquer_objet_mutable(django_apps.get_model, "Dossier", {
+            "id": str(dossier.id), "modifie_le": modifie_le_central, "statut": "EN_COURS",
+        })
+        assert resultat == "applique"
+        dossier.refresh_from_db()
+        assert dossier.statut == "EN_COURS"
+        assert dossier.modifie_le.isoformat() == modifie_le_central
+
+    def test_ne_declenche_pas_loutbox_meme_avec_le_reglage_actif(self, dossier, settings):
+        settings.INSTANCE_SATELLITE_LOCALE = True
+        EvenementSynchronisation.objects.all().delete()
+        appliquer_objet_mutable(django_apps.get_model, "Dossier", {
+            "id": str(dossier.id), "modifie_le": "2020-01-01T00:00:00+00:00", "statut": "RESOLU",
+        })
+        assert EvenementSynchronisation.objects.count() == 0
+
+    def test_ignore_si_ecriture_locale_en_attente(self, dossier):
+        EvenementSynchronisation.objects.create(
+            modele="Dossier", objet_id=dossier.id, action="MODIFICATION",
+            payload={"statut": "AFFECTE"}, etat=EtatEvenementSynchronisation.EN_ATTENTE,
+        )
+        resultat = appliquer_objet_mutable(django_apps.get_model, "Dossier", {
+            "id": str(dossier.id), "modifie_le": "2020-01-01T00:00:00+00:00", "statut": "RESOLU",
+        })
+        assert resultat == "ignore_local_en_attente"
+        dossier.refresh_from_db()
+        assert dossier.statut != "RESOLU"
+
+    def test_efface_un_conflit_deja_tranche_localement(self, dossier):
+        EvenementSynchronisation.objects.create(
+            modele="Dossier", objet_id=dossier.id, action="MODIFICATION",
+            payload={"statut": "AFFECTE"}, etat=EtatEvenementSynchronisation.CONFLIT,
+        )
+        appliquer_objet_mutable(django_apps.get_model, "Dossier", {
+            "id": str(dossier.id), "modifie_le": "2020-01-01T00:00:00+00:00", "statut": "RESOLU",
+        })
+        assert not EvenementSynchronisation.objects.filter(
+            modele="Dossier", objet_id=dossier.id, etat=EtatEvenementSynchronisation.CONFLIT,
+        ).exists()
+
+    def test_cree_un_dossier_absent_localement(self, crisis):
+        nouveau_id = "33333333-3333-3333-3333-333333333333"
+        resultat = appliquer_objet_mutable(django_apps.get_model, "Dossier", {
+            "id": nouveau_id, "modifie_le": "2020-01-01T00:00:00+00:00",
+            "numero": "DOS-ENTRANT-1", "crise_id": str(crisis.id), "titre": "Reçu du central",
+            "description": "...", "statut": "NOUVEAU", "environment": "PROD",
+        })
+        assert resultat == "applique"
+        cree = Dossier.objects.get(id=nouveau_id)
+        assert cree.numero == "DOS-ENTRANT-1"
+        assert cree.modifie_le.isoformat() == "2020-01-01T00:00:00+00:00"
+
+
+@pytest.mark.django_db
+class TestCommandeSynchroniserEntrant:
+    @pytest.fixture(autouse=True)
+    def _config_satellite(self, settings):
+        settings.SATELLITE_CENTRAL_URL = "https://central.example"
+        settings.SATELLITE_ID = "sat-1"
+        settings.SATELLITE_EMAIL = "sat@example.com"
+        settings.SATELLITE_PASSWORD = "secret"
+
+    def test_sans_configuration_ne_fait_aucun_appel_reseau(self, settings, monkeypatch):
+        settings.SATELLITE_CENTRAL_URL = ""
+        appele = []
+        monkeypatch.setattr("core.management.commands.synchroniser_entrant.requests.post", lambda *a, **k: appele.append(1))
+        call_command("synchroniser_entrant")
+        assert appele == []
+
+    def test_applique_les_dossiers_renvoyes_par_donnees(self, monkeypatch, dossier):
+        class FakeReponse:
+            def __init__(self, data):
+                self._data = data
+
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return self._data
+
+        def fake_post(url, **kwargs):
+            return FakeReponse({"access": "jeton-test"})
+
+        def fake_get(url, **kwargs):
+            return FakeReponse({
+                "dossiers": [{"id": str(dossier.id), "modifie_le": "2020-01-01T00:00:00+00:00", "statut": "RESOLU"}],
+                "missions": [],
+            })
+
+        monkeypatch.setattr("core.management.commands.synchroniser_entrant.requests.post", fake_post)
+        monkeypatch.setattr("core.management.commands.synchroniser_entrant.requests.get", fake_get)
+        call_command("synchroniser_entrant")
+
+        dossier.refresh_from_db()
+        assert dossier.statut == "RESOLU"

@@ -10777,6 +10777,20 @@ def _communes_visibles_supervision(request):
 _logger_sync = logging.getLogger(__name__)
 
 
+def _payload_donnees_mutable(obj, nom_modele):
+    """Payload d'un objet MUTABLE (Dossier/Mission) pour le pull central -> local
+    (SatelliteViewSet.donnees) — même extraction de champs que sync_outbox.construire_payload
+    (payload sortant), plus `id`/`modifie_le` que le sens sortant n'a jamais besoin d'envoyer
+    (gérés par le central côté sortant) mais dont le satellite a explicitement besoin ici pour
+    poser une `version_de_base` correcte sur ses prochaines écritures locales."""
+    from .sync_outbox import construire_payload
+    payload = construire_payload(obj, nom_modele)
+    payload["id"] = str(obj.id)
+    payload["modifie_le"] = obj.modifie_le.isoformat()
+    payload["environment"] = obj.environment
+    return payload
+
+
 def _notifier_conflit_synchronisation(satellite, nom_modele, objet_id):
     """Prévient les contacts actifs de l'institution du satellite — jamais résolu tout seul,
     voir ConflitSynchronisation.__doc__ : quelqu'un doit trancher explicitement."""
@@ -11071,10 +11085,21 @@ class SatelliteViewSet(
             request, Information.objects.filter(environment=env).filter(filtre_crise),
             resolver=_information_zone_resolver,
         )
+        # Dossier/Mission (mutables, voir core/sync_outbox.py) : déjà scopés via crise_ids
+        # (lui-même déjà passé par filter_queryset_to_viewer_zone ci-dessus) — pas besoin de
+        # ré-appliquer filter_queryset_to_viewer_zone, ces modèles n'ont pas de champ de zone
+        # propre. `modifie_le` inclus explicitement : le satellite en a besoin pour poser la
+        # bonne `version_de_base` sur ses PROCHAINES écritures locales (voir
+        # synchroniser_entrant côté satellite) — un payload de sync sortant ne l'inclut jamais
+        # (géré par le central), mais un payload de PULL entrant le doit.
+        dossiers_qs = Dossier.objects.filter(environment=env, crise_id__in=crise_ids)
+        missions_qs = Mission.objects.filter(environment=env).filter(Q(crise_id__in=crise_ids) | Q(crise__isnull=True))
 
         return Response({
             "crises": CrisisSerializer(crises_qs, many=True).data,
             "demandes": RequestSerializer(demandes_qs, many=True, context={'request': request}).data,
+            "dossiers": [_payload_donnees_mutable(d, "Dossier") for d in dossiers_qs],
+            "missions": [_payload_donnees_mutable(m, "Mission") for m in missions_qs],
             "offres": OfferSerializer(offres_qs, many=True, context={'request': request}).data,
             "signalements": InformationSerializer(signalements_qs, many=True, context={'request': request}).data,
         })

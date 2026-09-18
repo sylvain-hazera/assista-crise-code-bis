@@ -50,6 +50,7 @@ administrateur valide → identifiants affichés **une seule fois**) — voir
 | `annoncer-backend-local` | full | Annonce ce backend en mDNS sur le LAN, pour qu'un satellite GW séparé sur le même site le trouve sans IP configurée à la main. |
 | `meshtastic-bridge` | gw, full | Optionnel — pilote un ou plusieurs `CompagnonMeshtastic` (MQTT, TCP ou SERIE) ; voir la note ci-dessous. |
 | `sync-sortant` | full | Pousse périodiquement vers le central les écritures locales en attente — voir "Synchronisation local → central" ci-dessous. |
+| `sync-entrant` | full | Sens inverse : applique localement le rafraîchissement central → local pour Dossier/Mission. |
 
 ## Nœuds branchés en USB/série
 
@@ -173,17 +174,32 @@ une coupure — `Dossier` (+ son fil `DossierCommentaire`/`DossierHistorique`),
   si injoignable, retente au passage suivant.
 - **Conflits** : jamais résolus automatiquement — un `ConflitSynchronisation` est créé côté
   central, les contacts actifs de l'institution sont notifiés (`Notification`), l'événement
-  local reste marqué `CONFLIT` (pas retenté). Résolution actuellement uniquement en base côté
-  central (`ConflitSynchronisation.statut`) — **pas encore d'action API ni de page dédiée pour
-  trancher garder-central/garder-local**, à construire dans un prochain sous-chantier.
+  local reste marqué `CONFLIT` (pas retenté). Arbitrage via la page `/admin/conflits-
+  synchronisation` (frontend, comparaison champ par champ version centrale/locale) ou
+  directement `POST /api/conflits-synchronisation/<id>/resoudre/`
+  (`{"choix": "GARDE_CENTRAL"|"GARDE_LOCAL"}`) — voir `ConflitSynchronisationViewSet`.
+- **`sync-entrant`** (nouveau conteneur, même image que `backend`, SANS
+  `INSTANCE_SATELLITE_LOCALE`) : sens inverse de `sync-sortant` — boucle `synchroniser_entrant`
+  (`SATELLITE_SYNC_ENTRANT_INTERVALLE_S`, 300 par défaut), applique localement le
+  rafraîchissement `GET /api/satellites/<id>/donnees/` pour `Dossier`/`Mission` uniquement
+  (Crisis/Request/Offer/Information, aussi renvoyés par cet endpoint, restent un gap séparé non
+  traité par cette commande). Un objet avec une écriture locale encore `EN_ATTENTE` est ignoré
+  (jamais écrasé silencieusement) ; un conflit tranché côté central (`resoudre`) redescend donc
+  vers la copie locale dès le passage suivant, puisque rien ne le bloque plus une fois résolu.
+  `modifie_le` est posé à la valeur EXACTE reçue du central (`QuerySet.update()`, aucun signal
+  déclenché) — indispensable pour qu'une future écriture locale calcule une `version_de_base`
+  qui corresponde vraiment à ce que le central connaît, plutôt qu'un horodatage arbitraire qui
+  déclencherait un faux conflit au prochain envoi.
 - **Identité** : l'auteur apparent côté central reste le compte de service du satellite
   (aucun nouveau mécanisme d'auth) ; le vrai auteur local (peut n'exister QUE côté local, pas
   de compte web) est conservé dans `auteur_local_email`/`auteur_local_nom` et apparaît dans le
   commentaire d'audit posé à l'application de l'événement.
 
 Testé par `backend/core/test_synchronisation.py` (peuplement de la file, application côté
-endpoint, commande `synchroniser_sortant`) — **jamais testé de bout en bout entre deux vraies
-instances** (central + satellite Full réels), seulement en isolation avec mocks.
+endpoint des deux sens, commandes `synchroniser_sortant`/`synchroniser_entrant`, résolution de
+conflit) — **jamais testé de bout en bout entre deux vraies instances** (central + satellite
+Full réels), seulement en isolation avec mocks. Crisis/Request/Offer/Information (pull central
+-> local) restent sans consommateur — gap connu, pas dans le périmètre de ce chantier.
 
 ## Installer les dépendances et lancer les tests
 

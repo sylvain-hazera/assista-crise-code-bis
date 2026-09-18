@@ -95,6 +95,8 @@ def capturer_version_avant_ecriture(sender, instance, **kwargs):
     from django.conf import settings
     if not settings.INSTANCE_SATELLITE_LOCALE or instance.pk is None:
         return
+    if getattr(instance, "_synchronisation_entrante", False):
+        return  # voir enregistrer_evenement pour le sens de ce marqueur.
     instance._version_de_base_avant_ecriture = (
         sender.objects.filter(pk=instance.pk).values_list("modifie_le", flat=True).first()
     )
@@ -105,6 +107,12 @@ def enregistrer_evenement(sender, instance, created, **kwargs):
     logique par régime."""
     from django.conf import settings
     if not settings.INSTANCE_SATELLITE_LOCALE:
+        return
+    if getattr(instance, "_synchronisation_entrante", False):
+        # Cette écriture vient d'appliquer un pull central -> local (voir la commande de
+        # gestion synchroniser_entrant) — CE N'EST PAS une écriture humaine locale à
+        # repropager : la traiter comme telle boucherait indéfiniment (le central renverrait
+        # sa propre donnée comme si elle venait de diverger localement).
         return
 
     nom_modele = sender.__name__

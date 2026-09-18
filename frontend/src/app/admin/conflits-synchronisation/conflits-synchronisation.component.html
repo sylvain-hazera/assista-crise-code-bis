@@ -1,0 +1,89 @@
+<div class="page-header">
+  <h2>Conflits de synchronisation</h2>
+  <p class="page-hint">
+    Un dossier ou une mission modifié à la fois côté central et sur un satellite pendant une
+    coupure ne s'écrase jamais tout seul — chaque conflit attend ici un choix explicite entre la
+    version centrale et celle proposée par le satellite.
+  </p>
+</div>
+
+@if (errorMessage) {
+  <p class="error-message">{{ errorMessage }}</p>
+}
+
+<div class="table-wrapper">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Objet</th>
+        <th>Satellite</th>
+        <th>Levé le</th>
+        <th>Statut</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      @if (loading) {
+        <tr><td colspan="5" class="empty">Chargement…</td></tr>
+      } @else if (conflits.length === 0) {
+        <tr><td colspan="5" class="empty">Aucun conflit de synchronisation.</td></tr>
+      } @else {
+        @for (conflit of conflits; track conflit.id) {
+          <tr>
+            <td>{{ conflit.modele_libelle }}</td>
+            <td>{{ conflit.satellite_nom }}</td>
+            <td>{{ conflit.cree_le | date:'dd/MM/yyyy HH:mm' }}</td>
+            <td><span class="statut" [ngClass]="statutClass(conflit)">{{ statutLabel(conflit) }}</span></td>
+            <td>
+              <button type="button" class="btn-secondary-sm" (click)="toggleDetail(conflit)">
+                {{ detailOuvert === conflit.id ? 'Masquer' : 'Détails' }}
+              </button>
+            </td>
+          </tr>
+          @if (detailOuvert === conflit.id) {
+            <tr class="detail-row">
+              <td colspan="5">
+                <table class="diff-table">
+                  <thead>
+                    <tr><th>Champ</th><th>Version centrale</th><th>Version locale (satellite)</th></tr>
+                  </thead>
+                  <tbody>
+                    @for (champ of champsModifies(conflit); track champ) {
+                      <tr>
+                        <td class="mono">{{ champ }}</td>
+                        <td>{{ conflit.etat_central_au_conflit[champ] }}</td>
+                        <td>{{ conflit.payload_local[champ] }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+
+                @if (conflit.statut === 'EN_ATTENTE') {
+                  <div class="resolution-actions">
+                    <button
+                      type="button" class="btn-secondary-sm" [disabled]="actionEnCours === conflit.id"
+                      (click)="resoudre(conflit, 'GARDE_CENTRAL')"
+                    >
+                      Garder la version centrale
+                    </button>
+                    <button
+                      type="button" class="btn-primary sm" [disabled]="actionEnCours === conflit.id"
+                      (click)="resoudre(conflit, 'GARDE_LOCAL')"
+                    >
+                      Appliquer la version locale
+                    </button>
+                  </div>
+                } @else {
+                  <p class="page-hint">
+                    Résolu le {{ conflit.resolu_le | date:'dd/MM/yyyy HH:mm' }}
+                    — redescendra vers le satellite à sa prochaine synchronisation entrante.
+                  </p>
+                }
+              </td>
+            </tr>
+          }
+        }
+      }
+    </tbody>
+  </table>
+</div>

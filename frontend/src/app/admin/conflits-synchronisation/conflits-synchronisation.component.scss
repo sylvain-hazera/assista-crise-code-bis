@@ -1,0 +1,92 @@
+.page-header {
+  margin-bottom: 1.2rem;
+
+  h2 { display: flex; align-items: center; gap: .6rem; margin: 0 0 .3rem; }
+  .page-hint { color: #6b7280; font-size: .9rem; margin: 0; max-width: 68ch; }
+}
+
+.btn-primary {
+  padding: .55rem 1.1rem;
+  border-radius: 6px;
+  border: 1px solid #2563eb;
+  background: #2563eb;
+  color: #fff;
+  cursor: pointer;
+  font-size: .88rem;
+
+  &:disabled { opacity: .5; cursor: not-allowed; }
+  &.sm { padding: .3rem .7rem; font-size: .8rem; }
+}
+
+.btn-secondary-sm {
+  padding: .3rem .6rem;
+  border-radius: 6px;
+  border: 1px solid #d1d5db;
+  background: #f9fafb;
+  color: #374151;
+  cursor: pointer;
+  font-size: .78rem;
+
+  &:disabled { opacity: .5; cursor: not-allowed; }
+  &:hover:not(:disabled) { border-color: #2563eb; color: #2563eb; }
+}
+
+.table-wrapper { overflow-x: auto; }
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .88rem;
+
+  th, td {
+    text-align: left;
+    padding: .6rem .8rem;
+    border-bottom: 1px solid #f0f0f0;
+  }
+  th {
+    color: #6b7280;
+    font-size: .74rem;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+  }
+  .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: .85em; }
+  .empty { color: #9ca3af; text-align: center; }
+}
+
+.detail-row td {
+  background: #f9fafb;
+  padding: 1rem;
+}
+
+.diff-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .85rem;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  overflow: hidden;
+
+  th, td { text-align: left; padding: .5rem .7rem; border-bottom: 1px solid #f0f0f0; }
+  th { color: #6b7280; font-size: .72rem; text-transform: uppercase; letter-spacing: .03em; }
+  tr:last-child td { border-bottom: none; }
+}
+
+.resolution-actions {
+  display: flex;
+  gap: .6rem;
+  margin-top: .9rem;
+  flex-wrap: wrap;
+}
+
+.statut {
+  padding: .2rem .6rem;
+  border-radius: 999px;
+  font-size: .78rem;
+  font-weight: 600;
+
+  &.statut-ok { background: #dcfce7; color: #15803d; }
+  &.statut-attention { background: #fef3c7; color: #92400e; }
+}
+
+.error-message { color: #dc3545; margin-bottom: 1rem; }
