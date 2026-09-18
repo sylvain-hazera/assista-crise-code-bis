@@ -195,11 +195,42 @@ services:
       - MQTT_BROKER=mosquitto
       - DJANGO_SUPERUSER_EMAIL=${DJANGO_SUPERUSER_EMAIL}
       - DJANGO_SUPERUSER_PASSWORD=${DJANGO_SUPERUSER_PASSWORD}
+      # Peuple la file de synchronisation local -> central à chaque écriture locale pertinente
+      # (voir backend/core/sync_outbox.py) — vrai UNIQUEMENT ici, jamais côté central lui-même.
+      - INSTANCE_SATELLITE_LOCALE=True
     depends_on:
       db:
         condition: service_healthy
       mosquitto:
         condition: service_started
+    restart: unless-stopped
+    profiles: ["full"]
+
+  # Pousse périodiquement vers le central les écritures locales en attente (voir
+  # backend/core/management/commands/synchroniser_sortant.py) — même image que `backend`
+  # (accès direct à la même base, pas de second HTTP local nécessaire), mais SANS
+  # INSTANCE_SATELLITE_LOCALE (ce conteneur ne doit jamais peupler la file, seulement la
+  # vider). Toujours tenté, que le central soit vu en ligne ou non par etat-connectivite — la
+  # commande échoue proprement toute seule si le central est injoignable, voir sa docstring.
+  sync-sortant:
+    build: ../backend
+    command: ["sh", "-c", "while true; do python manage.py synchroniser_sortant; sleep ${SATELLITE_SYNC_SORTANT_INTERVALLE_S:-300}; done"]
+    environment:
+      - DB_HOST=db
+      - DB_NAME=assista-db
+      - DB_USER=${DB_USER}
+      - DB_PASS=${DB_PASS}
+      - SECRET_KEY=${SECRET_KEY}
+      # Identifiants de CE satellite auprès du central — SATELLITE_ID renvoyé par l'API à
+      # l'enrôlement (voir installer.sh), pas à confondre avec DJANGO_SUPERUSER_* (compte admin
+      # de l'instance LOCALE, sans rapport).
+      - SATELLITE_CENTRAL_URL=${CENTRAL_URL:-https://assista-crise.fr}
+      - SATELLITE_ID=${SATELLITE_ID}
+      - SATELLITE_EMAIL=${SATELLITE_EMAIL}
+      - SATELLITE_PASSWORD=${SATELLITE_PASSWORD}
+    depends_on:
+      db:
+        condition: service_healthy
     restart: unless-stopped
     profiles: ["full"]
 

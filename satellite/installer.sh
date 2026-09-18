@@ -82,6 +82,20 @@ phase_enroler() {
     log "Enrôlé avec succès :"
     echo "$corps"
     echo
+
+    # Mémorisé à part (comme .profil) : .env n'existe pas encore à ce stade (créé par
+    # phase_demarrer) — relu et écrit dans SATELLITE_ID à l'étape 2, nécessaire à la
+    # synchronisation local -> central (sync-sortant, voir synchroniser_sortant.py).
+    local satellite_id
+    satellite_id="$(echo "$corps" | grep -o '"id"[[:space:]]*:[[:space:]]*"[^"]*"' | head -n1 | sed -E 's/.*:[[:space:]]*"([^"]*)"/\1/')"
+    if [ -n "$satellite_id" ]; then
+        echo "$satellite_id" > "$REPERTOIRE_SCRIPT/.satellite_id"
+        log "Identifiant du satellite mémorisé ($satellite_id) — sera écrit dans .env à l'étape 2."
+    else
+        log "AVERTISSEMENT : impossible d'extraire l'identifiant du satellite de la réponse ci-dessus."
+        log "Notez-le manuellement, vous devrez le renseigner dans SATELLITE_ID (fichier .env)."
+    fi
+
     log "PROCHAINE ÉTAPE (humaine, côté central) : demandez à un administrateur de valider ce"
     log "satellite depuis la page Satellites — il obtiendra un email et un mot de passe affichés"
     log "UNE SEULE FOIS à cet instant. Notez-les, vous en aurez besoin pour : $0 demarrer"
@@ -125,10 +139,15 @@ phase_demarrer() {
         fi
         compagnon_id="$(demander "UUID du CompagnonMeshCore (laisser vide si pas encore créé)" "")"
 
+        local satellite_id
+        satellite_id="$(cat "$REPERTOIRE_SCRIPT/.satellite_id" 2>/dev/null || echo "")"
+        satellite_id="$(demander "Identifiant du satellite (SATELLITE_ID, mémorisé à l'enrôlement)" "$satellite_id")"
+
         cat > "$FICHIER_ENV" <<EOF
 CENTRAL_URL=$central_url
 SATELLITE_EMAIL=$satellite_email
 SATELLITE_PASSWORD=$satellite_password
+SATELLITE_ID=$satellite_id
 SATELLITE_NOM=$satellite_nom
 MESHCORE_CONNEXION_TYPE=$connexion_type
 MESHCORE_SERIE_DEVICE=$serie_device

@@ -1568,6 +1568,12 @@ class Dossier(EnvironmentScopedModel):
     important = models.BooleanField(default=False)
     date_signalement_important = models.DateTimeField(null=True, blank=True)
 
+    # Ajouté pour la synchronisation local -> central (voir core/sync_outbox.py) : seul moyen
+    # de détecter qu'un satellite a divergé du central pendant une coupure (le central a-t-il
+    # été modifié par quelqu'un d'autre entre-temps ?) sans lui, aucune donnée de version
+    # disponible pour arbitrer un conflit plutôt que d'écraser silencieusement.
+    modifie_le = models.DateTimeField(auto_now=True)
+
     def __str__(self):
         return f"{self.numero} - {self.titre}"
 
@@ -1640,6 +1646,9 @@ class Mission(EnvironmentScopedModel):
         null=True, blank=True,
         related_name="missions_instanciees",
     )
+
+    # Voir Dossier.modifie_le — même rôle pour la synchronisation local -> central.
+    modifie_le = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         return self.titre
@@ -4424,4 +4433,130 @@ class Satellite(EnvironmentScopedModel):
 
     def __str__(self):
         return f"{self.nom} ({self.institution.nom}) — {self.statut_enrolement}"
+
+
+class ModeleSynchronisable(models.TextChoices):
+    """Modèles couverts par la synchronisation local -> central (voir core/sync_outbox.py) —
+    périmètre v1 (2026-09-18) : le travail des acteurs institutionnels sur place pendant une
+    coupure (Dossier + son fil de commentaires/historique, DeclarationSecurite, Mission,
+    MessageMeshLog). Explicitement PAS Request/Offer/Information : alimentés par les citoyens
+    via internet, jamais via le LAN privé d'un satellite (voir le cadrage Chantier B) —
+    ajoutables plus tard sans redesign, juste une nouvelle entrée ici + un sérialiseur dédié."""
+    DOSSIER = "Dossier", "Dossier"
+    DOSSIER_COMMENTAIRE = "DossierCommentaire", "Commentaire de dossier"
+    DOSSIER_HISTORIQUE = "DossierHistorique", "Historique de dossier"
+    DECLARATION_SECURITE = "DeclarationSecurite", "Déclaration de sécurité"
+    MISSION = "Mission", "Mission"
+    MESSAGE_MESH_LOG = "MessageMeshLog", "Message mesh"
+
+
+class ActionSynchronisation(models.TextChoices):
+    CREATION = "CREATION", "Création"
+    MODIFICATION = "MODIFICATION", "Modification"
+
+
+class EtatEvenementSynchronisation(models.TextChoices):
+    EN_ATTENTE = "EN_ATTENTE", "En attente"
+    SYNCHRONISE = "SYNCHRONISE", "Synchronisé"
+    CONFLIT = "CONFLIT", "En conflit — arbitrage requis"
+    ERREUR = "ERREUR", "Erreur"
+
+
+class EvenementSynchronisation(EnvironmentScopedModel):
+    """Une écriture locale à propager vers le central — peuplé par des signaux Django
+    (post_save), UNIQUEMENT quand `settings.INSTANCE_SATELLITE_LOCALE` est vrai (jamais côté
+    central lui-même, sinon boucle). Consommé par la commande de gestion
+    `synchroniser_sortant` (tournant dans le conteneur `sync-sortant` du profil Full, voir
+    satellite/docker-compose.yml), qui pousse les événements EN_ATTENTE dans l'ordre
+    chronologique vers `SatelliteViewSet.synchroniser`.
+
+    Écriture toujours locale d'abord (le modèle métier est déjà sauvegardé quand cet
+    enregistrement est créé) ; propagation asynchrone ensuite — jamais de connexion synchrone
+    bloquante au moment de l'écriture, même principe que CommandeMeshCore/MessageMeshLog."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    modele = models.CharField(max_length=30, choices=ModeleSynchronisable.choices)
+    objet_id = models.UUIDField()
+    action = models.CharField(max_length=15, choices=ActionSynchronisation.choices)
+
+    # Snapshot des champs pertinents au moment de l'écriture locale — un dict simple (pas un
+    # sérialiseur DRF réutilisé : `author`/`id` sont read_only sur les sérialiseurs d'admin
+    # existants, voir la note du cadrage Chantier B sur ce sujet), construit par
+    # core/sync_outbox.py.
+    payload = models.JSONField()
+
+    # Valeur de `modifie_le` (côté modèles mutables uniquement, voir ModeleSynchronisable côté
+    # DOSSIER/MISSION) connue AVANT la première écriture locale hors-ligne sur cet objet — sert
+    # à détecter, côté central, si quelqu'un d'autre l'a modifié entre-temps (conflit) plutôt
+    # que d'écraser silencieusement. Null pour les modèles "append-only" (DossierCommentaire,
+    # DossierHistorique, DeclarationSecurite, MessageMeshLog) : jamais réédités après création,
+    # donc jamais de conflit possible sur eux — un simple upsert par id suffit.
+    version_de_base = models.DateTimeField(null=True, blank=True)
+
+    # Snapshot du véritable auteur local (peut n'exister QUE côté local, pas encore de compte
+    # web — voir la note du cadrage sur le compte auto-créé, non construit à ce jour). L'auteur
+    # apparent côté central reste le compte de service du satellite (décision utilisateur du
+    # 2026-09-18) ; ces deux champs permettent de retrouver qui a vraiment agi, affichés dans le
+    # commentaire d'audit posé à l'application de l'événement.
+    auteur_local_email = models.CharField(max_length=255, blank=True)
+    auteur_local_nom = models.CharField(max_length=255, blank=True)
+
+    cree_le = models.DateTimeField(auto_now_add=True)
+
+    etat = models.CharField(
+        max_length=12, choices=EtatEvenementSynchronisation.choices,
+        default=EtatEvenementSynchronisation.EN_ATTENTE,
+    )
+    synchronise_le = models.DateTimeField(null=True, blank=True)
+    erreur = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["cree_le"]
+
+    def __str__(self):
+        return f"{self.action} {self.modele} {self.objet_id} — {self.etat}"
+
+
+class StatutConflitSynchronisation(models.TextChoices):
+    EN_ATTENTE = "EN_ATTENTE", "En attente d'arbitrage"
+    RESOLU_GARDE_CENTRAL = "RESOLU_GARDE_CENTRAL", "Résolu — version centrale conservée"
+    RESOLU_GARDE_LOCAL = "RESOLU_GARDE_LOCAL", "Résolu — version locale appliquée"
+
+
+class ConflitSynchronisation(EnvironmentScopedModel):
+    """Créé côté CENTRAL quand un événement de synchronisation mutable (Dossier/Mission) arrive
+    avec une `version_de_base` qui ne correspond plus à l'état central actuel — quelqu'un
+    (central ou un autre satellite) a modifié cet objet entre-temps. Jamais résolu
+    automatiquement (principe déjà acté au cadrage Chantier B : "jamais un choix automatique
+    silencieux") : un administrateur choisit explicitement quoi garder."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    satellite = models.ForeignKey(Satellite, on_delete=models.CASCADE, related_name="conflits_synchronisation")
+
+    modele = models.CharField(max_length=30, choices=ModeleSynchronisable.choices)
+    objet_id = models.UUIDField()
+
+    payload_local = models.JSONField(help_text="Ce que le satellite tentait d'appliquer.")
+    etat_central_au_conflit = models.JSONField(
+        help_text="Instantané de l'état central au moment du conflit, pour comparaison.",
+    )
+
+    statut = models.CharField(
+        max_length=25, choices=StatutConflitSynchronisation.choices,
+        default=StatutConflitSynchronisation.EN_ATTENTE,
+    )
+
+    cree_le = models.DateTimeField(auto_now_add=True)
+    resolu_le = models.DateTimeField(null=True, blank=True)
+    resolu_par = models.ForeignKey(
+        "User", on_delete=models.SET_NULL, null=True, blank=True, related_name="conflits_synchronisation_resolus",
+    )
+
+    class Meta:
+        ordering = ["-cree_le"]
+
+    def __str__(self):
+        return f"Conflit {self.modele} {self.objet_id} ({self.statut})"
 

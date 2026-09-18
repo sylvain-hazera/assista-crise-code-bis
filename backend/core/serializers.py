@@ -49,6 +49,7 @@ from .models import (
     RelaisMeshCore,
     Satellite,
     JetonEnrolementSatellite,
+    ConflitSynchronisation,
     CanalMeshCore,
     MessageCanalMeshCore,
     ContactMeshCore,
@@ -2903,5 +2904,20 @@ class JetonEnrolementSatelliteSerializer(serializers.ModelSerializer):
         model = JetonEnrolementSatellite
         fields = ['id', 'institution', 'jeton', 'expiration', 'utilise', 'date_creation']
         read_only_fields = fields
+
+
+class ConflitSynchronisationSerializer(serializers.ModelSerializer):
+    satellite_nom = serializers.CharField(source='satellite.nom', read_only=True)
+    modele_libelle = serializers.CharField(source='get_modele_display', read_only=True)
+
+    class Meta:
+        model = ConflitSynchronisation
+        fields = "__all__"
+        # Jamais écrit directement — uniquement créé par SatelliteViewSet.synchroniser et
+        # tranché via ConflitSynchronisationViewSet.resoudre (voir leurs docstrings).
+        read_only_fields = [
+            'satellite', 'modele', 'objet_id', 'payload_local', 'etat_central_au_conflit',
+            'statut', 'resolu_le', 'resolu_par',
+        ]
 
 

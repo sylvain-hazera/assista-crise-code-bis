@@ -8,6 +8,7 @@ paho-mqtt
 cryptography
 psycopg2-binary>=2.9
 django-cors-headers>=4.3.1
+requests>=2.31.0
 Pillow>=10.2.0
 drf-spectacular
 django-filter

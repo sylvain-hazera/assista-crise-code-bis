@@ -292,6 +292,31 @@ SATELLITE_SEUIL_PERDU_MINUTES = int(os.environ.get('SATELLITE_SEUIL_PERDU_MINUTE
 # un jour en base.
 SATELLITE_SUPERVISION_RAYON_LIMITROPHE_KM = int(os.environ.get('SATELLITE_SUPERVISION_RAYON_LIMITROPHE_KM', 15))
 
+# Active la file de synchronisation local -> central (core/sync_outbox.py) : seule une
+# instance Full de satellite (backend local tournant sur le Pi) doit peupler la file à chaque
+# écriture locale — le central ne doit jamais le faire (sinon boucle : le central "synchronise
+# vers lui-même"). Réglé explicitement à True uniquement dans satellite/.env.example (profil
+# full), absent/False partout ailleurs.
+INSTANCE_SATELLITE_LOCALE = os.environ.get('INSTANCE_SATELLITE_LOCALE', 'False') == 'True'
+
+# Intervalle (secondes) entre deux tentatives de la commande synchroniser_sortant côté
+# satellite Full — voir satellite/docker-compose.yml, service sync-sortant. Toujours tentée,
+# que le central soit vu en ligne ou non par etat_connectivite.py (décision utilisateur du
+# 2026-09-18) : ce paramètre n'a de sens que côté satellite, mais vit ici pour rester cohérent
+# avec les autres seuils SATELLITE_* déjà en settings plutôt que dans un fichier à part.
+SATELLITE_SYNC_SORTANT_INTERVALLE_S = int(os.environ.get('SATELLITE_SYNC_SORTANT_INTERVALLE_S', 300))
+
+# Identifiants du compte de service de CE satellite auprès du central, utilisés par la
+# commande de gestion `synchroniser_sortant` (voir satellite/docker-compose.yml, service
+# sync-sortant) — mêmes valeurs que le pont MeshCore/Meshtastic utilise déjà pour s'authentifier
+# (DJANGO_EMAIL/DJANGO_PASSWORD côté bridge), mais nommées ici SATELLITE_* pour ne pas laisser
+# penser qu'elles configurent CE backend lui-même (elles configurent ce qu'il appelle).
+# SATELLITE_ID : uuid renvoyé par l'API à l'enrôlement (voir installer.sh, phase "enroler").
+SATELLITE_CENTRAL_URL = os.environ.get('SATELLITE_CENTRAL_URL', '')
+SATELLITE_ID = os.environ.get('SATELLITE_ID', '')
+SATELLITE_EMAIL = os.environ.get('SATELLITE_EMAIL', '')
+SATELLITE_PASSWORD = os.environ.get('SATELLITE_PASSWORD', '')
+
 USE_X_FORWARDED_HOST = True
 
 SECURE_PROXY_SSL_HEADER = (

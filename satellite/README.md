@@ -49,6 +49,7 @@ administrateur valide → identifiants affichés **une seule fois**) — voir
 | `tileserver` | full | Sert les tuiles téléchargées — même image que le central (`maptiler/tileserver-gl`). |
 | `annoncer-backend-local` | full | Annonce ce backend en mDNS sur le LAN, pour qu'un satellite GW séparé sur le même site le trouve sans IP configurée à la main. |
 | `meshtastic-bridge` | gw, full | Optionnel — pilote un ou plusieurs `CompagnonMeshtastic` (MQTT, TCP ou SERIE) ; voir la note ci-dessous. |
+| `sync-sortant` | full | Pousse périodiquement vers le central les écritures locales en attente — voir "Synchronisation local → central" ci-dessous. |
 
 ## Nœuds branchés en USB/série
 
@@ -147,6 +148,42 @@ transiter aucune donnée.
 ```bash
 python3 annoncer_backend_local.py
 ```
+
+## Synchronisation local → central (profil full uniquement)
+
+Décidée le 2026-09-18, périmètre v1 : le travail des acteurs institutionnels sur place pendant
+une coupure — `Dossier` (+ son fil `DossierCommentaire`/`DossierHistorique`),
+`DeclarationSecurite`, `Mission`, `MessageMeshLog`. PAS `Request`/`Offer`/`Information`
+(citoyens, alimentés via internet, jamais via le LAN privé d'un satellite) — voir
+`backend/core/sync_outbox.py` pour ajouter un modèle plus tard sans redesign.
+
+- **Côté backend local** (`INSTANCE_SATELLITE_LOCALE=True`, posé automatiquement sur le
+  service `backend` du profil full) : chaque écriture pertinente peuple
+  `EvenementSynchronisation` (signaux Django, `core/sync_outbox.py`). Deux régimes : les
+  modèles "append-only" (jamais réédités après création — commentaires, historique,
+  déclarations, messages mesh) s'upsertent simplement par id côté central ; les modèles
+  "mutables" (`Dossier`, `Mission`) capturent une `version_de_base` (leur `modifie_le` juste
+  avant la première écriture hors-ligne) pour détecter un conflit plutôt que d'écraser
+  silencieusement une modification faite entre-temps côté central.
+- **`sync-sortant`** (nouveau conteneur, même image que `backend`, sans
+  `INSTANCE_SATELLITE_LOCALE`) : boucle `synchroniser_sortant` (commande de gestion Django,
+  `SATELLITE_SYNC_SORTANT_INTERVALLE_S` secondes entre deux passages, 300 par défaut) — pousse
+  les événements en attente vers `POST /api/satellites/<id>/synchroniser/`. Toujours tenté,
+  que le central soit vu en ligne ou non par `etat-connectivite` : échoue proprement tout seul
+  si injoignable, retente au passage suivant.
+- **Conflits** : jamais résolus automatiquement — un `ConflitSynchronisation` est créé côté
+  central, les contacts actifs de l'institution sont notifiés (`Notification`), l'événement
+  local reste marqué `CONFLIT` (pas retenté). Résolution actuellement uniquement en base côté
+  central (`ConflitSynchronisation.statut`) — **pas encore d'action API ni de page dédiée pour
+  trancher garder-central/garder-local**, à construire dans un prochain sous-chantier.
+- **Identité** : l'auteur apparent côté central reste le compte de service du satellite
+  (aucun nouveau mécanisme d'auth) ; le vrai auteur local (peut n'exister QUE côté local, pas
+  de compte web) est conservé dans `auteur_local_email`/`auteur_local_nom` et apparaît dans le
+  commentaire d'audit posé à l'application de l'événement.
+
+Testé par `backend/core/test_synchronisation.py` (peuplement de la file, application côté
+endpoint, commande `synchroniser_sortant`) — **jamais testé de bout en bout entre deux vraies
+instances** (central + satellite Full réels), seulement en isolation avec mocks.
 
 ## Installer les dépendances et lancer les tests
 

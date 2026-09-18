@@ -33,6 +33,7 @@ __pycache__/
 .pytest_cache/
 satellite/.env
 satellite/.profil
+satellite/.satellite_id
 *.pyo
 *.pyd
 

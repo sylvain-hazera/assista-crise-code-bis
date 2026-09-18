@@ -26,6 +26,7 @@ from .views import (
     CompagnonMeshtasticViewSet, NoeudUtilisateurMeshtasticViewSet, MessageMeshtasticLogViewSet,
     CanalMeshtasticViewSet, MessageCanalMeshtasticViewSet, ContactMeshtasticViewSet,
     SatelliteViewSet,
+    ConflitSynchronisationViewSet,
     RoleOperationnelViewSet,
     InstitutionCompetenceViewSet,
     AffectationRoleOperationnelViewSet,
@@ -89,6 +90,7 @@ router.register(r'noeuds-meshcore', NoeudMeshUtilisateurViewSet)
 router.register(r'messages-meshcore', MessageMeshLogViewSet)
 router.register(r'commandes-meshcore', CommandeMeshCoreViewSet)
 router.register(r'satellites', SatelliteViewSet)
+router.register(r'conflits-synchronisation', ConflitSynchronisationViewSet)
 router.register(r'relais-meshcore', RelaisMeshCoreViewSet)
 router.register(r'canaux-meshcore', CanalMeshCoreViewSet)
 router.register(r'messages-canal-meshcore', MessageCanalMeshCoreViewSet)

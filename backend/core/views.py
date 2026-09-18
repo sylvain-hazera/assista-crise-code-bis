@@ -1,3 +1,6 @@
+import logging
+
+from django.apps import apps
 from django.shortcuts import render
 from django.http import FileResponse, StreamingHttpResponse, HttpResponse
 from rest_framework.decorators import action
@@ -149,6 +152,8 @@ from .models import (
     CompagnonMeshtastic, NoeudUtilisateurMeshtastic, MessageMeshtasticLog,
     CanalMeshtastic, MessageCanalMeshtastic, ContactMeshtastic,
     Satellite, JetonEnrolementSatellite, ProfilSatellite, StatutEnrolementSatellite,
+    EvenementSynchronisation, EtatEvenementSynchronisation, ConflitSynchronisation,
+    StatutConflitSynchronisation, ModeleSynchronisable,
     AffectationPointBenevole, StatutAffectation,
     RecherchePersonne, RecherchePersonneCommentaire, Besoin, Notification, DossierParticipant,
     RecherchePersonneCommentairePhoto, RecherchePersonneLecture, RecherchePersonneLectureHistorique,
@@ -308,6 +313,7 @@ from .serializers import (
     RelaisMeshCoreSerializer,
     SatelliteSerializer,
     JetonEnrolementSatelliteSerializer,
+    ConflitSynchronisationSerializer,
     CanalMeshCoreSerializer,
     MessageCanalMeshCoreSerializer,
     ContactMeshCoreSerializer,
@@ -10768,6 +10774,97 @@ def _communes_visibles_supervision(request):
     return set()
 
 
+_logger_sync = logging.getLogger(__name__)
+
+
+def _notifier_conflit_synchronisation(satellite, nom_modele, objet_id):
+    """Prévient les contacts actifs de l'institution du satellite — jamais résolu tout seul,
+    voir ConflitSynchronisation.__doc__ : quelqu'un doit trancher explicitement."""
+    destinataires = ContactInstitution.objects.filter(
+        institution=satellite.institution, actif=True,
+    ).select_related('utilisateur')
+    for contact in destinataires:
+        Notification.objects.create(
+            utilisateur=contact.utilisateur,
+            titre="Conflit de synchronisation satellite",
+            message=(
+                f"Le satellite {satellite.nom} a tenté de synchroniser un {nom_modele} "
+                f"({objet_id}) déjà modifié côté central depuis sa dernière prise de contact. "
+                f"Un arbitrage est nécessaire avant que cette modification ne soit appliquée."
+            ),
+            environment=satellite.environment,
+        )
+
+
+def _appliquer_evenement_synchronisation(satellite, evenement, request):
+    """Applique (ou met en conflit) un événement de synchronisation local -> central — voir
+    SatelliteViewSet.synchroniser et core/sync_outbox.py pour le contexte complet. Ne lève
+    jamais : toute erreur devient un résultat "erreur" pour ne pas bloquer les événements
+    suivants du même lot."""
+    from .sync_outbox import APPEND_ONLY, MUTABLE, construire_payload
+
+    evenement_id = evenement.get('id')
+    nom_modele = evenement.get('modele')
+    try:
+        objet_id = evenement['objet_id']
+        payload = dict(evenement['payload'])
+    except (KeyError, TypeError):
+        return {"id": evenement_id, "resultat": "erreur", "detail": "Événement incomplet."}
+
+    if nom_modele not in ModeleSynchronisable.values:
+        return {"id": evenement_id, "resultat": "erreur", "detail": f"Modèle non synchronisable : {nom_modele}."}
+    ModeleClasse = apps.get_model('core', nom_modele)
+
+    auteur_local = evenement.get('auteur_local_email') or 'auteur local inconnu'
+
+    try:
+        with transaction.atomic():
+            if nom_modele in APPEND_ONLY:
+                _, cree = ModeleClasse.objects.get_or_create(
+                    id=objet_id, defaults={**payload, "environment": satellite.environment},
+                )
+                resultat = "applique" if cree else "deja_applique"
+                if cree:
+                    audit_log(
+                        request=request, action_code="CREATION", objet_type=nom_modele, objet_id=objet_id,
+                        commentaire=f"Reçu par synchronisation du satellite {satellite.nom} (auteur local : {auteur_local}).",
+                    )
+                return {"id": evenement_id, "resultat": resultat}
+
+            # MUTABLE (Dossier, Mission) : conflit possible, voir la docstring du module sync_outbox.
+            objet_existant = ModeleClasse.objects.filter(pk=objet_id).first()
+            if objet_existant is None:
+                ModeleClasse.objects.create(id=objet_id, environment=satellite.environment, **payload)
+                audit_log(
+                    request=request, action_code="CREATION", objet_type=nom_modele, objet_id=objet_id,
+                    commentaire=f"Créé par synchronisation du satellite {satellite.nom} (auteur local : {auteur_local}).",
+                )
+                return {"id": evenement_id, "resultat": "applique", "detail": "créé côté central"}
+
+            version_centrale = objet_existant.modifie_le.isoformat() if objet_existant.modifie_le else None
+            if evenement.get('version_de_base') != version_centrale:
+                ConflitSynchronisation.objects.create(
+                    satellite=satellite, modele=nom_modele, objet_id=objet_id,
+                    payload_local=payload,
+                    etat_central_au_conflit=construire_payload(objet_existant, nom_modele),
+                    environment=satellite.environment,
+                )
+                _notifier_conflit_synchronisation(satellite, nom_modele, objet_id)
+                return {"id": evenement_id, "resultat": "conflit", "detail": "version centrale différente"}
+
+            for champ, valeur in payload.items():
+                setattr(objet_existant, champ, valeur)
+            objet_existant.save()
+            audit_log(
+                request=request, action_code="MODIFICATION", objet_type=nom_modele, objet_id=objet_id,
+                commentaire=f"Modifié par synchronisation du satellite {satellite.nom} (auteur local : {auteur_local}).",
+            )
+            return {"id": evenement_id, "resultat": "applique"}
+    except Exception as exc:
+        _logger_sync.exception("Échec application événement de synchronisation %s (%s)", evenement_id, nom_modele)
+        return {"id": evenement_id, "resultat": "erreur", "detail": str(exc)}
+
+
 class SatelliteViewSet(
     EnvironmentScopedViewSetMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet
 ):
@@ -10787,7 +10884,7 @@ class SatelliteViewSet(
     def get_permissions(self):
         if self.action == 'enroler':
             return [AllowAny()]
-        if self.action in ('contact', 'donnees'):
+        if self.action in ('contact', 'donnees', 'synchroniser'):
             return [permissions.IsAuthenticated()]
         if self.action in ('generer_jeton', 'valider', 'revoquer'):
             return [IsInstitutionalActor(), DenyInDemo()]
@@ -10795,7 +10892,7 @@ class SatelliteViewSet(
 
     def get_queryset(self):
         qs = super().get_queryset()
-        if self.action in ('contact', 'donnees'):
+        if self.action in ('contact', 'donnees', 'synchroniser'):
             # Le contrôle d'identité se fait dans l'action elle-même (compte_service ==
             # request.user) — le compte de service d'un satellite n'a volontairement aucun
             # ContactInstitution (voir SatelliteViewSet.valider), donc le filtrage par
@@ -10982,6 +11079,29 @@ class SatelliteViewSet(
             "signalements": InformationSerializer(signalements_qs, many=True, context={'request': request}).data,
         })
 
+    @action(detail=True, methods=['post'], url_path='synchroniser')
+    def synchroniser(self, request, pk=None):
+        """Synchronisation local -> central (cadrage "Chantier B", décisions du 2026-09-18) :
+        reçoit un lot d'EvenementSynchronisation accumulés côté satellite
+        (core/sync_outbox.py) dans l'ordre chronologique et les applique un par un — jamais
+        tout ou rien, l'échec ou le conflit d'un événement ne bloque pas les suivants. Payload
+        attendu : {"evenements": [{"id", "modele", "objet_id", "action", "payload",
+        "version_de_base", "auteur_local_email", "auteur_local_nom"}, ...]}. Renvoie le
+        résultat par événement — la commande synchroniser_sortant côté satellite ne marque
+        comme synchronisé QUE ce qui revient "applique"/"deja_applique" (jamais un conflit ou
+        une erreur, qui doivent être retentés ou arbitrés, pas oubliés silencieusement)."""
+        satellite = self.get_object()
+        self._exiger_compte_service(request, satellite)
+
+        satellite.dernier_contact = timezone.now()
+        satellite.save(update_fields=['dernier_contact'])
+
+        resultats = [
+            _appliquer_evenement_synchronisation(satellite, evenement, request)
+            for evenement in request.data.get('evenements', [])
+        ]
+        return Response({"resultats": resultats})
+
     @action(detail=False, methods=['get'], url_path='supervision')
     def supervision(self, request):
         """Vue de supervision inter-collectivités (communes voisines -> préfecture) : pour
@@ -11032,3 +11152,65 @@ class SatelliteViewSet(
                     "contacts_secours": contacts,
                 })
         return Response(resultats)
+
+
+class ConflitSynchronisationViewSet(
+    EnvironmentScopedViewSetMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet
+):
+    """Conflits levés par SatelliteViewSet.synchroniser quand un événement mutable (Dossier/
+    Mission) arrive avec une version_de_base périmée — jamais résolus automatiquement, voir
+    ConflitSynchronisation.__doc__. Pas encore de page frontend dédiée à ce jour (2026-09-18) :
+    endpoint consommable directement (Django admin ou un futur écran) en attendant."""
+
+    queryset = ConflitSynchronisation.objects.select_related('satellite', 'satellite__institution', 'resolu_par').all()
+    serializer_class = ConflitSynchronisationSerializer
+    permission_classes = [IsInstitutionalActor]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if get_effective_role(self.request) == UserRole.ADMINISTRATOR:
+            return qs
+        mes_institutions = ContactInstitution.objects.filter(
+            utilisateur=self.request.user, actif=True
+        ).values_list('institution_id', flat=True)
+        return qs.filter(satellite__institution_id__in=mes_institutions)
+
+    @action(detail=True, methods=['post'], url_path='resoudre')
+    def resoudre(self, request, pk=None):
+        """Body : {"choix": "GARDE_CENTRAL"|"GARDE_LOCAL"}. GARDE_LOCAL applique
+        `payload_local` sur l'objet central (le satellite avait raison) ; GARDE_CENTRAL ne
+        touche à rien (l'état central actuel est conservé tel quel). Dans les deux cas, la
+        copie locale du satellite reste divergente tant qu'un futur mécanisme de rafraîchissement
+        Dossier/Mission (SatelliteViewSet.donnees ne couvre aujourd'hui que Crisis/Request/
+        Offer/Information) ne la corrige pas — limite connue, non résolue à ce jour."""
+        conflit = self.get_object()
+        if conflit.statut != StatutConflitSynchronisation.EN_ATTENTE:
+            raise ValidationError("Ce conflit a déjà été résolu.")
+        # Vocabulaire d'API volontairement plus court que les valeurs stockées
+        # (RESOLU_GARDE_CENTRAL/RESOLU_GARDE_LOCAL) : le client choisit une action
+        # ("GARDE_CENTRAL"/"GARDE_LOCAL"), pas un état déjà résolu.
+        choix_vers_statut = {
+            "GARDE_CENTRAL": StatutConflitSynchronisation.RESOLU_GARDE_CENTRAL,
+            "GARDE_LOCAL": StatutConflitSynchronisation.RESOLU_GARDE_LOCAL,
+        }
+        choix = choix_vers_statut.get(request.data.get('choix'))
+        if choix is None:
+            raise ValidationError("choix doit être GARDE_CENTRAL ou GARDE_LOCAL.")
+
+        if choix == StatutConflitSynchronisation.RESOLU_GARDE_LOCAL:
+            ModeleClasse = apps.get_model('core', conflit.modele)
+            objet = ModeleClasse.objects.filter(pk=conflit.objet_id).first()
+            if objet is not None:
+                for champ, valeur in conflit.payload_local.items():
+                    setattr(objet, champ, valeur)
+                objet.save()
+
+        conflit.statut = choix
+        conflit.resolu_le = timezone.now()
+        conflit.resolu_par = request.user
+        conflit.save(update_fields=['statut', 'resolu_le', 'resolu_par'])
+        audit_log(
+            request=request, action_code="MODIFICATION", objet_type="ConflitSynchronisation", objet_id=conflit.id,
+            commentaire=f"Conflit de synchronisation résolu : {choix}.",
+        )
+        return Response(ConflitSynchronisationSerializer(conflit).data)
