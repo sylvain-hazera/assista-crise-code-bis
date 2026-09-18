@@ -22,7 +22,7 @@ from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from urllib.parse import quote
 from django_filters import rest_framework as filters
 from django.db import IntegrityError, transaction
-from django.db.models import Q, F, Prefetch, Count
+from django.db.models import Q, F, Prefetch, Count, Max
 from django.db.models.functions import TruncDate
 from dateutil.relativedelta import relativedelta
 from django.contrib.gis.db.models.functions import Distance
@@ -7139,6 +7139,18 @@ class NotificationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         return Notification.objects.filter(
             utilisateur=self.request.user, environment=get_active_environment(self.request)
         ).order_by('-date_creation')
+
+    @action(detail=False, methods=['get'])
+    def resume(self, request):
+        """Endpoint léger destiné à un polling fréquent (voir shared/utils/polling.util.ts
+        côté frontend) : juste de quoi détecter un changement, sans rapatrier toute la liste à
+        chaque appel — le frontend ne redemande la liste complète (get_all) que si ce résumé a
+        changé depuis le dernier poll."""
+        agg = self.get_queryset().aggregate(
+            count_non_lues=Count('id', filter=Q(lu=False)),
+            derniere_notification_le=Max('date_creation'),
+        )
+        return Response(agg)
 
 def _notifier_lecteurs_et_createur_recherche(request, recherche, titre, message):
     """Notifie le créateur de la fiche et toute personne l'ayant consultée

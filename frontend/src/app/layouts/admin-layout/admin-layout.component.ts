@@ -1,10 +1,20 @@
-import { Component, HostListener, OnInit } from '@angular/core';
+import { Component, HostListener, OnDestroy, OnInit } from '@angular/core';
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { CommonModule } from '@angular/common';
+import { Subscription } from 'rxjs';
 import { AuthService } from '../../auth/services/auth.service';
 import { NotificationService } from '../../services/notification.service';
 import { User, UserRole } from '../../shared/models/user.model';
-import { AppNotification } from '../../shared/models/notification.model';
+import { AppNotification, ResumeNotifications } from '../../shared/models/notification.model';
+import { pollWhileVisible } from '../../shared/utils/polling.util';
+import {
+  afficherNotificationNavigateur,
+  demanderPermissionNotificationNavigateur,
+} from '../../shared/utils/browser-notification.util';
+
+// Intervalle de polling de la cloche — voir pollWhileVisible (suspendu tant que l'onglet est en
+// arrière-plan, ne réveille jamais un onglet minimisé pour rien).
+const INTERVALLE_POLLING_NOTIFICATIONS_MS = 20_000;
 
 interface NavItem {
   icon: string;
@@ -20,15 +30,20 @@ interface NavItem {
   templateUrl: './admin-layout.component.html',
   styleUrls: ['./admin-layout.component.scss']
 })
-export class AdminLayoutComponent implements OnInit {
+export class AdminLayoutComponent implements OnInit, OnDestroy {
   currentUser: User | null = null;
   sidebarCollapsed = false;
   sidebarOpen = false; // Pour mobile
   showNotifications = false;
   showUserMenu = false;
   isMobile = false;
-  
+
   notifications: AppNotification[] = [];
+
+  private pollingNotificationsSub?: Subscription;
+  // null tant qu'aucun résumé n'a encore été reçu — sert à ne jamais déclencher de notification
+  // navigateur au tout premier chargement (rien de "nouveau" par rapport à... rien).
+  private dernierResume: ResumeNotifications | null = null;
 
   navItems: NavItem[] = [
     { icon: 'home', label: 'Accueil', route: '/admin/dashboard' },
@@ -123,12 +138,40 @@ export class AdminLayoutComponent implements OnInit {
   ngOnInit(): void {
     this.currentUser = this.authService.getCurrentUser();
     this.checkScreenSize();
-    this.loadNotifications();
+    demanderPermissionNotificationNavigateur();
+    this.demarrerPollingNotifications();
     // Rafraîchit le profil depuis l'API : sans ça, un accès démo (ou tout autre changement de
     // droits) accordé après la connexion resterait invisible tant que l'utilisateur ne se
     // reconnecte pas, puisque `getCurrentUser()` ne fait que relire le cache local du login.
     this.authService.fetchMe().subscribe({
       next: (user) => this.currentUser = user,
+      error: () => {},
+    });
+  }
+
+  ngOnDestroy(): void {
+    this.pollingNotificationsSub?.unsubscribe();
+  }
+
+  /** Remplace l'ancien chargement "une fois au montage, jamais rafraîchi" — la cloche restait
+   * périmée jusqu'au prochain rechargement complet de page, ce qui pouvait laisser un régulateur
+   * sans nouvelle information pendant toute la durée de sa session. Poll léger (resume : juste
+   * compteur + date) toutes les 20s, suspendu en arrière-plan (voir pollWhileVisible) ; la liste
+   * complète n'est redemandée que si ce résumé a effectivement changé. */
+  private demarrerPollingNotifications(): void {
+    this.pollingNotificationsSub = pollWhileVisible(
+      () => this.notificationService.resume(), INTERVALLE_POLLING_NOTIFICATIONS_MS,
+    ).subscribe({
+      next: (resume) => {
+        const changement = !this.dernierResume
+          || resume.count_non_lues !== this.dernierResume.count_non_lues
+          || resume.derniere_notification_le !== this.dernierResume.derniere_notification_le;
+        const nouvellesNotifications = !!this.dernierResume && resume.count_non_lues > this.dernierResume.count_non_lues;
+        this.dernierResume = resume;
+        if (changement) {
+          this.loadNotifications(nouvellesNotifications && typeof document !== 'undefined' && document.hidden);
+        }
+      },
       error: () => {},
     });
   }
@@ -145,9 +188,22 @@ export class AdminLayoutComponent implements OnInit {
     this.authService.setEnvironment(this.isDemo ? 'PROD' : 'DEMO');
   }
 
-  private loadNotifications(): void {
+  /** `notifierSiArrierePlan` : true uniquement quand le résumé polling vient de détecter au
+   * moins une notification en plus ET que l'onglet n'est pas au premier plan — inutile de
+   * doubler d'une popup navigateur une cloche que l'utilisateur regarde déjà. */
+  private loadNotifications(notifierSiArrierePlan = false): void {
     this.notificationService.getAll().subscribe({
-      next: (list) => this.notifications = list,
+      next: (list) => {
+        if (notifierSiArrierePlan) {
+          const anciensIds = new Set(this.notifications.map(n => n.id));
+          for (const n of list) {
+            if (!n.lu && !anciensIds.has(n.id)) {
+              afficherNotificationNavigateur(n.titre, { body: n.message });
+            }
+          }
+        }
+        this.notifications = list;
+      },
       error: () => {},
     });
   }

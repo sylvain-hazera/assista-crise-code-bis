@@ -1,8 +1,11 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { CommonModule } from '@angular/common';
-import { Subject, takeUntil } from 'rxjs';
+import { of, Subject, Subscription, takeUntil } from 'rxjs';
 import { DashboardStatsService, DashboardStats, DashboardFilter } from '../../services/dashboard-stats.service';
+import { pollWhileVisible } from '../../shared/utils/polling.util';
+
+const INTERVALLE_POLLING_DASHBOARD_MS = 30_000;
 
 // ── Types internes ────────────────────────────────────────────────────────────
 
@@ -68,6 +71,8 @@ enum FilterAction {
 })
 export class DashboardComponent implements OnInit, OnDestroy {
   private destroy$ = new Subject<void>();
+  private pollingSub?: Subscription;
+  private premierChargement = true;
   protected readonly Math = Math;
 
   // ── State ──────────────────────────────────────────────────
@@ -109,16 +114,33 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
   constructor(private dashboardStatsService: DashboardStatsService) {}
 
-  ngOnInit(): void  { this.loadAll(); }
-  ngOnDestroy(): void { this.destroy$.next(); this.destroy$.complete(); }
+  ngOnInit(): void {
+    // pollWhileVisible pilote aussi le tout premier chargement (son tick à t=0) — évite un
+    // double appel avec un loadAll() séparé ici. Suspendu en arrière-plan, rattrape
+    // immédiatement au retour au premier plan (voir pollWhileVisible).
+    this.pollingSub = pollWhileVisible(() => of(null), INTERVALLE_POLLING_DASHBOARD_MS).subscribe(() => {
+      this.loadAll(!this.premierChargement);
+      this.premierChargement = false;
+    });
+  }
+
+  ngOnDestroy(): void {
+    this.destroy$.next(); this.destroy$.complete();
+    this.pollingSub?.unsubscribe();
+  }
 
   // ────────────────────────────────────────────────────────────────────────────
   // DATA LOADING
   // ────────────────────────────────────────────────────────────────────────────
 
-  loadAll(): void {
-    this.isLoading    = true;
-    this.errorMessage = '';
+  /** `silencieux` : true pour les rafraîchissements automatiques en arrière-plan (polling) —
+   * pas de spinner plein écran ni de message d'erreur intrusif pour un simple poll raté, les
+   * données déjà affichées restent visibles telles quelles jusqu'au prochain poll réussi. */
+  loadAll(silencieux = false): void {
+    if (!silencieux) {
+      this.isLoading    = true;
+      this.errorMessage = '';
+    }
 
     this.dashboardStatsService.getStats(this.currentFilter as DashboardFilter)
       .pipe(takeUntil(this.destroy$))
@@ -126,8 +148,10 @@ export class DashboardComponent implements OnInit, OnDestroy {
         next: (data) => {
           this.process(data);
           this.isLoading = false;
+          this.errorMessage = '';
         },
         error: () => {
+          if (silencieux) return;
           this.errorMessage = 'Impossible de charger les données du tableau de bord.';
           this.isLoading    = false;
           this.stats        = this.emptyStats(false);

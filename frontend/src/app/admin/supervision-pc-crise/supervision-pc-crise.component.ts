@@ -1,8 +1,12 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnDestroy, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { Subscription } from 'rxjs';
 
 import { SatelliteService } from '../../services/satellite.service';
 import { LigneSupervision } from '../../shared/models/satellite.model';
+import { pollWhileVisible } from '../../shared/utils/polling.util';
+
+const INTERVALLE_POLLING_SUPERVISION_MS = 30_000;
 
 interface GroupeCrise {
   crise_id: string;
@@ -22,25 +26,41 @@ interface GroupeCrise {
   templateUrl: './supervision-pc-crise.component.html',
   styleUrl: './supervision-pc-crise.component.scss',
 })
-export class SupervisionPcCriseComponent implements OnInit {
+export class SupervisionPcCriseComponent implements OnInit, OnDestroy {
 
   groupes: GroupeCrise[] = [];
   loading = true;
   errorMessage = '';
 
+  private pollingSub?: Subscription;
+  private premierChargement = true;
+
   constructor(private service: SatelliteService) {}
 
   ngOnInit(): void {
-    this.load();
+    // Cette vue sert justement à repérer un PC Crise qui vient de décrocher — un chargement
+    // figé au montage serait contradictoire avec son objet même. Suspendu en arrière-plan,
+    // rattrape immédiatement au retour au premier plan (voir pollWhileVisible). Un poll raté
+    // après le tout premier chargement réussi n'efface pas les données déjà affichées — au pire
+    // prochain poll réussira.
+    this.pollingSub = pollWhileVisible(() => this.service.supervision(), INTERVALLE_POLLING_SUPERVISION_MS).subscribe({
+      next: (lignes) => {
+        this.groupes = this.grouperParCrise(lignes);
+        this.loading = false;
+        this.errorMessage = '';
+        this.premierChargement = false;
+      },
+      error: () => {
+        if (!this.premierChargement) return;
+        this.errorMessage = 'Impossible de charger la supervision.';
+        this.loading = false;
+        this.premierChargement = false;
+      },
+    });
   }
 
-  load(): void {
-    this.loading = true;
-    this.errorMessage = '';
-    this.service.supervision().subscribe({
-      next: (lignes) => { this.groupes = this.grouperParCrise(lignes); this.loading = false; },
-      error: () => { this.errorMessage = 'Impossible de charger la supervision.'; this.loading = false; },
-    });
+  ngOnDestroy(): void {
+    this.pollingSub?.unsubscribe();
   }
 
   private grouperParCrise(lignes: LigneSupervision[]): GroupeCrise[] {
