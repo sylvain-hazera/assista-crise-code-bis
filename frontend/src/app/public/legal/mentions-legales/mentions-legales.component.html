@@ -1,1 +1,88 @@
-<p>mention-legales works!</p>
+<div class="legal-page">
+  <div class="legal-wrapper">
+    <h1>Mentions légales</h1>
+    <p class="legal-updated">Dernière mise à jour : 18/09/2026</p>
+
+    <div class="legal-notice legal-notice-warning">
+      <span class="material-icons">warning</span>
+      <p>
+        <strong>[À valider avant publication]</strong> Ce texte a été rédigé à partir de la loi
+        n°2004-575 du 21 juin 2004 pour la confiance dans l'économie numérique (LCEN, articles
+        1-1 et suivants) et de la situation technique réelle du service au 18/09/2026, mais n'a
+        pas été relu par un juriste. En particulier : {{ contactNom }} publie ce site à titre
+        <strong>non professionnel</strong>, mais l'auto-hébergement (voir section 2) en fait
+        aussi son propre <strong>hébergeur</strong> au sens de la loi — rôle pour lequel
+        aucun anonymat n'est possible (l'hébergeur doit toujours être identifiable
+        publiquement). C'est pourquoi l'identité de {{ contactNom }} est publiée ici en clair,
+        plutôt que de s'appuyer sur le régime d'anonymat normalement ouvert à un éditeur non
+        professionnel — cette articulation mérite d'être confirmée par un juriste.
+      </p>
+    </div>
+
+    <section>
+      <h2>1. Éditeur du site</h2>
+      <p>
+        Le service Assista Crise est édité, à titre non professionnel, par :
+      </p>
+      <address class="legal-address">
+        {{ contactNom }}<br>
+        {{ contactAdresse }}<br>
+        Téléphone : {{ contactTelephone }} (heures de bureau, laisser un message)<br>
+        Email : <a [href]="'mailto:' + contactEmail">{{ contactEmail }}</a>
+      </address>
+      <p>
+        <strong>Directeur de la publication</strong> : {{ contactNom }}.
+      </p>
+    </section>
+
+    <section>
+      <h2>2. Hébergement</h2>
+      <p>
+        Le service est <strong>auto-hébergé</strong> par {{ contactNom }} lui-même, aux
+        coordonnées indiquées à la section 1 — il n'existe pas d'hébergeur tiers distinct de
+        l'éditeur.
+      </p>
+    </section>
+
+    <section>
+      <h2>3. Propriété intellectuelle</h2>
+      <p>
+        Sauf mention contraire, les éléments graphiques, textuels et logiciels du site sont la
+        propriété de {{ contactNom }} ou de leurs auteurs respectifs. Toute reproduction sans
+        autorisation préalable est interdite, à l'exception des contenus explicitement publiés
+        sous une licence libre (voir notre <a routerLink="/credits">page Crédits</a>).
+      </p>
+    </section>
+
+    <section>
+      <h2>4. Responsabilité</h2>
+      <p>
+        Assista Crise est un outil de <strong>coordination</strong> entre personnes affectées par
+        une crise, bénévoles et acteurs institutionnels — il ne se substitue ni aux services
+        d'urgence (112, 15, 18) ni aux consignes officielles des autorités. En cas de danger
+        immédiat, contactez toujours les services d'urgence en priorité.
+      </p>
+      <p>
+        {{ contactNom }} met en œuvre des moyens raisonnables pour assurer la disponibilité et la
+        fiabilité du service, sans garantie de continuité absolue — voir nos
+        <a routerLink="/cgu">CGU</a> pour le détail des conditions d'utilisation.
+      </p>
+    </section>
+
+    <section>
+      <h2>5. Données personnelles</h2>
+      <p>
+        Le traitement des données personnelles collectées par le service est décrit dans notre
+        <a routerLink="/rgpd">politique de confidentialité</a>.
+      </p>
+    </section>
+
+    <section>
+      <h2>6. Droit applicable</h2>
+      <p>
+        Les présentes mentions légales sont soumises au droit français. En cas de litige, et à
+        défaut de résolution amiable, les tribunaux français compétents seront seuls saisis.
+      </p>
+    </section>
+  </div>
+</div>

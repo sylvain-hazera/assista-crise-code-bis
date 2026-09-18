@@ -264,7 +264,10 @@ class TestNotificationRecherchePersonneRetrouvee:
     def test_retrouver_notifie_createur_et_lecteurs(self, create_user):
         createur = create_user(username="createur-audit@test.fr", email="createur-audit@test.fr", type="UTIL_SIMPLE")
         lecteur = create_user(username="lecteur-audit@test.fr", email="lecteur-audit@test.fr", type="UTIL_SIMPLE")
-        acteur = create_user(username="acteur-retrouve-audit@test.fr", email="acteur-retrouve-audit@test.fr", type="UTIL_SIMPLE")
+        # RecherchePersonneViewSet est réservé aux comptes institutionnels depuis le 2026-09-18
+        # (voir /rgpd) — createur/lecteur ci-dessus ne sont que des destinataires de
+        # notification, pas les auteurs de l'appel API, ils peuvent rester UTIL_SIMPLE.
+        acteur = create_user(username="acteur-retrouve-audit@test.fr", email="acteur-retrouve-audit@test.fr", type="AUT_LOCALE")
         recherche = RecherchePersonne.objects.create(
             nom="Dupont", prenom="Jean", age=70, source="DOMICILE", ville="Test-ville",
             contact_nom="Contact test", contact_email="contact@test.fr", contact_telephone="0600000000",

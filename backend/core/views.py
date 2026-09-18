@@ -7116,8 +7116,14 @@ class RecherchePersonneViewSet(
         RecherchePersonneSerializer
     )
 
+    # Avant ce correctif : IsAuthenticated seul, contrairement à ce que la page RGPD (/rgpd,
+    # section 1) prétendait déjà ("réservé aux comptes institutionnels") — écart trouvé en
+    # vérifiant cette page, corrigé le 2026-09-18. Traite des données concernant une personne
+    # qui n'a pas pu consentir elle-même (photographie, description physique) : un compte
+    # authentifié quelconque n'a pas vocation à y accéder, seuls les comptes institutionnels
+    # agissant par délégation du maire (voir la finalité décrite dans la page RGPD).
     permission_classes = [
-        permissions.IsAuthenticated
+        IsInstitutionalActor
     ]
     def get_queryset(self):
         # Depuis self.queryset (pas RecherchePersonne.objects.* directement) pour conserver le
@@ -7377,6 +7383,12 @@ class RecherchePersonneCommentaireViewSet(
         RecherchePersonneCommentaireSerializer
     )
 
+    # Voir la même correction sur RecherchePersonneViewSet (2026-09-18) : retombait sinon sur
+    # IsAuthenticated (défaut global), pas cohérent avec "réservé aux comptes institutionnels".
+    permission_classes = [
+        IsInstitutionalActor
+    ]
+
     def perform_create(self, serializer):
 
         commentaire = serializer.save(
@@ -7433,6 +7445,11 @@ class RecherchePersonneHistoriqueViewSet(
         RecherchePersonneHistoriqueSerializer
     )
 
+    # Voir la même correction sur RecherchePersonneViewSet (2026-09-18).
+    permission_classes = [
+        IsInstitutionalActor
+    ]
+
 class RecherchePersonnePhotoViewSet(
     EnvironmentScopedViewSetMixin, viewsets.ModelViewSet
 ):
@@ -7447,8 +7464,9 @@ class RecherchePersonnePhotoViewSet(
         RecherchePersonnePhotoSerializer
     )
 
+    # Voir la même correction sur RecherchePersonneViewSet (2026-09-18).
     permission_classes = [
-        permissions.IsAuthenticated
+        IsInstitutionalActor
     ]
 
     def perform_create(
@@ -7499,8 +7517,9 @@ class RecherchePersonneCommentairePhotoViewSet(
         RecherchePersonneCommentairePhotoSerializer
     )
 
+    # Voir la même correction sur RecherchePersonneViewSet (2026-09-18).
     permission_classes = [
-        permissions.IsAuthenticated
+        IsInstitutionalActor
     ]
 
     @action(

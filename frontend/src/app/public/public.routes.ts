@@ -5,7 +5,7 @@ import { AboutComponent } from './about/about.component';
 import { GlobalMapComponent } from './global-map/global-map.component';
 import { CrisisComponent } from './crisis/crisis.component';
 import { authGuard } from '../core/guards/auth.guard';
-import { adminGuard } from '../core/guards/admin.guard';
+import { adminGuard, institutionalEffectiveGuard } from '../core/guards/admin.guard';
 import { RecherchesPersonnesComponent } from '../pages/recherches-personnes/recherches-personnes.component';
 import { RecherchePersonneCreateComponent } from '../pages/recherche-personne-create/recherche-personne-create.component';
 import { RecherchePersonneDetailComponent } from '../pages/recherche-personne-detail/recherche-personne-detail.component';
@@ -130,18 +130,22 @@ export const PUBLIC_ROUTES: Routes = [
           .then(m => m.CreditsComponent)
       },
       {
+        // Réservé aux comptes institutionnels (voir /rgpd, section 1 et 2 — la fonctionnalité
+        // traite des données d'une personne qui n'a pas pu y consentir elle-même) — corrigé le
+        // 2026-09-18, n'exigeait auparavant qu'un compte authentifié quelconque (authGuard),
+        // incohérent avec ce que la page RGPD affirmait déjà.
         path: 'recherches-personnes',
-        canActivate: [authGuard],
+        canActivate: [institutionalEffectiveGuard],
         component: RecherchesPersonnesComponent
       },
       {
         path: 'recherches-personnes/new',
-        canActivate: [authGuard],
+        canActivate: [institutionalEffectiveGuard],
         component: RecherchePersonneCreateComponent
       },
       {
         path: 'recherches-personnes/:id',
-        canActivate: [authGuard],
+        canActivate: [institutionalEffectiveGuard],
         component: RecherchePersonneDetailComponent
       },
 ];

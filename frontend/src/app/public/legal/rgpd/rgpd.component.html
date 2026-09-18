@@ -1,81 +1,97 @@
 <div class="legal-page">
   <div class="legal-wrapper">
     <h1>Politique de confidentialité</h1>
-    <p class="legal-updated">Dernière mise à jour : 28/08/2026</p>
+    <p class="legal-updated">Dernière mise à jour : 18/09/2026 (revue initiale : 28/08/2026)</p>
 
     <div class="legal-notice legal-notice-warning">
       <span class="material-icons">warning</span>
       <p>
-        <strong>[À COMPLÉTER avant publication]</strong> Ce texte décrit fidèlement les traitements
-        techniquement réalisés par l'application au 28/08/2026. Il manque cependant les éléments
-        d'identité du responsable de traitement (section 1) et n'a pas été validé par un délégué
-        à la protection des données (DPO) ni un juriste. Points signalés comme nécessitant une
-        attention particulière avant mise en production réelle (au-delà d'un usage
-        expérimental/interne) :
+        <strong>[Corrections du 2026-09-18]</strong> Ce texte décrit fidèlement les traitements
+        techniquement réalisés par l'application. Les points ci-dessous, signalés lors d'une revue
+        du 28/08/2026, ont été traités depuis — le détail de chaque correction reste noté pour
+        traçabilité. Le texte n'a cependant toujours pas été validé par un délégué à la protection
+        des données (DPO) ni un juriste indépendant, et le point le plus important reste ouvert :
+        <strong>aucune convention de sous-traitance n'est encore signée avec les collectivités
+        utilisatrices</strong> (voir section 1).
       </p>
     </div>
     <ul class="legal-doubts">
       <li>
-        <strong>Absence de recueil d'information au moment de la collecte.</strong> Les
-        formulaires publics (demande d'aide, offre d'aide, signalement, "je suis en sécurité")
-        collectent nom, prénom, email, téléphone et localisation précise sans afficher de mention
-        d'information RGPD ni de lien vers cette page au moment de la saisie. C'est une obligation
-        de l'article 13 du RGPD, pas seulement une bonne pratique.
+        <strong>Recueil d'information au moment de la collecte — corrigé.</strong> Les 4 formulaires
+        publics (demande d'aide, offre d'aide, signalement, "je suis en sécurité") affichent
+        désormais une mention d'information avec un lien vers cette page, juste avant l'envoi (voir
+        <code>app-rgpd-notice</code>) — obligation de l'article 13 du RGPD.
       </li>
       <li>
-        <strong>Champs pouvant révéler des données de santé.</strong> Le "régime alimentaire
-        spécifique" (déclaration de sécurité) et les champs de commentaire libre (déclaration de
-        sécurité, recherche de personne) peuvent involontairement contenir des informations de
-        santé, de handicap ou d'appartenance religieuse — catégories de données dites
-        "sensibles" au sens de l'article 9 du RGPD, qui appellent en principe une base légale et
-        des garanties renforcées spécifiques, allant au-delà de ce qui est décrit ici.
+        <strong>Champs pouvant révéler des données de santé — nuancé.</strong> Le "régime
+        alimentaire spécifique" (déclaration de sécurité) est un simple indicateur binaire
+        (oui/non), pas un champ décrivant une pathologie — risque plus faible qu'un champ libre.
+        Les commentaires libres (déclaration de sécurité, recherche de personne), eux, peuvent
+        toujours involontairement contenir des informations de santé, de handicap ou de conviction
+        religieuse — catégories dites "sensibles" au sens de l'article 9 du RGPD. Un texte
+        d'avertissement invite désormais la personne qui saisit ces champs à ne pas y indiquer ce
+        type d'information ; le risque résiduel n'est pas éliminé pour autant (voir section 2).
       </li>
       <li>
-        <strong>Recherche de personnes disparues.</strong> Contrairement à ce que le nom du module
-        pourrait laisser penser, il ne s'agit pas d'un avis de recherche public : la fonctionnalité
-        est réservée aux comptes institutionnels authentifiés et sert à demander aux équipes
-        municipales, par délégation du maire, si elles ont des nouvelles d'une personne évacuée.
-        En cas de réponse positive, l'information est transmise à la personne qui s'inquiétait ;
-        en l'absence de nouvelles, une recherche est engagée et peut être transmise à la
-        gendarmerie. Elle traite néanmoins des données (photographie, description physique)
-        concernant une personne qui n'a pas pu consentir elle-même à ce traitement — le cadre
-        légal exact (mission d'intérêt public déléguée, urgence vitale) mérite d'être formellement
-        confirmé avec un juriste, de même que l'articulation avec le rôle de sous-traitant évoqué
-        en section 1.
+        <strong>Recherche de personnes disparues — accès restreint pour correspondre au texte.</strong>
+        Il ne s'agit pas d'un avis de recherche public : la fonctionnalité sert à demander aux
+        équipes municipales, par délégation du maire, si elles ont des nouvelles d'une personne
+        évacuée. Une vérification technique a montré que l'accès n'était en réalité restreint
+        qu'aux comptes authentifiés, pas spécifiquement institutionnels comme le texte le
+        prétendait — corrigé pour que seuls les comptes institutionnels y accèdent réellement. Le
+        cadre légal exact (mission d'intérêt public déléguée, urgence vitale) mérite toujours
+        d'être formellement confirmé avec un juriste, de même que l'articulation avec le rôle de
+        sous-traitant précisé en section 1.
       </li>
       <li>
-        <strong>Polices Google Fonts.</strong> Le site charge des polices depuis les serveurs
-        Google (fonts.googleapis.com), ce qui transmet l'adresse IP du visiteur à Google. C'est
-        mentionné en section 7 ci-dessous, mais l'auto-hébergement de ces polices est la pratique
-        recommandée par la CNIL pour éviter ce transfert.
+        <strong>Polices Google Fonts — corrigé.</strong> Les polices (Roboto, Material Icons,
+        Material Symbols Outlined) sont désormais auto-hébergées depuis nos propres serveurs —
+        plus aucun chargement depuis fonts.googleapis.com/fonts.gstatic.com, donc plus de
+        transmission de l'adresse IP du visiteur à Google (voir section 7).
       </li>
     </ul>
 
     <section>
       <h2>1. Responsable du traitement</h2>
       <p>
-        Assista Crise est un projet académique porté dans le cadre de la formation Info5 de
-        l'Université Grenoble Alpes. La qualification RGPD exacte de l'entité qui exploite le
-        service dépend du contexte d'usage et n'est pas encore tranchée :
+        Assista Crise fonctionne selon un modèle à deux niveaux :
       </p>
       <ul>
-        <li>lorsqu'une crise est pilotée par une autorité locale (mairie, service de secours) qui
-          décide de l'ouverture de la crise, des équipes mobilisées et des suites données aux
-          demandes, celle-ci agit comme <strong>responsable de traitement</strong> pour les données
-          de sa crise, et Assista Crise agit vraisemblablement comme <strong>sous-traitant</strong>
-          au sens de l'article 28 du RGPD — ce qui suppose normalement un contrat de
-          sous-traitance avec chaque autorité utilisatrice, qui n'existe pas encore à ce stade ;</li>
-        <li>pour les traitements propres au fonctionnement de la plateforme elle-même (création de
-          comptes, journal d'activité, sécurité technique), Assista Crise agit comme
-          <strong>responsable de traitement</strong>.</li>
+        <li>
+          <strong>Chaque collectivité utilisatrice</strong> (mairie, EPCI, service de secours) qui
+          pilote une crise sur la plateforme — décide de son ouverture, des équipes mobilisées et
+          des suites données aux demandes — est <strong>responsable de traitement</strong> au sens
+          du RGPD pour les données personnelles collectées dans le cadre de CETTE crise ;
+        </li>
+        <li>
+          <strong>{{ contactNom }}</strong>, qui développe et héberge la plateforme, agit comme
+          <strong>sous-traitant</strong> au sens de l'article 28 du RGPD pour ces mêmes données —
+          il les traite sur instruction de chaque collectivité, pour son compte, sans en
+          déterminer lui-même les finalités. <strong>Un contrat de sous-traitance (convention)
+          doit être formalisé avec chaque collectivité utilisatrice</strong> ; à ce stade, aucune
+          convention de ce type n'est encore signée — point à traiter avant tout déploiement
+          au-delà d'un usage expérimental/interne ;
+        </li>
+        <li>
+          pour les traitements propres au fonctionnement de la plateforme elle-même (création de
+          comptes, journal d'activité, sécurité technique — indépendants d'une crise
+          particulière), {{ contactNom }} agit comme <strong>responsable de traitement</strong>.
+        </li>
       </ul>
+      <address class="legal-address">
+        {{ contactNom }}<br>
+        {{ contactAdresse }}<br>
+        <a [href]="'mailto:' + contactEmail">{{ contactEmail }}</a>
+      </address>
       <p>
-        <strong>[À COMPLÉTER]</strong> : si le service est déployé au-delà d'un cadre
-        expérimental/pédagogique, l'entité juridiquement responsable (l'université elle-même, un
-        laboratoire, une association...) doit être formellement désignée ici, avec son adresse,
-        les contrats de sous-traitance correspondants et, le cas échéant, les coordonnées d'un
-        délégué à la protection des données (DPO). Contact temporaire :
-        <a href="mailto:contact&#64;assista-crise.fr">contact&#64;assista-crise.fr</a>.
+        <strong>Délégué à la protection des données (DPO)</strong> : {{ contactNom }}, aux
+        coordonnées ci-dessus, pour ses propres obligations de sous-traitant et pour les
+        traitements dont il est responsable (fonctionnement de la plateforme elle-même). <em>Cela
+        ne dispense pas chaque collectivité responsable de traitement de désigner ou de confirmer
+        son propre DPO (souvent mutualisé via un centre de gestion ou une intercommunalité) pour
+        ses propres obligations — cette articulation, comme la qualification retenue ci-dessus,
+        mérite d'être formellement confirmée avec un juriste avant toute mise en production
+        réelle.</em>
       </p>
     </section>
 
@@ -124,6 +140,15 @@
           </tr>
         </tbody>
       </table>
+      <p class="legal-note">
+        Le "régime alimentaire spécifique" est un simple indicateur oui/non, jamais un champ
+        décrivant une pathologie. Les champs de commentaire libre ("je suis en sécurité",
+        recherche de personnes), en revanche, peuvent toujours involontairement contenir des
+        informations de santé, de handicap ou de conviction religieuse — catégories dites
+        "sensibles" au sens de l'article 9 du RGPD. Un texte d'avertissement invite désormais à
+        ne pas y indiquer ce type d'information, mais le risque résiduel n'est pas éliminé pour
+        autant : n'y indiquez que ce qui est strictement nécessaire à la prise en charge.
+      </p>
     </section>
 
     <section>
@@ -133,13 +158,13 @@
         secours (voir section 1), la base légale relève de cette autorité en sa qualité de
         responsable de traitement : elle repose en pratique sur la <strong>sauvegarde des
         intérêts vitaux</strong> des personnes concernées et sur <strong>l'exécution d'une mission
-        d'intérêt public</strong> de sécurité civile. Assista Crise, en tant que sous-traitant
-        présumé pour ces traitements, n'a pas à définir lui-même cette base mais doit la respecter
-        et la documenter avec chaque autorité concernée. La création d'un compte et son
-        fonctionnement courant, propres à la plateforme, relèvent quant à eux de
-        <strong>l'exécution du contrat</strong> d'utilisation du service (voir nos
-        <a routerLink="/cgu">CGU</a>). <em>[À confirmer/affiner avec un juriste selon le statut
-        exact de l'entité opérant le service et la qualification retenue en section 1.]</em>
+        d'intérêt public</strong> de sécurité civile. {{ contactNom }}, en tant que sous-traitant
+        pour ces traitements, n'a pas à définir lui-même cette base mais doit la respecter
+        et la documenter avec chaque autorité concernée (voir la convention à formaliser,
+        section 1). La création d'un compte et son fonctionnement courant, propres à la
+        plateforme, relèvent quant à eux de <strong>l'exécution du contrat</strong> d'utilisation
+        du service (voir nos <a routerLink="/cgu">CGU</a>). <em>[À confirmer/affiner avec un
+        juriste avant toute mise en production réelle.]</em>
       </p>
     </section>
 
@@ -165,8 +190,8 @@
       </ul>
       <p>
         Aucune donnée n'est vendue ni cédée à des tiers à des fins commerciales. Aucun transfert
-        hors de l'Union européenne n'est effectué, à l'exception du chargement de polices
-        d'écriture depuis les serveurs de Google (voir section 7).
+        hors de l'Union européenne n'est effectué (voir section 7 : les polices d'écriture sont
+        auto-hébergées, plus aucun chargement depuis un serveur tiers).
       </p>
     </section>
 
@@ -227,9 +252,11 @@
         (localStorage), propre à votre appareil, jamais transmis à un tiers.
       </p>
       <p>
-        Le site charge les polices d'écriture et icônes Google Fonts directement depuis les
-        serveurs de Google (fonts.googleapis.com, fonts.gstatic.com), ce qui transmet votre adresse
-        IP à Google au moment du chargement de la page.
+        Les polices d'écriture et icônes (Roboto, Material Icons, Material Symbols Outlined) sont
+        <strong>auto-hébergées</strong> depuis nos propres serveurs — plus aucun chargement depuis
+        les serveurs de Google (fonts.googleapis.com, fonts.gstatic.com), donc plus de
+        transmission de votre adresse IP à un tiers au chargement de la page. C'était le cas avant
+        le 2026-09-18 ; corrigé depuis, conformément à la recommandation de la CNIL.
       </p>
     </section>
 
