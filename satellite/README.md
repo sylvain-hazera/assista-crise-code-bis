@@ -152,11 +152,14 @@ python3 annoncer_backend_local.py
 
 ## Synchronisation local → central (profil full uniquement)
 
-Décidée le 2026-09-18, périmètre v1 : le travail des acteurs institutionnels sur place pendant
-une coupure — `Dossier` (+ son fil `DossierCommentaire`/`DossierHistorique`),
-`DeclarationSecurite`, `Mission`, `MessageMeshLog`. PAS `Request`/`Offer`/`Information`
-(citoyens, alimentés via internet, jamais via le LAN privé d'un satellite) — voir
-`backend/core/sync_outbox.py` pour ajouter un modèle plus tard sans redesign.
+Décidée le 2026-09-18, périmètre v1 du sens LOCAL -> CENTRAL (`EvenementSynchronisation`) : le
+travail des acteurs institutionnels sur place pendant une coupure — `Dossier` (+ son fil
+`DossierCommentaire`/`DossierHistorique`), `DeclarationSecurite`, `Mission`, `MessageMeshLog`.
+PAS `Request`/`Offer`/`Information` dans CE sens (citoyens, alimentés via internet, jamais via
+le LAN privé d'un satellite) — voir `backend/core/sync_outbox.py` pour ajouter un modèle plus
+tard sans redesign. Le sens CENTRAL -> LOCAL (`donnees()`/`sync-entrant`, voir plus bas) couvre
+lui ces trois modèles en plus de Dossier/Mission — une demande soumise par un citoyen au site
+public doit redescendre vers le satellite, même si elle ne remonte jamais.
 
 - **Côté backend local** (`INSTANCE_SATELLITE_LOCALE=True`, posé automatiquement sur le
   service `backend` du profil full) : chaque écriture pertinente peuple
@@ -181,25 +184,38 @@ une coupure — `Dossier` (+ son fil `DossierCommentaire`/`DossierHistorique`),
 - **`sync-entrant`** (nouveau conteneur, même image que `backend`, SANS
   `INSTANCE_SATELLITE_LOCALE`) : sens inverse de `sync-sortant` — boucle `synchroniser_entrant`
   (`SATELLITE_SYNC_ENTRANT_INTERVALLE_S`, 300 par défaut), applique localement le
-  rafraîchissement `GET /api/satellites/<id>/donnees/` pour `Dossier`/`Mission` uniquement
-  (Crisis/Request/Offer/Information, aussi renvoyés par cet endpoint, restent un gap séparé non
-  traité par cette commande). Un objet avec une écriture locale encore `EN_ATTENTE` est ignoré
-  (jamais écrasé silencieusement) ; un conflit tranché côté central (`resoudre`) redescend donc
-  vers la copie locale dès le passage suivant, puisque rien ne le bloque plus une fois résolu.
-  `modifie_le` est posé à la valeur EXACTE reçue du central (`QuerySet.update()`, aucun signal
-  déclenché) — indispensable pour qu'une future écriture locale calcule une `version_de_base`
-  qui corresponde vraiment à ce que le central connaît, plutôt qu'un horodatage arbitraire qui
-  déclencherait un faux conflit au prochain envoi.
+  rafraîchissement `GET /api/satellites/<id>/donnees/`, en deux régimes :
+  - `Dossier`/`Mission` (mutables) : un objet avec une écriture locale encore `EN_ATTENTE` est
+    ignoré (jamais écrasé silencieusement) ; un conflit tranché côté central (`resoudre`)
+    redescend donc vers la copie locale dès le passage suivant, puisque rien ne le bloque plus
+    une fois résolu. `modifie_le` posé à la valeur EXACTE reçue du central (`QuerySet.update()`,
+    aucun signal déclenché) — indispensable pour qu'une future écriture locale calcule une
+    `version_de_base` qui corresponde vraiment à ce que le central connaît, plutôt qu'un
+    horodatage arbitraire qui déclencherait un faux conflit au prochain envoi.
+  - `Crisis`/`Request`/`Offer`/`Information` : simple upsert (jamais édités localement, le
+    central fait toujours autorité). Un champ géométrique (`location`/`zone`/`zone_secteurs`)
+    voyage en GeoJSON et se reconstruit via `GEOSGeometry`. Les FK vers un catalogue partagé
+    (`RequestType`/`OfferType`/`InformationType`/`MaterielCatalogue`/`Competence` — peuplé
+    indépendamment par ses propres migrations sur chaque déploiement, un même uuid n'a AUCUNE
+    raison de coïncider entre central et satellite) sont résolues par CLÉ NATURELLE (le nom
+    métier, unique des deux côtés), créées localement si absentes — cohérent avec la
+    philosophie déjà en place de ces tables ("n'importe quel centre peut ajouter une entrée,
+    immédiatement réutilisable"). Un `author`/`validator` pas encore connu localement (aucune
+    synchronisation des comptes utilisateurs à ce jour) est mis à `None` plutôt que de bloquer
+    tout l'enregistrement. `photo` (fichier binaire) volontairement exclu — jamais transféré par
+    ce canal JSON, déjà le cas avant ce chantier.
 - **Identité** : l'auteur apparent côté central reste le compte de service du satellite
   (aucun nouveau mécanisme d'auth) ; le vrai auteur local (peut n'exister QUE côté local, pas
   de compte web) est conservé dans `auteur_local_email`/`auteur_local_nom` et apparaît dans le
   commentaire d'audit posé à l'application de l'événement.
 
 Testé par `backend/core/test_synchronisation.py` (peuplement de la file, application côté
-endpoint des deux sens, commandes `synchroniser_sortant`/`synchroniser_entrant`, résolution de
-conflit) — **jamais testé de bout en bout entre deux vraies instances** (central + satellite
-Full réels), seulement en isolation avec mocks. Crisis/Request/Offer/Information (pull central
--> local) restent sans consommateur — gap connu, pas dans le périmètre de ce chantier.
+endpoint des deux sens — y compris résolution des FK de catalogue par clé naturelle et
+reconstruction GeoJSON pour Crisis/Request/Offer/Information —, commandes
+`synchroniser_sortant`/`synchroniser_entrant`, résolution de conflit) — **jamais testé de bout
+en bout entre deux vraies instances** (central + satellite Full réels), seulement en isolation
+avec mocks. `photo` (fichiers binaires) reste hors périmètre de ce canal JSON, comme avant ce
+chantier — aucun transfert d'image entre central et satellite.
 
 ## Installer les dépendances et lancer les tests
 

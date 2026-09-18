@@ -14,10 +14,11 @@ from rest_framework.test import APIClient
 
 from core.management.commands.synchroniser_entrant import appliquer_objet_mutable
 from core.models import (
-    ContactInstitution, ConflitSynchronisation, Crisis, Dossier, DossierCommentaire,
+    Competence, ContactInstitution, ConflitSynchronisation, Crisis, Dossier, DossierCommentaire,
     EtatEvenementSynchronisation, EvenementSynchronisation, Institution, InstitutionType,
-    Notification, Satellite, StatutEnrolementSatellite,
+    Notification, Offer, OfferType, Request, RequestType, Satellite, StatutEnrolementSatellite,
 )
+from core.sync_outbox import appliquer_payload_pull, construire_payload_pull
 
 
 @pytest.fixture
@@ -469,3 +470,150 @@ class TestCommandeSynchroniserEntrant:
 
         dossier.refresh_from_db()
         assert dossier.statut == "RESOLU"
+
+
+@pytest.mark.django_db
+class TestDonneesIncluCrisisRequestOfferInformation:
+    def test_demande_incluse_avec_cle_naturelle_du_type_et_geojson(self, satellite_client, satellite, crisis):
+        rtype = RequestType.objects.create(type="Aide urgente Donnees")
+        demande = Request.objects.create(
+            title="T", request_type=rtype, crisis=crisis, commune_code="38185",
+            first_name_request="A", last_name_request="B", email_request="a@b.fr", phone_request="0600000000",
+            location=Point(5.72, 45.18, srid=4326),
+        )
+        response = satellite_client.get(reverse('satellite-donnees', args=[satellite.id]))
+        assert response.status_code == status.HTTP_200_OK
+        demandes = {d["id"]: d for d in response.data["demandes"]}
+        assert str(demande.id) in demandes
+        item = demandes[str(demande.id)]
+        assert item["request_type_cle"] == "Aide urgente Donnees"
+        assert item["crisis_id"] == str(crisis.id)
+        assert "Point" in item["location"]
+        assert "photo" not in item
+
+
+@pytest.mark.django_db
+class TestConstruireEtAppliquerPayloadPull:
+    def test_construire_payload_pull_inclut_cle_naturelle_geojson_et_fk_partagee(self, crisis, create_user):
+        rtype = RequestType.objects.create(type="Aide urgente Pull")
+        auteur = create_user(username="citoyen-sync@x.fr", email="citoyen-sync@x.fr", type="UTIL_SIMPLE")
+        demande = Request.objects.create(
+            title="Besoin d'eau", request_type=rtype, crisis=crisis, author=auteur,
+            first_name_request="A", last_name_request="B", email_request="a@b.fr", phone_request="0600000000",
+            location=Point(5.72, 45.18, srid=4326),
+        )
+        payload = construire_payload_pull(demande, "Request")
+        assert payload["request_type_cle"] == "Aide urgente Pull"
+        assert payload["crisis_id"] == str(crisis.id)
+        assert payload["author_id"] == str(auteur.id)
+        assert "Point" in payload["location"]
+
+    def test_appliquer_cree_le_type_catalogue_absent_localement_par_nom(self, crisis):
+        rtype = RequestType.objects.create(type="Type Temporaire XYZ")
+        demande = Request.objects.create(
+            title="T", request_type=rtype, crisis=crisis,
+            first_name_request="A", last_name_request="B", email_request="a@b.fr", phone_request="0600000000",
+        )
+        payload = construire_payload_pull(demande, "Request")
+        demande_id = demande.id
+        # RequestType est PROTECT depuis Request : il faut supprimer la demande AVANT son type
+        # pour simuler "ce catalogue n'existe pas encore localement" sans violer la contrainte.
+        demande.delete()
+        rtype.delete()
+        assert not RequestType.objects.filter(type="Type Temporaire XYZ").exists()
+
+        appliquer_payload_pull(django_apps.get_model, Request, "Request", payload)
+
+        nouveau_type = RequestType.objects.get(type="Type Temporaire XYZ")
+        applique = Request.objects.get(id=demande_id)
+        assert applique.request_type_id == nouveau_type.id
+
+    def test_appliquer_met_auteur_absent_a_none_sans_planter(self, crisis, create_user):
+        auteur = create_user(username="ephemere-sync@x.fr", email="ephemere-sync@x.fr", type="UTIL_SIMPLE")
+        rtype = RequestType.objects.create(type="Aide urgente 2")
+        demande = Request.objects.create(
+            title="T", request_type=rtype, crisis=crisis, author=auteur,
+            first_name_request="A", last_name_request="B", email_request="a@b.fr", phone_request="0600000000",
+        )
+        payload = construire_payload_pull(demande, "Request")
+        auteur.delete()
+
+        appliquer_payload_pull(django_apps.get_model, Request, "Request", payload)
+
+        applique = Request.objects.get(id=demande.id)
+        assert applique.author_id is None
+
+    def test_appliquer_offer_resout_competences_par_nom(self, crisis):
+        otype = OfferType.objects.create(type="Materiel Pull")
+        comp = Competence.objects.create(nom="Secourisme Pull")
+        offre = Offer.objects.create(
+            title="Don", offer_type=otype, crisis=crisis,
+            first_name_offer="A", last_name_offer="B", email_offer="a@b.fr",
+        )
+        offre.competences.add(comp)
+        payload = construire_payload_pull(offre, "Offer")
+        comp.delete()
+        assert not Competence.objects.filter(nom="Secourisme Pull").exists()
+
+        appliquer_payload_pull(django_apps.get_model, Offer, "Offer", payload)
+
+        nouvelle_comp = Competence.objects.get(nom="Secourisme Pull")
+        applique = Offer.objects.get(id=offre.id)
+        assert nouvelle_comp in applique.competences.all()
+
+    def test_appliquer_reconstruit_la_geometrie_depuis_le_geojson(self, crisis):
+        rtype = RequestType.objects.create(type="Aide urgente 3")
+        demande = Request.objects.create(
+            title="T", request_type=rtype, crisis=crisis,
+            first_name_request="A", last_name_request="B", email_request="a@b.fr", phone_request="0600000000",
+            location=Point(5.72, 45.18, srid=4326),
+        )
+        payload = construire_payload_pull(demande, "Request")
+        demande.location = None
+        demande.save()
+
+        appliquer_payload_pull(django_apps.get_model, Request, "Request", payload)
+
+        applique = Request.objects.get(id=demande.id)
+        assert applique.location is not None
+        assert round(applique.location.x, 3) == round(5.72, 3)
+        assert round(applique.location.y, 3) == round(45.18, 3)
+
+    def test_commande_synchroniser_entrant_applique_aussi_les_demandes(self, settings, monkeypatch, crisis):
+        settings.SATELLITE_CENTRAL_URL = "https://central.example"
+        settings.SATELLITE_ID = "sat-1"
+        settings.SATELLITE_EMAIL = "sat@example.com"
+        settings.SATELLITE_PASSWORD = "secret"
+
+        rtype = RequestType.objects.create(type="Aide urgente Commande")
+        demande = Request.objects.create(
+            title="T", request_type=rtype, crisis=crisis,
+            first_name_request="A", last_name_request="B", email_request="a@b.fr", phone_request="0600000000",
+        )
+        payload = construire_payload_pull(demande, "Request")
+        demande_id = demande.id
+        demande.delete()
+        rtype.delete()
+
+        class FakeReponse:
+            def __init__(self, data):
+                self._data = data
+
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return self._data
+
+        def fake_post(url, **kwargs):
+            return FakeReponse({"access": "jeton-test"})
+
+        def fake_get(url, **kwargs):
+            return FakeReponse({"dossiers": [], "missions": [], "crises": [], "demandes": [payload], "offres": [], "signalements": []})
+
+        monkeypatch.setattr("core.management.commands.synchroniser_entrant.requests.post", fake_post)
+        monkeypatch.setattr("core.management.commands.synchroniser_entrant.requests.get", fake_get)
+        call_command("synchroniser_entrant")
+
+        assert Request.objects.filter(id=demande_id, title="T").exists()
+        assert RequestType.objects.filter(type="Aide urgente Commande").exists()

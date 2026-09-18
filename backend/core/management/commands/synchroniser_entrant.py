@@ -1,19 +1,25 @@
-"""Applique localement le rafraîchissement central -> local pour les modèles MUTABLE (Dossier,
-Mission) — voir SatelliteViewSet.donnees et core/sync_outbox.py. Limité à Dossier/Mission :
-Crisis/Request/Offer/Information (aussi renvoyés par `donnees()`) ne sont pas dans le périmètre
-de la synchronisation locale -> centrale (alimentés par les citoyens via internet, jamais édités
-localement) et n'ont donc aucun besoin de ce traitement prudent — les consommer reste un gap
-séparé, non traité ici (voir satellite/README.md).
+"""Applique localement le rafraîchissement central -> local (SatelliteViewSet.donnees) — deux
+régimes, voir core/sync_outbox.py pour le détail complet de chacun :
 
-Prudence spécifique à Dossier/Mission (contrairement à un simple upsert) : un objet avec un
-EvenementSynchronisation local encore EN_ATTENTE a une écriture locale pas encore poussée —
-appliquer la copie centrale par-dessus l'écraserait silencieusement, exactement ce que toute
-cette mécanique existe pour éviter. Cet objet est donc IGNORÉ tant que sa file locale n'est pas
-vide. `modifie_le` est posé à la valeur EXACTE reçue du central (pas "maintenant" — auto_now
-l'aurait sinon réécrasée) via QuerySet.update(), qui ne déclenche aucun signal : c'est ce qui
-permet à une future écriture locale de capturer une `version_de_base` qui correspond vraiment à
-ce que le central connaît, plutôt qu'un horodatage local arbitraire qui déclencherait un faux
-conflit au prochain envoi."""
+- **Dossier/Mission** (MUTABLE, voir `appliquer_objet_mutable`) : un objet avec une écriture
+  locale encore EN_ATTENTE est ignoré (jamais écrasé silencieusement — exactement ce que toute
+  cette mécanique existe pour éviter). `modifie_le` posé à la valeur EXACTE reçue du central
+  (pas "maintenant" — auto_now l'aurait sinon réécrasée) via `QuerySet.update()`, qui ne
+  déclenche aucun signal : c'est ce qui permet à une future écriture locale de capturer une
+  `version_de_base` qui correspond vraiment à ce que le central connaît, plutôt qu'un horodatage
+  local arbitraire qui déclencherait un faux conflit au prochain envoi. Un conflit déjà tranché
+  côté central (`ConflitSynchronisationViewSet.resoudre`) redescend donc automatiquement dès ce
+  passage, puisque rien ne le bloque plus une fois résolu.
+- **Crisis/Request/Offer/Information** (voir `sync_outbox.appliquer_payload_pull`) : upsert par
+  id, jamais de conflit possible à détecter (pas dans `sync_outbox.MODELES_SYNCHRONISABLES` —
+  jamais édités localement, alimentés par les citoyens via internet, le central fait toujours
+  autorité). Les FK vers un catalogue partagé (RequestType/OfferType/InformationType/
+  MaterielCatalogue/Competence, peuplé indépendamment par ses propres migrations sur chaque
+  déploiement — un même uuid n'a AUCUNE raison de coïncider entre central et satellite) sont
+  résolues par clé naturelle (nom métier) plutôt que par id, get_or_create localement si
+  absentes — voir sync_outbox.MODELES_PULL_SEUL. Un auteur (`author`) pas encore connu
+  localement (aucun mécanisme de synchronisation des comptes utilisateurs à ce jour) est mis à
+  None plutôt que de bloquer tout l'enregistrement."""
 import logging
 
 import requests
@@ -24,7 +30,12 @@ from core.models import EtatEvenementSynchronisation, EvenementSynchronisation
 
 logger = logging.getLogger(__name__)
 
-MODELES_ENTRANTS = ("Dossier", "Mission")
+MODELES_MUTABLES_ENTRANTS = ("Dossier", "Mission")
+MODELES_PULL_SEUL_ENTRANTS = ("Crisis", "Request", "Offer", "Information")
+CLES_JSON_PAR_MODELE = {
+    "Dossier": "dossiers", "Mission": "missions",
+    "Crisis": "crises", "Request": "demandes", "Offer": "offres", "Information": "signalements",
+}
 
 
 def appliquer_objet_mutable(apps_get_model, nom_modele, item):
@@ -58,10 +69,12 @@ def appliquer_objet_mutable(apps_get_model, nom_modele, item):
 
 
 class Command(BaseCommand):
-    help = "Applique localement le rafraîchissement central -> local (Dossier/Mission)."
+    help = "Applique localement le rafraîchissement central -> local (SatelliteViewSet.donnees)."
 
     def handle(self, *args, **options):
         from django.apps import apps
+
+        from core.sync_outbox import appliquer_payload_pull
 
         central_url = settings.SATELLITE_CENTRAL_URL
         satellite_id = settings.SATELLITE_ID
@@ -94,14 +107,25 @@ class Command(BaseCommand):
 
         donnees = reponse.json()
         compteurs = {"applique": 0, "ignore_local_en_attente": 0, "erreur": 0}
-        for nom_modele in MODELES_ENTRANTS:
-            for item in donnees.get(nom_modele.lower() + "s", []):
+
+        for nom_modele in MODELES_MUTABLES_ENTRANTS:
+            for item in donnees.get(CLES_JSON_PAR_MODELE[nom_modele], []):
                 try:
                     resultat = appliquer_objet_mutable(apps.get_model, nom_modele, item)
                 except Exception:
                     logger.exception("Échec application entrante %s %s", nom_modele, item.get("id"))
                     resultat = "erreur"
                 compteurs[resultat] += 1
+
+        for nom_modele in MODELES_PULL_SEUL_ENTRANTS:
+            ModeleClasse = apps.get_model('core', nom_modele)
+            for item in donnees.get(CLES_JSON_PAR_MODELE[nom_modele], []):
+                try:
+                    appliquer_payload_pull(apps.get_model, ModeleClasse, nom_modele, item)
+                    compteurs["applique"] += 1
+                except Exception:
+                    logger.exception("Échec application entrante %s %s", nom_modele, item.get("id"))
+                    compteurs["erreur"] += 1
 
         self.stdout.write(
             f"Synchronisation entrante : {compteurs['applique']} appliqué(s), "

@@ -11079,7 +11079,7 @@ class SatelliteViewSet(
             request, Request.objects.filter(environment=env, actif=True).filter(filtre_crise)
         )
         offres_qs = filter_queryset_to_viewer_zone(
-            request, Offer.objects.filter(environment=env, actif=True).filter(filtre_crise)
+            request, Offer.objects.filter(environment=env, actif=True).filter(filtre_crise).prefetch_related('competences')
         )
         signalements_qs = filter_queryset_to_viewer_zone(
             request, Information.objects.filter(environment=env).filter(filtre_crise),
@@ -11095,13 +11095,14 @@ class SatelliteViewSet(
         dossiers_qs = Dossier.objects.filter(environment=env, crise_id__in=crise_ids)
         missions_qs = Mission.objects.filter(environment=env).filter(Q(crise_id__in=crise_ids) | Q(crise__isnull=True))
 
+        from .sync_outbox import construire_payload_pull
         return Response({
-            "crises": CrisisSerializer(crises_qs, many=True).data,
-            "demandes": RequestSerializer(demandes_qs, many=True, context={'request': request}).data,
+            "crises": [construire_payload_pull(c, "Crisis") for c in crises_qs],
+            "demandes": [construire_payload_pull(d, "Request") for d in demandes_qs],
             "dossiers": [_payload_donnees_mutable(d, "Dossier") for d in dossiers_qs],
             "missions": [_payload_donnees_mutable(m, "Mission") for m in missions_qs],
-            "offres": OfferSerializer(offres_qs, many=True, context={'request': request}).data,
-            "signalements": InformationSerializer(signalements_qs, many=True, context={'request': request}).data,
+            "offres": [construire_payload_pull(o, "Offer") for o in offres_qs],
+            "signalements": [construire_payload_pull(s, "Information") for s in signalements_qs],
         })
 
     @action(detail=True, methods=['post'], url_path='synchroniser')
