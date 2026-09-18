@@ -83,6 +83,13 @@ export class CrisisService {
     return this.http.patch<Crisis>(`${this.apiUrl}/${id}/`, data);
   }
 
+  /** POST /api/crises/<id>/fusionner-zone/ — union géométrique d'un nouveau tracé avec la
+   * zone déjà enregistrée, plutôt que de l'écraser (voir crises.component.ts:saveZone).
+   * Refusé (400) si les deux tracés ne se touchent pas (voir CrisisViewSet.fusionner_zone). */
+  fusionnerZone(id: string, wkt: string): Observable<Crisis> {
+    return this.http.post<Crisis>(`${this.apiUrl}/${id}/fusionner-zone/`, { wkt });
+  }
+
   // /**
   //  * POST /api/crises/
   //  * Envoi via FormData pour gérer le champ photo éventuel.

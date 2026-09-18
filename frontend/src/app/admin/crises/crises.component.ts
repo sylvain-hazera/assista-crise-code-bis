@@ -309,16 +309,39 @@ export class CrisesComponent implements OnInit {
 
   saveZone(): void {
     if (!this.selectedCrisis) return;
+
+    // Une zone était déjà enregistrée : demander explicitement si ce nouveau tracé doit la
+    // REMPLACER ou s'y AJOUTER (fusion géométrique) — décision utilisateur du 2026-09-18,
+    // avant ce correctif le tracé écrasait toujours l'existant sans prévenir.
+    if (this.selectedCrisis.zone && this.pendingZoneWkt) {
+      const fusionner = confirm(
+        "Une zone est déjà enregistrée pour cette crise.\n\n" +
+        "OK pour AJOUTER ce tracé à la zone existante (fusion).\n" +
+        "Annuler pour REMPLACER entièrement la zone existante par ce nouveau tracé."
+      );
+      if (fusionner) {
+        this.crisisService.fusionnerZone(this.selectedCrisis.id, this.pendingZoneWkt).subscribe({
+          next: (updated) => this.onZoneSaved(updated),
+          error: (err) => this.showError(
+            err.error?.detail || "Impossible de fusionner ce tracé avec la zone existante."
+          ),
+        });
+        return;
+      }
+    }
+
     this.crisisService.patch(this.selectedCrisis.id, { zone: this.pendingZoneWkt }).subscribe({
-      next: (updated) => {
-        this.selectedCrisis = updated;
-        const idx = this.crises.findIndex(c => c.id === updated.id);
-        if (idx !== -1) this.crises[idx] = updated;
-        this.showZoneEditor = false;
-        this.showSuccess('Zone enregistrée.');
-      },
+      next: (updated) => this.onZoneSaved(updated),
       error: () => this.showError("Impossible d'enregistrer la zone."),
     });
+  }
+
+  private onZoneSaved(updated: Crisis): void {
+    this.selectedCrisis = updated;
+    const idx = this.crises.findIndex(c => c.id === updated.id);
+    if (idx !== -1) this.crises[idx] = updated;
+    this.showZoneEditor = false;
+    this.showSuccess('Zone enregistrée.');
   }
 
   // ── Zone de crise : secteurs (communes/départements + rayon) ───

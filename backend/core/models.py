@@ -388,6 +388,41 @@ class ImplicationInstitution(EnvironmentScopedModel):
         return f"{self.institution} - {self.crise} ({self.type_implication})"
 
 
+class ContributionZoneCommune(EnvironmentScopedModel):
+    """Qui a fait entrer CETTE commune dans `Crisis.zone_communes` — `zone_communes` reste un
+    simple JSONField (utilisé tel quel par tout le scoping zone existant, ex.
+    SatelliteViewSet.supervision), cette table ne fait qu'en tracer la provenance, en plus.
+    `institution` null = ajout sans propriétaire précis (ex. un admin élargissant la zone de
+    réponse sans que ce soit la commune elle-même qui se déclare) : librement retirable par
+    quiconque peut éditer la crise. `institution` renseigné = ajouté par cette commune/EPCI
+    elle-même déclarant une implication, ou par un de ses propres contacts via l'éditeur de
+    zone — voir CrisisViewSet.perform_update, seul cette institution (ou un administrateur
+    global, décision utilisateur du 2026-09-18) peut alors la retirer.
+
+    Une commune n'a qu'UN SEUL propriétaire par crise (contrainte d'unicité) : le premier
+    contributeur fait foi, un second ajout de la même commune ne change pas la provenance déjà
+    enregistrée — cohérent avec le principe "jamais un choix automatique silencieux", on ne
+    réattribue jamais la propriété d'une entrée déjà tracée."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    crise = models.ForeignKey(Crisis, on_delete=models.CASCADE, related_name="contributions_zone_communes")
+    commune_code = models.CharField(max_length=10)
+    institution = models.ForeignKey(
+        "Institution", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="contributions_zone_crises",
+    )
+    date_ajout = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["crise", "commune_code"], name="uq_contribution_zone_crise_commune"),
+        ]
+
+    def __str__(self):
+        return f"{self.commune_code} sur {self.crise} ({self.institution or 'sans propriétaire'})"
+
+
 class DureeHebergement(models.TextChoices):
     TEMPORAIRE = "TEMPORAIRE", "Temporaire"
     LONGUE_DUREE = "LONGUE_DUREE", "Longue durée"

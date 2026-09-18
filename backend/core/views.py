@@ -80,7 +80,7 @@ from .zone_scoping import (
     viewer_zone_code,
     widen_zone_from_request,
 )
-from django.contrib.gis.geos import Point
+from django.contrib.gis.geos import GEOSGeometry, Point
 
 
 GPS_IFD_TAG = 0x8825  # PIL.ExifTags.IFD.GPSInfo
@@ -141,6 +141,7 @@ from .models import (
     PointType,
     PointOperationnel,
     ImplicationInstitution,
+    ContributionZoneCommune,
     TypeImplication,
     StatutImplication,
     User, Crisis, TypeCrise, Request, RequestPhoto, Offer, OfferPhoto, OfferMessage, Information, DisponibiliteOffre, DisponibilitePointEquipe, MaterielPoint,
@@ -1964,7 +1965,7 @@ class CrisisViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         # posées sur un @action ne s'appliquent jamais d'elles-mêmes — chaque action custom
         # doit être explicitement listée ici, sinon elle retombe sur AllowAny (cf. cloturer/
         # reouvrir, découvert en corrigeant ce bug).
-        if self.action in ("create", "update", "partial_update"):
+        if self.action in ("create", "update", "partial_update", "fusionner_zone"):
             return [IsInstitutionalActor()]
         if self.action == "destroy":
             return [IsAdministrator()]
@@ -1996,6 +1997,40 @@ class CrisisViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         code = commune_code_from_point(crise.location)
         return Response({"commune_code": code})
 
+    @action(detail=True, methods=["post"], url_path="fusionner-zone")
+    def fusionner_zone(self, request, pk=None):
+        """Le tracé à main levée (`zone`) via saveZone() classique REMPLACE toujours
+        l'existant — cette action alternative FUSIONNE (union géométrique) un nouveau tracé
+        avec la zone déjà enregistrée plutôt que de l'écraser (décision utilisateur du
+        2026-09-18 : proposer explicitement le choix avant d'enregistrer, voir
+        crises.component.ts:saveZone). `zone` reste un PolygonField strict (pas Multi, voir
+        Crisis.zone) : si le nouveau tracé ne touche ni ne recouvre l'existant, leur union
+        produirait un MultiPolygon impossible à stocker ici — refusé explicitement (400) plutôt
+        que de corrompre silencieusement la donnée ou de la tronquer."""
+        crise = self.get_object()
+        wkt = request.data.get('wkt')
+        if not wkt:
+            return Response({'detail': "wkt requis."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            nouvelle_geometrie = GEOSGeometry(wkt, srid=4326)
+        except Exception:
+            return Response({'detail': "Tracé invalide."}, status=status.HTTP_400_BAD_REQUEST)
+
+        fusion = nouvelle_geometrie if crise.zone is None else crise.zone.union(nouvelle_geometrie)
+        if fusion.geom_type == 'MultiPolygon':
+            return Response({
+                'detail': "Ce tracé ne touche pas la zone existante — impossible de les "
+                          "fusionner en une seule zone continue. Utilisez « remplacer » à la place.",
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        crise.zone = fusion
+        crise.save(update_fields=['zone'])
+        audit_log(
+            request=request, action_code="MODIFICATION", objet_type="Crisis", objet_id=crise.id,
+            crise=crise, commentaire=f"Zone fusionnée avec un nouveau tracé sur la crise {crise.name}.",
+        )
+        return Response(self.get_serializer(crise).data)
+
     def perform_create(self, serializer):
         # Une mairie couvre un territoire bien plus resserré qu'une intercommunalité/préfecture
         # : 1 km de rayon par défaut pour la zone composée (zone_secteurs) plutôt que les 10 km
@@ -2015,6 +2050,66 @@ class CrisisViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             objet_id=crise.id,
             crise=crise,
             commentaire=f"Création crise : {crise.name}",
+        )
+
+    def perform_update(self, serializer):
+        """Décision utilisateur du 2026-09-18 : un utilisateur d'une collectivité ne peut pas
+        effacer, dans `zone_communes`, la contribution d'une AUTRE collectivité — seule
+        l'institution qui a fait entrer une commune dans la zone (voir
+        ContributionZoneCommune/_etendre_zone_crise_pour_implication) peut ensuite la retirer,
+        sauf un administrateur global. Une commune jamais tracée (ajoutée sans institution
+        précise, ex. un admin élargissant la zone de réponse) reste librement retirable —
+        aucune protection à réinventer pour ce cas, il n'y a juste personne à protéger."""
+        crise = serializer.instance
+        anciens_codes = set(crise.zone_communes)
+        nouveaux_codes = serializer.validated_data.get('zone_communes')
+
+        if nouveaux_codes is not None and get_effective_role(self.request) != UserRole.ADMINISTRATOR:
+            codes_retires = anciens_codes - set(nouveaux_codes)
+            if codes_retires:
+                contributions_protegees = ContributionZoneCommune.objects.filter(
+                    crise=crise, commune_code__in=codes_retires, institution__isnull=False,
+                ).exclude(
+                    institution__in=ContactInstitution.objects.filter(
+                        utilisateur=self.request.user, actif=True,
+                    ).values_list('institution_id', flat=True)
+                ).select_related('institution')
+                if contributions_protegees.exists():
+                    noms = ", ".join(sorted({c.institution.nom for c in contributions_protegees}))
+                    raise PermissionDenied(
+                        f"Vous ne pouvez pas retirer de la zone la contribution d'une autre "
+                        f"collectivité ({noms}) — seule cette collectivité ou un administrateur "
+                        f"peut le faire."
+                    )
+
+        crise = serializer.save()
+
+        if nouveaux_codes is not None:
+            institution_appelant_id = ContactInstitution.objects.filter(
+                utilisateur=self.request.user, actif=True,
+            ).values_list('institution_id', flat=True).first()
+            codes_ajoutes = set(nouveaux_codes) - anciens_codes
+            for code in codes_ajoutes:
+                institution_proprietaire = None
+                if institution_appelant_id:
+                    institution = Institution.objects.filter(pk=institution_appelant_id).first()
+                    if institution and institution.commune_code == code:
+                        institution_proprietaire = institution
+                ContributionZoneCommune.objects.get_or_create(
+                    crise=crise, commune_code=code,
+                    defaults={'institution': institution_proprietaire, 'environment': crise.environment},
+                )
+            codes_retires_effectifs = anciens_codes - set(nouveaux_codes)
+            if codes_retires_effectifs:
+                ContributionZoneCommune.objects.filter(crise=crise, commune_code__in=codes_retires_effectifs).delete()
+
+        audit_log(
+            request=self.request,
+            action_code="MODIFICATION",
+            objet_type="Crisis",
+            objet_id=crise.id,
+            crise=crise,
+            commentaire=f"Modification crise : {crise.name}",
         )
 
     @action(detail=True, methods=["get"])
@@ -9168,6 +9263,39 @@ def _notifier_verdict_implication(request, implication, valide: bool):
                 print(f"Erreur envoi email verdict implication : {e}")
 
 
+def _etendre_zone_crise_pour_implication(implication):
+    """Décision utilisateur du 2026-09-18 : une commune/EPCI qui se raccroche à une crise
+    (IMPLIQUE ou ACTEUR, quel que soit le sens du changement — se déclarer directement, ou
+    passer d'ACTEUR à IMPLIQUE) doit voir la zone de la crise s'étirer automatiquement sur son
+    propre territoire, sans geste manuel supplémentaire côté régulateur.
+
+    Ne fait qu'étendre `Crisis.zone_communes` (le champ réellement utilisé par le scoping zone
+    ailleurs dans l'app, ex. SatelliteViewSet.supervision) — ne recalcule PAS `zone_secteurs`
+    (le polygone affiché sur la carte, composé côté frontend depuis les contours officiels
+    geo.api.gouv.fr, voir la docstring de Crisis.zone_departements) : porter ce calcul
+    géométrique en Python aurait dupliqué une logique déjà éprouvée côté client pour un gain
+    incertain. Le prochain geste de recalcul de zone côté frontend (crises.component.ts)
+    reprendra automatiquement ce commune_code, déjà présent dans la liste. Idempotent — appelée
+    depuis perform_create/valider/perform_update, ne fait rien si déjà à jour."""
+    if implication.statut != StatutImplication.VALIDEE:
+        return
+    commune_code = implication.institution.commune_code
+    if not commune_code:
+        return
+
+    crise = implication.crise
+    if commune_code not in crise.zone_communes:
+        crise.zone_communes = [*crise.zone_communes, commune_code]
+        crise.save(update_fields=['zone_communes'])
+
+    # get_or_create, pas update_or_create : le premier contributeur fait foi, voir la docstring
+    # de ContributionZoneCommune — jamais réattribuer une provenance déjà tracée.
+    ContributionZoneCommune.objects.get_or_create(
+        crise=crise, commune_code=commune_code,
+        defaults={'institution': implication.institution, 'environment': implication.environment},
+    )
+
+
 class ImplicationInstitutionViewSet(
     EnvironmentScopedViewSetMixin, viewsets.ModelViewSet
 ):
@@ -9221,6 +9349,7 @@ class ImplicationInstitutionViewSet(
             utilisateur=self.request.user, responsable=resolved_responsable,
             environment=get_active_environment(self.request), statut=statut,
         )
+        _etendre_zone_crise_pour_implication(implication)
 
         if invited:
             send_crisis_regulateur_invite_email(self.request, resolved_responsable, implication.crise, institution)
@@ -9253,6 +9382,7 @@ class ImplicationInstitutionViewSet(
 
         implication.statut = StatutImplication.VALIDEE
         implication.save(update_fields=['statut'])
+        _etendre_zone_crise_pour_implication(implication)
         audit_log(
             request=request,
             action_code="MODIFICATION",
@@ -9299,6 +9429,10 @@ class ImplicationInstitutionViewSet(
         if not self._can_manage(serializer.instance):
             raise PermissionDenied("Seul l'auteur de cette déclaration, un contact de l'institution ou un administrateur peut la modifier.")
         implication = serializer.save()
+        # Couvre le cas d'une institution ACTEUR modifiée en IMPLIQUE (ou l'inverse) via un
+        # simple PATCH de type_implication — décision utilisateur du 2026-09-18, voir la
+        # docstring de _etendre_zone_crise_pour_implication.
+        _etendre_zone_crise_pour_implication(implication)
         audit_log(
             request=self.request,
             action_code="MODIFICATION",
