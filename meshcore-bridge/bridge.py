@@ -480,6 +480,13 @@ async def boucle_contacts(meshcore, django, compagnon_id):
                         contact["latitude"], contact["longitude"] = lat, lon
                     if c.get("last_advert"):
                         contact["dernier_advert"] = c["last_advert"]
+                    # out_path_len : nombre de sauts du chemin connu par CE companion vers ce
+                    # contact (voir meshcore/commands/contact.py) — 255 est un sentinel firmware
+                    # ("direct/flood, aucun chemin confirmé"), PAS "255 sauts" : transmis comme
+                    # None dans ce cas pour ne jamais laisser croire à un chemin très long.
+                    out_path_len = c.get("out_path_len")
+                    if out_path_len is not None:
+                        contact["nombre_sauts"] = None if out_path_len == 255 else out_path_len
                     contacts.append(contact)
                 if contacts:
                     await django.synchroniser_contacts(compagnon_id, contacts)

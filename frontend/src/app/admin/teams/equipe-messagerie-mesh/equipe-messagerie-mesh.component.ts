@@ -42,6 +42,11 @@ export class EquipeMessagerieMeshComponent implements OnChanges, OnDestroy {
   nouveauMessage = '';
   envoiEnCours = false;
 
+  /** Raison de la suggestion automatique du companion "Via" (voir core/routage_mesh.py côté
+   * backend) — affichée pour que l'utilisateur comprenne le choix fait à sa place, et puisse
+   * le changer explicitement (le sélecteur "Via" reste toujours modifiable). */
+  suggestionCompagnonRaison = '';
+
   private intervalRafraichissement: ReturnType<typeof setInterval> | null = null;
 
   constructor(
@@ -77,6 +82,7 @@ export class EquipeMessagerieMeshComponent implements OnChanges, OnDestroy {
           this.compagnonService.envoyables().subscribe(compagnons => {
             this.compagnons = compagnons as CompagnonMeshCore[];
             this.compagnonId = this.compagnons.find(c => c.principal)?.id || this.compagnons[0]?.id || '';
+            this.suggererCompagnon();
           });
         }
         // Le canal d'équipe reste affiché même sans membre équipé d'un nœud personnel —
@@ -103,6 +109,28 @@ export class EquipeMessagerieMeshComponent implements OnChanges, OnDestroy {
 
   get destinatairePubkey(): string | null {
     return this.noeudsEquipe.find(n => n.id === this.destinataireId)?.pubkey_hex || null;
+  }
+
+  onDestinataireChange(): void {
+    this.suggererCompagnon();
+  }
+
+  /** Interroge core/routage_mesh.py (via l'endpoint meilleur-pour-contact) pour pré-sélectionner
+   * le companion le plus adapté à CE destinataire — contact déjà entendu au plus court en
+   * sauts, sinon sa région, sinon le principal. Le sélecteur "Via" reste modifiable ensuite :
+   * ce n'est qu'une suggestion, jamais imposée. */
+  private suggererCompagnon(): void {
+    this.suggestionCompagnonRaison = '';
+    if (!this.destinatairePubkey || this.compagnons.length < 2) return;
+    this.compagnonService.meilleurPourContact(this.destinatairePubkey).subscribe({
+      next: (suggestion) => {
+        if (suggestion.compagnon_id && this.compagnons.some(c => c.id === suggestion.compagnon_id)) {
+          this.compagnonId = suggestion.compagnon_id;
+          this.suggestionCompagnonRaison = suggestion.raison;
+        }
+      },
+      error: () => {},
+    });
   }
 
   /** Nom lisible de la personne de terrain associée à ce nœud — utilisé pour afficher

@@ -47,7 +47,7 @@
       <div class="destinataire-row">
         <label>
           DM à
-          <select [(ngModel)]="destinataireId">
+          <select [(ngModel)]="destinataireId" (ngModelChange)="onDestinataireChange()">
             @for (n of noeudsEquipe; track n.id) {
               <option [value]="n.id">{{ n.utilisateur_nom }} ({{ n.nom_noeud || n.pubkey_hex.slice(0, 8) }})</option>
             }
@@ -64,6 +64,9 @@
           </label>
         }
       </div>
+      @if (suggestionCompagnonRaison) {
+        <p class="suggestion-hint">Companion suggéré : {{ suggestionCompagnonRaison }}.</p>
+      }
 
       <div class="saisie">
         <input type="text" placeholder="Écrire un message privé..." [(ngModel)]="nouveauMessage" (keyup.enter)="envoyer()">

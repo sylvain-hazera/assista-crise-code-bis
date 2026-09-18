@@ -1,0 +1,9 @@
+# Base officielle Docker CLI (Alpine, inclut le plugin compose v2) plutôt qu'un python:slim +
+# installation manuelle du CLI Docker : ce conteneur doit piloter le Docker DE L'HÔTE via le
+# socket monté (voir docker-compose.yml) — "Docker outside of Docker", pattern standard, jamais
+# du Docker-in-Docker (aucun démon Docker ne tourne DANS ce conteneur).
+FROM docker:27-cli
+RUN apk add --no-cache python3 py3-pip py3-requests
+WORKDIR /app
+COPY appliquer_config_proxy.py .
+CMD ["python3", "-u", "appliquer_config_proxy.py"]

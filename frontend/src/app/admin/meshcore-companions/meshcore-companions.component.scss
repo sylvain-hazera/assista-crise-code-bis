@@ -65,6 +65,14 @@
 }
 .form-input-sm { flex: 0 0 100px; min-width: 80px; }
 
+.region-cell {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+
+  .form-input-sm { flex: 0 0 90px; min-width: 70px; }
+}
+
 .btn-primary {
   padding: .55rem 1.1rem;
   border-radius: 6px;

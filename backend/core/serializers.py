@@ -2667,6 +2667,12 @@ class MessageMeshLogSerializer(serializers.ModelSerializer):
         # effet (DRF ignore un champ read_only reçu en entrée sans lever d'erreur) : un
         # message resté EN_ATTENTE à jamais, réessayé en boucle, jamais marqué en échec.
         read_only_fields = ['expediteur', 'equipe']
+        # `compagnon` optionnel côté API (contrairement au modèle, où il reste requis) :
+        # laisser vide déclenche la sélection automatique du meilleur companion pour ce
+        # destinataire (voir MessageMeshLogViewSet.perform_create, core/routage_mesh.py) — un
+        # client qui SAIT déjà quel companion utiliser peut toujours le poser explicitement,
+        # ce qui garde la priorité (jamais écrasé par la sélection auto).
+        extra_kwargs = {'compagnon': {'required': False}}
 
     def get_expediteur_nom(self, obj):
         if not obj.expediteur_id:

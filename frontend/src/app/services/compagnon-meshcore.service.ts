@@ -42,4 +42,18 @@ export class CompagnonMeshCoreService {
   envoyerAdvert(id: string, flood: boolean): Observable<{ id: string; statut: string }> {
     return this.http.post<{ id: string; statut: string }>(`${this.url}/${id}/envoyer-advert/`, { flood });
   }
+
+  /** GET /api/compagnons-meshcore/meilleur-pour-contact/ — suggère le companion le plus adapté
+   * pour joindre un contact (chemin le plus court déjà connu, sinon région, sinon principal) —
+   * voir core/routage_mesh.py côté backend. Au moins un des deux paramètres requis. */
+  meilleurPourContact(pubkeyHex?: string, regionTag?: string): Observable<{
+    compagnon_id: string | null; compagnon_nom: string | null; raison: string; region_tag: string | null;
+  }> {
+    const params: Record<string, string> = {};
+    if (pubkeyHex) params['pubkey_hex'] = pubkeyHex;
+    if (regionTag) params['region_tag'] = regionTag;
+    return this.http.get<{ compagnon_id: string | null; compagnon_nom: string | null; raison: string; region_tag: string | null }>(
+      `${this.url}/meilleur-pour-contact/`, { params },
+    );
+  }
 }

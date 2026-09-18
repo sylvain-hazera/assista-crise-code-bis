@@ -69,6 +69,31 @@ services:
     restart: unless-stopped
     profiles: ["gw", "full"]
 
+  # Reconfiguration distante de meshcore-proxy SANS action locale/SSH — voir
+  # appliquer_config_proxy.py. Optionnel : un satellite dont la config ne bouge jamais après
+  # l'installation n'en a pas besoin, mais permet d'ajouter/changer un nœud (nouvel appareil sur
+  # le LAN du satellite) en éditant simplement le CompagnonMeshCore côté central. Socket Docker
+  # monté (accès root de facto sur l'hôte, même compromis que --privileged pour detecter-noeud)
+  # : jamais à activer sur une machine partagée au-delà du satellite lui-même.
+  appliquer-config-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile.config-proxy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - .:/satellite
+    working_dir: /satellite
+    environment:
+      - CENTRAL_URL=${CENTRAL_URL:-https://assista-crise.fr}
+      - SATELLITE_EMAIL=${SATELLITE_EMAIL}
+      - SATELLITE_PASSWORD=${SATELLITE_PASSWORD}
+      - MESHCORE_COMPAGNON_ID=${MESHCORE_COMPAGNON_ID}
+      - FICHIER_ENV=/satellite/.env
+      - CONFIG_POLL_INTERVAL_S=${CONFIG_POLL_INTERVAL_S:-60}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    restart: unless-stopped
+    profiles: ["gw", "full"]
+
   meshcore-bridge:
     build:
       context: ../meshcore-bridge

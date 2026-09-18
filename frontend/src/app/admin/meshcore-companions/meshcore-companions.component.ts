@@ -43,7 +43,14 @@ export class MeshcoreCompanionsComponent implements OnInit {
   // l'afficher sur la carte au même titre qu'un relais (voir map.component.ts).
   nouveauLat: number | null = null;
   nouveauLon: number | null = null;
+  // Convention communautaire de canal régional (ex: "fr-naq") — pas une notion protocolaire
+  // MeshCore, voir CompagnonMeshCore.region_tag.
+  nouveauRegion = '';
   creating = false;
+
+  // Édition de la région d'un companion existant — un champ texte par ligne, pas de modal.
+  regionEnCoursEdition: Record<string, string> = {};
+  savingRegion: string | null = null;
 
   // Détection automatique (usage offline, sans internet) : on donne juste IP + port d'un vrai
   // appareil, le serveur essaie une vraie connexion Meshtastic puis MeshCore et crée le
@@ -280,6 +287,9 @@ export class MeshcoreCompanionsComponent implements OnInit {
       payload.latitude = this.nouveauLat;
       payload.longitude = this.nouveauLon;
     }
+    if (this.nouveauRegion.trim()) {
+      payload.region_tag = this.nouveauRegion.trim();
+    }
 
     this.creating = true;
     this.service.create(payload).subscribe({
@@ -290,9 +300,32 @@ export class MeshcoreCompanionsComponent implements OnInit {
         this.nouveauBle = '';
         this.nouveauLat = null;
         this.nouveauLon = null;
+        this.nouveauRegion = '';
         this.creating = false;
       },
       error: () => { this.errorMessage = "Impossible de créer ce companion."; this.creating = false; },
+    });
+  }
+
+  /** Édition inline de la région d'un companion déjà créé — champ texte + bouton par ligne,
+   * pas de modal (cohérent avec le reste de cette page). */
+  regionEditee(companion: CompagnonMeshCore): string {
+    return this.regionEnCoursEdition[companion.id] ?? companion.region_tag ?? '';
+  }
+
+  enregistrerRegion(companion: CompagnonMeshCore): void {
+    const valeur = (this.regionEnCoursEdition[companion.id] ?? '').trim();
+    this.savingRegion = companion.id;
+    this.service.update(companion.id, { region_tag: valeur }).subscribe({
+      next: (mis_a_jour) => {
+        companion.region_tag = mis_a_jour.region_tag;
+        delete this.regionEnCoursEdition[companion.id];
+        this.savingRegion = null;
+      },
+      error: () => {
+        this.errorMessage = "Impossible d'enregistrer la région de ce companion.";
+        this.savingRegion = null;
+      },
     });
   }
 

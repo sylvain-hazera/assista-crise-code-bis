@@ -9626,6 +9626,32 @@ class CompagnonMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelView
             for c in compagnons
         ])
 
+    @action(detail=False, methods=['get'], url_path='meilleur-pour-contact')
+    def meilleur_pour_contact(self, request):
+        """Suggère le meilleur companion pour joindre un contact — voir core/routage_mesh.py
+        pour la logique (contact déjà entendu, au plus court en sauts ; sinon région ; sinon
+        principal). `?pubkey_hex=...` et/ou `?region_tag=...`, au moins un des deux requis.
+        Restreint à l'institution de l'appelant (jamais suggérer un companion d'une autre
+        institution) sauf pour un administrateur, qui voit tout le parc."""
+        from .routage_mesh import meilleur_compagnon_pour_contact
+
+        pubkey_hex = request.query_params.get('pubkey_hex')
+        region_tag = request.query_params.get('region_tag')
+        if not pubkey_hex and not region_tag:
+            return Response({'detail': "pubkey_hex ou region_tag requis."}, status=status.HTTP_400_BAD_REQUEST)
+
+        institution = None
+        if get_effective_role(request) != UserRole.ADMINISTRATOR:
+            institution_id = ContactInstitution.objects.filter(
+                utilisateur=request.user, actif=True
+            ).values_list('institution_id', flat=True).first()
+            institution = Institution.objects.filter(pk=institution_id).first() if institution_id else None
+        resultat = meilleur_compagnon_pour_contact(
+            pubkey_hex=pubkey_hex, region_tag=region_tag,
+            institution=institution, environment=get_active_environment(request),
+        )
+        return Response(resultat.as_dict())
+
     def perform_create(self, serializer):
         compagnon = serializer.save(environment=get_active_environment(self.request))
         audit_log(
@@ -9695,6 +9721,12 @@ class CompagnonMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelView
             if dernier_advert:
                 from datetime import datetime, timezone as dt_timezone
                 defaults['dernier_advert'] = datetime.fromtimestamp(dernier_advert, tz=dt_timezone.utc)
+            # Présent (même à None — voir meshcore-bridge/bridge.py:boucle_contacts, sentinel
+            # firmware 255 = "aucun chemin confirmé") dès que le pont a une info à jour ; absent
+            # pour un rafraîchissement de position seule (jamais écraser une valeur connue par
+            # un silence).
+            if 'nombre_sauts' in contact:
+                defaults['nombre_sauts'] = contact.get('nombre_sauts')
 
             ContactMeshCore.objects.update_or_create(
                 compagnon=compagnon, pubkey_hex=pubkey_hex,
@@ -10058,6 +10090,23 @@ class MessageMeshLogViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet
         )
         if direction == DirectionMessageMesh.SORTANT and environment == Environment.DEMO:
             save_kwargs['contenu'] = _contenu_message_mesh_demo(serializer.validated_data.get('contenu'))
+
+        if 'compagnon' not in serializer.validated_data:
+            # Client parti sans préciser — sélection automatique du meilleur companion pour ce
+            # destinataire (voir core/routage_mesh.py). Uniquement pertinent en SORTANT : un
+            # message ENTRANT vient toujours du service-pont, qui connaît déjà son propre
+            # companion et le fournit systématiquement.
+            from .routage_mesh import meilleur_compagnon_pour_contact
+            institution_id = ContactInstitution.objects.filter(
+                utilisateur=self.request.user, actif=True
+            ).values_list('institution_id', flat=True).first()
+            institution = Institution.objects.filter(pk=institution_id).first() if institution_id else None
+            resultat = meilleur_compagnon_pour_contact(
+                pubkey_hex=contact_pubkey_hex, institution=institution, environment=environment,
+            )
+            if resultat.compagnon is None:
+                raise ValidationError("Aucun companion MeshCore disponible pour envoyer ce message.")
+            save_kwargs['compagnon'] = resultat.compagnon
 
         message = serializer.save(**save_kwargs)
         if message.direction == DirectionMessageMesh.ENTRANT and message.statut == StatutMessageMesh.EN_ATTENTE:

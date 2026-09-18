@@ -3774,6 +3774,15 @@ class CompagnonMeshCore(EnvironmentScopedModel):
     principal = models.BooleanField(default=False)
     actif = models.BooleanField(default=True)
 
+    # Convention COMMUNAUTAIRE de canal régional (ex: "fr-naq" pour Nouvelle-Aquitaine) — PAS
+    # une notion imposée par le firmware/protocole MeshCore (vérifié : aucune ACL ni aucun
+    # découpage régional protocolaire n'existe côté MeshCore, l'ACL du firmware est une table de
+    # permissions par répéteur/room server, sans rapport avec la géographie). Simple étiquette
+    # texte libre, saisie par un administrateur — sert à core.routage_mesh.
+    # meilleur_compagnon_pour_contact pour repérer quel companion est réputé couvrir quelle
+    # région quand aucun contact direct n'est encore connu pour un destinataire donné.
+    region_tag = models.CharField(max_length=20, blank=True)
+
     derniere_connexion = models.DateTimeField(null=True, blank=True)
     dernier_etat = models.CharField(
         max_length=20, null=True, blank=True,
@@ -4048,6 +4057,22 @@ class ContactMeshCore(EnvironmentScopedModel):
     location = gis_models.PointField(srid=4326, null=True, blank=True)
 
     dernier_advert = models.DateTimeField(null=True, blank=True)
+
+    # Nombre de sauts (répéteurs) du chemin connu par CE companion vers ce contact — reflète
+    # `out_path_len` de la lib meshcore (voir EventType.CONTACTS/get_contacts,
+    # meshcore-bridge/bridge.py:boucle_contacts) : None si aucun chemin connu (sentinel
+    # firmware 255, "direct/flood" — pas la même chose que "0 saut", qui signifie un chemin
+    # confirmé sans répéteur). Sert à core.routage_mesh.meilleur_compagnon_pour_contact pour
+    # préférer, à recense égale, le companion le plus proche (le moins de sauts) d'un
+    # destinataire.
+    nombre_sauts = models.PositiveSmallIntegerField(null=True, blank=True)
+
+    # Étiquette régionale (convention communautaire, ex: "fr-naq") assignée manuellement à ce
+    # contact une fois sa zone connue — aucune inférence automatique (le firmware ne fournit
+    # aucune donnée géographique fiable au-delà d'une position GPS optionnelle, souvent absente
+    # pour un simple companion de terrain). Sert de repli dans
+    # core.routage_mesh.meilleur_compagnon_pour_contact quand aucun chemin direct n'est connu.
+    region_tag = models.CharField(max_length=20, blank=True)
 
     date_synchronisation = models.DateTimeField(auto_now=True)
 

@@ -75,6 +75,15 @@
     sur la carte, comme un relais.
   </p>
 
+  <div class="form-row">
+    <input type="text" class="form-input form-input-sm" placeholder="Région (ex: fr-naq, optionnel)" [(ngModel)]="nouveauRegion">
+  </div>
+  <p class="page-hint">
+    Étiquette de canal régional communautaire (ex: <code>#fr-naq</code> pour la
+    Nouvelle-Aquitaine) — pas une notion imposée par MeshCore, juste un repère pour suggérer ce
+    companion quand aucun contact direct n'est encore connu pour un destinataire de cette zone.
+  </p>
+
   <button type="button" class="btn-primary" [disabled]="!formValide || creating" (click)="ajouter()">
     Ajouter ce companion
   </button>
@@ -102,6 +111,7 @@
           <th>Type</th>
           <th>Adresse</th>
           <th>Position</th>
+          <th>Région</th>
           <th>Statut</th>
           <th>Dernière connexion</th>
           <th>ID (pour COMPAGNON_ID)</th>
@@ -116,6 +126,19 @@
             <td>{{ c.connexion_type }}</td>
             <td class="mono">{{ adresse(c) }}</td>
             <td class="mono">{{ (c.latitude != null && c.longitude != null) ? (c.latitude | number:'1.4-4') + ', ' + (c.longitude | number:'1.4-4') : '—' }}</td>
+            <td>
+              <div class="region-cell">
+                <input
+                  type="text" class="form-input form-input-sm" placeholder="fr-naq"
+                  [ngModel]="regionEditee(c)" (ngModelChange)="regionEnCoursEdition[c.id] = $event"
+                >
+                @if (regionEnCoursEdition[c.id] !== undefined && regionEnCoursEdition[c.id] !== (c.region_tag || '')) {
+                  <button type="button" class="btn-secondary-sm" [disabled]="savingRegion === c.id" (click)="enregistrerRegion(c)">
+                    Enregistrer
+                  </button>
+                }
+              </div>
+            </td>
             <td><span class="statut" [ngClass]="statutClass(c)">{{ c.dernier_etat || 'jamais connecté' }}</span></td>
             <td>{{ c.derniere_connexion ? (c.derniere_connexion | date:'short') : '—' }}</td>
             <td class="mono id-cell" (click)="copierId(c)" title="Cliquer pour copier">{{ c.id }}</td>
@@ -130,7 +153,7 @@
             <td><button type="button" class="btn-danger-sm" (click)="supprimer(c)">Supprimer</button></td>
           </tr>
         } @empty {
-          <tr><td colspan="9" class="empty">Aucun companion déclaré pour l'instant.</td></tr>
+          <tr><td colspan="10" class="empty">Aucun companion déclaré pour l'instant.</td></tr>
         }
       </tbody>
     </table>
@@ -192,7 +215,7 @@
     <h3>Nœuds détectés, pas encore attribués</h3>
     <table class="data-table">
       <thead>
-        <tr><th>Nom annoncé</th><th>Rôle</th><th>Clé publique</th><th>Dernier contact</th><th>Attribuer à…</th><th></th></tr>
+        <tr><th>Nom annoncé</th><th>Rôle</th><th>Clé publique</th><th>Dernier contact</th><th>Sauts</th><th>Région</th><th>Attribuer à…</th><th></th></tr>
       </thead>
       <tbody>
         @for (c of contactsDisponibles; track c.id) {
@@ -201,6 +224,8 @@
             <td>{{ typeContactLabel(c.type_contact) }}</td>
             <td class="mono">{{ c.pubkey_hex.slice(0, 16) }}…</td>
             <td>{{ c.dernier_advert ? (c.dernier_advert | date:'short') : '—' }}</td>
+            <td>{{ c.nombre_sauts != null ? c.nombre_sauts : '—' }}</td>
+            <td>{{ c.region_tag || '—' }}</td>
             <td>
               <select [(ngModel)]="attributionsParContact[c.id]">
                 <option value="">— Utilisateur —</option>

@@ -51,6 +51,7 @@ administrateur valide → identifiants affichés **une seule fois**) — voir
 | `meshtastic-bridge` | gw, full | Optionnel — pilote un ou plusieurs `CompagnonMeshtastic` (MQTT, TCP ou SERIE) ; voir la note ci-dessous. |
 | `sync-sortant` | full | Pousse périodiquement vers le central les écritures locales en attente — voir "Synchronisation local → central" ci-dessous. |
 | `sync-entrant` | full | Sens inverse : applique localement le rafraîchissement central → local pour Dossier/Mission. |
+| `appliquer-config-proxy` | gw, full | Reconfigure `meshcore-proxy` à distance (voir "Reconfiguration distante" ci-dessous), sans action locale/SSH. |
 
 ## Nœuds branchés en USB/série
 
@@ -216,6 +217,49 @@ reconstruction GeoJSON pour Crisis/Request/Offer/Information —, commandes
 en bout entre deux vraies instances** (central + satellite Full réels), seulement en isolation
 avec mocks. `photo` (fichiers binaires) reste hors périmètre de ce canal JSON, comme avant ce
 chantier — aucun transfert d'image entre central et satellite.
+
+## Routage MeshCore : régions et meilleur companion (2026-09-18)
+
+Recherché avant de coder (pas supposé) : **MeshCore n'a aucune notion protocolaire de région
+ou d'ACL géographique**. L'ACL du firmware est une table de permissions par répéteur/room
+server/capteur (qui a le droit de l'administrer), sans aucun rapport avec la géographie. Les
+« régions » françaises (ex. `#fr-naq`) sont une pure convention communautaire de nom de canal.
+
+- `CompagnonMeshCore.region_tag`/`ContactMeshCore.region_tag` : étiquettes texte libres,
+  posées à la main (page `/admin/meshcore-companions`), aucune inférence automatique.
+- `ContactMeshCore.nombre_sauts` : capté par `meshcore-bridge/bridge.py:boucle_contacts` depuis
+  `out_path_len` (déjà renvoyé par la lib `meshcore` dans le même événement `CONTACTS` déjà
+  consommé — pas de nouvelle plomberie protocolaire) ; `None` si aucun chemin confirmé
+  (sentinel firmware 255, jamais interprété comme "255 sauts").
+- `backend/core/routage_mesh.py:meilleur_compagnon_pour_contact` : contact déjà entendu
+  (au plus court en sauts) > région correspondante > companion principal > premier actif.
+  Exposé via `GET /api/compagnons-meshcore/meilleur-pour-contact/` et branché automatiquement
+  sur `MessageMeshLogViewSet.perform_create` quand le client ne précise pas `compagnon` (un
+  choix explicite reste toujours prioritaire). La page de messagerie d'équipe
+  (`equipe-messagerie-mesh.component`) suggère désormais ce companion avec sa raison, affichée
+  à l'utilisateur — jamais un choix opaque.
+- Émission "à l'aveugle" sur le canal régional (`#fr-naq`) plutôt qu'un DM ciblé quand aucun
+  contact direct n'est connu : reste une décision humaine (le résultat de
+  `meilleur_compagnon_pour_contact` porte `region_tag` pour que l'appelant le sache), pas
+  automatisée — le canal MeshCore (`MessageCanalMeshCore`) existe déjà, non re-câblé ici.
+
+14 tests dédiés (`backend/core/test_routage_mesh.py`).
+
+## Reconfiguration distante du proxy (2026-09-18)
+
+Referme le manque signalé : configurer un satellite depuis le site central pour lui ajouter un
+nœud dans son LAN, sans SSH ni action locale. `appliquer-config-proxy` (voir
+`appliquer_config_proxy.py`) poll périodiquement `GET /api/compagnons-meshcore/<id>/` — si
+`connexion_type`/`tcp_host`/`tcp_port`/`serie_device` diffèrent de `.env`, le réécrit
+(atomique) puis force `docker compose up -d --no-deps meshcore-proxy` (PAS `docker restart`,
+qui ne relirait jamais les nouvelles variables d'environnement déjà figées à la création du
+conteneur). Nécessite le socket Docker monté — accès root de facto sur l'hôte, même compromis
+déjà accepté pour `detecter-noeud` (`--privileged` pour `/dev`).
+
+10 tests dédiés (`satellite/test_appliquer_config_proxy.py`, logique pure — requests/subprocess
+mockés). **Jamais testé sur du vrai matériel** — la recréation via `docker compose up -d
+--no-deps` est la partie la plus fragile (suppose le plugin compose v2, normalement inclus par
+`get.docker.com`) à vérifier au premier essai réel.
 
 ## Installer les dépendances et lancer les tests
 
