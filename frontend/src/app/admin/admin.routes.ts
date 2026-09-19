@@ -31,6 +31,7 @@ import { CriseDemarrageComponent } from './crise-demarrage/crise-demarrage.compo
 import { MeshcoreCompanionsComponent } from './meshcore-companions/meshcore-companions.component';
 import { SatellitesComponent } from './satellites/satellites.component';
 import { SupervisionPcCriseComponent } from './supervision-pc-crise/supervision-pc-crise.component';
+import { DemandesMobilisationComponent } from './demandes-mobilisation/demandes-mobilisation.component';
 import { ConflitsSynchronisationComponent } from './conflits-synchronisation/conflits-synchronisation.component';
 import { MeshcoreCanauxComponent } from './meshcore-canaux/meshcore-canaux.component';
 import { MeshtasticCompanionsComponent } from './meshtastic-companions/meshtastic-companions.component';
@@ -58,6 +59,7 @@ export const ADMIN_ROUTES: Routes = [
   { path: 'meshcore-companions', component: MeshcoreCompanionsComponent, canActivate: [institutionalEffectiveGuard] },
   { path: 'satellites', component: SatellitesComponent, canActivate: [institutionalEffectiveGuard] },
   { path: 'supervision-pc-crise', component: SupervisionPcCriseComponent, canActivate: [institutionalEffectiveGuard] },
+  { path: 'demandes-mobilisation', component: DemandesMobilisationComponent, canActivate: [institutionalEffectiveGuard] },
   { path: 'conflits-synchronisation', component: ConflitsSynchronisationComponent, canActivate: [institutionalEffectiveGuard] },
   { path: 'meshcore-canaux', component: MeshcoreCanauxComponent, canActivate: [institutionalEffectiveGuard] },
   { path: 'meshtastic-companions', component: MeshtasticCompanionsComponent, canActivate: [institutionalEffectiveGuard] },

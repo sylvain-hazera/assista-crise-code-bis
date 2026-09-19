@@ -1,0 +1,183 @@
+.page-header {
+  margin-bottom: 1rem;
+
+  h2 { margin: 0 0 .3rem; }
+
+  .page-hint { color: #6b7280; font-size: .9rem; margin: 0; max-width: 70ch; }
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+  gap: .75rem;
+}
+
+.institution-active {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  color: #374151;
+  font-weight: 600;
+  font-size: .9rem;
+
+  .material-icons { font-size: 18px; color: #6b7280; }
+}
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  padding: .5rem 1rem;
+  border-radius: 6px;
+  border: 1px solid #2563eb;
+  background: #2563eb;
+  color: #fff;
+  cursor: pointer;
+  font-size: .88rem;
+
+  .material-icons { font-size: 18px; }
+
+  &:disabled { opacity: .5; cursor: not-allowed; }
+}
+
+.btn-secondary {
+  padding: .5rem 1rem;
+  border-radius: 6px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  color: #374151;
+  cursor: pointer;
+  font-size: .88rem;
+}
+
+.form-panel {
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 1.1rem 1.3rem;
+  margin-bottom: 1.5rem;
+  max-width: 720px;
+}
+
+.form-row {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+
+  .form-group { flex: 1; min-width: 200px; }
+}
+
+.form-group {
+  margin-bottom: 1rem;
+
+  label { display: block; font-size: .85rem; font-weight: 600; color: #374151; margin-bottom: .35rem; }
+  .required { color: #dc2626; }
+
+  select, input[type="text"], textarea {
+    width: 100%;
+    padding: .5rem .65rem;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    font-size: .88rem;
+    box-sizing: border-box;
+  }
+
+  select[size] { height: auto; }
+}
+
+.type-cible-tabs {
+  display: flex;
+  gap: .4rem;
+  margin-bottom: .5rem;
+  flex-wrap: wrap;
+
+  button {
+    display: inline-flex;
+    align-items: center;
+    gap: .3rem;
+    padding: .4rem .75rem;
+    border-radius: 999px;
+    border: 1px solid #e5e7eb;
+    background: #fff;
+    color: #6b7280;
+    cursor: pointer;
+    font-size: .8rem;
+
+    .material-icons { font-size: 16px; }
+
+    &.actif { background: #eff6ff; border-color: #2563eb; color: #1d4ed8; font-weight: 600; }
+  }
+}
+
+.recherche-cible {
+  margin-bottom: .5rem;
+}
+
+.form-actions {
+  display: flex;
+  gap: .6rem;
+  margin-top: .5rem;
+}
+
+.error-message {
+  color: #dc2626;
+  font-size: .85rem;
+  margin: .5rem 0;
+}
+
+.table-wrapper { overflow-x: auto; }
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .85rem;
+
+  th, td {
+    text-align: left;
+    padding: .55rem .7rem;
+    border-bottom: 1px solid #f0f0f0;
+  }
+
+  th {
+    color: #6b7280;
+    font-size: .74rem;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+  }
+
+  .empty { color: #9ca3af; text-align: center; }
+}
+
+.cible-type-badge {
+  margin-left: .4rem;
+  background: #f3f4f6;
+  color: #4b5563;
+  border-radius: 999px;
+  padding: .05rem .5rem;
+  font-size: .7rem;
+}
+
+.statut-badge {
+  padding: .2rem .6rem;
+  border-radius: 999px;
+  font-size: .78rem;
+  font-weight: 600;
+
+  &.statut-active { background: #dcfce7; color: #15803d; }
+  &.statut-revoquee { background: #f3f4f6; color: #6b7280; }
+}
+
+.btn-danger-sm {
+  padding: .3rem .7rem;
+  border-radius: 6px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  color: #b91c1c;
+  cursor: pointer;
+  font-size: .8rem;
+
+  &:disabled { opacity: .5; cursor: not-allowed; }
+}

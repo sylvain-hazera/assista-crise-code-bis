@@ -18,6 +18,7 @@ from .models import (
     Environment,
     UserRole,
     InstitutionType,
+    DemandeMobilisation,
     Institution,
     RoleOperationnel,
     ContactInstitution,
@@ -1783,6 +1784,78 @@ class NotificationSerializer(serializers.ModelSerializer):
         model = Notification
         fields = "__all__"
         read_only_fields = ["utilisateur", "dossier", "crise", "titre", "message", "date_creation"]
+
+class DemandeMobilisationSerializer(serializers.ModelSerializer):
+    """Voir DemandeMobilisation.__doc__ — la cible (Y) est résolue en un couple `cible_type`/
+    `cible_nom`/`cible_contact` uniforme côté frontend, quel que soit celui des 3 champs cible_*
+    réellement renseigné, pour ne jamais devoir dupliquer cette logique côté client."""
+
+    crise_nom = serializers.CharField(source="crise.name", read_only=True)
+    institution_emettrice_nom = serializers.CharField(source="institution_emettrice.nom", read_only=True)
+    emetteur_nom = serializers.SerializerMethodField()
+    point_operationnel_nom = serializers.CharField(source="point_operationnel.nom", read_only=True, default=None)
+    type_demande_libelle = serializers.CharField(source="get_type_demande_display", read_only=True)
+    statut_libelle = serializers.CharField(source="get_statut_display", read_only=True)
+
+    cible_type = serializers.SerializerMethodField()
+    cible_nom = serializers.SerializerMethodField()
+    cible_contact = serializers.SerializerMethodField()
+
+    class Meta:
+        model = DemandeMobilisation
+        fields = "__all__"
+        read_only_fields = [
+            "emetteur", "statut", "date_creation", "date_revocation", "jeton_verification",
+        ]
+
+    def get_emetteur_nom(self, obj):
+        if not obj.emetteur_id:
+            return None
+        return f"{obj.emetteur.first_name} {obj.emetteur.last_name}".strip() or obj.emetteur.email
+
+    def get_cible_type(self, obj):
+        if obj.cible_utilisateur_id:
+            return "utilisateur"
+        if obj.cible_institution_id:
+            return "institution"
+        if obj.cible_offre_id:
+            return "offre"
+        return None
+
+    def get_cible_nom(self, obj):
+        if obj.cible_utilisateur_id:
+            u = obj.cible_utilisateur
+            return f"{u.first_name} {u.last_name}".strip() or u.email
+        if obj.cible_institution_id:
+            return obj.cible_institution.nom
+        if obj.cible_offre_id:
+            o = obj.cible_offre
+            return f"{o.first_name_offer} {o.last_name_offer}".strip() or o.email_offer
+        return None
+
+    def get_cible_contact(self, obj):
+        if obj.cible_utilisateur_id:
+            return obj.cible_utilisateur.email
+        if obj.cible_institution_id:
+            return obj.cible_institution.email
+        if obj.cible_offre_id:
+            return obj.cible_offre.email_offer
+        return None
+
+    def validate(self, attrs):
+        def valeur(champ):
+            if champ in attrs:
+                return attrs[champ]
+            return getattr(self.instance, champ, None) if self.instance else None
+
+        cibles = [valeur("cible_utilisateur"), valeur("cible_institution"), valeur("cible_offre")]
+        if len([c for c in cibles if c is not None]) != 1:
+            raise serializers.ValidationError({
+                "cible": "Exactement une cible doit être renseignée : un utilisateur, une "
+                         "institution déjà inscrite, ou une offre d'aide déposée sans compte.",
+            })
+        return attrs
+
 
 class RecherchePersonneSerializer(
     serializers.ModelSerializer

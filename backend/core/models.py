@@ -2214,6 +2214,88 @@ class Notification(EnvironmentScopedModel):
         auto_now_add=True
     )
 
+
+class TypeDemandeMobilisation(models.TextChoices):
+    MISE_A_DISPOSITION = "MISE_A_DISPOSITION", "Se mettre à disposition"
+    SE_RENDRE_A = "SE_RENDRE_A", "Se rendre à un endroit précis"
+
+
+class StatutDemandeMobilisation(models.TextChoices):
+    ACTIVE = "ACTIVE", "Active"
+    REVOQUEE = "REVOQUEE", "Révoquée"
+
+
+class DemandeMobilisation(EnvironmentScopedModel):
+    """Acte formel par lequel une institution (« l'autorité X ») demande à une personne ou à une
+    autre institution (« Y ») de se mettre à disposition ou de se rendre à un endroit précis,
+    dans le cadre d'une crise — cadrage du 2026-09-19. Volontairement nommée "demande" et non
+    "réquisition" : une réquisition légale au sens strict (article L. 2215-1 du CGCT, ou celles
+    prévues par la loi du 13 août 2004) est un pouvoir limité à des autorités précises (préfet,
+    maire dans des conditions définies) — cette plateforme n'émet ici qu'une DEMANDE formelle
+    tracée, jamais un acte de réquisition au sens juridique, pour ne jamais laisser croire à une
+    contrainte légale que ce document ne confère pas réellement (voir la formulation du futur
+    PDF/attestation, à reprendre avec la même prudence).
+
+    `jeton_verification` est posé en prévision d'une future attestation PDF + QR code de
+    vérification (pas encore construite à ce stade) — même pattern que Offer.deletion_token/
+    reponse_token (secrets.token_urlsafe(32), généré côté vue).
+
+    Cible (Y) : exactement UNE des trois ci-dessous doit être renseignée (validé côté
+    serializer) — un utilisateur déjà inscrit, une autre institution inscrite, ou une personne
+    sans compte connue seulement via une offre d'aide qu'elle a déposée (identité/contact/
+    immatriculation déjà saisis à ce moment-là par elle-même, voir Offer)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    crise = models.ForeignKey(
+        "Crisis", on_delete=models.CASCADE, related_name="demandes_mobilisation",
+    )
+
+    institution_emettrice = models.ForeignKey(
+        "Institution", on_delete=models.CASCADE, related_name="demandes_mobilisation_emises",
+    )
+    # Qui a effectivement cliqué (pour la main courante/la future attestation) — distinct de
+    # l'institution émettrice elle-même.
+    emetteur = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name="demandes_mobilisation_creees",
+    )
+
+    cible_utilisateur = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name="demandes_mobilisation_recues",
+    )
+    cible_institution = models.ForeignKey(
+        "Institution", on_delete=models.SET_NULL, null=True, blank=True, related_name="demandes_mobilisation_recues",
+    )
+    cible_offre = models.ForeignKey(
+        "Offer", on_delete=models.SET_NULL, null=True, blank=True, related_name="demandes_mobilisation_recues",
+    )
+
+    type_demande = models.CharField(max_length=25, choices=TypeDemandeMobilisation.choices)
+
+    # Pertinents seulement pour SE_RENDRE_A — lieu structuré si un point opérationnel existe
+    # déjà (préféré, cohérent avec la carte), texte libre sinon (un lieu de rendez-vous n'a pas
+    # toujours de PointOperationnel créé au moment de la demande).
+    point_operationnel = models.ForeignKey(
+        "PointOperationnel", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="demandes_mobilisation",
+    )
+    lieu_texte = models.CharField(max_length=255, blank=True)
+
+    motif = models.TextField(blank=True)
+
+    statut = models.CharField(
+        max_length=15, choices=StatutDemandeMobilisation.choices, default=StatutDemandeMobilisation.ACTIVE,
+    )
+
+    date_creation = models.DateTimeField(auto_now_add=True)
+    date_revocation = models.DateTimeField(null=True, blank=True)
+
+    jeton_verification = models.CharField(max_length=64, unique=True, null=True, blank=True)
+
+    def __str__(self):
+        return f"Demande {self.get_type_demande_display()} — {self.institution_emettrice.nom}"
+
+
 def secure_recherche_photo_path(
     instance,
     filename

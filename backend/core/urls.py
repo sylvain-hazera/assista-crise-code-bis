@@ -15,6 +15,7 @@ from .views import (
     OfferReponsePublicView,
     RecherchePersonneHistoriqueViewSet, AffectationCompetenceViewSet,
     DossierViewSet, MissionViewSet, DocumentViewSet, DossierCommentaireViewSet, DossierHistoriqueViewSet, NotificationViewSet, TeamViewSet,
+    DemandeMobilisationViewSet,
     AuditLogViewSet,
     JournalCollectiviteViewSet,
     InstitutionTypeViewSet,
@@ -166,6 +167,7 @@ router.register(r'dossier-historique', DossierHistoriqueViewSet)
 router.register(r'audit-logs', AuditLogViewSet)
 router.register(r'journal-collectivite', JournalCollectiviteViewSet, basename='journal-collectivite')
 router.register(r'notifications', NotificationViewSet, basename='notification')
+router.register(r'demandes-mobilisation', DemandeMobilisationViewSet, basename='demandemobilisation')
 router.register(r'recherches-personnes', RecherchePersonneViewSet)
 router.register(r'recherches-personnes-commentaires', RecherchePersonneCommentaireViewSet)
 router.register(r'recherches-personnes-historique', RecherchePersonneHistoriqueViewSet),

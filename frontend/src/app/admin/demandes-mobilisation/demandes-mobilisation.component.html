@@ -1,0 +1,170 @@
+<div class="page-header">
+  <h2>Demandes de mobilisation</h2>
+  <p class="page-hint">
+    Acte formel par lequel votre institution demande à quelqu'un de se mettre à disposition ou
+    de se rendre à un endroit précis, pour une crise donnée. Il ne s'agit pas d'une réquisition
+    légale au sens strict — une demande tracée, pas une contrainte juridique.
+  </p>
+</div>
+
+@if (!institutionEmettriceId) {
+  <p class="error-message">
+    Votre compte n'est rattaché à aucune institution — impossible d'émettre une demande.
+  </p>
+} @else {
+  <div class="toolbar">
+    <span class="institution-active">
+      <span class="material-icons">apartment</span> {{ institutionEmettriceNom }}
+    </span>
+    @if (!formOuvert) {
+      <button type="button" class="btn-primary" (click)="ouvrirFormulaire()">
+        <span class="material-icons">add</span> Nouvelle demande
+      </button>
+    }
+  </div>
+
+  @if (formOuvert) {
+    <div class="form-panel">
+      <div class="form-row">
+        <div class="form-group">
+          <label for="crise">Crise <span class="required">*</span></label>
+          <select id="crise" [(ngModel)]="criseId">
+            <option value="">— Choisir —</option>
+            @for (c of crises; track c.id) {
+              <option [value]="c.id">{{ c.name }}</option>
+            }
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="type-demande">Nature de la demande <span class="required">*</span></label>
+          <select id="type-demande" [(ngModel)]="typeDemande">
+            <option value="MISE_A_DISPOSITION">Se mettre à disposition</option>
+            <option value="SE_RENDRE_A">Se rendre à un endroit précis</option>
+          </select>
+        </div>
+      </div>
+
+      @if (typeDemande === 'SE_RENDRE_A') {
+        <div class="form-group">
+          <label for="lieu">Lieu <span class="required">*</span></label>
+          <input type="text" id="lieu" placeholder="Ex : Mairie, salle des fêtes" [(ngModel)]="lieuTexte">
+        </div>
+      }
+
+      <div class="form-group">
+        <label>Destinataire (Y) <span class="required">*</span></label>
+        <div class="type-cible-tabs">
+          <button type="button" [class.actif]="typeCible === 'utilisateur'" (click)="changerTypeCible('utilisateur')">
+            <span class="material-icons">person</span> Utilisateur inscrit
+          </button>
+          <button type="button" [class.actif]="typeCible === 'institution'" (click)="changerTypeCible('institution')">
+            <span class="material-icons">apartment</span> Institution
+          </button>
+          <button type="button" [class.actif]="typeCible === 'offre'" (click)="changerTypeCible('offre')">
+            <span class="material-icons">volunteer_activism</span> Offre d'aide (sans compte)
+          </button>
+        </div>
+
+        <input type="text" class="recherche-cible" placeholder="Rechercher un nom…" [(ngModel)]="rechercheCible">
+
+        @if (typeCible === 'utilisateur') {
+          <select size="6" [(ngModel)]="cibleId">
+            @for (u of utilisateursFiltres; track u.id) {
+              <option [value]="u.id">{{ u.first_name }} {{ u.last_name }} ({{ u.email }})</option>
+            } @empty {
+              <option disabled>Aucun résultat</option>
+            }
+          </select>
+        }
+        @if (typeCible === 'institution') {
+          <select size="6" [(ngModel)]="cibleId">
+            @for (i of institutionsFiltrees; track i.id) {
+              <option [value]="i.id">{{ i.nom }}</option>
+            } @empty {
+              <option disabled>Aucun résultat</option>
+            }
+          </select>
+        }
+        @if (typeCible === 'offre') {
+          <select size="6" [(ngModel)]="cibleId">
+            @for (o of offresFiltrees; track o.id) {
+              <option [value]="o.id">{{ o.first_name_offer }} {{ o.last_name_offer }} — {{ o.title }}</option>
+            } @empty {
+              <option disabled>Aucun résultat</option>
+            }
+          </select>
+        }
+      </div>
+
+      <div class="form-group">
+        <label for="motif">Motif (optionnel)</label>
+        <textarea id="motif" rows="2" [(ngModel)]="motif"></textarea>
+      </div>
+
+      @if (formErreur) {
+        <p class="error-message">{{ formErreur }}</p>
+      }
+
+      <div class="form-actions">
+        <button type="button" class="btn-primary" [disabled]="!formValide || soumission" (click)="envoyer()">
+          {{ soumission ? 'Envoi…' : 'Envoyer la demande' }}
+        </button>
+        <button type="button" class="btn-secondary" (click)="annulerFormulaire()">Annuler</button>
+      </div>
+    </div>
+  }
+
+  @if (revoquerErreur) {
+    <p class="error-message">{{ revoquerErreur }}</p>
+  }
+
+  @if (loading) {
+    <p>Chargement…</p>
+  } @else if (errorMessage) {
+    <p class="error-message">{{ errorMessage }}</p>
+  } @else {
+    <div class="table-wrapper">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Crise</th>
+            <th>Émetteur</th>
+            <th>Destinataire</th>
+            <th>Nature</th>
+            <th>Lieu / Motif</th>
+            <th>Statut</th>
+            <th>Date</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (d of demandes; track d.id) {
+            <tr>
+              <td>{{ d.crise_nom }}</td>
+              <td>{{ d.institution_emettrice_nom }}</td>
+              <td>
+                {{ d.cible_nom || '—' }}
+                @if (d.cible_type === 'institution') { <span class="cible-type-badge">Institution</span> }
+                @if (d.cible_type === 'offre') { <span class="cible-type-badge">Sans compte</span> }
+              </td>
+              <td>{{ d.type_demande_libelle }}</td>
+              <td>{{ d.lieu_texte || d.motif || '—' }}</td>
+              <td><span class="statut-badge" [ngClass]="statutClass(d)">{{ d.statut_libelle }}</span></td>
+              <td>{{ d.date_creation | date:'dd/MM/yyyy HH:mm' }}</td>
+              <td>
+                @if (d.statut === 'ACTIVE') {
+                  <button type="button" class="btn-danger-sm" [disabled]="revoquerEnCours === d.id" (click)="revoquer(d)">
+                    Révoquer
+                  </button>
+                }
+              </td>
+            </tr>
+          } @empty {
+            <tr><td colspan="8" class="empty">Aucune demande de mobilisation pour l'instant.</td></tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+}

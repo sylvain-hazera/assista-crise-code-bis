@@ -142,6 +142,7 @@ from .models import (
     PointOperationnel,
     ImplicationInstitution,
     ContributionZoneCommune,
+    DemandeMobilisation, TypeDemandeMobilisation, StatutDemandeMobilisation,
     TypeImplication,
     StatutImplication,
     User, Crisis, TypeCrise, Request, RequestPhoto, Offer, OfferPhoto, OfferMessage, Information, DisponibiliteOffre, DisponibilitePointEquipe, MaterielPoint,
@@ -336,6 +337,7 @@ from .serializers import (
     DossierCommentaireSerializer,
     DossierHistoriqueSerializer,
     NotificationSerializer,
+    DemandeMobilisationSerializer,
     UserSerializer,
     RecherchePersonneLectureSerializer,
     RecherchePersonneLectureHistoriqueSerializer,
@@ -7199,6 +7201,101 @@ class NotificationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             derniere_notification_le=Max('date_creation'),
         )
         return Response(agg)
+
+
+def _peut_emettre_demande_mobilisation(request, institution) -> bool:
+    """Restreint aux rôles responsable/régulateur de l'institution émettrice (décision du
+    2026-09-19, plus étroit que IsInstitutionalActor seul) — une demande formelle adressée à
+    une autre personne/institution n'est pas un geste anodin, contrairement à la plupart des
+    actions courantes de ce projet."""
+    if get_effective_role(request) == UserRole.ADMINISTRATOR:
+        return True
+    if institution is None:
+        return False
+    return AffectationRoleOperationnel.objects.filter(
+        utilisateur=request.user, institution=institution,
+        role__code__in=["RESPONSABLE", "REGULATEUR"], actif=True,
+    ).exists()
+
+
+class DemandeMobilisationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
+    """Voir DemandeMobilisation.__doc__. Émission restreinte aux rôles responsable/régulateur de
+    l'institution émettrice (_peut_emettre_demande_mobilisation) ; visible par l'institution
+    émettrice, l'institution cible, l'utilisateur cible lui-même, ou un administrateur — jamais
+    par une institution tierce sans lien avec cette demande."""
+
+    queryset = DemandeMobilisation.objects.select_related(
+        'crise', 'institution_emettrice', 'emetteur', 'cible_utilisateur', 'cible_institution',
+        'cible_offre', 'point_operationnel',
+    ).order_by('-date_creation')
+    serializer_class = DemandeMobilisationSerializer
+    permission_classes = [IsInstitutionalActor]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if get_effective_role(self.request) == UserRole.ADMINISTRATOR:
+            return qs
+        mes_institutions_ids = ContactInstitution.objects.filter(
+            utilisateur=self.request.user, actif=True,
+        ).values_list('institution_id', flat=True)
+        return qs.filter(
+            Q(institution_emettrice_id__in=mes_institutions_ids)
+            | Q(cible_institution_id__in=mes_institutions_ids)
+            | Q(cible_utilisateur=self.request.user)
+        )
+
+    def perform_create(self, serializer):
+        institution = serializer.validated_data.get('institution_emettrice')
+        if not _peut_emettre_demande_mobilisation(self.request, institution):
+            raise PermissionDenied(
+                "Seul un responsable ou un régulateur de l'institution émettrice peut créer "
+                "une demande de mobilisation."
+            )
+        demande = serializer.save(
+            emetteur=self.request.user,
+            jeton_verification=secrets.token_urlsafe(32),
+            environment=get_active_environment(self.request),
+        )
+        cible_nom = self.get_serializer(demande).data.get('cible_nom') or '(cible non identifiée)'
+        audit_log(
+            request=self.request, action_code="CREATION", objet_type="DemandeMobilisation",
+            objet_id=demande.id, crise=demande.crise,
+            commentaire=f"{institution.nom} demande à {cible_nom} de "
+                        f"{demande.get_type_demande_display().lower()} (crise : {demande.crise.name}).",
+        )
+        if demande.cible_utilisateur_id:
+            message = f"{institution.nom} vous demande de {demande.get_type_demande_display().lower()}"
+            if demande.lieu_texte:
+                message += f" — {demande.lieu_texte}"
+            if demande.motif:
+                message += f" ({demande.motif})"
+            Notification.objects.create(
+                utilisateur=demande.cible_utilisateur, crise=demande.crise,
+                titre="Demande de mobilisation", message=message,
+                environment=get_active_environment(self.request),
+            )
+
+    @action(detail=True, methods=['post'])
+    def revoquer(self, request, pk=None):
+        """Une demande révoquée n'est jamais supprimée (trace conservée pour la main courante),
+        seul son statut change — idempotent, une révocation répétée ne réécrit pas
+        date_revocation."""
+        demande = self.get_object()
+        if not _peut_emettre_demande_mobilisation(request, demande.institution_emettrice):
+            return Response(
+                {"error": "Seul un responsable ou un régulateur de l'institution émettrice peut révoquer cette demande."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if demande.statut != StatutDemandeMobilisation.REVOQUEE:
+            demande.statut = StatutDemandeMobilisation.REVOQUEE
+            demande.date_revocation = timezone.now()
+            demande.save(update_fields=['statut', 'date_revocation'])
+            audit_log(
+                request=request, action_code="MODIFICATION", objet_type="DemandeMobilisation",
+                objet_id=demande.id, crise=demande.crise, commentaire="Demande de mobilisation révoquée.",
+            )
+        return Response(self.get_serializer(demande).data)
+
 
 def _notifier_lecteurs_et_createur_recherche(request, recherche, titre, message):
     """Notifie le créateur de la fiche et toute personne l'ayant consultée
