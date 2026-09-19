@@ -1,3 +1,5 @@
+import uuid
+
 import pytest
 from django.urls import reverse
 from rest_framework import status
@@ -345,3 +347,90 @@ class TestRessourcesMobilisees:
         client.force_authenticate(user=user)
         response = client.get(reverse('team-ressources-mobilisees'))
         assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_non_admin_scoped_to_own_institution_only(self, mairie_client, team_a, create_user):
+        """Corrigé le 2026-09-19 : une mairie ne doit voir QUE les ressources mobilisées de sa
+        propre institution (ou d'une institution qui lui délègue une équipe) — pas celles d'une
+        institution tierce sans aucun lien avec elle."""
+        client, _ = mairie_client
+        autre_institution = _make_institution(nom='Mairie Ressources B')
+        autre_team = Team.objects.create(name='Équipe Ressources B', institution=autre_institution)
+        # Un membre est nécessaire pour que cette équipe produise ne serait-ce qu'une ligne —
+        # sinon l'assertion ci-dessous serait vraie même sans le correctif de portée.
+        autre_membre = create_user(username='membre-ress-b@test.fr', email='membre-ress-b@test.fr')
+        autre_team.members.add(autre_membre)
+
+        response = client.get(reverse('team-ressources-mobilisees'))
+
+        assert response.status_code == status.HTTP_200_OK
+        assert not any(r['equipe_id'] == str(autre_team.id) for r in response.data)
+
+    def test_non_admin_sees_delegated_team(self, mairie_client, institution_a, create_user):
+        """Une institution délégataire d'une équipe (voir Team.institution_delegataire) doit
+        aussi voir ses ressources mobilisées, pas seulement l'institution responsable — même
+        périmètre que _appartient_a_equipe."""
+        client, _ = mairie_client
+        responsable = _make_institution(nom='Mairie Ressources Responsable')
+        team_deleguee = Team.objects.create(
+            name='Équipe Déléguée', institution=responsable, institution_delegataire=institution_a,
+        )
+        membre = create_user(username='membre-ress-deleg@test.fr', email='membre-ress-deleg@test.fr')
+        team_deleguee.members.add(membre)
+
+        response = client.get(reverse('team-ressources-mobilisees'))
+
+        assert any(r['equipe_id'] == str(team_deleguee.id) for r in response.data)
+
+    def test_admin_sees_all_institutions(self, create_user, team_a):
+        autre_institution = _make_institution(nom='Mairie Ressources C')
+        autre_team = Team.objects.create(name='Équipe Ressources C', institution=autre_institution)
+        autre_membre = create_user(username='membre-ress-c@test.fr', email='membre-ress-c@test.fr')
+        autre_team.members.add(autre_membre)
+        admin = create_user(username='admin-ress@test.fr', email='admin-ress@test.fr', type='ADMIN')
+        client = APIClient()
+        client.force_authenticate(user=admin)
+
+        response = client.get(reverse('team-ressources-mobilisees'))
+
+        equipe_ids = {r['equipe_id'] for r in response.data}
+        assert str(autre_team.id) in equipe_ids
+
+    def test_material_row_exposes_proprietaire_and_groupe(self, mairie_client, team_a, offer_type, create_user):
+        """Corrigé le 2026-09-19 : une ligne "matériel" doit exposer qui l'a déposé (jamais
+        évident depuis `nom`, le titre de l'offre) — présence physique, groupe de dépôt
+        (association/entreprise) et accompagnants, pour retrouver facilement le propriétaire
+        d'un matériel déposé sans lui, ou relier matériel + personne quand indissociables."""
+        client, _ = mairie_client
+        proprietaire = create_user(username='proprietaire-ress@test.fr', email='proprietaire-ress@test.fr')
+        groupe_id = uuid.uuid4()
+        offer = Offer.objects.create(
+            title='Camion-citerne + équipage', first_name_offer='Jean', last_name_offer='Dupont',
+            email_offer='proprietaire-ress@test.fr', phone_offer='0600000001', status='DISPONIBLE',
+            offer_type=offer_type, materiel_type='CUVE', author=proprietaire,
+            presence_physique=True, accompagne=True, nombre_accompagnants=2,
+            organisation_nom='Asso Secours Bénévoles', groupe_id=groupe_id,
+        )
+        client.post(reverse('team-definir-mission', args=[team_a.id]), {'titre': 'Mission'}, format='json')
+        client.post(reverse('team-assigner-ressource', args=[team_a.id]), {'offer_id': str(offer.id)}, format='json')
+
+        response = client.get(reverse('team-ressources-mobilisees'))
+
+        ligne = next(r for r in response.data if r['type'] == 'materiel' and r['equipe_id'] == str(team_a.id))
+        assert ligne['proprietaire_nom'] == 'Jean Dupont'
+        assert ligne['proprietaire_id'] == str(proprietaire.id)
+        assert ligne['proprietaire_email'] == 'proprietaire-ress@test.fr'
+        assert ligne['proprietaire_telephone'] == '0600000001'
+        assert ligne['presence_physique'] is True
+        assert ligne['accompagne'] is True
+        assert ligne['nombre_accompagnants'] == 2
+        assert ligne['organisation_nom'] == 'Asso Secours Bénévoles'
+        assert ligne['groupe_id'] == str(groupe_id)
+
+    def test_personne_row_exposes_user_id(self, mairie_client, team_a):
+        client, user = mairie_client
+        team_a.members.add(user)
+
+        response = client.get(reverse('team-ressources-mobilisees'))
+
+        ligne = next(r for r in response.data if r['type'] == 'personne' and r['equipe_id'] == str(team_a.id))
+        assert ligne['user_id'] == str(user.id)

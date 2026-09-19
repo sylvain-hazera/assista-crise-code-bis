@@ -66,53 +66,162 @@
   }
 }
 
-.table-wrapper {
-  overflow-x: auto;
+.error-message {
+  color: #dc3545;
 }
 
-.data-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: .85rem;
+// ── Groupes équipe ──────────────────────────────────────────────────────────
 
-  th, td {
-    text-align: left;
-    padding: .55rem .7rem;
-    border-bottom: 1px solid #f0f0f0;
-    white-space: nowrap;
-  }
+.equipe-groupe {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-left-width: 4px;
+  border-radius: 8px;
+  padding: .9rem 1.1rem;
+  margin-bottom: 1rem;
+}
 
-  th {
-    color: #6b7280;
+// Cycle de 6 couleurs de cadre — seul moyen de différencier les équipes d'un coup d'œil sans
+// devoir lire chaque nom, demande explicite. Le nom reste de toute façon toujours affiché en
+// en-tête, donc une répétition de couleur au-delà de 6 équipes reste sans ambiguïté.
+.equipe-couleur-0 { border-left-color: #2563eb; }
+.equipe-couleur-1 { border-left-color: #16a34a; }
+.equipe-couleur-2 { border-left-color: #d97706; }
+.equipe-couleur-3 { border-left-color: #db2777; }
+.equipe-couleur-4 { border-left-color: #7c3aed; }
+.equipe-couleur-5 { border-left-color: #0891b2; }
+
+.equipe-entete {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  margin-bottom: .75rem;
+  font-size: .95rem;
+
+  .material-icons { color: #6b7280; font-size: 20px; }
+
+  .equipe-institution { color: #6b7280; font-weight: 400; }
+
+  .equipe-compte {
+    margin-left: auto;
+    color: #9ca3af;
+    font-size: .78rem;
     font-weight: 600;
-    font-size: .75rem;
-    text-transform: uppercase;
-    cursor: pointer;
-    user-select: none;
-
-    .sort-icon { font-size: 14px; vertical-align: middle; color: #9ca3af; }
-
-    &:hover { color: #374151; }
   }
+}
 
-  .empty { color: #9ca3af; text-align: center; white-space: normal; }
+.unites-liste {
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+}
+
+.unite-carte {
+  display: flex;
+  flex-direction: column;
+  gap: .35rem;
+  padding: .5rem .7rem;
+  border-radius: 6px;
+  background: #f9fafb;
+
+  &.unite-liee {
+    background: #f5f3ff;
+    border: 1px dashed #c4b5fd;
+  }
+}
+
+.unite-personne, .unite-materiel {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .5rem;
+  font-size: .85rem;
+}
+
+.unite-materiel-liee {
+  margin-left: 1.2rem;
+}
+
+.lien-icon {
+  font-size: 16px;
+  color: #7c3aed;
+}
+
+.unite-nom {
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.unite-detail {
+  color: #6b7280;
 }
 
 .type-badge {
   display: inline-flex;
   align-items: center;
   gap: .3rem;
-  padding: .2rem .6rem;
+  padding: .15rem .55rem;
   border-radius: 999px;
-  font-size: .78rem;
+  font-size: .72rem;
   font-weight: 600;
+  flex-shrink: 0;
 
-  .material-icons { font-size: 15px; }
+  .material-icons { font-size: 14px; }
 
   &.type-personne { background: #eff6ff; color: #1d4ed8; }
   &.type-materiel { background: #f0fdf4; color: #15803d; }
 }
 
-.error-message {
-  color: #dc3545;
+.statut-badge {
+  background: #f3f4f6;
+  color: #374151;
+  border-radius: 999px;
+  padding: .1rem .55rem;
+  font-size: .72rem;
+}
+
+.proprietaire {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  color: #374151;
+  font-size: .82rem;
+
+  .material-icons { font-size: 15px; color: #9ca3af; }
+}
+
+.proprietaire-contact {
+  color: #6b7280;
+  font-size: .78rem;
+}
+
+.warning-badge {
+  background: #fef3c7;
+  color: #92400e;
+  border-radius: 999px;
+  padding: .1rem .55rem;
+  font-size: .72rem;
+  font-weight: 600;
+}
+
+.info-badge {
+  background: #f3f4f6;
+  color: #4b5563;
+  border-radius: 999px;
+  padding: .1rem .55rem;
+  font-size: .72rem;
+}
+
+.organisation-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: .25rem;
+  background: #ede9fe;
+  color: #5b21b6;
+  border-radius: 999px;
+  padding: .1rem .6rem;
+  font-size: .72rem;
+  font-weight: 600;
+
+  .material-icons { font-size: 13px; }
 }

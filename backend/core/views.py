@@ -4417,7 +4417,13 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         ou sans l'offreur présent) apparaît une fois par équipe qui l'a retenue — une offre de
         bénévolat pur (aucun matériel) n'apparaît PAS une seconde fois ici, la personne qui la
         porte est déjà comptée côté "personne". Équipes actives uniquement (une équipe
-        désactivée n'est plus vraiment mobilisée)."""
+        désactivée n'est plus vraiment mobilisée).
+
+        Restreint à SA PROPRE institution (responsable ou délégataire, voir
+        _appartient_a_equipe) pour tout le monde sauf un administrateur plateforme — corrigé le
+        2026-09-19, cette action listait auparavant les équipes de TOUTES les institutions,
+        contrairement à l'action `list` (qui applique déjà filter_queryset_to_viewer_zone) :
+        une mairie voyait les ressources mobilisées d'autres collectivités sans lien avec elle."""
         teams = (
             self.filter_queryset(self.get_queryset())
             .filter(actif=True)
@@ -4426,6 +4432,18 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
                 'assigned_offers__materiel_catalogue', 'assigned_crises', 'points_operationnels',
             )
         )
+        if effective_role_or_none(request) != UserRole.ADMINISTRATOR:
+            # ContactInstitution (contact actif), pas User.institution_id : même source de
+            # vérité que _appartient_a_institution/_appartient_a_equipe utilisées ailleurs pour
+            # la même notion d'appartenance — jamais garanti que User.institution (FK
+            # dénormalisée, posée à l'inscription) reste synchronisée avec les rattachements
+            # ultérieurs.
+            mes_institutions_ids = ContactInstitution.objects.filter(
+                utilisateur=request.user, actif=True,
+            ).values_list('institution_id', flat=True)
+            teams = teams.filter(
+                Q(institution_id__in=mes_institutions_ids) | Q(institution_delegataire_id__in=mes_institutions_ids)
+            )
 
         rows = []
         for team in teams:
@@ -4448,6 +4466,11 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
                     "centres": centres,
                     "detail": ", ".join(competences) if competences else None,
                     "statut": None,
+                    # Corrèle avec proprietaire_id d'une ligne "materiel" ci-dessous : détecte
+                    # qu'un membre d'équipe a lui-même apporté du matériel (couple personne +
+                    # matériel indissociable, voir Offer.presence_physique) — voir la page
+                    # frontend pour le regroupement visuel.
+                    "user_id": str(membre.id),
                 })
 
             for offre in team.assigned_offers.all():
@@ -4465,6 +4488,31 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
                     "centres": centres,
                     "detail": detail,
                     "statut": offre.get_status_display(),
+                    # Qui a déposé ce matériel — jamais évident depuis `nom` seul (le titre de
+                    # l'offre, pas une personne) : indispensable pour retrouver le propriétaire
+                    # d'un matériel déposé sans que son auteur reste sur place (presence_physique
+                    # False/None), ou pour relier ce matériel à son apporteur quand il EST membre
+                    # de l'équipe (presence_physique True, voir user_id ci-dessus).
+                    "proprietaire_nom": f"{offre.first_name_offer} {offre.last_name_offer}".strip() or None,
+                    "proprietaire_id": str(offre.author_id) if offre.author_id else None,
+                    "proprietaire_email": offre.email_offer or None,
+                    "proprietaire_telephone": offre.phone_offer,
+                    # True = apporté ET exploité sur place par son propriétaire (indissociable
+                    # personne/matériel) ; False = déposé, le propriétaire ne reste pas ; None =
+                    # jamais renseigné (offre antérieure à ce champ).
+                    "presence_physique": offre.presence_physique,
+                    # Dépôt groupé (association/entreprise avec plusieurs personnes/véhicules en
+                    # une seule soumission, voir Offer.groupe_id) — même groupe_id partagé par
+                    # toutes les lignes (personnes ET matériel) de cette soumission.
+                    "organisation_nom": offre.organisation_nom,
+                    "groupe_id": str(offre.groupe_id) if offre.groupe_id else None,
+                    # Personnes accompagnant le propriétaire pour exploiter CE matériel — un
+                    # décompte, pas des identités individuelles (Offer ne les nomme pas une par
+                    # une) : affiché tel quel plutôt qu'omis, pour ne pas laisser croire qu'une
+                    # seule personne est mobilisée sur un matériel qui en occupe en réalité
+                    # plusieurs (ex: camion + équipage).
+                    "accompagne": offre.accompagne,
+                    "nombre_accompagnants": offre.nombre_accompagnants,
                 })
 
         return Response(rows)

@@ -2,7 +2,8 @@
   <h2>Ressources mobilisées</h2>
   <p class="page-hint">
     Personnes et matériel réellement retenus par une équipe — où (institution, centre, crise) et
-    avec quoi (compétence pour une personne, matériel précis pour une offre).
+    avec quoi (compétence pour une personne, matériel précis pour une offre). Groupé par équipe ;
+    une personne qui a apporté du matériel apparaît reliée à celui-ci.
   </p>
 </div>
 
@@ -18,7 +19,10 @@
       <option value="personne">Personnes</option>
       <option value="materiel">Matériel</option>
     </select>
-    <input type="text" placeholder="Filtrer (nom, équipe, institution, centre...)" [(ngModel)]="searchQuery">
+    <input type="text" placeholder="Filtrer (nom, équipe, institution, organisation, centre...)" [(ngModel)]="searchQuery">
+    <button type="button" (click)="toggleTriNom()">
+      <span class="material-icons">{{ triNomAsc ? 'arrow_upward' : 'arrow_downward' }}</span> Trier par nom
+    </button>
     <button type="button" (click)="load()">
       <span class="material-icons">refresh</span> Actualiser
     </button>
@@ -32,42 +36,70 @@
   <p>Chargement…</p>
 } @else if (errorMessage) {
   <p class="error-message">{{ errorMessage }}</p>
+} @else if (groupes.length === 0) {
+  <p class="page-hint">Aucune ressource mobilisée pour l'instant.</p>
 } @else {
-  <div class="table-wrapper">
-    <table class="data-table">
-      <thead>
-        <tr>
-          <th (click)="sortBy('type')">Type <span class="material-icons sort-icon">{{ sortIcon('type') }}</span></th>
-          <th (click)="sortBy('nom')">Nom <span class="material-icons sort-icon">{{ sortIcon('nom') }}</span></th>
-          <th (click)="sortBy('equipe_nom')">Équipe <span class="material-icons sort-icon">{{ sortIcon('equipe_nom') }}</span></th>
-          <th (click)="sortBy('institution')">Institution <span class="material-icons sort-icon">{{ sortIcon('institution') }}</span></th>
-          <th>Crise(s)</th>
-          <th>Centre(s)</th>
-          <th (click)="sortBy('detail')">Compétence / Matériel <span class="material-icons sort-icon">{{ sortIcon('detail') }}</span></th>
-          <th (click)="sortBy('statut')">Statut <span class="material-icons sort-icon">{{ sortIcon('statut') }}</span></th>
-        </tr>
-      </thead>
-      <tbody>
-        @for (r of filteredRows; track r.equipe_id + r.type + r.nom) {
-          <tr>
-            <td>
-              <span class="type-badge" [class.type-personne]="r.type === 'personne'" [class.type-materiel]="r.type === 'materiel'">
-                <span class="material-icons">{{ r.type === 'personne' ? 'person' : 'inventory_2' }}</span>
-                {{ r.type === 'personne' ? 'Personne' : 'Matériel' }}
-              </span>
-            </td>
-            <td>{{ r.nom }}</td>
-            <td>{{ r.equipe_nom }}</td>
-            <td>{{ r.institution || '—' }}</td>
-            <td>{{ r.crises.join(', ') || '—' }}</td>
-            <td>{{ r.centres.join(', ') || '—' }}</td>
-            <td>{{ r.detail || '—' }}</td>
-            <td>{{ r.statut || '—' }}</td>
-          </tr>
-        } @empty {
-          <tr><td colspan="8" class="empty">Aucune ressource mobilisée pour l'instant.</td></tr>
+  @for (groupe of groupes; track groupe.equipe_id) {
+    <div class="equipe-groupe" [class]="'equipe-couleur-' + groupe.couleurIndex">
+      <div class="equipe-entete">
+        <span class="material-icons">groups</span>
+        <strong>{{ groupe.equipe_nom }}</strong>
+        @if (groupe.institution) { <span class="equipe-institution">— {{ groupe.institution }}</span> }
+        <span class="equipe-compte">{{ groupe.unites.length }} unité(s)</span>
+      </div>
+
+      <div class="unites-liste">
+        @for (unite of groupe.unites; track unite.cle) {
+          <div class="unite-carte" [class.unite-liee]="unite.personne && unite.materiels.length > 0">
+            @if (unite.personne) {
+              <div class="unite-personne">
+                <span class="type-badge type-personne">
+                  <span class="material-icons">person</span> Personne
+                </span>
+                <span class="unite-nom">{{ unite.personne.nom }}</span>
+                @if (unite.personne.detail) { <span class="unite-detail">{{ unite.personne.detail }}</span> }
+              </div>
+            }
+
+            @for (materiel of unite.materiels; track materiel.nom + materiel.detail) {
+              <div class="unite-materiel" [class.unite-materiel-liee]="unite.personne">
+                @if (unite.personne) {
+                  <span class="material-icons lien-icon" title="Apporté par cette personne">subdirectory_arrow_right</span>
+                }
+                <span class="type-badge type-materiel">
+                  <span class="material-icons">inventory_2</span> Matériel
+                </span>
+                <span class="unite-nom">{{ materiel.nom }}</span>
+                @if (materiel.detail) { <span class="unite-detail">{{ materiel.detail }}</span> }
+                @if (materiel.statut) { <span class="statut-badge">{{ materiel.statut }}</span> }
+
+                @if (!unite.personne) {
+                  <span class="proprietaire">
+                    <span class="material-icons">badge</span>
+                    {{ materiel.proprietaire_nom || 'Propriétaire inconnu' }}
+                    @if (materiel.proprietaire_email) { <span class="proprietaire-contact">· {{ materiel.proprietaire_email }}</span> }
+                    @if (materiel.proprietaire_telephone) { <span class="proprietaire-contact">· {{ materiel.proprietaire_telephone }}</span> }
+                  </span>
+                  @if (materiel.presence_physique === false) {
+                    <span class="warning-badge">Déposé — ne reste pas sur place</span>
+                  } @else if (materiel.presence_physique === true) {
+                    <span class="info-badge">Présent (pas membre officiel de l'équipe)</span>
+                  }
+                }
+
+                @if (materiel.accompagne && materiel.nombre_accompagnants) {
+                  <span class="info-badge">+ {{ materiel.nombre_accompagnants }} accompagnant(s)</span>
+                }
+                @if (materiel.organisation_nom) {
+                  <span class="organisation-badge">
+                    <span class="material-icons">apartment</span> {{ materiel.organisation_nom }}
+                  </span>
+                }
+              </div>
+            }
+          </div>
         }
-      </tbody>
-    </table>
-  </div>
+      </div>
+    </div>
+  }
 }
