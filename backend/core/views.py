@@ -7300,10 +7300,10 @@ class DemandeMobilisationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
     def envoyer_attestation(self, request, pk=None):
         """Génère l'attestation PDF (avec QR code de vérification, voir
         core/attestation_mobilisation.py) et l'envoie par email à l'adresse connue de la cible.
-        `base_url` dérivée de la requête elle-même (request.build_absolute_uri), jamais d'un
-        settings.SERVER_URL fixe — le QR doit pointer vers l'hôte réellement utilisé pour
-        appeler cette action (.113/.114/futur domaine public), pas une valeur qui pourrait ne
-        pas encore résoudre publiquement."""
+        `base_url` = settings.SERVER_URL (le domaine public assista-crise.fr), jamais l'hôte de
+        la requête qui a déclenché l'envoi — demande explicite du 2026-09-21 : le QR doit
+        toujours pointer vers la même adresse, quel que soit l'endroit (.113/.114) d'où
+        l'attestation est émise, même avant que ce domaine ne résolve publiquement."""
         from .attestation_mobilisation import email_cible, generer_pdf_demande_mobilisation
 
         demande = self.get_object()
@@ -7320,8 +7320,7 @@ class DemandeMobilisationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        base_url = request.build_absolute_uri('/')
-        pdf_bytes = generer_pdf_demande_mobilisation(demande, base_url)
+        pdf_bytes = generer_pdf_demande_mobilisation(demande, settings.SERVER_URL)
         message = (
             f"Bonjour,\n\n"
             f"{demande.institution_emettrice.nom} vous adresse une demande de mobilisation "

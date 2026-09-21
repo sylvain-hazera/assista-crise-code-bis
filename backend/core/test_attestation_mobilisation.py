@@ -1,13 +1,17 @@
+from unittest.mock import patch
+
 import pytest
 from django.core import mail
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from core.attestation_mobilisation import generer_pdf_demande_mobilisation, url_verification
+from core.attestation_mobilisation import (
+    generer_mini_carte, generer_pdf_demande_mobilisation, immatriculation_cible, url_verification,
+)
 from core.models import (
     AffectationRoleOperationnel, ContactInstitution, Crisis, DemandeMobilisation, Institution,
-    InstitutionType, RoleOperationnel,
+    InstitutionType, Offer, OfferType, PointOperationnel, PointType, RoleOperationnel, Team,
 )
 
 
@@ -169,3 +173,110 @@ class TestVerificationPublique:
         response = client.get(reverse('verifier_demande_mobilisation', args=[demande.jeton_verification]))
         contenu = response.content.decode('utf-8')
         assert 'cible-attest@test.fr' not in contenu
+
+
+@pytest.mark.django_db
+class TestImmatriculationCible:
+
+    def test_absente_si_cible_utilisateur(self, demande):
+        assert immatriculation_cible(demande) is None
+
+    def test_presente_si_cible_offre_avec_immatriculation(self, responsable_client, crisis, institution_a):
+        client, _ = responsable_client
+        offer_type, _ = OfferType.objects.get_or_create(type='Test Offre Immat', defaults={'description': ''})
+        offre = Offer.objects.create(
+            title='Camion', first_name_offer='Jean', last_name_offer='Vehicule',
+            email_offer='vehicule@test.fr', status='DISPONIBLE', offer_type=offer_type,
+            immatriculation='AB-123-CD',
+        )
+        response = client.post(reverse('demandemobilisation-list'), {
+            'crise': str(crisis.id), 'institution_emettrice': str(institution_a.id),
+            'type_demande': 'MISE_A_DISPOSITION', 'cible_offre': str(offre.id),
+        }, format='json')
+        d = DemandeMobilisation.objects.get(id=response.data['id'])
+        assert immatriculation_cible(d) == 'AB-123-CD'
+
+
+@pytest.mark.django_db
+class TestMiniCarte:
+    """generer_mini_carte ne doit jamais lever d'exception — un problème réseau externe (OSM
+    indisponible, pas de connexion) ne doit jamais casser la génération du PDF, voir son
+    docstring. Réseau toujours mocké ici : jamais de vrai appel à tile.openstreetmap.org
+    pendant la suite de tests (lent, flaky, dépendant d'un service tiers)."""
+
+    def test_retourne_none_si_echec_reseau(self):
+        with patch('requests.Session.get', side_effect=Exception('pas de réseau')):
+            resultat = generer_mini_carte(44.9, -0.98)
+        assert resultat is None
+
+    def test_retourne_un_png_si_succes(self):
+        from PIL import Image
+        import io as io_module
+
+        tuile = Image.new('RGB', (256, 256), 'blue')
+        tuile_bytes = io_module.BytesIO()
+        tuile.save(tuile_bytes, format='PNG')
+
+        class FausseReponse:
+            content = tuile_bytes.getvalue()
+            def raise_for_status(self):
+                pass
+
+        with patch('requests.Session.get', return_value=FausseReponse()):
+            resultat = generer_mini_carte(44.9, -0.98)
+
+        assert resultat is not None
+        image = Image.open(resultat)
+        assert image.format == 'PNG'
+
+
+@pytest.mark.django_db
+class TestZone4ContactFallback:
+    """Voir attestation_mobilisation._contact_point : responsable du point > leader d'équipe >
+    régulateur d'équipe > repli sur l'institution émettrice (aucun contact de terrain)."""
+
+    def test_repli_institution_si_aucun_point(self, responsable_client, demande):
+        pdf = generer_pdf_demande_mobilisation(demande, 'https://www.assista-crise.fr')
+        assert pdf.startswith(b'%PDF')  # pas de point_operationnel sur `demande` : ne doit pas planter
+
+    def test_contact_est_le_responsable_du_point(self, responsable_client, crisis, institution_a, create_user):
+        client, _ = responsable_client
+        point_type, _ = PointType.objects.get_or_create(code='TEST_PT_ATTEST', defaults={'libelle': 'Test'})
+        responsable_point = create_user(
+            username='resp-point-attest@test.fr', email='resp-point-attest@test.fr',
+            first_name='Resp', last_name='Point', phone_number='0611111111',
+        )
+        point = PointOperationnel.objects.create(nom='Point Test', type=point_type, responsable=responsable_point)
+        cible = create_user(username='cible-point-attest@test.fr', email='cible-point-attest@test.fr')
+
+        response = client.post(reverse('demandemobilisation-list'), {
+            'crise': str(crisis.id), 'institution_emettrice': str(institution_a.id),
+            'type_demande': 'SE_RENDRE_A', 'point_operationnel': str(point.id),
+            'cible_utilisateur': str(cible.id),
+        }, format='json')
+        d = DemandeMobilisation.objects.get(id=response.data['id'])
+
+        from core.attestation_mobilisation import _contact_point
+        contact, equipe = _contact_point(d)
+        assert contact == responsable_point
+        assert equipe is None
+
+    def test_contact_repli_sur_leader_equipe_si_point_sans_responsable(self, responsable_client, crisis, institution_a, create_user):
+        client, _ = responsable_client
+        point_type, _ = PointType.objects.get_or_create(code='TEST_PT_ATTEST2', defaults={'libelle': 'Test'})
+        leader = create_user(username='leader-equipe-attest@test.fr', email='leader-equipe-attest@test.fr')
+        equipe = Team.objects.create(name='Équipe Test Attestation', institution=institution_a, leader=leader)
+        point = PointOperationnel.objects.create(nom='Point Sans Resp', type=point_type, equipe=equipe)
+        cible = create_user(username='cible-point-attest2@test.fr', email='cible-point-attest2@test.fr')
+
+        response = client.post(reverse('demandemobilisation-list'), {
+            'crise': str(crisis.id), 'institution_emettrice': str(institution_a.id),
+            'type_demande': 'SE_RENDRE_A', 'point_operationnel': str(point.id),
+            'cible_utilisateur': str(cible.id),
+        }, format='json')
+        d = DemandeMobilisation.objects.get(id=response.data['id'])
+
+        from core.attestation_mobilisation import _contact_point
+        contact, equipe_trouvee = _contact_point(d)
+        assert contact == leader
+        assert equipe_trouvee == equipe
