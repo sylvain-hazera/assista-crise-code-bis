@@ -42,7 +42,7 @@ from django.core.files.base import ContentFile
 from PIL import Image
 from PIL.ExifTags import TAGS, GPSTAGS
 
-from .audit import audit_log, get_client_ip, send_mail_logged
+from .audit import audit_log, get_client_ip, send_mail_logged, send_mail_with_attachment_logged
 from .export import build_crisis_export_zip
 from .institution_attachment import (
     find_institution_for_pending_user, attach_user_with_role,
@@ -7295,6 +7295,102 @@ class DemandeMobilisationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
                 objet_id=demande.id, crise=demande.crise, commentaire="Demande de mobilisation révoquée.",
             )
         return Response(self.get_serializer(demande).data)
+
+    @action(detail=True, methods=['post'], url_path='envoyer-attestation')
+    def envoyer_attestation(self, request, pk=None):
+        """Génère l'attestation PDF (avec QR code de vérification, voir
+        core/attestation_mobilisation.py) et l'envoie par email à l'adresse connue de la cible.
+        `base_url` dérivée de la requête elle-même (request.build_absolute_uri), jamais d'un
+        settings.SERVER_URL fixe — le QR doit pointer vers l'hôte réellement utilisé pour
+        appeler cette action (.113/.114/futur domaine public), pas une valeur qui pourrait ne
+        pas encore résoudre publiquement."""
+        from .attestation_mobilisation import email_cible, generer_pdf_demande_mobilisation
+
+        demande = self.get_object()
+        if not _peut_emettre_demande_mobilisation(request, demande.institution_emettrice):
+            return Response(
+                {"error": "Seul un responsable ou un régulateur de l'institution émettrice peut envoyer cette attestation."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        destinataire = email_cible(demande)
+        if not destinataire:
+            return Response(
+                {"error": "Aucune adresse email connue pour le destinataire de cette demande."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        base_url = request.build_absolute_uri('/')
+        pdf_bytes = generer_pdf_demande_mobilisation(demande, base_url)
+        message = (
+            f"Bonjour,\n\n"
+            f"{demande.institution_emettrice.nom} vous adresse une demande de mobilisation "
+            f"dans le cadre de la crise « {demande.crise.name} » — voir l'attestation ci-jointe.\n\n"
+            f"Cordialement,\n{demande.institution_emettrice.nom}"
+        )
+        send_mail_with_attachment_logged(
+            request, subject=f"Attestation de mobilisation — {demande.crise.name}", message=message,
+            from_email=None, recipient_list=[destinataire],
+            attachment_filename="attestation_mobilisation.pdf", attachment_content=pdf_bytes,
+            attachment_mimetype="application/pdf",
+        )
+        return Response({"envoye_a": destinataire})
+
+
+class VerifierDemandeMobilisationView(APIView):
+    """Page de vérification publique (pointée par le QR code de l'attestation, voir
+    core/attestation_mobilisation.py) — AUCUNE authentification requise, c'est justement le
+    point : un gendarme qui scanne le QR n'a pas de compte sur la plateforme. Retourne une page
+    HTML minimale plutôt que du JSON brut (lisible directement sur l'écran d'un téléphone après
+    scan) et volontairement peu de données (jamais l'email/téléphone de la cible sur une page
+    publique sans authentification) — juste de quoi confirmer l'authenticité et le statut à
+    jour (une révocation survenue après l'émission du PDF doit être visible ici immédiatement,
+    contrairement au PDF lui-même qui reste figé une fois envoyé)."""
+
+    permission_classes = [AllowAny]
+
+    def get(self, request, jeton):
+        from .attestation_mobilisation import nom_cible
+
+        demande = DemandeMobilisation.objects.select_related(
+            'crise', 'institution_emettrice', 'point_operationnel',
+        ).filter(jeton_verification=jeton).first()
+
+        if demande is None:
+            html = (
+                "<!doctype html><html lang='fr'><meta charset='utf-8'>"
+                "<title>Vérification — introuvable</title>"
+                "<body style='font-family:sans-serif;max-width:480px;margin:3rem auto;padding:0 1rem'>"
+                "<h1 style='color:#b91c1c'>Jeton inconnu</h1>"
+                "<p>Aucune attestation ne correspond à ce QR code.</p>"
+                "</body></html>"
+            )
+            return HttpResponse(html, content_type="text/html; charset=utf-8", status=404)
+
+        valide = demande.statut == StatutDemandeMobilisation.ACTIVE
+        couleur = "#15803d" if valide else "#b91c1c"
+        libelle_statut = "ATTESTATION VALIDE" if valide else "ATTESTATION RÉVOQUÉE"
+        lieu = demande.point_operationnel.nom if demande.point_operationnel_id else (demande.lieu_texte or "—")
+
+        html = f"""<!doctype html><html lang='fr'><meta charset='utf-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>Vérification d'attestation</title>
+<body style='font-family:sans-serif;max-width:480px;margin:2rem auto;padding:0 1rem;color:#1f2937'>
+  <h1 style='color:{couleur};font-size:1.3rem'>{libelle_statut}</h1>
+  <table style='width:100%;border-collapse:collapse;font-size:.95rem'>
+    <tr><td style='padding:.4rem 0;color:#6b7280'>Autorité émettrice</td><td><strong>{demande.institution_emettrice.nom}</strong></td></tr>
+    <tr><td style='padding:.4rem 0;color:#6b7280'>Destinataire</td><td>{nom_cible(demande)}</td></tr>
+    <tr><td style='padding:.4rem 0;color:#6b7280'>Crise</td><td>{demande.crise.name}</td></tr>
+    <tr><td style='padding:.4rem 0;color:#6b7280'>Nature</td><td>{demande.get_type_demande_display()}</td></tr>
+    <tr><td style='padding:.4rem 0;color:#6b7280'>Lieu</td><td>{lieu}</td></tr>
+    <tr><td style='padding:.4rem 0;color:#6b7280'>Émise le</td><td>{demande.date_creation.strftime('%d/%m/%Y à %H:%M')}</td></tr>
+  </table>
+  <p style='color:#9ca3af;font-size:.78rem;margin-top:2rem'>
+    Ceci n'est pas une réquisition légale au sens strict (article L. 2215-1 du CGCT) — une
+    demande formelle tracée sur la plateforme Assista Crise.
+  </p>
+</body></html>"""
+        return HttpResponse(html, content_type="text/html; charset=utf-8")
 
 
 def _notifier_lecteurs_et_createur_recherche(request, recherche, titre, message):

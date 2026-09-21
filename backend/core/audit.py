@@ -94,3 +94,30 @@ def send_mail_logged(request, subject, message, from_email, recipient_list, **kw
             commentaire=f'Envoi "{subject}" à {", ".join(recipient_list)}',
             succes=succes,
         )
+
+
+def send_mail_with_attachment_logged(
+    request, subject, message, from_email, recipient_list,
+    attachment_filename, attachment_content, attachment_mimetype, **kwargs,
+):
+    """Variante de send_mail_logged avec pièce jointe — django.core.mail.send_mail ne le permet
+    pas, EmailMessage.attach() si. Même journalisation systématique dans la main courante que
+    send_mail_logged, avec le nom du fichier joint en plus dans le commentaire."""
+    from django.core.mail import EmailMessage
+
+    succes = True
+    try:
+        email = EmailMessage(subject, message, from_email, recipient_list, **kwargs)
+        email.attach(attachment_filename, attachment_content, attachment_mimetype)
+        return email.send()
+    except Exception:
+        succes = False
+        raise
+    finally:
+        audit_log(
+            request=request,
+            action_code="ENVOI_EMAIL",
+            objet_type="Email",
+            commentaire=f'Envoi "{subject}" (pièce jointe : {attachment_filename}) à {", ".join(recipient_list)}',
+            succes=succes,
+        )

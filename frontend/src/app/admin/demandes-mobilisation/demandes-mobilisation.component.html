@@ -118,6 +118,12 @@
   @if (revoquerErreur) {
     <p class="error-message">{{ revoquerErreur }}</p>
   }
+  @if (envoiAttestationMessage) {
+    <p class="success-message">{{ envoiAttestationMessage }}</p>
+  }
+  @if (envoiAttestationErreur) {
+    <p class="error-message">{{ envoiAttestationErreur }}</p>
+  }
 
   @if (loading) {
     <p>Chargement…</p>
@@ -152,8 +158,11 @@
               <td>{{ d.lieu_texte || d.motif || '—' }}</td>
               <td><span class="statut-badge" [ngClass]="statutClass(d)">{{ d.statut_libelle }}</span></td>
               <td>{{ d.date_creation | date:'dd/MM/yyyy HH:mm' }}</td>
-              <td>
+              <td class="actions-cell">
                 @if (d.statut === 'ACTIVE') {
+                  <button type="button" class="btn-secondary-sm" [disabled]="envoiAttestationEnCours === d.id" (click)="envoyerAttestation(d)" title="Générer l'attestation PDF (avec QR code de vérification) et l'envoyer par email">
+                    <span class="material-icons">mail</span> Envoyer l'attestation
+                  </button>
                   <button type="button" class="btn-danger-sm" [disabled]="revoquerEnCours === d.id" (click)="revoquer(d)">
                     Révoquer
                   </button>

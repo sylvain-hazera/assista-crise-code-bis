@@ -19,6 +19,8 @@ redis>=5.0.0
 gunicorn>=21.2.0
 whitenoise>=6.6.0
 openpyxl>=3.1.0
+reportlab>=5.0.1
+qrcode>=8.2
 
 # Tests & Coverage
 pytest>=7.4.0

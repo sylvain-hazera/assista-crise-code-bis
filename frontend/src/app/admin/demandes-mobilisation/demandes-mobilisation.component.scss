@@ -170,14 +170,30 @@
   &.statut-revoquee { background: #f3f4f6; color: #6b7280; }
 }
 
-.btn-danger-sm {
+.btn-danger-sm, .btn-secondary-sm {
+  display: inline-flex;
+  align-items: center;
+  gap: .25rem;
   padding: .3rem .7rem;
   border-radius: 6px;
   border: 1px solid #e5e7eb;
   background: #fff;
-  color: #b91c1c;
   cursor: pointer;
   font-size: .8rem;
+  margin-right: .35rem;
+
+  .material-icons { font-size: 15px; }
 
   &:disabled { opacity: .5; cursor: not-allowed; }
+}
+
+.btn-danger-sm { color: #b91c1c; }
+.btn-secondary-sm { color: #374151; }
+
+.actions-cell { white-space: nowrap; }
+
+.success-message {
+  color: #15803d;
+  font-size: .85rem;
+  margin: .5rem 0;
 }

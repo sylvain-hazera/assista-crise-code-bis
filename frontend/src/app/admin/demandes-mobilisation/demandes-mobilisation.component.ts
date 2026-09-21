@@ -185,4 +185,24 @@ export class DemandesMobilisationComponent implements OnInit {
   statutClass(demande: DemandeMobilisation): string {
     return demande.statut === 'ACTIVE' ? 'statut-active' : 'statut-revoquee';
   }
+
+  envoiAttestationEnCours: string | null = null;
+  envoiAttestationMessage = '';
+  envoiAttestationErreur = '';
+
+  envoyerAttestation(demande: DemandeMobilisation): void {
+    this.envoiAttestationEnCours = demande.id;
+    this.envoiAttestationMessage = '';
+    this.envoiAttestationErreur = '';
+    this.service.envoyerAttestation(demande.id).subscribe({
+      next: (res) => {
+        this.envoiAttestationMessage = `Attestation envoyée à ${res.envoye_a}.`;
+        this.envoiAttestationEnCours = null;
+      },
+      error: (err) => {
+        this.envoiAttestationErreur = err.error?.error || "Impossible d'envoyer l'attestation.";
+        this.envoiAttestationEnCours = null;
+      },
+    });
+  }
 }

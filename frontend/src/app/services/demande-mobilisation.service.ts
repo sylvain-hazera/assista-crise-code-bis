@@ -21,4 +21,10 @@ export class DemandeMobilisationService {
   revoquer(id: string): Observable<DemandeMobilisation> {
     return this.http.post<DemandeMobilisation>(`${this.apiUrl}/${id}/revoquer/`, {});
   }
+
+  /** Génère l'attestation PDF (avec QR code de vérification) et l'envoie par email à l'adresse
+   * connue du destinataire — voir DemandeMobilisationViewSet.envoyer_attestation. */
+  envoyerAttestation(id: string): Observable<{ envoye_a: string }> {
+    return this.http.post<{ envoye_a: string }>(`${this.apiUrl}/${id}/envoyer-attestation/`, {});
+  }
 }
