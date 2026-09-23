@@ -44,6 +44,11 @@ export const PUBLIC_ROUTES: Routes = [
           .then(m => m.MagicLoginComponent)
       },
       {
+        path: 'mot-de-passe-oublie',
+        loadComponent: () => import('../auth/component/forgot-password/forgot-password.component')
+          .then(m => m.ForgotPasswordComponent)
+      },
+      {
         path: 'reinitialiser-mot-de-passe/:uidb64/:token',
         loadComponent: () => import('../auth/component/reset-password/reset-password.component')
           .then(m => m.ResetPasswordComponent)

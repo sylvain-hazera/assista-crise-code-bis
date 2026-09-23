@@ -6618,6 +6618,60 @@ class ChangePasswordView(generics.UpdateAPIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+class PasswordResetRequestView(generics.GenericAPIView):
+    """Libre-service : un utilisateur qui a oublié son mot de passe saisit son email et reçoit
+    un lien (même mécanique que UserViewSet.send_password_reset, jusque-là réservée aux
+    administrateurs). Complète ce mécanisme sans le remplacer -- un admin peut toujours
+    déclencher un envoi depuis la page de gestion des utilisateurs.
+
+    Réponse strictement identique que l'email corresponde à un compte ou non : ne jamais
+    révéler par ce endpoint si une adresse est inscrite (énumération de comptes), y compris en
+    cas de compte désactivé -- indiscernable ici d'une adresse inconnue."""
+
+    permission_classes = [permissions.AllowAny]
+
+    GENERIC_RESPONSE = {
+        'message': "Si un compte existe avec cette adresse, un email de réinitialisation vient d'être envoyé."
+    }
+
+    def post(self, request, *args, **kwargs):
+        email = (request.data.get('email') or '').strip()
+        if not email:
+            return Response({'error': "L'adresse email est requise."}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = User.objects.filter(email__iexact=email, is_active=True).first()
+        if user:
+            reset_link = build_magic_link(request, user, "reset-password")
+            message = (
+                f"Bonjour {user.first_name} {user.last_name},\n\n"
+                "Vous avez demandé la réinitialisation du mot de passe de votre compte "
+                "Assista-Crise.\n\n"
+                f"Pour choisir un nouveau mot de passe, cliquez sur le lien suivant :\n{reset_link}\n\n"
+                "Ce lien est valable 7 jours et ne peut être utilisé qu'une seule fois. Si vous "
+                "n'êtes pas à l'origine de cette demande, vous pouvez ignorer cet email : votre "
+                "mot de passe actuel reste valable.\n\n"
+                "Cordialement,\n"
+                "L'équipe Assista-Crise"
+            )
+            send_mail_env_aware(
+                request,
+                subject="Réinitialisation de votre mot de passe Assista-Crise",
+                message=message,
+                from_email=None,
+                recipient_list=[user.email],
+                fail_silently=False,
+            )
+            audit_log(
+                request=request,
+                action_code="MODIFICATION",
+                objet_type="User",
+                objet_id=user.id,
+                commentaire=f"Lien de réinitialisation de mot de passe demandé en libre-service : {user.email}",
+            )
+
+        return Response(self.GENERIC_RESPONSE, status=status.HTTP_200_OK)
+
+
 class PasswordResetConfirmView(generics.GenericAPIView):
     """Consomme le lien envoyé par UserViewSet.send_password_reset : contrairement à
     ChangePasswordView, ne requiert pas de connaître l'ancien mot de passe — la preuve de

@@ -2,7 +2,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenBlacklistView
 from .views import (
-    ChangePasswordView, PasswordResetConfirmView, MyTokenObtainPairView, MyTokenRefreshView, RegisterView, InstitutionValidationView, UserMeView,
+    ChangePasswordView, PasswordResetRequestView, PasswordResetConfirmView, MyTokenObtainPairView, MyTokenRefreshView, RegisterView, InstitutionValidationView, UserMeView,
     AccountActivationView, MagicLoginView, MaPositionView, PositionsEquipesView,
     UserViewSet, CrisisViewSet, RequestViewSet, 
     RecherchePersonneCommentairePhotoViewSet,
@@ -193,6 +193,7 @@ urlpatterns = [
     path('me/', UserMeView.as_view(), name='auth_me'),
     path('verifier-mobilisation/<str:jeton>/', VerifierDemandeMobilisationView.as_view(), name='verifier_demande_mobilisation'),
     path('change-password/', ChangePasswordView.as_view(), name='auth_change_password'),
+    path('reset-password/request/', PasswordResetRequestView.as_view(), name='reset_password_request'),
     path('reset-password/<str:uidb64>/<str:token>/', PasswordResetConfirmView.as_view(), name='reset_password_confirm'),
     path('stats/dashboard/', DashboardStatsView.as_view(), name='dashboard_stats'),
     path('mesh-local/detecter/', MeshLocalDetecterView.as_view(), name='mesh_local_detecter'),

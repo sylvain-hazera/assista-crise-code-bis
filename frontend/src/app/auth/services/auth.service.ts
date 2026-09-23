@@ -392,10 +392,27 @@ export class AuthService {
   }
 
   /**
+   * POST /api/reset-password/request/
+   * Libre-service (page "mot de passe oublié") : déclenche l'envoi du lien de réinitialisation
+   * si l'email correspond à un compte. Réponse toujours identique côté backend, que l'email
+   * existe ou non -- ne jamais différencier les deux cas côté UI non plus.
+   */
+  requestPasswordReset(email: string): Observable<void> {
+    return this.http
+      .post<void>(`${this.url}/reset-password/request/`, { email })
+      .pipe(
+        catchError((error: HttpErrorResponse) => {
+          const errorMessage = error.error?.error || 'Une erreur est survenue, réessayez plus tard.';
+          return throwError(() => new Error(errorMessage));
+        })
+      );
+  }
+
+  /**
    * POST /api/reset-password/<uidb64>/<token>/
-   * Consomme le lien reçu par email suite à une demande de réinitialisation déclenchée par un
-   * administrateur (page Utilisateurs) : contrairement à changePassword, ne nécessite pas de
-   * connaître l'ancien mot de passe.
+   * Consomme le lien reçu par email suite à une demande de réinitialisation -- déclenchée soit
+   * en libre-service (requestPasswordReset), soit par un administrateur (page Utilisateurs) :
+   * contrairement à changePassword, ne nécessite pas de connaître l'ancien mot de passe.
    */
   resetPasswordConfirm(uidb64: string, token: string, new_password: string): Observable<void> {
     return this.http
