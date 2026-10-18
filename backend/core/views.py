@@ -12,6 +12,8 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticatedOrReadOnly, AllowAny
+
+from .metrics import EMAILS_FAILED
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
@@ -1519,8 +1521,9 @@ class UserViewSet(viewsets.ModelViewSet):
                         recipient_list=[user.email],
                         fail_silently=False,
                     )
-                except Exception as e:
-                    print(f"Erreur envoi email utilisateur : {e}")
+                except Exception:
+                    logger.exception("Registration email failed for user %s", user.pk)
+                    EMAILS_FAILED.labels(kind="registration_pending").inc()
                 
                 # Notifier les administrateurs
                 admin_emails = User.objects.filter(
@@ -1547,8 +1550,9 @@ class UserViewSet(viewsets.ModelViewSet):
                             recipient_list=list(admin_emails),
                             fail_silently=False,
                         )
-                    except Exception as e:
-                        print(f"Erreur envoi email admins : {e}")
+                    except Exception:
+                        logger.exception("Admin notification email failed for user %s", user.pk)
+                        EMAILS_FAILED.labels(kind="admin_notification").inc()
 
                 if getattr(user, 'type', None) in {'AUT_LOCALE', 'SECOURS', 'ADMIN'}:
                     try:
@@ -1861,8 +1865,9 @@ class UserViewSet(viewsets.ModelViewSet):
                 recipient_list=[user_to_approve.email],
                 fail_silently=False,
             )
-        except Exception as e:
-            print(f"Erreur envoi email validation : {e}")
+        except Exception:
+            logger.exception("Validation email failed for user %s", user_to_approve.pk)
+            EMAILS_FAILED.labels(kind="account_validated").inc()
         
         return Response({
             'message': 'Compte validé avec succès',
@@ -1909,13 +1914,13 @@ class UserViewSet(viewsets.ModelViewSet):
                 recipient_list=[user_to_reject.email],
                 fail_silently=False,
             )
-        except Exception as e:
-            print(f"Erreur envoi email rejet : {e}")
+        except Exception:
+            logger.exception("Rejection email failed for user %s", user_to_reject.pk)
+            EMAILS_FAILED.labels(kind="account_rejected").inc()
         
         # Désactiver le compte (ou le supprimer)
         user_to_reject.is_active = False
         user_to_reject.save()
-
         return Response({
             'message': 'Compte rejeté',
             'user': UserSerializer(user_to_reject).data
@@ -3832,8 +3837,9 @@ class RequestViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             )
             print("Succès : Email de confirmation envoyé.")
 
-        except Exception as e:
-            print(f"Erreur critique : L'envoi de l'email a échoué. Détails : {e}")
+        except Exception:
+            logger.exception("Confirmation email failed for request %s", demande.pk)
+            EMAILS_FAILED.labels(kind="request_confirmation").inc()
 
     @action(detail=True, methods=["post"], permission_classes=[IsInstitutionalActor])
     def assign_team(self, request, pk=None):

@@ -1,0 +1,30 @@
+# Alertmanager de DÉVELOPPEMENT : tout part vers MailHog (http://localhost:8025).
+global:
+  smtp_smarthost: 'mailhog:1025'
+  smtp_from: 'alertmanager@assista-crise.local'
+  smtp_require_tls: false               # MailHog n'a pas de TLS
+
+route:
+  receiver: team-email
+  group_by: ['alertname', 'job']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - matchers: ['alertname="Watchdog"']
+      receiver: blackhole
+    - matchers: ['severity="critical"']
+      receiver: team-email
+      repeat_interval: 1h
+
+receivers:
+  - name: blackhole                # sans configuration : alerte ignorée (le Watchdog, en dev)
+  - name: team-email
+    email_configs:
+      - to: 'oncall@assista-crise.local'
+        send_resolved: true
+
+inhibit_rules:
+  - source_matchers: ['alertname="SiteDown"']   # site tombé : les warnings ne sont que des conséquences
+    target_matchers: ['severity="warning"']
+    equal: ['environment']

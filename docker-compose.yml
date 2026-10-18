@@ -1,58 +1,57 @@
+# Base commune à tous les environnements (voir DOCUMENTATION.md, « Environnements Docker ») :
+#   dev  : docker compose up        (+ docker-compose.override.yml, chargé automatiquement)
+#   prod : docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile monitoring up -d
+
+x-logging: &logging              # rotation : sans elle, les logs Docker remplissent le disque
+  driver: json-file
+  options: { max-size: "10m", max-file: "3" }
+
+x-monitoring: &monitoring
+  profiles: [monitoring]
+  logging: *logging
+
+secrets:
+  grafana_admin_password: { file: "${SECRETS_DIR:-./secrets}/grafana_admin_password.txt" }
+  pg_monitoring_password: { file: "${SECRETS_DIR:-./secrets}/pg_monitoring_password.txt" }
+
 services:
+  # ---------------------------------------------------------------- application
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile.dev
     container_name: ac_frontend
-    ports:
-      - "4200:4200"
-    volumes:
-      - ./frontend:/app         
-      - /app/node_modules       
-    environment:
-      - CHOKIDAR_USEPOLLING=true
+    logging: *logging
 
   backend:
-    build: ./backend
     container_name: ac_backend
-    ports:
-      - "8000:8000"
+    logging: *logging
     volumes:
-      - ./backend:/app
       - media_volume:/app/media
+    tmpfs:                         # métriques multi-workers gunicorn, vidé à chaque démarrage
+      - /tmp/prometheus-multiproc:uid=10001,gid=10001,mode=0755
     environment:
+      - PROMETHEUS_MULTIPROC_DIR=/tmp/prometheus-multiproc
       - DB_HOST=db
       - DB_NAME=assista-db
       - DB_USER=${DB_USER}
       - DB_PASS=${DB_PASS}
+      - SECRET_KEY=${SECRET_KEY}
       - MQTT_BROKER=mosquitto
-      - EMAIL_HOST=mailhog      # Use MailHog in dev
-      - EMAIL_PORT=1025
-    # For Hardware USB Access (uncomment on VM/Host with antenna)
-    # devices:
-    #   - "/dev/ttyACM0:/dev/ttyACM0"
     depends_on:
-      db:
-        condition: service_healthy
-      mosquitto:
-        condition: service_started
-      mailhog:
-        condition: service_started
+      db:        { condition: service_healthy }
+      mosquitto: { condition: service_started }
 
-  # Dev local uniquement. ATTENTION : POSTGRES_USER ci-dessous devient le SUPERUSER PostgreSQL
-  # de bootstrap sur une base neuve (comportement de l'image officielle) — pas "le compte de
-  # l'appli". Voir le même commentaire dans docker-compose.prod.yml.
+  # Sur une base neuve, POSTGRES_USER devient le SUPERUSER PostgreSQL (voir docker-compose.prod.yml).
   db:
     image: postgis/postgis:15-3.3
     container_name: ac_db
+    logging: *logging
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./monitoring/postgres/init-monitoring-user.sh:/docker-entrypoint-initdb.d/50-monitoring-user.sh:ro
     environment:
       - POSTGRES_DB=assista-db
       - POSTGRES_USER=${DB_USER}
       - POSTGRES_PASSWORD=${DB_PASS}
-    ports: # !!! REMOVE FOR PRODUCTION !!!
-      - "5432:5432"    
+    secrets: [pg_monitoring_password]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d assista-db"]
       interval: 5s
@@ -60,78 +59,99 @@ services:
       retries: 5
 
   mosquitto:
-    image: eclipse-mosquitto
+    image: eclipse-mosquitto:2.1.2-alpine
     container_name: ac_mqtt
-    ports:
-      - "1883:1883" # TCP listener
-      - "9001:9001" # Websocket listener
+    logging: *logging
     volumes:
       - ./mosquitto/config:/mosquitto/config
       - ./mosquitto/data:/mosquitto/data
 
-  grafana:
-    image: grafana/grafana
-    container_name: ac_stats
-    ports:
-      - "3000:3000"
-    depends_on:
-      - db
-
-  mailhog:
-    image: mailhog/mailhog
-    container_name: ac_mailer
-    ports:
-      - "1025:1025" # SMTP port
-      - "8025:8025" # Web UI
-    networks:
-      - default
-    environment:
-      - EMAIL_HOST=mailhog
-      - EMAIL_PORT=1025
-
   tileserver:
-    image: maptiler/tileserver-gl
+    image: maptiler/tileserver-gl:v5.5.0
     container_name: ac_maps
-    ports:
-      - "8080:8080"
-    # volumes:
-    #   - ./tileserver:/data
-
-  # Phase de test uniquement (voir meshcore-bridge/README.md) — pas de service équivalent
-  # dans docker-compose.prod.yml tant que le matériel n'a pas été validé.
-  meshcore-bridge:
-    build: ./meshcore-bridge
-    container_name: ac_meshcore_bridge
-    restart: unless-stopped
-    environment:
-      - DJANGO_API_URL=http://backend:8000/api
-      - DJANGO_BRIDGE_EMAIL=${MESHCORE_BRIDGE_EMAIL}
-      - DJANGO_BRIDGE_PASSWORD=${MESHCORE_BRIDGE_PASSWORD}
-      - COMPAGNON_ID=${MESHCORE_COMPAGNON_ID}
-      - MESHCORE_CONNEXION_TYPE=${MESHCORE_CONNEXION_TYPE:-TCP}
-      - MESHCORE_TCP_HOST=${MESHCORE_TCP_HOST}
-      - MESHCORE_TCP_PORT=${MESHCORE_TCP_PORT:-5000}
-      - MESHCORE_SERIE_DEVICE=${MESHCORE_SERIE_DEVICE}
-      - MESHCORE_BLE_ADRESSE=${MESHCORE_BLE_ADRESSE}
-      - LOG_LEVEL=${MESHCORE_LOG_LEVEL:-INFO}
-    # Pour une connexion série USB (décommenter et adapter) :
-    # devices:
-    #   - "/dev/ttyUSB0:/dev/ttyUSB0"
-    depends_on:
-      - backend
-    profiles:
-      - meshcore-test
+    logging: *logging
 
   proxy:
-    build: ./proxy
     container_name: ac_proxy
-    ports:
-      - "80:80"
-    depends_on:
-      - frontend
-      - backend
-      - tileserver
+    logging: *logging
+    depends_on: [frontend, backend, tileserver]
+
+  # ---------------------------------------------------------------- monitoring
+  # Images de prometheus/alertmanager/grafana : construites depuis monitoring/<nom>/
+  # (dev : docker-compose.override.yml ; prod : registre, voir docker-compose.prod.yml).
+  prometheus:
+    <<: *monitoring
+    container_name: ac_prometheus
+    volumes:
+      - prom_data:/prometheus
+
+  alertmanager:
+    <<: *monitoring
+    container_name: ac_alertmanager
+    volumes:
+      - alertmanager_data:/alertmanager
+
+  grafana:
+    <<: *monitoring
+    container_name: ac_grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD__FILE=/run/secrets/grafana_admin_password   # deux underscores
+      - GF_USERS_ALLOW_SIGN_UP=false
+    secrets: [grafana_admin_password]
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on: [prometheus]
+
+  postgres-exporter:
+    <<: *monitoring
+    image: prometheuscommunity/postgres-exporter:v0.15.0
+    environment:
+      - DATA_SOURCE_URI=db:5432/assista-db?sslmode=disable
+      - DATA_SOURCE_USER=monitoring
+      - DATA_SOURCE_PASS_FILE=/run/secrets/pg_monitoring_password
+    secrets: [pg_monitoring_password]
+    depends_on: [db]
+
+  nginx-exporter:
+    <<: *monitoring
+    image: nginx/nginx-prometheus-exporter:1.1.0
+    command: ['--nginx.scrape-uri=http://proxy:8081/stub_status']
+    depends_on: [proxy]
+
+  mosquitto-exporter:
+    <<: *monitoring
+    image: sapcc/mosquitto-exporter:0.8.0
+    environment:
+      - BROKER_ENDPOINT=tcp://mosquitto:1883
+    depends_on: [mosquitto]
+
+  cadvisor:
+    <<: *monitoring
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    privileged: true               # compromis assumé : accès large à l'hôte, port jamais publié
+    devices: [/dev/kmsg]
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+
+  node-exporter:
+    <<: *monitoring
+    image: prom/node-exporter:v1.8.2
+    pid: host
+    volumes:
+      - /:/host:ro,rslave
+    command: ['--path.rootfs=/host']
+
+  blackbox-exporter:
+    <<: *monitoring
+    image: prom/blackbox-exporter:v0.25.0
 
 volumes:
   postgres_data:
   media_volume:
+  prom_data:
+  alertmanager_data:
+  grafana_data:

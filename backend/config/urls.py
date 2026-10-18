@@ -22,9 +22,12 @@ from django.contrib.auth import views as auth_views
 from django.http import HttpResponseForbidden
 from django.urls import path, re_path, include
 from django.views.static import serve as serve_static
+from core.metrics import metrics_view
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
 urlpatterns = [
+    # /metrics : réseau interne uniquement, non routé par le proxy public
+    path('metrics', metrics_view, name='prometheus-django-metrics'),
     # Sous /django-admin/ (et non /admin/) pour matcher ce que proxy/nginx.conf
     # proxifie déjà vers le backend, et ne pas entrer en conflit avec le préfixe
     # /admin utilisé par le SPA Angular côté frontend.

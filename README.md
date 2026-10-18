@@ -24,82 +24,51 @@ voir le fichier [LICENSE](LICENSE). En résumé : le code est libre, réutilisab
 y compris à l'étranger, mais toute version modifiée exploitée comme service en ligne doit
 republier ses modifications sous la même licence.
 
-## Stack Technique
+## Stack technique
 
-* **Backend :** Django 5 + Django REST Framework (Python)
+* **Backend :** Django 5 + Django REST Framework, gunicorn, Celery (Python)
 * **Frontend :** Angular 19 + MapLibre GL (TypeScript)
-* **Base de données :** PostgreSQL + PostGIS (Spatial)
-* **Infrastructure :** Docker & Docker Compose
+* **Base de données :** PostgreSQL + PostGIS
+* **Communication :** emails, Matrix/Element, réseaux radio MeshCore et Meshtastic (MQTT)
+* **Infrastructure :** Docker Compose, Nginx, monitoring Prometheus / Alertmanager / Grafana
 
-## Prérequis
+## Démarrage rapide
 
-Avant de lancer le projet, assurez-vous d'avoir installé :
-* Docker
-* Git
-
-## Installation et Démarrage
-
-### 1. Lancer l'application
-À la racine du projet (au niveau du fichier docker-compose.yml), ouvrez un terminal et exécutez la commande suivante :
+Prérequis : Docker (Compose v2), Git, `openssl`.
 
 ```bash
-docker compose up -d --build
+./scripts/init-secrets.sh      # crée .env et secrets/ (n'écrase jamais l'existant)
+docker compose up -d --build   # application + monitoring
 ```
-Note : L'option --build force la reconstruction des images pour inclure les nouvelles dépendances. Le premier démarrage peut prendre quelques minutes le temps que la base de données PostGIS s'initialise complètement.
 
-### 2. Accéder aux services
+| Adresse | Service |
+|---|---|
+| http://localhost | application (via Nginx) |
+| http://localhost:8000/api/docs/ | documentation de l'API (Swagger) |
+| http://localhost/django-admin/ | administration Django |
+| http://localhost:8025 | emails envoyés en développement (MailHog) |
+| http://localhost:3000 | Grafana (monitoring) |
 
-Une fois les conteneurs actifs, les services sont accessibles aux adresses suivantes :
-
-- Frontend (Application Web) : http://localhost:4200
-- Backend (API REST) : http://localhost:8000/api/
-- Documentation API (Swagger UI) : http://localhost:8000/api/docs/
-- Administration Django : http://localhost:8000/admin/**
-
-## Arrêt et Nettoyage
-### Arrêt standard
-
-Pour arrêter les conteneurs tout en conservant les données enregistrées dans la base de données :
-
+Créer le premier administrateur :
 
 ```bash
-docker compose down
+docker compose exec backend python manage.py createsuperuser
 ```
 
-### Arrêt complet (Réinitialisation)
-
-Pour arrêter les conteneurs et supprimer le volume de la base de données (remise à zéro complète) :
-
+## Commandes utiles
 
 ```bash
-docker compose down -v
+docker compose logs -f backend                        # logs du backend
+docker compose exec backend python manage.py <cmd>    # commande Django
+docker compose exec backend pytest -o addopts="" --no-cov   # tests backend
+docker compose down                                   # arrêt (données conservées)
+docker compose down -v                                # arrêt + suppression de toutes les données
 ```
 
-Attention : Cette commande effacera toutes les données (utilisateurs, crises, signalements) créées depuis le dernier lancement.
-## Commandes utiles pour le développement
-### Consulter les logs
-Pour voir les logs du backend pour debug :
+## Documentation
 
-```bash
-docker compose logs -f backend
-```
-
-### Exécuter des commandes Django
-
-Pour exécuter des commandes administratives (migrations, shell, etc.) à l'intérieur du conteneur backend :
-```bash
-docker compose exec backend python manage.py <votre_commande>
-```
-
-Exemple pour créer les migrations manuellement :
-```bash
-docker compose exec backend python manage.py makemigrations
-```
-
-### Reconstruire le Frontend
-
-En cas de problème avec les dépendances npm ou node_modules :
-```bash
-docker compose build --no-cache frontend
-docker compose up -d
-```
+* **[DOCUMENTATION.md](DOCUMENTATION.md)** — architecture, code, environnements, sécurité, tests,
+  déploiement, pièges connus et chantiers ouverts : **à lire pour reprendre le projet.**
+* [monitoring/README.md](monitoring/README.md) — exploitation du monitoring.
+* READMEs des modules : [satellite](satellite/README.md), [meshtastic-bridge](meshtastic-bridge/README.md),
+  [meshcore-bridge](meshcore-bridge/README.md), [frontend](frontend/README.md).

@@ -1,0 +1,39 @@
+# Alertmanager de PRODUCTION, intégré à l'image : aucun secret ici (mot de passe SMTP et URL
+# healthchecks.io sont lus dans /run/secrets). TODO avant le build : l'adresse de l'équipe.
+global:
+  smtp_smarthost: 'smtp.ionos.fr:465'          # 465 = TLS implicite
+  smtp_from: 'no-reply@assista-crise.fr'
+  smtp_auth_username: 'no-reply@assista-crise.fr'
+  smtp_auth_password_file: '/run/secrets/email_password'
+
+route:
+  receiver: team-email
+  group_by: ['alertname', 'job']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    # battement renvoyé chaque minute (sinon répétition par défaut de 4 h = fausse alerte)
+    - matchers: ['alertname="Watchdog"']
+      receiver: deadmans-switch
+      group_wait: 0s
+      group_interval: 1m
+      repeat_interval: 1m
+    - matchers: ['severity="critical"']
+      receiver: team-email
+      repeat_interval: 1h
+
+receivers:
+  - name: team-email
+    email_configs:
+      - to: 'TODO-team-address@example.org'   # TODO
+        send_resolved: true
+  - name: deadmans-switch
+    webhook_configs:
+      - url_file: '/run/secrets/healthchecks_url'
+        send_resolved: false
+
+inhibit_rules:
+  - source_matchers: ['alertname="SiteDown"']   # site tombé : les warnings ne sont que des conséquences
+    target_matchers: ['severity="warning"']
+    equal: ['environment']

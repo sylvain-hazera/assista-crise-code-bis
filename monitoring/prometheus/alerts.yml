@@ -1,0 +1,162 @@
+# Règles d'alerte, testées par alerts_test.yml (principes : DOCUMENTATION.md, « Monitoring »).
+
+groups:
+  # ------------------------------------------------------------------ availability
+  - name: availability
+    rules:
+      - alert: SiteDown
+        expr: probe_success{job="blackbox-https"} == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "{{ $labels.instance }} is unreachable"
+          description: "The external HTTPS probe of {{ $labels.instance }} has failed for 2 minutes: users cannot reach the site."
+
+      - alert: InstanceDown
+        expr: up == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "{{ $labels.job }} is down"
+          description: "Prometheus cannot scrape {{ $labels.instance }} for more than 2 minutes."
+
+      # up == 1 dit seulement que l'EXPORTER répond : chacun publie aussi l'état de son service.
+      - alert: ServiceDown
+        expr: (nginx_up == 0) or (pg_up == 0)
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "{{ $labels.job }}: the exporter is up but reports its service DOWN"
+          description: "The {{ $labels.job }} exporter answers, but cannot reach the service it monitors."
+
+  # ------------------------------------------------------------------ application
+  - name: application
+    rules:
+      - alert: HighErrorRate
+        # seuil de trafic : 1 erreur sur 2 requêtes n'est pas un incident
+        expr: |
+          (
+            sum(rate(django_http_responses_total_by_status_total{status=~"5.."}[5m]))
+              / sum(rate(django_http_responses_total_by_status_total[5m]))
+          ) > 0.05
+          and sum(rate(django_http_responses_total_by_status_total[5m])) > 0.05
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "API error rate is {{ $value | humanizePercentage }}"
+          description: "More than 5% of API responses are 5xx over the last 5 minutes."
+
+      - alert: SlowAPI
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(django_http_requests_latency_seconds_by_view_method_bucket{view!="prometheus-django-metrics"}[5m]))
+          ) > 1
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "API p95 latency is {{ $value | humanizeDuration }}"
+          description: "5% of API requests take more than 1 second, for 10 minutes."
+
+      - alert: EmailsFailing
+        expr: sum by (kind) (increase(assista_emails_failed_total[15m])) > 0
+        labels: { severity: warning }
+        annotations:
+          summary: "Emails of type {{ $labels.kind }} are failing"
+          description: "At least one email could not be sent in the last 15 minutes. Check the backend logs (logger.exception) and the SMTP settings."
+
+  # ------------------------------------------------------------------ infrastructure
+  - name: infrastructure
+    rules:
+      - alert: DiskWillFillIn24h
+        expr: |
+          predict_linear(node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs|vfat"}[6h], 24 * 3600) < 0
+        for: 30m
+        labels: { severity: warning }
+        annotations:
+          summary: "Disk {{ $labels.mountpoint }} will be full within 24 hours"
+          description: "At the current rate, {{ $labels.mountpoint }} on {{ $labels.instance }} runs out of space within a day."
+
+      - alert: DiskAlmostFull
+        expr: |
+          node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs|vfat"}
+            / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs|vfat"} < 0.05
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "Disk {{ $labels.mountpoint }} has less than 5% free space"
+          description: "Databases and logs fail when the disk is full. Free space now."
+
+      - alert: LowMemory
+        expr: node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes < 0.10
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "Less than 10% memory available on {{ $labels.instance }}"
+          description: "The host may start killing processes (OOM). Check which container uses the memory in Grafana."
+
+      - alert: ContainerRestarting
+        expr: changes(container_start_time_seconds{name!=""}[15m]) > 2
+        labels: { severity: warning }
+        annotations:
+          summary: "Container {{ $labels.name }} restarted {{ $value }} times in 15 minutes"
+          description: "Probably a crash loop: check docker logs {{ $labels.name }}."
+
+      - alert: DatabaseConnectionsHigh
+        expr: sum(pg_stat_activity_count) / scalar(max(pg_settings_max_connections)) > 0.8
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "PostgreSQL uses {{ $value | humanizePercentage }} of its connections"
+          description: "New connections will be refused when the limit is reached."
+
+  # ------------------------------------------------------------------ certificates
+  - name: certificates
+    rules:
+      - alert: TLSCertExpiringSoon
+        expr: probe_ssl_earliest_cert_expiry - time() < 14 * 86400
+        for: 1h
+        labels: { severity: warning }
+        annotations:
+          summary: "TLS certificate of {{ $labels.instance }} expires in {{ $value | humanizeDuration }}"
+          description: "Automatic renewal has probably failed. Check certbot on the VM."
+
+      - alert: TLSCertExpiringCritical
+        expr: probe_ssl_earliest_cert_expiry - time() < 3 * 86400
+        for: 1h
+        labels: { severity: critical }
+        annotations:
+          summary: "TLS certificate of {{ $labels.instance }} expires in {{ $value | humanizeDuration }}"
+          description: "Browsers will block the site when it expires. Renew it now."
+
+  # ------------------------------------------------------------------ business (the mission)
+  - name: business
+    rules:
+      - alert: NoHelpRequestDuringActiveCrisis
+        # or vector(0) : aucune demande doit compter comme 0, pas comme « pas de donnée »
+        expr: |
+          (sum(assista_active_crises) > 0)
+          and on() ((sum(increase(assista_help_requests_total[6h])) or vector(0)) == 0)
+        for: 30m
+        labels: { severity: warning }
+        annotations:
+          summary: "A crisis is active but no help request was created for 6 hours"
+          description: "Either nobody needs help, or the request form is broken. Test it on the public site."
+
+      - alert: UnprocessedRequestsPilingUp
+        expr: sum(assista_requests_by_status{status="NON_TRAITEE"}) > 50
+        for: 1h
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $value }} help requests are waiting to be processed"
+          description: "Requests are arriving faster than teams process them."
+
+
+  # ------------------------------------------------------------------ meta-monitoring
+  - name: meta
+    rules:
+      # Dead man's switch : toujours active, alerte quand le battement S'ARRÊTE (healthchecks.io).
+      - alert: Watchdog
+        expr: vector(1)
+        labels: { severity: none }
+        annotations:
+          summary: "Heartbeat: the alerting pipeline is alive. This alert must ALWAYS be firing."

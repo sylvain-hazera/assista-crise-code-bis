@@ -6,6 +6,9 @@ class CoreConfig(AppConfig):
     name = 'core'
 
     def ready(self):
+        from . import metrics
+        metrics.register()
+        
         # Connectés inconditionnellement : chaque fonction se désactive elle-même si
         # settings.INSTANCE_SATELLITE_LOCALE est faux (voir core/sync_outbox.py) — pas de coût
         # au-delà d'un dispatch de signal côté central.

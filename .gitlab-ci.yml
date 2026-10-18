@@ -1,76 +1,105 @@
-image: docker:latest
-
-services:
-  - docker:dind
-
+# Pipeline : test (chaque push) -> build (branche prod) -> deploy (branche prod).
+# Variables CI requises : voir DOCUMENTATION.md, « CI/CD ».
 stages:
+  - test
   - build
   - deploy
 
 variables:
-  DOCKER_HOST: tcp://docker:2375
-  DOCKER_TLS_CERTDIR: ""
+  REGISTRY: $HARBOR_URL/$HARBOR_PROJECT
 
-  # Define image names explicitly
-  IMAGE_BACKEND: $HARBOR_URL/$HARBOR_PROJECT/backend:latest
-  IMAGE_FRONTEND: $HARBOR_URL/$HARBOR_PROJECT/frontend:latest
-  IMAGE_PROXY: $HARBOR_URL/$HARBOR_PROJECT/proxy:latest
+# ============================================================== test
+monitoring_rules:
+  stage: test
+  image: { name: prom/prometheus:v3.15.0, entrypoint: [""] }
+  script:
+    - promtool check config monitoring/prometheus/prometheus.yml
+    - cd monitoring/prometheus && promtool test rules alerts_test.yml   # unit tests of the alerting rules
 
+alertmanager_config:
+  stage: test
+  image: { name: prom/alertmanager:v0.34.0, entrypoint: [""] }
+  script:
+    - amtool check-config monitoring/alertmanager/alertmanager.yml monitoring/alertmanager/alertmanager.prod.yml
+
+compose_config:
+  stage: test
+  image: docker:29.9.0
+  script:
+    - docker compose config -q
+    - docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile monitoring config -q
+
+backend_tests:
+  stage: test
+  image: python:3.10-slim
+  services:
+    - name: postgis/postgis:15-3.3
+      alias: db
+  variables:
+    POSTGRES_DB: assista-db
+    POSTGRES_USER: admin
+    POSTGRES_PASSWORD: ci-only-password       # throwaway database of this job only
+    DB_USER: admin
+    DB_PASS: ci-only-password
+    SECRET_KEY: ci-only-not-a-secret
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq --no-install-recommends binutils libproj-dev gdal-bin libgdal-dev gcc > /dev/null
+    - pip install -q -r backend/requirements.txt
+  script:
+    - cd backend && pytest -q -p no:cacheprovider --no-cov
+  # TODO : à retirer quand la suite sera verte (tests déjà en échec sur main)
+  allow_failure: true
+
+# ============================================================== build
 build_push_harbor:
   stage: build
-  only:
-    - prod
+  image: docker:29.9.0
+  services: [docker:dind]
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+  rules:
+    - if: $CI_COMMIT_BRANCH == "prod"
   before_script:
-    - docker login -u "$HARBOR_USER" -p "$HARBOR_PASSWORD" "$HARBOR_URL"
+    - echo "$HARBOR_PASSWORD" | docker login -u "$HARBOR_USER" --password-stdin "$HARBOR_URL"
   script:
-    - echo "Building and pushing Backend..."
-    - docker build -t $IMAGE_BACKEND ./backend
-    - docker push $IMAGE_BACKEND
+    # deux tags : le commit (traçabilité, rollback) et latest
+    - docker build -t $REGISTRY/backend:$CI_COMMIT_SHORT_SHA -t $REGISTRY/backend:latest ./backend
+    - docker build -f frontend/Dockerfile.prod -t $REGISTRY/frontend:$CI_COMMIT_SHORT_SHA -t $REGISTRY/frontend:latest ./frontend
+    - docker build -t $REGISTRY/proxy:$CI_COMMIT_SHORT_SHA -t $REGISTRY/proxy:latest ./proxy
+    # smoke test de l'image elle-même : Django démarre avec ses vraies dépendances
+    - docker run --rm --entrypoint python -e SECRET_KEY=smoke-test -e DB_USER=smoke -e DB_PASS=smoke $REGISTRY/backend:$CI_COMMIT_SHORT_SHA manage.py check
+    - docker push --all-tags $REGISTRY/backend
+    - docker push --all-tags $REGISTRY/frontend
+    - docker push --all-tags $REGISTRY/proxy
+    # images de monitoring : leur Dockerfile revalide la configuration (promtool / amtool)
+    - |
+      for svc in prometheus alertmanager grafana; do
+        docker build -t $REGISTRY/$svc:$CI_COMMIT_SHORT_SHA -t $REGISTRY/$svc:latest ./monitoring/$svc
+        docker push --all-tags $REGISTRY/$svc
+      done
 
-    - echo "Building and pushing Frontend..."
-    - docker build -t $IMAGE_FRONTEND -f ./frontend/Dockerfile.prod ./frontend
-    - docker push $IMAGE_FRONTEND
-    
-    - echo "Building and pushing Proxy..."
-    - docker build -t $IMAGE_PROXY ./proxy
-    - docker push $IMAGE_PROXY
-
+# ============================================================== deploy
 deploy_vm:
   stage: deploy
   image: alpine:3.18
-  only:
-    - prod
+  rules:
+    - if: $CI_COMMIT_BRANCH == "prod"
   before_script:
-    - apk add --no-cache openssh-client ca-certificates bash
-    - mkdir -p ~/.ssh
-    - chmod 700 ~/.ssh
-    
-    # Decode Base64 private key
-    - echo "$SSH_PRIVATE_KEY" | base64 -d > ~/.ssh/id_ed25519
-    
-    - chmod 600 ~/.ssh/id_ed25519
-    - ssh-keyscan -H $SSH_HOST >> ~/.ssh/known_hosts
+    - apk add --no-cache openssh-client
+    - mkdir -p ~/.ssh && chmod 700 ~/.ssh
+    - echo "$SSH_PRIVATE_KEY" | base64 -d > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
+    # empreinte de la VM vérifiée une fois à la main (protection contre l'homme du milieu)
+    - echo "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
   script:
-    - echo "Updating docker-compose.prod.yml on VM..."
     - export REMOTE_DIR="/home/$SSH_USER/assista-crise"
-    
-    # Copy the latest docker-compose file to the VM
-    - scp -i ~/.ssh/id_ed25519 docker-compose.prod.yml $SSH_USER@$SSH_HOST:$REMOTE_DIR/docker-compose.prod.yml
-
-    - echo "Deploying on VM..."
-    - ssh -i ~/.ssh/id_ed25519 $SSH_USER@$SSH_HOST "
-        set -e &&
-        cd $REMOTE_DIR &&
-        
-        echo 'Logging into Harbor...' &&
-        docker login -u '$HARBOR_USER' -p '$HARBOR_PASSWORD' '$HARBOR_URL' &&
-        
-        echo 'Pulling new images...' &&
-        docker compose -f docker-compose.prod.yml pull &&
-        
-        echo 'Restarting containers...' &&
-        docker compose -f docker-compose.prod.yml up -d --force-recreate &&
-        
-        echo 'Cleaning up...' &&
-        docker image prune -f
-      "
+    - export SSH="ssh -i $HOME/.ssh/id_ed25519 $SSH_USER@$SSH_HOST"
+    - export SCP="scp -i $HOME/.ssh/id_ed25519"
+    - export COMPOSE="docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile monitoring"
+    # .env et secrets sont préparés une fois sur la VM, jamais envoyés par la CI
+    - $SCP -r docker-compose.yml docker-compose.prod.yml monitoring scripts $SSH_USER@$SSH_HOST:$REMOTE_DIR/
+    - $SCP mosquitto/config/mosquitto.conf $SSH_USER@$SSH_HOST:$REMOTE_DIR/mosquitto/config/mosquitto.conf
+    # mot de passe via stdin, jamais en argument (visible dans la liste des processus)
+    - echo "$HARBOR_PASSWORD" | $SSH "docker login -u '$HARBOR_USER' --password-stdin '$HARBOR_URL'"
+    # sans --force-recreate : seuls les conteneurs modifiés sont recréés
+    - $SSH "cd $REMOTE_DIR && export IMAGE_TAG=$CI_COMMIT_SHORT_SHA && $COMPOSE pull && $COMPOSE up -d --remove-orphans && docker image prune -f"

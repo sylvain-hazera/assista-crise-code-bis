@@ -10,22 +10,32 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 import os
+import sys
 from pathlib import Path
+
+from django.core.exceptions import ImproperlyConfigured
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+
+def env_secret(name, default=None):
+    """Valeur du fichier NAME_FILE (secret Docker) si défini, sinon de la variable NAME."""
+    path = os.environ.get(f"{name}_FILE")
+    if path:
+        with open(path) as f:
+            return f.read().strip()
+    return os.environ.get(name) or default   # variable vide = absente
 
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-# La valeur en dur ne sert que de repli pour le dev local sans env configuré ; en
-# production, SECRET_KEY doit toujours être fourni via l'environnement.
-SECRET_KEY = os.environ.get(
-    'SECRET_KEY',
-    'django-insecure-HSLgGBNlaGBJ4kyaracScLRPa3tFJhK6LOEbYQs9ipBu-DaMMQfey725-fB-uq8Dabk',
-)
+# Clé de repli publique (historique git) : n'importe qui pourrait signer sessions et JWT avec.
+# Acceptée seulement avec DEBUG=True ou pendant les tests.
+_DEV_FALLBACK_SECRET_KEY = 'django-insecure-HSLgGBNlaGBJ4kyaracScLRPa3tFJhK6LOEbYQs9ipBu-DaMMQfey725-fB-uq8Dabk'
+SECRET_KEY = env_secret('SECRET_KEY', _DEV_FALLBACK_SECRET_KEY)
 
 # Chiffrement des colonnes sensibles au niveau applicatif (voir core/crypto_fields.py) --
 # PAS de valeur de repli ici contrairement à SECRET_KEY : un démarrage sans ces clés doit
@@ -99,6 +109,14 @@ LOGGING = {
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 
+_RUNNING_TESTS = 'pytest' in sys.modules or sys.argv[1:2] == ['test']
+if SECRET_KEY == _DEV_FALLBACK_SECRET_KEY and not (DEBUG or _RUNNING_TESTS):
+    raise ImproperlyConfigured(
+        "SECRET_KEY (ou SECRET_KEY_FILE) n'est pas défini : refus de démarrer avec la clé de repli, "
+        "publique. En dev : ./scripts/init-secrets.sh (ajoute SECRET_KEY au .env) ou DEBUG=True."
+    )
+
+
 ALLOWED_HOSTS = [
     'localhost', '172.16.1.114', '127.0.0.1',
     'assista-crise.fr', 'www.assista-crise.fr', 'demo.assista-crise.fr', 'assista-crise.duckdns.org',
@@ -154,9 +172,11 @@ INSTALLED_APPS = [
     'core',
     "django.contrib.gis",
     'oauth2_provider',
+    'django_prometheus',
 ]
 
 MIDDLEWARE = [
+    'django_prometheus.middleware.PrometheusBeforeMiddleware',   # doit rester en premier
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
@@ -169,6 +189,7 @@ MIDDLEWARE = [
     'core.middleware.NoCacheApiMiddleware',
     'core.middleware.AuditTraceMiddleware',
     'core.middleware.GeoResolutionBudgetMiddleware',
+    'django_prometheus.middleware.PrometheusAfterMiddleware',    # doit rester en dernier
 ]
 
 ROOT_URLCONF = 'config.urls'
@@ -196,14 +217,15 @@ WSGI_APPLICATION = 'config.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.contrib.gis.db.backends.postgis',
+        # PostGIS instrumenté : requêtes, erreurs et latence SQL sur /metrics
+        'ENGINE': 'django_prometheus.db.backends.postgis',
         'NAME': os.environ.get('DB_NAME', 'assista-db'),
         # Pas de valeur par défaut pour USER/PASSWORD (contrairement à avant, où le repli
         # 'admin'/'admin' codé en dur ici correspondait EXACTEMENT aux identifiants réellement
         # utilisés en prod, jamais changés) : mieux vaut un démarrage qui échoue bruyamment
         # (KeyError) qu'un repli silencieux vers un identifiant faible.
         'USER': os.environ['DB_USER'],
-        'PASSWORD': os.environ['DB_PASS'],
+        'PASSWORD': env_secret('DB_PASS') or os.environ['DB_PASS'],   # KeyError si absent : échec explicite
         'HOST': os.environ.get('DB_HOST', 'db'),
         'PORT': '5432',
         # Le rôle applicatif (assista_app) n'est pas superuser et ne peut donc pas exécuter
@@ -343,7 +365,7 @@ EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'False') == 'True'
 EMAIL_USE_SSL = os.environ.get('EMAIL_USE_SSL', 'False') == 'True'
 
 EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
-EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
+EMAIL_HOST_PASSWORD = env_secret('EMAIL_HOST_PASSWORD', '')
 
 DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'no-reply@assista-crise.fr')
 

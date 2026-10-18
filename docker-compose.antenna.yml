@@ -1,0 +1,6 @@
+# Couche optionnelle pour la machine où l'antenne LoRa est branchée. À activer dans SON .env :
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.override.yml:docker-compose.antenna.yml
+services:
+  backend:
+    devices:
+      - "/dev/ttyACM0:/dev/ttyACM0"

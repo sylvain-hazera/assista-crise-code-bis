@@ -1,0 +1,122 @@
+# Tests unitaires de alerts.yml (séries simulées), exécutés au build de l'image et en CI :
+#   docker run --rm -v "$PWD/monitoring/prometheus":/m -w /m --entrypoint promtool prom/prometheus:v3.15.0 test rules alerts_test.yml
+rule_files: [alerts.yml]
+evaluation_interval: 1m
+
+tests:
+  - name: backend goes down
+    interval: 1m
+    input_series:
+      - series: 'up{job="django", instance="backend:8000"}'
+        values: '1 1 0 0 0 0 0'
+    alert_rule_test:
+      - eval_time: 3m             # down for 1 min: still pending, no alert yet
+        alertname: InstanceDown
+        exp_alerts: []
+      - eval_time: 5m             # down for 3 min, longer than "for: 2m": firing
+        alertname: InstanceDown
+        exp_alerts:
+          - exp_labels: { severity: critical, job: django, instance: "backend:8000" }
+            exp_annotations:
+              summary: "django is down"
+              description: "Prometheus cannot scrape backend:8000 for more than 2 minutes."
+
+  - name: nginx down while its exporter is up (the blind spot of "up")
+    interval: 1m
+    input_series:
+      - series: 'up{job="nginx", instance="nginx-exporter:9113"}'
+        values: '1x6'
+      - series: 'nginx_up{job="nginx", instance="nginx-exporter:9113"}'
+        values: '1 1 0 0 0 0 0'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: InstanceDown
+        exp_alerts: []            # the exporter itself is fine...
+      - eval_time: 5m
+        alertname: ServiceDown    # ...but the service it watches is not
+        exp_alerts:
+          - exp_labels: { severity: critical, job: nginx, instance: "nginx-exporter:9113" }
+            exp_annotations:
+              summary: "nginx: the exporter is up but reports its service DOWN"
+              description: "The nginx exporter answers, but cannot reach the service it monitors."
+
+  - name: high error rate with real traffic
+    interval: 1m
+    input_series:   # 1 request/s answered 200, 0.1 request/s answered 500
+      - series: 'django_http_responses_total_by_status_total{status="200"}'
+        values: '0+60x15'
+      - series: 'django_http_responses_total_by_status_total{status="500"}'
+        values: '0+6x15'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: HighErrorRate
+        exp_alerts:
+          - exp_labels: { severity: critical }
+            exp_annotations:
+              summary: "API error rate is 9.091%"
+              description: "More than 5% of API responses are 5xx over the last 5 minutes."
+
+  - name: errors with almost no traffic are not an incident
+    interval: 1m
+    input_series:   # sustained but tiny traffic: 0.75 request/min, a third of them 500 (ratio 33%)
+      - series: 'django_http_responses_total_by_status_total{status="200"}'
+        values: '0+0.5x25'
+      - series: 'django_http_responses_total_by_status_total{status="500"}'
+        values: '0+0.25x25'
+    alert_rule_test:
+      - eval_time: 20m            # well past "for: 5m": only the minimum-traffic guard prevents the alert
+        alertname: HighErrorRate
+        exp_alerts: []
+
+  - name: crisis active but no help request at all
+    interval: 1m
+    input_series:
+      - series: 'assista_active_crises{type="INONDATION"}'
+        values: '1x60'
+    alert_rule_test:
+      - eval_time: 45m
+        alertname: NoHelpRequestDuringActiveCrisis
+        exp_alerts:
+          - exp_labels: { severity: warning }
+            exp_annotations:
+              summary: "A crisis is active but no help request was created for 6 hours"
+              description: "Either nobody needs help, or the request form is broken. Test it on the public site."
+
+  - name: crisis active and requests arriving
+    interval: 1m
+    input_series:
+      - series: 'assista_active_crises{type="INONDATION"}'
+        values: '1x60'
+      - series: 'assista_help_requests_total{request_type="Soins médicaux"}'
+        values: '0+1x60'
+    alert_rule_test:
+      - eval_time: 45m
+        alertname: NoHelpRequestDuringActiveCrisis
+        exp_alerts: []
+
+  - name: certificate expiring in 10 days
+    interval: 1m
+    input_series:
+      - series: 'probe_ssl_earliest_cert_expiry{job="blackbox-https", instance="https://assista-crise.fr"}'
+        values: '864000x120'   # expiry timestamp = 10 days after the test's time 0
+    alert_rule_test:
+      - eval_time: 2h
+        alertname: TLSCertExpiringSoon
+        exp_alerts:
+          - exp_labels: { severity: warning, job: blackbox-https, instance: "https://assista-crise.fr" }
+            exp_annotations:
+              summary: "TLS certificate of https://assista-crise.fr expires in 9d 22h 0m 0s"
+              description: "Automatic renewal has probably failed. Check certbot on the VM."
+      - eval_time: 2h
+        alertname: TLSCertExpiringCritical
+        exp_alerts: []
+
+  - name: the watchdog is always firing
+    interval: 1m
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: Watchdog
+        exp_alerts:
+          - exp_labels: { severity: none }
+            exp_annotations:
+              summary: "Heartbeat: the alerting pipeline is alive. This alert must ALWAYS be firing."

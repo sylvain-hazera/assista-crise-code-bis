@@ -1,25 +1,27 @@
+# Couche PRODUCTION, toujours avec la base :
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile monitoring up -d
+#
+# Ce fichier n'est pas la source de vérité du déploiement réel (.114, relancé à la main derrière
+# le WAF ac_waf) : il sert à une reconstruction from scratch et doit rester cohérent avec lui.
+# Sur une base neuve, POSTGRES_USER devient le SUPERUSER PostgreSQL : DB_USER/DB_PASS ne doivent
+# PAS être les identifiants applicatifs restreints ; refaire ensuite la séparation de .114
+# (rôles svc_dbmaint / assista_app). Voir DOCUMENTATION.md, « Production ».
+
+x-restart: &restart
+  restart: unless-stopped
+
 services:
+  # ---------------------------------------------------------------- application
   frontend:
-    image: im2ag-harbor.univ-grenoble-alpes.fr/assista-crise/frontend:latest
-    container_name: ac_frontend
+    image: im2ag-harbor.univ-grenoble-alpes.fr/assista-crise/frontend:${IMAGE_TAG:-latest}
     restart: always
-    networks:
-      - front
+    networks: [front]
 
   backend:
-    image: im2ag-harbor.univ-grenoble-alpes.fr/assista-crise/backend:latest
-    container_name: ac_backend
-    volumes:
-      - media_volume:/app/media
+    image: im2ag-harbor.univ-grenoble-alpes.fr/assista-crise/backend:${IMAGE_TAG:-latest}
     environment:
-      - SECRET_KEY=${SECRET_KEY}
       - DEBUG=False
-      - DB_HOST=db
-      - DB_NAME=assista-db
-      - DB_USER=${DB_USER}
-      - DB_PASS=${DB_PASS}
-      - MQTT_BROKER=mosquitto
-      - EMAIL_HOST=smtp.ionos.fr      # Use Ionos in prod
+      - EMAIL_HOST=smtp.ionos.fr
       - EMAIL_PORT=465
       - EMAIL_USE_TLS=False
       - EMAIL_USE_SSL=True
@@ -28,103 +30,79 @@ services:
       - EMAIL_HOST_PASSWORD=${EMAIL_PASSWORD}
       - DJANGO_SUPERUSER_EMAIL=${DJANGO_SUPERUSER_EMAIL}
       - DJANGO_SUPERUSER_PASSWORD=${DJANGO_SUPERUSER_PASSWORD}
-    # For Hardware USB Access (uncomment on VM/Host with antenna)
-    # devices:
-    #   - "/dev/ttyACM0:/dev/ttyACM0"
     restart: always
-    depends_on:
-      db:
-        condition: service_healthy
-      mosquitto:
-        condition: service_started
-    networks:
-      - front
-      - back
-      - db
+    networks: [front, back, db]
 
-  # NB : ce fichier n'est plus la source de vérité du déploiement réel (.113/.114 sont
-  # relancés à la main, voir les scripts de déploiement) — laissé ici pour une éventuelle
-  # reconstruction from scratch. ATTENTION si ce cas se présente : POSTGRES_USER ci-dessous
-  # devient le SUPERUSER PostgreSQL de bootstrap (comportement de l'image officielle), pas
-  # juste "le compte de l'appli" — sur une base neuve, DB_USER/DB_PASS ne doivent PAS être les
-  # identifiants applicatifs à droits restreints. Une fois la base initialisée, refaire la même
-  # séparation superuser (bootstrap) / rôle applicatif à droits limités que sur .113/.114
-  # (rôles svc_dbmaint / assista_app).
-  #
-  # Réseau : ac_db est isolé sur son propre réseau "db", que seul backend rejoint (en plus de
-  # "front"/"back") — aucun autre conteneur (proxy, ponts Meshtastic/MeshCore) ne doit jamais
-  # pouvoir résoudre/atteindre ac_db, cf. .113/.114 (assista-db).
   db:
-    image: postgis/postgis:15-3.3
-    container_name: ac_db
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    environment:
-      - POSTGRES_DB=assista-db
-      - POSTGRES_USER=${DB_USER}
-      - POSTGRES_PASSWORD=${DB_PASS}
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d assista-db"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
     restart: always
-    networks:
-      - db
+    networks: [db]                 # réseau isolé : seuls backend et postgres-exporter le rejoignent
 
   mosquitto:
-    image: eclipse-mosquitto
-    container_name: ac_mqtt
     ports:
-      - "1883:1883" # TCP listener
-      - "9001:9001" # Websocket listener
-    volumes:
-      - ./mosquitto/config:/mosquitto/config
-      - ./mosquitto/data:/mosquitto/data
-    networks:
-      - front
-
-  grafana:
-    image: grafana/grafana
-    container_name: ac_stats
-    ports:
-      - "3000:3000"
-    depends_on:
-      - db
-    networks:
-      - back
+      - "1883:1883"
+      - "9001:9001"
+    networks: [front]
 
   tileserver:
-    image: maptiler/tileserver-gl
-    container_name: ac_maps
-    ports:
-      - "8080:8080"
-    # volumes:
-    #   - ./tileserver:/data
-    networks:
-      - front
+    networks: [front]              # aucun port publié : rien ne l'utilise depuis l'extérieur
 
   proxy:
-    image: im2ag-harbor.univ-grenoble-alpes.fr/assista-crise/proxy:latest
-    container_name: ac_proxy
+    image: im2ag-harbor.univ-grenoble-alpes.fr/assista-crise/proxy:${IMAGE_TAG:-latest}
     ports:
       - "80:80"
       - "443:443"
     volumes:
       - /etc/letsencrypt:/etc/letsencrypt:ro
     restart: always
-    depends_on:
-      - frontend
-      - backend
-      - tileserver
-    networks:
-      - front
+    networks: [front]
+
+  # ---------------------------------------------------------------- monitoring
+  prometheus:
+    <<: *restart
+    image: stefy237/assista-crise-prometheus:${IMAGE_TAG:-latest}
+    environment:
+      - ENVIRONMENT=prod
+    command:                       # surcharger command remplace TOUS les arguments par défaut
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+    networks: [monitoring, front]  # front : scrape de backend:8000/metrics
+
+  alertmanager:
+    <<: *restart
+    image: stefy237/assista-crise-alertmanager:${IMAGE_TAG:-latest}
+    command: ['--config.file=/etc/alertmanager/alertmanager.prod.yml', '--storage.path=/alertmanager']
+    secrets: [email_password, healthchecks_url]
+    networks: [monitoring]
+
+  grafana:
+    <<: *restart
+    image: stefy237/assista-crise-grafana:${IMAGE_TAG:-latest}
+    ports: ["127.0.0.1:3000:3000"] # accès : ssh -L 3000:localhost:3000 <vm>
+    networks: [monitoring]
+
+  postgres-exporter:
+    <<: *restart
+    networks: [monitoring, db]
+
+  nginx-exporter:
+    <<: *restart
+    networks: [monitoring, front]
+
+  mosquitto-exporter:
+    <<: *restart
+    networks: [monitoring, front]
+
+  cadvisor:          { <<: *restart, networks: [monitoring] }
+  node-exporter:     { <<: *restart, networks: [monitoring] }
+  blackbox-exporter: { <<: *restart, networks: [monitoring] }
+
+secrets:
+  email_password:   { file: "${SECRETS_DIR:-./secrets}/email_password.txt" }
+  healthchecks_url: { file: "${SECRETS_DIR:-./secrets}/healthchecks_url.txt" }
 
 networks:
   front:
   back:
   db:
-
-volumes:
-  postgres_data:
-  media_volume:
+  monitoring:

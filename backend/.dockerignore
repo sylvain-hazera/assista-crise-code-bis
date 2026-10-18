@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+*.pyo
+*.md
+.env
+.dive-ci
+.dive.yml
+venv/

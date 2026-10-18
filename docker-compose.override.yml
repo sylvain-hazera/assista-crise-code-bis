@@ -1,0 +1,99 @@
+# Couche DÉVELOPPEMENT, chargée automatiquement par « docker compose up ».
+# Point d'entrée : http://localhost (Nginx, mêmes routes qu'en production : proxy/nginx.dev.conf).
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    ports: ["4200:4200"]
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - CHOKIDAR_USEPOLLING=true
+
+  backend:
+    build: ./backend
+    ports: ["8000:8000"]
+    volumes:
+      - ./backend:/app
+    tmpfs:                         # l'image tourne en uid 10001, ./backend appartient à l'hôte
+      - /app/staticfiles:uid=10001,gid=10001,mode=0755
+    environment:
+      - EMAIL_HOST=mailhog
+      - EMAIL_PORT=1025
+    depends_on:
+      mailhog: { condition: service_started }
+
+  db:
+    ports: ["5432:5432"]
+
+  mosquitto:
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+
+  tileserver:
+    ports: ["8080:8080"]
+
+  proxy:
+    build: ./proxy
+    ports: ["80:80"]
+    volumes:
+      - ./proxy/nginx.dev.conf:/etc/nginx/conf.d/default.conf:ro
+
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    container_name: ac_mailer
+    ports:
+      - "1025:1025"                # SMTP
+      - "8025:8025"                # interface web
+
+  # Phase de test (meshcore-bridge/README.md) : docker compose --profile meshcore-test up
+  meshcore-bridge:
+    build: ./meshcore-bridge
+    container_name: ac_meshcore_bridge
+    restart: unless-stopped
+    environment:
+      - DJANGO_API_URL=http://backend:8000/api
+      - DJANGO_BRIDGE_EMAIL=${MESHCORE_BRIDGE_EMAIL}
+      - DJANGO_BRIDGE_PASSWORD=${MESHCORE_BRIDGE_PASSWORD}
+      - COMPAGNON_ID=${MESHCORE_COMPAGNON_ID}
+      - MESHCORE_CONNEXION_TYPE=${MESHCORE_CONNEXION_TYPE:-TCP}
+      - MESHCORE_TCP_HOST=${MESHCORE_TCP_HOST}
+      - MESHCORE_TCP_PORT=${MESHCORE_TCP_PORT:-5000}
+      - MESHCORE_SERIE_DEVICE=${MESHCORE_SERIE_DEVICE}
+      - MESHCORE_BLE_ADRESSE=${MESHCORE_BLE_ADRESSE}
+      - LOG_LEVEL=${MESHCORE_LOG_LEVEL:-INFO}
+    depends_on:
+      - backend
+    profiles:
+      - meshcore-test
+
+  # Monitoring : mêmes Dockerfiles que la CI (leur validation tourne aussi ici), puis les fichiers
+  # sont montés par-dessus : modifier une règle, puis « docker compose restart prometheus ».
+  prometheus:
+    build: ./monitoring/prometheus
+    image: assista-crise-local/prometheus:dev
+    environment:
+      - ENVIRONMENT=dev
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+    ports: ["127.0.0.1:9090:9090"]
+
+  alertmanager:
+    build: ./monitoring/alertmanager
+    image: assista-crise-local/alertmanager:dev
+    volumes:
+      - ./monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    ports: ["127.0.0.1:9093:9093"]
+
+  grafana:
+    build: ./monitoring/grafana
+    image: assista-crise-local/grafana:dev
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/etc/grafana/dashboards:ro
+    ports: ["127.0.0.1:3000:3000"]
