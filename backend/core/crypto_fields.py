@@ -1,23 +1,7 @@
-"""Chiffrement des colonnes sensibles au niveau applicatif (voir le plan de conception
-"Chiffrement des colonnes sensibles") -- ni le disque, ni PostgreSQL, ni aucun champ n'étaient
-chiffrés jusqu'ici (seuls les mots de passe le sont, via le hasher Django par défaut). Un accès
-root/disque à la VM, ou un simple `pg_dump`/requête SQL directe hors Django, lisait tout en
-clair malgré les données personnelles réelles traitées (demandeurs d'aide, bénévoles,
-signalements, personnes recherchées, déclarations de sécurité).
+"""Chiffrement applicatif des colonnes contenant des données personnelles.
 
-Volontairement HORS PÉRIMÈTRE (voir le plan pour le détail des raisons) : tous les champs
-géographiques (PostGIS a besoin de la géométrie brute pour ses requêtes spatiales -- un blob
-chiffré casserait `.contains()`/`Distance()`/etc.), les `ImageField` (fichiers sur le volume
-média, pas des colonnes texte), `AuditLog` (journal d'événements en texte/JSON libre,
-structurellement différent), les champs organisationnels d'`Institution`.
-
-Deux clés distinctes (jamais la même, pour ne pas mélanger les usages cryptographiques) :
-`FIELD_ENCRYPTION_KEY` (Fernet, chiffrement réversible -- `EncryptedTextField`/
-`EncryptedEmailField`/`EncryptedJSONField`) et `FIELD_BLIND_INDEX_KEY` (HMAC-SHA256,
-irréversible -- `blind_index()`, pour les quelques champs email ayant besoin d'une recherche
-EXACTE, ex: la connexion). Les deux sont lues depuis les variables d'environnement (voir
-`config/settings.py`), jamais codées en dur, jamais commitées -- mêmes garanties que
-SECRET_KEY/DB_PASS."""
+Périmètre, clés et index aveugles : DOCUMENTATION.md, § 10.1.
+"""
 import hashlib
 import hmac
 import json
@@ -44,13 +28,8 @@ def _fernet() -> Fernet:
 
 
 def blind_index(valeur: str) -> str:
-    """Empreinte déterministe et irréversible d'une valeur (normalisée -- espaces en bord et
-    casse ignorés, pour qu'une recherche par email se comporte comme l'ancien `__iexact`),
-    utilisée UNIQUEMENT pour permettre une recherche EXACTE sur un champ chiffré par ailleurs de
-    façon non déterministe (Fernet inclut un nonce aléatoire -- deux lignes avec la même valeur
-    en clair ont un ciphertext différent, l'égalité ne peut donc jamais se tester directement
-    sur la colonne chiffrée). Ne sert JAMAIS à une recherche floue (`icontains`) : un index
-    aveugle ne peut indexer qu'une correspondance exacte, jamais une sous-chaîne."""
+    """HMAC de la valeur normalisée (espaces en bord et casse ignorés) : permet une recherche
+    exacte sur une colonne chiffrée, jamais une recherche partielle."""
     if not settings.FIELD_BLIND_INDEX_KEY:
         raise ImproperlyConfigured(
             "FIELD_BLIND_INDEX_KEY n'est pas configurée -- voir "
@@ -63,12 +42,8 @@ def blind_index(valeur: str) -> str:
 
 
 class EncryptedTextField(models.TextField):
-    """Stocke le ciphertext Fernet (base64, longueur variable) dans une colonne `TEXT` -- pas
-    de limite de longueur PostgreSQL à gérer contrairement à un `CharField` classique ; la
-    validation de format/longueur du texte EN CLAIR reste faite par le serializer DRF existant,
-    AVANT l'écriture en base, donc inchangée par ce champ. `from_db_value` tolère une valeur
-    déjà en clair (non-chiffrée) : filet de sécurité pendant la fenêtre de migration, où les
-    anciennes lignes pas encore re-chiffrées doivent rester lisibles sans planter."""
+    """Texte chiffré Fernet dans une colonne TEXT ; la validation du texte en clair reste
+    faite par le serializer."""
 
     def get_prep_value(self, value):
         if value is None or value == "":
@@ -81,23 +56,17 @@ class EncryptedTextField(models.TextField):
         try:
             return _fernet().decrypt(value.encode()).decode()
         except InvalidToken:
-            # Valeur en clair pré-migration (voir docstring) -- jamais le cas une fois la
-            # migration de données terminée et vérifiée, mais mieux vaut afficher la valeur
-            # brute que de faire une erreur 500 sur une ligne pas encore migrée.
+            # ligne antérieure au chiffrement : lisible plutôt qu'une erreur 500
             return value
 
 
 class EncryptedEmailField(EncryptedTextField):
-    """Identique à EncryptedTextField, conserve juste la validation de format email pour les
-    formulaires/admin qui en dépendent (le serializer DRF applique déjà EmailField par ailleurs
-    -- cette validation-ci ne sert qu'en repli, ex: admin Django direct)."""
+    """EncryptedTextField avec validation du format email (utile à l'admin Django)."""
     default_validators = [EmailValidator()]
 
 
 class EncryptedJSONField(EncryptedTextField):
-    """Pour un champ structuré (ex: DeclarationSecurite.ages_enfants, une liste d'âges
-    d'enfants) : sérialise en JSON puis chiffre la chaîne résultante, inverse à la lecture.
-    Expose un objet Python natif (liste/dict) comme un vrai JSONField, pas une chaîne JSON."""
+    """Valeur JSON (liste, dict) chiffrée, exposée comme un objet Python natif."""
 
     def get_prep_value(self, value):
         if value is None:
@@ -111,6 +80,5 @@ class EncryptedJSONField(EncryptedTextField):
         try:
             return json.loads(value)
         except (TypeError, ValueError):
-            # Même filet que la classe parente : une valeur pas encore migrée n'est pas du
-            # JSON valide, on la renvoie telle quelle plutôt que de planter.
+            # ligne antérieure au chiffrement, comme dans la classe parente
             return value

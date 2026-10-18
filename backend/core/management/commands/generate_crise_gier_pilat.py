@@ -416,7 +416,11 @@ class Command(BaseCommand):
         return points
 
     def _creer_equipes(self, crisis: Crisis, points: list) -> list:
-        type_mairie = InstitutionType.objects.get(code="mairie")
+        # aucune migration ne crée ce type : l'application le crée au premier rattachement
+        # d'une mairie (institution_attachment), absent donc d'une base neuve
+        type_mairie, _ = InstitutionType.objects.get_or_create(
+            code="mairie", defaults={"libelle": "Mairie", "est_public": True},
+        )
         institution, _ = Institution.objects.get_or_create(
             nom=INSTITUTION_NOM,
             defaults={"type": type_mairie, "commune_code": "42207", "commune_nom": "Saint-Chamond"},

@@ -12,6 +12,8 @@ ENV_FILE="${ENV_FILE:-.env}"
 
 # lettres et chiffres uniquement : Compose interpréterait un « $ » dans .env
 random() { openssl rand -base64 64 | tr -dc 'A-Za-z0-9' | cut -c1-"$1"; }
+# clé Fernet : 32 octets en base64 « urlsafe » (aucun « $ », donc sans risque dans .env)
+fernet_key() { openssl rand -base64 32 | tr '+/' '-_'; }
 
 echo "Variables in $ENV_FILE:"
 touch "$ENV_FILE"
@@ -29,6 +31,12 @@ add_var DB_USER admin
 add_var DB_PASS "$(random 32)"
 add_var SECRET_KEY "$(random 64)"
 add_var COMPOSE_PROFILES monitoring
+# Chiffrement des données personnelles (core/crypto_fields.py, core/file_crypto.py), lues par le
+# backend de dev uniquement (docker-compose.override.yml). Perdre ou changer l'une de ces clés
+# rend illisibles les données chiffrées avec elle : sauvegarder .env. Jamais les clés de prod.
+add_var FIELD_ENCRYPTION_KEY "$(fernet_key)"
+add_var FIELD_BLIND_INDEX_KEY "$(random 64)"
+add_var FILE_ENCRYPTION_KEY "$(fernet_key)"
 
 echo "Monitoring secrets in $SECRETS_DIR:"
 mkdir -p "$SECRETS_DIR"

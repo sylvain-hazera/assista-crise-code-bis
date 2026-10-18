@@ -1,16 +1,6 @@
-"""Filtrage par zone de compétence (commune/EPCI/département/région/national).
+"""Filtrage par zone de compétence (commune, EPCI, département, région, national).
 
-Extrait de views.py lors de l'audit sécurité qui a montré que la quasi-totalité des vues
-(demandes d'aide, offres d'aide, signalements, équipes, points opérationnels, dossiers, "je
-suis en sécurité") n'appliquait aucun filtrage par institution/zone — seul le filtre
-environnement PROD/DEMO existait. `SECTEUR_CHAMP_PAR_NIVEAU`/`_institution_secteur_or_400`
-existaient déjà (RequestViewSet.vue_secteur/OfferViewSet.vue_secteur) mais n'étaient utilisés
-que sur ces deux actions dédiées, jamais sur les vues "liste" par défaut. Ce module généralise
-le même mécanisme : `viewer_zone_code`/`object_in_viewer_zone` pour les serializers (prédicat
-par objet, jamais bloquant), `filter_queryset_to_viewer_zone` pour les querysets (get_queryset).
-
-UserRole.ADMINISTRATOR (rôle applicatif, pas un rôle institutionnel) contourne toujours ce
-filtrage — c'est le seul rôle qui voit vraiment tout, sans notion de zone.
+Fonctionnement et règles : DOCUMENTATION.md, § 5.5.
 """
 from django.db.models import Q
 from rest_framework import status
@@ -19,9 +9,7 @@ from rest_framework.response import Response
 from .models import UserRole
 from .permissions import effective_role_or_none
 
-# Colonne correspondante par niveau de secteur — mêmes noms de champ dénormalisés sur Offer et
-# Request (voir OfferViewSet.perform_create/RequestViewSet.perform_create) — "national" n'en a
-# pas (aucun filtre géographique, voir vue_secteur).
+# colonnes dénormalisées sur Offer et Request ; "national" n'a pas de filtre
 SECTEUR_CHAMP_PAR_NIVEAU = {
     "commune": "commune_code",
     "epci": "epci_code",
@@ -31,12 +19,8 @@ SECTEUR_CHAMP_PAR_NIVEAU = {
 
 
 def _institution_commune_or_400(request):
-    """Code commune de l'institution de l'utilisateur appelant, pour les actions "vue mairie"
-    partagées par RequestViewSet/InformationViewSet. Retourne soit le code (str), soit une
-    Response 400 prête à renvoyer si l'utilisateur n'a pas d'institution ou que celle-ci n'a
-    pas de commune renseignée (ex: institution non-AUT_LOCALE, ou AUT_LOCALE non encore
-    rattachée via l'annuaire) — jamais une liste vide silencieuse qui masquerait la vraie
-    cause."""
+    """Code commune de l'institution de l'appelant, ou une Response 400 explicite (plutôt
+    qu'une liste vide qui masquerait la cause)."""
     institution = getattr(request.user, 'institution', None)
     if institution is None or not institution.commune_code:
         return Response(
@@ -47,20 +31,14 @@ def _institution_commune_or_400(request):
 
 
 def _institution_secteur_or_400(request):
-    """(niveau, code) du secteur consultable par l'institution de l'utilisateur appelant.
-    `institution.secteur_override` (posé manuellement, usage test uniquement — voir le champ)
-    prend le pas sur le niveau déduit du type. Le code lui-même est lu directement sur
-    l'institution (epci_code/departement_code/region_code, dénormalisés par Institution.save()
-    depuis commune_code) — jamais recalculé ici. "national" ne renvoie aucun code (pas de
-    filtre géographique). Retourne une Response 400 prête à renvoyer si l'institution n'a pas
-    de commune, ou si le secteur demandé (override compris) n'est pas renseigné."""
+    """(niveau, code) du secteur de l'institution de l'appelant, ou une Response 400.
+    "national" renvoie un code None."""
     commune_code = _institution_commune_or_400(request)
     if isinstance(commune_code, Response):
         return commune_code
 
     institution = request.user.institution
-    # Déjà calculé et stocké par Institution.save() (secteur_override en priorité, sinon
-    # déduit du type via SECTEUR_NIVEAU_PAR_TYPE_INSTITUTION) — jamais recalculé ici.
+    # calculé par Institution.save()
     niveau = institution.secteur_niveau_effectif or "commune"
 
     if niveau == "national":
@@ -78,10 +56,7 @@ def _institution_secteur_or_400(request):
 
 
 def viewer_zone_code(request):
-    """Variante douce de `_institution_secteur_or_400` : jamais de 400, `None` si la zone de
-    l'utilisateur courant n'est pas résolvable (anonyme, sans institution, institution sans
-    commune/secteur renseigné) — pour les prédicats de visibilité "best effort" (serializers),
-    qui ne doivent jamais faire échouer toute une réponse pour un champ optionnel."""
+    """Comme _institution_secteur_or_400, mais None au lieu d'une 400 (pour les serializers)."""
     user = getattr(request, 'user', None) if request is not None else None
     if not (user and user.is_authenticated):
         return None
@@ -95,15 +70,8 @@ ECHELLE_ORDER = ["commune", "epci", "departement", "region", "national"]
 
 
 def widen_zone_from_request(request):
-    """Zone effective (niveau, code) pour une liste "élargissable" (vue Signalements) : part
-    du niveau naturel de l'institution de l'appelant (comme _institution_secteur_or_400/
-    viewer_zone_code), mais autorise un élargissement explicite via `?echelle=epci|
-    departement|region|national` — jamais un niveau plus étroit que le niveau naturel (une
-    mairie ne peut pas se réduire à "moins que sa commune", ça ne change rien pour elle et
-    évite un paramètre trompeur). `?echelle` absent, invalide, ou égal au niveau naturel :
-    comportement inchangé (niveau naturel). None si aucune zone n'est résolvable pour
-    l'appelant (pas institutionnel, pas d'institution/commune) — l'appelant décide alors
-    lui-même du repli (national, ou 400, selon le contexte)."""
+    """Zone de l'appelant, élargie par ?echelle= (jamais rétrécie). None si non résolvable :
+    l'appelant choisit le repli."""
     natural = viewer_zone_code(request)
     if natural is None:
         return None
@@ -120,10 +88,8 @@ def widen_zone_from_request(request):
 
 
 def object_in_viewer_zone(request, obj, champ_par_niveau=SECTEUR_CHAMP_PAR_NIVEAU):
-    """Prédicat par objet : True si `obj` est dans la zone de compétence de l'utilisateur
-    courant de `request`. UserRole.ADMINISTRATOR (rôle applicatif) et le niveau "national"
-    (aucun filtre géographique pour cette institution) court-circuitent toujours vers True ;
-    une zone non résolvable (anonyme, pas d'institution...) donne toujours False."""
+    """True si obj est dans la zone de l'appelant (toujours pour un administrateur ou le
+    niveau national, jamais si la zone n'est pas résolvable)."""
     if effective_role_or_none(request) == UserRole.ADMINISTRATOR:
         return True
     zone = viewer_zone_code(request)
@@ -139,17 +105,8 @@ def object_in_viewer_zone(request, obj, champ_par_niveau=SECTEUR_CHAMP_PAR_NIVEA
 
 
 def object_in_viewer_zone_via_commune(request, obj, commune_field="commune_code"):
-    """Variante de `object_in_viewer_zone` pour les modèles qui, comme `Information`, n'ont
-    QUE `commune_code` (pas d'epci_code/departement_code/region_code dénormalisés — voir
-    `_information_zone_resolver` dans views.py, même contrainte côté queryset). Utiliser
-    `object_in_viewer_zone` tel quel pour ces modèles renvoie toujours False dès que le niveau
-    naturel de l'appelant dépasse "commune" (`getattr(obj, "region_code", None)` vaut
-    toujours None sur un objet qui n'a pas ce champ) — bug constaté sur InformationSerializer.
-    _location_visible : masquait latitude/longitude (donc les faisait disparaître de la
-    carte) pour toute institution dont le secteur effectif est epci/département/région,
-    alors que le queryset `InformationViewSet.get_queryset` les incluait bien (lui utilise
-    déjà _information_zone_resolver). Résout via le référentiel Commune, comme au niveau
-    queryset, plutôt que de comparer un champ inexistant."""
+    """object_in_viewer_zone pour un modèle qui n'a que commune_code (Information) : les
+    niveaux supérieurs sont résolus via le référentiel Commune."""
     if effective_role_or_none(request) == UserRole.ADMINISTRATOR:
         return True
     zone = viewer_zone_code(request)
@@ -171,10 +128,7 @@ def object_in_viewer_zone_via_commune(request, obj, commune_field="commune_code"
 
 
 def apply_zone(queryset, zone, resolver=None, champ_par_niveau=SECTEUR_CHAMP_PAR_NIVEAU):
-    """Applique un zone (niveau, code) déjà résolu — factorise le filtrage lui-même, pour les
-    appelants qui ont leur propre logique de résolution (ex: widen_zone_from_request, pour les
-    listes "élargissables"). Voir filter_queryset_to_viewer_zone pour le cas standard
-    (résolution + filtrage en un appel)."""
+    """Filtre queryset sur une zone (niveau, code) déjà résolue."""
     niveau, code = zone
     if niveau == "national":
         return queryset
@@ -187,14 +141,8 @@ def apply_zone(queryset, zone, resolver=None, champ_par_niveau=SECTEUR_CHAMP_PAR
 
 
 def filter_queryset_to_viewer_zone(request, queryset, resolver=None, champ_par_niveau=SECTEUR_CHAMP_PAR_NIVEAU):
-    """Version dure (querysets) du même filtrage, pour les `get_queryset`/actions `list` :
-    réduit `queryset` à la zone de compétence de l'utilisateur courant. UserRole.ADMINISTRATOR
-    voit tout, sans filtre. `resolver(niveau, code) -> Q` permet de filtrer une ressource sans
-    code géographique dénormalisé directement dessus (ex: Team via
-    `Q(institution__commune_code=code)`, PointOperationnel via
-    `Q(equipe__institution__commune_code=code)`) ; par défaut, filtre directement sur
-    `champ_par_niveau[niveau]`. Retourne un queryset vide (`.none()`) si la zone de
-    l'utilisateur n'est pas résolvable — jamais tout ouvrir par défaut faute de zone connue."""
+    """Réduit queryset à la zone de l'appelant ; vide si elle n'est pas résolvable.
+    resolver(niveau, code) -> Q pour une ressource sans code géographique propre (ex : Team)."""
     if effective_role_or_none(request) == UserRole.ADMINISTRATOR:
         return queryset
     zone = viewer_zone_code(request)

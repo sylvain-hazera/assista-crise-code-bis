@@ -244,12 +244,8 @@ class UserSerializer(serializers.ModelSerializer):
     reserve_a_verifier = serializers.SerializerMethodField()
     acces_registre_vulnerables = serializers.SerializerMethodField()
     ma_zone = serializers.SerializerMethodField()
-    # `photo` reste écrivable mais jamais renvoyée telle quelle (voir extra_kwargs plus bas) —
-    # contrairement à tous les autres modèles à photo du site (Crisis/Request/Offer/
-    # Information/RecherchePersonne), elle n'était pas write_only : n'importe quel compte
-    # institutionnel listant les utilisateurs récupérait une URL /media/ publique et
-    # définitive, jamais réévaluée. `photo_url` passe désormais par une action `preview`
-    # qui vérifie les droits à chaque appel (voir UserViewSet.preview).
+    # photo est write_only : l'image passe par l'action preview, qui vérifie les droits à chaque
+    # appel.
     photo_url = serializers.SerializerMethodField()
 
     def get_photo_url(self, obj):
@@ -258,9 +254,8 @@ class UserSerializer(serializers.ModelSerializer):
         return f"/api/users/{obj.id}/preview/"
 
     def _active_contact(self, obj):
-        # institution_nom et institution_id faisaient chacun leur propre requête pour le même
-        # ContactInstitution actif — mémorisé sur l'instance le temps de la sérialisation
-        # (utile surtout en liste, ex: UserViewSet).
+        # ContactInstitution actif mémorisé pendant la sérialisation (institution_nom et
+        # institution_id).
         cached = getattr(obj, '_active_contact_cache', 'unset')
         if cached != 'unset':
             return cached
@@ -273,58 +268,40 @@ class UserSerializer(serializers.ModelSerializer):
         return contact.institution.nom if contact else None
 
     def get_institution_type_code(self, obj):
-        # Utilisé côté frontend pour réserver certaines rubriques (ex: Zones) aux mairies/EPCI
-        # — même critère que _institution_est_autorite_locale côté backend (core/views.py),
-        # jamais dupliqué en dur côté frontend.
+        # Même critère que _institution_est_autorite_locale (core/views.py).
         contact = self._active_contact(obj)
         return contact.institution.type.code if contact and contact.institution.type else None
 
     def get_institution_id(self, obj):
-        # Utilisé côté frontend pour restreindre les sélecteurs de responsables/équipes d'un
-        # point opérationnel aux seuls membres/équipes de SA PROPRE institution (jamais toute
-        # la plateforme) — voir point-modal.component.ts.
+        # Restreint côté frontend les responsables d'un point aux membres de sa propre institution.
         contact = self._active_contact(obj)
         return str(contact.institution_id) if contact else None
 
     def get_ma_zone(self, obj):
-        # Niveau/nom déjà calculés et stockés par Institution.save() (secteur_override en
-        # priorité, sinon déduit du type) — jamais recalculés ici. Basé sur User.institution
-        # (le FK direct), la même source que _institution_commune_or_400/_institution_secteur_or_400
-        # (core/views.py) utilisée par la Vue Ma Collectivité — pas ContactInstitution, qui est un
-        # mécanisme distinct (voir institution_nom/institution_id ci-dessus).
+        # Calculés par Institution.save(), à partir de User.institution (pas de
+        # ContactInstitution).
         institution = getattr(obj, 'institution', None)
         if institution is None or not institution.commune_code:
             return None
         return {
             "niveau": institution.secteur_niveau_effectif,
             "nom": institution.secteur_nom,
-            # Aléas de la commune de l'institution (API Géorisques) — simplification volontaire
-            # tant que l'institution est de niveau "commune" (le cas le plus courant, une
-            # mairie) : pour un secteur plus large (EPCI/département/région), ce sont pour
-            # l'instant les seuls risques de LA commune de l'institution, pas l'agrégation de
-            # tout le secteur (voir commune_risques).
+            # Risques de la seule commune de l'institution, même pour un secteur plus large.
             "risques": commune_risques(institution.commune_code),
             "risques_date_maj": commune_risques_date_maj(institution.commune_code),
         }
 
     def get_needs_institution_setup(self, obj):
-        # Compte Autorité locale activé, mais pas encore rattaché à une institution (voir
-        # UserViewSet.institution_suggestion/confirmer_institution/creer_mon_institution) — sert
-        # au frontend à savoir s'il doit proposer l'écran "Finalisez votre inscription", y
-        # compris à une reconnexion ultérieure si la personne avait quitté cet écran sans finir.
+        # Autorité locale activée mais sans institution : le frontend propose « Finalisez votre
+        # inscription ».
         return bool(obj.is_active and obj.type == UserRole.LOCAL_AUTHORITY and obj.pending_institution_name)
 
     def get_reserve_a_verifier(self, obj):
-        # Même gabarit que get_needs_institution_setup -- pilote la bannière "candidature à
-        # vérifier" (voir header.component.html/settings.component.html). True tant que la
-        # personne a coché "rejoindre la réserve" à l'inscription et que le responsable de
-        # cette réserve n'a pas encore traité la candidature (voir UserViewSet.verifier_reserve).
+        # Candidature à la réserve non encore traitée : bannière « à vérifier ».
         return bool(obj.souhaite_rejoindre_reserve and not obj.reserve_verifiee)
 
     def get_acces_registre_vulnerables(self, obj):
-        # Pilote uniquement l'affichage du menu/garde frontend (registre communal des personnes
-        # vulnérables) -- le ViewSet (core/vulnerabilites.py) reste la seule source de vérité
-        # pour les données réelles, recalculée à chaque requête.
+        # Affichage du menu seulement ; l'accès réel est contrôlé par core/vulnerabilites.py.
         from .vulnerabilites import NOM_COMPETENCE_VULNERABILITES, utilisateur_a_acces_rcsc
 
         institution = getattr(obj, 'institution', None)
@@ -358,24 +335,16 @@ class UserSerializer(serializers.ModelSerializer):
             'postal_code': {'required': False},
             'enabled': {'required': False},
             'demo_role': {'required': False},
-            # is_active : jamais modifiable via un PATCH générique — seulement via
-            # approve_account/reject_account/UserViewSet.perform_destroy/reactiver, qui
-            # journalisent l'action (voir le commentaire "is_active est le champ réellement
-            # vérifié par /api/token/" sur approve_account).
+            # is_active : seulement via les actions dédiées, qui journalisent.
             'is_active': {'read_only': True},
-            # Même raisonnement que is_active ci-dessus : jamais modifiable via un PATCH
-            # générique (IsSelfOrInstitutional autoriserait sinon un candidat à se marquer
-            # lui-même "vérifié") — seulement via UserViewSet.verifier_reserve, réservée au
-            # rôle RESPONSABLE de la réserve concernée.
+            # Seulement via UserViewSet.verifier_reserve (sinon un candidat pourrait se valider
+            # lui-même).
             'reserve_verifiee': {'read_only': True},
         }
 
     def to_representation(self, instance):
-        """En zone DEMO, email/téléphone/username d'un compte réel ne doivent jamais apparaître
-        à l'écran pendant une démonstration — même si le compte lui-même (utilisateurs communs
-        aux deux zones) est bien réel. `username` vaut souvent l'email en clair par convention
-        (compte créé via l'email) : masqué lui aussi, sinon il fuit la même information par un
-        autre champ. Masquage à l'affichage uniquement, jamais en base."""
+        """En zone DEMO, email, téléphone et username (souvent l'email) sont masqués à
+        l'affichage, jamais en base."""
         data = super().to_representation(instance)
         request = self.context.get('request')
         if request is not None and get_active_environment(request) == Environment.DEMO:
@@ -390,29 +359,17 @@ class UserSerializer(serializers.ModelSerializer):
         return value or None
 
     def validate(self, attrs):
-        # Cette vérification n'a de sens qu'à la création du compte (l'email doit prouver
-        # l'appartenance à une institution pour s'inscrire comme tel) — elle ne doit jamais se
-        # redéclencher sur une simple modification d'un compte déjà existant (ex: un admin qui
-        # règle le rôle démo d'un compte SECOURS/AUT_LOCALE/ADMIN), sans quoi toute édition de
-        # ces comptes échoue puisque le formulaire d'édition ne renvoie pas les informations
-        # d'inscription (institution_name/type, commune) qui ne sont capturées qu'une fois.
+        # Vérification limitée à la création : le formulaire d'édition ne renvoie pas les
+        # informations d'inscription.
         if self.instance is None:
             email = attrs.get('email')
             user_type = attrs.get('type')
             request = self.context.get('request')
 
             if user_type == UserRole.ADMINISTRATOR:
-                # ADMIN n'est pas un représentant d'institution (contrairement à AUT_LOCALE/
-                # SECOURS) : il n'y a pas de domaine email à prouver, donc pas de sens à lui
-                # appliquer InstitutionEmailValidator. Le vrai garde-fou est l'autorisation, pas
-                # le domaine -- repéré en corrigeant le blocage de ngueganglaura@gmail.com
-                # (compte Administrateur, domaine personnel légitimement refusé par l'ancienne
-                # règle) : la validation de domaine était en fait le SEUL rempart empêchant
-                # n'importe quel compte connecté de créer un Administrateur via ce même
-                # serializer (POST /api/users/, permission IsAuthenticated sans restriction de
-                # rôle) -- contournable avec un domaine quelconque au motif "*mairie*.fr" sans
-                # posséder de vraie mairie. Seul un administrateur déjà authentifié peut donc
-                # désormais créer un compte Administrateur, qu'importe le domaine de l'email.
+                # ADMIN ne représente pas une institution : pas de domaine email à prouver. Seul un
+                # administrateur authentifié peut créer un compte ADMIN (la validation de domaine
+                # n'est pas un contrôle d'accès).
                 is_requester_admin = bool(
                     request and request.user.is_authenticated
                     and effective_role_or_none(request) == UserRole.ADMINISTRATOR
@@ -422,18 +379,9 @@ class UserSerializer(serializers.ModelSerializer):
                         {'type': "Seul un administrateur peut créer un compte Administrateur."}
                     )
             elif user_type == UserRole.LOCAL_AUTHORITY and not (attrs.get('institution_name') or '').strip():
-                # Sans institution_name, aucun moyen pour le système de proposer ou de rappeler
-                # le rattachement ensuite : needs_institution_setup (voir
-                # get_needs_institution_setup ci-dessous) ne se déclenche QUE si ce champ est
-                # rempli -- or la validation de domaine ci-dessous peut très bien passer SANS
-                # institution_name (son motif regex ne porte que sur le domaine email). Repéré
-                # via l'incident Ludovic Vaysse (07/10) : compte Autorité locale activé, jamais
-                # rattaché à aucune institution, sans bannière de rappel ni aucune trace
-                # permettant de le détecter avant qu'un administrateur n'investigue
-                # manuellement. Demande utilisateur du 08/10 : plutôt que de rejeter
-                # l'inscription, la rétrograder en simple utilisateur -- uniquement pour
-                # AUT_LOCALE (pas ORGANIZED_RESCUE/SECOURS, dont le sous-type RCSC se rattache à
-                # une mairie EXISTANTE par commune, sans jamais nommer sa propre institution).
+                # Sans institution_name, le rattachement ne peut être ni proposé ni rappelé :
+                # l'inscription AUT_LOCALE est rétrogradée en utilisateur simple (les secours RCSC
+                # se rattachent à une mairie existante par commune).
                 attrs['type'] = UserRole.SIMPLE_USER
             elif user_type in {UserRole.LOCAL_AUTHORITY, UserRole.ORGANIZED_RESCUE}:
                 valid, message, _details = InstitutionEmailValidator.validate_institution_account(
@@ -449,9 +397,8 @@ class UserSerializer(serializers.ModelSerializer):
         return attrs
 
     def create(self, validated_data):
-        # Conservés pour le rattachement institution après confirmation de l'email (activation) —
-        # voir core/institution_attachment.py. Ne JAMAIS rattacher sur la seule foi d'un email non
-        # vérifié : n'importe qui peut prétendre être "contact@loire.fr" sans posséder cette boîte.
+        # Utilisés après confirmation de l'email (core/institution_attachment.py) : jamais de
+        # rattachement sur la foi d'un email non vérifié.
         pending_institution_name = validated_data.get('institution_name', '')
         pending_institution_type = validated_data.get('institution_type', '')
         pending_commune_name = validated_data.get('commune_name', '')
@@ -465,16 +412,13 @@ class UserSerializer(serializers.ModelSerializer):
 
         user_type = validated_data.get('type')
         if user_type in {UserRole.LOCAL_AUTHORITY, UserRole.ORGANIZED_RESCUE, UserRole.ADMINISTRATOR}:
-            # is_active est le champ que Django/SimpleJWT vérifie réellement à la connexion
-            # (/api/token/) : sans lui, enabled=False seul ne bloque rien — le compte reste
-            # utilisable pour se connecter tant que is_active vaut True (valeur par défaut).
+            # is_active est le champ vérifié à la connexion (/api/token/) : enabled seul ne bloque
+            # rien.
             validated_data['enabled'] = False
             validated_data['is_active'] = False
 
-        # LOCAL_AUTHORITY : rattachement à l'activation du lien magique (voir
-        # AccountActivationView). ORGANIZED_RESCUE : pas de lien magique pour ce type (voir
-        # register()), le rattachement AASC/RCSC se fait plus tard, à l'approbation du compte
-        # (approve_account) — voir attach_secours_user_to_institution.
+        # AUT_LOCALE : rattachement à l'activation du lien ; SECOURS : à l'approbation du compte
+        # (attach_secours_user_to_institution).
         if user_type in {UserRole.LOCAL_AUTHORITY, UserRole.ORGANIZED_RESCUE}:
             validated_data['pending_institution_name'] = pending_institution_name
             validated_data['pending_institution_type'] = pending_institution_type
@@ -486,12 +430,8 @@ class UserSerializer(serializers.ModelSerializer):
         return user
 
     def update(self, instance, validated_data):
-        # `type`/`demo_role`/`enabled` restent dans Meta.fields pour qu'un acteur institutionnel
-        # puisse les régler depuis la page Utilisateurs — mais UserViewSet.get_permissions()
-        # autorise aussi un compte à modifier SON PROPRE profil (photo, téléphone...), et sans
-        # ce filtre il pouvait au passage se réattribuer type=ADMIN ou s'auto-valider
-        # (enabled=True) par la même requête : vérifié en le reproduisant, corrigé ici plutôt
-        # qu'au niveau permission puisque le reste de la modification doit rester autorisé.
+        # Un compte peut modifier son propre profil, mais pas type, demo_role ni enabled (sinon il
+        # pourrait se donner ADMIN ou s'auto-valider).
         request = self.context.get('request')
         is_institutional = bool(
             request and request.user.is_authenticated
@@ -504,13 +444,9 @@ class UserSerializer(serializers.ModelSerializer):
         return super().update(instance, validated_data)
 
 def validate_crisis_open(crisis, field_name="crisis"):
-    """Verrou minimal réutilisé par tout ce qui s'accroche à une crise (implication, point
-    opérationnel, délégation de compétence...) : bloque uniquement sur une crise clôturée. Ne
-    vérifie pas la présence d'un responsable — condition qui n'a pas de sens pour l'acte même
-    qui désigne le premier responsable d'une crise (cf. validate_crisis_open_and_monitored,
-    plus stricte, pour les dépôts de demande/offre/information). `field_name` doit correspondre
-    au nom du champ FK vers Crisis sur le serializer appelant ('crisis' pour Request/Offer/
-    Information, 'crise' pour ImplicationInstitution/PointOperationnel/DelegationCompetence)."""
+    """Refuse tout rattachement à une crise clôturée (sans exiger de responsable, contrairement
+    à validate_crisis_open_and_monitored). field_name : nom de la FK vers Crisis sur le
+    serializer appelant."""
     if crisis is None:
         return
     if crisis.end_date is not None:
@@ -520,9 +456,8 @@ def validate_crisis_open(crisis, field_name="crisis"):
 
 
 def validate_crisis_open_and_monitored(crisis):
-    """Une demande/offre/information ne peut être déposée sur une crise que si elle est
-    encore ouverte (pas de end_date) et qu'un responsable y est activement rattaché — pas
-    de dépôt dans le vide sur une crise abandonnée ou dont personne n'a la charge."""
+    """Dépôt de demande, offre ou information seulement sur une crise ouverte ayant un
+    responsable."""
     validate_crisis_open(crisis)
     if crisis is None:
         return
@@ -565,9 +500,7 @@ class CrisisSerializer(serializers.ModelSerializer):
         return f"{obj.author.first_name} {obj.author.last_name}".strip() or obj.author.username
 
     def get_commune(self, obj):
-        # En liste, jamais de résolution réseau (coût multiplié par le nombre de lignes, voir
-        # commune_from_point_cached) -- seul un retrieve sur UN objet peut se permettre un
-        # géocodage à la volée.
+        # Pas de géocodage réseau en liste (coût par ligne) ; seulement sur un retrieve.
         view = self.context.get('view')
         if view is not None and getattr(view, 'action', None) == 'list':
             return commune_from_point_cached(obj.location)
@@ -595,12 +528,8 @@ class CrisisSerializer(serializers.ModelSerializer):
         return any(i.responsable_id and i.actif for i in obj.implications.all())
 
 class RequestSerializer(serializers.ModelSerializer):
-    """Serializer pour les demandes d'aide.
-
-    La localisation précise (adresse) n'est un renseignement privé que la mairie, les
-    services de secours, et les bénévoles effectivement affectés au dossier issu de cette
-    demande doivent voir — jamais le grand public. `latitude`/`longitude`/`location`
-    renvoient donc null pour tout autre consommateur."""
+    """Demande d'aide. La localisation n'est visible que de la mairie, des secours et des
+    bénévoles affectés au dossier ; null pour les autres."""
     latitude = serializers.SerializerMethodField()
     longitude = serializers.SerializerMethodField()
     author = serializers.PrimaryKeyRelatedField(read_only=True, allow_null=True)
@@ -616,13 +545,8 @@ class RequestSerializer(serializers.ModelSerializer):
     class Meta:
         model = Request
         fields = '__all__'
-        # actif : jamais modifiable via un PATCH générique, uniquement via destroy/reactiver
-        # (qui journalisent l'action, voir RequestViewSet.perform_destroy/reactiver).
-        # deletion_token/edition_token : jamais exposés en lecture, sinon n'importe quel
-        # visiteur du détail public de la demande pourrait la désactiver/modifier lui-même.
-        # email_request_bidx : jamais exposé ni modifiable via l'API -- calculé uniquement par
-        # Request.save() (voir core/crypto_fields.py), un client ne doit jamais pouvoir le
-        # définir lui-même (collision avec un autre email possible).
+        # actif : seulement via destroy/reactiver (journalisés). Jetons jamais exposés.
+        # email_request_bidx calculé par save(), jamais fourni par le client.
         extra_kwargs = {
             'photo': {'write_only': True}, 'actif': {'read_only': True},
             'deletion_token': {'write_only': True}, 'edition_token': {'write_only': True},
@@ -634,11 +558,7 @@ class RequestSerializer(serializers.ModelSerializer):
         user = getattr(request, 'user', None)
         if not (user and user.is_authenticated and request):
             return False
-        # Corrige la faille identifiée par l'audit sécurité (voir zone_scoping.py) : un rôle
-        # institutionnel seul ne suffit plus, il faut aussi que la demande soit dans la zone
-        # de compétence de l'acteur (object_in_viewer_zone) — sinon n'importe quel acteur
-        # institutionnel de la plateforme voyait le détail complet de n'importe quelle demande
-        # nationale.
+        # Rôle institutionnel et zone de compétence requis (zone_scoping.object_in_viewer_zone).
         if effective_role_or_none(request) in INSTITUTIONAL_TYPES and object_in_viewer_zone(request, obj):
             return True
         return obj.dossiers.filter(participants__utilisateur=user).exists()
@@ -668,9 +588,7 @@ class RequestSerializer(serializers.ModelSerializer):
         return round(distance.km, 1) if distance is not None else None
 
     def get_est_affectee(self, obj):
-        # RequestViewSet.vue_secteur annote nb_equipes_affectees (1 requête pour toute la
-        # liste) — sans cette annotation (ex: détail d'une seule demande), retombe sur une
-        # requête directe, comme distance_from_crisis_km ci-dessus.
+        # Annoté par vue_secteur en liste ; requête directe sinon.
         nb_equipes = getattr(obj, 'nb_equipes_affectees', None)
         if nb_equipes is not None:
             return nb_equipes > 0
@@ -679,9 +597,8 @@ class RequestSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         data = super().to_representation(instance)
         if not self._location_visible(instance):
-            # Hors zone/anonyme : aucune donnée personnelle exposée, en PROD comme en DEMO —
-            # pas juste un masquage réversible (mask_email/mask_phone), qui n'a de sens que
-            # pour un acteur déjà autorisé mais en environnement de démonstration.
+            # Hors zone ou anonyme : aucune donnée personnelle (le masquage DEMO ne concerne que
+            # les acteurs autorisés).
             data['location'] = None
             data['first_name_request'] = None
             data['last_name_request'] = None
@@ -716,13 +633,8 @@ class RequestSerializer(serializers.ModelSerializer):
 
 
 class RequestPublicEditSerializer(serializers.ModelSerializer):
-    """Modification d'une demande par son auteur, via le lien reçu par email
-    (Request.edition_token, voir RequestEditionPublicView) — SANS compte, SANS authentification.
-    Allow-list volontairement restreinte au contenu du post (compléter une information,
-    changer une disponibilité…) : jamais `status` (état de TRAITEMENT interne, pas une
-    disponibilité comme pour Offer), jamais `request_type` (changer de catégorie casserait le
-    rattachement déjà fait à une compétence/Dossier/équipe), jamais les champs d'identité
-    (même choix déjà fait côté Offer, absent de son formulaire d'édition public)."""
+    """Modification par l'auteur via le lien email (edition_token), sans compte. Champs limités
+    au contenu : ni status, ni request_type, ni identité."""
 
     class Meta:
         model = Request
@@ -754,11 +666,8 @@ class RequestPhotoSerializer(serializers.ModelSerializer):
 
 
 class OfferSerializer(serializers.ModelSerializer):
-    """Serializer pour les offres d'aide.
-
-    La localisation précise (adresse) n'est un renseignement privé que la mairie et les
-    services de secours doivent voir — jamais le grand public. `latitude`/`longitude`/
-    `location` renvoient donc null pour tout consommateur non institutionnel."""
+    """Offre d'aide. La localisation n'est visible que des acteurs institutionnels de la zone ;
+    null pour les autres."""
     latitude = serializers.SerializerMethodField()
     longitude = serializers.SerializerMethodField()
     author = serializers.PrimaryKeyRelatedField(read_only=True, allow_null=True)
@@ -776,9 +685,7 @@ class OfferSerializer(serializers.ModelSerializer):
     competences_libelles = serializers.SerializerMethodField()
     commune = serializers.SerializerMethodField()
     distance_from_crisis_km = serializers.SerializerMethodField()
-    # Progression réelle d'une ressource affectée à une équipe (en attente/confirmé/en
-    # transit/arrivé/décliné) — voir EngagementRessource, absent (None) tant que l'offre n'a
-    # jamais été affectée comme ressource à une équipe.
+    # Progression de la ressource (EngagementRessource) ; None si jamais affectée.
     engagement_statut = serializers.CharField(source='engagement.statut', read_only=True, default=None)
     engagement_statut_libelle = serializers.SerializerMethodField()
     # "Logement intervenants" (24/09) : pratique côté client plutôt que de tester
@@ -788,13 +695,8 @@ class OfferSerializer(serializers.ModelSerializer):
     class Meta:
         model = Offer
         fields = '__all__'
-        # actif : jamais modifiable via un PATCH générique, uniquement via destroy/reactiver
-        # (qui journalisent l'action, voir OfferViewSet.perform_destroy/reactiver).
-        # deletion_token/reponse_token : jamais exposés en lecture, sinon n'importe quel
-        # visiteur du détail public de l'offre pourrait la supprimer ou usurper son
-        # propriétaire (répondre/éditer) via ces jetons. accueil_intervenants_valide_par/_le :
-        # jamais posables par un PATCH générique, uniquement via
-        # OfferViewSet.valider_accueil_intervenants (même logique que actif).
+        # actif et validation de l'accueil d'intervenants : seulement via les actions dédiées.
+        # Jetons jamais exposés.
         extra_kwargs = {
             'photo': {'write_only': True}, 'actif': {'read_only': True},
             'deletion_token': {'write_only': True}, 'reponse_token': {'write_only': True},
@@ -815,10 +717,8 @@ class OfferSerializer(serializers.ModelSerializer):
         return engagement.get_statut_display() if engagement else None
 
     def _location_visible(self, obj) -> bool:
-        # Même correctif que RequestSerializer._location_visible (voir son commentaire) : un
-        # rôle institutionnel seul ne suffit plus, il faut aussi que l'offre soit dans la zone
-        # de compétence de l'acteur. Offer n'a pas de branche "participant du dossier lié"
-        # (contrairement à Request/Information) : seul le rôle+zone donne accès.
+        # Rôle institutionnel et zone requis (pas de branche « participant du dossier » pour une
+        # offre).
         request = self.context.get('request')
         user = getattr(request, 'user', None)
         if not (user and user.is_authenticated and request):
@@ -892,13 +792,8 @@ class OfferSerializer(serializers.ModelSerializer):
 
 
 class OfferPublicEditSerializer(serializers.ModelSerializer):
-    """Modification d'une offre par son auteur, via le lien reçu par email (Offer.reponse_token,
-    voir OfferReponsePublicView) — SANS compte, SANS authentification. Allow-list reprenant
-    exactement les champs déjà exposés par le formulaire d'édition public existant
-    (offer-reponse.component.ts) : resserre ce que l'API accepte en écriture pour correspondre à
-    ce que le frontend envoie réellement, plutôt que le OfferSerializer complet (fields='__all__',
-    utilisé jusqu'ici) qui laissait techniquement n'importe quel champ (crisis, status
-    administratif des AUTRES usages de ce champ, etc.) modifiable par qui tient ce jeton."""
+    """Modification par l'auteur via le lien email (reponse_token), sans compte. Champs limités
+    à ceux du formulaire public (offer-reponse.component.ts)."""
 
     class Meta:
         model = Offer
@@ -910,11 +805,8 @@ class OfferPublicEditSerializer(serializers.ModelSerializer):
 
 
 class OfferNationalPartialSerializer(serializers.ModelSerializer):
-    """Vue "France entière (partiel)" d'OfferViewSet.vue_secteur (niveau national) : donne à
-    tout acteur institutionnel, quel que soit son propre niveau de secteur, une vue d'ensemble
-    nationale des offres — type/statut/crise/date uniquement, jamais les coordonnées/contact
-    d'une institution tierce (nom, email, téléphone, localisation). Contrairement à
-    OfferSerializer, jamais complet : ni masquage réversible (DEMO) ni détail nominatif."""
+    """Vue nationale partielle des offres (type, statut, crise, date) pour tout acteur
+    institutionnel, sans aucune coordonnée."""
     offer_type_nom = serializers.CharField(source="offer_type.type", read_only=True, default=None)
     crisis_nom = serializers.CharField(source="crisis.name", read_only=True, default=None)
 
@@ -1037,9 +929,7 @@ class MaterielPointSerializer(serializers.ModelSerializer):
         return full_name or obj.responsable.email
 
     def get_quantite_totale(self, obj):
-        # Somme des apports actifs (voir ContributionMateriel) — None si aucun apport n'a
-        # jamais été tracé sur cette ligne, pour distinguer "pas d'apport suivi" (utiliser
-        # `quantite` manuel) de "0 apport actif restant" (tout a été retiré).
+        # Somme des apports actifs ; None si aucun apport tracé (utiliser quantite).
         result = obj.contributions.exclude(statut=StatutMateriel.RETIRE).aggregate(total=Sum('quantite'))
         return result['total']
 
@@ -1110,21 +1000,14 @@ class DeclarationSecuriteSerializer(serializers.ModelSerializer):
     declare_par_nom = serializers.SerializerMethodField()
     latitude = serializers.SerializerMethodField()
     longitude = serializers.SerializerMethodField()
-    # Déclaré explicitement : EncryptedJSONField hérite de TextField (voir core/crypto_fields.py)
-    # pour que le chiffrement s'applique, donc DRF le mapperait par défaut sur un simple
-    # CharField (string) plutôt qu'un JSONField -- cassant le contrat API (ages_enfants doit
-    # rester une vraie liste d'entiers en JSON, pas une chaîne). Le champ modèle gère déjà la
-    # conversion liste <-> JSON <-> chiffré de façon transparente ; ce JSONField ne voit que la
-    # liste Python déjà déchiffrée.
+    # Déclaré explicitement : EncryptedJSONField hérite de TextField, DRF en ferait une chaîne.
     ages_enfants = serializers.JSONField(required=False)
 
     class Meta:
         model = DeclarationSecurite
         fields = '__all__'
         read_only_fields = ['id', 'date_declaration', 'declare_par', 'registre_presence']
-        # `crise` reste obligatoire en base (jamais nullable), mais optionnelle à la saisie :
-        # une entrée via le secrétariat d'un centre (voir DeclarationSecuriteViewSet.
-        # perform_create) la déduit de centre_accueil.crise plutôt que de la faire ressaisir.
+        # Optionnelle à la saisie : déduite de centre_accueil.crise pour une saisie au secrétariat.
         extra_kwargs = {'crise': {'required': False}}
 
     def get_declare_par_nom(self, obj):
@@ -1133,9 +1016,7 @@ class DeclarationSecuriteSerializer(serializers.ModelSerializer):
         full_name = f"{obj.declare_par.first_name} {obj.declare_par.last_name}".strip()
         return full_name or obj.declare_par.email
 
-    # Même règle de confidentialité qu'InformationSerializer._location_visible : une adresse
-    # personnelle, potentiellement celle d'une personne vulnérable/déplacée — jamais exposée
-    # au grand public, seulement aux acteurs institutionnels.
+    # Adresse personnelle : visible des seuls acteurs institutionnels.
     def _location_visible(self, obj) -> bool:
         request = self.context.get('request')
         user = getattr(request, 'user', None)
@@ -1184,12 +1065,8 @@ class AffectationPointBenevoleSerializer(serializers.ModelSerializer):
 
 
 class InformationSerializer(serializers.ModelSerializer):
-    """Serializer pour les informations.
-
-    La localisation précise (adresse) n'est un renseignement privé que la mairie, les
-    services de secours, et les bénévoles effectivement affectés au dossier issu de ce
-    signalement doivent voir — jamais le grand public. `latitude`/`longitude`/`location`
-    renvoient donc null pour tout autre consommateur."""
+    """Signalement. La localisation n'est visible que de la mairie, des secours et des bénévoles
+    affectés au dossier ; null pour les autres."""
     latitude = serializers.SerializerMethodField()
     longitude = serializers.SerializerMethodField()
     author = serializers.PrimaryKeyRelatedField(read_only=True, allow_null=True)
@@ -1204,11 +1081,7 @@ class InformationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Information
         fields = '__all__'
-        # actif : jamais modifiable via un PATCH générique, uniquement via destroy/reactiver
-        # (qui journalisent l'action, voir InformationViewSet.perform_destroy/reactiver).
-        # deletion_token/edition_token : jamais exposés en lecture, sinon n'importe quel
-        # visiteur du détail public du signalement pourrait le désactiver/modifier lui-même.
-        # email_information_bidx : voir le commentaire équivalent sur RequestSerializer.
+        # actif : seulement via destroy/reactiver. Jetons et index aveugle jamais exposés.
         extra_kwargs = {
             'photo': {'write_only': True}, 'actif': {'read_only': True},
             'deletion_token': {'write_only': True}, 'edition_token': {'write_only': True},
@@ -1220,14 +1093,8 @@ class InformationSerializer(serializers.ModelSerializer):
         user = getattr(request, 'user', None)
         if not (user and user.is_authenticated and request):
             return False
-        # Même correctif que RequestSerializer._location_visible (voir son commentaire) : un
-        # rôle institutionnel seul ne suffit plus, il faut aussi que le signalement soit dans
-        # la zone de compétence de l'acteur. object_in_viewer_zone_via_commune (pas
-        # object_in_viewer_zone) : Information n'a que commune_code, voir son docstring —
-        # sinon epci_code/departement_code/region_code inexistants sur ce modèle masquaient
-        # systématiquement latitude/longitude pour toute institution de secteur epci/
-        # département/région (ex: la carte "Signalements" restait vide malgré des
-        # signalements bien dans le queryset retourné).
+        # Rôle institutionnel et zone requis ; Information n'a que commune_code
+        # (object_in_viewer_zone_via_commune).
         if effective_role_or_none(request) in INSTITUTIONAL_TYPES and object_in_viewer_zone_via_commune(request, obj):
             return True
         return obj.dossiers.filter(participants__utilisateur=user).exists()
@@ -1295,12 +1162,8 @@ class InformationSerializer(serializers.ModelSerializer):
 
 
 class InformationPublicEditSerializer(serializers.ModelSerializer):
-    """Modification d'un signalement par son auteur, via le lien reçu par email
-    (Information.edition_token, voir InformationEditionPublicView) — SANS compte, SANS
-    authentification. Allow-list volontairement réduite au seul `title` (= le texte du
-    signalement, Information n'a pas de champ `description` séparé) : azimuth/location/photo
-    laissés hors scope pour cette première version (nécessiteraient un sélecteur carte/boussole
-    ou un upload multipart sur cette page minimale) — à étendre si besoin réel identifié."""
+    """Modification par l'auteur via le lien email (edition_token), sans compte : title
+    seulement."""
 
     class Meta:
         model = Information
@@ -1370,10 +1233,7 @@ class ConfigurationAlerteSismiqueSerializer(serializers.ModelSerializer):
 
 
 class InterlocuteurAlertePCSSerializer(serializers.ModelSerializer):
-    """`institutions` en lecture seule -- le rattachement/détachement passe uniquement par les
-    actions dédiées InterlocuteurAlertePCSViewSet.rattacher/detacher (voir leurs docstrings),
-    jamais par un PATCH direct sur le M2M (qui permettrait à une institution de désinscrire une
-    autre institution par erreur)."""
+    """institutions en lecture seule : rattacher/détacher par les actions dédiées."""
     utilisateur_nom = serializers.SerializerMethodField()
     institutions_noms = serializers.SerializerMethodField()
 
@@ -1392,9 +1252,7 @@ class InterlocuteurAlertePCSSerializer(serializers.ModelSerializer):
 
 
 class NotificationAlertePCSSerializer(serializers.ModelSerializer):
-    """Entièrement en lecture seule via le CRUD standard -- les seules écritures possibles
-    passent par NotificationAlertePCSViewSet.envoyer_lot/confirmer, ou par l'accusé de
-    réception public (AccuserReceptionAlertePCSPublicView)."""
+    """Lecture seule ; écritures par envoyer_lot/confirmer ou l'accusé de réception public."""
     confirme_par_nom = serializers.SerializerMethodField()
 
     class Meta:
@@ -1482,10 +1340,8 @@ class TeamSerializer(serializers.ModelSerializer):
     canal_meshcore_id = serializers.CharField(source='canal_meshcore.id', read_only=True, default=None)
     canal_meshcore_nom = serializers.CharField(source='canal_meshcore.nom', read_only=True, default=None)
     canal_meshcore_provisionne = serializers.SerializerMethodField()
-    # Idem pour Meshtastic (voir TeamViewSet.provisionner_canal_meshtastic) — pas d'équivalent
-    # "provisionne" ici : contrairement à MeshCore (canal_idx tenu par le pont sur SON
-    # companion), un canal Meshtastic n'a pas d'état de configuration observable côté serveur,
-    # chaque destinataire le configure lui-même sur son propre appareil.
+    # Pas d'état « provisionné » pour Meshtastic : chaque destinataire configure le canal sur son
+    # appareil.
     canal_meshtastic_id = serializers.CharField(source='canal_meshtastic.id', read_only=True, default=None)
     canal_meshtastic_nom = serializers.CharField(source='canal_meshtastic.nom', read_only=True, default=None)
     # Salon Matrix privé de l'équipe (voir TeamViewSet.provisionner_salon_matrix) — même
@@ -1498,9 +1354,7 @@ class TeamSerializer(serializers.ModelSerializer):
         return canal is not None and canal.canal_idx is not None
 
     def get_commune_centre(self, obj):
-        # Centre la minimap de la fiche équipe sur la commune de son institution — repli
-        # simple et toujours disponible, indépendant de la zone d'intervention précise
-        # (souvent non dessinée) — voir commune_center_from_code.
+        # Centre de la minimap : commune de l'institution.
         code = obj.institution.commune_code if obj.institution_id else None
         return commune_center_from_code(code) if code else None
 
@@ -1548,11 +1402,7 @@ class TeamSerializer(serializers.ModelSerializer):
             'salon_matrix_id',
             'salon_matrix_room_id',
         ]
-        # institution_delegataire/equipe_parente/est_equipe_rcsc ne sont pas modifiables ici :
-        # elles ne doivent changer que via les actions dédiées (definir_delegation/
-        # retirer_delegation, rattacher_equipe/detacher_equipe, designer_rcsc), qui appliquent
-        # leurs propres gardes (historique, anti-cycle, permission) — un PATCH générique les
-        # contournerait.
+        # Modifiables seulement par les actions dédiées (historique, anti-cycle, permissions).
         read_only_fields = ['id', 'created_at', 'actif', 'institution_delegataire', 'equipe_parente', 'est_equipe_rcsc']
 
     def get_zone_precise_geojson(self, obj):
@@ -1570,18 +1420,12 @@ class TeamSerializer(serializers.ModelSerializer):
         return f"{user.first_name} {user.last_name}".strip() or user.username
 
     def get_members_info(self, obj):
-        # Dénormalisé ici (plutôt que de faire fetcher /api/users/ côté frontend) : un simple
-        # bénévole membre d'une équipe n'a pas forcément accès à la liste globale des
-        # utilisateurs, et n'a de toute façon besoin que du nom de ses coéquipiers, jamais de
-        # leur email/téléphone — voir "vue équipe".
+        # Noms des coéquipiers seulement (un bénévole n'a pas accès à la liste des utilisateurs).
         return [{"id": str(m.id), "nom": self._nom(m)} for m in obj.members.all()]
 
     def get_vehicules_count(self, obj):
-        # Ressources de type Transport affectées à l'équipe — même source que "leur matériel"
-        # (Team.assigned_offers), voir PointOperationnelViewSet.vue_operationnelle. Filtré en
-        # Python (pas .filter() côté DB) pour réutiliser le prefetch_related('assigned_offers')
-        # de TeamViewSet.queryset — un .filter() sur un manager déjà prefetch ignore le cache et
-        # relance une requête par équipe.
+        # Filtré en Python pour profiter du prefetch assigned_offers (un .filter() relancerait une
+        # requête).
         return sum(1 for o in obj.assigned_offers.all() if o.offer_type_id and o.offer_type.type == "Transport")
 
     def get_leader_nom(self, obj):
@@ -1619,9 +1463,7 @@ class DernierePositionUtilisateurSerializer(serializers.ModelSerializer):
         return f"{obj.utilisateur.first_name} {obj.utilisateur.last_name}".strip() or obj.utilisateur.username
 
     def get_team_noms(self, obj):
-        # Préfixé par l'institution responsable (ex: "Mairie de Rion des Landes - Cellule
-        # population") -- la carte des dernières positions affiche des équipes de PLUSIEURS
-        # institutions mêlées, demande utilisateur du 15/10 pour s'y retrouver vite.
+        # Préfixé par l'institution : la carte mêle des équipes de plusieurs institutions.
         return [
             f"{nom_institution} - {nom}" if nom_institution else nom
             for nom, nom_institution in obj.utilisateur.teams.values_list('name', 'institution__nom')
@@ -1683,10 +1525,7 @@ class MissionSerializer(serializers.ModelSerializer):
 
 
 def _regulateurs_pour_dossier(dossier, equipe=None):
-    """Duplique volontairement `views._regulateurs_pour_dossier` (même logique exacte) plutôt
-    que d'importer depuis views.py, qui importe déjà ce module — importer dans l'autre sens
-    créerait un cycle. Même patron déjà accepté ailleurs dans ce fichier pour de petites
-    fonctions de garde partagées."""
+    """Copie de views._regulateurs_pour_dossier : l'importer créerait un cycle d'imports."""
     if dossier.competence:
         return User.objects.filter(
             affectations_roles__competence=dossier.competence,
@@ -1774,11 +1613,7 @@ class DossierSerializer(serializers.ModelSerializer):
         }
 
     def validate(self, attrs):
-        # Empêche un Dossier.crise de diverger silencieusement de Dossier.mission.crise (doublon
-        # structurel relevé en audit : rien d'autre dans le code ne garantissait cette
-        # cohérence, un simple PATCH pouvait rattacher un dossier à une mission d'une autre
-        # crise). Tolère un `mission.crise` nul (mission pas encore rattachée à une crise
-        # précise) — seule une divergence explicite entre deux crises différentes est bloquée.
+        # Refuse un dossier rattaché à une mission d'une autre crise (mission sans crise tolérée).
         crise = attrs.get('crise', getattr(self.instance, 'crise', None))
         mission = attrs.get('mission', getattr(self.instance, 'mission', None))
         if crise and mission and mission.crise_id and mission.crise_id != crise.id:
@@ -1791,19 +1626,13 @@ class DossierSerializer(serializers.ModelSerializer):
         return obj.demande or obj.information
 
     def get_description_origine(self, obj):
-        # `description` sur Dossier lui-même est un texte généré automatiquement à
-        # l'affectation ("Demande affectée à l'équipe X : <titre>"), jamais ce que la personne
-        # a réellement écrit — ce champ-ci restitue la vraie description saisie sur la demande
-        # d'origine (un signalement n'a pas de description séparée, voir Information.__doc__
-        # ailleurs dans ce fichier : son titre porte déjà l'information complète).
+        # Description saisie sur la demande d'origine (Dossier.description est générée).
         if obj.demande:
             return obj.demande.description
         return None
 
     def get_latitude(self, obj):
-        # Pas de gating supplémentaire ici : un Dossier n'est jamais listable publiquement
-        # (DossierViewSet.get_queryset le restreint déjà aux institutionnels ou aux
-        # participants), donc quiconque peut voir CE dossier peut voir sa localisation.
+        # Pas de contrôle ici : DossierViewSet.get_queryset limite déjà l'accès.
         origine = self._origine(obj)
         return origine.location.y if origine and origine.location else None
 
@@ -1812,10 +1641,7 @@ class DossierSerializer(serializers.ModelSerializer):
         return origine.location.x if origine and origine.location else None
 
     def get_has_photo(self, obj):
-        # Sert à décider côté frontend s'il faut tenter RequestViewSet.preview /
-        # InformationViewSet.preview (même contrôle d'accès que la demande/le signalement
-        # d'origine, via user_can_view_photo(..., dossiers_field='dossiers') — un participant
-        # du dossier y a déjà droit) plutôt que d'appeler l'endpoint à l'aveugle.
+        # Indique au frontend si preview peut être appelée.
         origine = self._origine(obj)
         return bool(origine and origine.photo)
 
@@ -1853,12 +1679,8 @@ class DossierSerializer(serializers.ModelSerializer):
         return None
 
     def get_regulateurs(self, obj):
-        # Rappel logistique pour les intervenants terrain (voir dossier-suivi) : contrairement
-        # aux autres coordonnées ci-dessus, jamais exposées nulle part pour un Dossier avant ce
-        # correctif. get_queryset() de DossierViewSet garantit déjà que seul un participant du
-        # dossier (ou un institutionnel) peut lire CE dossier — pas de garde supplémentaire ici,
-        # seul le masquage DEMO ci-dessous s'applique (comme les autres contacts de ce
-        # serializer).
+        # Contact du régulateur pour les intervenants (accès déjà limité par get_queryset ; masqué
+        # en DEMO).
         regulateurs = _regulateurs_pour_dossier(obj, obj.equipe)
         return [
             {
@@ -1871,10 +1693,7 @@ class DossierSerializer(serializers.ModelSerializer):
         ]
 
     def get_has_updates(self, obj):
-        # get_unread_count() coûte jusqu'à 3 requêtes (participant + 2 count()) : les deux
-        # champs le déclenchaient chacun séparément (has_updates ET unread_count sont tous les
-        # deux exposés), doublant inutilement ce coût pour chaque dossier d'une liste. Mémorisé
-        # sur l'instance le temps de la sérialisation.
+        # get_unread_count mémorisé : utilisé par has_updates et unread_count.
         return self.get_unread_count(obj) > 0
 
     def get_unread_count(self, obj):
@@ -1937,11 +1756,7 @@ class DossierSerializer(serializers.ModelSerializer):
         )
 
     def to_representation(self, instance):
-        # Même politique que RequestSerializer/InformationSerializer : en zone DEMO, jamais de
-        # vraie coordonnée de contact affichée, même à un compte institutionnel ou à un chef
-        # d'équipe — sinon ce serializer contournerait le masquage déjà en place sur la
-        # demande/le signalement d'origine. Idem pour le contact régulateur (rappel logistique,
-        # voir get_regulateurs) : mêmes coordonnées personnelles, même garde.
+        # En DEMO, contacts masqués pour tous, comme sur la demande d'origine.
         data = super().to_representation(instance)
         request = self.context.get('request')
         if request is not None and get_active_environment(request) == Environment.DEMO:
@@ -1953,9 +1768,7 @@ class DossierSerializer(serializers.ModelSerializer):
         return data
 
 def _gps_dms_to_decimal(dms_str, ref):
-    """Convertit un tag GPS EXIF degrés/minutes/secondes tel que stringifié par
-    extract_exif_metadata ("(deg, min, sec)", voir views.py) en degrés décimaux. None si le
-    format est illisible plutôt que de faire échouer tout le serializer pour une photo."""
+    """Convertit un GPS EXIF (deg, min, sec) en degrés décimaux ; None si illisible."""
     match = re.match(r'\(([\d.]+),\s*([\d.]+),\s*([\d.]+)\)', dms_str or '')
     if not match:
         return None
@@ -1997,12 +1810,8 @@ class DocumentSerializer(serializers.ModelSerializer):
         return os.path.basename(obj.fichier.name)
 
     def _metadata_privees_visible(self, obj) -> bool:
-        # Métadonnées EXIF sensibles (GPS notamment) : réservées à l'auteur du document et aux
-        # acteurs institutionnels — SAUF pour une photo rattachée à un Dossier, où tout
-        # participant du dossier y a accès aussi (décision explicite : les coéquipiers d'un
-        # même dossier ont besoin de la localisation des photos les uns des autres pour la
-        # minimap de suivi terrain, voir dossier-suivi). Une photo d'offre/demande (obj.dossier
-        # absent) garde la restriction stricte d'origine.
+        # EXIF (GPS) réservés à l'auteur et aux institutionnels, et aux participants pour une photo
+        # de dossier (minimap de suivi).
         request = self.context.get('request')
         user = getattr(request, 'user', None)
         if not user or not user.is_authenticated:
@@ -2062,10 +1871,7 @@ class DossierCommentaireSerializer(serializers.ModelSerializer):
 
 
 class JournalCollectiviteSerializer(serializers.ModelSerializer):
-    """Entrée du journal de bord de la Vue Ma Collectivité — auteur/institution/date_creation en
-    lecture seule (posés par JournalCollectiviteViewSet.perform_create, jamais par le client) ;
-    aucun champ n'est modifiable après création, cohérent avec l'absence de route update/delete
-    (voir JournalCollectiviteViewSet)."""
+    """Entrée du journal de bord, non modifiable après création."""
 
     auteur_nom = serializers.SerializerMethodField()
     crise_nom = serializers.CharField(source="crise.name", read_only=True, default=None)
@@ -2102,11 +1908,8 @@ class AuditLogSerializer(serializers.ModelSerializer):
 
 
 class AuditLogAdminSerializer(serializers.ModelSerializer):
-    """Vue complète de la main courante, réservée à AuditLogViewSet.list/export en mode
-    consultation globale (administrateur, sans ?objet_type=&objet_id=) — contrairement à
-    AuditLogSerializer (widget d'historique par fiche), expose aussi l'adresse IP, le
-    user-agent, l'institution et le statut succès/échec : c'est le registre RGPD complet, pas
-    un simple fil d'activité."""
+    """Main courante complète (IP, user-agent, institution, succès) pour la consultation globale
+    par un administrateur."""
 
     utilisateur_email = serializers.CharField(source='utilisateur.email', read_only=True, default=None)
     utilisateur_nom = serializers.SerializerMethodField()
@@ -2156,9 +1959,7 @@ class NotificationSerializer(serializers.ModelSerializer):
         read_only_fields = ["utilisateur", "dossier", "crise", "titre", "message", "date_creation"]
 
 class DemandeMobilisationSerializer(serializers.ModelSerializer):
-    """Voir DemandeMobilisation.__doc__ — la cible (Y) est résolue en un couple `cible_type`/
-    `cible_nom`/`cible_contact` uniforme côté frontend, quel que soit celui des 3 champs cible_*
-    réellement renseigné, pour ne jamais devoir dupliquer cette logique côté client."""
+    """Cible résolue en cible_type/cible_nom/cible_contact pour le frontend."""
 
     crise_nom = serializers.CharField(source="crise.name", read_only=True)
     institution_emettrice_nom = serializers.CharField(source="institution_emettrice.nom", read_only=True)
@@ -2257,10 +2058,7 @@ class RecherchePersonneSerializer(
         return bool(obj.photo)
 
     def _dernier_commentaire(self, obj):
-        # dernier_commentaire/date_dernier_commentaire/nb_photos_dernier_commentaire et
-        # etat_utilisateur refaisaient chacun la même requête "dernier commentaire" — mémorisé
-        # sur l'instance le temps de la sérialisation (jusqu'à 4 requêtes identiques par fiche
-        # en liste).
+        # Dernier commentaire mémorisé (utilisé par quatre champs).
         cached = getattr(obj, '_dernier_commentaire_cache', 'unset')
         if cached != 'unset':
             return cached
@@ -2559,10 +2357,8 @@ class InstitutionSerializer(
         default=None,
     )
 
-    # {"PERMANENTS": {...}|None, "BENEVOLES": {...}|None} -- toujours les deux clés, valeur
-    # None tant que non provisionné (voir InstitutionViewSet.provisionner_salons_matrix). Le
-    # queryset DOIT prefetch_related('salons_matrix') (voir InstitutionViewSet) sous peine du
-    # même N+1 que celui trouvé et corrigé sur TeamSerializer/salon_matrix le 24/09.
+    # Deux clés toujours présentes (None si non provisionné). Le queryset doit faire
+    # prefetch_related('salons_matrix').
     salons_matrix = serializers.SerializerMethodField()
 
     class Meta:
@@ -2570,11 +2366,8 @@ class InstitutionSerializer(
         model = Institution
 
         fields = "__all__"
-        # Jamais assignables directement par le payload entrant (create/update) : ces 3 champs ne
-        # doivent être posés que par _traiter_acceptation_convention (backend/core/views.py), pour
-        # qu'un payload de création/édition d'institution ne puisse pas se déclarer lui-même
-        # "convention déjà acceptée" et contourner ainsi la case à cocher obligatoire — voir
-        # core/convention_sous_traitance.py.
+        # Posés seulement par _traiter_acceptation_convention (core/views.py), jamais par le
+        # payload.
         read_only_fields = [
             "convention_sous_traitance_acceptee_le",
             "convention_sous_traitance_acceptee_par",
@@ -2592,13 +2385,7 @@ class InstitutionSerializer(
         }
 
     def to_representation(self, instance):
-        # Une VRAIE institution (email/téléphone réels) reste visible en DEMO (voir
-        # InstitutionViewSet.get_queryset, règle à sens unique) pour permettre de s'appuyer sur
-        # les vraies mairies/collectivités dans une démonstration — mais ses coordonnées de
-        # contact ne doivent jamais apparaître à l'écran pendant cette démonstration, même
-        # principe que UserSerializer (email/téléphone masqués, nom laissé en clair : le nom
-        # d'une institution publique n'est pas une donnée sensible, contrairement à sa ligne
-        # directe). Masquage à l'affichage uniquement, jamais en base.
+        # Une institution réelle reste visible en DEMO, coordonnées masquées à l'affichage.
         data = super().to_representation(instance)
         request = self.context.get('request')
         if request is not None and get_active_environment(request) == Environment.DEMO:
@@ -2607,22 +2394,13 @@ class InstitutionSerializer(
         return data
 
     def update(self, instance, validated_data):
-        # secteur_override élargit potentiellement la visibilité jusqu'à "national" — jamais
-        # laissé passer par la permission générale d'édition d'institution
-        # (IsInstitutionMemberOrAdministrator, voir InstitutionViewSet.get_permissions).
-        # Restriction supplémentaire ici, à dessein plus stricte et différente selon
-        # l'environnement actif : en PROD, réservé au(x) super-admin(s) Django (is_superuser) ;
-        # en DEMO (bac à sable, enjeu moindre), tout membre actif de CETTE institution peut le
-        # régler — usage prévu : simuler un secteur de test (voir Institution.secteur_override).
+        # secteur_override peut ouvrir une vue nationale : superuser en PROD, membre de
+        # l'institution en DEMO.
         if "secteur_override" in validated_data:
             request = self.context.get("request")
             if not self._can_edit_secteur_override(request, instance):
                 validated_data.pop("secteur_override")
-        # Même garde-fou que UserSerializer/RequestSerializer/OfferSerializer/
-        # InformationSerializer : un formulaire d'édition affiche la version masquée
-        # (to_representation ci-dessus) et la renvoie telle quelle au save si aucun de ces deux
-        # champs n'a réellement changé — sans ce retrait, éditer une institution en DEMO
-        # écraserait silencieusement un vrai email/téléphone par son masque affiché.
+        # Ignore un email/téléphone renvoyé masqué, pour ne pas écraser la vraie valeur en DEMO.
         request = self.context.get("request")
         validated_data = strip_masked_fields_in_demo(request, validated_data, ('email', 'telephone'))
         return super().update(instance, validated_data)
@@ -2678,9 +2456,7 @@ class DelegationCompetenceSerializer(
         fields = "__all__"
 
     def validate(self, attrs):
-        # attrs['crise'] est absent sur un PATCH qui ne touche pas ce champ — retomber sur la
-        # crise déjà rattachée à l'instance pour que le verrou s'applique à TOUTE modification
-        # d'un objet lié à une crise fermée, pas seulement à une réaffectation de crise.
+        # Sans crise dans le PATCH, vérifier celle de l'instance.
         crise = attrs.get('crise') or (self.instance.crise if self.instance else None)
         validate_crisis_open(crise, field_name="crise")
 
@@ -2759,9 +2535,7 @@ class PointOperationnelSerializer(
     responsables_ids = serializers.PrimaryKeyRelatedField(
         many=True, queryset=User.objects.all(), source='responsables', required=False
     )
-    # Contact complet (nom/email/téléphone) de tous les responsables de ce point — `responsable`
-    # (champ historique) + `responsables` (M2M) + chefs des équipes de gestion, dédoublonnés :
-    # voir point_responsables_contacts(). Affiché dans la comparaison de stocks entre centres.
+    # Contacts de tous les responsables (point_responsables_contacts()).
     responsables_contacts = serializers.SerializerMethodField()
     equipes_gestion_ids = serializers.PrimaryKeyRelatedField(
         many=True, queryset=Team.objects.all(), source='equipes_gestion', required=False
@@ -2774,9 +2548,7 @@ class PointOperationnelSerializer(
     civils_accueillis = serializers.SerializerMethodField()
     peut_gerer = serializers.SerializerMethodField()
     commune_nom = serializers.SerializerMethodField()
-    # "Logement intervenants" (24/09) : distance à SA propre crise liée, voir l'annotation
-    # posée sur PointOperationnelViewSet.queryset (même idiome que OfferSerializer, FK `crise`
-    # au lieu de `crisis`). None si le point ou sa crise n'a pas de coordonnées.
+    # Distance à la crise du point (annotation du queryset) ; None sans coordonnées.
     distance_from_crisis_km = serializers.SerializerMethodField()
 
     class Meta:
@@ -2795,11 +2567,7 @@ class PointOperationnelSerializer(
         return round(distance.km, 1) if distance is not None else None
 
     def get_peut_gerer(self, obj):
-        # Reflète exactement la règle déjà appliquée côté API (RegistrePresenceViewSet.
-        # _can_manage / _peut_gerer_stock_point) — les boutons "Secrétariat"/"Stock" du détail
-        # centre n'étaient conditionnés côté frontend que par isEdit (point déjà créé), sans
-        # refléter les droits réels : n'importe quel utilisateur authentifié voyait ces
-        # boutons, y compris s'ils menaient ensuite à un 403.
+        # Mêmes règles que l'API (secrétariat, stock), pour n'afficher que les boutons utilisables.
         request = self.context.get('request')
         if not request or not request.user.is_authenticated:
             return False
@@ -2855,9 +2623,7 @@ class PointOperationnelSerializer(
         return [t.name for t in obj.equipes_ravitaillement.all()]
 
     def validate(self, attrs):
-        # attrs['crise'] est absent sur un PATCH qui ne touche pas ce champ — retomber sur la
-        # crise déjà rattachée à l'instance pour que le verrou s'applique à TOUTE modification
-        # d'un objet lié à une crise fermée, pas seulement à une réaffectation de crise.
+        # Sans crise dans le PATCH, vérifier celle de l'instance.
         crise = attrs.get('crise') or (self.instance.crise if self.instance else None)
         validate_crisis_open(crise, field_name="crise")
         return attrs
@@ -2938,18 +2704,12 @@ class PlanMissionModeleSerializer(serializers.ModelSerializer):
 
 
 class PointOperationnelPublicSerializer(serializers.ModelSerializer):
-    """Version publique, à champs restreints, d'un point opérationnel — utilisée par le
-    formulaire public "je suis en sécurité" (choix d'un centre d'accueil, suggestions de
-    centres disponibles). Volontairement distincte de PointOperationnelSerializer : celui-ci
-    expose aussi des champs internes (commentaire, responsable...) qui n'ont rien à faire
-    devant le grand public."""
+    """Point opérationnel à champs restreints, pour les formulaires et la carte publics."""
 
     latitude = serializers.SerializerMethodField()
     longitude = serializers.SerializerMethodField()
     personnes_presentes = serializers.SerializerMethodField()
-    # Le type lui-même n'a rien de sensible (un centre d'accueil doit justement être identifiable
-    # publiquement) — utile pour distinguer centres d'accueil / postes de secours sur la carte
-    # publique (voir PointOperationnelViewSet.carte_publique).
+    # Type public : distingue centres d'accueil et postes de secours.
     type_code = serializers.CharField(source="type.code", read_only=True, default=None)
     type_libelle = serializers.CharField(source="type.libelle", read_only=True, default=None)
 
@@ -2979,9 +2739,7 @@ class ImplicationInstitutionSerializer(
     responsable_nom = serializers.SerializerMethodField()
     themes_libelles = serializers.SerializerMethodField()
     responsable_email = serializers.CharField(write_only=True, required=False, allow_blank=True)
-    # Jamais posé par le client (création/modification) : uniquement par perform_create (voir
-    # ImplicationInstitutionViewSet) et par les actions valider/refuser dédiées, sans quoi une
-    # institution non-AUT_LOCALE pourrait s'auto-valider en envoyant simplement statut=VALIDEE.
+    # statut posé seulement par perform_create et valider/refuser (sinon auto-validation possible).
     statut = serializers.ChoiceField(choices=StatutImplication.choices, read_only=True)
     peut_valider = serializers.SerializerMethodField()
 
@@ -3001,10 +2759,8 @@ class ImplicationInstitutionSerializer(
         return [t.nom for t in obj.themes.all()]
 
     def get_peut_valider(self, obj):
-        """True si l'utilisateur courant peut valider/refuser CETTE déclaration en attente —
-        régulateur AUT_LOCALE d'une institution elle-même impliquée (validée, active) sur la
-        même crise. Piloté par le même calcul que ImplicationInstitutionViewSet.valider/refuser,
-        pour que le bouton n'apparaisse jamais là où l'action serait de toute façon refusée."""
+        """True si l'utilisateur peut valider ou refuser cette déclaration (même calcul que
+        l'action)."""
         if obj.statut != StatutImplication.EN_ATTENTE:
             return False
         request = self.context.get('request')
@@ -3014,9 +2770,7 @@ class ImplicationInstitutionSerializer(
         return is_regulateur_aut_locale_de_la_crise(request, obj.crise)
 
     def validate(self, attrs):
-        # attrs['crise'] est absent sur un PATCH qui ne touche pas ce champ — retomber sur la
-        # crise déjà rattachée à l'instance pour que le verrou s'applique à TOUTE modification
-        # d'un objet lié à une crise fermée, pas seulement à une réaffectation de crise.
+        # Sans crise dans le PATCH, vérifier celle de l'instance.
         crise = attrs.get('crise') or (self.instance.crise if self.instance else None)
         validate_crisis_open(crise, field_name="crise")
         return attrs
@@ -3042,20 +2796,14 @@ class ContactInstitutionSerializer(
         full_name = f"{obj.utilisateur.first_name} {obj.utilisateur.last_name}".strip()
         if full_name:
             return full_name
-        # Repli sur l'email seulement s'il y a un vrai nom à afficher à sa place — en DEMO,
-        # jamais l'email en clair (voir to_representation), même repli masqué que
-        # utilisateur_email pour ne pas fuiter l'adresse réelle par ce champ-ci.
+        # Jamais l'email en clair en DEMO.
         request = self.context.get('request')
         if request is not None and get_active_environment(request) == Environment.DEMO:
             return mask_email(obj.utilisateur.email)
         return obj.utilisateur.email
 
     def to_representation(self, instance):
-        # Un VRAI contact (email réel) reste visible en DEMO (voir
-        # ContactInstitutionViewSet.get_queryset, même règle à sens unique que Institution) —
-        # mais son email ne doit jamais apparaître à l'écran pendant une démonstration, même
-        # principe que UserSerializer/InstitutionSerializer (nom laissé en clair, coordonnées
-        # masquées). Masquage à l'affichage uniquement, jamais en base.
+        # Un contact réel reste visible en DEMO, email masqué à l'affichage.
         data = super().to_representation(instance)
         request = self.context.get('request')
         if request is not None and get_active_environment(request) == Environment.DEMO:
@@ -3111,11 +2859,7 @@ class CompagnonMeshCoreSerializer(serializers.ModelSerializer):
         return instance
 
     def to_representation(self, instance):
-        """En zone DEMO, la topologie réseau réelle du pont (tcp_host/tcp_port/serie_device/
-        ble_adresse/pubkey_hex) ne doit jamais apparaître à l'écran — masquage à l'affichage
-        uniquement (même principe que UserSerializer pour email/téléphone), jamais en base : la
-        lecture (list/retrieve) reste sinon possible pour que la démo composition d'un DM reste
-        possible (voir CompagnonMeshCoreViewSet)."""
+        """En DEMO, la topologie réseau du pont est masquée à l'affichage."""
         data = super().to_representation(instance)
         request = self.context.get('request')
         if request is not None and get_active_environment(request) == Environment.DEMO:
@@ -3138,11 +2882,7 @@ class NoeudMeshUtilisateurSerializer(serializers.ModelSerializer):
         return f"{obj.utilisateur.first_name} {obj.utilisateur.last_name}".strip() or obj.utilisateur.email
 
     def to_representation(self, instance):
-        """Qui est rattaché à quel nœud reste privé en zone DEMO — utilisateur_nom masqué
-        ci-dessus, `utilisateur` (l'id du compte réel) masqué ici. pubkey_hex reste présent :
-        indispensable pour qu'un nœud reste adressable par message (voir docstring de la
-        classe). Masquage à l'affichage uniquement, jamais en base — même principe que
-        CompagnonMeshCoreSerializer/UserSerializer."""
+        """En DEMO, le compte rattaché au nœud est masqué ; pubkey_hex reste pour l'adressage."""
         data = super().to_representation(instance)
         request = self.context.get('request')
         if request is not None and get_active_environment(request) == Environment.DEMO:
@@ -3158,21 +2898,11 @@ class MessageMeshLogSerializer(serializers.ModelSerializer):
     class Meta:
         model = MessageMeshLog
         fields = "__all__"
-        # equipe/expediteur sont résolus côté serveur depuis contact_pubkey_hex (voir
-        # MessageMeshLogViewSet.perform_create) — jamais posés par le client.
-        #
-        # statut/erreur/date_envoi NE DOIVENT PAS être ici : le service-pont les met à jour
-        # via PATCH après une tentative d'envoi (voir DjangoClient.marquer_message côté pont,
-        # et le commentaire de MessageMeshLogViewSet.get_permissions qui documente déjà ce
-        # comportement) — les y avoir mis par erreur rendait ce PATCH silencieusement sans
-        # effet (DRF ignore un champ read_only reçu en entrée sans lever d'erreur) : un
-        # message resté EN_ATTENTE à jamais, réessayé en boucle, jamais marqué en échec.
+        # equipe et expediteur sont résolus par le serveur.
+        # statut, erreur et date_envoi doivent rester modifiables : le pont les met à jour par
+        # PATCH (DRF ignore sans erreur un champ read_only reçu).
         read_only_fields = ['expediteur', 'equipe']
-        # `compagnon` optionnel côté API (contrairement au modèle, où il reste requis) :
-        # laisser vide déclenche la sélection automatique du meilleur companion pour ce
-        # destinataire (voir MessageMeshLogViewSet.perform_create, core/routage_mesh.py) — un
-        # client qui SAIT déjà quel companion utiliser peut toujours le poser explicitement,
-        # ce qui garde la priorité (jamais écrasé par la sélection auto).
+        # Optionnel : vide = choix automatique du companion (core/routage_mesh.py).
         extra_kwargs = {'compagnon': {'required': False}}
 
     def get_expediteur_nom(self, obj):
@@ -3202,10 +2932,7 @@ class CommandeMeshCoreSerializer(serializers.ModelSerializer):
     class Meta:
         model = CommandeMeshCore
         fields = "__all__"
-        # statut/erreur/date_execution ne doivent PAS être en read_only : le service-pont les
-        # met à jour via PATCH après tentative d'exécution (même piège déjà rencontré sur
-        # MessageMeshLogSerializer — un champ read_only reçu en entrée est silencieusement
-        # ignoré par DRF, sans erreur, laissant la commande EN_ATTENTE pour toujours).
+        # Modifiables par le PATCH du pont (même piège que MessageMeshLogSerializer).
 
 
 class TracerouteMeshCoreSerializer(serializers.ModelSerializer):
@@ -3214,9 +2941,7 @@ class TracerouteMeshCoreSerializer(serializers.ModelSerializer):
     class Meta:
         model = TracerouteMeshCore
         fields = "__all__"
-        # Lecture seule (affichage de l'historique) -- écrit uniquement via les actions
-        # dédiées de CompagnonMeshCoreViewSet (lancer_traceroute/rapporter_traceroute), jamais
-        # par un POST/PATCH direct sur ce serializer.
+        # Écrit seulement par lancer_traceroute/rapporter_traceroute.
         read_only_fields = ['compagnon', 'tag', 'statut', 'chemin', 'erreur', 'date_reponse']
 
 
@@ -3254,25 +2979,14 @@ class RelaisMeshCoreSerializer(serializers.ModelSerializer):
 
 
 class SalonMatrixEquipeSerializer(serializers.ModelSerializer):
-    """`membres` alimente directement le pont matrix-bridge (identifiants Matrix déterministes
-    des membres actuels de l'équipe, voir core.matrix.matrix_user_id) -- lui évite de recalculer
-    la correspondance User -> Matrix lui-même, une seule source de vérité côté Django."""
+    """membres : identifiants Matrix calculés par Django pour matrix-bridge."""
 
     equipe_nom = serializers.CharField(source='equipe.name', read_only=True)
     membres = serializers.SerializerMethodField()
-    # Texte prêt à poser tel quel comme sujet (m.room.topic) du salon par le pont -- demande
-    # explicite de Sylvain le 24/09 ("rappel du régulateur et ses coordonnées en en-tête du
-    # canal"). None si l'équipe n'a pas de régulateur désigné : le pont laisse alors le sujet
-    # tel quel plutôt que d'écraser par une chaîne vide.
+    # Sujet du salon (régulateur et coordonnées) ; None = le pont ne touche pas au sujet.
     sujet_salon = serializers.SerializerMethodField()
-    # L'équipe "cellule de crise" (voir CelluleCriseView._get_or_create_cellule) est créée SANS
-    # membres formels ni régulateur -- n'importe quel acteur institutionnel doit pouvoir y entrer
-    # (rejoint via assurer_membre_salon au premier accès, voir TeamViewSet.salon_matrix_messages).
-    # Si le pont expulsait quiconque n'est pas dans `membres` (comportement historique, voir
-    # boucle_provisionnement_salons), il rejetait cette personne au cycle suivant -- constaté en
-    # direct le 2026-09-28 (rejoint puis aussitôt "Ne fait plus partie de l'équipe"). Ce champ
-    # dit au pont de ne JAMAIS expulser personne de ce salon précis (l'ajout via `membres` reste
-    # inchangé pour les équipes normales).
+    # La cellule de crise n'a pas de membres formels : le pont ne doit expulser personne de son
+    # salon.
     expulsion_activee = serializers.SerializerMethodField()
 
     class Meta:
@@ -3301,18 +3015,14 @@ class SalonMatrixEquipeSerializer(serializers.ModelSerializer):
         return not PointOperationnel.objects.filter(equipe=obj.equipe, type__code="CELLULE_CRISE").exists()
 
 
-# Rôles considérés "permanents" d'une institution (personnel institutionnel), par opposition
-# aux bénévoles mobilisés ponctuellement sur ses équipes -- même ensemble que
-# AuthService.isAdmin() côté frontend (RESCUE/LOCAL_AUTH/ADMIN/REGULATEUR).
+# Rôles permanents d'une institution (même ensemble que AuthService.isAdmin() côté frontend).
 ROLES_PERMANENTS_INSTITUTION = [
     UserRole.ADMINISTRATOR, UserRole.LOCAL_AUTHORITY, UserRole.ORGANIZED_RESCUE, UserRole.REGULATEUR,
 ]
 
 
 class SalonMatrixInstitutionSerializer(serializers.ModelSerializer):
-    """Deux salons par institution (voir SalonMatrixInstitution/TypeSalonInstitution) --
-    `membres` recalculé à chaque lecture selon le type, jamais figé : le pont resynchronise en
-    continu (voir matrix-bridge/bridge.py, boucle_provisionnement_salons_institution)."""
+    """membres recalculé à chaque lecture selon le type de salon."""
 
     institution_nom = serializers.CharField(source='institution.nom', read_only=True)
     membres = serializers.SerializerMethodField()
@@ -3356,24 +3066,14 @@ class CanalMeshCoreSerializer(serializers.ModelSerializer):
         return obj.canal_idx is not None
 
     def validate(self, attrs):
-        # Canal public (nom préfixé `#`, ex: "#meteo") -- clé dérivable par tout le monde depuis
-        # le nom, voir CanalMeshCore.derive_cle_publique : jamais à fournir manuellement,
-        # calculée ici pour que le pont puisse le provisionner (boucle_provisionnement_canaux
-        # ignore tout canal sans cle_partagee_hex, voir meshcore-bridge/bridge.py).
+        # Canal public « #nom » : clé dérivée du nom, nécessaire au provisionnement par le pont.
         nom = attrs.get('nom', getattr(self.instance, 'nom', ''))
         deja_une_cle = attrs.get('cle_partagee_hex') or (self.instance and self.instance.cle_partagee_hex)
         if nom.startswith('#') and not deja_une_cle:
             cle = CanalMeshCore.derive_cle_publique(nom)
             attrs['cle_partagee_hex'] = cle
-            # Un nom de canal public n'est jamais devinable depuis le seul chan_hash observé sur
-            # l'air (fonction à sens unique, voir CanalMeshCoreDetecte) -- mais si un humain tape
-            # ICI le bon nom (ex: après avoir reconnu "#ca" dans "Canaux détectés"), son
-            # chan_hash dérivé matche exactement celui déjà vu : la ou les lignes fantômes
-            # correspondantes (potentiellement plusieurs companions) peuvent alors être
-            # nettoyées -- demande utilisateur du 12/10. Portée à l'environnement entier (pas au
-            # seul companion appelant, contrairement au nettoyage symétrique de
-            # signaler_canaux_detectes pour le secret Public) : un essai de nom se fait depuis
-            # l'admin, pas depuis un companion précis.
+            # Nommer un canal public permet de nettoyer les canaux détectés de même chan_hash, dans
+            # tout l'environnement.
             request = self.context.get('request')
             if request is not None:
                 chan_hash = CanalMeshCore.chan_hash_pour_secret(cle)
@@ -3417,9 +3117,7 @@ class CompagnonMeshtasticSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = CompagnonMeshtastic
-        # x25519_private_key_hex EXCLU explicitement (pas __all__ telle quelle) : c'est la
-        # seule chose qui protège l'identité de ce companion, jamais exposée par l'API sous
-        # aucun prétexte, contrairement au reste des champs.
+        # x25519_private_key_hex exclue : jamais exposée par l'API.
         exclude = ['x25519_private_key_hex']
         extra_kwargs = {'mqtt_password': {'write_only': True}}
 
@@ -3486,12 +3184,7 @@ class MessageMeshtasticLogSerializer(serializers.ModelSerializer):
 class MessageCanalMeshtasticSerializer(serializers.ModelSerializer):
     canal_nom = serializers.CharField(source='canal.nom', read_only=True)
     expediteur_nom = serializers.SerializerMethodField()
-    # Nom ANNONCÉ par le nœud lui-même (répertoire ContactMeshtastic, découvert passivement) --
-    # distinct d'expediteur_nom (compte assista-crise affecté, voir NoeudUtilisateurMeshtastic) :
-    # un nœud peut être vu sur le mesh sans que personne ne l'ait affecté à un compte, et
-    # inversement on veut les DEUX quand ils existent ("le nom du node ET son propriétaire si
-    # affecté", demande utilisateur du 10/10) -- jusqu'ici ni l'un ni l'autre n'était résolu
-    # pour un message de canal entrant, qui n'affichait donc que "Mesh" générique côté frontend.
+    # Nom annoncé par le nœud (distinct du compte affecté, expediteur_nom).
     node_nom = serializers.SerializerMethodField()
 
     class Meta:
@@ -3519,19 +3212,14 @@ class MessageCanalMeshtasticSerializer(serializers.ModelSerializer):
 
 class MessageCanalMeshCoreSerializer(serializers.ModelSerializer):
     canal_nom = serializers.CharField(source='canal.nom', read_only=True)
-    # Nécessaire au pont pour appeler send_chan_msg (qui prend un index local, pas une clé) —
-    # voir CanalMeshCore.canal_idx, provisionné par CompagnonMeshCoreViewSet.
-    # rapporter_canal_provisionne.
+    # Index local du canal, nécessaire à send_chan_msg côté pont.
     canal_idx = serializers.IntegerField(source='canal.canal_idx', read_only=True)
     expediteur_nom = serializers.SerializerMethodField()
 
     class Meta:
         model = MessageCanalMeshCore
         fields = "__all__"
-        # Même correctif que MessageMeshLogSerializer : statut/erreur doivent rester
-        # modifiables par le PATCH que le pont envoie après une tentative d'envoi, sinon un
-        # message de canal reste EN_ATTENTE pour toujours (voir MessageCanalMeshCoreViewSet.
-        # get_permissions, qui documente déjà ce comportement attendu côté pont).
+        # Modifiables par le PATCH du pont (même piège que MessageMeshLogSerializer).
         read_only_fields = ['expediteur']
 
     def get_expediteur_nom(self, obj):
@@ -3549,17 +3237,11 @@ class SatelliteSerializer(serializers.ModelSerializer):
     class Meta:
         model = Satellite
         fields = "__all__"
-        # compte_service n'est jamais écrivable depuis ce serializer : posé uniquement par
-        # SatelliteViewSet.valider (qui génère le compte de service et renvoie ses identifiants
-        # une seule fois dans sa propre réponse, jamais relisible ensuite) — jamais via un
-        # create/update générique sur ce endpoint.
+        # compte_service posé seulement par SatelliteViewSet.valider.
         read_only_fields = ['statut_enrolement', 'compte_service', 'dernier_contact']
 
     def get_etat(self, obj):
-        # Actif/Inactif/Perdu dérivé de dernier_contact à la lecture (jamais stocké) — voir
-        # Satellite.__doc__ et les seuils SATELLITE_SEUIL_INACTIF_MINUTES/
-        # SATELLITE_SEUIL_PERDU_MINUTES (settings). None tant qu'aucun contact n'a encore eu
-        # lieu (satellite tout juste enrôlé, ou pas encore approuvé).
+        # Dérivé de dernier_contact et des seuils SATELLITE_* ; None avant le premier contact.
         if obj.dernier_contact is None:
             return None
         silence_minutes = (timezone.now() - obj.dernier_contact).total_seconds() / 60
@@ -3622,9 +3304,7 @@ class HabitationHistoriqueSerializer(serializers.ModelSerializer):
 
 
 class HabitationSerializer(serializers.ModelSerializer):
-    """`latitude`/`longitude` en lecture/écriture séparées -- même convention que
-    PointOperationnelSerializer -- plutôt que le PointField brut, pour rester cohérent avec ce
-    que le frontend consomme déjà partout ailleurs pour placer un marqueur sur la carte."""
+    """latitude/longitude séparées, comme PointOperationnelSerializer."""
 
     latitude = serializers.SerializerMethodField()
     longitude = serializers.SerializerMethodField()
@@ -3682,10 +3362,7 @@ class RattachementHabitationSerializer(serializers.ModelSerializer):
         read_only_fields = [
             'utilisateur', 'statut', 'traite_par', 'date_traitement', 'motif_refus', 'date_demande',
         ]
-        # justificatif : jamais exposé en lecture directe (URL media brute) -- même politique
-        # que Offer.photo, récupérable uniquement via RattachementHabitationViewSet.preview
-        # (contrôle d'accès : institution habilitée sur la commune, voir _refuser_si_non_accede).
-        # email_demandeur_bidx : voir le commentaire équivalent sur RequestSerializer.
+        # justificatif seulement via preview (contrôle d'accès). Index aveugle jamais exposé.
         extra_kwargs = {'justificatif': {'write_only': True}, 'email_demandeur_bidx': {'read_only': True}}
 
     def get_traite_par_nom(self, obj):
@@ -3698,13 +3375,8 @@ class RattachementHabitationSerializer(serializers.ModelSerializer):
 
 
 class PieceIdentiteReserveSerializer(serializers.ModelSerializer):
-    """`utilisateur` en lecture seule : toujours forcé à request.user côté vue
-    (PieceIdentiteReserveViewSet.perform_create), jamais accepté du client -- même classe de
-    garde-fou que pour RisqueCommunal plus tôt dans ce projet (ne jamais faire confiance à un id
-    de propriétaire fourni par le client). `permis_recto`/`permis_verso` write_only : jamais
-    d'URL /media/ directe (chiffrés au repos de toute façon, une URL brute ne donnerait que du
-    ciphertext inexploitable) -- récupérables uniquement via les actions télécharger-recto/
-    télécharger-verso qui déchiffrent à la volée après contrôle d'accès."""
+    """utilisateur forcé à request.user par la vue. Permis en write_only, téléchargés déchiffrés
+    via les actions dédiées après contrôle d'accès."""
 
     a_recto = serializers.SerializerMethodField()
     a_verso = serializers.SerializerMethodField()

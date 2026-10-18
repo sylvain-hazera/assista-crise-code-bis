@@ -2,20 +2,31 @@
 """
 Script pour générer des données de test pour l'application Assista-Crise
 Crée des crises, demandes, offres et informations réparties sur toute la France
+
+    docker compose exec backend python generate_test_data.py              # zone PROD
+    docker compose exec backend python generate_test_data.py --env DEMO   # zone DEMO
+
+Développement uniquement (refuse de tourner si DEBUG=False). Pour un scénario de démonstration
+complet et réaliste, préférer : python manage.py generate_crise_gier_pilat
 """
+import argparse
 import os
 import sys
 import django
 import random
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 # Configuration Django
 sys.path.append('/app')
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
 django.setup()
 
+from django.conf import settings
 from django.contrib.gis.geos import Point
-from core.models import User, Crisis, Request, Offer, Information, RequestType, OfferType, InformationType, Status
+from django.utils import timezone
+from core.crypto_fields import blind_index
+from core.models import (User, Crisis, Request, Offer, Information, RequestType, OfferType,
+                         InformationType, Status, Environment)
 
 # Villes françaises avec coordonnées GPS (latitude, longitude)
 CITIES_FRANCE = [
@@ -57,11 +68,16 @@ CITIES_FRANCE = [
     {'name': 'Nancy', 'lat': 48.6921, 'lon': 6.1844},
 ]
 
-# Types de crises
-CRISIS_TYPES = [
-    'Inondation', 'Incendie', 'Tempête', 'Accident', 'Pollution',
-    'Séisme', 'Canicule', 'Froid extrême', 'Panne électrique'
-]
+# Types de crises : libellé affiché dans le nom -> valeur de Crisis.type
+CRISIS_TYPES = {
+    'Inondation': 'INONDATION', 'Incendie': 'INCENDIE', 'Tempête': 'CATASTROPHE_NATURELLE',
+    'Accident': 'ACCIDENT', 'Pollution': 'AUTRE', 'Séisme': 'CATASTROPHE_NATURELLE',
+    'Canicule': 'CATASTROPHE_NATURELLE', 'Froid extrême': 'CATASTROPHE_NATURELLE',
+    'Panne électrique': 'AUTRE',
+}
+
+# Zone (PROD ou DEMO) des données créées, fixée par --env
+ENVIRONMENT = Environment.PROD
 
 # Noms et prénoms français
 FIRST_NAMES = [
@@ -80,23 +96,28 @@ LAST_NAMES = [
 
 def random_date_recent(days_back=30):
     """Génère une date aléatoire dans les N derniers jours"""
-    now = datetime.now()
+    now = timezone.now()
     random_days = random.randint(0, days_back)
     return now - timedelta(days=random_days)
 
 def random_date_future(days_ahead=60):
     """Génère une date aléatoire dans les N prochains jours"""
-    now = datetime.now()
+    now = timezone.now()
     random_days = random.randint(1, days_ahead)
     return now + timedelta(days=random_days)
 
 def create_admin_user():
-    """Crée ou récupère l'utilisateur admin"""
+    """Réutilise un superuser existant (createsuperuser), sinon crée admin@admin.com"""
+    existing = User.objects.filter(is_superuser=True).first()
+    if existing:
+        print(f"[OK] Superuser existant réutilisé: {existing.username}")
+        return existing
     admin_email = 'admin@admin.com'
-    try:
-        user = User.objects.get(email=admin_email)
+    # email chiffré : la recherche passe par son index aveugle, jamais par email=
+    user = User.objects.filter(email_bidx=blind_index(admin_email)).first()
+    if user:
         print(f"[OK] Utilisateur admin existant: {admin_email}")
-    except User.DoesNotExist:
+    else:
         user = User.objects.create_user(
             username='admin',
             email=admin_email,
@@ -128,7 +149,7 @@ def create_test_users(count=10):
                 password='test123',
                 first_name=first_name,
                 last_name=last_name,
-                type=random.choice(['SIMPLE_USER', 'LOCAL_AUTH', 'RESCUE']),
+                type=random.choice(['UTIL_SIMPLE', 'AUT_LOCALE', 'SECOURS']),
                 enabled=True,
                 phone_number=f"06{random.randint(10000000, 99999999)}"
             )
@@ -147,11 +168,12 @@ def create_crises(users, count=15):
         lat = city['lat'] + random.uniform(-0.05, 0.05)
         lon = city['lon'] + random.uniform(-0.05, 0.05)
         
-        crisis_type = random.choice(CRISIS_TYPES)
-        
+        crisis_type = random.choice(list(CRISIS_TYPES))
+
         crisis = Crisis.objects.create(
+            environment=ENVIRONMENT,
             name=f"{crisis_type} - {city['name']}",
-            type=crisis_type,
+            type=CRISIS_TYPES[crisis_type],
             description=f"Situation d'urgence nécessitant une intervention. {crisis_type} signalé dans la région de {city['name']}.",
             location=Point(lon, lat),
             start_date=random_date_recent(10),
@@ -194,6 +216,7 @@ def create_requests(users, crises, count=50):
         title = random.choice(request_templates).format(req_type.type, nb_people)
         
         request = Request.objects.create(
+            environment=ENVIRONMENT,
             title=title,
             location=Point(lon, lat),
             request_type=req_type,
@@ -202,7 +225,6 @@ def create_requests(users, crises, count=50):
             email_request=f"{first_name.lower()}.{last_name.lower()}@email.fr",
             phone_request=f"06{random.randint(10000000, 99999999)}",
             status=Status.UNPROCESSED,
-            created_at=random_date_recent(20),
             expires_at=random_date_future(40),
             author=random.choice(users),
             crisis=random.choice(crises) if crises and random.random() > 0.3 else None
@@ -242,6 +264,7 @@ def create_offers(users, crises, count=50):
         title = random.choice(offer_templates).format(off_type.type)
         
         offer = Offer.objects.create(
+            environment=ENVIRONMENT,
             title=title,
             location=Point(lon, lat),
             offer_type=off_type,
@@ -249,7 +272,6 @@ def create_offers(users, crises, count=50):
             last_name_offer=last_name,
             email_offer=f"{first_name.lower()}.{last_name.lower()}@email.fr",
             status=Status.UNPROCESSED,
-            created_at=random_date_recent(20),
             author=random.choice(users),
             crisis=random.choice(crises) if crises and random.random() > 0.3 else None
         )
@@ -288,6 +310,7 @@ def create_informations(users, crises, count=30):
         title = random.choice(info_templates).format(info_type.type)
         
         info = Information.objects.create(
+            environment=ENVIRONMENT,
             title=title,
             location=Point(lon, lat),
             information_type=info_type,
@@ -296,7 +319,6 @@ def create_informations(users, crises, count=30):
             email_information=f"{first_name.lower()}.{last_name.lower()}@email.fr",
             phone_information=f"06{random.randint(10000000, 99999999)}",
             status=Status.UNPROCESSED,
-            created_at=random_date_recent(15),
             author=random.choice(users),
             crisis=random.choice(crises) if crises and random.random() > 0.4 else None
         )
@@ -306,8 +328,25 @@ def create_informations(users, crises, count=30):
     return informations
 
 def main():
+    global ENVIRONMENT
+    parser = argparse.ArgumentParser(description="Données de test (développement uniquement)")
+    parser.add_argument("--env", choices=Environment.values, default=Environment.PROD,
+                        help="zone des données créées (défaut : PROD)")
+    parser.add_argument("--yes", action="store_true", help="ne pas demander de confirmation")
+    args = parser.parse_args()
+    ENVIRONMENT = args.env
+
+    # crée des comptes aux mots de passe connus (test123) : jamais sur une vraie base. DEBUG ne
+    # suffit pas à le détecter (le dev tourne aussi en DEBUG=False), d'où la confirmation.
+    db = settings.DATABASES["default"]
+    if not args.yes:
+        answer = input(f"Base {db['NAME']} sur {db['HOST']}, zone {ENVIRONMENT} : créer des "
+                       "données de test et des comptes au mot de passe connu ? [o/N] ")
+        if answer.strip().lower() not in ("o", "oui", "y", "yes"):
+            sys.exit("Annulé, rien n'a été créé.")
+
     print("\n" + "="*60)
-    print("Génération de données de test pour Assista-Crise")
+    print(f"Génération de données de test pour Assista-Crise (zone {ENVIRONMENT})")
     print("="*60 + "\n")
     
     # Créer les utilisateurs

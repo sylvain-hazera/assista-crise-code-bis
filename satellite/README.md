@@ -244,7 +244,7 @@ public doit redescendre vers le satellite, même si elle ne remonte jamais.
   de compte web) est conservé dans `auteur_local_email`/`auteur_local_nom` et apparaît dans le
   commentaire d'audit posé à l'application de l'événement.
 
-Testé par `backend/core/test_synchronisation.py` (peuplement de la file, application côté
+Testé par `backend/core/tests/satellites/test_synchronisation.py` (peuplement de la file, application côté
 endpoint des deux sens — y compris résolution des FK de catalogue par clé naturelle et
 reconstruction GeoJSON pour Crisis/Request/Offer/Information —, commandes
 `synchroniser_sortant`/`synchroniser_entrant`, résolution de conflit) — **jamais testé de bout
@@ -277,7 +277,7 @@ server/capteur (qui a le droit de l'administrer), sans aucun rapport avec la gé
   `meilleur_compagnon_pour_contact` porte `region_tag` pour que l'appelant le sache), pas
   automatisée — le canal MeshCore (`MessageCanalMeshCore`) existe déjà, non re-câblé ici.
 
-14 tests dédiés (`backend/core/test_routage_mesh.py`).
+14 tests dédiés (`backend/core/tests/mesh/test_routage_mesh.py`).
 
 ## Reconfiguration distante du proxy (2026-09-18)
 

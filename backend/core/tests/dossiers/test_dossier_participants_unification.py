@@ -180,7 +180,7 @@ class TestManualPathParticipants:
         """assign_team ajoutait un régulateur notifié mais jamais l'équipe elle-même comme
         DossierParticipant — désormais unifié avec le chemin automatique."""
         client, _ = local_authority_client
-        from core.test_requests import REQUEST_PAYLOAD
+        from core.tests.citoyens.test_requests import REQUEST_PAYLOAD
         from core.models import Request
 
         request_type_local = None
@@ -213,7 +213,7 @@ class TestManualPathParticipants:
         """Le régulateur notifié par assign_team doit aussi apparaître comme
         DossierParticipant(role=REGULATION), pas seulement recevoir une Notification."""
         client, _ = local_authority_client
-        from core.test_requests import REQUEST_PAYLOAD
+        from core.tests.citoyens.test_requests import REQUEST_PAYLOAD
         from core.models import Request
 
         crisis = Crisis.objects.create(name="Crise unif manuel regul", type="INCENDIE", location="POINT (5.72 45.18)")

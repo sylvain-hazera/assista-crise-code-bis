@@ -42,12 +42,16 @@ backend_tests:
     DB_USER: admin
     DB_PASS: ci-only-password
     SECRET_KEY: ci-only-not-a-secret
+    # clés publiques volontairement triviales : la base du job est jetable
+    FIELD_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+    FIELD_BLIND_INDEX_KEY: ci-only-not-a-secret
+    FILE_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
   before_script:
     - apt-get update -qq && apt-get install -y -qq --no-install-recommends binutils libproj-dev gdal-bin libgdal-dev gcc > /dev/null
     - pip install -q -r backend/requirements.txt
   script:
     - cd backend && pytest -q -p no:cacheprovider --no-cov
-  # TODO : à retirer quand la suite sera verte (tests déjà en échec sur main)
+  # TODO : à retirer quand la suite sera verte (1 test déjà en échec sur main)
   allow_failure: true
 
 # ============================================================== build

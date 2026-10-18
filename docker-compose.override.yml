@@ -23,6 +23,10 @@ services:
     environment:
       - EMAIL_HOST=mailhog
       - EMAIL_PORT=1025
+      # en prod, ces clés sont injectées hors du dépôt (backend.env sur la VM)
+      - FIELD_ENCRYPTION_KEY=${FIELD_ENCRYPTION_KEY}
+      - FIELD_BLIND_INDEX_KEY=${FIELD_BLIND_INDEX_KEY}
+      - FILE_ENCRYPTION_KEY=${FILE_ENCRYPTION_KEY}
     depends_on:
       mailhog: { condition: service_started }
 

@@ -17,7 +17,7 @@ from core.models import (
     RequestType,
 )
 
-# Commune pré-résolue (même valeurs que core/test_vue_secteur.py) pour que Institution.save()
+# Commune pré-résolue (même valeurs que core/tests/zones/test_vue_secteur.py) pour que Institution.save()
 # (commune_secteur_codes) et la vue institutionnelle trouvent tout en base, sans appel réseau
 # à geo.api.gouv.fr pendant les tests.
 COMMUNE_CODE = "38185"

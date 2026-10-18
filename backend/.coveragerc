@@ -1,20 +1,3 @@
 [run]
-source = core
-omit = 
-    */migrations/*
-    */tests/*
-    */test_*.py
-    */__pycache__/*
-    */venv/*
-    */virtualenv/*
-    */management/commands/*
-
-[report]
-exclude_lines =
-    pragma: no cover
-    def __repr__
-    raise AssertionError
-    raise NotImplementedError
-    if __name__ == .__main__.:
-    if settings.DEBUG
-    pass
+# les tests ne comptent pas dans la couverture du code applicatif
+omit = core/tests/*

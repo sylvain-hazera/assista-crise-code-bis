@@ -41,6 +41,9 @@ Prérequis : Docker (Compose v2), Git, `openssl`.
 docker compose up -d --build   # application + monitoring
 ```
 
+`.env` contient aussi les clés de chiffrement des données personnelles : **sauvegardez-le**,
+sans lui les données chiffrées de votre base deviennent illisibles.
+
 | Adresse | Service |
 |---|---|
 | http://localhost | application (via Nginx) |
@@ -49,10 +52,11 @@ docker compose up -d --build   # application + monitoring
 | http://localhost:8025 | emails envoyés en développement (MailHog) |
 | http://localhost:3000 | Grafana (monitoring) |
 
-Créer le premier administrateur :
+Créer le premier administrateur, puis des données de test :
 
 ```bash
 docker compose exec backend python manage.py createsuperuser
+docker compose exec backend python manage.py generate_crise_gier_pilat --total 100   # scénario de démo
 ```
 
 ## Commandes utiles
@@ -60,7 +64,8 @@ docker compose exec backend python manage.py createsuperuser
 ```bash
 docker compose logs -f backend                        # logs du backend
 docker compose exec backend python manage.py <cmd>    # commande Django
-docker compose exec backend pytest -o addopts="" --no-cov   # tests backend
+docker compose exec backend pytest -o addopts="" --no-cov   # tests backend (tous)
+docker compose exec backend pytest core/tests/mesh/          # tests d'un domaine
 docker compose down                                   # arrêt (données conservées)
 docker compose down -v                                # arrêt + suppression de toutes les données
 ```
@@ -69,6 +74,11 @@ docker compose down -v                                # arrêt + suppression de 
 
 * **[DOCUMENTATION.md](DOCUMENTATION.md)** — architecture, code, environnements, sécurité, tests,
   déploiement, pièges connus et chantiers ouverts : **à lire pour reprendre le projet.**
+  Les tests backend sont rangés par domaine dans `backend/core/tests/` (comptes, securite,
+  crises, citoyens, equipes, mesh…) : où placer un nouveau test, voir son § 11.1.
 * [monitoring/README.md](monitoring/README.md) — exploitation du monitoring.
-* READMEs des modules : [satellite](satellite/README.md), [meshtastic-bridge](meshtastic-bridge/README.md),
-  [meshcore-bridge](meshcore-bridge/README.md), [frontend](frontend/README.md).
+* READMEs des modules : [backend](backend/README.md), [frontend](frontend/README.md),
+  [proxy](proxy/README.md), [satellite](satellite/README.md),
+  [meshtastic-bridge](meshtastic-bridge/README.md), [meshcore-bridge](meshcore-bridge/README.md),
+  [matrix-bridge](matrix-bridge/README.md), [mosquitto](mosquitto/README.md),
+  [tileserver](tileserver/README.md), [security](security/README.md).
