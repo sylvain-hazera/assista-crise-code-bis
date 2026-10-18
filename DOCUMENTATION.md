@@ -534,9 +534,9 @@ par chemin dans le conteneur. Les services de monitoring ont le profil `monitori
 
 ### 8.2 Production
 
-- Réseaux : `front` (proxy, frontend, backend, mosquitto, tileserver), `back`, `db` (base
+- Réseaux : `front` (proxy, frontend, backend, mosquitto), `back`, `db` (base
   isolée : seuls `backend` et `postgres-exporter` le rejoignent), `monitoring`.
-- Ports publiés : 80/443 (proxy), 1883/9001 (MQTT), Grafana sur `127.0.0.1:3000` uniquement.
+- Ports publiés : 80/443 (proxy), 1883 (MQTT), Grafana sur `127.0.0.1:3000` uniquement.
 - Images de base épinglées par digest dans les Dockerfiles (builds reproductibles) ; les mettre à
   jour régulièrement (`docker buildx imagetools inspect <image>` puis remplacer le `@sha256:…`).
 
@@ -648,9 +648,11 @@ accès au disque, un `pg_dump` ou une requête SQL ne lit que du texte chiffré.
   `DEBUG=False` par défaut, audit des accès (`AuditLog`).
 - **Monitoring** : Prometheus et Alertmanager n'ont pas d'authentification et ne sont jamais
   publiés ; Grafana écoute sur la boucle locale (tunnel SSH).
-- **MQTT** : accès anonyme conservé pour l'instant (les appareils Meshtastic se connectent avec
-  des identifiants propres à chaque appareil) ; activer l'authentification nécessite de créer
-  un compte pour chaque client (`mosquitto_passwd`) — décision d'équipe.
+- **MQTT** : authentifié **en dev** (`mosquitto/config/mosquitto.dev.conf`, comptes `exporter`
+  et `dev` dont les mots de passe sont dans `.env`). En production, l'accès reste **anonyme**
+  sur le port 1883 publié : n'importe qui peut lire ou publier sur le broker. L'activer exige un
+  compte pour chaque appareil et pont radio — décision d'équipe, procédure dans
+  [mosquitto/README.md](mosquitto/README.md).
 
 ---
 
@@ -806,13 +808,16 @@ Variables CI (protégées et masquées) : `HARBOR_URL`, `HARBOR_PROJECT`, `HARBO
   (`stefy237/…`) alors que la CI et `deploy_harbor.sh` les poussent vers Harbor — choisir un
   registre unique.
 - Ajouter Redis et un worker Celery à la pile Compose (simulation d'inondation en dev).
-- Authentification MQTT (décision d'équipe, voir § 10).
+- **Authentification MQTT en production** (accès anonyme aujourd'hui, voir § 10.2) : recenser
+  les clients radio, leur créer un compte, puis appliquer la configuration de dev.
 - Métriques métier à venir : messages radio reçus (alerte `MeshSilent`, à partir de
   `MessageMeshLog`) et délai entre une demande et sa prise en charge.
 - Logs centralisés (Loki + Grafana Alloy).
-- **Tileserver inutilisé** : le supprimer ou s'en servir pour des cartes hors ligne (voir
-  [tileserver/README.md](tileserver/README.md)).
-- **Port MQTT 9001** publié sans listener configuré (voir [mosquitto/README.md](mosquitto/README.md)).
+- **Cartes hors ligne des satellites** : le satellite `full` télécharge et sert des tuiles
+  (`tileserver` de `satellite/docker-compose.yml`), mais le frontend charge toujours un style
+  de carte externe (en dur dans `map.component.ts` et `simulation-inondation.component.ts`) :
+  sans internet, le fond de carte est vide. Sortir l'URL du style dans `environment.ts` et la
+  pointer, sur un satellite, vers le tileserver local via une route Nginx.
 - Mettre à jour l'image Grafana (vulnérabilités signalées sur `13.0.11`) et les digests des
   images de base.
 - Documents obsolètes à archiver : `DOCUMENTATION.pdf`, `Documentation_technique.pdf`,
@@ -829,5 +834,5 @@ Variables CI (protégées et masquées) : `HARBOR_URL`, `HARBOR_PROJECT`, `HARBO
 - READMEs des modules : [frontend](frontend/README.md), [proxy](proxy/README.md),
   [satellite](satellite/README.md), [meshtastic-bridge](meshtastic-bridge/README.md),
   [meshcore-bridge](meshcore-bridge/README.md), [matrix-bridge](matrix-bridge/README.md),
-  [mosquitto](mosquitto/README.md), [tileserver](tileserver/README.md), [security](security/README.md)
+  [mosquitto](mosquitto/README.md), [security](security/README.md)
 - `.github/agents/assista-crise-reprise.agent.md` — méthode de reprise du projet

@@ -110,11 +110,8 @@ def url_verification(demande, base_url: str) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Mini-carte (zone 3) — mosaïque de tuiles OpenStreetMap publiques, la France n'est pas
-# couverte par le tileserver auto-hébergé de ce projet (bordeaux.mbtiles uniquement, en tuiles
-# vectorielles non rasterisables simplement) — décision utilisateur du 2026-09-21 après
-# clarification explicite de ce compromis (dépendance externe + coordonnées GPS envoyées à
-# l'infrastructure publique OSM).
+# Mini-carte (zone 3) — tuiles OpenStreetMap publiques, faute de serveur de tuiles raster
+# auto-hébergé : compromis accepté (dépendance externe, coordonnées envoyées à OSM).
 # ─────────────────────────────────────────────────────────────────────────────
 
 TAILLE_TUILE_OSM = 256

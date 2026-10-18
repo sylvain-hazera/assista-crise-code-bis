@@ -66,15 +66,10 @@ services:
       - ./mosquitto/config:/mosquitto/config
       - ./mosquitto/data:/mosquitto/data
 
-  tileserver:
-    image: maptiler/tileserver-gl:v5.5.0
-    container_name: ac_maps
-    logging: *logging
-
   proxy:
     container_name: ac_proxy
     logging: *logging
-    depends_on: [frontend, backend, tileserver]
+    depends_on: [frontend, backend]
 
   # ---------------------------------------------------------------- monitoring
   # Images de prometheus/alertmanager/grafana : construites depuis monitoring/<nom>/

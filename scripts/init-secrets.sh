@@ -37,6 +37,9 @@ add_var COMPOSE_PROFILES monitoring
 add_var FIELD_ENCRYPTION_KEY "$(fernet_key)"
 add_var FIELD_BLIND_INDEX_KEY "$(random 64)"
 add_var FILE_ENCRYPTION_KEY "$(fernet_key)"
+# Comptes du broker MQTT de dev (mosquitto.dev.conf) : exporter pour le monitoring, dev pour les tests
+add_var MQTT_EXPORTER_PASSWORD "$(random 32)"
+add_var MQTT_DEV_PASSWORD "$(random 32)"
 
 echo "Monitoring secrets in $SECRETS_DIR:"
 mkdir -p "$SECRETS_DIR"

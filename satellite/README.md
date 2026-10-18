@@ -66,7 +66,7 @@ administrateur valide → identifiants affichés **une seule fois**) — voir
 | `etat-connectivite` | gw, full | Vérifie périodiquement si le central répond, écrit l'état dans un volume partagé (`etat_connectivite.py`) — source de vérité unique pour tout futur composant qui en a besoin (bannière, écran de statut). |
 | `db`, `mosquitto`, `backend`, `frontend` | full | Instance assista-crise locale, identique au déploiement central. |
 | `telecharger-tuiles` | full | Conteneur one-shot : télécharge les tuiles du département + limitrophes (`telecharger_tuiles.py`). |
-| `tileserver` | full | Sert les tuiles téléchargées — même image que le central (`maptiler/tileserver-gl`). |
+| `tileserver` | full | Sert les tuiles téléchargées (`maptiler/tileserver-gl`) ; pas encore utilisé par le frontend (voir DOCUMENTATION.md, chantiers ouverts). |
 | `annoncer-backend-local` | full | Annonce ce backend en mDNS sur le LAN, pour qu'un satellite GW séparé sur le même site le trouve sans IP configurée à la main. |
 | `meshtastic-bridge` | gw, full | Optionnel — pilote un ou plusieurs `CompagnonMeshtastic` (MQTT, TCP ou SERIE) ; voir la note ci-dessous. |
 | `sync-sortant` | full | Pousse périodiquement vers le central les écritures locales en attente — voir "Synchronisation local → central" ci-dessous. |

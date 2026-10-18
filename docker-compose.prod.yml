@@ -38,13 +38,8 @@ services:
     networks: [db]                 # réseau isolé : seuls backend et postgres-exporter le rejoignent
 
   mosquitto:
-    ports:
-      - "1883:1883"
-      - "9001:9001"
+    ports: ["1883:1883"]
     networks: [front]
-
-  tileserver:
-    networks: [front]              # aucun port publié : rien ne l'utilise depuis l'extérieur
 
   proxy:
     image: im2ag-harbor.univ-grenoble-alpes.fr/assista-crise/proxy:${IMAGE_TAG:-latest}

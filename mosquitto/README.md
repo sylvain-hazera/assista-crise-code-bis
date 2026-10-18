@@ -6,56 +6,78 @@ un service *publie* des messages sur un *topic*, ceux qui y sont *abonnés* les 
 
 ## Qui l'utilise
 
-- **Appareils et ponts Meshtastic** configurés pour utiliser ce broker local. Un companion
+- **Appareils et ponts Meshtastic** configurés pour utiliser ce broker. Un companion
   Meshtastic (`CompagnonMeshtastic`) peut aussi pointer vers un broker tiers (ex. Gaulix,
   `mqtt.gaulix.fr`) : voir [meshtastic-bridge/README.md](../meshtastic-bridge/README.md).
 - **Satellites** : chaque Raspberry Pi a son propre broker (voir
   [satellite/README.md](../satellite/README.md)).
-- **Monitoring** : `mosquitto-exporter` s'y abonne pour produire les métriques
-  (`mosquitto_up`, clients connectés, messages).
+- **Monitoring** : `mosquitto-exporter` s'y connecte pour produire les métriques
+  (`broker_clients_connected`, messages…).
 
 Le backend Django ne s'y connecte pas directement.
 
-## Configuration (`config/mosquitto.conf`)
+## Deux configurations
 
-| Réglage | Effet |
-|---|---|
-| `listener 1883` | MQTT sur le port 1883 |
-| `allow_anonymous true` | connexion sans identifiant (voir ci-dessous) |
-| `persistence true` | messages et abonnements conservés dans `data/` (volume, non versionné) |
-| `log_dest stdout` | journaux visibles avec `docker compose logs mosquitto` |
+| Fichier | Utilisé | Accès |
+|---|---|---|
+| `config/mosquitto.conf` | production | **anonyme** (en attendant la décision de l'équipe) |
+| `config/mosquitto.dev.conf` | dev (`docker-compose.override.yml`) | **authentifié** |
 
-Ports publiés (dev et production) : 1883 et 9001. Seul 1883 est configuré : aucun `listener`
-n'écoute sur 9001 (habituellement MQTT sur WebSocket), ce port publié ne mène donc à rien. Soit
-ajouter `listener 9001` + `protocol websockets` si un client web en a besoin, soit retirer ce
-port des fichiers Compose.
+Communs aux deux : un seul listener, MQTT sur le port **1883** (seul port publié),
+persistance dans `data/` (volume, non versionné), journaux sur la sortie standard
+(`docker compose logs mosquitto`).
 
-## Accès anonyme : décision en attente
+### En dev : comptes et mots de passe
 
-L'accès sans identifiant est conservé pour l'instant : les appareils Meshtastic se connectent
-avec des identifiants propres à chaque appareil, et activer l'authentification impose de créer
-un compte pour **chaque** client. C'est une décision d'équipe (voir
-[DOCUMENTATION.md](../DOCUMENTATION.md), § 10.2). Pour l'activer :
+`./scripts/init-secrets.sh` génère deux mots de passe dans `.env` ; au démarrage, la commande
+du service construit le fichier de mots de passe (`/tmp/passwd`, dans le conteneur) :
 
-```bash
-docker compose exec mosquitto mosquitto_passwd -c /mosquitto/config/passwd <client>   # -c seulement pour le premier
-```
+| Compte | Mot de passe (`.env`) | Utilisé par |
+|---|---|---|
+| `exporter` | `MQTT_EXPORTER_PASSWORD` | `mosquitto-exporter` (`MQTT_USER` / `MQTT_PASS`) |
+| `dev` | `MQTT_DEV_PASSWORD` | tests manuels, outils, un pont lancé en local |
 
-puis, dans `mosquitto.conf`, remplacer `allow_anonymous true` par :
+Changer un mot de passe : le modifier dans `.env`, puis
+`docker compose up -d mosquitto mosquitto-exporter`. Ajouter un compte : une ligne
+`mosquitto_passwd -b /tmp/passwd <compte> "$$<VARIABLE>"` dans la commande du service
+(override) et la variable dans `.env` et `init-secrets.sh`.
 
-```
-allow_anonymous false
-password_file /mosquitto/config/passwd
-```
-
-et `docker compose restart mosquitto`. Le fichier `passwd` n'est jamais commité
-(`.gitignore`). Penser à donner un compte à `mosquitto-exporter` et à chaque pont.
-
-## Tester
+Tester :
 
 ```bash
-# s'abonner à tout (laisser tourner)
-docker compose exec mosquitto mosquitto_sub -h localhost -t '#' -v
-# publier depuis un autre terminal
-docker compose exec mosquitto mosquitto_pub -h localhost -t test/hello -m 'bonjour'
+P=$(grep '^MQTT_DEV_PASSWORD=' .env | cut -d= -f2-)
+docker compose exec mosquitto mosquitto_sub -h localhost -u dev -P "$P" -t '#' -v        # écoute tout
+docker compose exec mosquitto mosquitto_pub -h localhost -u dev -P "$P" -t test/hello -m bonjour
+docker compose exec mosquitto mosquitto_pub -h localhost -t test -m x                    # refusé : not authorised
 ```
+
+### En production : passer à l'authentification
+
+Aujourd'hui, n'importe qui peut lire ou publier sur le broker de production (port 1883
+publié, accès anonyme). Pour l'authentifier, sans couper les appareils :
+
+1. **Recenser les clients** : appareils et ponts Meshtastic, `mosquitto-exporter` (les
+   connexions apparaissent dans `docker compose logs mosquitto`).
+2. **Créer un compte par client**, dans un fichier hors du dépôt :
+   ```bash
+   docker compose exec mosquitto mosquitto_passwd -c /mosquitto/config/passwd exporter   # -c pour le premier seulement
+   docker compose exec mosquitto mosquitto_passwd /mosquitto/config/passwd <client>
+   ```
+   (`mosquitto/config/passwd` est dans `.gitignore`.)
+3. **Configurer chaque client** avec son identifiant ; pour l'exporter, `MQTT_USER` et
+   `MQTT_PASS` dans `docker-compose.prod.yml`.
+4. **Basculer** `config/mosquitto.conf` :
+   ```
+   allow_anonymous false
+   password_file /mosquitto/config/passwd
+   ```
+   puis `docker compose restart mosquitto` et vérifier dans les journaux que chaque client se
+   reconnecte (`u'<compte>'`).
+
+C'est une décision d'équipe : un client oublié perd sa connexion à la bascule.
+
+## WebSocket
+
+Aucun client n'utilise MQTT sur WebSocket (habituellement le port 9001, utile à un navigateur) :
+ce port a été retiré. Pour le réactiver, ajouter à la configuration `listener 9001` puis
+`protocol websockets`, et publier le port dans les fichiers Compose.

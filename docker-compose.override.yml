@@ -34,12 +34,24 @@ services:
     ports: ["5432:5432"]
 
   mosquitto:
-    ports:
-      - "1883:1883"
-      - "9001:9001"
+    ports: ["1883:1883"]
+    environment:
+      - MQTT_EXPORTER_PASSWORD=${MQTT_EXPORTER_PASSWORD}
+      - MQTT_DEV_PASSWORD=${MQTT_DEV_PASSWORD}
+    # authentification en dev : fichier de mots de passe recréé à chaque démarrage
+    command:
+      - sh
+      - -c
+      - >-
+        mosquitto_passwd -c -b /tmp/passwd exporter "$$MQTT_EXPORTER_PASSWORD" &&
+        mosquitto_passwd -b /tmp/passwd dev "$$MQTT_DEV_PASSWORD" &&
+        chown mosquitto:mosquitto /tmp/passwd && chmod 0700 /tmp/passwd &&
+        exec mosquitto -c /mosquitto/config/mosquitto.dev.conf
 
-  tileserver:
-    ports: ["8080:8080"]
+  mosquitto-exporter:
+    environment:
+      - MQTT_USER=exporter
+      - MQTT_PASS=${MQTT_EXPORTER_PASSWORD}
 
   proxy:
     build: ./proxy

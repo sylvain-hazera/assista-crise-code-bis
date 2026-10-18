@@ -81,4 +81,4 @@ docker compose down -v                                # arrêt + suppression de 
   [proxy](proxy/README.md), [satellite](satellite/README.md),
   [meshtastic-bridge](meshtastic-bridge/README.md), [meshcore-bridge](meshcore-bridge/README.md),
   [matrix-bridge](matrix-bridge/README.md), [mosquitto](mosquitto/README.md),
-  [tileserver](tileserver/README.md), [security](security/README.md).
+  [security](security/README.md).
