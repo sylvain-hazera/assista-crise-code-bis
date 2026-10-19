@@ -18,11 +18,8 @@ export interface AdresseSimulee {
 
 export type StatutSimulationInondation = 'EN_COURS' | 'TERMINEE' | 'ECHEC';
 
-/** Relief + paliers d'eau simulés pour une commune -- calcul TOUJOURS asynchrone côté serveur
- * (Celery), mais TOUJOURS borné (grille plafonnée) quelle que soit la taille de la commune.
- * `statut` seul renseigné tant que 'EN_COURS' ; les autres champs n'arrivent qu'à 'TERMINEE'.
- * Volontairement séparé des adresses (voir SimulationAdresses) : une grande ville peut avoir un
- * chargement d'adresses trop long/refusé sans que ça affecte cette simulation. */
+/** Relief + paliers d'eau d'une commune : calcul asynchrone (Celery) mais toujours borné.
+ * Seul `statut` est renseigné tant que 'EN_COURS'. */
 export interface SimulationInondation {
   statut: StatutSimulationInondation;
   erreur?: string;
@@ -31,10 +28,8 @@ export interface SimulationInondation {
   paliers?: PalierInondation[];
 }
 
-/** Adresses BAN d'une commune et leur seuil d'inondation simulé -- chargement TOUJOURS
- * déclenché explicitement par l'utilisateur (jamais automatique à la sélection d'une commune),
- * peut échouer clairement sur une très grande ville (voir core/inondation.py:SEUIL_VOIES_MAX)
- * sans affecter SimulationInondation. */
+/** Adresses BAN et leur seuil d'inondation : chargement sur demande, peut échouer sur une très
+ * grande ville (SEUIL_VOIES_MAX) sans affecter la simulation. */
 export interface SimulationAdresses {
   statut: StatutSimulationInondation;
   erreur?: string;
@@ -45,28 +40,22 @@ export interface SimulationAdresses {
 export interface PointRuissellement {
   lon: number;
   lat: number;
-  /** Valeur RELATIVE (nombre de cellules amont convergeant ici) -- pas un débit ou une hauteur
-   * d'eau réelle, voir core/ruissellement.py. Une valeur élevée signale un axe d'écoulement
-   * naturel (talweg), pas une prévision d'un épisode précis. */
+  /** Valeur relative (cellules amont convergentes), pas un débit : signale un axe d'écoulement. */
   accumulation: number;
 }
 
-/** Grille d'accumulation de flux (ruissellement/crue éclair) d'une commune -- même grille
- * d'altitude que SimulationInondation, mais algorithme différent (pas de "niveau" à faire
- * varier). Toujours bornée comme SimulationInondation, jamais comme SimulationAdresses. */
+/** Accumulation de flux (ruissellement) sur la même grille d'altitude, toujours bornée. */
 export interface SimulationRuissellement {
   statut: StatutSimulationInondation;
   erreur?: string;
   commune_code?: string;
   points?: PointRuissellement[];
-  /** Espacement réel (mètres) entre deux points de la grille -- nécessaire pour dessiner
-   * chaque case à sa vraie taille géographique (voir simulation-inondation.component.ts). */
+  /** Espacement réel (m) de la grille, pour dessiner chaque case à sa taille. */
   pas_metres?: number;
 }
 
-/** Couleur de vigilance crues officielle (Vigicrues) du tronçon de cours d'eau surveillé le plus
- * proche de la commune -- donnée qualitative (prévisionnistes), DISTINCTE du niveau d'eau mesuré
- * (voir core/hydrometrie.py). */
+/** Vigilance crues (Vigicrues) du tronçon surveillé le plus proche : qualitative, distincte du
+ * niveau mesuré. */
 export interface VigilanceCrue {
   troncon?: string;
   niveau?: number;
@@ -74,9 +63,7 @@ export interface VigilanceCrue {
   couleur?: string;
 }
 
-/** Dernier niveau d'eau RÉELLEMENT mesuré (Hub'Eau, station la plus proche de la commune) --
- * repère informatif à placer sur le curseur de SimulationInondation, MÊME référentiel NGF,
- * jamais une prévision ni une donnée pilotant la simulation (voir core/hydrometrie.py). */
+/** Dernier niveau mesuré (Hub'Eau), même référentiel NGF : repère informatif seulement. */
 export interface NiveauObserve {
   disponible: boolean;
   station?: string;

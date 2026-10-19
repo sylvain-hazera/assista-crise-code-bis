@@ -63,11 +63,8 @@ export class UsersComponent implements OnInit, OnDestroy {
     this.userForm = this.createForm();
   }
 
-  /** Masquage redondant côté client (le backend masque déjà email/phone_number en zone DEMO,
-   * voir UserSerializer.to_representation) : cette page liste les coordonnées réelles de tous
-   * les comptes, la plus sensible de l'app en la matière — ne jamais dépendre d'une seule
-   * couche pour ça (un cache HTTP périmé a suffi une fois à en exposer, voir
-   * NoCacheApiMiddleware). */
+  /** Masquage redondant en zone DEMO (le backend masque déjà, UserSerializer.to_representation) :
+   * page la plus sensible, on ne dépend pas d'une seule couche. */
   get isDemo(): boolean {
     return this.authService.getEnvironment() === 'DEMO';
   }
@@ -76,9 +73,7 @@ export class UsersComponent implements OnInit, OnDestroy {
     return this.isDemo ? '••••••@zone.demo' : user.email;
   }
 
-  /** username vaut souvent l'email en clair pour ces comptes (convention username=email) — la
-   * colonne "utilisateur" (toujours visible, contrairement à "contact" qui peut sortir du
-   * cadre sur mobile) l'affichait donc en clair même en zone démo. Masqué de la même façon. */
+  /** username vaut souvent l'email : masqué de la même façon. */
   displayUsername(user: User): string {
     return this.isDemo ? '••••••' : user.username;
   }
@@ -133,8 +128,7 @@ export class UsersComponent implements OnInit, OnDestroy {
    * Configure l'écouteur de recherche avec debounce
    */
   private setupSearchListener(): void {
-    // À implémenter si vous voulez une recherche en temps réel
-    // Pour l'instant, la recherche se fait côté client
+    // Recherche côté client pour l'instant.
   }
 
   /**
@@ -183,8 +177,7 @@ export class UsersComponent implements OnInit, OnDestroy {
       filtered = filtered.filter(user => user.type === this.selectedRole);
     }
 
-    // Filtre par statut : is_active === false signifie compte désactivé (voir la politique
-    // de désactivation) — is_active absent/true = actif.
+    // is_active === false : compte désactivé.
     if (this.selectedStatus !== 'ALL') {
       const wantActive = this.selectedStatus === 'ACTIVE';
       filtered = filtered.filter(user => (user.is_active !== false) === wantActive);
@@ -243,8 +236,7 @@ export class UsersComponent implements OnInit, OnDestroy {
     this.userForm.get('password')?.updateValueAndValidity();
     this.userForm.get('confirmPassword')?.updateValueAndValidity();
     
-    // user.photo n'est plus renvoyée en clair (write_only, voir photo_url) : on récupère
-    // l'aperçu de la photo existante en blob, comme app-user-avatar.
+    // photo est write_only : aperçu récupéré en blob.
     this.previewUrl = null;
     if (user.photo_url) {
       this.userService.preview(user.id).subscribe({
@@ -316,8 +308,7 @@ export class UsersComponent implements OnInit, OnDestroy {
     if (formValue.last_name) formData.append('last_name', formValue.last_name);
     if (formValue.phone_number) formData.append('phone_number', formValue.phone_number);
     if (formValue.type) formData.append('type', formValue.type);
-    // Toujours envoyé (même vide) : une chaîne vide signifie "retirer l'accès démo" — si on
-    // l'omettait quand elle est vide, un PATCH ne pourrait jamais effacer un accès déjà accordé.
+    // Toujours envoyé : une chaîne vide retire l'accès démo.
     formData.append('demo_role', formValue.demo_role || '');
 
     // Ajouter le mot de passe seulement en création ou si modifié
@@ -368,10 +359,7 @@ export class UsersComponent implements OnInit, OnDestroy {
       });
   }
 
-  /**
-   * Désactive un compte utilisateur après confirmation (voir la politique de désactivation :
-   * un compte n'est jamais réellement supprimé, seulement désactivé — is_active=false).
-   */
+  /** Désactive le compte (is_active=false), jamais de suppression réelle. */
   deleteUser(user: User): void {
     if (!confirm(`Désactiver le compte de ${user.first_name} ${user.last_name} ? Le compte reste dans l'historique, réactivable à tout moment.`)) {
       return;

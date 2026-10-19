@@ -307,8 +307,7 @@
             </div>
           </div>
 
-          <!-- Recherche membres (scopée aux membres de l'institution de l'équipe, de sa
-               déléguée, et des institutions déjà liées — voir loadCandidateMembers) -->
+          <!-- Recherche membres (candidats scopés, voir loadCandidateMembers) -->
           <div class="member-search">
             <span class="material-icons">search</span>
             <input type="text" placeholder="Filtrer les membres proposés…"
@@ -688,9 +687,7 @@
             <p class="no-missions">Aucune crise rattachée — les vues qui s'appuient sur ce champ (ressources mobilisées, recrutement scopé, matching hébergement) ne verront pas cette équipe tant que ce n'est pas fait.</p>
           }
 
-          <!-- Un seul sélecteur de crise pour toute la section (Rattacher ET Définir/Changer
-               la mission juste en dessous) — deux sélecteurs séparés demandaient la même
-               information deux fois, remarque directe de l'utilisateur. -->
+          <!-- Un seul sélecteur de crise pour Rattacher et Définir/Changer la mission -->
           <div class="mission-active-bar">
             <select class="form-select" [(ngModel)]="rattacherCriseId">
               <option [ngValue]="null">Choisir une crise…</option>
@@ -703,9 +700,7 @@
             </button>
           </div>
 
-          <!-- Mission active : regroupée ici avec la crise plutôt que dans "Ressources
-               assignées" — les deux parlaient de la même crise à deux endroits séparés par
-               le canal MeshCore, remarque directe de l'utilisateur ("ce n'est pas intuitif"). -->
+          <!-- Mission active, regroupée avec la crise -->
           <div class="mission-active-bar">
             @if (selectedTeam.mission_active_titre) {
               <span class="mission-active-label">
@@ -767,12 +762,9 @@
           }
         </div>
 
-        <!-- ── MESSAGERIE D'ÉQUIPE (unifiée Matrix + MeshCore + Meshtastic, 2026-10-05) ──
-             Une seule fenêtre : l'envoi part toujours sur Matrix (par défaut, provisionné à
-             la volée si besoin — voir TeamViewSet.messagerie_unifiee) et en plus sur
-             MeshCore/Meshtastic pour les membres équipés, sans action manuelle. Les réponses,
-             quel que soit le canal d'où elles arrivent, apparaissent ici — le régulateur n'a
-             plus à choisir où lire/écrire. -->
+        <!-- ── MESSAGERIE D'ÉQUIPE (Matrix + MeshCore + Meshtastic) ──
+             Envoi sur Matrix et sur MeshCore/Meshtastic pour les membres équipés ; les réponses de
+             tous les canaux arrivent ici (TeamViewSet.messagerie_unifiee). -->
         <div class="detail-section">
           <div class="section-header">
             <h3>

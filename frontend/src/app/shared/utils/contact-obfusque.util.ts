@@ -1,10 +1,6 @@
-/** Coordonnées du sous-traitant/hébergeur (voir /rgpd section 1 et /mentions-legales),
- * protégées d'une lecture directe par un robot moissonnant le HTML brut ou le bundle JS
- * compilé — chiffrées par un simple décalage auto-inverse (lettres : ROT13 ; chiffres :
- * décalage de 5 modulo 10), décodées à l'exécution. Ne protège pas d'un robot qui exécute du
- * JavaScript (aucune protection côté client ne le peut réellement), seulement des collecteurs
- * qui ne font que lire le texte source — demande explicite de l'utilisateur du 2026-09-18.
- * Une seule fonction pour chiffrer ET déchiffrer : le décalage est son propre inverse. */
+/** Coordonnées du sous-traitant/hébergeur (/rgpd, /mentions-legales) masquées aux robots qui
+ * lisent le HTML ou le bundle sans exécuter le JS : ROT13 pour les lettres, décalage de 5
+ * modulo 10 pour les chiffres. Le décalage est son propre inverse (une seule fonction). */
 export function decoderContact(texte: string): string {
   return texte.replace(/[a-zA-Z0-9]/g, (c) => {
     if (c >= '0' && c <= '9') {

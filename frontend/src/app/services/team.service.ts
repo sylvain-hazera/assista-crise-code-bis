@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
-import { Team, MatrixMessage } from '../shared/models/team.model';  // ← import unique
+import { Team, MatrixMessage } from '../shared/models/team.model';
 import { Dossier } from '../shared/models/dossier.model';
 import { PointOperationnel } from '../shared/models/point-operationnel.model';
 import { RessourceMobilisee } from '../shared/models/ressource-mobilisee.model';
@@ -12,8 +12,7 @@ export class TeamService {
   private url = `${environment.apiUrl}/teams`;
   constructor(private http: HttpClient) {}
 
-  /** includeInactive : demande aussi les équipes désactivées (?actif=all, réservé
-   * institutionnel — voir la politique de désactivation). */
+  /** includeInactive : ajoute les équipes désactivées (?actif=all, institutionnels). */
   getAll(includeInactive = false): Observable<Team[]> {
     const params = includeInactive ? new HttpParams().set('actif', 'all') : undefined;
     return this.http.get<Team[]>(`${this.url}/`, { params });
@@ -27,16 +26,13 @@ export class TeamService {
   /** POST /api/teams/<id>/reactiver/ — réactive une équipe désactivée (voir delete). */
   reactiver(id: string):                   Observable<Team>    { return this.http.post<Team>(`${this.url}/${id}/reactiver/`, {}); }
 
-  /** POST /api/teams/<id>/designer-rcsc/ — bascule est_equipe_rcsc (réservé à l'autorité locale
-   * de l'institution de l'équipe) -- voir TeamViewSet.designer_rcsc côté backend. */
+  /** POST /api/teams/<id>/designer-rcsc/ — bascule est_equipe_rcsc (autorité locale de l'institution). */
   designerRcsc(id: string):                Observable<Team>    { return this.http.post<Team>(`${this.url}/${id}/designer-rcsc/`, {}); }
   /** GET /api/teams/vue_mairie/ — équipes de toute la commune (toutes institutions). */
   vueMairie():                              Observable<Team[]>  { return this.http.get<Team[]>(`${this.url}/vue_mairie/`); }
-  /** GET /api/teams/equipes-institution/ — équipes de la SEULE institution de l'appelant
-   * (contrairement à vueMairie, toute la commune, et mesEquipes, celles dont on est membre). */
+  /** GET /api/teams/equipes-institution/ — équipes de la seule institution de l'appelant. */
   equipesInstitution():                     Observable<Team[]>  { return this.http.get<Team[]>(`${this.url}/equipes-institution/`); }
-  /** GET /api/teams/ressources-mobilisees/ — récap personnes/matériel mobilisés, voir
-   * RessourcesMobiliseesComponent. */
+  /** GET /api/teams/ressources-mobilisees/ — récap personnes/matériel mobilisés. */
   ressourcesMobilisees():                   Observable<RessourceMobilisee[]> { return this.http.get<RessourceMobilisee[]>(`${this.url}/ressources-mobilisees/`); }
 
   inviterMembre(id: string, data: {
@@ -83,77 +79,64 @@ export class TeamService {
     return this.http.post<void>(`${this.url}/${id}/delier-point/`, { point_id: pointId });
   }
 
-  /** POST /api/teams/<id>/assigner-crise/ — rattache l'équipe à une crise (additif, jamais un
-   * remplacement de Team.assigned_crises). Nécessaire en plus de lierPoint : lier un point
-   * n'ajoute pas automatiquement la crise à assigned_crises, or plusieurs vues s'appuient sur
-   * ce champ précisément (recrutement scopé, ressources mobilisées, matching hébergement). */
+  /** POST /api/teams/<id>/assigner-crise/ — ajoute une crise à Team.assigned_crises. Nécessaire
+   * en plus de lierPoint (voir DOCUMENTATION.md, § 6.2). */
   assignerCrise(id: string, criseId: string): Observable<Team> {
     return this.http.post<Team>(`${this.url}/${id}/assigner-crise/`, { crise_id: criseId });
   }
 
-  /** POST /api/teams/<id>/provisionner-canal-meshcore/ — crée (ou récupère) le canal MeshCore
-   * privé de l'équipe et envoie ses infos (nom + clé) en DM à chaque membre équipé d'un nœud.
-   * `regenerer: true` change la clé et ne la renvoie qu'aux membres ACTUELS — le mécanisme de
-   * révocation (retirer un membre problématique de l'équipe, puis régénérer). */
+  /** POST /api/teams/<id>/provisionner-canal-meshcore/ — crée ou récupère le canal privé et envoie
+   * nom + clé en DM aux membres équipés. `regenerer: true` change la clé et ne l'envoie qu'aux
+   * membres actuels (révocation). */
   provisionnerCanalMeshCore(id: string, regenerer = false): Observable<{ canal_id: string; nom: string; destinataires: number; compagnon_disponible: boolean }> {
     return this.http.post<{ canal_id: string; nom: string; destinataires: number; compagnon_disponible: boolean }>(
       `${this.url}/${id}/provisionner-canal-meshcore/`, { regenerer },
     );
   }
 
-  /** POST /api/teams/<id>/provisionner-canal-meshtastic/ — équivalent Meshtastic de
-   * provisionnerCanalMeshCore. Le DM envoyé à chaque membre est automatiquement chiffré par
-   * clé publique (PKI) dès qu'elle est connue pour lui, sinon repli sur le canal principal. */
+  /** POST /api/teams/<id>/provisionner-canal-meshtastic/ — idem en Meshtastic ; DM chiffré par
+   * clé publique (PKI) quand elle est connue. */
   provisionnerCanalMeshtastic(id: string, regenerer = false): Observable<{ canal_id: string; nom: string; destinataires: number; compagnon_disponible: boolean }> {
     return this.http.post<{ canal_id: string; nom: string; destinataires: number; compagnon_disponible: boolean }>(
       `${this.url}/${id}/provisionner-canal-meshtastic/`, { regenerer },
     );
   }
 
-  /** POST /api/teams/<id>/provisionner-salon-matrix/ — active le salon Matrix privé de
-   * l'équipe (voir TeamViewSet.provisionner_salon_matrix). room_id reste vide dans la réponse
-   * tant que le pont matrix-bridge ne l'a pas créé côté Synapse (poll périodique). */
+  /** POST /api/teams/<id>/provisionner-salon-matrix/ — room_id reste vide tant que matrix-bridge
+   * n'a pas créé le salon. */
   provisionnerSalonMatrix(id: string): Observable<{ id: string; room_id: string | null }> {
     return this.http.post<{ id: string; room_id: string | null }>(
       `${this.url}/${id}/provisionner-salon-matrix/`, {},
     );
   }
 
-  /** GET /api/teams/<id>/salon-matrix-messages/ — messages du salon Matrix de l'équipe (voir
-   * TeamViewSet.salon_matrix_messages), relayés côté serveur via le jeton du bot. */
+  /** GET /api/teams/<id>/salon-matrix-messages/ — relayés par le serveur avec le jeton du bot. */
   getSalonMatrixMessages(id: string): Observable<{ messages: MatrixMessage[] }> {
     return this.http.get<{ messages: MatrixMessage[] }>(`${this.url}/${id}/salon-matrix-messages/`);
   }
 
-  /** POST /api/teams/<id>/salon-matrix-messages/ — poste un message dans le salon Matrix de
-   * l'équipe (attribué à l'utilisateur courant, voir envoyer_message_salon). `urgent` : ouvert
-   * à tout le monde, y compris un intervenant isolé (décision utilisateur du 26/09). */
+  /** POST /api/teams/<id>/salon-matrix-messages/ — `urgent` est ouvert à tous les membres. */
   envoyerMessageSalonMatrix(id: string, texte: string, urgent = false): Observable<{ messages: MatrixMessage[] }> {
     return this.http.post<{ messages: MatrixMessage[] }>(`${this.url}/${id}/salon-matrix-messages/`, { texte, urgent });
   }
 
-  /** POST /api/teams/<id>/salon-matrix-reagir/ — accusé "Vu" sur un message (réaction Matrix,
-   * réservé aux cadres régulateur/chef d'équipe/institutionnel, voir salon_matrix_reagir). */
+  /** POST /api/teams/<id>/salon-matrix-reagir/ — accusé « Vu » (cadres seulement). */
   reagirSalonMatrix(id: string, eventId: string): Observable<{ status: string }> {
     return this.http.post<{ status: string }>(`${this.url}/${id}/salon-matrix-reagir/`, { event_id: eventId });
   }
 
-  /** GET /api/teams/<id>/messagerie-unifiee/ — fenêtre de messagerie UNIQUE de l'équipe,
-   * fusionnant Matrix/MeshCore/Meshtastic (voir TeamViewSet.messagerie_unifiee). Remplace
-   * getSalonMatrixMessages pour la vue équipe (2026-10-05) -- le salon Matrix lui-même reste
-   * provisionné à la volée côté serveur, plus besoin de bouton manuel préalable. */
+  /** GET /api/teams/<id>/messagerie-unifiee/ — Matrix + MeshCore + Meshtastic fusionnés ; le
+   * salon Matrix est provisionné à la volée. */
   getMessagerieUnifiee(id: string): Observable<{ messages: MatrixMessage[] }> {
     return this.http.get<{ messages: MatrixMessage[] }>(`${this.url}/${id}/messagerie-unifiee/`);
   }
 
-  /** POST /api/teams/<id>/messagerie-unifiee/ — envoie un message sur Matrix ET sur
-   * MeshCore/Meshtastic pour les membres équipés (automatique, sans action manuelle). */
+  /** POST /api/teams/<id>/messagerie-unifiee/ — envoie sur Matrix et sur MeshCore/Meshtastic. */
   envoyerMessageUnifie(id: string, texte: string, urgent = false): Observable<{ messages: MatrixMessage[] }> {
     return this.http.post<{ messages: MatrixMessage[] }>(`${this.url}/${id}/messagerie-unifiee/`, { texte, urgent });
   }
 
-  /** POST /api/teams/<id>/demarrer-engagement/ — pose engagement_debut=maintenant si pas déjà
-   * engagée (idempotent). Réservé aux cadres, voir Team.engagement_debut. */
+  /** POST /api/teams/<id>/demarrer-engagement/ — engagement_debut=maintenant (idempotent, cadres). */
   demarrerEngagement(id: string): Observable<Team> {
     return this.http.post<Team>(`${this.url}/${id}/demarrer-engagement/`, {});
   }
@@ -171,11 +154,8 @@ export class TeamService {
     return this.http.post<Team>(`${this.url}/${parentId}/detacher-equipe/`, { equipe_id: equipeId });
   }
 
-  /** GET /api/teams/<id>/institutions-liees/ — institution délégataire + institutions
-   * co-impliquées sur une même crise, utilisées pour élargir la recherche de membre à recruter
-   * au-delà de la seule institution de l'équipe (voir teams.component.ts, loadCandidateMembers).
-   * `type: 'acteur'` restreint aux institutions ACTEUR (sélecteur "institution délégataire",
-   * voir institutionsDelegablesPourEquipe). */
+  /** GET /api/teams/<id>/institutions-liees/ — délégataire + institutions co-impliquées sur une
+   * crise (élargit les candidats). `type: 'acteur'` : institutions ACTEUR seulement. */
   institutionsLiees(id: string, type?: 'acteur'): Observable<{ id: string; nom: string }[]> {
     const params = type ? { type } : undefined;
     return this.http.get<{ id: string; nom: string }[]>(`${this.url}/${id}/institutions-liees/`, { params });

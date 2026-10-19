@@ -155,22 +155,15 @@ export const PUBLIC_ROUTES: Routes = [
           .then(m => m.CreditsComponent)
       },
       {
-        // Réservé aux comptes institutionnels (voir /rgpd, section 1 et 2 — la fonctionnalité
-        // traite des données d'une personne qui n'a pas pu y consentir elle-même) — corrigé le
-        // 2026-09-18, n'exigeait auparavant qu'un compte authentifié quelconque (authGuard),
-        // incohérent avec ce que la page RGPD affirmait déjà.
+        // Institutionnels seulement : données d'une personne qui n'a pas pu consentir (voir /rgpd).
         path: 'recherches-personnes',
         canActivate: [institutionalEffectiveGuard],
         component: RecherchesPersonnesComponent
       },
       {
-        // Dépôt ouvert à tout compte authentifié (demande utilisateur du 08/10) : un citoyen
-        // dont un proche a disparu pendant une crise n'a aucune raison d'être rattaché à une
-        // institution pour signaler sa disparition -- même logique que Request/Offer/
-        // Information. Backend aligné (RecherchePersonneViewSet.get_permissions, action
-        // 'create' -> IsAuthenticated). Seules la consultation du registre et sa gestion
-        // (ci-dessus/ci-dessous) restent réservées aux institutionnels -- c'est là qu'est la
-        // donnée sensible sur un tiers qui avait motivé le correctif RGPD du 18/09.
+        // Dépôt ouvert à tout compte authentifié (un proche disparu), comme Request/Offer/Information ;
+        // consultation et gestion du registre restent institutionnelles
+        // (RecherchePersonneViewSet.get_permissions).
         path: 'recherches-personnes/new',
         canActivate: [authGuard],
         component: RecherchePersonneCreateComponent

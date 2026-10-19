@@ -17,46 +17,14 @@ const ADRESSES_SOURCE_ID = 'inondation-adresses';
 const RUISSELLEMENT_SOURCE_ID = 'inondation-ruissellement';
 const CLE_DERNIERE_COMMUNE = 'simulation-inondation-derniere-commune';
 const INTERVALLE_POLLING_MS = 6_000;
-const METRES_PAR_DEGRE_LAT = 111_320; // même valeur que core/inondation.py, pour la cohérence
+const METRES_PAR_DEGRE_LAT = 111_320; // même valeur que core/inondation.py
 
 type ColonneTri = 'adresse' | 'altitude' | 'profondeur';
 
-/**
- * Simulation grossière d'inondation par commune (voir core/inondation.py) : la mairie choisit
- * une commune, déplace un curseur de niveau d'eau, voit la zone potentiellement inondée sur la
- * carte. Outil de planification préventive -- jamais une prévision hydraulique précise, voir le
- * disclaimer affiché en tête de page.
- *
- * Simulation du niveau d'eau et chargement des adresses BAN volontairement SÉPARÉS (demande
- * explicite du 2026-09-30, suite à l'échec du chargement complet sur Bordeaux) : la première
- * est toujours bornée (grille plafonnée) et se lance automatiquement à la sélection d'une
- * commune ; le second est déclenché explicitement par l'utilisateur ("Charger les adresses"),
- * peut prendre bien plus longtemps ou échouer clairement sur une très grande ville, sans jamais
- * affecter la simulation du niveau d'eau elle-même.
- *
- * Calcul TOUJOURS asynchrone côté serveur (Celery) : une grande commune peut prendre plusieurs
- * minutes. `choisirCommune`/`chargerAdresses` interrogent périodiquement (pollWhileVisible,
- * même patron que le chat Matrix) jusqu'à `statut !== 'EN_COURS'` -- l'état vivant en base côté
- * serveur (TacheSimulationInondation), revenir sur cette page (même après navigation ailleurs)
- * et resélectionner la même commune reprend exactement où c'était. La dernière commune choisie
- * est mémorisée en localStorage (uniquement pour resélectionner sans retaper) et resélectionnée
- * automatiquement à l'ouverture de la page -- SANS relancer le chargement des adresses, qui
- * reste toujours un geste explicite.
- *
- * Carte autonome sur le modèle de MinimapComponent (pas MapComponent, trop généraliste) : le
- * polygone de zone inondée est ré-affiché en entier à chaque changement de niveau (setData,
- * léger -- déjà tout chargé côté client), la couleur des points d'adresse est pilotée par une
- * expression MapLibre data-driven sur `seuil_inondation` (embarqué dans chaque feature), mise à
- * jour via setPaintProperty -- AUCUN appel réseau par mouvement de curseur.
- *
- * Deux MODES superposés sur cette même page (demande explicite du 2026-09-30, au regard de
- * l'épisode de vigilance rouge Gard/Hérault de ce jour-là) : "Crue de rivière" (ci-dessus,
- * inchangé) et "Ruissellement" (crue éclair, accumulation de flux sur la même grille
- * d'altitude, voir core/ruissellement.py -- pas de curseur, pas de "niveau" à faire varier). Un
- * seul des deux jeux de couches est visible à la fois (setLayoutProperty 'visibility', jamais
- * détruit/recréé) ; la couche adresses (crue de rivière), elle, reste affichée dans les deux
- * modes si déjà chargée -- simple superposition visuelle, aucun calcul croisé entre les deux.
- */
+/** Simulation grossière d'inondation par commune (outil de planification, pas une prévision).
+ * Calcul asynchrone (Celery), interrogé par polling ; adresses BAN chargées séparément, sur
+ * demande ; deux modes superposables (crue de rivière, ruissellement).
+ * Voir DOCUMENTATION.md, § 6.5. */
 @Component({
   selector: 'app-simulation-inondation',
   standalone: true,
@@ -79,10 +47,8 @@ export class SimulationInondationComponent implements AfterViewInit, OnDestroy {
   adressesEnCours = false;
   adressesErreur = '';
 
-  /** Dernier niveau RÉELLEMENT observé (Hub'Eau, station la plus proche) -- simple repère
-   * informatif affiché à côté du curseur, sur le MÊME référentiel NGF ; jamais chargé
-   * automatiquement en boucle (un seul appel, pas de polling -- ce n'est pas un calcul, juste
-   * une lecture temps réel déjà mise en cache 5 min côté serveur, voir core/hydrometrie.py). */
+  /** Dernier niveau observé (Hub'Eau, station la plus proche), même référentiel NGF : repère
+   * informatif, un seul appel (cache serveur 5 min, core/hydrometrie.py). */
   niveauObserve: NiveauObserve | null = null;
 
   coucheRiviereActive = true;
@@ -126,11 +92,8 @@ export class SimulationInondationComponent implements AfterViewInit, OnDestroy {
     this.map?.remove();
   }
 
-  /** Reprend la dernière commune choisie (localStorage, best-effort) -- permet de revenir sur
-   * cette page après être parti ailleurs sans avoir à retaper le nom : le statut réel (toujours
-   * en cache, en cours ou terminé) est relu depuis le serveur, jamais supposé côté client. Ne
-   * relance QUE la simulation du niveau d'eau, jamais le chargement des adresses (voir
-   * docstring de la classe). */
+  /** Resélectionne la dernière commune (localStorage) ; le statut est relu sur le serveur.
+   * Ne relance jamais le chargement des adresses. */
   private restaurerDerniereCommune(): void {
     try {
       const brut = localStorage.getItem(CLE_DERNIERE_COMMUNE);
@@ -138,7 +101,7 @@ export class SimulationInondationComponent implements AfterViewInit, OnDestroy {
       const commune = JSON.parse(brut) as Commune;
       if (commune?.code) this.choisirCommune(commune);
     } catch {
-      // Stockage indisponible/corrompu : pas grave, l'utilisateur rechoisit sa commune.
+      // Stockage indisponible : l'utilisateur rechoisit sa commune.
     }
   }
 
@@ -187,8 +150,7 @@ export class SimulationInondationComponent implements AfterViewInit, OnDestroy {
       });
   }
 
-  /** Déclenché explicitement par un bouton (jamais automatique) -- voir docstring de la classe
-   * pour pourquoi c'est séparé de la simulation du niveau d'eau. */
+  /** Déclenché uniquement par le bouton « Charger les adresses ». */
   chargerAdresses(): void {
     const commune = this.communeSelectionnee;
     if (!commune || this.adressesEnCours) return;
@@ -219,11 +181,7 @@ export class SimulationInondationComponent implements AfterViewInit, OnDestroy {
       });
   }
 
-  /** Les deux couches sont indépendantes (demande explicite du 2026-09-30 : "superposer les
-   * deux"), pas un choix exclusif -- chacune a son propre interrupteur, les deux peuvent être
-   * actives en même temps. Déclenche automatiquement le calcul de ruissellement à la première
-   * activation pour la commune courante (toujours borné, contrairement aux adresses : pas
-   * besoin d'un geste explicite séparé comme "Charger les adresses"). */
+  /** Couches indépendantes, activables ensemble ; le ruissellement se calcule à la première activation. */
   basculerCoucheRiviere(): void {
     this.coucheRiviereActive = !this.coucheRiviereActive;
     this.majVisibiliteCouches();
@@ -267,8 +225,7 @@ export class SimulationInondationComponent implements AfterViewInit, OnDestroy {
       });
   }
 
-  /** Pas du curseur -- la grille de niveaux est régulière par construction (voir
-   * core/inondation.py:NIVEAUX_PAR_DEFAUT), le pas se déduit des deux premières valeurs. */
+  /** Pas du curseur, déduit des deux premiers niveaux (grille régulière, NIVEAUX_PAR_DEFAUT). */
   get pasNiveau(): number {
     const niveaux = this.simulation?.niveaux ?? [0, 1];
     return niveaux.length > 1 ? Math.round((niveaux[1] - niveaux[0]) * 100) / 100 : 1;
@@ -284,9 +241,8 @@ export class SimulationInondationComponent implements AfterViewInit, OnDestroy {
     this.majCouleurAdresses();
   }
 
-  /** Profondeur d'eau simulée à l'adresse pour le niveau actuel du curseur -- null si non
-   * atteinte à ce niveau (jamais atteinte dans la plage testée, OU niveau courant encore sous
-   * son seuil). Distinct de `adresse.seuil_inondation` (le seuil fixe, indépendant du curseur). */
+  /** Profondeur d'eau à l'adresse pour le niveau du curseur ; null si non atteinte.
+   * Distinct de `adresse.seuil_inondation` (seuil fixe). */
   profondeurActuelle(adresse: AdresseSimulee): number | null {
     if (adresse.seuil_inondation === null || this.niveauCourant < adresse.seuil_inondation) return null;
     if (adresse.altitude === null) return null;
@@ -342,10 +298,7 @@ export class SimulationInondationComponent implements AfterViewInit, OnDestroy {
     if (this.mapPret) cb(); else this.map.once('load', cb);
   }
 
-  /** Appelée dès que la simulation du niveau d'eau est prête -- affiche le polygone de zone
-   * inondée. La couche d'adresses (vide pour l'instant) est créée en même temps pour que le
-   * réordonnancement des couches (zone sous les adresses) reste correct même si les adresses
-   * arrivent plus tard (voir rafraichirCoucheAdresses). */
+  /** Affiche la zone inondée et crée la couche d'adresses (vide) pour garder l'ordre des couches. */
   private afficherSurCarte(): void {
     this.runWhenMapReady(() => {
       this.creerCoucheAdresses();
@@ -354,8 +307,7 @@ export class SimulationInondationComponent implements AfterViewInit, OnDestroy {
     });
   }
 
-  /** Appelée séparément une fois les adresses chargées (geste explicite de l'utilisateur, voir
-   * chargerAdresses) -- peuple la couche déjà créée par afficherSurCarte. */
+  /** Remplit la couche d'adresses une fois chargées. */
   private rafraichirCoucheAdresses(): void {
     this.runWhenMapReady(() => {
       this.majCouleurAdresses();
@@ -392,10 +344,7 @@ export class SimulationInondationComponent implements AfterViewInit, OnDestroy {
     this.map.on('mouseleave', `${ADRESSES_SOURCE_ID}-layer`, () => { this.map!.getCanvas().style.cursor = ''; });
   }
 
-  /** `profondeur_actuelle` est recalculée et réécrite dans les features à chaque changement de
-   * niveau (voir majCouleurAdresses) -- ce n'est PAS une nouvelle requête réseau, juste
-   * source.setData() sur des données déjà en mémoire côté client. Vide tant que les adresses
-   * n'ont pas été chargées (voir chargerAdresses). */
+  /** `profondeur_actuelle` est réécrite à chaque changement de niveau (setData local, sans réseau). */
   private adressesEnGeoJSON(): FeatureCollection<Point> {
     const adresses = this.adresses?.adresses ?? [];
     return {
@@ -413,9 +362,8 @@ export class SimulationInondationComponent implements AfterViewInit, OnDestroy {
     };
   }
 
-  /** Couleur pilotée par une expression MapLibre data-driven sur `seuil_inondation` (fixe,
-   * comparé au niveau courant côté expression) -- gris = jamais touchée dans la plage testée,
-   * rouge = touchée au niveau courant, bleu = pas encore atteinte à ce niveau. */
+  /** Couleur data-driven sur `seuil_inondation` : gris = jamais touchée, rouge = touchée au niveau
+   * courant, bleu = pas encore atteinte. */
   private majCouleurAdresses(): void {
     if (!this.map) return;
     const source = this.map.getSource(ADRESSES_SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
@@ -456,8 +404,7 @@ export class SimulationInondationComponent implements AfterViewInit, OnDestroy {
     }, `${ADRESSES_SOURCE_ID}-layer`);
   }
 
-  /** Cadrage initial sur la zone inondée (adresses pas encore chargées) -- recadré sur les
-   * adresses une fois chargées, voir cadrerSurAdresses. */
+  /** Cadrage initial sur la zone inondée, puis sur les adresses (cadrerSurAdresses). */
   private cadrerSurZone(): void {
     if (!this.map) return;
     const palier = (this.simulation?.paliers ?? []).find(p => p.niveau === this.niveauCourant);
@@ -481,9 +428,7 @@ export class SimulationInondationComponent implements AfterViewInit, OnDestroy {
     this.map.fitBounds(bounds, { padding: 40, maxZoom: 15, animate: false });
   }
 
-  /** Affiche/masque chaque couche selon son propre interrupteur (voir docstring de la classe :
-   * les deux sont indépendantes, jamais détruites/recréées) -- juste leur visibilité. La couche
-   * adresses n'est PAS concernée : elle reste affichée indépendamment des deux si déjà chargée. */
+  /** Visibilité de chaque couche selon son interrupteur ; la couche adresses n'est pas concernée. */
   private majVisibiliteCouches(): void {
     if (!this.map) return;
     const visibiliteRiviere = this.coucheRiviereActive ? 'visible' : 'none';
@@ -503,10 +448,8 @@ export class SimulationInondationComponent implements AfterViewInit, OnDestroy {
     });
   }
 
-  /** Petit carré à la taille géographique RÉELLE d'une case de grille (même logique que
-   * core/ruissellement.py:_polygone_cellule, côté serveur, pour les cases de la zone inondée)
-   * -- en degrés, pas en pixels : la taille suit le zoom naturellement, aucun réglage
-   * zoom-dépendant à maintenir. */
+  /** Carré à la taille réelle d'une case de grille, en degrés (suit le zoom), comme
+   * core/ruissellement.py:_polygone_cellule. */
   private carreGrille(lon: number, lat: number, pasMetres: number): Polygon {
     const demiLat = (pasMetres / 2) / METRES_PAR_DEGRE_LAT;
     const demiLon = (pasMetres / 2) / (METRES_PAR_DEGRE_LAT * Math.max(Math.cos(lat * Math.PI / 180), 0.1));
@@ -520,13 +463,9 @@ export class SimulationInondationComponent implements AfterViewInit, OnDestroy {
     };
   }
 
-  /** Grille de carrés pleins (pas un heatmap -- essayé, mauvaise méthode pour une grille
-   * RÉGULIÈRE : le flou d'un heatmap est pensé pour des points épars, et son rayon reste
-   * fondamentalement en pixels même zoom-dépendant, ce qui réagissait mal en zoomant, voir
-   * historique). Chaque case affiche sa vraie valeur, sans flou ni mélange -- couleur en
-   * paliers sur `accumulation`, transparente en dessous du premier seuil pour que le fond de
-   * carte et l'éventuelle couche rivière restent lisibles. Seuils choisis sur des grilles
-   * réelles (Portets, Bordeaux) -- pas une calibration scientifique. */
+  /** Grille de carrés pleins (un heatmap, en pixels et flouté, rend mal une grille régulière).
+   * Couleur par paliers sur `accumulation`, transparente sous le premier seuil. Seuils empiriques
+   * (Portets, Bordeaux). */
   private creerOuMajCoucheRuissellement(): void {
     if (!this.map || !this.ruissellement) return;
     const points = this.ruissellement.points ?? [];
@@ -547,10 +486,7 @@ export class SimulationInondationComponent implements AfterViewInit, OnDestroy {
     }
 
     this.map.addSource(RUISSELLEMENT_SOURCE_ID, { type: 'geojson', data: data as any });
-    // `before` seulement si la couche adresses existe déjà (pas garanti -- l'utilisateur peut
-    // activer le ruissellement avant même que la simulation de niveau d'eau ait fini, voir
-    // basculerCoucheRuissellement) : MapLibre lève une erreur si on référence une couche
-    // inexistante.
+    // `before` seulement si la couche adresses existe : MapLibre refuse une couche inexistante.
     const avant = this.map.getLayer(`${ADRESSES_SOURCE_ID}-layer`) ? `${ADRESSES_SOURCE_ID}-layer` : undefined;
     this.map.addLayer({
       id: `${RUISSELLEMENT_SOURCE_ID}-layer`, type: 'fill', source: RUISSELLEMENT_SOURCE_ID,

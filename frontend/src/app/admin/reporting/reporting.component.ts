@@ -60,7 +60,7 @@ export interface ReportRow {
   isSecoursAccount: boolean;
   competencesLibelles: string[];
   description: string | null;
-  // Offres uniquement — voir propose-help-form pour ce que ces champs signifient.
+  // Offres uniquement (voir propose-help-form).
   materielLivraison?: string | null;
   diplomeSecourisme?: boolean;
   ancienSapeurPompier?: boolean;
@@ -68,8 +68,7 @@ export interface ReportRow {
   presencePhysique?: boolean | null;
   organisationNom?: string | null;   // dépôt groupé : nom de l'entreprise/association déposante
   groupeId?: string | null;
-  // Offer/Request/Information uniquement (voir la politique de désactivation) — toujours true
-  // pour Crisis, qui n'a pas ce champ et se supprime réellement.
+  // Offer/Request/Information ; toujours true pour Crisis (supprimée réellement).
   actif:        boolean;
   // raw originals for detail modal
   _raw:         Crisis | Offer | Request | Information;
@@ -82,12 +81,8 @@ type FilterStatus = Status     | 'ALL';
 type SortField    = 'title' | 'kind' | 'status' | 'date' | 'contact' | 'commune' | 'distanceFromCrisisKm';
 type EchelleFilter = 'zone' | 'rayon' | 'departement' | 'region' | 'national';
 
-// Correspondance SortField (UI) -> `ordering` serveur (OrderingFilter, voir core/views.py) —
-// 'contact' est volontairement absent : champ chiffré (first_name_offer/last_name_offer/...),
-// non triable en SQL (voir core/crypto_fields.py), trié côté client sur la page affichée
-// uniquement (voir setSort). Crisis n'a pas de colonne 'status' ni 'commune_code'/
-// 'distance_from_crisis' : un ordering non supporté par le FilterSet ciblé est simplement
-// ignoré par DRF (pas d'erreur), donc cette table unique convient pour les 4 types.
+// SortField (UI) -> `ordering` serveur. 'contact' est absent : champ chiffré, trié côté client
+// sur la page affichée. Un ordering non supporté est ignoré par DRF, d'où une table unique.
 const ORDERING_FIELD_MAP: Partial<Record<SortField, string>> = {
   title: 'title',
   status: 'status',
@@ -108,15 +103,12 @@ export class ReportingComponent implements OnInit, OnDestroy {
 
   private destroy$ = new Subject<void>();
 
-  // ── Support data (chargées une fois, pas re-paginées — volumes réduits) ────
+  // ── Support data (chargées une fois, non paginées) ────
   teams:           Team[]        = [];
   dossiers:        Dossier[]     = [];
   missions:        Mission[]     = [];
   regulateurs:     User[]        = [];
-  /** Annuaire permanent de bénévoles (mode pickForTeamId uniquement) — chargé une fois à
-   * l'entrée dans ce mode, pas reparcouru à chaque changement de filtre/page (c'est un
-   * annuaire de secours pour rattacher un bénévole existant à une équipe, pas le flux de
-   * triage principal que cette page optimise). Voir OfferService.vueSecteur. */
+  /** Annuaire permanent de bénévoles (mode pickForTeamId), chargé une fois. Voir OfferService.vueSecteur. */
   benevoleRows:    ReportRow[]   = [];
 
   // ── Détail offre : disponibilités + affectation ─────────────
@@ -124,11 +116,9 @@ export class ReportingComponent implements OnInit, OnDestroy {
   assignTeamId:    string | null = null;
   assignDossierId: string | null = null;
 
-  // ── Lignes affichées : la page courante du type actif (ou un aperçu borné
-  // multi-types pour l'onglet "Tout", voir loadOverview) — jamais la table entière. ──
+  // ── Lignes affichées : page courante du type actif, ou aperçu borné pour « Tout » ──
   pagedRows:    ReportRow[] = [];
-  /** Nombre total de résultats correspondant aux filtres actifs pour le type actif (depuis
-   * `count` de la réponse paginée) — absent de sens pour l'onglet "Tout" (voir isOverview). */
+  /** Total pour le type actif (`count` paginé) ; sans objet pour « Tout ». */
   totalCount = 0;
 
   // ── UI state ───────────────────────────────────────────────
@@ -141,24 +131,17 @@ export class ReportingComponent implements OnInit, OnDestroy {
   searchQuery   = '';
   filterKind:   FilterKind   = 'ALL';
   filterStatus: FilterStatus = 'ALL';
-  // Substring sur le nom de commune affiché (dérivé serveur, pas une colonne DB unifiée sur
-  // les 4 types) — reste un filtre CLIENT, mais désormais recadré à la seule page affichée
-  // (plus de filtre global possible une fois la pagination serveur en place). Voir le hint
-  // affiché sous ce champ dans le template.
+  // Filtre client sur la page affichée (le nom de commune n'est pas une colonne commune aux 4 types).
   filterCommune   = '';
   filterCompetence = 'ALL';
   filterMaterielLivraison: 'ALL' | 'A_RECUPERER' | 'LIVRAISON_POSSIBLE' = 'ALL';
   sortField:    SortField    = 'date';
   sortAsc                    = false;
-  // Offres/demandes/signalements désactivés (voir la politique de désactivation) sont masqués
-  // par défaut par le backend — ce bouton demande explicitement ?actif=all pour les retrouver
-  // et pouvoir les réactiver.
+  // Les éléments désactivés sont masqués par le backend ; ?actif=all les fait réapparaître.
   showDesactives = false;
 
   // ── Échelle géographique (par défaut : ma zone) ─────────────
-  // 'zone' = niveau naturel de l'institution (backend: ?scope=zone, sans ?echelle) ; 'rayon' =
-  // ?scope=zone&rayon_km=, n'affecte que les offres/bénévoles côté backend (_apply_rayon_km,
-  // OfferViewSet uniquement) ; les autres valeurs élargissent via ?echelle= (toutes listes).
+  // 'zone' = ?scope=zone ; 'rayon' = ?scope=zone&rayon_km= (offres seulement) ; autres = ?echelle=.
   echelleOptions: { value: EchelleFilter; label: string }[] = [
     { value: 'zone',        label: 'Ma zone' },
     { value: 'rayon',       label: 'Rayon (km)' },
@@ -185,10 +168,9 @@ export class ReportingComponent implements OnInit, OnDestroy {
   isLoadingAddress = false;
   newStatus:   Status | ''      = '';
 
-  // ── Sélection multiple + actions groupées (persiste à travers les pages — voir
-  // RecrutementBenevolesModalComponent, même patron : un Set d'ids + une Map parallèle qui
-  // garde la ligne complète, pour pouvoir construire la barre d'action/le récap sans dépendre
-  // de la page actuellement chargée) ─────────────────────────
+  // ── Sélection multiple + actions groupées ─────────────────────
+  // Persiste entre les pages : Set d'ids + Map des lignes complètes (même patron que
+  // RecrutementBenevolesModalComponent).
   selectedOfferIds   = new Set<string>();
   selectedRequestIds = new Set<string>();
   selectedInformationIds = new Set<string>();
@@ -215,7 +197,7 @@ export class ReportingComponent implements OnInit, OnDestroy {
   bulkTeamQuery          = '';
   showBulkTeamResults    = false;
 
-  // ── Photos (blob-fetch access-contrôlé, plus d'URL brute côté API) ──────────
+  // ── Photos (récupérées en blob via l'action access-contrôlée) ──────────
   photoUrls: Record<string, string> = {};
 
   // ── Exposed enums ──────────────────────────────────────────
@@ -229,8 +211,7 @@ export class ReportingComponent implements OnInit, OnDestroy {
     { label: 'Informations', value: 'Information',  icon: 'info'                },
   ];
 
-  /** Compteurs par onglet (badge) — alimentés par `count` de chaque réponse paginée, jamais
-   * recalculés depuis un tableau en mémoire (il n'y en a plus un qui contienne tout). */
+  /** Compteurs par onglet, issus du `count` de chaque réponse paginée. */
   countByKind: Record<string, number> = { ALL: 0, Crisis: 0, Offer: 0, Request: 0, Information: 0 };
 
   readonly statusOptions: { label: string; value: FilterStatus }[] = [
@@ -267,27 +248,19 @@ export class ReportingComponent implements OnInit, OnDestroy {
     private pointOperationnelService: PointOperationnelService,
   ) {}
 
-  /** Présent quand on arrive depuis "Ouvrir le tableau des offres" du détail d'une équipe
-   * (voir TeamsComponent) : remplace la barre d'action groupée habituelle par un bouton
-   * "Ajouter à l'équipe" par offre. */
+  /** Arrivée depuis le détail d'une équipe : bouton « Ajouter à l'équipe » par offre. */
   pickForTeamId: string | null = null;
-  /** Idem, depuis "Ouvrir le tableau des offres" du détail d'un point (centre) — voir
-   * PointModalComponent : remplace la barre par un bouton "Ajouter au stock" par offre de
-   * matériel. Mutuellement exclusif avec pickForTeamId (un seul mode sélection à la fois). */
+  /** Arrivée depuis le détail d'un point : bouton « Ajouter au stock » par offre de matériel.
+   * Exclusif avec pickForTeamId. */
   pickForPointId: string | null = null;
   points: PointOperationnel[] = [];
 
-  /** Vrai dès qu'on arrive en mode picker (équipe ou point) — dans ce mode, la sélection
-   * groupée habituelle (case à cocher + barre "Créer une équipe...") n'a pas de sens : on est
-   * déjà dans une équipe/un point précis, pas en train d'en créer un nouveau à partir d'une
-   * sélection. Voir col-actions, qui garde lui Voir/Télécharger/Supprimer visibles en plus du
-   * bouton d'ajout, contrairement à cette sélection groupée qui disparaît entièrement. */
+  /** Mode picker (équipe ou point) : la sélection groupée est masquée, les actions de ligne restent. */
   get pickerModeActive(): boolean {
     return !!(this.pickForTeamId || this.pickForPointId);
   }
 
-  /** Onglet "Tout" : aperçu borné (1ère page de chaque type, pas de pagination/tri) plutôt
-   * qu'une fusion paginée de 4 flux hétérogènes — voir le hint affiché dans le template. */
+  /** Onglet « Tout » : 1re page de chaque type, sans pagination ni tri. */
   get isOverview(): boolean {
     return this.filterKind === 'ALL';
   }
@@ -296,9 +269,7 @@ export class ReportingComponent implements OnInit, OnDestroy {
     this.pickForTeamId = this.route.snapshot.queryParamMap.get('pickForTeam');
     this.pickForPointId = this.route.snapshot.queryParamMap.get('pickForPoint');
 
-    // Données de support (équipes, dossiers, missions, régulateurs) : chargées une fois, pas
-    // re-paginées ni refetchées à chaque changement de filtre/page de la table principale —
-    // volumes sans commune mesure avec Offer/Request/Information à l'échelle cible.
+    // Données de support chargées une fois, non rechargées à chaque filtre ou page.
     forkJoin({
       teams:    this.teamService.getAll(),
       dossiers: this.dossierService.getAll(),
@@ -344,9 +315,8 @@ export class ReportingComponent implements OnInit, OnDestroy {
     return this.points.find(p => p.id === this.pickForPointId);
   }
 
-  /** Ajoute l'offre comme ressource de l'équipe visée, rattachée à sa mission active (voir
-   * TeamViewSet.assigner_ressource). Reste sur le tableau pour permettre d'en ajouter
-   * plusieurs d'affilée — "Retour à l'équipe" (bouton dédié) referme le mode sélection. */
+  /** Ajoute l'offre comme ressource de l'équipe (TeamViewSet.assigner_ressource) ; reste sur le
+   * tableau pour en ajouter plusieurs. */
   ajouterCommeRessource(offerId: string, e?: Event): void {
     e?.stopPropagation();
     if (!this.pickForTeamId) return;
@@ -356,8 +326,7 @@ export class ReportingComponent implements OnInit, OnDestroy {
     });
   }
 
-  /** Ajoute l'offre de matériel au stock du point visé (crée un apport individuel — voir
-   * OfferViewSet.affecter_stock). */
+  /** Ajoute l'offre au stock du point (OfferViewSet.affecter_stock). */
   ajouterAuStock(offerId: string, e?: Event): void {
     e?.stopPropagation();
     if (!this.pickForPointId) return;
@@ -385,13 +354,10 @@ export class ReportingComponent implements OnInit, OnDestroy {
   }
 
   // ────────────────────────────────────────────────────────────────────────────
-  // LOAD (serveur : pagination + recherche + tri + filtres, voir plan 2026-10-15)
+  // LOAD (serveur : pagination + recherche + tri + filtres, voir DOCUMENTATION.md, § 6.2)
   // ────────────────────────────────────────────────────────────────────────────
 
-  /** Params d'échelle géographique communs à Crise/Offre/Demande/Signalement : ?scope=zone
-   * (opt-in, voir _widen_zone_for_reporting côté backend) + éventuel ?echelle= élargi. Le
-   * rayon en km n'affecte que les offres (?rayon_km=, voir _apply_rayon_km côté backend) —
-   * les autres types restent à "ma zone" quand ce choix est sélectionné. */
+  /** Échelle commune aux 4 types : ?scope=zone + ?echelle= éventuel. ?rayon_km= ne concerne que les offres. */
   private buildEchelleParams(forOffer = false): Record<string, string> {
     const params: Record<string, string> = { scope: 'zone' };
     if (this.echelle === 'rayon') {
@@ -402,10 +368,8 @@ export class ReportingComponent implements OnInit, OnDestroy {
     return params;
   }
 
-  /** Construit les query params serveur pour un type donné — échelle + actif (déjà des
-   * paramètres serveur avant ce chantier) + search/status/ordering (nouveaux, voir
-   * RequestSearchFilter/InformationSearchFilter/OfferSearchFilter/CrisisSearchFilter côté
-   * backend) + competence/materiel_livraison (offres uniquement). */
+  /** Query params serveur d'un type : échelle, actif, search/status/ordering, et
+   * competence/materiel_livraison pour les offres. */
   private buildParams(kind: ReportKind): Record<string, string> {
     const params: Record<string, string> = { ...this.buildEchelleParams(kind === 'Offer') };
     if (this.showDesactives && kind !== 'Crisis') params['actif'] = 'all';
@@ -436,10 +400,7 @@ export class ReportingComponent implements OnInit, OnDestroy {
     }
   }
 
-  /** Point d'entrée unique de chargement — branche sur l'onglet actif : un type précis
-   * déclenche une page serveur triée/filtrée ; "Tout" déclenche un aperçu borné (voir
-   * loadOverview). Toujours appelé après un changement de filtre/tri/page/onglet — jamais de
-   * recalcul en mémoire depuis une table déjà chargée (il n'y en a plus). */
+  /** Point d'entrée unique, appelé après tout changement de filtre/tri/page/onglet. */
   load(): void {
     this.isLoading = true;
     this.selectedOfferIds.clear();
@@ -456,9 +417,7 @@ export class ReportingComponent implements OnInit, OnDestroy {
     }
   }
 
-  /** Recharge sans réinitialiser la sélection ni la page courante — utilisé après une action
-   * qui modifie des données déjà affichées (réactivation, suppression...) plutôt que
-   * `load()`, qui remettrait l'utilisateur à la page 1 avec sélection vidée. */
+  /** Recharge en conservant la sélection et la page (load() revient à la page 1). */
   private reload(): void {
     this.isLoading = true;
     if (this.isOverview) this.loadOverview();
@@ -485,9 +444,7 @@ export class ReportingComponent implements OnInit, OnDestroy {
     this.refreshOtherCounts(kind);
   }
 
-  /** Onglet "Tout" : 1ère page de chaque type, taille fixe courte — pas une fusion paginée (ça
-   * reviendrait à tout recharger pour trier en mémoire, exactement le problème corrigé ici).
-   * Fusionné et trié par date côté client : coût négligeable sur ≤40 lignes. */
+  /** Onglet « Tout » : 1re page de chaque type, fusionnée et triée par date côté client (≤40 lignes). */
   private loadOverview(): void {
     const OVERVIEW_PAGE_SIZE = 10;
     const kinds: ReportKind[] = ['Crisis', 'Offer', 'Request', 'Information'];
@@ -513,9 +470,7 @@ export class ReportingComponent implements OnInit, OnDestroy {
     });
   }
 
-  /** Tient à jour les compteurs des AUTRES onglets pendant qu'on affiche un type précis (sinon
-   * les badges resteraient figés sur leur dernière valeur connue) — requêtes légères
-   * (page_size=1, seul `count` nous intéresse), indépendantes du rendu de la page affichée. */
+  /** Met à jour les compteurs des autres onglets (page_size=1, seul `count` sert). */
   private refreshOtherCounts(activeKind: ReportKind): void {
     const others = (['Crisis', 'Offer', 'Request', 'Information'] as ReportKind[]).filter(k => k !== activeKind);
     forkJoin(others.map(k => this.searchPageFor(k, 1, 1).pipe(
@@ -529,13 +484,10 @@ export class ReportingComponent implements OnInit, OnDestroy {
     });
   }
 
-  /** Dernière page reçue du serveur, AVANT filtre commune/tri contact (tous deux client-side,
-   * voir ci-dessous) — permet de les réappliquer sans refaire d'appel réseau à chaque
-   * frappe/clic, contrairement aux autres filtres qui déclenchent tous un vrai rechargement. */
+  /** Dernière page reçue, avant filtre commune et tri contact (appliqués côté client). */
   private lastFetchedRows: ReportRow[] = [];
 
-  /** Recalcule `pagedRows` depuis `lastFetchedRows` : filtre commune (substring, voir
-   * filterCommune) puis tri contact si actif — jamais de requête serveur ici. */
+  /** Recalcule `pagedRows` (filtre commune puis tri contact), sans requête. */
   private applyCommuneFilterAndContactSort(): void {
     const q = this.filterCommune.trim().toLowerCase();
     const rows = q ? this.lastFetchedRows.filter(r => r.commune?.toLowerCase().includes(q)) : [...this.lastFetchedRows];
@@ -543,8 +495,7 @@ export class ReportingComponent implements OnInit, OnDestroy {
     this.pagedRows = rows;
   }
 
-  /** Filtre commune (voir filterCommune) : purement client, ne déclenche jamais de requête
-   * serveur — recalcule juste `pagedRows` depuis la page déjà chargée. */
+  /** Filtre commune purement client. */
   onCommuneFilterChange(): void {
     this.applyCommuneFilterAndContactSort();
   }
@@ -564,11 +515,8 @@ export class ReportingComponent implements OnInit, OnDestroy {
     this.pagedRows.filter(r => r.has_photo).forEach(r => this.loadRowPhoto(r));
   }
 
-  /** Ouvre directement le détail d'une ligne arrivée via `?id=` (ex: lien depuis une
-   * notification) — en appel direct (retrieve), indépendamment de la page/des filtres
-   * actuellement chargés : cette ligne peut très bien ne pas être sur la page affichée, voir
-   * le plan pagination Signalements. `kind` n'étant pas connu depuis l'URL, on tente les 4
-   * types en parallèle et on garde le premier qui répond. */
+  /** Ouvre le détail d'une ligne passée par `?id=`, indépendamment de la page chargée. Le type
+   * n'étant pas dans l'URL, les 4 types sont essayés en parallèle. */
   private openByIdFromUrl(): void {
     const targetId = this.route.snapshot.queryParamMap.get('id');
     if (!targetId) return;
@@ -584,8 +532,7 @@ export class ReportingComponent implements OnInit, OnDestroy {
   }
 
   // ────────────────────────────────────────────────────────────────────────────
-  // BUILD ROW (un seul type brut -> ReportRow, réutilisé par le chargement de page normal,
-  // l'aperçu "Tout", l'annuaire de bénévoles et le lien profond ?id=)
+  // BUILD ROW (un type brut -> ReportRow)
   // ────────────────────────────────────────────────────────────────────────────
 
   private toRow(kind: ReportKind, raw: Crisis | Offer | Request | Information): ReportRow {
@@ -650,9 +597,7 @@ export class ReportingComponent implements OnInit, OnDestroy {
     }
   }
 
-  /** Récupère la photo d'une ligne via l'action /preview/ access-contrôlée du bon
-   * service selon `kind` — 403 silencieux si l'utilisateur n'est pas auteur/acteur
-   * (pas d'erreur affichée, la vignette reste simplement absente). */
+  /** Photo via /preview/ du service du type ; un 403 laisse simplement la vignette vide. */
   private loadRowPhoto(row: ReportRow): void {
     const service = {
       Crisis: this.crisisService,
@@ -715,10 +660,7 @@ export class ReportingComponent implements OnInit, OnDestroy {
     this.assignTeamId = null;
     this.assignDossierId = null;
 
-    // Ces coordonnées ne sont jamais renvoyées par l'API à un consommateur non institutionnel
-    // (voir _location_visible côté serializers) : quiconque atteint ce code les voit déjà de
-    // plein droit — autant afficher l'adresse la plus précise possible (les services ont
-    // besoin de s'y rendre), pas juste la commune.
+    // L'API ne renvoie ces coordonnées qu'aux institutionnels : on affiche l'adresse précise.
     if (row.latitude != null && row.longitude != null) {
       this.isLoadingAddress = true;
       this.geolocationService.reverseGeocode(row.latitude, row.longitude).subscribe({
@@ -761,8 +703,7 @@ export class ReportingComponent implements OnInit, OnDestroy {
     { creneau: 'NUIT', label: 'Nuit' },
   ];
 
-  /** Calendrier des disponibilités : une ligne par jour (couvrant la plage réellement déclarée),
-   * une colonne par créneau, chaque case indiquant si le bénévole est disponible. */
+  /** Calendrier des disponibilités : une ligne par jour déclaré, une colonne par créneau. */
   get dispoCalendrier(): { label: string; creneaux: { creneau: string; label: string; disponible: boolean }[] }[] {
     if (this.selectedOfferDispos.length === 0) return [];
 
@@ -785,7 +726,7 @@ export class ReportingComponent implements OnInit, OnDestroy {
     return jours;
   }
 
-  /** Dossiers de la même crise que l'offre sélectionnée (une affectation hors-crise n'a pas de sens). */
+  /** Dossiers de la même crise que l'offre sélectionnée. */
   get dossiersForSelectedOffer(): Dossier[] {
     if (!this.selectedRow?.crisis) return [];
     return this.dossiers.filter(d => d.crise === this.selectedRow!.crisis);
@@ -800,8 +741,7 @@ export class ReportingComponent implements OnInit, OnDestroy {
       ? team.assigned_offer_ids
       : [...team.assigned_offer_ids, this.selectedRow.id];
 
-    // Affecter l'offre à l'équipe y ajoute aussi la personne qui la propose, sinon on affecte
-    // une "mission" sans jamais rattacher le bénévole lui-même à l'équipe.
+    // Affecter l'offre ajoute aussi son auteur à l'équipe.
     let memberIds = team.member_ids ?? [];
     const authorId = this.selectedRow.author;
     if (authorId && !memberIds.includes(authorId)) {
@@ -819,9 +759,8 @@ export class ReportingComponent implements OnInit, OnDestroy {
     });
   }
 
-  /** Affectation d'une demande à une équipe : passe par l'action backend dédiée qui crée le
-   * dossier de suivi, notifie le régulateur de l'équipe et informe le demandeur par email —
-   * contrairement aux offres, pas un simple ajout à assigned_request_ids côté client. */
+  /** Passe par l'action backend dédiée : dossier de suivi, notification du régulateur, email au
+   * demandeur. */
   submitAssignTeamRequest(): void {
     if (!this.selectedRow || !this.assignTeamId) return;
     const team = this.teams.find(t => t.id === this.assignTeamId);
@@ -898,8 +837,7 @@ export class ReportingComponent implements OnInit, OnDestroy {
     return ids.length > 0 && ids.every(id => this.selectedInformationIds.has(id));
   }
 
-  /** "Tout sélectionner (page)" — porte explicitement sur la page affichée uniquement : il n'y
-   * a plus de table en mémoire contenant la totalité des résultats filtrés. */
+  /** « Tout sélectionner » porte sur la page affichée uniquement. */
   toggleSelectAllOffers(): void {
     const all = this.allPagedOffersSelected;
     this.pagedRows.filter(r => r.kind === 'Offer').forEach(r => {
@@ -928,9 +866,8 @@ export class ReportingComponent implements OnInit, OnDestroy {
     return Array.from(this.selectedRequestRowsMap.values());
   }
 
-  /** Une mission est rattachée à une seule crise : la création de mission depuis la sélection
-   * n'a de sens que si toutes les demandes sélectionnées partagent la même crise (garde-fou
-   * client, le backend refuse aussi explicitement le cas contraire). */
+  /** Une mission a une seule crise : toutes les demandes sélectionnées doivent la partager
+   * (le backend le vérifie aussi). */
   get bulkRequestsShareCrisis(): boolean {
     const crises = new Set(this.selectedRequestRows.map(r => r.crisis));
     return crises.size === 1 && !crises.has(null);
@@ -995,8 +932,7 @@ export class ReportingComponent implements OnInit, OnDestroy {
   // ── Barre groupée offres : créer une équipe + assigner un régulateur ────────
 
   openBulkOfferModal(): void {
-    // Pré-remplit le nom d'équipe avec l'organisation quand toutes les offres sélectionnées
-    // viennent d'un même dépôt groupé — reste modifiable, juste un gain de temps.
+    // Pré-remplit le nom d'équipe avec l'organisation si toutes les offres viennent d'un même dépôt groupé.
     const selected = Array.from(this.selectedOfferRowsMap.values());
     const organisations = new Set(selected.map(r => r.organisationNom).filter(Boolean));
     this.bulkTeamName = organisations.size === 1 ? [...organisations][0]! : '';
@@ -1177,9 +1113,7 @@ export class ReportingComponent implements OnInit, OnDestroy {
   }
 
   // ────────────────────────────────────────────────────────────────────────────
-  // EXPORT CSV — porte désormais sur la page affichée, pas le résultat filtré complet (plus
-  // de table en mémoire les contenant tous — voir le plan pagination Signalements). Un export
-  // serveur du résultat filtré complet reste une amélioration de suivi possible.
+  // EXPORT CSV (page affichée uniquement ; un export serveur complet reste à faire)
   // ────────────────────────────────────────────────────────────────────────────
 
   exportCSV(): void {
@@ -1247,14 +1181,12 @@ export class ReportingComponent implements OnInit, OnDestroy {
   }
 
   // ────────────────────────────────────────────────────────────────────────────
-  // TRANSFORMATION (une soumission classée dans le mauvais formulaire, ex: une
-  // offre de matériel déposée comme demande d'aide)
+  // TRANSFORMATION (soumission déposée dans le mauvais formulaire)
   // ────────────────────────────────────────────────────────────────────────────
 
   isTransforming = false;
 
-  /** Cibles de transformation possibles pour le type de la ligne sélectionnée — jamais vers
-   * son propre type, jamais depuis/vers Crisis (pas concerné par cette confusion de formulaire). */
+  /** Cibles possibles : jamais le type actuel, jamais Crisis. */
   get transformCibles(): { value: 'REQUEST' | 'OFFER' | 'INFORMATION'; label: string }[] {
     if (!this.selectedRow) return [];
     const all: { value: 'REQUEST' | 'OFFER' | 'INFORMATION'; label: string }[] = [

@@ -45,10 +45,8 @@ export class SettingsComponent implements OnInit {
   isUpdatingProfile = false;
   isChangingPassword = false;
 
-  // Candidature réserve (voir User.souhaite_rejoindre_reserve, PieceIdentiteReserveService) --
-  // null tant qu'aucun fichier n'a encore été envoyé, auquel cas le prochain upload CRÉE la
-  // pièce (voir uploaderPermis) ; une fois un id connu, les uploads suivants la METTENT À JOUR
-  // (remplacement recto/verso indépendamment l'un de l'autre).
+  // Candidature réserve : null tant qu'aucun fichier n'est envoyé (le prochain upload crée la
+  // pièce), ensuite les uploads la mettent à jour.
   maPieceIdentite: PieceIdentiteReserve | null = null;
   uploadPermisEnCours = false;
   uploadPermisErreur = '';
@@ -95,11 +93,7 @@ export class SettingsComponent implements OnInit {
   mesNoeudsMeshCore: NoeudMeshUtilisateur[] = [];
   mesNoeudsMeshtastic: NoeudUtilisateurMeshtastic[] = [];
   isLoadingRadio = false;
-  // Réclamer/Libérer sont refusés côté serveur en zone DEMO (DenyInDemo côté écriture — voir
-  // NoeudMeshUtilisateurViewSet) : affiché ici pour ne pas laisser croire que le bouton
-  // "Libérer" ne fait rien quand en réalité il est bloqué (le message d'erreur renvoyé par le
-  // serveur passait auparavant inaperçu, réutilisant la zone d'erreur du formulaire "Réclamer"
-  // tout en haut, loin du bouton "Libérer" réellement cliqué) — bug rapporté le 2026-09-16.
+  // Réclamer/Libérer sont refusés en zone DEMO : message affiché près du bouton.
   isDemoZone = false;
 
   reclamerMeshCorePubkey = '';
@@ -115,13 +109,10 @@ export class SettingsComponent implements OnInit {
   reclamerMeshtasticErreur = '';
   libererMeshtasticErreur = '';
   libererMeshtasticSucces = '';
-  /** Non-null uniquement quand le backend n'a pas pu déduire le broker tout seul (jamais
-   * détecté, ou détecté sur plusieurs à la fois) — voir NoeudUtilisateurMeshtasticViewSet.
-   * reclamer. */
+  /** Renseigné quand le backend n'a pas pu déduire le broker (NoeudUtilisateurMeshtasticViewSet.reclamer). */
   meshtasticBrokerRequis: { id: string; nom: string }[] | null = null;
   meshtasticBrokerChoisi = '';
-  /** Tous les brokers actifs, chargés seulement si compagnons_candidats revient vide (nœud
-   * jamais détecté nulle part) — inutile de tout charger tant qu'on n'en a pas besoin. */
+  /** Brokers actifs, chargés seulement si compagnons_candidats est vide. */
   tousLesBrokersMeshtastic: { id: string; nom: string; broker_host: string }[] = [];
 
   constructor(
@@ -143,10 +134,8 @@ export class SettingsComponent implements OnInit {
     public suiviPosition: SuiviPositionPermanentService,
   ) {}
 
-  /** Bascule le suivi de position permanent (voir SuiviPositionPermanentService) -- accord
-   * navigateur demandé une seule fois, à la première activation. Accessible ici (page
-   * /settings, réservée à `authGuard` seul) contrairement au bouton équivalent de l'en-tête
-   * admin, hors d'atteinte d'un simple intervenant sans rôle institutionnel. */
+  /** Bascule le suivi de position permanent (accord demandé une fois). Accessible ici à tout
+   * utilisateur connecté. */
   basculerSuiviPosition(): void {
     if (this.suiviPosition.actif) {
       this.suiviPosition.desactiver();
@@ -158,8 +147,7 @@ export class SettingsComponent implements OnInit {
   ngOnInit(): void {
     this.currentUser = this.authService.getCurrentUser();
     this.isDemoZone = this.authService.getEnvironment() === 'DEMO';
-    // currentUser.photo n'est plus renvoyée en clair (write_only, voir photo_url) : on
-    // récupère l'aperçu de la photo existante en blob.
+    // photo est write_only : aperçu récupéré en blob.
     this.previewUrl = null;
     if (this.currentUser?.photo_url) {
       this.userService.preview(this.currentUser.id).subscribe({
@@ -174,11 +162,8 @@ export class SettingsComponent implements OnInit {
       this.chargerPieceIdentiteReserve();
     }
 
-    // Abonnement réactif (pas juste route.snapshot, lu une seule fois) : les liens rapides de
-    // l'en-tête (`quick-link`) pointent tous vers /settings avec un `tab` différent — Angular
-    // réutilise la même instance de ce composant d'un tab à l'autre puisque la route ne change
-    // pas, donc ngOnInit ne se relance jamais. Sans cet abonnement, cliquer sur ces liens
-    // depuis l'écran /settings lui-même ne changeait jamais l'onglet affiché.
+    // Abonnement à queryParams : les liens rapides changent seulement `tab`, Angular réutilise
+    // l'instance et ne relance pas ngOnInit.
     const validTabs: (typeof this.activeTab)[] = ['profile', 'password', 'offer', 'request', 'crisis', 'declaration', 'information', 'dossier', 'radio'];
     this.route.queryParamMap.subscribe(params => {
       const requestedTab = params.get('tab');
@@ -449,14 +434,6 @@ export class SettingsComponent implements OnInit {
   }
 
   deleteAccount(): void {
-    // this.authService.delete().subscribe({
-    //   next: () => {
-    //     this.successMessage = 'Compte supprimé avec succès';
-    //     this.authService.logout();
-    //     this.router.navigate(['/login']);
-    //   },
-    //   error: err => (this.errorMessage = err.error?.detail ?? 'Erreur')
-    // });
   }
 
   /**
@@ -593,7 +570,6 @@ export class SettingsComponent implements OnInit {
       next:  () => { this.successMessage = 'Offre mise à jour'; this.loadOffres(); },
       error: err => (this.errorMessage = err.error?.detail ?? 'Erreur')
     })
-    // this.router.navigate(['/user/offre/edit',   o.id]); 
   }
 
   editRequest(demande: Request): void { 
@@ -606,7 +582,6 @@ export class SettingsComponent implements OnInit {
       next:  () => { this.successMessage = 'Demande mise à jour'; this.loadDemandes(); },
       error: err => (this.errorMessage = err.error?.detail ?? 'Erreur')
     });
-    // this.router.navigate(['/user/demande/edit', d.id]); 
   }
 
   // ----- View ----------------------------------------------------------------
@@ -664,7 +639,6 @@ export class SettingsComponent implements OnInit {
     this.router.navigate(['/dossier-suivi', dossier.id]);
   }
 
-
   // ── Helpers ──────────────────────────────────────────────────
 
   /** Libellé lisible pour les statuts Django */
@@ -719,9 +693,7 @@ export class SettingsComponent implements OnInit {
   private clearMessages(): void { this.successMessage = ''; this.errorMessage = ''; }
 
   private chargerPieceIdentiteReserve(): void {
-    // L'API ne retourne QUE la pièce du propriétaire connecté (voir
-    // PieceIdentiteReserveViewSet.get_queryset) -- au plus une par utilisateur en pratique,
-    // on prend la première s'il y en a une.
+    // L'API ne renvoie que la pièce du propriétaire (au plus une).
     this.pieceIdentiteReserveService.mesPieces().subscribe({
       next: (pieces) => { this.maPieceIdentite = pieces[0] ?? null; },
       error: () => {},

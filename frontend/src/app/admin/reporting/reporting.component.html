@@ -170,8 +170,7 @@
     }
   </div>
 
-  <!-- ══ BARRES D'ACTION GROUPÉE (masquées en mode picker : hors-sujet quand on est déjà dans
-       une équipe/un point précis, voir pickerModeActive) ═══════════════════════════════════ -->
+  <!-- ══ BARRES D'ACTION GROUPÉE (masquées en mode picker) ═══════════════════════════ -->
   @if (!pickerModeActive && selectedOfferIds.size > 0) {
     <div class="bulk-bar">
       <span class="bulk-count">{{ selectedOfferIds.size }} offre{{ selectedOfferIds.size > 1 ? 's' : '' }} sélectionnée{{ selectedOfferIds.size > 1 ? 's' : '' }}</span>
@@ -358,9 +357,7 @@
                   }
                 </td>
                 <td class="col-actions" (click)="$event.stopPropagation()">
-                  <!-- En mode picker, le bouton d'ajout coexiste avec Voir/Télécharger/Supprimer
-                       (jamais l'un à la place de l'autre) : on doit pouvoir consulter le détail
-                       même en train de choisir une ressource à ajouter. -->
+                  <!-- En mode picker, le bouton d'ajout s'ajoute à Voir/Télécharger/Supprimer -->
                   @if (pickForTeamId && row.kind === 'Offer') {
                     <button class="btn-primary sm" (click)="ajouterCommeRessource(row.id, $event)">
                       <span class="material-icons">add</span> Ajouter à l'équipe
@@ -503,9 +500,7 @@
           </div>
         }
 
-        <!-- Description : un signalement divers n'a pas de champ description séparé, le titre
-             porte l'information complète (tronqué dans l'en-tête de la modale) — demandes,
-             offres et crises ont bien un champ dédié. -->
+        <!-- Description : un signalement divers n'en a pas, le titre porte l'information -->
         @if (isInfo(selectedRow._raw)) {
           <div class="detail-section">
             <h3>Description</h3>
@@ -648,8 +643,7 @@
           </div>
         }
 
-        <!-- Affectation à une équipe (demandes uniquement) : crée automatiquement un dossier
-             de suivi, notifie le régulateur de l'équipe et informe le demandeur par email. -->
+        <!-- Affectation d'une demande : dossier de suivi, notification du régulateur, email au demandeur -->
         @if (selectedRow.kind === 'Request') {
           <div class="detail-section">
             <h3>Affectation</h3>
@@ -952,9 +946,7 @@
   </div>
 }
 
-<!-- ══ VISIONNEUSE PHOTO PLEIN ÉCRAN ══════════════════════════════════════════
-     (la minimap de localisation est affichée dans la vue de détail elle-même,
-     pas ici, pour être visible sans avoir à cliquer sur la photo) -->
+<!-- ══ VISIONNEUSE PHOTO PLEIN ÉCRAN (minimap dans la vue de détail) ══ -->
 @if (showImageLightbox && selectedRow) {
   <div class="modal-overlay lightbox-overlay" (click)="closeImageLightbox()">
     <div class="lightbox-content" (click)="$event.stopPropagation()">

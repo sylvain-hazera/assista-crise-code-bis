@@ -272,8 +272,7 @@ export class CelluleCriseComponent implements OnInit, OnDestroy {
     });
   }
 
-  /** Décoche une catégorie (nom de thème/type) de l'affichage courant -- masque temporairement,
-   * jamais destructif, persistant par utilisateur (décision utilisateur du 26/09). */
+  /** Masque une catégorie de l'affichage (non destructif, mémorisé par utilisateur). */
   basculerExclusion(categorie: string): void {
     if (this.categoriesExclues.has(categorie)) {
       this.categoriesExclues.delete(categorie);

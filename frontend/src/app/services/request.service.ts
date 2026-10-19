@@ -10,7 +10,6 @@ import { geoPointToLatLng, latLngToGeoJson } from '../shared/models/geopoint.mod
   providedIn: 'root'
 })
 export class RequestService {
-  // private apiUrl = `${environment.apiUrl}/demandes`;
   private readonly url     = `${environment.apiUrl}/demandes`;
   private readonly typeUrl = `${environment.apiUrl}/types-demande`;
 
@@ -18,10 +17,7 @@ export class RequestService {
 
   // ── TYPES ────────────────────────────────────────────────────
 
-  /**
-   * Liste des types pour peupler les <select>.
-   * GET /api/types-demande/
-   */
+  /** GET /api/types-demande/ */
   getTypes(): Observable<RequestType[]> {
     return this.http.get<RequestType[]>(`${this.typeUrl}/`);
   }
@@ -35,9 +31,7 @@ export class RequestService {
       .pipe(map(list => list.map(this.normalize)));
   }
 
-  /** GET /api/demandes/?page=&page_size=&... — voir OfferService.searchPage, même patron
-   * (pagination opt-in, toujours l'enveloppe ici puisque `page` est systématiquement envoyé).
-   * Utilisé par ReportingComponent (page Signalements) à la place de getAll(). */
+  /** GET /api/demandes/?page=&page_size=&... — pagination serveur, comme OfferService.searchPage. */
   searchPage(params: Record<string, string>, page: number, pageSize: number): Observable<PageResponse<Request>> {
     const httpParams = this.toParams({ ...params, page: String(page), page_size: String(pageSize) });
     return this.http
@@ -45,17 +39,8 @@ export class RequestService {
       .pipe(map(res => ({ ...res, results: res.results.map(this.normalize) })));
   }
 
-  /**
-   * Demandes de l'utilisateur connecté.
-   * GET /api/demandes/my_requests/
-   * Django : @action(detail=False, url_path='my_requests')
-   * L'authentification JWT identifie automatiquement l'utilisateur.
-   */
+  /** GET /api/demandes/my_requests/ */
   getMines(email: string): Observable<Request[]> {
-    // return this.http
-    //   .get<Request[]>(`${this.url}/my_requests/`)
-    //   .pipe(map(list => list.map(this.normalize)));
-    // return this.getAll({ auteur: userId });
     return this.getAll({ author_email: email });
   }
 
@@ -71,8 +56,7 @@ export class RequestService {
     return this.http.get(`${this.url}/${id}/preview/`, { responseType: 'blob' });
   }
 
-  /** POST /api/photos-demandes/ — ajoute une photo à la galerie d'une demande déjà créée
-   * (au-delà de sa photo principale, voir RequestPhoto/request-help-form). */
+  /** POST /api/photos-demandes/ — ajoute une photo à la galerie d'une demande (RequestPhoto). */
   addPhoto(requestId: string, file: File, ordre: number): Observable<void> {
     const fd = new FormData();
     fd.append('request', requestId);
@@ -81,8 +65,8 @@ export class RequestService {
     return this.http.post<void>(`${environment.apiUrl}/photos-demandes/`, fd);
   }
 
-  /** POST /api/demandes/<id>/transformer/ — recrée cette demande en offre ou signalement
-   * (réservé institutionnel, refusé si déjà affectée). Supprime la demande d'origine. */
+  /** POST /api/demandes/<id>/transformer/ — recrée la demande en offre ou signalement et la
+   * supprime (institutionnels, refusé si déjà affectée). */
   transformer(id: string, cible: 'OFFER' | 'INFORMATION'): Observable<any> {
     return this.http.post<any>(`${this.url}/${id}/transformer/`, { cible });
   }
@@ -95,12 +79,8 @@ export class RequestService {
       .pipe(map(list => list.map(this.normalize)));
   }
 
-  /** GET /api/demandes/vue_secteur/ — comme vue_mairie, mais à l'échelle adaptée au type
-   * d'institution de l'appelant (commune/EPCI/département/région/national, voir
-   * _institution_secteur_or_400 côté backend) — inclut est_affectee (RequestSerializer),
-   * calculé côté serveur pour le récapitulatif de la Vue Ma Collectivité. `limite` plafonne
-   * côté serveur (page_size) : le récapitulatif reflète alors seulement les demandes chargées,
-   * pas le total réel du secteur (voir VueMairieComponent). */
+  /** GET /api/demandes/vue_secteur/ — à l'échelle du type d'institution, avec est_affectee.
+   * `limite` plafonne côté serveur : le récapitulatif ne reflète alors que les demandes chargées. */
   vueSecteur(options?: { limite?: number }): Observable<Request[]> {
     let params = new HttpParams();
     if (options?.limite) params = params.set('page', '1').set('page_size', String(options.limite));
@@ -109,10 +89,7 @@ export class RequestService {
       .pipe(map(res => (Array.isArray(res) ? res : res.results).map(this.normalize)));
   }
 
-  /**
-   * Statistiques.
-   * GET /api/demandes/stats/?[params]
-   */
+  /** GET /api/demandes/stats/?[params] */
   getStats(filter?: Record<string, string>): Observable<StatsResponse> {
     return this.http.get<StatsResponse>(
       `${this.url}/stats/`,
@@ -127,7 +104,6 @@ export class RequestService {
   update(id: string, data: Partial<Request> | FormData): Observable<Request> {
     return this.http.patch<Request>(`${this.url}/${id}/`, data);
   }
-
 
   /** DELETE /api/demandes/<id>/ */
   delete(id: string): Observable<void> {
@@ -177,7 +153,6 @@ export class RequestService {
 
   private toFormData(p: Partial<RequestPayload>): FormData {
     const fd = new FormData();
-    // Champs texte — on n'ajoute que ceux définis
     const textFields: (keyof RequestPayload)[] = [
       'title', 'first_name_request', 'last_name_request',
       'email_request', 'phone_request',

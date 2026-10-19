@@ -6,11 +6,8 @@ import { ActivatedRoute } from '@angular/router';
 import { AccuserReceptionPCSService, AccuseReceptionPCS } from '../../services/accuser-reception-pcs.service';
 import { ReponseContactPCS } from '../../shared/models/notification-alerte-pcs.model';
 
-/** Page publique d'accusé de réception d'une alerte PCS/PICS -- atteinte depuis le lien envoyé
- * par mail (voir core.alertes_pcs._lien_accuse_reception), sans authentification. Permet au
- * destinataire de confirmer lui-même qu'il a bien été prévenu, avec un choix rapide, pour
- * éviter un appel téléphonique de relance potentiellement inutile -- demande utilisateur du
- * 11/10. */
+/** Accusé de réception public d'une alerte PCS/PICS (lien du mail,
+ * core.alertes_pcs._lien_accuse_reception) : évite un appel de relance. */
 @Component({
   selector: 'app-confirmation-pcs',
   standalone: true,

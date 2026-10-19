@@ -11,17 +11,8 @@ export interface MinimapPointInteret {
 
 const ZONE_SOURCE_ID = 'minimap-zone';
 
-/**
- * Petite carte de localisation en lecture seule : un point + éventuellement une flèche
- * de direction (azimut EXIF capturé au moment de la photo). Volontairement séparée du
- * MapComponent partagé (clustering multi-source) et de ZoneMapComponent (dessin de
- * polygone) — ici on ne fait qu'afficher un point fixe pour donner du contexte spatial à
- * un signalement, ex: dans la visionneuse plein écran d'une photo.
- *
- * `pointsInteret` (optionnel) ajoute des repères secondaires (points opérationnels de la
- * crise pertinents pour l'intervenant : transit, regroupement, accueil, secours...) — la
- * carte se recentre alors pour tous les englober plutôt que sur le seul point principal.
- */
+/** Carte de localisation en lecture seule : un point, une flèche d'azimut facultative, et des
+ * points d'intérêt facultatifs (la carte les englobe alors). */
 @Component({
   selector: 'app-minimap',
   standalone: true,
@@ -38,8 +29,7 @@ export class MinimapComponent implements AfterViewInit, OnChanges, OnDestroy {
   @Input() azimuth: number | null = null;
   @Input() zoom = 15;
   @Input() pointsInteret: MinimapPointInteret[] = [];
-  /** Contour précis (ex: Crisis.zone_geojson) — affiché en plus du point principal, la carte
-   * s'ajuste alors pour englober tout le polygone plutôt que de rester au zoom fixe. */
+  /** Contour précis (ex: Crisis.zone_geojson) ; la carte s'ajuste pour l'englober. */
   @Input() zoneGeojson: Polygon | null = null;
 
   private map: maplibregl.Map | null = null;
@@ -53,13 +43,8 @@ export class MinimapComponent implements AfterViewInit, OnChanges, OnDestroy {
     this.observeContainerResize();
   }
 
-  /** Même correctif que MapComponent.observeContainerResize : MapLibre ne calcule la taille
-   * du canvas qu'une fois, à l'instant de la construction — si le conteneur n'a pas encore sa
-   * taille finale à ce moment (ex: une minimap dans une modale dont la mise en page n'est pas
-   * encore stabilisée), fitBounds/fitToZone se base sur un viewport erroné et la carte ne
-   * cadre pas correctement sur la zone. On réaligne le canvas ET on refait le cadrage une fois
-   * la taille réelle connue, pas juste resize() seul (qui ne corrigerait pas un fitBounds déjà
-   * calculé avec de mauvaises dimensions). */
+  /** Comme MapComponent : resize() quand le conteneur prend sa taille, puis nouveau cadrage
+   * (un fitBounds calculé avec de mauvaises dimensions resterait faux). */
   private observeContainerResize(): void {
     if (typeof ResizeObserver === 'undefined') return;
     this.resizeObserver = new ResizeObserver(() => {
@@ -122,9 +107,7 @@ export class MinimapComponent implements AfterViewInit, OnChanges, OnDestroy {
     }
   }
 
-  /** MapLibre ne rejoue jamais l'événement 'load' pour un listener attaché après coup — voir
-   * MapComponent.runWhenMapReady, même correctif ici : addSource/addLayer exigent le style
-   * chargé, contrairement aux Marker (point/flèche), ajoutables immédiatement. */
+  /** Comme MapComponent.runWhenMapReady : addSource/addLayer exigent le style chargé (pas les Marker). */
   private runWhenMapReady(cb: () => void): void {
     if (!this.map) return;
     if (this.map.isStyleLoaded()) {
@@ -169,9 +152,7 @@ export class MinimapComponent implements AfterViewInit, OnChanges, OnDestroy {
     this.map.fitBounds(bounds, { padding: 30, maxZoom: this.zoom });
   }
 
-  /** Sans point d'intérêt, comportement inchangé (centré sur le point principal au zoom
-   * demandé) — avec, la carte s'ajuste pour tous les englober, en respectant `zoom` comme
-   * niveau MAXIMUM (pas la peine de trop s'approcher si les points sont proches). */
+  /** Avec des points d'intérêt, ajuste pour les englober ; `zoom` est alors un maximum. */
   private fitToPoints(): void {
     if (!this.map || this.pointsInteret.length === 0) return;
     const bounds = new maplibregl.LngLatBounds([this.longitude, this.latitude], [this.longitude, this.latitude]);
@@ -193,8 +174,7 @@ export class MinimapComponent implements AfterViewInit, OnChanges, OnDestroy {
     });
   }
 
-  /** Même convention visuelle que MapComponent.addDirectionArrowLayer : flèche verte,
-   * icon-rotate direct sur la valeur d'azimut (0 = Nord, sens horaire, pas de conversion). */
+  /** Même flèche que MapComponent.addDirectionArrowLayer. */
   private syncArrowMarker(): void {
     this.arrowMarker?.remove();
     this.arrowMarker = null;

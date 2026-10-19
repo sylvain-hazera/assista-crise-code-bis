@@ -29,8 +29,7 @@ interface JourDispo {
   creneaux: { creneau: Creneau; label: string; checked: boolean }[];
 }
 
-// Labels exacts des OfferType côté backend (backend/entrypoint.sh) — utilisés pour savoir
-// quels champs complémentaires afficher pour une ligne donnée.
+// Libellés exacts des OfferType (backend/entrypoint.sh).
 const TYPE_HEBERGEMENT = 'Hébergement';
 const TYPE_SOINS = 'Soins médicaux et paramédicaux';
 const TYPE_TRANSPORT = 'Transport';
@@ -40,46 +39,29 @@ const TYPE_AUTRE = 'Autre';
 const TYPE_NOURRITURE = 'Nourriture et eau';
 const TYPE_BENEVOLAT = 'Bénévolat';
 
-// Valeur de materielType déclenchant la rubrique "Engins agricoles / chantiers / spéciaux"
-// (liste à cocher, voir engineLines) — un "pseudo-type" : cette ligne du formulaire ne devient
-// jamais elle-même une offre, seuls les engins cochés en dessous en deviennent une chacun (voir
-// isEnginesGatewayRow()/onSubmit()).
+// Pseudo-type : la ligne ne devient pas une offre, chaque engin coché devient la sienne
+// (voir DOCUMENTATION.md, § 6.2).
 const ENGINS_AGRICOLES_VALUE = 'ENGINS_AGRICOLES';
 
-// Présence physique de l'offreur avec ce qu'il propose : certains types l'excluent ou
-// l'impliquent toujours par nature, d'autres sont ambigus (un camion, des vivres... peuvent
-// être déposés seuls ou apportés par l'offreur en personne) et demandent une réponse
-// explicite — voir addOffer()/presencePhysiqueValidator. Un hébergement prêté n'implique
-// jamais que l'offreur y réside ; à l'inverse, Soins/Soutien/Autre (bénévolat) SONT la
-// personne elle-même, la présence est toujours vraie.
+// Présence physique de l'offreur : imposée par certains types, à préciser pour les types
+// ambigus (voir DOCUMENTATION.md, § 6.2).
 const TYPES_PRESENCE_FORCEE_FAUSSE = [TYPE_HEBERGEMENT];
-// TYPE_BENEVOLAT (offre de temps/compétences, sans matériel) n'était pas listé ici : une ligne
-// "Bénévolat" gardait presencePhysique à null (repli par défaut, voir addOffer()) sans jamais
-// le forcer à true — proposeAideEnPersonne restait donc toujours fausse pour ce type, cachant
-// à tort les sections "Vos compétences"/"Vos disponibilités", pourtant les plus pertinentes
-// pour un bénévole. Repéré en direct.
 const TYPES_PRESENCE_FORCEE_VRAIE = [TYPE_SOINS, TYPE_SOUTIEN, TYPE_AUTRE, TYPE_BENEVOLAT];
 const TYPES_PRESENCE_A_PRECISER = [TYPE_TRANSPORT, TYPE_MATERIEL, TYPE_NOURRITURE];
 
-/** La case de conformité (permis/CACES, assurance, CT, sobriété, plaque) n'est obligatoire que
- * sur les lignes où un véhicule/engin est en jeu (voir showConformiteVehicule) — sa validité
- * dépend donc du contrôle voisin `type`, pas d'elle-même. Angular ne réévalue pas
- * automatiquement un validateur quand un AUTRE contrôle change : addOffer() force la
- * réévaluation sur chaque changement de `type` (voir son abonnement à valueChanges). */
+/** Case de conformité véhicule, obligatoire selon le contrôle voisin `type` : addOffer()
+ * force la réévaluation à chaque changement de type. */
 function confirmationReglementaireValidator(control: AbstractControl): ValidationErrors | null {
   const parent = control.parent;
   if (!parent) return null;
   const type = parent.get('type')?.value;
-  // La ligne "passerelle" vers la rubrique Engins ne devient jamais elle-même une offre (voir
-  // ENGINS_AGRICOLES_VALUE) : sa propre confirmation réglementaire n'a pas de sens, celle du lot
-  // d'engins cochés (engineConfirmationReglementaire) la remplace.
+  // La ligne passerelle Engins utilise engineConfirmationReglementaire à la place.
   if (type === TYPE_MATERIEL && parent.get('materielType')?.value === ENGINS_AGRICOLES_VALUE) return null;
   const requiert = type === TYPE_TRANSPORT || type === TYPE_MATERIEL;
   return (requiert && !control.value) ? { required: true } : null;
 }
 
-/** presencePhysique doit être explicitement true/false (jamais null) sur les types ambigus —
- * voir TYPES_PRESENCE_A_PRECISER. Même mécanique que confirmationReglementaireValidator. */
+/** presencePhysique doit être true/false (jamais null) sur les types ambigus. */
 function presencePhysiqueValidator(control: AbstractControl): ValidationErrors | null {
   const parent = control.parent;
   if (!parent) return null;
@@ -89,9 +71,7 @@ function presencePhysiqueValidator(control: AbstractControl): ValidationErrors |
   return (requiert && control.value === null) ? { required: true } : null;
 }
 
-/** Le type d'animal transporté change radicalement les moyens requis (cage, bétaillère...) :
- * exigé dès que transportType === ANIMAUX. Dépend de transportType, pas de type — voir
- * l'abonnement dédié dans addOffer(). */
+/** Type d'animal exigé si transportType === ANIMAUX (réévalué dans addOffer()). */
 function transportAnimauxPrecisionValidator(control: AbstractControl): ValidationErrors | null {
   const parent = control.parent;
   if (!parent) return null;
@@ -162,9 +142,7 @@ export class ProposeHelpFormComponent implements OnInit {
     { value: 'CHAMBRE', label: 'Chambre' },
   ];
 
-  /** Adresse du logement propre à cette ligne Hébergement (voir hebergementLatitude/Longitude
-   * dans addOffer()) — indépendante de "Votre adresse" : au submit, on utilise celle-ci pour
-   * `location`/`commune_code` si renseignée, sinon on retombe sur l'adresse partagée. */
+  /** Adresse propre au logement ; à défaut, l'adresse partagée est utilisée à la soumission. */
   onHebergementAddressSelected(row: AbstractControl, addr: AddressResult | null): void {
     this.rowGroup(row).patchValue({
       hebergementLatitude: addr?.latitude ?? null,
@@ -173,16 +151,12 @@ export class ProposeHelpFormComponent implements OnInit {
   }
 
   // ── Rubrique "Engins agricoles / chantiers / spéciaux" ─────────────────────────
-  // Liste à cocher dédiée, indépendante du menu déroulant "Type de matériel" ci-dessus (qui ne
-  // sert plus qu'aux quelques types structurels fixes) : chaque engin coché devient, à la
-  // soumission, sa propre offre (type Matériel/Autre + ce catalogue précis), avec sa propre
-  // quantité et sa propre photo — voir buildEngineCreations(). Adossée à MaterielCatalogue
-  // (categorie=ENGIN), donc extensible en direct via la ligne "Autre" ci-dessous.
+  // Chaque engin coché devient une offre (Matériel/Autre + catalogue), avec quantité et photo
+  // propres. Catalogue MaterielCatalogue (categorie=ENGIN), extensible via « Autre ».
   engineLines: { item: MaterielCatalogue; checked: boolean; quantite: number | null; photo: File | null }[] = [];
   newEngineNom = '';
   addingCustomEngine = false;
-  // Une seule confirmation réglementaire pour tout le lot d'engins cochés (pas une par ligne) —
-  // même rappel légal que showConformiteVehicule pour une ligne Transport/Matériel standard.
+  // Une seule confirmation réglementaire pour tout le lot d'engins.
   engineConfirmationReglementaire = false;
   engineImmatriculation = '';
 
@@ -210,8 +184,7 @@ export class ProposeHelpFormComponent implements OnInit {
     this.addingCustomEngine = true;
     this.materielCatalogueService.create({ nom, categorie: 'ENGIN' }).subscribe({
       next: (item) => {
-        // Réutilise la ligne existante si ce nom (insensible à la casse) est déjà dans le
-        // catalogue — même dédoublonnage que TagLikeViewSetMixin côté back.
+        // Réutilise l'entrée existante (nom insensible à la casse), comme TagLikeViewSetMixin.
         const existing = this.engineLines.find(l => l.item.id === item.id);
         if (existing) {
           existing.checked = true;
@@ -233,9 +206,8 @@ export class ProposeHelpFormComponent implements OnInit {
     this.longitude = addr?.longitude ?? null;
   }
 
-  // Étape "crise + lieu + thèmes à l'écoute" (voir app-crise-lieu-theme) : remplace l'ancien
-  // crisis-autocomplete maison + la section "Votre adresse" séparée plus bas dans le formulaire
-  // — l'adresse n'est désormais demandée qu'une fois, en tête.
+  // Étape « crise + lieu + thèmes à l'écoute » (app-crise-lieu-theme) : l'adresse n'est
+  // demandée qu'une fois.
   criseSelectionnee: Crisis | null = null;
   typesOffreAutorises: string[] = [];
 
@@ -252,9 +224,7 @@ export class ProposeHelpFormComponent implements OnInit {
     { value: '', label: 'Dropdown' }
   ];
 
-  /** offerTypeOptions restreint aux types dont l'id figure dans typesOffreAutorises (thèmes à
-   * l'écoute, voir onTypesAutorises) -- offerTypeOptions garde value=nom du type (pas l'id),
-   * d'où le passage par typesOffreMap pour la comparaison. */
+  /** Types limités aux thèmes à l'écoute ; options par nom, typesOffreMap fait la correspondance. */
   get offerTypeOptionsFiltrees(): { value: string; label: string }[] {
     return this.offerTypeOptions.slice(1).filter(opt => {
       const id = this.typesOffreMap.get(opt.value);
@@ -277,10 +247,7 @@ export class ProposeHelpFormComponent implements OnInit {
   competenceSearchFn = (q: string) => this.competenceService.search(q);
   competenceCreateFn = (nom: string) => this.competenceService.create({ nom });
 
-  // Catalogue partagé (façon hashtag) : un matériel "Autre" tapé une fois devient proposable à
-  // tout le monde ensuite — même mécanisme que pour l'inventaire des points. Chargé en entier
-  // (pas seulement via recherche) pour apparaître directement dans le menu déroulant "Type de
-  // matériel", avant "Autre" — qui ne doit plus servir que pour un matériel pas encore listé.
+  // Catalogue partagé : un matériel « Autre » saisi une fois est proposé à tous ensuite.
   allMateriels: MaterielCatalogue[] = [];
   materielCatalogueSearchFn = (q: string) => this.materielCatalogueService.search(q);
   materielCatalogueCreateFn = (nom: string) => this.materielCatalogueService.create({ nom });
@@ -288,9 +255,7 @@ export class ProposeHelpFormComponent implements OnInit {
 
   readonly CATALOGUE_PREFIX = 'CATALOGUE:';
 
-  /** Le menu "Type de matériel" mélange les types structurels fixes (CUVE, POMPE...) et le
-   * catalogue partagé, distingués par un préfixe sur la valeur — choisir une entrée du
-   * catalogue revient à choisir "Autre" + ce matériel précis, sans repasser par la recherche. */
+  /** Valeurs préfixées : une entrée du catalogue équivaut à « Autre » + ce matériel. */
   onMaterielTypeDropdownChange(row: AbstractControl, value: string): void {
     const rg = this.rowGroup(row);
     if (value.startsWith(this.CATALOGUE_PREFIX)) {
@@ -314,18 +279,13 @@ export class ProposeHelpFormComponent implements OnInit {
 
   onMaterielCatalogueSelected(row: AbstractControl, item: MaterielCatalogue): void {
     this.rowGroup(row).patchValue({ materielCatalogue: item.id, materielCatalogueNom: item.nom });
-    // Apparaît désormais directement dans le menu déroulant, avant "Autre" — pour ce
-    // formulaire (pas besoin de recharger la page) et pour tous les suivants (déjà en base).
     if (!this.allMateriels.some(m => m.id === item.id)) {
       this.allMateriels = [...this.allMateriels, item];
     }
   }
 
-  // ── Type de matériel : menu catégorie/sous-catégorie pliable (choix unique, pas de case à
-  // cocher) — même principe que le menu des compétences ci-dessus, mais l'état ouvert/déplié
-  // est tenu PAR LIGNE (plusieurs offres possibles dans ce formulaire), indexé par l'instance
-  // du FormGroup de la ligne plutôt que par un identifiant stable (elle ne change jamais tant
-  // que la ligne existe).
+  // ── Type de matériel : menu catégorie/sous-catégorie pliable (choix unique) ──
+  // État déplié tenu par ligne, indexé par l'instance du FormGroup.
   private materielDropdownOpenRows = new Set<AbstractControl>();
   private expandedMaterielGroupsByRow = new Map<AbstractControl, Set<string>>();
 
@@ -357,11 +317,7 @@ export class ProposeHelpFormComponent implements OnInit {
     else set.add(parentId);
   }
 
-  /** Catalogue organisé en catégorie/sous-catégorie (MaterielCatalogue.parent) — distinct de
-   * `categorie` (énumération fixe dédiée au stock des centres, jamais utilisée ici). Les
-   * entrées désactivées (actif=false, ex: un doublon d'un type structurel fixe comme "Pompe")
-   * n'apparaissent plus dans ce sélecteur public, contrairement à l'admin qui les garde
-   * visibles pour pouvoir les réactiver. */
+  /** Catalogue par parent (MaterielCatalogue.parent) ; les entrées inactives sont masquées ici. */
   get materielGroups(): { parent: MaterielCatalogue; children: MaterielCatalogue[] }[] {
     const actifs = this.allMateriels.filter(m => m.actif !== false);
     const topLevel = actifs.filter(m => !m.parent);
@@ -384,10 +340,7 @@ export class ProposeHelpFormComponent implements OnInit {
   }
 
   selectMaterielCatalogueItemFromTree(row: AbstractControl, item: MaterielCatalogue): void {
-    // materielType doit valoir 'AUTRE' pour que ce choix soit soumis (voir onSubmit, qui
-    // n'envoie materiel_catalogue que si materielType === 'AUTRE') — jamais posé par
-    // onMaterielCatalogueSelected seul (appelée aussi depuis la recherche libre "Autre", où
-    // materielType vaut déjà 'AUTRE' à ce stade).
+    // materielType doit valoir 'AUTRE' : onSubmit n'envoie materiel_catalogue que dans ce cas.
     this.rowGroup(row).patchValue({ materielType: 'AUTRE' });
     this.onMaterielCatalogueSelected(row, item);
     this.materielDropdownOpenRows.delete(row);
@@ -403,15 +356,10 @@ export class ProposeHelpFormComponent implements OnInit {
   }
 
   allCompetences: Competence[] = [];
-  // Un lien "Autre (préciser)" ouvre le champ de recherche/création libre en dessous de l'arbre
-  // — pour une compétence pas encore listée, jamais pour naviguer parmi celles qui existent
-  // déjà (voir competencesDropdownOpen/competenceGroups ci-dessous).
+  // « Autre (préciser) » ouvre la recherche/création libre, pour une compétence non listée.
   showCompetenceAutre = false;
 
-  // ── Menu déroulant catégorie/sous-catégorie pliable (même principe que "Thèmes
-  // d'intervention" côté équipe et "Thèmes à l'écoute" côté déclaration de crise) — repose sur
-  // Competence.parent. Sélection multiple (contrairement au matériel plus bas) : une case
-  // cochée ajoute/retire la compétence de selectedCompetences.
+  // ── Menu catégorie/sous-catégorie pliable (Competence.parent), sélection multiple ──
   competencesDropdownOpen = false;
   expandedCompetenceGroups = new Set<string>();
 
@@ -448,8 +396,7 @@ export class ProposeHelpFormComponent implements OnInit {
     return selected === ids.length ? 'all' : 'some';
   }
 
-  /** Coche/décoche le thème parent ET tous ses sous-thèmes d'un coup (dégénère au comportement
-   * de toggleCompetenceChecked pour un thème sans sous-catégorie). */
+  /** Coche ou décoche le thème parent et tous ses sous-thèmes. */
   toggleCompetenceGroupChecked(group: { parent: Competence; children: Competence[] }): void {
     const groupItems = [group.parent, ...group.children];
     const tout = groupItems.every(c => this.isCompetenceChecked(c.id));
@@ -470,8 +417,7 @@ export class ProposeHelpFormComponent implements OnInit {
       error: () => {},
     });
     this.materielCatalogueService.getAll().subscribe({
-      // Les engins (categorie=ENGIN) ont leur propre rubrique dédiée (voir loadEngineCatalogue)
-      // — exclus d'ici pour ne pas apparaître une seconde fois dans "Type de matériel" > Autre.
+      // Les engins ont leur propre rubrique (loadEngineCatalogue).
       next: (list) => this.allMateriels = list.filter(m => m.categorie !== 'ENGIN'),
       error: () => {},
     });
@@ -506,8 +452,7 @@ export class ProposeHelpFormComponent implements OnInit {
     return this.joursDispo.every(jour => jour.creneaux.every(slot => slot.checked));
   }
 
-  /** Coche ou décoche tous les créneaux d'un coup — si au moins un créneau reste décoché,
-   * l'action est "tout cocher" ; sinon "tout décocher" (cf. allDisposChecked). */
+  /** Tout cocher si un créneau reste décoché, sinon tout décocher. */
   toggleAllDispos(): void {
     const nouvelEtat = !this.allDisposChecked;
     this.joursDispo.forEach(jour => jour.creneaux.forEach(slot => slot.checked = nouvelEtat));
@@ -536,7 +481,7 @@ export class ProposeHelpFormComponent implements OnInit {
       image: [null],
     });
 
-    this.addOffer(); // Ajouter une ligne d'offre initiale
+    this.addOffer();
 
     this.informationForm = this.formBuilder.group({
       lastName: [this.currentUser?.last_name, Validators.required],
@@ -544,29 +489,23 @@ export class ProposeHelpFormComponent implements OnInit {
       email: [this.currentUser?.email, [Validators.required, Validators.email]],
       phoneNumber: [this.currentUser?.phone_number, [Validators.required, Validators.pattern(/^\+?[\d\s.-]{10,20}$/)]],
       organisationNom: [''],
-      // Qualifications de la personne — déclarées UNE SEULE FOIS ici (voir section "Vos
-      // qualifications"), et reportées sur chaque offre où elle est physiquement présente au
-      // moment de la soumission (voir onSubmit) : avant ce correctif, "diplôme de secourisme"
-      // était un champ PAR LIGNE D'OFFRE, dupliqué à l'identique (et pouvant être répondu
-      // différemment) à chaque fois qu'une ligne d'un type concerné était ajoutée.
+      // Qualifications déclarées une fois pour la personne, reportées sur chaque offre où elle est
+      // présente (voir onSubmit).
       diplomeSecourisme: [false],
       ancienSapeurPompier: [false],
       acceptCgu: [false, Validators.requiredTrue],
     });
   }
 
-  /** Galerie (jusqu'à 10 photos) — la première du tableau émis est toujours la principale
-   * désignée (voir PhotoGalleryPickerComponent), envoyée dans le champ `photo` existant de
-   * l'offre ; les suivantes sont postées séparément vers la galerie après création (voir
-   * onSubmit). */
+  /** Galerie (10 photos max) : la première part dans `photo` de l'offre, les autres sont postées
+   * après création. */
   selectedPhotos: File[] = [];
 
   onPhotosSelected(files: File[]): void {
     this.selectedPhotos = files;
   }
 
-  // Encadré rouge de résumé, un par étape (formulaire en 2 temps) — remplace les alert()
-  // génériques qui ne disaient jamais lesquels des champs posaient problème.
+  // Résumé des erreurs, un par étape.
   formErrorsStep1: string[] = [];
   formErrorsStep2: string[] = [];
 
@@ -602,16 +541,11 @@ export class ProposeHelpFormComponent implements OnInit {
     const addressVisible = this.requestForm.get('addressVisible')?.value;
     const hasLocation = !!(addressVisible && this.latitude != null && this.longitude != null);
 
-    // Dépôt groupé (entreprise/association déposant plusieurs personnes/véhicules en une
-    // seule visite) : un seul groupe_id partagé par toutes les lignes de cette soumission, posé
-    // uniquement si un nom d'organisation est renseigné — sinon comportement inchangé.
+    // Dépôt groupé (organisation) : un groupe_id commun, seulement si un nom d'organisation est saisi.
     const organisationNom = (this.informationForm.get('organisationNom')?.value || '').trim();
     const groupeId = organisationNom ? crypto.randomUUID() : null;
 
-    // La ligne "passerelle" vers Engins agricoles (voir ENGINS_AGRICOLES_VALUE) ne devient
-    // jamais elle-même une offre : seuls les engins cochés en dessous (checkedEngineLines) en
-    // deviennent une chacun. `realRows` remplace offerRows.controls comme base d'index pour le
-    // reste de la méthode (déclaration de disponibilités, photos de galerie).
+    // La ligne passerelle Engins est exclue ; `realRows` sert de base d'index pour la suite.
     const realRows = this.offerRows.controls.filter(row => {
       const v = row.value;
       return !(v.type === TYPE_MATERIEL && v.materielType === ENGINS_AGRICOLES_VALUE);
@@ -631,8 +565,7 @@ export class ProposeHelpFormComponent implements OnInit {
       if (typeId) formData.append('offer_type', typeId);
       if (crisisId) formData.append('crisis', crisisId);
 
-      // L'adresse propre au logement (si renseignée sur cette ligne Hébergement) prime sur
-      // "Votre adresse", partagée par défaut avec toutes les lignes de la soumission.
+      // L'adresse du logement prime sur « Votre adresse ».
       const hebergementHasOwnLocation = v.type === TYPE_HEBERGEMENT && v.hebergementLatitude != null && v.hebergementLongitude != null;
       if (hebergementHasOwnLocation) {
         formData.append('location', JSON.stringify({
@@ -692,8 +625,7 @@ export class ProposeHelpFormComponent implements OnInit {
         if (v.accompagne && v.nombreAccompagnants) formData.append('nombre_accompagnants', String(v.nombreAccompagnants));
       }
       if (v.type === TYPE_SOUTIEN && v.soutienType) formData.append('soutien_type', v.soutienType);
-      // Qualifications déclarées une seule fois pour la personne (voir "Vos qualifications" à
-      // l'étape 2) — reportées sur chaque offre où elle est physiquement présente.
+      // Qualifications reportées sur chaque offre où la personne est présente.
       if (v.presencePhysique === true) {
         formData.append('diplome_secourisme', String(!!this.informationForm.get('diplomeSecourisme')?.value));
         formData.append('ancien_sapeur_pompier', String(!!this.informationForm.get('ancienSapeurPompier')?.value));
@@ -710,8 +642,7 @@ export class ProposeHelpFormComponent implements OnInit {
       }
       if (this.currentUser?.id) formData.append('author', this.currentUser.id);
       if (this.selectedPhotos[0]) formData.append('photo', this.selectedPhotos[0]);
-      // Compétences déclarées côté personne : n'ont de sens que si l'offreur est
-      // effectivement présent avec ce qu'il propose (voir presencePhysique).
+      // Compétences reportées seulement si l'offreur est présent.
       if (v.presencePhysique === true) {
         this.selectedCompetences.forEach(c => formData.append('competences', c.id));
       }
@@ -719,9 +650,7 @@ export class ProposeHelpFormComponent implements OnInit {
       return this.offerService.create(formData);
     });
 
-    // Rubrique "Engins agricoles / chantiers / spéciaux" : chaque ligne cochée devient sa
-    // propre offre (Matériel/Autre + ce catalogue précis), avec sa propre photo — indépendante
-    // de la galerie globale ci-dessus, qui ne s'applique qu'aux lignes du formulaire standard.
+    // Chaque engin coché devient une offre, avec sa propre photo.
     const checkedEngineLines = this.engineLines.filter(l => l.checked);
     const engineCreations: Observable<Offer>[] = checkedEngineLines.map(line => {
       const formData = new FormData();
@@ -742,8 +671,7 @@ export class ProposeHelpFormComponent implements OnInit {
 
       formData.append('description', `Engin proposé : ${line.item.nom}`);
       formData.append('renouvelable', 'false');
-      // Pas de choix "présent moi-même" dans cette liste rapide (contrairement à une ligne
-      // standard) : un engin coché ici est mis à disposition seul, par défaut.
+      // Un engin coché est mis à disposition seul par défaut.
       formData.append('presence_physique', 'false');
       formData.append('materiel_type', 'AUTRE');
       formData.append('materiel_catalogue', line.item.id);
@@ -766,16 +694,13 @@ export class ProposeHelpFormComponent implements OnInit {
 
     forkJoin(creations).subscribe({
       next: (offers) => {
-        // Des disponibilités n'ont de sens que pour une offre où l'offreur est présent en
-        // personne (voir presencePhysique) — seules les offres issues des lignes standard sont
-        // concernées, elles restent en tête de `offers` puisque `creations` les place en premier.
+        // Disponibilités seulement pour les offres avec présence ; les lignes standard sont en tête
+        // de `offers`.
         const rowOffers = offers.slice(0, rowCreations.length);
         rowOffers.forEach((o, i) => {
           if (realRows[i].value.presencePhysique === true) this.declareDisponibilites(o.id);
         });
-        // Photos additionnelles de la galerie (au-delà de la principale déjà envoyée avec
-        // chaque offre) — postées séparément vers chaque offre créée, une fois qu'elle existe.
-        // Ne s'applique qu'aux lignes standard : les engins ont chacun leur propre photo dédiée.
+        // Photos supplémentaires postées après création (lignes standard seulement).
         const photosSupplementaires = this.selectedPhotos.slice(1);
         rowOffers.forEach(o => {
           photosSupplementaires.forEach((file, i) => {
@@ -806,10 +731,7 @@ export class ProposeHelpFormComponent implements OnInit {
     return rowValue.description || '';
   }
 
-  /** La commune est obligatoire même pour un offreur d'aide (matching géographique avec les
-   * besoins à proximité) : l'adresse précise reste néanmoins masquable au public via la case
-   * "adresse visible" plus bas — seule la sélection elle-même (qui résout une commune) est
-   * requise ici. */
+  /** Commune obligatoire (rapprochement géographique) ; l'adresse peut rester masquée au public. */
   onContinue(): void {
     this.formErrorsStep1 = this.step1ValidationErrors();
     if (this.formErrorsStep1.length > 0) return;
@@ -826,8 +748,7 @@ export class ProposeHelpFormComponent implements OnInit {
     }
   }
 
-  /** Envoie les créneaux de disponibilité cochés, liés à l'offre qui vient d'être créée. Un
-   * échec ici n'annule pas la création de l'offre (déjà faite). */
+  /** Envoie les créneaux cochés ; un échec n'annule pas l'offre déjà créée. */
   private declareDisponibilites(offerId: string): void {
     for (const jour of this.joursDispo) {
       for (const slot of jour.creneaux) {
@@ -856,9 +777,7 @@ export class ProposeHelpFormComponent implements OnInit {
       type: ['', Validators.required],
       description: ['', [Validators.minLength(10)]],
       hebergementDuree: [''],
-      // Adresse du logement, si différente de "Votre adresse" (voir onHebergementAddressSelected)
-      // — retombe sur cette dernière au moment de la soumission si laissée vide. Offer n'a pas
-      // de champ commune_code (contrairement à Request) : seule la position géographique compte.
+      // Adresse du logement (à défaut, « Votre adresse ») ; Offer n'a pas de commune_code.
       hebergementLatitude: [null as number | null],
       hebergementLongitude: [null as number | null],
       typeLoyer: [''],
@@ -895,11 +814,8 @@ export class ProposeHelpFormComponent implements OnInit {
       accompagne: [null as boolean | null],
       nombreAccompagnants: [null as number | null],
     });
-    // Le type conditionne l'exigibilité de confirmationReglementaire (voir le validateur) :
-    // sans cet abonnement, choisir Transport/Matériel APRÈS coup ne rendrait jamais la case
-    // obligatoire tant qu'on ne retouche pas la case elle-même. Pilote aussi presencePhysique :
-    // forcée vrai/faux sur les types non-ambigus, remise à null (à préciser) sur les autres —
-    // change de type après avoir répondu ne doit pas garder une réponse qui ne correspond plus.
+    // Le type rend confirmationReglementaire obligatoire ou non : réévaluation à chaque changement.
+    // Il fixe aussi presencePhysique (vrai/faux selon le type, null à préciser sinon).
     row.get('type')?.valueChanges.subscribe((type: string | null) => {
       row.get('confirmationReglementaire')?.updateValueAndValidity();
       if (TYPES_PRESENCE_FORCEE_VRAIE.includes(type ?? '')) {
@@ -910,16 +826,11 @@ export class ProposeHelpFormComponent implements OnInit {
         row.get('presencePhysique')?.setValue(null);
       }
     });
-    // Même mécanique que confirmationReglementaireValidator ci-dessus, mais pilotée par
-    // transportType (sous-catégorie), pas type : choisir "Transport d'animaux" APRÈS coup doit
-    // rendre transportAnimauxPrecision obligatoire sans retoucher le champ lui-même.
+    // Idem pour transportAnimauxPrecision, piloté par transportType.
     row.get('transportType')?.valueChanges.subscribe(() => {
       row.get('transportAnimauxPrecision')?.updateValueAndValidity();
     });
-    // Choisir "Engins agricoles..." (ligne passerelle, voir ENGINS_AGRICOLES_VALUE) dispense
-    // cette ligne de presencePhysique/confirmationReglementaire, remplacées par les leurs
-    // (engineConfirmationReglementaire) — sans cet abonnement, les valider une fois avant de
-    // changer d'avis laisserait l'ancienne réponse geler l'état invalide/valide du contrôle.
+    // La ligne passerelle Engins est dispensée de presencePhysique/confirmationReglementaire.
     row.get('materielType')?.valueChanges.subscribe((materielType: string | null) => {
       row.get('confirmationReglementaire')?.updateValueAndValidity();
       row.get('presencePhysique')?.updateValueAndValidity();
@@ -930,8 +841,7 @@ export class ProposeHelpFormComponent implements OnInit {
     this.offerRows.push(row);
   }
 
-  /** Cette ligne demande-t-elle explicitement si l'offreur est présent (types ambigus) ? Pas
-   * pour la ligne "passerelle" Engins agricoles — voir ENGINS_AGRICOLES_VALUE. */
+  /** Faut-il demander la présence de l'offreur ? (types ambigus, hors ligne passerelle) */
   showPresencePhysiqueChoice(type: string | null | undefined, materielType?: string | null): boolean {
     if (type === TYPE_MATERIEL && materielType === ENGINS_AGRICOLES_VALUE) return false;
     return !!type && TYPES_PRESENCE_A_PRECISER.includes(type);
@@ -941,22 +851,13 @@ export class ProposeHelpFormComponent implements OnInit {
     this.offerRows.removeAt(index);
   }
 
-  /** Transport (toujours un véhicule, conduit par l'offreur) et Matériel (peut être un engin
-   * ou un véhicule remorquable, prêté seul ou avec l'offreur) sont les deux types où un
-   * véhicule/engin est potentiellement en jeu — le rappel s'affiche sur les deux, la conduite
-   * conditionnelle précise du texte ("que vous le conduisiez ou non") le rend juste même quand
-   * le matériel proposé n'est en réalité pas motorisé (ex: une cuve). */
+  /** Transport et Matériel peuvent impliquer un véhicule ou un engin : le rappel s'affiche sur les deux. */
   showConformiteVehicule(type: string | null | undefined, materielType?: string | null): boolean {
     if (type === TYPE_MATERIEL && materielType === ENGINS_AGRICOLES_VALUE) return false;
     return type === TYPE_TRANSPORT || type === TYPE_MATERIEL;
   }
 
-  /** Une personne qui ne propose QUE du matériel (ex: une cuve à prêter, un hébergement vide)
-   * n'a ni compétence ni disponibilité personnelle à déclarer : lui montrer ces deux sections
-   * (pensées pour un engagement en personne) n'a pas de sens et ajoute du bruit/des clics
-   * inutiles. S'appuie désormais sur presencePhysique, déclaré explicitement par ligne
-   * (remplace l'ancienne règle "tout type ≠ Matériel", fausse pour l'Hébergement et incapable
-   * de distinguer un Transport/Matériel avec ou sans l'offreur). */
+  /** Compétences et disponibilités ne s'affichent que si l'offreur est présent sur au moins une ligne. */
   get proposeAideEnPersonne(): boolean {
     return this.offerRows.controls.some(row => row.value.presencePhysique === true);
   }

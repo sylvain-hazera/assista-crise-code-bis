@@ -226,15 +226,13 @@ export class CrisesComponent implements OnInit {
     return this.delegations.filter(d => d.crise === crisisId);
   }
 
-  /** Une institution ne peut déléguer une compétence que si elle est déjà impliquée
-   * (acteur ou simple impliquée) sur cette crise — cohérent avec la règle backend. */
+  /** Délégation possible seulement par une institution impliquée sur la crise (règle backend). */
   delegableInstitutionsFor(crisisId: string): Institution[] {
     const ids = new Set(this.implicationsFor(crisisId).map(i => i.institution));
     return this.institutions.filter(i => ids.has(i.id!));
   }
 
-  /** La bénéficiaire d'une délégation doit être acteur opérationnel sur la crise (ex: une
-   * association déjà mobilisée sur un point) — cohérent avec la règle backend. */
+  /** La bénéficiaire doit être acteur opérationnel sur la crise (règle backend). */
   acteursInstitutionsFor(crisisId: string): Institution[] {
     const ids = new Set(this.acteursFor(crisisId).map(i => i.institution));
     return this.institutions.filter(i => ids.has(i.id!));
@@ -285,9 +283,7 @@ export class CrisesComponent implements OnInit {
   // ── Photo (aperçu) ───────────────────────────────────────────
   crisisPhotoUrl: string | null = null;
 
-  /** CrisisSerializer.photo est write_only (voir preview, gardé par user_can_view_photo) :
-   * même patron que dossiers.component.loadOrigineDossierPhoto, un blob récupéré à l'ouverture
-   * du détail plutôt qu'une URL directement utilisable dans un <img src>. */
+  /** CrisisSerializer.photo est write_only : blob récupéré via preview à l'ouverture du détail. */
   private loadCrisisPhoto(crisis: Crisis): void {
     if (this.crisisPhotoUrl) URL.revokeObjectURL(this.crisisPhotoUrl);
     this.crisisPhotoUrl = null;
@@ -310,9 +306,7 @@ export class CrisesComponent implements OnInit {
   saveZone(): void {
     if (!this.selectedCrisis) return;
 
-    // Une zone était déjà enregistrée : demander explicitement si ce nouveau tracé doit la
-    // REMPLACER ou s'y AJOUTER (fusion géométrique) — décision utilisateur du 2026-09-18,
-    // avant ce correctif le tracé écrasait toujours l'existant sans prévenir.
+    // Zone existante : demander si le tracé la remplace ou s'y ajoute (fusion).
     if (this.selectedCrisis.zone && this.pendingZoneWkt) {
       const fusionner = confirm(
         "Une zone est déjà enregistrée pour cette crise.\n\n" +
@@ -345,9 +339,7 @@ export class CrisesComponent implements OnInit {
   }
 
   // ── Zone de crise : secteurs (communes/départements + rayon) ───
-  /** Résout les noms des communes/départements déjà enregistrés sur la crise, pour
-   * l'affichage des chips (le backend ne stocke que des codes). N'écrit rien : appelé au
-   * chargement de l'écran, avant toute modification par l'utilisateur. */
+  /** Le backend ne stocke que des codes : résout les noms pour les chips (lecture seule). */
   private loadZoneSecteurLabels(): void {
     const crisis = this.selectedCrisis;
     if (!crisis || (!crisis.zone_communes?.length && !crisis.zone_departements?.length)) return;
@@ -364,9 +356,7 @@ export class CrisesComponent implements OnInit {
     });
   }
 
-  /** forkJoin([]) ne complète jamais avec une valeur (RxJS) : indispensable de retomber sur
-   * of([]) quand la liste de codes est vide, sinon le forkJoin englobant ne se déclenche
-   * jamais dès qu'une des deux listes (communes/départements) est vide. */
+  /** forkJoin([]) n'émet jamais : repli sur of([]) pour une liste vide. */
   private fetchContours(codes: string[], fetchFn: (code: string) => import('rxjs').Observable<GeoContour>) {
     return codes.length ? forkJoin(codes.map(fetchFn)) : of([] as GeoContour[]);
   }
@@ -465,15 +455,8 @@ export class CrisesComponent implements OnInit {
     return this.authService.getCurrentUser()?.type === UserRole.ADMIN;
   }
 
-  /** Contrairement à isAdmin (toujours basé sur le rôle PROD réel, à dessein — voir
-   * AuthService.isAdmin), reflète le rôle EFFECTIVEMENT appliqué à la requête en cours (PROD ou
-   * DEMO selon la bascule active, voir AuthService.getEffectiveRole/backend get_effective_role).
-   * Utilisé spécifiquement pour les sélecteurs d'institution (selectableInstitutions) : un
-   * admin PROD dont le rôle démo est un simple AUT_LOCALE ne doit se voir proposer QUE ses
-   * propres institutions en zone DEMO, jamais toutes celles de la plateforme — avant ce
-   * correctif, le sélecteur en proposait la totalité (isAdmin restant vrai en DEMO), pour un
-   * backend qui rejetait ensuite (403) tout choix hors institution propre puisque
-   * get_effective_role y renvoie le rôle démo, pas ADMIN. */
+  /** Rôle effectif (PROD ou DEMO), pas isAdmin : en DEMO, un admin PROD avec un rôle démo
+   * AUT_LOCALE ne doit voir que ses institutions (le backend refuserait les autres). */
   get isAdminEffectif(): boolean {
     return this.authService.getEffectiveRole() === UserRole.ADMIN;
   }
@@ -569,8 +552,7 @@ export class CrisesComponent implements OnInit {
     });
   }
 
-  /** Un admin peut déclarer/désigner un responsable pour n'importe quelle institution ; un
-   * acteur institutionnel reste limité aux siennes. */
+  /** Un admin peut désigner un responsable pour toute institution ; les autres, pour les leurs. */
   get selectableInstitutions(): Institution[] {
     return this.isAdminEffectif ? this.institutions : this.myInstitutions;
   }
@@ -649,11 +631,7 @@ export class CrisesComponent implements OnInit {
     });
   }
 
-  /** Traduit les erreurs backend les plus courantes sur une déclaration d'implication en
-   * message exploitable — avant ce correctif, un message générique ("Impossible d'enregistrer
-   * cette déclaration.") s'affichait aussi bien pour un vrai problème que pour une institution
-   * déjà déclarée sur cette crise (contrainte d'unicité crise/institution/type_implication),
-   * cas fréquent et pourtant présenté comme un échec inexpliqué. */
+  /** Messages lisibles pour les erreurs courantes (dont l'unicité crise/institution/type). */
   private implicationErrorMessage(err: any, fallback: string): string {
     const nonFieldErrors: string[] = err?.error?.non_field_errors ?? [];
     if (nonFieldErrors.some(m => typeof m === 'string' && m.includes('must make a unique set'))) {
@@ -704,8 +682,7 @@ export class CrisesComponent implements OnInit {
     });
   }
 
-  /** Autorisé au déclarant, à un contact de l'institution, ou à un admin — même règle que
-   * le backend (voir ImplicationInstitutionViewSet._can_manage). */
+  /** Déclarant, contact de l'institution ou admin (ImplicationInstitutionViewSet._can_manage). */
   canManageImplication(implication: ImplicationInstitution): boolean {
     if (this.isAdmin) return true;
     if (this.isMine(implication)) return true;
@@ -751,9 +728,7 @@ export class CrisesComponent implements OnInit {
     });
   }
 
-  /** Le backend autorise tout acteur institutionnel à gérer n'importe quel point (voir
-   * PointOperationnelViewSet) — le frontend n'a donc pas besoin d'être plus restrictif que
-   * "admin ou moi-même" pour afficher le bouton de retrait. */
+  /** Le backend autorise tout acteur institutionnel : « admin ou moi-même » suffit ici. */
   canManagePoint(point: PointOperationnel): boolean {
     return this.isAdmin || this.isMine(point);
   }

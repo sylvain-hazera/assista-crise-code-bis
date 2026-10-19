@@ -26,9 +26,7 @@ const CRENEAUX: { creneau: Creneau; label: string }[] = [
   { creneau: 'NUIT', label: 'N' },
 ];
 
-// Heure conventionnelle de chaque créneau, pour déduire la date/heure attendue du premier
-// créneau coché — l'utilisateur n'a plus à la saisir séparément, ça n'avait pas de sens
-// puisqu'elle correspond justement à ce premier créneau.
+// Heure conventionnelle de chaque créneau, pour déduire l'heure attendue du premier créneau coché.
 const HEURE_CRENEAU: Record<Creneau, string> = {
   MATIN: '08:00',
   MIDI: '12:00',
@@ -51,14 +49,8 @@ function buildJours(): JourCreneaux[] {
   return jours;
 }
 
-/**
- * Mini-outil RH de recrutement de bénévoles sur un point : tableau paginé/filtrable/triable
- * (recherche, disponibilité, compétences, distance), sélection multiple, affectation groupée.
- * Sélectionner un bénévole coche d'office tous ses créneaux déclarés disponibles dans la
- * grille "créneaux à couvrir" (décochables ensuite un par un) — le régulateur garde la main
- * pour ajuster, mais n'a pas à tout cocher à la main. La ligne d'en-tête du tableau affiche en
- * direct, pour chaque créneau, le nombre de bénévoles déjà présents dans l'équipe.
- */
+/** Recrutement de bénévoles sur un point : tableau filtrable, sélection multiple, affectation
+ * groupée. Sélectionner un bénévole pré-coche ses créneaux disponibles. */
 @Component({
   selector: 'app-recrutement-benevoles-modal',
   standalone: true,
@@ -90,15 +82,11 @@ export class RecrutementBenevolesModalComponent implements OnInit {
   selectedCompetences: Competence[] = [];
   competenceSearchFn = (q: string) => this.competenceService.search(q);
 
-  // Sélection multiple (persiste entre les pages) — on garde l'objet complet, pas seulement
-  // l'id, pour pouvoir recalculer les créneaux à couvrir même pour un candidat d'une autre page.
+  // Sélection multiple persistante entre les pages (objets complets).
   selectedIds = new Set<string>();
   private selectedCandidats = new Map<string, CandidatBenevole>();
 
-  // Créneaux à couvrir PAR bénévole sélectionné (clé "date|creneau") — pré-cochés sur ses
-  // propres disponibilités déclarées à la sélection, ajustables ensuite individuellement.
-  // Avant ce correctif, une seule grille de créneaux était partagée par tout le lot sélectionné,
-  // sans tenir compte des disponibilités propres à chacun.
+  // Créneaux à couvrir par bénévole (clé "date|creneau"), pré-cochés sur ses disponibilités.
   private benevoleCreneaux = new Map<string, Set<string>>();
 
   // Affectation groupée
@@ -108,8 +96,7 @@ export class RecrutementBenevolesModalComponent implements OnInit {
   submitError = '';
   submitSummary = '';
 
-  // Compteurs "déjà affecté" par créneau, déduits de la vue équipe existante — affichés en
-  // haut du tableau, sur la même grille que les disponibilités de chaque bénévole.
+  // Compteurs « déjà affecté » par créneau, issus de la vue équipe.
   private equipeDisponibilites: { date: string; creneau: Creneau }[] = [];
 
   private search$ = new Subject<string>();
@@ -264,8 +251,7 @@ export class RecrutementBenevolesModalComponent implements OnInit {
     return new Set(candidat.disponibilites.map(d => `${d.date}|${d.creneau}`));
   }
 
-  /** Bénévoles sélectionnés, dans l'ordre — pour l'affichage individuel des créneaux à couvrir
-   * dans la barre d'action groupée. */
+  /** Bénévoles sélectionnés, dans l'ordre. */
   get selectedCandidatsList(): CandidatBenevole[] {
     return Array.from(this.selectedCandidats.values());
   }
@@ -288,8 +274,7 @@ export class RecrutementBenevolesModalComponent implements OnInit {
     return this.equipeDisponibilites.filter(d => d.date === date && d.creneau === creneau).length;
   }
 
-  /** Nombre de bénévoles sélectionnés couvrant ce créneau, tous confondus — affiché à titre
-   * indicatif à côté du décompte "déjà présents dans l'équipe". */
+  /** Nombre de bénévoles sélectionnés couvrant ce créneau. */
   delta(date: string, creneau: Creneau): number {
     let count = 0;
     for (const id of this.selectedIds) {
@@ -298,8 +283,7 @@ export class RecrutementBenevolesModalComponent implements OnInit {
     return count;
   }
 
-  /** Date/heure attendue déduite du premier créneau coché (le plus tôt) pour CE bénévole —
-   * plus de champ à saisir séparément, ça correspond exactement à ce créneau. */
+  /** Date/heure attendue : premier créneau coché de ce bénévole. */
   premierCreneauFor(candidatId: string): { date: string; creneau: Creneau; label: string } | null {
     const set = this.benevoleCreneaux.get(candidatId);
     if (!set || set.size === 0) return null;

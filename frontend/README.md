@@ -1,59 +1,98 @@
-# AssistaCriseFront
+# Frontend — application Angular d'Assista-Crise
 
-This project was generated using [Angular CLI](https://github.com/angular/angular-cli) version 19.1.2.
+Interface web de la plateforme : Angular 19 (composants standalone) et MapLibre GL pour la
+cartographie. Ce README sert de point d'entrée dans le code frontend. Les rôles, flux métier,
+pièges de la carte et le menu d'administration sont détaillés dans
+[DOCUMENTATION.md](../DOCUMENTATION.md), § 6.
 
-## Development server
+## Démarrer
 
-To start a local development server, run:
+### Avec Docker (recommandé)
 
-```bash
-ng serve
-```
-
-Once the server is running, open your browser and navigate to `http://localhost:4200/`. The application will automatically reload whenever you modify any of the source files.
-
-## Code scaffolding
-
-Angular CLI includes powerful code scaffolding tools. To generate a new component, run:
+Le frontend tourne avec le reste de la pile (voir le [README principal](../README.md)) :
 
 ```bash
-ng generate component component-name
+./scripts/init-secrets.sh          # depuis la racine, une seule fois
+docker compose up -d --build
+docker compose logs -f frontend
 ```
 
-For a complete list of available schematics (such as `components`, `directives`, or `pipes`), run:
+En dev, `docker-compose.override.yml` construit `Dockerfile.dev` (`ng serve`, rechargement à
+chaud) et monte `frontend/` dans le conteneur : une modification du code est visible sans
+reconstruire l'image.
+
+| URL | |
+|---|---|
+| http://localhost | application via Nginx (recommandé : `/api` et le reste sur la même origine) |
+| http://localhost:4200 | serveur de dev Angular en direct |
+
+### Sans Docker
+
+Le backend doit tourner (API attendue sur `http://localhost:8000/api`) :
 
 ```bash
-ng generate --help
+cd frontend
+npm ci          # installe exactement les versions de package-lock.json
+npm start       # ng serve sur http://localhost:4200
 ```
 
-## Building
-
-To build the project run:
+## Commandes
 
 ```bash
-ng build
+npm start                 # serveur de dev
+npm run build             # build de production dans dist/assista-crise-front/browser
+npm run watch             # build de dev continu
+npm test                  # tests unitaires Karma/Jasmine (navigateur, mode watch)
+npm run test:ci           # tests une fois, Chrome headless, avec couverture
+npx ng generate component admin/ma-page   # nouveau composant (standalone par défaut)
 ```
 
-This will compile your project and store the build artifacts in the `dist/` directory. By default, the production build optimizes your application for performance and speed.
+Les tests Karma ont besoin d'un Chrome : lancez-les sur le poste, pas dans le conteneur de dev
+(image `node:alpine` sans navigateur). La CI ne les exécute pas encore.
 
-## Running unit tests
+## Organisation de `src/`
 
-To execute unit tests with the [Karma](https://karma-runner.github.io) test runner, use the following command:
+| Dossier | Contenu |
+|---|---|
+| `app/app.routes.ts` | routes racine : charge paresseusement `public/public.routes.ts` et `admin/admin.routes.ts` |
+| `app/public/` | pages publiques : accueil, carte, formulaires (demande, offre, déclaration), suivi de dossier, paramètres, pages légales |
+| `app/admin/` | espace d'administration (`/admin`) : une page par dossier (crises, équipes, institutions, signalements, radio, satellites…) |
+| `app/pages/` | pages connectées hors admin : mes interventions, mon équipe, hébergement, recherche de personnes, dégâts |
+| `app/layouts/` | mises en page publique et admin (menu latéral, cloche de notifications) |
+| `app/auth/` | connexion, inscription, `AuthService` (session, rôles, zone PROD/DEMO), intercepteurs (JWT, `X-Environment`) |
+| `app/core/` | gardes de routes (`guards/`), intercepteurs, pipes et services transverses |
+| `app/services/` | un service par ressource d'API (`crisis.service.ts`, `team.service.ts`…) |
+| `app/shared/` | composants réutilisables (`components/common/` : cartes, modales…), modèles TypeScript (`models/`), utilitaires (`utils/`) |
+| `environments/` | `environment.ts` (dev, API sur `http://localhost:8000/api`), `environment.prod.ts` (API relative `/api`) |
+| `assets/`, `fonts.scss` | images ; polices auto-hébergées (fichiers dans `../public/assets/fonts/`, aucun appel à Google Fonts) |
 
-```bash
-ng test
-```
+## Ajouter une page
 
-## Running end-to-end tests
+1. Créer un composant standalone dans le bon groupe (`public/`, `admin/` ou `pages/`).
+2. Déclarer la route avec `loadComponent` dans `public.routes.ts` ou `admin.routes.ts`, avec la
+   garde adaptée (`authGuard`, `institutionalEffectiveGuard`, `sysAdminGuard`…, voir
+   DOCUMENTATION.md, § 6.1).
+3. Pour une page d'administration, l'ajouter au menu de `layouts/admin-layout` (§ 6.4) : sinon
+   elle n'est atteignable que par son URL.
+4. Appeler l'API via un service de `app/services/`. Pour un rafraîchissement périodique,
+   utiliser `pollWhileVisible` (`shared/utils/polling.util.ts`) plutôt qu'un `setInterval`.
 
-For end-to-end (e2e) testing, run:
+Le frontend masque ce que le backend refuserait, mais **le contrôle d'accès réel est toujours
+côté serveur** : ne jamais compter sur une garde Angular pour protéger une donnée.
 
-```bash
-ng e2e
-```
+## Production
 
-Angular CLI does not come with an end-to-end testing framework by default. You can choose one that suits your needs.
+`Dockerfile.prod` compile l'application (`npm run build`) puis la sert avec un Nginx léger
+(`nginx.conf` : repli sur `index.html` pour le routage Angular, `index.html` toujours revalidé
+et chunks JS/CSS hachés mis en cache longue durée). La CI
+construit et pousse cette image, et le proxy Nginx de la pile la place devant le backend sur
+la même origine (voir [proxy/README.md](../proxy/README.md)).
 
-## Additional Resources
+## Pièges fréquents
 
-For more information on using the Angular CLI, including detailed command references, visit the [Angular CLI Overview and Command Reference](https://angular.dev/tools/cli) page.
+| Symptôme | Cause et solution |
+|---|---|
+| `Cannot find module 'terra-draw'` (ou un autre paquet) | `node_modules` local plus ancien que `package.json` : `npm ci` |
+| La carte est tronquée ou mal cadrée | taille du canvas MapLibre fixée à l'initialisation : voir DOCUMENTATION.md, § 6.3 |
+| Une page admin n'apparaît pas dans le menu | entrée absente de `admin-layout`, ou rôle effectif non institutionnel (zone DEMO) |
+| Un droit accordé n'apparaît pas | profil en cache : recharger la page (les gardes rafraîchissent `/api/auth/me/`) |

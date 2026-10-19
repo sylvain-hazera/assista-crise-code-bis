@@ -28,15 +28,11 @@ const PRIORITE_OPTIONS: { value: Dossier['priorite']; label: string }[] = [
   { value: 'BASSE', label: 'Basse' },
 ];
 
-// Statuts modifiables directement depuis cette vue (DossierViewSet.definir_statut, ouvert au
-// chef/régulateur de l'équipe affectée même non-institutionnel) — CLOTURE/RESOLU restent
-// exclusivement gérés par cloturer(), pas de bouton équivalent ici (voir DossiersComponent
-// côté admin pour ce cas). Même liste que dossiers.component.ts (STATUTS_MODIFIABLES).
+// Statuts modifiables ici (DossierViewSet.definir_statut) ; CLOTURE/RESOLU passent par
+// cloturer(). Même liste que dossiers.component.ts.
 const STATUTS_MODIFIABLES = ['NOUVEAU', 'EN_ATTENTE_DISTRIBUTION', 'EN_ATTENTE_AFFECTATION', 'AFFECTE', 'EN_COURS'];
 
-// Le tri par priorité prime toujours sur l'ordre manuel : un dossier urgent doit remonter en
-// tête même s'il vient d'être ajouté (ordre par défaut à 0, sinon systématiquement premier
-// quelle que soit sa priorité — ce qui n'a pas de sens opérationnellement).
+// La priorité prime sur l'ordre manuel.
 const PRIORITE_RANG: Record<string, number> = { URGENTE: 0, NORMALE: 1, BASSE: 2 };
 
 const PRIORITE_COULEUR: Record<string, string> = { URGENTE: '#dc2626', NORMALE: '#f59e0b', BASSE: '#3b82f6' };
@@ -83,8 +79,7 @@ export class MesInterventionsComponent implements OnInit, OnDestroy {
           this.isLoading = false;
           return;
         }
-        // Vue "de management PAR équipe" : on démarre sur la première équipe, pas sur un
-        // mélange "toutes mes équipes" qui n'a pas de zone/minimap cohérente à afficher.
+        // Démarre sur la première équipe (une zone cohérente à afficher).
         this.selectedTeamId = teams[0].id!;
         this.loadDossiers();
       },
@@ -153,9 +148,7 @@ export class MesInterventionsComponent implements OnInit, OnDestroy {
     });
   }
 
-  /** Le réordonnancement manuel n'a de sens qu'au sein d'une même équipe (chaque équipe gère
-   * sa propre tournée) : les flèches haut/bas ne sont donc affichées que si une équipe précise
-   * est sélectionnée, jamais sur la vue "toutes mes équipes" mélangeant plusieurs tournées. */
+  /** Réordonnancement seulement dans une équipe sélectionnée (une tournée par équipe). */
   get canReorder(): boolean {
     return this.selectedTeamId !== 'ALL';
   }
@@ -176,13 +169,8 @@ export class MesInterventionsComponent implements OnInit, OnDestroy {
     this.persistOrder(list);
   }
 
-  /** Réindexe l'`ordre` de toute la liste visible sur sa position (0, 1, 2…) plutôt que
-   * d'échanger les deux valeurs stockées : tous les dossiers démarrent avec le même `ordre`
-   * par défaut (0), donc échanger deux valeurs identiques ne changeait jamais rien de visible
-   * — le tri semblait "figé" jusqu'à un rechargement qui, faute d'ordre explicite en base pour
-   * les ex-æquo, réaffichait une position arbitraire différente et donnait l'illusion que ça
-   * avait fonctionné. Réindexer garantit des valeurs distinctes après chaque clic, donc un
-   * rendu immédiat et correct sans avoir besoin de recharger la page. */
+  /** Réindexe `ordre` sur toute la liste : tous les dossiers partent de 0, échanger deux valeurs
+   * identiques ne changerait rien. */
   private persistOrder(list: Dossier[]): void {
     list.forEach((d, index) => {
       if (d.ordre === index) return;
@@ -224,8 +212,7 @@ export class MesInterventionsComponent implements OnInit, OnDestroy {
     });
   }
 
-  /** Lien "itinéraire" vers Google Maps depuis la position actuelle du terrain jusqu'au
-   * dossier — ouvre l'appli maps native sur mobile, Google Maps web sinon. */
+  /** Itinéraire Google Maps depuis la position actuelle (appli native sur mobile). */
   mapsDirectionsUrl(dossier: Dossier): string | null {
     if (dossier.latitude == null || dossier.longitude == null) return null;
     return `https://www.google.com/maps/dir/?api=1&destination=${dossier.latitude},${dossier.longitude}`;

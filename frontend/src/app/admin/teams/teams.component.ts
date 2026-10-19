@@ -75,10 +75,8 @@ export class TeamsComponent implements OnInit {
   points: PointOperationnel[] = [];
   pointTypes: PointType[] = [];
 
-  /** Membres candidats pour l'équipe SÉLECTIONNÉE uniquement (rechargés à l'ouverture du
-   * détail, scopés sur son institution) — distinct de `users` (liste globale, encore
-   * nécessaire pour résoudre noms/initiales de membres déjà affectés, y compris ceux qui
-   * auraient depuis quitté l'institution). */
+  /** Candidats de l'équipe sélectionnée (scopés sur son institution) ; `users` reste la liste
+   * globale pour afficher les membres déjà affectés. */
   candidateMembers: User[] = [];
   showInviteForm = false;
   inviteError = '';
@@ -134,8 +132,7 @@ export class TeamsComponent implements OnInit {
     this.loadRemoteData();
   }
 
-  /** Retour depuis "Ouvrir le tableau des offres" (voir ReportingComponent, mode picker) :
-   * rouvre directement le détail de l'équipe concernée une fois les données chargées. */
+  /** Retour depuis le tableau des offres (mode picker) : rouvre le détail de l'équipe. */
   private openTeamFromQueryParam(): void {
     const openTeamId = this.route.snapshot.queryParamMap.get('openTeam');
     if (!openTeamId) return;
@@ -146,8 +143,7 @@ export class TeamsComponent implements OnInit {
     }
   }
 
-  // Équipes désactivées (voir la politique de désactivation) sont masquées par défaut par le
-  // backend — ce bouton demande explicitement ?actif=all pour les retrouver et les réactiver.
+  // Les équipes désactivées sont masquées par le backend ; ?actif=all les fait réapparaître.
   showDesactives = false;
 
   // ── Load ─────────────────────────────────────────────────────
@@ -156,11 +152,10 @@ export class TeamsComponent implements OnInit {
     forkJoin({
       users:    this.userService.getAll(),
       crisis:   this.crisisService.getAll(),
-      // exclude_type=Bénévolat : l'annuaire permanent de bénévoles n'a pas vocation à être
-      // proposé comme ressource affectable à une équipe (voir ReportingComponent.loadAll).
+      // L'annuaire permanent de bénévoles n'est pas une ressource affectable à une équipe.
       offers:   this.offerService.getAll({ exclude_type: 'Bénévolat' }),
       requests: this.requestService.getAll(),
-      teams:    this.teamService.getAll(this.showDesactives),       // ← ajouté ici
+      teams:    this.teamService.getAll(this.showDesactives),
       dossiers: this.dossierService.getAll(),
       competences: this.competenceService.getAll(),
       besoins: this.besoinService.getAll(),
@@ -175,9 +170,7 @@ export class TeamsComponent implements OnInit {
         this.crisis   = crisis;
         this.offers   = offers;
         this.requests = requests;
-        // Scopé aux offres déjà chargées ci-dessus plutôt qu'un getAll() séparé (27k+ lignes
-        // mesurées sur cette table, sans rapport avec le nombre d'offres réellement affichées
-        // ici) -- voir DisponibiliteOffreService.getByOffers.
+        // Limité aux offres chargées (la table complète dépasse 27k lignes).
         this.disponibiliteOffreService.getByOffers(offers.map(o => o.id!)).subscribe({
           next: (disponibilites) => { this.disponibilites = disponibilites; },
           error: () => {},
@@ -201,9 +194,7 @@ export class TeamsComponent implements OnInit {
     });
   }
 
-  /** Reconstruit les missions affichées à partir des ids réellement assignés côté backend
-   * (assigned_crisis_ids/assigned_offer_ids/assigned_request_ids) — `missions` n'est jamais
-   * renvoyé tel quel par l'API, c'est une projection locale pour l'affichage. */
+  /** `missions` n'est pas renvoyé par l'API : projection locale des assigned_*_ids. */
   private buildMissions(team: Team): TeamMission[] {
     const missions: TeamMission[] = [];
     for (const id of team.assigned_crisis_ids ?? []) {
@@ -283,7 +274,6 @@ export class TeamsComponent implements OnInit {
     });
   }
 
-
   // ── DETAIL ────────────────────────────────────────────────────
   openDetail(team: Team): void {
     this.selectedTeam = team;
@@ -313,9 +303,7 @@ export class TeamsComponent implements OnInit {
   dossierHistoriqueEntries: any[] = [];
   historyLoading = false;
 
-  /** Charge la main courante de l'équipe (qui a rejoint/quitté, ressources/mission) et
-   * l'historique de traitement de ses dossiers (déjà tracé par DossierHistorique) — deux
-   * sources déjà existantes, fusionnées ici en une seule timeline. */
+  /** Timeline fusionnée : main courante de l'équipe + historique de ses dossiers. */
   private loadHistory(team: Team): void {
     if (!team.id) return;
     this.historyLoading = true;
@@ -350,12 +338,8 @@ export class TeamsComponent implements OnInit {
     return [...fromAudit, ...fromDossiers].sort((a, b) => b.date.localeCompare(a.date));
   }
 
-  /** Ne propose comme candidats à l'ajout QUE les membres de l'institution responsable de
-   * cette équipe, de son institution délégataire, et des institutions "déjà liées" (co-
-   * impliquées sur une même crise, voir TeamViewSet.institutions_liees) — avant le premier
-   * correctif de cette liste, tous les comptes de la plateforme (admins, secours, particuliers
-   * sans lien avec cette mairie...) apparaissaient dans le sélecteur. Vide si l'équipe n'a
-   * aucune institution (rien de pertinent à proposer). */
+  /** Candidats à l'ajout : membres de l'institution responsable, de la délégataire et des
+   * institutions liées (TeamViewSet.institutions_liees). Vide sans institution. */
   private loadCandidateMembers(team: Team): void {
     const ownInstitutionIds = [team.institution, team.institution_delegataire].filter((id): id is string => !!id);
     if (ownInstitutionIds.length === 0 || !team.id) {
@@ -414,11 +398,8 @@ export class TeamsComponent implements OnInit {
     });
   }
 
-  /** Bascule est_equipe_rcsc (voir TeamViewSet.designer_rcsc) -- conditionne l'accès au registre
-   * des personnes vulnérables pour toute l'institution de cette équipe (voir
-   * core/vulnerabilites.py). Réservé côté serveur à l'autorité locale propriétaire ; le bouton
-   * n'est affiché côté client que pour cette même population (voir isAutoriteLocaleCommunale
-   * dans le template), par cohérence avec le reste de la page -- pas une garantie de sécurité. */
+  /** Bascule est_equipe_rcsc : ouvre le registre des personnes vulnérables à l'institution
+   * (core/vulnerabilites.py). Le contrôle réel est côté serveur. */
   designerRcsc(): void {
     if (!this.selectedTeam?.id) return;
     this.teamService.designerRcsc(this.selectedTeam.id).subscribe({
@@ -431,10 +412,8 @@ export class TeamsComponent implements OnInit {
     });
   }
 
-  /** Institutions proposables comme délégataire : ACTEUR sur une crise où l'institution de
-   * l'équipe est elle-même impliquée (TeamViewSet.institutions_liees?type=acteur), chargé dans
-   * openDetail — avant ce correctif, ce sélecteur proposait TOUTES les institutions de la
-   * plateforme, sans lien avec la crise de l'équipe. */
+  /** Délégataires possibles : institutions ACTEUR d'une crise où l'institution de l'équipe est
+   * impliquée (institutions_liees?type=acteur). */
   institutionsDelegables: { id: string; nom: string }[] = [];
 
   private loadInstitutionsDelegables(team: Team): void {
@@ -449,13 +428,9 @@ export class TeamsComponent implements OnInit {
   communePostaux: Record<string, string> = {};
   departementNoms: Record<string, string> = {};
   pendingZoneWkt: string | null = null;
-  /** Calque de référence (contours réels) des communes de la zone, pour la carte unique de la
-   * section "Zone d'intervention" (fusion des deux cartes, 2026-10-05) -- voir
-   * ZoneMapComponent.communesGeojson. */
+  /** Contours des communes de la zone, pour la carte « Zone d'intervention ». */
   zoneMapCommunesGeojson: FeatureCollection<Polygon | MultiPolygon> | null = null;
-  /** Centre initial de la carte -- recalé sur la commune de l'équipe à l'ouverture du détail
-   * (corrige un bug constaté le 2026-10-05 : la carte restait sur son centre par défaut, au
-   * milieu de la France, quelle que soit l'équipe). */
+  /** Recentré sur la commune de l'équipe à l'ouverture du détail. */
   zoneMapCenter: [number, number] = [2.2137, 46.2276];
   communeSearchFn = (q: string) => this.locationService.searchCommunesByName(q);
   departementSearchFn = (q: string) => {
@@ -465,9 +440,7 @@ export class TeamsComponent implements OnInit {
     );
   };
 
-  /** Résout les noms des départements/communes déjà enregistrés sur l'équipe, pour l'affichage
-   * des chips (le backend ne stocke que des codes) — même patron que CrisesComponent. N'écrit
-   * rien : appelé à l'ouverture du détail, avant toute modification par l'utilisateur. */
+  /** Le backend ne stocke que des codes : résout les noms pour les chips (lecture seule). */
   private loadZoneCodeLabels(team: Team): void {
     (team.communes ?? []).forEach(code => {
       this.locationService.getCommuneName(code).subscribe(c => {
@@ -480,11 +453,8 @@ export class TeamsComponent implements OnInit {
     });
   }
 
-  /** Recharge le calque de contours communaux de la carte unique de zone -- appelé à l'ouverture
-   * du détail et après chaque ajout/retrait de commune (voir docstring de
-   * `zoneMapCommunesGeojson`). Construit la collection au fur et à mesure que chaque contour
-   * arrive plutôt que d'attendre un forkJoin : une commune qui échoue (API indisponible) ne doit
-   * jamais empêcher l'affichage des autres. */
+  /** Chaque contour est ajouté dès réception (pas de forkJoin) : une commune en échec ne bloque
+   * pas les autres. */
   private syncZoneMapCommunes(team: Team): void {
     const codes = team.communes ?? [];
     const features: Feature<Polygon | MultiPolygon>[] = [];
@@ -611,10 +581,8 @@ export class TeamsComponent implements OnInit {
     return this.selectedTeam?.member_ids?.includes(userId) ?? false;
   }
 
-  /** Affectation de rôle opérationnel active de `userId` pour l'institution de l'équipe (le
-   * rôle est un concept d'institution, pas d'équipe — voir AffectationRoleOperationnel côté
-   * backend, déjà le même modèle utilisé par l'onglet "Régulateurs" des Institutions). `null`
-   * si aucun rôle affecté (ex: membre pas encore invité via ce formulaire). */
+  /** Rôle opérationnel actif du membre dans l'institution de l'équipe (le rôle appartient à
+   * l'institution, pas à l'équipe : AffectationRoleOperationnel). null si aucun. */
   private memberRoleAffectation(userId: string): AffectationRoleOperationnel | null {
     if (!this.selectedTeam?.institution) return null;
     return this.affectationsRoles.find(a =>
@@ -626,18 +594,14 @@ export class TeamsComponent implements OnInit {
     return this.memberRoleAffectation(userId)?.role ?? '';
   }
 
-  /** Crée ou met à jour l'affectation de rôle d'un membre déjà présent dans l'équipe —
-   * jusqu'ici, le rôle ne pouvait être choisi qu'à l'invitation d'un nouveau membre, pas
-   * édité après coup pour un membre existant. roleId vide = retire le rôle (désactive
-   * l'affectation plutôt que de la supprimer, cohérent avec le reste du modèle). */
+  /** Crée ou modifie le rôle d'un membre ; roleId vide désactive l'affectation (sans suppression). */
   setMemberRole(userId: string, roleId: string): void {
     if (!this.selectedTeam?.institution) return;
     const institutionId = this.selectedTeam.institution;
     const existing = this.memberRoleAffectation(userId);
 
     if (existing?.id) {
-      // PUT (pas PATCH côté service) : utilisateur/institution/role sont requis dans le
-      // payload même pour ne changer que `actif` ou `role`.
+      // PUT : utilisateur/institution/role sont requis même pour ne changer que actif ou role.
       this.affectationRoleService.update(existing.id, {
         utilisateur: userId, institution: institutionId,
         role: roleId || existing.role, actif: !!roleId,
@@ -653,9 +617,7 @@ export class TeamsComponent implements OnInit {
     }
   }
 
-  /** Invite un nouveau membre dans l'institution de l'équipe (nom/prénom/email/tél/rôle) et
-   * l'ajoute directement à l'équipe — même s'il n'a pas encore activé son compte (voir
-   * TeamViewSet.inviter_membre côté backend). */
+  /** Invite un membre dans l'institution et l'ajoute à l'équipe, même avant activation du compte. */
   submitInvite(): void {
     if (!this.selectedTeam?.id || this.inviteForm.invalid) {
       this.inviteForm.markAllAsTouched();
@@ -681,9 +643,7 @@ export class TeamsComponent implements OnInit {
   competencesDropdownOpen = false;
   themesDropdownOpen = false;
 
-  /** Groupe les compétences par parent (sous-compétences) pour l'affichage en menu déroulant —
-   * un thème de premier niveau (parent = null) forme un groupe avec ses enfants indentés en
-   * dessous ; chaque thème (parent compris) reste individuellement sélectionnable. */
+  /** Groupe les compétences par parent ; chaque thème reste sélectionnable. */
   get competenceGroups(): { parent: Competence; children: Competence[] }[] {
     const topLevel = this.competences.filter(c => !c.parent);
     return topLevel.map(parent => ({
@@ -710,9 +670,7 @@ export class TeamsComponent implements OnInit {
     return this.selectedTeam?.competence_ids?.includes(competenceId) ?? false;
   }
 
-  // Repliés par défaut : une sous-catégorie (ex: "traduction anglais" sous "Traducteur") ne
-  // s'affiche qu'au clic sur la flèche à côté de son parent, pas en permanence — a vocation à
-  // grossir (plusieurs langues, etc.) sans alourdir la liste visible par défaut.
+  // Sous-thèmes repliés par défaut.
   expandedCompetenceGroups = new Set<string>();
 
   toggleCompetenceGroupExpand(parentId: string): void {
@@ -724,8 +682,7 @@ export class TeamsComponent implements OnInit {
     return this.expandedCompetenceGroups.has(parentId);
   }
 
-  /** 'all' | 'some' | 'none' — pilote l'état (coché / indéterminé / décoché) de la case du
-   * thème parent, en tenant compte de ses sous-thèmes. */
+  /** État de la case parent (coché / indéterminé / décoché) selon ses sous-thèmes. */
   competenceGroupState(group: { parent: Competence; children: Competence[] }): 'all' | 'some' | 'none' {
     const ids = [group.parent.id, ...group.children.map(c => c.id)];
     const selected = ids.filter(id => this.hasCompetence(id)).length;
@@ -733,8 +690,7 @@ export class TeamsComponent implements OnInit {
     return selected === ids.length ? 'all' : 'some';
   }
 
-  /** Coche/décoche le thème parent ET tous ses sous-thèmes en un seul appel (dégénère au
-   * comportement de toggleCompetence pour un thème sans sous-catégorie). */
+  /** Coche ou décoche le thème parent et tous ses sous-thèmes. */
   toggleCompetenceGroup(group: { parent: Competence; children: Competence[] }): void {
     if (!this.selectedTeam) return;
     const groupIds = [group.parent.id, ...group.children.map(c => c.id)];
@@ -763,9 +719,7 @@ export class TeamsComponent implements OnInit {
   }
 
   // ── SPÉCIALITÉ DE L'ÉQUIPE (vues dédiées, ex: "Hébergement") ────
-  // Distinct des "Thèmes d'intervention" (competences) ci-dessus : celui-ci déclenche des
-  // vues/tableaux de bord spécifiques à un besoin précis (voir HebergementMatchingComponent),
-  // pas un simple filtre de compétence bénévole.
+  // Déclenche des vues spécifiques (HebergementMatchingComponent), contrairement aux compétences.
   toggleTheme(themeId: string): void {
     if (!this.selectedTeam) return;
     const ids = this.selectedTeam.theme_ids ?? [];
@@ -793,15 +747,11 @@ export class TeamsComponent implements OnInit {
     e?.stopPropagation();
     this.selectedTeam = team;
     this.modal        = 'assign';
-    // Sélection locale (voir toggleStagedRequest) : part de l'état réellement assigné, jamais
-    // vide au premier affichage.
+    // Sélection locale initialisée sur l'état réellement assigné.
     this.stagedRequestIds = new Set(team.missions.filter(m => m.kind === 'Request').map(m => m.id));
   }
 
-  // Sélection en attente de validation pour la liste "Ajouter des demandes" (modal assign) :
-  // cocher/décocher une ligne ne fait plus d'appel réseau immédiat (donc plus de création de
-  // dossier ni d'email envoyé à chaque clic, juste en parcourant la liste) — seul le bouton
-  // "Valider la sélection" applique réellement le changement, en un seul appel groupé.
+  // Sélection en attente : aucun appel réseau avant « Valider la sélection » (voir DOCUMENTATION.md, § 6.2).
   stagedRequestIds = new Set<string>();
   savingSelection = false;
 
@@ -822,11 +772,8 @@ export class TeamsComponent implements OnInit {
     return false;
   }
 
-  /** Applique en un seul appel la sélection en attente — c'est ICI, et seulement ici, que se
-   * joue la vraie affectation (création de dossier, notification des régulateurs, email au
-   * demandeur, voir _assign_request_to_team côté backend). Crises/offres ne passent pas par
-   * cette liste (retrait immédiat depuis la section "Missions" du détail, voir toggleMission) :
-   * on renvoie leurs ids inchangés pour ne pas les affecter par erreur. */
+  /** Applique la sélection en un appel : c'est ici que se font la création de dossier, les
+   * notifications et l'email au demandeur. Crises et offres sont renvoyées inchangées. */
   validerSelectionDemandes(): void {
     if (!this.selectedTeam || this.savingSelection) return;
     const team = this.selectedTeam;
@@ -874,9 +821,8 @@ export class TeamsComponent implements OnInit {
     const offerIds   = missions.filter(m => m.kind === 'Offer').map(m => m.id);
     const requestIds = missions.filter(m => m.kind === 'Request').map(m => m.id);
 
-    // Les offres (ressources) ne passent plus par ce mécanisme générique — voir
-    // assignerRessource/retirerRessource, qui gèrent déjà l'ajout de l'auteur comme membre —
-    // offerIds n'est recalculé ici que pour ne pas écraser les ressources déjà affectées.
+    // Les offres passent par assignerRessource/retirerRessource ; offerIds est recalculé pour ne
+    // pas écraser les ressources affectées.
     this.teamService.patch(team.id!, {
       assigned_crisis_ids:  crisisIds,
       assigned_offer_ids:   offerIds,
@@ -892,10 +838,7 @@ export class TeamsComponent implements OnInit {
   }
 
   // ── DÉTAIL D'UNE DEMANDE (modal assign) ─────────────────────────
-  // Vue enrichie (minimap, photo, coordonnées, description complète) pour mieux choisir quoi
-  // assigner — avant ce correctif, la liste ne montrait que titre/nom/date. Repliée par défaut
-  // (une ligne par demande) pour rester scannable même avec beaucoup de demandes, dépliée au
-  // clic sur une seule à la fois plutôt que tout afficher en permanence.
+  // Détail repliable d'une demande (minimap, photo, coordonnées), une seule dépliée à la fois.
   expandedRequestId: string | null = null;
   requestPhotoUrls: Record<string, string> = {};
 
@@ -950,10 +893,8 @@ export class TeamsComponent implements OnInit {
     return { Crisis: 'Crises', Offer: "Offres d'aide", Request: "Demandes d'aide" }[kind];
   }
 
-  /** Demandes assignées à l'équipe — la crise se rattache désormais directement à la mission
-   * (voir mission-active-bar/submitDefinirMission), ce groupe ne couvre plus que les demandes
-   * d'aide. Les offres (ressources) ont leur propre section dédiée, voir
-   * resourcesForSelectedTeam. */
+  /** Demandes assignées à l'équipe (la crise est portée par la mission, les offres par
+   * resourcesForSelectedTeam). */
   get missionsByKind(): { kind: TeamMission['kind']; missions: TeamMission[] }[] {
     if (!this.selectedTeam) return [];
     return (['Request'] as TeamMission['kind'][])
@@ -961,30 +902,23 @@ export class TeamsComponent implements OnInit {
       .filter(g => g.missions.length > 0);
   }
 
-  /** Nombre total de demandes assignées. */
   get missionsCount(): number {
     return this.missionsByKind.reduce((sum, g) => sum + g.missions.length, 0);
   }
 
-  /** Ressources (offres) affectées à l'équipe — bénévoles seuls, bénévoles + matériel, ou
-   * matériel seul (voir Offer.materiel_type/transport_type/diplome_secourisme). */
+  /** Ressources (offres) affectées : bénévoles seuls, bénévoles + matériel, ou matériel seul. */
   get resourcesForSelectedTeam(): TeamMission[] {
     return this.selectedTeam?.missions.filter(m => m.kind === 'Offer') ?? [];
   }
 
-  /** Récapitulatif rapide : combien de ressources affectées sont des bénévoles seuls, des
-   * bénévoles avec matériel, ou du matériel seul — dérivé des offres déjà chargées, sans appel
-   * réseau supplémentaire. */
+  /** Répartition des ressources affectées, calculée sur les offres déjà chargées. */
   get resourcesSummary(): { seul: number; avecMateriel: number; materielSeul: number } {
     let seul = 0, avecMateriel = 0, materielSeul = 0;
     for (const m of this.resourcesForSelectedTeam) {
       const o = this.offers.find(o => o.id === m.id);
       if (!o) continue;
       const estMateriel = o.materiel_type != null || o.materiel_livraison != null;
-      // presence_physique déclaré explicitement à la soumission (voir propose-help-form) —
-      // remplace l'ancienne heuristique (diplome_secourisme/transport_type), incapable de
-      // distinguer un Transport/Matériel avec ou sans l'offreur. Null (offres antérieures à
-      // ce champ) est traité comme présence pour ne pas changer leur classement rétroactivement.
+      // presence_physique null (offres anciennes) est compté comme présence.
       const estEnPersonne = !!o.author && o.presence_physique !== false;
       if (estMateriel && estEnPersonne) avecMateriel++;
       else if (estMateriel) materielSeul++;
@@ -993,9 +927,7 @@ export class TeamsComponent implements OnInit {
     return { seul, avecMateriel, materielSeul };
   }
 
-  // Même liste que propose-help-form.component.ts (materielTypeOptions) — dupliquée ici
-  // volontairement, comme le reste de ce fichier le fait déjà pour de petites tables de
-  // correspondance, plutôt que de créer un import partagé pour six libellés fixes.
+  // Dupliqué de propose-help-form (materielTypeOptions) : six libellés fixes.
   private readonly MATERIEL_TYPE_LABELS: Record<string, string> = {
     CUVE: 'Cuve / citerne mobile', POMPE: 'Pompe', ETUVE: 'Étuve',
     CHAMBRE_FROIDE: 'Chambre froide', REMORQUE: 'Remorque', AUTRE: 'Autre',
@@ -1005,14 +937,12 @@ export class TeamsComponent implements OnInit {
     return this.offers.find(o => o.id === m.id);
   }
 
-  /** Compétences déclarées par le bénévole sur cette ressource — vide pour du matériel seul. */
   resourceCompetencesLabel(m: TeamMission): string | null {
     const libelles = this.offerFor(m)?.competences_libelles;
     return libelles?.length ? libelles.join(', ') : null;
   }
 
-  /** Matériel apporté avec la ressource — le catalogue partagé (nom libre) prime sur le type
-   * générique quand l'offreur a précisé "Autre" avec un nom (voir propose-help-form). */
+  /** Le nom libre du catalogue prime sur le type générique (cas « Autre »). */
   resourceMaterielLabel(m: TeamMission): string | null {
     const o = this.offerFor(m);
     if (!o) return null;
@@ -1024,9 +954,7 @@ export class TeamsComponent implements OnInit {
   // ── Ressources : mission active + ajout/retrait ──────────────
   missionTitreInput = '';
 
-  /** Passe la mission active de l'équipe en "En cours" directement depuis sa fiche — sans
-   * ça, il fallait retrouver la mission sur la page Missions séparée pour déclencher le
-   * suivi de position MeshCore (Mission.statut EN_COURS), demandé explicitement ici. */
+  /** Passe la mission active en « En cours » (déclenche le suivi de position MeshCore). */
   demarrerMissionActive(): void {
     if (!this.selectedTeam?.mission_active) return;
     this.missionService.patch(this.selectedTeam.mission_active, { statut: 'EN_COURS' }).subscribe({
@@ -1041,9 +969,7 @@ export class TeamsComponent implements OnInit {
 
   submitDefinirMission(): void {
     if (!this.selectedTeam?.id || !this.missionTitreInput.trim()) return;
-    // Même sélecteur de crise que "Rattacher" juste au-dessus (voir rattacherCriseId) — on ne
-    // demande plus la crise deux fois dans la même section, remarque directe de
-    // l'utilisateur ("tu ne peux pas demander 2 fois la crise assignée").
+    // Réutilise le sélecteur de crise de « Rattacher » (un seul sélecteur pour la section).
     this.teamService.definirMission(this.selectedTeam.id, this.missionTitreInput.trim(), this.rattacherCriseId ?? undefined).subscribe({
       next: (updated) => {
         this.selectedTeam = { ...updated, missions: this.selectedTeam!.missions };
@@ -1056,12 +982,8 @@ export class TeamsComponent implements OnInit {
   }
 
   // ── Crises rattachées : rattacher/afficher (Team.assigned_crises) ────
-  // Distinct de la mission active ci-dessus (Mission.crise) : lier un point ou définir une
-  // mission ne rattachent jamais automatiquement la crise elle-même à l'équipe, or plusieurs
-  // vues s'appuient spécifiquement sur ce champ (recrutement scopé, ressources mobilisées,
-  // matching hébergement) — voir TeamViewSet.assigner_crise. Avant ce contrôle, aucune vue
-  // n'exposait de moyen de le faire manuellement (le wizard de démarrage de crise est le seul
-  // autre endroit qui l'appelle, et seulement pour une crise en cours de création).
+  // Team.assigned_crises est distinct de la mission active : plusieurs vues en dépendent
+  // (recrutement, ressources mobilisées, hébergement). Voir DOCUMENTATION.md, § 6.2.
   rattacherCriseId: string | null = null;
 
   get crisesRattacheesTeam(): Crisis[] {
@@ -1074,9 +996,7 @@ export class TeamsComponent implements OnInit {
     if (!this.selectedTeam?.id || !this.rattacherCriseId) return;
     this.teamService.assignerCrise(this.selectedTeam.id, this.rattacherCriseId).subscribe({
       next: (updated) => {
-        // rattacherCriseId volontairement PAS remis à null : la même crise sélectionnée sert
-        // aussi au bouton "Définir/Changer" la mission juste en dessous (un seul sélecteur de
-        // crise partagé pour toute la section, plus deux comme avant).
+        // rattacherCriseId est conservé : il sert aussi au bouton « Définir/Changer » la mission.
         this.selectedTeam = { ...updated, missions: this.buildMissions(updated) };
         this.reloadTeams();
         this.showSuccess('Crise rattachée à l\'équipe.');
@@ -1187,16 +1107,12 @@ export class TeamsComponent implements OnInit {
     return `${this.elementWebUrl}/#/room/${encodeURIComponent(roomId)}`;
   }
 
-  // Propriétés fléchées (auto-liées) plutôt que des méthodes classiques : passées telles
-  // quelles en [Input] à MatrixSalonChatComponent (voir sa docstring, générique Team/
-  // Institution), qui les appelle sans connaître `this`.
-  // Messagerie d'équipe unifiée (Matrix + MeshCore + Meshtastic fusionnés, 2026-10-05) --
-  // voir TeamViewSet.messagerie_unifiee. Remplace les anciens appels Matrix-seul.
+  // Fonctions fléchées : passées en [Input] à MatrixSalonChatComponent, qui les appelle sans `this`.
+  // Messagerie unifiée Matrix + MeshCore + Meshtastic (TeamViewSet.messagerie_unifiee).
   chargerMessagesSalonEquipe = () => this.teamService.getMessagerieUnifiee(this.selectedTeam!.id!);
   envoyerMessageSalonEquipe = (texte: string, urgent: boolean = false) => this.teamService.envoyerMessageUnifie(this.selectedTeam!.id!, texte, urgent);
 
-  /** Crises ouvertes proposables pour la mission — une mission ne doit pas pouvoir se rattacher
-   * à une crise déjà clôturée (voir validate_crisis_open côté backend). */
+  /** Seules les crises ouvertes sont proposées (validate_crisis_open côté backend). */
   get crisesOuvertes(): Crisis[] {
     return this.crisis.filter(c => !c.end_date);
   }
@@ -1229,8 +1145,7 @@ export class TeamsComponent implements OnInit {
     EN_TRANSIT: 'Marquer arrivée',
   };
 
-  /** Prochaine étape pour le bouton "Étape suivante" — null si aucun engagement ou déjà à un
-   * statut terminal (ARRIVE/DECLINE, plus rien à faire avancer manuellement). */
+  /** Prochaine étape d'engagement ; null si aucun engagement ou statut terminal (ARRIVE/DECLINE). */
   prochainStatutRessource(m: TeamMission): string | null {
     if (!m.engagementStatut) return null;
     return TeamsComponent.PROCHAIN_STATUT[m.engagementStatut] ?? null;
@@ -1259,8 +1174,7 @@ export class TeamsComponent implements OnInit {
     this.avancerStatutRessource(offerId, 'DECLINE');
   }
 
-  /** Résumé rapide sous le titre d'une mission : contact + statut, pour ne pas avoir à ouvrir
-   * l'offre/la demande pour savoir qui l'a déclarée. */
+  /** Résumé sous le titre d'une mission : contact + statut. */
   missionContact(m: TeamMission): string {
     if (m.kind === 'Offer') {
       const o = this.offers.find(o => o.id === m.id);
@@ -1286,9 +1200,7 @@ export class TeamsComponent implements OnInit {
     return this.selectedTeam.member_ids.map(id => this.getUserById(id)).filter(Boolean) as User[];
   }
 
-  /** Dossiers de suivi rattachés à l'équipe (créés automatiquement lors de l'affectation
-   * d'une demande, voir Request.assign_team côté backend — ou manuellement depuis cette vue,
-   * voir showCreateDossierForm/submitCreerDossier, pour une mission sans demande d'origine). */
+  /** Dossiers de l'équipe : créés à l'affectation d'une demande ou manuellement (mission sans demande). */
   get dossiersForSelectedTeam(): Dossier[] {
     if (!this.selectedTeam) return [];
     return this.dossiers.filter(d => d.equipe === this.selectedTeam!.id);
@@ -1340,8 +1252,7 @@ export class TeamsComponent implements OnInit {
     return this.points.filter(p => p.equipe === this.selectedTeam!.id);
   }
 
-  /** Points pas encore rattachés à une équipe, candidats à lier depuis cette fiche — filtrés
-   * par la recherche libre pour ne pas dérouler une liste sans fin sur une grosse plateforme. */
+  /** Points sans équipe, candidats à lier, filtrés par la recherche. */
   get pointsCandidatsALier(): PointOperationnel[] {
     const q = this.pointSearchQuery.trim().toLowerCase();
     return this.points
@@ -1355,10 +1266,7 @@ export class TeamsComponent implements OnInit {
     this.pointSearchQuery = '';
   }
 
-  /** Ouvre la même modale de création que la vue crise (app-point-modal) — mêmes champs
-   * (thème, titre, description, capacité, adresse, dates), avec l'équipe pré-sélectionnée et
-   * sans crise obligatoire (un point de regroupement des moyens n'est pas forcément lié à une
-   * crise précise). */
+  /** Ouvre la modale de création de point (app-point-modal), équipe pré-sélectionnée, crise facultative. */
   ouvrirCreationPoint(): void {
     this.showPointModal = true;
     this.showLinkPointForm = false;
@@ -1393,7 +1301,6 @@ export class TeamsComponent implements OnInit {
     });
   }
 
-
   // ── HIÉRARCHIE D'ÉQUIPES (rattachement comme ressource) ──────
   showAttachTeamForm = false;
   attachTeamSearchQuery = '';
@@ -1403,9 +1310,8 @@ export class TeamsComponent implements OnInit {
     this.attachTeamSearchQuery = '';
   }
 
-  /** Tous les descendants connus côté client (sous-équipes, sous-sous-équipes...) d'une équipe
-   * — sert uniquement à ne pas proposer un choix qui créerait un cycle évident dans le
-   * sélecteur ; la garde anti-cycle qui fait foi reste côté serveur. */
+  /** Descendants connus côté client, pour masquer les choix créant un cycle (la garde réelle est
+   * côté serveur). */
   private getDescendantIds(teamId: string): Set<string> {
     const descendants = new Set<string>();
     const queue = [teamId];
@@ -1422,9 +1328,7 @@ export class TeamsComponent implements OnInit {
     return descendants;
   }
 
-  /** Équipes proposables comme sous-équipe : ni l'équipe elle-même, ni ses descendants déjà
-   * connus, ni une équipe déjà rattachée ailleurs (le serveur refuserait, autant filtrer tout
-   * de suite) — filtrées par la recherche libre. */
+  /** Sous-équipes possibles : ni l'équipe, ni ses descendants, ni une équipe déjà rattachée. */
   get equipesCandidatesARattacher(): Team[] {
     if (!this.selectedTeam) return [];
     const excludedIds = this.getDescendantIds(this.selectedTeam.id!);
@@ -1472,8 +1376,7 @@ export class TeamsComponent implements OnInit {
     });
   }
 
-  /** Résumé rapide de disponibilité d'un membre, affiché directement dans la liste plutôt que
-   * de devoir ouvrir le planning complet pour savoir qui est là. */
+  /** Résumé de disponibilité affiché dans la liste des membres. */
   memberAvailability(userId: string): { hasAny: boolean; label: string } {
     const dispos = this.disposForMember(userId);
     if (dispos.length === 0) {
@@ -1501,15 +1404,13 @@ export class TeamsComponent implements OnInit {
     { creneau: 'NUIT', label: 'Nuit' },
   ];
 
-  /** Disponibilités déclarées par un membre : celles de toutes les offres d'aide dont il est
-   * l'auteur (les disponibilités sont rattachées à une offre, pas directement à l'utilisateur). */
+  /** Disponibilités d'un membre : celles des offres dont il est l'auteur. */
   private disposForMember(userId: string): DisponibiliteOffre[] {
     const offerIds = new Set(this.offers.filter(o => o.author === userId).map(o => o.id));
     return this.disponibilites.filter(d => offerIds.has(d.offer));
   }
 
-  /** Colonnes du planning : une par (date, créneau) réellement déclaré par au moins un membre,
-   * triées par date puis par ordre matin→nuit. */
+  /** Colonnes du planning : une par (date, créneau) déclaré, triées par date puis matin→nuit. */
   get planningColonnes(): { date: string; creneau: string; label: string; jourLabel: string }[] {
     if (!this.selectedTeam) return [];
     const dateSet = new Set<string>();

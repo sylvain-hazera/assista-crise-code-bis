@@ -19,11 +19,8 @@ import { ModuleDegatsCrise } from '../../../shared/models/habitation.model';
 
 type Vue = 'carte' | 'liste';
 
-/** Page "Référencement des dégâts" — carte + vue de suivi (liste avec recherche/filtre
- * multicritère, regroupement par zone) pour une commune/zone sinistrée. Accessible sans compte
- * (consultation publique + dépôt d'un rattachement propriétaire/locataire) ; les actions de
- * gestion (créer/évaluer/importer/accepter un rattachement) restent conditionnées côté backend
- * à une délégation (voir Habitation.peut_gerer, HabitationViewSet). */
+/** « Référencement des dégâts » : carte + suivi pour une commune sinistrée. Consultation
+ * publique ; la gestion exige une délégation (Habitation.peut_gerer). */
 @Component({
   selector: 'app-habitations-page',
   standalone: true,
@@ -51,15 +48,12 @@ export class HabitationsPageComponent implements OnInit {
   resultatImport: { crees: number; erreurs: { ligne: number; message: string }[] } | null = null;
   importEnCours = false;
 
-  // Estimation automatique via la BAN (Phase 2) -- toujours plafonnée à UNE commune (voir
-  // HabitationViewSet.estimation_ban), une crise sélectionnée ne fait que restreindre encore
-  // le résultat si elle a une zone dessinée, jamais l'élargir à plusieurs communes.
+  // Estimation via la BAN, plafonnée à une commune ; la zone de crise ne peut que restreindre.
   panneauEstimationOuvert = false;
   communeEstimation = '';
   communeEstimationLabel = '';
   criseEstimationId = '';
-  // Zone nommée (ex: "Quartier Nord") pour restreindre le scan à l'intérieur de la commune
-  // sélectionnée -- distincte de la zone dessinée de la crise, voir habitations.perimetre_scan.
+  // Zone nommée restreignant le scan dans la commune (habitations.perimetre_scan).
   zoneEstimationId = '';
   crises: Crisis[] = [];
   zones: Zone[] = [];
@@ -69,10 +63,8 @@ export class HabitationsPageComponent implements OnInit {
 
   communeSearchFn = (q: string) => this.locationService.searchCommunesByName(q);
 
-  // Activation du module (désactivé par défaut, voir ModuleDegatsCrise.__doc__) : une mairie/
-  // EPCI choisit une crise et, optionnellement, une zone restreignant où les points peuvent
-  // être chargés -- ne montre que le module de SON institution (une ligne existe par couple
-  // crise/institution).
+  // Activation du module (désactivé par défaut, ModuleDegatsCrise) : une ligne par couple
+  // crise/institution, seule celle de mon institution est montrée.
   panneauModuleOuvert = false;
   moduleCriseId = '';
   moduleZoneId = '';
@@ -80,9 +72,7 @@ export class HabitationsPageComponent implements OnInit {
   moduleChargement = false;
   moduleEnCours = false;
 
-  // Bandeau public : si la crise consultée (filtres.crise) n'a de module actif pour AUCUNE
-  // institution, la page reste consultable mais on le signale plutôt que de laisser une carte
-  // vide sans explication.
+  // Bandeau si aucun module n'est actif pour la crise consultée.
   moduleActifPourCriseFiltree: boolean | null = null;
 
   constructor(
@@ -143,8 +133,7 @@ export class HabitationsPageComponent implements OnInit {
     this.carte?.recharger(this.filtres);
   }
 
-  // Regroupement par zone pour la vue liste (habitations sans zone regroupées à part) — évite
-  // de dépendre d'un tri serveur, la liste chargée tient largement en mémoire pour une commune.
+  // Regroupement par zone côté client (la liste d'une commune tient en mémoire).
   get groupesParZone(): { nom: string; habitations: Habitation[] }[] {
     const groupes = new Map<string, Habitation[]>();
     for (const h of this.habitations) {
@@ -152,8 +141,7 @@ export class HabitationsPageComponent implements OnInit {
       if (!groupes.has(cle)) groupes.set(cle, []);
       groupes.get(cle)!.push(h);
     }
-    // Trié par adresse au sein de chaque zone -- demandé explicitement pour la validation des
-    // requêtes de rattachement (tableau institution "vue de suivi").
+    // Trié par adresse dans chaque zone.
     return Array.from(groupes.entries()).map(([nom, habitations]) => ({
       nom, habitations: [...habitations].sort((a, b) => a.adresse.localeCompare(b.adresse)),
     }));
@@ -167,10 +155,7 @@ export class HabitationsPageComponent implements OnInit {
   onFichierImportChoisi(event: Event): void {
     const input = event.target as HTMLInputElement;
     this.fichierImport = input.files?.[0] || null;
-    // Pas d'aperçu de colonnes ici (contrairement à l'import personnel communal) : le mapping
-    // reste simple (adresse/latitude/longitude/parcelle/commune), l'utilisateur les associe à
-    // l'œil vu le faible nombre de colonnes cibles, pas besoin d'un sélecteur dynamique par
-    // en-tête détecté.
+    // Mapping de colonnes simple (adresse/latitude/longitude/parcelle/commune), sans aperçu.
   }
 
   lancerImport(): void {
@@ -198,8 +183,7 @@ export class HabitationsPageComponent implements OnInit {
       this.crisisService.getAll().subscribe(c => this.crises = c);
     }
     if (this.zones.length === 0) {
-      // Sans filtre institution : le backend restreint déjà aux zones des institutions de
-      // l'utilisateur courant (voir ZoneViewSet.get_queryset), même portée que le reste de la page.
+      // Sans filtre, le backend limite déjà aux zones de mes institutions.
       this.zoneService.getAll().subscribe(z => this.zones = z);
     }
   }

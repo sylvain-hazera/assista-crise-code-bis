@@ -10,7 +10,6 @@ import { Form } from '@angular/forms';
 })
 export class UserService {
   private apiUrl = environment.apiUrl;
-  
 
   constructor(private http: HttpClient) { }
 
@@ -34,9 +33,7 @@ export class UserService {
     return this.http.delete<void>(`${this.apiUrl}/users/${id}/`);
   }
 
-  /** GET /api/users/<id>/preview/ — soi-même ou acteur institutionnel (voir photo_url,
-   * jamais un chemin /media/ direct). Même patron que CrisisService.preview : un blob à
-   * transformer en object URL, pas une URL directement utilisable dans un <img src>. */
+  /** GET /api/users/<id>/preview/ — soi-même ou acteur institutionnel ; renvoie un blob. */
   preview(id: string): Observable<Blob> {
     return this.http.get(`${this.apiUrl}/users/${id}/preview/`, { responseType: 'blob' });
   }
@@ -50,10 +47,8 @@ export class UserService {
     return this.http.post<{ message: string }>(`${this.apiUrl}/users/${id}/send_password_reset/`, {});
   }
 
-  /** Comptes créés mais désactivés en attente d'une décision (aujourd'hui : uniquement les
-   * inscriptions Secours organisés — une mairie s'active elle-même par simple confirmation
-   * d'email, voir AccountActivationView). Un admin voit tout ; une mairie ne voit que les
-   * comptes de son propre code postal (filtrage fait côté backend). */
+  /** Comptes désactivés en attente de décision (inscriptions Secours). Un admin voit tout, une
+   * mairie son code postal (filtré côté backend). */
   getPendingValidations(): Observable<User[]> {
     return this.http.get<User[]>(`${this.apiUrl}/users/pending_validations/`);
   }
@@ -66,14 +61,12 @@ export class UserService {
     return this.http.post<{ message: string; user: User }>(`${this.apiUrl}/users/${id}/reject_account/`, { reason });
   }
 
-  /** GET /api/users/institution_suggestion/ — institution retrouvée pour le compte connecté
-   * (voir UserViewSet.institution_suggestion), sans rien rattacher. `null` si rien trouvé (à
-   * créer soi-même, voir creerMonInstitution). */
+  /** GET /api/users/institution_suggestion/ — institution retrouvée pour le compte, sans
+   * rattacher. `null` si rien. */
   institutionSuggestion(): Observable<{
     institution: { id: string; nom: string; type_libelle?: string | null } | null;
-    // True si l'institution retrouvée (mairie/EPCI/SDIS) doit encore accepter la convention de
-    // sous-traitance RGPD (voir /convention-sous-traitance) — jamais si déjà acceptée par un
-    // membre précédent de la même institution, voir UserViewSet.institution_suggestion.
+    // True si l'institution (mairie/EPCI/SDIS) doit encore accepter la convention de
+    // sous-traitance RGPD.
     convention_requise: boolean;
     pending_institution_name: string | null;
     pending_commune_name: string | null;
@@ -82,10 +75,8 @@ export class UserService {
     return this.http.get<any>(`${this.apiUrl}/users/institution_suggestion/`);
   }
 
-  /** POST /api/users/confirmer-institution/ — rattache le compte connecté à l'institution
-   * retrouvée par institutionSuggestion, avec le rôle choisi. `conventionAcceptee` n'est exigé
-   * que si institutionSuggestion a renvoyé `convention_requise: true` (voir
-   * _traiter_acceptation_convention côté backend, qui renvoie 400 sinon). */
+  /** POST /api/users/confirmer-institution/ — rattache le compte avec le rôle choisi.
+   * `conventionAcceptee` exigé si `convention_requise: true`. */
   confirmerInstitution(roleCode: string, conventionAcceptee = false): Observable<User> {
     return this.http.post<User>(`${this.apiUrl}/users/confirmer-institution/`, {
       role_code: roleCode,
@@ -93,10 +84,8 @@ export class UserService {
     });
   }
 
-  /** POST /api/users/creer-mon-institution/ — quand institutionSuggestion ne renvoie rien :
-   * crée l'institution (mêmes champs que le formulaire admin) et y rattache le compte connecté
-   * comme créateur, avec le rôle choisi. `convention_acceptee` n'est exigé que si le type choisi
-   * est mairie/EPCI/SDIS (voir CODES_TYPES_COLLECTIVITE côté backend). */
+  /** POST /api/users/creer-mon-institution/ — crée l'institution et y rattache le compte.
+   * `convention_acceptee` exigé pour mairie/EPCI/SDIS. */
   creerMonInstitution(data: {
     nom: string; type: string; description?: string; telephone?: string;
     email?: string; adresse?: string; commune_code?: string; commune_nom?: string;
@@ -105,9 +94,7 @@ export class UserService {
     return this.http.post<User>(`${this.apiUrl}/users/creer-mon-institution/`, data);
   }
 
-  /** POST /api/users/actualiser-risques/ — force le rafraîchissement des risques du territoire
-   * de l'institution du compte connecté (ignore le cache, voir UserViewSet.actualiser_risques),
-   * pour le bouton "Actualiser" de la Vue Ma Collectivité. */
+  /** POST /api/users/actualiser-risques/ — rafraîchit les risques du territoire (sans cache). */
   actualiserRisques(): Observable<{
     risques: { num_risque: string; libelle_risque_long: string }[];
     risques_date_maj: string | null;

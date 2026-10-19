@@ -115,9 +115,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
   constructor(private dashboardStatsService: DashboardStatsService) {}
 
   ngOnInit(): void {
-    // pollWhileVisible pilote aussi le tout premier chargement (son tick à t=0) — évite un
-    // double appel avec un loadAll() séparé ici. Suspendu en arrière-plan, rattrape
-    // immédiatement au retour au premier plan (voir pollWhileVisible).
+    // pollWhileVisible fait aussi le premier chargement (tick à t=0).
     this.pollingSub = pollWhileVisible(() => of(null), INTERVALLE_POLLING_DASHBOARD_MS).subscribe(() => {
       this.loadAll(!this.premierChargement);
       this.premierChargement = false;
@@ -133,9 +131,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
   // DATA LOADING
   // ────────────────────────────────────────────────────────────────────────────
 
-  /** `silencieux` : true pour les rafraîchissements automatiques en arrière-plan (polling) —
-   * pas de spinner plein écran ni de message d'erreur intrusif pour un simple poll raté, les
-   * données déjà affichées restent visibles telles quelles jusqu'au prochain poll réussi. */
+  /** `silencieux` : rafraîchissement automatique, sans spinner ni message d'erreur. */
   loadAll(silencieux = false): void {
     if (!silencieux) {
       this.isLoading    = true;

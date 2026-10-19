@@ -16,12 +16,9 @@ import { Offer } from '../../shared/models/offer.model';
 
 type TypeCible = 'utilisateur' | 'institution' | 'offre';
 
-/** Acter qu'une institution ("l'autorité X") demande à quelqu'un ("Y" — un utilisateur inscrit,
- * une autre institution, ou une personne sans compte connue via une offre d'aide déposée) de se
- * mettre à disposition ou de se rendre à un endroit précis, pour une crise donnée — voir
- * DemandeMobilisation.__doc__ côté backend pour la nuance volontaire avec une "réquisition"
- * légale au sens strict. Base pour une future attestation PDF + QR code (pas construite à ce
- * stade, voir le cadrage du 2026-09-19) — jeton_verification est déjà posé en prévision. */
+/** Demande de mobilisation d'une institution envers une personne ou une institution, pour une
+ * crise (pas une réquisition légale, voir DemandeMobilisation.__doc__). L'attestation PDF
+ * + QR code s'appuie sur jeton_verification. */
 @Component({
   selector: 'app-demandes-mobilisation',
   standalone: true,

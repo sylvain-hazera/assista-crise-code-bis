@@ -20,12 +20,8 @@ import { CriseLieuThemeComponent } from '../../../shared/components/public/crise
 
 const TYPE_HEBERGEMENT = 'Hébergement';
 
-/** Critères détaillés du logement recherché, par index de besoin — même patron que
- * subCategorySelections (tableau parallèle à needsType/descriptions, pas un FormGroup :
- * needsType reste un FormArray de simples contrôles string, voir addNeed()/removeNeed()).
- * Pas d'adresse précise ici (contrairement à l'offre) : une recherche de logement porte sur
- * une zone (une ou plusieurs communes + rayon optionnel), pas un point — voir
- * zoneCommunes/zoneRayonKm et Request.zone_recherche_communes/zone_recherche_rayon_km. */
+/** Critères du logement recherché, par index de besoin (tableau parallèle à needsType).
+ * Pas d'adresse : une recherche de logement porte sur une zone (communes + rayon). */
 interface HebergementDetails {
   hebergementDuree: string;
   zoneCommunes: Commune[];
@@ -81,8 +77,7 @@ export class RequestHelpFormComponent implements OnInit {
     this.longitude = addr?.longitude ?? null;
   }
 
-  // Étape "crise + lieu + thèmes à l'écoute" (voir app-crise-lieu-theme) : remplace l'ancien
-  // crisis-autocomplete maison + l'ancienne section "Votre adresse" séparée plus bas.
+  // Étape « crise + lieu + thèmes à l'écoute » (app-crise-lieu-theme).
   criseSelectionnee: Crisis | null = null;
   typesDemandeAutorises: string[] = [];
 
@@ -99,9 +94,7 @@ export class RequestHelpFormComponent implements OnInit {
     { value: '', label: 'Dropdown' }
   ];
 
-  /** needTypeOptions (types de premier niveau) restreint aux thèmes à l'écoute -- les
-   * sous-catégories (childrenByParentType) d'un type déjà autorisé restent toutes visibles,
-   * simple précision d'un thème déjà validé, pas un axe à l'écoute séparé. */
+  /** Types de premier niveau limités aux thèmes à l'écoute ; leurs sous-catégories restent visibles. */
   get needTypeOptionsFiltrees(): { value: string; label: string }[] {
     return this.needTypeOptions.slice(1).filter(opt => {
       const id = this.typesDemandeMap.get(opt.value);
@@ -158,14 +151,13 @@ export class RequestHelpFormComponent implements OnInit {
     });
   }
 
-  // Sous-catégorie (précision optionnelle) par index de besoin — ex: "Matériel" >
-  // "Groupe électrogène", "Interprétariat / traduction" > "Anglais".
+  // Sous-catégorie facultative par besoin (ex: Matériel > Groupe électrogène).
   childrenByParentType: Map<string, { value: string; label: string }[]> = new Map();
   subCategorySelections: string[] = [];
 
   readonly TYPE_HEBERGEMENT = TYPE_HEBERGEMENT;
 
-  // Critères détaillés du logement recherché, par index de besoin — voir HebergementDetails.
+  // Critères du logement recherché, par besoin (HebergementDetails).
   hebergementDetails: HebergementDetails[] = [];
 
   readonly typeLoyerOptions: { value: string; label: string }[] = [
@@ -183,9 +175,7 @@ export class RequestHelpFormComponent implements OnInit {
     { value: 'CHAMBRE', label: 'Chambre' },
   ];
 
-  /** Zone de recherche du logement (une ou plusieurs communes + rayon optionnel), propre à ce
-   * besoin — une recherche de logement porte sur une zone, pas une adresse précise qu'on ne
-   * connaît pas encore (voir Request.zone_recherche_communes/zone_recherche_rayon_km). */
+  /** Zone de recherche du logement (communes + rayon), propre à ce besoin. */
   communeSearchFn = (q: string) => this.locationService.searchCommunesByName(q);
 
   addZoneCommune(index: number, commune: Commune): void {
@@ -205,7 +195,7 @@ export class RequestHelpFormComponent implements OnInit {
   }
 
   onTopLevelTypeChange(index: number): void {
-    // Un changement de besoin principal invalide toute précision déjà choisie pour l'ancien.
+    // Changer de besoin principal efface la précision choisie.
     this.subCategorySelections[index] = '';
   }
 
@@ -213,8 +203,7 @@ export class RequestHelpFormComponent implements OnInit {
     this.subCategorySelections[index] = value;
   }
 
-  /** Type réellement à envoyer pour ce besoin : la précision si choisie, sinon le besoin
-   * principal — cf. usage dans onSubmit(). */
+  /** Type envoyé : la précision si choisie, sinon le besoin principal. */
   private effectiveNeedType(index: number): string {
     return this.subCategorySelections[index] || this.needsType.at(index).value;
   }
@@ -228,7 +217,7 @@ export class RequestHelpFormComponent implements OnInit {
       image: [null],
     });
 
-    this.addNeed(); // Ajouter un besoin initial  
+    this.addNeed();
 
     this.informationForm = this.formBuilder.group({
       lastName: [this.currentUser?.last_name, Validators.required],
@@ -238,23 +227,18 @@ export class RequestHelpFormComponent implements OnInit {
     });
   }
 
-  /** Galerie (jusqu'à 10 photos) — la première du tableau émis est toujours la principale
-   * désignée (voir PhotoGalleryPickerComponent), envoyée dans le champ `photo` existant de la
-   * demande ; les suivantes sont postées séparément vers la galerie après création. */
+  /** Galerie (10 photos max) : la première part dans `photo` de la demande, les autres après création. */
   selectedPhotos: File[] = [];
 
   onPhotosSelected(files: File[]): void {
     this.selectedPhotos = files;
   }
 
-  // Encadré rouge de résumé, un par étape (formulaire en 2 temps) — remplace les alert()
-  // génériques qui ne disaient jamais lesquels des champs posaient problème.
+  // Résumé des erreurs, un par étape.
   formErrorsStep1: string[] = [];
   formErrorsStep2: string[] = [];
 
-  /** "Votre adresse" n'a de sens que pour les besoins autres qu'Hébergement (qui a sa propre
-   * zone de recherche, voir hebergementDetails) — inutile de la rendre obligatoire si tous les
-   * besoins de cette soumission sont des recherches de logement. */
+  /** « Votre adresse » est facultative si tous les besoins sont des recherches de logement. */
   addressRequired(): boolean {
     return this.needsType.controls.some(c => c.value !== TYPE_HEBERGEMENT);
   }
@@ -303,9 +287,7 @@ export class RequestHelpFormComponent implements OnInit {
       formData.append('email_request', this.informationForm.get('email')?.value);
       formData.append('phone_request', this.informationForm.get('phoneNumber')?.value);
 
-      // Un besoin Hébergement n'a pas d'adresse précise : sa zone de recherche (une ou
-      // plusieurs communes) remplace `location`/`commune_code` — voir plus bas. Tous les
-      // autres besoins gardent "Votre adresse", partagée par la soumission.
+      // Besoin Hébergement : la zone de recherche remplace `location`/`commune_code`.
       if (topLevelType !== TYPE_HEBERGEMENT) {
         formData.append('location', JSON.stringify(localisation));
         if (this.selectedAddress?.citycode) formData.append('commune_code', this.selectedAddress.citycode);
@@ -319,8 +301,7 @@ export class RequestHelpFormComponent implements OnInit {
       if (topLevelType === TYPE_HEBERGEMENT && hd) {
         if (hd.zoneCommunes.length > 0) {
           formData.append('zone_recherche_communes', JSON.stringify(hd.zoneCommunes.map(c => c.code)));
-          // Conserve un matching géographique de base (commune_code) même sans adresse
-          // précise — voir team_zone_specificity, qui sait déjà s'en contenter.
+          // commune_code conservé pour un rapprochement géographique de base (team_zone_specificity).
           formData.append('commune_code', hd.zoneCommunes[0].code);
         }
         if (hd.zoneRayonKm) formData.append('zone_recherche_rayon_km', String(hd.zoneRayonKm));
@@ -351,8 +332,7 @@ export class RequestHelpFormComponent implements OnInit {
 
     forkJoin(creations).subscribe({
       next: (requests) => {
-        // Photos additionnelles de la galerie (au-delà de la principale déjà envoyée avec
-        // chaque demande) — postées séparément vers chaque demande créée, une fois qu'elle existe.
+        // Photos supplémentaires postées après création de chaque demande.
         const photosSupplementaires = this.selectedPhotos.slice(1);
         requests.forEach(r => {
           photosSupplementaires.forEach((file, i) => {
@@ -421,8 +401,7 @@ export class RequestHelpFormComponent implements OnInit {
     this.hebergementDetails.splice(index, 1);
   }
 
-  /** Remonte la raison précise d'un refus (ex: "Cette crise est clôturée...") plutôt qu'un
-   * message générique — cf. validate_crisis_open_and_monitored côté backend. */
+  /** Affiche la raison précise d'un refus (validate_crisis_open_and_monitored). */
   private extractApiErrorMessage(err: any): string {
     const body = err?.error;
     if (!body) {

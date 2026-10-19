@@ -4,12 +4,8 @@ import { CommonModule } from '@angular/common';
 import { ConflitSynchronisationService } from '../../services/conflit-synchronisation.service';
 import { ConflitSynchronisation } from '../../shared/models/conflit-synchronisation.model';
 
-/** Arbitrage des conflits de synchronisation local -> central (satellites, voir le cadrage
- * "Chantier B") : un Dossier/Mission modifié des deux côtés pendant une coupure ne s'écrase
- * jamais silencieusement — un ConflitSynchronisation est créé côté central et attend ici un
- * choix explicite entre la version centrale et celle proposée par le satellite. Voir
- * ConflitSynchronisationViewSet côté backend (pas encore de page dédiée avant ce jour,
- * 2026-09-18). */
+/** Arbitrage des conflits de synchronisation satellite -> central : un Dossier/Mission modifié
+ * des deux côtés crée un ConflitSynchronisation, tranché ici (ConflitSynchronisationViewSet). */
 @Component({
   selector: 'app-conflits-synchronisation',
   standalone: true,

@@ -11,15 +11,10 @@ import { FicheMaterielModalComponent } from '../../shared/components/common/fich
 
 type TypeFilter = 'ALL' | 'personne' | 'materiel';
 
-// Nombre de couleurs de cadre distinctes pour les groupes équipe — au-delà, ça recommence à
-// tourner (cyclique) plutôt que d'en ajouter indéfiniment, une répétition occasionnelle sur une
-// longue liste reste sans ambiguïté puisque le nom de l'équipe est toujours affiché en tête.
+// Couleurs de cadre des groupes équipe, réutilisées en cycle.
 const NB_COULEURS_EQUIPE = 6;
 
-/** Une "unité" = une personne ET, si elle en a apporté, le(s) matériel(s) qu'elle a apportés
- * (couple indissociable, voir Offer.presence_physique) — ou un matériel seul déposé par
- * quelqu'un qui n'est pas (ou plus) membre de l'équipe, avec son propriétaire toujours visible
- * pour qu'on puisse le retrouver facilement. */
+/** Unité = une personne et le matériel qu'elle a apporté, ou un matériel seul (propriétaire affiché). */
 interface UniteRessource {
   cle: string;
   personne: RessourceMobilisee | null;
@@ -34,12 +29,8 @@ interface GroupeEquipe {
   couleurIndex: number;
 }
 
-/** Récap des ressources mobilisées (personnes ET matériel), où (institution/centre/crise) et
- * avec quoi (compétence ou matériel précis) — voir TeamViewSet.ressources_mobilisees. Groupé
- * par équipe par défaut (demande explicite du 2026-09-19) : chaque collectivité ne voit que ses
- * propres ressources (restriction appliquée côté serveur, sauf pour un administrateur
- * plateforme), et une personne apparaît regroupée avec le matériel qu'elle a elle-même apporté
- * (indissociable) plutôt que mélangée sans lien visible dans une liste plate. */
+/** Ressources mobilisées (personnes et matériel), groupées par équipe
+ * (TeamViewSet.ressources_mobilisees, scopé côté serveur). */
 @Component({
   selector: 'app-ressources-mobilisees',
   standalone: true,
@@ -56,7 +47,7 @@ export class RessourcesMobiliseesComponent implements OnInit {
   searchQuery = '';
   triNomAsc = true;
 
-  // ── "Besoin hébergement" (24/09) : sélection groupée + affectation ─────────────────────
+  // ── Besoin hébergement : sélection groupée + affectation ─────────────────────
   selection = new Set<string>();
   pickerOuvert = false;
   pickerIntervenantIds: string[] = [];
@@ -87,9 +78,7 @@ export class RessourcesMobiliseesComponent implements OnInit {
     else this.selection.add(userId);
   }
 
-  /** "Sélectionner toute l'équipe" — demande explicite de Sylvain le 24/09 (une asso qui
-   * arrive avec 50 intervenants d'un coup). Bascule sur l'état actuel : tous sélectionnés ->
-   * tous désélectionnés, sinon tous sélectionnés. */
+  /** Sélectionne ou désélectionne toute l'équipe (arrivées groupées d'une association). */
   basculerSelectionEquipe(groupe: GroupeEquipe): void {
     const ids = groupe.unites.map(u => u.personne?.user_id).filter((id): id is string => !!id);
     const toutSelectionne = ids.length > 0 && ids.every(id => this.selection.has(id));
@@ -108,8 +97,7 @@ export class RessourcesMobiliseesComponent implements OnInit {
     return this.selection.size;
   }
 
-  /** Ouvre le sélecteur de logement pour UNE personne (bouton "Besoin hébergement" sur sa
-   * ligne) — n'affecte que si la personne a au moins une crise (voir crise_ids). */
+  /** Sélecteur de logement pour une personne (il lui faut au moins une crise). */
   ouvrirPickerPourPersonne(personne: RessourceMobilisee): void {
     if (!personne.user_id || !personne.crise_ids.length) return;
     this.pickerIntervenantIds = [personne.user_id];
@@ -117,9 +105,7 @@ export class RessourcesMobiliseesComponent implements OnInit {
     this.pickerOuvert = true;
   }
 
-  /** Ouvre le sélecteur de logement pour toute la sélection groupée — la crise de recherche
-   * est celle de la première personne sélectionnée (cas d'usage visé : une seule crise à la
-   * fois, sélection groupée d'une même équipe/asso). */
+  /** Sélecteur de logement pour la sélection ; la crise est celle de la première personne. */
   ouvrirPickerPourSelection(): void {
     const personnes = this.filteredRows.filter(
       r => r.type === 'personne' && r.user_id && this.selection.has(r.user_id)
@@ -142,7 +128,7 @@ export class RessourcesMobiliseesComponent implements OnInit {
     this.load();
   }
 
-  // ── Fiche intervenant (24/09) ───────────────────────────────────────────────────────────
+  // ── Fiche intervenant ───────────────────────────────────────────────────────────
   ficheOuverte = false;
   ficheUserId: string | null = null;
   ficheCriseId: string | null = null;
@@ -162,7 +148,7 @@ export class RessourcesMobiliseesComponent implements OnInit {
     this.ficheOuverte = false;
   }
 
-  // ── Fiche matériel (24/09) ──────────────────────────────────────────────────────────────
+  // ── Fiche matériel ──────────────────────────────────────────────────────────────
   ficheMaterielOuverte = false;
   ficheMaterielOffreId: string | null = null;
 
@@ -175,8 +161,7 @@ export class RessourcesMobiliseesComponent implements OnInit {
     this.ficheMaterielOuverte = false;
   }
 
-  /** Respecte la recherche/le filtre de type — base commune à l'export CSV (toujours à plat)
-   * et au regroupement par équipe (voir `groupes` ci-dessous). */
+  /** Recherche/filtre de type, base de l'export CSV et du regroupement. */
   get filteredRows(): RessourceMobilisee[] {
     const q = this.searchQuery.trim().toLowerCase();
     let list = this.rows;
@@ -201,11 +186,7 @@ export class RessourcesMobiliseesComponent implements OnInit {
     this.triNomAsc = !this.triNomAsc;
   }
 
-  /** Regroupe filteredRows par équipe, puis à l'intérieur de chaque équipe fusionne chaque
-   * membre avec le(s) matériel(s) qu'il a lui-même apportés (`materiel.proprietaire_id ===
-   * personne.user_id`) — un matériel dont le propriétaire n'est pas membre de cette équipe (ou
-   * n'a pas de propriétaire identifié) reste une unité à part, mais garde son propriétaire
-   * visible (voir le template) pour rester facilement retrouvable. */
+  /** Groupe par équipe, puis rattache à chaque membre le matériel qu'il a apporté. */
   get groupes(): GroupeEquipe[] {
     const parEquipe = new Map<string, RessourceMobilisee[]>();
     for (const r of this.filteredRows) {
@@ -240,10 +221,7 @@ export class RessourcesMobiliseesComponent implements OnInit {
         ...materielsRestants.map((m, i) => ({ cle: `m-${i}-${m.nom}`, personne: null, materiels: [m] })),
       ];
 
-      // Les unités d'un même dépôt groupé (association/entreprise, voir Offer.groupe_id)
-      // restent visuellement adjacentes, plutôt que dispersées dans la liste au hasard de
-      // l'ordre alphabétique — sans quoi le lien entre elles ne serait visible que dans les
-      // données, jamais à l'écran.
+      // Les unités d'un même dépôt groupé (Offer.groupe_id) restent adjacentes.
       unites.sort((a, b) => {
         const gA = a.materiels[0]?.groupe_id || '';
         const gB = b.materiels[0]?.groupe_id || '';

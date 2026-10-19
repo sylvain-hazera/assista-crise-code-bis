@@ -62,8 +62,7 @@ export class InstitutionsComponent implements OnInit {
   domaines: InstitutionDomaine[] = [];
   competences: Competence[] = [];
   affectationsRoles: AffectationRoleOperationnel[] = [];
-  /** Zones (catalogue) de l'institution actuellement ouverte — chargées à l'ouverture du
-   * détail (openDetail), pas dans le forkJoin initial (scopées à une seule institution). */
+  /** Zones de l'institution ouverte, chargées dans openDetail. */
   zones: Zone[] = [];
 
   isLoading = true;
@@ -186,12 +185,10 @@ export class InstitutionsComponent implements OnInit {
       utilisateur: [null, Validators.required],
       fonction: ['', Validators.required],
       contact_principal: [false],
-      // Optionnels : renseignés ici, ils créent en plus une affectation rôle/thème pour
-      // éviter d'avoir à ressaisir le même utilisateur dans l'onglet "Régulateurs / thèmes".
+      // Facultatifs : créent aussi une affectation rôle/thème.
       role: [null],
       competence: [null],
-      // Zone (catalogue Zone de l'institution) que ce contact couvre — préparation PCS/PICS,
-      // voir ZonesComponent.
+      // Zone couverte par ce contact (préparation PCS/PICS).
       zone: [null],
     });
 
@@ -364,10 +361,7 @@ export class InstitutionsComponent implements OnInit {
     );
   }
 
-  /** Recherche un type de risque déjà déclaré par une autre commune (ex: "Inondation", déjà
-   * seedé) ou en crée un nouveau à la volée -- catalogue librement extensible, voir docstring
-   * de RisqueMajeurType (confirmé nécessaire en croisant 3 vrais PCS le 12/10 : aucune commune
-   * n'a la même liste de risques). */
+  /** Cherche un type de risque existant ou en crée un (catalogue extensible, RisqueMajeurType). */
   risqueSearchFn = (q: string) => this.risqueMajeurTypeService.search(q);
   risqueCreateLabelFn = (value: string) => `Créer « ${value} » comme nouveau type de risque`;
   risqueCreateFn = (nom: string) => this.risqueMajeurTypeService.create({ nom });
@@ -405,9 +399,7 @@ export class InstitutionsComponent implements OnInit {
     });
   }
 
-  /** Accepte une suggestion : réutilise le type de risque existant (nom exact) ou le crée --
-   * RisqueMajeurTypeViewSet.create dédoublonne déjà par nom insensible à la casse, voir
-   * TagLikeViewSetMixin -- puis déclare le risque pour cette institution. */
+  /** Réutilise ou crée le type de risque (dédoublonné par TagLikeViewSetMixin), puis le déclare. */
   accepterSuggestion(suggestion: SuggestionGeorisques): void {
     if (!this.selectedInstitution?.id || suggestion.deja_declare) return;
     this.acceptationSuggestionEnCours = suggestion.num_risque;
@@ -465,8 +457,7 @@ export class InstitutionsComponent implements OnInit {
     );
   }
 
-  /** Utilisateurs de l'institution sélectionnée -- candidats au rattachement d'un compte pour
-   * l'envoi Matrix (voir "lier à un compte" dans le formulaire d'édition inline). */
+  /** Utilisateurs de l'institution, rattachables à un interlocuteur pour l'envoi Matrix. */
   get utilisateursCandidatsPCS(): User[] {
     if (!this.selectedInstitution?.id) return [];
     const ids = this.contacts.filter(c => c.institution === this.selectedInstitution!.id).map(c => c.utilisateur);
@@ -482,13 +473,10 @@ export class InstitutionsComponent implements OnInit {
       .filter(g => g.items.length > 0);
   }
 
-  /** Recherche un interlocuteur déjà déclaré (par une autre commune du même département
-   * comprise) -- voir <app-tag-search-input> dans le template. */
+  /** Recherche un interlocuteur déjà déclaré (y compris par une autre commune). */
   interlocuteurPCSSearchFn = (q: string) => this.interlocuteurAlertePCSService.search(q);
 
-  /** Création rapide avec des valeurs par défaut (mode TELEPHONE tant qu'aucun email/compte
-   * n'est renseigné) -- l'utilisateur complète ensuite via l'édition inline. Le backend
-   * rattache automatiquement l'institution courante à la création (perform_create). */
+  /** Création rapide en mode TELEPHONE, complétée ensuite ; le backend rattache l'institution. */
   interlocuteurPCSCreateLabelFn = (value: string) => `Créer « ${value} » comme nouveau contact`;
 
   modeAlertePCSLabel(mode: ModeAlertePCS): string {
@@ -499,8 +487,7 @@ export class InstitutionsComponent implements OnInit {
     this.interlocuteurAlertePCSService.create({ organisme, nom: organisme, categorie: 'AUTRE', mode_alerte: 'TELEPHONE' });
 
   onInterlocuteurPCSSelected(item: InterlocuteurAlertePCS): void {
-    // Rattache systématiquement (no-op si déjà fait par interlocuteurPCSCreateFn) -- couvre le
-    // cas "trouvé via recherche, pas encore rattaché à MA commune".
+    // Rattache toujours (no-op si déjà fait) : cas d'un résultat de recherche non rattaché.
     this.interlocuteurAlertePCSService.rattacher(item.id).subscribe(() => this.chargerInterlocuteursPCS());
   }
 
@@ -576,8 +563,7 @@ export class InstitutionsComponent implements OnInit {
       next: () => {
         this.reloadContacts();
 
-        // Rôle optionnel : évite de ressaisir le même utilisateur dans l'onglet
-        // "Régulateurs / thèmes" pour lui donner un rôle opérationnel dans la foulée.
+        // Rôle facultatif, créé dans la foulée.
         if (role) {
           this.affectationRoleService.create({ utilisateur, role, competence, institution, actif: true }).subscribe({
             next: () => {
@@ -598,9 +584,7 @@ export class InstitutionsComponent implements OnInit {
     });
   }
 
-  /** Édition de la zone d'un contact déjà présent (pas seulement à la création) — PUT exige
-   * tous les champs requis (institution/utilisateur), pas seulement `zone` (voir
-   * AffectationRoleOperationnelService.update, même contrainte). */
+  /** PUT : institution/utilisateur requis en plus de `zone`. */
   setContactZone(contact: ContactInstitution, zoneId: string | null): void {
     this.contactService.update(contact.id!, {
       utilisateur: contact.utilisateur, institution: contact.institution,
@@ -643,15 +627,13 @@ export class InstitutionsComponent implements OnInit {
   }
 
   onContactUserQueryChange(): void {
-    // Retaper dans le champ après une sélection invalide le choix précédent : il faut
-    // re-sélectionner explicitement un résultat pour que le formulaire redevienne valide.
+    // Retaper invalide la sélection : il faut re-choisir un résultat.
     this.contactForm.get('utilisateur')?.setValue(null);
     this.showContactUserResults = true;
   }
 
   hideContactUserResultsDelayed(): void {
-    // Délai court pour laisser le (click) sur un résultat s'exécuter avant que le blur
-    // ne referme la liste — sans ce délai, le clic sur un résultat n'a jamais lieu.
+    // Délai pour que le (click) sur un résultat passe avant la fermeture au blur.
     setTimeout(() => this.showContactUserResults = false, 150);
   }
 
@@ -859,10 +841,7 @@ export class InstitutionsComponent implements OnInit {
     setTimeout(() => this.errorMessage = '', 5000);
   }
 
-  // Le backend renvoie le détail exact de la validation (ex: contrainte violée, champ
-  // invalide) — l'afficher plutôt qu'un message générique deviné évite d'induire l'utilisateur
-  // en erreur sur la vraie cause d'un échec (ex: un message toujours affiché en cas d'échec de
-  // création de contact, même quand la cause réelle n'a rien à voir avec le contact principal).
+  // Affiche le détail exact renvoyé par le backend plutôt qu'un message deviné.
   private extractErrorMessage(err: unknown): string | null {
     const body = (err as any)?.error;
     if (!body) return null;

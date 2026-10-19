@@ -6,224 +6,6 @@ import { environment } from '../../../environments/environment';
 import { User, UserRole, UserPayload, Environment } from '../../shared/models/user.model';
 import { SuiviPositionPermanentService } from '../../services/suivi-position-permanent.service';
 
-// interface RegisterRequest {
-//   username: string;
-//   email: string;
-//   password: string;
-//   type: string;  // UserRole
-//   telephone_utilisateur: string;
-//   last_name: string;
-//   first_name?: string;
-// }
-
-// interface LoginRequest {
-//   email: string;
-//   password: string;
-// }
-
-// interface AuthResponse {
-//   user: User;
-//   token: string;
-//   message?: string;
-// }
-
-// @Injectable({
-//   providedIn: 'root'
-// })
-// export class AuthService {
-//   deleteAccount() {
-//     throw new Error('Method not implemented.');
-//   }
-//   private apiUrl = `${environment.apiUrl}/users`;  // Utilise /api/users pour register/login
-  
-//   private currentUserSubject = new BehaviorSubject<Utilisateur | null>(null);
-//   public currentUser$ = this.currentUserSubject.asObservable();
-
-//   private isAuthenticatedSubject = new BehaviorSubject<boolean>(false);
-//   public isAuthenticated$ = this.isAuthenticatedSubject.asObservable();
-
-//   constructor(
-//     private http: HttpClient,
-//     private router: Router
-//   ) {
-//     this.loadUserFromStorage();
-//   }
-
-//   // Charger l'utilisateur depuis le localStorage
-//   private loadUserFromStorage(): void {
-//     const token = localStorage.getItem('auth_token');
-//     const userJson = localStorage.getItem('current_user');
-      
-//     if (token && userJson) {
-//       try {
-//         const user = JSON.parse(userJson);
-//         this.currentUserSubject.next(user);
-//         this.isAuthenticatedSubject.next(true);
-//       } catch (error) {
-//         this.clearAuthData();
-//       }
-//     }
-//   }
-
-//   // Enregistrer un nouvel utilisateur
-//   register(data: RegisterRequest): Observable<AuthResponse> {
-//     return this.http.post<AuthResponse>(`${this.apiUrl}/register/`, data)
-//       .pipe(
-//         tap(response => this.handleAuthSuccess(response)),
-//         catchError(this.handleError)
-//       );
-//   }
-
-//   // Connexion
-//   login(credentials: LoginRequest): Observable<AuthResponse> {
-//     return this.http.post<AuthResponse>(`${this.apiUrl}/login/`, credentials)
-//       .pipe(
-//         tap(response => this.handleAuthSuccess(response)),
-//         catchError(this.handleError)
-//       );
-//   }
-
-// // Déconnexion
-//   logout(): void {
-//     this.http.post(`${this.apiUrl}/logout/`, {}).subscribe({
-//       next: () => {
-//         this.clearAuthData();
-//         this.router.navigate(['/accueil']);
-//       },
-//       error: () => {
-//         this.clearAuthData();
-//         this.router.navigate(['/accueil']);
-//       }
-//     });
-//   }
-
-//   // Vérifier si l'utilisateur est connecté
-//   isLoggedIn(): boolean {
-//     return this.isAuthenticatedSubject.value;
-//   }
-
-//   isAdmin(): boolean {
-//     const user = this.currentUserSubject.value;
-//     if (!user) return false;
-    
-//     return user.userType === UserRole.Admin || 
-//           user.userType === UserRole.Rescue || 
-//           user.userType === UserRole.Organization;
-//   }
-
-//   isSysAdmin(): boolean {
-//     const user = this.currentUserSubject.value;
-//     return user ? user.userType === UserRole.Admin : false;
-//   }
-
-
-//   // Obtenir l'utilisateur actuel
-//   getCurrentUser(): User | null {
-//     return this.currentUserSubject.value;
-//   }
-
-//   // Obtenir le token
-//   getToken(): string | null {
-//     return localStorage.getItem('auth_token');
-//   }
-
-//   // Mettre à jour le profil
-//   updateProfile(data: Partial<User>): Observable<User> {
-//     return this.http.put<User>(`${this.apiUrl}/profile`, data)
-//       .pipe(
-//         tap(user => {
-//           this.currentUserSubject.next(user);
-//           localStorage.setItem('current_user', JSON.stringify(user));
-//         }),
-//         catchError(this.handleError)
-//       );
-//   }
-
-//   // Changer le mot de passe
-//   changePassword(oldPassword: string, newPassword: string): Observable<any> {
-//     return this.http.post(`${this.apiUrl}/change-password`, {
-//       oldPassword,
-//       newPassword
-//     }).pipe(catchError(this.handleError));
-//   }
-
-//   // Réinitialiser le mot de passe
-//   resetPassword(email: string): Observable<any> {
-//     return this.http.post(`${this.apiUrl}/reset-password`, { email })
-//       .pipe(catchError(this.handleError));
-//   }
-
-//   // Gérer le succès de l'authentification
-//   // private handleAuthSuccess(response: AuthResponse): void {
-//   //   if (response.token && response.user) {
-//   //     localStorage.setItem('auth_token', response.token);
-//   //     localStorage.setItem('current_user', JSON.stringify(response.user));
-//   //     this.currentUserSubject.next(response.user);
-//   //     this.isAuthenticatedSubject.next(true);
-//   //   }
-//   // }
-
-//   private handleAuthSuccess(response: AuthResponse): void {
-//     if (response.token && response.user) {
-//       // 1. On récupère l'utilisateur "brut" du serveur (type any pour manipuler les champs snake_case)
-//       const rawUser = response.user as any;
-
-//       // 2. On crée un objet propre qui respecte l'interface Utilisateur (camelCase)
-//       const mappedUser: User = {
-//         ...rawUser, // Garde les champs déjà corrects (id, email, etc.)
-//         pseudo: rawUser.username || rawUser.pseudo,
-//         lastName: rawUser.last_name || rawUser.lastName,
-//         firstName: rawUser.first_name || rawUser.firstName,
-//         phone: rawUser.phone_number || rawUser.phone,
-//         postalCode: rawUser.postal_code || rawUser.postalCode,
-//         // Utilisation du mapper de rôle que nous avons vu précédemment
-//         userType: this.mapBackendRoleToEnum(rawUser.type || rawUser.userType)
-//       };
-
-//       localStorage.setItem('auth_token', response.token);
-//       localStorage.setItem('current_user', JSON.stringify(mappedUser));
-      
-//       this.currentUserSubject.next(mappedUser);
-//       this.isAuthenticatedSubject.next(true);
-//     }
-//   }
-
-//   // Ajoute cette petite fonction helper dans AuthService pour le rôle
-//   private mapBackendRoleToEnum(backendRole: string): UserRole {
-//     const mapping: Record<string, UserRole> = {
-//       'UTIL_SIMPLE': UserRole.Individual,
-//       'AUT_LOCALE': UserRole.Organization,
-//       'SECOURS': UserRole.Rescue,
-//       'ADMIN': UserRole.Admin
-//     };
-//     return mapping[backendRole] || UserRole.Individual;
-//   }
-
-//   // Nettoyer les données d'authentification
-//   private clearAuthData(): void {
-//     localStorage.removeItem('auth_token');
-//     localStorage.removeItem('current_user');
-//     this.currentUserSubject.next(null);
-//     this.isAuthenticatedSubject.next(false);
-//   }
-
-//   // Gérer les erreurs
-//   private handleError(error: HttpErrorResponse): Observable<never> {
-//     let errorMessage = 'Une erreur est survenue';
-    
-//     if (error.error instanceof ErrorEvent) {
-//       // Erreur côté client
-//       errorMessage = `Erreur: ${error.error.message}`;
-//     } else {
-//       // Erreur côté serveur
-//       errorMessage = error.error?.message || `Code d'erreur: ${error.status}`;
-//     }
-    
-//     console.error(errorMessage);
-//     return throwError(() => new Error(errorMessage));
-//   }
-// }
-
 interface TokenResponse {
   access: string;    // JWT access (simplejwt)
   refresh: string;
@@ -243,30 +25,19 @@ interface ActivationResponse {
 @Injectable({ providedIn: 'root' })
 export class AuthService {
   private readonly url = `${environment.apiUrl}`;
-  // private readonly url = `${environment.apiUrl}/auth`;
-  // private readonly url = `${environment.apiUrl}/users`;
 
   constructor(private http: HttpClient, private suiviPosition: SuiviPositionPermanentService) {}
 
-  /**
-   * Stocke la session (token d'accès, refresh, utilisateur) en localStorage.
-   * Factorisé pour être appelé aussi bien après /token/ qu'après activation de compte.
-   */
+  /** Stocke la session (access, refresh, utilisateur) ; appelé après /token/ et après activation. */
   setSession(accessToken: string, refreshToken: string, user: User): void {
     localStorage.setItem('access_token', accessToken);
     localStorage.setItem('refresh_token', refreshToken);
     localStorage.setItem('current_user', JSON.stringify(user));
-    // Relance le suivi de position permanent si l'utilisateur l'avait déjà activé lors d'une
-    // session précédente (voir SuiviPositionPermanentService) -- ne redemande jamais l'accord,
-    // le navigateur ne re-prompt pas une permission déjà accordée pour cette origine.
+    // Relance le suivi de position permanent s'il avait été activé (sans redemander l'accord).
     this.suiviPosition.demarrerSiConsentement();
   }
 
-  /**
-   * POST /api/auth/token/
-   * Réponse : { access, refresh, user }
-   * (Nécessite un serializer custom côté Django pour inclure `user`)
-   */
+  /** POST /api/auth/token/ → { access, refresh, user } */
   login(email: string, password: string): Observable<LoginResponse> {
     return this.http
       .post<LoginResponse>(`${this.url}/token/`, { email, password })
@@ -290,11 +61,7 @@ export class AuthService {
       );
   }
 
-  /**
-   * GET /api/activate-account/<uidb64>/<token>/
-   * Confirme la possession de l'email (lien reçu à l'inscription) et active le compte.
-   * Réponse : { user, token, refresh, message }
-   */
+  /** GET /api/activate-account/<uidb64>/<token>/ : active le compte → { user, token, refresh, message } */
   activateAccount(uidb64: string, token: string): Observable<ActivationResponse> {
     return this.http
       .get<ActivationResponse>(`${this.url}/activate-account/${uidb64}/${token}/`)
@@ -307,11 +74,7 @@ export class AuthService {
       );
   }
 
-  /**
-   * GET /api/magic-login/<uidb64>/<token>/
-   * Connexion sans mot de passe via lien magique (ex : suivi de dossier envoyé par email).
-   * Réponse : { user, token, refresh, message }
-   */
+  /** GET /api/magic-login/<uidb64>/<token>/ : connexion par lien magique → { user, token, refresh, message } */
   magicLogin(uidb64: string, token: string): Observable<ActivationResponse> {
     return this.http
       .get<ActivationResponse>(`${this.url}/magic-login/${uidb64}/${token}/`)
@@ -324,13 +87,8 @@ export class AuthService {
       );
   }
 
-  /**
-   * POST /api/auth/token/refresh/
-   * Renouveler l'access token depuis le refresh token. Avec ROTATE_REFRESH_TOKENS actif
-   * côté serveur, la réponse contient aussi un nouveau refresh token (l'ancien est
-   * blacklisté) — il faut donc aussi le stocker, sinon le prochain rafraîchissement
-   * échouerait avec un refresh token déjà consommé.
-   */
+  /** POST /api/auth/token/refresh/. ROTATE_REFRESH_TOKENS : le nouveau refresh doit être stocké,
+   * l'ancien est blacklisté. */
   refreshToken(): Observable<TokenResponse> {
     const refresh = localStorage.getItem('refresh_token');
     return this.http
@@ -343,9 +101,7 @@ export class AuthService {
       }));
   }
 
-  /**
-   * POST /api/auth/register/
-   */
+  /** POST /api/auth/register/ */
   register(payload: UserPayload & { email: string; password: string }): Observable<User> {
     return this.http.post<User>(`${this.url}/register/`, payload);
   }
@@ -360,22 +116,15 @@ export class AuthService {
     return this.http.post<{ valid: boolean; message: string; details: any }>(`${this.url}/validate-institution/`, payload);
   }
 
-  /**
-   * GET /api/auth/me/
-   * Récupère le profil de l'utilisateur connecté depuis le backend.
-   */
+  /** GET /api/auth/me/ */
   fetchMe(): Observable<User> {
     return this.http
       .get<User>(`${this.url}/me/`)
       .pipe(tap(user => localStorage.setItem('current_user', JSON.stringify(user))));
   }
 
-  /**
-   * PATCH /api/auth/me/
-   * Met à jour le profil (photo via FormData si besoin).
-   */
+  /** PATCH /api/auth/me/ (FormData si photo). */
   updateProfile(payload: UserPayload): Observable<User> {
-    // Si photo présente → FormData ; sinon JSON
     const body = payload.photo
       ? this.profileToFormData(payload)
       : payload;
@@ -385,10 +134,7 @@ export class AuthService {
       .pipe(tap(user => localStorage.setItem('current_user', JSON.stringify(user))));
   }
 
-  /**
-   * POST /api/auth/change-password/
-   * Payload attendu par Django : { old_password, new_password }
-   */
+  /** POST /api/auth/change-password/ { old_password, new_password } */
   changePassword(old_password: string, new_password: string): Observable<void> {
     return this.http.post<void>(`${this.url}/change-password/`, {
       old_password,
@@ -396,12 +142,8 @@ export class AuthService {
     });
   }
 
-  /**
-   * POST /api/reset-password/request/
-   * Libre-service (page "mot de passe oublié") : déclenche l'envoi du lien de réinitialisation
-   * si l'email correspond à un compte. Réponse toujours identique côté backend, que l'email
-   * existe ou non -- ne jamais différencier les deux cas côté UI non plus.
-   */
+  /** POST /api/reset-password/request/ : réponse identique que l'email existe ou non ; l'UI ne
+   * doit pas non plus distinguer les deux cas. */
   requestPasswordReset(email: string): Observable<void> {
     return this.http
       .post<void>(`${this.url}/reset-password/request/`, { email })
@@ -413,12 +155,8 @@ export class AuthService {
       );
   }
 
-  /**
-   * POST /api/reset-password/<uidb64>/<token>/
-   * Consomme le lien reçu par email suite à une demande de réinitialisation -- déclenchée soit
-   * en libre-service (requestPasswordReset), soit par un administrateur (page Utilisateurs) :
-   * contrairement à changePassword, ne nécessite pas de connaître l'ancien mot de passe.
-   */
+  /** POST /api/reset-password/<uidb64>/<token>/ : sans l'ancien mot de passe (lien demandé en
+   * libre-service ou par un administrateur). */
   resetPasswordConfirm(uidb64: string, token: string, new_password: string): Observable<void> {
     return this.http
       .post<void>(`${this.url}/reset-password/${uidb64}/${token}/`, { new_password })
@@ -430,11 +168,7 @@ export class AuthService {
       );
   }
 
-  /**
-   * Révoque le refresh token côté serveur (best-effort — ne bloque jamais le nettoyage
-   * local, même si l'appel réseau échoue, ex. hors-ligne ou token déjà expiré) puis
-   * vide la session locale.
-   */
+  /** Révoque le refresh token (best-effort) puis vide toujours la session locale. */
   logout(): void {
     const refresh = localStorage.getItem('refresh_token');
     if (refresh) {
@@ -457,13 +191,8 @@ export class AuthService {
     return localStorage.getItem('access_token');
   }
 
-  /** À dessein basé uniquement sur le rôle PROD réel — d'autres endroits (ex: floutage des
-   * coordonnées précises sur la carte publique, map.component.ts) s'appuient dessus pour des
-   * décisions de confidentialité qui ne doivent JAMAIS s'élargir simplement parce qu'un compte
-   * a reçu un accès démo. Pour l'entrée dans la zone /admin elle-même, voir canEnterAdminArea()
-   * ci-dessous — c'est une question différente ("peut-il atteindre la bascule PROD/DEMO ?"),
-   * pas "a-t-il des droits institutionnels réels en ce moment ?".
-   */
+  /** Basé uniquement sur le rôle PROD réel : sert à des décisions de confidentialité qui ne doivent
+   * pas s'élargir avec un accès démo. Voir DOCUMENTATION.md, § 6.1. */
   isAdmin(): boolean {
     return this.getCurrentUser()?.type === UserRole.RESCUE ||
       this.getCurrentUser()?.type === UserRole.LOCAL_AUTH||
@@ -475,11 +204,7 @@ export class AuthService {
     return this.isAdmin();
   }
 
-  /** Rôle réellement appliqué pour la requête EN COURS, miroir de get_effective_role côté
-   * backend : demo_role en zone DEMO, type en zone PROD. Contrairement à isAdmin() (toujours
-   * basé sur le rôle PROD réel, à dessein), c'est CE rôle qui détermine si les pages admin
-   * actuellement affichées ont une chance de charger quoi que ce soit — sert à ne montrer dans
-   * la barre latérale que ce que l'utilisateur peut effectivement utiliser MAINTENANT. */
+  /** Rôle effectif de la requête en cours (miroir de get_effective_role) : pilote la barre latérale. */
   getEffectiveRole(): UserRole | null {
     if (this.getEnvironment() === 'DEMO') {
       return this.getCurrentUser()?.demo_role ?? null;
@@ -493,23 +218,15 @@ export class AuthService {
       role === UserRole.ADMIN || role === UserRole.REGULATEUR;
   }
 
-  /** Zones = découpage PCS/PICS, réservé aux collectivités territoriales (mairie/EPCI/
-   * département/région) — même critère que _institution_est_autorite_locale côté backend
-   * (core/views.py), qui bloque déjà la création côté API. Élargi de mairie/EPCI à CG/CR le
-   * 15/10 (demande utilisateur). Un admin (rôle PROD réel, voir isAdmin) voit toujours tout. */
+  /** Zones (découpage PCS/PICS) : collectivités territoriales seulement, comme
+   * _institution_est_autorite_locale côté backend. Un admin voit tout. */
   isAutoriteLocaleCommunale(): boolean {
     if (this.isAdmin()) return true;
     const code = this.getCurrentUser()?.institution_type_code;
     return code === 'MAIRIE' || code === 'EPCI' || code === 'CG' || code === 'CR';
   }
 
-  /** Utilisé par adminGuard. Un compte n'ayant reçu qu'un accès démo (demo_role réglé, type
-   * PROD resté simple) ne doit JAMAIS pouvoir entrer dans /admin tant qu'il est en zone PROD
-   * — même si le backend refuse déjà les données (get_effective_role), la mise en page/le
-   * routage admin eux-mêmes ne doivent être atteignables qu'une fois la bascule sur DEMO déjà
-   * activée. La bascule elle-même vit dans l'en-tête public (visible dès que canAccessDemo()
-   * est vrai, voir header.component), précisément pour ne jamais avoir besoin d'entrer dans
-   * /admin en PROD pour l'atteindre. */
+  /** Utilisé par adminGuard : un compte avec un simple accès démo n'entre dans /admin qu'en zone DEMO. */
   canEnterAdminArea(): boolean {
     if (this.isAdmin()) return true;
     return this.canAccessDemo() && this.getEnvironment() === 'DEMO';
@@ -523,22 +240,18 @@ export class AuthService {
     return this.getCurrentUser()?.enabled === true;
   }
 
-  /** Zone active (PROD par défaut) — lue par l'intercepteur pour l'en-tête X-Environment
-   * envoyé à chaque requête, et par le header pour la bannière "ZONE DE DÉMONSTRATION". */
+  /** Zone active (PROD par défaut), envoyée par l'intercepteur dans X-Environment. */
   getEnvironment(): Environment {
     return (localStorage.getItem('active_environment') as Environment) || 'PROD';
   }
 
-  /** Change de zone puis recharge la page entière : le moyen le plus simple de garantir que
-   * toutes les listes/pages déjà chargées se rafraîchissent sous le nouvel environnement, sans
-   * rendre tout AuthService réactif (aujourd'hui 100% synchrone/localStorage). */
+  /** Rechargement complet : toutes les données repartent sous le nouvel environnement. */
   setEnvironment(env: Environment): void {
     localStorage.setItem('active_environment', env);
     window.location.reload();
   }
 
-  /** La bascule ne doit être visible que pour un utilisateur ayant reçu un accès démo explicite
-   * (demo_role non nul) — réglé manuellement par un admin sur la page Utilisateurs. */
+  /** Bascule visible seulement si un admin a donné un demo_role à l'utilisateur. */
   canAccessDemo(): boolean {
     return !!this.getCurrentUser()?.demo_role;
   }

@@ -14,11 +14,8 @@ import { pollWhileVisible } from '../../../shared/utils/polling.util';
 
 const INTERVALLE_POLLING_MESSAGES_MS = 8_000;
 
-/** DM privés régulateur <-> équipe, uniquement si au moins un membre de l'équipe a un
- * companion MeshCore personnel associé (voir /admin/meshcore-companions, section « Nœuds »).
- * La visibilité réelle de ces messages est imposée côté serveur (leader/régulateur de CETTE
- * équipe uniquement, voir MessageMeshLogViewSet) — ce composant se contente d'afficher ce que
- * l'API accepte de renvoyer, il n'invente pas de restriction supplémentaire côté client. */
+/** DM régulateur <-> équipe, si un membre a un companion MeshCore personnel. La visibilité est
+ * imposée côté serveur (MessageMeshLogViewSet). */
 @Component({
   selector: 'app-equipe-messagerie-mesh',
   standalone: true,
@@ -29,8 +26,7 @@ const INTERVALLE_POLLING_MESSAGES_MS = 8_000;
 export class EquipeMessagerieMeshComponent implements OnChanges, OnDestroy {
 
   @Input() equipeId!: string;
-  /** Canal d'équipe (voir TeamViewSet.provisionner_canal_meshcore) — ses messages sont
-   * fusionnés avec les DM dans le même fil, si fourni. */
+  /** Canal d'équipe, fusionné avec les DM dans le même fil. */
   @Input() canalId?: string | null;
 
   chargement = true;
@@ -46,9 +42,7 @@ export class EquipeMessagerieMeshComponent implements OnChanges, OnDestroy {
   nouveauMessage = '';
   envoiEnCours = false;
 
-  /** Raison de la suggestion automatique du companion "Via" (voir core/routage_mesh.py côté
-   * backend) — affichée pour que l'utilisateur comprenne le choix fait à sa place, et puisse
-   * le changer explicitement (le sélecteur "Via" reste toujours modifiable). */
+  /** Raison de la suggestion du companion « Via » (core/routage_mesh.py), modifiable. */
   suggestionCompagnonRaison = '';
 
   private pollingSub?: Subscription;
@@ -64,10 +58,8 @@ export class EquipeMessagerieMeshComponent implements OnChanges, OnDestroy {
     if (changes['equipeId'] && this.equipeId) {
       this.charger();
       this.pollingSub?.unsubscribe();
-      // pollWhileVisible (au lieu d'un setInterval nu) : suspend le rafraîchissement quand
-      // l'onglet est en arrière-plan, et rattrape immédiatement au retour au premier plan
-      // plutôt que d'attendre jusqu'à 8s de plus — le premier tick (immédiat) est ignoré ici,
-      // charger() vient déjà de le faire via chargerMessages(true).
+      // pollWhileVisible : suspendu en arrière-plan ; le premier tick est ignoré (charger() vient
+      // de charger).
       let premierTick = true;
       this.pollingSub = pollWhileVisible(() => of(null), INTERVALLE_POLLING_MESSAGES_MS).subscribe(() => {
         if (premierTick) { premierTick = false; return; }
@@ -82,9 +74,7 @@ export class EquipeMessagerieMeshComponent implements OnChanges, OnDestroy {
 
   private charger(): void {
     this.chargement = true;
-    // messageables()/envoyables() (résumés minimaux, jamais l'identité réelle en zone DEMO)
-    // plutôt que getAll() (bloqué en zone DEMO, voir NoeudMeshUtilisateurViewSet/
-    // CompagnonMeshCoreViewSet) — le filtrage par équipe se fait déjà côté serveur.
+    // messageables()/envoyables() : résumés sans identité en zone DEMO (getAll() y est bloqué).
     this.noeudService.messageables(this.equipeId).subscribe({
       next: (noeuds) => {
         this.noeudsEquipe = noeuds as NoeudMeshUtilisateur[];
@@ -97,8 +87,7 @@ export class EquipeMessagerieMeshComponent implements OnChanges, OnDestroy {
             this.suggererCompagnon();
           });
         }
-        // Le canal d'équipe reste affiché même sans membre équipé d'un nœud personnel —
-        // seule la composition d'un DM (destinataire) en dépend.
+        // Le canal d'équipe s'affiche même sans membre équipé ; seuls les DM en dépendent.
         this.chargerMessages(true);
       },
       error: () => { this.erreur = "Impossible de vérifier l'équipement MeshCore de cette équipe."; this.chargement = false; },
@@ -127,10 +116,8 @@ export class EquipeMessagerieMeshComponent implements OnChanges, OnDestroy {
     this.suggererCompagnon();
   }
 
-  /** Interroge core/routage_mesh.py (via l'endpoint meilleur-pour-contact) pour pré-sélectionner
-   * le companion le plus adapté à CE destinataire — contact déjà entendu au plus court en
-   * sauts, sinon sa région, sinon le principal. Le sélecteur "Via" reste modifiable ensuite :
-   * ce n'est qu'une suggestion, jamais imposée. */
+  /** Pré-sélectionne le companion le plus adapté (meilleur-pour-contact) : plus court en sauts,
+   * sinon même région, sinon le principal. */
   private suggererCompagnon(): void {
     this.suggestionCompagnonRaison = '';
     if (!this.destinatairePubkey || this.compagnons.length < 2) return;
@@ -145,17 +132,13 @@ export class EquipeMessagerieMeshComponent implements OnChanges, OnDestroy {
     });
   }
 
-  /** Nom lisible de la personne de terrain associée à ce nœud — utilisé pour afficher
-   * clairement "à qui" un DM sortant a été adressé et "qui" a répondu, un fil de DM
-   * d'équipe mélangeant potentiellement plusieurs membres équipés d'un nœud personnel. */
+  /** Nom de la personne associée au nœud. */
   private nomPourPubkey(pubkeyHex: string): string {
     const noeud = this.noeudsEquipe.find(n => n.pubkey_hex === pubkeyHex);
     return noeud?.utilisateur_nom || noeud?.nom_noeud || pubkeyHex.slice(0, 8);
   }
 
-  /** Ligne d'attribution d'un DM : "Moi → <destinataire>" (sortant) ou "<expéditeur> → Moi"
-   * (entrant) — remarque explicite : sans ça, impossible de savoir à qui un message sortant
-   * était adressé, ou qui a répondu, dès que l'équipe a plus d'un membre équipé. */
+  /** Attribution d'un DM : « Moi → destinataire » ou « expéditeur → Moi ». */
   attributionDm(m: MessageMeshLog): string {
     const autre = this.nomPourPubkey(m.contact_pubkey_hex);
     return m.direction === 'SORTANT' ? `Moi → ${autre}` : `${m.expediteur_nom || autre} → Moi`;

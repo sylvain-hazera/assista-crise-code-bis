@@ -7,12 +7,8 @@ import type { FeatureCollection, MultiPolygon, Polygon } from 'geojson';
 
 const COMMUNES_SOURCE_ID = 'zone-map-communes';
 
-/**
- * Carte de dessin de zone (polygone), autonome et volontairement séparée du MapComponent
- * partagé (déjà volumineux et multi-usage crises/demandes/offres). Émet la zone dessinée
- * en WKT (`"POLYGON ((lng lat, ...))"`), directement consommable par l'API (champ `zone`
- * de Crisis), sans dépendance de parsing WKT côté frontend.
- */
+/** Carte de dessin de zone (polygone), séparée de MapComponent. Émet du WKT
+ * (`"POLYGON ((lng lat, ...))"`) consommable directement par l'API. */
 @Component({
   selector: 'app-zone-map',
   standalone: true,
@@ -26,9 +22,7 @@ export class ZoneMapComponent implements AfterViewInit, OnChanges, OnDestroy {
   @Input() center: [number, number] = [2.2137, 46.2276]; // France, par défaut
   @Input() zoom = 11;
   @Input() initialZone: Polygon | null = null;
-  /** Contours des communes de la zone (calque de référence transparent, sous l'outil de
-   * dessin) -- voir MinimapComponent.syncZonePolygon pour le même procédé, repris ici pour
-   * fusionner les deux cartes autrefois séparées de la vue équipe (2026-10-05). */
+  /** Contours des communes (calque de référence sous l'outil de dessin). */
   @Input() communesGeojson: FeatureCollection<Polygon | MultiPolygon> | null = null;
 
   @Output() zoneChange = new EventEmitter<string | null>();
@@ -39,12 +33,8 @@ export class ZoneMapComponent implements AfterViewInit, OnChanges, OnDestroy {
   private draw: TerraDraw | null = null;
 
   ngOnChanges(changes: SimpleChanges): void {
-    // this.map reste null tant que ngAfterViewInit n'a pas tourné (toujours après le tout
-    // premier ngOnChanges dans l'ordre du cycle de vie Angular) : condition suffisante pour
-    // ignorer ce premier appel sans avoir besoin de vérifier firstChange séparément sur
-    // chaque input. flyTo (animé) plutôt que setCenter seul : la carte doit aussi zoomer
-    // quand l'adresse saisie change (ex: commune choisie dans le formulaire de déclaration
-    // de crise), pas seulement se recentrer sans changer d'échelle.
+    // this.map est null au premier ngOnChanges (avant ngAfterViewInit) : appel ignoré.
+    // flyTo pour recentrer et zoomer.
     if (!this.map) return;
     if (changes['center'] || changes['zoom']) {
       this.map.flyTo({ center: this.center, zoom: this.zoom });
@@ -69,8 +59,7 @@ export class ZoneMapComponent implements AfterViewInit, OnChanges, OnDestroy {
     this.map.addControl(new maplibregl.NavigationControl(), 'top-right');
 
     this.map.on('load', () => {
-      // Calque de référence AVANT TerraDraw : reste sous l'outil de dessin, ne capte jamais ses
-      // clics (voir docstring de l'input communesGeojson).
+      // Calque de référence ajouté avant TerraDraw : reste dessous, sans capter les clics.
       this.syncCommunesLayer();
 
       this.draw = new TerraDraw({
@@ -100,12 +89,8 @@ export class ZoneMapComponent implements AfterViewInit, OnChanges, OnDestroy {
     });
   }
 
-  /** Calque de référence transparent des contours communaux -- même patron que
-   * MinimapComponent.syncZonePolygon (fill + outline), couleur distincte du polygone dessiné
-   * par TerraDraw pour ne jamais confondre "contour de référence" et "zone précise en cours
-   * d'édition". Ne fait rien tant que la carte n'est pas chargée (rappelé depuis ngOnChanges
-   * avant ngAfterViewInit lors du tout premier changement d'input, cas ignoré ici comme pour
-   * center/zoom). */
+  /** Contours communaux en calque transparent, d'une couleur distincte du polygone dessiné.
+   * Sans effet tant que la carte n'est pas chargée. */
   private syncCommunesLayer(): void {
     if (!this.map || !this.map.isStyleLoaded()) return;
     const data: FeatureCollection = this.communesGeojson ?? { type: 'FeatureCollection', features: [] };

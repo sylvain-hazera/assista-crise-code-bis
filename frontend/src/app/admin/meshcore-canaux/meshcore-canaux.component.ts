@@ -12,12 +12,8 @@ import { CanalMeshCore, CanalMeshCoreDetecte, MessageCanalMeshCore, MessageMeshL
 import { NoeudMeshUtilisateur } from '../../shared/models/noeud-mesh-utilisateur.model';
 import { ContactMeshCore } from '../../shared/models/contact-meshcore.model';
 
-/** Cible d'un message privé, fusionnée depuis NoeudMeshUtilisateur (contact attribué à un
- * compte) ET ContactMeshCore (tout contact connu du companion, attribué ou non) -- voir
- * contactsPourDm. Un DM cible une pubkey, jamais un id de l'un ou l'autre modèle : les deux
- * APIs d'envoi/historique (MessageMeshLogViewSet) sont déjà purement indexées par pubkey_hex,
- * sans jamais exiger de NoeudMeshUtilisateur (demande utilisateur du 12/10 : pouvoir contacter
- * n'importe quel nœud connu, pas seulement ceux déjà attribués à un compte). */
+/** Cible de message privé : NoeudMeshUtilisateur ou ContactMeshCore, identifiée par pubkey
+ * (MessageMeshLogViewSet est indexé par pubkey_hex). */
 interface CibleDm {
   pubkeyHex: string;
   titre: string;
@@ -28,18 +24,9 @@ type Conversation =
   | { type: 'canal'; canal: CanalMeshCore }
   | { type: 'dm'; cible: CibleDm };
 
-/** Chat MeshCore unifié : canaux d'équipe (coordination générale, un canal = une équipe, voir
- * TeamViewSet.provisionner_canal_meshcore) ET messages privés (DM, un fil par personne) dans
- * la même interface — sidebar de conversations + fil de discussion, comme un client de
- * messagerie classique (inspiré de github.com/Daring-Designs/meshtastic-ui-ha : sidebar de
- * conversations mêlant canaux et DM, indicateurs de statut d'envoi par message).
- *
- * Un canal d'équipe se crée depuis la fiche équipe (TeamsComponent, bouton "Créer le canal
- * MeshCore") — cette page ne fait que lister/discuter sur ceux qui existent déjà. Les DM,
- * eux, ciblent une personne précise parmi celles ayant un nœud MeshCore associé
- * (NoeudMeshUtilisateur) — jamais une équipe entière, pour éviter l'ambiguïté de routage
- * qu'avait l'ancien système (un message attribué à `expediteur.teams.first()`, arbitraire dès
- * qu'on appartient à plusieurs équipes). */
+/** Chat MeshCore : canaux d'équipe, canaux publics et messages privés dans une même interface.
+ * Les canaux d'équipe se créent depuis la fiche équipe ; un DM vise une personne, jamais une
+ * équipe (pas d'ambiguïté de routage). */
 @Component({
   selector: 'app-meshcore-canaux',
   standalone: true,
@@ -50,18 +37,15 @@ type Conversation =
 export class MeshcoreCanauxComponent implements OnInit, OnDestroy, AfterViewChecked {
 
   @ViewChild('messagesContainer') messagesContainer?: ElementRef<HTMLDivElement>;
-  /** Défilement en bas différé à l'après-rendu (voir ngAfterViewChecked) : le conteneur
-   * `@ViewChild` n'existe pas encore tant que `loadingMessages` affiche le spinner à sa place. */
+  /** Défilement différé à l'après-rendu : le conteneur n'existe pas pendant le spinner. */
   private doitDefilerEnBas = false;
 
   canaux: CanalMeshCore[] = [];
   noeuds: NoeudMeshUtilisateur[] = [];
-  /** Tout contact connu du companion (type COMPANION uniquement -- un répéteur/room server ne
-   * se contacte pas en DM), attribué à un compte ou non -- voir contactsPourDm. */
+  /** Contacts COMPANION du companion (un répéteur ne se contacte pas en DM). */
   contacts: ContactMeshCore[] = [];
   compagnonPrincipalId: string | null = null;
-  /** Canaux dont le companion capte le trafic radio sans les connaître localement (voir
-   * CanalMeshCoreDetecte) -- lecture seule, pas de clé donc pas de fil de discussion. */
+  /** Canaux captés sans clé locale (CanalMeshCoreDetecte) : lecture seule. */
   canauxDetectes: CanalMeshCoreDetecte[] = [];
 
   conversationSelectionnee: Conversation | null = null;
@@ -75,9 +59,7 @@ export class MeshcoreCanauxComponent implements OnInit, OnDestroy, AfterViewChec
   nouveauMessage = '';
   envoiEnCours = false;
 
-  /** Rejoindre un canal public existant (ex: "#meteo") -- clé dérivée automatiquement du nom
-   * côté serveur (voir CanalMeshCoreSerializer.validate), jamais à saisir : c'est tout le
-   * principe d'un canal public (demande utilisateur du 11/10). */
+  /** Canal public (ex: "#meteo") : clé dérivée du nom côté serveur (CanalMeshCoreSerializer.validate). */
   nouveauCanalPublicNom = '';
   ajoutCanalEnCours = false;
 
@@ -101,11 +83,7 @@ export class MeshcoreCanauxComponent implements OnInit, OnDestroy, AfterViewChec
     }, 8000);
   }
 
-  /** Recharge juste la liste des canaux (équipe + publics) sans repasser par le spinner plein
-   * écran de chargerSidebar -- un canal public rejoint depuis une autre page, ou auto-créé par
-   * le pont (ex: canal "Public" par défaut, voir CanalMeshCore.SECRET_PUBLIC_PAR_DEFAUT),
-   * n'apparaissait jamais dans la sidebar tant que la page n'était pas rechargée manuellement
-   * (signalé par l'utilisateur le 11/10 : message reçu sur "#test" invisible jusqu'à F5). */
+  /** Recharge la liste des canaux sans spinner (canaux rejoints ailleurs ou créés par le pont). */
   private rafraichirCanaux(): void {
     this.canalService.getAll().subscribe({
       next: (canaux) => { this.canaux = canaux; },
@@ -113,9 +91,7 @@ export class MeshcoreCanauxComponent implements OnInit, OnDestroy, AfterViewChec
     });
   }
 
-  /** Même raison que rafraichirCanaux : un nouveau contact synchronisé par le pont (voir
-   * boucle_contacts côté meshcore-bridge) doit apparaître dans "Messages privés" sans recharger
-   * la page -- demande utilisateur du 12/10 (pouvoir contacter n'importe quel nœud connu). */
+  /** Idem pour les contacts synchronisés par le pont (boucle_contacts). */
   private rafraichirContacts(): void {
     this.contactService.getAll().subscribe({
       next: (contacts) => { this.contacts = contacts.filter(c => c.type_contact === 'COMPANION'); },
@@ -139,8 +115,7 @@ export class MeshcoreCanauxComponent implements OnInit, OnDestroy, AfterViewChec
     if (el) el.scrollTop = el.scrollHeight;
   }
 
-  /** Vrai si l'utilisateur n'a pas remonté lire l'historique -- évite de l'arracher de sa
-   * lecture à chaque rafraîchissement automatique (8s). */
+  /** Ne force pas le défilement si l'utilisateur relit l'historique (rafraîchissement toutes les 8 s). */
   private estProcheDuBas(): boolean {
     const el = this.messagesContainer?.nativeElement;
     if (!el) return true;
@@ -184,10 +159,7 @@ export class MeshcoreCanauxComponent implements OnInit, OnDestroy, AfterViewChec
     this.chargerMessages(this.conversationSelectionnee, true);
   }
 
-  /** Fusionne NoeudMeshUtilisateur (compte attribué, nom prioritaire) et ContactMeshCore (tout
-   * contact connu du companion) en une seule liste de cibles DM, dédupliquée par pubkey_hex --
-   * un contact pas encore attribué à un compte reste joignable, juste sous son nom annoncé brut
-   * plutôt que le nom d'un utilisateur (demande utilisateur du 12/10). */
+  /** Liste des cibles DM dédupliquée par pubkey_hex ; le nom du compte prime sur le nom annoncé. */
   get contactsPourDm(): CibleDm[] {
     const parPubkey = new Map<string, CibleDm>();
     for (const n of this.noeuds) {
@@ -247,12 +219,8 @@ export class MeshcoreCanauxComponent implements OnInit, OnDestroy, AfterViewChec
     }
   }
 
-  /** Canaux d'équipe (coordination privée, `equipe` renseigné) vs canaux publics (clé connue
-   * de tous -- nom préfixé `#` rejoint manuellement, OU canal "Public" par défaut détecté et
-   * ajouté automatiquement, voir CanalMeshCore.SECRET_PUBLIC_PAR_DEFAUT) -- deux usages
-   * différents, affichés en deux sections séparées (demande utilisateur du 11/10), mais TOUS
-   * les deux utilisables (fil de discussion complet), contrairement aux canaux détectés
-   * ci-dessous (clé inconnue, donc rien à afficher ni rejoindre). */
+  /** Canaux d'équipe (`equipe` renseigné) et canaux publics, affichés séparément ; les deux ont un
+   * fil de discussion, contrairement aux canaux détectés. */
   get canauxEquipe(): CanalMeshCore[] {
     return this.canaux.filter(c => !!c.equipe);
   }
@@ -311,10 +279,7 @@ export class MeshcoreCanauxComponent implements OnInit, OnDestroy, AfterViewChec
         this.nouveauCanalPublicNom = '';
         this.ajoutCanalEnCours = false;
         this.selectionnerCanal(canal);
-        // Si le nom tapé correspond à du trafic déjà capté sous un chan_hash inconnu, le
-        // backend vient de nettoyer la ligne fantôme correspondante (voir
-        // CanalMeshCoreSerializer.validate) -- rafraîchir tout de suite plutôt que d'attendre
-        // le prochain cycle de 8s, pour une confirmation visuelle immédiate.
+        // Le backend a pu fusionner une ligne fantôme de trafic capté : rafraîchir tout de suite.
         this.chargerCanauxDetectes();
       },
       error: () => { this.errorMessage = "Impossible de rejoindre ce canal public."; this.ajoutCanalEnCours = false; },

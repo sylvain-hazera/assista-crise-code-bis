@@ -24,24 +24,19 @@ import { Competence } from '../../shared/models/competence.model';
 import { User } from '../../shared/models/user.model';
 
 interface EtapePoint {
-  // null tant qu'un type n'a pas été choisi (uniquement possible pour une ligne ajoutée via
-  // ajouterPoint() — les 3 lignes par défaut ont toujours le leur dès le départ).
+  // null tant que le type n'est pas choisi (lignes ajoutées par ajouterPoint()).
   pointTypeCode: string | null;
   titre: string;
   description: string;
   suggestions: string[];
-  // Distingue les 3 lignes proposées par défaut (titre/description/suggestions fixes) d'une
-  // ligne ajoutée par l'utilisateur (juste un sélecteur de type + un nom) — voir demande
-  // utilisateur du 2026-09-15 : autant de points que voulu, pas figé à 3.
+  // Distingue les 3 lignes par défaut d'une ligne ajoutée (type + nom seulement).
   isDefault: boolean;
   nom: string;
   cree: boolean;
   point: PointOperationnel | null;
   equipeId: string | null;
   nouvelleEquipeNom: string;
-  // Renseigné directement au récap pour une équipe tout juste créée — voir demandes
-  // utilisateur du 2026-09-15 : "pas un lien vers l'équipe", tout se fait ici (contact,
-  // thèmes, spécialité, mission), zone déduite en silence du territoire communal de la crise.
+  // Saisi au récapitulatif pour une équipe juste créée ; zone déduite du territoire de la crise.
   responsable: { prenom: string; nom: string; email: string; telephone: string; roleCode: string | null; membreExistantId: string | null };
   membresAjoutes: string[];
   themeIds: string[];
@@ -51,19 +46,13 @@ interface EtapePoint {
   infosDone: boolean;
   infosSkipped: boolean;
   infosError: string;
-  // Membres candidats résolus depuis l'institution RÉELLE de l'équipe tout juste créée (relue
-  // via l'équipe elle-même, jamais depuis "mon" institution en cache côté frontend) — un
-  // compte lié à plusieurs institutions (ex: admin de test) pouvait sinon proposer la mauvaise
-  // liste, silencieusement — voir bug rapporté le 2026-09-15.
+  // Candidats résolus depuis l'institution réelle de l'équipe (voir chargerContexteEquipe).
   candidateMembers: User[];
 }
 
-/** Wizard proposé juste après la déclaration d'une crise (ou depuis son détail, plus tard) pour
- * poser rapidement ses éléments stratégiques — voir la demande utilisateur du 2026-09-10.
- * Premier composant "multi-étapes" du projet : pas de librairie de stepper, juste un index
- * `step` et des panneaux conditionnels, cohérent avec le reste du code. Réutilise entièrement
- * des endpoints déjà existants (PointOperationnelViewSet, TeamViewSet) — aucune route backend
- * dédiée. */
+/** Assistant de démarrage de crise : points stratégiques, équipes, récapitulatif.
+ * Simple index `step` et panneaux conditionnels ; uniquement des endpoints existants
+ * (PointOperationnelViewSet, TeamViewSet). Voir DOCUMENTATION.md, § 6.2. */
 @Component({
   selector: 'app-crise-demarrage',
   standalone: true,
@@ -80,9 +69,7 @@ export class CriseDemarrageComponent implements OnInit {
   roles: RoleOperationnel[] = [];
   besoins: Besoin[] = [];
   competences: Competence[] = [];
-  // Territoire communal de LA CRISE elle-même (pas de l'institution qui la pilote, qui peut
-  // être plus large ou différente) — demande utilisateur du 2026-09-15, proposé par défaut
-  // comme zone d'intervention de toute équipe créée à la volée dans ce wizard.
+  // Territoire communal de la crise (pas de l'institution pilote), zone par défaut des équipes créées ici.
   criseCommuneCode: string | null = null;
 
   step = 1; // 1 = points, 2 = équipes, 3 = récapitulatif
@@ -175,7 +162,7 @@ export class CriseDemarrageComponent implements OnInit {
   private chargerNotificationsPCS(): void {
     this.notificationAlertePCSService.getForCrise(this.criseId).subscribe(notifs => {
       this.notificationsPCS = notifs;
-      // Toutes les lignes envoyables (pas encore dans un état terminal) cochées par défaut.
+      // Lignes envoyables (non terminales) cochées par défaut.
       this.selectionEnvoiPCS = new Set(this.notificationsAutoEnAttente.map(n => n.id));
     });
   }
@@ -240,12 +227,8 @@ export class CriseDemarrageComponent implements OnInit {
     }[notif.reponse_contact] || '';
   }
 
-  /** Résout les membres candidats depuis l'institution RÉELLE de l'équipe tout juste créée
-   * (relue via l'équipe elle-même), jamais depuis "mon" institution mise en cache côté
-   * frontend — un compte lié à plusieurs institutions (admin de test, multi-mandats...)
-   * pouvait sinon résoudre une institution différente de celle qui vient réellement de
-   * recevoir l'équipe, laissant la liste de membres silencieusement vide (bug rapporté le
-   * 2026-09-15). */
+  /** Relit l'institution via l'équipe elle-même, jamais l'institution en cache : un compte
+   * multi-institutions résoudrait sinon la mauvaise liste. */
   private chargerContexteEquipe(etape: EtapePoint): void {
     if (!etape.equipeId) { return; }
     this.teamService.getById(etape.equipeId).subscribe(team => {
@@ -268,8 +251,6 @@ export class CriseDemarrageComponent implements OnInit {
     etape.nom = nom;
   }
 
-  /** Autant de points stratégiques que voulu, pas figé aux 3 par défaut — voir demande
-   * utilisateur du 2026-09-15. */
   ajouterPoint(): void {
     this.etapes = [
       ...this.etapes,
@@ -285,8 +266,7 @@ export class CriseDemarrageComponent implements OnInit {
     this.etapes = this.etapes.filter(e => e !== etape);
   }
 
-  /** Crée en un lot tous les points dont le nom a été renseigné (une case vide = non pourvu,
-   * plus besoin d'un bouton "passer" séparé maintenant que tout est sur un seul écran). */
+  /** Crée en un lot les points nommés (case vide = non pourvu). */
   terminerEtapePoints(): void {
     const aCreer = this.etapes.filter(e => e.nom.trim());
     const sansType = aCreer.find(e => !e.pointTypeCode);
@@ -323,16 +303,12 @@ export class CriseDemarrageComponent implements OnInit {
     });
   }
 
-  /** Points réellement créés à l'étape "équipes" (les lignes non renseignées n'y figurent pas). */
   get etapesAvecPoint(): EtapePoint[] {
     return this.etapes.filter(e => e.cree && e.point);
   }
 
-  /** Un point n'a une équipe "complète" que si elle passe par le même mécanisme serveur que
-   * partout ailleurs (point-modal, `nouvelle_equipe_nom` sur le create/update du point) : ça
-   * déclare l'institution comme actrice de la crise (ImplicationInstitution), notifie son
-   * référent et journalise le tout — un simple `TeamService.create({name})` fait ici avant ce
-   * correctif ne faisait rien de tout ça (voir _creer_equipe_pour_point côté backend). */
+  /** Passe par `nouvelle_equipe_nom` sur le point, comme point-modal : implication de
+   * l'institution, notification du référent, journalisation (_creer_equipe_pour_point). */
   terminerEtapeEquipes(): void {
     const affectations = this.etapesAvecPoint.filter(e => e.point && (e.equipeId || e.nouvelleEquipeNom.trim()));
     if (affectations.length === 0) {
@@ -345,10 +321,7 @@ export class CriseDemarrageComponent implements OnInit {
     const terminerSiFini = () => {
       restant--;
       if (restant === 0) {
-        // Lier le point à l'équipe (ci-dessus) n'ajoute jamais la crise à
-        // Team.assigned_crises — sans cet appel, l'équipe reste invisible dans les vues qui
-        // s'appuient spécifiquement sur ce champ (ressources mobilisées, recrutement scopé,
-        // matching hébergement), même si elle est bien affectée aux points de la crise.
+        // Lier un point n'ajoute pas la crise à Team.assigned_crises : appel explicite nécessaire.
         equipesACrise.forEach(equipeId => {
           this.teamService.assignerCrise(equipeId, this.criseId).subscribe({ error: () => {} });
         });
@@ -388,12 +361,8 @@ export class CriseDemarrageComponent implements OnInit {
     etape.competenceIds = checked ? [...etape.competenceIds, id] : etape.competenceIds.filter(x => x !== id);
   }
 
-  /** Renseigne directement, sur une équipe tout juste créée par ce wizard, tout ce qui permet
-   * aux mécanismes d'automatisation de la plateforme de fonctionner (matching hébergement,
-   * recrutement scopé...) sans repasser par la fiche équipe — demande utilisateur du
-   * 2026-09-15 : contact (existant ou invité), thèmes d'intervention, spécialité, mission
-   * confiée, et la zone d'intervention déduite EN SILENCE du territoire communal de la crise
-   * (jamais demandée). Le point et la crise sont déjà affectés depuis terminerEtapeEquipes. */
+  /** Complète l'équipe juste créée (contact, thèmes, spécialité, mission) pour que les
+   * automatisations (hébergement, recrutement) fonctionnent ; zone déduite du territoire de la crise. */
   enregistrerEquipe(etape: EtapePoint): void {
     if (!etape.equipeId) { return; }
     const r = etape.responsable;
@@ -435,9 +404,7 @@ export class CriseDemarrageComponent implements OnInit {
     });
   }
 
-  /** Même en repoussant à plus tard, la zone d'intervention est fixée en silence — c'est elle
-   * qui permet aux automatisations de fonctionner dès maintenant, pas la peine d'attendre que
-   * l'utilisateur revienne compléter la fiche équipe pour ça. */
+  /** Même si l'utilisateur reporte, la zone d'intervention est fixée. */
   passerEquipe(etape: EtapePoint): void {
     etape.infosSkipped = true;
     if (etape.equipeId && this.criseCommuneCode) {
@@ -445,11 +412,8 @@ export class CriseDemarrageComponent implements OnInit {
     }
   }
 
-  /** Réutilise Plan (dispositif pré-enregistré) tel quel : on référence les équipes/points déjà
-   * créés (jamais de copie, voir docstring de Plan côté backend) sous un nom, pour pouvoir tout
-   * ré-activer en un geste sur une prochaine crise via PlanViewSet.activer. Les équipes gardent
-   * leur zone/compétences propres, le matériel reste attaché aux points eux-mêmes : rien à
-   * dupliquer, il suffit de les regrouper ici. */
+  /** Enregistre équipes et points comme Plan (références, pas de copie), réactivable sur une
+   * prochaine crise via PlanViewSet.activer. */
   enregistrerCommeDispositif(): void {
     const points = this.etapesAvecPoint;
     if (points.length === 0) {

@@ -419,6 +419,135 @@ npm test                               # tests Karma
 npm run build                          # build de production (dist/)
 ```
 
+Outils partagés (`shared/utils/`) : `pollWhileVisible` (rafraîchissement périodique suspendu
+quand l'onglet est en arrière-plan, sans requêtes qui se chevauchent : à utiliser plutôt qu'un
+`setInterval`), `crisis-zone-secteurs.util.ts` (zone de crise composée de communes et
+départements), `contact-obfusque.util.ts` (coordonnées masquées aux robots).
+
+### 6.1 Rôles, zone DEMO et gardes
+
+`AuthService` garde la session (JWT d'accès + refresh, utilisateur) dans `localStorage`. Le
+refresh token tourne à chaque rafraîchissement (`ROTATE_REFRESH_TOKENS`) : le nouveau doit être
+stocké, l'ancien est blacklisté. La déconnexion révoque le refresh côté serveur (best-effort),
+puis vide toujours la session locale.
+
+Deux notions de rôle coexistent, à ne pas confondre :
+
+| Méthode | Base | Sert à |
+|---|---|---|
+| `isAdmin()`, `isSysAdmin()` | rôle **PROD réel** (`type`) | décisions de confidentialité (ex. flou des positions sur la carte publique), page Utilisateurs : ne s'élargissent jamais avec un accès démo |
+| `getEffectiveRole()` | `demo_role` en zone DEMO, `type` en PROD (miroir de `get_effective_role` côté backend) | ce qui peut charger **maintenant** : menu latéral, sélecteurs d'institution |
+
+- **Zone active.** `getEnvironment()` (PROD par défaut) part dans l'en-tête `X-Environment` de
+  chaque requête (intercepteur `auth/interceptor/auth.ts`). Changer de zone recharge la page
+  entière : toutes les données repartent sous le bon environnement. La bascule n'apparaît,
+  dans l'en-tête public, que si un admin a donné un `demo_role` au compte.
+- **Gardes** (`core/guards/`) : `authGuard` (connecté), `adminGuard` (un compte n'ayant qu'un
+  accès démo n'entre dans `/admin` qu'en zone DEMO), `sysAdminGuard` (admin PROD réel),
+  `institutionalEffectiveGuard` (rôle effectif institutionnel, sinon page « droits
+  insuffisants » dans l'admin), `accountValidationGuard` (admin ou mairie), `zonesGuard`
+  (collectivités territoriales) et `vulnerabilitesGuard` (champ serveur
+  `acces_registre_vulnerables`, non recalculable côté client).
+- **Profil périmé.** `getCurrentUser()` relit le cache posé à la connexion. Les gardes et la
+  mise en page admin rafraîchissent le profil (`/api/auth/me/`) : sans cela, un droit accordé
+  après la connexion resterait invisible jusqu'à la reconnexion.
+- Le frontend masque ou désactive ce que le backend refuserait, mais **le contrôle réel est
+  toujours côté serveur**. La page Utilisateurs masque en plus les coordonnées en zone DEMO
+  (le serializer le fait déjà), pour ne pas dépendre d'une seule couche.
+- **Suivi de position permanent** (`SuiviPositionPermanentService`) : traçage continu d'un
+  intervenant, indépendant de Matrix (Element limite le partage en direct à 8 h). Il est
+  actif par défaut pour tout compte connecté, sauf refus mémorisé dans `localStorage` (toggle
+  de l'en-tête admin ou de `/settings`). L'invite de géolocalisation du navigateur reste le
+  vrai garde-fou. Il ne fonctionne que tant que l'application est ouverte. À distinguer de
+  `GeolocationService.reportPositionIfInstitutional` (capture ponctuelle, institutionnels).
+
+### 6.2 Flux métier à connaître
+
+- **Formulaire d'offre** (`propose-help-form`). Une soumission peut contenir plusieurs lignes,
+  chacune devenant une `Offer` :
+  - `presencePhysique` : imposé par le type (Soins, Soutien, Bénévolat : la personne elle-même ;
+    hébergement prêté : jamais présente) ou à préciser pour les types ambigus (transport,
+    matériel, vivres). Les compétences, disponibilités et qualifications (déclarées une seule
+    fois) ne sont reportées que sur les offres avec présence ;
+  - la ligne « Engins agricoles / chantiers / spéciaux » est une **passerelle** : elle ne
+    devient jamais une offre, chaque engin coché dessous devient la sienne, avec une seule
+    confirmation réglementaire pour le lot ;
+  - catalogue matériel partagé (`MaterielCatalogue`) : un matériel « Autre » saisi une fois
+    est ensuite proposé à tous ;
+  - plusieurs validateurs dépendent d'un autre contrôle (`type`, `transportType`) : Angular ne
+    les réévalue pas seul, d'où les abonnements à `valueChanges` dans `addOffer()` ;
+  - un nom d'organisation pose un `groupe_id` commun (dépôt groupé), repris par l'affichage
+    des ressources et le pré-remplissage du nom d'équipe.
+- **Demandes** (`request-help-form`) : un besoin Hébergement porte sur une **zone** (communes +
+  rayon), pas une adresse ; `commune_code` est conservé pour le rapprochement géographique.
+- **Affecter une demande à une équipe** passe toujours par l'action backend dédiée
+  (`assign_team` ou la validation groupée de la fiche équipe) : création du dossier,
+  notification du régulateur, email au demandeur. Dans la fiche équipe, cocher une demande ne
+  fait aucun appel réseau : seul « Valider la sélection » applique, en un appel.
+- **`Team.assigned_crises` est distinct de la mission active** (`Mission.crise`) et des points
+  liés. Lier un point ou définir une mission ne rattache pas la crise à l'équipe ; or le
+  recrutement, les ressources mobilisées et le matching hébergement lisent ce champ. Il faut
+  appeler `assigner-crise` explicitement (fiche équipe, assistant de démarrage).
+- **Candidats** (membres, responsables, délégataires) : toujours scopés sur l'institution de
+  l'objet édité (équipe, point) et ses institutions liées, **jamais sur l'institution du
+  compte connecté**, même pour un admin.
+- **Page Signalements** (`reporting`) : pagination, recherche, tri et filtres **côté serveur**
+  ; jamais la table entière en mémoire. Exceptions côté client, sur la page affichée : le tri
+  par contact (champ chiffré, non triable en SQL) et le filtre par nom de commune. L'onglet
+  « Tout » n'est qu'un aperçu (1re page de chaque type) ; « Tout sélectionner » et l'export CSV
+  portent sur la page affichée. Les modes « picker » (`?pickForTeamId=`, `?pickForPoint=`)
+  servent à ajouter des offres à une équipe ou au stock d'un point.
+- **Assistant de démarrage de crise** (`crise-demarrage`) : points stratégiques, équipes, puis
+  récapitulatif. Une équipe créée ici passe par `nouvelle_equipe_nom` sur le point (implication
+  de l'institution, notification, journalisation) et reçoit en silence la zone du territoire
+  de la crise. L'ensemble peut être enregistré comme `Plan`, réactivable sur une prochaine
+  crise.
+- **Éléments désactivés** : équipes, offres, demandes et signalements ne sont jamais supprimés
+  mais désactivés ; le backend les masque, `?actif=all` les fait réapparaître pour les
+  réactiver.
+- **Photos** : les champs `photo` sont `write_only` ; l'aperçu passe par l'action `/preview/`,
+  qui renvoie un blob converti en object URL (un 403 laisse simplement la vignette vide).
+
+### 6.3 Cartographie (MapLibre)
+
+- Trois composants : `MapComponent` (carte générale, clustering), `MinimapComponent` (point en
+  lecture seule) et `ZoneMapComponent` (dessin de polygone avec TerraDraw, émis en WKT).
+- **Pièges MapLibre** : la taille du canvas est fixée à l'initialisation (un `ResizeObserver`
+  appelle `resize()`, puis recadre si besoin) ; l'événement `load` n'est pas rejoué pour un
+  écouteur ajouté après coup (`runWhenMapReady` teste `isStyleLoaded()`) ; les propriétés
+  tableau/objet d'une source GeoJSON sont sérialisées en chaîne JSON.
+- Demandes, offres et signalements partagent une source clusterisée : les masquer retire leurs
+  features de la source, sinon les clusters les compteraient encore.
+- **Calques chargés à la demande** : l'annuaire de bénévoles (jusqu'à ~1 300 fiches pour un
+  secteur régional) et les relais MeshCore ne sont chargés qu'à la première activation
+  (performance, minimisation des données de position).
+- Les positions de nœuds personnels MeshCore/Meshtastic n'apparaissent que pendant une mission
+  `EN_COURS` (règle appliquée par le serveur). Pour un visiteur non institutionnel, les
+  positions des demandes, offres et signalements sont légèrement bruitées.
+
+### 6.4 Menu de l'administration
+
+`layouts/admin-layout` construit le menu : des entrées `permanent` toujours visibles, puis des
+cadres repliables groupés **par moment d'usage** dans le cycle d'une crise (crise en cours,
+post-critique, préparation), sauf deux cadres transversaux (Communications / Radio,
+Administration). L'état replié est une préférence locale (`localStorage`). La visibilité suit
+le rôle effectif (§ 6.1) ; « Mes interventions » reste visible pour un chef d'équipe non
+institutionnel (route publique). Une nouvelle page doit y être ajoutée, sinon elle n'est
+atteignable que par son URL. La cloche interroge un résumé léger toutes les 20 s
+(`pollWhileVisible`) et ne recharge la liste que s'il a changé.
+
+### 6.5 Simulation d'inondation (page)
+
+Outil de planification, pas une prévision (calculs au § 5.8). La page lance la simulation des
+paliers dès qu'une commune est choisie, puis l'interroge par polling jusqu'à
+`statut !== 'EN_COURS'`. L'état vit côté serveur : revenir sur la page reprend où l'on en
+était (la dernière commune est mémorisée en `localStorage`). Le chargement des adresses BAN
+reste un geste explicite, car il peut être long ou échouer sur une grande ville. Le curseur ne
+fait aucun appel réseau : couleurs data-driven (`setPaintProperty`) et `setData` sur des
+données déjà chargées. Deux modes superposables : crue de rivière et ruissellement (grille de
+carrés à la taille réelle des cellules). Le niveau mesuré (Hub'Eau) et la vigilance
+(Vigicrues) ne sont que des repères.
+
 ---
 
 ## 7. Services annexes
@@ -769,7 +898,9 @@ Variables CI (protégées et masquées) : `HARBOR_URL`, `HARBOR_PROJECT`, `HARBO
 - Backend : nouvelle ressource = modèle + migration commitée + serializer + ViewSet enregistré
   dans `core/urls.py` + permissions + tests pytest dans le bon dossier de domaine
   (`core/tests/<domaine>/`, règle de choix au § 11.1).
-- Frontend : nouvelle page = composant standalone + route `loadComponent` dans le groupe adéquat.
+- Frontend : nouvelle page = composant standalone + route `loadComponent` dans le groupe adéquat
+  + entrée dans le menu admin (§ 6.4) ; rafraîchissement périodique via `pollWhileVisible`.
+- Pas de code mort laissé en commentaire (ancienne implémentation, CSS désactivé) : git le garde.
 - Toute route ajoutée à `proxy/nginx.conf` est reportée dans `proxy/nginx.dev.conf`.
 - Avant de pousser : tests ciblés, `docker compose config`, et `docker compose build` des images
   de monitoring si `monitoring/` a changé.
@@ -793,6 +924,7 @@ Variables CI (protégées et masquées) : `HARBOR_URL`, `HARBOR_PROJECT`, `HARBO
 | Erreurs de schéma sur une base de dev ancienne | base créée par un autre historique de migrations : la recréer (`docker volume rm …_postgres_data`) |
 | Une règle d'alerte modifiée n'est pas prise en compte | `docker compose restart prometheus` |
 | Un compteur Prometheus « recule » | métriques non agrégées entre workers : vérifier `PROMETHEUS_MULTIPROC_DIR` |
+| `tsc` local : `Cannot find module 'terra-draw'` | `node_modules` du poste plus ancien que `package.json` : `cd frontend && npm ci` (l'image Docker l'installe déjà) |
 | `lookup X … server misbehaving` au démarrage | course au démarrage entre conteneurs : `depends_on` |
 
 ---
@@ -802,8 +934,10 @@ Variables CI (protégées et masquées) : `HARBOR_URL`, `HARBOR_PROJECT`, `HARBO
 - Corriger le dernier test en échec puis retirer `allow_failure` de la CI.
 - **Clés de chiffrement en production** : documenter leur injection et vérifier qu'elles
   sont sauvegardées hors de la machine (sans elles, les données personnelles sont perdues).
-- Commentaires historiques encore longs dans `views.py`, le frontend et les ponts : les
-  réduire selon les conventions (§ 13), en coordination avec les auteurs (conflits).
+- Commentaires historiques encore longs dans `views.py` et les ponts : les réduire selon les
+  conventions (§ 13), en coordination avec les auteurs (conflits). Le frontend est fait
+  pour ses plus gros fichiers.
+- Frontend : `services/api.service.ts` n'est plus importé nulle part : à supprimer.
 - **Registre des images de monitoring** : la production les tire de Docker Hub
   (`stefy237/…`) alors que la CI et `deploy_harbor.sh` les poussent vers Harbor — choisir un
   registre unique.

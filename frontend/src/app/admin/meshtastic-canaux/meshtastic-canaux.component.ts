@@ -220,9 +220,7 @@ export class MeshtasticCanauxComponent implements OnInit, OnDestroy, AfterViewCh
   auteurMessage(m: MessageCanalMeshtastic | MessageMeshtasticLog, conv: Conversation): string {
     if (m.direction === 'SORTANT') return m.expediteur_nom || 'Moi';
     if (conv.type === 'dm') return this.titreConversation(conv);
-    // Canal entrant : nom annoncé par le nœud + propriétaire affecté si connu (demande
-    // utilisateur du 10/10) -- "Mesh" générique seulement en dernier recours, si rien n'a pu
-    // être identifié (nœud jamais vu dans le répertoire, et pas affecté à un compte).
+    // Canal entrant : nom annoncé + propriétaire si connu ; « Mesh » générique en dernier recours.
     const nodeNom = (m as MessageCanalMeshtastic).node_nom;
     if (nodeNom && m.expediteur_nom) return `${nodeNom} (${m.expediteur_nom})`;
     if (nodeNom) return nodeNom;

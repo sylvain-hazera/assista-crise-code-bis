@@ -47,18 +47,11 @@ export class RegisterComponent implements OnInit, OnDestroy {
     { value: UserRole.RESCUE, label: 'Secours organisés' },
   ];
 
-  // Peuplé depuis la vraie table InstitutionType (voir ngOnInit) — remplace un ancien tableau
-  // codé en dur, déconnecté de la base, qui manquait "association"/"aasc" et dont plusieurs
-  // codes ne correspondaient même plus à ceux réellement en base (ex: sous_prefecture vs
-  // sous_pref, conseil_departemental/conseil_regional vs cg/cr, cc/metropole vs epci unique).
-  // "aasc" est exclu ici : sélectionné via la case à cocher dédiée (userType RESCUE), pas via
-  // ce sélecteur générique (voir toggleFieldsBasedOnUserType/onSubmit).
+  // Chargé depuis InstitutionType. « aasc » est exclu : choisi par la case dédiée (Secours).
   institutionTypeOptions: InstitutionType[] = [];
 
-  // Case "Je souhaite rejoindre la réserve" (voir User.souhaite_rejoindre_reserve) : affichée
-  // uniquement quand le Host visité résout vers une institution marque blanche avec sa propre
-  // réserve (Institution.reserve_active) -- invisible sur le site généraliste
-  // assista-crise.fr, où `branding` reste les valeurs par défaut (reserve_active=false).
+  // « Rejoindre la réserve » : seulement sur un site marque blanche avec réserve
+  // (Institution.reserve_active).
   branding: Branding | null = null;
 
   constructor(
@@ -118,9 +111,7 @@ export class RegisterComponent implements OnInit, OnDestroy {
       commune: ['', Validators.required],
       institutionName: [''],
       institutionType: [''],
-      // AASC/RCSC : uniquement pour userType === RESCUE, remplacent le sélecteur générique
-      // institutionType (qui n'a jamais eu de sens pour un compte "Secours organisés" — voir
-      // toggleFieldsBasedOnUserType). Mutuellement exclusives.
+      // AASC/RCSC : comptes Secours seulement, mutuellement exclusives.
       isAasc: [false],
       isRcsc: [false],
       souhaiteRejoindreReserve: [false],
@@ -176,9 +167,7 @@ export class RegisterComponent implements OnInit, OnDestroy {
 
       const isRcsc = userType === UserRole.RESCUE && this.registerForm.get('isRcsc')?.value;
       if (isRcsc) {
-        // RCSC : rattachement automatique à la mairie de la commune déclarée (déjà collectée
-        // ci-dessous), pas de nom/type/email d'institution à saisir — ce n'est pas sa propre
-        // institution.
+        // RCSC : rattachement automatique à la mairie de la commune déclarée.
         institutionNameControl?.clearValidators();
         institutionNameControl?.setValue('');
         institutionNameControl?.disable();
@@ -191,8 +180,7 @@ export class RegisterComponent implements OnInit, OnDestroy {
 
         const isAasc = userType === UserRole.RESCUE && this.registerForm.get('isAasc')?.value;
         if (isAasc) {
-          // AASC : type forcé côté submit (voir onSubmit), le sélecteur générique ne
-          // s'applique pas à ce cas.
+          // AASC : type forcé dans onSubmit.
           institutionTypeControl?.clearValidators();
           institutionTypeControl?.setValue('');
           institutionTypeControl?.disable();

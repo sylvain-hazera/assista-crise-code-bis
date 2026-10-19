@@ -73,9 +73,7 @@ export class DeclareCrisisFormComponent implements OnInit{
       : this.selectedThemes.filter(id => id !== besoinId);
   }
 
-  // ── Thèmes à l'écoute : menu déroulant pliable (même patron que "Thèmes d'intervention",
-  // voir teams.component.ts) — purement local ici (rien n'est envoyé avant la soumission du
-  // formulaire, contrairement à la fiche équipe qui PATCH à chaque coche).
+  // ── Thèmes à l'écoute : menu pliable, local jusqu'à la soumission ──
   besoinsDropdownOpen = false;
   expandedBesoinGroups = new Set<string>();
 
@@ -103,8 +101,7 @@ export class DeclareCrisisFormComponent implements OnInit{
     return selected === ids.length ? 'all' : 'some';
   }
 
-  /** Coche/décoche le thème parent ET tous ses sous-thèmes (dégénère au comportement de
-   * toggleTheme pour un thème sans sous-catégorie). */
+  /** Coche ou décoche le thème parent et tous ses sous-thèmes. */
   toggleBesoinGroup(group: { parent: Besoin; children: Besoin[] }): void {
     const groupIds = [group.parent.id, ...group.children.map(c => c.id)];
     const tout = groupIds.every(id => this.selectedThemes.includes(id));
@@ -113,8 +110,7 @@ export class DeclareCrisisFormComponent implements OnInit{
       : [...new Set([...this.selectedThemes, ...groupIds])];
   }
 
-  /** Même patron que allDisposChecked/toggleAllDispos (propose-help-form) : tout cocher/tout
-   * décocher en un clic plutôt que groupe par groupe. */
+  /** Tout cocher / tout décocher. */
   get allBesoinsChecked(): boolean {
     return this.besoins.length > 0 && this.besoins.every(b => this.selectedThemes.includes(b.id));
   }
@@ -125,10 +121,8 @@ export class DeclareCrisisFormComponent implements OnInit{
 
   selectedAddress: AddressResult | null = null;
 
-  // Recentre/zoome la minimap de dessin de zone sur l'adresse choisie — champs dédiés (pas un
-  // getter réévalué à chaque cycle de détection de changement, qui recréerait un nouveau
-  // tableau [lon, lat] à chaque fois et redéclencherait le flyTo de ZoneMapComponent en boucle) :
-  // ne changent qu'au moment réel où selectedAddress change.
+  // Centre de la minimap : champs mis à jour seulement quand selectedAddress change (un getter
+  // recréerait le tableau et relancerait flyTo en boucle).
   zoneMapCenter: [number, number] = [2.2137, 46.2276];
   zoneMapZoom = 6;
 
@@ -180,10 +174,7 @@ export class DeclareCrisisFormComponent implements OnInit{
         const mesContacts = contacts.filter(c => c.utilisateur === me?.id && c.actif);
         const myInstitutionIds = new Set(mesContacts.map(c => c.institution));
         this.myInstitutions = institutions.filter(i => myInstitutionIds.has(i.id!));
-        // Un non-admin ne choisit jamais son institution (forcément la ou les siennes) : on la
-        // déduit toujours en silence, y compris s'il en a plusieurs (contact principal en
-        // priorité, sinon la première) — voir demande utilisateur du 2026-09-15, le menu
-        // déroulant "Institution" ne doit exister que pour un admin.
+        // Un non-admin ne choisit pas son institution : contact principal en priorité, sinon la première.
         if (!this.isAdmin && this.myInstitutions.length > 0) {
           const principal = mesContacts.find(c => c.contact_principal);
           this.onInstitutionChange(principal?.institution ?? this.myInstitutions[0].id!);
@@ -231,8 +222,7 @@ export class DeclareCrisisFormComponent implements OnInit{
     }
   }
 
-  // Encadré rouge de résumé, affiché juste au-dessus du bouton d'envoi — remplace les alert()
-  // génériques qui ne disaient jamais lesquels des champs posaient problème.
+  // Résumé des erreurs au-dessus du bouton d'envoi.
   formErrors: string[] = [];
 
   private validationErrors(): string[] {
@@ -271,9 +261,7 @@ export class DeclareCrisisFormComponent implements OnInit{
         next: (response: any) => {
           console.log('Crisis créée:', response);
           this.declareInstitutionImplication(response.id);
-          // Propose d'enchaîner sur le démarrage de crise (cellule de crise, centre
-          // d'accueil, centre de regroupement des moyens) plutôt que de forcer un aller-
-          // retour ultérieur — voir CriseDemarrageComponent.
+          // Propose d'enchaîner sur le démarrage de crise (CriseDemarrageComponent).
           const configurerMaintenant = confirm(
             "Votre crise a été enregistrée avec succès !\n\n" +
             "Voulez-vous configurer maintenant ses éléments stratégiques (cellule de crise, " +
@@ -293,9 +281,7 @@ export class DeclareCrisisFormComponent implements OnInit{
           if (err.status === 401) {
             errorMessage = 'Vous devez être connecté en tant qu\'administrateur ou autorité locale pour déclarer une crise.';
           } else if (err.status === 400 && err.error?.onboarding) {
-            // Rattachement à l'institution pas encore finalisé (voir
-            // _verifier_onboarding_termine côté backend) — redirige directement plutôt que de
-            // laisser l'utilisateur sur un formulaire qu'il ne pourra pas soumettre.
+            // Rattachement à l'institution non finalisé (_verifier_onboarding_termine) : redirection.
             alert(err.error.onboarding);
             this.router.navigate(['/completer-inscription']);
             return;
@@ -316,9 +302,7 @@ export class DeclareCrisisFormComponent implements OnInit{
     this.router.navigate(['/accueil']);
   }
 
-  /** Déclare l'institution du déclarant comme acteur sur la crise qui vient d'être créée,
-   * avec ses thèmes d'écoute et son responsable/régulateur. Un échec ici n'annule pas la
-   * création de la crise (déjà faite) : l'utilisateur peut compléter depuis /admin/crises. */
+  /** Déclare l'institution comme acteur de la nouvelle crise ; un échec n'annule pas la crise. */
   private declareInstitutionImplication(crisisId: string): void {
     if (!this.selectedInstitutionId) {
       return;

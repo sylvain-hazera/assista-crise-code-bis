@@ -4,13 +4,8 @@ import { CommonModule } from '@angular/common';
 import { FicheIntervenantService } from '../../../../services/fiche-intervenant.service';
 import { FicheIntervenant } from '../../../models/fiche-intervenant.model';
 
-/** Fiche détaillée d'une personne mobilisée (24/09, bouton "Détail" depuis Ressources
- * mobilisées) : identité, provenance, compétences, créneaux/lieux travaillés, affectations sur
- * des points, présence en centre, logement, durée d'engagement, PLUS deux historiques
- * distincts (précisé explicitement par Sylvain après une première version qui les confondait) :
- * "historique du compte" (sécurité — création, IP, reset mot de passe) et "activité" (tout ce
- * que la personne a fait sur la plateforme, consultations comprises) — voir
- * FicheIntervenantView, tout est renvoyé par un seul appel désormais. */
+/** Fiche détaillée d'une personne mobilisée (depuis Ressources mobilisées), avec deux
+ * historiques distincts : compte (sécurité) et activité. Un seul appel (FicheIntervenantView). */
 @Component({
   selector: 'app-fiche-intervenant-modal',
   standalone: true,

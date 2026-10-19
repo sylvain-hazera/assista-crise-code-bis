@@ -310,10 +310,8 @@
                         <p class="field-hint-inline">Sélectionné : {{ rg.get('materielCatalogueNom')?.value }}</p>
                     }
 
-                    <!-- Engins agricoles / chantiers / spéciaux : liste à cocher dédiée, sous ce
-                         choix précis du menu ci-dessus. Chaque ligne cochée devient sa propre
-                         offre à la soumission (voir onSubmit) — cette ligne-ci n'en devient
-                         jamais une elle-même, d'où l'absence de Quantité/Livraison génériques. -->
+                    <!-- Engins agricoles / chantiers / spéciaux : chaque ligne cochée devient une offre ;
+                         la ligne passerelle n'en devient pas une (pas de Quantité/Livraison) -->
                     @if (rg.get('materielType')?.value === ENGINS_AGRICOLES_VALUE) {
                         <div class="engine-lines">
                             @for (line of engineLines; track line.item.id) {
@@ -410,8 +408,7 @@
                     }
                 }
 
-                <!-- Présence physique : types ambigus où l'offreur peut soit accompagner ce
-                     qu'il propose, soit le mettre à disposition seul (camion, matériel, vivres) -->
+                <!-- Présence physique : types ambigus (accompagné ou mis à disposition seul) -->
                 @if (showPresencePhysiqueChoice(rg.get('type')?.value, rg.get('materielType')?.value)) {
                     <div class="form-group">
                         <label class="form-label">Serez-vous présent(e) vous-même ? <span class="required">*</span></label>
@@ -427,9 +424,7 @@
                     </div>
                 }
 
-                <!-- Matériel apporté ET exploité par l'offreur lui-même : dimensionne l'accueil
-                     de l'équipe mobilisée (une personne seule ou accompagnée n'a pas les mêmes
-                     besoins) -->
+                <!-- Matériel apporté et exploité par l'offreur : dimensionne l'accueil de l'équipe -->
                 @if (rg.get('type')?.value === TYPE_MATERIEL && rg.get('presencePhysique')?.value === true) {
                     <div class="form-group">
                         <label class="form-label">Venez-vous seul(e) ou accompagné(e) ?</label>
@@ -446,9 +441,7 @@
                     </div>
                 }
 
-
-                <!-- Véhicule/engin (transport ou matériel roulant/motorisé), conduit par
-                     l'offreur ou prêté seul : rappel des obligations légales -->
+                <!-- Véhicule/engin : rappel des obligations légales -->
                 @if (showConformiteVehicule(rg.get('type')?.value, rg.get('materielType')?.value)) {
                     <div class="compliance-disclaimer">
                         <span class="material-icons">warning_amber</span>
@@ -549,8 +542,7 @@
             </div>
         }
 
-            <!-- Adresse visible : l'adresse elle-même est déjà connue (voir app-crise-lieu-theme
-                 en tête d'étape), seule la visibilité reste à choisir ici. -->
+            <!-- Adresse visible : l'adresse vient de app-crise-lieu-theme, seule la visibilité se choisit ici -->
             @if (selectedAddress) {
             <div class="form-section">
                 <div class="form-group checkbox-group">
@@ -689,9 +681,7 @@
             </div>
 
             @if (proposeAideEnPersonne) {
-              <!-- Qualifications de la personne — déclarées ici UNE SEULE FOIS, quel que soit
-                   le nombre de lignes d'offre où elle est présente en personne (voir onSubmit,
-                   qui reporte ces deux valeurs sur chacune d'elles). -->
+              <!-- Qualifications déclarées une fois, reportées sur chaque offre avec présence (onSubmit) -->
               <div class="form-section">
                   <h2 class="section-title">Vos qualifications</h2>
                   <div class="form-group checkbox-group">

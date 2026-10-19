@@ -1,27 +1,19 @@
 import type { Polygon } from "geojson";
 
-/** Message du salon Matrix d'une équipe, relayé par TeamViewSet.salon_matrix_messages (le
- * backend parle à Synapse via le jeton du bot, jamais un jeton exposé au navigateur -- voir
- * core/matrix.py). Consommé par MatrixSalonChatComponent. */
+/** Message du salon Matrix d'une équipe, relayé par le backend avec le jeton du bot (core/matrix.py). */
 export interface MatrixMessage {
-  /** `event_id` pour un message Matrix (voir TeamViewSet.salon_matrix_messages) -- reste
-   * nommé ainsi pour compat, mais contient l'UUID du message pour les sources mesh (voir
-   * `source`, TeamViewSet.messagerie_unifiee). */
+  /** Id Matrix pour un message Matrix ; UUID du message pour les sources mesh. */
   event_id:        string;
   texte:           string;
   horodatage:      number;
   expediteur_id:   string | null;
   expediteur_nom:  string;
   moi:             boolean;
-  /** Ouvert à tout le monde, y compris un intervenant isolé (décision utilisateur du 26/09). */
+  /** Ouvert à tous les membres. */
   urgent:          boolean;
-  /** Noms des cadres ayant posé l'accusé "Vu" (réaction Matrix filtrée côté backend, voir
-   * TeamViewSet.salon_matrix_messages) -- vide si personne, jamais rempli par un non-cadre.
-   * Toujours vide pour les sources mesh (pas de concept de "Vu" côté MeshCore/Meshtastic). */
+  /** Cadres ayant posé « Vu » ; toujours vide pour les sources mesh. */
   vu_par:          string[];
-  /** Canal d'origine du message -- absent (undefined) pour un message Matrix "classique" via
-   * salon_matrix_messages ; toujours posé par messagerie_unifiee (fenêtre d'équipe fusionnée,
-   * 2026-10-05), y compris 'matrix', pour afficher un badge discret par message. */
+  /** Canal d'origine ; posé par messagerie_unifiee (badge par message). */
   source?:         'matrix' | 'meshcore' | 'meshtastic';
 }
 
@@ -31,8 +23,7 @@ export interface TeamMission {
   titre:   string;
   statut?: string;
   date?:   string;
-  // Offer uniquement — progression réelle de la ressource (voir EngagementRessource) :
-  // en attente / confirmé / en transit / arrivé / décliné, absent si jamais affectée.
+  // Offer uniquement : progression de la ressource (EngagementRessource), absent si non affectée.
   engagementStatut?: string | null;
   engagementStatutLibelle?: string | null;
 }
@@ -90,17 +81,11 @@ export interface Team {
   created_at?:          string;
   actif?:               boolean;           // false = désactivée (politique de désactivation)
   commune_centre?:      { latitude: number | null; longitude: number | null } | null;
-  /** Temps d'engagement continu sans repos (page Cellule de crise) -- null = au repos/pas
-   * encore engagée. Manuel dans les deux sens, voir TeamService.demarrerEngagement/
-   * mettreAuRepos. */
+  /** Début de l'engagement continu (null = au repos), géré manuellement. */
   engagement_debut?:    string | null;
 }
 
-/** Nom affiché d'une équipe, préfixé par son institution responsable (ex: "Mairie de Rion des
- * Landes - Cellule population") -- à utiliser partout où des équipes de PLUSIEURS institutions
- * peuvent apparaître ensemble (sélecteurs/listes/carte zone-filtrés, pas une fiche d'équipe ou
- * un sélecteur déjà restreint à une seule institution, où le préfixe serait redondant).
- * Demande utilisateur du 2026-10-15 : repérer vite qui est qui en environnement multi-entité. */
+/** Nom préfixé par l'institution responsable, pour les listes mêlant plusieurs institutions. */
 export function teamDisplayName(team: Pick<Team, 'name' | 'institution_nom'>): string {
   return team.institution_nom ? `${team.institution_nom} - ${team.name}` : team.name;
 }

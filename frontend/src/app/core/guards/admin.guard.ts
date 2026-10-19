@@ -4,12 +4,8 @@ import { catchError, map, of } from 'rxjs';
 import { AuthService } from '../../auth/services/auth.service';
 import { UserRole } from '../../shared/models/user.model';
 
-/** Rafraîchit le profil depuis l'API avant de statuer : `canEnterAdminArea()`/`isSysAdmin()`
- * lisent le cache local posé à la connexion (voir `getCurrentUser()`), qui reste périmé tant
- * que l'utilisateur ne se reconnecte pas manuellement. Sans ce rafraîchissement, un accès démo
- * (ou toute autre élévation de rôle) accordé après la connexion ne serait jamais atteignable :
- * le garde bloquerait l'entrée dans /admin avant même que la mise en page (qui rafraîchit elle
- * aussi le profil dans son ngOnInit) n'ait la moindre chance de s'exécuter.*/
+/** Rafraîchit le profil avant de statuer : le cache local de la connexion ne reflète pas un
+ * droit accordé depuis (ex: accès démo). */
 function withFreshProfile(authService: AuthService, router: Router, check: () => boolean) {
   if (!authService.getToken()) {
     return router.parseUrl('/accueil');
@@ -34,12 +30,8 @@ export const sysAdminGuard: CanActivateFn = (route, state) => {
   return withFreshProfile(authService, router, () => authService.isSysAdmin());
 };
 
-/** Contrairement à adminGuard/sysAdminGuard (qui renvoient vers /accueil, hors de l'admin), ce
- * garde redirige vers une page dédiée À L'INTÉRIEUR de l'admin (sidebar/en-tête conservés) qui
- * affiche clairement "vous n'avez pas les droits" — pour un compte entré dans /admin avec un
- * rôle EFFECTIF (voir getEffectiveRole) non institutionnel, ex: accès démo réglé sur un rôle
- * simple, ou en attendant que la bascule PROD/DEMO soit activée. Sans ce garde, chaque
- * sous-page tentait de charger ses données et échouait avec une erreur générique. */
+/** Redirige vers une page « droits insuffisants » dans l'admin quand le rôle effectif n'est
+ * pas institutionnel (au lieu d'erreurs dans chaque page). */
 export const institutionalEffectiveGuard: CanActivateFn = (route, state) => {
   const authService = inject(AuthService);
   const router = inject(Router);
@@ -53,11 +45,7 @@ export const institutionalEffectiveGuard: CanActivateFn = (route, state) => {
   );
 };
 
-/** Validation des comptes en attente (aujourd'hui : uniquement les inscriptions Secours
- * organisés, voir UserViewSet.pending_validations côté backend) — réservée à un admin ou à
- * une mairie (qui ne voit/valide que les comptes de son propre code postal), pas à tout
- * acteur institutionnel comme institutionalEffectiveGuard : un régulateur ou un compte Secours
- * n'a rien à faire sur cette page. */
+/** Validation des comptes en attente (Secours organisés) : admin ou mairie (son code postal). */
 export const accountValidationGuard: CanActivateFn = (route, state) => {
   const authService = inject(AuthService);
   const router = inject(Router);
@@ -76,11 +64,7 @@ export const accountValidationGuard: CanActivateFn = (route, state) => {
   );
 };
 
-/** Zones = découpage PCS/PICS, réservé aux mairies/intercommunalités (voir
- * AuthService.isAutoriteLocaleCommunale, même critère que _institution_est_autorite_locale
- * côté backend qui bloque déjà la création). Sans ce garde, la page restait accessible en
- * navigation directe à n'importe quel acteur institutionnel — juste inutilisable une fois
- * ouverte (création refusée en 403 par l'API). */
+/** Zones : mairies/intercommunalités (isAutoriteLocaleCommunale), sinon 403 à l'usage. */
 export const zonesGuard: CanActivateFn = (route, state) => {
   const authService = inject(AuthService);
   const router = inject(Router);
@@ -94,11 +78,8 @@ export const zonesGuard: CanActivateFn = (route, state) => {
   );
 };
 
-/** Registre des personnes vulnérables : basé sur `acces_registre_vulnerables`, calculé côté
- * serveur (RCSC/RESPONSABLE désigné pour une mairie, délégation de compétence active sinon,
- * voir UserSerializer.get_acces_registre_vulnerables) -- contrairement à
- * isAutoriteLocaleCommunale (zonesGuard ci-dessus), cette règle n'est pas re-dérivable côté
- * client (dépend de l'appartenance à une Team précise), d'où la lecture directe du champ. */
+/** Registre des personnes vulnérables : champ serveur `acces_registre_vulnerables` (dépend
+ * de l'appartenance à une équipe, non recalculable côté client). */
 export const vulnerabilitesGuard: CanActivateFn = (route, state) => {
   const authService = inject(AuthService);
   const router = inject(Router);
@@ -111,7 +92,4 @@ export const vulnerabilitesGuard: CanActivateFn = (route, state) => {
     catchError(() => of(router.parseUrl('/admin/acces-refuse'))),
   );
 };
-
-
-
 

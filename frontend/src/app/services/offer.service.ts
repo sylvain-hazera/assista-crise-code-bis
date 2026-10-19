@@ -12,7 +12,6 @@ import { Team } from '../shared/models/team.model';
   providedIn: 'root'
 })
 export class OfferService {
-  // private apiUrl = `${environment.apiUrl}/offres`;
   private readonly url     = `${environment.apiUrl}/offres`;
   private readonly typeUrl = `${environment.apiUrl}/types-offre`;
 
@@ -30,7 +29,6 @@ export class OfferService {
 
   /** GET /api/offres/my_offres/ */
   getMines(email: string): Observable<Offer[]> {
-      // return this.getAll({ auteur: userId });
       return this.getAll({ author_email: email });
   }
 
@@ -45,8 +43,7 @@ export class OfferService {
     return this.http.get(`${this.url}/${id}/preview/`, { responseType: 'blob' });
   }
 
-  /** POST /api/photos-offres/ — ajoute une photo à la galerie d'une offre déjà créée (au-delà
-   * de sa photo principale, voir OfferPhoto/propose-help-form). */
+  /** POST /api/photos-offres/ — ajoute une photo à la galerie d'une offre (OfferPhoto). */
   addPhoto(offerId: string, file: File, ordre: number): Observable<void> {
     const fd = new FormData();
     fd.append('offer', offerId);
@@ -55,7 +52,7 @@ export class OfferService {
     return this.http.post<void>(`${environment.apiUrl}/photos-offres/`, fd);
   }
 
-  /** GET /api/photos-offres/?offer=<id> — galerie (fiche matériel, 24/09). */
+  /** GET /api/photos-offres/?offer=<id> — galerie. */
   getPhotos(offerId: string): Observable<{ id: string; ordre: number }[]> {
     return this.http.get<{ id: string; ordre: number }[]>(`${environment.apiUrl}/photos-offres/`, {
       params: { offer: offerId },
@@ -67,16 +64,13 @@ export class OfferService {
     return this.http.get(`${environment.apiUrl}/photos-offres/${photoId}/preview/`, { responseType: 'blob' });
   }
 
-  /** POST /api/offres/<id>/transformer/ — recrée cette offre en demande ou signalement
-   * (réservé institutionnel, refusé si déjà affectée). Supprime l'offre d'origine. */
+  /** POST /api/offres/<id>/transformer/ — recrée l'offre en demande ou signalement et la supprime
+   * (institutionnels, refusé si déjà affectée). */
   transformer(id: string, cible: 'REQUEST' | 'INFORMATION'): Observable<any> {
     return this.http.post<any>(`${this.url}/${id}/transformer/`, { cible });
   }
 
-    /**
-     * Statistiques.
-     * GET /api/offres/stats/?[params]
-     */
+    /** GET /api/offres/stats/?[params] */
   getStats(filter?: Record<string, string>): Observable<StatsResponse> {
     return this.http.get<StatsResponse>(
       `${this.url}/stats/`,
@@ -101,17 +95,14 @@ export class OfferService {
     return this.http.post<Offer>(`${this.url}/${id}/reactiver/`, {});
   }
 
-  /** POST /api/offres/<id>/valider-accueil-intervenants/ — un acteur institutionnel confirme
-   * qu'une offre d'hébergement cochée "accueille des intervenants" est réellement exploitable
-   * (voir OfferViewSet.valider_accueil_intervenants, "Logement intervenants" 24/09). */
+  /** POST /api/offres/<id>/valider-accueil-intervenants/ — confirme qu'un hébergement peut
+   * accueillir des intervenants. */
   validerAccueilIntervenants(id: string): Observable<Offer> {
     return this.http.post<Offer>(`${this.url}/${id}/valider-accueil-intervenants/`, {});
   }
 
-  /** GET /api/offres/?page=&page_size=&... — pagination serveur opt-in (voir
-   * OptionalPageNumberPagination côté backend), toujours l'enveloppe {count,next,previous,
-   * results} puisque `page` est systématiquement envoyé ici -- utilisé par ReportingComponent
-   * (page Signalements) à la place de getAll() pour ne jamais charger la table entière. */
+  /** GET /api/offres/?page=&page_size=&... — pagination serveur (OptionalPageNumberPagination),
+   * enveloppe {count,next,previous,results}. Utilisé par ReportingComponent. */
   searchPage(params: Record<string, string>, page: number, pageSize: number): Observable<PageResponse<Offer>> {
     const httpParams = this.toParams({ ...params, page: String(page), page_size: String(pageSize) });
     return this.http
@@ -125,12 +116,8 @@ export class OfferService {
     return this.http.get<Offer[]>(`${this.url}/vue_mairie/`).pipe(map(list => list.map(this.normalize)));
   }
 
-  /** GET /api/offres/vue_secteur/ — comme vue_mairie, mais à l'échelle adaptée au type
-   * d'institution de l'appelant (commune/EPCI/département, voir _institution_secteur_or_400
-   * côté backend). Sans `limite`, renvoie tout d'un coup — un secteur large (région, national)
-   * peut compter des milliers de fiches, en particulier l'annuaire de bénévoles (type
-   * Bénévolat, voir `type`/`excludeType`) : passer `limite` plafonne côté serveur (`page_size`)
-   * plutôt que de tout charger pour ne rien afficher. */
+  /** GET /api/offres/vue_secteur/ — à l'échelle du type d'institution (commune/EPCI/département).
+   * `limite` plafonne côté serveur (l'annuaire de bénévoles peut compter des milliers de fiches). */
   vueSecteur(options?: { limite?: number; type?: string; excludeType?: string }): Observable<Offer[]> {
     let params = new HttpParams();
     if (options?.limite) params = params.set('page', '1').set('page_size', String(options.limite));
@@ -141,10 +128,8 @@ export class OfferService {
     );
   }
 
-  /** GET /api/offres/vue_secteur/?echelle=national — "Voir toute la France (partiel)" : vue
-   * nationale accessible à tout acteur institutionnel quel que soit son propre niveau de
-   * secteur, toujours réduite à type/statut/crise/date (OfferNationalPartialSerializer côté
-   * backend) — jamais les coordonnées/contact d'une institution tierce. */
+  /** GET /api/offres/vue_secteur/?echelle=national — vue nationale partielle (type/statut/crise/date,
+   * OfferNationalPartialSerializer), jamais de coordonnées. */
   vueSecteurNationalPartiel(options?: { limite?: number }): Observable<OfferNationalPartial[]> {
     let params = new HttpParams().set('echelle', 'national');
     if (options?.limite) params = params.set('page', '1').set('page_size', String(options.limite));
@@ -168,28 +153,23 @@ export class OfferService {
     });
   }
 
-  /** POST /api/offres/{id}/affecter-stock/ — ajoute une offre de matériel au stock d'un point
-   * (crée un apport individuel, voir ContributionMateriel). Retourne la ligne MaterielPoint
-   * mise à jour. */
+  /** POST /api/offres/{id}/affecter-stock/ — ajoute l'offre au stock d'un point (ContributionMateriel) ;
+   * renvoie la ligne MaterielPoint. */
   affecterStock(offerId: string, pointId: string): Observable<any> {
     return this.http.post<any>(`${this.url}/${offerId}/affecter-stock/`, { point_id: pointId });
   }
 
-  /** GET /api/offres/{id}/messages/ — fil de discussion avec le propriétaire de l'offre
-   * (réservé acteur institutionnel — voir vue équipe hébergement). */
+  /** GET /api/offres/{id}/messages/ — fil avec le propriétaire de l'offre (institutionnels). */
   getMessages(offerId: string): Observable<OfferMessage[]> {
     return this.http.get<OfferMessage[]>(`${this.url}/${offerId}/messages/`);
   }
 
-  /** POST /api/offres/{id}/messages/ — envoie un message au propriétaire de l'offre, qui
-   * reçoit un lien de réponse/édition par email. */
+  /** POST /api/offres/{id}/messages/ — le propriétaire reçoit un lien de réponse par email. */
   sendMessage(offerId: string, contenu: string): Observable<OfferMessage> {
     return this.http.post<OfferMessage>(`${this.url}/${offerId}/messages/`, { contenu });
   }
 
-  /** GET /api/offres/retours-externes/ — offres ayant au moins un message non lu par
-   * l'institution (voir OfferMessage.lu_par_institution), pour l'onglet "Retours externes" de
-   * la page Cellule de crise. */
+  /** GET /api/offres/retours-externes/ — offres avec un message non lu par l'institution. */
   retoursExternes(criseId: string): Observable<Offer[]> {
     return this.http.get<Offer[]>(`${this.url}/retours-externes/`, { params: { crisis: criseId } });
   }

@@ -20,12 +20,8 @@ import { User } from '../../shared/models/user.model';
 
 type Direction = 'asc' | 'desc';
 
-/** Ligne unifiée pour la table "Répéteurs & infrastructure" — fusionne RelaisMeshCore (position
- * connue, promu automatiquement dès qu'un répéteur annonce un GPS valide, voir
- * CompagnonMeshCoreViewSet.synchroniser_contacts) et les ContactMeshCore de type non-COMPANION
- * pas encore promus (pas de position GPS encore reçue) — sans cette fusion, un répéteur sans
- * position restait indéfiniment mélangé aux companions personnels dans la table "à attribuer"
- * (deja_associe n'est jamais vrai pour un répéteur, qui n'est jamais attribué à un utilisateur). */
+/** Ligne de la table « Répéteurs & infrastructure » : RelaisMeshCore (position connue) et
+ * ContactMeshCore non-COMPANION pas encore promus (sans GPS). */
 interface LigneInfrastructure {
   id: string;
   relaisId: string | null;
@@ -40,11 +36,8 @@ interface LigneInfrastructure {
   actif: boolean | null;
 }
 
-/** Page de test MeshCore : juste de quoi déclarer un companion (nom + IP/port, ou device série,
- * ou adresse BLE) sans passer par le Django admin — voir meshcore-bridge/README.md pour le
- * service qui se connecte réellement dessus. Volontairement minimal (pas de gestion
- * d'institution ici) tant que le matériel n'a pas confirmé l'usage — voir doc de conception
- * « Maillage Terrain ». Reste sur la branche feature/meshcore-poc, jamais déployée sur .114. */
+/** Configuration MeshCore minimale (companions, contacts, répéteurs) sans passer par le Django
+ * admin. Voir meshcore-bridge/README.md. */
 @Component({
   selector: 'app-meshcore-companions',
   standalone: true,
@@ -64,22 +57,18 @@ export class MeshcoreCompanionsComponent implements OnInit, OnDestroy {
   nouveauPort = 5000;
   nouveauDevice = '/dev/ttyUSB0';
   nouveauBle = '';
-  // Position du companion physique (poste de commandement, véhicule...) : optionnelle, pour
-  // l'afficher sur la carte au même titre qu'un relais (voir map.component.ts).
+  // Position facultative du companion, affichée sur la carte.
   nouveauLat: number | null = null;
   nouveauLon: number | null = null;
-  // Convention communautaire de canal régional (ex: "fr-naq") — pas une notion protocolaire
-  // MeshCore, voir CompagnonMeshCore.region_tag.
+  // Convention communautaire de canal régional (ex: "fr-naq"), pas une notion MeshCore.
   nouveauRegion = '';
   creating = false;
 
-  // Édition de la région d'un companion existant — un champ texte par ligne, pas de modal.
   regionEnCoursEdition: Record<string, string> = {};
   savingRegion: string | null = null;
 
-  // Détection automatique (usage offline, sans internet) : on donne juste IP + port d'un vrai
-  // appareil, le serveur essaie une vraie connexion Meshtastic puis MeshCore et crée le
-  // companion correspondant tout seul — voir MeshLocalDetecterService.
+  // Détection automatique (hors ligne) : IP + port, le serveur essaie Meshtastic puis MeshCore
+  // (MeshLocalDetecterService).
   detectIp = '';
   detectPort = 5000;
   detectNom = '';
@@ -102,26 +91,18 @@ export class MeshcoreCompanionsComponent implements OnInit, OnDestroy {
 
   contacts: ContactMeshCore[] = [];
   analyseSecurite: AnalyseSecuriteMeshCore | null = null;
-  /** Réservé aux administrateurs (voir AlerteMeshSOSViewSet) -- null tant que non chargé,
-   * jamais interrogé pour un compte institutionnel non-admin (évite un 403 systématique). */
+  /** Admins seulement (AlerteMeshSOSViewSet) : jamais interrogé pour les autres (403). */
   alertesSOS: AlerteMeshSOS[] = [];
 
-  // Recherche/tri companions — table du haut (devices physiques du pont).
   companionRecherche = '';
   companionTri: 'nom' | 'derniere_connexion' = 'nom';
   companionDirection: Direction = 'asc';
 
-  // Recherche/tri répéteurs & infrastructure — voir lignesInfrastructure ci-dessous.
   infraRecherche = '';
   infraTri: 'nom' | 'dernierContact' | 'nombreSauts' = 'nom';
   infraDirection: Direction = 'asc';
 
-  /** Paramétrage/affectation MeshCore jamais consultable ni modifiable depuis la zone DEMO
-   * (voir BlockedInDemoMixin côté serveur, CompagnonMeshCoreViewSet/NoeudMeshUtilisateurViewSet
-   * — demande explicite du 14/09) : on évite même d'émettre les requêtes (403 systématique)
-   * pour afficher un message clair plutôt qu'un chargement qui échoue silencieusement. Les
-   * nœuds restent néanmoins bien affectés et joignables ailleurs (carte, messagerie d'équipe),
-   * seule CETTE page de configuration est bloquée. */
+  /** Page bloquée en zone DEMO (BlockedInDemoMixin) : aucune requête émise, message affiché. */
   isDemo = false;
 
   constructor(
@@ -173,20 +154,13 @@ export class MeshcoreCompanionsComponent implements OnInit, OnDestroy {
     });
   }
 
-  /** Companions personnels pas encore associés à un compte utilisateur — RESTREINT au type
-   * COMPANION (corrigé le 2026-09-18 : un répéteur/room server/capteur n'est jamais attribuable
-   * à un utilisateur, deja_associe reste donc toujours faux pour eux, ce qui les laissait
-   * s'accumuler indéfiniment ici, mélangés aux vrais companions personnels — voir
-   * lignesInfrastructure pour leur affichage dédié). Répertoire déjà tenu par le firmware,
-   * synchronisé par le pont — voir bridge.py, boucle_contacts. */
+  /** Companions personnels non associés (type COMPANION seulement ; répéteurs dans
+   * lignesInfrastructure). Synchronisés par le pont (bridge.py, boucle_contacts). */
   get contactsDisponibles(): ContactMeshCore[] {
     return this.contacts.filter(c => c.type_contact === 'COMPANION' && !c.deja_associe);
   }
 
-  /** Compare deux valeurs pour le tri des tables ci-dessous — une valeur manquante (null/
-   * undefined) est toujours reléguée en fin de liste, quel que soit le sens du tri, plutôt que
-   * de sauter en tête en mode "desc" (ce qui serait déroutant : "aucune donnée" n'est jamais le
-   * résultat le plus pertinent). */
+  /** Tri : une valeur manquante va toujours en fin de liste, quel que soit le sens. */
   private comparer(a: string | number | null | undefined, b: string | number | null | undefined, direction: Direction): number {
     if (a == null && b == null) return 0;
     if (a == null) return 1;
@@ -195,8 +169,7 @@ export class MeshcoreCompanionsComponent implements OnInit, OnDestroy {
     return direction === 'asc' ? resultat : -resultat;
   }
 
-  /** Flèche de tri affichée dans l'en-tête de colonne cliqué — vide si ce n'est pas la colonne
-   * de tri actuelle, pour ne pas encombrer les autres en-têtes. */
+  /** Flèche de tri, seulement sur la colonne triée. */
   indicateurTri(colonneActuelle: string, colonneAffichee: string, direction: Direction): string {
     if (colonneActuelle !== colonneAffichee) return '';
     return direction === 'asc' ? '▲' : '▼';
@@ -234,12 +207,8 @@ export class MeshcoreCompanionsComponent implements OnInit, OnDestroy {
     }
   }
 
-  /** Table unifiée "Répéteurs & infrastructure" — voir LigneInfrastructure. Un répéteur déjà
-   * promu en RelaisMeshCore (position GPS connue) est enrichi avec dernier contact/sauts/région
-   * depuis le ContactMeshCore de même pubkey_hex ; un répéteur/room server/capteur pas encore
-   * promu (aucune position reçue) apparaît quand même, sans position, plutôt que de rester
-   * invisible en attendant un GPS qui n'arrivera peut-être jamais (ex: room server fixe sans
-   * module GPS). */
+  /** Répéteurs promus enrichis par le ContactMeshCore de même pubkey_hex ; les non promus
+   * apparaissent sans position. */
   get lignesInfrastructure(): LigneInfrastructure[] {
     const parPubkey = new Map<string, ContactMeshCore>();
     for (const c of this.contacts) {
@@ -300,17 +269,13 @@ export class MeshcoreCompanionsComponent implements OnInit, OnDestroy {
     });
   }
 
-  /** Une ligne pas encore promue en RelaisMeshCore (aucune position GPS reçue) n'a rien à
-   * supprimer côté serveur — c'est un ContactMeshCore synchronisé automatiquement par le pont,
-   * qui ne disparaît jamais tout seul même si ce contact n'est plus vu (synchroniser_contacts
-   * ne fait que créer/mettre à jour, jamais supprimer) : rien à faire ici tant que ce contact
-   * n'a pas de position, le bouton Supprimer reste donc caché pour ces lignes. */
+  /** Une ligne non promue est un ContactMeshCore synchronisé, jamais supprimé par le pont :
+   * pas de bouton Supprimer. */
   supprimerLigneInfrastructure(ligne: LigneInfrastructure): void {
     if (!ligne.relaisId) return;
     const relais = this.relais.find(r => r.id === ligne.relaisId);
     if (relais) this.supprimerRelais(relais);
   }
-
 
   load(): void {
     this.loading = true;
@@ -361,9 +326,7 @@ export class MeshcoreCompanionsComponent implements OnInit, OnDestroy {
     return !!this.nouveauNoeudUtilisateurId && !!this.nouveauNoeudPubkey.trim();
   }
 
-  /** Utilisateur choisi pour chaque contact détecté non associé, en attente d'attribution —
-   * un choix par ligne du tableau (voir attributionsPubkeys ci-dessous), plutôt qu'un unique
-   * formulaire séquentiel (choisir un contact, puis l'utilisateur, puis valider). */
+  /** Utilisateur choisi par contact non associé, un choix par ligne. */
   attributionsParContact: Record<string, string> = {};
   attribuingContactId: string | null = null;
 
@@ -495,8 +458,7 @@ export class MeshcoreCompanionsComponent implements OnInit, OnDestroy {
     });
   }
 
-  /** Édition inline de la région d'un companion déjà créé — champ texte + bouton par ligne,
-   * pas de modal (cohérent avec le reste de cette page). */
+  /** Édition en ligne de la région d'un companion. */
   regionEditee(companion: CompagnonMeshCore): string {
     return this.regionEnCoursEdition[companion.id] ?? companion.region_tag ?? '';
   }
@@ -540,10 +502,8 @@ export class MeshcoreCompanionsComponent implements OnInit, OnDestroy {
     navigator.clipboard?.writeText(c.id).catch(() => {});
   }
 
-  // Advert / flood advert : programme la commande côté API, exécutée par le pont à son
-  // prochain cycle d'interrogation (quelques secondes, pas immédiat) — voir
-  // CompagnonMeshCoreService.envoyerAdvert. Un seul en vol à la fois par companion pour
-  // désactiver le bouton pendant l'attente, pas pour empêcher plusieurs companions en //.
+  // Advert : commande mise en file, exécutée par le pont à son prochain cycle (quelques secondes).
+  // Un seul en vol par companion.
   advertEnCours: string | null = null;
   advertMessage = '';
   advertErreur = '';
@@ -564,11 +524,8 @@ export class MeshcoreCompanionsComponent implements OnInit, OnDestroy {
     });
   }
 
-  // Traceroute : même principe de file d'attente que l'advert (exécuté par le pont à son
-  // prochain cycle), mais la réponse met plus longtemps à revenir (paquet de trace en
-  // diffusion, voir TRACEROUTE_TIMEOUT_SECONDS côté pont) -- on repasse par l'historique
-  // toutes les 4s jusqu'à ce que la ligne la plus récente ne soit plus EN_ATTENTE, ou jusqu'à
-  // une limite de tentatives pour ne jamais boucler indéfiniment si le pont est hors ligne.
+  // Traceroute : même file d'attente ; historique relu toutes les 4 s jusqu'à la réponse ou
+  // une limite de tentatives (pont hors ligne).
   tracerouteCompagnonId: string | null = null;
   tracerouteResultats: TracerouteMeshCore[] = [];
   tracerouteEnCours: string | null = null;
@@ -608,8 +565,7 @@ export class MeshcoreCompanionsComponent implements OnInit, OnDestroy {
   }
 
   libelleChemin(chemin: SautTraceroute[]): string {
-    // Le dernier élément n'a jamais de hash (réception par notre propre companion, voir
-    // docstring de TracerouteMeshCore.chemin) -- distingué du reste pour rester lisible.
+    // Le dernier saut n'a pas de hash (réception par notre companion, TracerouteMeshCore.chemin).
     return chemin
       .map(saut => saut.hash ? `#${saut.hash} (${saut.snr.toFixed(1)} dB)` : `Companion (${saut.snr.toFixed(1)} dB)`)
       .join(' → ');

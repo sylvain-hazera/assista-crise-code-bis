@@ -23,13 +23,8 @@ import { PointInventaireModalComponent } from '../point-inventaire-modal/point-i
 import { PointSecretariatModalComponent } from '../point-secretariat-modal/point-secretariat-modal.component';
 import { PointVueOperationnelleModalComponent } from '../point-vue-operationnelle-modal/point-vue-operationnelle-modal.component';
 
-/**
- * Modale "Créer/éditer un point opérationnel" — remplace l'ancien formulaire inline de
- * crises.component (création seule). Volontairement séparée en composant dédié : les volets
- * suivants du même chantier (compétences requises, équipe responsable, inventaire matériel)
- * y ajoutent chacun une section, ce qui aurait rendu crises.component ingérable si tout était
- * resté inline.
- */
+/** Modale de création/édition d'un point opérationnel (composant dédié : chaque volet y ajoute
+ * sa section). */
 @Component({
   selector: 'app-point-modal',
   standalone: true,
@@ -38,21 +33,18 @@ import { PointVueOperationnelleModalComponent } from '../point-vue-operationnell
   styleUrl: './point-modal.component.scss'
 })
 export class PointModalComponent implements OnChanges {
-  // Optionnel : un point créé depuis une équipe (regroupement des moyens, carburant...) n'est
-  // pas forcément lié à une crise précise — voir TeamsComponent, seul appelant sans crisisId.
+  // Facultatif : un point créé depuis une équipe n'a pas forcément de crise.
   @Input() crisisId: string | null = null;
   @Input({ required: true }) pointTypes: PointType[] = [];
   @Input({ required: true }) selectableInstitutions: Institution[] = [];
   @Input() isAdmin = false;
   @Input() point: PointOperationnel | null = null; // null = création
-  /** Équipe pré-sélectionnée à la création (ex: depuis la fiche équipe) — reste modifiable. */
+  /** Équipe pré-sélectionnée à la création, modifiable. */
   @Input() defaultEquipeId: string | null = null;
 
   @Output() saved = new EventEmitter<PointOperationnel>();
   @Output() closed = new EventEmitter<void>();
-  /** Mise à jour "silencieuse" (compétences, futures sections équipe/matériel) : le parent
-   * doit rafraîchir sa liste, mais la modale reste ouverte (contrairement à `saved`, qui
-   * suit la soumission du formulaire principal et ferme la modale). */
+  /** Mise à jour sans fermer la modale (le parent rafraîchit sa liste), contrairement à `saved`. */
   @Output() pointUpdated = new EventEmitter<PointOperationnel>();
 
   form!: FormGroup;
@@ -73,9 +65,8 @@ export class PointModalComponent implements OnChanges {
   secretariatModalOpen = false;
   vueOperationnelleModalOpen = false;
 
-  // Équipes/responsables supplémentaires (roulement jour/nuit, spécialités) — voir
-  // PointOperationnel.equipes_gestion/equipes_ravitaillement/responsables. Distinct de
-  // `equipe` (champ historique, unique) géré par le formulaire principal ci-dessus.
+  // Équipes/responsables supplémentaires (equipes_gestion, equipes_ravitaillement, responsables),
+  // distincts du champ historique `equipe`.
   selectedEquipesGestion: string[] = [];
   selectedEquipesRavitaillement: string[] = [];
   selectedResponsables: string[] = [];
@@ -100,16 +91,8 @@ export class PointModalComponent implements OnChanges {
     this.crisisService.getAll().subscribe(crises => this.crises = crises);
   }
 
-  /** Candidats pour "Responsable"/"Responsables supplémentaires" : membres de l'institution
-   * responsable de CE point (via son équipe) ou de son institution déléguée — pas l'institution
-   * du compte connecté (ex: un admin dont l'institution personnelle n'a aucun rapport avec le
-   * point édité), sans quoi le sélecteur proposait soit les mauvaises personnes, soit personne
-   * du tout. Toujours filtré, MÊME pour un admin (qui reste autorisé côté serveur à désigner
-   * n'importe qui, voir PointOperationnelViewSet.perform_update, mais un sélecteur listant tous
-   * les comptes de la plateforme n'est pas exploitable et n'a jamais de raison d'être la bonne
-   * réponse ici). Un point sans équipe (donc sans institution déterminable) n'a pas de
-   * candidats proposés — le champ reste utilisable en tapant "Moi" (l'utilisateur assigné avant
-   * de choisir une équipe apparaît via ensureAssignedUsersPresent). */
+  /** Candidats responsables : membres de l'institution du point (via son équipe) ou de sa
+   * déléguée, jamais celle du compte connecté, même pour un admin. Sans équipe, aucun candidat. */
   private refreshCandidateUsers(): void {
     const institutionIds = this.pointInstitutionIds;
 
@@ -125,12 +108,8 @@ export class PointModalComponent implements OnChanges {
     });
   }
 
-  /** Institution(s) "actives" du point en cours d'édition : celle de l'équipe responsable
-   * actuellement choisie + sa déléguée (le cas normal — la source de vérité une fois une équipe
-   * assignée), ou à défaut (création, aucune équipe encore choisie) celle explicitement
-   * sélectionnée dans le champ Institution — jamais l'institution du compte connecté, sans
-   * rapport avec CE point pour un admin ou un régulateur intervenant hors de sa propre
-   * institution. */
+  /** Institutions du point : celle de l'équipe responsable + sa déléguée, ou à défaut celle
+   * choisie dans le champ Institution. */
   private get pointInstitutionIds(): string[] {
     const equipeId = this.form?.get('equipe')?.value ?? this.point?.equipe ?? this.defaultEquipeId;
     const equipe = this.teams.find(t => t.id === equipeId);
@@ -141,10 +120,7 @@ export class PointModalComponent implements OnChanges {
     return institutionId ? [institutionId] : [];
   }
 
-  // Utilisateurs déjà rattachés (responsable historique ou responsables supplémentaires) mais
-  // absents de la liste scopée à mon institution (ex: affectés avant ce filtre, ou par un
-  // admin d'une autre institution) — récupérés individuellement pour ne pas les faire
-  // disparaître silencieusement des sélecteurs.
+  // Utilisateurs déjà rattachés mais hors de la liste scopée : récupérés pour rester affichés.
   private ensureAssignedUsersPresent(): void {
     const missingIds = new Set<string>();
     if (this.point?.responsable && !this.users.some(u => u.id === this.point!.responsable)) {
@@ -158,11 +134,8 @@ export class PointModalComponent implements OnChanges {
     });
   }
 
-  // "Équipe responsable" + "Équipes de gestion supplémentaires" + "Équipes de terrain
-  // ravitaillées ici" : ne proposer que les équipes de l'institution responsable DE CE POINT
-  // (ou sa déléguée, voir pointInstitutionIds) — pas celle du compte connecté, sans quoi un
-  // admin (ou un régulateur intervenant hors de sa propre institution) voyait soit les
-  // mauvaises équipes, soit aucune. Une équipe déjà affectée avant ce filtre reste visible.
+  // Équipes proposées : celles de l'institution du point (ou de sa déléguée) ; une équipe déjà
+  // affectée reste visible.
   get teamsMonInstitution(): Team[] {
     const institutionIds = this.pointInstitutionIds;
     if (institutionIds.length === 0) return this.teams;
@@ -206,9 +179,7 @@ export class PointModalComponent implements OnChanges {
   }
 
   private buildForm(): void {
-    // Une crise doit toujours être choisie à la création lorsqu'aucune n'est déjà imposée par
-    // le contexte d'ouverture de la modale (ex: depuis la fiche d'une crise) — évite les
-    // centres orphelins créés depuis /admin/centres.
+    // Crise obligatoire à la création si le contexte n'en impose pas (pas de centre orphelin).
     const criseRequired = !this.isEdit && !this.crisisId;
     this.form = this.fb.group({
       institution: [null],
@@ -222,8 +193,7 @@ export class PointModalComponent implements OnChanges {
       date_fermeture: [this.toDatetimeLocal(this.point?.date_fermeture)],
       equipe: [this.point?.equipe ?? this.defaultEquipeId ?? null],
       responsable: [this.point?.responsable ?? null],
-      // Uniquement à la création (voir isEdit) : crée une équipe en même temps que le point,
-      // plutôt que d'obliger à en créer une séparément avant de pouvoir en assigner une.
+      // Création seulement : crée une équipe en même temps que le point.
       creerNouvelleEquipe: [false],
       nouvelleEquipeNom: [''],
     });
@@ -238,10 +208,7 @@ export class PointModalComponent implements OnChanges {
     this.selectedEquipesRavitaillement = this.point?.equipes_ravitaillement_ids ?? [];
     this.selectedResponsables = this.point?.responsables_ids ?? [];
 
-    // Les candidats "Responsable" dépendent de l'équipe choisie, ou à défaut de l'institution
-    // choisie (création, avant toute équipe — voir pointInstitutionIds/refreshCandidateUsers) —
-    // recalculés à chaque changement de l'un ou l'autre, et une première fois ici (utile si
-    // `teams` est déjà chargé, ex: réouverture de la modale pour un autre point).
+    // Candidats recalculés à chaque changement d'équipe ou d'institution.
     this.form.get('equipe')?.valueChanges.subscribe(() => this.refreshCandidateUsers());
     this.form.get('institution')?.valueChanges.subscribe(() => this.refreshCandidateUsers());
     this.refreshCandidateUsers();
@@ -284,8 +251,7 @@ export class PointModalComponent implements OnChanges {
     return `${user.first_name ?? ''} ${user.last_name ?? ''}`.trim() || user.email;
   }
 
-  // Filtre client (pas de recherche serveur dédiée) — évite une liste de responsables
-  // potentiellement très longue à parcourir sans filtre.
+  // Filtre client de la liste des responsables.
   responsableFilter = '';
 
   get filteredUsers(): User[] {
@@ -356,15 +322,13 @@ export class PointModalComponent implements OnChanges {
     this.inventaireModalOpen = false;
   }
 
-  /** Ouvre le tableau Signalements en mode sélection pour y piocher des offres de matériel à
-   * ajouter au stock de ce point (voir ReportingComponent ?pickForPoint=). */
+  /** Ouvre Signalements en mode sélection (?pickForPoint=) pour ajouter du matériel au stock. */
   ouvrirTableauOffres(): void {
     if (!this.point?.id) return;
     this.router.navigate(['/admin/signalements'], { queryParams: { pickForPoint: this.point.id } });
   }
 
-  /** Page dédiée plutôt qu'une modale de plus imbriquée dans celle-ci — le tableau (une
-   * colonne par centre de la crise) était à l'étroit dans une modale contrainte. */
+  /** Page dédiée : le tableau (une colonne par centre) est trop large pour une modale. */
   openComparaisonModal(): void {
     if (!this.crisisId) return;
     this.router.navigate(['/admin/crises', this.crisisId, 'stocks']);

@@ -12,14 +12,8 @@ import { pollWhileVisible } from '../../../shared/utils/polling.util';
 // solliciter ça plus souvent qu'un chat d'équipe classique n'en a besoin.
 const INTERVALLE_POLLING_MS = 8_000;
 
-/** Chat Matrix intégré (pas de fenêtre séparée / lien Element, demande explicite de Sylvain le
- * 24/09) -- générique, réutilisé aussi bien pour le salon d'une équipe
- * (TeamViewSet.salon_matrix_messages) que pour les salons généraux d'institution
- * (InstitutionViewSet.salon_matrix_messages) : c'est l'appelant qui fournit les fonctions de
- * chargement/envoi, ce composant ne connaît ni Team ni Institution. Tout passe par un relais
- * côté backend via le jeton du bot Matrix, jamais un jeton exposé au navigateur (voir
- * core/matrix.py pour pourquoi un jeton personnel par utilisateur s'est avéré impossible sous
- * délégation MAS). Même style de polling que EquipeMessagerieMeshComponent. */
+/** Chat Matrix intégré, générique (salon d'équipe ou d'institution) : l'appelant fournit les
+ * fonctions de chargement/envoi. Relais backend avec le jeton du bot (core/matrix.py). */
 @Component({
   selector: 'app-matrix-salon-chat',
   standalone: true,
@@ -37,9 +31,7 @@ export class MatrixSalonChatComponent implements OnChanges, OnDestroy {
   @Input() pretACharger = true;
   @Input() chargerMessages!: () => Observable<{ messages: MatrixMessage[] }>;
   @Input() envoyerMessage!: (texte: string, urgent?: boolean) => Observable<{ messages: MatrixMessage[] }>;
-  /** Case "urgent" à l'envoi -- ouverte à tout le monde, y compris un intervenant isolé (décision
-   * utilisateur du 26/09). Désactivée par défaut : seuls les salons qui en ont vraiment besoin
-   * (chat d'équipe) l'activent. */
+  /** Case « urgent », ouverte à tous ; désactivée par défaut (le chat d'équipe l'active). */
   @Input() autoriserUrgent = false;
   /** Bouton "Vu" par message -- réservé aux cadres (régulateur/chef d'équipe/institutionnel),
    * fourni par l'appelant qui seul sait qui est cadre ici. Absent = pas de bouton "Vu" du tout

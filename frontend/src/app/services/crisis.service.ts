@@ -25,27 +25,17 @@ export class CrisisService {
       .pipe(map(list => list.map(this.normalize)));
   }
 
-  /**
-   * Crises d'un utilisateur spécifique.
-   * Django filtre via : ?validateur=<userId>
-   * GET /api/crises/?validateur=<uuid>
-   */
+  /** GET /api/crises/?validateur=<uuid> */
   getMines(email: string): Observable<Crisis[]> {
-    // return this.getAll({ auteur: userId });
     return this.getAll({ author_email: email });
   }
 
-  /**
-   * Crises récentes.
-   * GET /api/crises/?ordering=-date_debut&limit=<n>
-   * Nécessite LimitOffsetPagination ou un filtre custom côté Django.
-   */
+  /** GET /api/crises/?ordering=-date_debut&limit=<n> */
   getRecent(limit = 5): Observable<Crisis[]> {
     return this.getAll({ ordering: '-date_debut', limit: String(limit) });
   }
 
-  /** GET /api/crises/?page=&page_size=&... — voir OfferService.searchPage, même patron.
-   * Utilisé par ReportingComponent (page Signalements) à la place de getAll(). */
+  /** GET /api/crises/?page=&page_size=&... — pagination serveur, comme OfferService.searchPage. */
   searchPage(params: Record<string, string>, page: number, pageSize: number): Observable<PageResponse<Crisis>> {
     const httpParams = this.toParams({ ...params, page: String(page), page_size: String(pageSize) });
     return this.http
@@ -65,11 +55,7 @@ export class CrisisService {
     return this.http.get(`${this.apiUrl}/${id}/preview/`, { responseType: 'blob' });
   }
 
-  /**
-   * Statistiques pour le dashboard.
-   * GET /api/crises/stats/?[params]
-   * Nécessite un @action(detail=False) Django.
-   */
+  /** GET /api/crises/stats/?[params] */
   getStats(filter?: Record<string, string>): Observable<StatsResponse> {
     return this.http.get<StatsResponse>(
       `${this.apiUrl}/stats/`,
@@ -92,32 +78,11 @@ export class CrisisService {
     return this.http.patch<Crisis>(`${this.apiUrl}/${id}/`, data);
   }
 
-  /** POST /api/crises/<id>/fusionner-zone/ — union géométrique d'un nouveau tracé avec la
-   * zone déjà enregistrée, plutôt que de l'écraser (voir crises.component.ts:saveZone).
-   * Refusé (400) si les deux tracés ne se touchent pas (voir CrisisViewSet.fusionner_zone). */
+  /** POST /api/crises/<id>/fusionner-zone/ — union avec la zone existante ; 400 si les tracés
+   * ne se touchent pas. */
   fusionnerZone(id: string, wkt: string): Observable<Crisis> {
     return this.http.post<Crisis>(`${this.apiUrl}/${id}/fusionner-zone/`, { wkt });
   }
-
-  // /**
-  //  * POST /api/crises/
-  //  * Envoi via FormData pour gérer le champ photo éventuel.
-  //  */
-  // create(payload: CrisisPayload): Observable<Crisis> {
-  //   return this.http
-  //     .post<Crisis>(`${this.apiUrl}/`, this.toFormData(payload))
-  //     .pipe(map(this.normalize));
-  // }
-
-  // /**
-  //  * PATCH /api/crises/<id>/
-  //  * PATCH (partiel) plutôt que PUT (complet).
-  //  */
-  // update(id: string, payload: Partial<CrisePayload>): Observable<Crisis> {
-  //   return this.http
-  //     .patch<Crisis>(`${this.apiUrl}/${id}/`, this.toFormData(payload))
-  //     .pipe(map(this.normalize));
-  // }
 
   /** DELETE /api/crises/<id>/ */
   delete(id: string): Observable<void> {
@@ -145,18 +110,14 @@ export class CrisisService {
     return this.http.get<StocksComparaison>(`${this.apiUrl}/${id}/stocks-comparaison/`);
   }
 
-  /** GET /api/crises/<id>/commune/ — code commune INSEE résolu par reverse-géocodage depuis la
-   * localisation de la crise (pas un champ dénormalisé, calculé à la demande — voir la vue). */
+  /** GET /api/crises/<id>/commune/ — code INSEE calculé par géocodage inverse. */
   getCommune(id: string): Observable<{ commune_code: string | null }> {
     return this.http.get<{ commune_code: string | null }>(`${this.apiUrl}/${id}/commune/`);
   }
 
   // ── PRIVÉ ────────────────────────────────────────────────────
 
-  /**
-   * Django retourne { localisation: { type: "Point", coordinates: [lng, lat] } }
-   * On extrait latitude/longitude pour un usage pratique dans les templates.
-   */
+  /** Extrait latitude/longitude du GeoJSON { type: "Point", coordinates: [lng, lat] }. */
   private normalize = (c: any): Crisis => {
     if (c.location?.coordinates) {
       return { ...c, ...geoPointToLatLng(c.location) };

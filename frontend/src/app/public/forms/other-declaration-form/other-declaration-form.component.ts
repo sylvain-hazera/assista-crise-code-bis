@@ -35,7 +35,7 @@ export class OtherDeclarationFormComponent implements OnInit {
   otherInformationForm!: FormGroup;
   selectedFile: File | null = null;
   fileName: string = 'Select';
-  StateForm = StateForm; // Expose enum to template
+  StateForm = StateForm;
   state: StateForm = StateForm.DeclareSafe;
 
   latitude: number | null = null;
@@ -57,9 +57,7 @@ export class OtherDeclarationFormComponent implements OnInit {
   crisisSearch: string = 'Aucune crise en rapport';
   showCrisisDropdown: boolean = false;
 
-  // Centres d'accueil proposés pour "Je suis en sécurité", une fois une crise choisie — pour
-  // le choix explicite d'un centre (situation EN_CENTRE) ou les suggestions du popup
-  // "trouver un centre" (situation BESOIN_CENTRE).
+  // Centres d'accueil de la crise choisie, pour « Je suis en sécurité » (EN_CENTRE ou BESOIN_CENTRE).
   centresAccueil: CentreAccueilPublic[] = [];
 
   showCentrePopup = false;
@@ -69,8 +67,7 @@ export class OtherDeclarationFormComponent implements OnInit {
 
   selectedInformationType: InformationType | null = null;
 
-  // Étape "crise + lieu + thèmes à l'écoute" (voir app-crise-lieu-theme), uniquement pour
-  // "Autre information" -- "Je suis en sécurité" n'a pas d'axe thème/besoin, non concerné.
+  // Étape « crise + lieu + thèmes à l'écoute », pour « Autre information » seulement.
   criseSelectionneeOther: Crisis | null = null;
   typesSignalementAutorises: string[] = [];
   informationTypeOptions: InformationType[] = [];
@@ -95,8 +92,7 @@ export class OtherDeclarationFormComponent implements OnInit {
     this.selectedInformationType = this.informationTypeOptions.find(t => t.id === id) || null;
   }
 
-  // Position + azimut capturés au moment de la photo (prioritaires sur l'adresse saisie
-  // manuellement s'ils sont disponibles) — cf. capturePhotoWithLocation().
+  // Position + azimut capturés à la prise de photo, prioritaires sur l'adresse saisie.
   capturedLatitude: number | null = null;
   capturedLongitude: number | null = null;
   capturedAzimuth: number | null = null;
@@ -130,10 +126,8 @@ export class OtherDeclarationFormComponent implements OnInit {
     this.selectedInformationType = item;
   }
 
-  /** Déclenché par le bouton "Prendre une photo" : lance la capture GPS + boussole (doit
-   * démarrer depuis ce geste utilisateur direct pour que iOS autorise l'accès aux capteurs),
-   * puis ouvre l'appareil photo natif. Les deux captures tournent en parallèle pendant que
-   * l'utilisateur prend la photo — normalement déjà résolues à son retour. */
+  /** Lance GPS + boussole depuis le geste utilisateur (exigé par iOS), puis l'appareil photo ;
+   * les captures tournent en parallèle. */
   capturePhotoWithLocation(fileInput: HTMLInputElement): void {
     this.locationPromise = this.geolocationService.requestLocation().catch(() => null);
     this.azimuthPromise = this.geolocationService.getCurrentAzimuth();
@@ -231,9 +225,7 @@ export class OtherDeclarationFormComponent implements OnInit {
       } else if (this.state === StateForm.OtherDeclaration) {
         this.otherInformationForm.patchValue({ image: this.selectedFile });
 
-        // Récupère la position/l'azimut lancés au clic sur "Prendre une photo" (cf.
-        // capturePhotoWithLocation) — déjà résolus la plupart du temps le temps que
-        // l'utilisateur revienne de l'appareil photo natif.
+        // Récupère position/azimut lancés au clic sur « Prendre une photo ».
         if (this.locationPromise) {
           const [coords, azimuth] = await Promise.all([
             this.locationPromise,
@@ -269,10 +261,7 @@ export class OtherDeclarationFormComponent implements OnInit {
     }
   }
 
-  /** Centres d'accueil proposés une fois une crise choisie — vide (et champ masqué côté
-   * template) si aucune crise n'est sélectionnée, une entrée en centre n'a pas de sens sans
-   * savoir à quelle crise elle se rattache. Endpoint public dédié (pas getByCrise, qui exige
-   * une session authentifiée — ce formulaire est ouvert à tous). */
+  /** Centres d'accueil de la crise choisie, via l'endpoint public (formulaire ouvert à tous). */
   private loadCentresAccueil(crisisId: string): void {
     this.declareSafeForm.patchValue({ centreAccueil: '' });
     this.centresAccueil = [];
@@ -287,15 +276,12 @@ export class OtherDeclarationFormComponent implements OnInit {
     return this.declareSafeForm.get('situation')?.value;
   }
 
-  /** Une position captée automatiquement (photo prise via l'appareil) vaut une adresse
-   * saisie à la main — l'une ou l'autre suffit pour situer le signalement. */
+  /** Une position captée vaut une adresse saisie. */
   hasLocationForOther(): boolean {
     return !!this.selectedAddressOther || (this.capturedLatitude != null && this.capturedLongitude != null);
   }
 
-  // Encadré rouge de résumé, affiché juste au-dessus du bouton d'envoi de chaque formulaire —
-  // remplace les alert() génériques qui ne disaient jamais lesquels des champs posaient
-  // problème. Recalculé à chaque tentative de soumission.
+  // Résumé des erreurs au-dessus du bouton d'envoi, recalculé à chaque tentative.
   formErrors: string[] = [];
 
   private declareSafeValidationErrors(): string[] {
@@ -360,8 +346,7 @@ export class OtherDeclarationFormComponent implements OnInit {
       type_declarant: typeDeclarant,
       nom_referent: this.declareSafeForm.get('lastName')?.value,
       prenom_referent: this.declareSafeForm.get('firstName')?.value,
-      // Email et téléphone renseignés tous les deux dans le formulaire : le contact retenu
-      // pour la déclaration privilégie l'email, le téléphone reste dans le commentaire.
+      // Email retenu comme contact, le téléphone reste dans le commentaire.
       contact_referent: this.declareSafeForm.get('email')?.value,
       nombre_adultes: typeDeclarant === 'PERSONNE_SEULE' ? 1 : this.declareSafeForm.get('nombreAdultes')?.value,
       nombre_enfants: typeDeclarant === 'PERSONNE_SEULE' ? 0 : this.declareSafeForm.get('nombreEnfants')?.value,
@@ -388,8 +373,7 @@ export class OtherDeclarationFormComponent implements OnInit {
       next: (response) => {
         console.log('Déclaration de sécurité créée:', response);
         if (situation === 'BESOIN_CENTRE') {
-          // Pas de redirection immédiate : le popup "trouver un centre" propose des
-          // suggestions avant de renvoyer la personne à l'accueil.
+          // Pas de redirection : le popup « trouver un centre » propose d'abord des suggestions.
           this.openCentrePopup();
         } else {
           alert('Votre déclaration a été enregistrée avec succès !');
@@ -404,9 +388,7 @@ export class OtherDeclarationFormComponent implements OnInit {
     });
   }
 
-  /** Remonte la raison précise d'un refus (ex: "Cette crise est clôturée...") plutôt qu'un
-   * message générique — cf. validate_crisis_open côté backend, seule condition bloquante
-   * pour ces formulaires publics au-delà des champs obligatoires eux-mêmes. */
+  /** Affiche la raison précise d'un refus (validate_crisis_open). */
   private extractApiErrorMessage(err: any): string {
     const body = err?.error;
     if (!body) {
@@ -453,8 +435,7 @@ export class OtherDeclarationFormComponent implements OnInit {
     this.router.navigate(['/accueil']);
   }
 
-  /** Centres triés par distance croissante si la position de l'utilisateur est connue,
-   * ordre du serveur sinon (distance/saturation alors non calculables). */
+  /** Tri par distance si la position est connue, sinon ordre du serveur. */
   get centresTries(): (CentreAccueilPublic & { distanceKm: number | null; sature: boolean })[] {
     return this.centresAccueil
       .map(c => ({
@@ -539,7 +520,6 @@ export class OtherDeclarationFormComponent implements OnInit {
     this.router.navigate(['/accueil']);
   }
 
-  // Helper methods for template
   isFieldInvalid(formName: 'declareSafe' | 'otherInformation', fieldName: string): boolean {
     const form = formName === 'declareSafe' ? this.declareSafeForm : this.otherInformationForm;
     const field = form.get(fieldName);

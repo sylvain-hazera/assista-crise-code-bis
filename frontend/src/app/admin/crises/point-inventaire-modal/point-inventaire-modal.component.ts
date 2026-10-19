@@ -21,10 +21,8 @@ const NIVEAUX: { value: NiveauStock; label: string }[] = [
   { value: 'EN_TROP', label: 'En trop' },
 ];
 
-/** "Sous-menu - fenêtre" besoins/stocks d'un point : le catalogue matériel est partagé entre
- * tous les centres (voir MaterielCatalogueService — recherche ou création façon hashtag) — un
- * item ajouté ici apparaît, à niveau nul, dans la liste de tous les autres centres, sans action
- * de leur part (backend : PointOperationnelViewSet.stocks). */
+/** Besoins/stocks d'un point. Catalogue matériel partagé : un item ajouté ici apparaît à
+ * niveau nul dans tous les centres (PointOperationnelViewSet.stocks). */
 @Component({
   selector: 'app-point-inventaire-modal',
   standalone: true,
@@ -41,9 +39,7 @@ export class PointInventaireModalComponent implements OnInit {
   stocks: MaterielPoint[] = [];
   loading = true;
   savingItemId: string | null = null;
-  // Catégories du catalogue matériel masquées pour ce centre (voir PointType.
-  // categories_materiel_exclues) — résolu depuis le type du point, pas depuis le point
-  // lui-même (le type ne dénormalise que son code/libellé sur PointOperationnel).
+  // Catégories masquées pour ce centre, lues sur son type (PointType.categories_materiel_exclues).
   categoriesExclues: string[] = [];
 
   constructor(
@@ -86,8 +82,7 @@ export class PointInventaireModalComponent implements OnInit {
     return entry.id ? (this.contributionsByMaterielPoint[entry.id] ?? []) : [];
   }
 
-  /** Ajoute un apport manuel (stock non issu d'une offre publique) — crée d'abord la ligne
-   * MaterielPoint si elle n'existe pas encore, même logique que setNiveau. */
+  /** Apport manuel ; crée d'abord la ligne MaterielPoint si besoin. */
   ajouterApportManuel(entry: MaterielPoint): void {
     if (!this.newContribution.fournisseur_nom.trim() || !this.newContribution.quantite) return;
 
@@ -130,8 +125,7 @@ export class PointInventaireModalComponent implements OnInit {
     });
   }
 
-  /** Ajout groupé depuis app-materiel-categorie-picker (une catégorie entière ou une
-   * sélection multiple) — même logique que onCatalogueItemSelected, répétée par item. */
+  /** Ajout groupé depuis app-materiel-categorie-picker. */
   onCatalogueItemsAdded(items: MaterielCatalogue[]): void {
     for (const item of items) this.onCatalogueItemSelected(item);
   }
@@ -152,9 +146,7 @@ export class PointInventaireModalComponent implements OnInit {
     return this.niveaux.find(n => n.value === niveau)?.label ?? niveau;
   }
 
-  /** Un item du catalogue pas encore dans la liste locale (nouvellement créé par CE centre ou
-   * découvert via un autre) : on l'ajoute côté client à niveau nul, sans appel serveur — la
-   * ligne réelle n'est créée qu'au premier changement de niveau (cf. setNiveau). */
+  /** Item ajouté localement à niveau nul ; la ligne serveur est créée au premier changement. */
   onCatalogueItemSelected(item: MaterielCatalogue): void {
     if (this.stocks.some(s => s.item === item.id)) return;
     this.stocks = [
@@ -164,10 +156,7 @@ export class PointInventaireModalComponent implements OnInit {
     ];
   }
 
-  /** Précision libre par item (ex: "tatamis utilisables comme lits d'urgence") -- le champ
-   * existait déjà côté modèle/API mais n'était affiché nulle part (demande utilisateur du
-   * 12/10). Même logique que setNiveau : crée la ligne réelle au premier enregistrement si elle
-   * n'existe encore que côté client. */
+  /** Précision libre par item ; crée la ligne au premier enregistrement si besoin. */
   commentaireEnCours: Record<string, string> = {};
   savingCommentaireItemId: string | null = null;
 
@@ -202,10 +191,7 @@ export class PointInventaireModalComponent implements OnInit {
     });
   }
 
-  /** Retire le besoin de la liste de ce point -- jusqu'ici seul "remettre à Nul" était possible,
-   * la ligne restait affichée indéfiniment (demande utilisateur du 12/10). Une ligne jamais
-   * enregistrée côté serveur (id null, simple ajout client en attente) se retire juste
-   * localement, rien à appeler. */
+  /** Retire le besoin du point ; une ligne jamais enregistrée est retirée localement. */
   supprimerEntree(entry: MaterielPoint): void {
     if (!confirm(`Retirer « ${entry.item_nom} » de la liste de ce centre ?`)) return;
     if (!entry.id) {

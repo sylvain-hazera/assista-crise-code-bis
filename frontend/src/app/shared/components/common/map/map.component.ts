@@ -39,8 +39,7 @@ interface LayerVisibility {
   noeudsMeshtastic: boolean;
 }
 
-// Codes/libellés déjà utilisés côté offre/point pour repérer secourisme/soins — voir
-// OfferSerializer.offer_type_nom / PointOperationnelSerializer.type_code.
+// Codes et libellés secourisme/soins (OfferSerializer.offer_type_nom, PointOperationnelSerializer.type_code).
 const OFFER_TYPE_SOINS = 'Soins médicaux et paramédicaux';
 const POINT_TYPE_SECOURS = 'SECOURS';
 const POINT_TYPE_HEBERGEMENT = 'HEBERGEMENT';
@@ -54,7 +53,6 @@ const POSTE_SECOURS_ICON_ID = 'poste-secours-icon';
   styleUrl: './map.component.scss'
 })
 export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
-  // Reference to the map container element in the template to initialize MapLibre on it
   @ViewChild('mapContainer') mapContainer!: ElementRef;
 
   @Input() crises: Crisis[] = [];
@@ -65,13 +63,10 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   @Input() center: [number, number] = [2.2137, 46.2276];
   @Input() zoom: number = 5;
 
-  // Positions d'équipe réservées aux acteurs institutionnels : la checkbox correspondante
-  // n'est même pas rendue pour un visiteur non institutionnel (voir map.component.html).
+  // Positions d'équipe : institutionnels seulement (case non rendue sinon).
   isInstitutional = false;
 
-  // Replié par défaut : la liste des calques peut compter jusqu'à 9 entrées pour un
-  // institutionnel, largement de quoi masquer une bonne partie de la carte sur mobile si elle
-  // reste toujours ouverte (voir layer-toggle-fab dans le template).
+  // Panneau des calques replié par défaut (jusqu'à 9 entrées, gênant sur mobile).
   layersPanelOpen = false;
 
   layerVisibility: LayerVisibility = {
@@ -84,23 +79,16 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     centresTous: true,
     centresHebergement: true,
     postesSecours: true,
-    // Annuaire de bénévoles (potentiellement plusieurs centaines de fiches sur un secteur
-    // départemental) : masqué par défaut, pour ne pas polluer la carte de crise dès l'ouverture
-    // — l'utilisateur l'active volontairement s'il en a besoin.
+    // Annuaire de bénévoles : masqué et chargé à la demande (voir DOCUMENTATION.md, § 6.3).
     benevolesPompiers: false,
-    // Répéteurs MeshCore (voir doc de conception « Maillage Terrain ») : infrastructure pure,
-    // mais décoché par défaut (demande utilisateur du 10/10) -- l'utilisateur l'active
-    // volontairement s'il en a besoin, même logique que l'annuaire bénévoles.
+    // Répéteurs MeshCore : masqués et chargés à la demande.
     relaisMeshCore: false,
-    // Companions MeshCore (poste de commandement, véhicule...) : position saisie manuellement,
-    // optionnelle — visible par défaut comme les relais.
+    // Companions MeshCore : position saisie à la main, facultative.
     compagnonsMeshCore: true,
-    // Nœuds personnels MeshCore (porteur de terrain) : position réelle du firmware (annonce ou
-    // télémétrie pendant une mission active, voir bridge.py boucle_positions_missions) —
-    // visible par défaut, comme les relais/companions.
+    // Nœuds personnels MeshCore : position firmware, seulement pendant une mission active
+    // (bridge.py, boucle_positions_missions).
     noeudsMeshCore: true,
-    // Nœuds personnels Meshtastic — même règle mission-active que noeudsMeshCore, voir
-    // NoeudUtilisateurMeshtasticViewSet.positions_en_mission.
+    // Nœuds personnels Meshtastic : même règle (positions_en_mission).
     noeudsMeshtastic: true,
   };
 
@@ -120,11 +108,8 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   private centresHebergementGeoJSON: FeatureCollection<Geometry> | null = null;
   private postesSecoursGeoJSON: FeatureCollection<Geometry> | null = null;
   private subscription: Subscription | null = null;
-  // MapLibre calcule la taille du canvas une seule fois à l'initialisation, à partir de la
-  // taille de .map-container à cet instant : sans resize() explicite, le canvas garde ensuite
-  // sa taille d'origine même quand le conteneur change (repli/dépli de la sidebar admin —
-  // grid-template-columns animé, voir admin-layout.component.scss — ou redimensionnement de
-  // la fenêtre), ce qui laissait la carte tronquée/mal cadrée par rapport à l'espace réel.
+  // MapLibre fixe la taille du canvas à l'initialisation : resize() à chaque changement de
+  // taille du conteneur (repli de la sidebar, fenêtre).
   private resizeObserver: ResizeObserver | null = null;
 
   constructor(private crisisService: CrisisService,
@@ -155,32 +140,20 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     if (this.isInstitutional) {
       this.loadTeamPositions();
       this.loadCentres();
-      // Pas de chargement ici : voir onLayerToggle() — l'annuaire de bénévoles peut compter
-      // plusieurs centaines à ~1300 fiches pour une institution à secteur région/département
-      // (mesuré : jusqu'à 1,1s de sérialisation côté serveur, avant même le transfert et le
-      // parsing JS), pour un calque masqué par défaut : le charger inconditionnellement ici
-      // ralentissait l'affichage initial de la carte pour TOUT compte institutionnel, même
-      // ceux qui n'ouvrent jamais ce calque.
+      // Annuaire de bénévoles chargé à la demande (onLayerToggle) : jusqu'à ~1300 fiches.
     }
-    // Centres d'accueil et postes de secours : visibles sans authentification (contrairement
-    // aux deux calques ci-dessus), voir PointOperationnelViewSet.carte_publique.
+    // Centres d'accueil et postes de secours : publics (PointOperationnelViewSet.carte_publique).
     this.loadCentresPublics();
     if (this.isInstitutional) {
-      // Relais MeshCore : PAS chargé ici, voir onLayerToggle()/loadRelaisMeshCore -- à la
-      // demande seulement, même logique que l'annuaire bénévoles.
+      // Relais MeshCore chargés à la demande (onLayerToggle/loadRelaisMeshCore).
       this.loadCompagnonsMeshCore();
       this.loadNoeudsMeshCore();
       this.loadNoeudsMeshtastic();
     }
   }
 
-  /** Appelé par les checkbox du panneau de calques (voir template) : ré-applique la
-   * visibilité sur les couches déjà ajoutées à la carte, sans jamais recharger les données —
-   * sauf l'annuaire bénévoles/pompiers et les relais MeshCore, chargés à la demande à la
-   * première activation (voir ngOnInit, loadBenevolesPompiers et loadRelaisMeshCore).
-   * Décoché par défaut ET non chargé tant que l'utilisateur ne l'a pas demandé : la position
-   * d'un relais n'a pas besoin de transiter jusqu'au navigateur de quelqu'un qui n'ouvre jamais
-   * ce calque (demande utilisateur du 10/10, souci de minimisation des données de position). */
+  /** Ré-applique la visibilité des calques sans recharger, sauf l'annuaire bénévoles et les relais
+   * MeshCore, chargés à la première activation (minimisation des données de position). */
   onLayerToggle(): void {
     if (this.layerVisibility.benevolesPompiers && !this.benevolesPompiersCharges) {
       this.benevolesPompiersCharges = true;
@@ -214,9 +187,8 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     this.map.setLayoutProperty(layerId, 'visibility', visible ? 'visible' : 'none');
   }
 
-  /** Les demandes/offres/signalements partagent une seule source clusterisée : les cacher
-   * doit donc retirer leurs features de la source elle-même (pas juste la visibilité de
-   * calque), sinon un cluster masqué continuerait à compter les points cachés. */
+  /** Demandes/offres/signalements partagent une source clusterisée : les masquer retire leurs
+   * features de la source, sinon les clusters les compteraient encore. */
   private applyClusterVisibility(): void {
     if (!this.map) return;
     const source = this.map.getSource('clusters') as maplibregl.GeoJSONSource | undefined;
@@ -232,11 +204,8 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     return { type: 'FeatureCollection', features: parts };
   }
 
-  /** MapLibre ne rejoue jamais l'événement 'load' pour un listener attaché après coup : sur ce
-   * composant, les données arrivent par API après l'initialisation de la carte, donc un simple
-   * `map.on('load', cb)` tardif ne se déclenchait jamais — c'est ce qui empêchait demandes/
-   * offres/signalements de s'afficher (seules les zones de crise, ajoutées de façon
-   * synchrone dans initializeMap(), apparaissaient). */
+  /** MapLibre ne rejoue pas 'load' pour un listener ajouté après coup : les données arrivant par
+   * API après l'initialisation, on vérifie isStyleLoaded(). */
   private runWhenMapReady(cb: () => void): void {
     if (!this.map) return;
     if (this.map.isStyleLoaded()) {
@@ -283,10 +252,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
         })
         .catch((error: any) => {
           console.log('Géolocalisation non disponible:', error.message);
-          // GPS refusé/indisponible : se rabat sur le code postal du profil (adresse connue
-          // de l'utilisateur), moins précis mais toujours plus pertinent que le centre par
-          // défaut de la France — jamais bloquant si l'utilisateur n'est pas connecté ou n'a
-          // pas renseigné de code postal.
+          // GPS indisponible : repli sur le code postal du profil, s'il existe.
           this.centerOnUserPostalCodeIfAvailable();
         });
     }
@@ -312,26 +278,25 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     });
   }
 
-  ngAfterViewInit(): void { // Initialize the map after the view is initialized to ensure the container is available
+  ngAfterViewInit(): void {
     this.initializeMap();
     this.observeContainerResize();
   }
 
-  // Garde la taille du canvas MapLibre alignée sur celle réelle de .map-container à tout
-  // instant (pas seulement à l'initialisation) — voir le commentaire sur resizeObserver.
+  // Garde le canvas aligné sur .map-container (voir resizeObserver).
   private observeContainerResize(): void {
     if (typeof ResizeObserver === 'undefined') return; // pas de support (SSR/anciens navigateurs) : dégrade sans casser
     this.resizeObserver = new ResizeObserver(() => this.map?.resize());
     this.resizeObserver.observe(this.mapContainer.nativeElement);
   }
 
-  ngOnDestroy(): void { // Clean up subscriptions and map instance to prevent memory leaks
+  ngOnDestroy(): void {
     if (this.subscription) this.subscription.unsubscribe();
     if (this.resizeObserver) this.resizeObserver.disconnect();
     if (this.map) this.map.remove();
   }
 
-  loadCrises() { // Load crises from the API and add them to the map
+  loadCrises() {
     this.subscription = this.crisisService.getAll().subscribe({
       next: (crises) => {
         console.log('Données de crises reçues:', crises);
@@ -352,7 +317,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
         .map(d => {
           let longitude = Number(d.longitude);
           let latitude = Number(d.latitude);
-          if (jitter) { // Add random noise to coordinates to prevent exact location identification
+          if (jitter) { // Bruit aléatoire : empêche l'identification d'une position exacte.
             longitude += (Math.random() - 0.5) * 0.01;
             latitude += (Math.random() - 0.5) * 0.01;
           }
@@ -370,11 +335,10 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     };
   }
 
-  loadHelpData() { // Load requests, offers and informations in parallel and process them together to add to the map
+  loadHelpData() {
     this.subscription = forkJoin({
       requests: this.requestService.getAll(),
-      // exclude_type=Bénévolat : l'annuaire permanent de bénévoles n'a pas vocation à être
-      // épinglé sur la carte des besoins/offres de crise (voir ReportingComponent.loadAll).
+      // L'annuaire de bénévoles n'est pas affiché sur la carte de crise.
       proposals: this.offerService.getAll({ exclude_type: 'Bénévolat' }),
       informations: this.informationService.getAll()
     }).subscribe({
@@ -390,8 +354,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
 
         this.runWhenMapReady(() => this.addSourceAndLayers());
 
-        // Calque dédié, institutionnel uniquement : offres de secourisme/soins isolées parmi
-        // toutes les offres déjà chargées ci-dessus — pas d'appel réseau supplémentaire.
+        // Calque institutionnel : offres de secourisme/soins, filtrées dans les offres déjà chargées.
         if (this.isInstitutional) {
           const personnel = proposals.filter((o: any) =>
             o.diplome_secourisme === true || o.offer_type_nom === OFFER_TYPE_SOINS
@@ -404,18 +367,11 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     });
   }
 
-  /** Annuaire de bénévoles (Offer type Bénévolat), scopé au secteur de l'institution appelante
-   * (commune/EPCI/département — voir OfferService.vueSecteur) : appel réseau distinct de
-   * loadHelpData, jamais mélangé aux offres de crise (exclude_type=Bénévolat là-bas). Calque
-   * masqué par défaut (voir layerVisibility.benevolesPompiers). */
-  /** Non-null seulement si loadBenevolesPompiers a échoué — affiché en infobulle sur le
-   * calque (voir template) plutôt que silencieux : un compte institutionnel sans commune
-   * renseignée, ou dont l'institution n'est pas encore rattachée (User.institution vide),
-   * n'a sinon aucun moyen de comprendre pourquoi le calque reste vide une fois coché. */
+  /** Annuaire de bénévoles scopé au secteur de l'institution (OfferService.vueSecteur), séparé
+   * de loadHelpData. Masqué par défaut. */
+  /** Erreur affichée en infobulle du calque (souvent : institution absente ou sans commune). */
   benevolesPompiersError: string | null = null;
-  // Chargé une seule fois, à la première activation du calque (voir onLayerToggle) — jusqu'à
-  // ~1300 fiches pour une institution à secteur région, coûteux à charger pour rien tant que
-  // l'utilisateur n'a jamais coché la case.
+  // Chargé une seule fois, à la première activation du calque.
   private benevolesPompiersCharges = false;
   private relaisMeshCoreCharges = false;
 
@@ -520,9 +476,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     this.map.on('mouseleave', 'team-positions-layer', () => { this.map!.getCanvas().style.cursor = ''; });
   }
 
-  /** Relais MeshCore (voir doc de conception « Maillage Terrain ») : infrastructure pure,
-   * position saisie manuellement (voir /admin/meshcore-companions) — pas de rafraîchissement
-   * temps réel, un relais ne dialogue avec rien. */
+  /** Relais MeshCore : position saisie dans /admin/meshcore-companions, pas de temps réel. */
   loadRelaisMeshCore(): void {
     this.relaisMeshCoreService.getAll().subscribe({
       next: (relais) => {
@@ -593,10 +547,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     this.map.on('mouseleave', 'relais-meshcore-layer', () => { this.map!.getCanvas().style.cursor = ''; });
   }
 
-  /** Companions MeshCore (poste de commandement, véhicule...) : position saisie manuellement,
-   * optionnelle — voir /admin/meshcore-companions. Même logique que les relais, mais distincts
-   * visuellement (ce sont des postes de commandement/passerelles, pas de l'infrastructure
-   * passive), et seuls ceux ayant une position renseignée apparaissent. */
+  /** Companions MeshCore avec position renseignée (/admin/meshcore-companions). */
   loadCompagnonsMeshCore(): void {
     this.compagnonMeshCoreService.getAll().subscribe({
       next: (compagnons) => {
@@ -667,11 +618,8 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     this.map.on('mouseleave', 'compagnons-meshcore-layer', () => { this.map!.getCanvas().style.cursor = ''; });
   }
 
-  /** Nœuds personnels MeshCore (porteur de terrain, ex: SH1) : uniquement pendant qu'une
-   * mission de l'équipe du porteur est EN_COURS — jamais de suivi continu hors mission (voir
-   * NoeudMeshUtilisateurViewSet.positions_en_mission, qui applique déjà cette règle côté
-   * serveur ; la fraîcheur de la position est entretenue par bridge.py
-   * boucle_positions_missions pendant ce temps). */
+  /** Nœuds personnels MeshCore : seulement pendant une mission EN_COURS de l'équipe du porteur
+   * (règle appliquée côté serveur, positions_en_mission). */
   loadNoeudsMeshCore(): void {
     this.noeudMeshUtilisateurService.positionsEnMission().subscribe({
       next: (positions) => {
@@ -692,8 +640,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     });
   }
 
-  /** Formatte la télémétrie batterie pour une popup de carte -- chaîne vide si aucune des deux
-   * valeurs n'est connue (voir docstring de PositionNoeudMission.tension_batterie_v). */
+  /** Télémétrie batterie pour la popup ; chaîne vide si inconnue. */
   private libelleBatterie(tensionV: number | null, niveauPct: number | null): string {
     const morceaux: string[] = [];
     if (niveauPct != null) morceaux.push(`${niveauPct}%`);
@@ -755,9 +702,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     this.map.on('mouseleave', 'noeuds-meshcore-layer', () => { this.map!.getCanvas().style.cursor = ''; });
   }
 
-  /** Nœuds personnels Meshtastic — même règle mission-active que loadNoeudsMeshCore, voir
-   * NoeudUtilisateurMeshtasticViewSet.positions_en_mission. Couleur distincte (bleu plutôt que
-   * vert) pour ne pas confondre les deux protocoles sur la carte. */
+  /** Nœuds personnels Meshtastic : même règle que loadNoeudsMeshCore, en bleu. */
   loadNoeudsMeshtastic(): void {
     this.noeudUtilisateurMeshtasticService.positionsEnMission().subscribe({
       next: (positions) => {
@@ -917,10 +862,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     this.map.on('mouseleave', 'benevoles-pompiers-layer', () => { this.map!.getCanvas().style.cursor = ''; });
   }
 
-  /** Tous les points opérationnels (centres d'accueil, de regroupement des moyens...) —
-   * institutionnel uniquement, comme les positions équipes : un point logistique interne n'a
-   * pas vocation à être exposé au grand public comme le sont les deux calques publics dédiés
-   * (centres d'accueil, postes de secours — voir loadCentresPublics). */
+  /** Tous les points opérationnels : institutionnels seulement. */
   loadCentres(): void {
     this.pointOperationnelService.getAll().subscribe({
       next: (points) => {
@@ -934,9 +876,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     });
   }
 
-  /** Centres d'accueil et postes de secours : visibles sans authentification (voir
-   * PointOperationnelViewSet.carte_publique) — contrairement à "Tous les centres" ci-dessus,
-   * réservé aux institutionnels. */
+  /** Centres d'accueil et postes de secours : publics (carte_publique). */
   loadCentresPublics(): void {
     this.pointOperationnelService.getCartePublique().subscribe({
       next: (points: CentreAccueilPublic[]) => {
@@ -996,9 +936,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     this.map.on('mouseleave', layerId, () => { this.map!.getCanvas().style.cursor = ''; });
   }
 
-  /** Icône dédiée (croix rouge sur fond blanc) plutôt qu'un simple point coloré, pour rester
-   * immédiatement identifiable — y compris par un visiteur anonyme qui ne connaît pas la
-   * légende des calques. */
+  /** Icône dédiée (croix rouge), reconnaissable sans légende. */
   private ensurePosteSecoursIcon(): Promise<void> {
     if (!this.map) return Promise.reject('map non initialisée');
     if (this.map.hasImage(POSTE_SECOURS_ICON_ID)) return Promise.resolve();
@@ -1204,10 +1142,8 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
       this.addDirectionArrowLayer();
   }
 
-  /** Petite flèche orientée selon l'azimut capturé au moment de la photo (boussole du
-   * téléphone) — uniquement sur les signalements (Information) qui en ont une, superposée
-   * au marqueur point. `icon-rotate` en degrés horaires depuis le haut correspond
-   * exactement à la convention azimut (0 = Nord), pas de conversion nécessaire. */
+  /** Flèche orientée selon l'azimut de la photo (signalements) ; icon-rotate suit déjà la
+   * convention azimut (0 = Nord). */
   private addDirectionArrowLayer(): void {
     if (!this.map) return;
 
@@ -1404,8 +1340,7 @@ private addHoverEffect() { // Show convex hull around clusters on hover
         return;
       }
 
-      // Zone composée à partir de communes/départements ajoutés (union bufferisée,
-      // calculée côté frontend au moment de l'ajout — cf. crisis-zone-secteurs.util.ts)
+      // Zone composée de communes/départements (union calculée dans crisis-zone-secteurs.util.ts).
       if (crisis.zone_secteurs_geojson) {
         this.crisisCircle.push({
           type: 'Feature',

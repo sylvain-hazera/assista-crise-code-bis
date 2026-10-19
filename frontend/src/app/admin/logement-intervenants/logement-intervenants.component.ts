@@ -12,14 +12,9 @@ import { Offer } from '../../shared/models/offer.model';
 import { Institution } from '../../shared/models/institution.model';
 import { PointModalComponent } from '../crises/point-modal/point-modal.component';
 
-/** "Logement intervenants" (24/09, réflexion avec Sylvain sur le logement des bénévoles
- * mobilisés plusieurs jours loin de chez eux) -- deux sources réunies dans une seule vue :
- * les points opérationnels de type Hébergement (centres/colonies gérés par une équipe) et les
- * offres de particuliers cochées "accueil_intervenants" (voir Offer, HebergementDetailsMixin)
- * -- distinctes des offres d'hébergement pour sinistrés (accueil_sinistres), une même offre
- * pouvant cocher les deux. Une offre de particulier reste "en attente" tant qu'un acteur
- * institutionnel ne l'a pas validée (voir OfferViewSet.valider_accueil_intervenants) : on
- * n'envoie jamais un intervenant chez quelqu'un jamais vérifié. */
+/** Logement des intervenants : points de type Hébergement et offres de particuliers cochées
+ * « accueil_intervenants » (distinct d'accueil_sinistres). Une offre de particulier reste en
+ * attente tant qu'un institutionnel ne l'a pas validée (valider_accueil_intervenants). */
 @Component({
   selector: 'app-logement-intervenants',
   standalone: true,

@@ -27,16 +27,9 @@ import { TagSearchInputComponent } from '../../../shared/components/common/tag-s
 import { PointModalComponent } from '../../crises/point-modal/point-modal.component';
 import { ZoneModalComponent } from '../../zones/zone-modal/zone-modal.component';
 
-/**
- * Créer/éditer un plan (dispositif pré-enregistré, voir Plan) : sélection par chip-toggle des
- * zones/équipes/points/risques/contacts/interlocuteurs déjà existants de mon institution — même
- * patron d'accumulation locale puis submit unique que ZoneModalComponent (un plan en création
- * n'a pas encore d'id). Risques et interlocuteurs PCS réutilisent le même patron "chercher ou
- * créer" déjà en place dans la fiche Institution (onglets Mes risques/Annuaire PCS, voir
- * institutions.component.ts) plutôt que de dupliquer cette logique -- les contacts internes, eux,
- * ne se créent pas depuis ce flux (choisir un utilisateur + une fonction est un sous-flux à part
- * entière, déjà couvert par l'onglet Contacts de la fiche Institution).
- */
+/** Création/édition d'un plan (dispositif pré-enregistré) : sélection d'éléments existants de
+ * l'institution, accumulée localement puis soumise en une fois (comme ZoneModalComponent).
+ * Risques et interlocuteurs : même « chercher ou créer » que la fiche Institution. */
 @Component({
   selector: 'app-plan-modal',
   standalone: true,
@@ -72,9 +65,8 @@ export class PlanModalComponent implements OnChanges {
   saving = false;
   errorMessage = '';
 
-  // Missions modèles (uniquement en édition — un plan sans id ne peut pas encore en porter, voir
-  // PlanMissionModele.plan) : équipe/mission/référent instanciés en Mission+Dossier réels à
-  // l'activation de cette équipe (PlanViewSet.activer).
+  // Missions modèles (édition seulement) : instanciées en Mission + Dossier à l'activation
+  // (PlanViewSet.activer).
   missionsModeles: PlanMissionModele[] = [];
   missionForm!: FormGroup;
   showMissionForm = false;
@@ -144,8 +136,7 @@ export class PlanModalComponent implements OnChanges {
     this.missionModeleService.getByPlan(this.plan.id).subscribe(modeles => this.missionsModeles = modeles);
   }
 
-  // Équipes sélectionnées pour ce plan (le formulaire n'a de sens que pour l'une d'elles) —
-  // recalculé à chaque affichage plutôt que mémorisé, `selectedTeamIds` change librement.
+  // Équipes sélectionnées, recalculées à chaque affichage.
   get selectableTeamsForMission(): Team[] {
     return this.teams.filter(t => !!t.id && this.selectedTeamIds.includes(t.id));
   }
@@ -226,9 +217,7 @@ export class PlanModalComponent implements OnChanges {
       : [...this.selectedZoneIds, id];
   }
 
-  // ── Création d'une nouvelle zone directement depuis ce flux (demande utilisateur) ──────
-  // Réutilise app-zone-modal telle quelle (même composant que la page Zones), même patron que
-  // showPointModal/onPointCreated ci-dessous.
+  // ── Création d'une zone depuis ce flux (app-zone-modal) ──────
   showZoneModal = false;
 
   onZoneCreated(zone: Zone): void {
@@ -237,13 +226,9 @@ export class PlanModalComponent implements OnChanges {
     this.toggleZone(zone.id);
   }
 
-  // ── Cellules standards PCS (raccourci, demande utilisateur du 12/10) ──────────────────
-  // Pas de gabarit de Team côté backend (Plan ne fait que référencer des équipes déjà
-  // existantes, jamais n'en crée -- voir PlanViewSet.activer) : simple raccourci qui crée 4
-  // équipes nommées comme les 4 cellules terrain d'un PCS type (COM/LOG/POP/SECU), reprises
-  // telles quelles dans la sélection ci-dessous une fois créées. Noms/missions croisés sur 3
-  // vrais PCS (Floirac/Saint-Sixt/Canet-de-Salars) -- une commune reste libre de les renommer
-  // ou de n'en garder que certaines, la structure variant fortement d'une commune à l'autre.
+  // ── Cellules standards PCS ──────────────────
+  // Raccourci qui crée 4 équipes nommées comme les cellules d'un PCS type (COM/LOG/POP/SECU),
+  // renommables. Plan ne crée jamais d'équipe lui-même.
   creantCellulesStandards = false;
 
   private readonly CELLULES_STANDARDS: { name: string; description: string; color: string }[] = [
@@ -276,10 +261,7 @@ export class PlanModalComponent implements OnChanges {
       : [...this.selectedTeamIds, id];
   }
 
-  // ── Création libre d'une équipe (demande utilisateur) ──────────────────────────────────
-  // Même formulaire que teams.component.ts (nom + responsable optionnel), sans y toucher --
-  // simple formulaire inline ici, même patron de recherche que missionReferentQuery/
-  // selectMissionReferent ci-dessus, dupliqué pour le responsable d'équipe.
+  // ── Création libre d'une équipe (nom + responsable facultatif) ──────────
   showTeamForm = false;
   teamNom = '';
   teamLeaderId: string | null = null;
@@ -339,10 +321,7 @@ export class PlanModalComponent implements OnChanges {
       : [...this.selectedPointIds, id];
   }
 
-  // ── Création d'un nouveau point directement depuis ce flux (demande utilisateur) ──────
-  // Réutilise app-point-modal telle quelle (même composant que la vue crise/équipe), hors
-  // contexte de crise -- voir teams.component pour le même usage non-crise (crisisId=null,
-  // selectableInstitutions=[]).
+  // ── Création d'un point depuis ce flux (app-point-modal, hors crise) ──────
   showPointModal = false;
 
   onPointCreated(point: PointOperationnel): void {
@@ -351,9 +330,7 @@ export class PlanModalComponent implements OnChanges {
     if (point.id) this.togglePoint(point.id);
   }
 
-  // ── Stock de matériel d'un point sélectionné (visibilité, demande utilisateur) ─────────
-  // Chargé à la demande (jamais pour tous les points en même temps) pour ne pas multiplier les
-  // appels réseau -- un simple repli, pas une refonte de la gestion de stock elle-même.
+  // ── Stock de matériel d'un point sélectionné (chargé à la demande) ─────────
   expandedStockPointIds: string[] = [];
   stocksParPoint: Record<string, MaterielPoint[]> = {};
   stockLoadingPointId: string | null = null;
@@ -376,9 +353,7 @@ export class PlanModalComponent implements OnChanges {
     });
   }
 
-  // ── Risques couverts : chercher/créer un type de risque, puis le déclarer pour mon
-  // institution si ce n'est pas déjà fait -- même patron exact que institutions.component.ts
-  // (onRisqueSelected), aucune duplication de logique métier, juste le même geste ici.
+  // ── Risques couverts : chercher/créer un type puis le déclarer (comme institutions.component) ──
   risqueSearchFn = (q: string) => this.risqueMajeurTypeService.search(q);
   risqueCreateLabelFn = (value: string) => `Créer « ${value} » comme nouveau type de risque`;
   risqueCreateFn = (nom: string) => this.risqueMajeurTypeService.create({ nom });
@@ -402,7 +377,7 @@ export class PlanModalComponent implements OnChanges {
       : [...this.selectedRisqueIds, id];
   }
 
-  // ── Contacts internes : sélection parmi l'existant uniquement (voir docstring de classe) ──
+  // ── Contacts internes : sélection parmi l'existant uniquement ──
   toggleContact(id: string): void {
     this.selectedContactIds = this.selectedContactIds.includes(id)
       ? this.selectedContactIds.filter(i => i !== id)
@@ -413,18 +388,14 @@ export class PlanModalComponent implements OnChanges {
     return contact.utilisateur_nom || contact.fonction || 'Contact';
   }
 
-  // ── Interlocuteurs externes (annuaire PCS) : même patron "chercher ou créer" que
-  // institutions.component.ts (onglet Annuaire PCS) -- création rapide en mode TELEPHONE,
-  // complétée ensuite depuis cet onglet si besoin (email, mode d'alerte précis...).
+  // ── Interlocuteurs externes (annuaire PCS) : chercher ou créer, comme institutions.component ──
   interlocuteurPCSSearchFn = (q: string) => this.interlocuteurAlertePCSService.search(q);
   interlocuteurPCSCreateLabelFn = (value: string) => `Créer « ${value} » comme nouvel interlocuteur`;
   interlocuteurPCSCreateFn = (organisme: string) =>
     this.interlocuteurAlertePCSService.create({ organisme, nom: organisme, categorie: 'AUTRE', mode_alerte: 'TELEPHONE' });
 
   onInterlocuteurPCSSelected(item: InterlocuteurAlertePCS): void {
-    // Rattache systématiquement (no-op si déjà fait par interlocuteurPCSCreateFn) -- même
-    // patron que institutions.component.ts, couvre le cas "trouvé via recherche, pas encore
-    // rattaché à MON institution".
+    // Rattache toujours (no-op si déjà fait).
     this.interlocuteurAlertePCSService.rattacher(item.id).subscribe(rattache => {
       if (!this.interlocuteursPCS.some(i => i.id === rattache.id)) {
         this.interlocuteursPCS = [...this.interlocuteursPCS, rattache];

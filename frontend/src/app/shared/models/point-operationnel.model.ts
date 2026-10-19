@@ -28,8 +28,7 @@ export interface PointOperationnel {
   peut_gerer?: boolean;
   adresse?: string | null;
   commune_nom?: string | null;
-  /** "Logement intervenants" (24/09) : distance à sa propre crise liée, null si le point ou sa
-   * crise n'a pas de coordonnées. */
+  /** Distance à sa crise ; null sans coordonnées. */
   distance_from_crisis_km?: number | null;
   latitude?: number | null;
   longitude?: number | null;
@@ -38,8 +37,7 @@ export interface PointOperationnel {
   commentaire?: string | null;
   description?: string | null;
   capacite_accueil?: number | null;
-  /** Centre d'accueil acceptant les animaux domestiques -- voir PointOperationnel.
-   * accepte_animaux côté backend (demande utilisateur du 12/10). */
+  /** Centre d'accueil acceptant les animaux (PointOperationnel.accepte_animaux). */
   accepte_animaux?: boolean;
   date_ouverture?: string | null;
   date_fermeture?: string | null;
