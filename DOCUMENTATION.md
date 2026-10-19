@@ -253,6 +253,7 @@ Toutes les routes sont sous `/api/` (`core/urls.py`) ; documentation interactive
 | `DEBUG` | `False` par défaut |
 | `DB_HOST`, `DB_NAME`, `DB_USER`, `DB_PASS` | base PostgreSQL (échec explicite si absentes) |
 | `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_USE_SSL/TLS`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, `DEFAULT_FROM_EMAIL` | envoi d'emails |
+| `SERVER_URL` | adresse du frontend dans les liens des emails (activation, connexion magique, réinitialisation) ; défaut `https://www.assista-crise.fr`, `http://localhost` en dev (override) |
 | `CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND` | Redis pour Celery |
 | `OIDC_ISS_ENDPOINT`, `OIDC_RSA_PRIVATE_KEY`, `MATRIX_SERVER_NAME` | SSO Matrix |
 | `FIELD_ENCRYPTION_KEY`, `FIELD_BLIND_INDEX_KEY`, `FILE_ENCRYPTION_KEY` | chiffrement des données personnelles, **sans valeur de repli** (§ 10.1) |
@@ -924,6 +925,9 @@ Variables CI (protégées et masquées) : `HARBOR_URL`, `HARBOR_PROJECT`, `HARBO
 | Erreurs de schéma sur une base de dev ancienne | base créée par un autre historique de migrations : la recréer (`docker volume rm …_postgres_data`) |
 | Une règle d'alerte modifiée n'est pas prise en compte | `docker compose restart prometheus` |
 | Un compteur Prometheus « recule » | métriques non agrégées entre workers : vérifier `PROMETHEUS_MULTIPROC_DIR` |
+| « Impossible de contacter le serveur » à la connexion en dev, alors que l'API répond | requête bloquée par CORS (console du navigateur) : en dev le front appelle `localhost:8000` depuis une autre origine. L'origine doit figurer dans `CORS_ALLOWED_ORIGINS` et tout en-tête ajouté par l'intercepteur (ex. `X-Environment`) dans `CORS_ALLOW_HEADERS` (`config/settings.py`) ; en prod, même origine, pas de CORS |
+| Un lien reçu par email en dev ouvre le site de production (« Lien invalide ou expiré ») | `SERVER_URL` non défini : il vaut l'adresse de prod par défaut (défini à `http://localhost` dans l'override) |
+| `manage.py changepassword <email>` : `user … does not exist` | la commande compare l'email en clair à la colonne chiffrée. Utiliser le shell : `User.objects.get(email_bidx=blind_index('<email>'))` puis `set_password()` et `save()` |
 | `tsc` local : `Cannot find module 'terra-draw'` | `node_modules` du poste plus ancien que `package.json` : `cd frontend && npm ci` (l'image Docker l'installe déjà) |
 | `lookup X … server misbehaving` au démarrage | course au démarrage entre conteneurs : `depends_on` |
 

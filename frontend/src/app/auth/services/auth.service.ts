@@ -37,7 +37,7 @@ export class AuthService {
     this.suiviPosition.demarrerSiConsentement();
   }
 
-  /** POST /api/auth/token/ → { access, refresh, user } */
+  /** POST /api/token/ → { access, refresh, user } */
   login(email: string, password: string): Observable<LoginResponse> {
     return this.http
       .post<LoginResponse>(`${this.url}/token/`, { email, password })
@@ -87,7 +87,7 @@ export class AuthService {
       );
   }
 
-  /** POST /api/auth/token/refresh/. ROTATE_REFRESH_TOKENS : le nouveau refresh doit être stocké,
+  /** POST /api/token/refresh/. ROTATE_REFRESH_TOKENS : le nouveau refresh doit être stocké,
    * l'ancien est blacklisté. */
   refreshToken(): Observable<TokenResponse> {
     const refresh = localStorage.getItem('refresh_token');
@@ -101,7 +101,7 @@ export class AuthService {
       }));
   }
 
-  /** POST /api/auth/register/ */
+  /** POST /api/register/ */
   register(payload: UserPayload & { email: string; password: string }): Observable<User> {
     return this.http.post<User>(`${this.url}/register/`, payload);
   }
@@ -116,14 +116,14 @@ export class AuthService {
     return this.http.post<{ valid: boolean; message: string; details: any }>(`${this.url}/validate-institution/`, payload);
   }
 
-  /** GET /api/auth/me/ */
+  /** GET /api/me/ */
   fetchMe(): Observable<User> {
     return this.http
       .get<User>(`${this.url}/me/`)
       .pipe(tap(user => localStorage.setItem('current_user', JSON.stringify(user))));
   }
 
-  /** PATCH /api/auth/me/ (FormData si photo). */
+  /** PATCH /api/me/ (FormData si photo). */
   updateProfile(payload: UserPayload): Observable<User> {
     const body = payload.photo
       ? this.profileToFormData(payload)
@@ -134,7 +134,7 @@ export class AuthService {
       .pipe(tap(user => localStorage.setItem('current_user', JSON.stringify(user))));
   }
 
-  /** POST /api/auth/change-password/ { old_password, new_password } */
+  /** POST /api/change-password/ { old_password, new_password } */
   changePassword(old_password: string, new_password: string): Observable<void> {
     return this.http.post<void>(`${this.url}/change-password/`, {
       old_password,

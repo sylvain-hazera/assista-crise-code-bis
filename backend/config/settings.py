@@ -215,6 +215,8 @@ CORS_ALLOWED_ORIGINS = [
     "http://172.16.1.114:4200",
     "http://assista-crise.duckdns.org",
     "http://demo.assista-crise.fr",
+    "http://localhost",              # dev via le proxy Nginx (le front appelle localhost:8000)
+    "http://127.0.0.1",
     "http://localhost:4200",
     "http://127.0.0.1:4200",
     "http://frontend:4200",  # Pour Docker
@@ -251,6 +253,7 @@ CORS_ALLOW_HEADERS = [
     'user-agent',
     'x-csrftoken',
     'x-requested-with',
+    'x-environment',  # zone PROD/DEMO, ajoutée à chaque requête par l'intercepteur Angular
 ]
 
 REST_FRAMEWORK = {

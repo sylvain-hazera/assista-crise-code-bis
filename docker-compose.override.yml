@@ -23,6 +23,7 @@ services:
     environment:
       - EMAIL_HOST=mailhog
       - EMAIL_PORT=1025
+      - SERVER_URL=http://localhost   # liens des emails (activation, réinitialisation…) ; défaut = prod
       # en prod, ces clés sont injectées hors du dépôt (backend.env sur la VM)
       - FIELD_ENCRYPTION_KEY=${FIELD_ENCRYPTION_KEY}
       - FIELD_BLIND_INDEX_KEY=${FIELD_BLIND_INDEX_KEY}
