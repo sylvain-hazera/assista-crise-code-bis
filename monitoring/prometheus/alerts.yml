@@ -134,8 +134,8 @@ groups:
       - alert: NoHelpRequestDuringActiveCrisis
         # or vector(0) : aucune demande doit compter comme 0, pas comme « pas de donnée »
         expr: |
-          (sum(assista_active_crises) > 0)
-          and on() ((sum(increase(assista_help_requests_total[6h])) or vector(0)) == 0)
+          (sum(assista_active_crises{environment="PROD"}) > 0)
+          and on() ((sum(increase(assista_help_requests_total{environment="PROD"}[6h])) or vector(0)) == 0)
         for: 30m
         labels: { severity: warning }
         annotations:
@@ -143,12 +143,21 @@ groups:
           description: "Either nobody needs help, or the request form is broken. Test it on the public site."
 
       - alert: UnprocessedRequestsPilingUp
-        expr: sum(assista_requests_by_status{status="NON_TRAITEE"}) > 50
+        expr: sum(assista_requests_by_status{status="NON_TRAITEE", environment="PROD"}) > 50
         for: 1h
         labels: { severity: warning }
         annotations:
           summary: "{{ $value }} help requests are waiting to be processed"
           description: "Requests are arriving faster than teams process them."
+
+      # Un email part déjà à chaque nouveau compte en attente : celle-ci rattrape l'oubli.
+      - alert: AccountWaitingForValidation
+        expr: assista_oldest_pending_account_age_seconds > 24 * 3600
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "An account has been waiting for validation for {{ $value | humanizeDuration }}"
+          description: "Validate or reject it on /admin/validations-comptes."
 
 
   # ------------------------------------------------------------------ meta-monitoring

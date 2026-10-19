@@ -324,13 +324,14 @@ Détails opérationnels : [monitoring/README.md](monitoring/README.md).
 | Source | Métriques | Méthode |
 |---|---|---|
 | Django (`/metrics`) | requêtes, statuts, latence par vue, requêtes SQL | RED |
-| `core/metrics.py` | `assista_help_requests_total`, `assista_offers_total`, `assista_emails_failed_total`, `assista_requests_by_status`, `assista_offers_by_status`, `assista_active_crises` | métier |
+| `core/metrics.py` | `assista_help_requests_total`, `assista_offers_total`, `assista_institutions_created_total`, `assista_emails_failed_total`, `assista_requests_by_status`, `assista_offers_by_status`, `assista_active_crises`, `assista_accounts_pending_validation`, `assista_oldest_pending_account_age_seconds` — label `environment` (PROD/DEMO) sur les métriques métier | métier |
 | postgres / nginx / mosquitto exporters | état et charge de chaque service | USE |
 | node-exporter, cAdvisor | hôte et conteneurs | USE |
 | blackbox-exporter | sonde HTTPS de https://assista-crise.fr | boîte noire |
 
 Gunicorn tournant avec plusieurs workers, les métriques sont agrégées via
-`PROMETHEUS_MULTIPROC_DIR` (sinon chaque scrape lirait un worker au hasard).
+`PROMETHEUS_MULTIPROC_DIR` (sinon chaque scrape lirait un worker au hasard), activé par défaut
+par le `CMD` de l'image (`/tmp/prometheus-multiproc`, vidé au démarrage).
 
 ### 9.2 Alertes (`monitoring/prometheus/alerts.yml`)
 
@@ -343,7 +344,7 @@ Principes : alerter sur les **symptômes** ressentis par les utilisateurs, chaqu
 | Application | `HighErrorRate` (avec seuil de trafic minimum), `SlowAPI`, `EmailsFailing` |
 | Infrastructure | `DiskWillFillIn24h` (prédiction), `DiskAlmostFull`, `LowMemory`, `ContainerRestarting`, `DatabaseConnectionsHigh` |
 | Certificats | `TLSCertExpiringSoon`, `TLSCertExpiringCritical` |
-| Métier | `NoHelpRequestDuringActiveCrisis`, `UnprocessedRequestsPilingUp` |
+| Métier (PROD uniquement) | `NoHelpRequestDuringActiveCrisis`, `UnprocessedRequestsPilingUp`, `AccountWaitingForValidation` (> 24 h) |
 | Méta | `Watchdog` : toujours active, transmise à healthchecks.io qui alerte quand elle **s'arrête** |
 
 Chaque règle est couverte par `alerts_test.yml` (`promtool test rules`).

@@ -33,6 +33,23 @@ def emails_administrateurs():
     })
 
 
+def filtre_comptes_en_attente():
+    """Comptes en attente de validation (UserViewSet.pending_validations, métrique
+    assista_accounts_pending_validation). Un compte "Secours organisés" est créé
+    is_active=False (seul champ qui bloque vraiment la connexion, voir UserSerializer.create) --
+    un filtre is_active=True seul le rendait invisible (constaté le 19/10 en préparant le POC
+    SDIS 40). Distingué d'un compte REJETÉ (même état enabled/is_active) par sa demande
+    d'institution encore en attente, que reject_account efface."""
+    from django.db.models import Q
+
+    from .models import UserRole
+
+    return Q(enabled=False) & (
+        Q(is_active=True)
+        | (Q(type=UserRole.ORGANIZED_RESCUE) & Q(pending_institution_type__isnull=False) & ~Q(pending_institution_type=''))
+    )
+
+
 def notifier_administrateurs(subject, message, request=None):
     """Ne lève jamais : une alerte qui échoue ne doit pas faire échouer l'action qui l'a
     déclenchée (l'échec reste tracé dans la main courante par send_mail_logged)."""

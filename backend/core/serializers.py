@@ -3036,6 +3036,11 @@ class ContactInstitutionSerializer(
 
         fields = "__all__"
 
+        # Pas de validateur auto pour uq_contact_principal_institution : un nouveau contact
+        # principal REMPLACE l'ancien (ContactInstitutionViewSet._liberer_contact_principal),
+        # il n'est pas refusé (demande utilisateur du 19/10).
+        validators = []
+
     def get_utilisateur_nom(self, obj):
         if not obj.utilisateur:
             return None

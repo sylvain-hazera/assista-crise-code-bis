@@ -52,7 +52,7 @@ from PIL.ExifTags import TAGS, GPSTAGS
 
 from .alertes_pcs import preparer_checklist_pcs, envoyer_notifications
 from .audit import audit_log, get_client_ip, send_mail_logged, send_mail_with_attachment_logged
-from .notifications_admin import notifier_administrateurs
+from .notifications_admin import filtre_comptes_en_attente, notifier_administrateurs
 from .export import build_crisis_export_zip
 from .institution_attachment import (
     find_institution_for_pending_user, attach_user_with_role,
@@ -1765,16 +1765,7 @@ class UserViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_403_FORBIDDEN
             )
 
-        # Un compte "Secours organisés" est créé is_active=False (seul champ qui bloque vraiment
-        # la connexion, voir UserSerializer.create) -- l'ancien filtre is_active=True le rendait
-        # invisible ici, donc impossible à valider depuis cette page (constaté le 19/10 en
-        # préparant le POC SDIS 40). Distingué d'un compte REJETÉ (même état
-        # enabled/is_active) par sa demande d'institution encore en attente, que reject_account
-        # efface désormais.
-        en_attente = Q(enabled=False) & (
-            Q(is_active=True)
-            | (Q(type=UserRole.ORGANIZED_RESCUE) & Q(pending_institution_type__isnull=False) & ~Q(pending_institution_type=''))
-        )
+        en_attente = filtre_comptes_en_attente()
         # Les admins voient tout, les institutions voient leur code postal
         if role == UserRole.ADMINISTRATOR:
             pending_users = User.objects.filter(en_attente)
@@ -13319,22 +13310,37 @@ class ContactInstitutionViewSet(
             return qs.filter(environment__in=[Environment.PROD, Environment.DEMO])
         return qs.filter(environment=Environment.PROD)
 
-    def perform_create(self, serializer):
-        # "Un seul contact principal par institution" est appliqué par un index unique partiel
-        # en base (voir migration 0060) — pas par le serializer, DRF ne traduisant pas les
-        # UniqueConstraint conditionnelles en validateur. Sans ce try/except, une vraie
-        # tentative de double contact principal remontait en IntegrityError non interceptée
-        # (500 générique) au lieu d'un message exploitable côté frontend.
+    def _liberer_contact_principal(self, serializer):
+        """Un seul contact principal par institution (index unique partiel, migration 0060) :
+        en désigner un nouveau retire le drapeau à l'ancien, qui reste contact de
+        l'institution -- jamais un refus (demande utilisateur du 19/10)."""
+        if not serializer.validated_data.get('contact_principal'):
+            return
+        institution = serializer.validated_data.get('institution') or getattr(serializer.instance, 'institution', None)
+        if institution is None:
+            return
+        anciens = ContactInstitution.objects.filter(institution=institution, contact_principal=True)
+        if serializer.instance is not None:
+            anciens = anciens.exclude(pk=serializer.instance.pk)
+        anciens.update(contact_principal=False)
+
+    def _enregistrer(self, serializer, **kwargs):
+        # Savepoint dédié : sans lui, une IntegrityError (deux désignations simultanées)
+        # laisse la transaction de la requête (ATOMIC_REQUESTS) dans un état cassé.
         try:
-            # Savepoint dédié : sans lui, l'IntegrityError laisse la transaction de la requête
-            # (ATOMIC_REQUESTS) dans un état cassé — toute requête SQL suivante (y compris celles
-            # de la gestion d'erreur DRF elle-même) échouerait avec TransactionManagementError.
             with transaction.atomic():
-                contact = serializer.save(environment=get_active_environment(self.request))
+                self._liberer_contact_principal(serializer)
+                return serializer.save(**kwargs)
         except IntegrityError:
             raise ValidationError(
-                {"contact_principal": "Cette institution a déjà un contact principal : décochez « Principal » ou retirez-le d'abord de l'autre contact."}
+                {"contact_principal": "Le contact principal vient d'être modifié par ailleurs : rechargez la page et réessayez."}
             )
+
+    def perform_update(self, serializer):
+        self._enregistrer(serializer)
+
+    def perform_create(self, serializer):
+        contact = self._enregistrer(serializer, environment=get_active_environment(self.request))
         audit_log(
             request=self.request,
             action_code="CREATION",

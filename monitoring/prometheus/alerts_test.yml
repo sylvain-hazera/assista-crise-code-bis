@@ -71,7 +71,7 @@ tests:
   - name: crisis active but no help request at all
     interval: 1m
     input_series:
-      - series: 'assista_active_crises{type="INONDATION"}'
+      - series: 'assista_active_crises{type="INONDATION", environment="PROD"}'
         values: '1x60'
     alert_rule_test:
       - eval_time: 45m
@@ -85,14 +85,48 @@ tests:
   - name: crisis active and requests arriving
     interval: 1m
     input_series:
-      - series: 'assista_active_crises{type="INONDATION"}'
+      - series: 'assista_active_crises{type="INONDATION", environment="PROD"}'
         values: '1x60'
-      - series: 'assista_help_requests_total{request_type="Soins médicaux"}'
+      - series: 'assista_help_requests_total{request_type="Soins médicaux", environment="PROD"}'
         values: '0+1x60'
     alert_rule_test:
       - eval_time: 45m
         alertname: NoHelpRequestDuringActiveCrisis
         exp_alerts: []
+
+  - name: demo data never triggers business alerts
+    interval: 1m
+    input_series:
+      - series: 'assista_active_crises{type="INONDATION", environment="DEMO"}'
+        values: '1x60'
+      - series: 'assista_requests_by_status{status="NON_TRAITEE", environment="DEMO"}'
+        values: '400x120'
+      - series: 'assista_requests_by_status{status="NON_TRAITEE", environment="PROD"}'
+        values: '3x120'
+    alert_rule_test:
+      - eval_time: 45m
+        alertname: NoHelpRequestDuringActiveCrisis
+        exp_alerts: []
+      - eval_time: 2h
+        alertname: UnprocessedRequestsPilingUp
+        exp_alerts: []
+
+  - name: account waiting for validation for more than a day
+    interval: 1m
+    input_series:   # oldest pending account: 23h50 old at t=0, ages one minute per minute
+      - series: 'assista_oldest_pending_account_age_seconds'
+        values: '85800+60x60'
+    alert_rule_test:
+      - eval_time: 15m            # over 24h since t=10m, but not yet for 10 minutes
+        alertname: AccountWaitingForValidation
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: AccountWaitingForValidation
+        exp_alerts:
+          - exp_labels: { severity: warning }
+            exp_annotations:
+              summary: "An account has been waiting for validation for 1d 0h 20m 0s"
+              description: "Validate or reject it on /admin/validations-comptes."
 
   - name: certificate expiring in 10 days
     interval: 1m
