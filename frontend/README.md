@@ -58,11 +58,11 @@ Les tests Karma ont besoin d'un Chrome : lancez-les sur le poste, pas dans le co
 | `app/public/` | pages publiques : accueil, carte, formulaires (demande, offre, déclaration), suivi de dossier, paramètres, pages légales |
 | `app/admin/` | espace d'administration (`/admin`) : une page par dossier (crises, équipes, institutions, signalements, radio, satellites…) |
 | `app/pages/` | pages connectées hors admin : mes interventions, mon équipe, hébergement, recherche de personnes, dégâts |
-| `app/layouts/` | mises en page publique et admin (menu latéral, cloche de notifications) |
+| `app/layouts/` | coquilles publique et admin, avec leurs morceaux : `public-layout/` (`header/`, `footer/`, `geolocation-popup/`), `admin-layout/` (menu : `admin-nav.config.ts`, `admin-sidebar/` ; cloche : `admin-notifications/`) |
 | `app/auth/` | connexion, inscription, `AuthService` (session, rôles, zone PROD/DEMO), intercepteurs (JWT, `X-Environment`) |
 | `app/core/` | gardes de routes (`guards/`), intercepteurs, pipes et services transverses |
 | `app/services/` | un service par ressource d'API (`crisis.service.ts`, `team.service.ts`…) |
-| `app/shared/` | composants réutilisables (`components/common/` : cartes, modales…), modèles TypeScript (`models/`), utilitaires (`utils/`) |
+| `app/shared/` | composants utilisés par **au moins deux** pages ou layouts (`components/common/` : cartes, modales… ; `components/public/` : briques des formulaires publics), modèles TypeScript (`models/`), utilitaires (`utils/`) |
 | `environments/` | `environment.ts` (dev, API sur `http://localhost:8000/api`), `environment.prod.ts` (API relative `/api`) |
 | `assets/`, `fonts.scss` | images ; polices auto-hébergées (fichiers dans `../public/assets/fonts/`, aucun appel à Google Fonts) |
 
@@ -72,8 +72,8 @@ Les tests Karma ont besoin d'un Chrome : lancez-les sur le poste, pas dans le co
 2. Déclarer la route avec `loadComponent` dans `public.routes.ts` ou `admin.routes.ts`, avec la
    garde adaptée (`authGuard`, `institutionalEffectiveGuard`, `sysAdminGuard`…, voir
    DOCUMENTATION.md, § 6.1).
-3. Pour une page d'administration, l'ajouter au menu de `layouts/admin-layout` (§ 6.4) : sinon
-   elle n'est atteignable que par son URL.
+3. Pour une page d'administration, l'ajouter dans `layouts/admin-layout/admin-nav.config.ts`
+   avec la bonne `visibilite` (§ 6.4) : sinon elle n'est atteignable que par son URL.
 4. Appeler l'API via un service de `app/services/`. Pour un rafraîchissement périodique,
    utiliser `pollWhileVisible` (`shared/utils/polling.util.ts`) plutôt qu'un `setInterval`.
 
@@ -94,5 +94,6 @@ la même origine (voir [proxy/README.md](../proxy/README.md)).
 |---|---|
 | `Cannot find module 'terra-draw'` (ou un autre paquet) | `node_modules` local plus ancien que `package.json` : `npm ci` |
 | La carte est tronquée ou mal cadrée | taille du canvas MapLibre fixée à l'initialisation : voir DOCUMENTATION.md, § 6.3 |
-| Une page admin n'apparaît pas dans le menu | entrée absente de `admin-layout`, ou rôle effectif non institutionnel (zone DEMO) |
+| Une page admin n'apparaît pas dans le menu | entrée absente de `admin-nav.config.ts`, `visibilite` trop restrictive, ou rôle effectif non institutionnel (zone DEMO) |
+| `ng test` : `EACCES` sur `.angular/cache` | cache créé par le conteneur (root) : lancer avec `CI=true` (désactive ce cache) ou supprimer `.angular/` avec `sudo` |
 | Un droit accordé n'apparaît pas | profil en cache : recharger la page (les gardes rafraîchissent `/api/auth/me/`) |

@@ -1,8 +1,8 @@
 import { Component, OnInit } from '@angular/core';
 import { RouterOutlet } from "@angular/router";
-import { FooterComponent } from "../../shared/components/public/footer/footer.component";
-import { HeaderComponent } from '../../shared/components/public/header/header.component';
-import { GeolocationPopupComponent } from '../../shared/components/public/geolocation-popup/geolocation-popup.component';
+import { FooterComponent } from "./footer/footer.component";
+import { HeaderComponent } from './header/header.component';
+import { GeolocationPopupComponent } from './geolocation-popup/geolocation-popup.component';
 import { GeolocationService } from '../../services/geolocation.service';
 
 @Component({

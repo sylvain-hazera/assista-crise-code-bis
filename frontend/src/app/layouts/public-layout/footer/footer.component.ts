@@ -2,7 +2,7 @@ import { Component } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { Observable } from 'rxjs';
-import { BrandingService, Branding } from '../../../../services/branding.service';
+import { BrandingService, Branding } from '../../../services/branding.service';
 
 @Component({
   selector: 'app-footer',

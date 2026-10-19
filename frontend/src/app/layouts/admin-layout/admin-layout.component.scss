@@ -12,19 +12,6 @@
   // ==================== SIDEBAR COLLAPSED (DESKTOP) ====================
   &.sidebar-collapsed {
     grid-template-columns: 70px 1fr;
-
-    .admin-sidebar {
-      .nav-label {
-        opacity: 0;
-        width: 0;
-        overflow: hidden;
-      }
-
-      .nav-item {
-        justify-content: center;
-        padding: 1rem;
-      }
-    }
   }
 
   // ==================== SIDEBAR OPEN (MOBILE) ====================
@@ -187,20 +174,6 @@
       &.position-toggle.actif .material-icons {
         color: #16a34a;
       }
-
-      .notification-badge {
-        position: absolute;
-        top: 2px;
-        right: 2px;
-        background: #f44336;
-        color: white;
-        border-radius: 10px;
-        padding: 2px 6px;
-        font-size: 0.7rem;
-        font-weight: 600;
-        min-width: 18px;
-        text-align: center;
-      }
     }
 
     .notification-wrapper,
@@ -237,7 +210,6 @@
 }
 
 // ==================== DROPDOWNS ====================
-.notification-dropdown,
 .user-dropdown {
   position: absolute;
   top: calc(100% + 10px);
@@ -302,78 +274,6 @@
   }
 }
 
-.notification-list {
-  max-height: 400px;
-  overflow-y: auto;
-
-  .notification-item {
-    display: flex;
-    align-items: flex-start;
-    gap: 1rem;
-    padding: 1rem 1.5rem;
-    border-bottom: 1px solid #f5f5f5;
-    cursor: pointer;
-    transition: background-color 0.2s;
-
-    &:hover {
-      background-color: #f9f9f9;
-    }
-
-    &:last-child {
-      border-bottom: none;
-    }
-
-    &.unread {
-      background-color: #f4f6ff;
-    }
-
-    .material-icons {
-      color: #667eea;
-      font-size: 24px;
-
-      &.warning {
-        color: #ff9800;
-      }
-
-      &.info {
-        color: #2196f3;
-      }
-    }
-
-    .notification-content {
-      flex: 1;
-
-      .notification-title {
-        margin: 0 0 0.25rem 0;
-        font-weight: 500;
-        font-size: 0.95rem;
-      }
-
-      .notification-time {
-        margin: 0;
-        color: #999;
-        font-size: 0.8rem;
-      }
-    }
-  }
-
-  .notification-empty {
-    text-align: center;
-    padding: 2rem;
-    color: #999;
-
-    .material-icons {
-      font-size: 48px;
-      margin-bottom: 0.5rem;
-      opacity: 0.5;
-    }
-
-    p {
-      margin: 0;
-    }
-  }
-}
-
 .dropdown-divider {
   height: 1px;
   background-color: #e0e0e0;
@@ -424,156 +324,6 @@
   flex-direction: column;
   overflow-x: hidden;
   overflow-y: auto;
-
-  .sidebar-nav {
-    flex: 1;
-    padding: 1rem 0;
-
-    .nav-item {
-      display: flex;
-      align-items: center;
-      gap: 1rem;
-      padding: 1rem 1.5rem;
-      color: #666;
-      text-decoration: none;
-      transition: all 0.3s;
-      cursor: pointer;
-      border-left: 3px solid transparent;
-
-      .material-icons {
-        font-size: 24px;
-        min-width: 24px;
-      }
-
-      .nav-label {
-        white-space: nowrap;
-        transition: opacity 0.3s, width 0.3s;
-        font-weight: 500;
-      }
-
-      &:hover {
-        background-color: #f5f5f5;
-        color: #333;
-      }
-
-      &.active {
-        background-color: #e8f0fe;
-        color: #667eea;
-        border-left-color: #667eea;
-
-        .material-icons {
-          color: #667eea;
-        }
-      }
-    }
-
-    .nav-groupe {
-      margin: 0.25rem 0;
-
-      .nav-groupe-header {
-        display: flex;
-        align-items: center;
-        gap: 1rem;
-        width: 100%;
-        padding: 0.75rem 1.5rem;
-        background: none;
-        border: none;
-        cursor: pointer;
-        color: #8a8f98;
-        font-size: 0.78rem;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-        text-align: left;
-        transition: color 0.2s;
-
-        .material-icons:first-child {
-          font-size: 20px;
-          min-width: 20px;
-          color: #8a8f98;
-        }
-
-        .nav-label {
-          flex: 1;
-          white-space: nowrap;
-        }
-
-        .chevron {
-          font-size: 20px;
-          min-width: 20px;
-          color: #b0b4bb;
-        }
-
-        &:hover {
-          color: #555;
-
-          .material-icons:first-child,
-          .chevron {
-            color: #667eea;
-          }
-        }
-      }
-
-      &.ouvert .nav-groupe-header {
-        color: #667eea;
-
-        .material-icons:first-child {
-          color: #667eea;
-        }
-      }
-
-      .nav-item-sous {
-        padding-left: 2.25rem;
-      }
-    }
-  }
-
-  .sidebar-footer {
-    padding: 1rem 0;
-    border-top: 1px solid #e0e0e0;
-
-    .nav-item {
-      display: flex;
-      align-items: center;
-      gap: 1rem;
-      padding: 1rem 1.5rem;
-      color: #666;
-      text-decoration: none;
-      transition: all 0.3s;
-      cursor: pointer;
-      background: none;
-      border: none;
-      width: 100%;
-      text-align: left;
-
-      .material-icons {
-        font-size: 24px;
-        min-width: 24px;
-      }
-
-      .nav-label {
-        white-space: nowrap;
-        transition: opacity 0.3s, width 0.3s;
-        font-weight: 500;
-      }
-
-      &:hover {
-        background-color: #f5f5f5;
-      }
-
-      &.logout-btn {
-        color: #f44336;
-
-        .material-icons {
-          color: #f44336;
-        }
-
-        &:hover {
-          background-color: #ffebee;
-        }
-      }
-    }
-  }
 }
 
 // ==================== MAIN CONTENT ====================
@@ -703,7 +453,6 @@
   }
 
   // Dropdowns responsive
-  .notification-dropdown,
   .user-dropdown {
     position: fixed;
     top: 70px;
@@ -712,10 +461,6 @@
     min-width: auto;
     max-width: 400px;
     margin: 0 auto;
-  }
-
-  .notification-list {
-    max-height: 300px;
   }
 }
 
@@ -741,7 +486,6 @@
     padding: 0.5rem;
   }
 
-  .notification-dropdown,
   .user-dropdown {
     min-width: auto;
     max-width: calc(100vw - 1rem);
@@ -749,8 +493,7 @@
 }
 
 // ==================== SCROLL CUSTOMIZATION ====================
-.admin-content,
-.notification-list {
+.admin-content {
   &::-webkit-scrollbar {
     width: 8px;
   }

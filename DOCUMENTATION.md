@@ -414,6 +414,14 @@ rattachement d'une mairie.
   `environment.prod.ts` (API relative `/api`, servie par le même Nginx que la page).
 - Cartographie : MapLibre GL.
 
+**Où placer un composant** :
+
+| Dossier | Contenu | Règle |
+|---|---|---|
+| `admin/<page>/`, `public/<page>/`, `pages/<page>/` | les **pages** : un composant par route | un sous-composant propre à une page reste dans son dossier (ex. `admin/teams/equipe-messagerie-mesh/`) |
+| `layouts/<nom>-layout/` | les **coquilles** : composant de route parent avec le `<router-outlet>` et l'habillage | le layout assemble ses morceaux, placés dans son propre dossier (`public-layout/` : en-tête, pied de page, popup de géolocalisation ; `admin-layout/` : menu, cloche, § 6.4) |
+| `shared/components/` | les **briques réutilisées** par plusieurs pages ou layouts (cartes, modales, sélecteurs) | seulement à partir de deux utilisateurs ; sinon, près de l'unique utilisateur |
+
 ```bash
 cd frontend && npm ci && npm start     # sans Docker
 npm test                               # tests Karma
@@ -528,14 +536,35 @@ Deux notions de rôle coexistent, à ne pas confondre :
 
 ### 6.4 Menu de l'administration
 
-`layouts/admin-layout` construit le menu : des entrées `permanent` toujours visibles, puis des
-cadres repliables groupés **par moment d'usage** dans le cycle d'une crise (crise en cours,
-post-critique, préparation), sauf deux cadres transversaux (Communications / Radio,
-Administration). L'état replié est une préférence locale (`localStorage`). La visibilité suit
-le rôle effectif (§ 6.1) ; « Mes interventions » reste visible pour un chef d'équipe non
-institutionnel (route publique). Une nouvelle page doit y être ajoutée, sinon elle n'est
-atteignable que par son URL. La cloche interroge un résumé léger toutes les 20 s
-(`pollWhileVisible`) et ne recharge la liste que s'il a changé.
+```
+layouts/admin-layout/
+├── admin-layout.component.*     coquille : grille, en-tête (PROD/DEMO, suivi de position,
+│                                menu utilisateur), affichage mobile, <router-outlet>
+├── admin-nav.config.ts          entrées et cadres du menu : données pures
+├── admin-sidebar/               menu latéral : cadres repliables, filtrage par visibilité
+└── admin-notifications/         cloche : polling, liste, notifications navigateur
+```
+
+**Ajouter une page au menu = ajouter une entrée dans `admin-nav.config.ts`** (icône, libellé,
+route, cadre, `visibilite`) ; sinon elle n'est atteignable que par son URL. Les entrées
+`permanent` sont toujours en haut ; les autres sont rangées dans des cadres repliables groupés
+**par moment d'usage** dans le cycle d'une crise (crise en cours, post-critique, préparation),
+sauf deux cadres transversaux (Communications / Radio, Administration). L'état replié est une
+préférence locale (`localStorage`).
+
+`visibilite` décide qui voit l'entrée : `institutionnel` (défaut, rôle effectif, § 6.1),
+`tous` (ex. « Mes interventions », route publique pour un chef d'équipe non institutionnel),
+`sysadmin`, `validation-comptes`, `autorite-locale`, `registre-vulnerables`. Masquer une entrée
+ne protège rien : la route doit avoir la garde correspondante.
+
+La cloche interroge un résumé léger toutes les 20 s (`pollWhileVisible`) et ne recharge la
+liste que s'il a changé. Son état ouvert/fermé appartient au layout, qui garantit qu'une seule
+liste déroulante est ouverte à la fois.
+
+Styles : ce qui place un bloc dans la grille (`grid-area`, position fixe sur mobile) reste dans
+`admin-layout.component.scss`, car il s'applique à la balise du composant enfant ; l'intérieur
+de chaque bloc est stylé dans le composant lui-même (encapsulation Angular). Le mode réduit
+passe par la classe `collapsed` posée sur `<app-admin-sidebar>` (`:host(.collapsed)`).
 
 ### 6.5 Simulation d'inondation (page)
 
@@ -900,7 +929,7 @@ Variables CI (protégées et masquées) : `HARBOR_URL`, `HARBOR_PROJECT`, `HARBO
   dans `core/urls.py` + permissions + tests pytest dans le bon dossier de domaine
   (`core/tests/<domaine>/`, règle de choix au § 11.1).
 - Frontend : nouvelle page = composant standalone + route `loadComponent` dans le groupe adéquat
-  + entrée dans le menu admin (§ 6.4) ; rafraîchissement périodique via `pollWhileVisible`.
+  + entrée dans `admin-nav.config.ts` (§ 6.4) ; rafraîchissement périodique via `pollWhileVisible`.
 - Pas de code mort laissé en commentaire (ancienne implémentation, CSS désactivé) : git le garde.
 - Toute route ajoutée à `proxy/nginx.conf` est reportée dans `proxy/nginx.dev.conf`.
 - Avant de pousser : tests ciblés, `docker compose config`, et `docker compose build` des images

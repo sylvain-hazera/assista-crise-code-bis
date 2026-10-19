@@ -1,0 +1,39 @@
+<button class="icon-button" (click)="basculer()" aria-label="Notifications">
+  <span class="material-icons">notifications</span>
+  @if (nonLues > 0) {
+    <span class="notification-badge">{{ nonLues }}</span>
+  }
+</button>
+
+@if (ouvert) {
+  <div class="notification-dropdown">
+    <div class="dropdown-header">
+      <h3>Notifications</h3>
+      <button
+        class="close-btn"
+        (click)="fermer()"
+        aria-label="Fermer les notifications">
+        <span class="material-icons">close</span>
+      </button>
+    </div>
+
+    <div class="notification-list">
+      @for (notification of notifications; track notification.id) {
+        <div class="notification-item" [class.unread]="!notification.lu" (click)="onNotificationClick(notification)">
+          <span class="material-icons" [class.warning]="!notification.lu" [class.info]="notification.lu">
+            {{ notification.lu ? 'notifications_none' : 'notifications_active' }}
+          </span>
+          <div class="notification-content">
+            <p class="notification-title">{{ notification.titre }}</p>
+            <p class="notification-time">{{ notificationTime(notification.date_creation) }}</p>
+          </div>
+        </div>
+      } @empty {
+        <div class="notification-empty">
+          <span class="material-icons">notifications_none</span>
+          <p>Aucune notification</p>
+        </div>
+      }
+    </div>
+  </div>
+}

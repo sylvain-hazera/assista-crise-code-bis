@@ -21,7 +21,9 @@ pièges connus). Résumé des points à respecter :
   serializer + ViewSet enregistré dans `core/urls.py` + permissions + tests ; respecter
   `EnvironmentScopedModel` (isolation PROD/DEMO) et `zone_scoping.py`.
 - **Frontend** : pages en composants standalone chargés par `loadComponent` dans
-  `public/public.routes.ts` ou `admin/admin.routes.ts`.
+  `public/public.routes.ts` ou `admin/admin.routes.ts` ; une page admin s'ajoute au menu dans
+  `layouts/admin-layout/admin-nav.config.ts`. Un composant ne va dans `shared/components/` que
+  s'il sert à au moins deux pages ou layouts (DOCUMENTATION.md, § 6).
 - **Proxy** : toute route ajoutée à `proxy/nginx.conf` doit l'être aussi dans `proxy/nginx.dev.conf`.
 - **Sécurité** : jamais de secret dans le code ou git (`.env`, `secrets/`) ; ne pas publier de
   nouveau port en production.

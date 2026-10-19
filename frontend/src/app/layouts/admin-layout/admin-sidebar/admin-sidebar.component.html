@@ -1,0 +1,74 @@
+<nav class="sidebar-nav">
+  @for (item of itemsPermanents; track item.route) {
+    <a
+      [routerLink]="item.route"
+      routerLinkActive="active"
+      class="nav-item"
+      [title]="item.label"
+      (click)="navigation.emit()">
+      <span class="material-icons">{{ item.icon }}</span>
+      <span class="nav-label">{{ item.label }}</span>
+    </a>
+  }
+
+  @if (collapsed) {
+    <!-- Mode réduit (icônes seules) : pas de cadres repliables sans libellé, tout est à plat. -->
+    @for (groupe of groupesNav; track groupe.id) {
+      @for (item of itemsDuGroupe(groupe.id); track item.route) {
+        <a
+          [routerLink]="item.route"
+          routerLinkActive="active"
+          class="nav-item"
+          [title]="item.label"
+          (click)="navigation.emit()">
+          <span class="material-icons">{{ item.icon }}</span>
+          <span class="nav-label">{{ item.label }}</span>
+        </a>
+      }
+    }
+  } @else {
+    @for (groupe of groupesNav; track groupe.id) {
+      @if (itemsDuGroupe(groupe.id).length > 0) {
+        <div class="nav-groupe" [class.ouvert]="estGroupeOuvert(groupe.id)">
+          <button type="button" class="nav-groupe-header" (click)="toggleGroupe(groupe.id)">
+            <span class="material-icons">{{ groupe.icon }}</span>
+            <span class="nav-label">{{ groupe.label }}</span>
+            <span class="material-icons chevron">{{ estGroupeOuvert(groupe.id) ? 'expand_less' : 'expand_more' }}</span>
+          </button>
+          @if (estGroupeOuvert(groupe.id)) {
+            <div class="nav-groupe-items">
+              @for (item of itemsDuGroupe(groupe.id); track item.route) {
+                <a
+                  [routerLink]="item.route"
+                  routerLinkActive="active"
+                  class="nav-item nav-item-sous"
+                  [title]="item.label"
+                  (click)="navigation.emit()">
+                  <span class="material-icons">{{ item.icon }}</span>
+                  <span class="nav-label">{{ item.label }}</span>
+                </a>
+              }
+            </div>
+          }
+        </div>
+      }
+    }
+  }
+</nav>
+
+<div class="sidebar-footer">
+  <a
+    routerLink="/settings"
+    routerLinkActive="active"
+    class="nav-item"
+    title="Paramètres"
+    (click)="navigation.emit()">
+    <span class="material-icons">settings</span>
+    <span class="nav-label">Paramètres</span>
+  </a>
+
+  <button class="nav-item logout-btn" (click)="deconnexion.emit()" title="Déconnexion">
+    <span class="material-icons">logout</span>
+    <span class="nav-label">Déconnexion</span>
+  </button>
+</div>
