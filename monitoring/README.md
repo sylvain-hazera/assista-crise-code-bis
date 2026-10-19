@@ -54,7 +54,21 @@ docker compose exec db psql -U "$DB_USER" -d assista-db -c "ALTER USER monitorin
 docker compose exec grafana grafana cli admin reset-admin-password '<grafana_admin_password.txt>'
 ```
 
-## Mise en production
+## Production réelle (.114)
+
+Décrite par `docker-compose.114.yml` (voir DOCUMENTATION.md, § 12.3), pas par les étapes
+ci-dessous :
+
+1. `scripts/114/preparer-monitoring.sh` : secrets dans `~/.config/assista-crise/secrets/` et rôle
+   PostgreSQL `monitoring` (idempotent).
+2. `scripts/114/deployer.sh prometheus alertmanager grafana postgres-exporter nginx-exporter cadvisor node-exporter blackbox-exporter`.
+3. Grafana : http://172.16.1.114:3000 (LAN), `admin` / `grafana_admin_password.txt`.
+
+Différences avec la procédure générique : `prometheus.114.yml` (sans mosquitto, non déployé sur
+.114) ; Alertmanager lit `~/.config/assista-crise/monitoring/alertmanager.114.yml` (hors dépôt :
+destinataires réels, Watchdog non relié à healthchecks.io tant qu'aucun check n'est créé).
+
+## Mise en production (VM neuve)
 
 1. Remplacer le `TODO` (adresse de l'équipe) dans `alertmanager/alertmanager.prod.yml`, puis
    construire et pousser les images (CI sur `prod` ou `./deploy_harbor.sh`).

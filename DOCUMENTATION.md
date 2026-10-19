@@ -437,8 +437,15 @@ Variables CI (protégées et masquées) : `HARBOR_URL`, `HARBOR_PROJECT`, `HARBO
 
 ### 12.3 Production réelle
 
-- `.114` est relancée **à la main**, derrière le WAF `ac_waf` ; `docker-compose.prod.yml` sert à
-  une reconstruction et doit rester cohérent avec elle.
+- `.114` est décrite par **`docker-compose.114.yml`** (source de vérité depuis le 19/10/2026 :
+  tous les conteneurs, monitoring compris, nommés `ac_<service>`, images locales
+  `assista-crise-<service>:prod`, réseaux/volumes/secrets existants en `external`).
+  Déployer : `scripts/114/deployer.sh <service>...` (build + recréation + reload du proxy).
+  Migration initiale depuis les anciens `docker run` : `scripts/114/migrer-vers-compose.sh`
+  (retour arrière : `scripts/114/annuler-migration-compose.sh`). Monitoring :
+  `scripts/114/preparer-monitoring.sh` (secrets + rôle PostgreSQL `monitoring`), Grafana sur
+  http://172.16.1.114:3000 (LAN). `docker-compose.prod.yml` sert à une reconstruction from
+  scratch et doit rester cohérent avec lui.
 - Images construites par la CI ou par `./deploy_harbor.sh` (build + push manuel) ;
   `./build-prod.sh` construit et lance la version de prod en local.
 - Préparation d'une VM pour le monitoring : voir [monitoring/README.md](monitoring/README.md).

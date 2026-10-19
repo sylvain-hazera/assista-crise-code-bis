@@ -180,6 +180,9 @@ export class AdminLayoutComponent implements OnInit, OnDestroy {
 
     { icon: 'group', label: 'Utilisateurs', route: '/admin/utilisateurs', groupe: 'administration' },
 
+    // Grafana (demande utilisateur du 19/10) : administrateurs de la plateforme uniquement.
+    { icon: 'monitor_heart', label: 'Monitoring', route: '/admin/monitoring', groupe: 'administration' },
+
     { icon: 'fact_check', label: 'Main courante', route: '/admin/main-courante', groupe: 'crise' },
 
     // Comptes Secours organisés en attente (auto-inscription bloquée jusqu'à décision d'un
@@ -386,7 +389,7 @@ export class AdminLayoutComponent implements OnInit, OnDestroy {
    * visible (route publique pour un chef d'équipe possiblement non institutionnel, voir
    * navItems). Tout le reste : masqué si le rôle effectif courant n'est pas institutionnel. */
   isNavItemVisible(item: NavItem): boolean {
-    if (item.label === 'Utilisateurs' || item.label === 'Main courante') return this.isSysAdmin();
+    if (item.label === 'Utilisateurs' || item.label === 'Main courante' || item.label === 'Monitoring') return this.isSysAdmin();
     if (item.label === 'Mes interventions') return true;
     if (item.label === 'Validations de comptes') {
       const role = this.authService.getEffectiveRole();

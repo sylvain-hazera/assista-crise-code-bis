@@ -1,6 +1,7 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenBlacklistView
+from .grafana_acces import GrafanaSessionView, grafana_verifier
 from .views import (
     ChangePasswordView, PasswordResetRequestView, PasswordResetConfirmView, MyTokenObtainPairView, MyTokenRefreshView, RegisterView, InstitutionValidationView, UserMeView,
     AccountActivationView, MagicLoginView, MaPositionView, PositionsEquipesView,
@@ -249,6 +250,8 @@ urlpatterns = [
     path('reset-password/request/', PasswordResetRequestView.as_view(), name='reset_password_request'),
     path('reset-password/<str:uidb64>/<str:token>/', PasswordResetConfirmView.as_view(), name='reset_password_confirm'),
     path('stats/dashboard/', DashboardStatsView.as_view(), name='dashboard_stats'),
+    path('monitoring/grafana-session/', GrafanaSessionView.as_view(), name='grafana_session'),
+    path('monitoring/grafana-verifier/', grafana_verifier, name='grafana_verifier'),
     path('mesh-local/detecter/', MeshLocalDetecterView.as_view(), name='mesh_local_detecter'),
     path('imports/apercu/', ImportApercuView.as_view(), name='import_apercu'),
     path('imports/personnel-communal/', ImportPersonnelCommunalView.as_view(), name='import_personnel_communal'),
