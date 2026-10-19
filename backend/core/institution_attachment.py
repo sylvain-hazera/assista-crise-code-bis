@@ -340,11 +340,18 @@ def attach_secours_user_to_institution(user, request=None):
     - "rcsc" : la réserve n'est pas sa propre institution, elle est rattachée à la Mairie déjà
       existante de la commune déclarée (recherche par commune_code) — jamais créée à la volée
       (une RCSC sans mairie enregistrée ne doit pas produire une fausse mairie).
-    - tout autre type (ou aucun) : ne fait rien, comportement inchangé.
+    - tout autre type (ex: un agent de SDIS qui a choisi "Secours organisés" plutôt
+      qu'"Institution" à l'inscription) : même résolution que le parcours Institution (domaine
+      déjà connu, puis annuaire officiel, voir find_institution_for_pending_user) --
+      l'approbation par un humain de confiance tient lieu ici de la confirmation explicite que
+      l'utilisateur fait lui-même sur l'autre parcours. Avant ce correctif (préparation du POC
+      SDIS 40, 20/10) : rien n'était rattaché ET les pending_* étaient effacés juste après --
+      compte actif sans institution ni accès démo, sans plus aucune trace de ce qu'il avait
+      déclaré. Sans correspondance, les pending_* sont désormais conservés pour un
+      rattachement manuel.
 
-    Retourne l'institution rattachée, ou None (soit parce que le type n'est ni aasc ni rcsc,
-    soit parce qu'aucune mairie n'a pu être trouvée pour une RCSC — à l'appelant de décider
-    quoi faire dans ce dernier cas, ex: notifier pour un rattachement manuel)."""
+    Retourne l'institution rattachée, ou None (aucune correspondance trouvée -- à l'appelant de
+    décider quoi faire, ex: notifier pour un rattachement manuel)."""
     pending_type = (user.pending_institution_type or '').strip().lower()
     matched_institution = None
 
@@ -393,6 +400,22 @@ def attach_secours_user_to_institution(user, request=None):
                     commentaire=f"Rattachement RCSC de {user.email} à {matched_institution.nom}",
                 )
             grant_institution_and_demo_access(user, matched_institution, request)
+
+    else:
+        matched_institution = find_institution_for_pending_user(user, request)
+        if matched_institution is None:
+            return None
+        contact, contact_created = _get_or_create_contact_institution(matched_institution, user, 'Membre')
+        if contact_created and request is not None:
+            audit_log(
+                request=request,
+                action_code="CREATION",
+                objet_type="ContactInstitution",
+                objet_id=contact.id,
+                commentaire=f"Rattachement de {user.email} à {matched_institution.nom} (approbation compte Secours organisés)",
+            )
+        grant_institution_and_demo_access(user, matched_institution, request)
+        assign_default_institution_role(user, matched_institution)
 
     _clear_pending_institution_fields(user)
     return matched_institution

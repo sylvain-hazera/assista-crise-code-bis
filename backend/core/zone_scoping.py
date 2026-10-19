@@ -46,6 +46,18 @@ def _institution_commune_or_400(request):
     return institution.commune_code
 
 
+def _sdis_en_demo(request):
+    from .models import Environment
+    from .permissions import get_active_environment
+
+    institution = getattr(request.user, 'institution', None)
+    if institution is None or not institution.type_id:
+        return False
+    if (institution.type.code or '').upper() != 'SDIS':
+        return False
+    return get_active_environment(request) == Environment.DEMO
+
+
 def _institution_secteur_or_400(request):
     """(niveau, code) du secteur consultable par l'institution de l'utilisateur appelant.
     `institution.secteur_override` (posé manuellement, usage test uniquement — voir le champ)
@@ -53,7 +65,15 @@ def _institution_secteur_or_400(request):
     l'institution (epci_code/departement_code/region_code, dénormalisés par Institution.save()
     depuis commune_code) — jamais recalculé ici. "national" ne renvoie aucun code (pas de
     filtre géographique). Retourne une Response 400 prête à renvoyer si l'institution n'a pas
-    de commune, ou si le secteur demandé (override compris) n'est pas renseigné."""
+    de commune, ou si le secteur demandé (override compris) n'est pas renseigné.
+
+    Zone DEMO : un SDIS y a une portée NATIONALE (demande utilisateur du 19/10, POC SDIS 40) --
+    les jeux de démonstration sont répartis sur plusieurs départements (Isère, Loire,
+    Gironde...), un SDIS limité à son propre département n'y verrait souvent rien. Zone PROD
+    inchangée (département)."""
+    if _sdis_en_demo(request):
+        return "national", None
+
     commune_code = _institution_commune_or_400(request)
     if isinstance(commune_code, Response):
         return commune_code

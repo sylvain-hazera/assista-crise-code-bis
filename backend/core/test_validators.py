@@ -246,11 +246,12 @@ def test_extract_domain_candidates_reads_email_and_website():
 @pytest.mark.django_db
 @patch("core.auth_validation.InstitutionEmailValidator._search_annuaire")
 def test_annuaire_match_validates_domain_not_covered_by_regex(mock_search):
-    """sdis33.fr n'est reconnu par aucun motif de validate_email_domain : l'annuaire doit
-    quand même confirmer l'inscription quand il connaît le domaine officiel de l'institution."""
+    """L'annuaire reste la voie prioritaire quand il connaît le domaine officiel de
+    l'institution. (sdis33.fr n'était à l'origine couvert par aucun motif de
+    validate_email_domain -- les domaines sdisXX.fr y ont été ajoutés le 19/10 comme filet de
+    secours en cas de panne de l'annuaire, voir test_validate_institution_account_sdis_sans_
+    annuaire ; ce test vérifie toujours que l'annuaire passe en premier.)"""
     mock_search.return_value = [ANNUAIRE_SDIS_RECORD]
-
-    assert InstitutionEmailValidator.validate_email_domain("agent@sdis33.fr")[0] is False
 
     valid, message, details = InstitutionEmailValidator.validate_institution_account(
         email="agent@sdis33.fr",

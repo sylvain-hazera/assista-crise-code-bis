@@ -52,6 +52,7 @@ from PIL.ExifTags import TAGS, GPSTAGS
 
 from .alertes_pcs import preparer_checklist_pcs, envoyer_notifications
 from .audit import audit_log, get_client_ip, send_mail_logged, send_mail_with_attachment_logged
+from .notifications_admin import notifier_administrateurs
 from .export import build_crisis_export_zip
 from .institution_attachment import (
     find_institution_for_pending_user, attach_user_with_role,
@@ -1525,34 +1526,23 @@ class UserViewSet(viewsets.ModelViewSet):
                     logger.exception("Registration email failed for user %s", user.pk)
                     EMAILS_FAILED.labels(kind="registration_pending").inc()
                 
-                # Notifier les administrateurs
-                admin_emails = User.objects.filter(
-                    type='ADMIN', 
-                    is_active=True
-                ).values_list('email', flat=True)
-                
-                if admin_emails:
-                    try:
-                        send_mail_logged(
-                            request,
-                            subject=f"Nouvelle demande de validation - {user.get_type_display()}",
-                            message=(
-                                f"Un nouveau compte nécessite votre validation :\n\n"
-                                f"- Nom : {user.first_name} {user.last_name}\n"
-                                f"- Email : {user.email}\n"
-                                f"- Type : {user.get_type_display()}\n"
-                                f"- Code postal : {user.postal_code or 'Non renseigné'}\n\n"
-                                f"Connectez-vous au dashboard pour valider ou rejeter ce compte.\n\n"
-                                "Cordialement,\n"
-                                "Système Assista-Crise"
-                            ),
-                            from_email=None,
-                            recipient_list=list(admin_emails),
-                            fail_silently=False,
-                        )
-                    except Exception:
-                        logger.exception("Admin notification email failed for user %s", user.pk)
-                        EMAILS_FAILED.labels(kind="admin_notification").inc()
+                # Notifier les administrateurs (voir core/notifications_admin.py -- hors
+                # adresses factices des comptes démo, jamais d'exception propagée).
+                notifier_administrateurs(
+                    f"Compte en attente de validation - {user.get_type_display()}",
+                    (
+                        f"Un nouveau compte nécessite votre validation :\n\n"
+                        f"- Nom : {user.first_name} {user.last_name}\n"
+                        f"- Email : {user.email}\n"
+                        f"- Type : {user.get_type_display()}\n"
+                        f"- Institution déclarée : {user.pending_institution_name or 'non renseignée'}"
+                        f" ({user.pending_institution_type or 'type non renseigné'})\n"
+                        f"- Commune : {user.pending_commune_name or 'non renseignée'}\n"
+                        f"- Code postal : {user.postal_code or 'Non renseigné'}\n\n"
+                        f"Valider ou rejeter ce compte : {settings.SERVER_URL.rstrip('/')}/admin/validations-comptes"
+                    ),
+                    request=request,
+                )
 
                 if getattr(user, 'type', None) in {'AUT_LOCALE', 'SECOURS', 'ADMIN'}:
                     try:
@@ -1775,15 +1765,21 @@ class UserViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_403_FORBIDDEN
             )
 
+        # Un compte "Secours organisés" est créé is_active=False (seul champ qui bloque vraiment
+        # la connexion, voir UserSerializer.create) -- l'ancien filtre is_active=True le rendait
+        # invisible ici, donc impossible à valider depuis cette page (constaté le 19/10 en
+        # préparant le POC SDIS 40). Distingué d'un compte REJETÉ (même état
+        # enabled/is_active) par sa demande d'institution encore en attente, que reject_account
+        # efface désormais.
+        en_attente = Q(enabled=False) & (
+            Q(is_active=True)
+            | (Q(type=UserRole.ORGANIZED_RESCUE) & Q(pending_institution_type__isnull=False) & ~Q(pending_institution_type=''))
+        )
         # Les admins voient tout, les institutions voient leur code postal
         if role == UserRole.ADMINISTRATOR:
-            pending_users = User.objects.filter(enabled=False, is_active=True)
+            pending_users = User.objects.filter(en_attente)
         else:
-            pending_users = User.objects.filter(
-                enabled=False, 
-                is_active=True,
-                postal_code=user.postal_code
-            )
+            pending_users = User.objects.filter(en_attente, postal_code=user.postal_code)
         
         serializer = self.get_serializer(pending_users, many=True)
         return Response(serializer.data)
@@ -1918,8 +1914,14 @@ class UserViewSet(viewsets.ModelViewSet):
             logger.exception("Rejection email failed for user %s", user_to_reject.pk)
             EMAILS_FAILED.labels(kind="account_rejected").inc()
         
-        # Désactiver le compte (ou le supprimer)
+        # Désactiver le compte (ou le supprimer). Demande d'institution effacée : marque le
+        # compte comme traité, sinon un compte "Secours organisés" rejeté resterait listé dans
+        # pending_validations (même état enabled/is_active qu'un compte encore en attente).
         user_to_reject.is_active = False
+        user_to_reject.pending_institution_name = None
+        user_to_reject.pending_institution_type = None
+        user_to_reject.pending_commune_name = None
+        user_to_reject.pending_commune_code = None
         user_to_reject.save()
         return Response({
             'message': 'Compte rejeté',

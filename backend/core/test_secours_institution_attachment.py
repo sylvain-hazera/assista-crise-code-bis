@@ -10,6 +10,7 @@ from core.institution_attachment import attach_secours_user_to_institution
 from core.models import (
     ContactInstitution,
     Institution,
+    InstitutionDomaine,
     InstitutionType,
     User,
 )
@@ -161,3 +162,69 @@ class TestRegistrationPersistsPendingFieldsForSecours:
         user = User.objects.get(id=response.data["user"]["id"])
         assert user.pending_institution_type == "rcsc"
         assert user.pending_commune_code == "38185"
+
+
+def _make_pending_sdis(email="agent@sdis40.fr"):
+    return User.objects.create_user(
+        username=email, email=email, password="Test1234!", type="SECOURS", enabled=False,
+        postal_code="40000",
+        pending_institution_type="sdis",
+        pending_institution_name="SDIS des Landes",
+        pending_commune_code="40192",
+        pending_commune_name="Mont-de-Marsan",
+    )
+
+
+@pytest.mark.django_db
+class TestAutreTypeSecoursAttachment:
+    """Agent de SDIS ayant choisi "Secours organisés" (et non "Institution") à l'inscription --
+    cas attendu pour le POC SDIS 40 du 20/10. Avant correctif : compte approuvé sans institution
+    ni accès démo, et pending_* effacés."""
+
+    def test_approve_account_attaches_sdis_via_known_domain(self, api_client, admin):
+        sdis_type, _ = InstitutionType.objects.get_or_create(code="sdis", defaults={"libelle": "SDIS"})
+        institution = Institution.objects.create(nom="SDIS Landes test", type=sdis_type, actif=True)
+        InstitutionDomaine.objects.create(institution=institution, domaine="sdis40.fr", valide=True)
+        pending = _make_pending_sdis()
+
+        api_client.force_authenticate(user=admin)
+        with patch("django.core.mail.send_mail"):
+            response = api_client.post(reverse("user-approve-account", kwargs={"pk": pending.id}))
+
+        assert response.status_code == status.HTTP_200_OK
+        pending.refresh_from_db()
+        assert pending.is_active is True
+        assert pending.institution_id == institution.id
+        assert pending.demo_role == "SECOURS"
+        assert ContactInstitution.objects.filter(institution=institution, utilisateur=pending, actif=True).exists()
+        assert pending.pending_institution_name is None
+
+    @patch("core.auth_validation.InstitutionEmailValidator._search_annuaire", return_value=None)
+    def test_sans_correspondance_conserve_les_pending(self, mock_search, admin):
+        pending = _make_pending_sdis(email="agent@sdis-inconnu.fr")
+
+        assert attach_secours_user_to_institution(pending) is None
+
+        pending.refresh_from_db()
+        assert pending.institution_id is None
+        assert pending.pending_institution_name == "SDIS des Landes"
+        assert pending.pending_institution_type == "sdis"
+
+
+def test_validate_email_domain_accepte_sdis_sans_annuaire():
+    from core.auth_validation import InstitutionEmailValidator
+    for email in ("agent@sdis40.fr", "agent@sdis2a.fr", "agent@sdis971.fr", "agent@mail.sdis40.fr"):
+        assert InstitutionEmailValidator.validate_email_domain(email)[0], email
+    assert not InstitutionEmailValidator.validate_email_domain("agent@gmail.com")[0]
+
+
+@pytest.mark.django_db
+@patch("core.auth_validation.InstitutionEmailValidator._search_annuaire", return_value=None)
+def test_validate_institution_account_sdis_sans_annuaire(mock_search):
+    """Annuaire indisponible (simulé) : un email @sdis40.fr de type sdis doit rester accepté."""
+    from core.auth_validation import InstitutionEmailValidator
+    ok, message, _ = InstitutionEmailValidator.validate_institution_account(
+        email="agent@sdis40.fr", institution_name="SDIS des Landes", institution_type="sdis",
+        commune_name="Mont-de-Marsan", commune_code="40192",
+    )
+    assert ok, message

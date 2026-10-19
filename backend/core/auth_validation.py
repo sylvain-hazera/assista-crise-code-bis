@@ -418,6 +418,12 @@ class InstitutionEmailValidator:
             r"^.*\.ars(?:[.-][a-z0-9-]+)*\.sante\.fr$",
             r"^(?:chu|chr)(?:[.-][a-z0-9-]+)*(?:\.fr)?$",
             r"^.*-(?:chu|chr)(?:[.-][a-z0-9-]+)*(?:\.fr)?$",
+            # SDIS (sdis40.fr, sdis2a.fr, sdis971.fr...) : jusqu'ici couverts UNIQUEMENT par la
+            # voie annuaire de validate_institution_account -- une panne/lenteur de
+            # api-lannuaire.service-public.gouv.fr faisait alors échouer toute inscription SDIS
+            # (constaté en préparant le POC SDIS 40 du 20/10).
+            r"^sdis(?:[.-]?[a-z0-9-]+)*\.fr$",
+            r"^.*\.sdis[a-z0-9-]*\.fr$",
         ]
 
         for pattern in allowed_patterns:

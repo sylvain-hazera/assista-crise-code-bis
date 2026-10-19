@@ -1,13 +1,16 @@
 import logging
 
-from .models import AuditAction, AuditLog
+from .models import AuditAction, AuditLog, Environment
 from .permissions import get_active_environment
 
 logger = logging.getLogger(__name__)
 
 
 def get_client_ip(request):
-    """Adresse IP réelle du client, en tenant compte du proxy nginx (X-Forwarded-For/X-Real-IP)."""
+    """Adresse IP réelle du client, en tenant compte du proxy nginx (X-Forwarded-For/X-Real-IP).
+    None hors requête HTTP (signal, commande, shell -- voir audit_log)."""
+    if request is None:
+        return None
     forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
     if forwarded_for:
         return forwarded_for.split(",")[0].strip()
@@ -44,7 +47,10 @@ def audit_log(
             utilisateur=request.user if is_authenticated else None,
             institution=getattr(request.user, "institution", None) if is_authenticated else None,
             adresse_ip=get_client_ip(request),
-            user_agent=request.META.get("HTTP_USER_AGENT"),
+            # request=None : appel hors requête HTTP (signal post_save, commande, shell) --
+            # journalisé quand même plutôt que d'échouer (constaté le 16/10 avec un email
+            # envoyé depuis le shell : la ligne de main courante était silencieusement perdue).
+            user_agent=request.META.get("HTTP_USER_AGENT") if request is not None else None,
             action=action,
             objet_type=objet_type,
             objet_id=objet_id,
@@ -53,7 +59,7 @@ def audit_log(
             nouvel_etat=nouvel_etat,
             commentaire=commentaire,
             succes=succes,
-            environment=get_active_environment(request),
+            environment=get_active_environment(request) if request is not None else Environment.PROD,
         )
         # Marque la requête comme déjà journalisée : voir AuditTraceMiddleware, qui n'écrit sa
         # propre ligne générique (LECTURE/CREATION/MODIFICATION/SUPPRESSION par méthode HTTP)
