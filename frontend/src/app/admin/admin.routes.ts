@@ -1,99 +1,54 @@
-import { InstitutionsComponent } from './institutions/institutions.component';
-import { CrisesComponent } from './crises/crises.component';
-import { CentresComponent } from './centres/centres.component';
-import { LogementIntervenantsComponent } from './logement-intervenants/logement-intervenants.component';
-import { StocksComparaisonComponent } from './stocks-comparaison/stocks-comparaison.component';
-import { ZonesComponent } from './zones/zones.component';
-import { PersonnesVulnerablesComponent } from './personnes-vulnerables/personnes-vulnerables.component';
-import { SimulationInondationComponent } from './simulation-inondation/simulation-inondation.component';
-import { PlansComponent } from './plans/plans.component';
 import { Routes } from '@angular/router';
-import { DashboardComponent } from './dashboard/dashboard.component';
-import { CelluleCriseComponent } from './cellule-crise/cellule-crise.component';
-import { ReportingComponent } from './reporting/reporting.component';
-import { TeamsComponent } from './teams/teams.component';
-import { MapComponent } from '../shared/components/common/map/map.component';
-import { ResultsComponent } from './results/results.component';
-import { UsersComponent } from './users/users.component';
-import { AuditLogsComponent } from './audit-logs/audit-logs.component';
 import { sysAdminGuard, institutionalEffectiveGuard, accountValidationGuard, zonesGuard, vulnerabilitesGuard } from '../core/guards/admin.guard';
 import { AccesRefuseComponent } from './acces-refuse/acces-refuse.component';
-import { AccountValidationsComponent } from './account-validations/account-validations.component';
-import { CompetencesComponent } from './competences/competences.component';
-import { AffectationsComponent } from './affectations/affectations.component';
-import { DossiersComponent } from './dossiers/dossiers.component';
-import { MissionsComponent } from './missions/missions.component';
-import { VueMairieComponent } from './vue-mairie/vue-mairie.component';
-import { ImportPersonnelComponent } from './import-personnel/import-personnel.component';
-import { ImportInstitutionsComponent } from './import-institutions/import-institutions.component';
-import { ImportCorrespondantsPCSComponent } from './import-correspondants-pcs/import-correspondants-pcs.component';
-import { ImportInterlocuteursPCSComponent } from './import-interlocuteurs-pcs/import-interlocuteurs-pcs.component';
-import { ImportMaterielPointComponent } from './import-materiel-point/import-materiel-point.component';
-import { DeclarationsSecuriteComponent } from './declarations-securite/declarations-securite.component';
-import { BesoinsComponent } from './besoins/besoins.component';
-import { BesoinsCompetencesComponent } from './besoins-competences/besoins-competences.component';
-import { MaterielComponent } from './materiel/materiel.component';
-import { RessourcesMobiliseesComponent } from './ressources-mobilisees/ressources-mobilisees.component';
-import { CriseDemarrageComponent } from './crise-demarrage/crise-demarrage.component';
-import { MeshcoreCompanionsComponent } from './meshcore-companions/meshcore-companions.component';
-import { SatellitesComponent } from './satellites/satellites.component';
-import { SupervisionPcCriseComponent } from './supervision-pc-crise/supervision-pc-crise.component';
-import { DemandesMobilisationComponent } from './demandes-mobilisation/demandes-mobilisation.component';
-import { ConflitsSynchronisationComponent } from './conflits-synchronisation/conflits-synchronisation.component';
-import { MeshcoreCanauxComponent } from './meshcore-canaux/meshcore-canaux.component';
-import { MeshtasticCompanionsComponent } from './meshtastic-companions/meshtastic-companions.component';
-import { MeshtasticCanauxComponent } from './meshtastic-canaux/meshtastic-canaux.component';
-import { RecherchesPersonnesComponent } from '../pages/recherches-personnes/recherches-personnes.component';
-import { RecherchePersonneCreateComponent } from '../pages/recherche-personne-create/recherche-personne-create.component';
-import { RecherchePersonneDetailComponent } from '../pages/recherche-personne-detail/recherche-personne-detail.component';
 
 export const ADMIN_ROUTES: Routes = [
   { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
   { path: 'acces-refuse', component: AccesRefuseComponent },
-  { path: 'dashboard', component: DashboardComponent, canActivate: [institutionalEffectiveGuard] },
-  { path: 'cellule-crise', component: CelluleCriseComponent, canActivate: [institutionalEffectiveGuard] },
-  { path: 'signalements', component: ReportingComponent, canActivate: [institutionalEffectiveGuard] },
-  { path: 'dossiers', component: DossiersComponent, canActivate: [institutionalEffectiveGuard] },
-  { path: 'missions', component: MissionsComponent, canActivate: [institutionalEffectiveGuard] },
-  { path: 'vue-mairie', component: VueMairieComponent, canActivate: [institutionalEffectiveGuard] },
-  { path: 'import-personnel', component: ImportPersonnelComponent, canActivate: [institutionalEffectiveGuard] },
-  { path: 'import-institutions', component: ImportInstitutionsComponent, canActivate: [institutionalEffectiveGuard] },
-  { path: 'import-correspondants-pcs', component: ImportCorrespondantsPCSComponent, canActivate: [institutionalEffectiveGuard] },
-  { path: 'import-interlocuteurs-pcs', component: ImportInterlocuteursPCSComponent, canActivate: [institutionalEffectiveGuard] },
-  { path: 'import-materiel-point', component: ImportMaterielPointComponent, canActivate: [institutionalEffectiveGuard] },
-  { path: 'declarations-securite', component: DeclarationsSecuriteComponent, canActivate: [institutionalEffectiveGuard] },
-  { path: 'equipes', component: TeamsComponent, canActivate: [institutionalEffectiveGuard] },
-  { path: 'institutions', component: InstitutionsComponent, canActivate: [institutionalEffectiveGuard] },
-  { path: 'crises', component: CrisesComponent, canActivate: [institutionalEffectiveGuard] },
-  { path: 'crises/:crisisId/stocks', component: StocksComparaisonComponent, canActivate: [institutionalEffectiveGuard] },
-  { path: 'crises/:id/demarrage', component: CriseDemarrageComponent, canActivate: [institutionalEffectiveGuard] },
-  { path: 'meshcore-companions', component: MeshcoreCompanionsComponent, canActivate: [institutionalEffectiveGuard] },
-  { path: 'satellites', component: SatellitesComponent, canActivate: [institutionalEffectiveGuard] },
-  { path: 'supervision-pc-crise', component: SupervisionPcCriseComponent, canActivate: [institutionalEffectiveGuard] },
-  { path: 'demandes-mobilisation', component: DemandesMobilisationComponent, canActivate: [institutionalEffectiveGuard] },
-  { path: 'conflits-synchronisation', component: ConflitsSynchronisationComponent, canActivate: [institutionalEffectiveGuard] },
-  { path: 'meshcore-canaux', component: MeshcoreCanauxComponent, canActivate: [institutionalEffectiveGuard] },
-  { path: 'meshtastic-companions', component: MeshtasticCompanionsComponent, canActivate: [institutionalEffectiveGuard] },
-  { path: 'meshtastic-canaux', component: MeshtasticCanauxComponent, canActivate: [institutionalEffectiveGuard] },
-  { path: 'centres', component: CentresComponent, canActivate: [institutionalEffectiveGuard] },
-  { path: 'logement-intervenants', component: LogementIntervenantsComponent, canActivate: [institutionalEffectiveGuard] },
-  { path: 'zones', component: ZonesComponent, canActivate: [institutionalEffectiveGuard, zonesGuard] },
-  { path: 'personnes-vulnerables', component: PersonnesVulnerablesComponent, canActivate: [institutionalEffectiveGuard, vulnerabilitesGuard] },
-  { path: 'simulation-inondation', component: SimulationInondationComponent, canActivate: [institutionalEffectiveGuard] },
-  { path: 'plans', component: PlansComponent, canActivate: [institutionalEffectiveGuard] },
-  { path: 'carte', component: MapComponent, canActivate: [institutionalEffectiveGuard] },
-  { path: 'resultats', component: ResultsComponent, canActivate: [institutionalEffectiveGuard] },
-  { path: 'utilisateurs', component: UsersComponent, canActivate: [sysAdminGuard] },
-  { path: 'main-courante', component: AuditLogsComponent, canActivate: [sysAdminGuard] },
-  { path: 'validations-comptes', component: AccountValidationsComponent, canActivate: [accountValidationGuard] },
-  { path: 'competences', component: CompetencesComponent, canActivate: [institutionalEffectiveGuard] },
-  { path: 'besoins', component: BesoinsComponent, canActivate: [institutionalEffectiveGuard] },
-  { path: 'materiel', component: MaterielComponent, canActivate: [institutionalEffectiveGuard] },
-  { path: 'ressources-mobilisees', component: RessourcesMobiliseesComponent, canActivate: [institutionalEffectiveGuard] },
-  { path: 'correspondances', component: BesoinsCompetencesComponent, canActivate: [institutionalEffectiveGuard] },
-  { path: 'affectations', component: AffectationsComponent, canActivate: [institutionalEffectiveGuard] },
-  { path: 'recherches-personnes', component: RecherchesPersonnesComponent, canActivate: [institutionalEffectiveGuard] },
-  { path: 'recherches-personnes/new', component: RecherchePersonneCreateComponent, canActivate: [institutionalEffectiveGuard] },
-  { path: 'recherches-personnes/:id', component: RecherchePersonneDetailComponent, canActivate: [institutionalEffectiveGuard] },
+  { path: 'dashboard', loadComponent: () => import('./dashboard/dashboard.component').then(m => m.DashboardComponent), canActivate: [institutionalEffectiveGuard] },
+  { path: 'cellule-crise', loadComponent: () => import('./cellule-crise/cellule-crise.component').then(m => m.CelluleCriseComponent), canActivate: [institutionalEffectiveGuard] },
+  { path: 'signalements', loadComponent: () => import('./reporting/reporting.component').then(m => m.ReportingComponent), canActivate: [institutionalEffectiveGuard] },
+  { path: 'dossiers', loadComponent: () => import('./dossiers/dossiers.component').then(m => m.DossiersComponent), canActivate: [institutionalEffectiveGuard] },
+  { path: 'missions', loadComponent: () => import('./missions/missions.component').then(m => m.MissionsComponent), canActivate: [institutionalEffectiveGuard] },
+  { path: 'vue-mairie', loadComponent: () => import('./vue-mairie/vue-mairie.component').then(m => m.VueMairieComponent), canActivate: [institutionalEffectiveGuard] },
+  { path: 'import-personnel', loadComponent: () => import('./import-personnel/import-personnel.component').then(m => m.ImportPersonnelComponent), canActivate: [institutionalEffectiveGuard] },
+  { path: 'import-institutions', loadComponent: () => import('./import-institutions/import-institutions.component').then(m => m.ImportInstitutionsComponent), canActivate: [institutionalEffectiveGuard] },
+  { path: 'import-correspondants-pcs', loadComponent: () => import('./import-correspondants-pcs/import-correspondants-pcs.component').then(m => m.ImportCorrespondantsPCSComponent), canActivate: [institutionalEffectiveGuard] },
+  { path: 'import-interlocuteurs-pcs', loadComponent: () => import('./import-interlocuteurs-pcs/import-interlocuteurs-pcs.component').then(m => m.ImportInterlocuteursPCSComponent), canActivate: [institutionalEffectiveGuard] },
+  { path: 'import-materiel-point', loadComponent: () => import('./import-materiel-point/import-materiel-point.component').then(m => m.ImportMaterielPointComponent), canActivate: [institutionalEffectiveGuard] },
+  { path: 'declarations-securite', loadComponent: () => import('./declarations-securite/declarations-securite.component').then(m => m.DeclarationsSecuriteComponent), canActivate: [institutionalEffectiveGuard] },
+  { path: 'equipes', loadComponent: () => import('./teams/teams.component').then(m => m.TeamsComponent), canActivate: [institutionalEffectiveGuard] },
+  { path: 'institutions', loadComponent: () => import('./institutions/institutions.component').then(m => m.InstitutionsComponent), canActivate: [institutionalEffectiveGuard] },
+  { path: 'crises', loadComponent: () => import('./crises/crises.component').then(m => m.CrisesComponent), canActivate: [institutionalEffectiveGuard] },
+  { path: 'crises/:crisisId/stocks', loadComponent: () => import('./stocks-comparaison/stocks-comparaison.component').then(m => m.StocksComparaisonComponent), canActivate: [institutionalEffectiveGuard] },
+  { path: 'crises/:id/demarrage', loadComponent: () => import('./crise-demarrage/crise-demarrage.component').then(m => m.CriseDemarrageComponent), canActivate: [institutionalEffectiveGuard] },
+  { path: 'meshcore-companions', loadComponent: () => import('./meshcore-companions/meshcore-companions.component').then(m => m.MeshcoreCompanionsComponent), canActivate: [institutionalEffectiveGuard] },
+  { path: 'satellites', loadComponent: () => import('./satellites/satellites.component').then(m => m.SatellitesComponent), canActivate: [institutionalEffectiveGuard] },
+  { path: 'supervision-pc-crise', loadComponent: () => import('./supervision-pc-crise/supervision-pc-crise.component').then(m => m.SupervisionPcCriseComponent), canActivate: [institutionalEffectiveGuard] },
+  { path: 'demandes-mobilisation', loadComponent: () => import('./demandes-mobilisation/demandes-mobilisation.component').then(m => m.DemandesMobilisationComponent), canActivate: [institutionalEffectiveGuard] },
+  { path: 'conflits-synchronisation', loadComponent: () => import('./conflits-synchronisation/conflits-synchronisation.component').then(m => m.ConflitsSynchronisationComponent), canActivate: [institutionalEffectiveGuard] },
+  { path: 'meshcore-canaux', loadComponent: () => import('./meshcore-canaux/meshcore-canaux.component').then(m => m.MeshcoreCanauxComponent), canActivate: [institutionalEffectiveGuard] },
+  { path: 'meshtastic-companions', loadComponent: () => import('./meshtastic-companions/meshtastic-companions.component').then(m => m.MeshtasticCompanionsComponent), canActivate: [institutionalEffectiveGuard] },
+  { path: 'meshtastic-canaux', loadComponent: () => import('./meshtastic-canaux/meshtastic-canaux.component').then(m => m.MeshtasticCanauxComponent), canActivate: [institutionalEffectiveGuard] },
+  { path: 'centres', loadComponent: () => import('./centres/centres.component').then(m => m.CentresComponent), canActivate: [institutionalEffectiveGuard] },
+  { path: 'logement-intervenants', loadComponent: () => import('./logement-intervenants/logement-intervenants.component').then(m => m.LogementIntervenantsComponent), canActivate: [institutionalEffectiveGuard] },
+  { path: 'zones', loadComponent: () => import('./zones/zones.component').then(m => m.ZonesComponent), canActivate: [institutionalEffectiveGuard, zonesGuard] },
+  { path: 'personnes-vulnerables', loadComponent: () => import('./personnes-vulnerables/personnes-vulnerables.component').then(m => m.PersonnesVulnerablesComponent), canActivate: [institutionalEffectiveGuard, vulnerabilitesGuard] },
+  { path: 'simulation-inondation', loadComponent: () => import('./simulation-inondation/simulation-inondation.component').then(m => m.SimulationInondationComponent), canActivate: [institutionalEffectiveGuard, zonesGuard] },
+  { path: 'plans', loadComponent: () => import('./plans/plans.component').then(m => m.PlansComponent), canActivate: [institutionalEffectiveGuard] },
+  { path: 'carte', loadComponent: () => import('../shared/components/common/map/map.component').then(m => m.MapComponent), canActivate: [institutionalEffectiveGuard] },
+  { path: 'resultats', loadComponent: () => import('./results/results.component').then(m => m.ResultsComponent), canActivate: [institutionalEffectiveGuard] },
+  { path: 'utilisateurs', loadComponent: () => import('./users/users.component').then(m => m.UsersComponent), canActivate: [sysAdminGuard] },
+  { path: 'main-courante', loadComponent: () => import('./audit-logs/audit-logs.component').then(m => m.AuditLogsComponent), canActivate: [sysAdminGuard] },
+  { path: 'validations-comptes', loadComponent: () => import('./account-validations/account-validations.component').then(m => m.AccountValidationsComponent), canActivate: [accountValidationGuard] },
+  { path: 'competences', loadComponent: () => import('./competences/competences.component').then(m => m.CompetencesComponent), canActivate: [institutionalEffectiveGuard] },
+  { path: 'besoins', loadComponent: () => import('./besoins/besoins.component').then(m => m.BesoinsComponent), canActivate: [institutionalEffectiveGuard] },
+  { path: 'materiel', loadComponent: () => import('./materiel/materiel.component').then(m => m.MaterielComponent), canActivate: [institutionalEffectiveGuard] },
+  { path: 'ressources-mobilisees', loadComponent: () => import('./ressources-mobilisees/ressources-mobilisees.component').then(m => m.RessourcesMobiliseesComponent), canActivate: [institutionalEffectiveGuard] },
+  { path: 'correspondances', loadComponent: () => import('./besoins-competences/besoins-competences.component').then(m => m.BesoinsCompetencesComponent), canActivate: [institutionalEffectiveGuard] },
+  { path: 'affectations', loadComponent: () => import('./affectations/affectations.component').then(m => m.AffectationsComponent), canActivate: [institutionalEffectiveGuard] },
+  { path: 'recherches-personnes', loadComponent: () => import('../pages/recherches-personnes/recherches-personnes.component').then(m => m.RecherchesPersonnesComponent), canActivate: [institutionalEffectiveGuard] },
+  { path: 'recherches-personnes/new', loadComponent: () => import('../pages/recherche-personne-create/recherche-personne-create.component').then(m => m.RecherchePersonneCreateComponent), canActivate: [institutionalEffectiveGuard] },
+  { path: 'recherches-personnes/:id', loadComponent: () => import('../pages/recherche-personne-detail/recherche-personne-detail.component').then(m => m.RecherchePersonneDetailComponent), canActivate: [institutionalEffectiveGuard] },
 ];
 

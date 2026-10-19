@@ -406,8 +406,11 @@ rattachement d'une mairie.
 - `src/app/app.routes.ts` charge paresseusement deux groupes : `public/public.routes.ts`
   (accueil, carte, formulaires, suivi de dossier, connexion…) et `admin/admin.routes.ts`
   (tableau de bord, crises, dossiers, missions, équipes, institutions, matériel, satellites…).
-- Les pages sont des **composants standalone** chargés avec `loadComponent` : suivre ce modèle
-  pour toute nouvelle page.
+- Les pages sont des **composants standalone** chargés avec `loadComponent` : chacune a son
+  propre paquet JS, téléchargé à la première visite (page admin typique : quelques Ko à
+  25 Ko compressés). Suivre ce modèle pour toute nouvelle page ; `component:` est réservé aux
+  layouts et à `acces-refuse`. Pas de `PreloadAllModules` : le préchargement ignore les gardes
+  `canActivate` et ferait télécharger tout le code admin aux visiteurs publics.
 - `services/` : un service par ressource d'API ; `core/guards/` : authentification, rôle admin,
   compte activé ; `auth/interceptor/` : ajout du JWT.
 - `src/environments/` : `environment.ts` (dev, API sur `http://localhost:8000/api`) et
@@ -555,7 +558,9 @@ préférence locale (`localStorage`).
 `visibilite` décide qui voit l'entrée : `institutionnel` (défaut, rôle effectif, § 6.1),
 `tous` (ex. « Mes interventions », route publique pour un chef d'équipe non institutionnel),
 `sysadmin`, `validation-comptes`, `autorite-locale`, `registre-vulnerables`. Masquer une entrée
-ne protège rien : la route doit avoir la garde correspondante.
+ne protège rien : la route doit avoir la garde correspondante. Un test de la spec de
+`admin-sidebar` vérifie que chaque entrée `/admin/...` pointe vers une route existante et que
+cette route porte la garde associée à sa `visibilite`.
 
 La cloche interroge un résumé léger toutes les 20 s (`pollWhileVisible`) et ne recharge la
 liste que s'il a changé. Son état ouvert/fermé appartient au layout, qui garantit qu'une seule
