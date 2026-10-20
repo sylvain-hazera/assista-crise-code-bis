@@ -50,6 +50,54 @@ def _delegation_couvre_commune(delegation: DelegationCompetence, commune_code: s
     return False
 
 
+def _institution_couvre_commune(institution, commune_code: str) -> bool:
+    """Vrai si la commune tombe dans le SECTEUR effectif de l'institution (sa commune, son EPCI,
+    son département ou sa région), pas seulement sa commune exacte -- même découpage que
+    SECTEUR_CHAMP_PAR_NIVEAU (zone_scoping). Une AUT_LOCALE de niveau département (ex: Conseil
+    départemental) couvre ainsi toutes les communes de son département."""
+    niveau = institution.secteur_niveau_effectif
+    if niveau == "national":
+        return True
+    if not niveau or niveau == "commune":
+        return bool(institution.commune_code) and institution.commune_code == commune_code
+    if niveau == "departement":
+        # Pur calcul de chaîne (pas d'appel réseau) -- cas le plus courant.
+        return bool(institution.departement_code) and institution.departement_code == _departement_code(commune_code)
+    from .geo_lookup import commune_secteur_codes
+    secteurs = commune_secteur_codes(commune_code)
+    champ = {"epci": "epci_code", "region": "region_code"}.get(niveau)
+    if champ is None:
+        return False
+    code_institution = getattr(institution, champ, None)
+    return bool(code_institution) and code_institution == secteurs.get(champ)
+
+
+def peut_simuler_commune(request, commune_code: str) -> bool:
+    """Accès à l'outil « Simulation d'inondation » (planification préventive, PAS liée à une
+    crise -- distinct d'institution_accede_commune, qui vise le référencement des dégâts commune
+    par commune). Un acteur institutionnel couvre tout son SECTEUR (correctif du 20/10/2026 : un
+    Conseil départemental voit toutes les communes de son département, pas seulement sa commune
+    siège). En DEMO, il peut simuler n'importe quelle commune -- les jeux de démonstration sont
+    répartis sur plusieurs départements, même raison que la portée nationale des SDIS en démo."""
+    from .models import Environment, UserRole
+    from .permissions import INSTITUTIONAL_TYPES, get_active_environment, get_effective_role
+
+    user = getattr(request, "user", None)
+    if not (user and user.is_authenticated):
+        return False
+    role = get_effective_role(request)
+    if role == UserRole.ADMINISTRATOR:
+        return True
+    if role not in INSTITUTIONAL_TYPES:
+        return False
+    if get_active_environment(request) == Environment.DEMO:
+        return True
+    institution = getattr(user, "institution", None)
+    if institution is None:
+        return False
+    return _institution_couvre_commune(institution, commune_code)
+
+
 def institution_accede_commune(request, commune_code: str, crise=None) -> bool:
     """True si l'institution de l'appelant peut gérer les habitations de `commune_code` --
     ADMINISTRATOR voit toujours tout, une AUT_LOCALE sur sa propre commune, une institution

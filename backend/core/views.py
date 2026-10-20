@@ -5011,12 +5011,12 @@ class SimulationInondationView(generics.GenericAPIView):
     permission_classes = [IsInstitutionalActor]
 
     def get(self, request, commune_code):
-        from .habitations import institution_accede_commune
+        from .habitations import peut_simuler_commune
         from .inondation import paliers_en_cache
         from .models import TypeTacheInondation
         from .tasks import calculer_paliers_task
 
-        if not institution_accede_commune(request, commune_code):
+        if not peut_simuler_commune(request, commune_code):
             return Response(
                 {"error": "Vous n'avez pas accès à cette commune pour cet outil."},
                 status=status.HTTP_403_FORBIDDEN,
@@ -5038,12 +5038,12 @@ class SimulationInondationAdressesView(generics.GenericAPIView):
     permission_classes = [IsInstitutionalActor]
 
     def get(self, request, commune_code):
-        from .habitations import institution_accede_commune
+        from .habitations import peut_simuler_commune
         from .inondation import adresses_en_cache
         from .models import TypeTacheInondation
         from .tasks import charger_adresses_task
 
-        if not institution_accede_commune(request, commune_code):
+        if not peut_simuler_commune(request, commune_code):
             return Response(
                 {"error": "Vous n'avez pas accès à cette commune pour cet outil."},
                 status=status.HTTP_403_FORBIDDEN,
@@ -5064,12 +5064,12 @@ class SimulationRuissellementView(generics.GenericAPIView):
     permission_classes = [IsInstitutionalActor]
 
     def get(self, request, commune_code):
-        from .habitations import institution_accede_commune
+        from .habitations import peut_simuler_commune
         from .models import TypeTacheInondation
         from .ruissellement import ruissellement_en_cache
         from .tasks import calculer_ruissellement_task
 
-        if not institution_accede_commune(request, commune_code):
+        if not peut_simuler_commune(request, commune_code):
             return Response(
                 {"error": "Vous n'avez pas accès à cette commune pour cet outil."},
                 status=status.HTTP_403_FORBIDDEN,
@@ -5092,10 +5092,10 @@ class SimulationInondationNiveauObserveView(generics.GenericAPIView):
     permission_classes = [IsInstitutionalActor]
 
     def get(self, request, commune_code):
-        from .habitations import institution_accede_commune
+        from .habitations import peut_simuler_commune
         from .hydrometrie import niveau_observe_commune
 
-        if not institution_accede_commune(request, commune_code):
+        if not peut_simuler_commune(request, commune_code):
             return Response(
                 {"error": "Vous n'avez pas accès à cette commune pour cet outil."},
                 status=status.HTTP_403_FORBIDDEN,
