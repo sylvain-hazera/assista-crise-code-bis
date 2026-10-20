@@ -1,5 +1,6 @@
 import json
 import threading
+import time
 import urllib.parse
 import urllib.request
 
@@ -114,6 +115,35 @@ def commune_from_code(commune_code: str) -> str | None:
     return commune.nom
 
 
+# Mémo en mémoire (par processus) pour les variantes *_cached : sans lui, une liste de 500
+# demandes faisait 500 requêtes SQL identiques ou presque (mesuré le 20/10/2026 sur
+# /api/demandes/ : 365 lectures de core_commune). Un nom trouvé est gardé (le nom d'une commune
+# ne change pas) ; une absence seulement _MEMO_ABSENCE_S secondes, le temps qu'une résolution
+# (retrieve, tâche de fond) la comble. Plafonné : vidé d'un coup au-delà de _MEMO_MAX entrées.
+_MEMO_MAX = 50_000
+_MEMO_ABSENCE_S = 600
+_memo_nom_par_code: dict = {}
+_memo_nom_par_point: dict = {}
+
+
+def _lire_memo(memo: dict, cle):
+    """(trouvé, valeur) : une absence mémorisée expire après _MEMO_ABSENCE_S."""
+    entree = memo.get(cle)
+    if entree is None:
+        return False, None
+    valeur, expire = entree
+    if expire is not None and time.monotonic() > expire:
+        return False, None
+    return True, valeur
+
+
+def _memoriser(memo: dict, cle, valeur):
+    if len(memo) >= _MEMO_MAX:
+        memo.clear()
+    memo[cle] = (valeur, None if valeur else time.monotonic() + _MEMO_ABSENCE_S)
+    return valeur
+
+
 def commune_from_code_cached(commune_code: str) -> str | None:
     """Comme commune_from_code, mais jamais de résolution réseau ni d'écriture -- une simple
     lecture de ce qui est déjà en cache (ou None). Pour les contextes où déclencher un appel
@@ -125,7 +155,13 @@ def commune_from_code_cached(commune_code: str) -> str | None:
 
     if not commune_code:
         return None
-    return Commune.objects.filter(code=commune_code).values_list("nom", flat=True).first()
+    trouve, valeur = _lire_memo(_memo_nom_par_code, commune_code)
+    if trouve:
+        return valeur
+    return _memoriser(
+        _memo_nom_par_code, commune_code,
+        Commune.objects.filter(code=commune_code).values_list("nom", flat=True).first(),
+    )
 
 
 def commune_center_from_code(commune_code: str) -> dict:
@@ -274,8 +310,14 @@ def commune_from_point_cached(point) -> str | None:
     if point is None:
         return None
     lat, lon = round(point.y, 4), round(point.x, 4)
+    trouve, valeur = _lire_memo(_memo_nom_par_point, (lat, lon))
+    if trouve:
+        return valeur
     point_commune = PointCommune.objects.filter(lat=lat, lon=lon).select_related("commune").first()
-    return point_commune.commune.nom if point_commune and point_commune.commune_id else None
+    return _memoriser(
+        _memo_nom_par_point, (lat, lon),
+        point_commune.commune.nom if point_commune and point_commune.commune_id else None,
+    )
 
 
 def commune_code_from_point(point) -> str | None:

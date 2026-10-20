@@ -28,7 +28,7 @@ from django_filters import rest_framework as filters
 from rest_framework.filters import OrderingFilter
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import IntegrityError, transaction
-from django.db.models import Q, F, Prefetch, Count, Max
+from django.db.models import Q, F, Prefetch, Count, Exists, Max, OuterRef
 from django.db.models.functions import TruncDate
 from dateutil.relativedelta import relativedelta
 from django.contrib.gis.db.models.functions import Distance
@@ -1343,6 +1343,14 @@ class UserViewSet(viewsets.ModelViewSet):
                     institutions__institution_id__in=institution_ids,
                     institutions__actif=True,
                 ).distinct()
+            # Rattachement actif de chaque utilisateur en une requête pour toute la liste (voir
+            # UserSerializer._active_contact) plutôt qu'une par utilisateur.
+            queryset = queryset.prefetch_related(Prefetch(
+                'institutions',
+                queryset=ContactInstitution.objects.filter(actif=True)
+                    .select_related('institution__type').order_by('pk'),
+                to_attr='contacts_actifs_prefetch',
+            ))
         return queryset
 
     def get_permissions(self):
@@ -3565,6 +3573,12 @@ class RequestViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             # Opt-in (?scope=zone) : voir _widen_zone_for_reporting — n'affecte que
             # ReportingComponent, pas les autres consommateurs de cette même liste.
             qs = _widen_zone_for_reporting(self.request, qs)
+            # est_affectee en une sous-requête pour toute la liste, au lieu d'une requête par
+            # demande (483 sur la page Équipes en démo, mesuré le 20/10/2026) -- voir
+            # RequestSerializer.get_est_affectee, qui n'utilise que nb_equipes_affectees > 0.
+            qs = qs.annotate(nb_equipes_affectees=Exists(
+                Team.assigned_requests.through.objects.filter(request_id=OuterRef('pk'))
+            ))
         return qs
 
     @action(detail=True, methods=["post"], permission_classes=[IsInstitutionalActor])

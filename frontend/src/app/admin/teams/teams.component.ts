@@ -151,30 +151,68 @@ export class TeamsComponent implements OnInit {
   showDesactives = false;
 
   // ── Load ─────────────────────────────────────────────────────
+  /** En deux temps (page lente, demande utilisateur du 20/10/2026) : la page s'affiche dès que
+   * les équipes et les petites listes dont dépendent les cartes sont là ; offres, demandes,
+   * dossiers et points -- de loin le plus lourd, ~1,9 Mo en démo -- arrivent ensuite, puis les
+   * missions affichées sont recalculées (voir chargerDonneesSecondaires). */
   private loadRemoteData(): void {
     this.isLoading = true;
     forkJoin({
       users:    this.userService.getAll(),
       crisis:   this.crisisService.getAll(),
-      // exclude_type=Bénévolat : l'annuaire permanent de bénévoles n'a pas vocation à être
-      // proposé comme ressource affectable à une équipe (voir ReportingComponent.loadAll).
-      offers:   this.offerService.getAll({ exclude_type: 'Bénévolat' }),
-      requests: this.requestService.getAll(),
-      teams:    this.teamService.getAll(this.showDesactives),       // ← ajouté ici
-      dossiers: this.dossierService.getAll(),
+      teams:    this.teamService.getAll(this.showDesactives),
       competences: this.competenceService.getAll(),
       besoins: this.besoinService.getAll(),
       roles: this.roleOperationnelService.getAll(),
       affectationsRoles: this.affectationRoleService.getAll(),
       institutions: this.institutionService.getAll(),
-      points: this.pointOperationnelService.getAll(),
       pointTypes: this.pointTypeService.getAll(),
     }).subscribe({
-      next: ({ users, crisis, offers, requests, teams, dossiers, competences, besoins, roles, affectationsRoles, institutions, points, pointTypes }) => {
+      next: ({ users, crisis, teams, competences, besoins, roles, affectationsRoles, institutions, pointTypes }) => {
         this.users    = users;
         this.crisis   = crisis;
-        this.offers   = offers;
+        this.competences = competences;
+        this.besoins = besoins;
+        this.roles = roles;
+        this.affectationsRoles = affectationsRoles;
+        this.institutions = institutions;
+        this.pointTypes = pointTypes;
+        this.teams    = teams.map(t => ({ ...t, missions: this.buildMissions(t) }));
+        this.isLoading = false;
+        this.openTeamFromQueryParam();
+        this.chargerDonneesSecondaires();
+      },
+      error: () => {
+        this.showError('Impossible de charger les données.');
+        this.isLoading = false;
+      },
+    });
+  }
+
+  /** Vrai tant que offres/demandes/dossiers/points ne sont pas arrivés : les pastilles de
+   * mission des cartes et les ressources de la fiche équipe se complètent à leur arrivée. */
+  donneesSecondairesEnCours = false;
+
+  private chargerDonneesSecondaires(): void {
+    this.donneesSecondairesEnCours = true;
+    forkJoin({
+      // exclude_type=Bénévolat : l'annuaire permanent de bénévoles n'a pas vocation à être
+      // proposé comme ressource affectable à une équipe (voir ReportingComponent.loadAll).
+      offers:   this.offerService.getAll({ exclude_type: 'Bénévolat' }),
+      requests: this.requestService.getAll(),
+      dossiers: this.dossierService.getAll(),
+      points: this.pointOperationnelService.getAll(),
+    }).subscribe({
+      next: ({ offers, requests, dossiers, points }) => {
+        this.offers = offers;
         this.requests = requests;
+        this.dossiers = dossiers;
+        this.points = points;
+        this.teams = this.teams.map(t => ({ ...t, missions: this.buildMissions(t) }));
+        if (this.selectedTeam) {
+          this.selectedTeam = { ...this.selectedTeam, missions: this.buildMissions(this.selectedTeam) };
+        }
+        this.donneesSecondairesEnCours = false;
         // Scopé aux offres déjà chargées ci-dessus plutôt qu'un getAll() séparé (27k+ lignes
         // mesurées sur cette table, sans rapport avec le nombre d'offres réellement affichées
         // ici) -- voir DisponibiliteOffreService.getByOffers.
@@ -182,21 +220,10 @@ export class TeamsComponent implements OnInit {
           next: (disponibilites) => { this.disponibilites = disponibilites; },
           error: () => {},
         });
-        this.dossiers = dossiers;
-        this.competences = competences;
-        this.besoins = besoins;
-        this.roles = roles;
-        this.affectationsRoles = affectationsRoles;
-        this.institutions = institutions;
-        this.points = points;
-        this.pointTypes = pointTypes;
-        this.teams    = teams.map(t => ({ ...t, missions: this.buildMissions(t) }));
-        this.isLoading = false;
-        this.openTeamFromQueryParam();
       },
       error: () => {
-        this.showError('Impossible de charger les données.');
-        this.isLoading = false;
+        this.donneesSecondairesEnCours = false;
+        this.showError('Impossible de charger les offres, demandes et dossiers des équipes.');
       },
     });
   }

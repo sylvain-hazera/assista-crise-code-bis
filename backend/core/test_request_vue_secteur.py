@@ -143,3 +143,26 @@ class TestRequestVueSecteur:
         response = client.get(reverse("request-vue-secteur"))
 
         assert response.status_code == 403
+
+
+@pytest.mark.django_db
+def test_liste_demandes_est_affectee_sans_requete_par_ligne(create_user, commune_grenoble, django_assert_max_num_queries):
+    # /api/demandes/ annote l'affectation (RequestViewSet.get_queryset, action list) : même
+    # résultat qu'en vue_secteur, sans une requête SQL par demande (page Équipes, 20/10/2026).
+    institution = _make_institution("CR", commune_grenoble.code)
+    user = create_user(email="region-liste@test.fr", username="region-liste@test.fr", type="AUT_LOCALE", institution=institution)
+    affectee = _make_request(commune_grenoble, title="Affectée")
+    for i in range(10):
+        _make_request(commune_grenoble, title=f"Non affectée {i}")
+    Team.objects.create(name="Équipe liste").assigned_requests.add(affectee)
+
+    client = APIClient()
+    client.force_authenticate(user=user)
+    client.get(reverse("request-list"))   # réchauffe les mémos de communes
+    with django_assert_max_num_queries(15):
+        response = client.get(reverse("request-list"))
+
+    assert response.status_code == 200
+    par_titre = {r["title"]: r["est_affectee"] for r in response.data}
+    assert par_titre["Affectée"] is True
+    assert par_titre["Non affectée 3"] is False

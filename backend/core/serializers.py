@@ -264,7 +264,11 @@ class UserSerializer(serializers.ModelSerializer):
         cached = getattr(obj, '_active_contact_cache', 'unset')
         if cached != 'unset':
             return cached
-        contact = obj.institutions.filter(actif=True).select_related('institution__type').first()
+        prefetch = getattr(obj, 'contacts_actifs_prefetch', None)   # UserViewSet, en liste
+        if prefetch is not None:
+            contact = prefetch[0] if prefetch else None
+        else:
+            contact = obj.institutions.filter(actif=True).select_related('institution__type').first()
         obj._active_contact_cache = contact
         return contact
 
@@ -295,6 +299,15 @@ class UserSerializer(serializers.ModelSerializer):
         institution = getattr(obj, 'institution', None)
         if institution is None or not institution.commune_code:
             return None
+        # Aléas lus une fois par commune pour toute une liste d'utilisateurs (souvent de la
+        # même institution) au lieu de 2 lectures par utilisateur.
+        memo = self.context.setdefault('_risques_par_commune', {})
+        if institution.commune_code not in memo:
+            memo[institution.commune_code] = (
+                commune_risques(institution.commune_code),
+                commune_risques_date_maj(institution.commune_code),
+            )
+        risques, risques_date_maj = memo[institution.commune_code]
         return {
             "niveau": institution.secteur_niveau_effectif,
             "nom": institution.secteur_nom,
@@ -303,8 +316,8 @@ class UserSerializer(serializers.ModelSerializer):
             # mairie) : pour un secteur plus large (EPCI/département/région), ce sont pour
             # l'instant les seuls risques de LA commune de l'institution, pas l'agrégation de
             # tout le secteur (voir commune_risques).
-            "risques": commune_risques(institution.commune_code),
-            "risques_date_maj": commune_risques_date_maj(institution.commune_code),
+            "risques": risques,
+            "risques_date_maj": risques_date_maj,
         }
 
     def get_needs_institution_setup(self, obj):
@@ -1850,6 +1863,12 @@ class DossierSerializer(serializers.ModelSerializer):
         origine = self._origine(obj)
         if not origine or not origine.location:
             return None
+        # En liste : lecture du cache seule, jamais d'appel réseau (même règle que
+        # RequestSerializer.get_commune).
+        view = self.context.get('view')
+        if view is not None and getattr(view, 'action', None) == 'list':
+            code = obj.demande.commune_code if obj.demande else None
+            return commune_from_code_cached(code) or commune_from_point_cached(origine.location)
         if obj.demande and obj.demande.commune_code:
             return commune_from_code(obj.demande.commune_code) or commune_from_point(origine.location)
         return commune_from_point(origine.location)
@@ -1886,7 +1905,13 @@ class DossierSerializer(serializers.ModelSerializer):
         # dossier (ou un institutionnel) peut lire CE dossier — pas de garde supplémentaire ici,
         # seul le masquage DEMO ci-dessous s'applique (comme les autres contacts de ce
         # serializer).
-        regulateurs = _regulateurs_pour_dossier(obj, obj.equipe)
+        # Mêmes régulateurs pour tous les dossiers d'une même compétence (ou d'une même
+        # équipe) : calculés une fois par liste plutôt que 3 requêtes par dossier.
+        memo = self.context.setdefault('_regulateurs_par_cle', {})
+        cle = ('competence', obj.competence_id) if obj.competence_id else ('equipe', obj.equipe_id)
+        if cle not in memo:
+            memo[cle] = list(_regulateurs_pour_dossier(obj, obj.equipe))
+        regulateurs = memo[cle]
         return [
             {
                 'id': str(r.id),
