@@ -2,8 +2,8 @@
 // admin-layout.component.scss.
 
 :host {
-  background: white;
-  border-bottom: 1px solid #e0e0e0;
+  background: var(--ac-surface, white);
+  border-bottom: 1px solid var(--ac-border, #e0e0e0);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -27,7 +27,7 @@
   font-weight: 700;
   letter-spacing: 0.04em;
   font-size: 0.95rem;
-  color: #431407;
+  color: #431407; // theme: fixe (sur le fond orange du mode démo)
   background: rgba(255, 255, 255, 0.35);
   padding: 0.35rem 0.9rem;
   border-radius: 999px;
@@ -39,9 +39,9 @@
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  border: 1px solid #d1d5db;
-  background: #f3f4f6;
-  color: #374151;
+  border: 1px solid var(--ac-border-strong, #d1d5db);
+  background: var(--ac-surface-2, #f3f4f6);
+  color: var(--ac-text, #374151);
   padding: 0.4rem 0.8rem;
   border-radius: 999px;
   cursor: pointer;
@@ -51,7 +51,7 @@
 
   .material-icons { font-size: 1.1rem; }
 
-  &:hover { background: #e5e7eb; }
+  &:hover { background: var(--ac-surface-3, #e5e7eb); }
 
   &.demo-mode {
     background: #431407;
@@ -77,12 +77,12 @@
     transition: background-color 0.3s;
 
     &:hover {
-      background-color: #f5f5f5;
+      background-color: var(--ac-surface-2, #f5f5f5);
     }
 
     .material-icons {
       font-size: 24px;
-      color: #333;
+      color: var(--ac-text, #333);
     }
   }
 
@@ -99,7 +99,7 @@
     }
 
     .logo-text {
-      color: #333;
+      color: var(--ac-text, #333);
     }
   }
 }
@@ -118,12 +118,12 @@
     transition: background-color 0.3s;
 
     &:hover {
-      background-color: #f5f5f5;
+      background-color: var(--ac-surface-2, #f5f5f5);
     }
 
     .material-icons {
       font-size: 24px;
-      color: #666;
+      color: var(--ac-text-muted, #666);
     }
   }
 
@@ -137,12 +137,12 @@
     transition: background-color 0.3s;
 
     &:hover {
-      background-color: #f5f5f5;
+      background-color: var(--ac-surface-2, #f5f5f5);
     }
 
     .material-icons {
       font-size: 24px;
-      color: #666;
+      color: var(--ac-text-muted, #666);
     }
 
     &.position-toggle.actif .material-icons {
@@ -167,12 +167,12 @@
     transition: background-color 0.3s;
 
     &:hover {
-      background-color: #f5f5f5;
+      background-color: var(--ac-surface-2, #f5f5f5);
     }
 
     .company-name {
       font-weight: 500;
-      color: #333;
+      color: var(--ac-text, #333);
     }
 
     .user-icon {
@@ -186,7 +186,7 @@
   position: absolute;
   top: calc(100% + 10px);
   right: 0;
-  background: white;
+  background: var(--ac-surface, white);
   border-radius: 12px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
   min-width: 320px;
@@ -196,7 +196,7 @@
 
 .dropdown-header {
   padding: 1.5rem;
-  border-bottom: 1px solid #e0e0e0;
+  border-bottom: 1px solid var(--ac-border, #e0e0e0);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -215,7 +215,7 @@
     border-radius: 4px;
 
     &:hover {
-      background-color: #f5f5f5;
+      background-color: var(--ac-surface-2, #f5f5f5);
     }
 
     .material-icons {
@@ -240,7 +240,7 @@
 
     .user-email {
       margin: 0.25rem 0 0 0;
-      color: #666;
+      color: var(--ac-text-muted, #666);
       font-size: 0.85rem;
     }
   }
@@ -248,7 +248,7 @@
 
 .dropdown-divider {
   height: 1px;
-  background-color: #e0e0e0;
+  background-color: var(--ac-surface-3, #e0e0e0);
   margin: 0.5rem 0;
 }
 
@@ -267,22 +267,22 @@
 
   .material-icons {
     font-size: 20px;
-    color: #666;
+    color: var(--ac-text-muted, #666);
   }
 
   &:hover {
-    background-color: #f5f5f5;
+    background-color: var(--ac-surface-2, #f5f5f5);
   }
 
   &.logout {
-    color: #f44336;
+    color: var(--ac-red-text, #f44336);
 
     .material-icons {
-      color: #f44336;
+      color: var(--ac-red-text, #f44336);
     }
 
     &:hover {
-      background-color: #ffebee;
+      background-color: var(--ac-red-bg, #ffebee);
     }
   }
 }

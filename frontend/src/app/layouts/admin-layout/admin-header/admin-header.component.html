@@ -38,9 +38,22 @@
     </button>
   }
 
+  <button
+    class="icon-button theme-toggle"
+    (click)="theme.basculer()"
+    [title]="theme.sombre ? 'Passer en mode clair' : 'Passer en mode sombre'"
+    [attr.aria-label]="theme.sombre ? 'Passer en mode clair' : 'Passer en mode sombre'">
+    <span class="material-icons">{{ theme.sombre ? 'light_mode' : 'dark_mode' }}</span>
+  </button>
+
   @if (!isMobile) {
-    <button class="desktop-toggle" (click)="toggleSidebar.emit()" aria-label="Réduire ou étendre le menu">
-      <span class="material-icons">{{ sidebarCollapsed ? 'menu_open' : 'menu' }}</span>
+    <button
+      class="desktop-toggle"
+      (click)="toggleSidebar.emit()"
+      [title]="sidebarFermee ? 'Afficher le menu' : 'Masquer le menu'"
+      [attr.aria-label]="sidebarFermee ? 'Afficher le menu' : 'Masquer le menu'"
+      [attr.aria-expanded]="!sidebarFermee">
+      <span class="material-icons">{{ sidebarFermee ? 'menu' : 'menu_open' }}</span>
     </button>
   }
 

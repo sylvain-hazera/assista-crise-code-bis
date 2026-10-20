@@ -18,7 +18,7 @@
 
   .subtitle {
     margin: .25rem 0 0;
-    color: #6b7280;
+    color: var(--ac-text-muted, #6b7280);
     font-size: .9rem;
   }
 }
@@ -48,13 +48,13 @@
   margin-bottom: 1rem;
   font-size: .9rem;
 
-  &.toast-err { background: #fef2f2; color: #b91c1c; }
+  &.toast-err { background: var(--ac-red-bg, #fef2f2); color: var(--ac-red-text, #b91c1c); }
 }
 
 .loading, .empty {
   padding: 2rem;
   text-align: center;
-  color: #6b7280;
+  color: var(--ac-text-muted, #6b7280);
 }
 
 .toolbar {
@@ -68,19 +68,19 @@
 
 .scope-toggle {
   display: inline-flex;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--ac-border-strong, #d1d5db);
   border-radius: 8px;
   overflow: hidden;
 
   button {
     border: none;
-    background: #fff;
-    color: #374151;
+    background: var(--ac-surface, #fff);
+    color: var(--ac-text, #374151);
     padding: .45rem 1rem;
     font-size: .85rem;
     cursor: pointer;
 
-    &:not(:last-child) { border-right: 1px solid #d1d5db; }
+    &:not(:last-child) { border-right: 1px solid var(--ac-border-strong, #d1d5db); }
 
     &.active {
       background: #2563eb;
@@ -93,13 +93,13 @@
   display: flex;
   align-items: center;
   gap: .5rem;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--ac-border-strong, #d1d5db);
   border-radius: 6px;
   padding: .4rem .75rem;
   flex: 1;
   max-width: 320px;
 
-  .material-icons { color: #9ca3af; font-size: 1.1rem; }
+  .material-icons { color: var(--ac-text-subtle, #9ca3af); font-size: 1.1rem; }
 
   input {
     border: none;
@@ -112,27 +112,27 @@
 .data-table {
   width: 100%;
   border-collapse: collapse;
-  background: #fff;
+  background: var(--ac-surface, #fff);
 
   th, td {
     text-align: left;
     padding: .65rem .75rem;
-    border-bottom: 1px solid #f0f0f0;
+    border-bottom: 1px solid var(--ac-border, #f0f0f0);
   }
 
   th {
-    color: #6b7280;
+    color: var(--ac-text-muted, #6b7280);
     font-weight: 600;
     font-size: .8rem;
     text-transform: uppercase;
   }
 
-  tbody tr:hover { background: #f9fafb; cursor: pointer; }
+  tbody tr:hover { background: var(--ac-surface-2, #f9fafb); cursor: pointer; }
 
   td.actions {
     display: flex;
     justify-content: flex-end;
     cursor: default;
-    color: #9ca3af;
+    color: var(--ac-text-subtle, #9ca3af);
   }
 }

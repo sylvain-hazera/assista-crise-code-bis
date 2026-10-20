@@ -2,7 +2,7 @@
   margin-bottom: 1.2rem;
 
   h2 { display: flex; align-items: center; gap: .6rem; margin: 0 0 .3rem; }
-  .page-hint { color: #6b7280; font-size: .9rem; margin: 0; max-width: 68ch; }
+  .page-hint { color: var(--ac-text-muted, #6b7280); font-size: .9rem; margin: 0; max-width: 68ch; }
 }
 
 .badge-test {
@@ -10,15 +10,15 @@
   text-transform: uppercase;
   letter-spacing: .04em;
   font-weight: 700;
-  color: #92400e;
-  background: #fef3c7;
+  color: var(--ac-orange-text, #92400e);
+  background: var(--ac-amber-bg, #fef3c7);
   border-radius: 999px;
   padding: .15rem .6rem;
 }
 
 .create-panel {
-  background: #f9fafb;
-  border: 1px solid #e5e7eb;
+  background: var(--ac-surface-2, #f9fafb);
+  border: 1px solid var(--ac-border, #e5e7eb);
   border-radius: 8px;
   padding: 1rem 1.2rem 1.2rem;
   margin-bottom: 1.5rem;
@@ -42,7 +42,7 @@
 
   select {
     padding: .5rem .6rem;
-    border: 1px solid #e5e7eb;
+    border: 1px solid var(--ac-border, #e5e7eb);
     border-radius: 6px;
   }
 }
@@ -51,7 +51,7 @@
   flex: 1;
   min-width: 180px;
   padding: .5rem .7rem;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--ac-border, #e5e7eb);
   border-radius: 6px;
   font-size: .9rem;
 }
@@ -76,7 +76,7 @@
   summary {
     cursor: pointer;
     font-size: .85rem;
-    color: var(--muted, #6b7280);
+    color: var(--muted, var(--ac-text-muted, #6b7280));
     font-weight: 600;
   }
   &[open] summary { margin-bottom: .75rem; }
@@ -85,9 +85,9 @@
 .btn-danger-sm {
   padding: .3rem .7rem;
   border-radius: 6px;
-  border: 1px solid #e5e7eb;
-  background: #fff;
-  color: #b91c1c;
+  border: 1px solid var(--ac-border, #e5e7eb);
+  background: var(--ac-surface, #fff);
+  color: var(--ac-red-text, #b91c1c);
   cursor: pointer;
   font-size: .8rem;
 }
@@ -102,18 +102,18 @@
   th, td {
     text-align: left;
     padding: .6rem .8rem;
-    border-bottom: 1px solid #f0f0f0;
+    border-bottom: 1px solid var(--ac-border, #f0f0f0);
   }
   th {
-    color: #6b7280;
+    color: var(--ac-text-muted, #6b7280);
     font-size: .74rem;
     text-transform: uppercase;
     letter-spacing: .04em;
   }
   .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: .85em; }
-  .id-cell { cursor: pointer; color: #6b7280; }
-  .id-cell:hover { color: #2563eb; text-decoration: underline; }
-  .empty { color: #9ca3af; text-align: center; }
+  .id-cell { cursor: pointer; color: var(--ac-text-muted, #6b7280); }
+  .id-cell:hover { color: var(--ac-blue-text, #2563eb); text-decoration: underline; }
+  .empty { color: var(--ac-text-subtle, #9ca3af); text-align: center; }
 }
 
 .statut {
@@ -122,21 +122,21 @@
   font-size: .78rem;
   font-weight: 600;
 
-  &.statut-ok { background: #dcfce7; color: #15803d; }
-  &.statut-erreur { background: #fee2e2; color: #b91c1c; }
-  &.statut-inconnu { background: #f3f4f6; color: #6b7280; }
+  &.statut-ok { background: var(--ac-green-bg, #dcfce7); color: var(--ac-green-text, #15803d); }
+  &.statut-erreur { background: var(--ac-red-bg, #fee2e2); color: var(--ac-red-text, #b91c1c); }
+  &.statut-inconnu { background: var(--ac-surface-2, #f3f4f6); color: var(--ac-text-muted, #6b7280); }
 }
 
-.error-message { color: #dc3545; margin-bottom: 1rem; }
-.success-message { color: #15803d; margin-bottom: 1rem; }
+.error-message { color: var(--ac-red-text, #dc3545); margin-bottom: 1rem; }
+.success-message { color: var(--ac-green-text, #15803d); margin-bottom: 1rem; }
 
 .banner-info {
   display: flex;
   align-items: center;
   gap: .6rem;
-  background: #ecfeff;
-  color: #0e7490;
-  border: 1px solid #a5f3fc;
+  background: var(--ac-teal-bg, #ecfeff);
+  color: var(--ac-teal-text, #0e7490);
+  border: 1px solid var(--ac-teal-border, #a5f3fc);
   border-radius: 8px;
   padding: .7rem 1rem;
   font-size: .85rem;
@@ -149,8 +149,8 @@
     padding: .3rem .8rem;
     border-radius: 6px;
     border: 1px solid #0891b2;
-    background: #fff;
-    color: #0891b2;
+    background: var(--ac-surface, #fff);
+    color: var(--ac-teal-text, #0891b2);
     cursor: pointer;
     font-size: .8rem;
     &:disabled { opacity: .5; cursor: not-allowed; }

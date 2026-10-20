@@ -1,8 +1,9 @@
-import { Component, OnDestroy, OnInit } from '@angular/core';
+import { Component, OnDestroy, OnInit, effect, untracked } from '@angular/core';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { ActivatedRoute, Router } from '@angular/router';
 import { environment } from '../../../environments/environment';
+import { ThemeService } from '../../services/theme.service';
 
 export interface OngletSupervision {
   id: string;
@@ -55,7 +56,14 @@ export class MonitoringComponent implements OnInit, OnDestroy {
     private sanitizer: DomSanitizer,
     private route: ActivatedRoute,
     private router: Router,
-  ) {}
+    private themeService: ThemeService,
+  ) {
+    // Grafana suit le thème de l'application (bouton de l'en-tête) : recharge le tableau.
+    effect(() => {
+      this.themeService.theme();
+      untracked(() => this.majUrl());
+    });
+  }
 
   ngOnInit(): void {
     const id = this.route.snapshot.queryParamMap.get('onglet');
@@ -103,7 +111,8 @@ export class MonitoringComponent implements OnInit, OnDestroy {
     const variable = this.onglet.conteneurs
       ? `&var-monitoring=${this.afficherMonitoring ? 'aucun' : 'monitoring'}`
       : '';
-    this.urlBrute = `${environment.grafanaUrl}/d/${this.onglet.uid}/?orgId=1&theme=light${variable}&auth_token=${this.jeton}`;
+    const theme = this.themeService.sombre ? 'dark' : 'light';
+    this.urlBrute = `${environment.grafanaUrl}/d/${this.onglet.uid}/?orgId=1&theme=${theme}${variable}&auth_token=${this.jeton}`;
     // URL construite ici à partir de constantes et du jeton du backend, jamais d'une saisie
     this.url = this.sanitizer.bypassSecurityTrustResourceUrl(`${this.urlBrute}&kiosk`);
   }

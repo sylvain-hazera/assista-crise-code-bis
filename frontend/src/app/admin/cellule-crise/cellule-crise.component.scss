@@ -14,18 +14,18 @@
 
   select {
     padding: 0.5rem 0.8rem;
-    border: 1px solid #d1d5db;
+    border: 1px solid var(--ac-border-strong, #d1d5db);
     border-radius: 8px;
     font-size: 0.9rem;
   }
 }
 
-.hint { color: #9ca3af; font-size: 0.85rem; }
-.hint-petit { color: #9ca3af; font-size: 0.78rem; }
+.hint { color: var(--ac-text-subtle, #9ca3af); font-size: 0.85rem; }
+.hint-petit { color: var(--ac-text-subtle, #9ca3af); font-size: 0.78rem; }
 
 /* ── Barres repliables (messages / urgences) ───────────────────────── */
 .barre-repliable {
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--ac-border, #e5e7eb);
   border-radius: 10px;
   margin-bottom: 0.75rem;
   overflow: hidden;
@@ -37,14 +37,14 @@
   align-items: center;
   gap: 0.5rem;
   padding: 0.6rem 1rem;
-  background: #f9fafb;
+  background: var(--ac-surface-2, #f9fafb);
   border: none;
   cursor: pointer;
   font-size: 0.9rem;
   font-weight: 600;
-  color: #374151;
+  color: var(--ac-text, #374151);
 
-  .material-icons { font-size: 18px; color: #6b7280; }
+  .material-icons { font-size: 18px; color: var(--ac-text-muted, #6b7280); }
   .chevron { margin-left: auto; }
 }
 
@@ -68,16 +68,16 @@
 
 .urgence-item {
   font-size: 0.85rem;
-  color: #1f2937;
+  color: var(--ac-text, #1f2937);
   padding: 0.4rem 0.6rem;
-  background: #fef2f2;
+  background: var(--ac-red-bg, #fef2f2);
   border-radius: 6px;
-  .vu { display: block; font-size: 0.72rem; color: #15803d; margin-top: 0.15rem; }
+  .vu { display: block; font-size: 0.72rem; color: var(--ac-green-text, #15803d); margin-top: 0.15rem; }
 }
 
 /* ── Panneaux ───────────────────────────────────────────────────────── */
 .panneau {
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--ac-border, #e5e7eb);
   border-radius: 12px;
   margin-bottom: 1rem;
   overflow: hidden;
@@ -89,13 +89,13 @@
   align-items: center;
   gap: 0.6rem;
   padding: 0.8rem 1.1rem;
-  background: #f3f4f6;
+  background: var(--ac-surface-2, #f3f4f6);
   border: none;
   cursor: pointer;
 
   h2 { margin: 0; font-size: 1.05rem; }
-  .material-icons:first-child { color: #7c3aed; }
-  .chevron { margin-left: auto; color: #6b7280; }
+  .material-icons:first-child { color: var(--ac-purple-text, #7c3aed); }
+  .chevron { margin-left: auto; color: var(--ac-text-muted, #6b7280); }
 }
 
 .panneau-corps { padding: 1rem 1.1rem; }
@@ -109,9 +109,9 @@
 
   button {
     padding: 0.4rem 0.8rem;
-    border: 1px solid #d1d5db;
+    border: 1px solid var(--ac-border-strong, #d1d5db);
     border-radius: 999px;
-    background: #fff;
+    background: var(--ac-surface, #fff);
     cursor: pointer;
     font-size: 0.82rem;
     &.actif { background: #7c3aed; color: #fff; border-color: #7c3aed; }
@@ -131,15 +131,15 @@
   border-collapse: collapse;
   font-size: 0.82rem;
 
-  th, td { text-align: left; padding: 0.4rem 0.5rem; border-bottom: 1px solid #f0f0f0; }
-  th { color: #6b7280; font-weight: 600; font-size: 0.75rem; text-transform: uppercase; }
-  a { color: #7c3aed; cursor: pointer; text-decoration: underline dotted; }
+  th, td { text-align: left; padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--ac-border, #f0f0f0); }
+  th { color: var(--ac-text-muted, #6b7280); font-weight: 600; font-size: 0.75rem; text-transform: uppercase; }
+  a { color: var(--ac-purple-text, #7c3aed); cursor: pointer; text-decoration: underline dotted; }
   button { font-size: 0.78rem; padding: 0.25rem 0.6rem; border-radius: 6px; border: 1px solid #7c3aed; background: #7c3aed; color: #fff; cursor: pointer; }
 }
 
 /* ── Panneau Moyen (cartes équipe) ──────────────────────────────────── */
 .carte-equipe {
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--ac-border, #e5e7eb);
   border-radius: 10px;
   margin-bottom: 0.7rem;
   overflow: hidden;
@@ -151,29 +151,29 @@
   align-items: center;
   gap: 0.6rem;
   padding: 0.6rem 0.9rem;
-  background: #fff;
+  background: var(--ac-surface, #fff);
   border: none;
   cursor: pointer;
   text-align: left;
 
-  .resume-equipe { color: #6b7280; font-size: 0.82rem; }
-  .chevron { margin-left: auto; color: #9ca3af; }
+  .resume-equipe { color: var(--ac-text-muted, #6b7280); font-size: 0.82rem; }
+  .chevron { margin-left: auto; color: var(--ac-text-subtle, #9ca3af); }
 }
 
 .badge-engagement {
   font-size: 0.75rem;
   padding: 0.1rem 0.5rem;
   border-radius: 999px;
-  background: #dcfce7;
-  color: #15803d;
-  &.au-repos { background: #f3f4f6; color: #6b7280; }
+  background: var(--ac-green-bg, #dcfce7);
+  color: var(--ac-green-text, #15803d);
+  &.au-repos { background: var(--ac-surface-2, #f3f4f6); color: var(--ac-text-muted, #6b7280); }
 }
 
 .carte-equipe-corps {
   padding: 0.8rem 0.9rem;
-  border-top: 1px dashed #e5e7eb;
+  border-top: 1px dashed var(--ac-border, #e5e7eb);
 
-  h4 { font-size: 0.82rem; text-transform: uppercase; color: #6b7280; margin: 0.8rem 0 0.4rem; }
+  h4 { font-size: 0.82rem; text-transform: uppercase; color: var(--ac-text-muted, #6b7280); margin: 0.8rem 0 0.4rem; }
 }
 
 .ligne-actions {
@@ -182,8 +182,8 @@
   gap: 0.8rem;
   margin-bottom: 0.6rem;
 
-  button { font-size: 0.8rem; padding: 0.3rem 0.7rem; border-radius: 6px; border: 1px solid #7c3aed; background: #fff; color: #7c3aed; cursor: pointer; }
-  .lien-fiche { font-size: 0.8rem; color: #7c3aed; cursor: pointer; margin-left: auto; }
+  button { font-size: 0.8rem; padding: 0.3rem 0.7rem; border-radius: 6px; border: 1px solid #7c3aed; background: var(--ac-surface, #fff); color: var(--ac-purple-text, #7c3aed); cursor: pointer; }
+  .lien-fiche { font-size: 0.8rem; color: var(--ac-purple-text, #7c3aed); cursor: pointer; margin-left: auto; }
 }
 
 .liste-simple {
@@ -197,9 +197,9 @@
     align-items: center;
     gap: 0.5rem;
     padding: 0.35rem 0;
-    border-bottom: 1px solid #f5f5f5;
+    border-bottom: 1px solid var(--ac-border, #f5f5f5);
     button { margin-left: auto; font-size: 0.78rem; padding: 0.25rem 0.6rem; border-radius: 6px; border: 1px solid #7c3aed; background: #7c3aed; color: #fff; cursor: pointer; }
-    .btn-secondaire { background: #fff; color: #7c3aed; margin-left: 0.4rem; }
+    .btn-secondaire { background: var(--ac-surface, #fff); color: var(--ac-purple-text, #7c3aed); margin-left: 0.4rem; }
   }
 }
 
@@ -211,14 +211,14 @@
   margin-bottom: 1rem;
 
   div {
-    background: #f9fafb;
+    background: var(--ac-surface-2, #f9fafb);
     border-radius: 8px;
     padding: 0.5rem 0.9rem;
     text-align: center;
     min-width: 90px;
 
-    strong { display: block; font-size: 1.3rem; color: #7c3aed; }
-    span { font-size: 0.72rem; color: #6b7280; }
+    strong { display: block; font-size: 1.3rem; color: var(--ac-purple-text, #7c3aed); }
+    span { font-size: 0.72rem; color: var(--ac-text-muted, #6b7280); }
   }
 }
 
@@ -227,7 +227,7 @@
   gap: 0.5rem;
   margin-bottom: 0.8rem;
 
-  textarea { flex: 1; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.85rem; font-family: inherit; }
+  textarea { flex: 1; padding: 0.5rem; border: 1px solid var(--ac-border-strong, #d1d5db); border-radius: 6px; font-size: 0.85rem; font-family: inherit; }
   button { align-self: flex-start; padding: 0.5rem 1rem; border-radius: 6px; border: 1px solid #7c3aed; background: #7c3aed; color: #fff; cursor: pointer; &:disabled { opacity: .5; cursor: not-allowed; } }
 }
 
@@ -238,7 +238,7 @@
 
 .entree-journal {
   padding: 0.5rem 0;
-  border-bottom: 1px solid #f5f5f5;
-  .meta { font-size: 0.7rem; color: #9ca3af; }
+  border-bottom: 1px solid var(--ac-border, #f5f5f5);
+  .meta { font-size: 0.7rem; color: var(--ac-text-subtle, #9ca3af); }
   p { margin: 0.2rem 0 0; font-size: 0.85rem; }
 }

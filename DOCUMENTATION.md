@@ -546,7 +546,7 @@ layouts/admin-layout/
 ├── admin-nav.config.ts          entrées et cadres du menu : données pures
 ├── admin-sidebar/               menu latéral : cadres repliables, filtrage par visibilité
 └── admin-header/                logo, bannière démo, suivi de position, bascule PROD/DEMO,
-    │                            menu utilisateur
+    │                            thème clair/sombre, affichage du menu, menu utilisateur
     └── admin-notifications/     cloche : polling, liste, notifications navigateur
 ```
 
@@ -577,6 +577,22 @@ de chaque bloc est stylé dans le composant lui-même (encapsulation Angular). L
 passe par la classe `collapsed` posée sur `<app-admin-sidebar>` (`:host(.collapsed)`), la zone
 DEMO par `demo-mode` sur `<app-admin-header>`.
 
+**Menu latéral ajustable (grand écran, > 768 px).** Trois états, pilotés par le layout
+(`etatSidebar`) : `etendue` (largeur libre de 200 à 420 px), `reduite` (icônes seules, 70 px),
+`fermee` (masqué, `inert`). La largeur de la colonne passe par la variable CSS
+`--sidebar-largeur` posée sur la grille ; le contenu principal suit donc le menu.
+- Poignée sur le bord droit du menu (`role="separator"`) : glisser change la largeur ; sous
+  150 px le menu passe en icônes seules, sous 40 px il se ferme ; double-clic = largeur par
+  défaut ; au clavier, flèches et Entrée. Pendant le glissement (`.redimensionnement`), pas
+  d'animation et pas de sélection de texte ; le pointeur est capté (`setPointerCapture`) pour
+  ne pas être perdu au-dessus d'une iframe (Grafana).
+- Bouton de l'en-tête : masquer / réafficher le menu (retour à l'état précédent). Bouton du
+  bas du menu : icônes seules / libellés.
+- Les libellés se tronquent (« … ») quand le menu rétrécit ; en mode réduit, les icônes
+  glissent vers le centre (padding animé) au lieu de sauter.
+- État, largeur et état avant fermeture sont une préférence locale (`localStorage`,
+  `admin-sidebar-affichage`). Sur mobile, rien ne change : menu en tiroir.
+
 ### 6.5 Simulation d'inondation (page)
 
 Outil de planification, pas une prévision (calculs au § 5.8). La page lance la simulation des
@@ -588,6 +604,41 @@ fait aucun appel réseau : couleurs data-driven (`setPaintProperty`) et `setData
 données déjà chargées. Deux modes superposables : crue de rivière et ruissellement (grille de
 carrés à la taille réelle des cellules). Le niveau mesuré (Hub'Eau) et la vigilance
 (Vigicrues) ne sont que des repères.
+
+### 6.6 Thème clair / sombre
+
+`ThemeService` (`services/theme.service.ts`) pose `data-theme="clair|sombre"` et
+`color-scheme` sur `<html>`. Préférence `clair`, `sombre` ou `systeme` (défaut : suit
+`prefers-color-scheme`, y compris quand le système bascule pendant la session), mémorisée en
+`localStorage` (`theme`). Bouton soleil/lune dans les deux en-têtes (admin et public).
+
+**Principe : le mode clair ne change pas.** Les couleurs des composants s'écrivent
+`var(--ac-…, <couleur d'origine>)`. Les variables `--ac-*` ne sont définies que sous
+`html[data-theme='sombre']` (`styles.scss`, « Thème ») : en clair, la valeur de repli
+s'applique, au pixel près.
+
+| Variables | Rôle en sombre |
+|---|---|
+| `--ac-bg`, `--ac-surface`, `--ac-surface-2`, `--ac-surface-3` | page, cartes, fonds discrets/survols (sous les cartes), pastilles (au-dessus) |
+| `--ac-text`, `--ac-text-muted`, `--ac-text-subtle` | texte principal, secondaire, discret |
+| `--ac-border`, `--ac-border-strong` | bordures |
+| `--ac-<famille>-bg/-text/-border` (`red`, `orange`, `amber`, `green`, `teal`, `blue`, `indigo`, `purple`, `pink`) | badges, alertes, encadrés teintés : fond opaque teinté, texte clair |
+
+**Écrire un nouveau style** : utiliser directement ces variables avec la couleur claire en
+repli, par exemple `color: var(--ac-text-muted, #6b7280);`. Les couleurs franches (boutons,
+dégradés, texte blanc sur un bouton) restent telles quelles. Une couleur qui doit être la même
+dans les deux thèmes (texte sur le fond orange du mode démo) se marque `// theme: fixe`.
+
+**Conversion des feuilles existantes** : `frontend/scripts/convertir-couleurs-theme.py`
+(`--dry-run` pour simuler, `--annuler` pour revenir aux couleurs d'origine). Il classe chaque
+couleur selon la propriété (fond, texte, bordure, `stroke`/`fill` SVG) et sa nature (gris,
+teinte pâle, texte de couleur trop sombre pour un fond sombre) ; il laisse le texte d'un bloc
+dont le fond reste clair. Idempotent : à relancer après l'ajout de pages écrites avec des
+couleurs en dur.
+
+Limites connues : les couleurs écrites dans les templates (`style="…"`) ou dans le TypeScript
+ne sont pas converties ; le fond de carte MapLibre reste clair. Grafana suit le thème
+(`theme=dark` dans l'URL de l'iframe, § 9.3.1).
 
 ---
 

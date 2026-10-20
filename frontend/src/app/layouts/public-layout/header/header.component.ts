@@ -7,6 +7,7 @@ import { TeamService } from '../../../services/team.service';
 import { UserAvatarComponent } from '../../../shared/components/common/user-avatar/user-avatar.component';
 import { Observable } from 'rxjs';
 import { BrandingService, Branding } from '../../../services/branding.service';
+import { ThemeService } from '../../../services/theme.service';
 
 @Component({
   selector: 'app-header',
@@ -29,7 +30,7 @@ export class HeaderComponent {
 
   constructor(
     public authService: AuthService, private router: Router, private teamService: TeamService,
-    private brandingService: BrandingService,
+    private brandingService: BrandingService, public theme: ThemeService,
   ) {
     this.branding$ = this.brandingService.branding$;
     this.currentUser = this.authService.getCurrentUser();

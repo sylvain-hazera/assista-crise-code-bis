@@ -6,10 +6,10 @@
   display: block;
   font-size: 0.95rem;
   font-weight: 500;
-  color: #333;
+  color: var(--ac-text, #333);
   margin-bottom: 0.5rem;
 
-  .ap-required { color: #dc3545; }
+  .ap-required { color: var(--ac-red-text, #dc3545); }
 }
 
 .ap-input-row {
@@ -26,7 +26,7 @@
   .ap-icon {
     position: absolute;
     left: 0.75rem;
-    color: #999;
+    color: var(--ac-text-subtle, #999);
     font-size: 20px;
   }
 
@@ -40,12 +40,12 @@
   .ap-input {
     width: 100%;
     padding: 0.75rem 2.5rem 0.75rem 2.5rem;
-    border: 1px solid #ddd;
+    border: 1px solid var(--ac-border, #ddd);
     border-radius: 4px;
     font-size: 1rem;
     transition: border-color 0.3s ease;
 
-    &::placeholder { color: #999; }
+    &::placeholder { color: var(--ac-text-subtle, #999); }
     &:focus { outline: none; border-color: #4CAF50; }
   }
 }
@@ -53,10 +53,10 @@
 .ap-locate-btn {
   flex-shrink: 0;
   width: 44px;
-  border: 1px solid #ddd;
+  border: 1px solid var(--ac-border, #ddd);
   border-radius: 4px;
-  background: white;
-  color: #555;
+  background: var(--ac-surface, white);
+  color: var(--ac-text-muted, #555);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -65,7 +65,7 @@
 
   .material-icons { font-size: 20px; }
 
-  &:hover:not(:disabled) { background: #f5f5f5; border-color: #4CAF50; color: #4CAF50; }
+  &:hover:not(:disabled) { background: var(--ac-surface-2, #f5f5f5); border-color: #4CAF50; color: #4CAF50; }
   &:disabled { opacity: 0.5; cursor: not-allowed; }
 }
 
@@ -74,8 +74,8 @@
   top: 100%;
   left: 0;
   right: 44px;
-  background: white;
-  border: 1px solid #ddd;
+  background: var(--ac-surface, white);
+  border: 1px solid var(--ac-border, #ddd);
   border-radius: 4px;
   margin-top: 0.25rem;
   max-height: 260px;
@@ -92,9 +92,9 @@
   cursor: pointer;
   font-size: 0.9rem;
 
-  .material-icons { font-size: 18px; color: #999; }
+  .material-icons { font-size: 18px; color: var(--ac-text-subtle, #999); }
 
-  &:hover { background: #f5f5f5; }
+  &:hover { background: var(--ac-surface-2, #f5f5f5); }
 }
 
 .ap-item-label {
@@ -112,8 +112,8 @@
   flex-shrink: 0;
   font-size: 0.78rem;
   font-weight: 600;
-  color: #555;
-  background: #eee;
+  color: var(--ac-text-muted, #555);
+  background: var(--ac-surface-2, #eee);
   border-radius: 3px;
   padding: 0.1rem 0.4rem;
 }
@@ -121,5 +121,5 @@
 .ap-hint {
   margin: 0.4rem 0 0;
   font-size: 0.78rem;
-  color: #999;
+  color: var(--ac-text-subtle, #999);
 }

@@ -6,7 +6,7 @@
 
 .hint {
   font-size: .8rem;
-  color: #6b7280;
+  color: var(--ac-text-muted, #6b7280);
   margin: 0;
 }
 
@@ -15,5 +15,5 @@
   height: 260px;
   border-radius: 8px;
   overflow: hidden;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--ac-border, #e5e7eb);
 }

@@ -12,7 +12,7 @@
 
   .hint {
     font-size: .8rem;
-    color: #6b7280;
+    color: var(--ac-text-muted, #6b7280);
   }
 }
 
@@ -25,11 +25,11 @@
   display: inline-flex;
   align-items: center;
   gap: .4rem;
-  background: #f3f4f6;
-  color: #374151;
+  background: var(--ac-surface-2, #f3f4f6);
+  color: var(--ac-text, #374151);
 
   &.sm { padding: .35rem .75rem; font-size: .8rem; }
-  &:hover { background: #e5e7eb; }
+  &:hover { background: var(--ac-surface-3, #e5e7eb); }
 }
 
 .zone-map-container {
@@ -37,5 +37,5 @@
   height: 320px;
   border-radius: 8px;
   overflow: hidden;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--ac-border, #e5e7eb);
 }

@@ -9,19 +9,19 @@
 
   h1 {
     font-size: 2rem;
-    color: #333;
+    color: var(--ac-text, #333);
     margin-bottom: 0.5rem;
   }
 
   .subtitle {
-    color: #666;
+    color: var(--ac-text-muted, #666);
     font-size: 1rem;
   }
 }
 
 .error-message {
-  background: #fee;
-  color: #c33;
+  background: var(--ac-red-bg, #fee);
+  color: var(--ac-red-text, #c33);
   padding: 1rem;
   border-radius: 8px;
   margin-bottom: 1rem;
@@ -30,7 +30,7 @@
 .loading {
   text-align: center;
   padding: 3rem;
-  color: #666;
+  color: var(--ac-text-muted, #666);
   font-size: 1.1rem;
 
   .spinner {
@@ -55,7 +55,7 @@
 .empty-state {
   text-align: center;
   padding: 4rem 2rem;
-  color: #999;
+  color: var(--ac-text-subtle, #999);
 
   .material-symbols-outlined {
     font-size: 4rem;
@@ -70,7 +70,7 @@
 }
 
 .validation-card {
-  background: white;
+  background: var(--ac-surface, white);
   border-radius: 12px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
   overflow: hidden;
@@ -130,7 +130,7 @@
     display: flex;
     align-items: center;
     gap: 0.75rem;
-    color: #555;
+    color: var(--ac-text-muted, #555);
 
     .material-symbols-outlined {
       color: #667eea;
@@ -141,7 +141,7 @@
 
 .card-actions {
   padding: 1rem 1.5rem;
-  background: #f8f9fa;
+  background: var(--ac-surface-2, #f8f9fa);
   display: flex;
   gap: 1rem;
   justify-content: flex-end;

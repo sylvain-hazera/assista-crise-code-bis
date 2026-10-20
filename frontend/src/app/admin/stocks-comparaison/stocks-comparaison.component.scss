@@ -18,7 +18,7 @@
 
   .subtitle {
     margin: .25rem 0 0;
-    color: #6b7280;
+    color: var(--ac-text-muted, #6b7280);
     font-size: .9rem;
   }
 }
@@ -27,21 +27,21 @@
   background: none;
   border: none;
   cursor: pointer;
-  color: #6b7280;
+  color: var(--ac-text-muted, #6b7280);
   display: flex;
   align-items: center;
 
-  &:hover { color: #374151; }
+  &:hover { color: var(--ac-text, #374151); }
 }
 
 .field-hint {
-  color: #6b7280;
+  color: var(--ac-text-muted, #6b7280);
   font-size: .85rem;
   margin: 0 0 .9rem;
 }
 
 .field-hint-inline {
-  color: #6b7280;
+  color: var(--ac-text-muted, #6b7280);
   font-size: .78rem;
   margin-left: .3rem;
 }
@@ -56,8 +56,8 @@
   font-size: .85rem;
   white-space: nowrap;
 
-  th, td { text-align: left; padding: .6rem .7rem; border-bottom: 1px solid #f0f0f0; }
-  th { color: #6b7280; font-weight: 600; font-size: .74rem; text-transform: uppercase; }
+  th, td { text-align: left; padding: .6rem .7rem; border-bottom: 1px solid var(--ac-border, #f0f0f0); }
+  th { color: var(--ac-text-muted, #6b7280); font-weight: 600; font-size: .74rem; text-transform: uppercase; }
 }
 
 .badge {
@@ -67,13 +67,13 @@
   font-weight: 600;
   display: inline-block;
 
-  &.niveau-NUL { background: #f3f4f6; color: #374151; }
-  &.niveau-FAIBLE { background: #fef3c7; color: #92400e; }
-  &.niveau-OK { background: #dcfce7; color: #166534; }
-  &.niveau-EN_TROP { background: #dbeafe; color: #1e40af; }
+  &.niveau-NUL { background: var(--ac-surface-2, #f3f4f6); color: var(--ac-text, #374151); }
+  &.niveau-FAIBLE { background: var(--ac-amber-bg, #fef3c7); color: var(--ac-orange-text, #92400e); }
+  &.niveau-OK { background: var(--ac-green-bg, #dcfce7); color: var(--ac-green-text, #166534); }
+  &.niveau-EN_TROP { background: var(--ac-blue-bg, #dbeafe); color: var(--ac-blue-text, #1e40af); }
 }
 
-.empty { color: #9ca3af; }
+.empty { color: var(--ac-text-subtle, #9ca3af); }
 
 .point-header {
   white-space: normal;
@@ -82,7 +82,7 @@
   .point-nom {
     display: block;
     font-size: .9rem;
-    color: #111827;
+    color: var(--ac-text, #111827);
     margin-bottom: .3rem;
   }
 
@@ -93,20 +93,20 @@
     font-weight: 400;
     text-transform: none;
 
-    &.empty { color: #9ca3af; font-style: italic; }
+    &.empty { color: var(--ac-text-subtle, #9ca3af); font-style: italic; }
   }
 
   .responsable-contact {
     display: flex;
     flex-direction: column;
 
-    .responsable-nom { font-weight: 600; color: #374151; }
+    .responsable-nom { font-weight: 600; color: var(--ac-text, #374151); }
 
     .contact-item {
       display: flex;
       align-items: center;
       gap: .25rem;
-      color: #6b7280;
+      color: var(--ac-text-muted, #6b7280);
       font-size: .72rem;
 
       .material-icons.small { font-size: .95rem; }
@@ -125,7 +125,7 @@
   gap: 1rem;
   margin-top: 1rem;
   padding: .6rem .9rem;
-  background: #eff6ff;
+  background: var(--ac-blue-bg, #eff6ff);
   border-radius: 8px;
   font-size: .85rem;
 }
@@ -133,7 +133,7 @@
 .transfer-form {
   margin-top: 1rem;
   padding: 1rem;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--ac-border, #e5e7eb);
   border-radius: 8px;
   max-width: 480px;
 
@@ -154,7 +154,7 @@
 .qty-input {
   width: 70px;
   padding: .25rem .4rem;
-  border: 1px solid #ccc;
+  border: 1px solid var(--ac-border-strong, #ccc);
   border-radius: 4px;
 }
 
@@ -164,10 +164,10 @@
   gap: .3rem;
   margin-bottom: .75rem;
 
-  label { font-size: .8rem; font-weight: 600; color: #555; }
+  label { font-size: .8rem; font-weight: 600; color: var(--ac-text-muted, #555); }
   select, textarea {
     padding: .4rem .6rem;
-    border: 1px solid #ccc;
+    border: 1px solid var(--ac-border-strong, #ccc);
     border-radius: 4px;
     font-family: inherit;
   }
@@ -200,14 +200,14 @@
 }
 
 .btn-secondary {
-  background: #fff;
-  color: #374151;
-  border: 1px solid #d1d5db;
+  background: var(--ac-surface, #fff);
+  color: var(--ac-text, #374151);
+  border: 1px solid var(--ac-border-strong, #d1d5db);
 }
 
 .success-message {
-  color: #166534;
-  background: #dcfce7;
+  color: var(--ac-green-text, #166534);
+  background: var(--ac-green-bg, #dcfce7);
   padding: .5rem .8rem;
   border-radius: 6px;
   margin-top: .75rem;
@@ -215,6 +215,6 @@
 }
 
 .error-message {
-  color: #dc3545;
+  color: var(--ac-red-text, #dc3545);
   font-size: .82rem;
 }

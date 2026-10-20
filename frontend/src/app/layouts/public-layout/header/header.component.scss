@@ -1,6 +1,6 @@
 .header {
-  background-color: white;
-  border-bottom: 2px solid #e0e0e0;
+  background-color: var(--ac-surface, white);
+  border-bottom: 2px solid var(--ac-border, #e0e0e0);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   position: sticky;
   top: 0;
@@ -44,7 +44,7 @@
       font-size: 1.5rem;
       font-weight: 600;
       margin: 0;
-      color: #333;
+      color: var(--ac-text, #333);
     }
   }
 
@@ -66,7 +66,7 @@
 
     a {
       text-decoration: none;
-      color: #666;
+      color: var(--ac-text-muted, #666);
       font-weight: 500;
       padding: 0.5rem 1rem;
       border-radius: 4px;
@@ -74,8 +74,8 @@
       white-space: nowrap;
 
       &:hover {
-        color: #333;
-        background-color: #f5f5f5;
+        color: var(--ac-text, #333);
+        background-color: var(--ac-surface-2, #f5f5f5);
       }
 
       &.active {
@@ -101,9 +101,9 @@
     display: flex;
     align-items: center;
     gap: 0.35rem;
-    border: 1px solid #d1d5db;
-    background: #f3f4f6;
-    color: #374151;
+    border: 1px solid var(--ac-border-strong, #d1d5db);
+    background: var(--ac-surface-2, #f3f4f6);
+    color: var(--ac-text, #374151);
     padding: 0.4rem 0.8rem;
     border-radius: 999px;
     cursor: pointer;
@@ -114,7 +114,7 @@
 
     .material-icons { font-size: 1.1rem; }
 
-    &:hover { background: #e5e7eb; }
+    &:hover { background: var(--ac-surface-3, #e5e7eb); }
 
     &.demo-mode {
       background: #431407;
@@ -132,9 +132,9 @@
     display: flex;
     align-items: center;
     gap: 0.4rem;
-    color: #4338ca;
-    background: #eef2ff;
-    border: 1px solid #c7d2fe;
+    color: var(--ac-indigo-text, #4338ca);
+    background: var(--ac-blue-bg, #eef2ff);
+    border: 1px solid var(--ac-blue-border, #c7d2fe);
     border-radius: 999px;
     padding: 0.4rem 0.9rem;
     font-size: 0.85rem;
@@ -148,7 +148,7 @@
     }
 
     &:hover {
-      background: #e0e7ff;
+      background: var(--ac-blue-bg, #e0e7ff);
     }
   }
 
@@ -189,6 +189,30 @@
   }
 
   // ============================================
+  // THÈME CLAIR / SOMBRE (ThemeService)
+  // ============================================
+  .theme-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: none;
+    cursor: pointer;
+    transition: background-color 0.2s;
+
+    .material-icons {
+      font-size: 1.5rem;
+      color: var(--ac-text-muted, #666);
+    }
+
+    &:hover { background-color: var(--ac-surface-2, #f5f5f5); }
+  }
+
+  // ============================================
   // USER WRAPPER
   // ============================================
   .user-wrapper {
@@ -211,7 +235,7 @@
 
       .material-icons {
         font-size: 2.5rem;
-        color: #666;
+        color: var(--ac-text-muted, #666);
       }
 
       &.logged-in {
@@ -221,10 +245,10 @@
         border-radius: 999px;
         gap: 0.5rem;
         padding: 0.3rem 0.8rem 0.3rem 0.3rem;
-        border: 1px solid #e5e7eb;
+        border: 1px solid var(--ac-border, #e5e7eb);
 
         &:hover {
-          background-color: #f5f5f5;
+          background-color: var(--ac-surface-2, #f5f5f5);
           transform: none;
         }
       }
@@ -260,17 +284,17 @@
       .user-button-label {
         font-size: 0.9rem;
         font-weight: 600;
-        color: #333;
+        color: var(--ac-text, #333);
         white-space: nowrap;
       }
 
       .dropdown-caret {
         font-size: 1.2rem !important;
-        color: #999 !important;
+        color: var(--ac-text-subtle, #999) !important;
       }
 
       &:hover {
-        background-color: #f5f5f5;
+        background-color: var(--ac-surface-2, #f5f5f5);
         transform: scale(1.05);
       }
     }
@@ -280,7 +304,7 @@
       position: absolute;
       top: calc(100% + 10px);
       right: 0;
-      background: white;
+      background: var(--ac-surface, white);
       border-radius: 12px;
       box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
       min-width: 320px;
@@ -289,7 +313,7 @@
 
       .dropdown-header {
         padding: 1.5rem;
-        border-bottom: 1px solid #e0e0e0;
+        border-bottom: 1px solid var(--ac-border, #e0e0e0);
         display: flex;
         align-items: center;
         gap: 1rem;
@@ -306,12 +330,12 @@
             margin: 0;
             font-weight: 600;
             font-size: 1rem;
-            color: #333;
+            color: var(--ac-text, #333);
           }
 
           .user-email {
             margin: 0.25rem 0 0 0;
-            color: #666;
+            color: var(--ac-text-muted, #666);
             font-size: 0.85rem;
           }
         }
@@ -319,7 +343,7 @@
 
       .dropdown-divider {
         height: 1px;
-        background-color: #e0e0e0;
+        background-color: var(--ac-surface-3, #e0e0e0);
         margin: 0;
       }
 
@@ -335,26 +359,26 @@
         gap: 1rem;
         transition: background-color 0.2s;
         font-size: 0.95rem;
-        color: #333;
+        color: var(--ac-text, #333);
 
         .material-icons {
           font-size: 20px;
-          color: #666;
+          color: var(--ac-text-muted, #666);
         }
 
         &:hover {
-          background-color: #f5f5f5;
+          background-color: var(--ac-surface-2, #f5f5f5);
         }
 
         &.logout {
-          color: #f44336;
+          color: var(--ac-red-text, #f44336);
 
           .material-icons {
-            color: #f44336;
+            color: var(--ac-red-text, #f44336);
           }
 
           &:hover {
-            background-color: #ffebee;
+            background-color: var(--ac-red-bg, #ffebee);
           }
         }
       }
@@ -404,7 +428,7 @@
       font-size: 0.45rem;
       font-weight: 600;
       line-height: 1;
-      color: #333;
+      color: var(--ac-text, #333);
       text-transform: uppercase;
       letter-spacing: 0.02em;
       transition: opacity 0.2s ease;
@@ -440,7 +464,7 @@
     right: -100%;
     width: 280px;
     height: calc(100vh - 70px);
-    background: white;
+    background: var(--ac-surface, white);
     box-shadow: -2px 0 8px rgba(0, 0, 0, 0.1);
     transition: right 0.3s ease;
     z-index: 101;
@@ -457,27 +481,27 @@
       gap: 1rem;
       padding: 1rem 1.5rem;
       text-decoration: none;
-      color: #666;
+      color: var(--ac-text-muted, #666);
       font-weight: 500;
       transition: all 0.2s;
       border-left: 3px solid transparent;
 
       .material-icons {
         font-size: 24px;
-        color: #666;
+        color: var(--ac-text-muted, #666);
       }
 
       &:hover {
-        background-color: #f5f5f5;
-        color: #333;
+        background-color: var(--ac-surface-2, #f5f5f5);
+        color: var(--ac-text, #333);
 
         .material-icons {
-          color: #333;
+          color: var(--ac-text, #333);
         }
       }
 
       &.active {
-        background-color: #e8f5e9;
+        background-color: var(--ac-green-bg, #e8f5e9);
         color: #4caf50;
         border-left-color: #4caf50;
 
@@ -489,14 +513,14 @@
 
     .mobile-nav-divider {
       height: 1px;
-      background: #eee;
+      background: var(--ac-surface-2, #eee);
       margin: 0.5rem 1.5rem;
     }
 
     .mobile-quick-link.quick-link-offer .material-icons { color: #22c55e; }
-    .mobile-quick-link.quick-link-request .material-icons { color: #ef4444; }
-    .mobile-quick-link.quick-link-information .material-icons { color: #3b82f6; }
-    .mobile-quick-link.quick-link-dossier .material-icons { color: #a855f7; }
+    .mobile-quick-link.quick-link-request .material-icons { color: var(--ac-red-text, #ef4444); }
+    .mobile-quick-link.quick-link-information .material-icons { color: var(--ac-blue-text, #3b82f6); }
+    .mobile-quick-link.quick-link-dossier .material-icons { color: var(--ac-purple-text, #a855f7); }
     .mobile-quick-link.quick-link-team .material-icons { color: #f59e0b; }
     .mobile-quick-link.quick-link-interventions .material-icons { color: #0ea5e9; }
   }
@@ -716,8 +740,8 @@
   justify-content: center;
   gap: 0.5rem;
   padding: 0.6rem 1rem;
-  background: #fef3c7;
-  color: #92400e;
+  background: var(--ac-amber-bg, #fef3c7);
+  color: var(--ac-orange-text, #92400e);
   font-size: 0.85rem;
   font-weight: 600;
   text-decoration: none;

@@ -10,7 +10,7 @@
 .fiche-panel {
   width: min(480px, 100%);
   height: 100%;
-  background: white;
+  background: var(--ac-surface, white);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -22,7 +22,7 @@
   justify-content: space-between;
   align-items: flex-start;
   padding: 1.25rem 1.25rem 0.5rem;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--ac-border, #eee);
 
   h2 { font-size: 1.15rem; margin: 0; padding-right: 1rem; }
 }
@@ -33,15 +33,15 @@
   font-size: 1.5rem;
   line-height: 1;
   cursor: pointer;
-  color: #888;
-  &:hover { color: #333; }
+  color: var(--ac-text-subtle, #888);
+  &:hover { color: var(--ac-text, #333); }
 }
 
 .fiche-onglets {
   display: flex;
   gap: 0.25rem;
   padding: 0 1.25rem;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--ac-border, #eee);
   overflow-x: auto;
 
   button {
@@ -50,7 +50,7 @@
     border-bottom: 2px solid transparent;
     padding: 0.6rem 0.6rem;
     font-size: 0.85rem;
-    color: #666;
+    color: var(--ac-text-muted, #666);
     cursor: pointer;
     white-space: nowrap;
     display: flex;
@@ -80,13 +80,13 @@
   flex-direction: column;
   margin-bottom: 0.75rem;
 
-  .label { font-size: 0.75rem; color: #888; text-transform: uppercase; }
+  .label { font-size: 0.75rem; color: var(--ac-text-subtle, #888); text-transform: uppercase; }
 }
 
 .bloc-evaluation, .bloc-statut-lecture {
   margin-top: 1.25rem;
   padding-top: 1.25rem;
-  border-top: 1px solid #eee;
+  border-top: 1px solid var(--ac-border, #eee);
 
   h3 { font-size: 0.95rem; margin: 0 0 0.75rem; }
 
@@ -101,7 +101,7 @@
       width: 100%;
       margin-top: 0.3rem;
       padding: 0.5rem;
-      border: 1px solid #ddd;
+      border: 1px solid var(--ac-border, #ddd);
       border-radius: 6px;
       font-size: 0.9rem;
       font-weight: 400;
@@ -126,7 +126,7 @@
 .pastille-chantier {
   margin-left: 0.5rem;
   font-size: 0.8rem;
-  color: #555;
+  color: var(--ac-text-muted, #555);
 }
 
 .btn-primary {
@@ -142,7 +142,7 @@
 }
 
 .btn-secondaire {
-  background: white;
+  background: var(--ac-surface, white);
   border: 1px solid #667eea;
   color: #667eea;
   border-radius: 6px;
@@ -169,19 +169,19 @@
 .galerie-item {
   border-radius: 8px;
   overflow: hidden;
-  border: 1px solid #eee;
+  border: 1px solid var(--ac-border, #eee);
 
   img { width: 100%; height: 120px; object-fit: cover; display: block; }
 }
 
 .galerie-legende {
   font-size: 0.7rem;
-  color: #888;
+  color: var(--ac-text-subtle, #888);
   padding: 0.3rem 0.4rem;
 }
 
 .vide {
-  color: #999;
+  color: var(--ac-text-subtle, #999);
   font-size: 0.85rem;
   text-align: center;
   padding: 1.5rem 0;
@@ -195,14 +195,14 @@
 }
 
 .commentaire {
-  background: #f8f9fb;
+  background: var(--ac-surface-2, #f8f9fb);
   border-radius: 8px;
   padding: 0.6rem 0.8rem;
 }
 
 .commentaire-auteur {
   font-size: 0.75rem;
-  color: #888;
+  color: var(--ac-text-subtle, #888);
   margin-bottom: 0.2rem;
 }
 
@@ -218,7 +218,7 @@
 
   textarea {
     padding: 0.5rem;
-    border: 1px solid #ddd;
+    border: 1px solid var(--ac-border, #ddd);
     border-radius: 6px;
     font-size: 0.88rem;
   }
@@ -228,17 +228,17 @@
 
 .historique-item {
   padding: 0.5rem 0;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--ac-border, #f0f0f0);
 
   &:last-child { border-bottom: none; }
 }
 
 .historique-evenement { font-size: 0.88rem; font-weight: 600; }
-.historique-meta { font-size: 0.75rem; color: #888; }
-.historique-commentaire { font-size: 0.85rem; margin-top: 0.2rem; color: #555; }
+.historique-meta { font-size: 0.75rem; color: var(--ac-text-subtle, #888); }
+.historique-commentaire { font-size: 0.85rem; margin-top: 0.2rem; color: var(--ac-text-muted, #555); }
 
 .rattachement-item {
-  border: 1px solid #eee;
+  border: 1px solid var(--ac-border, #eee);
   border-radius: 8px;
   padding: 0.75rem;
   margin-bottom: 0.75rem;
@@ -251,7 +251,7 @@
   &[data-statut="REFUSE"] { border-left: 3px solid #ef4444; opacity: 0.7; }
 }
 
-.rattachement-contact, .rattachement-date { font-size: 0.78rem; color: #888; }
+.rattachement-contact, .rattachement-date { font-size: 0.78rem; color: var(--ac-text-subtle, #888); }
 .rattachement-message { font-size: 0.85rem; margin-top: 0.3rem; font-style: italic; }
 
 .rattachement-justificatif {
@@ -265,7 +265,7 @@
   .material-icons { font-size: 16px; }
 }
 
-.hint-petit { font-size: 0.78rem; color: #888; margin: -0.4rem 0 0.5rem; }
+.hint-petit { font-size: 0.78rem; color: var(--ac-text-subtle, #888); margin: -0.4rem 0 0.5rem; }
 
 .rattachement-actions {
   display: flex;
@@ -288,19 +288,19 @@
 
 .rattachement-statut-badge {
   font-size: 0.75rem;
-  color: #666;
+  color: var(--ac-text-muted, #666);
   white-space: nowrap;
 }
 
 .bloc-demande-rattachement {
   .explication, .confirmation {
     font-size: 0.85rem;
-    color: #555;
+    color: var(--ac-text-muted, #555);
     margin-bottom: 1rem;
     line-height: 1.4;
   }
 
-  .confirmation { color: #166534; }
+  .confirmation { color: var(--ac-green-text, #166534); }
 
   label {
     display: block;
@@ -313,7 +313,7 @@
       width: 100%;
       margin-top: 0.3rem;
       padding: 0.5rem;
-      border: 1px solid #ddd;
+      border: 1px solid var(--ac-border, #ddd);
       border-radius: 6px;
       font-size: 0.9rem;
       font-weight: 400;
@@ -328,11 +328,11 @@
   gap: 0.6rem;
   margin-top: 1.25rem;
   padding-top: 1rem;
-  border-top: 1px solid #e5e7eb;
+  border-top: 1px solid var(--ac-border, #e5e7eb);
 
   h3 { margin: 0; }
   label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.85rem; }
-  input { padding: 0.35rem 0.5rem; border: 1px solid #d1d5db; border-radius: 6px; font: inherit; }
+  input { padding: 0.35rem 0.5rem; border: 1px solid var(--ac-border-strong, #d1d5db); border-radius: 6px; font: inherit; }
 }
 
 .table-surfaces {
@@ -341,9 +341,9 @@
   font-size: 0.85rem;
 
   th, td { padding: 0.3rem 0.4rem; text-align: left; }
-  thead th { color: #6b7280; font-weight: 500; }
+  thead th { color: var(--ac-text-muted, #6b7280); font-weight: 500; }
   input { width: 100%; max-width: 7rem; box-sizing: border-box; font-variant-numeric: tabular-nums; }
-  .part { color: #b45309; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .part { color: var(--ac-orange-text, #b45309); font-variant-numeric: tabular-nums; white-space: nowrap; }
 }
 
 .bloc-dvf {
@@ -353,7 +353,7 @@
   gap: 0.35rem;
   padding: 0.6rem 0.75rem;
   border-radius: 8px;
-  background: #f8fafc;
+  background: var(--ac-surface-2, #f8fafc);
 
   p { margin: 0; font-size: 0.85rem; }
   .hint-petit { margin: 0; }
@@ -363,10 +363,10 @@
   border: none;
   background: none;
   padding: 0 0.25rem;
-  color: #2563eb;
+  color: var(--ac-blue-text, #2563eb);
   font: inherit;
   text-decoration: underline;
   cursor: pointer;
 }
 
-.erreur-releve { margin: 0; color: #b91c1c; font-size: 0.85rem; }
+.erreur-releve { margin: 0; color: var(--ac-red-text, #b91c1c); font-size: 0.85rem; }

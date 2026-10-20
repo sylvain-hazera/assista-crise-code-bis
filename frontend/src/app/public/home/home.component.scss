@@ -15,8 +15,8 @@
   .search-box {
     display: flex;
     align-items: center;
-    background: white;
-    border: 2px solid #e0e0e0;
+    background: var(--ac-surface, white);
+    border: 2px solid var(--ac-border, #e0e0e0);
     border-radius: 25px;
     padding: 0.5rem 1rem;
     margin-bottom: 1rem;
@@ -25,7 +25,7 @@
 
     .search-icon {
       margin-right: 0.5rem;
-      color: #999;
+      color: var(--ac-text-subtle, #999);
     }
 
     input {
@@ -36,7 +36,7 @@
       background: transparent;
 
       &::placeholder {
-        color: #999;
+        color: var(--ac-text-subtle, #999);
       }
     }
   }
@@ -107,7 +107,7 @@
   gap: 2rem;
 
   .map-section {
-    background: #f0f0f0;
+    background: var(--ac-surface-2, #f0f0f0);
     border-radius: 8px;
     overflow: hidden;
     min-height: 400px;
@@ -115,12 +115,12 @@
 
 -section {
     .info-card {
-      background: white;
+      background: var(--ac-surface, white);
       padding: 1.5rem;
       border-radius: 8px;
       box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
       line-height: 1.6;
-      color: #666;
+      color: var(--ac-text-muted, #666);
     }
   }
 }

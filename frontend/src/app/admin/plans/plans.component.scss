@@ -18,7 +18,7 @@
 
   .subtitle {
     margin: .25rem 0 0;
-    color: #6b7280;
+    color: var(--ac-text-muted, #6b7280);
     font-size: .9rem;
   }
 }
@@ -48,8 +48,8 @@
   margin-bottom: 1rem;
   font-size: .9rem;
 
-  &.toast-err { background: #fef2f2; color: #b91c1c; }
-  &.toast-ok { background: #f0fdf4; color: #15803d; }
+  &.toast-err { background: var(--ac-red-bg, #fef2f2); color: var(--ac-red-text, #b91c1c); }
+  &.toast-ok { background: var(--ac-green-bg, #f0fdf4); color: var(--ac-green-text, #15803d); }
 
   .btn-link {
     margin-left: auto;
@@ -65,7 +65,7 @@
 .loading, .empty {
   padding: 2rem;
   text-align: center;
-  color: #6b7280;
+  color: var(--ac-text-muted, #6b7280);
 }
 
 .toolbar {
@@ -78,13 +78,13 @@
   display: flex;
   align-items: center;
   gap: .5rem;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--ac-border-strong, #d1d5db);
   border-radius: 6px;
   padding: .4rem .75rem;
   flex: 1;
   max-width: 320px;
 
-  .material-icons { color: #9ca3af; font-size: 1.1rem; }
+  .material-icons { color: var(--ac-text-subtle, #9ca3af); font-size: 1.1rem; }
 
   input {
     border: none;
@@ -97,22 +97,22 @@
 .data-table {
   width: 100%;
   border-collapse: collapse;
-  background: #fff;
+  background: var(--ac-surface, #fff);
 
   th, td {
     text-align: left;
     padding: .65rem .75rem;
-    border-bottom: 1px solid #f0f0f0;
+    border-bottom: 1px solid var(--ac-border, #f0f0f0);
   }
 
   th {
-    color: #6b7280;
+    color: var(--ac-text-muted, #6b7280);
     font-weight: 600;
     font-size: .8rem;
     text-transform: uppercase;
   }
 
-  tbody tr:hover { background: #f9fafb; cursor: pointer; }
+  tbody tr:hover { background: var(--ac-surface-2, #f9fafb); cursor: pointer; }
 
   td.actions {
     display: flex;
@@ -130,22 +130,22 @@
   padding: .35rem .7rem;
   border-radius: 6px;
   border: 1px solid #1d4ed8;
-  background: #eff6ff;
-  color: #1d4ed8;
+  background: var(--ac-blue-bg, #eff6ff);
+  color: var(--ac-blue-text, #1d4ed8);
   font-size: .8rem;
   font-weight: 600;
   cursor: pointer;
 
   .material-icons { font-size: 1rem; }
 
-  &:hover { background: #dbeafe; }
+  &:hover { background: var(--ac-blue-bg, #dbeafe); }
 }
 
 .icon-btn {
   background: none;
   border: none;
   cursor: pointer;
-  color: #9ca3af;
+  color: var(--ac-text-subtle, #9ca3af);
 
-  &:hover { color: #dc2626; }
+  &:hover { color: var(--ac-red-text, #dc2626); }
 }

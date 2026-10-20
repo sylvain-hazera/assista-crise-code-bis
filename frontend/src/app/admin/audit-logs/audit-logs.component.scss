@@ -1,9 +1,9 @@
 :host {
-  --bg:      #f4f5f7;
-  --surface: #ffffff;
-  --border:  #e5e7eb;
-  --text:    #111827;
-  --muted:   #6b7280;
+  --bg:      var(--ac-bg, #f4f5f7);
+  --surface: var(--ac-surface, #ffffff);
+  --border:  var(--ac-border, #e5e7eb);
+  --text:    var(--ac-text, #111827);
+  --muted:   var(--ac-text-muted, #6b7280);
   --radius:  14px;
   --shadow:  0 1px 4px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.06);
   --ok:      #16a34a;
@@ -80,7 +80,7 @@
 
 .alert-error {
   display: flex; align-items: center; gap: .5rem;
-  background: #fef2f2; color: #991b1b; border: 1px solid #fecaca;
+  background: var(--ac-red-bg, #fef2f2); color: var(--ac-red-text, #991b1b); border: 1px solid var(--ac-red-border, #fecaca);
   border-radius: 10px; padding: .75rem 1rem; font-size: .9rem;
 }
 
@@ -120,7 +120,7 @@ thead th {
 
 tbody td { padding: .65rem 1rem; border-bottom: 1px solid var(--border); vertical-align: top; }
 tbody tr:last-child td { border-bottom: none; }
-tbody tr.row-echec { background: #fff7f7; }
+tbody tr.row-echec { background: var(--ac-surface-2, #fff7f7); }
 
 .date-cell { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .ip-cell { font-variant-numeric: tabular-nums; color: var(--muted); }
@@ -142,8 +142,8 @@ tbody tr.row-echec { background: #fff7f7; }
 .status-chip {
   padding: .15rem .55rem; border-radius: 99px; font-size: .75rem; font-weight: 600;
 }
-.status-ok { background: #dcfce7; color: var(--ok); }
-.status-ko { background: #fee2e2; color: var(--ko); }
+.status-ok { background: var(--ac-green-bg, #dcfce7); color: var(--ok); }
+.status-ko { background: var(--ac-red-bg, #fee2e2); color: var(--ko); }
 
 .pagination {
   display: flex; align-items: center; justify-content: center; gap: 1rem;
@@ -151,7 +151,7 @@ tbody tr.row-echec { background: #fff7f7; }
 }
 
 .skel-rows { padding: 1rem; display: flex; flex-direction: column; gap: .6rem; }
-.skel { background: linear-gradient(90deg, var(--bg) 25%, #ececec 37%, var(--bg) 63%); background-size: 400% 100%; animation: skel-shimmer 1.4s ease infinite; border-radius: 8px; }
+.skel { background: linear-gradient(90deg, var(--bg) 25%, var(--ac-surface-3, #ececec) 37%, var(--bg) 63%); background-size: 400% 100%; animation: skel-shimmer 1.4s ease infinite; border-radius: 8px; }
 .skel-row { height: 2.2rem; }
 @keyframes skel-shimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
 

@@ -7,12 +7,12 @@
     gap: .5rem;
     font-size: 1rem;
     margin: 0 0 .8rem;
-    .material-icons { font-size: 18px; color: #7c3aed; }
+    .material-icons { font-size: 18px; color: var(--ac-purple-text, #7c3aed); }
   }
 }
 
-.hint { color: #9ca3af; font-size: .85rem; }
-.erreur { color: #dc3545; font-size: .85rem; }
+.hint { color: var(--ac-text-subtle, #9ca3af); font-size: .85rem; }
+.erreur { color: var(--ac-red-text, #dc3545); font-size: .85rem; }
 
 .messages {
   max-height: 260px;
@@ -22,31 +22,31 @@
   gap: .5rem;
   margin-bottom: .8rem;
   padding: .5rem;
-  background: #fafafa;
+  background: var(--ac-surface-2, #fafafa);
   border-radius: 8px;
 }
 
 .message {
   max-width: 75%;
-  background: #f3f4f6;
+  background: var(--ac-surface-2, #f3f4f6);
   border-radius: 8px;
   padding: .4rem .6rem;
 
-  &.sortant { align-self: flex-end; background: #ede9fe; }
-  &.urgent { border: 1px solid #dc2626; background: #fef2f2; }
+  &.sortant { align-self: flex-end; background: var(--ac-indigo-bg, #ede9fe); }
+  &.urgent { border: 1px solid #dc2626; background: var(--ac-red-bg, #fef2f2); }
 
-  .message-meta { font-size: .68rem; color: #6b7280; margin-bottom: .15rem; display: flex; align-items: center; gap: .2rem; }
-  .message-contenu { font-size: .85rem; color: #1f2937; white-space: pre-wrap; }
-  .badge-urgent { font-size: 14px; color: #dc2626; }
+  .message-meta { font-size: .68rem; color: var(--ac-text-muted, #6b7280); margin-bottom: .15rem; display: flex; align-items: center; gap: .2rem; }
+  .message-contenu { font-size: .85rem; color: var(--ac-text, #1f2937); white-space: pre-wrap; }
+  .badge-urgent { font-size: 14px; color: var(--ac-red-text, #dc2626); }
   .badge-source {
     font-size: .62rem;
     padding: .05rem .4rem;
     border-radius: 999px;
-    background: #e0e7ff;
-    color: #4338ca;
+    background: var(--ac-blue-bg, #e0e7ff);
+    color: var(--ac-indigo-text, #4338ca);
     text-transform: none;
   }
-  .message-vu { font-size: .72rem; color: #15803d; margin-top: .2rem; }
+  .message-vu { font-size: .72rem; color: var(--ac-green-text, #15803d); margin-top: .2rem; }
 }
 
 .btn-vu {
@@ -56,8 +56,8 @@
   padding: .15rem .5rem;
   border-radius: 999px;
   border: 1px solid #15803d;
-  background: #fff;
-  color: #15803d;
+  background: var(--ac-surface, #fff);
+  color: var(--ac-green-text, #15803d);
   cursor: pointer;
   &:disabled { opacity: .5; cursor: not-allowed; }
 }
@@ -71,14 +71,14 @@
   // `min-width: 0` -- sans ça, un input garde sa largeur intrinsèque malgré flex:1 et pousse
   // le bouton "Envoyer" hors de l'écran sur mobile (constaté le 2026-10-04, bouton visible
   // uniquement coupé au bord de l'écran) plutôt que de passer à la ligne.
-  input[type="text"] { flex: 1 1 auto; min-width: 0; padding: .5rem .7rem; border: 1px solid #e5e7eb; border-radius: 6px; font-size: .85rem; }
+  input[type="text"] { flex: 1 1 auto; min-width: 0; padding: .5rem .7rem; border: 1px solid var(--ac-border, #e5e7eb); border-radius: 6px; font-size: .85rem; }
 
   .case-urgent {
     display: inline-flex;
     align-items: center;
     gap: .25rem;
     font-size: .8rem;
-    color: #dc2626;
+    color: var(--ac-red-text, #dc2626);
     white-space: nowrap;
   }
 

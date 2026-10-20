@@ -66,6 +66,14 @@
         </div>
       }
 
+      <button
+        class="theme-toggle"
+        (click)="theme.basculer()"
+        [title]="theme.sombre ? 'Passer en mode clair' : 'Passer en mode sombre'"
+        [attr.aria-label]="theme.sombre ? 'Passer en mode clair' : 'Passer en mode sombre'">
+        <span class="material-icons">{{ theme.sombre ? 'light_mode' : 'dark_mode' }}</span>
+      </button>
+
       <!-- User Button -->
       <div class="user-wrapper">
         <button

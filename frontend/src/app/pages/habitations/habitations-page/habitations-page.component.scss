@@ -25,19 +25,19 @@
 
 .toggle-vue {
   display: flex;
-  border: 1px solid #ddd;
+  border: 1px solid var(--ac-border, #ddd);
   border-radius: 8px;
   overflow: hidden;
 
   button {
-    background: white;
+    background: var(--ac-surface, white);
     border: none;
     padding: 0.45rem 1rem;
     font-size: 0.85rem;
     cursor: pointer;
 
     &.actif { background: #667eea; color: white; }
-    &:not(:last-child) { border-right: 1px solid #ddd; }
+    &:not(:last-child) { border-right: 1px solid var(--ac-border, #ddd); }
   }
 }
 
@@ -49,7 +49,7 @@
 
   input, select {
     padding: 0.5rem 0.7rem;
-    border: 1px solid #ddd;
+    border: 1px solid var(--ac-border, #ddd);
     border-radius: 6px;
     font-size: 0.85rem;
   }
@@ -72,13 +72,13 @@
 .groupe-zone {
   margin-bottom: 1.5rem;
 
-  h3 { font-size: 0.95rem; margin: 0 0 0.5rem; color: #555; }
+  h3 { font-size: 0.95rem; margin: 0 0 0.5rem; color: var(--ac-text-muted, #555); }
 }
 
 table {
   width: 100%;
   border-collapse: collapse;
-  background: white;
+  background: var(--ac-surface, white);
   border-radius: 8px;
   overflow: hidden;
 
@@ -86,18 +86,18 @@ table {
     text-align: left;
     font-size: 0.75rem;
     text-transform: uppercase;
-    color: #888;
+    color: var(--ac-text-subtle, #888);
     padding: 0.5rem 0.75rem;
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid var(--ac-border, #eee);
   }
 
   td {
     padding: 0.6rem 0.75rem;
     font-size: 0.85rem;
-    border-bottom: 1px solid #f4f4f4;
+    border-bottom: 1px solid var(--ac-border, #f4f4f4);
   }
 
-  tr:hover td { background: #f8f9fb; cursor: pointer; }
+  tr:hover td { background: var(--ac-surface-2, #f8f9fb); cursor: pointer; }
 }
 
 .pastille-mini {
@@ -119,7 +119,7 @@ table {
 }
 
 .vide {
-  color: #999;
+  color: var(--ac-text-subtle, #999);
   text-align: center;
   padding: 2rem;
 }
@@ -137,7 +137,7 @@ table {
 }
 
 .btn-secondaire {
-  background: white;
+  background: var(--ac-surface, white);
   border: 1px solid #667eea;
   color: #667eea;
   border-radius: 6px;
@@ -169,7 +169,7 @@ table {
 }
 
 .import-panel {
-  background: white;
+  background: var(--ac-surface, white);
   border-radius: 12px;
   padding: 1.5rem;
   width: min(480px, 90vw);
@@ -178,7 +178,7 @@ table {
 
   h2 { font-size: 1.1rem; margin: 0 0 0.75rem; }
 
-  .explication { font-size: 0.82rem; color: #666; margin-bottom: 0.5rem; }
+  .explication { font-size: 0.82rem; color: var(--ac-text-muted, #666); margin-bottom: 0.5rem; }
 
   input[type="file"] { margin: 0.75rem 0; }
 }
@@ -194,7 +194,7 @@ table {
     width: 100%;
     margin-top: 0.3rem;
     padding: 0.5rem;
-    border: 1px solid #ddd;
+    border: 1px solid var(--ac-border, #ddd);
     border-radius: 6px;
     font-size: 0.88rem;
     font-weight: 400;
@@ -232,7 +232,7 @@ table {
       flex: 1;
       max-width: 140px;
       padding: 0.35rem 0.5rem;
-      border: 1px solid #ddd;
+      border: 1px solid var(--ac-border, #ddd);
       border-radius: 6px;
       font-size: 0.8rem;
     }
@@ -243,14 +243,14 @@ table {
   margin-top: 1rem;
   font-size: 0.85rem;
 
-  .erreurs { color: #b91c1c; font-weight: 600; margin-top: 0.5rem; }
+  .erreurs { color: var(--ac-red-text, #b91c1c); font-weight: 600; margin-top: 0.5rem; }
 
   ul { margin: 0.3rem 0 0; padding-left: 1.2rem; }
 }
 
 .bandeau-module-inactif {
-  background: #fef3c7;
-  color: #92400e;
+  background: var(--ac-amber-bg, #fef3c7);
+  color: var(--ac-orange-text, #92400e);
   border-radius: 8px;
   padding: 0.6rem 1rem;
   font-size: 0.85rem;
@@ -259,14 +259,14 @@ table {
 
 .statut-module {
   font-size: 0.85rem;
-  color: #444;
+  color: var(--ac-text, #444);
   margin: 0.5rem 0;
 }
 
 .btn-lien-export {
   border: none;
   background: none;
-  color: #2563eb;
+  color: var(--ac-blue-text, #2563eb);
   font: inherit;
   font-size: 0.85rem;
   text-decoration: underline;
@@ -276,8 +276,8 @@ table {
 .rappel-dvf {
   margin: -0.4rem 0 1rem;
   font-size: 0.9rem;
-  color: #374151;
+  color: var(--ac-text, #374151);
   font-variant-numeric: tabular-nums;
 
-  .indicatif { margin-left: 0.4rem; color: #6b7280; font-size: 0.8rem; }
+  .indicatif { margin-left: 0.4rem; color: var(--ac-text-muted, #6b7280); font-size: 0.8rem; }
 }

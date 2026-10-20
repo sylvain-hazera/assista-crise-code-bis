@@ -1,6 +1,6 @@
 .legal-page {
   min-height: 100vh;
-  background-color: #f8f9fa;
+  background-color: var(--ac-surface-2, #f8f9fa);
   padding: 2rem 1rem 5rem;
   display: flex;
   justify-content: center;
@@ -9,12 +9,12 @@
 .legal-wrapper {
   max-width: 800px;
   width: 100%;
-  background: white;
+  background: var(--ac-surface, white);
   padding: 2.5rem;
   border-radius: 8px;
   margin: 1rem auto;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  color: #333;
+  color: var(--ac-text, #333);
   line-height: 1.6;
 
   h1 {
@@ -27,7 +27,7 @@
     font-size: 1.15rem;
     font-weight: 600;
     margin: 2rem 0 0.75rem;
-    color: #1a1a1a;
+    color: var(--ac-text, #1a1a1a);
   }
 
   p {
@@ -44,7 +44,7 @@
   }
 
   section {
-    border-top: 1px solid #eee;
+    border-top: 1px solid var(--ac-border, #eee);
     padding-top: 0.5rem;
 
     &:first-of-type {

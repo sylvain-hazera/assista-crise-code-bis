@@ -17,7 +17,7 @@
   left: 50%;
   transform: translateX(-50%);
   z-index: 5;
-  background: white;
+  background: var(--ac-surface, white);
   padding: 0.4rem 1rem;
   border-radius: 8px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
@@ -29,7 +29,7 @@
   bottom: 1.5rem;
   left: 0.75rem;
   z-index: 5;
-  background: white;
+  background: var(--ac-surface, white);
   padding: 0.6rem 0.9rem;
   border-radius: 8px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
@@ -54,7 +54,7 @@
 }
 
 .anneau-termine {
-  background: white;
+  background: var(--ac-surface, white);
   border: 3px solid #166534;
   width: 10px;
   height: 10px;

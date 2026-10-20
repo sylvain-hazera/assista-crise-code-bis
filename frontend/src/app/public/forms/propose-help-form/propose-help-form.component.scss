@@ -2,7 +2,7 @@
 
 .propose-help-container {
   min-height: 100vh;
-  background-color: #f8f9fa;
+  background-color: var(--ac-surface-2, #f8f9fa);
   padding: 2rem 1rem 5rem;
   display: flex;
   justify-content: center;
@@ -12,7 +12,7 @@
 .form-wrapper {
   max-width: 600px;
   width: 100%;
-  background: white;
+  background: var(--ac-surface, white);
   padding: 2rem;
   border-radius: 8px;
   margin: 2rem auto;
@@ -24,7 +24,7 @@
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
-    color: #666;
+    color: var(--ac-text-muted, #666);
     text-decoration: none;
     font-size: 0.9rem;
     margin-bottom: 1rem;
@@ -32,7 +32,7 @@
     transition: color 0.3s ease;
 
     &:hover {
-      color: #333;
+      color: var(--ac-text, #333);
     }
 
     .arrow {
@@ -44,7 +44,7 @@
     text-align: center;
     font-size: 1.8rem;
     font-weight: 600;
-    color: #333;
+    color: var(--ac-text, #333);
     margin: 1rem 0;
     padding: 0 0.5rem;
     white-space: nowrap;
@@ -52,7 +52,7 @@
 
   .title-divider {
     border: none;
-    border-top: 1px solid #ddd;
+    border-top: 1px solid var(--ac-border, #ddd);
     margin: 1rem 0;
   }
 
@@ -78,17 +78,17 @@
     display: block;
     font-size: 0.95rem;
     font-weight: 500;
-    color: #333;
+    color: var(--ac-text, #333);
     margin-bottom: 0.5rem;
 
     .required {
-      color: #dc3545;
+      color: var(--ac-red-text, #dc3545);
     }
   }
 
   .form-hint {
     font-size: 0.82rem;
-    color: #6b7280;
+    color: var(--ac-text-muted, #6b7280);
     margin-top: 0.4rem;
   }
 
@@ -98,10 +98,10 @@
     .form-select {
       width: 100%;
       padding: 0.75rem 2.5rem 0.75rem 1rem;
-      border: 1px solid #ddd;
+      border: 1px solid var(--ac-border, #ddd);
       border-radius: 4px;
       font-size: 1rem;
-      background-color: white;
+      background-color: var(--ac-surface, white);
       appearance: none;
       cursor: pointer;
       transition: border-color 0.3s ease;
@@ -128,13 +128,13 @@
   .form-input {
     width: 100%;
     padding: 0.75rem 0 0.75rem 0.75rem;
-    border: 1px solid #ddd;
+    border: 1px solid var(--ac-border, #ddd);
     border-radius: 4px;
     font-size: 1rem;
     transition: border-color 0.3s ease;
 
     &::placeholder {
-      color: #999;
+      color: var(--ac-text-subtle, #999);
     }
 
     &:focus {
@@ -150,7 +150,7 @@
   .form-textarea {
     width: 100%;
     padding: 0.75rem 0 0.75rem 0.75rem;
-    border: 1px solid #ddd;
+    border: 1px solid var(--ac-border, #ddd);
     border-radius: 4px;
     font-size: 1rem;
     resize: vertical;
@@ -159,7 +159,7 @@
     transition: border-color 0.3s ease;
 
     &::placeholder {
-      color: #999;
+      color: var(--ac-text-subtle, #999);
     }
 
     &:focus {
@@ -173,7 +173,7 @@
   }
 
   .error-message {
-    color: #dc3545;
+    color: var(--ac-red-text, #dc3545);
     font-size: 0.85rem;
     margin-top: 0.25rem;
   }
@@ -195,7 +195,7 @@
 
     .checkbox-text {
       font-size: 0.95rem;
-      color: #333;
+      color: var(--ac-text, #333);
     }
   }
 }
@@ -206,7 +206,7 @@
   gap: 0.5rem;
   cursor: pointer;
   font-size: 0.95rem;
-  color: #333;
+  color: var(--ac-text, #333);
   margin-bottom: 0.4rem;
 
   input[type="radio"] {
@@ -227,13 +227,13 @@
 .field-hint-inline {
   font-weight: 400;
   font-size: 0.82rem;
-  color: #888;
+  color: var(--ac-text-subtle, #888);
 }
 
 .field-hint {
   font-size: 0.85rem;
-  color: #666;
-  background: #f8f9fa;
+  color: var(--ac-text-muted, #666);
+  background: var(--ac-surface-2, #f8f9fa);
   border-left: 3px solid #4CAF50;
   padding: 0.5rem 0.75rem;
   margin: 0 0 0.6rem;
@@ -244,8 +244,8 @@
   display: flex;
   gap: 0.6rem;
   font-size: 0.85rem;
-  color: #7a4a00;
-  background: #fff8e6;
+  color: var(--ac-orange-text, #7a4a00);
+  background: var(--ac-amber-bg, #fff8e6);
   border-left: 3px solid #d99a00;
   padding: 0.65rem 0.85rem;
   margin: 0 0 0.6rem;
@@ -272,14 +272,14 @@
   text-align: center;
 
   .other-service-link {
-    color: #007bff;
+    color: var(--ac-blue-text, #007bff);
     text-decoration: underline;
     font-size: 0.95rem;
     cursor: pointer;
     transition: color 0.3s ease;
 
     &:hover {
-      color: #0056b3;
+      color: var(--ac-blue-text, #0056b3);
     }
   }
 }
@@ -288,14 +288,14 @@
   margin: 0.5rem 0;
 
   .remove-service-link {
-    color: #ff0015;
+    color: var(--ac-red-text, #ff0015);
     text-decoration: underline;
     font-size: 0.75rem;
     cursor: pointer;
     transition: color 0.3s ease;
 
     &:hover {
-      color: #b30027;
+      color: var(--ac-red-text, #b30027);
     }
   }
 }
@@ -303,21 +303,21 @@
 .form-section {
   margin-top: 2rem;
   padding-top: 2rem;
-  border-top: 2px solid #cccbcb;
+  border-top: 2px solid var(--ac-border-strong, #cccbcb);
 
   .section-title {
     font-size: 1.3rem;
     font-weight: 600;
-    color: #333;
+    color: var(--ac-text, #333);
     margin-bottom: 1rem;
 
     .required {
-      color: #dc3545;
+      color: var(--ac-red-text, #dc3545);
     }
   }
 
   .section-description {
-    color: #666;
+    color: var(--ac-text-muted, #666);
     font-size: 0.95rem;
     margin-bottom: 1rem;
     line-height: 1.5;
@@ -336,7 +336,7 @@
   flex-wrap: wrap;
   gap: .75rem;
   padding: .5rem 0;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--ac-border, #eee);
 
   .engine-line-checkbox {
     flex: 1 1 220px;
@@ -367,9 +367,9 @@
     align-items: center;
     gap: .3rem;
     padding: .35rem .7rem;
-    border: 1px solid #ccc;
+    border: 1px solid var(--ac-border-strong, #ccc);
     border-radius: 4px;
-    background: #f5f5f5;
+    background: var(--ac-surface-2, #f5f5f5);
     cursor: pointer;
     font-size: .85rem;
 
@@ -391,9 +391,9 @@
 
   .btn-add-engine {
     padding: .5rem 1rem;
-    border: 1px solid #ccc;
+    border: 1px solid var(--ac-border-strong, #ccc);
     border-radius: 4px;
-    background: #f5f5f5;
+    background: var(--ac-surface-2, #f5f5f5);
     cursor: pointer;
 
     &:disabled {
@@ -417,14 +417,14 @@
   gap: 0.4rem;
   width: 100%;
   padding: 0.75rem 1rem;
-  border: 1px solid #ddd;
+  border: 1px solid var(--ac-border, #ddd);
   border-radius: 4px;
-  background: white;
+  background: var(--ac-surface, white);
   font-size: 0.95rem;
-  color: #333;
+  color: var(--ac-text, #333);
   cursor: pointer;
 
-  .material-icons { font-size: 20px; color: #666; }
+  .material-icons { font-size: 20px; color: var(--ac-text-muted, #666); }
 
   &:hover { border-color: #4CAF50; }
 }
@@ -437,8 +437,8 @@
   right: 0;
   max-height: 18rem;
   overflow-y: auto;
-  background: white;
-  border: 1px solid #ddd;
+  background: var(--ac-surface, white);
+  border: 1px solid var(--ac-border, #ddd);
   border-radius: 6px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
   padding: 0.4rem 0.6rem;
@@ -458,7 +458,7 @@
 
     .checkbox-text {
       font-size: 0.95rem;
-      color: #333;
+      color: var(--ac-text, #333);
     }
   }
 }
@@ -478,7 +478,7 @@
   padding-left: 2rem;
   font-weight: 400;
 
-  .checkbox-text { color: #666; }
+  .checkbox-text { color: var(--ac-text-muted, #666); }
 }
 
 .theme-group-expand-btn {
@@ -492,15 +492,15 @@
   background: none;
   border: none;
   cursor: pointer;
-  color: #666;
+  color: var(--ac-text-muted, #666);
 
   .material-icons { font-size: 18px; }
 
-  &:hover { color: #333; }
+  &:hover { color: var(--ac-text, #333); }
 }
 
 .theme-empty {
-  color: #999;
+  color: var(--ac-text-subtle, #999);
   font-size: 0.9rem;
   padding: 0.4rem 0.2rem;
 }
@@ -513,13 +513,13 @@
   border-radius: 4px;
   padding: 0.2rem 0.4rem;
   font-size: 0.95rem;
-  color: #333;
+  color: var(--ac-text, #333);
 
-  &:hover { background: #f4f4f4; }
+  &:hover { background: var(--ac-surface-2, #f4f4f4); }
 
   &.selected {
-    background: #e8f5e9;
-    color: #2e7d32;
+    background: var(--ac-green-bg, #e8f5e9);
+    color: var(--ac-green-text, #2e7d32);
     font-weight: 600;
   }
 }
@@ -527,13 +527,13 @@
 .btn-link-invite {
   background: none;
   border: none;
-  color: #1d4ed8;
+  color: var(--ac-blue-text, #1d4ed8);
   font-size: 0.85rem;
   cursor: pointer;
   padding: 0.3rem 0.2rem;
   text-decoration: underline;
 
-  &:hover { color: #1e40af; }
+  &:hover { color: var(--ac-blue-text, #1e40af); }
 }
 
 .chip-list {
@@ -547,8 +547,8 @@
   display: inline-flex;
   align-items: center;
   gap: .35rem;
-  background: #eff6ff;
-  color: #1d4ed8;
+  background: var(--ac-blue-bg, #eff6ff);
+  color: var(--ac-blue-text, #1d4ed8);
   border-radius: 999px;
   padding: .3rem .7rem;
   font-size: .85rem;
@@ -556,7 +556,7 @@
   button {
     background: none;
     border: none;
-    color: #1d4ed8;
+    color: var(--ac-blue-text, #1d4ed8);
     cursor: pointer;
     font-size: 1rem;
     line-height: 1;
@@ -567,7 +567,7 @@
 .btn-toggle-all-dispos {
   background: none;
   border: 1px solid #1d4ed8;
-  color: #1d4ed8;
+  color: var(--ac-blue-text, #1d4ed8);
   border-radius: 6px;
   padding: 0.35rem 0.8rem;
   font-size: 0.85rem;
@@ -575,7 +575,7 @@
   margin-bottom: 0.75rem;
 
   &:hover {
-    background: #eff6ff;
+    background: var(--ac-blue-bg, #eff6ff);
   }
 }
 
@@ -591,14 +591,14 @@
   th, td {
     padding: .5rem .6rem;
     text-align: center;
-    border-bottom: 1px solid #e5e5e5;
+    border-bottom: 1px solid var(--ac-border, #e5e5e5);
   }
 
   .dispo-jour {
     text-align: left;
     white-space: nowrap;
     font-weight: 500;
-    color: #333;
+    color: var(--ac-text, #333);
     text-transform: capitalize;
   }
 
@@ -622,9 +622,9 @@
     
     padding: 0.75rem 1rem 0.75rem 0.75rem; 
     
-    border: 1px solid #ddd;
+    border: 1px solid var(--ac-border, #ddd);
     border-radius: 4px;
-    background-color: white;
+    background-color: var(--ac-surface, white);
     cursor: pointer;
     transition: border-color 0.3s ease;
 
@@ -633,12 +633,12 @@
     }
 
     .file-name {
-      color: #666;
+      color: var(--ac-text-muted, #666);
       font-size: 1rem;
     }
 
     .file-arrow {
-      color: #666;
+      color: var(--ac-text-muted, #666);
       font-size: 0.8rem;
     }
   }
@@ -682,7 +682,7 @@
 hr {
     margin: 20px 0;
     border: none;
-    border-top: 1px solid #ddd;
+    border-top: 1px solid var(--ac-border, #ddd);
 }
 
 /* 1. Force all form elements to include padding/border in the width calculation */

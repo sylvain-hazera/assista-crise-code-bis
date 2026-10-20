@@ -9,7 +9,7 @@
 }
 
 .modal {
-  background: #fff;
+  background: var(--ac-surface, #fff);
   border-radius: 10px;
   width: 100%;
   max-width: 640px;
@@ -22,10 +22,10 @@
   align-items: center;
   justify-content: space-between;
   padding: 1rem 1.25rem;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--ac-border, #f0f0f0);
   position: sticky;
   top: 0;
-  background: #fff;
+  background: var(--ac-surface, #fff);
 
   h2 { margin: 0; font-size: 1.1rem; }
 }
@@ -39,7 +39,7 @@
 
 .loading {
   text-align: center;
-  color: #6b7280;
+  color: var(--ac-text-muted, #6b7280);
   padding: 2rem 0;
 }
 
@@ -51,12 +51,12 @@
   label {
     font-size: .85rem;
     font-weight: 600;
-    color: #374151;
+    color: var(--ac-text, #374151);
   }
 
   input, select {
     padding: .5rem .65rem;
-    border: 1px solid #e2e8f0;
+    border: 1px solid var(--ac-border, #e2e8f0);
     border-radius: 6px;
     font-size: .9rem;
   }
@@ -64,28 +64,28 @@
   .field-hint {
     margin: 0;
     font-size: .78rem;
-    color: #6b7280;
+    color: var(--ac-text-muted, #6b7280);
   }
 }
 
-.required { color: #dc2626; }
+.required { color: var(--ac-red-text, #dc2626); }
 
 .scope-toggle {
   display: inline-flex;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--ac-border-strong, #d1d5db);
   border-radius: 8px;
   overflow: hidden;
   width: fit-content;
 
   button {
     border: none;
-    background: #fff;
-    color: #374151;
+    background: var(--ac-surface, #fff);
+    color: var(--ac-text, #374151);
     padding: .45rem 1rem;
     font-size: .85rem;
     cursor: pointer;
 
-    &:not(:last-child) { border-right: 1px solid #d1d5db; }
+    &:not(:last-child) { border-right: 1px solid var(--ac-border-strong, #d1d5db); }
 
     &.active {
       background: #2563eb;
@@ -101,7 +101,7 @@
 }
 
 .team-activation-row {
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--ac-border, #e2e8f0);
   border-radius: 8px;
   padding: .6rem .75rem;
   display: flex;
@@ -110,7 +110,7 @@
 
   &.selected {
     border-color: #1d4ed8;
-    background: #f8faff;
+    background: var(--ac-surface-2, #f8faff);
   }
 }
 
@@ -144,27 +144,27 @@
   border-radius: 999px;
   padding: .3rem .7rem;
   font-size: .8rem;
-  border: 1px solid #d1d5db;
-  background: #fff;
-  color: #374151;
+  border: 1px solid var(--ac-border-strong, #d1d5db);
+  background: var(--ac-surface, #fff);
+  color: var(--ac-text, #374151);
   cursor: pointer;
 
   &.sm { padding: .2rem .55rem; font-size: .74rem; }
 
   &.selected {
-    background: #eff6ff;
-    color: #1d4ed8;
+    background: var(--ac-blue-bg, #eff6ff);
+    color: var(--ac-blue-text, #1d4ed8);
     border-color: #1d4ed8;
   }
 }
 
 .chip-empty {
   font-size: .8rem;
-  color: #9ca3af;
+  color: var(--ac-text-subtle, #9ca3af);
 }
 
 .error-message {
-  color: #dc2626;
+  color: var(--ac-red-text, #dc2626);
   font-size: .85rem;
   margin: 0;
 }
@@ -174,18 +174,18 @@
   gap: .5rem;
   justify-content: flex-end;
   padding-top: .5rem;
-  border-top: 1px solid #f0f0f0;
+  border-top: 1px solid var(--ac-border, #f0f0f0);
 }
 
 .btn-primary {
   background: #2563eb; color: #fff; border: none; border-radius: 6px; padding: .6rem 1.25rem; cursor: pointer;
   &:disabled { opacity: .6; cursor: default; }
 }
-.btn-secondary { background: #f3f4f6; color: #374151; border: none; border-radius: 6px; padding: .6rem 1.25rem; cursor: pointer; }
+.btn-secondary { background: var(--ac-surface-2, #f3f4f6); color: var(--ac-text, #374151); border: none; border-radius: 6px; padding: .6rem 1.25rem; cursor: pointer; }
 
 .icon-btn {
   background: none;
   border: none;
   cursor: pointer;
-  color: #6b7280;
+  color: var(--ac-text-muted, #6b7280);
 }

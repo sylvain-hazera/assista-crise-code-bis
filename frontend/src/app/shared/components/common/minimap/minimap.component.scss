@@ -3,7 +3,7 @@
   height: 220px;
   border-radius: 8px;
   overflow: hidden;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--ac-border, #e5e7eb);
 }
 
 ::ng-deep .minimap-direction-arrow {
