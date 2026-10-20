@@ -485,6 +485,8 @@ tr.row-desactive {
   }
 }
 
+.field-hint { display: block; margin-top: .25rem; font-size: .75rem; color: var(--muted); }
+
 .mission-mode-toggle {
   display: flex; gap: 1.2rem;
   label { display: inline-flex; align-items: center; gap: .35rem; font-weight: 500; color: var(--text); }
@@ -514,6 +516,8 @@ tr.row-desactive {
       font-size: .85rem;
       cursor: pointer;
       &:hover { background: #f3f4f6; }
+      &.disabled { color: var(--muted); cursor: not-allowed; &:hover { background: none; } }
+      .team-option-mission { display: block; font-size: .75rem; color: var(--muted); }
     }
   }
 }

@@ -182,10 +182,36 @@ def importer_institutions(request, lignes, mapping):
     formulaire d'édition de l'institution (autocomplete, même mécanisme que l'équipe)."""
     from .audit import audit_log
     from .models import Institution, InstitutionType
+    from .notifications_admin import notifications_institution_suspendues, notifier_administrateurs
     from .permissions import get_active_environment
 
     environment = get_active_environment(request)
     types_par_libelle = {t.libelle.strip().lower(): t for t in InstitutionType.objects.all()}
+
+    # Alerte "nouvelle institution" (voir core/notifications_admin.py) suspendue pendant la
+    # boucle : un seul récapitulatif après, plutôt qu'un email par ligne importée.
+    with notifications_institution_suspendues():
+        crees, erreurs = _importer_lignes_institutions(lignes, mapping, types_par_libelle, environment)
+
+    if crees:
+        notifier_administrateurs(
+            f"{len(crees)} institution(s) importée(s)",
+            "Import CSV d'institutions :\n\n" + "\n".join(f"- {nom}" for nom in crees),
+            request=request,
+        )
+
+    audit_log(
+        request=request,
+        action_code="IMPORT_LISTE",
+        objet_type="Institution",
+        objet_id=None,
+        commentaire=f"Import d'institutions : {len(crees)} créée(s), {len(erreurs)} erreur(s)",
+    )
+    return {"crees": len(crees), "erreurs": erreurs}
+
+
+def _importer_lignes_institutions(lignes, mapping, types_par_libelle, environment):
+    from .models import Institution
 
     crees, erreurs = [], []
     for numero, ligne in enumerate(lignes, start=2):  # ligne 1 = en-têtes, données à partir de 2
@@ -214,15 +240,7 @@ def importer_institutions(request, lignes, mapping):
             environment=environment,
         )
         crees.append(nom)
-
-    audit_log(
-        request=request,
-        action_code="IMPORT_LISTE",
-        objet_type="Institution",
-        objet_id=None,
-        commentaire=f"Import d'institutions : {len(crees)} créée(s), {len(erreurs)} erreur(s)",
-    )
-    return {"crees": len(crees), "erreurs": erreurs}
+    return crees, erreurs
 
 
 def exemple_csv_institutions() -> str:

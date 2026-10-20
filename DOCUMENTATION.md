@@ -721,13 +721,14 @@ Détails opérationnels : [monitoring/README.md](monitoring/README.md).
 | Source | Métriques | Méthode |
 |---|---|---|
 | Django (`/metrics`) | requêtes, statuts, latence par vue, requêtes SQL | RED |
-| `core/metrics.py` | `assista_help_requests_total`, `assista_offers_total`, `assista_emails_failed_total`, `assista_requests_by_status`, `assista_offers_by_status`, `assista_active_crises` | métier |
+| `core/metrics.py` | `assista_help_requests_total`, `assista_offers_total`, `assista_institutions_created_total`, `assista_emails_failed_total`, `assista_requests_by_status`, `assista_offers_by_status`, `assista_active_crises`, `assista_accounts_pending_validation`, `assista_oldest_pending_account_age_seconds` — label `environment` (PROD/DEMO) sur les métriques métier | métier |
 | postgres / nginx / mosquitto exporters | état et charge de chaque service | USE |
 | node-exporter, cAdvisor | hôte et conteneurs | USE |
 | blackbox-exporter | sonde HTTPS de https://assista-crise.fr | boîte noire |
 
 Gunicorn tournant avec plusieurs workers, les métriques sont agrégées via
-`PROMETHEUS_MULTIPROC_DIR` (sinon chaque scrape lirait un worker au hasard).
+`PROMETHEUS_MULTIPROC_DIR` (sinon chaque scrape lirait un worker au hasard), activé par défaut
+par le `CMD` de l'image (`/tmp/prometheus-multiproc`, vidé au démarrage).
 
 ### 9.2 Alertes (`monitoring/prometheus/alerts.yml`)
 
@@ -740,7 +741,7 @@ Principes : alerter sur les **symptômes** ressentis par les utilisateurs, chaqu
 | Application | `HighErrorRate` (avec seuil de trafic minimum), `SlowAPI`, `EmailsFailing` |
 | Infrastructure | `DiskWillFillIn24h` (prédiction), `DiskAlmostFull`, `LowMemory`, `ContainerRestarting`, `DatabaseConnectionsHigh` |
 | Certificats | `TLSCertExpiringSoon`, `TLSCertExpiringCritical` |
-| Métier | `NoHelpRequestDuringActiveCrisis`, `UnprocessedRequestsPilingUp` |
+| Métier (PROD uniquement) | `NoHelpRequestDuringActiveCrisis`, `UnprocessedRequestsPilingUp`, `AccountWaitingForValidation` (> 24 h) |
 | Méta | `Watchdog` : toujours active, transmise à healthchecks.io qui alerte quand elle **s'arrête** |
 
 Chaque règle est couverte par `alerts_test.yml` (`promtool test rules`).
@@ -748,7 +749,7 @@ Chaque règle est couverte par `alerts_test.yml` (`promtool test rules`).
 ### 9.3 Notifications et visualisation
 
 - Alertmanager : dev → MailHog ; prod → SMTP Ionos + healthchecks.io (Watchdog renvoyé chaque minute).
-- Grafana : quatre tableaux provisionnés depuis `monitoring/grafana/dashboards/`, reliés par
+- Grafana : six tableaux provisionnés depuis `monitoring/grafana/dashboards/`, reliés par
   le tag `assista` :
 
   | Onglet de l'admin | uid | Contenu |
@@ -757,6 +758,14 @@ Chaque règle est couverte par `alerts_test.yml` (`promtool test rules`).
   | Santé du site | `assista-sante` | disponibilité, erreurs 5xx, latence, certificat, alertes |
   | Métriques métier | `assista-metier` | crises actives, demandes, offres, emails en échec |
   | Infrastructure | `assista-infra` | conteneurs, VM, PostgreSQL, MQTT |
+  | WAF | `assista-waf` | refus 403, détections OWASP CRS, types d'attaque, IP, trafic par code HTTP |
+  | Fail2ban | `assista-fail2ban` | bans et détections par jail |
+
+  Les onglets WAF et Fail2ban lisent **Loki** (.114 uniquement, `docker-compose.114.yml`) :
+  Alloy (`monitoring/alloy/config.alloy`) y envoie l'audit ModSecurity, le journal d'accès du
+  WAF et le journal de fail2ban, réduits à des champs choisis (jamais les en-têtes
+  Authorization/Cookie ni les corps de requête ; jetons des URL masqués). Rétention 90 jours
+  (`monitoring/loki/loki.yml`). Ailleurs, ces deux onglets restent vides.
 
   Les conteneurs du profil monitoring portent le label `assista.role=monitoring` (ancre
   `x-monitoring` de `docker-compose.yml`), que cAdvisor expose en `container_label_assista_role`.
@@ -959,8 +968,15 @@ Variables CI (protégées et masquées) : `HARBOR_URL`, `HARBOR_PROJECT`, `HARBO
 
 ### 12.3 Production réelle
 
-- `.114` est relancée **à la main**, derrière le WAF `ac_waf` ; `docker-compose.prod.yml` sert à
-  une reconstruction et doit rester cohérent avec elle.
+- `.114` est décrite par **`docker-compose.114.yml`** (source de vérité depuis le 19/10/2026 :
+  tous les conteneurs, monitoring compris, nommés `ac_<service>`, images locales
+  `assista-crise-<service>:prod`, réseaux/volumes/secrets existants en `external`).
+  Déployer : `scripts/114/deployer.sh <service>...` (build + recréation + reload du proxy).
+  Migration initiale depuis les anciens `docker run` : `scripts/114/migrer-vers-compose.sh`
+  (retour arrière : `scripts/114/annuler-migration-compose.sh`). Monitoring :
+  `scripts/114/preparer-monitoring.sh` (secrets + rôle PostgreSQL `monitoring`), Grafana sur
+  http://172.16.1.114:3000 (LAN). `docker-compose.prod.yml` sert à une reconstruction from
+  scratch et doit rester cohérent avec lui.
 - Images construites par la CI ou par `./deploy_harbor.sh` (build + push manuel) ;
   `./build-prod.sh` construit et lance la version de prod en local.
 - Préparation d'une VM pour le monitoring : voir [monitoring/README.md](monitoring/README.md).
@@ -1031,7 +1047,8 @@ Variables CI (protégées et masquées) : `HARBOR_URL`, `HARBOR_PROJECT`, `HARBO
   les clients radio, leur créer un compte, puis appliquer la configuration de dev.
 - Métriques métier à venir : messages radio reçus (alerte `MeshSilent`, à partir de
   `MessageMeshLog`) et délai entre une demande et sa prise en charge.
-- Logs centralisés (Loki + Grafana Alloy).
+- Logs centralisés (Loki + Grafana Alloy) : en place sur .114 pour le WAF et fail2ban (20/10/2026) ;
+  restent les journaux applicatifs (backend, Celery, Synapse).
 - **Cartes hors ligne des satellites** : le satellite `full` télécharge et sert des tuiles
   (`tileserver` de `satellite/docker-compose.yml`), mais le frontend charge toujours un style
   de carte externe (en dur dans `map.component.ts` et `simulation-inondation.component.ts`) :

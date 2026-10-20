@@ -128,10 +128,32 @@ class TestDefinirMission:
 @pytest.mark.django_db
 class TestAssignerRessource:
 
-    def test_requires_active_mission_first(self, mairie_client, team_a, offer):
+    def test_assigns_without_mission_then_attaches_to_first_mission(self, mairie_client, team_a, offer):
+        # Mission non bloquante en crise (20/10/2026) : l'offre rejoint l'équipe tout de suite,
+        # puis la mission dès qu'elle est définie.
         client, _ = mairie_client
         response = client.post(reverse('team-assigner-ressource', args=[team_a.id]), {'offer_id': str(offer.id)}, format='json')
-        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+        assert response.status_code == status.HTTP_200_OK
+        offer.refresh_from_db()
+        assert team_a.assigned_offers.filter(id=offer.id).exists()
+        assert offer.status == 'INDISPONIBLE'
+        assert offer.mission_id is None
+
+        client.post(reverse('team-definir-mission', args=[team_a.id]), {'titre': 'Mission tardive'}, format='json')
+        team_a.refresh_from_db()
+        offer.refresh_from_db()
+        assert offer.mission_id == team_a.mission_active_id
+
+    def test_removing_resource_assigned_without_mission_frees_it(self, mairie_client, team_a, offer):
+        client, _ = mairie_client
+        client.post(reverse('team-assigner-ressource', args=[team_a.id]), {'offer_id': str(offer.id)}, format='json')
+
+        client.post(reverse('team-retirer-ressource', args=[team_a.id]), {'offer_id': str(offer.id)}, format='json')
+
+        offer.refresh_from_db()
+        assert offer.status == 'DISPONIBLE'
+        assert not team_a.assigned_offers.filter(id=offer.id).exists()
 
     def test_assigns_resource_to_active_mission(self, mairie_client, team_a, offer):
         client, _ = mairie_client
@@ -435,3 +457,276 @@ class TestRessourcesMobilisees:
 
         ligne = next(r for r in response.data if r['type'] == 'personne' and r['equipe_id'] == str(team_a.id))
         assert ligne['user_id'] == str(user.id)
+
+
+@pytest.mark.django_db
+class TestAssignerRessources:
+    """Affectation groupée d'offres à une équipe existante (page Signalements)."""
+
+    def _offre(self, offer_type, n):
+        return Offer.objects.create(
+            title=f'Offre groupée {n}', first_name_offer='B', last_name_offer=f'Énévole{n}',
+            email_offer=f'benevole-groupe-{n}@test.fr', status='DISPONIBLE', offer_type=offer_type,
+        )
+
+    def _avec_mission(self, client, team):
+        client.post(reverse('team-definir-mission', args=[team.id]), {'titre': 'Hébergement'}, format='json')
+        team.refresh_from_db()
+
+    def test_assigns_all_selected_offers(self, mairie_client, team_a, offer_type):
+        client, _ = mairie_client
+        self._avec_mission(client, team_a)
+        offres = [self._offre(offer_type, n) for n in range(3)]
+
+        response = client.post(
+            reverse('team-assigner-ressources', args=[team_a.id]),
+            {'offer_ids': [str(o.id) for o in offres]}, format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['ajoutees'] == 3
+        assert response.data['deja_affectees'] == 0
+        assert team_a.assigned_offers.count() == 3
+        assert team_a.members.count() == 3
+        for o in offres:
+            o.refresh_from_db()
+            assert o.status == 'INDISPONIBLE'
+            assert o.mission_id == team_a.mission_active_id
+
+    def test_skips_offers_already_in_team(self, mairie_client, team_a, offer_type):
+        client, _ = mairie_client
+        self._avec_mission(client, team_a)
+        deja, nouvelle = self._offre(offer_type, 1), self._offre(offer_type, 2)
+        client.post(reverse('team-assigner-ressource', args=[team_a.id]), {'offer_id': str(deja.id)}, format='json')
+
+        response = client.post(
+            reverse('team-assigner-ressources', args=[team_a.id]),
+            {'offer_ids': [str(deja.id), str(nouvelle.id)]}, format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['ajoutees'] == 1
+        assert response.data['deja_affectees'] == 1
+        assert team_a.assigned_offers.count() == 2
+
+    def test_works_without_mission(self, mairie_client, team_a, offer):
+        client, _ = mairie_client
+        response = client.post(
+            reverse('team-assigner-ressources', args=[team_a.id]), {'offer_ids': [str(offer.id)]}, format='json',
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['ajoutees'] == 1
+        assert team_a.assigned_offers.filter(id=offer.id).exists()
+
+    def test_rejects_team_outside_own_institution(self, mairie_client, offer):
+        client, _ = mairie_client
+        autre = Team.objects.create(name='Équipe autre mairie', institution=_make_institution(nom='Autre mairie'))
+        response = client.post(
+            reverse('team-assigner-ressources', args=[autre.id]), {'offer_ids': [str(offer.id)]}, format='json',
+        )
+        assert response.status_code in (status.HTTP_403_FORBIDDEN, status.HTTP_404_NOT_FOUND)
+        assert not autre.assigned_offers.exists()
+
+    def test_rejects_unknown_or_invalid_offer_ids(self, mairie_client, team_a, offer):
+        client, _ = mairie_client
+        self._avec_mission(client, team_a)
+        for ids in ([str(offer.id), str(uuid.uuid4())], ['pas-un-uuid'], []):
+            response = client.post(
+                reverse('team-assigner-ressources', args=[team_a.id]), {'offer_ids': ids}, format='json',
+            )
+            assert response.status_code == status.HTTP_400_BAD_REQUEST, ids
+        assert not team_a.assigned_offers.exists()
+
+
+@pytest.mark.django_db
+class TestPeutGererEquipe:
+
+    def test_own_and_delegated_teams_are_manageable_others_not(self, mairie_client, institution_a):
+        client, _ = mairie_client
+        autre = _make_institution(nom='Autre mairie peut_gerer')
+        propre = Team.objects.create(name='Propre', institution=institution_a)
+        deleguee = Team.objects.create(name='Déléguée', institution=autre, institution_delegataire=institution_a)
+        etrangere = Team.objects.create(name='Étrangère', institution=autre)
+
+        for team, attendu in ((propre, True), (deleguee, True), (etrangere, False)):
+            response = client.get(reverse('team-detail', args=[team.id]))
+            assert response.status_code == status.HTTP_200_OK
+            assert response.data['peut_gerer'] is attendu, team.name
+
+    def test_admin_can_manage_any_team(self, create_user, team_a):
+        admin = create_user(username='admin-peut-gerer@test.fr', email='admin-peut-gerer@test.fr', type='ADMIN')
+        client = APIClient()
+        client.force_authenticate(user=admin)
+        response = client.get(reverse('team-detail', args=[team_a.id]))
+        assert response.data['peut_gerer'] is True
+
+
+@pytest.mark.django_db
+class TestSupprimerEquipe:
+    """Suppression définitive (à côté de la désactivation réversible)."""
+
+    def test_deletes_team_and_frees_its_resources(self, mairie_client, team_a, offer):
+        client, _ = mairie_client
+        client.post(reverse('team-definir-mission', args=[team_a.id]), {'titre': 'Mission'}, format='json')
+        client.post(reverse('team-assigner-ressource', args=[team_a.id]), {'offer_id': str(offer.id)}, format='json')
+
+        response = client.post(reverse('team-supprimer', args=[team_a.id]))
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        assert not Team.objects.filter(id=team_a.id).exists()
+        offer.refresh_from_db()
+        assert offer.status == 'DISPONIBLE'
+        assert offer.mission_id is None
+
+    def test_deactivated_team_can_be_deleted(self, mairie_client, team_a):
+        client, _ = mairie_client
+        team_a.actif = False
+        team_a.save(update_fields=['actif'])
+
+        response = client.post(reverse('team-supprimer', args=[team_a.id]))
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        assert not Team.objects.filter(id=team_a.id).exists()
+
+    def test_delegated_institution_cannot_delete(self, mairie_client, institution_a):
+        client, _ = mairie_client
+        responsable = _make_institution(nom='Mairie responsable suppression')
+        team = Team.objects.create(name='Déléguée', institution=responsable, institution_delegataire=institution_a)
+
+        response = client.post(reverse('team-supprimer', args=[team.id]))
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert Team.objects.filter(id=team.id).exists()
+
+    def test_other_institution_cannot_delete(self, mairie_client):
+        client, _ = mairie_client
+        team = Team.objects.create(name='Étrangère', institution=_make_institution(nom='Autre mairie suppression'))
+
+        response = client.post(reverse('team-supprimer', args=[team.id]))
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert Team.objects.filter(id=team.id).exists()
+
+    def test_admin_can_delete_any_team(self, create_user, team_a):
+        admin = create_user(username='admin-suppr@test.fr', email='admin-suppr@test.fr', type='ADMIN')
+        client = APIClient()
+        client.force_authenticate(user=admin)
+
+        response = client.post(reverse('team-supprimer', args=[team_a.id]))
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+
+    def test_non_institutional_user_cannot_delete(self, create_user, team_a):
+        user = create_user(username='simple-suppr@test.fr', email='simple-suppr@test.fr', type='UTIL_SIMPLE')
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        response = client.post(reverse('team-supprimer', args=[team_a.id]))
+
+        assert response.status_code in (status.HTTP_403_FORBIDDEN, status.HTTP_404_NOT_FOUND)
+        assert Team.objects.filter(id=team_a.id).exists()
+
+
+@pytest.mark.django_db
+class TestDomainesEtCompetences:
+    """Domaines d'intervention (themes) -> compétences liées par les Correspondances."""
+
+    def _domaine(self, nom, *competences):
+        from core.models import Besoin, BesoinCompetence, Competence
+        besoin = Besoin.objects.create(nom=nom, nature='MIXTE')
+        for c in competences:
+            BesoinCompetence.objects.create(besoin=besoin, competence=Competence.objects.get_or_create(nom=c)[0])
+        return besoin
+
+    def _patch_domaines(self, client, team, *besoins):
+        return client.patch(reverse('team-detail', args=[team.id]), {'theme_ids': [str(b.id) for b in besoins]}, format='json')
+
+    def test_adding_domain_adds_linked_competences(self, mairie_client, team_a):
+        client, _ = mairie_client
+        hebergement = self._domaine('Hébergement test', 'Accueil test')
+
+        response = self._patch_domaines(client, team_a, hebergement)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert set(team_a.competences.values_list('nom', flat=True)) == {'Accueil test'}
+
+    def test_removing_domain_keeps_competences_still_reached_and_manual_ones(self, mairie_client, team_a):
+        from core.models import Competence
+        client, _ = mairie_client
+        transport = self._domaine('Transport test', 'Conduite test')
+        animaux = self._domaine('Transport animaux test', 'Conduite test', 'Soin animaux test')
+        manuelle = Competence.objects.create(nom='Opérateur radio test')
+        self._patch_domaines(client, team_a, transport, animaux)
+        team_a.competences.add(manuelle)
+
+        self._patch_domaines(client, team_a, transport)
+
+        assert set(team_a.competences.values_list('nom', flat=True)) == {'Conduite test', 'Opérateur radio test'}
+
+    def test_explicit_competences_in_same_patch_are_respected(self, mairie_client, team_a):
+        client, _ = mairie_client
+        hebergement = self._domaine('Hébergement explicite test', 'Accueil explicite test')
+
+        client.patch(
+            reverse('team-detail', args=[team_a.id]),
+            {'theme_ids': [str(hebergement.id)], 'competence_ids': []}, format='json',
+        )
+
+        assert not team_a.competences.exists()
+
+
+@pytest.mark.django_db
+class TestCycleDeVieRessource:
+    """Relecture du 20/10/2026 : une ressource n'appartient qu'à une équipe, et redevient
+    disponible quand l'équipe qui la retient la lâche."""
+
+    def test_reassigning_moves_resource_out_of_previous_team(self, mairie_client, team_a, offer, institution_a):
+        client, _ = mairie_client
+        team_b = Team.objects.create(name='Équipe Ressources B', institution=institution_a)
+        client.post(reverse('team-assigner-ressource', args=[team_a.id]), {'offer_id': str(offer.id)}, format='json')
+
+        client.post(reverse('team-assigner-ressources', args=[team_b.id]), {'offer_ids': [str(offer.id)]}, format='json')
+
+        assert not team_a.assigned_offers.filter(id=offer.id).exists()
+        assert team_b.assigned_offers.filter(id=offer.id).exists()
+        offer.refresh_from_db()
+        assert offer.status == 'INDISPONIBLE'
+
+    def test_offer_from_team_created_without_mission_is_freed_when_removed(self, create_user, offer):
+        admin = create_user(username='admin-cycle@test.fr', email='admin-cycle@test.fr', type='ADMIN')
+        client = APIClient()
+        client.force_authenticate(user=admin)
+        response = client.post(
+            reverse('offer-bulk-create-team'), {'offer_ids': [str(offer.id)], 'team_name': 'Créée sans mission'}, format='json',
+        )
+        team = Team.objects.get(id=response.data['id'])
+
+        client.post(reverse('team-retirer-ressource', args=[team.id]), {'offer_id': str(offer.id)}, format='json')
+
+        offer.refresh_from_db()
+        assert offer.status == 'DISPONIBLE'
+
+    def test_offer_from_team_created_without_mission_is_freed_when_team_deleted(self, create_user, offer):
+        admin = create_user(username='admin-cycle2@test.fr', email='admin-cycle2@test.fr', type='ADMIN')
+        client = APIClient()
+        client.force_authenticate(user=admin)
+        response = client.post(
+            reverse('offer-bulk-create-team'), {'offer_ids': [str(offer.id)], 'team_name': 'Créée puis supprimée'}, format='json',
+        )
+
+        client.post(reverse('team-supprimer', args=[response.data['id']]))
+
+        offer.refresh_from_db()
+        assert offer.status == 'DISPONIBLE'
+
+    def test_removing_does_not_free_resource_retained_by_another_team(self, mairie_client, team_a, offer, institution_a):
+        client, _ = mairie_client
+        team_b = Team.objects.create(name='Équipe Ressources C', institution=institution_a)
+        client.post(reverse('team-assigner-ressource', args=[team_b.id]), {'offer_id': str(offer.id)}, format='json')
+        team_a.assigned_offers.add(offer)   # ancienne affectation restée (données d'avant le correctif)
+
+        client.post(reverse('team-retirer-ressource', args=[team_a.id]), {'offer_id': str(offer.id)}, format='json')
+
+        offer.refresh_from_db()
+        assert offer.status == 'INDISPONIBLE'
+        assert team_b.assigned_offers.filter(id=offer.id).exists()

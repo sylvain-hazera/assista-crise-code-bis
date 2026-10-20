@@ -34,6 +34,7 @@ export interface Crisis {
   severity: string | null;
   is_open?: boolean;
   has_responsable_actif?: boolean;
+  essai?: boolean;               // crise d'essai : ignorée par le monitoring
 }
 
 export interface CrisisPayload {

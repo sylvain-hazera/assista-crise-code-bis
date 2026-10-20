@@ -22,6 +22,7 @@ export interface JetonEnrolementSatellite {
   id: string;
   institution: string;
   jeton: string;
+  profil: 'GW' | 'FULL';
   expiration: string;
   utilise: boolean;
   date_creation: string;

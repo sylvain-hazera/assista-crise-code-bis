@@ -74,7 +74,9 @@ export class RegisterComponent implements OnInit, OnDestroy {
   private loadInstitutionTypes(): void {
     this.institutionTypeService.getAll().subscribe({
       next: (types) => {
-        this.institutionTypeOptions = types.filter(t => t.code !== 'aasc');
+        // actif=false : types de test/doublons masqués du formulaire public sans les supprimer
+        // (certains restent référencés par des institutions existantes).
+        this.institutionTypeOptions = types.filter(t => t.code !== 'aasc' && t.actif !== false);
       },
       error: (err) => console.error('Erreur chargement types d\'institution:', err)
     });

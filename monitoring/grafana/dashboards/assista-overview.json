@@ -544,7 +544,7 @@
             "uid": "prometheus"
           },
           "refId": "A",
-          "expr": "sum(assista_active_crises) or vector(0)",
+          "expr": "sum(assista_active_crises{environment=\"$environment\"}) or vector(0)",
           "legendFormat": ""
         }
       ],
@@ -606,7 +606,7 @@
             "uid": "prometheus"
           },
           "refId": "A",
-          "expr": "sum(assista_requests_by_status{status=\"NON_TRAITEE\"}) or vector(0)",
+          "expr": "sum(assista_requests_by_status{status=\"NON_TRAITEE\", environment=\"$environment\"}) or vector(0)",
           "legendFormat": ""
         }
       ],
@@ -705,7 +705,7 @@
             "uid": "prometheus"
           },
           "refId": "A",
-          "expr": "sum by (status) (assista_requests_by_status)",
+          "expr": "sum by (status) (assista_requests_by_status{environment=\"$environment\"})",
           "legendFormat": "{{status}}"
         }
       ],
@@ -740,7 +740,7 @@
             "uid": "prometheus"
           },
           "refId": "A",
-          "expr": "sum by (request_type) (increase(assista_help_requests_total[1h]))",
+          "expr": "sum by (request_type) (increase(assista_help_requests_total{environment=\"$environment\"}[1h]))",
           "legendFormat": "{{request_type}}"
         }
       ],
@@ -777,7 +777,7 @@
             "uid": "prometheus"
           },
           "refId": "A",
-          "expr": "sum by (offer_type) (increase(assista_offers_total[1h]))",
+          "expr": "sum by (offer_type) (increase(assista_offers_total{environment=\"$environment\"}[1h]))",
           "legendFormat": "{{offer_type}}"
         }
       ],
@@ -785,6 +785,164 @@
         "legend": {
           "displayMode": "table",
           "placement": "right"
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Accounts waiting for validation",
+      "description": "All environments: an account belongs to neither",
+      "id": 24,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 0,
+        "y": 27
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "assista_accounts_pending_validation or vector(0)",
+          "legendFormat": ""
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Oldest pending account",
+      "description": "Validate or reject on /admin/validations-comptes",
+      "id": 25,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 6,
+        "y": 27
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 3600
+              },
+              {
+                "color": "red",
+                "value": 86400
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "assista_oldest_pending_account_age_seconds or vector(0)",
+          "legendFormat": ""
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value"
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Institutions created per day",
+      "description": "Automatic (sign-up, directory) and manual",
+      "id": 26,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 12,
+        "y": 27
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "sum(increase(assista_institutions_created_total{environment=\"$environment\"}[1d])) or vector(0)",
+          "legendFormat": "institutions"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
         }
       }
     },
@@ -797,7 +955,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 27
+        "y": 33
       },
       "panels": []
     },
@@ -814,7 +972,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 28
+        "y": 34
       },
       "fieldConfig": {
         "defaults": {
@@ -847,7 +1005,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 28
+        "y": 34
       },
       "fieldConfig": {
         "defaults": {
@@ -880,7 +1038,7 @@
         "h": 6,
         "w": 6,
         "x": 0,
-        "y": 36
+        "y": 42
       },
       "fieldConfig": {
         "defaults": {
@@ -933,7 +1091,7 @@
         "h": 6,
         "w": 6,
         "x": 6,
-        "y": 36
+        "y": 42
       },
       "fieldConfig": {
         "defaults": {
@@ -986,7 +1144,7 @@
         "h": 6,
         "w": 6,
         "x": 12,
-        "y": 36
+        "y": 42
       },
       "fieldConfig": {
         "defaults": {},
@@ -1017,7 +1175,7 @@
         "h": 6,
         "w": 6,
         "x": 18,
-        "y": 36
+        "y": 42
       },
       "fieldConfig": {
         "defaults": {},
@@ -1064,6 +1222,30 @@
         "includeAll": false,
         "multi": false,
         "skipUrlSync": false
+      },
+      {
+        "name": "environment",
+        "label": "Environment",
+        "type": "custom",
+        "query": "PROD,DEMO",
+        "current": {
+          "selected": true,
+          "text": "PROD",
+          "value": "PROD"
+        },
+        "options": [
+          {
+            "selected": true,
+            "text": "PROD",
+            "value": "PROD"
+          },
+          {
+            "selected": false,
+            "text": "DEMO",
+            "value": "DEMO"
+          }
+        ],
+        "description": "Mission panels only: DEMO holds thousands of synthetic rows"
       }
     ]
   },

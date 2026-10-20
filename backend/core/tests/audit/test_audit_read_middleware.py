@@ -194,3 +194,30 @@ class TestRegisterViewAuditLog:
         user = User.objects.get(email_bidx=blind_index("nouveau@test.fr"))
         entry = AuditLog.objects.filter(action__code="CREATION", objet_type="User", objet_id=user.id).first()
         assert entry is not None
+
+
+@pytest.mark.django_db
+def test_lectures_des_comptes_de_service_ne_sont_pas_journalisees(create_user):
+    # Ponts radio et satellites interrogent l'API en boucle : 90 % de la main courante avant ce
+    # filtre (relecture du 20/10/2026). Un humain reste journalisé, comme les écritures.
+    pont = create_user(username="pont-test@assista-crise.local", email="pont-test@assista-crise.local", type="ADMIN")
+    satellite = create_user(username="satellite-x@service.assista-crise.local", email="satellite-x@service.assista-crise.local", type="ADMIN")
+    humain = create_user(username="humain-lecture@test.fr", email="humain-lecture@test.fr", type="UTIL_SIMPLE")
+    for user, attendu in ((pont, 0), (satellite, 0), (humain, 1)):
+        client = APIClient()
+        client.force_authenticate(user=user)
+        avant = AuditLog.objects.filter(utilisateur=user, action__code="LECTURE").count()
+        # Liste sans journalisation propre à la vue : seul le middleware la trace (comme les
+        # files d'envoi interrogées par les ponts radio).
+        assert client.get(reverse('competence-list')).status_code == 200
+        assert AuditLog.objects.filter(utilisateur=user, action__code="LECTURE").count() == avant + attendu
+
+
+@pytest.mark.django_db
+def test_ecritures_des_comptes_de_service_restent_journalisees(create_user):
+    pont = create_user(username="pont-ecrit@assista-crise.local", email="pont-ecrit@assista-crise.local", type="ADMIN")
+    client = APIClient()
+    client.force_authenticate(user=pont)
+    avant = AuditLog.objects.filter(utilisateur=pont).count()
+    client.post(reverse('crisis-list'), {}, format='json')   # refusée ou non : tentative tracée
+    assert AuditLog.objects.filter(utilisateur=pont).count() == avant + 1

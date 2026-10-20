@@ -252,3 +252,27 @@ async def test_boucle_sans_une_seule_iteration_repasse_apres_le_sleep(monkeypatc
 
     assert appels.call_count == 2
     assert sleep_appele.call_count == 2
+
+
+def test_detecter_et_enregistrer_toutes_les_radios(monkeypatch):
+    # Installation automatique : MeshCore ET Meshtastic branchées -> les deux remontées et
+    # enregistrées (decouvrir_et_identifier, lui, s'arrête à la première).
+    import asyncio
+    import detecter_noeud_serie as d
+
+    monkeypatch.setattr(d, "lister_devices_candidats", lambda: ["/dev/ttyUSB0", "/dev/ttyACM0", "/dev/ttyUSB1"])
+
+    async def identifier(device):
+        return {"/dev/ttyUSB0": {"protocole": "meshcore", "pubkey_hex": "ab"},
+                "/dev/ttyACM0": {"protocole": "meshtastic", "node_num": 42}}.get(device)
+
+    async def enregistrer(identite, *args, **kwargs):
+        return f"id-{identite['protocole']}"
+
+    monkeypatch.setattr(d, "identifier_device", identifier)
+    monkeypatch.setattr(d, "enregistrer_aupres_du_central", enregistrer)
+    radios = asyncio.run(d.detecter_et_enregistrer_toutes("https://central/api", "e", "p"))
+
+    assert [(r["device"], r["protocole"], r["compagnon_id"]) for r in radios] == [
+        ("/dev/ttyUSB0", "meshcore", "id-meshcore"), ("/dev/ttyACM0", "meshtastic", "id-meshtastic"),
+    ]

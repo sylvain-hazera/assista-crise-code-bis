@@ -66,6 +66,9 @@
                     <button class="icon-btn" (click)="reactiver(team, $event)" title="Réactiver">
                       <span class="material-icons">restore</span>
                     </button>
+                    <button class="icon-btn danger" (click)="openDelete(team, $event)" title="Supprimer définitivement">
+                      <span class="material-icons">delete_forever</span>
+                    </button>
                   } @else {
                     <button class="icon-btn" (click)="openAssign(team, $event)" title="Assigner des demandes">
                       <span class="material-icons">assignment</span>
@@ -73,8 +76,8 @@
                     <button class="icon-btn" (click)="openEdit(team, $event)" title="Modifier">
                       <span class="material-icons">edit</span>
                     </button>
-                    <button class="icon-btn danger" (click)="openDelete(team, $event)" title="Désactiver">
-                      <span class="material-icons">block</span>
+                    <button class="icon-btn danger" (click)="openDelete(team, $event)" title="Désactiver ou supprimer">
+                      <span class="material-icons">delete</span>
                     </button>
                   }
                 </div>
@@ -162,6 +165,12 @@
           @if (createForm.get('name')?.invalid && createForm.get('name')?.touched) {
             <span class="field-err">Nom requis (minimum 2 caractères)</span>
           }
+        </div>
+
+        <div class="field">
+          <label>Mission (recommandé)</label>
+          <input type="text" formControlName="mission" placeholder="Ex: Hébergement des sinistrés secteur nord"/>
+          <span class="field-hint">Facultatif : l'équipe peut recevoir des ressources sans mission, à définir dès que possible.</span>
         </div>
 
         <div class="field">
@@ -407,24 +416,117 @@
           }
         </div>
 
-        <!-- ── THÈMES D'INTERVENTION ──────────────────────────── -->
-        <div class="detail-section">
+        <!-- ── MISSION : ce que fait l'équipe, sur quelle crise, dans quels domaines ──────
+             Remplace trois blocs séparés (Thèmes d'intervention, Spécialité de l'équipe, Crise &
+             mission), demande utilisateur du 20/10/2026 : « un seul, simple, parlant, efficace ».
+             Mêmes données qu'avant (mission_active, assigned_crises, competences, themes). -->
+        <div class="detail-section mission-section">
           <div class="section-header">
-            <h3>
-              <span class="material-icons">category</span>
-              Thèmes d'intervention
-              <span class="count-badge">{{ selectedTeam.competence_ids.length }}</span>
-            </h3>
-            <span class="section-hint">Cliquer pour ajouter / retirer</span>
+            <h3><span class="material-icons">flag</span> Mission</h3>
+            @if (selectedTeam.mission_active_titre) {
+              <span class="statut-mission" [class.en-cours]="selectedTeam.mission_active_statut === 'EN_COURS'">
+                {{ selectedTeam.mission_active_statut === 'EN_COURS' ? 'En cours' : selectedTeam.mission_active_statut === 'TERMINEE' ? 'Terminée' : 'En préparation' }}
+              </span>
+            }
           </div>
 
-          <div class="dropdown-multiselect">
-            <button type="button" class="btn-secondary sm" (click)="competencesDropdownOpen = !competencesDropdownOpen">
-              <span class="material-icons">{{ competencesDropdownOpen ? 'expand_less' : 'expand_more' }}</span>
-              Ajouter un thème
+          <!-- Mission en cours -->
+          @if (selectedTeam.mission_active_titre) {
+            <div class="mission-courante">
+              <p>
+                <strong>{{ selectedTeam.mission_active_titre }}</strong>
+                @if (selectedTeam.mission_active_crise_nom) {
+                  <span class="mission-crise"><span class="material-icons">local_fire_department</span> {{ selectedTeam.mission_active_crise_nom }}</span>
+                }
+              </p>
+              @if (selectedTeam.mission_active_statut === 'EN_PREPARATION') {
+                <button class="btn-secondary sm" (click)="demarrerMissionActive()" title="Passer la mission en cours (active le suivi de position radio)">
+                  <span class="material-icons">play_circle</span> Démarrer
+                </button>
+              }
+            </div>
+          } @else {
+            <p class="no-missions">Pas encore de mission : l'équipe peut déjà recevoir des ressources, elles rejoindront la mission dès qu'elle sera définie.</p>
+          }
+
+          <!-- Un seul formulaire : titre (nouvelle mission) et/ou crise (rattachement) -->
+          <div class="mission-form">
+            <input type="text" [(ngModel)]="missionTitreInput"
+                   [placeholder]="selectedTeam.mission_active_titre ? 'Nouvelle mission…' : 'Mission, ex : hébergement des sinistrés secteur nord'" />
+            <select class="form-select" [(ngModel)]="rattacherCriseId" title="Facultatif : la crise sur laquelle l'équipe intervient">
+              <option [ngValue]="null">Crise (facultatif)</option>
+              @for (c of crisesOuvertes; track c.id) {
+                <option [ngValue]="c.id">{{ c.name }}</option>
+              }
+            </select>
+            <button class="btn-primary sm" [disabled]="!missionTitreInput.trim() && !rattacherCriseId" (click)="validerMission()">
+              {{ libelleValiderMission }}
             </button>
+          </div>
+          @if (crisesRattacheesTeam.length > 0) {
+            <div class="crises-equipe">
+              <span class="crises-label">Crises</span>
+              @for (c of crisesRattacheesTeam; track c.id) {
+                <span class="competence-chip" [title]="'Depuis le ' + fmtDate(c.start_date)">
+                  <span class="material-icons">local_fire_department</span> {{ c.name }}
+                </span>
+              }
+            </div>
+          } @else {
+            <p class="no-missions">Sans crise, l'équipe n'apparaît ni dans les ressources mobilisées, ni dans le recrutement, ni dans le matching hébergement.</p>
+          }
+
+          <!-- Domaines d'intervention (Besoin) : ce que l'équipe prend en charge. Les compétences
+               liées (Correspondances) sont ajoutées par le serveur, voir
+               _synchroniser_competences_des_domaines ; une compétence précise reste ajoutable. -->
+          <div class="savoir-faire">
+            <span class="savoir-faire-label">Domaines d'intervention</span>
+            <div class="competence-chip-list">
+              @for (b of selectedThemes; track b.id) {
+                <button type="button" class="competence-chip selected" [style.--ac]="selectedTeam.color"
+                        (click)="toggleTheme(b.id)" title="Retirer ce domaine (et les compétences qui en découlent)">
+                  {{ b.nom }} ×
+                </button>
+              }
+              @if (selectedThemes.length === 0) {
+                <p class="empty-pick">Aucun domaine : ajoutez ce que l'équipe prend en charge (hébergement, pompage…).</p>
+              }
+            </div>
+            @if (selectedCompetences.length > 0) {
+              <div class="competence-chip-list competences-associees">
+                <span class="crises-label">Compétences</span>
+                @for (c of selectedCompetences; track c.id) {
+                  <button type="button" class="competence-chip" (click)="toggleCompetence(c.id)" title="Retirer cette compétence">
+                    {{ c.nom }} ×
+                  </button>
+                }
+              </div>
+            }
+
+            <div class="savoir-faire-ajout">
+              <app-tag-search-input
+                placeholder="Ajouter un domaine (hébergement, pompage…) ou une compétence précise"
+                [searchFn]="savoirFaireSearchFn"
+                [createFn]="savoirFaireCreateFn"
+                subLabelField="sorte"
+                [createLabelFn]="libelleCreerCompetence"
+                (itemSelected)="onSavoirFaireSelected($event)">
+              </app-tag-search-input>
+              <button type="button" class="btn-ghost sm" (click)="competencesDropdownOpen = !competencesDropdownOpen">
+                <span class="material-icons">{{ competencesDropdownOpen ? 'expand_less' : 'list' }}</span> Parcourir
+              </button>
+            </div>
+
             @if (competencesDropdownOpen) {
-              <div class="dropdown-panel">
+              <div class="dropdown-panel savoir-faire-panel">
+                <p class="panel-titre">Domaines d'intervention</p>
+                @for (b of domainesProposables; track b.id) {
+                  <label class="dropdown-check-item" [class.child-item]="!!b.parent">
+                    <input type="checkbox" [checked]="hasTheme(b.id)" (change)="toggleTheme(b.id)">
+                    {{ b.nom }}
+                  </label>
+                }
+                <p class="panel-titre">Compétences précises</p>
                 @for (group of competenceGroups; track group.parent.id) {
                   <div class="dropdown-check-item parent-item">
                     @if (group.children.length > 0) {
@@ -450,87 +552,15 @@
                     }
                   }
                 }
-                @if (competences.length === 0) {
-                  <p class="empty-pick">Aucun thème/compétence défini.</p>
-                }
               </div>
             }
-          </div>
 
-          <app-tag-search-input
-            placeholder="Chercher ou créer un thème (ex: transport animaux)..."
-            [searchFn]="competenceSearchFn"
-            [createFn]="competenceCreateFn"
-            (itemSelected)="onCompetenceSearchSelected($event)">
-          </app-tag-search-input>
-
-          <div class="competence-chip-list">
-            @for (c of selectedCompetences; track c.id) {
-              <button type="button"
-                      class="competence-chip selected"
-                      [style.--ac]="selectedTeam.color"
-                      (click)="toggleCompetence(c.id)"
-                      title="Retirer">
-                {{ c.nom }} ×
-              </button>
-            }
-            @if (selectedCompetences.length === 0) {
-              <p class="empty-pick">Aucun thème sélectionné.</p>
+            @if (hasTheme(besoinHebergementId())) {
+              <a class="btn-secondary sm" [routerLink]="['/mon-equipe', selectedTeam.id, 'hebergement']">
+                <span class="material-icons">home_work</span> Ouvrir le tableau de bord Hébergement
+              </a>
             }
           </div>
-        </div>
-
-        <!-- ── SPÉCIALITÉ DE L'ÉQUIPE (vues dédiées) ───────────── -->
-        <div class="detail-section">
-          <div class="section-header">
-            <h3>
-              <span class="material-icons">dashboard</span>
-              Spécialité de l'équipe
-              <span class="count-badge">{{ selectedTeam.theme_ids?.length || 0 }}</span>
-            </h3>
-            <span class="section-hint">Donne accès à un tableau de bord dédié (ex: Hébergement)</span>
-          </div>
-
-          <div class="dropdown-multiselect">
-            <button type="button" class="btn-secondary sm" (click)="themesDropdownOpen = !themesDropdownOpen">
-              <span class="material-icons">{{ themesDropdownOpen ? 'expand_less' : 'expand_more' }}</span>
-              Ajouter une spécialité
-            </button>
-            @if (themesDropdownOpen) {
-              <div class="dropdown-panel">
-                @for (b of besoins; track b.id) {
-                  <label class="dropdown-check-item">
-                    <input type="checkbox" [checked]="hasTheme(b.id)" (change)="toggleTheme(b.id)">
-                    {{ b.nom }}
-                  </label>
-                }
-                @if (besoins.length === 0) {
-                  <p class="empty-pick">Aucune spécialité définie.</p>
-                }
-              </div>
-            }
-          </div>
-
-          <div class="competence-chip-list">
-            @for (b of selectedThemes; track b.id) {
-              <button type="button"
-                      class="competence-chip selected"
-                      [style.--ac]="selectedTeam.color"
-                      (click)="toggleTheme(b.id)"
-                      title="Retirer">
-                {{ b.nom }} ×
-              </button>
-            }
-            @if (selectedThemes.length === 0) {
-              <p class="empty-pick">Aucune spécialité sélectionnée.</p>
-            }
-          </div>
-
-          @if (hasTheme(besoinHebergementId())) {
-            <a class="btn-secondary sm" [routerLink]="['/mon-equipe', selectedTeam.id, 'hebergement']">
-              <span class="material-icons">home_work</span> Ouvrir le tableau de bord Hébergement
-            </a>
-          }
         </div>
 
         <!-- ── ZONE D'INTERVENTION ────────────────────────────── -->
@@ -657,74 +687,6 @@
               }
             </div>
           }
-        </div>
-
-        <!-- ── CRISES RATTACHÉES ─────────────────────────────── -->
-        <div class="detail-section">
-          <div class="section-header">
-            <h3>
-              <span class="material-icons">local_fire_department</span>
-              Crise &amp; mission
-              <span class="count-badge">{{ crisesRattacheesTeam.length }}</span>
-            </h3>
-          </div>
-
-          @if (crisesRattacheesTeam.length > 0) {
-            <div class="mission-list">
-              @for (c of crisesRattacheesTeam; track c.id) {
-                <div class="mission-row">
-                  <span class="mk-badge mk-crisis">
-                    <span class="material-icons">local_fire_department</span>
-                  </span>
-                  <div class="mission-info">
-                    <span class="mission-titre">{{ c.name }}</span>
-                    <span class="mission-meta">{{ fmtDate(c.start_date) }} @if (c.status) { · {{ c.status }} }</span>
-                  </div>
-                </div>
-              }
-            </div>
-          } @else {
-            <p class="no-missions">Aucune crise rattachée — les vues qui s'appuient sur ce champ (ressources mobilisées, recrutement scopé, matching hébergement) ne verront pas cette équipe tant que ce n'est pas fait.</p>
-          }
-
-          <!-- Un seul sélecteur de crise pour Rattacher et Définir/Changer la mission -->
-          <div class="mission-active-bar">
-            <select class="form-select" [(ngModel)]="rattacherCriseId">
-              <option [ngValue]="null">Choisir une crise…</option>
-              @for (c of crisesOuvertes; track c.id) {
-                <option [ngValue]="c.id">{{ c.name }}</option>
-              }
-            </select>
-            <button class="btn-secondary sm" [disabled]="!rattacherCriseId" (click)="submitRattacherCrise()">
-              <span class="material-icons">link</span> Rattacher l'équipe
-            </button>
-          </div>
-
-          <!-- Mission active, regroupée avec la crise -->
-          <div class="mission-active-bar">
-            @if (selectedTeam.mission_active_titre) {
-              <span class="mission-active-label">
-                <span class="material-icons">flag</span> Mission : {{ selectedTeam.mission_active_titre }}
-                @if (selectedTeam.mission_active_crise_nom) {
-                  · <span class="material-icons">local_fire_department</span> {{ selectedTeam.mission_active_crise_nom }}
-                }
-                @if (selectedTeam.mission_active_statut === 'EN_COURS') {
-                  · <span class="material-icons statut-ok">check_circle</span> En cours
-                }
-              </span>
-              @if (selectedTeam.mission_active_statut === 'EN_PREPARATION') {
-                <button class="btn-secondary sm" (click)="demarrerMissionActive()" title="Démarrer (passer en cours)">
-                  <span class="material-icons">play_circle</span> Démarrer
-                </button>
-              }
-            } @else {
-              <span class="mission-active-label muted">Aucune mission définie pour cette équipe.</span>
-            }
-            <input type="text" placeholder="Nouvelle mission (texte libre)…" [(ngModel)]="missionTitreInput" />
-            <button class="btn-secondary sm" (click)="submitDefinirMission()" title="Utilise la crise choisie ci-dessus (optionnel)">
-              {{ selectedTeam.mission_active_titre ? 'Changer' : 'Définir' }}
-            </button>
-          </div>
         </div>
 
         <!-- ── CANAL MESHCORE ─────────────────────────────────── -->
@@ -879,6 +841,9 @@
               <span class="count-badge">{{ resourcesForSelectedTeam.length }}</span>
             </h3>
           </div>
+          @if (donneesSecondairesEnCours) {
+            <p class="chargement-secondaire"><span class="material-icons">hourglass_top</span> Chargement des ressources…</p>
+          }
 
           @if (resourcesForSelectedTeam.length > 0) {
             <p class="resources-summary">
@@ -939,13 +904,11 @@
 
           @if (!selectedTeam.mission_active_titre) {
             <p class="mission-required-warning">
-              <span class="material-icons">warning</span>
-              Définissez d'abord une mission ci-dessus : sans elle, aucune ressource ne peut être affectée à cette équipe.
+              <span class="material-icons">info</span>
+              Pas encore de mission : les ressources sont affectées à l'équipe et rejoindront sa mission dès qu'elle sera définie ci-dessus.
             </p>
           }
-          <button class="btn-secondary sm ressources-open-btn" (click)="ouvrirTableauOffres()"
-                  [disabled]="!selectedTeam.mission_active_titre"
-                  [title]="!selectedTeam.mission_active_titre ? 'Définissez une mission avant d\'ouvrir le tableau des offres.' : ''">
+          <button class="btn-secondary sm ressources-open-btn" (click)="ouvrirTableauOffres()">
             <span class="material-icons">search</span> Ouvrir le tableau des offres
           </button>
         </div>
@@ -1339,21 +1302,34 @@
   <div class="modal-overlay" (click)="closeModal()">
     <div class="modal modal-sm" (click)="$event.stopPropagation()">
       <div class="modal-header danger">
-        <h2><span class="material-icons">warning</span> Désactiver l'équipe</h2>
+        <h2><span class="material-icons">warning</span> {{ selectedTeam.actif === false ? "Supprimer l'équipe" : "Désactiver ou supprimer l'équipe" }}</h2>
         <button class="icon-btn" (click)="closeModal()"><span class="material-icons">close</span></button>
       </div>
       <div class="modal-body delete-body">
         <div class="team-avatar lg" [style.background]="selectedTeam.color">
           {{ selectedTeam.name[0] }}
         </div>
-        <p>Désactiver <strong>{{ selectedTeam.name }}</strong> ?</p>
-        <p class="warn">L'équipe et ses membres restent dans l'historique — réactivable à tout moment.</p>
+        <p><strong>{{ selectedTeam.name }}</strong></p>
+        @if (selectedTeam.actif !== false) {
+          <p><strong>Désactiver</strong> : l'équipe et ses membres restent dans l'historique, réactivable à tout moment.</p>
+        }
+        <p><strong>Supprimer définitivement</strong> : l'équipe disparaît, ses ressources redeviennent disponibles.
+          Dossiers, points et messages radio sont conservés, sans équipe. Irréversible.</p>
+        <label class="confirm-suppression">
+          <input type="checkbox" [(ngModel)]="confirmerSuppressionDefinitive"/>
+          Je confirme la suppression définitive
+        </label>
       </div>
       <div class="modal-footer">
         <button class="btn-ghost" (click)="closeModal()">Annuler</button>
-        <button class="btn-danger" (click)="confirmDelete()" [disabled]="isSaving">
-          <span class="material-icons">block</span>
-          {{ isSaving ? 'Désactivation…' : 'Désactiver' }}
+        @if (selectedTeam.actif !== false) {
+          <button class="btn-secondary" (click)="confirmDelete()" [disabled]="isSaving">
+            <span class="material-icons">block</span> Désactiver
+          </button>
+        }
+        <button class="btn-danger" (click)="supprimerDefinitivement()" [disabled]="isSaving || !confirmerSuppressionDefinitive">
+          <span class="material-icons">delete_forever</span>
+          {{ isSaving ? 'Suppression…' : 'Supprimer définitivement' }}
         </button>
       </div>
     </div>

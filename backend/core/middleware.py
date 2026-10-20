@@ -36,6 +36,11 @@ class AuditTraceMiddleware:
     API)."""
 
     EXCLUDED_PREFIXES = ('/api/token/',)
+    # Comptes de service (ponts radio, satellites) : machines qui interrogent l'API en boucle --
+    # leurs LECTURES représentaient 90 % de la main courante (~90 000 lignes/jour, 88 % de la
+    # base mesuré le 20/10/2026) sans rien apprendre à personne. Leurs écritures restent tracées.
+    # ponts : pont-…@assista-crise.local ; satellites : satellite-…@service.assista-crise.local
+    SERVICE_ACCOUNT_SUFFIXES = ('@assista-crise.local', '.assista-crise.local')
     ACTION_BY_METHOD = {
         "GET": "LECTURE",
         "HEAD": "LECTURE",
@@ -55,9 +60,18 @@ class AuditTraceMiddleware:
             and request.path.startswith('/api/')
             and not request.path.startswith(self.EXCLUDED_PREFIXES)
             and not getattr(request, '_audit_log_written', False)
+            and not self._lecture_compte_service(request)
         ):
             self._log(request, response)
         return response
+
+    def _lecture_compte_service(self, request):
+        if self.ACTION_BY_METHOD[request.method] != "LECTURE":
+            return False
+        user = getattr(request, 'user', None)
+        if user is None or not user.is_authenticated:
+            return False
+        return (user.username or '').lower().endswith(self.SERVICE_ACCOUNT_SUFFIXES)
 
     def _log(self, request, response):
         try:

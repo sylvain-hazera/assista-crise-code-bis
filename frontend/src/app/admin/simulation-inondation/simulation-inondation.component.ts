@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { Subscription } from 'rxjs';
 import { takeWhile } from 'rxjs/operators';
 import maplibregl from 'maplibre-gl';
-import type { Feature, FeatureCollection, Point, Polygon } from 'geojson';
+import type { Feature, FeatureCollection, MultiPolygon, Point, Polygon } from 'geojson';
 
 import { pollWhileVisible } from '../../shared/utils/polling.util';
 import { TagSearchInputComponent } from '../../shared/components/common/tag-search-input/tag-search-input.component';
@@ -15,9 +15,24 @@ import { AdresseSimulee, NiveauObserve, SimulationAdresses, SimulationInondation
 const ZONE_SOURCE_ID = 'inondation-zone';
 const ADRESSES_SOURCE_ID = 'inondation-adresses';
 const RUISSELLEMENT_SOURCE_ID = 'inondation-ruissellement';
+const COMMUNE_SOURCE_ID = 'commune-contour';
+const GEORISQUES_SOURCE_ID = 'georisques-alea';
+// Zones inondables officielles Géorisques (BRGM/DGPR, rapportage 2020) récupérées EN VECTEUR via
+// le backend (WFS) et dessinées ici en violet franc : les tuiles WMS d'origine, vert pâle à ~40 %
+// d'opacité, étaient illisibles sur le fond de carte (demande utilisateur du 20/10/2026). Mêmes
+// zones que le filtre de l'estimation des dégâts.
+const GEORISQUES_COUCHES = [
+  { valeur: 'ALEA_SYNT_01_01FOR_FXX', libelle: 'Débordement de cours d\'eau — fréquent (décennal)' },
+  { valeur: 'ALEA_SYNT_01_02MOY_FXX', libelle: 'Débordement de cours d\'eau — moyen (centennal, réf. PPRI)' },
+  { valeur: 'ALEA_SYNT_01_04FAI_FXX', libelle: 'Débordement de cours d\'eau — rare (millénal)' },
+  { valeur: 'ALEA_SYNT_02_02MOY_FXX', libelle: 'Ruissellement — moyen (centennal)' },
+  { valeur: 'ALEA_SYNT_03_02MOY_FXX', libelle: 'Submersion marine — moyen (centennal)' },
+];
 const CLE_DERNIERE_COMMUNE = 'simulation-inondation-derniere-commune';
 const INTERVALLE_POLLING_MS = 6_000;
-const METRES_PAR_DEGRE_LAT = 111_320; // même valeur que core/inondation.py
+// Seuils de gravité par hauteur d'eau (m) -- limité ≤ 0,5 ; modéré ≤ 1 ; fort au-delà.
+const SEUILS_GRAVITE = { limite: 0.5, modere: 1 };
+const METRES_PAR_DEGRE_LAT = 111_320; // même valeur que core/inondation.py, pour la cohérence
 
 type ColonneTri = 'adresse' | 'altitude' | 'profondeur';
 
@@ -50,6 +65,11 @@ export class SimulationInondationComponent implements AfterViewInit, OnDestroy {
   /** Dernier niveau observé (Hub'Eau, station la plus proche), même référentiel NGF : repère
    * informatif, un seul appel (cache serveur 5 min, core/hydrometrie.py). */
   niveauObserve: NiveauObserve | null = null;
+
+  // Overlay des zones inondables officielles (Géorisques), indépendant de la simulation.
+  readonly georisquesCouches = GEORISQUES_COUCHES;
+  coucheGeorisquesActive = false;
+  georisquesCouche = 'ALEA_SYNT_01_02MOY_FXX';
 
   coucheRiviereActive = true;
   coucheRuissellementActive = false;
@@ -107,6 +127,8 @@ export class SimulationInondationComponent implements AfterViewInit, OnDestroy {
 
   choisirCommune(commune: Commune): void {
     this.communeSelectionnee = commune;
+    this.cadrerSurCommune(commune);
+    this.majCoucheGeorisques();
     this.simulation = null;
     this.erreur = '';
     this.enCours = true;
@@ -293,6 +315,90 @@ export class SimulationInondationComponent implements AfterViewInit, OnDestroy {
     URL.revokeObjectURL(url);
   }
 
+  /** Zoom + centrage sur la commune dès sa sélection : la commune remplit la vue, sans
+   * attendre la fin du calcul (demande utilisateur du 20/10/2026). Trace aussi son contour. */
+  private cadrerSurCommune(commune: Commune): void {
+    this.locationService.getCommuneContour(commune.code).subscribe({
+      next: (geo) => this.runWhenMapReady(() => this.afficherContourCommune(geo?.contour ?? null)),
+      error: () => { /* contour indisponible : le cadrage sur la zone simulée prendra le relais */ },
+    });
+  }
+
+  private afficherContourCommune(geometry: Polygon | MultiPolygon | null): void {
+    if (!this.map) return;
+    const data: Feature = { type: 'Feature', properties: {}, geometry: geometry as any };
+    const source = this.map.getSource(COMMUNE_SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
+    if (source) source.setData(data as any);
+    else if (geometry) {
+      this.map.addSource(COMMUNE_SOURCE_ID, { type: 'geojson', data: data as any });
+      this.map.addLayer({
+        id: `${COMMUNE_SOURCE_ID}-layer`, type: 'line', source: COMMUNE_SOURCE_ID,
+        paint: { 'line-color': '#1d4ed8', 'line-width': 2, 'line-dasharray': [2, 1] },
+      });
+    }
+    if (!geometry) return;
+    const anneaux = geometry.type === 'Polygon' ? geometry.coordinates : geometry.coordinates.flat();
+    const coords = anneaux.flat() as [number, number][];
+    if (!coords.length) return;
+    const bounds = coords.reduce(
+      (b, c) => b.extend(c as [number, number]),
+      new maplibregl.LngLatBounds(coords[0], coords[0]),
+    );
+    this.map.fitBounds(bounds, { padding: 30, animate: true, duration: 600 });
+  }
+
+  /** Zones Géorisques de la commune choisie, dessinées en vecteur (voir GEORISQUES_COUCHES).
+   * Rechargées à chaque changement de commune ou de scénario tant que la case est cochée. */
+  georisquesMessage = '';
+
+  majCoucheGeorisques(): void {
+    this.georisquesMessage = '';
+    const commune = this.communeSelectionnee;
+    if (!this.coucheGeorisquesActive || !commune) {
+      this.runWhenMapReady(() => this.dessinerZonesGeorisques(null));
+      return;
+    }
+    const couche = this.georisquesCouche;
+    this.georisquesMessage = 'Chargement des zones officielles…';
+    this.simulationService.zonesGeorisques(commune.code, couche).subscribe({
+      next: (r) => {
+        if (commune !== this.communeSelectionnee || couche !== this.georisquesCouche) return;   // réponse périmée
+        this.georisquesMessage = r.geometrie
+          ? ''
+          : `Aucune zone officielle « ${r.libelle} » sur cette commune : Géorisques ne couvre que les Territoires à Risque Important d'Inondation (TRI).`;
+        this.runWhenMapReady(() => this.dessinerZonesGeorisques(r.geometrie));
+      },
+      error: (err) => {
+        this.georisquesMessage = err?.error?.error || 'Zones Géorisques indisponibles pour le moment.';
+        this.runWhenMapReady(() => this.dessinerZonesGeorisques(null));
+      },
+    });
+  }
+
+  private dessinerZonesGeorisques(geometrie: Polygon | MultiPolygon | null): void {
+    if (!this.map) return;
+    const data: Feature | FeatureCollection = geometrie
+      ? { type: 'Feature', properties: {}, geometry: geometrie }
+      : { type: 'FeatureCollection', features: [] };
+    const source = this.map.getSource(GEORISQUES_SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
+    if (source) {
+      source.setData(data as any);
+      return;
+    }
+    this.map.addSource(GEORISQUES_SOURCE_ID, { type: 'geojson', data: data as any });
+    // Sous la zone simulée et les adresses, pour qu'elles restent lisibles par-dessus.
+    const avant = this.map.getLayer(`${ZONE_SOURCE_ID}-fill`) ? `${ZONE_SOURCE_ID}-fill`
+      : this.map.getLayer(`${ADRESSES_SOURCE_ID}-layer`) ? `${ADRESSES_SOURCE_ID}-layer` : undefined;
+    this.map.addLayer({
+      id: `${GEORISQUES_SOURCE_ID}-fill`, type: 'fill', source: GEORISQUES_SOURCE_ID,
+      paint: { 'fill-color': '#7c3aed', 'fill-opacity': 0.35 },
+    }, avant);
+    this.map.addLayer({
+      id: `${GEORISQUES_SOURCE_ID}-outline`, type: 'line', source: GEORISQUES_SOURCE_ID,
+      paint: { 'line-color': '#5b21b6', 'line-width': 1.5 },
+    }, avant);
+  }
+
   private runWhenMapReady(cb: () => void): void {
     if (!this.map) return;
     if (this.mapPret) cb(); else this.map.once('load', cb);
@@ -344,7 +450,14 @@ export class SimulationInondationComponent implements AfterViewInit, OnDestroy {
     this.map.on('mouseleave', `${ADRESSES_SOURCE_ID}-layer`, () => { this.map!.getCanvas().style.cursor = ''; });
   }
 
-  /** `profondeur_actuelle` est réécrite à chaque changement de niveau (setData local, sans réseau). */
+  /** `profondeur_actuelle` est recalculée et réécrite dans les features à chaque changement de
+   * niveau (voir majCouleurAdresses) -- ce n'est PAS une nouvelle requête réseau, juste
+   * source.setData() sur des données déjà en mémoire côté client. Vide tant que les adresses
+   * n'ont pas été chargées (voir chargerAdresses). */
+  get aDesAdressesAffichees(): boolean {
+    return (this.adresses?.adresses?.length ?? 0) > 0 && this.coucheRiviereActive;
+  }
+
   private adressesEnGeoJSON(): FeatureCollection<Point> {
     const adresses = this.adresses?.adresses ?? [];
     return {
@@ -372,11 +485,15 @@ export class SimulationInondationComponent implements AfterViewInit, OnDestroy {
 
     const layerId = `${ADRESSES_SOURCE_ID}-layer`;
     if (!this.map.getLayer(layerId)) return;
+    // Gravité par HAUTEUR d'eau simulée (inspiré de la grille bluemapping, volet vitesse en
+    // moins : le modèle "baignoire" ne calcule pas de vitesse). Seuils SEUILS_GRAVITE.
     this.map.setPaintProperty(layerId, 'circle-color', [
       'case',
       ['==', ['get', 'seuil_inondation'], null], '#6b7280',
-      ['<=', ['get', 'seuil_inondation'], this.niveauCourant], '#dc2626',
-      '#2563eb',
+      ['==', ['get', 'profondeur_actuelle'], null], '#2563eb',
+      ['<=', ['get', 'profondeur_actuelle'], SEUILS_GRAVITE.limite], '#fbbf24',
+      ['<=', ['get', 'profondeur_actuelle'], SEUILS_GRAVITE.modere], '#f97316',
+      '#dc2626',
     ]);
   }
 

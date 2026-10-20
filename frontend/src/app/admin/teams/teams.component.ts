@@ -2,7 +2,7 @@ import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule, ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { forkJoin, of, map } from 'rxjs';
+import { forkJoin, Observable, of, map } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import type { Feature, FeatureCollection, MultiPolygon, Polygon } from 'geojson';
 
@@ -49,6 +49,10 @@ import { PointOperationnel, PointType } from '../../shared/models/point-operatio
 type ModalView = 'none' | 'create' | 'detail' | 'edit' | 'delete' | 'assign' | 'planning';
 
 const COLORS = ['#ef4444','#f97316','#eab308','#22c55e','#06b6d4','#3b82f6','#8b5cf6','#ec4899'];
+
+/** Élément de la recherche « Savoir-faire » du bloc Mission : une compétence ou une
+ * spécialité (Besoin), distinguées par estSpecialite. */
+type SavoirFaire = (Competence | Besoin) & { sorte?: string; estSpecialite?: boolean };
 
 @Component({
   selector: 'app-teams',
@@ -147,49 +151,79 @@ export class TeamsComponent implements OnInit {
   showDesactives = false;
 
   // ── Load ─────────────────────────────────────────────────────
+  /** En deux temps (page lente, demande utilisateur du 20/10/2026) : la page s'affiche dès que
+   * les équipes et les petites listes dont dépendent les cartes sont là ; offres, demandes,
+   * dossiers et points -- de loin le plus lourd, ~1,9 Mo en démo -- arrivent ensuite, puis les
+   * missions affichées sont recalculées (voir chargerDonneesSecondaires). */
   private loadRemoteData(): void {
     this.isLoading = true;
     forkJoin({
       users:    this.userService.getAll(),
       crisis:   this.crisisService.getAll(),
-      // L'annuaire permanent de bénévoles n'est pas une ressource affectable à une équipe.
-      offers:   this.offerService.getAll({ exclude_type: 'Bénévolat' }),
-      requests: this.requestService.getAll(),
       teams:    this.teamService.getAll(this.showDesactives),
-      dossiers: this.dossierService.getAll(),
       competences: this.competenceService.getAll(),
       besoins: this.besoinService.getAll(),
       roles: this.roleOperationnelService.getAll(),
       affectationsRoles: this.affectationRoleService.getAll(),
       institutions: this.institutionService.getAll(),
-      points: this.pointOperationnelService.getAll(),
       pointTypes: this.pointTypeService.getAll(),
     }).subscribe({
-      next: ({ users, crisis, offers, requests, teams, dossiers, competences, besoins, roles, affectationsRoles, institutions, points, pointTypes }) => {
+      next: ({ users, crisis, teams, competences, besoins, roles, affectationsRoles, institutions, pointTypes }) => {
         this.users    = users;
         this.crisis   = crisis;
-        this.offers   = offers;
-        this.requests = requests;
-        // Limité aux offres chargées (la table complète dépasse 27k lignes).
-        this.disponibiliteOffreService.getByOffers(offers.map(o => o.id!)).subscribe({
-          next: (disponibilites) => { this.disponibilites = disponibilites; },
-          error: () => {},
-        });
-        this.dossiers = dossiers;
         this.competences = competences;
         this.besoins = besoins;
         this.roles = roles;
         this.affectationsRoles = affectationsRoles;
         this.institutions = institutions;
-        this.points = points;
         this.pointTypes = pointTypes;
         this.teams    = teams.map(t => ({ ...t, missions: this.buildMissions(t) }));
         this.isLoading = false;
         this.openTeamFromQueryParam();
+        this.chargerDonneesSecondaires();
       },
       error: () => {
         this.showError('Impossible de charger les données.');
         this.isLoading = false;
+      },
+    });
+  }
+
+  /** Vrai tant que offres/demandes/dossiers/points ne sont pas arrivés : les pastilles de
+   * mission des cartes et les ressources de la fiche équipe se complètent à leur arrivée. */
+  donneesSecondairesEnCours = false;
+
+  private chargerDonneesSecondaires(): void {
+    this.donneesSecondairesEnCours = true;
+    forkJoin({
+      // exclude_type=Bénévolat : l'annuaire permanent de bénévoles n'a pas vocation à être
+      // proposé comme ressource affectable à une équipe (voir ReportingComponent.loadAll).
+      offers:   this.offerService.getAll({ exclude_type: 'Bénévolat' }),
+      requests: this.requestService.getAll(),
+      dossiers: this.dossierService.getAll(),
+      points: this.pointOperationnelService.getAll(),
+    }).subscribe({
+      next: ({ offers, requests, dossiers, points }) => {
+        this.offers = offers;
+        this.requests = requests;
+        this.dossiers = dossiers;
+        this.points = points;
+        this.teams = this.teams.map(t => ({ ...t, missions: this.buildMissions(t) }));
+        if (this.selectedTeam) {
+          this.selectedTeam = { ...this.selectedTeam, missions: this.buildMissions(this.selectedTeam) };
+        }
+        this.donneesSecondairesEnCours = false;
+        // Scopé aux offres déjà chargées ci-dessus plutôt qu'un getAll() séparé (27k+ lignes
+        // mesurées sur cette table, sans rapport avec le nombre d'offres réellement affichées
+        // ici) -- voir DisponibiliteOffreService.getByOffers.
+        this.disponibiliteOffreService.getByOffers(offers.map(o => o.id!)).subscribe({
+          next: (disponibilites) => { this.disponibilites = disponibilites; },
+          error: () => {},
+        });
+      },
+      error: () => {
+        this.donneesSecondairesEnCours = false;
+        this.showError('Impossible de charger les offres, demandes et dossiers des équipes.');
       },
     });
   }
@@ -232,6 +266,7 @@ export class TeamsComponent implements OnInit {
       name:        ['', [Validators.required, Validators.minLength(2)]],
       description: [''],
       leader:    [null],
+      mission:   [''],   // facultative (non bloquante en crise), définie juste après la création
     });
     this.editForm = this.fb.group({
       name:        ['', [Validators.required, Validators.minLength(2)]],
@@ -256,7 +291,8 @@ export class TeamsComponent implements OnInit {
 
   submitCreate(): void {
     if (this.createForm.invalid) { this.createForm.markAllAsTouched(); return; }
-    const { name, description, leader } = this.createForm.value;
+    const { name, description, leader, mission } = this.createForm.value;
+    const missionTitre = (mission ?? '').trim();
     const payload: Partial<Team> = {
       name,
       description: description ?? '',
@@ -269,7 +305,20 @@ export class TeamsComponent implements OnInit {
       competence_ids:       [],
     };
     this.teamService.create(payload).subscribe({
-      next: () => { this.reloadTeams(); this.showSuccess('Équipe créée.'); this.closeModal(); },
+      next: (team) => {
+        this.closeModal();
+        if (!missionTitre) {
+          this.reloadTeams();
+          this.showSuccess('Équipe créée — pensez à définir sa mission.');
+          return;
+        }
+        // Équipe déjà créée à ce stade : un échec ne concerne que la mission, à redéfinir
+        // depuis la fiche (et non « erreur lors de la création », trompeur).
+        this.teamService.definirMission(team.id!, missionTitre).subscribe({
+          next: () => { this.reloadTeams(); this.showSuccess('Équipe créée avec sa mission.'); },
+          error: () => { this.reloadTeams(); this.showError("Équipe créée, mais la mission n'a pas pu être définie : redéfinissez-la depuis sa fiche."); },
+        });
+      },
       error: () => this.showError('Erreur lors de la création.'),
     });
   }
@@ -546,6 +595,7 @@ export class TeamsComponent implements OnInit {
   openDelete(team: Team, e?: Event): void {
     e?.stopPropagation();
     this.selectedTeam = team;
+    this.confirmerSuppressionDefinitive = false;
     this.modal = 'delete';
   }
 
@@ -554,6 +604,28 @@ export class TeamsComponent implements OnInit {
     this.teamService.delete(this.selectedTeam.id).subscribe({
       next: () => { this.reloadTeams(); this.showSuccess('Équipe désactivée.'); this.closeModal(); },
       error: () => this.showError('Erreur lors de la désactivation.'),
+    });
+  }
+
+  /** Suppression définitive (demande utilisateur du 20/10) : 2e confirmation dans la modale,
+   * réservée côté serveur à l'institution responsable ou à un administrateur. */
+  confirmerSuppressionDefinitive = false;
+
+  supprimerDefinitivement(): void {
+    if (!this.selectedTeam?.id || !this.confirmerSuppressionDefinitive) return;
+    const nom = this.selectedTeam.name;
+    this.isSaving = true;
+    this.teamService.supprimer(this.selectedTeam.id).subscribe({
+      next: () => {
+        this.isSaving = false;
+        this.reloadTeams();
+        this.showSuccess(`Équipe « ${nom} » supprimée définitivement.`);
+        this.closeModal();
+      },
+      error: (err) => {
+        this.isSaving = false;
+        this.showError(err?.error?.error || 'Erreur lors de la suppression.');
+      },
     });
   }
 
@@ -640,8 +712,7 @@ export class TeamsComponent implements OnInit {
   }
 
   // ── THÈMES D'INTERVENTION ─────────────────────────────────────
-  competencesDropdownOpen = false;
-  themesDropdownOpen = false;
+  competencesDropdownOpen = false;   // panneau « Parcourir » du savoir-faire (bloc Mission)
 
   /** Groupe les compétences par parent ; chaque thème reste sélectionnable. */
   get competenceGroups(): { parent: Competence; children: Competence[] }[] {
@@ -706,20 +777,49 @@ export class TeamsComponent implements OnInit {
     });
   }
 
-  competenceSearchFn = (q: string) => this.competenceService.search(q);
-  competenceCreateFn = (nom: string) => this.competenceService.create({ nom });
+  libelleCreerCompetence = (nom: string) => `Créer la compétence « ${nom} »`;
 
-  onCompetenceSearchSelected(item: Competence): void {
-    if (!this.competences.find(c => c.id === item.id)) {
-      this.competences = [...this.competences, item];
+  /** Domaines proposables à une équipe : les besoins qualifiés (nature posée), groupe puis
+   * éléments -- sans les signalements de situation (« Route barrée », « Danger imminent »…),
+   * qui ne sont pas un domaine qu'une équipe prend en charge. */
+  get domainesProposables(): Besoin[] {
+    const qualifies = this.besoins.filter(b => b.nature);
+    const racines = qualifies.filter(b => !b.parent).sort((a, b) => a.nom.localeCompare(b.nom));
+    return racines.flatMap(r => [r, ...qualifies.filter(b => b.parent === r.id).sort((a, b) => a.nom.localeCompare(b.nom))]);
+  }
+
+  /** Recherche du bloc Mission : domaines d'abord (liste courte déjà chargée), puis
+   * compétences précises (serveur) -- `sorte` les distingue dans le menu. */
+  savoirFaireSearchFn = (q: string): Observable<SavoirFaire[]> => {
+    const terme = q.trim().toLowerCase();
+    const domaines = this.domainesProposables
+      .filter(b => b.nom.toLowerCase().includes(terme))
+      .map(b => ({ ...b, sorte: 'domaine', estSpecialite: true }));
+    return this.competenceService.search(q).pipe(
+      map(competences => [...domaines, ...competences.map(c => ({ ...c, sorte: 'compétence précise', estSpecialite: false }))]),
+    );
+  };
+
+  savoirFaireCreateFn = (nom: string): Observable<SavoirFaire> => this.competenceService.create({ nom });
+
+  onSavoirFaireSelected(item: SavoirFaire): void {
+    if (item.estSpecialite) {
+      if (!this.hasTheme(item.id)) this.toggleTheme(item.id);
+      return;
     }
-    if (!this.hasCompetence(item.id)) {
-      this.toggleCompetence(item.id);
+    const competence = item as Competence;
+    if (!this.competences.find(c => c.id === competence.id)) {
+      this.competences = [...this.competences, competence];
+    }
+    if (!this.hasCompetence(competence.id)) {
+      this.toggleCompetence(competence.id);
     }
   }
 
-  // ── SPÉCIALITÉ DE L'ÉQUIPE (vues dédiées, ex: "Hébergement") ────
-  // Déclenche des vues spécifiques (HebergementMatchingComponent), contrairement aux compétences.
+  // ── DOMAINES D'INTERVENTION (Team.themes, des Besoin, ex: "Hébergement") ────
+  // Ce que l'équipe prend en charge : ouvre les vues dédiées (voir HebergementMatchingComponent)
+  // et, côté serveur, ajoute/retire les compétences liées (_synchroniser_competences_des_domaines)
+  // -- la réponse du PATCH porte donc aussi les competence_ids à jour.
   toggleTheme(themeId: string): void {
     if (!this.selectedTeam) return;
     const ids = this.selectedTeam.theme_ids ?? [];
@@ -967,6 +1067,21 @@ export class TeamsComponent implements OnInit {
     });
   }
 
+  /** Bouton unique du bloc Mission : un titre définit (ou remplace) la mission, sur la crise
+   * choisie s'il y en a une (definir_mission la rattache aussi à l'équipe) ; une crise seule
+   * rattache l'équipe sans toucher à sa mission. */
+  get libelleValiderMission(): string {
+    if (this.missionTitreInput.trim()) {
+      return this.selectedTeam?.mission_active_titre ? 'Changer la mission' : 'Définir la mission';
+    }
+    return 'Rattacher à la crise';
+  }
+
+  validerMission(): void {
+    if (this.missionTitreInput.trim()) this.submitDefinirMission();
+    else if (this.rattacherCriseId) this.submitRattacherCrise();
+  }
+
   submitDefinirMission(): void {
     if (!this.selectedTeam?.id || !this.missionTitreInput.trim()) return;
     // Réutilise le sélecteur de crise de « Rattacher » (un seul sélecteur pour la section).
@@ -974,6 +1089,7 @@ export class TeamsComponent implements OnInit {
       next: (updated) => {
         this.selectedTeam = { ...updated, missions: this.selectedTeam!.missions };
         this.missionTitreInput = '';
+        this.rattacherCriseId = null;
         this.reloadTeams();
         this.showSuccess('Mission de l\'équipe définie.');
       },
@@ -996,7 +1112,7 @@ export class TeamsComponent implements OnInit {
     if (!this.selectedTeam?.id || !this.rattacherCriseId) return;
     this.teamService.assignerCrise(this.selectedTeam.id, this.rattacherCriseId).subscribe({
       next: (updated) => {
-        // rattacherCriseId est conservé : il sert aussi au bouton « Définir/Changer » la mission.
+        this.rattacherCriseId = null;
         this.selectedTeam = { ...updated, missions: this.buildMissions(updated) };
         this.reloadTeams();
         this.showSuccess('Crise rattachée à l\'équipe.');
@@ -1159,8 +1275,9 @@ export class TeamsComponent implements OnInit {
     if (!this.selectedTeam?.id) return;
     this.teamService.definirStatutRessource(this.selectedTeam.id, offerId, statut).subscribe({
       next: (updated) => {
-        this.offerService.getAll({ exclude_type: 'Bénévolat' }).subscribe(offers => {
-          this.offers = offers;
+        // Seule cette offre a changé : la relire elle seule, pas toute la liste (~1 Mo en démo).
+        this.offerService.getById(offerId).subscribe(offer => {
+          this.offers = this.offers.map(o => o.id === offer.id ? offer : o);
           this.selectedTeam = { ...updated, missions: this.buildMissions(updated) };
           this.reloadTeams();
         });

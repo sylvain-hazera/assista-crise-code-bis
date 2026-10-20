@@ -259,7 +259,11 @@ class UserSerializer(serializers.ModelSerializer):
         cached = getattr(obj, '_active_contact_cache', 'unset')
         if cached != 'unset':
             return cached
-        contact = obj.institutions.filter(actif=True).select_related('institution__type').first()
+        prefetch = getattr(obj, 'contacts_actifs_prefetch', None)   # UserViewSet, en liste
+        if prefetch is not None:
+            contact = prefetch[0] if prefetch else None
+        else:
+            contact = obj.institutions.filter(actif=True).select_related('institution__type').first()
         obj._active_contact_cache = contact
         return contact
 
@@ -283,12 +287,21 @@ class UserSerializer(serializers.ModelSerializer):
         institution = getattr(obj, 'institution', None)
         if institution is None or not institution.commune_code:
             return None
+        # Aléas lus une fois par commune pour toute une liste d'utilisateurs (souvent de la
+        # même institution) au lieu de 2 lectures par utilisateur.
+        memo = self.context.setdefault('_risques_par_commune', {})
+        if institution.commune_code not in memo:
+            memo[institution.commune_code] = (
+                commune_risques(institution.commune_code),
+                commune_risques_date_maj(institution.commune_code),
+            )
+        risques, risques_date_maj = memo[institution.commune_code]
         return {
             "niveau": institution.secteur_niveau_effectif,
             "nom": institution.secteur_nom,
             # Risques de la seule commune de l'institution, même pour un secteur plus large.
-            "risques": commune_risques(institution.commune_code),
-            "risques_date_maj": commune_risques_date_maj(institution.commune_code),
+            "risques": risques,
+            "risques_date_maj": risques_date_maj,
         }
 
     def get_needs_institution_setup(self, obj):
@@ -1349,6 +1362,32 @@ class TeamSerializer(serializers.ModelSerializer):
     salon_matrix_id = serializers.CharField(source='salon_matrix.id', read_only=True, default=None)
     salon_matrix_room_id = serializers.CharField(source='salon_matrix.room_id', read_only=True, default=None)
 
+    # L'appelant peut-il gérer cette équipe (ressources, mission, dossiers) ? La liste des
+    # équipes couvre toute sa zone, mais seules celles de son institution (ou déléguées à
+    # elle) acceptent ses affectations -- ex. « Affecter à une équipe existante » sur la page
+    # Signalements n'en propose pas d'autres.
+    peut_gerer = serializers.SerializerMethodField()
+
+    def get_peut_gerer(self, obj):
+        # Même règle que _appartient_a_equipe (core/views.py), avec les institutions de
+        # l'appelant lues une seule fois pour toute la liste (contexte partagé).
+        request = self.context.get('request')
+        if request is None or not request.user.is_authenticated:
+            return False
+        if 'mes_institutions_equipe' not in self.context:
+            if effective_role_or_none(request) == UserRole.ADMINISTRATOR:
+                self.context['mes_institutions_equipe'] = None
+            else:
+                self.context['mes_institutions_equipe'] = set(ContactInstitution.objects.filter(
+                    utilisateur=request.user, actif=True,
+                ).values_list('institution_id', flat=True))
+        mes_institutions = self.context['mes_institutions_equipe']
+        if mes_institutions is None:
+            return True
+        return obj.institution_id in mes_institutions or (
+            obj.institution_delegataire_id is not None and obj.institution_delegataire_id in mes_institutions
+        )
+
     def get_canal_meshcore_provisionne(self, obj):
         canal = getattr(obj, 'canal_meshcore', None)
         return canal is not None and canal.canal_idx is not None
@@ -1383,6 +1422,7 @@ class TeamSerializer(serializers.ModelSerializer):
             'member_ids',
             'members_info',
             'vehicules_count',
+            'peut_gerer',
             'assigned_crisis_ids',
             'assigned_offer_ids',
             'assigned_request_ids',
@@ -1649,6 +1689,12 @@ class DossierSerializer(serializers.ModelSerializer):
         origine = self._origine(obj)
         if not origine or not origine.location:
             return None
+        # En liste : lecture du cache seule, jamais d'appel réseau (même règle que
+        # RequestSerializer.get_commune).
+        view = self.context.get('view')
+        if view is not None and getattr(view, 'action', None) == 'list':
+            code = obj.demande.commune_code if obj.demande else None
+            return commune_from_code_cached(code) or commune_from_point_cached(origine.location)
         if obj.demande and obj.demande.commune_code:
             return commune_from_code(obj.demande.commune_code) or commune_from_point(origine.location)
         return commune_from_point(origine.location)
@@ -1680,8 +1726,12 @@ class DossierSerializer(serializers.ModelSerializer):
 
     def get_regulateurs(self, obj):
         # Contact du régulateur pour les intervenants (accès déjà limité par get_queryset ; masqué
-        # en DEMO).
-        regulateurs = _regulateurs_pour_dossier(obj, obj.equipe)
+        # en DEMO). Mêmes régulateurs pour une même compétence (ou équipe) : calculés une fois par liste.
+        memo = self.context.setdefault('_regulateurs_par_cle', {})
+        cle = ('competence', obj.competence_id) if obj.competence_id else ('equipe', obj.equipe_id)
+        if cle not in memo:
+            memo[cle] = list(_regulateurs_pour_dossier(obj, obj.equipe))
+        regulateurs = memo[cle]
         return [
             {
                 'id': str(r.id),
@@ -2790,6 +2840,11 @@ class ContactInstitutionSerializer(
 
         fields = "__all__"
 
+        # Pas de validateur auto pour uq_contact_principal_institution : un nouveau contact
+        # principal REMPLACE l'ancien (ContactInstitutionViewSet._liberer_contact_principal),
+        # il n'est pas refusé (demande utilisateur du 19/10).
+        validators = []
+
     def get_utilisateur_nom(self, obj):
         if not obj.utilisateur:
             return None
@@ -3236,8 +3291,9 @@ class SatelliteSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Satellite
-        fields = "__all__"
-        # compte_service posé seulement par SatelliteViewSet.valider.
+        # Jamais le hash du secret de récupération des identifiants ; compte_service posé
+        # seulement par SatelliteViewSet.valider.
+        exclude = ['secret_recuperation_hash']
         read_only_fields = ['statut_enrolement', 'compte_service', 'dernier_contact']
 
     def get_etat(self, obj):
@@ -3255,7 +3311,7 @@ class SatelliteSerializer(serializers.ModelSerializer):
 class JetonEnrolementSatelliteSerializer(serializers.ModelSerializer):
     class Meta:
         model = JetonEnrolementSatellite
-        fields = ['id', 'institution', 'jeton', 'expiration', 'utilise', 'date_creation']
+        fields = ['id', 'institution', 'jeton', 'profil', 'expiration', 'utilise', 'date_creation']
         read_only_fields = fields
 
 

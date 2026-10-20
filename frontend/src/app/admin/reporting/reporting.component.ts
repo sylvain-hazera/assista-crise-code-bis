@@ -2,7 +2,7 @@ import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import { catchError, forkJoin, Observable, of, Subject, takeUntil } from 'rxjs';
+import { catchError, forkJoin, Observable, of, Subject, switchMap, takeUntil } from 'rxjs';
 
 import { CrisisService }  from '../../services/crisis.service';
 import { OfferService }   from '../../services/offer.service';
@@ -184,6 +184,11 @@ export class ReportingComponent implements OnInit, OnDestroy {
   showBulkInformationTeamResults = false;
 
   showBulkOfferModal   = false;
+  bulkOfferMode: 'new' | 'existing' = 'new';
+  bulkOfferTeamId: string | null = null;
+  bulkOfferTeamQuery = '';
+  showBulkOfferTeamResults = false;
+  bulkMissionTitre = '';   // facultatif : mission de la nouvelle équipe, ou de l'équipe existante qui n'en a pas
   bulkTeamName          = '';
   bulkRegulateurId: string | null = null;
   bulkRegulateurQuery    = '';
@@ -929,10 +934,24 @@ export class ReportingComponent implements OnInit, OnDestroy {
     });
   }
 
-  // ── Barre groupée offres : créer une équipe + assigner un régulateur ────────
+  /** « Annuler la sélection » des barres groupées : vide aussi les lignes mémorisées (Map),
+   * pas seulement les ids -- sinon openBulkOfferModal pré-remplissait le nom d'équipe depuis
+   * une sélection annulée. */
+  annulerSelection(type: 'Offer' | 'Request' | 'Information'): void {
+    if (type === 'Offer') { this.selectedOfferIds.clear(); this.selectedOfferRowsMap.clear(); }
+    if (type === 'Request') { this.selectedRequestIds.clear(); this.selectedRequestRowsMap.clear(); }
+    if (type === 'Information') { this.selectedInformationIds.clear(); this.selectedInformationRowsMap.clear(); }
+  }
+
+  // ── Barre groupée offres : nouvelle équipe (+ régulateur) ou équipe existante ─
 
   openBulkOfferModal(): void {
-    // Pré-remplit le nom d'équipe avec l'organisation si toutes les offres viennent d'un même dépôt groupé.
+    this.bulkOfferMode = 'new';
+    this.bulkOfferTeamId = null;
+    this.bulkOfferTeamQuery = '';
+    this.bulkMissionTitre = '';
+    // Pré-remplit le nom d'équipe avec l'organisation quand toutes les offres sélectionnées
+    // viennent d'un même dépôt groupé — reste modifiable, juste un gain de temps.
     const selected = Array.from(this.selectedOfferRowsMap.values());
     const organisations = new Set(selected.map(r => r.organisationNom).filter(Boolean));
     this.bulkTeamName = organisations.size === 1 ? [...organisations][0]! : '';
@@ -964,15 +983,81 @@ export class ReportingComponent implements OnInit, OnDestroy {
     setTimeout(() => this.showBulkRegulateurResults = false, 150);
   }
 
+  /** Équipes existantes proposées : seulement celles que l'utilisateur peut gérer (son
+   * institution ou déléguée, voir TeamSerializer.peut_gerer) -- la liste des équipes couvre
+   * toute sa zone, le backend refuserait les autres. Une équipe sans mission reste
+   * sélectionnable (non bloquant en crise) ; sa mission peut être saisie au passage. */
+  get filteredBulkOfferTeams(): Team[] {
+    const q = this.bulkOfferTeamQuery.trim().toLowerCase();
+    return this.teams
+      .filter(t => t.peut_gerer && t.actif !== false)
+      .filter(t => !q || t.name.toLowerCase().includes(q))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  get bulkOfferTeam(): Team | undefined {
+    return this.teams.find(t => t.id === this.bulkOfferTeamId);
+  }
+
+  selectBulkOfferTeam(t: Team): void {
+    this.bulkOfferTeamId = t.id!;
+    this.bulkOfferTeamQuery = teamDisplayName(t);
+    this.showBulkOfferTeamResults = false;
+  }
+
+  onBulkOfferTeamQueryChange(): void {
+    this.bulkOfferTeamId = null;
+    this.showBulkOfferTeamResults = true;
+  }
+
+  hideBulkOfferTeamResultsDelayed(): void {
+    setTimeout(() => this.showBulkOfferTeamResults = false, 150);
+  }
+
+  get bulkOfferSubmittable(): boolean {
+    return this.bulkOfferMode === 'new' ? !!this.bulkTeamName.trim() : !!this.bulkOfferTeamId;
+  }
+
+  submitBulkOffer(): void {
+    if (this.bulkOfferMode === 'existing') this.submitBulkOfferExistingTeam();
+    else this.submitBulkOfferTeam();
+  }
+
+  submitBulkOfferExistingTeam(): void {
+    const team = this.bulkOfferTeam;
+    if (!team?.id || this.selectedOfferIds.size === 0) return;
+    const offerIds = [...this.selectedOfferIds];
+    const titre = team.mission_active ? '' : this.bulkMissionTitre.trim();
+    // Mission saisie au passage pour une équipe qui n'en a pas : définie d'abord, pour que les
+    // offres y soient rattachées directement.
+    const avantAffectation: Observable<unknown> = titre ? this.teamService.definirMission(team.id, titre) : of(null);
+    avantAffectation.pipe(switchMap(() => this.teamService.assignerRessources(team.id!, offerIds))).subscribe({
+      next: ({ team: updated, ajoutees, deja_affectees }) => {
+        const idx = this.teams.findIndex(t => t.id === updated.id);
+        if (idx !== -1) this.teams[idx] = updated;
+        let message = `${ajoutees} offre(s) affectée(s) à l'équipe « ${teamDisplayName(updated)} »`
+          + (updated.mission_active_titre ? ` (mission : ${updated.mission_active_titre}).` : ' — pensez à définir sa mission.');
+        if (deja_affectees > 0) message += ` ${deja_affectees} déjà dans cette équipe.`;
+        this.showSuccess(message);
+        this.selectedOfferIds.clear();
+        this.selectedOfferRowsMap.clear();
+        this.showBulkOfferModal = false;
+        this.load();   // statut des offres passé à « Indisponible »
+      },
+      error: (err) => this.showError(err?.error?.error || "Impossible d'affecter ces offres à l'équipe."),
+    });
+  }
+
   submitBulkOfferTeam(): void {
     if (!this.bulkTeamName.trim() || this.selectedOfferIds.size === 0) return;
-    this.offerService.bulkCreateTeam([...this.selectedOfferIds], this.bulkTeamName.trim(), this.bulkRegulateurId).subscribe({
+    this.offerService.bulkCreateTeam([...this.selectedOfferIds], this.bulkTeamName.trim(), this.bulkRegulateurId, this.bulkMissionTitre.trim()).subscribe({
       next: (team) => {
         this.teams.push(team);
         this.showSuccess(`Équipe « ${team.name} » créée avec ${this.selectedOfferIds.size} offre(s).`);
         this.selectedOfferIds.clear();
         this.selectedOfferRowsMap.clear();
         this.showBulkOfferModal = false;
+        this.load();   // statut des offres passé à « Indisponible »
       },
       error: (err) => this.showError(err?.error?.error || "Impossible de créer l'équipe."),
     });

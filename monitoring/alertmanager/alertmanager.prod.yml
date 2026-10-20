@@ -11,7 +11,7 @@ route:
   group_by: ['alertname', 'job']
   group_wait: 30s
   group_interval: 5m
-  repeat_interval: 4h
+  repeat_interval: 24h      # avertissements : un rappel par jour, pas plus (demande du 20/10)
   routes:
     # battement renvoyé chaque minute (sinon répétition par défaut de 4 h = fausse alerte)
     - matchers: ['alertname="Watchdog"']
@@ -21,12 +21,14 @@ route:
       repeat_interval: 1m
     - matchers: ['severity="critical"']
       receiver: team-email
-      repeat_interval: 1h
+      repeat_interval: 4h     # critiques (site, base...) : rappel toutes les 4 h
 
 receivers:
   - name: team-email
     email_configs:
-      - to: 'TODO-team-address@example.org'   # TODO
+      # Jamais d'adresse réelle dans le dépôt. .114 monte sa propre copie de ce fichier, avec les
+      # destinataires : ~/.config/assista-crise/monitoring/alertmanager.114.yml (docker-compose.114.yml).
+      - to: 'TODO-team-address@example.org'
         send_resolved: true
   - name: deadmans-switch
     webhook_configs:

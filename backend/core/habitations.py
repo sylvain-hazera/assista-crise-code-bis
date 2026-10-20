@@ -50,6 +50,54 @@ def _delegation_couvre_commune(delegation: DelegationCompetence, commune_code: s
     return False
 
 
+def _institution_couvre_commune(institution, commune_code: str) -> bool:
+    """Vrai si la commune tombe dans le SECTEUR effectif de l'institution (sa commune, son EPCI,
+    son département ou sa région), pas seulement sa commune exacte -- même découpage que
+    SECTEUR_CHAMP_PAR_NIVEAU (zone_scoping). Une AUT_LOCALE de niveau département (ex: Conseil
+    départemental) couvre ainsi toutes les communes de son département."""
+    niveau = institution.secteur_niveau_effectif
+    if niveau == "national":
+        return True
+    if not niveau or niveau == "commune":
+        return bool(institution.commune_code) and institution.commune_code == commune_code
+    if niveau == "departement":
+        # Pur calcul de chaîne (pas d'appel réseau) -- cas le plus courant.
+        return bool(institution.departement_code) and institution.departement_code == _departement_code(commune_code)
+    from .geo_lookup import commune_secteur_codes
+    secteurs = commune_secteur_codes(commune_code)
+    champ = {"epci": "epci_code", "region": "region_code"}.get(niveau)
+    if champ is None:
+        return False
+    code_institution = getattr(institution, champ, None)
+    return bool(code_institution) and code_institution == secteurs.get(champ)
+
+
+def peut_simuler_commune(request, commune_code: str) -> bool:
+    """Accès à l'outil « Simulation d'inondation » (planification préventive, PAS liée à une
+    crise -- distinct d'institution_accede_commune, qui vise le référencement des dégâts commune
+    par commune). Un acteur institutionnel couvre tout son SECTEUR (correctif du 20/10/2026 : un
+    Conseil départemental voit toutes les communes de son département, pas seulement sa commune
+    siège). En DEMO, il peut simuler n'importe quelle commune -- les jeux de démonstration sont
+    répartis sur plusieurs départements, même raison que la portée nationale des SDIS en démo."""
+    from .models import Environment, UserRole
+    from .permissions import INSTITUTIONAL_TYPES, get_active_environment, get_effective_role
+
+    user = getattr(request, "user", None)
+    if not (user and user.is_authenticated):
+        return False
+    role = get_effective_role(request)
+    if role == UserRole.ADMINISTRATOR:
+        return True
+    if role not in INSTITUTIONAL_TYPES:
+        return False
+    if get_active_environment(request) == Environment.DEMO:
+        return True
+    institution = getattr(user, "institution", None)
+    if institution is None:
+        return False
+    return _institution_couvre_commune(institution, commune_code)
+
+
 def institution_accede_commune(request, commune_code: str, crise=None) -> bool:
     """True si l'institution de l'appelant peut gérer les habitations de `commune_code` --
     ADMINISTRATOR voit toujours tout, une AUT_LOCALE sur sa propre commune, une institution
@@ -255,6 +303,80 @@ def perimetre_zone_nommee(zone) -> "object | None":
     return None
 
 
+# Zones de débordement de cours d'eau officielles (Géorisques, rapportage 2020, flux WFS) -- ne
+# couvrent que les Territoires à Risque Important d'Inondation (TRI) : ailleurs, aucune zone.
+GEORISQUES_WFS = "https://www.georisques.gouv.fr/services"
+COUCHES_DEBORDEMENT_GEORISQUES = {
+    "ALEA_SYNT_01_01FOR_FXX": "débordement fréquent (décennal)",
+    "ALEA_SYNT_01_02MOY_FXX": "débordement moyen (centennal, réf. PPRI)",
+    "ALEA_SYNT_01_04FAI_FXX": "débordement rare (millénal)",
+}
+# Couches affichables sur la carte de simulation (débordement + ruissellement + submersion) --
+# seules celles de débordement servent au filtre des adresses (estimation des dégâts).
+COUCHES_GEORISQUES = {
+    **COUCHES_DEBORDEMENT_GEORISQUES,
+    "ALEA_SYNT_02_02MOY_FXX": "ruissellement moyen (centennal)",
+    "ALEA_SYNT_03_02MOY_FXX": "submersion marine moyenne (centennale)",
+}
+
+
+def zones_georisques(commune_code: str, couche: str) -> dict:
+    """Union des zones Géorisques de `couche` (voir COUCHES_GEORISQUES) sur l'emprise de la
+    commune -- `{"polygone": GEOS | None, "erreur": str | None}`. polygone None sans erreur =
+    la commune n'a aucune zone officielle pour ce scénario (hors TRI). Sert à la fois au filtre
+    des adresses (estimation des dégâts) et à l'affichage sur la carte de simulation : les
+    deux montrent donc exactement les mêmes zones."""
+    from django.contrib.gis.geos import GEOSGeometry, MultiPolygon
+
+    from .inondation import _bbox_commune
+
+    bbox = _bbox_commune(commune_code)
+    if bbox is None:
+        return {"polygone": None, "erreur": "Contour de la commune indisponible (geo.api.gouv.fr)."}
+    lon_min, lat_min, lon_max, lat_max = bbox
+    params = urllib.parse.urlencode({
+        "SERVICE": "WFS", "VERSION": "2.0.0", "REQUEST": "GetFeature",
+        "TYPENAMES": f"ms:{couche}", "SRSNAME": "EPSG:4326", "COUNT": 5000,
+        # WFS 2.0 en EPSG:4326 : axe latitude d'abord dans la BBOX (coordonnées renvoyées en lon,lat).
+        "BBOX": f"{lat_min},{lon_min},{lat_max},{lon_max},urn:ogc:def:crs:EPSG::4326",
+        "OUTPUTFORMAT": "application/json; subtype=geojson; charset=utf-8",
+    })
+    try:
+        with urllib.request.urlopen(f"{GEORISQUES_WFS}?{params}", timeout=60) as response:
+            brut = response.read().decode("utf-8").strip()
+    except Exception:
+        return {"polygone": None, "erreur": "Service Géorisques indisponible, réessayez plus tard."}
+    if not brut:   # le serveur renvoie un corps vide quand aucune zone ne croise l'emprise
+        return {"polygone": None, "erreur": None}
+    try:
+        features = json.loads(brut).get("features") or []
+    except ValueError:
+        return {"polygone": None, "erreur": "Réponse Géorisques illisible."}
+
+    polygones = []
+    for feature in features:
+        geometrie = feature.get("geometry")
+        if not geometrie:
+            continue
+        try:
+            geos = GEOSGeometry(json.dumps(geometrie), srid=4326)
+            if not geos.valid:
+                geos = geos.buffer(0)   # répare auto-intersections/anneaux mal orientés
+        except Exception:
+            continue                    # géométrie inexploitable : ignorée, pas tout le calcul
+        if geos.geom_type == "Polygon":
+            polygones.append(geos)
+        elif geos.geom_type == "MultiPolygon":
+            polygones.extend(geos)
+    if not polygones:
+        return {"polygone": None, "erreur": None}
+    try:
+        union = MultiPolygon(*polygones, srid=4326).unary_union
+    except Exception:
+        union = MultiPolygon(*polygones, srid=4326).buffer(0)
+    return {"polygone": union, "erreur": None}
+
+
 def perimetre_scan(crise, zone) -> "object | None":
     """Combine la zone dessinée de la crise et une Zone nommée optionnelle (ex: "commune
     impactée : Le Porge, zone de recherche : Quartier Nord") : l'intersection des deux si les
@@ -293,9 +415,12 @@ def scanner_ban_commune(commune_code: str, polygone_limite=None, max_workers: in
 
     if polygone_limite is not None:
         from django.contrib.gis.geos import Point
+        # Géométrie préparée : test point-dans-polygone bien plus rapide sur des formes détaillées
+        # (zones Géorisques : plusieurs milliers de sommets par commune).
+        prepare = polygone_limite.prepared
         adresses = [
             a for a in adresses
-            if polygone_limite.contains(Point(a["lon"], a["lat"], srid=4326))
+            if prepare.contains(Point(a["lon"], a["lat"], srid=4326))
         ]
 
     return {"adresses": adresses, "voies_totales": len(voies), "voies_en_echec": echecs, "erreur": None}

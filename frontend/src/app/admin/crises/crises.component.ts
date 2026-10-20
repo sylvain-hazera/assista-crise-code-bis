@@ -361,6 +361,19 @@ export class CrisesComponent implements OnInit {
     return codes.length ? forkJoin(codes.map(fetchFn)) : of([] as GeoContour[]);
   }
 
+  updateEssai(essai: boolean): void {
+    const crisis = this.selectedCrisis;
+    if (!crisis || essai === !!crisis.essai) return;
+    this.crisisService.patch(crisis.id, { essai }).subscribe({
+      next: (updated) => {
+        this.selectedCrisis = updated;
+        const idx = this.crises.findIndex(c => c.id === updated.id);
+        if (idx !== -1) this.crises[idx] = updated;
+      },
+      error: () => this.showError("Impossible de modifier le statut d'essai de la crise."),
+    });
+  }
+
   updateZoneRadius(radius: number): void {
     const crisis = this.selectedCrisis;
     if (!crisis || !radius || radius === crisis.radius) return;

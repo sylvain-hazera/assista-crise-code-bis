@@ -30,9 +30,25 @@ def _institution_commune_or_400(request):
     return institution.commune_code
 
 
+def _sdis_en_demo(request):
+    from .models import Environment
+    from .permissions import get_active_environment
+
+    institution = getattr(request.user, 'institution', None)
+    if institution is None or not institution.type_id:
+        return False
+    if (institution.type.code or '').upper() != 'SDIS':
+        return False
+    return get_active_environment(request) == Environment.DEMO
+
+
 def _institution_secteur_or_400(request):
     """(niveau, code) du secteur de l'institution de l'appelant, ou une Response 400.
-    "national" renvoie un code None."""
+    "national" renvoie un code None. En zone DEMO, un SDIS a une portée nationale (les jeux de
+    démonstration couvrent plusieurs départements, POC SDIS 40 du 20/10/2026)."""
+    if _sdis_en_demo(request):
+        return "national", None
+
     commune_code = _institution_commune_or_400(request)
     if isinstance(commune_code, Response):
         return commune_code

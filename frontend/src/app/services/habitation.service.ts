@@ -66,11 +66,14 @@ export class HabitationService {
     );
   }
 
-  estimationBan(communeCode: string, criseId?: string, zoneId?: string): Observable<{
-    creees: number; adresses_trouvees: number; voies_totales: number; voies_en_echec: number;
+  /** `georisques` (optionnel) : ne référencer que les adresses situées dans les zones de
+   * débordement officielles Géorisques de ce scénario (ex: ALEA_SYNT_01_02MOY_FXX). */
+  estimationBan(communeCode: string, criseId?: string, zoneId?: string, georisques?: string): Observable<{
+    creees: number; adresses_trouvees: number; voies_totales: number; voies_en_echec: number; filtre_georisques?: string | null;
   }> {
-    return this.http.post<{ creees: number; adresses_trouvees: number; voies_totales: number; voies_en_echec: number }>(
-      `${this.url}/estimation-ban/`, { commune_code: communeCode, crise: criseId || undefined, zone: zoneId || undefined }
+    return this.http.post<{ creees: number; adresses_trouvees: number; voies_totales: number; voies_en_echec: number; filtre_georisques?: string | null }>(
+      `${this.url}/estimation-ban/`,
+      { commune_code: communeCode, crise: criseId || undefined, zone: zoneId || undefined, georisques: georisques || undefined },
     );
   }
 

@@ -283,6 +283,11 @@ class Crisis(EnvironmentScopedModel):
     )
     start_date = models.DateTimeField(auto_now_add=True)
     end_date = models.DateTimeField(null=True, blank=True)
+    # Crise créée pour des essais (demande utilisateur du 20/10) : reste ouverte et pleinement
+    # utilisable, mais ignorée par le monitoring -- sinon "crise active sans demande d'aide"
+    # alerte en permanence sur des crises de test que personne ne veut clôturer (la clôture
+    # déclenche la purge RGPD à 30 jours, voir cleanup_crises).
+    essai = models.BooleanField(default=False)
 
     author = models.ForeignKey(
         User,
@@ -2208,6 +2213,19 @@ class Habitation(EnvironmentScopedModel):
     )
 
     date_derniere_evaluation = models.DateTimeField(null=True, blank=True)
+
+    # Surfaces (m²) -- totales et part impactée par les dégâts (demande utilisateur du 20/10/2026).
+    surface_habitable_totale = models.FloatField(null=True, blank=True, help_text="Surface habitable totale (m²).")
+    surface_habitable_impactee = models.FloatField(null=True, blank=True, help_text="Surface habitable impactée (m²).")
+    surface_non_habitable_totale = models.FloatField(null=True, blank=True, help_text="Surface non habitable totale (annexes, garage, local…) (m²).")
+    surface_non_habitable_impactee = models.FloatField(null=True, blank=True, help_text="Surface non habitable impactée (m²).")
+
+    # Valeur indicative du bien (€), typiquement issue de DVF (valeurs foncières open data) --
+    # jamais une expertise, toujours affichée comme indicative (voir vue DVF).
+    valeur_estimee = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True,
+                                         help_text="Valeur indicative du bien (€), ex. DVF.")
+    valeur_source = models.CharField(max_length=40, null=True, blank=True,
+                                     help_text="Origine de la valeur (ex: DVF, saisie manuelle).")
 
     date_creation = models.DateTimeField(auto_now_add=True)
     modifie_le = models.DateTimeField(auto_now=True)
@@ -5405,6 +5423,10 @@ class JetonEnrolementSatellite(EnvironmentScopedModel):
 
     jeton = models.CharField(max_length=64, unique=True)
 
+    # Profil choisi par l'administrateur en générant le jeton (installation en une commande,
+    # 20/10/2026) : le satellite n'a plus à le connaître ni à le ressaisir.
+    profil = models.CharField(max_length=4, choices=ProfilSatellite.choices, default=ProfilSatellite.GW)
+
     expiration = models.DateTimeField()
 
     utilise = models.BooleanField(default=False)
@@ -5445,6 +5467,11 @@ class Satellite(EnvironmentScopedModel):
     dernier_contact = models.DateTimeField(null=True, blank=True)
 
     version_logicielle = models.CharField(max_length=50, blank=True)
+
+    # Secret remis au satellite à l'enrôlement (haché ici, jamais en clair) : lui permet de
+    # récupérer SEUL ses identifiants une fois validé (SatelliteViewSet.recuperer_identifiants),
+    # sans qu'un humain ait à les recopier -- usage unique, effacé à la récupération.
+    secret_recuperation_hash = models.CharField(max_length=128, null=True, blank=True)
 
     date_creation = models.DateTimeField(auto_now_add=True)
 

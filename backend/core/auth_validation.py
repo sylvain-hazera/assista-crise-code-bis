@@ -397,27 +397,41 @@ class InstitutionEmailValidator:
             return False, "L'adresse email n'est pas au bon format"
 
         domain = email.split("@", 1)[1]
+        # Motifs ci-dessous écrits sans ambiguïté (séparateur [.-]+ puis segment SANS tiret) :
+        # l'ancienne forme (?:[.-][a-z0-9-]+)* laissait un même domaine se découper de façon
+        # exponentielle (« chu-a-a-a-…! ») -- ~1 s pour 24 segments, des heures pour 60, sur un
+        # formulaire d'inscription public (relecture du 20/10/2026). Même ensemble de domaines
+        # acceptés en pratique (un label DNS ne finit jamais par un tiret). Longueur bornée à
+        # celle d'un nom de domaine (RFC 1035) en garde-fou supplémentaire.
+        if len(domain) > 253:
+            return False, "L'adresse email n'est pas au bon format"
         allowed_patterns = [
-            r"^mairie(?:[.-][a-z0-9-]+)*(?:\.fr)?$",
-            r"^.*\.mairie(?:[.-][a-z0-9-]+)*(?:\.fr)?$",
-            r"^.*(?:prefecture|gendarmerie|police|samu|collectivite|collectivités|communaute|communes?|commune|intercommunalite|metropole|departement|region|hopital|hôpital|hospitalier)(?:[.-][a-z0-9-]+)*(?:\.fr)?$",
-            r"^prefecture(?:[.-][a-z0-9-]+)*(?:\.fr)?$",
-            r"^police(?:[.-][a-z0-9-]+)*(?:\.fr)?$",
-            r"^gendarmerie(?:[.-][a-z0-9-]+)*(?:\.fr)?$",
-            r"^samu(?:[.-][a-z0-9-]+)*(?:\.fr)?$",
-            r"^ministere(?:[.-][a-z0-9-]+)*(?:\.gouv\.fr)?$",
+            r"^mairie(?:[.-]+[a-z0-9]+)*(?:\.fr)?$",
+            r"^.*\.mairie(?:[.-]+[a-z0-9]+)*(?:\.fr)?$",
+            r"^.*(?:prefecture|gendarmerie|police|samu|collectivite|collectivités|communaute|communes?|commune|intercommunalite|metropole|departement|region|hopital|hôpital|hospitalier)(?:[.-]+[a-z0-9]+)*(?:\.fr)?$",
+            r"^prefecture(?:[.-]+[a-z0-9]+)*(?:\.fr)?$",
+            r"^police(?:[.-]+[a-z0-9]+)*(?:\.fr)?$",
+            r"^gendarmerie(?:[.-]+[a-z0-9]+)*(?:\.fr)?$",
+            r"^samu(?:[.-]+[a-z0-9]+)*(?:\.fr)?$",
+            r"^ministere(?:[.-]+[a-z0-9]+)*(?:\.gouv\.fr)?$",
             r"^.*\.gouv\.fr$",
-            r"^cc(?:[.-][a-z0-9-]+)*(?:\.fr)?$",
-            r"^.*-cc(?:[.-][a-z0-9-]+)*(?:\.fr)?$",
-            r"^.*communaut(?:e|es)(?:[.-][a-z0-9-]+)*(?:\.fr)?$",
-            r"^.*collectivite(?:s)?(?:[.-][a-z0-9-]+)*(?:\.fr)?$",
+            r"^cc(?:[.-]+[a-z0-9]+)*(?:\.fr)?$",
+            r"^.*-cc(?:[.-]+[a-z0-9]+)*(?:\.fr)?$",
+            r"^.*communaut(?:e|es)(?:[.-]+[a-z0-9]+)*(?:\.fr)?$",
+            r"^.*collectivite(?:s)?(?:[.-]+[a-z0-9]+)*(?:\.fr)?$",
             # "ars"/"chu"/"chr" : jetons courts, non ajoutés au groupe générique ci-dessus
             # (même logique que "cc" plus haut) pour éviter les faux positifs par sous-chaîne
             # (ex: "ars" apparaît dans "marseille").
-            r"^ars(?:[.-][a-z0-9-]+)*\.sante\.fr$",
-            r"^.*\.ars(?:[.-][a-z0-9-]+)*\.sante\.fr$",
-            r"^(?:chu|chr)(?:[.-][a-z0-9-]+)*(?:\.fr)?$",
-            r"^.*-(?:chu|chr)(?:[.-][a-z0-9-]+)*(?:\.fr)?$",
+            r"^ars(?:[.-]+[a-z0-9]+)*\.sante\.fr$",
+            r"^.*\.ars(?:[.-]+[a-z0-9]+)*\.sante\.fr$",
+            r"^(?:chu|chr)(?:[.-]+[a-z0-9]+)*(?:\.fr)?$",
+            r"^.*-(?:chu|chr)(?:[.-]+[a-z0-9]+)*(?:\.fr)?$",
+            # SDIS (sdis40.fr, sdis2a.fr, sdis971.fr...) : jusqu'ici couverts UNIQUEMENT par la
+            # voie annuaire de validate_institution_account -- une panne/lenteur de
+            # api-lannuaire.service-public.gouv.fr faisait alors échouer toute inscription SDIS
+            # (constaté en préparant le POC SDIS 40 du 20/10).
+            r"^sdis[a-z0-9]*(?:[.-]+[a-z0-9]+)*\.fr$",
+            r"^.*\.sdis[a-z0-9]*(?:-+[a-z0-9]+)*\.fr$",
         ]
 
         for pattern in allowed_patterns:

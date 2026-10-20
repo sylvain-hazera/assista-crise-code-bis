@@ -14,7 +14,10 @@ class CoreConfig(AppConfig):
         # au-delà d'un dispatch de signal côté central.
         from django.db.models.signals import post_save, pre_save
 
-        from . import sync_outbox
+        from . import notifications_admin, sync_outbox
+        from .models import Institution
+
+        post_save.connect(notifications_admin.institution_creee, sender=Institution, dispatch_uid="notif_admin_institution_creee")
         from .models import (
             DeclarationSecurite, Dossier, DossierCommentaire, DossierHistorique, MessageMeshLog,
             Mission,

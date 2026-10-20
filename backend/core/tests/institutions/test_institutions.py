@@ -520,12 +520,12 @@ class TestContactInstitutionPrincipalUniqueness:
         institution_type = InstitutionType.objects.create(code="MAIRIE", libelle="Mairie")
         return Institution.objects.create(nom="Mairie de Test", type=institution_type)
 
-    def test_second_principal_contact_is_rejected_cleanly(self, authenticated_client):
+    def test_second_principal_contact_replaces_the_first(self, authenticated_client):
         client, admin = authenticated_client
         institution = self._institution()
         first = User.objects.create_user(username="premier@mairie.fr", email="premier@mairie.fr", password="Test1234!")
         second = User.objects.create_user(username="second@mairie.fr", email="second@mairie.fr", password="Test1234!")
-        ContactInstitution.objects.create(institution=institution, utilisateur=first, contact_principal=True)
+        ancien = ContactInstitution.objects.create(institution=institution, utilisateur=first, contact_principal=True)
 
         response = client.post(
             reverse('contactinstitution-list'),
@@ -533,9 +533,28 @@ class TestContactInstitutionPrincipalUniqueness:
             format='json',
         )
 
-        assert response.status_code == status.HTTP_400_BAD_REQUEST
-        assert 'contact_principal' in response.data
-        assert ContactInstitution.objects.filter(institution=institution, contact_principal=True).count() == 1
+        assert response.status_code == status.HTTP_201_CREATED
+        principaux = ContactInstitution.objects.filter(institution=institution, contact_principal=True)
+        assert list(principaux.values_list('utilisateur', flat=True)) == [second.id]
+        ancien.refresh_from_db()
+        assert ancien.actif and not ancien.contact_principal
+
+    def test_promoting_existing_contact_replaces_the_principal(self, authenticated_client):
+        client, admin = authenticated_client
+        institution = self._institution()
+        first = User.objects.create_user(username="p1@mairie.fr", email="p1@mairie.fr", password="Test1234!")
+        second = User.objects.create_user(username="p2@mairie.fr", email="p2@mairie.fr", password="Test1234!")
+        ancien = ContactInstitution.objects.create(institution=institution, utilisateur=first, contact_principal=True)
+        promu = ContactInstitution.objects.create(institution=institution, utilisateur=second, contact_principal=False)
+
+        response = client.patch(
+            reverse('contactinstitution-detail', kwargs={"pk": promu.id}), {"contact_principal": True}, format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        ancien.refresh_from_db()
+        promu.refresh_from_db()
+        assert promu.contact_principal and not ancien.contact_principal
 
     def test_multiple_secondary_contacts_are_allowed(self, authenticated_client):
         client, admin = authenticated_client

@@ -40,4 +40,10 @@ ENTRYPOINT ["/entrypoint.sh"]
 # constaté par vmstat). Forme shell (pas exec) pour que ${...} soit interprété au démarrage du
 # conteneur, pas gelé au build -- valeur par défaut prudente, à relever explicitement via
 # l'env du conteneur sur une machine qui peut l'encaisser (.114 : GUNICORN_WORKERS=6).
-CMD ["sh", "-c", "exec gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers ${GUNICORN_WORKERS:-3} --timeout 60"]
+#
+# PROMETHEUS_MULTIPROC_DIR : sans lui, chaque worker a ses propres compteurs et /metrics renvoie
+# ceux d'un worker au hasard. Activé ici par défaut (et pas via ENV, qui s'appliquerait aussi aux
+# conteneurs de tests où le dossier n'existe pas) : .114 lance le conteneur par docker run, sans
+# le tmpfs de docker-compose.yml. Vidé à chaque démarrage (valeurs d'anciens PID).
+# --no-control-socket : gunicorn 26 tente sinon de créer ~/.gunicorn, inexistant pour appuser.
+CMD ["sh", "-c", "export PROMETHEUS_MULTIPROC_DIR=\"${PROMETHEUS_MULTIPROC_DIR:-/tmp/prometheus-multiproc}\" && mkdir -p \"$PROMETHEUS_MULTIPROC_DIR\" && find \"$PROMETHEUS_MULTIPROC_DIR\" -mindepth 1 -delete && exec gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers ${GUNICORN_WORKERS:-3} --timeout 60 --no-control-socket"]

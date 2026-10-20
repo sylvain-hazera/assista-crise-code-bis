@@ -147,9 +147,9 @@ export class OfferService {
 
   /** POST /api/offres/bulk_create_team/ — crée une équipe à partir d'une sélection d'offres
    * (membres = auteurs distincts), lui assigne les offres et un régulateur optionnel. */
-  bulkCreateTeam(offerIds: string[], teamName: string, regulateurId: string | null): Observable<Team> {
+  bulkCreateTeam(offerIds: string[], teamName: string, regulateurId: string | null, missionTitre = ''): Observable<Team> {
     return this.http.post<Team>(`${this.url}/bulk_create_team/`, {
-      offer_ids: offerIds, team_name: teamName, regulateur: regulateurId,
+      offer_ids: offerIds, team_name: teamName, regulateur: regulateurId, mission_titre: missionTitre,
     });
   }
 

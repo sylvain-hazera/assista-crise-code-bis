@@ -57,8 +57,10 @@ export const ADMIN_ROUTES: Routes = [
   { path: 'correspondances', loadComponent: () => import('./besoins-competences/besoins-competences.component').then(m => m.BesoinsCompetencesComponent), canActivate: [institutionalEffectiveGuard] },
   { path: 'utilisateurs', loadComponent: () => import('./users/users.component').then(m => m.UsersComponent), canActivate: [sysAdminGuard] },
   { path: 'validations-comptes', loadComponent: () => import('./account-validations/account-validations.component').then(m => m.AccountValidationsComponent), canActivate: [accountValidationGuard] },
-  { path: 'utilisateurs', loadComponent: () => import('./users/users.component').then(m => m.UsersComponent), canActivate: [sysAdminGuard] },
   { path: 'monitoring', loadComponent: () => import('./monitoring/monitoring.component').then(m => m.MonitoringComponent), canActivate: [sysAdminGuard] },
+  // anciennes pages séparées (20/10), devenues des onglets de la supervision technique
+  { path: 'supervision-waf', redirectTo: '/admin/monitoring?onglet=waf' },
+  { path: 'fail2ban', redirectTo: '/admin/monitoring?onglet=fail2ban' },
 
   // ── Hors menu : imports (ouverts depuis les pages concernées) ──
   { path: 'import-personnel', loadComponent: () => import('./import-personnel/import-personnel.component').then(m => m.ImportPersonnelComponent), canActivate: [institutionalEffectiveGuard] },

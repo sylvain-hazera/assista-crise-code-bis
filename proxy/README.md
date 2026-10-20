@@ -32,10 +32,20 @@ sous-domaines Matrix.
 - **Image** : `owasp/modsecurity-crs:nginx` (image publique, pas construite depuis ce dépôt).
 - **Créé le** : 2026-09-06. **Aucun docker-compose ni script de lancement n'existait** jusqu'au
   2026-10-15 — reconstruit depuis l'état du conteneur vivant.
-- **Redéploiement** : `~/scripts/redeploy-waf.sh` (hors dépôt, sur l'hôte). Nécessaire après
-  toute modification de `~/.config/assista-crise/secrets/waf.env` (les variables d'env d'un
-  conteneur sont figées au démarrage — un `nginx -s reload` relit la config nginx et les
-  certificats sur disque, mais jamais les variables d'environnement).
+- **Depuis le 19/10/2026** : décrit par `docker-compose.114.yml` (service `waf`, toutes les
+  options ci-dessous y figurent).
+- **Redéploiement** : `~/scripts/redeploy-waf.sh` (hors dépôt, recrée le service par compose).
+  Nécessaire après toute modification de `waf.env` ou de `modsecurity-override.conf` (les
+  variables d'env d'un conteneur sont figées au démarrage, et l'override est un template
+  instancié au démarrage — un `nginx -s reload` ne relit ni l'un ni l'autre).
+- **Mode BLOCAGE** (`MODSEC_RULE_ENGINE=On` dans `waf.env`) depuis le 19/10/2026 ; avant :
+  `DetectionOnly` (journalisation seule). Décidé après analyse des journaux de 6 semaines
+  (`waf_modsec_logs`, `audit/audit.log`, JSON) : 85 requêtes auraient été bloquées, presque
+  toutes des scanners ; les faux positifs restants (Accept-Charset de navigateurs mobiles,
+  Grafana) sont exclus dans `modsecurity-override.conf`. **Faux positif en production** :
+  chercher la règle (`ruleId`) dans `audit.log`, l'exclure dans l'override au plus près du
+  chemin concerné, redéployer ; en urgence, repasser `MODSEC_RULE_ENGINE=DetectionOnly` puis
+  `redeploy-waf.sh`.
 - **Config** :
   - `SERVER_NAME` (dans `waf.env`) : liste des hostnames acceptés, séparés par un espace.
     Injectée directement dans `server_name ${SERVER_NAME};` du template nginx de l'image (voir
@@ -44,11 +54,9 @@ sous-domaines Matrix.
   - `SSL_CERT_FILE`/`SSL_CERT_KEY_FILE` : `/etc/letsencrypt/live/assista-crise.fr/{fullchain,privkey}.pem`
     (un seul certificat, une seule paire de clés, qui couvre TOUS les hostnames via ses SAN —
     pas de certificat par sous-domaine).
-  - `modsecurity-override.conf` (ce dossier, voir plus bas) : règles CRS personnalisées,
-    montées en bind dans le conteneur depuis `/home/sylvain/proxy/modsecurity-override.conf`
-    (hors dépôt, copie identique conservée ici pour le suivi de version — **si tu modifies ce
-    fichier, modifie les DEUX copies, ou mieux, fais pointer le montage sur celle du dépôt** et
-    supprime le doublon dans `~/proxy/`).
+  - `modsecurity-override.conf` (ce dossier) : règles CRS personnalisées, montées depuis le
+    dépôt depuis le passage à compose (avant : copie hors dépôt `~/proxy/modsecurity-override.conf`,
+    à synchroniser à la main -- désormais inutilisée).
   - `waf-fix-log-symlinks.sh` (ce dossier) : hook `docker-entrypoint.d`, monté tel quel.
 
 ⚠️ **Le conteneur doit démarrer avec `--user root`** (voir `redeploy-waf.sh`) — l'image

@@ -152,6 +152,17 @@
           </select>
         </label>
 
+        <label class="champ-estimation">
+          Limiter aux zones de débordement officielles (Géorisques, optionnel)
+          <select [(ngModel)]="georisquesEstimation">
+            <option value="">— Toutes les adresses —</option>
+            @for (s of scenariosDebordement; track s.valeur) {
+              <option [value]="s.valeur">{{ s.libelle }}</option>
+            }
+          </select>
+          <small>Les zones officielles ne couvrent que les Territoires à Risque Important d'Inondation (TRI).</small>
+        </label>
+
         <button class="btn-primary" [disabled]="!communeEstimation.trim() || estimationEnCours" (click)="lancerEstimation()">
           {{ estimationEnCours ? 'Chargement en cours…' : 'Charger les points' }}
         </button>
@@ -164,6 +175,9 @@
           <div class="resultat-import">
             <p>{{ resultatEstimation.creees }} habitation(s) créée(s) sur {{ resultatEstimation.adresses_trouvees }} adresse(s) trouvée(s)
               ({{ resultatEstimation.voies_totales }} voie(s) de la commune, {{ resultatEstimation.voies_en_echec }} en échec).</p>
+            @if (resultatEstimation.filtre_georisques) {
+              <p>Limité aux adresses situées en zone Géorisques : {{ resultatEstimation.filtre_georisques }}.</p>
+            }
           </div>
         }
 

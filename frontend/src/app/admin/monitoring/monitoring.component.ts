@@ -19,6 +19,9 @@ export const ONGLETS_SUPERVISION: OngletSupervision[] = [
   { id: 'sante', label: 'Santé du site', icon: 'monitor_heart', uid: 'assista-sante' },
   { id: 'metier', label: 'Métriques métier', icon: 'insights', uid: 'assista-metier' },
   { id: 'infra', label: 'Infrastructure', icon: 'dns', uid: 'assista-infra', conteneurs: true },
+  // journaux du WAF et de fail2ban, lus par Loki : seulement là où Loki tourne (.114)
+  { id: 'waf', label: 'WAF', icon: 'shield', uid: 'assista-waf' },
+  { id: 'fail2ban', label: 'Fail2ban', icon: 'block', uid: 'assista-fail2ban' },
 ];
 
 /** Renouvelle le jeton avant son expiration : Grafana le renvoie à chaque requête. */

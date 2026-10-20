@@ -61,7 +61,18 @@ def test_extraire_appelle_pmtiles_avec_la_bonne_bbox(tmp_path):
     assert "--maxzoom=12" in commande
 
 
-def test_extraire_sans_source_leve_une_erreur_claire(monkeypatch):
+def test_extraire_sans_source_prend_le_dernier_build(monkeypatch):
+    # Plus d'URL à recopier : sans source, le dernier build Protomaps est trouvé tout seul.
     monkeypatch.setattr(tt, "PMTILES_SOURCE_DEFAUT", None)
-    with pytest.raises(RuntimeError):
-        tt.extraire("38", "/tmp/sortie.pmtiles", source=None)
+    monkeypatch.setattr(tt, "dernier_build", lambda: "https://build.protomaps.com/20261020.pmtiles")
+    commandes = []
+    monkeypatch.setattr(tt.subprocess, "run", lambda commande, **kw: commandes.append(commande))
+    tt.extraire("38", "/tmp/sortie.pmtiles", source=None)
+    assert commandes[0][2] == "https://build.protomaps.com/20261020.pmtiles"
+
+
+def test_dernier_build_prend_la_cle_la_plus_recente():
+    import json as _json
+    from telecharger_tuiles import dernier_build
+    liste = [{"key": "20260901.pmtiles"}, {"key": "20261020.pmtiles"}, {"key": "20250101.pmtiles"}, {"key": "notes.txt"}]
+    assert dernier_build(lecteur=lambda url: _json.dumps(liste).encode()) == "https://build.protomaps.com/20261020.pmtiles"

@@ -9,7 +9,8 @@ Procédures et commandes. Architecture, liste des métriques et des alertes, pri
 |---|---|
 | `prometheus/` | image : `prometheus.yml` (cibles), `alerts.yml` (règles), `alerts_test.yml` (tests, exécutés au build) |
 | `alertmanager/` | image : `alertmanager.prod.yml` (SMTP + healthchecks.io) ; `alertmanager.yml` (dev, MailHog) est monté par l'override |
-| `grafana/` | image : datasource et dashboards provisionnés |
+| `grafana/` | image : datasources et dashboards provisionnés |
+| `loki/`, `alloy/` | .114 : stockage et collecte des journaux du WAF et de fail2ban |
 | `postgres/` | création du rôle `monitoring` sur une base **neuve** (monté par la base compose) |
 
 ## Développement
@@ -54,7 +55,30 @@ docker compose exec db psql -U "$DB_USER" -d assista-db -c "ALTER USER monitorin
 docker compose exec grafana grafana cli admin reset-admin-password '<grafana_admin_password.txt>'
 ```
 
-## Mise en production
+## Production réelle (.114)
+
+Décrite par `docker-compose.114.yml` (voir DOCUMENTATION.md, § 12.3), pas par les étapes
+ci-dessous :
+
+1. `scripts/114/preparer-monitoring.sh` : secrets dans `~/.config/assista-crise/secrets/` et rôle
+   PostgreSQL `monitoring` (idempotent).
+2. `scripts/114/deployer.sh prometheus alertmanager grafana postgres-exporter nginx-exporter cadvisor node-exporter blackbox-exporter`.
+3. Grafana : http://172.16.1.114:3000 (LAN), `admin` / `grafana_admin_password.txt`.
+
+Pages admin Supervision WAF / Fail2ban : Loki + Alloy (`loki/`, `alloy/`, services `loki` et
+`alloy` de `docker-compose.114.yml`), mis en place par `scripts/114/activer-supervision-securite.sh`.
+Fail2ban écrit désormais son journal dans `/var/log/fail2ban/fail2ban.log` (volume
+`ac_fail2ban_logs`, lu par Alloy) et non plus dans `docker logs` :
+`docker exec ac_fail2ban tail -f /var/log/fail2ban/fail2ban.log`. Au premier démarrage, Alloy
+relit les journaux depuis leur début (audit du WAF depuis le 03/09/2026) ; ses positions de
+lecture sont dans le volume `ac_alloy_data`. Lignes écartées, par motif :
+`docker exec ac_prometheus wget -qO- 'localhost:9090/api/v1/query?query=loki_process_dropped_lines_total'`.
+
+Différences avec la procédure générique : `prometheus.114.yml` (sans mosquitto, non déployé sur
+.114, plus les cibles loki et alloy) ; Alertmanager lit `~/.config/assista-crise/monitoring/alertmanager.114.yml` (hors dépôt :
+destinataires réels, Watchdog non relié à healthchecks.io tant qu'aucun check n'est créé).
+
+## Mise en production (VM neuve)
 
 1. Remplacer le `TODO` (adresse de l'équipe) dans `alertmanager/alertmanager.prod.yml`, puis
    construire et pousser les images (CI sur `prod` ou `./deploy_harbor.sh`).

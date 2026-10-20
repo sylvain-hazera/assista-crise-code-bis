@@ -26,8 +26,9 @@ from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from urllib.parse import quote
 from django_filters import rest_framework as filters
 from rest_framework.filters import OrderingFilter
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import IntegrityError, transaction
-from django.db.models import Q, F, Prefetch, Count, Max
+from django.db.models import Q, F, Prefetch, Count, Exists, Max, OuterRef
 from django.db.models.functions import TruncDate
 from dateutil.relativedelta import relativedelta
 from django.contrib.gis.db.models.functions import Distance
@@ -52,6 +53,7 @@ from PIL.ExifTags import TAGS, GPSTAGS
 
 from .alertes_pcs import preparer_checklist_pcs, envoyer_notifications
 from .audit import audit_log, get_client_ip, send_mail_logged, send_mail_with_attachment_logged
+from .notifications_admin import filtre_comptes_en_attente, notifier_administrateurs
 from .export import build_crisis_export_zip
 from .institution_attachment import (
     find_institution_for_pending_user, attach_user_with_role,
@@ -1341,6 +1343,14 @@ class UserViewSet(viewsets.ModelViewSet):
                     institutions__institution_id__in=institution_ids,
                     institutions__actif=True,
                 ).distinct()
+            # Rattachement actif de chaque utilisateur en une requête pour toute la liste (voir
+            # UserSerializer._active_contact) plutôt qu'une par utilisateur.
+            queryset = queryset.prefetch_related(Prefetch(
+                'institutions',
+                queryset=ContactInstitution.objects.filter(actif=True)
+                    .select_related('institution__type').order_by('pk'),
+                to_attr='contacts_actifs_prefetch',
+            ))
         return queryset
 
     def get_permissions(self):
@@ -1525,34 +1535,23 @@ class UserViewSet(viewsets.ModelViewSet):
                     logger.exception("Registration email failed for user %s", user.pk)
                     EMAILS_FAILED.labels(kind="registration_pending").inc()
                 
-                # Notifier les administrateurs
-                admin_emails = User.objects.filter(
-                    type='ADMIN', 
-                    is_active=True
-                ).values_list('email', flat=True)
-                
-                if admin_emails:
-                    try:
-                        send_mail_logged(
-                            request,
-                            subject=f"Nouvelle demande de validation - {user.get_type_display()}",
-                            message=(
-                                f"Un nouveau compte nécessite votre validation :\n\n"
-                                f"- Nom : {user.first_name} {user.last_name}\n"
-                                f"- Email : {user.email}\n"
-                                f"- Type : {user.get_type_display()}\n"
-                                f"- Code postal : {user.postal_code or 'Non renseigné'}\n\n"
-                                f"Connectez-vous au dashboard pour valider ou rejeter ce compte.\n\n"
-                                "Cordialement,\n"
-                                "Système Assista-Crise"
-                            ),
-                            from_email=None,
-                            recipient_list=list(admin_emails),
-                            fail_silently=False,
-                        )
-                    except Exception:
-                        logger.exception("Admin notification email failed for user %s", user.pk)
-                        EMAILS_FAILED.labels(kind="admin_notification").inc()
+                # Notifier les administrateurs (voir core/notifications_admin.py -- hors
+                # adresses factices des comptes démo, jamais d'exception propagée).
+                notifier_administrateurs(
+                    f"Compte en attente de validation - {user.get_type_display()}",
+                    (
+                        f"Un nouveau compte nécessite votre validation :\n\n"
+                        f"- Nom : {user.first_name} {user.last_name}\n"
+                        f"- Email : {user.email}\n"
+                        f"- Type : {user.get_type_display()}\n"
+                        f"- Institution déclarée : {user.pending_institution_name or 'non renseignée'}"
+                        f" ({user.pending_institution_type or 'type non renseigné'})\n"
+                        f"- Commune : {user.pending_commune_name or 'non renseignée'}\n"
+                        f"- Code postal : {user.postal_code or 'Non renseigné'}\n\n"
+                        f"Valider ou rejeter ce compte : {settings.SERVER_URL.rstrip('/')}/admin/validations-comptes"
+                    ),
+                    request=request,
+                )
 
                 if getattr(user, 'type', None) in {'AUT_LOCALE', 'SECOURS', 'ADMIN'}:
                     try:
@@ -1775,15 +1774,12 @@ class UserViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_403_FORBIDDEN
             )
 
+        en_attente = filtre_comptes_en_attente()
         # Les admins voient tout, les institutions voient leur code postal
         if role == UserRole.ADMINISTRATOR:
-            pending_users = User.objects.filter(enabled=False, is_active=True)
+            pending_users = User.objects.filter(en_attente)
         else:
-            pending_users = User.objects.filter(
-                enabled=False, 
-                is_active=True,
-                postal_code=user.postal_code
-            )
+            pending_users = User.objects.filter(en_attente, postal_code=user.postal_code)
         
         serializer = self.get_serializer(pending_users, many=True)
         return Response(serializer.data)
@@ -1918,8 +1914,14 @@ class UserViewSet(viewsets.ModelViewSet):
             logger.exception("Rejection email failed for user %s", user_to_reject.pk)
             EMAILS_FAILED.labels(kind="account_rejected").inc()
         
-        # Désactiver le compte (ou le supprimer)
+        # Désactiver le compte (ou le supprimer). Demande d'institution effacée : marque le
+        # compte comme traité, sinon un compte "Secours organisés" rejeté resterait listé dans
+        # pending_validations (même état enabled/is_active qu'un compte encore en attente).
         user_to_reject.is_active = False
+        user_to_reject.pending_institution_name = None
+        user_to_reject.pending_institution_type = None
+        user_to_reject.pending_commune_name = None
+        user_to_reject.pending_commune_code = None
         user_to_reject.save()
         return Response({
             'message': 'Compte rejeté',
@@ -3571,6 +3573,12 @@ class RequestViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             # Opt-in (?scope=zone) : voir _widen_zone_for_reporting — n'affecte que
             # ReportingComponent, pas les autres consommateurs de cette même liste.
             qs = _widen_zone_for_reporting(self.request, qs)
+            # est_affectee en une sous-requête pour toute la liste, au lieu d'une requête par
+            # demande (483 sur la page Équipes en démo, mesuré le 20/10/2026) -- voir
+            # RequestSerializer.get_est_affectee, qui n'utilise que nb_equipes_affectees > 0.
+            qs = qs.annotate(nb_equipes_affectees=Exists(
+                Team.assigned_requests.through.objects.filter(request_id=OuterRef('pk'))
+            ))
         return qs
 
     @action(detail=True, methods=["post"], permission_classes=[IsInstitutionalActor])
@@ -4314,6 +4322,145 @@ def _appartient_a_equipe(request, team) -> bool:
     )
 
 
+def _affecter_ressource(request, team, offer):
+    """Ajoute une offre aux ressources de l'équipe, rattachée à sa mission active s'il y en a
+    une : commun à TeamViewSet.assigner_ressource (une offre) et assigner_ressources
+    (sélection de la page Signalements). L'appelant a déjà vérifié le périmètre.
+    Sans mission (non bloquant en crise, demande utilisateur du 20/10/2026), l'offre est
+    rattachée à l'équipe seule, puis à sa mission dès qu'elle est définie (definir_mission)."""
+    # Une ressource retenue (matériel avec ou sans l'offreur, ou bénévolat) ne doit plus
+    # apparaître comme disponible dans le tableau des offres/bénévoles pendant qu'un
+    # régulateur cherche des moyens — sinon deux équipes pouvaient la retenir en même
+    # temps. Symétrique avec TeamViewSet.retirer_ressource, qui la repasse disponible.
+    offer.mission = team.mission_active
+    offer.status = Status.UNAVAILABLE
+    offer.save(update_fields=['mission', 'status'])
+    # Une ressource n'appartient qu'à une équipe à la fois (un seul engagement, voir plus bas) :
+    # réaffectée ici, elle quitte l'équipe précédente -- sinon elle restait listée dans les deux
+    # (relecture du 20/10/2026, facile à provoquer depuis l'affectation groupée).
+    for ancienne in offer.assigned_teams.exclude(pk=team.pk):
+        ancienne.assigned_offers.remove(offer)
+        audit_log(
+            request=request, action_code="SUPPRESSION", objet_type="Team", objet_id=ancienne.id,
+            commentaire=f"Ressource « {offer.title} » réaffectée à l'équipe {team.name}",
+        )
+    team.assigned_offers.add(offer)
+    # N'ajoute comme membre que si la présence physique n'est pas explicitement exclue
+    # (ex: un simple prêteur de chambre) — None (offres antérieures à ce champ) garde
+    # l'ancien comportement, seul False l'exclut désormais. offer.author_id seul ne
+    # suffisait pas : la quasi-totalité des offres viennent du formulaire public
+    # (propose-help-form), soumis SANS compte — author restait alors toujours None,
+    # donc aucun bénévole n'était jamais ajouté comme membre en pratique (personne seule,
+    # avec matériel, ou matériel seul : le compteur "Membres" restait à 0 dans tous les
+    # cas). resolve_or_invite_benevole (déjà utilisé par PointOperationnelViewSet.
+    # inviter_benevole) résout aussi via email_offer/first_name_offer/last_name_offer,
+    # créant un compte à la volée si besoin — même principe que resolve_or_invite_demandeur.
+    if offer.presence_physique is not False:
+        benevole, _created = resolve_or_invite_benevole(offer, request)
+        if benevole:
+            team.members.add(benevole)
+
+    # Un engagement neuf à chaque affectation — jamais partagé entre deux affectations
+    # successives, comme offer.mission (une réaffectation ailleurs repart de zéro).
+    EngagementRessource.objects.filter(offer=offer).delete()
+    engagement = EngagementRessource.objects.create(
+        offer=offer, team=team, token_confirmation=secrets.token_urlsafe(32),
+        environment=get_active_environment(request),
+    )
+    send_engagement_confirmation_email(request, engagement)
+
+    audit_log(
+        request=request,
+        action_code="AFFECTATION",
+        objet_type="Team",
+        objet_id=team.id,
+        commentaire=f"Ressource ajoutée : « {offer.title} »" + (
+            f" (mission : {team.mission_active.titre})" if team.mission_active_id else " (équipe sans mission)"
+        ),
+    )
+
+
+def _ressource_retenue_par_equipe(team, offer) -> bool:
+    """L'offre est-elle retenue par CETTE équipe (et donc à libérer quand elle la quitte) ?
+    Jamais si une autre équipe la retient (engagement, mission ou affectation), pour ne pas
+    couper une réaffectation faite entre-temps. Sinon oui : engagement à son nom
+    (assigner_ressource), mission de cette équipe, ou -- offres d'une équipe créée depuis la
+    page Signalements sans mission (bulk_create_team, ni engagement ni mission) -- simple
+    affectation à cette seule équipe. Ce dernier cas restait « Indisponible » pour toujours
+    une fois l'offre retirée ou l'équipe supprimée (relecture du 20/10/2026)."""
+    engagement = EngagementRessource.objects.filter(offer=offer).only('team_id').first()
+    if engagement is not None:
+        return engagement.team_id == team.pk
+    if offer.mission_id:
+        return offer.mission.equipes.filter(pk=team.pk).exists()
+    return not offer.assigned_teams.exclude(pk=team.pk).exists()
+
+
+def _liberer_ressource(team, offer):
+    """Inverse d'_affecter_ressource pour une offre retenue par l'équipe : sans mission et de
+    nouveau disponible pour une autre équipe."""
+    if _ressource_retenue_par_equipe(team, offer):
+        offer.mission = None
+        offer.status = Status.AVAILABLE
+        offer.save(update_fields=['mission', 'status'])
+    EngagementRessource.objects.filter(offer=offer, team=team).delete()
+
+
+def _synchroniser_competences_des_domaines(team, anciens_domaine_ids):
+    """Domaines d'intervention (Team.themes, des Besoin) -> compétences de l'équipe, via les
+    Correspondances (BesoinCompetence), demande utilisateur du 20/10/2026 : on choisit ce que
+    l'équipe prend en charge, les compétences qui orientent dossiers et bénévoles suivent.
+    Domaine ajouté : ses compétences liées sont ajoutées. Domaine retiré : ses compétences
+    liées sont retirées, sauf si un domaine restant y mène aussi. Les compétences ajoutées à
+    la main sans lien avec un domaine ne sont jamais touchées."""
+    domaine_ids = set(team.themes.values_list('id', flat=True))
+    ajoutes, retires = domaine_ids - set(anciens_domaine_ids), set(anciens_domaine_ids) - domaine_ids
+    if ajoutes:
+        team.competences.add(*BesoinCompetence.objects.filter(besoin_id__in=ajoutes).values_list('competence_id', flat=True))
+    if retires:
+        gardees = set(BesoinCompetence.objects.filter(besoin_id__in=domaine_ids).values_list('competence_id', flat=True))
+        a_retirer = set(BesoinCompetence.objects.filter(besoin_id__in=retires).values_list('competence_id', flat=True)) - gardees
+        if a_retirer:
+            team.competences.remove(*a_retirer)
+
+
+def _definir_mission(request, team, titre, crise=None):
+    """Définit (ou remplace) la mission active de l'équipe : TeamViewSet.definir_mission et
+    création d'équipe depuis la page Signalements (OfferViewSet.bulk_create_team)."""
+    mission = Mission.objects.create(titre=titre, crise=crise, environment=get_active_environment(request))
+    mission.equipes.add(team)
+    team.mission_active = mission
+    team.save(update_fields=['mission_active'])
+    # Ressources affectées pendant que l'équipe n'avait pas de mission (non bloquant en crise) :
+    # rattachées à la première mission définie. Celles d'une mission précédente n'en changent pas.
+    team.assigned_offers.filter(mission__isnull=True).update(mission=mission)
+    # Synchronise le chemin d'écriture équipe<->crise séparé (assigned_crises, voir
+    # TeamViewSet.assigner_crise) — sans ça, une équipe affectée à une mission d'une crise
+    # peut rester absente de assigned_crises, invisible du recrutement/matching hébergement/
+    # stats qui filtrent dessus (voir doc de conception, doublon relevé explicitement).
+    if crise:
+        team.assigned_crises.add(crise)
+        _assurer_implication_impliquee(request, team.institution_id, crise)
+
+    _notifier_membres_equipe(
+        request, team, "Nouvelle mission",
+        f"Votre équipe a une nouvelle mission : « {mission.titre} »"
+        + (f" (crise : {crise.name})" if crise else "") + ".",
+    )
+
+    audit_log(
+        request=request,
+        action_code="MODIFICATION",
+        objet_type="Team",
+        objet_id=team.id,
+        commentaire=(
+            f"Mission de l'équipe définie : « {mission.titre} »"
+            + (f" (crise : {crise.name})" if crise else "")
+        ),
+    )
+    return mission
+
+
 def _assurer_implication_impliquee(request, institution_id, crise):
     """Garantit qu'une institution assignée à une crise (équipe rattachée via
     assigner_crise/definir_mission) y a au moins un statut officiel — IMPLIQUE, toujours
@@ -4864,12 +5011,12 @@ class SimulationInondationView(generics.GenericAPIView):
     permission_classes = [IsInstitutionalActor]
 
     def get(self, request, commune_code):
-        from .habitations import institution_accede_commune
+        from .habitations import peut_simuler_commune
         from .inondation import paliers_en_cache
         from .models import TypeTacheInondation
         from .tasks import calculer_paliers_task
 
-        if not institution_accede_commune(request, commune_code):
+        if not peut_simuler_commune(request, commune_code):
             return Response(
                 {"error": "Vous n'avez pas accès à cette commune pour cet outil."},
                 status=status.HTTP_403_FORBIDDEN,
@@ -4891,12 +5038,12 @@ class SimulationInondationAdressesView(generics.GenericAPIView):
     permission_classes = [IsInstitutionalActor]
 
     def get(self, request, commune_code):
-        from .habitations import institution_accede_commune
+        from .habitations import peut_simuler_commune
         from .inondation import adresses_en_cache
         from .models import TypeTacheInondation
         from .tasks import charger_adresses_task
 
-        if not institution_accede_commune(request, commune_code):
+        if not peut_simuler_commune(request, commune_code):
             return Response(
                 {"error": "Vous n'avez pas accès à cette commune pour cet outil."},
                 status=status.HTTP_403_FORBIDDEN,
@@ -4917,12 +5064,12 @@ class SimulationRuissellementView(generics.GenericAPIView):
     permission_classes = [IsInstitutionalActor]
 
     def get(self, request, commune_code):
-        from .habitations import institution_accede_commune
+        from .habitations import peut_simuler_commune
         from .models import TypeTacheInondation
         from .ruissellement import ruissellement_en_cache
         from .tasks import calculer_ruissellement_task
 
-        if not institution_accede_commune(request, commune_code):
+        if not peut_simuler_commune(request, commune_code):
             return Response(
                 {"error": "Vous n'avez pas accès à cette commune pour cet outil."},
                 status=status.HTTP_403_FORBIDDEN,
@@ -4945,10 +5092,10 @@ class SimulationInondationNiveauObserveView(generics.GenericAPIView):
     permission_classes = [IsInstitutionalActor]
 
     def get(self, request, commune_code):
-        from .habitations import institution_accede_commune
+        from .habitations import peut_simuler_commune
         from .hydrometrie import niveau_observe_commune
 
-        if not institution_accede_commune(request, commune_code):
+        if not peut_simuler_commune(request, commune_code):
             return Response(
                 {"error": "Vous n'avez pas accès à cette commune pour cet outil."},
                 status=status.HTTP_403_FORBIDDEN,
@@ -4958,6 +5105,44 @@ class SimulationInondationNiveauObserveView(generics.GenericAPIView):
         if resultat is None:
             return Response({"disponible": False})
         return Response({"disponible": True, **resultat})
+
+
+class SimulationInondationGeorisquesView(generics.GenericAPIView):
+    """Zones inondables officielles Géorisques d'une commune, en GeoJSON, pour la carte de
+    simulation (demande utilisateur du 20/10/2026 : les tuiles WMS, pâles et semi-transparentes,
+    étaient illisibles). Mêmes zones que le filtre de l'estimation des dégâts
+    (habitations.zones_georisques). Géométrie simplifiée (~5 m) pour l'affichage, et mise en
+    cache 24 h -- ces zones ne changent qu'au rapportage suivant."""
+
+    permission_classes = [IsInstitutionalActor]
+
+    def get(self, request, commune_code):
+        import json
+
+        from django.core.cache import cache
+
+        from .habitations import COUCHES_GEORISQUES, peut_simuler_commune, zones_georisques
+
+        if not peut_simuler_commune(request, commune_code):
+            return Response({"error": "Vous n'avez pas accès à cette commune pour cet outil."}, status=status.HTTP_403_FORBIDDEN)
+        couche = request.query_params.get("couche", "")
+        if couche not in COUCHES_GEORISQUES:
+            return Response({"error": "Scénario Géorisques inconnu."}, status=status.HTTP_400_BAD_REQUEST)
+
+        cle = f"georisques:{couche}:{commune_code}"
+        geojson = cache.get(cle)
+        if geojson is None:
+            zones = zones_georisques(commune_code, couche)
+            if zones["erreur"]:
+                return Response({"error": zones["erreur"]}, status=status.HTTP_502_BAD_GATEWAY)
+            polygone = zones["polygone"]
+            geojson = json.loads(polygone.simplify(0.00005, preserve_topology=True).geojson) if polygone else False
+            cache.set(cle, geojson, 24 * 3600)
+        return Response({
+            "couche": couche,
+            "libelle": COUCHES_GEORISQUES[couche],
+            "geometrie": geojson or None,
+        })
 
 
 class ZoneViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
@@ -5776,7 +5961,30 @@ class HabitationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             if zone is None:
                 return Response({"error": "Zone introuvable."}, status=status.HTTP_400_BAD_REQUEST)
 
-        resultat = scanner_ban_commune(commune_code, polygone_limite=perimetre_scan(crise, zone))
+        limite = perimetre_scan(crise, zone)
+
+        # Option : ne garder que les adresses situées dans les zones de débordement officielles
+        # Géorisques (demande utilisateur du 20/10/2026) -- se combine avec les autres filtres.
+        couche_georisques = (request.data.get('georisques') or '').strip()
+        libelle_georisques = None
+        if couche_georisques:
+            from .habitations import COUCHES_DEBORDEMENT_GEORISQUES, zones_georisques
+            libelle_georisques = COUCHES_DEBORDEMENT_GEORISQUES.get(couche_georisques)
+            if libelle_georisques is None:
+                return Response({"error": "Scénario Géorisques inconnu."}, status=status.HTTP_400_BAD_REQUEST)
+            zones = zones_georisques(commune_code, couche_georisques)
+            if zones["erreur"]:
+                return Response({"error": zones["erreur"]}, status=status.HTTP_502_BAD_GATEWAY)
+            if zones["polygone"] is None:
+                return Response(
+                    {"error": "Aucune zone de débordement Géorisques sur cette commune : les zones officielles "
+                              "ne couvrent que les Territoires à Risque Important d'Inondation (TRI). "
+                              "Relancez sans ce filtre."},
+                    status=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                )
+            limite = zones["polygone"] if limite is None else limite.intersection(zones["polygone"])
+
+        resultat = scanner_ban_commune(commune_code, polygone_limite=limite)
         if resultat["erreur"]:
             return Response({"error": resultat["erreur"]}, status=status.HTTP_502_BAD_GATEWAY)
 
@@ -5806,7 +6014,9 @@ class HabitationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         audit_log(
             request=request, action_code="IMPORT_LISTE", objet_type="Habitation", objet_id=None,
             commentaire=(
-                f"Estimation BAN commune {commune_code} : {creees} habitation(s) créée(s) sur "
+                f"Estimation BAN commune {commune_code}"
+                + (f" (zones Géorisques : {libelle_georisques})" if libelle_georisques else "")
+                + f" : {creees} habitation(s) créée(s) sur "
                 f"{len(resultat['adresses'])} adresse(s) trouvée(s) ({resultat['voies_totales']} voie(s), "
                 f"{resultat['voies_en_echec']} en échec)"
             ),
@@ -5816,6 +6026,7 @@ class HabitationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             "adresses_trouvees": len(resultat["adresses"]),
             "voies_totales": resultat["voies_totales"],
             "voies_en_echec": resultat["voies_en_echec"],
+            "filtre_georisques": libelle_georisques,
         })
 
 
@@ -6298,7 +6509,7 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset()
-        if self.action == 'reactiver':
+        if self.action in ('reactiver', 'supprimer'):   # aussi les équipes désactivées
             return qs
         qs = _filter_actif(self.request, qs)
         if self.action == 'list':
@@ -6406,6 +6617,8 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         # institution comme avant ce changement, plutôt que de bloquer sa création.
         institution = serializer.validated_data.get('institution') or getattr(self.request.user, 'institution', None)
         team = serializer.save(environment=get_active_environment(self.request), institution=institution)
+        if 'themes' in serializer.validated_data and 'competences' not in serializer.validated_data:
+            _synchroniser_competences_des_domaines(team, [])
 
         if institution is not None:
             _notify_institution_referent_of_team(team, institution, self.request)
@@ -6505,10 +6718,17 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             for demande in Request.objects.filter(id__in=added_request_ids):
                 _assign_request_to_team(demande, instance, self.request)
 
+        anciens_domaine_ids = list(instance.themes.values_list('id', flat=True))
+
         # Ne notifier que les membres réellement NOUVEAUX (jamais ceux déjà présents avant
         # cette modification, pour ne pas ré-envoyer le mail à chaque édition de l'équipe qui
         # ne touche pas member_ids, ex: changement de couleur ou de zone).
         team = serializer.save()
+
+        # Domaines modifiés seuls (fiche équipe) : les compétences liées suivent. Si le client
+        # envoie aussi competence_ids, c'est un choix explicite, laissé tel quel.
+        if 'themes' in serializer.validated_data and 'competences' not in serializer.validated_data:
+            _synchroniser_competences_des_domaines(team, anciens_domaine_ids)
 
         if institution_changed:
             audit_log(
@@ -6870,34 +7090,7 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
                 return Response({"error": "Crise introuvable."}, status=status.HTTP_400_BAD_REQUEST)
             validate_crisis_open(crise, field_name="crise_id")
 
-        mission = Mission.objects.create(titre=titre, crise=crise, environment=get_active_environment(request))
-        mission.equipes.add(team)
-        team.mission_active = mission
-        team.save(update_fields=['mission_active'])
-        # Synchronise le chemin d'écriture équipe<->crise séparé (assigned_crises, voir
-        # TeamViewSet.assigner_crise) — sans ça, une équipe affectée à une mission d'une crise
-        # peut rester absente de assigned_crises, invisible du recrutement/matching hébergement/
-        # stats qui filtrent dessus (voir doc de conception, doublon relevé explicitement).
-        if crise:
-            team.assigned_crises.add(crise)
-            _assurer_implication_impliquee(request, team.institution_id, crise)
-
-        _notifier_membres_equipe(
-            request, team, "Nouvelle mission",
-            f"Votre équipe a une nouvelle mission : « {mission.titre} »"
-            + (f" (crise : {crise.name})" if crise else "") + ".",
-        )
-
-        audit_log(
-            request=request,
-            action_code="MODIFICATION",
-            objet_type="Team",
-            objet_id=team.id,
-            commentaire=(
-                f"Mission de l'équipe définie : « {mission.titre} »"
-                + (f" (crise : {crise.name})" if crise else "")
-            ),
-        )
+        _definir_mission(request, team, titre, crise)
 
         return Response(TeamSerializer(team, context=self.get_serializer_context()).data)
 
@@ -6994,7 +7187,8 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='assigner-ressource')
     def assigner_ressource(self, request, pk=None):
         """Ajoute une offre (bénévole seul, bénévole+matériel, ou matériel seul) comme
-        ressource de l'équipe, rattachée à sa mission active — voir Team.mission_active. Ajoute
+        ressource de l'équipe, rattachée à sa mission active s'il y en a une (facultative depuis
+        le 20/10/2026, voir _affecter_ressource) — voir Team.mission_active. Ajoute
         aussi l'auteur de l'offre comme membre de l'équipe, comme le faisait déjà l'ancien
         mécanisme de "missions" assignées."""
         team = self.get_object()
@@ -7003,11 +7197,6 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
                 {"error": "Vous ne pouvez affecter des ressources qu'aux équipes de votre institution (ou de l'institution déléguée)."},
                 status=status.HTTP_403_FORBIDDEN,
             )
-        if not team.mission_active_id:
-            return Response(
-                {"error": "Définissez d'abord la mission de l'équipe avant d'y affecter des ressources."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
 
         offer_id = request.data.get('offer_id')
         try:
@@ -7015,47 +7204,75 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         except (Offer.DoesNotExist, ValueError, TypeError):
             return Response({"error": "Offre introuvable."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Une ressource retenue (matériel avec ou sans l'offreur, ou bénévolat) ne doit plus
-        # apparaître comme disponible dans le tableau des offres/bénévoles pendant qu'un
-        # régulateur cherche des moyens — sinon deux équipes pouvaient la retenir en même
-        # temps. Symétrique avec retirer_ressource ci-dessous, qui la repasse disponible.
-        offer.mission = team.mission_active
-        offer.status = Status.UNAVAILABLE
-        offer.save(update_fields=['mission', 'status'])
-        team.assigned_offers.add(offer)
-        # N'ajoute comme membre que si la présence physique n'est pas explicitement exclue
-        # (ex: un simple prêteur de chambre) — None (offres antérieures à ce champ) garde
-        # l'ancien comportement, seul False l'exclut désormais. offer.author_id seul ne
-        # suffisait pas : la quasi-totalité des offres viennent du formulaire public
-        # (propose-help-form), soumis SANS compte — author restait alors toujours None,
-        # donc aucun bénévole n'était jamais ajouté comme membre en pratique (personne seule,
-        # avec matériel, ou matériel seul : le compteur "Membres" restait à 0 dans tous les
-        # cas). resolve_or_invite_benevole (déjà utilisé par PointOperationnelViewSet.
-        # inviter_benevole) résout aussi via email_offer/first_name_offer/last_name_offer,
-        # créant un compte à la volée si besoin — même principe que resolve_or_invite_demandeur.
-        if offer.presence_physique is not False:
-            benevole, _created = resolve_or_invite_benevole(offer, request)
-            if benevole:
-                team.members.add(benevole)
-
-        # Un engagement neuf à chaque affectation — jamais partagé entre deux affectations
-        # successives, comme offer.mission (une réaffectation ailleurs repart de zéro).
-        EngagementRessource.objects.filter(offer=offer).delete()
-        engagement = EngagementRessource.objects.create(
-            offer=offer, team=team, token_confirmation=secrets.token_urlsafe(32),
-            environment=get_active_environment(request),
-        )
-        send_engagement_confirmation_email(request, engagement)
-
-        audit_log(
-            request=request,
-            action_code="AFFECTATION",
-            objet_type="Team",
-            objet_id=team.id,
-            commentaire=f"Ressource ajoutée : « {offer.title} » (mission : {team.mission_active.titre})",
-        )
+        _affecter_ressource(request, team, offer)
 
         return Response(TeamSerializer(team, context=self.get_serializer_context()).data)
+
+    @action(detail=True, methods=['post'], url_path='assigner-ressources')
+    def assigner_ressources(self, request, pk=None):
+        """Affecte plusieurs offres d'un coup à cette équipe existante (page Signalements,
+        « Affecter à une équipe », demande utilisateur du 20/10/2026) : mêmes règles
+        qu'assigner_ressource, offre par offre, mission comprise (facultative). Les offres déjà affectées à l'équipe
+        sont ignorées (pas de second email de confirmation)."""
+        team = self.get_object()
+        if not _appartient_a_equipe(request, team):
+            return Response(
+                {"error": "Vous ne pouvez affecter des ressources qu'aux équipes de votre institution (ou de l'institution déléguée)."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        offer_ids = request.data.get('offer_ids') or []
+        if not isinstance(offer_ids, list) or not offer_ids:
+            return Response({"error": "Aucune offre sélectionnée."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            offres = list(Offer.objects.filter(pk__in=offer_ids))
+        except (ValueError, DjangoValidationError):
+            return Response({"error": "Identifiant d'offre invalide."}, status=status.HTTP_400_BAD_REQUEST)
+        if len(offres) != len(set(map(str, offer_ids))):
+            return Response({"error": "Une ou plusieurs offres sont introuvables."}, status=status.HTTP_400_BAD_REQUEST)
+
+        deja_affectees = set(team.assigned_offers.filter(pk__in=[o.pk for o in offres]).values_list('pk', flat=True))
+        ajoutees = 0
+        with transaction.atomic():
+            for offer in offres:
+                if offer.pk in deja_affectees:
+                    continue
+                _affecter_ressource(request, team, offer)
+                ajoutees += 1
+
+        team.refresh_from_db()
+        return Response({
+            "team": TeamSerializer(team, context=self.get_serializer_context()).data,
+            "ajoutees": ajoutees,
+            "deja_affectees": len(deja_affectees),
+        })
+
+    @action(detail=True, methods=['post'], url_path='supprimer', permission_classes=[IsInstitutionalActor])
+    def supprimer(self, request, pk=None):
+        """Suppression DÉFINITIVE (demande utilisateur du 20/10/2026), à côté de la désactivation
+        réversible (DELETE, perform_destroy). Réservée à l'institution responsable (comme la
+        délégation) ou à un administrateur. Les ressources retenues par l'équipe redeviennent
+        disponibles ; dossiers, points, plans et journaux radio sont conservés, sans équipe
+        (SET_NULL) ; délégations, engagements et canaux de l'équipe sont supprimés avec elle."""
+        team = self.get_object()
+        if team.institution_id and not _appartient_a_institution(request, team.institution):
+            return Response(
+                {"error": "Seule l'institution responsable de l'équipe peut la supprimer."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        with transaction.atomic():
+            for offer in team.assigned_offers.all():
+                _liberer_ressource(team, offer)
+            audit_log(
+                request=request,
+                action_code="SUPPRESSION",
+                objet_type="Team",
+                objet_id=team.id,
+                commentaire=f"Suppression définitive de l'équipe : {team.name}",
+            )
+            team.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=True, methods=['post'], url_path='retirer-ressource')
     def retirer_ressource(self, request, pk=None):
@@ -7076,15 +7293,9 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             return Response({"error": "Offre introuvable."}, status=status.HTTP_400_BAD_REQUEST)
 
         team.assigned_offers.remove(offer)
-        if team.mission_active_id and offer.mission_id == team.mission_active_id:
-            offer.mission = None
-            # Redevient disponible pour une autre équipe — symétrique du passage à INDISPONIBLE
-            # dans assigner_ressource. Ne touche pas le statut si l'offre avait déjà été
-            # basculée ailleurs entre-temps (mission_id ne correspond alors plus à cette équipe,
-            # la condition ci-dessus ne serait pas entrée).
-            offer.status = Status.AVAILABLE
-            offer.save(update_fields=['mission', 'status'])
-        EngagementRessource.objects.filter(offer=offer, team=team).delete()
+        # Redevient disponible pour une autre équipe — symétrique du passage à INDISPONIBLE
+        # dans assigner_ressource, sauf si l'offre a été basculée ailleurs entre-temps.
+        _liberer_ressource(team, offer)
 
         audit_log(
             request=request,
@@ -8412,6 +8623,11 @@ class OfferViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         # Retenues dans cette équipe : ne doivent plus apparaître disponibles ailleurs — même
         # règle que assigner_ressource.
         Offer.objects.filter(pk__in=[o.pk for o in offres]).update(status=Status.UNAVAILABLE)
+        # Mission facultative, saisie dès la création (demande utilisateur du 20/10/2026) : les
+        # offres sélectionnées y sont rattachées (voir _definir_mission).
+        mission_titre = (request.data.get("mission_titre") or "").strip()
+        if mission_titre:
+            _definir_mission(request, team, mission_titre)
         # Même garde que assigner_ressource : n'ajoute pas comme membre un offreur dont la
         # présence physique est explicitement exclue, et résout via resolve_or_invite_benevole
         # (pas juste offer.author_id, toujours None pour une offre anonyme du formulaire
@@ -13317,22 +13533,37 @@ class ContactInstitutionViewSet(
             return qs.filter(environment__in=[Environment.PROD, Environment.DEMO])
         return qs.filter(environment=Environment.PROD)
 
-    def perform_create(self, serializer):
-        # "Un seul contact principal par institution" est appliqué par un index unique partiel
-        # en base (voir migration 0060) — pas par le serializer, DRF ne traduisant pas les
-        # UniqueConstraint conditionnelles en validateur. Sans ce try/except, une vraie
-        # tentative de double contact principal remontait en IntegrityError non interceptée
-        # (500 générique) au lieu d'un message exploitable côté frontend.
+    def _liberer_contact_principal(self, serializer):
+        """Un seul contact principal par institution (index unique partiel, migration 0060) :
+        en désigner un nouveau retire le drapeau à l'ancien, qui reste contact de
+        l'institution -- jamais un refus (demande utilisateur du 19/10)."""
+        if not serializer.validated_data.get('contact_principal'):
+            return
+        institution = serializer.validated_data.get('institution') or getattr(serializer.instance, 'institution', None)
+        if institution is None:
+            return
+        anciens = ContactInstitution.objects.filter(institution=institution, contact_principal=True)
+        if serializer.instance is not None:
+            anciens = anciens.exclude(pk=serializer.instance.pk)
+        anciens.update(contact_principal=False)
+
+    def _enregistrer(self, serializer, **kwargs):
+        # Savepoint dédié : sans lui, une IntegrityError (deux désignations simultanées)
+        # laisse la transaction de la requête (ATOMIC_REQUESTS) dans un état cassé.
         try:
-            # Savepoint dédié : sans lui, l'IntegrityError laisse la transaction de la requête
-            # (ATOMIC_REQUESTS) dans un état cassé — toute requête SQL suivante (y compris celles
-            # de la gestion d'erreur DRF elle-même) échouerait avec TransactionManagementError.
             with transaction.atomic():
-                contact = serializer.save(environment=get_active_environment(self.request))
+                self._liberer_contact_principal(serializer)
+                return serializer.save(**kwargs)
         except IntegrityError:
             raise ValidationError(
-                {"contact_principal": "Cette institution a déjà un contact principal : décochez « Principal » ou retirez-le d'abord de l'autre contact."}
+                {"contact_principal": "Le contact principal vient d'être modifié par ailleurs : rechargez la page et réessayez."}
             )
+
+    def perform_update(self, serializer):
+        self._enregistrer(serializer)
+
+    def perform_create(self, serializer):
+        contact = self._enregistrer(serializer, environment=get_active_environment(self.request))
         audit_log(
             request=self.request,
             action_code="CREATION",
@@ -15426,17 +15657,17 @@ class SatelliteViewSet(
     serializer_class = SatelliteSerializer
 
     def get_permissions(self):
-        if self.action == 'enroler':
+        if self.action in ('enroler', 'recuperer_identifiants'):
             return [AllowAny()]
         if self.action in ('contact', 'donnees', 'synchroniser'):
             return [permissions.IsAuthenticated()]
-        if self.action in ('generer_jeton', 'valider', 'revoquer'):
+        if self.action in ('generer_jeton', 'valider', 'revoquer', 'regenerer_identifiants'):
             return [IsInstitutionalActor(), DenyInDemo()]
         return [IsInstitutionalActor()]
 
     def get_queryset(self):
         qs = super().get_queryset()
-        if self.action in ('contact', 'donnees', 'synchroniser'):
+        if self.action in ('contact', 'donnees', 'synchroniser', 'recuperer_identifiants'):
             # Le contrôle d'identité se fait dans l'action elle-même (compte_service ==
             # request.user) — le compte de service d'un satellite n'a volontairement aucun
             # ContactInstitution (voir SatelliteViewSet.valider), donc le filtrage par
@@ -15454,8 +15685,12 @@ class SatelliteViewSet(
         institution = _resolve_institution_or_400(request)
         if isinstance(institution, Response):
             return institution
+        profil = request.data.get('profil') or ProfilSatellite.GW
+        if profil not in ProfilSatellite.values:
+            return Response({"error": "profil doit être GW ou FULL."}, status=status.HTTP_400_BAD_REQUEST)
         jeton = JetonEnrolementSatellite.objects.create(
             institution=institution,
+            profil=profil,
             jeton=secrets.token_urlsafe(32),
             expiration=timezone.now() + datetime.timedelta(hours=24),
             cree_par=request.user,
@@ -15472,30 +15707,85 @@ class SatelliteViewSet(
     def enroler(self, request):
         """Le satellite consomme le jeton reçu hors-bande pour créer sa propre entrée — AllowAny
         car il n'a par définition aucun identifiant à ce stade (voir docstring de la classe)."""
+        from django.contrib.auth.hashers import make_password
+
         jeton_valeur = request.data.get('jeton')
-        nom = request.data.get('nom')
-        profil = request.data.get('profil')
-        if not jeton_valeur or not nom or profil not in ProfilSatellite.values:
-            return Response(
-                {"error": "jeton, nom et profil (GW/FULL) sont requis."}, status=status.HTTP_400_BAD_REQUEST
-            )
+        nom = (request.data.get('nom') or '').strip()
+        if not jeton_valeur or not nom:
+            return Response({"error": "jeton et nom sont requis."}, status=status.HTTP_400_BAD_REQUEST)
 
         jeton = JetonEnrolementSatellite.objects.filter(jeton=jeton_valeur, utilise=False).first()
         if not jeton or jeton.expiration < timezone.now():
             return Response({"error": "Jeton invalide, déjà utilisé ou expiré."}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Profil : celui choisi à la génération du jeton ; un profil explicite reste accepté
+        # (anciens installeurs, `installer.sh enroler <jeton> <nom> <profil>`).
+        profil = request.data.get('profil') or jeton.profil
+        if profil not in ProfilSatellite.values:
+            return Response({"error": "profil doit être GW ou FULL."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Secret remis UNE fois au satellite : lui seul pourra récupérer ses identifiants après
+        # validation (recuperer_identifiants), sans recopie humaine.
+        secret = secrets.token_urlsafe(32)
         satellite = Satellite.objects.create(
             institution=jeton.institution, nom=nom, profil=profil,
             version_logicielle=request.data.get('version_logicielle', ''),
             environment=jeton.environment,
+            secret_recuperation_hash=make_password(secret),
         )
         jeton.utilise = True
         jeton.save(update_fields=['utilise'])
 
         return Response(
-            {"satellite_id": str(satellite.id), "statut_enrolement": satellite.statut_enrolement},
+            {
+                "satellite_id": str(satellite.id),
+                "statut_enrolement": satellite.statut_enrolement,
+                "secret_recuperation": secret,
+                "profil": satellite.profil,
+                "nom": satellite.nom,
+                "institution_nom": jeton.institution.nom,
+                # Département de l'institution : zone des cartes hors ligne (profil full).
+                "departement": jeton.institution.departement_code or "",
+            },
             status=status.HTTP_201_CREATED,
         )
+
+    @action(detail=True, methods=['post'], url_path='recuperer-identifiants')
+    def recuperer_identifiants(self, request, pk=None):
+        """Interrogé en boucle par l'installeur du satellite (`installer.sh installer`) avec le
+        secret reçu à l'enrôlement : 202 tant qu'un administrateur n'a pas validé, puis les
+        identifiants du compte de service, UNE seule fois (secret effacé ensuite). Remplace la
+        recopie manuelle des identifiants affichés à l'administrateur (20/10/2026)."""
+        from django.contrib.auth.hashers import check_password
+
+        satellite = self.get_object()
+        secret = request.data.get('secret') or ''
+        if not satellite.secret_recuperation_hash or not check_password(secret, satellite.secret_recuperation_hash):
+            return Response(
+                {"error": "Secret invalide ou identifiants déjà récupérés. Un administrateur peut les "
+                          "régénérer depuis la page Satellites."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if satellite.statut_enrolement == StatutEnrolementSatellite.REVOQUE:
+            return Response({"error": "Ce satellite a été révoqué."}, status=status.HTTP_410_GONE)
+        if satellite.statut_enrolement != StatutEnrolementSatellite.APPROUVE or satellite.compte_service is None:
+            return Response({"statut_enrolement": satellite.statut_enrolement}, status=status.HTTP_202_ACCEPTED)
+
+        mot_de_passe = secrets.token_urlsafe(24)
+        compte = satellite.compte_service
+        compte.set_password(mot_de_passe)
+        compte.save(update_fields=['password'])
+        satellite.secret_recuperation_hash = None
+        satellite.save(update_fields=['secret_recuperation_hash'])
+        audit_log(
+            request=request, action_code="MODIFICATION", objet_type="Satellite", objet_id=satellite.id,
+            commentaire=f"Satellite {satellite.nom} ({satellite.institution.nom}) — identifiants récupérés automatiquement par le satellite.",
+        )
+        return Response({
+            "statut_enrolement": satellite.statut_enrolement,
+            "email": compte.email,
+            "password": mot_de_passe,
+        })
 
     @action(detail=True, methods=['post'], url_path='valider')
     def valider(self, request, pk=None):
@@ -15525,11 +15815,41 @@ class SatelliteViewSet(
             commentaire=f"Satellite {satellite.nom} ({satellite.institution.nom}) approuvé — compte de service créé.",
         )
 
+        if satellite.secret_recuperation_hash:
+            # Installeur récent : le satellite récupère seul ses identifiants (recuperer_identifiants)
+            # -- rien à afficher ni à recopier, le mot de passe ci-dessus sera remplacé.
+            return Response({**SatelliteSerializer(satellite).data, "recuperation_automatique": True})
         return Response({
             **SatelliteSerializer(satellite).data,
             # Identifiants renvoyés UNE SEULE FOIS ici — le mot de passe n'est jamais stocké en
             # clair (User.set_password via create_user) et n'est plus jamais relisible ensuite.
             "identifiants_compte_service": {"email": email_service, "password": mot_de_passe},
+        })
+
+    @action(detail=True, methods=['post'], url_path='regenerer-identifiants')
+    def regenerer_identifiants(self, request, pk=None):
+        """Nouveau mot de passe pour le compte de service d'un satellite VALIDÉ -- l'ancien cesse
+        immédiatement de fonctionner. Les identifiants de `valider` ne s'affichent qu'une fois et
+        ne sont jamais relisibles : sans cette action, un affichage manqué (constaté le
+        20/10/2026, panneau hors de l'écran) obligeait à révoquer et réenrôler le satellite."""
+        satellite = self.get_object()
+        if satellite.statut_enrolement != StatutEnrolementSatellite.APPROUVE or satellite.compte_service is None:
+            return Response(
+                {"error": "Seul un satellite validé (et non révoqué) a des identifiants à régénérer."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        mot_de_passe = secrets.token_urlsafe(24)
+        compte = satellite.compte_service
+        compte.set_password(mot_de_passe)
+        compte.save(update_fields=['password'])
+
+        audit_log(
+            request=request, action_code="MODIFICATION", objet_type="Satellite", objet_id=satellite.id,
+            commentaire=f"Satellite {satellite.nom} ({satellite.institution.nom}) — identifiants du compte de service régénérés.",
+        )
+        return Response({
+            **SatelliteSerializer(satellite).data,
+            "identifiants_compte_service": {"email": compte.email, "password": mot_de_passe},
         })
 
     @action(detail=True, methods=['post'], url_path='revoquer')
