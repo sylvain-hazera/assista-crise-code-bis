@@ -25,7 +25,7 @@ logger = logging.getLogger("annoncer-backend-local")
 # le 2026-09-17 (zeroconf lève BadTypeInNameException, pas une erreur silencieuse).
 SERVICE_TYPE = "_ac-local._tcp.local."
 NOM_INSTANCE = os.environ.get("SATELLITE_NOM", socket.gethostname())
-PORT_BACKEND = int(os.environ.get("BACKEND_PORT", "8000"))
+PORT_BACKEND = int(os.environ.get("BACKEND_PORT", "8010"))
 INTERVALLE_VERIFICATION_SECONDES = int(os.environ.get("INTERVALLE_VERIFICATION_SECONDES", "60"))
 
 

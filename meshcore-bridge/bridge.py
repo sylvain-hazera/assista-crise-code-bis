@@ -39,8 +39,9 @@ COMPAGNON_ID = os.environ["COMPAGNON_ID"]
 # (central uniquement), rien ne change pour .113/.114 ni pour un satellite GW seul sans Full
 # local. Voir DjangoClient._cible_actuelle.
 LOCAL_API_URL = os.environ.get("LOCAL_API_URL")
-# Port publié du backend local du satellite (installer.sh le décale si 8000 est déjà pris)
-PORT_BACKEND_LOCAL = int(os.environ.get("BACKEND_PORT") or 8000)
+# Port publié du backend local du satellite : 8010 (8000 est très souvent déjà pris sur un
+# PC), décalé par installer.sh si lui aussi est occupé
+PORT_BACKEND_LOCAL = int(os.environ.get("BACKEND_PORT") or 8010)
 LOCAL_BRIDGE_EMAIL = os.environ.get("LOCAL_BRIDGE_EMAIL")
 LOCAL_BRIDGE_PASSWORD = os.environ.get("LOCAL_BRIDGE_PASSWORD")
 FICHIER_ETAT_CONNECTIVITE = os.environ.get("FICHIER_ETAT_CONNECTIVITE", "/var/run/satellite/etat_connectivite.json")
@@ -165,7 +166,7 @@ async def resoudre_url_locale():
       1. LOCAL_API_URL renseignée à la main -> utilisée telle quelle, AUCUNE détection (voir
          satellite/README.md : c'est la voie "je sais déjà, ne cherche pas", prioritaire sur
          tout le reste par construction).
-      2. localhost:8000 répond -> même machine (profil Full colocalisé), cas le plus courant.
+      2. localhost:8010 répond -> même machine (profil Full colocalisé), cas le plus courant.
       3. mDNS -> satellite à 2 Pi, GW et Full séparés sur le même site.
       4. Rien -> pas de repli local, comportement historique (central uniquement)."""
     if LOCAL_API_URL:

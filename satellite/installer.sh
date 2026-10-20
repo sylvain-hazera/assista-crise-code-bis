@@ -135,7 +135,7 @@ ports_publies() {
     # to set up container networking ... external connectivity »), on prend le suivant libre.
     # Un port déjà tenu par CE satellite (relance) est gardé tel quel.
     local cle defaut service actuel
-    for cle_defaut_service in BACKEND_PORT:8000:backend TUILES_PORT:8080:tileserver; do
+    for cle_defaut_service in BACKEND_PORT:8010:backend TUILES_PORT:8080:tileserver; do
         IFS=: read -r cle defaut service <<< "$cle_defaut_service"
         actuel="$(valeur_env "$cle")"; actuel="${actuel:-$defaut}"
         if port_occupe "$actuel" && [ -z "$(cd "$REPERTOIRE_SCRIPT" && docker compose ps -q "$service" 2>/dev/null)" ]; then

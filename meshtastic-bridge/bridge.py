@@ -46,8 +46,9 @@ DJANGO_PASSWORD = os.environ["DJANGO_BRIDGE_PASSWORD"]
 # meshcore-bridge/bridge.py:DjangoClient (voir son docstring pour le détail et la limite
 # connue sur la réconciliation UUID). Tous optionnels : absents = comportement historique.
 LOCAL_API_URL = os.environ.get("LOCAL_API_URL")
-# Port publié du backend local du satellite (installer.sh le décale si 8000 est déjà pris)
-PORT_BACKEND_LOCAL = int(os.environ.get("BACKEND_PORT") or 8000)
+# Port publié du backend local du satellite : 8010 (8000 est très souvent déjà pris sur un
+# PC), décalé par installer.sh si lui aussi est occupé
+PORT_BACKEND_LOCAL = int(os.environ.get("BACKEND_PORT") or 8010)
 LOCAL_BRIDGE_EMAIL = os.environ.get("LOCAL_BRIDGE_EMAIL")
 LOCAL_BRIDGE_PASSWORD = os.environ.get("LOCAL_BRIDGE_PASSWORD")
 FICHIER_ETAT_CONNECTIVITE = os.environ.get("FICHIER_ETAT_CONNECTIVITE", "/var/run/satellite/etat_connectivite.json")
