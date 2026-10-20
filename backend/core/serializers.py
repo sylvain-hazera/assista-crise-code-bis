@@ -3365,6 +3365,7 @@ class HabitationSerializer(serializers.ModelSerializer):
     latitude = serializers.SerializerMethodField()
     longitude = serializers.SerializerMethodField()
     zone_nom = serializers.CharField(source="zone.nom", read_only=True, default=None)
+    crise_nom = serializers.CharField(source="crise.name", read_only=True, default=None)
     nb_rattachements_en_attente = serializers.SerializerMethodField()
     peut_gerer = serializers.SerializerMethodField()
 

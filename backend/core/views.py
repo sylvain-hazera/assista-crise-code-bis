@@ -38,6 +38,7 @@ from django.utils.dateparse import parse_datetime
 from .auth_validation import InstitutionEmailValidator
 import csv
 import io
+from decimal import Decimal, InvalidOperation
 import datetime
 import os
 import re
@@ -5785,6 +5786,27 @@ class ModuleDegatsCriseViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelView
         )
 
 
+def _nombre_fr(valeur):
+    """Nombre pour un tableur français (virgule décimale), vide si absent."""
+    if valeur is None:
+        return ''
+    return f"{float(valeur):g}".replace('.', ',')
+
+
+def _resume_releve(habitation):
+    def m2(valeur):
+        return f"{valeur:g} m²" if valeur is not None else "?"
+    texte = (
+        f"Habitable : {m2(habitation.surface_habitable_impactee)} impactés sur {m2(habitation.surface_habitable_totale)} ; "
+        f"non habitable : {m2(habitation.surface_non_habitable_impactee)} impactés sur {m2(habitation.surface_non_habitable_totale)}"
+    )
+    if habitation.valeur_estimee is not None:
+        texte += f" ; valeur indicative : {float(habitation.valeur_estimee):,.0f} €".replace(',', ' ')
+        if habitation.valeur_source:
+            texte += f" ({habitation.valeur_source})"
+    return texte
+
+
 class HabitationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     """Référencement des dégâts par bâtiment (voir Habitation.__doc__). Lecture publique
     (AllowAny) -- la carte et la recherche d'adresse pour le rattachement propriétaire/locataire
@@ -5924,6 +5946,154 @@ class HabitationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             _dossier_pour_habitation(habitation, request)
 
         return Response(HabitationSerializer(habitation, context={'request': request}).data)
+
+    CHAMPS_RELEVE = (
+        'surface_habitable_totale', 'surface_habitable_impactee',
+        'surface_non_habitable_totale', 'surface_non_habitable_impactee',
+    )
+
+    @action(detail=True, methods=['post'])
+    def releve(self, request, pk=None):
+        """Relevé des surfaces (totales / impactées) et de la valeur du bien. Chaque relevé est
+        une ligne d'historique avec les valeurs du moment : le référencement peut être complété
+        en plusieurs passages au fil de la crise sans perdre les relevés précédents."""
+        habitation = self.get_object()
+        self._refuser_si_non_accede(habitation.commune_code, crise=habitation.crise)
+
+        valeurs = {}
+        for champ in self.CHAMPS_RELEVE:
+            if champ not in request.data:
+                continue
+            brut = request.data.get(champ)
+            if brut in (None, ''):
+                valeurs[champ] = None
+                continue
+            try:
+                valeurs[champ] = float(brut)
+            except (TypeError, ValueError):
+                return Response({"error": f"{champ} : nombre attendu."}, status=status.HTTP_400_BAD_REQUEST)
+            if valeurs[champ] < 0:
+                return Response({"error": f"{champ} : valeur négative."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if 'valeur_estimee' in request.data:
+            brut = request.data.get('valeur_estimee')
+            if brut in (None, ''):
+                valeurs['valeur_estimee'] = None
+            else:
+                try:
+                    valeurs['valeur_estimee'] = Decimal(str(brut)).quantize(Decimal('0.01'))
+                except (InvalidOperation, ValueError):
+                    return Response({"error": "valeur_estimee : nombre attendu."}, status=status.HTTP_400_BAD_REQUEST)
+                if valeurs['valeur_estimee'] < 0:
+                    return Response({"error": "valeur_estimee : valeur négative."}, status=status.HTTP_400_BAD_REQUEST)
+            valeurs['valeur_source'] = (request.data.get('valeur_source') or '').strip()[:40] or (
+                "Saisie manuelle" if valeurs['valeur_estimee'] is not None else None
+            )
+
+        if not valeurs:
+            return Response({"error": "Aucune valeur à enregistrer."}, status=status.HTTP_400_BAD_REQUEST)
+
+        for prefixe in ('surface_habitable', 'surface_non_habitable'):
+            totale = valeurs.get(f'{prefixe}_totale', getattr(habitation, f'{prefixe}_totale'))
+            impactee = valeurs.get(f'{prefixe}_impactee', getattr(habitation, f'{prefixe}_impactee'))
+            if totale is not None and impactee is not None and impactee > totale:
+                libelle = "habitable" if prefixe == 'surface_habitable' else "non habitable"
+                return Response(
+                    {"error": f"La surface {libelle} impactée dépasse la surface {libelle} totale."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        for champ, valeur in valeurs.items():
+            setattr(habitation, champ, valeur)
+        habitation.save(update_fields=[*valeurs.keys(), 'modifie_le'])
+
+        HabitationHistorique.objects.create(
+            habitation=habitation, auteur=request.user, evenement="Relevé des surfaces et de la valeur",
+            commentaire=_resume_releve(habitation), environment=habitation.environment,
+        )
+        audit_log(
+            request=request, action_code="MODIFICATION", objet_type="Habitation", objet_id=habitation.id,
+            commentaire=f"Relevé : {habitation.adresse}",
+        )
+        return Response(HabitationSerializer(habitation, context={'request': request}).data)
+
+    @action(detail=True, methods=['get'])
+    def dvf(self, request, pk=None):
+        """Valeurs foncières indicatives (voir core/dvf.py) : prix médian communal, ventes de la
+        parcelle, valeur indicative si la surface habitable totale est connue."""
+        from .dvf import estimation_habitation
+        habitation = self.get_object()
+        self._refuser_si_non_accede(habitation.commune_code)
+        return Response(estimation_habitation(habitation))
+
+    @action(detail=False, methods=['get'], url_path='prix-dvf')
+    def prix_dvf(self, request):
+        """Prix médian au m² d'une commune (DVF), rappel communal du référencement."""
+        from .dvf import prix_commune
+        commune_code = (request.query_params.get('commune_code') or '').strip()
+        if not commune_code:
+            return Response({"error": "commune_code est obligatoire."}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(prix_commune(commune_code))
+
+    @action(detail=False, methods=['get'], url_path='export-csv')
+    def export_csv(self, request):
+        """Adresses impactées d'une crise (dégâts constatés ou surface impactée), en CSV pour un
+        tableur. `toutes=1` : toutes les adresses référencées de la crise. Limité aux communes
+        que l'appelant gère (même règle que la modification)."""
+        from .habitations import institution_accede_commune
+
+        crise = Crisis.objects.filter(pk=request.query_params.get('crise') or None).first()
+        if crise is None:
+            return Response({"error": "crise est obligatoire."}, status=status.HTTP_400_BAD_REQUEST)
+
+        qs = Habitation.objects.filter(crise=crise, environment=get_active_environment(request)).select_related('zone')
+        commune_code = request.query_params.get('commune_code')
+        if commune_code:
+            qs = qs.filter(commune_code=commune_code)
+        if request.query_params.get('toutes') != '1':
+            qs = qs.filter(
+                Q(statut_evaluation__in=[StatutEvaluationHabitation.DEGATS_FAIBLES, StatutEvaluationHabitation.DEGATS_FORTS])
+                | Q(surface_habitable_impactee__gt=0) | Q(surface_non_habitable_impactee__gt=0)
+            )
+
+        acces = {}
+        lignes = []
+        for h in qs.order_by('commune_code', 'id'):
+            if h.commune_code not in acces:
+                acces[h.commune_code] = institution_accede_commune(request, h.commune_code)
+            if acces[h.commune_code]:
+                lignes.append(h)
+        if not lignes and not any(acces.values()) and acces:
+            raise PermissionDenied("Vous ne gérez aucune des communes de cette crise.")
+
+        sortie = io.StringIO()
+        sortie.write('\ufeff')   # Excel reconnaît l'UTF-8
+        ecrivain = csv.writer(sortie, delimiter=';')
+        ecrivain.writerow([
+            "Adresse", "Commune", "Code INSEE", "Zone", "Parcelle cadastrale", "Latitude", "Longitude",
+            "Évaluation", "Chantier", "Surface habitable totale (m²)", "Surface habitable impactée (m²)",
+            "Surface non habitable totale (m²)", "Surface non habitable impactée (m²)",
+            "Valeur indicative (€)", "Source de la valeur", "Dernière évaluation",
+        ])
+        for h in sorted(lignes, key=lambda x: (x.commune_code or '', x.adresse or '')):
+            ecrivain.writerow([
+                h.adresse, h.commune_nom or '', h.commune_code or '', h.zone.nom if h.zone else '',
+                h.parcelle_cadastrale or '',
+                f"{h.location.y:.6f}" if h.location else '', f"{h.location.x:.6f}" if h.location else '',
+                h.get_statut_evaluation_display(), h.get_statut_chantier_display() if h.statut_chantier else '',
+                *(_nombre_fr(getattr(h, c)) for c in self.CHAMPS_RELEVE),
+                _nombre_fr(h.valeur_estimee), h.valeur_source or '',
+                timezone.localtime(h.date_derniere_evaluation).strftime('%d/%m/%Y %H:%M') if h.date_derniere_evaluation else '',
+            ])
+
+        audit_log(
+            request=request, action_code="EXPORT", objet_type="Habitation", objet_id=None,
+            commentaire=f"Export CSV des adresses {'référencées' if request.query_params.get('toutes') == '1' else 'impactées'} "
+                        f"de la crise « {crise.name} » : {len(lignes)} ligne(s)",
+        )
+        reponse = HttpResponse(sortie.getvalue(), content_type="text/csv; charset=utf-8")
+        reponse['Content-Disposition'] = f'attachment; filename="adresses-impactees-{timezone.localdate():%Y%m%d}.csv"'
+        return reponse
 
     @action(detail=False, methods=['post'], url_path='estimation-ban')
     def estimation_ban(self, request):

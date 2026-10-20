@@ -6,7 +6,7 @@ import { ActivatedRoute } from '@angular/router';
 import { HabitationCarteComponent } from '../habitation-carte/habitation-carte.component';
 import { HabitationFicheComponent } from '../habitation-fiche/habitation-fiche.component';
 import { HabitationService, HabitationFiltres } from '../../../services/habitation.service';
-import { Habitation, LABELS_STATUT_EVALUATION, LABELS_STATUT_CHANTIER } from '../../../shared/models/habitation.model';
+import { Habitation, LABELS_STATUT_EVALUATION, LABELS_STATUT_CHANTIER, EstimationDvf } from '../../../shared/models/habitation.model';
 import { AuthService } from '../../../auth/services/auth.service';
 import { CrisisService } from '../../../services/crisis.service';
 import { Crisis } from '../../../shared/models/crisis.model';
@@ -40,6 +40,12 @@ export class HabitationsPageComponent implements OnInit {
   labelsChantier = LABELS_STATUT_CHANTIER;
 
   habitationSelectionnee: Habitation | null = null;
+
+  // Rappel de la valeur communale (DVF) quand la liste porte sur une seule commune.
+  dvfCommune: EstimationDvf | null = null;
+  private dvfCommuneCode = '';
+  exportEnCours = false;
+  exportErreur = '';
 
   panneauImportOuvert = false;
   fichierImport: File | null = null;
@@ -96,6 +102,8 @@ export class HabitationsPageComponent implements OnInit {
     if (communeCode) this.filtres.commune_code = communeCode;
     const criseId = this.route.snapshot.queryParamMap.get('crise');
     if (criseId) this.filtres.crise = criseId;
+    // liste des crises pour filtrer / exporter (réservé aux comptes connectés)
+    if (this.authService.getCurrentUser()) this.crisisService.getAll().subscribe(c => this.crises = c);
     this.charger();
   }
 
@@ -106,10 +114,64 @@ export class HabitationsPageComponent implements OnInit {
   charger(): void {
     this.chargement = true;
     this.habitationService.getAll(this.filtres).subscribe({
-      next: (h) => { this.habitations = h; this.chargement = false; this.carte?.recharger(this.filtres); },
+      next: (h) => {
+        this.habitations = h;
+        this.chargement = false;
+        this.carte?.recharger(this.filtres);
+        this.chargerDvfCommune();
+      },
       error: () => { this.chargement = false; },
     });
     this.verifierModuleCriseFiltree();
+  }
+
+  /** Commune unique de la liste (filtre explicite, sinon toutes les habitations dans la même). */
+  private get communeUnique(): string {
+    if (this.filtres.commune_code) return this.filtres.commune_code;
+    const codes = new Set(this.habitations.map(h => h.commune_code).filter(Boolean));
+    return codes.size === 1 ? [...codes][0]! : '';
+  }
+
+  private chargerDvfCommune(): void {
+    const code = this.communeUnique;
+    if (!code || !this.authService.getCurrentUser()) { this.dvfCommune = null; this.dvfCommuneCode = ''; return; }
+    if (code === this.dvfCommuneCode) return;
+    this.dvfCommuneCode = code;
+    this.habitationService.prixDvfCommune(code).subscribe({
+      next: (d) => this.dvfCommune = d.erreur ? null : d,
+      error: () => this.dvfCommune = null,
+    });
+  }
+
+  fr(n: number | null | undefined): string {
+    return n == null ? '' : Math.round(n).toLocaleString('fr-FR');
+  }
+
+  get nomCriseFiltree(): string {
+    return this.crises.find(c => c.id === this.filtres.crise)?.name ?? '';
+  }
+
+  exporterCsv(toutes: boolean): void {
+    if (!this.filtres.crise) return;
+    this.exportEnCours = true;
+    this.exportErreur = '';
+    this.habitationService.exporterCsv(this.filtres.crise, toutes).subscribe({
+      next: (blob) => {
+        this.exportEnCours = false;
+        const url = URL.createObjectURL(blob);
+        const lien = document.createElement('a');
+        lien.href = url;
+        lien.download = `${toutes ? 'adresses-referencees' : 'adresses-impactees'}-${new Date().toISOString().slice(0, 10)}.csv`;
+        lien.click();
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
+      },
+      error: (err) => {
+        this.exportEnCours = false;
+        this.exportErreur = err?.status === 403
+          ? "Vous ne gérez aucune des communes de cette crise."
+          : "L'export n'a pas pu être généré.";
+      },
+    });
   }
 
   private verifierModuleCriseFiltree(): void {

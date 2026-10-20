@@ -23,6 +23,40 @@ export interface Habitation {
   modifie_le: string;
   nb_rattachements_en_attente: number;
   peut_gerer: boolean;
+  crise_nom: string | null;
+  surface_habitable_totale: number | null;
+  surface_habitable_impactee: number | null;
+  surface_non_habitable_totale: number | null;
+  surface_non_habitable_impactee: number | null;
+  valeur_estimee: string | null;   // décimal sérialisé en texte par l'API
+  valeur_source: string | null;
+}
+
+export interface ReleveHabitation {
+  surface_habitable_totale?: number | null;
+  surface_habitable_impactee?: number | null;
+  surface_non_habitable_totale?: number | null;
+  surface_non_habitable_impactee?: number | null;
+  valeur_estimee?: number | null;
+  valeur_source?: string | null;
+}
+
+export interface PrixDvf {
+  prix_m2_median: number | null;
+  nb_ventes: number;
+}
+
+/** Valeurs foncières indicatives (backend core/dvf.py). */
+export interface EstimationDvf {
+  erreur: string | null;
+  source: string;
+  annees?: number[];
+  ensemble?: PrixDvf;
+  maison?: PrixDvf;
+  appartement?: PrixDvf;
+  ventes_parcelle?: { date: string; type: string; valeur: number; surface: number }[];
+  valeur_indicative?: number | null;
+  base_estimation?: string | null;
 }
 
 export interface HabitationCommentaire {

@@ -262,3 +262,22 @@ table {
   color: #444;
   margin: 0.5rem 0;
 }
+
+.btn-lien-export {
+  border: none;
+  background: none;
+  color: #2563eb;
+  font: inherit;
+  font-size: 0.85rem;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.rappel-dvf {
+  margin: -0.4rem 0 1rem;
+  font-size: 0.9rem;
+  color: #374151;
+  font-variant-numeric: tabular-nums;
+
+  .indicatif { margin-left: 0.4rem; color: #6b7280; font-size: 0.8rem; }
+}

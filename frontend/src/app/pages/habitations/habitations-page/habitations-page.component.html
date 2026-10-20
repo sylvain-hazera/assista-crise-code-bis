@@ -39,8 +39,33 @@
         <option [value]="option.key">{{ option.value }}</option>
       }
     </select>
+    @if (crises.length) {
+      <select [(ngModel)]="filtres.crise" (change)="appliquerFiltres()" aria-label="Crise">
+        <option [ngValue]="undefined">Toutes les crises</option>
+        @for (c of crises; track c.id) {
+          <option [ngValue]="c.id">{{ c.name }}</option>
+        }
+      </select>
+    }
     <button class="btn-primary" (click)="appliquerFiltres()">Filtrer</button>
+    @if (filtres.crise && authService.getCurrentUser()) {
+      <button class="btn-secondaire" [disabled]="exportEnCours" (click)="exporterCsv(false)"
+              title="Adresses avec dégâts constatés ou surface impactée, pour un tableur">
+        {{ exportEnCours ? 'Export…' : 'Exporter les adresses impactées (CSV)' }}
+      </button>
+      <button class="btn-lien-export" [disabled]="exportEnCours" (click)="exporterCsv(true)">toutes les adresses</button>
+    }
   </div>
+  @if (exportErreur) { <p class="bandeau-module-inactif">{{ exportErreur }}</p> }
+
+  @if (dvfCommune) {
+    <p class="rappel-dvf">
+      Valeur communale (DVF {{ dvfCommune.annees?.[0] }}–{{ dvfCommune.annees?.[dvfCommune.annees!.length - 1] }}) :
+      @if (dvfCommune.maison?.prix_m2_median) { maisons <strong>{{ fr(dvfCommune.maison!.prix_m2_median) }} €/m²</strong> }
+      @if (dvfCommune.appartement?.prix_m2_median) { · appartements <strong>{{ fr(dvfCommune.appartement!.prix_m2_median) }} €/m²</strong> }
+      <span class="indicatif">médiane des ventes, indicative</span>
+    </p>
+  }
 
   @if (vue === 'carte') {
     <div class="zone-carte">

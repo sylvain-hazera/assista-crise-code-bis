@@ -8,7 +8,7 @@ import { AuthService } from '../../../auth/services/auth.service';
 import {
   Habitation, HabitationCommentaire, HabitationHistorique, RattachementHabitation,
   StatutEvaluationHabitation, StatutChantierHabitation,
-  LABELS_STATUT_EVALUATION, LABELS_STATUT_CHANTIER,
+  LABELS_STATUT_EVALUATION, LABELS_STATUT_CHANTIER, ReleveHabitation, EstimationDvf,
 } from '../../../shared/models/habitation.model';
 import { DossierDocument } from '../../../shared/models/dossier-document.model';
 
@@ -33,6 +33,14 @@ export class HabitationFicheComponent implements OnChanges {
   statutChantier: StatutChantierHabitation = null;
   commentaireEvaluation = '';
   enregistrementEnCours = false;
+
+  // Relevé des surfaces et de la valeur : chaque enregistrement est gardé dans l'historique.
+  releve: ReleveHabitation = {};
+  valeurSource = '';
+  releveEnCours = false;
+  releveErreur = '';
+  dvf: EstimationDvf | null = null;
+  dvfEnCours = false;
 
   commentaires: HabitationCommentaire[] = [];
   nouveauCommentaire = '';
@@ -66,6 +74,8 @@ export class HabitationFicheComponent implements OnChanges {
   ngOnChanges(): void {
     this.statutEvaluation = this.habitation.statut_evaluation;
     this.statutChantier = this.habitation.statut_chantier;
+    this.initialiserReleve();
+    this.dvf = null;
     this.chargerCommentaires();
     this.chargerHistorique();
     if (this.habitation.peut_gerer) this.chargerRattachements();
@@ -96,6 +106,64 @@ export class HabitationFicheComponent implements OnChanges {
       },
       error: () => { this.enregistrementEnCours = false; },
     });
+  }
+
+  private initialiserReleve(): void {
+    const h = this.habitation;
+    this.releve = {
+      surface_habitable_totale: h.surface_habitable_totale,
+      surface_habitable_impactee: h.surface_habitable_impactee,
+      surface_non_habitable_totale: h.surface_non_habitable_totale,
+      surface_non_habitable_impactee: h.surface_non_habitable_impactee,
+      valeur_estimee: h.valeur_estimee !== null ? Number(h.valeur_estimee) : null,
+    };
+    this.valeurSource = h.valeur_source || '';
+    this.releveErreur = '';
+  }
+
+  /** Nombre entier à la française (espaces des milliers) -- la locale Angular « fr » n'est pas chargée. */
+  fr(n: number | null | undefined): string {
+    return n == null ? '' : Math.round(n).toLocaleString('fr-FR');
+  }
+
+  /** Part impactée en %, pour l'affichage à côté de la saisie. */
+  part(impactee?: number | null, totale?: number | null): number | null {
+    if (impactee == null || !totale) return null;
+    return Math.round(impactee * 100 / totale);
+  }
+
+  enregistrerReleve(): void {
+    this.releveEnCours = true;
+    this.releveErreur = '';
+    this.habitationService.releve(this.habitation.id, { ...this.releve, valeur_source: this.valeurSource || null }).subscribe({
+      next: (h) => {
+        this.releveEnCours = false;
+        this.misAJour.emit(h);
+        this.chargerHistorique();
+      },
+      error: (err) => {
+        this.releveEnCours = false;
+        this.releveErreur = err?.error?.error || "Le relevé n'a pas pu être enregistré.";
+      },
+    });
+  }
+
+  chargerDvf(): void {
+    this.dvfEnCours = true;
+    this.habitationService.dvf(this.habitation.id).subscribe({
+      next: (d) => { this.dvf = d; this.dvfEnCours = false; },
+      error: () => {
+        this.dvfEnCours = false;
+        this.dvf = { erreur: 'Valeurs foncières indisponibles pour le moment.', source: 'DVF' };
+      },
+    });
+  }
+
+  /** Reprend la valeur indicative DVF dans le relevé (à enregistrer ensuite). */
+  reprendreValeurDvf(): void {
+    if (!this.dvf?.valeur_indicative) return;
+    this.releve.valeur_estimee = this.dvf.valeur_indicative;
+    this.valeurSource = 'DVF médiane communale';
   }
 
   private chargerCommentaires(): void {

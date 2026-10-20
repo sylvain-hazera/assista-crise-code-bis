@@ -5,7 +5,7 @@ import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
 import {
   Habitation, HabitationCommentaire, HabitationHistorique, RattachementHabitation,
-  StatutEvaluationHabitation, StatutChantierHabitation,
+  StatutEvaluationHabitation, StatutChantierHabitation, ReleveHabitation, EstimationDvf,
 } from '../shared/models/habitation.model';
 
 export interface HabitationFiltres {
@@ -53,6 +53,26 @@ export class HabitationService {
       statut_chantier: statutChantier,
       commentaire: commentaire || undefined,
     });
+  }
+
+  /** Relevé des surfaces / de la valeur : chaque appel ajoute une ligne d'historique. */
+  releve(id: string, releve: ReleveHabitation): Observable<Habitation> {
+    return this.http.post<Habitation>(`${this.url}/${id}/releve/`, releve);
+  }
+
+  dvf(id: string): Observable<EstimationDvf> {
+    return this.http.get<EstimationDvf>(`${this.url}/${id}/dvf/`);
+  }
+
+  prixDvfCommune(communeCode: string): Observable<EstimationDvf> {
+    return this.http.get<EstimationDvf>(`${this.url}/prix-dvf/?commune_code=${encodeURIComponent(communeCode)}`);
+  }
+
+  /** CSV des adresses impactées de la crise (`toutes` : toutes les adresses référencées). */
+  exporterCsv(criseId: string, toutes = false): Observable<Blob> {
+    const params = new URLSearchParams({ crise: criseId });
+    if (toutes) params.set('toutes', '1');
+    return this.http.get(`${this.url}/export-csv/?${params}`, { responseType: 'blob' });
   }
 
   importerCsv(fichier: File, mapping: Record<string, string>, crise?: string, zone?: string): Observable<{ crees: number; erreurs: { ligne: number; message: string }[] }> {
