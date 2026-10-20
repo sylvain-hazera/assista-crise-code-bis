@@ -5,12 +5,12 @@
 .btn-add-photo {
   display: inline-flex; align-items: center; gap: .4rem;
   width: fit-content; padding: .5rem 1rem; border-radius: 8px;
-  background: #eff6ff; color: #1d4ed8; font-size: .88rem; font-weight: 600;
+  background: var(--ac-blue-bg, #eff6ff); color: var(--ac-blue-text, #1d4ed8); font-size: .88rem; font-weight: 600;
   cursor: pointer;
-  &:hover { background: #dbeafe; }
+  &:hover { background: var(--ac-blue-bg, #dbeafe); }
 }
 
-.error-message { color: #b91c1c; font-size: .82rem; margin: 0; }
+.error-message { color: var(--ac-red-text, #b91c1c); font-size: .82rem; margin: 0; }
 
 .photo-grid {
   display: grid;
@@ -24,7 +24,7 @@
   overflow: hidden;
   border: 2px solid transparent;
   aspect-ratio: 1;
-  background: #f3f4f6;
+  background: var(--ac-surface-2, #f3f4f6);
 
   &.principale { border-color: #f59e0b; }
 

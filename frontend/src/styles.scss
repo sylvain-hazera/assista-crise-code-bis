@@ -13,6 +13,69 @@
   --brand-font-text: Roboto, "Helvetica Neue", sans-serif;
 }
 
+// ==================== THÈME (mode sombre) ====================
+// ThemeService pose data-theme="sombre" sur <html>. Les couleurs des composants s'écrivent
+// var(--ac-…, <couleur du mode clair>) : les --ac-* ne sont définies qu'en mode sombre, le mode
+// clair garde donc exactement ses couleurs d'origine (valeur de repli). Conversion des anciennes
+// couleurs : frontend/scripts/convertir-couleurs-theme.py (DOCUMENTATION.md, § 6.6).
+html[data-theme='sombre'] {
+  // Neutres. Comme en clair (page gris clair, cartes blanches), la page reste plus foncée que les
+  // cartes : surface-2 (fonds de page, survols) sous surface ; surface-3 (pastilles) au-dessus.
+  --ac-bg: #101216;
+  --ac-surface: #1c1f26;
+  --ac-surface-2: #15171c;
+  --ac-surface-3: #2a2e38;
+  --ac-text: #e5e7eb;
+  --ac-text-muted: #a3aab8;
+  --ac-text-subtle: #7d8594;
+  --ac-border: #2f3542;
+  --ac-border-strong: #424a5a;
+
+  // Familles de couleurs : fonds pâles, textes foncés et bordures pâles du mode clair, qui
+  // deviennent des fonds teintés, des textes clairs et des bordures translucides. Fonds opaques
+  // (teinte à ~16 % sur --ac-surface) : une fenêtre ou un menu teinté ne laisse pas voir la page.
+  --ac-red-bg: #3e252b;                     --ac-red-text: #fca5a5;     --ac-red-border: rgba(248, 113, 113, .4);
+  --ac-orange-bg: #3f2c23;                  --ac-orange-text: #fdba74;  --ac-orange-border: rgba(251, 146, 60, .4);
+  --ac-amber-bg: #3f3322;                   --ac-amber-text: #fcd34d;   --ac-amber-border: rgba(251, 191, 36, .4);
+  --ac-green-bg: #1d382e;                   --ac-green-text: #86efac;   --ac-green-border: rgba(74, 222, 128, .35);
+  --ac-teal-bg: #1b3639;                    --ac-teal-text: #5eead4;    --ac-teal-border: rgba(45, 212, 191, .35);
+  --ac-blue-bg: #212f47;                    --ac-blue-text: #93c5fd;    --ac-blue-border: rgba(96, 165, 250, .4);
+  --ac-indigo-bg: #292c4b;                  --ac-indigo-text: #a5b4fc;  --ac-indigo-border: rgba(129, 140, 248, .4);
+  --ac-purple-bg: #322847;                  --ac-purple-text: #d8b4fe;  --ac-purple-border: rgba(192, 132, 252, .4);
+  --ac-pink-bg: #3d2638;                    --ac-pink-text: #f9a8d4;    --ac-pink-border: rgba(244, 114, 182, .4);
+
+  color-scheme: dark;
+
+  body {
+    background-color: var(--ac-bg);
+    color: var(--ac-text);
+  }
+
+  // Champs natifs : :where() (spécificité nulle) pour ne jamais l'emporter sur un composant.
+  :where(input:not([type='checkbox'], [type='radio'], [type='range'], [type='color']), select, textarea) {
+    background-color: var(--ac-surface);
+    color: var(--ac-text);
+    border-color: var(--ac-border-strong);
+  }
+
+  ::placeholder { color: var(--ac-text-subtle); }
+
+  // Fenêtres de la carte (MapLibre) : fond blanc fixé par la bibliothèque.
+  .maplibregl-popup-content {
+    background: var(--ac-surface);
+    color: var(--ac-text);
+  }
+  .maplibregl-popup-anchor-top .maplibregl-popup-tip,
+  .maplibregl-popup-anchor-top-left .maplibregl-popup-tip,
+  .maplibregl-popup-anchor-top-right .maplibregl-popup-tip { border-bottom-color: var(--ac-surface); }
+  .maplibregl-popup-anchor-bottom .maplibregl-popup-tip,
+  .maplibregl-popup-anchor-bottom-left .maplibregl-popup-tip,
+  .maplibregl-popup-anchor-bottom-right .maplibregl-popup-tip { border-top-color: var(--ac-surface); }
+  .maplibregl-popup-anchor-left .maplibregl-popup-tip { border-right-color: var(--ac-surface); }
+  .maplibregl-popup-anchor-right .maplibregl-popup-tip { border-left-color: var(--ac-surface); }
+  .maplibregl-popup-close-button { color: var(--ac-text-muted); }
+}
+
 html, body { height: 100%; }
 body { margin: 0; font-family: var(--brand-font-text); }
 app-header, app-admin-header {

@@ -20,6 +20,11 @@ export class AdminSidebarComponent {
   @HostBinding('class.collapsed')
   @Input() collapsed = false;
 
+  /** Grand écran : affiche le bouton icônes seules / libellés (le layout gère l'état). */
+  @Input() reductible = false;
+
+  @Output() basculerReduction = new EventEmitter<void>();
+
   /** Clic sur une entrée : le layout ferme le menu sur mobile. */
   @Output() navigation = new EventEmitter<void>();
   @Output() deconnexion = new EventEmitter<void>();

@@ -2,11 +2,12 @@ import { Component, EventEmitter, HostBinding, Input, Output } from '@angular/co
 import { Router } from '@angular/router';
 import { AuthService } from '../../../auth/services/auth.service';
 import { SuiviPositionPermanentService } from '../../../services/suivi-position-permanent.service';
+import { ThemeService } from '../../../services/theme.service';
 import { User, UserRole } from '../../../shared/models/user.model';
 import { AdminNotificationsComponent } from './admin-notifications/admin-notifications.component';
 
 /** En-tête de l'administration : logo, bannière démo, suivi de position, bascule PROD/DEMO,
- * cloche et menu utilisateur. Arbitre ses listes déroulantes (une seule ouverte à la fois) et
+ * thème clair/sombre, affichage du menu latéral, cloche et menu utilisateur. Arbitre ses listes déroulantes (une seule ouverte à la fois) et
  * signale au layout qu'une liste est ouverte : le layout affiche le fond qui les ferme. */
 @Component({
   selector: 'app-admin-header',
@@ -18,7 +19,8 @@ import { AdminNotificationsComponent } from './admin-notifications/admin-notific
 export class AdminHeaderComponent {
   @Input() currentUser: User | null = null;
   @Input() isMobile = false;
-  @Input() sidebarCollapsed = false;
+  /** Desktop : menu latéral masqué (le bouton propose de le réafficher). */
+  @Input() sidebarFermee = false;
 
   @Output() toggleSidebar = new EventEmitter<void>();
   /** true dès qu'une liste déroulante est ouverte ; émis à chaque ouverture ou fermeture. */
@@ -32,6 +34,7 @@ export class AdminHeaderComponent {
     private authService: AuthService,
     private router: Router,
     public suiviPosition: SuiviPositionPermanentService,
+    public theme: ThemeService,
   ) {}
 
   @HostBinding('class.demo-mode')

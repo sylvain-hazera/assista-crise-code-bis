@@ -10,8 +10,8 @@
   height: 100%;
   padding: 1.5rem;
   box-sizing: border-box;
-  background: #f4f5f7;
-  color: #111827;
+  background: var(--ac-surface-2, #f4f5f7);
+  color: var(--ac-text, #111827);
 }
 
 .entete {
@@ -34,7 +34,7 @@
   display: inline-flex;
   align-items: center;
   gap: .35rem;
-  color: #2563eb;
+  color: var(--ac-blue-text, #2563eb);
   text-decoration: none;
 
   .material-icons { font-size: 1.1rem; }
@@ -43,7 +43,7 @@
 .onglets {
   display: flex;
   gap: .25rem;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--ac-border, #e5e7eb);
   overflow-x: auto;
 }
 
@@ -55,17 +55,17 @@
   border: none;
   border-bottom: 3px solid transparent;
   background: none;
-  color: #6b7280;
+  color: var(--ac-text-muted, #6b7280);
   font: inherit;
   white-space: nowrap;
   cursor: pointer;
 
   .material-icons { font-size: 1.15rem; }
 
-  &:hover { color: #111827; }
+  &:hover { color: var(--ac-text, #111827); }
 
   &.actif {
-    color: #2563eb;
+    color: var(--ac-blue-text, #2563eb);
     border-bottom-color: #2563eb;
     font-weight: 600;
   }
@@ -75,7 +75,7 @@
   display: inline-flex;
   align-items: center;
   gap: .5rem;
-  color: #374151;
+  color: var(--ac-text, #374151);
   font-size: .9rem;
   cursor: pointer;
 }
@@ -84,14 +84,14 @@
   flex: 1;
   min-height: 70vh;
   width: 100%;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--ac-border, #e5e7eb);
   border-radius: 14px;
-  background: #fff;
+  background: var(--ac-surface, #fff);
 }
 
 .secours {
   margin: 0;
-  color: #6b7280;
+  color: var(--ac-text-muted, #6b7280);
   font-size: .85rem;
 }
 
@@ -102,8 +102,8 @@
   gap: .5rem;
   padding: 1.25rem;
   border-radius: 14px;
-  background: #fef2f2;
-  color: #991b1b;
+  background: var(--ac-red-bg, #fef2f2);
+  color: var(--ac-red-text, #991b1b);
 
   p { margin: 0; }
 }
@@ -117,7 +117,7 @@
   cursor: pointer;
 }
 
-.chargement { color: #6b7280; }
+.chargement { color: var(--ac-text-muted, #6b7280); }
 
 code {
   padding: 0 .25rem;

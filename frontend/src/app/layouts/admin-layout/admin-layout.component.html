@@ -1,12 +1,15 @@
-<div class="admin-layout" 
+<div class="admin-layout"
      [class.sidebar-collapsed]="sidebarCollapsed && !isMobile"
-     [class.sidebar-open]="sidebarOpen && isMobile">
-  
+     [class.sidebar-fermee]="sidebarFermee && !isMobile"
+     [class.redimensionnement]="redimensionnement"
+     [class.sidebar-open]="sidebarOpen && isMobile"
+     [style.--sidebar-largeur]="largeurAffichee + 'px'">
+
   <app-admin-header
     class="admin-header"
     [currentUser]="currentUser"
     [isMobile]="isMobile"
-    [sidebarCollapsed]="sidebarCollapsed"
+    [sidebarFermee]="sidebarFermee"
     (toggleSidebar)="toggleSidebar()"
     (menusOuvertsChange)="onMenusOuverts($event)"
     (deconnexion)="logout()">
@@ -16,9 +19,33 @@
     class="admin-sidebar"
     [class.open]="sidebarOpen && isMobile"
     [collapsed]="sidebarCollapsed && !isMobile"
+    [reductible]="!isMobile"
+    [attr.inert]="sidebarFermee && !isMobile ? '' : null"
+    (basculerReduction)="basculerReduction()"
     (navigation)="onNavItemClick()"
     (deconnexion)="logout()">
   </app-admin-sidebar>
+
+  @if (!isMobile) {
+    <!-- Poignée : glisser pour la largeur (sous les seuils : icônes seules puis fermé),
+         double-clic pour la largeur par défaut, flèches et Entrée au clavier. -->
+    <div class="poignee-sidebar"
+         role="separator"
+         tabindex="0"
+         aria-orientation="vertical"
+         aria-label="Redimensionner le menu"
+         [attr.aria-valuemin]="0"
+         [attr.aria-valuemax]="largeurs.max"
+         [attr.aria-valuenow]="largeurAffichee"
+         title="Glisser pour redimensionner le menu, double-clic pour revenir à la largeur par défaut"
+         (pointerdown)="debutRedimensionnement($event)"
+         (pointermove)="redimensionner($event)"
+         (pointerup)="finRedimensionnement($event)"
+         (pointercancel)="finRedimensionnement($event)"
+         (dblclick)="reinitialiserLargeur()"
+         (keydown)="clavierPoignee($event)">
+    </div>
+  }
 
   <!-- Main Content -->
   <main class="admin-content">

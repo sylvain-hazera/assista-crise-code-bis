@@ -19,7 +19,7 @@
 
   .subtitle {
     margin: .25rem 0 0;
-    color: #6b7280;
+    color: var(--ac-text-muted, #6b7280);
     font-size: .9rem;
     max-width: 60ch;
   }
@@ -48,7 +48,7 @@
   gap: .3rem;
   border-radius: 6px;
   border: 1px solid #16a34a;
-  background: #f0fdf4;
+  background: var(--ac-green-bg, #f0fdf4);
   color: #16a34a;
   cursor: pointer;
   font-weight: 600;
@@ -67,17 +67,17 @@
   margin-bottom: 1rem;
   font-size: .9rem;
 
-  &.toast-err { background: #fef2f2; color: #b91c1c; }
+  &.toast-err { background: var(--ac-red-bg, #fef2f2); color: var(--ac-red-text, #b91c1c); }
 }
 
 .loading, .empty {
   padding: 2rem;
   text-align: center;
-  color: #6b7280;
+  color: var(--ac-text-muted, #6b7280);
 }
 
 .hint {
-  color: #6b7280;
+  color: var(--ac-text-muted, #6b7280);
   font-size: .85rem;
   margin: 0 0 .8rem;
 }
@@ -91,29 +91,29 @@
     gap: .5rem;
     font-size: 1.05rem;
     margin: 0 0 .7rem;
-    .material-icons { font-size: 20px; color: #1d4ed8; }
+    .material-icons { font-size: 20px; color: var(--ac-blue-text, #1d4ed8); }
   }
 }
 
 .data-table {
   width: 100%;
   border-collapse: collapse;
-  background: #fff;
+  background: var(--ac-surface, #fff);
 
   th, td {
     text-align: left;
     padding: .65rem .75rem;
-    border-bottom: 1px solid #f0f0f0;
+    border-bottom: 1px solid var(--ac-border, #f0f0f0);
   }
 
   th {
-    color: #6b7280;
+    color: var(--ac-text-muted, #6b7280);
     font-weight: 600;
     font-size: .8rem;
     text-transform: uppercase;
   }
 
-  tbody tr:hover { background: #f9fafb; }
+  tbody tr:hover { background: var(--ac-surface-2, #f9fafb); }
 
   td.actions {
     display: flex;
@@ -123,6 +123,6 @@
   .sous-detail {
     display: block;
     font-size: .75rem;
-    color: #9ca3af;
+    color: var(--ac-text-subtle, #9ca3af);
   }
 }

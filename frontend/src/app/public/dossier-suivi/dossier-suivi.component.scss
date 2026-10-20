@@ -1,6 +1,6 @@
 .suivi-container {
   min-height: 100vh;
-  background: #f5f5f5;
+  background: var(--ac-surface-2, #f5f5f5);
   padding: 1.5rem 1rem 3rem;
   display: flex;
   justify-content: center;
@@ -9,7 +9,7 @@
 .suivi-wrapper {
   max-width: 640px;
   width: 100%;
-  background: white;
+  background: var(--ac-surface, white);
   border-radius: 16px;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
   padding: 1.75rem;
@@ -28,13 +28,13 @@
 }
 
 .error-icon {
-  color: #dc3545;
+  color: var(--ac-red-text, #dc3545);
 }
 
 .spinner {
   width: 44px;
   height: 44px;
-  border: 4px solid #f0f0f0;
+  border: 4px solid var(--ac-border, #f0f0f0);
   border-top: 4px solid #667eea;
   border-radius: 50%;
   animation: spin 1s linear infinite;
@@ -54,7 +54,7 @@
 
 .numero {
   font-family: monospace;
-  color: #888;
+  color: var(--ac-text-subtle, #888);
   font-size: 0.9rem;
 }
 
@@ -65,8 +65,8 @@
 }
 
 .statut-badge {
-  background: #eef1ff;
-  color: #4c51bf;
+  background: var(--ac-blue-bg, #eef1ff);
+  color: var(--ac-indigo-text, #4c51bf);
   padding: 0.3rem 0.75rem;
   border-radius: 999px;
   font-size: 0.8rem;
@@ -75,8 +75,8 @@
 }
 
 .statut-select {
-  background: #eef1ff;
-  color: #4c51bf;
+  background: var(--ac-blue-bg, #eef1ff);
+  color: var(--ac-indigo-text, #4c51bf);
   padding: 0.3rem 1.5rem 0.3rem 0.75rem;
   border-radius: 999px;
   font-size: 0.8rem;
@@ -85,8 +85,8 @@
   border: 1px solid transparent;
   cursor: pointer;
 
-  &[data-statut="EN_COURS"] { background: #dbeafe; color: #1d4ed8; }
-  &[data-statut="AFFECTE"] { background: #fef3c7; color: #92400e; }
+  &[data-statut="EN_COURS"] { background: var(--ac-blue-bg, #dbeafe); color: var(--ac-blue-text, #1d4ed8); }
+  &[data-statut="AFFECTE"] { background: var(--ac-amber-bg, #fef3c7); color: var(--ac-orange-text, #92400e); }
   &:disabled { opacity: 0.6; cursor: not-allowed; }
 }
 
@@ -94,8 +94,8 @@
   display: inline-flex;
   align-items: center;
   gap: 0.2rem;
-  background: #fef2f2;
-  color: #dc2626;
+  background: var(--ac-red-bg, #fef2f2);
+  color: var(--ac-red-text, #dc2626);
   padding: 0.3rem 0.75rem;
   border-radius: 999px;
   font-size: 0.8rem;
@@ -112,8 +112,8 @@
   padding: 0.5rem 0.9rem;
   border-radius: 8px;
   border: 1.5px solid #dc2626;
-  background: #fff;
-  color: #dc2626;
+  background: var(--ac-surface, #fff);
+  color: var(--ac-red-text, #dc2626);
   font-weight: 600;
   font-size: 0.85rem;
   cursor: pointer;
@@ -121,7 +121,7 @@
 
   .material-icons { font-size: 18px; }
 
-  &:hover:not(:disabled) { background: #fef2f2; }
+  &:hover:not(:disabled) { background: var(--ac-red-bg, #fef2f2); }
   &:disabled { opacity: 0.6; cursor: not-allowed; }
 
   &.active {
@@ -134,17 +134,17 @@
 .titre {
   font-size: 1.4rem;
   font-weight: 700;
-  color: #222;
+  color: var(--ac-text, #222);
   margin: 0.75rem 0 0.25rem;
 }
 
 .description {
-  color: #444;
+  color: var(--ac-text, #444);
   margin: 0 0 0.5rem;
 }
 
 .meta-row {
-  color: #555;
+  color: var(--ac-text-muted, #555);
   font-size: 0.9rem;
   margin-top: 0.25rem;
 }
@@ -152,8 +152,8 @@
 .logistique-box {
   margin-top: 1rem;
   padding: 0.9rem 1rem;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
+  background: var(--ac-surface-2, #f8fafc);
+  border: 1px solid var(--ac-border, #e2e8f0);
   border-radius: 10px;
 
   h3 {
@@ -162,14 +162,14 @@
     gap: 0.35rem;
     margin: 0 0 0.5rem;
     font-size: 0.9rem;
-    color: #334155;
+    color: var(--ac-text, #334155);
     .material-icons { font-size: 18px; }
   }
 }
 
 .logistique-row {
   font-size: 0.85rem;
-  color: #444;
+  color: var(--ac-text, #444);
   margin-bottom: 0.35rem;
   display: flex;
   flex-wrap: wrap;
@@ -182,7 +182,7 @@
 .demande-origine {
   display: block;
   font-style: italic;
-  color: #555;
+  color: var(--ac-text-muted, #555);
 }
 
 .logistique-minimap {
@@ -199,7 +199,7 @@
   .minimap-hint {
     margin: 0.35rem 0 0;
     font-size: 0.78rem;
-    color: #64748b;
+    color: var(--ac-text-muted, #64748b);
   }
 }
 
@@ -216,25 +216,25 @@
 }
 
 .contact-sub {
-  color: #777;
+  color: var(--ac-text-muted, #777);
   font-size: 0.8rem;
 }
 
 hr {
   border: none;
-  border-top: 1px solid #eee;
+  border-top: 1px solid var(--ac-border, #eee);
   margin: 1.5rem 0;
 }
 
 h2 {
   font-size: 1.1rem;
   font-weight: 700;
-  color: #222;
+  color: var(--ac-text, #222);
   margin: 0 0 0.5rem;
 }
 
 .section-hint {
-  color: #777;
+  color: var(--ac-text-muted, #777);
   font-size: 0.85rem;
   margin: 0 0 1rem;
 }
@@ -259,14 +259,14 @@ h2 {
     aspect-ratio: 1;
     object-fit: cover;
     border-radius: 8px;
-    border: 1px solid #eee;
+    border: 1px solid var(--ac-border, #eee);
   }
 
   .photo-placeholder {
     width: 100%;
     aspect-ratio: 1;
     border-radius: 8px;
-    background: #f0f0f0;
+    background: var(--ac-surface-2, #f0f0f0);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -288,7 +288,7 @@ h2 {
   }
 
   small {
-    color: #999;
+    color: var(--ac-text-subtle, #999);
     font-size: 0.7rem;
   }
 }
@@ -354,7 +354,7 @@ h2 {
 }
 
 .upload-error {
-  color: #dc3545;
+  color: var(--ac-red-text, #dc3545);
   font-size: 0.85rem;
   margin: 0 0 0.75rem;
 }
@@ -395,9 +395,9 @@ h2 {
 }
 
 .btn-photo-secondary {
-  background: white;
-  color: #555;
-  border: 1.5px solid #ddd;
+  background: var(--ac-surface, white);
+  color: var(--ac-text-muted, #555);
+  border: 1.5px solid var(--ac-border, #ddd);
 }
 
 .file-input {
@@ -417,7 +417,7 @@ h2 {
     resize: vertical;
     padding: 0.75rem;
     border-radius: 8px;
-    border: 1.5px solid #ddd;
+    border: 1.5px solid var(--ac-border, #ddd);
     font-family: inherit;
     font-size: 0.95rem;
   }
@@ -441,21 +441,21 @@ h2 {
 
 .commentaire-card {
   padding: 0.75rem 0;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--ac-border, #f0f0f0);
 
   .author {
     font-weight: 700;
-    color: #333;
+    color: var(--ac-text, #333);
     font-size: 0.9rem;
   }
 
   .text {
-    color: #444;
+    color: var(--ac-text, #444);
     margin: 0.15rem 0;
   }
 
   small {
-    color: #999;
+    color: var(--ac-text-subtle, #999);
     font-size: 0.75rem;
   }
 }

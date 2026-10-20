@@ -3,6 +3,7 @@ import { RouterOutlet } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { SuiviPositionPermanentService } from './services/suivi-position-permanent.service';
 import { BrandingService } from './services/branding.service';
+import { ThemeService } from './services/theme.service';
 
 @Component({
   selector: 'app-root',
@@ -19,6 +20,8 @@ export class AppComponent implements OnInit {
   constructor(
     private suiviPosition: SuiviPositionPermanentService,
     private branding: BrandingService,
+    // Injecté dès le démarrage : pose le thème (clair/sombre) avant le premier rendu.
+    private theme: ThemeService,
   ) {}
 
   ngOnInit(): void {

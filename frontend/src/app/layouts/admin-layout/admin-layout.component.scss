@@ -3,15 +3,29 @@
   grid-template-areas:
     "header header"
     "sidebar main";
-  grid-template-columns: 250px 1fr;
+  // Largeur posée par le composant selon l'état du menu (étendu, réduit, fermé) et la poignée.
+  grid-template-columns: var(--sidebar-largeur, 250px) 1fr;
   grid-template-rows: 70px 1fr;
   min-height: 100vh;
-  background-color: #f5f7fa;
+  background-color: var(--ac-surface-2, #f5f7fa);
   transition: grid-template-columns 0.3s ease;
 
-  // ==================== SIDEBAR COLLAPSED (DESKTOP) ====================
-  &.sidebar-collapsed {
-    grid-template-columns: 70px 1fr;
+  // ==================== POIGNÉE EN COURS DE GLISSEMENT ====================
+  // Le contenu suit le pointeur sans délai ; pas de sélection de texte pendant le geste.
+  &.redimensionnement {
+    transition: none;
+    cursor: col-resize;
+    user-select: none;
+
+    .admin-sidebar .nav-label { transition: none; }
+  }
+
+  // ==================== SIDEBAR FERMÉE (DESKTOP) ====================
+  // Masquée après l'animation (inert la retire déjà du clavier et des lecteurs d'écran).
+  &.sidebar-fermee .admin-sidebar {
+    visibility: hidden;
+    border-right-color: transparent;
+    transition: visibility 0s 0.3s;
   }
 
   // ==================== SIDEBAR OPEN (MOBILE) ====================
@@ -34,12 +48,56 @@
 // ==================== SIDEBAR ====================
 .admin-sidebar {
   grid-area: sidebar;
-  background: white;
-  border-right: 1px solid #e0e0e0;
+  background: var(--ac-surface, white);
+  border-right: 1px solid var(--ac-border, #e0e0e0);
   display: flex;
   flex-direction: column;
   overflow-x: hidden;
   overflow-y: auto;
+  // Reste visible quand la page défile.
+  position: sticky;
+  top: 70px;
+  height: calc(100vh - 70px);
+  align-self: start;
+  box-sizing: border-box;
+}
+
+// ==================== POIGNÉE DE REDIMENSIONNEMENT ====================
+.poignee-sidebar {
+  grid-area: sidebar;
+  justify-self: end;
+  position: sticky;
+  top: 70px;
+  align-self: start;
+  height: calc(100vh - 70px);
+  width: 10px;
+  margin-right: -5px; // à cheval sur la bordure du menu
+  z-index: 10;
+  cursor: col-resize;
+  touch-action: none;
+
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0 4px;
+    border-radius: 2px;
+    background: transparent;
+    transition: background-color 0.2s;
+  }
+
+  &:hover::after,
+  &:focus-visible::after,
+  .redimensionnement > &::after {
+    background: var(--brand-primary);
+  }
+
+  &:focus-visible { outline: none; }
+
+  // Menu fermé : la poignée reste au bord gauche pour le rouvrir en glissant.
+  .sidebar-fermee > & {
+    justify-self: start;
+    margin-right: 0;
+  }
 }
 
 // ==================== MAIN CONTENT ====================
@@ -47,7 +105,7 @@
   grid-area: main;
   padding: 1.5rem;
   overflow-y: auto;
-  background-color: #f5f7fa;
+  background-color: var(--ac-surface-2, #f5f7fa);
 }
 
 // ==================== OVERLAYS ====================
@@ -79,14 +137,6 @@
 
 // ==================== RESPONSIVE ====================
 @media (max-width: 1024px) {
-  .admin-layout {
-    grid-template-columns: 200px 1fr;
-
-    &.sidebar-collapsed {
-      grid-template-columns: 60px 1fr;
-    }
-  }
-
   .admin-content {
     padding: 1rem;
   }
@@ -110,6 +160,7 @@
     left: -250px;
     top: 60px;
     bottom: 0;
+    height: auto;
     width: 250px;
     z-index: 999;
     transition: left 0.3s ease;
@@ -144,7 +195,7 @@
   }
 
   &::-webkit-scrollbar-track {
-    background: #f1f1f1;
+    background: var(--ac-surface-2, #f1f1f1);
   }
 
   &::-webkit-scrollbar-thumb {

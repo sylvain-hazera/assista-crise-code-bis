@@ -1,10 +1,10 @@
 :host {
   --primary: #1d4ed8;
-  --surface: #ffffff;
-  --bg: #f1f5f9;
-  --border: #e2e8f0;
-  --text: #0f172a;
-  --muted: #64748b;
+  --surface: var(--ac-surface, #ffffff);
+  --bg: var(--ac-bg, #f1f5f9);
+  --border: var(--ac-border, #e2e8f0);
+  --text: var(--ac-text, #0f172a);
+  --muted: var(--ac-text-muted, #64748b);
 }
 
 .recherches-page {
@@ -58,7 +58,7 @@
 }
 
 .person-card {
-  background: white;
+  background: var(--ac-surface, white);
   border: 1px solid var(--border);
   border-radius: 12px;
   overflow: hidden;
@@ -102,7 +102,7 @@
 
   .material-icons {
     font-size: 60px;
-    color: #94a3b8;
+    color: var(--ac-text-subtle, #94a3b8);
   }
 }
 .search-box {
@@ -114,7 +114,7 @@
 
   padding: .8rem 1rem;
 
-  background: white;
+  background: var(--ac-surface, white);
 
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -135,23 +135,23 @@
 .last-comment {
   margin-top: 12px;
   padding: 8px;
-  background: #f8fafc;
+  background: var(--ac-surface-2, #f8fafc);
   border-left: 3px solid #3b82f6;
   border-radius: 6px;
   font-size: 0.85rem;
-  color: #475569;
+  color: var(--ac-text-muted, #475569);
 }
 
 .comment-photo-count {
   margin-top: 6px;
   font-size: 0.8rem;
-  color: #64748b;
+  color: var(--ac-text-muted, #64748b);
 }
 
 .comment-date {
   margin-top: 4px;
   font-size: 0.8rem;
-  color: #94a3b8;
+  color: var(--ac-text-subtle, #94a3b8);
 }
 
 .etat-badge {
@@ -164,17 +164,17 @@
 }
 
 .NOUVEAU {
-  background: #fee2e2;
-  color: #dc2626;
+  background: var(--ac-red-bg, #fee2e2);
+  color: var(--ac-red-text, #dc2626);
 }
 
 .VU {
-  background: #dcfce7;
+  background: var(--ac-green-bg, #dcfce7);
   color: #16a34a;
 }
 
 .ACQUITTE {
-  background: #dbeafe;
-  color: #2563eb;
+  background: var(--ac-blue-bg, #dbeafe);
+  color: var(--ac-blue-text, #2563eb);
 }
 

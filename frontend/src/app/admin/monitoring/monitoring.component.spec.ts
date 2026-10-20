@@ -5,6 +5,7 @@ import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angul
 
 import { MonitoringComponent, ONGLETS_SUPERVISION } from './monitoring.component';
 import { environment } from '../../../environments/environment';
+import { ThemeService } from '../../services/theme.service';
 
 const URL_JETON = `${environment.apiUrl}/monitoring/grafana-token/`;
 
@@ -14,6 +15,7 @@ describe('MonitoringComponent', () => {
   let http: HttpTestingController;
 
   function creer(onglet: string | null = null): void {
+    localStorage.removeItem('theme');
     TestBed.configureTestingModule({
       imports: [MonitoringComponent],
       providers: [
@@ -95,6 +97,20 @@ describe('MonitoringComponent', () => {
     expect(iframeSrc()).toContain('auth_token=neuf');
     component.ngOnDestroy();
   }));
+
+  it('Grafana suit le thème de l\'application', () => {
+    creer();
+    http.expectOne(URL_JETON).flush({ token: 'abc', expires_in: 3600 });
+    fixture.detectChanges();
+    expect(iframeSrc()).toContain('theme=light');
+
+    const theme = TestBed.inject(ThemeService);
+    theme.definir('sombre');
+    fixture.detectChanges();
+    expect(iframeSrc()).toContain('theme=dark');
+    theme.definir('systeme');
+    component.ngOnDestroy();
+  });
 
   it('refus du backend : message, pas d\'iframe', () => {
     creer();

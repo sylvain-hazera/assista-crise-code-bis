@@ -13,7 +13,7 @@
   }
 
   p {
-    color: #64748b;
+    color: var(--ac-text-muted, #64748b);
   }
 }
 
@@ -24,9 +24,9 @@
   button {
     padding: 0.5rem 1rem;
     border-radius: 8px;
-    border: 1px solid #e2e8f0;
-    background: white;
-    color: #64748b;
+    border: 1px solid var(--ac-border, #e2e8f0);
+    background: var(--ac-surface, white);
+    color: var(--ac-text-muted, #64748b);
     cursor: pointer;
 
     &.active {
@@ -44,8 +44,8 @@
   display: flex;
   align-items: center;
   gap: .75rem;
-  background: #eff6ff;
-  border: 1px solid #bfdbfe;
+  background: var(--ac-blue-bg, #eff6ff);
+  border: 1px solid var(--ac-blue-border, #bfdbfe);
   border-radius: 10px;
   padding: .6rem .9rem;
   margin-bottom: 1rem;
@@ -53,7 +53,7 @@
 
   select {
     padding: .35rem .6rem;
-    border: 1px solid #d1d5db;
+    border: 1px solid var(--ac-border-strong, #d1d5db);
     border-radius: 6px;
   }
 
@@ -65,7 +65,7 @@
     background: #2563eb;
     color: white;
     &:disabled { opacity: .6; cursor: not-allowed; }
-    &.btn-secondary { background: #e5e7eb; color: #374151; }
+    &.btn-secondary { background: var(--ac-surface-3, #e5e7eb); color: var(--ac-text, #374151); }
   }
 }
 
@@ -81,9 +81,9 @@
 }
 
 .dossier-card {
-  background: white;
+  background: var(--ac-surface, white);
   border-radius: 14px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--ac-border, #e2e8f0);
   padding: 1rem;
   box-shadow: 0 2px 8px rgba(0,0,0,.05);
 }
@@ -96,7 +96,7 @@
 
 .numero {
   font-weight: 700;
-  color: #2563eb;
+  color: var(--ac-blue-text, #2563eb);
 }
 
 .badges {
@@ -106,8 +106,8 @@
 }
 
 .badge {
-  background: #e2e8f0;
-  color: #334155;
+  background: var(--ac-surface-3, #e2e8f0);
+  color: var(--ac-text, #334155);
   padding: .3rem .7rem;
   border-radius: 99px;
   font-size: .8rem;
@@ -115,8 +115,8 @@
 }
 
 .badge-important {
-  background: #fef2f2;
-  color: #dc2626;
+  background: var(--ac-red-bg, #fef2f2);
+  color: var(--ac-red-text, #dc2626);
   display: inline-flex;
   align-items: center;
   gap: .2rem;
@@ -162,7 +162,7 @@
 }
 
 .modal {
-  background: white;
+  background: var(--ac-surface, white);
   width: 100%;
   max-width: 700px;
   max-height: 90vh;
@@ -174,13 +174,13 @@
 .modal-header {
   position: sticky;
   top: 0;
-  background: white;
+  background: var(--ac-surface, white);
   z-index: 10;
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 1rem;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid var(--ac-border, #e2e8f0);
 }
 
 .modal-header h2 {
@@ -189,7 +189,7 @@
 
 .modal-header button {
   border: none;
-  background: #e2e8f0;
+  background: var(--ac-surface-3, #e2e8f0);
   padding: .5rem .8rem;
   border-radius: 8px;
   cursor: pointer;
@@ -212,17 +212,17 @@
   select {
     margin-left: .5rem;
     padding: .35rem .5rem;
-    border: 1px solid #cbd5e1;
+    border: 1px solid var(--ac-border-strong, #cbd5e1);
     border-radius: 6px;
     font-size: .9rem;
-    background: #fff;
+    background: var(--ac-surface, #fff);
 
     &:disabled { opacity: .6; cursor: wait; }
   }
 }
 .commentaire-card {
-  border: 1px solid #e2e8f0;
-  background: #f8fafc;
+  border: 1px solid var(--ac-border, #e2e8f0);
+  background: var(--ac-surface-2, #f8fafc);
   border-radius: 8px;
   padding: .75rem;
   margin-bottom: .75rem;
@@ -231,12 +231,12 @@
 .commentaire-card small {
   display: block;
   margin-top: .5rem;
-  color: #64748b;
+  color: var(--ac-text-muted, #64748b);
 }
 
 .historique-card {
   border-left: 4px solid #2563eb;
-  background: #eff6ff;
+  background: var(--ac-blue-bg, #eff6ff);
   padding: .75rem;
   margin-bottom: .75rem;
   border-radius: 6px;
@@ -245,12 +245,12 @@
 .historique-card small {
   display: block;
   margin-top: .5rem;
-  color: #64748b;
+  color: var(--ac-text-muted, #64748b);
 }
 
 .document-card {
-  border: 1px solid #cbd5e1;
-  background: #ffffff;
+  border: 1px solid var(--ac-border-strong, #cbd5e1);
+  background: var(--ac-surface, #ffffff);
   padding: .75rem;
   margin-bottom: .75rem;
   border-radius: 8px;
@@ -259,7 +259,7 @@
 .document-card small {
   display: block;
   margin-top: .5rem;
-  color: #64748b;
+  color: var(--ac-text-muted, #64748b);
 }
 
 .update-box {
@@ -288,8 +288,8 @@
 
   button {
     border: 1px solid #dc2626;
-    background: white;
-    color: #dc2626;
+    background: var(--ac-surface, white);
+    color: var(--ac-red-text, #dc2626);
     padding: .5rem .75rem;
     border-radius: 8px;
     cursor: pointer;
@@ -303,7 +303,7 @@
 
 .author {
   font-weight: 600;
-  color: #2563eb;
+  color: var(--ac-blue-text, #2563eb);
   margin-bottom: .5rem;
 }
 
@@ -350,7 +350,7 @@
   height: 36px;
   border: none;
   border-radius: 50%;
-  background: white;
+  background: var(--ac-surface, white);
   cursor: pointer;
   font-size: 18px;
 }
