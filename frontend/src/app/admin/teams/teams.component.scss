@@ -84,10 +84,6 @@
   &.sm { padding: .25rem; .material-icons { font-size: 14px; } }
 }
 
-.link-btn {
-  background: none; border: none; cursor: pointer; color: var(--primary);
-  font-size: .88rem; text-decoration: underline; padding: 0;
-}
 
 // ── Toasts ──────────────────────────────────────────────────────
 .toast {
@@ -360,12 +356,6 @@ h3 { margin: 0; font-size: .9rem; font-weight: 700; display: flex; align-items: 
 .chip-empty { font-size: .8rem; color: #9ca3af; }
 .secteur-add-row { display: flex; gap: .75rem; margin-top: .5rem; app-tag-search-input { flex: 1; } }
 
-.commune-minimap {
-  margin-bottom: .75rem;
-  app-minimap { display: block; width: 100%; height: 180px; border-radius: 8px; overflow: hidden; }
-  .section-hint { margin-top: .35rem; }
-}
-.dropdown-multiselect { position: relative; margin-bottom: .6rem; }
 .dropdown-panel {
   position: absolute; z-index: 5; top: calc(100% + .3rem); left: 0; min-width: 16rem;
   max-height: 16rem; overflow-y: auto; background: white; border: 1.5px solid var(--border);
@@ -403,7 +393,6 @@ h3 { margin: 0; font-size: .9rem; font-weight: 700; display: flex; align-items: 
 }
 .up-name { display: block; font-size: .88rem; font-weight: 600; }
 .up-role { display: block; font-size: .75rem; color: var(--muted); }
-.check-ic { margin-left: auto; font-size: 18px; color: var(--primary); }
 
 // ── Mission list ──────────────────────────────────────────────────
 .mission-group { display: flex; flex-direction: column; gap: .4rem; margin-bottom: .9rem; &:last-child { margin-bottom: 0; } }
@@ -517,17 +506,6 @@ h3 { margin: 0; font-size: .9rem; font-weight: 700; display: flex; align-items: 
 }
 
 // ── Assign modal ──────────────────────────────────────────────────
-.assign-tabs { display: flex; gap: .4rem; margin-bottom: .25rem; }
-.assign-tab {
-  display: inline-flex; align-items: center; gap: .35rem;
-  background: var(--surface); border: 1.5px solid var(--border); border-radius: 9px;
-  padding: .5rem .9rem; font-size: .85rem; font-weight: 500; cursor: pointer; color: var(--muted);
-  transition: all .15s;
-  .material-icons { font-size: 16px; }
-  .tab-c { background: #f1f5f9; padding: .05rem .4rem; border-radius: 99px; font-size: .73rem; font-weight: 700; }
-  &.active { background: var(--primary); border-color: var(--primary); color: white;
-             .tab-c { background: rgba(255,255,255,.25); } }
-}
 .assign-list {
   display: flex; flex-direction: column; gap: .35rem; max-height: 360px; overflow-y: auto;
 }
@@ -601,4 +579,28 @@ h3 { margin: 0; font-size: .9rem; font-weight: 700; display: flex; align-items: 
   .teams-page { padding: 1rem; }
   .teams-grid { grid-template-columns: 1fr; }
   .assign-tabs .assign-tab span:not(.material-icons):not(.tab-c) { display: none; }
+}
+// ── Bloc Mission (mission + crise + savoir-faire, 20/10/2026) ──────────────────
+.mission-section { display: flex; flex-direction: column; gap: .7rem; }
+.statut-mission {
+  font-size: .72rem; font-weight: 700; padding: .2rem .6rem; border-radius: 99px; background: #fef3c7;
+  &.en-cours { background: #dcfce7; }
+}
+.mission-courante, .mission-form, .crises-equipe, .savoir-faire-ajout { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
+.mission-courante { justify-content: space-between; }
+.mission-crise { font-size: .8rem; color: #9a3412; }
+.mission-form {
+  input, select { padding: .45rem .65rem; border: 1px solid var(--border); border-radius: 8px; font-size: .85rem; }
+  input { flex: 2 1 14rem; } select { flex: 1 1 10rem; }
+}
+.crises-label, .savoir-faire-label { font-size: .75rem; font-weight: 700; text-transform: uppercase; color: var(--muted); }
+.savoir-faire {
+  display: flex; flex-direction: column; gap: .5rem; padding-top: .7rem; border-top: 1px solid var(--border);
+  > a { align-self: flex-start; }
+}
+.savoir-faire-ajout { align-items: flex-start; app-tag-search-input { flex: 1; } }
+.competence-chip .material-icons { font-size: 14px; vertical-align: -2px; }
+.savoir-faire-panel {
+  position: static; box-shadow: none;
+  .panel-titre { margin: .4rem .8rem .2rem; font-size: .72rem; font-weight: 700; color: var(--muted); }
 }

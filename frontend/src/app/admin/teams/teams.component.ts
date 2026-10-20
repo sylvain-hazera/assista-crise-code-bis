@@ -2,7 +2,7 @@ import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule, ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { forkJoin, of, map, switchMap } from 'rxjs';
+import { forkJoin, Observable, of, map, switchMap } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import type { Feature, FeatureCollection, MultiPolygon, Polygon } from 'geojson';
 
@@ -49,6 +49,10 @@ import { PointOperationnel, PointType } from '../../shared/models/point-operatio
 type ModalView = 'none' | 'create' | 'detail' | 'edit' | 'delete' | 'assign' | 'planning';
 
 const COLORS = ['#ef4444','#f97316','#eab308','#22c55e','#06b6d4','#3b82f6','#8b5cf6','#ec4899'];
+
+/** Élément de la recherche « Savoir-faire » du bloc Mission : une compétence ou une
+ * spécialité (Besoin), distinguées par estSpecialite. */
+type SavoirFaire = (Competence | Besoin) & { sorte?: string; estSpecialite?: boolean };
 
 @Component({
   selector: 'app-teams',
@@ -736,8 +740,7 @@ export class TeamsComponent implements OnInit {
   }
 
   // ── THÈMES D'INTERVENTION ─────────────────────────────────────
-  competencesDropdownOpen = false;
-  themesDropdownOpen = false;
+  competencesDropdownOpen = false;   // panneau « Parcourir » du savoir-faire (bloc Mission)
 
   /** Groupe les compétences par parent (sous-compétences) pour l'affichage en menu déroulant —
    * un thème de premier niveau (parent = null) forme un groupe avec ses enfants indentés en
@@ -808,15 +811,33 @@ export class TeamsComponent implements OnInit {
     });
   }
 
-  competenceSearchFn = (q: string) => this.competenceService.search(q);
-  competenceCreateFn = (nom: string) => this.competenceService.create({ nom });
+  libelleCreerCompetence = (nom: string) => `Créer la compétence « ${nom} »`;
 
-  onCompetenceSearchSelected(item: Competence): void {
-    if (!this.competences.find(c => c.id === item.id)) {
-      this.competences = [...this.competences, item];
+  /** Savoir-faire du bloc Mission : une seule recherche pour les compétences (serveur) et les
+   * spécialités (Besoin, liste courte déjà chargée) -- `sorte` les distingue dans le menu. */
+  savoirFaireSearchFn = (q: string): Observable<SavoirFaire[]> => {
+    const terme = q.trim().toLowerCase();
+    const specialites = this.besoins
+      .filter(b => b.nom.toLowerCase().includes(terme))
+      .map(b => ({ ...b, sorte: 'spécialité, tableau de bord dédié', estSpecialite: true }));
+    return this.competenceService.search(q).pipe(
+      map(competences => [...specialites, ...competences.map(c => ({ ...c, sorte: 'compétence', estSpecialite: false }))]),
+    );
+  };
+
+  savoirFaireCreateFn = (nom: string): Observable<SavoirFaire> => this.competenceService.create({ nom });
+
+  onSavoirFaireSelected(item: SavoirFaire): void {
+    if (item.estSpecialite) {
+      if (!this.hasTheme(item.id)) this.toggleTheme(item.id);
+      return;
     }
-    if (!this.hasCompetence(item.id)) {
-      this.toggleCompetence(item.id);
+    const competence = item as Competence;
+    if (!this.competences.find(c => c.id === competence.id)) {
+      this.competences = [...this.competences, competence];
+    }
+    if (!this.hasCompetence(competence.id)) {
+      this.toggleCompetence(competence.id);
     }
   }
 
@@ -1097,6 +1118,21 @@ export class TeamsComponent implements OnInit {
     });
   }
 
+  /** Bouton unique du bloc Mission : un titre définit (ou remplace) la mission, sur la crise
+   * choisie s'il y en a une (definir_mission la rattache aussi à l'équipe) ; une crise seule
+   * rattache l'équipe sans toucher à sa mission. */
+  get libelleValiderMission(): string {
+    if (this.missionTitreInput.trim()) {
+      return this.selectedTeam?.mission_active_titre ? 'Changer la mission' : 'Définir la mission';
+    }
+    return 'Rattacher à la crise';
+  }
+
+  validerMission(): void {
+    if (this.missionTitreInput.trim()) this.submitDefinirMission();
+    else if (this.rattacherCriseId) this.submitRattacherCrise();
+  }
+
   submitDefinirMission(): void {
     if (!this.selectedTeam?.id || !this.missionTitreInput.trim()) return;
     // Même sélecteur de crise que "Rattacher" juste au-dessus (voir rattacherCriseId) — on ne
@@ -1106,6 +1142,7 @@ export class TeamsComponent implements OnInit {
       next: (updated) => {
         this.selectedTeam = { ...updated, missions: this.selectedTeam!.missions };
         this.missionTitreInput = '';
+        this.rattacherCriseId = null;
         this.reloadTeams();
         this.showSuccess('Mission de l\'équipe définie.');
       },
@@ -1132,9 +1169,7 @@ export class TeamsComponent implements OnInit {
     if (!this.selectedTeam?.id || !this.rattacherCriseId) return;
     this.teamService.assignerCrise(this.selectedTeam.id, this.rattacherCriseId).subscribe({
       next: (updated) => {
-        // rattacherCriseId volontairement PAS remis à null : la même crise sélectionnée sert
-        // aussi au bouton "Définir/Changer" la mission juste en dessous (un seul sélecteur de
-        // crise partagé pour toute la section, plus deux comme avant).
+        this.rattacherCriseId = null;
         this.selectedTeam = { ...updated, missions: this.buildMissions(updated) };
         this.reloadTeams();
         this.showSuccess('Crise rattachée à l\'équipe.');
