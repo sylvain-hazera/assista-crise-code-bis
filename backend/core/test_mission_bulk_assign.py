@@ -99,6 +99,41 @@ class TestBulkCreateTeamOffers:
         assert offer1.status == 'INDISPONIBLE'
         assert offer2.status == 'INDISPONIBLE'
 
+    def test_bulk_create_team_with_mission(self, authenticated_client, offer_type):
+        client, _ = _make_admin(authenticated_client)
+        offer = Offer.objects.create(
+            title='Offre mission', first_name_offer='A', last_name_offer='B',
+            email_offer='mission@test.fr', offer_type=offer_type,
+        )
+
+        response = client.post(
+            reverse('offer-bulk-create-team'),
+            {'offer_ids': [str(offer.id)], 'team_name': 'Équipe avec mission', 'mission_titre': 'Hébergement d\'urgence'},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        team = Team.objects.get(id=response.data['id'])
+        assert team.mission_active.titre == "Hébergement d'urgence"
+        offer.refresh_from_db()
+        assert offer.mission_id == team.mission_active_id
+
+    def test_bulk_create_team_mission_is_optional(self, authenticated_client, offer_type):
+        client, _ = _make_admin(authenticated_client)
+        offer = Offer.objects.create(
+            title='Offre sans mission', first_name_offer='A', last_name_offer='B',
+            email_offer='sans-mission@test.fr', offer_type=offer_type,
+        )
+
+        response = client.post(
+            reverse('offer-bulk-create-team'),
+            {'offer_ids': [str(offer.id)], 'team_name': 'Équipe sans mission', 'mission_titre': '  '},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert Team.objects.get(id=response.data['id']).mission_active_id is None
+
     def test_bulk_create_team_notifies_each_offer_author(self, authenticated_client, offer_type):
         client, _ = _make_admin(authenticated_client)
         offer1 = Offer.objects.create(

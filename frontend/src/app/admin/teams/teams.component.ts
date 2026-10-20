@@ -2,7 +2,7 @@ import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule, ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { forkJoin, of, map } from 'rxjs';
+import { forkJoin, of, map, switchMap } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import type { Feature, FeatureCollection, MultiPolygon, Polygon } from 'geojson';
 
@@ -241,6 +241,7 @@ export class TeamsComponent implements OnInit {
       name:        ['', [Validators.required, Validators.minLength(2)]],
       description: [''],
       leader:    [null],
+      mission:   [''],   // facultative (non bloquante en crise), définie juste après la création
     });
     this.editForm = this.fb.group({
       name:        ['', [Validators.required, Validators.minLength(2)]],
@@ -265,7 +266,8 @@ export class TeamsComponent implements OnInit {
 
   submitCreate(): void {
     if (this.createForm.invalid) { this.createForm.markAllAsTouched(); return; }
-    const { name, description, leader } = this.createForm.value;
+    const { name, description, leader, mission } = this.createForm.value;
+    const missionTitre = (mission ?? '').trim();
     const payload: Partial<Team> = {
       name,
       description: description ?? '',
@@ -277,9 +279,15 @@ export class TeamsComponent implements OnInit {
       assigned_request_ids: [],
       competence_ids:       [],
     };
-    this.teamService.create(payload).subscribe({
-      next: () => { this.reloadTeams(); this.showSuccess('Équipe créée.'); this.closeModal(); },
-      error: () => this.showError('Erreur lors de la création.'),
+    this.teamService.create(payload).pipe(
+      switchMap(team => missionTitre ? this.teamService.definirMission(team.id!, missionTitre) : of(team)),
+    ).subscribe({
+      next: () => {
+        this.reloadTeams();
+        this.showSuccess(missionTitre ? 'Équipe créée avec sa mission.' : 'Équipe créée — pensez à définir sa mission.');
+        this.closeModal();
+      },
+      error: () => { this.reloadTeams(); this.showError('Erreur lors de la création.'); },
     });
   }
 
@@ -576,6 +584,7 @@ export class TeamsComponent implements OnInit {
   openDelete(team: Team, e?: Event): void {
     e?.stopPropagation();
     this.selectedTeam = team;
+    this.confirmerSuppressionDefinitive = false;
     this.modal = 'delete';
   }
 
@@ -584,6 +593,28 @@ export class TeamsComponent implements OnInit {
     this.teamService.delete(this.selectedTeam.id).subscribe({
       next: () => { this.reloadTeams(); this.showSuccess('Équipe désactivée.'); this.closeModal(); },
       error: () => this.showError('Erreur lors de la désactivation.'),
+    });
+  }
+
+  /** Suppression définitive (demande utilisateur du 20/10) : 2e confirmation dans la modale,
+   * réservée côté serveur à l'institution responsable ou à un administrateur. */
+  confirmerSuppressionDefinitive = false;
+
+  supprimerDefinitivement(): void {
+    if (!this.selectedTeam?.id || !this.confirmerSuppressionDefinitive) return;
+    const nom = this.selectedTeam.name;
+    this.isSaving = true;
+    this.teamService.supprimer(this.selectedTeam.id).subscribe({
+      next: () => {
+        this.isSaving = false;
+        this.reloadTeams();
+        this.showSuccess(`Équipe « ${nom} » supprimée définitivement.`);
+        this.closeModal();
+      },
+      error: (err) => {
+        this.isSaving = false;
+        this.showError(err?.error?.error || 'Erreur lors de la suppression.');
+      },
     });
   }
 

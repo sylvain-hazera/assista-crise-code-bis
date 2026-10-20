@@ -575,10 +575,14 @@ h3 { margin: 0; font-size: .9rem; font-weight: 700; display: flex; align-items: 
   .dispo-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; background: #22c55e; }
 }
 
+// ── Aide sous un champ de formulaire ────────────────────────────────
+.field-hint { display: block; margin-top: .25rem; font-size: .75rem; color: var(--muted); }
+
 // ── Delete modal ──────────────────────────────────────────────────
 .delete-body { text-align: center; gap: .75rem;
   p { margin: 0; font-size: .95rem; line-height: 1.5; }
   .warn { color: var(--danger); font-size: .85rem; }
+  .confirm-suppression { display: inline-flex; align-items: center; gap: .4rem; font-size: .85rem; color: var(--danger); cursor: pointer; }
 }
 
 // ── Animations ────────────────────────────────────────────────────

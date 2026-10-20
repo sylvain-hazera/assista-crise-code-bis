@@ -23,7 +23,8 @@ export class TeamService {
   create(data: Partial<Team>):             Observable<Team>    { return this.http.post<Team>(`${this.url}/`, data); }
   update(id: string, data: Partial<Team>): Observable<Team>    { return this.http.put<Team>(`${this.url}/${id}/`, data); }
   patch(id: string, data: Partial<Team>):  Observable<Team>    { return this.http.patch<Team>(`${this.url}/${id}/`, data); }
-  delete(id: string):                      Observable<void>    { return this.http.delete<void>(`${this.url}/${id}/`); }
+  delete(id: string):                      Observable<void>    { return this.http.delete<void>(`${this.url}/${id}/`); }   // désactivation (réversible)
+  supprimer(id: string):                   Observable<void>    { return this.http.post<void>(`${this.url}/${id}/supprimer/`, {}); }   // suppression définitive
   /** POST /api/teams/<id>/reactiver/ — réactive une équipe désactivée (voir delete). */
   reactiver(id: string):                   Observable<Team>    { return this.http.post<Team>(`${this.url}/${id}/reactiver/`, {}); }
 

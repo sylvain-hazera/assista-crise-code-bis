@@ -4309,9 +4309,11 @@ def _appartient_a_equipe(request, team) -> bool:
 
 
 def _affecter_ressource(request, team, offer):
-    """Ajoute une offre aux ressources de l'équipe, rattachée à sa mission active : commun à
-    TeamViewSet.assigner_ressource (une offre) et assigner_ressources (sélection de la page
-    Signalements). L'appelant a déjà vérifié le périmètre et la mission active."""
+    """Ajoute une offre aux ressources de l'équipe, rattachée à sa mission active s'il y en a
+    une : commun à TeamViewSet.assigner_ressource (une offre) et assigner_ressources
+    (sélection de la page Signalements). L'appelant a déjà vérifié le périmètre.
+    Sans mission (non bloquant en crise, demande utilisateur du 20/10/2026), l'offre est
+    rattachée à l'équipe seule, puis à sa mission dès qu'elle est définie (definir_mission)."""
     # Une ressource retenue (matériel avec ou sans l'offreur, ou bénévolat) ne doit plus
     # apparaître comme disponible dans le tableau des offres/bénévoles pendant qu'un
     # régulateur cherche des moyens — sinon deux équipes pouvaient la retenir en même
@@ -4349,8 +4351,66 @@ def _affecter_ressource(request, team, offer):
         action_code="AFFECTATION",
         objet_type="Team",
         objet_id=team.id,
-        commentaire=f"Ressource ajoutée : « {offer.title} » (mission : {team.mission_active.titre})",
+        commentaire=f"Ressource ajoutée : « {offer.title} »" + (
+            f" (mission : {team.mission_active.titre})" if team.mission_active_id else " (équipe sans mission)"
+        ),
     )
+
+
+def _ressource_retenue_par_equipe(team, offer) -> bool:
+    """L'offre est-elle retenue par CETTE équipe (et donc à libérer quand elle la quitte) ?
+    Engagement à son nom (assigner_ressource), ou lien vers sa mission active -- jamais une
+    offre déjà réaffectée ailleurs entre-temps."""
+    if EngagementRessource.objects.filter(offer=offer, team=team).exists():
+        return True
+    return bool(team.mission_active_id) and offer.mission_id == team.mission_active_id
+
+
+def _liberer_ressource(team, offer):
+    """Inverse d'_affecter_ressource pour une offre retenue par l'équipe : sans mission et de
+    nouveau disponible pour une autre équipe."""
+    if _ressource_retenue_par_equipe(team, offer):
+        offer.mission = None
+        offer.status = Status.AVAILABLE
+        offer.save(update_fields=['mission', 'status'])
+    EngagementRessource.objects.filter(offer=offer, team=team).delete()
+
+
+def _definir_mission(request, team, titre, crise=None):
+    """Définit (ou remplace) la mission active de l'équipe : TeamViewSet.definir_mission et
+    création d'équipe depuis la page Signalements (OfferViewSet.bulk_create_team)."""
+    mission = Mission.objects.create(titre=titre, crise=crise, environment=get_active_environment(request))
+    mission.equipes.add(team)
+    team.mission_active = mission
+    team.save(update_fields=['mission_active'])
+    # Ressources affectées pendant que l'équipe n'avait pas de mission (non bloquant en crise) :
+    # rattachées à la première mission définie. Celles d'une mission précédente n'en changent pas.
+    team.assigned_offers.filter(mission__isnull=True).update(mission=mission)
+    # Synchronise le chemin d'écriture équipe<->crise séparé (assigned_crises, voir
+    # TeamViewSet.assigner_crise) — sans ça, une équipe affectée à une mission d'une crise
+    # peut rester absente de assigned_crises, invisible du recrutement/matching hébergement/
+    # stats qui filtrent dessus (voir doc de conception, doublon relevé explicitement).
+    if crise:
+        team.assigned_crises.add(crise)
+        _assurer_implication_impliquee(request, team.institution_id, crise)
+
+    _notifier_membres_equipe(
+        request, team, "Nouvelle mission",
+        f"Votre équipe a une nouvelle mission : « {mission.titre} »"
+        + (f" (crise : {crise.name})" if crise else "") + ".",
+    )
+
+    audit_log(
+        request=request,
+        action_code="MODIFICATION",
+        objet_type="Team",
+        objet_id=team.id,
+        commentaire=(
+            f"Mission de l'équipe définie : « {mission.titre} »"
+            + (f" (crise : {crise.name})" if crise else "")
+        ),
+    )
+    return mission
 
 
 def _assurer_implication_impliquee(request, institution_id, crise):
@@ -6337,7 +6397,7 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset()
-        if self.action == 'reactiver':
+        if self.action in ('reactiver', 'supprimer'):   # aussi les équipes désactivées
             return qs
         qs = _filter_actif(self.request, qs)
         if self.action == 'list':
@@ -6909,34 +6969,7 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
                 return Response({"error": "Crise introuvable."}, status=status.HTTP_400_BAD_REQUEST)
             validate_crisis_open(crise, field_name="crise_id")
 
-        mission = Mission.objects.create(titre=titre, crise=crise, environment=get_active_environment(request))
-        mission.equipes.add(team)
-        team.mission_active = mission
-        team.save(update_fields=['mission_active'])
-        # Synchronise le chemin d'écriture équipe<->crise séparé (assigned_crises, voir
-        # TeamViewSet.assigner_crise) — sans ça, une équipe affectée à une mission d'une crise
-        # peut rester absente de assigned_crises, invisible du recrutement/matching hébergement/
-        # stats qui filtrent dessus (voir doc de conception, doublon relevé explicitement).
-        if crise:
-            team.assigned_crises.add(crise)
-            _assurer_implication_impliquee(request, team.institution_id, crise)
-
-        _notifier_membres_equipe(
-            request, team, "Nouvelle mission",
-            f"Votre équipe a une nouvelle mission : « {mission.titre} »"
-            + (f" (crise : {crise.name})" if crise else "") + ".",
-        )
-
-        audit_log(
-            request=request,
-            action_code="MODIFICATION",
-            objet_type="Team",
-            objet_id=team.id,
-            commentaire=(
-                f"Mission de l'équipe définie : « {mission.titre} »"
-                + (f" (crise : {crise.name})" if crise else "")
-            ),
-        )
+        _definir_mission(request, team, titre, crise)
 
         return Response(TeamSerializer(team, context=self.get_serializer_context()).data)
 
@@ -7033,7 +7066,8 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='assigner-ressource')
     def assigner_ressource(self, request, pk=None):
         """Ajoute une offre (bénévole seul, bénévole+matériel, ou matériel seul) comme
-        ressource de l'équipe, rattachée à sa mission active — voir Team.mission_active. Ajoute
+        ressource de l'équipe, rattachée à sa mission active s'il y en a une (facultative depuis
+        le 20/10/2026, voir _affecter_ressource) — voir Team.mission_active. Ajoute
         aussi l'auteur de l'offre comme membre de l'équipe, comme le faisait déjà l'ancien
         mécanisme de "missions" assignées."""
         team = self.get_object()
@@ -7041,11 +7075,6 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             return Response(
                 {"error": "Vous ne pouvez affecter des ressources qu'aux équipes de votre institution (ou de l'institution déléguée)."},
                 status=status.HTTP_403_FORBIDDEN,
-            )
-        if not team.mission_active_id:
-            return Response(
-                {"error": "Définissez d'abord la mission de l'équipe avant d'y affecter des ressources."},
-                status=status.HTTP_400_BAD_REQUEST,
             )
 
         offer_id = request.data.get('offer_id')
@@ -7061,19 +7090,14 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='assigner-ressources')
     def assigner_ressources(self, request, pk=None):
         """Affecte plusieurs offres d'un coup à cette équipe existante (page Signalements,
-        « Affecter à une équipe existante », demande utilisateur du 20/10/2026) : mêmes
-        règles qu'assigner_ressource, offre par offre. Les offres déjà affectées à l'équipe
+        « Affecter à une équipe », demande utilisateur du 20/10/2026) : mêmes règles
+        qu'assigner_ressource, offre par offre, mission comprise (facultative). Les offres déjà affectées à l'équipe
         sont ignorées (pas de second email de confirmation)."""
         team = self.get_object()
         if not _appartient_a_equipe(request, team):
             return Response(
                 {"error": "Vous ne pouvez affecter des ressources qu'aux équipes de votre institution (ou de l'institution déléguée)."},
                 status=status.HTTP_403_FORBIDDEN,
-            )
-        if not team.mission_active_id:
-            return Response(
-                {"error": "Définissez d'abord la mission de l'équipe avant d'y affecter des ressources."},
-                status=status.HTTP_400_BAD_REQUEST,
             )
 
         offer_ids = request.data.get('offer_ids') or []
@@ -7102,6 +7126,33 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             "deja_affectees": len(deja_affectees),
         })
 
+    @action(detail=True, methods=['post'], url_path='supprimer', permission_classes=[IsInstitutionalActor])
+    def supprimer(self, request, pk=None):
+        """Suppression DÉFINITIVE (demande utilisateur du 20/10/2026), à côté de la désactivation
+        réversible (DELETE, perform_destroy). Réservée à l'institution responsable (comme la
+        délégation) ou à un administrateur. Les ressources retenues par l'équipe redeviennent
+        disponibles ; dossiers, points, plans et journaux radio sont conservés, sans équipe
+        (SET_NULL) ; délégations, engagements et canaux de l'équipe sont supprimés avec elle."""
+        team = self.get_object()
+        if team.institution_id and not _appartient_a_institution(request, team.institution):
+            return Response(
+                {"error": "Seule l'institution responsable de l'équipe peut la supprimer."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        with transaction.atomic():
+            for offer in team.assigned_offers.all():
+                _liberer_ressource(team, offer)
+            audit_log(
+                request=request,
+                action_code="SUPPRESSION",
+                objet_type="Team",
+                objet_id=team.id,
+                commentaire=f"Suppression définitive de l'équipe : {team.name}",
+            )
+            team.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
     @action(detail=True, methods=['post'], url_path='retirer-ressource')
     def retirer_ressource(self, request, pk=None):
         """Retire une offre des ressources de l'équipe — ne vide le lien Offer.mission que s'il
@@ -7121,15 +7172,9 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             return Response({"error": "Offre introuvable."}, status=status.HTTP_400_BAD_REQUEST)
 
         team.assigned_offers.remove(offer)
-        if team.mission_active_id and offer.mission_id == team.mission_active_id:
-            offer.mission = None
-            # Redevient disponible pour une autre équipe — symétrique du passage à INDISPONIBLE
-            # dans assigner_ressource. Ne touche pas le statut si l'offre avait déjà été
-            # basculée ailleurs entre-temps (mission_id ne correspond alors plus à cette équipe,
-            # la condition ci-dessus ne serait pas entrée).
-            offer.status = Status.AVAILABLE
-            offer.save(update_fields=['mission', 'status'])
-        EngagementRessource.objects.filter(offer=offer, team=team).delete()
+        # Redevient disponible pour une autre équipe — symétrique du passage à INDISPONIBLE
+        # dans assigner_ressource, sauf si l'offre a été basculée ailleurs entre-temps.
+        _liberer_ressource(team, offer)
 
         audit_log(
             request=request,
@@ -8457,6 +8502,11 @@ class OfferViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         # Retenues dans cette équipe : ne doivent plus apparaître disponibles ailleurs — même
         # règle que assigner_ressource.
         Offer.objects.filter(pk__in=[o.pk for o in offres]).update(status=Status.UNAVAILABLE)
+        # Mission facultative, saisie dès la création (demande utilisateur du 20/10/2026) : les
+        # offres sélectionnées y sont rattachées (voir _definir_mission).
+        mission_titre = (request.data.get("mission_titre") or "").strip()
+        if mission_titre:
+            _definir_mission(request, team, mission_titre)
         # Même garde que assigner_ressource : n'ajoute pas comme membre un offreur dont la
         # présence physique est explicitement exclue, et résout via resolve_or_invite_benevole
         # (pas juste offer.author_id, toujours None pour une offre anonyme du formulaire

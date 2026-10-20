@@ -855,6 +855,12 @@
             <input type="text" [(ngModel)]="bulkTeamName" placeholder="Ex: Équipe hébergement nord"/>
           </div>
 
+          <div class="form-field">
+            <label>Mission (recommandé)</label>
+            <input type="text" [(ngModel)]="bulkMissionTitre" placeholder="Ex: Hébergement des sinistrés secteur nord"/>
+            <span class="field-hint">Facultatif : peut être définie plus tard depuis la page Équipes.</span>
+          </div>
+
           <div class="form-field user-search">
             <label>Régulateur (optionnel)</label>
             <input
@@ -887,11 +893,7 @@
             @if (showBulkOfferTeamResults) {
               <ul class="user-search-results">
                 @for (t of filteredBulkOfferTeams; track t.id) {
-                  <li
-                    [class.disabled]="!t.mission_active"
-                    [title]="t.mission_active ? '' : 'Définissez d\'abord la mission de cette équipe (page Équipes)'"
-                    (mousedown)="selectBulkOfferTeam(t)"
-                  >
+                  <li (mousedown)="selectBulkOfferTeam(t)">
                     {{ teamDisplayName(t) }}
                     <span class="team-option-mission">{{ t.mission_active ? 'Mission : ' + t.mission_active_titre : 'Aucune mission active' }}</span>
                   </li>
@@ -902,10 +904,19 @@
             }
           </div>
           @if (bulkOfferTeam) {
-            <p class="status-target">
-              Les offres rejoindront la mission « {{ bulkOfferTeam.mission_active_titre }} » et passeront
-              « Indisponible » ; chaque bénévole reçoit un email pour confirmer son engagement.
-            </p>
+            @if (bulkOfferTeam.mission_active) {
+              <p class="status-target">
+                Les offres rejoindront la mission « {{ bulkOfferTeam.mission_active_titre }} » et passeront
+                « Indisponible » ; chaque bénévole reçoit un email pour confirmer son engagement.
+              </p>
+            } @else {
+              <div class="form-field">
+                <label>Mission de l'équipe (recommandé)</label>
+                <input type="text" [(ngModel)]="bulkMissionTitre" placeholder="Ex: Hébergement des sinistrés secteur nord"/>
+                <span class="field-hint">Cette équipe n'a pas encore de mission. Facultatif : les offres lui sont
+                  affectées dans tous les cas, et rejoindront la mission dès qu'elle sera définie.</span>
+              </div>
+            }
           }
         }
       </div>

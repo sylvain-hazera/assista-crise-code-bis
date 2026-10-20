@@ -128,10 +128,32 @@ class TestDefinirMission:
 @pytest.mark.django_db
 class TestAssignerRessource:
 
-    def test_requires_active_mission_first(self, mairie_client, team_a, offer):
+    def test_assigns_without_mission_then_attaches_to_first_mission(self, mairie_client, team_a, offer):
+        # Mission non bloquante en crise (20/10/2026) : l'offre rejoint l'équipe tout de suite,
+        # puis la mission dès qu'elle est définie.
         client, _ = mairie_client
         response = client.post(reverse('team-assigner-ressource', args=[team_a.id]), {'offer_id': str(offer.id)}, format='json')
-        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+        assert response.status_code == status.HTTP_200_OK
+        offer.refresh_from_db()
+        assert team_a.assigned_offers.filter(id=offer.id).exists()
+        assert offer.status == 'INDISPONIBLE'
+        assert offer.mission_id is None
+
+        client.post(reverse('team-definir-mission', args=[team_a.id]), {'titre': 'Mission tardive'}, format='json')
+        team_a.refresh_from_db()
+        offer.refresh_from_db()
+        assert offer.mission_id == team_a.mission_active_id
+
+    def test_removing_resource_assigned_without_mission_frees_it(self, mairie_client, team_a, offer):
+        client, _ = mairie_client
+        client.post(reverse('team-assigner-ressource', args=[team_a.id]), {'offer_id': str(offer.id)}, format='json')
+
+        client.post(reverse('team-retirer-ressource', args=[team_a.id]), {'offer_id': str(offer.id)}, format='json')
+
+        offer.refresh_from_db()
+        assert offer.status == 'DISPONIBLE'
+        assert not team_a.assigned_offers.filter(id=offer.id).exists()
 
     def test_assigns_resource_to_active_mission(self, mairie_client, team_a, offer):
         client, _ = mairie_client
@@ -487,13 +509,14 @@ class TestAssignerRessources:
         assert response.data['deja_affectees'] == 1
         assert team_a.assigned_offers.count() == 2
 
-    def test_requires_active_mission(self, mairie_client, team_a, offer):
+    def test_works_without_mission(self, mairie_client, team_a, offer):
         client, _ = mairie_client
         response = client.post(
             reverse('team-assigner-ressources', args=[team_a.id]), {'offer_ids': [str(offer.id)]}, format='json',
         )
-        assert response.status_code == status.HTTP_400_BAD_REQUEST
-        assert not team_a.assigned_offers.exists()
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['ajoutees'] == 1
+        assert team_a.assigned_offers.filter(id=offer.id).exists()
 
     def test_rejects_team_outside_own_institution(self, mairie_client, offer):
         client, _ = mairie_client
@@ -536,3 +559,69 @@ class TestPeutGererEquipe:
         client.force_authenticate(user=admin)
         response = client.get(reverse('team-detail', args=[team_a.id]))
         assert response.data['peut_gerer'] is True
+
+
+@pytest.mark.django_db
+class TestSupprimerEquipe:
+    """Suppression définitive (à côté de la désactivation réversible)."""
+
+    def test_deletes_team_and_frees_its_resources(self, mairie_client, team_a, offer):
+        client, _ = mairie_client
+        client.post(reverse('team-definir-mission', args=[team_a.id]), {'titre': 'Mission'}, format='json')
+        client.post(reverse('team-assigner-ressource', args=[team_a.id]), {'offer_id': str(offer.id)}, format='json')
+
+        response = client.post(reverse('team-supprimer', args=[team_a.id]))
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        assert not Team.objects.filter(id=team_a.id).exists()
+        offer.refresh_from_db()
+        assert offer.status == 'DISPONIBLE'
+        assert offer.mission_id is None
+
+    def test_deactivated_team_can_be_deleted(self, mairie_client, team_a):
+        client, _ = mairie_client
+        team_a.actif = False
+        team_a.save(update_fields=['actif'])
+
+        response = client.post(reverse('team-supprimer', args=[team_a.id]))
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        assert not Team.objects.filter(id=team_a.id).exists()
+
+    def test_delegated_institution_cannot_delete(self, mairie_client, institution_a):
+        client, _ = mairie_client
+        responsable = _make_institution(nom='Mairie responsable suppression')
+        team = Team.objects.create(name='Déléguée', institution=responsable, institution_delegataire=institution_a)
+
+        response = client.post(reverse('team-supprimer', args=[team.id]))
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert Team.objects.filter(id=team.id).exists()
+
+    def test_other_institution_cannot_delete(self, mairie_client):
+        client, _ = mairie_client
+        team = Team.objects.create(name='Étrangère', institution=_make_institution(nom='Autre mairie suppression'))
+
+        response = client.post(reverse('team-supprimer', args=[team.id]))
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert Team.objects.filter(id=team.id).exists()
+
+    def test_admin_can_delete_any_team(self, create_user, team_a):
+        admin = create_user(username='admin-suppr@test.fr', email='admin-suppr@test.fr', type='ADMIN')
+        client = APIClient()
+        client.force_authenticate(user=admin)
+
+        response = client.post(reverse('team-supprimer', args=[team_a.id]))
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+
+    def test_non_institutional_user_cannot_delete(self, create_user, team_a):
+        user = create_user(username='simple-suppr@test.fr', email='simple-suppr@test.fr', type='UTIL_SIMPLE')
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        response = client.post(reverse('team-supprimer', args=[team_a.id]))
+
+        assert response.status_code in (status.HTTP_403_FORBIDDEN, status.HTTP_404_NOT_FOUND)
+        assert Team.objects.filter(id=team_a.id).exists()
