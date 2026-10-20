@@ -141,6 +141,28 @@ cles_chiffrement() {
     fi
 }
 
+aligner_mot_de_passe_db() {
+    # La base locale garde le mot de passe de sa toute première création (volume
+    # postgres_data) : une réinstallation qui régénère DB_PASS faisait échouer le backend
+    # (« password authentication failed for user », constaté le 20/10/2026). On réaligne
+    # toujours la base sur .env, par la connexion locale du conteneur (sans mot de passe).
+    local utilisateur mot_de_passe
+    utilisateur="$(valeur_env DB_USER)"; mot_de_passe="$(valeur_env DB_PASS)"
+    [ -n "$utilisateur" ] && [ -n "$mot_de_passe" ] || return 0
+    (cd "$REPERTOIRE_SCRIPT" && docker compose --profile full up -d db >/dev/null)
+    local i
+    for i in $(seq 1 30); do
+        (cd "$REPERTOIRE_SCRIPT" && docker compose --profile full exec -T db pg_isready -U "$utilisateur" -d assista-db >/dev/null 2>&1) && break
+        sleep 2
+    done
+    if (cd "$REPERTOIRE_SCRIPT" && docker compose --profile full exec -T db \
+            psql -q -U "$utilisateur" -d assista-db -c "ALTER USER \"$utilisateur\" PASSWORD '$mot_de_passe';" >/dev/null 2>&1); then
+        log "Mot de passe de la base locale aligné sur .env."
+    else
+        log "Attention : mot de passe de la base locale non réaligné (voir docker compose logs db)."
+    fi
+}
+
 ports_publies() {
     # Ports publiés par le profil full (backend local, application web) : si un autre programme les
     # occupe déjà sur la machine (ex. une autre appli en 8000, constaté le 20/10/2026 : « failed
@@ -420,6 +442,7 @@ EOF
     if [ "$profil" = "full" ]; then
         cles_chiffrement
         ports_publies
+        aligner_mot_de_passe_db
     fi
 
     log "Démarrage (profil $profil)..."
