@@ -417,7 +417,7 @@
           }
         </div>
 
-        <!-- ── MISSION : ce que fait l'équipe, sur quelle crise, avec quel savoir-faire ──
+        <!-- ── MISSION : ce que fait l'équipe, sur quelle crise, dans quels domaines ──────
              Remplace trois blocs séparés (Thèmes d'intervention, Spécialité de l'équipe, Crise &
              mission), demande utilisateur du 20/10/2026 : « un seul, simple, parlant, efficace ».
              Mêmes données qu'avant (mission_active, assigned_crises, competences, themes). -->
@@ -477,30 +477,36 @@
             <p class="no-missions">Sans crise, l'équipe n'apparaît ni dans les ressources mobilisées, ni dans le recrutement, ni dans le matching hébergement.</p>
           }
 
-          <!-- Savoir-faire : compétences ET spécialités, une seule liste -->
+          <!-- Domaines d'intervention (Besoin) : ce que l'équipe prend en charge. Les compétences
+               liées (Correspondances) sont ajoutées par le serveur, voir
+               _synchroniser_competences_des_domaines ; une compétence précise reste ajoutable. -->
           <div class="savoir-faire">
-            <span class="savoir-faire-label">Savoir-faire</span>
+            <span class="savoir-faire-label">Domaines d'intervention</span>
             <div class="competence-chip-list">
               @for (b of selectedThemes; track b.id) {
-                <button type="button" class="competence-chip selected specialite" [style.--ac]="selectedTeam.color"
-                        (click)="toggleTheme(b.id)" title="Spécialité (tableau de bord dédié) — cliquer pour retirer">
-                  <span class="material-icons">dashboard</span> {{ b.nom }} ×
-                </button>
-              }
-              @for (c of selectedCompetences; track c.id) {
                 <button type="button" class="competence-chip selected" [style.--ac]="selectedTeam.color"
-                        (click)="toggleCompetence(c.id)" title="Cliquer pour retirer">
-                  {{ c.nom }} ×
+                        (click)="toggleTheme(b.id)" title="Retirer ce domaine (et les compétences qui en découlent)">
+                  {{ b.nom }} ×
                 </button>
               }
-              @if (selectedThemes.length === 0 && selectedCompetences.length === 0) {
-                <p class="empty-pick">Aucun savoir-faire : ajoutez-en pour orienter les dossiers et les bénévoles vers cette équipe.</p>
+              @if (selectedThemes.length === 0) {
+                <p class="empty-pick">Aucun domaine : ajoutez ce que l'équipe prend en charge (hébergement, pompage…).</p>
               }
             </div>
+            @if (selectedCompetences.length > 0) {
+              <div class="competence-chip-list competences-associees">
+                <span class="crises-label">Compétences</span>
+                @for (c of selectedCompetences; track c.id) {
+                  <button type="button" class="competence-chip" (click)="toggleCompetence(c.id)" title="Retirer cette compétence">
+                    {{ c.nom }} ×
+                  </button>
+                }
+              </div>
+            }
 
             <div class="savoir-faire-ajout">
               <app-tag-search-input
-                placeholder="Ajouter : compétence ou spécialité (ex : hébergement, transport animaux)…"
+                placeholder="Ajouter un domaine (hébergement, pompage…) ou une compétence précise"
                 [searchFn]="savoirFaireSearchFn"
                 [createFn]="savoirFaireCreateFn"
                 subLabelField="sorte"
@@ -514,14 +520,14 @@
 
             @if (competencesDropdownOpen) {
               <div class="dropdown-panel savoir-faire-panel">
-                <p class="panel-titre">Spécialités <span>— ouvrent un tableau de bord dédié</span></p>
-                @for (b of besoins; track b.id) {
-                  <label class="dropdown-check-item">
+                <p class="panel-titre">Domaines d'intervention</p>
+                @for (b of domainesProposables; track b.id) {
+                  <label class="dropdown-check-item" [class.child-item]="!!b.parent">
                     <input type="checkbox" [checked]="hasTheme(b.id)" (change)="toggleTheme(b.id)">
                     {{ b.nom }}
                   </label>
                 }
-                <p class="panel-titre">Compétences</p>
+                <p class="panel-titre">Compétences précises</p>
                 @for (group of competenceGroups; track group.parent.id) {
                   <div class="dropdown-check-item parent-item">
                     @if (group.children.length > 0) {

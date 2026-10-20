@@ -4390,6 +4390,24 @@ def _liberer_ressource(team, offer):
     EngagementRessource.objects.filter(offer=offer, team=team).delete()
 
 
+def _synchroniser_competences_des_domaines(team, anciens_domaine_ids):
+    """Domaines d'intervention (Team.themes, des Besoin) -> compétences de l'équipe, via les
+    Correspondances (BesoinCompetence), demande utilisateur du 20/10/2026 : on choisit ce que
+    l'équipe prend en charge, les compétences qui orientent dossiers et bénévoles suivent.
+    Domaine ajouté : ses compétences liées sont ajoutées. Domaine retiré : ses compétences
+    liées sont retirées, sauf si un domaine restant y mène aussi. Les compétences ajoutées à
+    la main sans lien avec un domaine ne sont jamais touchées."""
+    domaine_ids = set(team.themes.values_list('id', flat=True))
+    ajoutes, retires = domaine_ids - set(anciens_domaine_ids), set(anciens_domaine_ids) - domaine_ids
+    if ajoutes:
+        team.competences.add(*BesoinCompetence.objects.filter(besoin_id__in=ajoutes).values_list('competence_id', flat=True))
+    if retires:
+        gardees = set(BesoinCompetence.objects.filter(besoin_id__in=domaine_ids).values_list('competence_id', flat=True))
+        a_retirer = set(BesoinCompetence.objects.filter(besoin_id__in=retires).values_list('competence_id', flat=True)) - gardees
+        if a_retirer:
+            team.competences.remove(*a_retirer)
+
+
 def _definir_mission(request, team, titre, crise=None):
     """Définit (ou remplace) la mission active de l'équipe : TeamViewSet.definir_mission et
     création d'équipe depuis la page Signalements (OfferViewSet.bulk_create_team)."""
@@ -6519,6 +6537,8 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         # institution comme avant ce changement, plutôt que de bloquer sa création.
         institution = serializer.validated_data.get('institution') or getattr(self.request.user, 'institution', None)
         team = serializer.save(environment=get_active_environment(self.request), institution=institution)
+        if 'themes' in serializer.validated_data and 'competences' not in serializer.validated_data:
+            _synchroniser_competences_des_domaines(team, [])
 
         if institution is not None:
             _notify_institution_referent_of_team(team, institution, self.request)
@@ -6618,10 +6638,17 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             for demande in Request.objects.filter(id__in=added_request_ids):
                 _assign_request_to_team(demande, instance, self.request)
 
+        anciens_domaine_ids = list(instance.themes.values_list('id', flat=True))
+
         # Ne notifier que les membres réellement NOUVEAUX (jamais ceux déjà présents avant
         # cette modification, pour ne pas ré-envoyer le mail à chaque édition de l'équipe qui
         # ne touche pas member_ids, ex: changement de couleur ou de zone).
         team = serializer.save()
+
+        # Domaines modifiés seuls (fiche équipe) : les compétences liées suivent. Si le client
+        # envoie aussi competence_ids, c'est un choix explicite, laissé tel quel.
+        if 'themes' in serializer.validated_data and 'competences' not in serializer.validated_data:
+            _synchroniser_competences_des_domaines(team, anciens_domaine_ids)
 
         if institution_changed:
             audit_log(

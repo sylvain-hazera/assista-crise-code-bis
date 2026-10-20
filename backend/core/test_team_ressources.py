@@ -625,3 +625,51 @@ class TestSupprimerEquipe:
 
         assert response.status_code in (status.HTTP_403_FORBIDDEN, status.HTTP_404_NOT_FOUND)
         assert Team.objects.filter(id=team_a.id).exists()
+
+
+@pytest.mark.django_db
+class TestDomainesEtCompetences:
+    """Domaines d'intervention (themes) -> compétences liées par les Correspondances."""
+
+    def _domaine(self, nom, *competences):
+        from core.models import Besoin, BesoinCompetence, Competence
+        besoin = Besoin.objects.create(nom=nom, nature='MIXTE')
+        for c in competences:
+            BesoinCompetence.objects.create(besoin=besoin, competence=Competence.objects.get_or_create(nom=c)[0])
+        return besoin
+
+    def _patch_domaines(self, client, team, *besoins):
+        return client.patch(reverse('team-detail', args=[team.id]), {'theme_ids': [str(b.id) for b in besoins]}, format='json')
+
+    def test_adding_domain_adds_linked_competences(self, mairie_client, team_a):
+        client, _ = mairie_client
+        hebergement = self._domaine('Hébergement test', 'Accueil test')
+
+        response = self._patch_domaines(client, team_a, hebergement)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert set(team_a.competences.values_list('nom', flat=True)) == {'Accueil test'}
+
+    def test_removing_domain_keeps_competences_still_reached_and_manual_ones(self, mairie_client, team_a):
+        from core.models import Competence
+        client, _ = mairie_client
+        transport = self._domaine('Transport test', 'Conduite test')
+        animaux = self._domaine('Transport animaux test', 'Conduite test', 'Soin animaux test')
+        manuelle = Competence.objects.create(nom='Opérateur radio test')
+        self._patch_domaines(client, team_a, transport, animaux)
+        team_a.competences.add(manuelle)
+
+        self._patch_domaines(client, team_a, transport)
+
+        assert set(team_a.competences.values_list('nom', flat=True)) == {'Conduite test', 'Opérateur radio test'}
+
+    def test_explicit_competences_in_same_patch_are_respected(self, mairie_client, team_a):
+        client, _ = mairie_client
+        hebergement = self._domaine('Hébergement explicite test', 'Accueil explicite test')
+
+        client.patch(
+            reverse('team-detail', args=[team_a.id]),
+            {'theme_ids': [str(hebergement.id)], 'competence_ids': []}, format='json',
+        )
+
+        assert not team_a.competences.exists()

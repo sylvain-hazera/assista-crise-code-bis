@@ -813,15 +813,24 @@ export class TeamsComponent implements OnInit {
 
   libelleCreerCompetence = (nom: string) => `Créer la compétence « ${nom} »`;
 
-  /** Savoir-faire du bloc Mission : une seule recherche pour les compétences (serveur) et les
-   * spécialités (Besoin, liste courte déjà chargée) -- `sorte` les distingue dans le menu. */
+  /** Domaines proposables à une équipe : les besoins qualifiés (nature posée), groupe puis
+   * éléments -- sans les signalements de situation (« Route barrée », « Danger imminent »…),
+   * qui ne sont pas un domaine qu'une équipe prend en charge. */
+  get domainesProposables(): Besoin[] {
+    const qualifies = this.besoins.filter(b => b.nature);
+    const racines = qualifies.filter(b => !b.parent).sort((a, b) => a.nom.localeCompare(b.nom));
+    return racines.flatMap(r => [r, ...qualifies.filter(b => b.parent === r.id).sort((a, b) => a.nom.localeCompare(b.nom))]);
+  }
+
+  /** Recherche du bloc Mission : domaines d'abord (liste courte déjà chargée), puis
+   * compétences précises (serveur) -- `sorte` les distingue dans le menu. */
   savoirFaireSearchFn = (q: string): Observable<SavoirFaire[]> => {
     const terme = q.trim().toLowerCase();
-    const specialites = this.besoins
+    const domaines = this.domainesProposables
       .filter(b => b.nom.toLowerCase().includes(terme))
-      .map(b => ({ ...b, sorte: 'spécialité, tableau de bord dédié', estSpecialite: true }));
+      .map(b => ({ ...b, sorte: 'domaine', estSpecialite: true }));
     return this.competenceService.search(q).pipe(
-      map(competences => [...specialites, ...competences.map(c => ({ ...c, sorte: 'compétence', estSpecialite: false }))]),
+      map(competences => [...domaines, ...competences.map(c => ({ ...c, sorte: 'compétence précise', estSpecialite: false }))]),
     );
   };
 
@@ -841,10 +850,10 @@ export class TeamsComponent implements OnInit {
     }
   }
 
-  // ── SPÉCIALITÉ DE L'ÉQUIPE (vues dédiées, ex: "Hébergement") ────
-  // Distinct des "Thèmes d'intervention" (competences) ci-dessus : celui-ci déclenche des
-  // vues/tableaux de bord spécifiques à un besoin précis (voir HebergementMatchingComponent),
-  // pas un simple filtre de compétence bénévole.
+  // ── DOMAINES D'INTERVENTION (Team.themes, des Besoin, ex: "Hébergement") ────
+  // Ce que l'équipe prend en charge : ouvre les vues dédiées (voir HebergementMatchingComponent)
+  // et, côté serveur, ajoute/retire les compétences liées (_synchroniser_competences_des_domaines)
+  // -- la réponse du PATCH porte donc aussi les competence_ids à jour.
   toggleTheme(themeId: string): void {
     if (!this.selectedTeam) return;
     const ids = this.selectedTeam.theme_ids ?? [];
