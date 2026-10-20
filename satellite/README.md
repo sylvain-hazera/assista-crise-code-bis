@@ -6,54 +6,61 @@ même sans internet. **Décision du 2026-09-17 : Docker + docker-compose sur Ras
 OS standard, pas une image disque pré-construite** — réutilise directement les images
 déjà éprouvées du reste du projet.
 
-## Démarrage rapide
+## Démarrage rapide (20/10/2026) — une commande, aucune question
 
-### Via le wizard (`installer.sh`), recommandé
+### 1. Sur le central (administrateur de l'institution)
 
-```bash
-# 1. Un administrateur génère un jeton depuis la page Satellites du central, vous le communique.
-./installer.sh enroler <jeton> <nom-du-satellite> gw   # ou "full"
-# 2. Un administrateur valide ce satellite depuis la même page, vous communique
-#    l'email + mot de passe affichés à cet instant (une seule fois).
-./installer.sh demarrer   # installe Docker si besoin, pose les questions restantes, démarre
-```
+Page **Satellites** → choisir le type :
 
-Testé pour de vrai contre `.113` le 2026-09-17 (voir le commit qui l'introduit) : l'enrôlement
-API fonctionne de bout en bout. **Non testé sur un vrai Raspberry Pi** — l'installation Docker
-et la détection série sont les points à vérifier en priorité au premier essai réel.
+- **Passerelle radio** (`gw`) : relaie les messages MeshCore / Meshtastic vers le site ;
+- **Complet** (`full`) : passerelle + site Assista-Crise local, utilisable sans Internet, avec
+  cartes hors ligne du département de l'institution (et des départements voisins).
 
-#### Installer sans nœud MeshCore connecté (demande utilisateur du 16/10)
+puis **« Générer le jeton et les commandes »**. La page affiche les commandes exactes à copier
+(jeton inclus, valable 24 h, usage unique).
 
-À l'étape `demarrer`, la question "Connexion MeshCore" accepte un troisième choix, **AUCUN** —
-en plus de SERIE/TCP — pour installer sans nœud branché : `meshcore-proxy` est alors gardé à 0
-réplique (`docker compose up --scale meshcore-proxy=0`) plutôt que de planter au démarrage sur
-un `/dev/ttyUSB0` qui n'existe pas encore. Le reste du satellite (détection série en continu,
-assista-crise local en profil `full`, etc.) fonctionne normalement pendant ce temps.
-
-Une fois le nœud branché (le jour même ou bien plus tard, pas besoin de refaire l'enrôlement) :
+### 2. Sur la machine du satellite (Raspberry Pi ou PC sous Linux, connecté à Internet)
 
 ```bash
-./installer.sh connecter-noeud
+git clone https://github.com/sylvain-hazera/assista-crise-code-bis.git
+cd assista-crise-code-bis/satellite
+./installer.sh installer <JETON>
 ```
 
-Relance la détection ponctuelle (même outil que `detecter-noeud`), écrit le device et
-l'identifiant `CompagnonMeshCore` trouvés dans `.env`, puis recrée `meshcore-proxy` (qui
-démarre cette fois pour de vrai) et `appliquer-config-proxy` (pour qu'il reparte avec le bon
-`MESHCORE_COMPAGNON_ID`).
+(`git` absent : `sudo apt install -y git`. Dépôt déjà cloné : `cd assista-crise-code-bis && git pull`.)
 
-### Manuellement
+Le script, sans rien demander :
 
-```bash
-cp .env.example .env    # compléter : identifiants du compte de service, device série, etc.
-docker compose --profile gw up -d      # pont + proxy MeshCore + détecteur de connectivité
-# ou
-docker compose --profile full up -d    # gw + assista-crise complet + tuiles offline
-```
+1. installe Docker si besoin (passe par `sudo` tant que vous n'êtes pas dans le groupe `docker`) ;
+2. enrôle le satellite (nom = nom de la machine, profil et département donnés par le central) ;
+3. **attend la validation** : il affiche l'adresse de la page Satellites et patiente ;
+4. une fois validé, **récupère seul ses identifiants** (aucune recopie) ;
+5. génère tous les secrets locaux (`.env`, lisible par vous seul) ;
+6. **détecte les radios** branchées (MeshCore et/ou Meshtastic), les enregistre au central ;
+   une radio absente met seulement son service en attente ;
+7. démarre le satellite (et, en profil complet, télécharge la carte du dernier build Protomaps).
 
-Le compte de service (`SATELLITE_EMAIL`/`SATELLITE_PASSWORD`) s'obtient via la vue
-**Satellites** côté central (génération de jeton → le satellite s'enrôle → un
-administrateur valide → identifiants affichés **une seule fois**) — voir
-`backend/core/views.py:SatelliteViewSet`.
+### 3. Sur le central
+
+Le satellite apparaît **« En attente de validation »** : cliquer **Valider**. C'est tout : il
+apparaît **« Actif »** environ une minute plus tard.
+
+### Ensuite
+
+| Situation | Commande (dans `satellite/`) |
+|---|---|
+| Installation interrompue (Ctrl+C, coupure) | `./installer.sh installer` (sans jeton : reprend où il en était) |
+| Radio branchée après l'installation | `./installer.sh connecter-noeud` |
+| Mise à jour | `git pull` puis `./installer.sh demarrer` |
+| Identifiants perdus / compromis | bouton **Régénérer les identifiants** sur la page Satellites |
+| Vérifier l'état | `docker compose --profile <gw\|full> ps` |
+
+### Ancien parcours (installations commencées avant le 20/10/2026)
+
+`./installer.sh enroler <jeton> <nom> <gw|full>`, validation (identifiants affichés une seule
+fois à l'administrateur), puis `./installer.sh demarrer` (questions interactives). Toujours
+accepté. Fichiers utiles : `.env` (configuration), `.satellite_id` (identifiant du satellite,
+désormais correctement mémorisé), `.profil`.
 
 ## Ce que chaque service fait
 

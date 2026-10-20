@@ -1,4 +1,20 @@
 #!/usr/bin/env bash
+# =====================================================================================
+#  INSTALLATION RECOMMANDÉE — une seule commande, aucune question (20/10/2026)
+#
+#    ./installer.sh installer <JETON>
+#
+#  Le jeton (et la commande complète, prête à copier) s'obtiennent sur la page Satellites du
+#  central. Le script : installe Docker si besoin, enrôle ce satellite, ATTEND qu'un
+#  administrateur clique « Valider » sur la page Satellites, récupère SEUL ses identifiants,
+#  génère tous les secrets locaux, détecte les radios branchées (MeshCore / Meshtastic),
+#  trouve la carte hors ligne du département, puis démarre. Interrompu (Ctrl+C, coupure) :
+#  relancer `./installer.sh installer` (sans jeton) reprend où il en était.
+#  Radio branchée plus tard : `./installer.sh connecter-noeud`.
+# =====================================================================================
+#
+# Ancien parcours en deux temps (toujours accepté) détaillé ci-dessous.
+#
 # Wizard d'installation d'un satellite — voir le cadrage "Chantier B" (plan) : Raspberry Pi OS
 # standard + Docker, PAS une image disque pré-construite (décision du 2026-09-17).
 #
@@ -41,6 +57,9 @@ set -euo pipefail
 
 REPERTOIRE_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FICHIER_ENV="$REPERTOIRE_SCRIPT/.env"
+# Mémoire de l'enrôlement (id, secret de récupération, profil, département...) : permet de
+# reprendre `installer` après une interruption. Permissions restreintes (contient un secret).
+FICHIER_ENROLEMENT="$REPERTOIRE_SCRIPT/.enrolement"
 
 log() { echo "==> $*"; }
 erreur() { echo "ERREUR : $*" >&2; exit 1; }
@@ -65,7 +84,46 @@ demander_secret() {
 }
 
 verifier_prerequis() {
-    command -v curl >/dev/null 2>&1 || erreur "curl est requis (apt install curl)."
+    command -v curl >/dev/null 2>&1 || erreur "curl est requis : sudo apt install -y curl"
+    command -v python3 >/dev/null 2>&1 || erreur "python3 est requis : sudo apt install -y python3"
+}
+
+# Champ d'un objet JSON (vide si absent) -- python3 plutôt qu'un grep fragile : c'est un grep
+# sur la mauvaise clé ("id" au lieu de "satellite_id") qui empêchait l'ancien parcours de
+# mémoriser l'identifiant du satellite.
+json_champ() {
+    python3 -c 'import json,sys
+try:
+    v = json.loads(sys.argv[1]).get(sys.argv[2])
+except Exception:
+    v = None
+print("" if v is None else v)' "$1" "$2"
+}
+
+secret_aleatoire() {
+    python3 -c 'import secrets; print(secrets.token_urlsafe(36))'
+}
+
+valeur_fichier() {
+    # valeur_fichier <fichier> <CLE> -> valeur (vide si absente)
+    grep -E "^$2=" "$1" 2>/dev/null | tail -n1 | cut -d= -f2-
+}
+
+# Docker juste installé : l'utilisateur n'est pas encore dans le groupe "docker" (il faudrait
+# se reconnecter) -- on passe alors par sudo plutôt que d'arrêter l'installation.
+DOCKER_SUDO=0
+docker() {
+    if [ "$DOCKER_SUDO" = 1 ]; then sudo docker "$@"; else command docker "$@"; fi
+}
+preparer_acces_docker() {
+    if command docker info >/dev/null 2>&1; then
+        DOCKER_SUDO=0
+    elif sudo docker info >/dev/null 2>&1; then
+        DOCKER_SUDO=1
+        log "Docker utilisé via sudo (reconnectez-vous plus tard pour vous en passer)."
+    else
+        erreur "Docker ne répond pas (même via sudo) : vérifiez son installation (sudo systemctl status docker)."
+    fi
 }
 
 phase_enroler() {
@@ -100,7 +158,7 @@ phase_enroler() {
     # phase_demarrer) — relu et écrit dans SATELLITE_ID à l'étape 2, nécessaire à la
     # synchronisation local -> central (sync-sortant, voir synchroniser_sortant.py).
     local satellite_id
-    satellite_id="$(echo "$corps" | grep -o '"id"[[:space:]]*:[[:space:]]*"[^"]*"' | head -n1 | sed -E 's/.*:[[:space:]]*"([^"]*)"/\1/')"
+    satellite_id="$(json_champ "$corps" satellite_id)"
     if [ -n "$satellite_id" ]; then
         echo "$satellite_id" > "$REPERTOIRE_SCRIPT/.satellite_id"
         log "Identifiant du satellite mémorisé ($satellite_id) — sera écrit dans .env à l'étape 2."
@@ -146,7 +204,8 @@ demander_connexion_meshcore() {
 }
 
 installer_docker_si_absent() {
-    if command -v docker >/dev/null 2>&1; then
+    # type -P : le binaire, pas la fonction docker() définie plus haut (qui existe toujours).
+    if type -P docker >/dev/null 2>&1; then
         log "Docker déjà installé ($(docker --version))."
         return
     fi
@@ -165,7 +224,7 @@ phase_demarrer() {
     installer_docker_si_absent
 
     if [ -f "$FICHIER_ENV" ]; then
-        log "$FICHIER_ENV existe déjà — relancé tel quel sans écraser vos réponses précédentes."
+        log "Configuration existante réutilisée ($FICHIER_ENV)."
     else
         log "Configuration du satellite (Entrée pour garder la valeur par défaut entre crochets)."
         local central_url satellite_nom satellite_email satellite_password profil
@@ -260,7 +319,7 @@ EOF
         log "Nœud MeshCore introuvable ($meshcore_dev) -- meshcore-proxy mis en attente (0 réplique)."
         scale_args+=(--scale meshcore-proxy=0)
     fi
-    if [ ! -e "$meshtastic_dev" ]; then
+    if [ -f "$REPERTOIRE_SCRIPT/.sans_meshtastic" ] || [ ! -e "$meshtastic_dev" ]; then
         log "Radio Meshtastic introuvable ($meshtastic_dev) -- meshtastic-bridge mis en attente (0 réplique)."
         scale_args+=(--scale meshtastic-bridge=0)
     fi
@@ -273,65 +332,173 @@ EOF
     echo "  docker compose --profile $profil logs -f meshcore-proxy meshcore-bridge"
 }
 
-phase_connecter_noeud() {
-    # Scénario "installer un nœud USB plus tard" (demande utilisateur du 16/10) : réutilise
-    # l'outil de détection ponctuelle déjà existant (detecter-noeud, voir sa propre docstring et
-    # detecter_noeud_serie.py) plutôt que de dupliquer la logique de détection en bash -- il
-    # sait déjà distinguer MeshCore/Meshtastic, s'enregistrer auprès du central (idempotent par
-    # pubkey_hex) et persister le résultat.
-    [ -f "$FICHIER_ENV" ] || erreur "$FICHIER_ENV introuvable — lancez d'abord : $0 demarrer"
-    installer_docker_si_absent
+configurer_radios() {
+    # Détecte TOUTES les radios branchées (outil detecter-noeud, mode DETECTION_TOUTES), les
+    # enregistre au central et écrit leur configuration dans .env -- aucune question. Une radio
+    # absente met simplement son service en attente (.sans_noeud / .sans_meshtastic).
+    log "Recherche des radios branchées (MeshCore / Meshtastic)..."
+    local radios
+    radios="$(cd "$REPERTOIRE_SCRIPT" && docker compose --profile outillage run --rm -e DETECTION_TOUTES=true detecter-noeud 2>/dev/null | tail -n1)"
+    [ -n "$radios" ] || radios="[]"
 
-    log "Détection du nœud MeshCore branché (peut prendre quelques secondes)..."
-    local resultat
-    resultat="$(cd "$REPERTOIRE_SCRIPT" && docker compose --profile outillage run --rm detecter-noeud 2>/dev/null | tail -n1)"
+    local meshcore meshtastic
+    meshcore="$(python3 -c 'import json,sys
+r = [x for x in json.loads(sys.argv[1] or "[]") if x.get("protocole") == "meshcore"]
+print(json.dumps(r[0]) if r else "")' "$radios" 2>/dev/null || true)"
+    meshtastic="$(python3 -c 'import json,sys
+r = [x for x in json.loads(sys.argv[1] or "[]") if x.get("protocole") == "meshtastic"]
+print(json.dumps(r[0]) if r else "")' "$radios" 2>/dev/null || true)"
 
-    if [ -z "$resultat" ] || [ "$resultat" = "null" ]; then
-        erreur "Aucun nœud détecté — vérifiez le branchement USB (ou la connexion TCP) et relancez cette commande."
-    fi
-    log "Détecté : $resultat"
-
-    local protocole device compagnon_id
-    protocole="$(echo "$resultat" | grep -o '"protocole"[[:space:]]*:[[:space:]]*"[^"]*"' | sed -E 's/.*:[[:space:]]*"([^"]*)"/\1/')"
-    device="$(echo "$resultat" | grep -o '"device"[[:space:]]*:[[:space:]]*"[^"]*"' | sed -E 's/.*:[[:space:]]*"([^"]*)"/\1/')"
-    compagnon_id="$(echo "$resultat" | grep -o '"compagnon_id"[[:space:]]*:[[:space:]]*"[^"]*"' | sed -E 's/.*:[[:space:]]*"([^"]*)"/\1/')"
-
-    if [ "$protocole" != "meshcore" ]; then
-        erreur "Nœud détecté en $protocole, pas MeshCore (voir meshtastic-bridge pour un nœud Meshtastic)."
-    fi
-    [ -n "$device" ] || erreur "Device introuvable dans la réponse de détection : $resultat"
-
-    # Réécriture CIBLÉE de .env (sed en place, pas une réécriture complète) -- ne doit jamais
-    # perdre les identifiants déjà présents (SATELLITE_EMAIL/PASSWORD, SECRET_KEY si full...).
-    sed -i \
-        -e "s|^MESHCORE_CONNEXION_TYPE=.*|MESHCORE_CONNEXION_TYPE=SERIE|" \
-        -e "s|^MESHCORE_SERIE_DEVICE=.*|MESHCORE_SERIE_DEVICE=$device|" \
-        "$FICHIER_ENV"
-    if [ -n "$compagnon_id" ]; then
-        sed -i "s|^MESHCORE_COMPAGNON_ID=.*|MESHCORE_COMPAGNON_ID=$compagnon_id|" "$FICHIER_ENV"
-        log "Enregistré côté central sous CompagnonMeshCore $compagnon_id."
+    if [ -n "$meshcore" ]; then
+        local device compagnon
+        device="$(json_champ "$meshcore" device)"; compagnon="$(json_champ "$meshcore" compagnon_id)"
+        sed -i -e "s|^MESHCORE_CONNEXION_TYPE=.*|MESHCORE_CONNEXION_TYPE=SERIE|" \
+               -e "s|^MESHCORE_SERIE_DEVICE=.*|MESHCORE_SERIE_DEVICE=$device|" \
+               -e "s|^MESHCORE_COMPAGNON_ID=.*|MESHCORE_COMPAGNON_ID=$compagnon|" "$FICHIER_ENV"
+        rm -f "$REPERTOIRE_SCRIPT/.sans_noeud"
+        log "  MeshCore    : $device${compagnon:+ (enregistré au central)}"
     else
-        log "AVERTISSEMENT : pas encore enregistré côté central (central injoignable au moment"
-        log "de la détection) — relancez '$0 connecter-noeud' une fois la connexion rétablie,"
-        log "appliquer-config-proxy ne pourra pas suivre la config central sans cet identifiant."
+        touch "$REPERTOIRE_SCRIPT/.sans_noeud"
+        log "  MeshCore    : aucune radio -- service en attente"
     fi
-    rm -f "$REPERTOIRE_SCRIPT/.sans_noeud"
+    if [ -n "$meshtastic" ]; then
+        local device
+        device="$(json_champ "$meshtastic" device)"
+        if grep -q "^MESHTASTIC_SERIE_DEVICE=" "$FICHIER_ENV"; then
+            sed -i "s|^MESHTASTIC_SERIE_DEVICE=.*|MESHTASTIC_SERIE_DEVICE=$device|" "$FICHIER_ENV"
+        else
+            echo "MESHTASTIC_SERIE_DEVICE=$device" >> "$FICHIER_ENV"
+        fi
+        rm -f "$REPERTOIRE_SCRIPT/.sans_meshtastic"
+        log "  Meshtastic  : $device"
+    else
+        touch "$REPERTOIRE_SCRIPT/.sans_meshtastic"
+        log "  Meshtastic  : aucune radio -- service en attente"
+    fi
+}
 
-    local profil
-    profil="$(cat "$REPERTOIRE_SCRIPT/.profil" 2>/dev/null || echo "gw")"
+phase_installer() {
+    local jeton="${1:-}" nom="${2:-}"
+    installer_docker_si_absent
+    preparer_acces_docker
 
-    # --no-deps : ne recrée QUE ces deux services (pas meshcore-bridge, qui ne parle qu'à
-    # meshcore-proxy en local via TCP 127.0.0.1 et n'a donc jamais besoin d'être recréé pour un
-    # changement de device -- même principe qu'appliquer_config_proxy.py, voir sa docstring sur
-    # pourquoi une recréation et pas un simple restart).
-    log "Device configuré ($device) -- recréation de meshcore-proxy et appliquer-config-proxy..."
-    (cd "$REPERTOIRE_SCRIPT" && docker compose --profile "$profil" up -d --no-deps meshcore-proxy appliquer-config-proxy)
+    # --- 1. Enrôlement (ou reprise d'une installation interrompue)
+    if [ -f "$FICHIER_ENROLEMENT" ]; then
+        log "Reprise de l'installation du satellite « $(valeur_fichier "$FICHIER_ENROLEMENT" SATELLITE_NOM) »."
+    else
+        [ -n "$jeton" ] || erreur "Usage : $0 installer <JETON>  (jeton et commande complète : page Satellites du central)"
+        local central_url="${CENTRAL_URL:-https://assista-crise.fr}"
+        nom="${nom:-$(hostname)}"
+        log "Enrôlement de « $nom » auprès de $central_url..."
+        local reponse code corps
+        reponse="$(curl -sS -w '\n%{http_code}' -X POST "${central_url%/}/api/satellites/enroler/" \
+            -H 'Content-Type: application/json' \
+            -d "{\"jeton\": \"$jeton\", \"nom\": \"$nom\", \"version_logicielle\": \"$(git -C "$REPERTOIRE_SCRIPT" describe --always 2>/dev/null || echo inconnue)\"}")"
+        code="$(echo "$reponse" | tail -n1)"
+        corps="$(echo "$reponse" | sed '$d')"
+        [ "$code" = "201" ] || erreur "Enrôlement refusé (HTTP $code) : $(json_champ "$corps" error) -- jeton expiré ou déjà utilisé ? Générez-en un nouveau sur la page Satellites."
+        local satellite_id secret
+        satellite_id="$(json_champ "$corps" satellite_id)"; secret="$(json_champ "$corps" secret_recuperation)"
+        [ -n "$satellite_id" ] && [ -n "$secret" ] || erreur "Réponse d'enrôlement inattendue : $corps"
+        umask 077
+        cat > "$FICHIER_ENROLEMENT" <<EOF
+CENTRAL_URL=${central_url%/}
+SATELLITE_ID=$satellite_id
+SECRET_RECUPERATION=$secret
+SATELLITE_NOM=$(json_champ "$corps" nom)
+PROFIL=$(json_champ "$corps" profil | tr '[:upper:]' '[:lower:]')
+DEPARTEMENT=$(json_champ "$corps" departement)
+INSTITUTION=$(json_champ "$corps" institution_nom)
+EOF
+        echo "$satellite_id" > "$REPERTOIRE_SCRIPT/.satellite_id"
+        log "Enrôlé : « $nom » pour $(valeur_fichier "$FICHIER_ENROLEMENT" INSTITUTION) (profil $(valeur_fichier "$FICHIER_ENROLEMENT" PROFIL))."
+    fi
+    local central_url satellite_id secret satellite_nom profil departement
+    central_url="$(valeur_fichier "$FICHIER_ENROLEMENT" CENTRAL_URL)"
+    satellite_id="$(valeur_fichier "$FICHIER_ENROLEMENT" SATELLITE_ID)"
+    secret="$(valeur_fichier "$FICHIER_ENROLEMENT" SECRET_RECUPERATION)"
+    satellite_nom="$(valeur_fichier "$FICHIER_ENROLEMENT" SATELLITE_NOM)"
+    profil="$(valeur_fichier "$FICHIER_ENROLEMENT" PROFIL)"; profil="${profil:-gw}"
+    departement="$(valeur_fichier "$FICHIER_ENROLEMENT" DEPARTEMENT)"
 
-    log "Terminé. Vérifier :"
-    echo "  cd $REPERTOIRE_SCRIPT && docker compose --profile $profil logs -f meshcore-proxy meshcore-bridge"
+    # --- 2. Validation par un administrateur, puis identifiants récupérés automatiquement
+    if [ ! -f "$FICHIER_ENV" ]; then
+        echo
+        log "ÉTAPE ADMINISTRATEUR : sur $central_url/admin/satellites, cliquez « Valider » sur la"
+        log "ligne « $satellite_nom ». Ce script attend et continue tout seul (Ctrl+C possible :"
+        log "relancez '$0 installer' pour reprendre)."
+        local reponse code corps email password
+        while true; do
+            reponse="$(curl -sS -w '\n%{http_code}' -X POST "$central_url/api/satellites/$satellite_id/recuperer-identifiants/" \
+                -H 'Content-Type: application/json' -d "{\"secret\": \"$secret\"}" 2>/dev/null || echo -e "\n000")"
+            code="$(echo "$reponse" | tail -n1)"; corps="$(echo "$reponse" | sed '$d')"
+            case "$code" in
+                200) email="$(json_champ "$corps" email)"; password="$(json_champ "$corps" password)"; echo; break ;;
+                202|000) printf '.'; sleep 10 ;;   # en attente de validation (ou réseau coupé : on réessaie)
+                410) echo; erreur "Ce satellite a été révoqué sur le central." ;;
+                *) echo; erreur "$(json_champ "$corps" error) (HTTP $code)" ;;
+            esac
+        done
+        log "Validé : identifiants reçus automatiquement."
+
+        # --- 3. Configuration complète, sans question (secrets générés ici, jamais affichés)
+        umask 077
+        cat > "$FICHIER_ENV" <<EOF
+CENTRAL_URL=$central_url
+SATELLITE_EMAIL=$email
+SATELLITE_PASSWORD=$password
+SATELLITE_ID=$satellite_id
+SATELLITE_NOM=$satellite_nom
+MESHCORE_CONNEXION_TYPE=SERIE
+MESHCORE_SERIE_DEVICE=/dev/ttyUSB0
+MESHCORE_TCP_HOST=
+MESHCORE_TCP_PORT=5000
+MESHCORE_PROXY_PORT=5050
+MESHCORE_COMPAGNON_ID=
+MESHTASTIC_SERIE_DEVICE=/dev/ttyACM0
+LOCAL_API_URL=
+LOG_LEVEL=INFO
+EOF
+        if [ "$profil" = "full" ]; then
+            cat >> "$FICHIER_ENV" <<EOF
+SECRET_KEY=$(secret_aleatoire)
+DB_USER=assista_app
+DB_PASS=$(secret_aleatoire)
+DJANGO_SUPERUSER_EMAIL=admin-local@service.assista-crise.local
+DJANGO_SUPERUSER_PASSWORD=$(secret_aleatoire)
+SATELLITE_DEPARTEMENT=${departement:-38}
+PMTILES_SOURCE=
+EOF
+        fi
+        chmod 600 "$FICHIER_ENV"
+        echo "$profil" > "$REPERTOIRE_SCRIPT/.profil"
+        log "Configuration écrite ($FICHIER_ENV, lisible par vous seul)."
+    fi
+
+    # --- 4. Radios, puis démarrage
+    configurer_radios
+    phase_demarrer
+
+    echo
+    log "Satellite « $satellite_nom » installé (profil $profil). Il apparaît « Actif » sur la page"
+    log "Satellites du central d'ici une minute. Radio branchée plus tard : $0 connecter-noeud"
+}
+
+phase_connecter_noeud() {
+    # Radio branchée après l'installation : même détection automatique que `installer`
+    # (MeshCore et/ou Meshtastic), puis recréation des seuls services radio concernés.
+    [ -f "$FICHIER_ENV" ] || erreur "$FICHIER_ENV introuvable — installez d'abord : $0 installer <JETON>"
+    installer_docker_si_absent
+    preparer_acces_docker
+    configurer_radios
+    phase_demarrer
 }
 
 case "${1:-}" in
+    installer)
+        verifier_prerequis
+        phase_installer "${2:-}" "${3:-}"
+        ;;
     enroler)
         verifier_prerequis
         [ $# -eq 4 ] || erreur "Usage : $0 enroler <jeton> <nom> <gw|full>"
@@ -347,9 +514,13 @@ case "${1:-}" in
         ;;
     *)
         echo "Usage :"
-        echo "  $0 enroler <jeton> <nom> <gw|full>   # étape 1 : s'enrôler auprès du central"
-        echo "  $0 demarrer                          # étape 2 : configurer et démarrer, une fois validé"
-        echo "  $0 connecter-noeud                   # si démarré sans nœud (AUCUN) : à lancer une fois branché"
+        echo "  $0 installer <JETON>    # installation complète, sans question (recommandé)"
+        echo "  $0 installer            # reprendre une installation interrompue"
+        echo "  $0 connecter-noeud      # radio branchée après l'installation"
+        echo "  $0 demarrer             # redémarrer le satellite (après une mise à jour : git pull d'abord)"
+        echo
+        echo "Ancien parcours (installations commencées avant le 20/10/2026) :"
+        echo "  $0 enroler <jeton> <nom> <gw|full>  puis  $0 demarrer"
         exit 1
         ;;
 esac

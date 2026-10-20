@@ -15657,7 +15657,7 @@ class SatelliteViewSet(
     serializer_class = SatelliteSerializer
 
     def get_permissions(self):
-        if self.action == 'enroler':
+        if self.action in ('enroler', 'recuperer_identifiants'):
             return [AllowAny()]
         if self.action in ('contact', 'donnees', 'synchroniser'):
             return [permissions.IsAuthenticated()]
@@ -15667,7 +15667,7 @@ class SatelliteViewSet(
 
     def get_queryset(self):
         qs = super().get_queryset()
-        if self.action in ('contact', 'donnees', 'synchroniser'):
+        if self.action in ('contact', 'donnees', 'synchroniser', 'recuperer_identifiants'):
             # Le contrôle d'identité se fait dans l'action elle-même (compte_service ==
             # request.user) — le compte de service d'un satellite n'a volontairement aucun
             # ContactInstitution (voir SatelliteViewSet.valider), donc le filtrage par
@@ -15685,8 +15685,12 @@ class SatelliteViewSet(
         institution = _resolve_institution_or_400(request)
         if isinstance(institution, Response):
             return institution
+        profil = request.data.get('profil') or ProfilSatellite.GW
+        if profil not in ProfilSatellite.values:
+            return Response({"error": "profil doit être GW ou FULL."}, status=status.HTTP_400_BAD_REQUEST)
         jeton = JetonEnrolementSatellite.objects.create(
             institution=institution,
+            profil=profil,
             jeton=secrets.token_urlsafe(32),
             expiration=timezone.now() + datetime.timedelta(hours=24),
             cree_par=request.user,
@@ -15703,30 +15707,85 @@ class SatelliteViewSet(
     def enroler(self, request):
         """Le satellite consomme le jeton reçu hors-bande pour créer sa propre entrée — AllowAny
         car il n'a par définition aucun identifiant à ce stade (voir docstring de la classe)."""
+        from django.contrib.auth.hashers import make_password
+
         jeton_valeur = request.data.get('jeton')
-        nom = request.data.get('nom')
-        profil = request.data.get('profil')
-        if not jeton_valeur or not nom or profil not in ProfilSatellite.values:
-            return Response(
-                {"error": "jeton, nom et profil (GW/FULL) sont requis."}, status=status.HTTP_400_BAD_REQUEST
-            )
+        nom = (request.data.get('nom') or '').strip()
+        if not jeton_valeur or not nom:
+            return Response({"error": "jeton et nom sont requis."}, status=status.HTTP_400_BAD_REQUEST)
 
         jeton = JetonEnrolementSatellite.objects.filter(jeton=jeton_valeur, utilise=False).first()
         if not jeton or jeton.expiration < timezone.now():
             return Response({"error": "Jeton invalide, déjà utilisé ou expiré."}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Profil : celui choisi à la génération du jeton ; un profil explicite reste accepté
+        # (anciens installeurs, `installer.sh enroler <jeton> <nom> <profil>`).
+        profil = request.data.get('profil') or jeton.profil
+        if profil not in ProfilSatellite.values:
+            return Response({"error": "profil doit être GW ou FULL."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Secret remis UNE fois au satellite : lui seul pourra récupérer ses identifiants après
+        # validation (recuperer_identifiants), sans recopie humaine.
+        secret = secrets.token_urlsafe(32)
         satellite = Satellite.objects.create(
             institution=jeton.institution, nom=nom, profil=profil,
             version_logicielle=request.data.get('version_logicielle', ''),
             environment=jeton.environment,
+            secret_recuperation_hash=make_password(secret),
         )
         jeton.utilise = True
         jeton.save(update_fields=['utilise'])
 
         return Response(
-            {"satellite_id": str(satellite.id), "statut_enrolement": satellite.statut_enrolement},
+            {
+                "satellite_id": str(satellite.id),
+                "statut_enrolement": satellite.statut_enrolement,
+                "secret_recuperation": secret,
+                "profil": satellite.profil,
+                "nom": satellite.nom,
+                "institution_nom": jeton.institution.nom,
+                # Département de l'institution : zone des cartes hors ligne (profil full).
+                "departement": jeton.institution.departement_code or "",
+            },
             status=status.HTTP_201_CREATED,
         )
+
+    @action(detail=True, methods=['post'], url_path='recuperer-identifiants')
+    def recuperer_identifiants(self, request, pk=None):
+        """Interrogé en boucle par l'installeur du satellite (`installer.sh installer`) avec le
+        secret reçu à l'enrôlement : 202 tant qu'un administrateur n'a pas validé, puis les
+        identifiants du compte de service, UNE seule fois (secret effacé ensuite). Remplace la
+        recopie manuelle des identifiants affichés à l'administrateur (20/10/2026)."""
+        from django.contrib.auth.hashers import check_password
+
+        satellite = self.get_object()
+        secret = request.data.get('secret') or ''
+        if not satellite.secret_recuperation_hash or not check_password(secret, satellite.secret_recuperation_hash):
+            return Response(
+                {"error": "Secret invalide ou identifiants déjà récupérés. Un administrateur peut les "
+                          "régénérer depuis la page Satellites."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if satellite.statut_enrolement == StatutEnrolementSatellite.REVOQUE:
+            return Response({"error": "Ce satellite a été révoqué."}, status=status.HTTP_410_GONE)
+        if satellite.statut_enrolement != StatutEnrolementSatellite.APPROUVE or satellite.compte_service is None:
+            return Response({"statut_enrolement": satellite.statut_enrolement}, status=status.HTTP_202_ACCEPTED)
+
+        mot_de_passe = secrets.token_urlsafe(24)
+        compte = satellite.compte_service
+        compte.set_password(mot_de_passe)
+        compte.save(update_fields=['password'])
+        satellite.secret_recuperation_hash = None
+        satellite.save(update_fields=['secret_recuperation_hash'])
+        audit_log(
+            request=request, action_code="MODIFICATION", objet_type="Satellite", objet_id=satellite.id,
+            commentaire=f"Satellite {satellite.nom} ({satellite.institution.nom}) — identifiants récupérés automatiquement par le satellite.",
+        )
+        return Response({
+            "statut_enrolement": satellite.statut_enrolement,
+            "email": compte.email,
+            "password": mot_de_passe,
+        })
 
     @action(detail=True, methods=['post'], url_path='valider')
     def valider(self, request, pk=None):
@@ -15756,6 +15815,10 @@ class SatelliteViewSet(
             commentaire=f"Satellite {satellite.nom} ({satellite.institution.nom}) approuvé — compte de service créé.",
         )
 
+        if satellite.secret_recuperation_hash:
+            # Installeur récent : le satellite récupère seul ses identifiants (recuperer_identifiants)
+            # -- rien à afficher ni à recopier, le mot de passe ci-dessus sera remplacé.
+            return Response({**SatelliteSerializer(satellite).data, "recuperation_automatique": True})
         return Response({
             **SatelliteSerializer(satellite).data,
             # Identifiants renvoyés UNE SEULE FOIS ici — le mot de passe n'est jamais stocké en

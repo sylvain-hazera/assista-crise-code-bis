@@ -27,9 +27,28 @@ logger = logging.getLogger("telecharger-tuiles")
 
 DATA_DEPARTEMENTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "departements_limitrophes.json")
 
-# Se périme (un build daté) — voir https://maps.protomaps.com/builds pour l'URL du jour au
-# moment de l'installation d'un satellite. Pas de "latest" stable côté Protomaps à ce jour.
+# Vide par défaut : le dernier build publié est alors trouvé tout seul (dernier_build), plus
+# besoin de recopier une URL datée depuis https://maps.protomaps.com/builds (20/10/2026).
 PMTILES_SOURCE_DEFAUT = os.environ.get("PMTILES_SOURCE")
+BUILDS_PROTOMAPS = "https://build-metadata.protomaps.dev/builds.json"
+URL_BUILD_PROTOMAPS = "https://build.protomaps.com/{cle}"
+
+
+def dernier_build(lecteur=None):
+    """URL du build PMTiles le plus récent (liste officielle Protomaps : clés datées
+    AAAAMMJJ.pmtiles, donc la plus grande est la plus récente). `lecteur` injectable pour les
+    tests (aucun vrai réseau)."""
+    import urllib.request
+
+    if lecteur is None:
+        def lecteur(url):
+            with urllib.request.urlopen(url, timeout=30) as reponse:
+                return reponse.read()
+    builds = json.loads(lecteur(BUILDS_PROTOMAPS))
+    cles = sorted(b["key"] for b in builds if str(b.get("key", "")).endswith(".pmtiles"))
+    if not cles:
+        raise RuntimeError("Liste des builds Protomaps vide ou illisible.")
+    return URL_BUILD_PROTOMAPS.format(cle=cles[-1])
 
 
 def _charger_departements():
@@ -63,12 +82,8 @@ def extraire(code_departement, sortie, source=None, maxzoom=None, inclure_limitr
     Dockerfile.tuiles) et un accès réseau vers `source`. Pas mocké : cette fonction fait un vrai
     téléchargement, à ne tester qu'avec subprocess.run mocké (voir test_telecharger_tuiles.py) ou
     en conditions réelles sur un satellite."""
-    source = source or PMTILES_SOURCE_DEFAUT
-    if not source:
-        raise RuntimeError(
-            "Aucune source PMTiles fournie (argument --source ou variable PMTILES_SOURCE) — "
-            "voir https://maps.protomaps.com/builds pour l'URL du build du jour."
-        )
+    source = source or PMTILES_SOURCE_DEFAUT or dernier_build()
+    logger.info("Source PMTiles : %s", source)
     bbox = bbox_zone(code_departement, inclure_limitrophes=inclure_limitrophes)
     commande = [
         "pmtiles", "extract", source, sortie,

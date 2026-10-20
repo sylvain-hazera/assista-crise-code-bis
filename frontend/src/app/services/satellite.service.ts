@@ -19,14 +19,14 @@ export class SatelliteService {
   /** POST /api/satellites/generer-jeton/ — jeton à usage unique (24h), pour l'institution de
    * l'appelant, à communiquer hors-bande au responsable du satellite (saisi lors de
    * l'installation du Pi). Voir SatelliteViewSet.generer_jeton. */
-  genererJeton(): Observable<JetonEnrolementSatellite> {
-    return this.http.post<JetonEnrolementSatellite>(`${this.url}/generer-jeton/`, {});
+  genererJeton(profil: 'GW' | 'FULL' = 'GW'): Observable<JetonEnrolementSatellite> {
+    return this.http.post<JetonEnrolementSatellite>(`${this.url}/generer-jeton/`, { profil });
   }
 
   /** POST /api/satellites/<id>/valider/ — approuve un satellite EN_ATTENTE et crée son compte
    * de service ; les identifiants ne sont renvoyés qu'ICI, une seule fois. */
-  valider(id: string): Observable<Satellite & { identifiants_compte_service: IdentifiantsCompteServiceSatellite }> {
-    return this.http.post<Satellite & { identifiants_compte_service: IdentifiantsCompteServiceSatellite }>(
+  valider(id: string): Observable<Satellite & { identifiants_compte_service?: IdentifiantsCompteServiceSatellite; recuperation_automatique?: boolean }> {
+    return this.http.post<Satellite & { identifiants_compte_service?: IdentifiantsCompteServiceSatellite; recuperation_automatique?: boolean }>(
       `${this.url}/${id}/valider/`, {}
     );
   }

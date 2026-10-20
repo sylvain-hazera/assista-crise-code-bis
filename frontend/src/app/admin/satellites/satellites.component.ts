@@ -30,6 +30,21 @@ export class SatellitesComponent implements OnInit {
 
   genererJetonEnCours = false;
   dernierJeton: JetonEnrolementSatellite | null = null;
+  profilJeton: 'GW' | 'FULL' = 'GW';
+  messageSucces = '';
+  /** Dépôt public cloné sur le satellite (voir satellite/README.md). */
+  readonly depot = 'https://github.com/sylvain-hazera/assista-crise-code-bis.git';
+
+  /** Commandes complètes à lancer sur la machine du satellite -- installation en une commande,
+   * sans question (installer.sh installer, 20/10/2026). */
+  get commandesInstallation(): string {
+    if (!this.dernierJeton) return '';
+    return [
+      `git clone ${this.depot}`,
+      'cd assista-crise-code-bis/satellite',
+      `./installer.sh installer ${this.dernierJeton.jeton}`,
+    ].join('\n');
+  }
 
   // Identifiants d'un compte de service, affichés une seule fois juste après validation — voir
   // SatelliteService.valider. Effacés dès qu'on quitte la page ou qu'on en valide un autre.
@@ -59,7 +74,7 @@ export class SatellitesComponent implements OnInit {
   genererJeton(): void {
     this.genererJetonEnCours = true;
     this.errorMessage = '';
-    this.service.genererJeton().subscribe({
+    this.service.genererJeton(this.profilJeton).subscribe({
       next: (jeton) => { this.dernierJeton = jeton; this.genererJetonEnCours = false; },
       error: (err) => {
         this.errorMessage = err.error?.error || "Impossible de générer un jeton d'enrôlement.";
@@ -72,10 +87,16 @@ export class SatellitesComponent implements OnInit {
     this.actionEnCours = satellite.id;
     this.errorMessage = '';
     this.identifiantsAffiches = null;
+    this.messageSucces = '';
     this.service.valider(satellite.id).subscribe({
       next: (resultat) => {
         this.actionEnCours = null;
-        this.identifiantsAffiches = { satelliteNom: satellite.nom, identifiants: resultat.identifiants_compte_service };
+        if (resultat.recuperation_automatique || !resultat.identifiants_compte_service) {
+          // Installeur récent : le satellite récupère seul ses identifiants, rien à recopier.
+          this.messageSucces = `Satellite « ${satellite.nom} » validé : il récupère ses identifiants et démarre tout seul (environ une minute).`;
+        } else {
+          this.identifiantsAffiches = { satelliteNom: satellite.nom, identifiants: resultat.identifiants_compte_service };
+        }
         this.load();
       },
       error: (err) => {

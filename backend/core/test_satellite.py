@@ -350,3 +350,69 @@ class TestRegenererIdentifiants:
         client.credentials(HTTP_X_ENVIRONMENT='DEMO')
         response = client.post(reverse('satellite-regenerer-identifiants', args=[satellite_en_attente.id]), {}, format='json')
         assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+@pytest.mark.django_db
+class TestInstallationAutomatique:
+    """Installation en une commande (20/10/2026) : le jeton porte le profil, le satellite
+    récupère seul ses identifiants après validation -- aucune recopie humaine."""
+
+    def _jeton(self, client, profil=None):
+        donnees = {"profil": profil} if profil else {}
+        return client.post(reverse('satellite-generer-jeton'), donnees, format='json').data
+
+    def _enroler(self, jeton, nom="sat-auto"):
+        return APIClient().post(reverse('satellite-enroler'), {"jeton": jeton, "nom": nom}, format='json')
+
+    def _recuperer(self, satellite_id, secret):
+        return APIClient().post(reverse('satellite-recuperer-identifiants', args=[satellite_id]), {"secret": secret}, format='json')
+
+    def test_parcours_complet_sans_recopie(self, mairie_a_client):
+        client, _ = mairie_a_client
+        jeton = self._jeton(client, "FULL")
+        assert jeton['profil'] == 'FULL'
+
+        enrolement = self._enroler(jeton['jeton'])
+        assert enrolement.status_code == status.HTTP_201_CREATED
+        assert enrolement.data['profil'] == 'FULL'          # repris du jeton
+        satellite_id, secret = enrolement.data['satellite_id'], enrolement.data['secret_recuperation']
+        assert secret
+
+        # Avant validation : en attente.
+        assert self._recuperer(satellite_id, secret).status_code == status.HTTP_202_ACCEPTED
+
+        validation = client.post(reverse('satellite-valider', args=[satellite_id]), {}, format='json')
+        assert validation.data['recuperation_automatique'] is True
+        assert 'identifiants_compte_service' not in validation.data   # rien à afficher ni recopier
+
+        identifiants = self._recuperer(satellite_id, secret)
+        assert identifiants.status_code == status.HTTP_200_OK
+        jwt = APIClient().post(reverse('token_obtain_pair'),
+                               {"email": identifiants.data['email'], "password": identifiants.data['password']}, format='json')
+        assert jwt.status_code == status.HTTP_200_OK
+
+        # Usage unique.
+        assert self._recuperer(satellite_id, secret).status_code == status.HTTP_403_FORBIDDEN
+
+    def test_mauvais_secret_refuse(self, mairie_a_client):
+        client, _ = mairie_a_client
+        enrolement = self._enroler(self._jeton(client)['jeton'])
+        assert self._recuperer(enrolement.data['satellite_id'], "faux").status_code == status.HTTP_403_FORBIDDEN
+
+    def test_satellite_revoque(self, mairie_a_client):
+        client, _ = mairie_a_client
+        enrolement = self._enroler(self._jeton(client)['jeton'])
+        satellite_id = enrolement.data['satellite_id']
+        client.post(reverse('satellite-valider', args=[satellite_id]), {}, format='json')
+        client.post(reverse('satellite-revoquer', args=[satellite_id]), {}, format='json')
+        assert self._recuperer(satellite_id, enrolement.data['secret_recuperation']).status_code == status.HTTP_410_GONE
+
+    def test_secret_jamais_expose_dans_la_liste(self, mairie_a_client):
+        client, _ = mairie_a_client
+        self._enroler(self._jeton(client)['jeton'])
+        liste = client.get(reverse('satellite-list'))
+        assert all('secret_recuperation_hash' not in s for s in liste.data)
+
+    def test_profil_par_defaut_passerelle(self, mairie_a_client):
+        client, _ = mairie_a_client
+        assert self._enroler(self._jeton(client)['jeton']).data['profil'] == 'GW'

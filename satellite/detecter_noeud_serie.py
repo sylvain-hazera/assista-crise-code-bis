@@ -208,6 +208,26 @@ async def decouvrir_identifier_et_enregistrer(central_url, email, password, fich
     return identite
 
 
+async def detecter_et_enregistrer_toutes(central_url=None, email=None, password=None, client=None):
+    """Toutes les radios branchées (MeshCore ET Meshtastic, contrairement à
+    decouvrir_et_identifier qui s'arrête à la première) -- utilisé par `installer.sh installer`
+    pour configurer chaque radio sans question (20/10/2026). Chacune est enregistrée au central
+    si possible (best-effort, comme decouvrir_identifier_et_enregistrer)."""
+    radios = []
+    for device in lister_devices_candidats():
+        identite = await identifier_device(device)
+        if not identite:
+            continue
+        identite = {"device": device, **identite}
+        if central_url and email and password:
+            try:
+                identite["compagnon_id"] = await enregistrer_aupres_du_central(identite, central_url, email, password, client=client)
+            except Exception:
+                logger.exception("Radio détectée (%s) mais central injoignable — pas encore enregistrée.", device)
+        radios.append(identite)
+    return radios
+
+
 async def boucle(central_url=None, email=None, password=None, fichier_etat=None, client=None, une_seule_iteration=False):
     """Surveillance continue (service "surveiller-noeuds", profils gw/full) : ré-exécute le
     même enchaînement que l'exécution ponctuelle (profil "outillage", conservée telle quelle
@@ -237,7 +257,10 @@ if __name__ == "__main__":
     if not (central_api and email and password):
         logger.warning("CENTRAL_URL/SATELLITE_EMAIL/SATELLITE_PASSWORD absents — détection locale seule, pas d'enregistrement.")
 
-    if os.environ.get("DETECTION_CONTINUE", "false").lower() == "true":
+    if os.environ.get("DETECTION_TOUTES", "false").lower() == "true":
+        # Installation automatique : liste JSON de toutes les radios, une ligne.
+        print(json.dumps(asyncio.run(detecter_et_enregistrer_toutes(central_api, email, password))))
+    elif os.environ.get("DETECTION_CONTINUE", "false").lower() == "true":
         # Service continu (surveiller-noeuds) : ne s'arrête jamais, pas de sortie JSON unique à
         # produire — voir boucle() pour le détail de ce qui est journalisé à chaque passage.
         asyncio.run(boucle(central_api, email, password))

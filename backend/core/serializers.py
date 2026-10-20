@@ -3605,7 +3605,8 @@ class SatelliteSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Satellite
-        fields = "__all__"
+        # Jamais le hash du secret de récupération des identifiants (voir Satellite).
+        exclude = ['secret_recuperation_hash']
         # compte_service n'est jamais écrivable depuis ce serializer : posé uniquement par
         # SatelliteViewSet.valider (qui génère le compte de service et renvoie ses identifiants
         # une seule fois dans sa propre réponse, jamais relisible ensuite) — jamais via un
@@ -3630,7 +3631,7 @@ class SatelliteSerializer(serializers.ModelSerializer):
 class JetonEnrolementSatelliteSerializer(serializers.ModelSerializer):
     class Meta:
         model = JetonEnrolementSatellite
-        fields = ['id', 'institution', 'jeton', 'expiration', 'utilise', 'date_creation']
+        fields = ['id', 'institution', 'jeton', 'profil', 'expiration', 'utilise', 'date_creation']
         read_only_fields = fields
 
 

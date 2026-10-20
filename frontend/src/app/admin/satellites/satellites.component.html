@@ -46,24 +46,51 @@
 
 @if (!isDemo) {
   <div class="create-panel">
-    <h3>Générer un jeton d'enrôlement</h3>
-    <p class="page-hint">
-      Jeton à usage unique, valable 24h, pour votre institution — le satellite s'en sert une
-      seule fois pour prendre contact et apparaître ci-dessous en attente de validation.
-    </p>
+    <h3>Installer un satellite</h3>
+    <ol class="etapes">
+      <li>Choisissez le type de satellite, puis générez le jeton (valable 24 h, usage unique).</li>
+      <li>Sur la machine du satellite (Raspberry Pi ou PC sous Linux, connecté à Internet), ouvrez un
+        terminal et collez les commandes affichées. Aucune question ne sera posée.</li>
+      <li>Le satellite apparaît dans la liste ci-dessous « En attente de validation » :
+        cliquez <strong>Valider</strong>. Il récupère seul ses identifiants, détecte ses radios et démarre.</li>
+    </ol>
+
+    <div class="choix-profil" role="radiogroup" aria-label="Type de satellite">
+      <label>
+        <input type="radio" name="profilJeton" value="GW" [(ngModel)]="profilJeton">
+        <strong>Passerelle radio</strong> — relaie les messages MeshCore / Meshtastic vers le site
+      </label>
+      <label>
+        <input type="radio" name="profilJeton" value="FULL" [(ngModel)]="profilJeton">
+        <strong>Complet</strong> — passerelle + site Assista-Crise local, utilisable sans Internet, avec cartes hors ligne
+      </label>
+    </div>
+
     <button type="button" class="btn-primary" [disabled]="genererJetonEnCours" (click)="genererJeton()">
-      {{ genererJetonEnCours ? 'Génération…' : "Générer un jeton" }}
+      {{ genererJetonEnCours ? 'Génération…' : "Générer le jeton et les commandes" }}
     </button>
 
     @if (dernierJeton) {
-      <div class="identifiant-row jeton-genere">
-        <span class="identifiant-label">Jeton</span>
-        <code>{{ dernierJeton.jeton }}</code>
-        <button type="button" class="btn-secondary-sm" (click)="copier(dernierJeton.jeton)">Copier</button>
-        <span class="page-hint">expire le {{ dernierJeton.expiration | date:'dd/MM/yyyy HH:mm' }}</span>
+      <div class="commandes-installation">
+        <div class="commandes-entete">
+          <span>Commandes à coller sur le satellite ({{ dernierJeton.profil === 'FULL' ? 'complet' : 'passerelle radio' }})</span>
+          <button type="button" class="btn-secondary-sm" (click)="copier(commandesInstallation)">Copier</button>
+        </div>
+        <pre>{{ commandesInstallation }}</pre>
+        <p class="page-hint">
+          Jeton valable jusqu'au {{ dernierJeton.expiration | date:'dd/MM/yyyy HH:mm' }}.
+          Si <code>git</code> manque : <code>sudo apt install -y git</code> d'abord.
+          Dépôt déjà présent sur la machine : remplacez la 1re ligne par <code>cd assista-crise-code-bis &amp;&amp; git pull</code>.
+          Installation interrompue : relancez <code>./installer.sh installer</code> (sans le jeton).
+          Radio branchée plus tard : <code>./installer.sh connecter-noeud</code>.
+        </p>
       </div>
     }
   </div>
+}
+
+@if (messageSucces) {
+  <p class="message-succes">{{ messageSucces }}</p>
 }
 
 @if (errorMessage) {

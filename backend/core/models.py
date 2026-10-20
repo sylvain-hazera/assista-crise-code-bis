@@ -6197,6 +6197,10 @@ class JetonEnrolementSatellite(EnvironmentScopedModel):
 
     jeton = models.CharField(max_length=64, unique=True)
 
+    # Profil choisi par l'administrateur en générant le jeton (installation en une commande,
+    # 20/10/2026) : le satellite n'a plus à le connaître ni à le ressaisir.
+    profil = models.CharField(max_length=4, choices=ProfilSatellite.choices, default=ProfilSatellite.GW)
+
     expiration = models.DateTimeField()
 
     utilise = models.BooleanField(default=False)
@@ -6249,6 +6253,11 @@ class Satellite(EnvironmentScopedModel):
     dernier_contact = models.DateTimeField(null=True, blank=True)
 
     version_logicielle = models.CharField(max_length=50, blank=True)
+
+    # Secret remis au satellite à l'enrôlement (haché ici, jamais en clair) : lui permet de
+    # récupérer SEUL ses identifiants une fois validé (SatelliteViewSet.recuperer_identifiants),
+    # sans qu'un humain ait à les recopier -- usage unique, effacé à la récupération.
+    secret_recuperation_hash = models.CharField(max_length=128, null=True, blank=True)
 
     date_creation = models.DateTimeField(auto_now_add=True)
 
