@@ -1,34 +1,33 @@
-import { Component, HostListener, OnInit } from '@angular/core';
+import { Component, HostListener, OnInit, ViewChild } from '@angular/core';
 import { Router, RouterOutlet } from '@angular/router';
-import { CommonModule } from '@angular/common';
 import { AuthService } from '../../auth/services/auth.service';
-import { SuiviPositionPermanentService } from '../../services/suivi-position-permanent.service';
-import { User, UserRole } from '../../shared/models/user.model';
+import { User } from '../../shared/models/user.model';
+import { AdminHeaderComponent } from './admin-header/admin-header.component';
 import { AdminSidebarComponent } from './admin-sidebar/admin-sidebar.component';
-import { AdminNotificationsComponent } from './admin-notifications/admin-notifications.component';
 
-/** Coquille de l'administration : grille, en-tête (bascule PROD/DEMO, suivi de position, menu
- * utilisateur), affichage mobile et <router-outlet>. Le menu et la cloche sont des composants
- * enfants ; les entrées du menu sont dans admin-nav.config.ts (DOCUMENTATION.md, § 6.4). */
+/** Coquille de l'administration : grille, affichage mobile, fonds semi-transparents et
+ * <router-outlet>. En-tête, menu et cloche sont des composants enfants ; les entrées du menu
+ * sont dans admin-nav.config.ts (DOCUMENTATION.md, § 6.4). */
 @Component({
   selector: 'app-admin-layout',
   standalone: true,
-  imports: [CommonModule, RouterOutlet, AdminSidebarComponent, AdminNotificationsComponent],
+  imports: [RouterOutlet, AdminHeaderComponent, AdminSidebarComponent],
   templateUrl: './admin-layout.component.html',
   styleUrls: ['./admin-layout.component.scss']
 })
 export class AdminLayoutComponent implements OnInit {
+  @ViewChild(AdminHeaderComponent) private header?: AdminHeaderComponent;
+
   currentUser: User | null = null;
   sidebarCollapsed = false;
   sidebarOpen = false; // mobile
-  showNotifications = false;
-  showUserMenu = false;
   isMobile = false;
+  /** Une liste déroulante de l'en-tête est ouverte : affiche le fond qui la ferme. */
+  menusOuverts = false;
 
   constructor(
     private authService: AuthService,
     private router: Router,
-    public suiviPosition: SuiviPositionPermanentService,
   ) {}
 
   ngOnInit(): void {
@@ -40,27 +39,6 @@ export class AdminLayoutComponent implements OnInit {
       next: (user) => this.currentUser = user,
       error: () => {},
     });
-  }
-
-  /** Bascule le suivi de position permanent ; l'accord navigateur n'est demandé qu'une fois. */
-  basculerSuiviPosition(): void {
-    if (this.suiviPosition.actif) {
-      this.suiviPosition.desactiver();
-    } else {
-      this.suiviPosition.activer();
-    }
-  }
-
-  get isDemo(): boolean {
-    return this.authService.getEnvironment() === 'DEMO';
-  }
-
-  get canAccessDemo(): boolean {
-    return this.authService.canAccessDemo();
-  }
-
-  toggleEnvironment(): void {
-    this.authService.setEnvironment(this.isDemo ? 'PROD' : 'DEMO');
   }
 
   @HostListener('window:resize')
@@ -91,35 +69,15 @@ export class AdminLayoutComponent implements OnInit {
     }
   }
 
-  /** Une seule liste déroulante ouverte à la fois ; sur mobile, ouvrir ferme le menu. */
-  onNotificationsToggle(ouvert: boolean): void {
-    this.showNotifications = ouvert;
-    if (ouvert) {
-      this.showUserMenu = false;
-      this.closeSidebar();
-    }
-  }
-
-  toggleUserMenu(): void {
-    this.showUserMenu = !this.showUserMenu;
-    this.showNotifications = false;
+  /** Sur mobile, toute action sur les listes de l'en-tête ferme le menu latéral. */
+  onMenusOuverts(ouverts: boolean): void {
+    this.menusOuverts = ouverts;
     this.closeSidebar();
   }
 
   closeAllMenus(): void {
-    this.showNotifications = false;
-    this.showUserMenu = false;
+    this.header?.fermerMenus();
     this.closeSidebar();
-  }
-
-  goToSettings(): void {
-    this.router.navigate(['/settings']);
-    this.closeAllMenus();
-  }
-
-  goToHome(): void {
-    this.router.navigate(['/accueil']);
-    this.closeAllMenus();
   }
 
   logout(): void {
@@ -130,12 +88,5 @@ export class AdminLayoutComponent implements OnInit {
 
   onNavItemClick(): void {
     this.closeSidebar();
-  }
-
-  get companyName(): string {
-    // currentUser peut être null le temps que le profil arrive.
-    return this.currentUser && this.currentUser.type !== UserRole.SIMPLE_USER
-      ? this.currentUser.last_name
-      : 'Admin';
   }
 }

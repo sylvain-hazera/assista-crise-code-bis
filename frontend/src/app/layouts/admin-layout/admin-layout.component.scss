@@ -26,293 +26,9 @@
 // ==================== HEADER ====================
 .admin-header {
   grid-area: header;
-  background: white;
-  border-bottom: 1px solid #e0e0e0;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0 1.5rem;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
   z-index: 999;
   position: sticky;
   top: 0;
-  transition: background-color 0.2s;
-
-  &.demo-mode {
-    background: #fb923c;
-    border-bottom-color: #ea580c;
-
-    .logo-text { color: #431407; }
-    .logo-icon { color: #431407; }
-  }
-
-  .demo-banner {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    font-size: 0.95rem;
-    color: #431407;
-    background: rgba(255, 255, 255, 0.35);
-    padding: 0.35rem 0.9rem;
-    border-radius: 999px;
-
-    .material-icons { font-size: 1.1rem; }
-  }
-
-  .env-toggle {
-    display: flex;
-    align-items: center;
-    gap: 0.35rem;
-    border: 1px solid #d1d5db;
-    background: #f3f4f6;
-    color: #374151;
-    padding: 0.4rem 0.8rem;
-    border-radius: 999px;
-    cursor: pointer;
-    font-size: 0.85rem;
-    font-weight: 600;
-    transition: background-color 0.2s;
-
-    .material-icons { font-size: 1.1rem; }
-
-    &:hover { background: #e5e7eb; }
-
-    &.demo-mode {
-      background: #431407;
-      color: #fff;
-      border-color: #431407;
-
-      &:hover { background: #5c1d0a; }
-    }
-  }
-
-  .header-left {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-
-    .mobile-menu-toggle {
-      display: none;
-      background: none;
-      border: none;
-      cursor: pointer;
-      padding: 0.5rem;
-      border-radius: 4px;
-      transition: background-color 0.3s;
-
-      &:hover {
-        background-color: #f5f5f5;
-      }
-
-      .material-icons {
-        font-size: 24px;
-        color: #333;
-      }
-    }
-
-    .logo {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      font-size: 1.5rem;
-      font-weight: 700;
-
-      .logo-icon {
-        font-size: 2rem;
-        color: #667eea;
-      }
-
-      .logo-text {
-        color: #333;
-      }
-    }
-  }
-
-  .header-right {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-
-    .desktop-toggle {
-      background: none;
-      border: none;
-      cursor: pointer;
-      padding: 0.5rem;
-      border-radius: 4px;
-      transition: background-color 0.3s;
-
-      &:hover {
-        background-color: #f5f5f5;
-      }
-
-      .material-icons {
-        font-size: 24px;
-        color: #666;
-      }
-    }
-
-    .icon-button {
-      position: relative;
-      background: none;
-      border: none;
-      cursor: pointer;
-      padding: 0.5rem;
-      border-radius: 50%;
-      transition: background-color 0.3s;
-
-      &:hover {
-        background-color: #f5f5f5;
-      }
-
-      .material-icons {
-        font-size: 24px;
-        color: #666;
-      }
-
-      &.position-toggle.actif .material-icons {
-        color: #16a34a;
-      }
-    }
-
-    .notification-wrapper,
-    .user-wrapper {
-      position: relative;
-    }
-
-    .user-button {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-      background: none;
-      border: none;
-      cursor: pointer;
-      padding: 0.5rem 1rem;
-      border-radius: 8px;
-      transition: background-color 0.3s;
-
-      &:hover {
-        background-color: #f5f5f5;
-      }
-
-      .company-name {
-        font-weight: 500;
-        color: #333;
-      }
-
-      .user-icon {
-        font-size: 32px;
-        color: #667eea;
-      }
-    }
-  }
-}
-
-// ==================== DROPDOWNS ====================
-.user-dropdown {
-  position: absolute;
-  top: calc(100% + 10px);
-  right: 0;
-  background: white;
-  border-radius: 12px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
-  min-width: 320px;
-  z-index: 1001;
-  animation: slideDown 0.2s ease;
-}
-
-.dropdown-header {
-  padding: 1.5rem;
-  border-bottom: 1px solid #e0e0e0;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-
-  h3 {
-    margin: 0;
-    font-size: 1.1rem;
-    font-weight: 600;
-  }
-
-  .close-btn {
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 0.25rem;
-    border-radius: 4px;
-
-    &:hover {
-      background-color: #f5f5f5;
-    }
-
-    .material-icons {
-      font-size: 20px;
-    }
-  }
-
-  .large-icon {
-    font-size: 48px;
-    color: #667eea;
-  }
-
-  .user-info {
-    flex: 1;
-    margin-left: 1rem;
-
-    .user-name {
-      margin: 0;
-      font-weight: 600;
-      font-size: 1rem;
-    }
-
-    .user-email {
-      margin: 0.25rem 0 0 0;
-      color: #666;
-      font-size: 0.85rem;
-    }
-  }
-}
-
-.dropdown-divider {
-  height: 1px;
-  background-color: #e0e0e0;
-  margin: 0.5rem 0;
-}
-
-.dropdown-item {
-  width: 100%;
-  padding: 0.875rem 1.5rem;
-  border: none;
-  background: none;
-  text-align: left;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  transition: background-color 0.2s;
-  font-size: 0.95rem;
-
-  .material-icons {
-    font-size: 20px;
-    color: #666;
-  }
-
-  &:hover {
-    background-color: #f5f5f5;
-  }
-
-  &.logout {
-    color: #f44336;
-
-    .material-icons {
-      color: #f44336;
-    }
-
-    &:hover {
-      background-color: #ffebee;
-    }
-  }
 }
 
 // ==================== SIDEBAR ====================
@@ -352,17 +68,6 @@
 }
 
 // ==================== ANIMATIONS ====================
-@keyframes slideDown {
-  from {
-    opacity: 0;
-    transform: translateY(-10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
 @keyframes fadeIn {
   from {
     opacity: 0;
@@ -400,38 +105,6 @@
     }
   }
 
-  .admin-header {
-    padding: 0 1rem;
-
-    .header-left {
-      .mobile-menu-toggle {
-        display: block;
-      }
-
-      .logo {
-        font-size: 1.2rem;
-
-        .logo-icon {
-          font-size: 1.5rem;
-        }
-
-        .logo-text {
-          display: none;
-        }
-      }
-    }
-
-    .header-right {
-      .desktop-toggle {
-        display: none;
-      }
-
-      .company-name {
-        display: none;
-      }
-    }
-  }
-
   .admin-sidebar {
     position: fixed;
     left: -250px;
@@ -451,32 +124,9 @@
   .admin-content {
     padding: 0.75rem;
   }
-
-  // Dropdowns responsive
-  .user-dropdown {
-    position: fixed;
-    top: 70px;
-    right: 0.5rem;
-    left: 0.5rem;
-    min-width: auto;
-    max-width: 400px;
-    margin: 0 auto;
-  }
 }
 
 @media (max-width: 480px) {
-  .admin-header {
-    grid-template-rows: 55px 1fr;
-
-    .header-right {
-      gap: 0.5rem;
-
-      .user-button {
-        padding: 0.5rem;
-      }
-    }
-  }
-
   .admin-sidebar {
     width: 220px;
     left: -220px;
@@ -484,11 +134,6 @@
 
   .admin-content {
     padding: 0.5rem;
-  }
-
-  .user-dropdown {
-    min-width: auto;
-    max-width: calc(100vw - 1rem);
   }
 }
 

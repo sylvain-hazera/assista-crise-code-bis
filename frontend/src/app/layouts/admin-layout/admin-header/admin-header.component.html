@@ -1,0 +1,86 @@
+<div class="header-left">
+  @if (isMobile) {
+    <button class="mobile-menu-toggle" (click)="toggleSidebar.emit()" aria-label="Menu">
+      <span class="material-icons">menu</span>
+    </button>
+  }
+
+  <div class="logo">
+    <span class="logo-icon">&#64;</span>
+    <span class="logo-text">Assista Crise</span>
+  </div>
+</div>
+
+@if (isDemo) {
+  <div class="demo-banner">
+    <span class="material-icons">science</span>
+    ZONE DE DÉMONSTRATION
+  </div>
+}
+
+<div class="header-right">
+  <button
+    class="icon-button position-toggle"
+    [class.actif]="suiviPosition.actif"
+    (click)="basculerSuiviPosition()"
+    [title]="suiviPosition.actif ? 'Désactiver le suivi de position permanent' : 'Activer le suivi de position permanent pendant mes missions'">
+    <span class="material-icons">{{ suiviPosition.actif ? 'my_location' : 'location_disabled' }}</span>
+  </button>
+
+  @if (canAccessDemo) {
+    <button
+      class="env-toggle"
+      [class.demo-mode]="isDemo"
+      (click)="toggleEnvironment()"
+      [title]="isDemo ? 'Repasser en production' : 'Passer en zone de démonstration'">
+      <span class="material-icons">{{ isDemo ? 'science' : 'toggle_off' }}</span>
+      {{ isDemo ? 'Démo' : 'Prod' }}
+    </button>
+  }
+
+  @if (!isMobile) {
+    <button class="desktop-toggle" (click)="toggleSidebar.emit()" aria-label="Réduire ou étendre le menu">
+      <span class="material-icons">{{ sidebarCollapsed ? 'menu_open' : 'menu' }}</span>
+    </button>
+  }
+
+  <app-admin-notifications
+    class="notification-wrapper"
+    [ouvert]="showNotifications"
+    (ouvertChange)="onNotificationsToggle($event)">
+  </app-admin-notifications>
+
+  <div class="user-wrapper">
+    <button class="user-button" (click)="toggleUserMenu()">
+      <span class="company-name">{{ companyName }}</span>
+      <span class="material-icons user-icon">account_circle</span>
+    </button>
+
+    @if (showUserMenu) {
+      <div class="user-dropdown">
+        <div class="dropdown-header">
+          <span class="material-icons large-icon">account_circle</span>
+          <div class="user-info">
+            <p class="user-name">{{ currentUser?.last_name }}</p>
+            <p class="user-email">{{ currentUser?.email }}</p>
+          </div>
+        </div>
+        <div class="dropdown-divider"></div>
+        <button class="dropdown-item" (click)="goToHome()">
+          <span class="material-icons">home</span>
+          Accueil grand public
+        </button>
+        <div class="dropdown-divider"></div>
+        <button class="dropdown-item" (click)="goToSettings()">
+          <span class="material-icons">settings</span>
+          Paramètres
+        </button>
+        <div class="dropdown-divider"></div>
+        <button class="dropdown-item logout" (click)="logout()">
+          <span class="material-icons">logout</span>
+          Déconnexion
+        </button>
+      </div>
+    }
+  </div>
+</div>

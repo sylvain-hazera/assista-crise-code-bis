@@ -58,7 +58,7 @@ Les tests Karma ont besoin d'un Chrome : lancez-les sur le poste, pas dans le co
 | `app/public/` | pages publiques : accueil, carte, formulaires (demande, offre, déclaration), suivi de dossier, paramètres, pages légales |
 | `app/admin/` | espace d'administration (`/admin`) : une page par dossier (crises, équipes, institutions, signalements, radio, satellites…) |
 | `app/pages/` | pages connectées hors admin : mes interventions, mon équipe, hébergement, recherche de personnes, dégâts |
-| `app/layouts/` | coquilles publique et admin, avec leurs morceaux : `public-layout/` (`header/`, `footer/`, `geolocation-popup/`), `admin-layout/` (menu : `admin-nav.config.ts`, `admin-sidebar/` ; cloche : `admin-notifications/`) |
+| `app/layouts/` | coquilles publique et admin, avec leurs morceaux : `public-layout/` (`header/`, `footer/`, `geolocation-popup/`), `admin-layout/` (menu : `admin-nav.config.ts`, `admin-sidebar/` ; en-tête : `admin-header/`, avec la cloche `admin-header/admin-notifications/`) |
 | `app/auth/` | connexion, inscription, `AuthService` (session, rôles, zone PROD/DEMO), intercepteurs (JWT, `X-Environment`) |
 | `app/core/` | gardes de routes (`guards/`), intercepteurs, pipes et services transverses |
 | `app/services/` | un service par ressource d'API (`crisis.service.ts`, `team.service.ts`…) |

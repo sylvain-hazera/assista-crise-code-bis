@@ -537,15 +537,17 @@ Deux notions de rôle coexistent, à ne pas confondre :
   `EN_COURS` (règle appliquée par le serveur). Pour un visiteur non institutionnel, les
   positions des demandes, offres et signalements sont légèrement bruitées.
 
-### 6.4 Menu de l'administration
+### 6.4 Mise en page et menu de l'administration
 
 ```
 layouts/admin-layout/
-├── admin-layout.component.*     coquille : grille, en-tête (PROD/DEMO, suivi de position,
-│                                menu utilisateur), affichage mobile, <router-outlet>
+├── admin-layout.component.*     coquille : grille, affichage mobile, fonds semi-transparents,
+│                                rafraîchissement du profil, <router-outlet>
 ├── admin-nav.config.ts          entrées et cadres du menu : données pures
 ├── admin-sidebar/               menu latéral : cadres repliables, filtrage par visibilité
-└── admin-notifications/         cloche : polling, liste, notifications navigateur
+└── admin-header/                logo, bannière démo, suivi de position, bascule PROD/DEMO,
+    │                            menu utilisateur
+    └── admin-notifications/     cloche : polling, liste, notifications navigateur
 ```
 
 **Ajouter une page au menu = ajouter une entrée dans `admin-nav.config.ts`** (icône, libellé,
@@ -563,13 +565,17 @@ ne protège rien : la route doit avoir la garde correspondante. Un test de la sp
 cette route porte la garde associée à sa `visibilite`.
 
 La cloche interroge un résumé léger toutes les 20 s (`pollWhileVisible`) et ne recharge la
-liste que s'il a changé. Son état ouvert/fermé appartient au layout, qui garantit qu'une seule
-liste déroulante est ouverte à la fois.
+liste que s'il a changé. L'en-tête arbitre ses deux listes déroulantes (notifications, menu
+utilisateur : une seule ouverte à la fois) et signale au layout qu'une liste est ouverte
+(`menusOuvertsChange`). Le layout affiche alors le fond semi-transparent et, au clic, appelle
+`fermerMenus()` de l'en-tête. Ce fond reste dans le layout : placé dans l'en-tête (`sticky`,
+z-index 999), il recouvrirait les boutons de l'en-tête lui-même.
 
 Styles : ce qui place un bloc dans la grille (`grid-area`, position fixe sur mobile) reste dans
 `admin-layout.component.scss`, car il s'applique à la balise du composant enfant ; l'intérieur
 de chaque bloc est stylé dans le composant lui-même (encapsulation Angular). Le mode réduit
-passe par la classe `collapsed` posée sur `<app-admin-sidebar>` (`:host(.collapsed)`).
+passe par la classe `collapsed` posée sur `<app-admin-sidebar>` (`:host(.collapsed)`), la zone
+DEMO par `demo-mode` sur `<app-admin-header>`.
 
 ### 6.5 Simulation d'inondation (page)
 

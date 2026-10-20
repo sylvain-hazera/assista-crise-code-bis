@@ -1,13 +1,13 @@
 import { Component, EventEmitter, Input, OnDestroy, OnInit, Output } from '@angular/core';
 import { Router } from '@angular/router';
 import { Subscription } from 'rxjs';
-import { NotificationService } from '../../../services/notification.service';
-import { AppNotification, ResumeNotifications } from '../../../shared/models/notification.model';
-import { pollWhileVisible } from '../../../shared/utils/polling.util';
+import { NotificationService } from '../../../../services/notification.service';
+import { AppNotification, ResumeNotifications } from '../../../../shared/models/notification.model';
+import { pollWhileVisible } from '../../../../shared/utils/polling.util';
 import {
   afficherNotificationNavigateur,
   demanderPermissionNotificationNavigateur,
-} from '../../../shared/utils/browser-notification.util';
+} from '../../../../shared/utils/browser-notification.util';
 
 // Polling de la cloche, suspendu quand l'onglet est en arrière-plan (pollWhileVisible).
 const INTERVALLE_POLLING_NOTIFICATIONS_MS = 20_000;

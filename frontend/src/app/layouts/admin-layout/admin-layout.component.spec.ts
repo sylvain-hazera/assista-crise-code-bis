@@ -25,13 +25,6 @@ describe('AdminLayoutComponent', () => {
     expect(component).toBeTruthy();
   });
 
-  it('ouvrir les notifications ferme le menu utilisateur', () => {
-    component.showUserMenu = true;
-    component.onNotificationsToggle(true);
-    expect(component.showNotifications).toBeTrue();
-    expect(component.showUserMenu).toBeFalse();
-  });
-
   it('les styles du layout et du menu s\'appliquent à travers les composants enfants', () => {
     const sidebar: HTMLElement = fixture.nativeElement.querySelector('app-admin-sidebar');
     expect(getComputedStyle(sidebar).display).toBe('flex');
@@ -45,10 +38,33 @@ describe('AdminLayoutComponent', () => {
     expect(getComputedStyle(label).overflow).toBe('hidden'); // opacity est animée (transition)
   });
 
-  it('ouvrir le menu utilisateur ferme les notifications', () => {
-    component.showNotifications = true;
-    component.toggleUserMenu();
-    expect(component.showUserMenu).toBeTrue();
-    expect(component.showNotifications).toBeFalse();
+  it('l\'en-tête est placé dans la grille et stylé par son propre composant', () => {
+    const header: HTMLElement = fixture.nativeElement.querySelector('app-admin-header');
+    const style = getComputedStyle(header);
+    expect(style.gridArea).toContain('header');
+    expect(style.position).toBe('sticky');
+    expect(style.display).toBe('flex');
+  });
+
+  it('une liste ouverte dans l\'en-tête affiche le fond, qui la referme au clic', () => {
+    const userButton: HTMLElement = fixture.nativeElement.querySelector('.user-button');
+    userButton.click();
+    fixture.detectChanges();
+    const fond: HTMLElement = fixture.nativeElement.querySelector('.dropdown-overlay');
+    expect(fond).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('.user-dropdown')).not.toBeNull();
+
+    fond.click();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.dropdown-overlay')).toBeNull();
+    expect(fixture.nativeElement.querySelector('.user-dropdown')).toBeNull();
+  });
+
+  it('le bouton de l\'en-tête réduit le menu latéral sur desktop', () => {
+    component.isMobile = false;
+    fixture.detectChanges();
+    fixture.nativeElement.querySelector('.desktop-toggle').click();
+    fixture.detectChanges();
+    expect(component.sidebarCollapsed).toBeTrue();
   });
 });
