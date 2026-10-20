@@ -514,6 +514,8 @@ tr.row-desactive {
       font-size: .85rem;
       cursor: pointer;
       &:hover { background: #f3f4f6; }
+      &.disabled { color: var(--muted); cursor: not-allowed; &:hover { background: none; } }
+      .team-option-mission { display: block; font-size: .75rem; color: var(--muted); }
     }
   }
 }

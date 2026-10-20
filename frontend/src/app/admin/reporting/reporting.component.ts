@@ -202,6 +202,10 @@ export class ReportingComponent implements OnInit, OnDestroy {
   showBulkInformationTeamResults = false;
 
   showBulkOfferModal   = false;
+  bulkOfferMode: 'new' | 'existing' = 'new';
+  bulkOfferTeamId: string | null = null;
+  bulkOfferTeamQuery = '';
+  showBulkOfferTeamResults = false;
   bulkTeamName          = '';
   bulkRegulateurId: string | null = null;
   bulkRegulateurQuery    = '';
@@ -992,9 +996,12 @@ export class ReportingComponent implements OnInit, OnDestroy {
     });
   }
 
-  // ── Barre groupée offres : créer une équipe + assigner un régulateur ────────
+  // ── Barre groupée offres : nouvelle équipe (+ régulateur) ou équipe existante ─
 
   openBulkOfferModal(): void {
+    this.bulkOfferMode = 'new';
+    this.bulkOfferTeamId = null;
+    this.bulkOfferTeamQuery = '';
     // Pré-remplit le nom d'équipe avec l'organisation quand toutes les offres sélectionnées
     // viennent d'un même dépôt groupé — reste modifiable, juste un gain de temps.
     const selected = Array.from(this.selectedOfferRowsMap.values());
@@ -1026,6 +1033,65 @@ export class ReportingComponent implements OnInit, OnDestroy {
 
   hideBulkRegulateurResultsDelayed(): void {
     setTimeout(() => this.showBulkRegulateurResults = false, 150);
+  }
+
+  /** Équipes existantes proposées : seulement celles que l'utilisateur peut gérer (son
+   * institution ou déléguée, voir TeamSerializer.peut_gerer) -- la liste des équipes couvre
+   * toute sa zone, le backend refuserait les autres. */
+  get filteredBulkOfferTeams(): Team[] {
+    const q = this.bulkOfferTeamQuery.trim().toLowerCase();
+    return this.teams
+      .filter(t => t.peut_gerer && t.actif !== false)
+      .filter(t => !q || t.name.toLowerCase().includes(q))
+      .sort((a, b) => Number(!!b.mission_active) - Number(!!a.mission_active) || a.name.localeCompare(b.name));
+  }
+
+  get bulkOfferTeam(): Team | undefined {
+    return this.teams.find(t => t.id === this.bulkOfferTeamId);
+  }
+
+  selectBulkOfferTeam(t: Team): void {
+    if (!t.mission_active) return;   // assigner-ressources exige une mission active
+    this.bulkOfferTeamId = t.id!;
+    this.bulkOfferTeamQuery = teamDisplayName(t);
+    this.showBulkOfferTeamResults = false;
+  }
+
+  onBulkOfferTeamQueryChange(): void {
+    this.bulkOfferTeamId = null;
+    this.showBulkOfferTeamResults = true;
+  }
+
+  hideBulkOfferTeamResultsDelayed(): void {
+    setTimeout(() => this.showBulkOfferTeamResults = false, 150);
+  }
+
+  get bulkOfferSubmittable(): boolean {
+    return this.bulkOfferMode === 'new' ? !!this.bulkTeamName.trim() : !!this.bulkOfferTeamId;
+  }
+
+  submitBulkOffer(): void {
+    if (this.bulkOfferMode === 'existing') this.submitBulkOfferExistingTeam();
+    else this.submitBulkOfferTeam();
+  }
+
+  submitBulkOfferExistingTeam(): void {
+    const team = this.bulkOfferTeam;
+    if (!team?.id || this.selectedOfferIds.size === 0) return;
+    this.teamService.assignerRessources(team.id, [...this.selectedOfferIds]).subscribe({
+      next: ({ team: updated, ajoutees, deja_affectees }) => {
+        const idx = this.teams.findIndex(t => t.id === updated.id);
+        if (idx !== -1) this.teams[idx] = updated;
+        let message = `${ajoutees} offre(s) affectée(s) à l'équipe « ${teamDisplayName(updated)} » (mission : ${updated.mission_active_titre}).`;
+        if (deja_affectees > 0) message += ` ${deja_affectees} déjà dans cette équipe.`;
+        this.showSuccess(message);
+        this.selectedOfferIds.clear();
+        this.selectedOfferRowsMap.clear();
+        this.showBulkOfferModal = false;
+        this.load();   // statut des offres passé à « Indisponible »
+      },
+      error: (err) => this.showError(err?.error?.error || "Impossible d'affecter ces offres à l'équipe."),
+    });
   }
 
   submitBulkOfferTeam(): void {

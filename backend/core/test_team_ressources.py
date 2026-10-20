@@ -435,3 +435,104 @@ class TestRessourcesMobilisees:
 
         ligne = next(r for r in response.data if r['type'] == 'personne' and r['equipe_id'] == str(team_a.id))
         assert ligne['user_id'] == str(user.id)
+
+
+@pytest.mark.django_db
+class TestAssignerRessources:
+    """Affectation groupée d'offres à une équipe existante (page Signalements)."""
+
+    def _offre(self, offer_type, n):
+        return Offer.objects.create(
+            title=f'Offre groupée {n}', first_name_offer='B', last_name_offer=f'Énévole{n}',
+            email_offer=f'benevole-groupe-{n}@test.fr', status='DISPONIBLE', offer_type=offer_type,
+        )
+
+    def _avec_mission(self, client, team):
+        client.post(reverse('team-definir-mission', args=[team.id]), {'titre': 'Hébergement'}, format='json')
+        team.refresh_from_db()
+
+    def test_assigns_all_selected_offers(self, mairie_client, team_a, offer_type):
+        client, _ = mairie_client
+        self._avec_mission(client, team_a)
+        offres = [self._offre(offer_type, n) for n in range(3)]
+
+        response = client.post(
+            reverse('team-assigner-ressources', args=[team_a.id]),
+            {'offer_ids': [str(o.id) for o in offres]}, format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['ajoutees'] == 3
+        assert response.data['deja_affectees'] == 0
+        assert team_a.assigned_offers.count() == 3
+        assert team_a.members.count() == 3
+        for o in offres:
+            o.refresh_from_db()
+            assert o.status == 'INDISPONIBLE'
+            assert o.mission_id == team_a.mission_active_id
+
+    def test_skips_offers_already_in_team(self, mairie_client, team_a, offer_type):
+        client, _ = mairie_client
+        self._avec_mission(client, team_a)
+        deja, nouvelle = self._offre(offer_type, 1), self._offre(offer_type, 2)
+        client.post(reverse('team-assigner-ressource', args=[team_a.id]), {'offer_id': str(deja.id)}, format='json')
+
+        response = client.post(
+            reverse('team-assigner-ressources', args=[team_a.id]),
+            {'offer_ids': [str(deja.id), str(nouvelle.id)]}, format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['ajoutees'] == 1
+        assert response.data['deja_affectees'] == 1
+        assert team_a.assigned_offers.count() == 2
+
+    def test_requires_active_mission(self, mairie_client, team_a, offer):
+        client, _ = mairie_client
+        response = client.post(
+            reverse('team-assigner-ressources', args=[team_a.id]), {'offer_ids': [str(offer.id)]}, format='json',
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert not team_a.assigned_offers.exists()
+
+    def test_rejects_team_outside_own_institution(self, mairie_client, offer):
+        client, _ = mairie_client
+        autre = Team.objects.create(name='Équipe autre mairie', institution=_make_institution(nom='Autre mairie'))
+        response = client.post(
+            reverse('team-assigner-ressources', args=[autre.id]), {'offer_ids': [str(offer.id)]}, format='json',
+        )
+        assert response.status_code in (status.HTTP_403_FORBIDDEN, status.HTTP_404_NOT_FOUND)
+        assert not autre.assigned_offers.exists()
+
+    def test_rejects_unknown_or_invalid_offer_ids(self, mairie_client, team_a, offer):
+        client, _ = mairie_client
+        self._avec_mission(client, team_a)
+        for ids in ([str(offer.id), str(uuid.uuid4())], ['pas-un-uuid'], []):
+            response = client.post(
+                reverse('team-assigner-ressources', args=[team_a.id]), {'offer_ids': ids}, format='json',
+            )
+            assert response.status_code == status.HTTP_400_BAD_REQUEST, ids
+        assert not team_a.assigned_offers.exists()
+
+
+@pytest.mark.django_db
+class TestPeutGererEquipe:
+
+    def test_own_and_delegated_teams_are_manageable_others_not(self, mairie_client, institution_a):
+        client, _ = mairie_client
+        autre = _make_institution(nom='Autre mairie peut_gerer')
+        propre = Team.objects.create(name='Propre', institution=institution_a)
+        deleguee = Team.objects.create(name='Déléguée', institution=autre, institution_delegataire=institution_a)
+        etrangere = Team.objects.create(name='Étrangère', institution=autre)
+
+        for team, attendu in ((propre, True), (deleguee, True), (etrangere, False)):
+            response = client.get(reverse('team-detail', args=[team.id]))
+            assert response.status_code == status.HTTP_200_OK
+            assert response.data['peut_gerer'] is attendu, team.name
+
+    def test_admin_can_manage_any_team(self, create_user, team_a):
+        admin = create_user(username='admin-peut-gerer@test.fr', email='admin-peut-gerer@test.fr', type='ADMIN')
+        client = APIClient()
+        client.force_authenticate(user=admin)
+        response = client.get(reverse('team-detail', args=[team_a.id]))
+        assert response.data['peut_gerer'] is True

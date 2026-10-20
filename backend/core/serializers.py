@@ -1493,6 +1493,32 @@ class TeamSerializer(serializers.ModelSerializer):
     salon_matrix_id = serializers.CharField(source='salon_matrix.id', read_only=True, default=None)
     salon_matrix_room_id = serializers.CharField(source='salon_matrix.room_id', read_only=True, default=None)
 
+    # L'appelant peut-il gérer cette équipe (ressources, mission, dossiers) ? La liste des
+    # équipes couvre toute sa zone, mais seules celles de son institution (ou déléguées à
+    # elle) acceptent ses affectations -- ex. « Affecter à une équipe existante » sur la page
+    # Signalements n'en propose pas d'autres.
+    peut_gerer = serializers.SerializerMethodField()
+
+    def get_peut_gerer(self, obj):
+        # Même règle que _appartient_a_equipe (core/views.py), avec les institutions de
+        # l'appelant lues une seule fois pour toute la liste (contexte partagé).
+        request = self.context.get('request')
+        if request is None or not request.user.is_authenticated:
+            return False
+        if 'mes_institutions_equipe' not in self.context:
+            if effective_role_or_none(request) == UserRole.ADMINISTRATOR:
+                self.context['mes_institutions_equipe'] = None
+            else:
+                self.context['mes_institutions_equipe'] = set(ContactInstitution.objects.filter(
+                    utilisateur=request.user, actif=True,
+                ).values_list('institution_id', flat=True))
+        mes_institutions = self.context['mes_institutions_equipe']
+        if mes_institutions is None:
+            return True
+        return obj.institution_id in mes_institutions or (
+            obj.institution_delegataire_id is not None and obj.institution_delegataire_id in mes_institutions
+        )
+
     def get_canal_meshcore_provisionne(self, obj):
         canal = getattr(obj, 'canal_meshcore', None)
         return canal is not None and canal.canal_idx is not None
@@ -1529,6 +1555,7 @@ class TeamSerializer(serializers.ModelSerializer):
             'member_ids',
             'members_info',
             'vehicules_count',
+            'peut_gerer',
             'assigned_crisis_ids',
             'assigned_offer_ids',
             'assigned_request_ids',

@@ -26,6 +26,7 @@ from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from urllib.parse import quote
 from django_filters import rest_framework as filters
 from rest_framework.filters import OrderingFilter
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import IntegrityError, transaction
 from django.db.models import Q, F, Prefetch, Count, Max
 from django.db.models.functions import TruncDate
@@ -4307,6 +4308,51 @@ def _appartient_a_equipe(request, team) -> bool:
     )
 
 
+def _affecter_ressource(request, team, offer):
+    """Ajoute une offre aux ressources de l'équipe, rattachée à sa mission active : commun à
+    TeamViewSet.assigner_ressource (une offre) et assigner_ressources (sélection de la page
+    Signalements). L'appelant a déjà vérifié le périmètre et la mission active."""
+    # Une ressource retenue (matériel avec ou sans l'offreur, ou bénévolat) ne doit plus
+    # apparaître comme disponible dans le tableau des offres/bénévoles pendant qu'un
+    # régulateur cherche des moyens — sinon deux équipes pouvaient la retenir en même
+    # temps. Symétrique avec TeamViewSet.retirer_ressource, qui la repasse disponible.
+    offer.mission = team.mission_active
+    offer.status = Status.UNAVAILABLE
+    offer.save(update_fields=['mission', 'status'])
+    team.assigned_offers.add(offer)
+    # N'ajoute comme membre que si la présence physique n'est pas explicitement exclue
+    # (ex: un simple prêteur de chambre) — None (offres antérieures à ce champ) garde
+    # l'ancien comportement, seul False l'exclut désormais. offer.author_id seul ne
+    # suffisait pas : la quasi-totalité des offres viennent du formulaire public
+    # (propose-help-form), soumis SANS compte — author restait alors toujours None,
+    # donc aucun bénévole n'était jamais ajouté comme membre en pratique (personne seule,
+    # avec matériel, ou matériel seul : le compteur "Membres" restait à 0 dans tous les
+    # cas). resolve_or_invite_benevole (déjà utilisé par PointOperationnelViewSet.
+    # inviter_benevole) résout aussi via email_offer/first_name_offer/last_name_offer,
+    # créant un compte à la volée si besoin — même principe que resolve_or_invite_demandeur.
+    if offer.presence_physique is not False:
+        benevole, _created = resolve_or_invite_benevole(offer, request)
+        if benevole:
+            team.members.add(benevole)
+
+    # Un engagement neuf à chaque affectation — jamais partagé entre deux affectations
+    # successives, comme offer.mission (une réaffectation ailleurs repart de zéro).
+    EngagementRessource.objects.filter(offer=offer).delete()
+    engagement = EngagementRessource.objects.create(
+        offer=offer, team=team, token_confirmation=secrets.token_urlsafe(32),
+        environment=get_active_environment(request),
+    )
+    send_engagement_confirmation_email(request, engagement)
+
+    audit_log(
+        request=request,
+        action_code="AFFECTATION",
+        objet_type="Team",
+        objet_id=team.id,
+        commentaire=f"Ressource ajoutée : « {offer.title} » (mission : {team.mission_active.titre})",
+    )
+
+
 def _assurer_implication_impliquee(request, institution_id, crise):
     """Garantit qu'une institution assignée à une crise (équipe rattachée via
     assigner_crise/definir_mission) y a au moins un statut officiel — IMPLIQUE, toujours
@@ -7008,47 +7054,53 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         except (Offer.DoesNotExist, ValueError, TypeError):
             return Response({"error": "Offre introuvable."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Une ressource retenue (matériel avec ou sans l'offreur, ou bénévolat) ne doit plus
-        # apparaître comme disponible dans le tableau des offres/bénévoles pendant qu'un
-        # régulateur cherche des moyens — sinon deux équipes pouvaient la retenir en même
-        # temps. Symétrique avec retirer_ressource ci-dessous, qui la repasse disponible.
-        offer.mission = team.mission_active
-        offer.status = Status.UNAVAILABLE
-        offer.save(update_fields=['mission', 'status'])
-        team.assigned_offers.add(offer)
-        # N'ajoute comme membre que si la présence physique n'est pas explicitement exclue
-        # (ex: un simple prêteur de chambre) — None (offres antérieures à ce champ) garde
-        # l'ancien comportement, seul False l'exclut désormais. offer.author_id seul ne
-        # suffisait pas : la quasi-totalité des offres viennent du formulaire public
-        # (propose-help-form), soumis SANS compte — author restait alors toujours None,
-        # donc aucun bénévole n'était jamais ajouté comme membre en pratique (personne seule,
-        # avec matériel, ou matériel seul : le compteur "Membres" restait à 0 dans tous les
-        # cas). resolve_or_invite_benevole (déjà utilisé par PointOperationnelViewSet.
-        # inviter_benevole) résout aussi via email_offer/first_name_offer/last_name_offer,
-        # créant un compte à la volée si besoin — même principe que resolve_or_invite_demandeur.
-        if offer.presence_physique is not False:
-            benevole, _created = resolve_or_invite_benevole(offer, request)
-            if benevole:
-                team.members.add(benevole)
-
-        # Un engagement neuf à chaque affectation — jamais partagé entre deux affectations
-        # successives, comme offer.mission (une réaffectation ailleurs repart de zéro).
-        EngagementRessource.objects.filter(offer=offer).delete()
-        engagement = EngagementRessource.objects.create(
-            offer=offer, team=team, token_confirmation=secrets.token_urlsafe(32),
-            environment=get_active_environment(request),
-        )
-        send_engagement_confirmation_email(request, engagement)
-
-        audit_log(
-            request=request,
-            action_code="AFFECTATION",
-            objet_type="Team",
-            objet_id=team.id,
-            commentaire=f"Ressource ajoutée : « {offer.title} » (mission : {team.mission_active.titre})",
-        )
+        _affecter_ressource(request, team, offer)
 
         return Response(TeamSerializer(team, context=self.get_serializer_context()).data)
+
+    @action(detail=True, methods=['post'], url_path='assigner-ressources')
+    def assigner_ressources(self, request, pk=None):
+        """Affecte plusieurs offres d'un coup à cette équipe existante (page Signalements,
+        « Affecter à une équipe existante », demande utilisateur du 20/10/2026) : mêmes
+        règles qu'assigner_ressource, offre par offre. Les offres déjà affectées à l'équipe
+        sont ignorées (pas de second email de confirmation)."""
+        team = self.get_object()
+        if not _appartient_a_equipe(request, team):
+            return Response(
+                {"error": "Vous ne pouvez affecter des ressources qu'aux équipes de votre institution (ou de l'institution déléguée)."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if not team.mission_active_id:
+            return Response(
+                {"error": "Définissez d'abord la mission de l'équipe avant d'y affecter des ressources."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        offer_ids = request.data.get('offer_ids') or []
+        if not isinstance(offer_ids, list) or not offer_ids:
+            return Response({"error": "Aucune offre sélectionnée."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            offres = list(Offer.objects.filter(pk__in=offer_ids))
+        except (ValueError, DjangoValidationError):
+            return Response({"error": "Identifiant d'offre invalide."}, status=status.HTTP_400_BAD_REQUEST)
+        if len(offres) != len(set(map(str, offer_ids))):
+            return Response({"error": "Une ou plusieurs offres sont introuvables."}, status=status.HTTP_400_BAD_REQUEST)
+
+        deja_affectees = set(team.assigned_offers.filter(pk__in=[o.pk for o in offres]).values_list('pk', flat=True))
+        ajoutees = 0
+        with transaction.atomic():
+            for offer in offres:
+                if offer.pk in deja_affectees:
+                    continue
+                _affecter_ressource(request, team, offer)
+                ajoutees += 1
+
+        team.refresh_from_db()
+        return Response({
+            "team": TeamSerializer(team, context=self.get_serializer_context()).data,
+            "ajoutees": ajoutees,
+            "deja_affectees": len(deja_affectees),
+        })
 
     @action(detail=True, methods=['post'], url_path='retirer-ressource')
     def retirer_ressource(self, request, pk=None):
