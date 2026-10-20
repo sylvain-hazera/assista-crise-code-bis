@@ -25,10 +25,12 @@ géométrique non plafonnée) dépasserait largement le timeout gunicorn. Seule
 (`SimulationInondationView`) ne fait que lire le cache via `resultat_en_cache` ou déclencher la
 tâche, jamais calculer elle-même.
 """
+import fcntl
 import json
 import math
 import time
 import urllib.parse
+import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -117,6 +119,36 @@ def _grille_points_bbox(bbox, pas_metres: int):
     return lons, lats
 
 
+# Débit maximal vers l'API d'altimétrie IGN, partagé par tous les processus du conteneur (les
+# tâches paliers et ruissellement tournent en même temps) : mesuré le 20/10/2026, l'IGN renvoie
+# 429 (Retry-After) dès ~5 requêtes/s par IP, 3/s passent sans refus. Avant cette limite, 8 lots
+# parallèles se faisaient refuser à ~90 % et toute simulation échouait (grille à ~10 %).
+IGN_REQUETES_PAR_SECONDE = 2.5
+_FICHIER_DEBIT_IGN = "/tmp/assista-ign-debit"
+IGN_TENTATIVES_429 = 6
+
+
+def _attendre_creneau_ign():
+    """Réserve le prochain créneau d'appel IGN (verrou fichier : vaut entre processus Celery)."""
+    intervalle = 1 / IGN_REQUETES_PAR_SECONDE
+    with open(_FICHIER_DEBIT_IGN, "a+") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        f.seek(0)
+        try:
+            prochain = float(f.read() or 0)
+        except ValueError:
+            prochain = 0.0
+        maintenant = time.time()
+        creneau = max(maintenant, prochain)
+        f.seek(0)
+        f.truncate()
+        f.write(str(creneau + intervalle))
+        f.flush()
+        fcntl.flock(f, fcntl.LOCK_UN)
+    if creneau > maintenant:
+        time.sleep(creneau - maintenant)
+
+
 def _altitudes_lot(lons: list, lats: list, debut: int):
     lon_str = "|".join(str(v) for v in lons)
     lat_str = "|".join(str(v) for v in lats)
@@ -124,7 +156,24 @@ def _altitudes_lot(lons: list, lats: list, debut: int):
         "https://data.geopf.fr/altimetrie/1.0/calcul/alti/rest/elevation.json"
         f"?lon={lon_str}&lat={lat_str}&resource=ign_rge_alti_wld&indent=false"
     )
-    data = _fetch_json(url)
+    data = None
+    for _ in range(IGN_TENTATIVES_429):
+        _attendre_creneau_ign()
+        try:
+            with urllib.request.urlopen(url, timeout=15) as response:
+                data = json.loads(response.read().decode("utf-8"))
+            break
+        except urllib.error.HTTPError as exc:
+            if exc.code != 429:
+                break
+            # trop de requêtes : attendre ce que l'IGN demande, puis réessayer ce lot
+            try:
+                attente = float(exc.headers.get("Retry-After") or 2)
+            except ValueError:
+                attente = 2
+            time.sleep(min(max(attente, 1), 10))
+        except Exception:
+            break
     resultat = {}
     if not data:
         return resultat
@@ -135,7 +184,7 @@ def _altitudes_lot(lons: list, lats: list, debut: int):
     return resultat
 
 
-def _altitudes_ign_par_lots(lons: list, lats: list, taille_lot: int = 200, max_workers: int = 8,
+def _altitudes_ign_par_lots(lons: list, lats: list, taille_lot: int = 200, max_workers: int = 4,
                             tentatives: int = 3) -> list:
     """Altitude IGN (RGE ALTI, API https://data.geopf.fr/altimetrie) pour une liste de points,
     par lots parallélisés (même patron que habitations.scanner_ban_commune -- mesuré en
@@ -154,7 +203,7 @@ def _altitudes_ign_par_lots(lons: list, lats: list, taille_lot: int = 200, max_w
         if tentative:
             time.sleep(2 * tentative)
         echoues = []
-        with ThreadPoolExecutor(max_workers=max_workers if tentative == 0 else 4) as executor:
+        with ThreadPoolExecutor(max_workers=max_workers if tentative == 0 else 2) as executor:
             futures = {
                 executor.submit(_altitudes_lot, lons[debut:fin], lats[debut:fin], debut): (debut, fin)
                 for debut, fin in a_faire
@@ -193,6 +242,20 @@ def grille_altitude_commune(commune_code: str, pas_metres: int = PAS_METRES_PAR_
         existante = GrilleAltimetrieCommune.objects.filter(commune_code=commune_code, environment=environment).first()
         if existante is not None:
             return existante.points
+
+    # Les tâches paliers et ruissellement demandent la même grille en même temps : la seconde
+    # attend la première puis lit le cache, au lieu de doubler les appels IGN (débit limité).
+    with open(f"/tmp/assista-grille-{commune_code}-{pas_metres}.lock", "a") as verrou:
+        fcntl.flock(verrou, fcntl.LOCK_EX)
+        if not forcer:
+            existante = GrilleAltimetrieCommune.objects.filter(commune_code=commune_code, environment=environment).first()
+            if existante is not None:
+                return existante.points
+        return _calculer_grille_altitude(commune_code, pas_metres, forcer, environment)
+
+
+def _calculer_grille_altitude(commune_code: str, pas_metres: int, forcer: bool, environment):
+    from .models import GrilleAltimetrieCommune
 
     bbox = _bbox_commune(commune_code)
     if bbox is None:

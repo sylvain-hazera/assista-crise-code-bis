@@ -4978,7 +4978,10 @@ def _lancer_ou_consulter_tache(request, commune_code, type_tache, lire_cache_fn,
     ).first()
     if tache is not None and tache.statut == StatutTacheInondation.EN_COURS and not forcer:
         return Response({"statut": StatutTacheInondation.EN_COURS}, status=status.HTTP_202_ACCEPTED)
-    if tache is not None and tache.statut == StatutTacheInondation.ECHEC and not forcer:
+    # Un échec n'est rendu tel quel qu'une minute : au-delà, rouvrir la commune relance le calcul
+    # (avant, un échec passager de l'IGN restait affiché pour toujours sans « forcer »).
+    if (tache is not None and tache.statut == StatutTacheInondation.ECHEC and not forcer
+            and tache.date_fin and timezone.now() - tache.date_fin < datetime.timedelta(minutes=1)):
         return Response(
             {"statut": StatutTacheInondation.ECHEC, "erreur": tache.erreur},
             status=status.HTTP_502_BAD_GATEWAY,

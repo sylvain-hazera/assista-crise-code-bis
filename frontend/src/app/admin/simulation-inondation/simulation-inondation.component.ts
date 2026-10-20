@@ -165,9 +165,9 @@ export class SimulationInondationComponent implements AfterViewInit, OnDestroy {
           this.niveauCourant = resultat.niveaux?.[0] ?? 0;
           this.afficherSurCarte();
         },
-        error: () => {
+        error: (err) => {
           this.enCours = false;
-          this.erreur = "Échec de la simulation pour cette commune. Une nouvelle tentative est possible ; contacter le support si le problème persiste.";
+          this.erreur = err?.error?.erreur || "Échec de la simulation pour cette commune. Une nouvelle tentative est possible ; contacter le support si le problème persiste.";
         },
       });
   }
@@ -196,9 +196,9 @@ export class SimulationInondationComponent implements AfterViewInit, OnDestroy {
           }
           this.rafraichirCoucheAdresses();
         },
-        error: () => {
+        error: (err) => {
           this.adressesEnCours = false;
-          this.adressesErreur = "Échec du chargement des adresses. Une nouvelle tentative est possible.";
+          this.adressesErreur = err?.error?.erreur || "Échec du chargement des adresses. Une nouvelle tentative est possible.";
         },
       });
   }
@@ -240,9 +240,9 @@ export class SimulationInondationComponent implements AfterViewInit, OnDestroy {
           }
           this.afficherRuissellementSurCarte();
         },
-        error: () => {
+        error: (err) => {
           this.ruissellementEnCours = false;
-          this.ruissellementErreur = "Échec du calcul de ruissellement. Une nouvelle tentative est possible.";
+          this.ruissellementErreur = err?.error?.erreur || "Échec du calcul de ruissellement. Une nouvelle tentative est possible.";
         },
       });
   }

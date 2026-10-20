@@ -73,3 +73,43 @@ class TestAccesSimulation:
     def test_utilisateur_non_institutionnel_refuse(self, create_user):
         simple = create_user(username="simple-simu@test.fr", email="simple-simu@test.fr", type="UTIL_SIMPLE")
         assert peut_simuler_commune(_requete(simple), "42183") is False
+
+
+@pytest.mark.django_db
+class TestRelanceApresEchec:
+    """Un échec (IGN indisponible) n'est plus collé à la commune : passé une minute, rouvrir la
+    commune relance le calcul au lieu de renvoyer la même erreur indéfiniment."""
+
+    def _appel(self, admin):
+        from unittest.mock import patch
+        from rest_framework.test import APIClient
+        client = APIClient()
+        client.force_authenticate(admin)
+        with patch("core.tasks.calculer_paliers_task.delay") as delay:
+            reponse = client.get("/api/simulation-inondation/42207/", HTTP_X_ENVIRONMENT="PROD")
+        return reponse, delay
+
+    def _echec(self, il_y_a):
+        import datetime
+        from django.utils import timezone
+        from core.models import StatutTacheInondation, TacheSimulationInondation, TypeTacheInondation
+        TacheSimulationInondation.objects.create(
+            commune_code="42207", environment="PROD", type_tache=TypeTacheInondation.PALIERS,
+            statut=StatutTacheInondation.ECHEC, erreur="IGN indisponible",
+            date_fin=timezone.now() - datetime.timedelta(seconds=il_y_a),
+        )
+
+    def test_echec_recent_renvoye(self, create_user):
+        admin = create_user(username="admin-echec@test.fr", email="admin-echec@test.fr", type="ADMIN")
+        self._echec(10)
+        reponse, delay = self._appel(admin)
+        assert reponse.status_code == 502
+        assert reponse.json()["erreur"] == "IGN indisponible"
+        delay.assert_not_called()
+
+    def test_echec_ancien_relance(self, create_user):
+        admin = create_user(username="admin-echec2@test.fr", email="admin-echec2@test.fr", type="ADMIN")
+        self._echec(120)
+        reponse, delay = self._appel(admin)
+        assert reponse.status_code == 202
+        delay.assert_called_once()

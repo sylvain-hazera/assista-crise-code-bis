@@ -117,3 +117,37 @@ class TestZonesDebordementGeorisques:
         polygone = self._zones(GEOJSON_DEUX_ZONES)["polygone"]
         assert polygone.contains(Point(5.005, 45.005, srid=4326))
         assert not polygone.contains(Point(5.015, 45.005, srid=4326))
+
+
+class TestDebitIgn:
+    """L'IGN renvoie 429 au-delà de ~5 requêtes/s (20/10/2026) : le lot attend puis réessaie."""
+
+    def test_lot_reessaye_apres_429(self):
+        import urllib.error
+
+        reponses = [
+            urllib.error.HTTPError("u", 429, "Too Many Requests", {"Retry-After": "1"}, None),
+            _ReponseFactice('{"elevations":[{"z":12.5},{"z":13.0}]}'),
+        ]
+
+        def urlopen(url, timeout):
+            r = reponses.pop(0)
+            if isinstance(r, Exception):
+                raise r
+            return r
+
+        with patch.object(inondation.urllib.request, "urlopen", side_effect=urlopen), \
+             patch.object(inondation.time, "sleep") as dodo:
+            resultat = inondation._altitudes_lot([5.0, 5.001], [45.0, 45.0], 10)
+
+        assert resultat == {10: 12.5, 11: 13.0}
+        assert any(appel.args[0] >= 1 for appel in dodo.call_args_list)
+
+    def test_creneaux_espaces(self, tmp_path):
+        with patch.object(inondation, "_FICHIER_DEBIT_IGN", str(tmp_path / "debit")), \
+             patch.object(inondation.time, "sleep") as dodo:
+            for _ in range(3):
+                inondation._attendre_creneau_ign()
+        attentes = [appel.args[0] for appel in dodo.call_args_list]
+        # 2e et 3e appels repoussés d'un intervalle (0,4 s) chacun environ
+        assert len(attentes) == 2 and attentes[1] > attentes[0] > 0.3
