@@ -402,7 +402,8 @@ export class SimulationInondationComponent implements AfterViewInit, OnDestroy {
       this.map.addSource(GEORISQUES_SOURCE_ID, {
         type: 'raster', tiles: [GEORISQUES_WMS + this.georisquesCouche], tileSize: 256,
       });
-      const avant = this.map.getLayer(`${ZONE_SOURCE_ID}-layer`) ? `${ZONE_SOURCE_ID}-layer` : undefined;
+      // Sous la zone simulée (couches -fill/-outline), pour la garder lisible par-dessus.
+      const avant = this.map.getLayer(`${ZONE_SOURCE_ID}-fill`) ? `${ZONE_SOURCE_ID}-fill` : undefined;
       this.map.addLayer({
         id: `${GEORISQUES_SOURCE_ID}-layer`, type: 'raster', source: GEORISQUES_SOURCE_ID,
         paint: { 'raster-opacity': 0.55 },

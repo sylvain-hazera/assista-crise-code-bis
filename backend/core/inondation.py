@@ -27,6 +27,7 @@ tâche, jamais calculer elle-même.
 """
 import json
 import math
+import time
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -128,24 +129,51 @@ def _altitudes_lot(lons: list, lats: list, debut: int):
     return resultat
 
 
-def _altitudes_ign_par_lots(lons: list, lats: list, taille_lot: int = 200, max_workers: int = 16) -> list:
+def _altitudes_ign_par_lots(lons: list, lats: list, taille_lot: int = 200, max_workers: int = 8,
+                            tentatives: int = 3) -> list:
     """Altitude IGN (RGE ALTI, API https://data.geopf.fr/altimetrie) pour une liste de points,
     par lots parallélisés (même patron que habitations.scanner_ban_commune -- mesuré en
     conditions réelles le 2026-09-29 : une grille de commune peut représenter des dizaines de
-    lots, du séquentiel dépasserait largement le timeout gunicorn au premier appel non mis en
-    cache). Un point non résolu (échec réseau, hors couverture) vaut None, jamais une exception."""
-    altitudes = [None] * len(lons)
-    lots = [(debut, min(debut + taille_lot, len(lons))) for debut in range(0, len(lons), taille_lot)]
+    lots, du séquentiel serait bien trop long). Un point non résolu vaut None, jamais une
+    exception.
 
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {
-            executor.submit(_altitudes_lot, lons[debut:fin], lats[debut:fin], debut): (debut, fin)
-            for debut, fin in lots
-        }
-        for future in as_completed(futures):
-            for i, valeur in future.result().items():
-                altitudes[i] = valeur
+    Les lots EN ÉCHEC (réponse absente : délai dépassé, service surchargé) sont relancés,
+    jusqu'à `tentatives` passes, avec moins de parallélisme et une pause croissante -- constaté
+    le 20/10/2026 : l'IGN, lent ce jour-là, n'avait renvoyé que ~10 % des lots, et la grille
+    trouée faussait toute la simulation (Portets : 0,2 km² inondés au lieu de 7)."""
+    altitudes = [None] * len(lons)
+    a_faire = [(debut, min(debut + taille_lot, len(lons))) for debut in range(0, len(lons), taille_lot)]
+
+    for tentative in range(tentatives):
+        if tentative:
+            time.sleep(2 * tentative)
+        echoues = []
+        with ThreadPoolExecutor(max_workers=max_workers if tentative == 0 else 4) as executor:
+            futures = {
+                executor.submit(_altitudes_lot, lons[debut:fin], lats[debut:fin], debut): (debut, fin)
+                for debut, fin in a_faire
+            }
+            for future in as_completed(futures):
+                resultat = future.result()
+                if not resultat:
+                    echoues.append(futures[future])
+                    continue
+                for i, valeur in resultat.items():
+                    altitudes[i] = valeur
+        a_faire = echoues
+        if not a_faire:
+            break
     return altitudes
+
+
+# Part minimale de la grille effectivement renvoyée par l'IGN pour la juger exploitable (et la
+# mettre en cache). En dessous, la simulation échoue avec un message clair plutôt que de produire
+# -- et de garder pour toujours -- une zone inondée fausse.
+COUVERTURE_MIN_GRILLE = 0.98
+
+
+class GrilleAltitudeIncomplete(Exception):
+    """Le service d'altimétrie IGN n'a pas répondu pour une trop grande partie de la commune."""
 
 
 def grille_altitude_commune(commune_code: str, pas_metres: int = PAS_METRES_PAR_DEFAUT, forcer: bool = False, environment=None):
@@ -168,6 +196,20 @@ def grille_altitude_commune(commune_code: str, pas_metres: int = PAS_METRES_PAR_
     grille_lon, grille_lat = np.meshgrid(lons, lats)
     lons_plats = grille_lon.ravel().tolist()
     lats_plats = grille_lat.ravel().tolist()
+    attendus = len(lons_plats)
+
+    # Le relief ne dépend pas de l'environnement : une grille COMPLÈTE déjà calculée en PROD (ou
+    # en DÉMO) sert telle quelle à l'autre, sans réinterroger l'IGN -- évite aussi que les deux
+    # divergent (cas Portets du 20/10/2026).
+    if not forcer:
+        for autre in GrilleAltimetrieCommune.objects.filter(commune_code=commune_code, pas_metres=pas_metres).exclude(environment=environment):
+            if len(autre.points or []) >= attendus * COUVERTURE_MIN_GRILLE:
+                GrilleAltimetrieCommune.objects.update_or_create(
+                    commune_code=commune_code, environment=environment,
+                    defaults={"points": autre.points, "pas_metres": pas_metres},
+                )
+                return autre.points
+
     altitudes = _altitudes_ign_par_lots(lons_plats, lats_plats)
 
     points = [
@@ -175,6 +217,12 @@ def grille_altitude_commune(commune_code: str, pas_metres: int = PAS_METRES_PAR_
         for lon, lat, alt in zip(lons_plats, lats_plats, altitudes)
         if alt is not None
     ]
+    if attendus and len(points) < attendus * COUVERTURE_MIN_GRILLE:
+        # Jamais mise en cache : un nouvel essai réinterrogera l'IGN.
+        raise GrilleAltitudeIncomplete(
+            f"Le service d'altimétrie IGN n'a répondu que pour {len(points) * 100 // attendus} % de la "
+            "commune (service lent ou indisponible). Réessayez dans quelques minutes."
+        )
 
     GrilleAltimetrieCommune.objects.update_or_create(
         commune_code=commune_code, environment=environment,
