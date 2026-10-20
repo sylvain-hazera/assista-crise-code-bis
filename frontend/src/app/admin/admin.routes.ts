@@ -16,7 +16,7 @@ import { MapComponent } from '../shared/components/common/map/map.component';
 import { ResultsComponent } from './results/results.component';
 import { UsersComponent } from './users/users.component';
 import { AuditLogsComponent } from './audit-logs/audit-logs.component';
-import { MonitoringComponent } from './monitoring/monitoring.component';
+import { MonitoringComponent, TABLEAUX_GRAFANA } from './monitoring/monitoring.component';
 import { sysAdminGuard, institutionalEffectiveGuard, accountValidationGuard, zonesGuard, vulnerabilitesGuard } from '../core/guards/admin.guard';
 import { AccesRefuseComponent } from './acces-refuse/acces-refuse.component';
 import { AccountValidationsComponent } from './account-validations/account-validations.component';
@@ -86,7 +86,9 @@ export const ADMIN_ROUTES: Routes = [
   { path: 'resultats', component: ResultsComponent, canActivate: [institutionalEffectiveGuard] },
   { path: 'utilisateurs', component: UsersComponent, canActivate: [sysAdminGuard] },
   { path: 'main-courante', component: AuditLogsComponent, canActivate: [sysAdminGuard] },
-  { path: 'monitoring', component: MonitoringComponent, canActivate: [sysAdminGuard] },
+  { path: 'monitoring', component: MonitoringComponent, canActivate: [sysAdminGuard], data: { grafana: TABLEAUX_GRAFANA.monitoring } },
+  { path: 'supervision-waf', component: MonitoringComponent, canActivate: [sysAdminGuard], data: { grafana: TABLEAUX_GRAFANA.waf } },
+  { path: 'fail2ban', component: MonitoringComponent, canActivate: [sysAdminGuard], data: { grafana: TABLEAUX_GRAFANA.fail2ban } },
   { path: 'validations-comptes', component: AccountValidationsComponent, canActivate: [accountValidationGuard] },
   { path: 'competences', component: CompetencesComponent, canActivate: [institutionalEffectiveGuard] },
   { path: 'besoins', component: BesoinsComponent, canActivate: [institutionalEffectiveGuard] },

@@ -1,0 +1,180 @@
+// Alloy (.114) : envoie à Loki les journaux du WAF et de fail2ban (pages admin Supervision WAF /
+// Fail2ban, via Grafana). Les journaux bruts contiennent des secrets (en-têtes Authorization et
+// Cookie, corps de requêtes de connexion dans l'audit ModSecurity) : seuls les champs listés
+// ci-dessous sont conservés, la ligne d'origine n'est jamais transmise.
+// Positions de lecture dans --storage.path (volume ac_alloy_data) : au premier démarrage, les
+// fichiers sont relus depuis leur début.
+
+loki.write "loki" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}
+
+// ------------------------------------------------------------------ WAF : audit ModSecurity
+// Une transaction JSON par ligne. Seules celles où au moins une règle a matché sont gardées (le
+// reste = réponses 4xx/5xx de l'application, journalisées par MODSEC_AUDIT_LOG_RELEVANT_STATUS).
+loki.source.file "waf_audit" {
+  targets    = [{"__path__" = "/logs/waf-modsec/audit/audit.log", "job" = "waf-audit"}]
+  forward_to = [loki.process.waf_audit.receiver]
+}
+
+loki.process "waf_audit" {
+  stage.json {
+    expressions = {
+      ts       = "transaction.time_stamp",
+      ip       = "transaction.client_ip",
+      hostname = "transaction.request.hostname",
+      method   = "transaction.request.method",
+      uri      = "transaction.request.uri",
+      ua       = "transaction.request.headers.\"user-agent\" || transaction.request.headers.\"User-Agent\"",
+      code     = "transaction.response.http_code",
+      rules    = "transaction.messages[].details.ruleId",
+      messages = "transaction.messages[].message",
+      // motif : première règle « concrète », hors règles de score/corrélation (949*, 959*, 980*)
+      motif    = "transaction.messages[?!starts_with(details.ruleId, '949') && !starts_with(details.ruleId, '959') && !starts_with(details.ruleId, '980')].message | [0]",
+    }
+  }
+
+  stage.template {
+    source   = "keep"
+    template = "{{ if and .rules (ne .rules \"[]\") }}1{{ else }}0{{ end }}"
+  }
+  stage.drop {
+    source = "keep"
+    value  = "0"
+    drop_counter_reason = "aucune_regle"
+  }
+
+  // 949110 = score d'anomalie au-dessus du seuil : requête refusée (403) en mode On (depuis le
+  // 19/10/2026), qui l'aurait été en DetectionOnly (seuil). Sinon : simple détection.
+  stage.template {
+    source   = "verdict"
+    template = "{{ if contains \"949110\" .rules }}{{ if eq .code \"403\" }}refusee{{ else }}seuil{{ end }}{{ else }}detectee{{ end }}"
+  }
+
+  stage.replace {
+    source     = "uri"
+    expression = "(?i)(?:token|key|code|password|passwd|secret|signature|sig|session)=([^&\\s]*)"
+    replace    = "***"
+  }
+
+  stage.timestamp {
+    source   = "ts"
+    format   = "Mon Jan _2 15:04:05 2006"
+    location = "UTC"
+  }
+
+  stage.labels {
+    values = { verdict = "" }      // hostname : dans la ligne (les scanners en envoient n'importe lesquels)
+  }
+
+  stage.template {
+    source   = "line"
+    template = "{\"ip\":{{ toJson .ip }},\"hostname\":{{ toJson .hostname }},\"method\":{{ toJson .method }},\"uri\":{{ toJson .uri }},\"code\":{{ toJson .code }},\"ua\":{{ toJson .ua }},\"motif\":{{ toJson .motif }},\"rules\":{{ toJson .rules }},\"messages\":{{ toJson .messages }}}"
+  }
+  stage.output {
+    source = "line"
+  }
+
+  forward_to = [loki.write.loki.receiver]
+}
+
+// ------------------------------------------------------------------ WAF : journal d'accès
+// Format nginx "combined" + X-Forwarded-For. Les sondes du monitoring (blackbox) sont ignorées.
+loki.source.file "waf_access" {
+  targets    = [{"__path__" = "/logs/waf/access.log", "job" = "waf-access"}]
+  forward_to = [loki.process.waf_access.receiver]
+}
+
+loki.process "waf_access" {
+  stage.regex {
+    expression = "^(?P<ip>\\S+) \\S+ \\S+ \\[(?P<ts>[^\\]]+)\\] \"(?P<method>\\S+) (?P<uri>\\S+) [^\"]*\" (?P<status>\\d{3}) (?P<bytes>\\d+) \"[^\"]*\" \"(?P<ua>[^\"]*)\""
+  }
+  stage.drop {
+    source = "ua"
+    expression = "^Blackbox Exporter"
+    drop_counter_reason = "sonde_monitoring"
+  }
+  stage.template {
+    source   = "keep"
+    template = "{{ if .status }}1{{ else }}0{{ end }}"
+  }
+  stage.drop {
+    source = "keep"
+    value  = "0"
+    drop_counter_reason = "format_inconnu"
+  }
+
+  stage.replace {
+    source     = "uri"
+    expression = "(?i)(?:token|key|code|password|passwd|secret|signature|sig|session)=([^&\\s]*)"
+    replace    = "***"
+  }
+
+  stage.timestamp {
+    source = "ts"
+    format = "02/Jan/2006:15:04:05 -0700"
+  }
+
+  stage.labels {
+    values = { status = "" }
+  }
+
+  stage.template {
+    source   = "line"
+    template = "{\"ip\":{{ toJson .ip }},\"method\":{{ toJson .method }},\"uri\":{{ toJson .uri }},\"bytes\":{{ toJson .bytes }},\"ua\":{{ toJson .ua }}}"
+  }
+  stage.output {
+    source = "line"
+  }
+
+  forward_to = [loki.write.loki.receiver]
+}
+
+// ------------------------------------------------------------------ fail2ban
+// Journal de fail2ban (F2B_LOG_TARGET, volume ac_fail2ban_logs), horodaté à l'heure de Paris.
+// Gardé : bans, levées de ban, détections (Found) et erreurs.
+loki.source.file "fail2ban" {
+  targets    = [{"__path__" = "/logs/fail2ban/fail2ban.log", "job" = "fail2ban"}]
+  forward_to = [loki.process.fail2ban.receiver]
+}
+
+loki.process "fail2ban" {
+  stage.regex {
+    expression = "^(?P<ts>\\d{4}-\\d\\d-\\d\\d \\d\\d:\\d\\d:\\d\\d),\\d+ fail2ban\\.\\S+\\s+\\[\\d+\\]: (?P<level>\\w+)\\s+(?:\\[(?P<jail>[^\\]]+)\\] )?(?P<msg>.*)$"
+  }
+  stage.regex {
+    source     = "msg"
+    expression = "^(?P<event>Ban|Unban|Restore Ban|Found|Increase Ban) (?P<ip>[0-9a-fA-F.:]+)"
+  }
+  stage.template {
+    source   = "keep"
+    template = "{{ if or .event (eq .level \"ERROR\") (eq .level \"CRITICAL\") }}1{{ else }}0{{ end }}"
+  }
+  stage.drop {
+    source = "keep"
+    value  = "0"
+    drop_counter_reason = "bruit"
+  }
+
+  stage.timestamp {
+    source   = "ts"
+    format   = "2006-01-02 15:04:05"
+    location = "Europe/Paris"
+  }
+
+  stage.labels {
+    values = { jail = "", event = "", level = "" }
+  }
+
+  stage.template {
+    source   = "line"
+    template = "{\"ip\":{{ toJson .ip }},\"msg\":{{ toJson .msg }}}"
+  }
+  stage.output {
+    source = "line"
+  }
+
+  forward_to = [loki.write.loki.receiver]
+}

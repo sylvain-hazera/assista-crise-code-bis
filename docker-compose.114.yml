@@ -68,8 +68,13 @@ services:
     cap_add: [NET_ADMIN, NET_RAW]
     env_file:
       - { path: "${SECRETS_DIR:-/home/sylvain/.config/assista-crise/secrets}/fail2ban.env", format: raw }
+    # Journal dans un fichier (et non plus `docker logs`) : Alloy le transmet à Loki (page admin
+    # Fail2ban). Consultation directe : docker exec ac_fail2ban tail -f /var/log/fail2ban/fail2ban.log
+    environment:
+      - F2B_LOG_TARGET=/var/log/fail2ban/fail2ban.log
     volumes:
       - fail2ban_data:/data
+      - fail2ban_logs:/var/log/fail2ban
       - /home/sylvain/.config/assista-crise/fail2ban/jail.d:/data/jail.d
       - /home/sylvain/.config/assista-crise/fail2ban/action.d:/data/action.d
       - /home/sylvain/.config/assista-crise/fail2ban/filter.d:/data/filter.d
@@ -304,7 +309,34 @@ services:
     volumes:
       - grafana_data:/var/lib/grafana
     networks: [monitoring, grafana-proxy]
-    depends_on: [prometheus]
+    depends_on: [prometheus, loki]
+
+  # Journaux du WAF et de fail2ban -> pages admin Supervision WAF / Fail2ban (Grafana).
+  loki:
+    <<: *service
+    image: grafana/loki:3.5.3
+    container_name: ac_loki
+    command: ['-config.file=/etc/loki/loki.yml']
+    volumes:
+      - ./monitoring/loki/loki.yml:/etc/loki/loki.yml:ro
+      - loki_data:/loki
+    networks: [monitoring]
+
+  alloy:
+    <<: *service
+    image: grafana/alloy:v1.10.2
+    container_name: ac_alloy
+    # Lit les journaux (lecture seule) et n'envoie à Loki que des champs choisis : voir
+    # monitoring/alloy/config.alloy (aucun en-tête Authorization/Cookie ni corps de requête).
+    command: ['run', '--storage.path=/var/lib/alloy/data', '--server.http.listen-addr=0.0.0.0:12345', '/etc/alloy/config.alloy']
+    volumes:
+      - ./monitoring/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - alloy_data:/var/lib/alloy/data
+      - waf_modsec_logs:/logs/waf-modsec:ro
+      - waf_nginx_logs:/logs/waf:ro
+      - fail2ban_logs:/logs/fail2ban:ro
+    networks: [monitoring]
+    depends_on: [loki]
 
   postgres-exporter:
     <<: *service
@@ -393,3 +425,6 @@ volumes:
   prometheus_data:        { name: ac_prometheus_data }
   alertmanager_data:      { name: ac_alertmanager_data }
   grafana_data:           { name: ac_grafana_data }
+  loki_data:              { name: ac_loki_data }
+  alloy_data:             { name: ac_alloy_data }
+  fail2ban_logs:          { name: ac_fail2ban_logs }

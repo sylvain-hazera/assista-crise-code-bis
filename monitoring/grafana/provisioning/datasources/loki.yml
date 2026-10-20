@@ -1,0 +1,10 @@
+apiVersion: 1
+datasources:
+  # Journaux du WAF et de fail2ban (pages admin Supervision WAF / Fail2ban). Loki n'existe que
+  # sur .114 (docker-compose.114.yml) : ailleurs, cette source est simplement injoignable.
+  - name: Loki
+    uid: loki                       # uid fixe, référencé par les dashboards JSON
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    editable: false

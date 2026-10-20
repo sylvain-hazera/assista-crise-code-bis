@@ -2,8 +2,8 @@
 
   <header class="monitoring-header">
     <div class="monitoring-title">
-      <span class="material-icons title-icon">monitor_heart</span>
-      <h1>Monitoring</h1>
+      <span class="material-icons title-icon">{{ tableau.icone }}</span>
+      <h1>{{ tableau.titre }}</h1>
     </div>
     @if (urlIframe) {
       <a class="btn-secondary" [href]="urlPleinEcran" target="_blank" rel="noopener">
@@ -16,7 +16,7 @@
   @if (errorMessage) {
     <p class="monitoring-error">{{ errorMessage }}</p>
   } @else if (urlIframe) {
-    <iframe class="monitoring-frame" [src]="urlIframe" title="Tableau de bord Grafana"></iframe>
+    <iframe class="monitoring-frame" [src]="urlIframe" [title]="'Tableau de bord Grafana : ' + tableau.titre"></iframe>
   } @else {
     <p class="monitoring-loading">Chargement du tableau de bord…</p>
   }

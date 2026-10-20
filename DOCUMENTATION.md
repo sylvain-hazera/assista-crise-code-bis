@@ -355,6 +355,13 @@ Chaque règle est couverte par `alerts_test.yml` (`promtool test rules`).
 - Grafana : tableau de bord « Assista-Crise Overview » (santé → mission → infrastructure),
   provisionné depuis `monitoring/grafana/dashboards/` ; une modification faite dans l'interface
   n'est pas conservée.
+- Pages admin (administrateurs de la plateforme) : **Monitoring** (Overview), **Supervision WAF**
+  (refus 403, détections OWASP CRS, types d'attaque, IP, trafic par code HTTP) et **Fail2ban**
+  (bans et détections par jail) — Grafana servi sous `/grafana/`, voir `core/grafana_acces.py`.
+  Les deux dernières lisent **Loki** (.114 uniquement) : Alloy (`monitoring/alloy/config.alloy`)
+  y envoie l'audit ModSecurity, le journal d'accès du WAF et le journal de fail2ban, réduits à
+  des champs choisis (jamais les en-têtes Authorization/Cookie ni les corps de requête ; jetons
+  des URL masqués). Rétention 90 jours (`monitoring/loki/loki.yml`).
 
 ### 9.4 Images de monitoring
 
@@ -494,7 +501,8 @@ Variables CI (protégées et masquées) : `HARBOR_URL`, `HARBOR_PROJECT`, `HARBO
 - Authentification MQTT (décision d'équipe, voir § 10).
 - Métriques métier à venir : messages radio reçus (alerte `MeshSilent`, à partir de
   `MessageMeshLog`) et délai entre une demande et sa prise en charge.
-- Logs centralisés (Loki + Grafana Alloy).
+- Logs centralisés (Loki + Grafana Alloy) : en place sur .114 pour le WAF et fail2ban (20/10/2026) ;
+  restent les journaux applicatifs (backend, Celery, Synapse).
 - Mettre à jour l'image Grafana (vulnérabilités signalées sur `13.0.11`) et les digests des
   images de base.
 - Documents obsolètes à archiver : `DOCUMENTATION.pdf`, `Documentation_technique.pdf`,

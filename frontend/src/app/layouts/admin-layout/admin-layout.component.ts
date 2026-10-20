@@ -183,6 +183,11 @@ export class AdminLayoutComponent implements OnInit, OnDestroy {
     // Grafana (demande utilisateur du 19/10) : administrateurs de la plateforme uniquement.
     { icon: 'monitor_heart', label: 'Monitoring', route: '/admin/monitoring', groupe: 'administration' },
 
+    // Journaux du WAF et de fail2ban dans Grafana (demande utilisateur du 20/10), mêmes droits.
+    { icon: 'shield', label: 'Supervision WAF', route: '/admin/supervision-waf', groupe: 'administration' },
+
+    { icon: 'block', label: 'Fail2ban', route: '/admin/fail2ban', groupe: 'administration' },
+
     { icon: 'fact_check', label: 'Main courante', route: '/admin/main-courante', groupe: 'crise' },
 
     // Comptes Secours organisés en attente (auto-inscription bloquée jusqu'à décision d'un
@@ -389,7 +394,8 @@ export class AdminLayoutComponent implements OnInit, OnDestroy {
    * visible (route publique pour un chef d'équipe possiblement non institutionnel, voir
    * navItems). Tout le reste : masqué si le rôle effectif courant n'est pas institutionnel. */
   isNavItemVisible(item: NavItem): boolean {
-    if (item.label === 'Utilisateurs' || item.label === 'Main courante' || item.label === 'Monitoring') return this.isSysAdmin();
+    if (item.label === 'Utilisateurs' || item.label === 'Main courante' || item.label === 'Monitoring'
+        || item.label === 'Supervision WAF' || item.label === 'Fail2ban') return this.isSysAdmin();
     if (item.label === 'Mes interventions') return true;
     if (item.label === 'Validations de comptes') {
       const role = this.authService.getEffectiveRole();
