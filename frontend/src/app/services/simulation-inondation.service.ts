@@ -1,3 +1,4 @@
+import type { MultiPolygon, Polygon } from 'geojson';
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
@@ -46,5 +47,14 @@ export class SimulationInondationService {
    * erreur HTTP). */
   niveauObserve(communeCode: string): Observable<NiveauObserve> {
     return this.http.get<NiveauObserve>(`${this.url}/${communeCode}/niveau-observe/`);
+  }
+
+  /** GET /api/simulation-inondation/<commune_code>/georisques/?couche=… — zones inondables
+   * officielles (Géorisques, vecteur) de la commune ; `geometrie` null = aucune zone pour ce
+   * scénario (commune hors Territoire à Risque Important d'Inondation). */
+  zonesGeorisques(communeCode: string, couche: string): Observable<{ couche: string; libelle: string; geometrie: Polygon | MultiPolygon | null }> {
+    return this.http.get<{ couche: string; libelle: string; geometrie: Polygon | MultiPolygon | null }>(
+      `${this.url}/${communeCode}/georisques/`, { params: { couche } },
+    );
   }
 }

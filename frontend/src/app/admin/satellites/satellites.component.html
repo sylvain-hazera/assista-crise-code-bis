@@ -17,6 +17,9 @@
 }
 
 @if (identifiantsAffiches) {
+  <!-- Fenêtre modale : avant, un panneau en haut de page, hors de l'écran quand on avait défilé
+       jusqu'au bouton Valider -- identifiants jamais vus, perdus (constaté le 20/10/2026). -->
+  <div class="identifiants-overlay" role="dialog" aria-modal="true">
   <div class="identifiants-panel">
     <h3>
       <span class="material-icons">vpn_key</span>
@@ -37,6 +40,7 @@
       <button type="button" class="btn-secondary-sm" (click)="copier(identifiantsAffiches.identifiants.password)">Copier</button>
     </div>
     <button type="button" class="btn-primary sm" (click)="fermerIdentifiants()">J'ai noté ces identifiants</button>
+  </div>
   </div>
 }
 
@@ -102,6 +106,10 @@
                 </button>
               }
               @if (!isDemo && satellite.statut_enrolement === 'APPROUVE') {
+                <button type="button" class="btn-secondary-sm" [disabled]="actionEnCours === satellite.id" (click)="regenererIdentifiants(satellite)"
+                        title="Identifiants perdus : en générer de nouveaux (les actuels cessent de fonctionner)">
+                  Régénérer les identifiants
+                </button>
                 <button type="button" class="btn-danger-sm" [disabled]="actionEnCours === satellite.id" (click)="revoquer(satellite)">
                   Révoquer
                 </button>

@@ -46,6 +46,9 @@
           }
         </select>
       }
+      @if (coucheGeorisquesActive && georisquesMessage) {
+        <p class="hint">{{ georisquesMessage }}</p>
+      }
     </div>
   }
 

@@ -85,6 +85,22 @@ export class SatellitesComponent implements OnInit {
     });
   }
 
+  regenererIdentifiants(satellite: Satellite): void {
+    if (!confirm(`Générer de nouveaux identifiants pour « ${satellite.nom} » ? Les actuels cesseront aussitôt de fonctionner : il faudra reporter les nouveaux dans la configuration du satellite.`)) return;
+    this.actionEnCours = satellite.id;
+    this.errorMessage = '';
+    this.service.regenererIdentifiants(satellite.id).subscribe({
+      next: (resultat) => {
+        this.actionEnCours = null;
+        this.identifiantsAffiches = { satelliteNom: satellite.nom, identifiants: resultat.identifiants_compte_service };
+      },
+      error: (err) => {
+        this.actionEnCours = null;
+        this.errorMessage = err.error?.error || 'Impossible de régénérer les identifiants.';
+      },
+    });
+  }
+
   revoquer(satellite: Satellite): void {
     if (!confirm(`Révoquer le satellite « ${satellite.nom} » ? Son compte de service sera immédiatement désactivé.`)) return;
     this.actionEnCours = satellite.id;

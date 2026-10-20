@@ -17,11 +17,10 @@ const ADRESSES_SOURCE_ID = 'inondation-adresses';
 const RUISSELLEMENT_SOURCE_ID = 'inondation-ruissellement';
 const COMMUNE_SOURCE_ID = 'commune-contour';
 const GEORISQUES_SOURCE_ID = 'georisques-alea';
-// Flux WMS officiel Géorisques (BRGM/DGPR) -- surfaces inondables de référence (rapportage 2020),
-// superposées à titre de comparaison avec la simulation indicative. Noms de couches relevés dans
-// le GetCapabilities (20/10/2026). {bbox-epsg-3857} : placeholder raster MapLibre (CRS web).
-const GEORISQUES_WMS = 'https://www.georisques.gouv.fr/services?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap'
-  + '&STYLES=&FORMAT=image/png&TRANSPARENT=true&CRS=EPSG:3857&WIDTH=256&HEIGHT=256&BBOX={bbox-epsg-3857}&LAYERS=';
+// Zones inondables officielles Géorisques (BRGM/DGPR, rapportage 2020) récupérées EN VECTEUR via
+// le backend (WFS) et dessinées ici en violet franc : les tuiles WMS d'origine, vert pâle à ~40 %
+// d'opacité, étaient illisibles sur le fond de carte (demande utilisateur du 20/10/2026). Mêmes
+// zones que le filtre de l'estimation des dégâts.
 const GEORISQUES_COUCHES = [
   { valeur: 'ALEA_SYNT_01_01FOR_FXX', libelle: 'Débordement de cours d\'eau — fréquent (décennal)' },
   { valeur: 'ALEA_SYNT_01_02MOY_FXX', libelle: 'Débordement de cours d\'eau — moyen (centennal, réf. PPRI)' },
@@ -166,6 +165,7 @@ export class SimulationInondationComponent implements AfterViewInit, OnDestroy {
   choisirCommune(commune: Commune): void {
     this.communeSelectionnee = commune;
     this.cadrerSurCommune(commune);
+    this.majCoucheGeorisques();
     this.simulation = null;
     this.erreur = '';
     this.enCours = true;
@@ -391,24 +391,56 @@ export class SimulationInondationComponent implements AfterViewInit, OnDestroy {
     this.map.fitBounds(bounds, { padding: 30, animate: true, duration: 600 });
   }
 
-  /** Overlay Géorisques (zones inondables officielles) -- ajouté/retiré/changé selon
-   * l'interrupteur et la couche choisie. Sous les repères de la simulation (adresses/zone). */
+  /** Zones Géorisques de la commune choisie, dessinées en vecteur (voir GEORISQUES_COUCHES).
+   * Rechargées à chaque changement de commune ou de scénario tant que la case est cochée. */
+  georisquesMessage = '';
+
   majCoucheGeorisques(): void {
-    this.runWhenMapReady(() => {
-      if (!this.map) return;
-      if (this.map.getLayer(`${GEORISQUES_SOURCE_ID}-layer`)) this.map.removeLayer(`${GEORISQUES_SOURCE_ID}-layer`);
-      if (this.map.getSource(GEORISQUES_SOURCE_ID)) this.map.removeSource(GEORISQUES_SOURCE_ID);
-      if (!this.coucheGeorisquesActive) return;
-      this.map.addSource(GEORISQUES_SOURCE_ID, {
-        type: 'raster', tiles: [GEORISQUES_WMS + this.georisquesCouche], tileSize: 256,
-      });
-      // Sous la zone simulée (couches -fill/-outline), pour la garder lisible par-dessus.
-      const avant = this.map.getLayer(`${ZONE_SOURCE_ID}-fill`) ? `${ZONE_SOURCE_ID}-fill` : undefined;
-      this.map.addLayer({
-        id: `${GEORISQUES_SOURCE_ID}-layer`, type: 'raster', source: GEORISQUES_SOURCE_ID,
-        paint: { 'raster-opacity': 0.55 },
-      }, avant);
+    this.georisquesMessage = '';
+    const commune = this.communeSelectionnee;
+    if (!this.coucheGeorisquesActive || !commune) {
+      this.runWhenMapReady(() => this.dessinerZonesGeorisques(null));
+      return;
+    }
+    const couche = this.georisquesCouche;
+    this.georisquesMessage = 'Chargement des zones officielles…';
+    this.simulationService.zonesGeorisques(commune.code, couche).subscribe({
+      next: (r) => {
+        if (commune !== this.communeSelectionnee || couche !== this.georisquesCouche) return;   // réponse périmée
+        this.georisquesMessage = r.geometrie
+          ? ''
+          : `Aucune zone officielle « ${r.libelle} » sur cette commune : Géorisques ne couvre que les Territoires à Risque Important d'Inondation (TRI).`;
+        this.runWhenMapReady(() => this.dessinerZonesGeorisques(r.geometrie));
+      },
+      error: (err) => {
+        this.georisquesMessage = err?.error?.error || 'Zones Géorisques indisponibles pour le moment.';
+        this.runWhenMapReady(() => this.dessinerZonesGeorisques(null));
+      },
     });
+  }
+
+  private dessinerZonesGeorisques(geometrie: Polygon | MultiPolygon | null): void {
+    if (!this.map) return;
+    const data: Feature | FeatureCollection = geometrie
+      ? { type: 'Feature', properties: {}, geometry: geometrie }
+      : { type: 'FeatureCollection', features: [] };
+    const source = this.map.getSource(GEORISQUES_SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
+    if (source) {
+      source.setData(data as any);
+      return;
+    }
+    this.map.addSource(GEORISQUES_SOURCE_ID, { type: 'geojson', data: data as any });
+    // Sous la zone simulée et les adresses, pour qu'elles restent lisibles par-dessus.
+    const avant = this.map.getLayer(`${ZONE_SOURCE_ID}-fill`) ? `${ZONE_SOURCE_ID}-fill`
+      : this.map.getLayer(`${ADRESSES_SOURCE_ID}-layer`) ? `${ADRESSES_SOURCE_ID}-layer` : undefined;
+    this.map.addLayer({
+      id: `${GEORISQUES_SOURCE_ID}-fill`, type: 'fill', source: GEORISQUES_SOURCE_ID,
+      paint: { 'fill-color': '#7c3aed', 'fill-opacity': 0.35 },
+    }, avant);
+    this.map.addLayer({
+      id: `${GEORISQUES_SOURCE_ID}-outline`, type: 'line', source: GEORISQUES_SOURCE_ID,
+      paint: { 'line-color': '#5b21b6', 'line-width': 1.5 },
+    }, avant);
   }
 
   private runWhenMapReady(cb: () => void): void {

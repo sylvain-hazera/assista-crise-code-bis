@@ -61,10 +61,16 @@ export class HabitationsPageComponent implements OnInit {
   // Zone nommée (ex: "Quartier Nord") pour restreindre le scan à l'intérieur de la commune
   // sélectionnée -- distincte de la zone dessinée de la crise, voir habitations.perimetre_scan.
   zoneEstimationId = '';
+  georisquesEstimation = '';   // filtre optionnel : zones de débordement officielles
+  readonly scenariosDebordement = [
+    { valeur: 'ALEA_SYNT_01_01FOR_FXX', libelle: 'Débordement fréquent (décennal)' },
+    { valeur: 'ALEA_SYNT_01_02MOY_FXX', libelle: 'Débordement moyen (centennal, réf. PPRI)' },
+    { valeur: 'ALEA_SYNT_01_04FAI_FXX', libelle: 'Débordement rare (millénal)' },
+  ];
   crises: Crisis[] = [];
   zones: Zone[] = [];
   estimationEnCours = false;
-  resultatEstimation: { creees: number; adresses_trouvees: number; voies_totales: number; voies_en_echec: number } | null = null;
+  resultatEstimation: { creees: number; adresses_trouvees: number; voies_totales: number; voies_en_echec: number; filtre_georisques?: string | null } | null = null;
   erreurEstimation = '';
 
   communeSearchFn = (q: string) => this.locationService.searchCommunesByName(q);
@@ -216,6 +222,7 @@ export class HabitationsPageComponent implements OnInit {
     this.erreurEstimation = '';
     this.habitationService.estimationBan(
       this.communeEstimation.trim(), this.criseEstimationId || undefined, this.zoneEstimationId || undefined,
+      this.georisquesEstimation || undefined,
     ).subscribe({
       next: (resultat) => {
         this.estimationEnCours = false;

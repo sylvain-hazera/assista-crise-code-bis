@@ -5107,6 +5107,44 @@ class SimulationInondationNiveauObserveView(generics.GenericAPIView):
         return Response({"disponible": True, **resultat})
 
 
+class SimulationInondationGeorisquesView(generics.GenericAPIView):
+    """Zones inondables officielles Géorisques d'une commune, en GeoJSON, pour la carte de
+    simulation (demande utilisateur du 20/10/2026 : les tuiles WMS, pâles et semi-transparentes,
+    étaient illisibles). Mêmes zones que le filtre de l'estimation des dégâts
+    (habitations.zones_georisques). Géométrie simplifiée (~5 m) pour l'affichage, et mise en
+    cache 24 h -- ces zones ne changent qu'au rapportage suivant."""
+
+    permission_classes = [IsInstitutionalActor]
+
+    def get(self, request, commune_code):
+        import json
+
+        from django.core.cache import cache
+
+        from .habitations import COUCHES_GEORISQUES, peut_simuler_commune, zones_georisques
+
+        if not peut_simuler_commune(request, commune_code):
+            return Response({"error": "Vous n'avez pas accès à cette commune pour cet outil."}, status=status.HTTP_403_FORBIDDEN)
+        couche = request.query_params.get("couche", "")
+        if couche not in COUCHES_GEORISQUES:
+            return Response({"error": "Scénario Géorisques inconnu."}, status=status.HTTP_400_BAD_REQUEST)
+
+        cle = f"georisques:{couche}:{commune_code}"
+        geojson = cache.get(cle)
+        if geojson is None:
+            zones = zones_georisques(commune_code, couche)
+            if zones["erreur"]:
+                return Response({"error": zones["erreur"]}, status=status.HTTP_502_BAD_GATEWAY)
+            polygone = zones["polygone"]
+            geojson = json.loads(polygone.simplify(0.00005, preserve_topology=True).geojson) if polygone else False
+            cache.set(cle, geojson, 24 * 3600)
+        return Response({
+            "couche": couche,
+            "libelle": COUCHES_GEORISQUES[couche],
+            "geometrie": geojson or None,
+        })
+
+
 class ZoneViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     """Catalogue de zones nommées d'une institution (voir Zone) — support du dispositif
     pré-enregistré (Plan) : chaque équipe/point peut en référencer une pour dire "je couvre le
@@ -5923,7 +5961,30 @@ class HabitationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             if zone is None:
                 return Response({"error": "Zone introuvable."}, status=status.HTTP_400_BAD_REQUEST)
 
-        resultat = scanner_ban_commune(commune_code, polygone_limite=perimetre_scan(crise, zone))
+        limite = perimetre_scan(crise, zone)
+
+        # Option : ne garder que les adresses situées dans les zones de débordement officielles
+        # Géorisques (demande utilisateur du 20/10/2026) -- se combine avec les autres filtres.
+        couche_georisques = (request.data.get('georisques') or '').strip()
+        libelle_georisques = None
+        if couche_georisques:
+            from .habitations import COUCHES_DEBORDEMENT_GEORISQUES, zones_georisques
+            libelle_georisques = COUCHES_DEBORDEMENT_GEORISQUES.get(couche_georisques)
+            if libelle_georisques is None:
+                return Response({"error": "Scénario Géorisques inconnu."}, status=status.HTTP_400_BAD_REQUEST)
+            zones = zones_georisques(commune_code, couche_georisques)
+            if zones["erreur"]:
+                return Response({"error": zones["erreur"]}, status=status.HTTP_502_BAD_GATEWAY)
+            if zones["polygone"] is None:
+                return Response(
+                    {"error": "Aucune zone de débordement Géorisques sur cette commune : les zones officielles "
+                              "ne couvrent que les Territoires à Risque Important d'Inondation (TRI). "
+                              "Relancez sans ce filtre."},
+                    status=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                )
+            limite = zones["polygone"] if limite is None else limite.intersection(zones["polygone"])
+
+        resultat = scanner_ban_commune(commune_code, polygone_limite=limite)
         if resultat["erreur"]:
             return Response({"error": resultat["erreur"]}, status=status.HTTP_502_BAD_GATEWAY)
 
@@ -5953,7 +6014,9 @@ class HabitationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         audit_log(
             request=request, action_code="IMPORT_LISTE", objet_type="Habitation", objet_id=None,
             commentaire=(
-                f"Estimation BAN commune {commune_code} : {creees} habitation(s) créée(s) sur "
+                f"Estimation BAN commune {commune_code}"
+                + (f" (zones Géorisques : {libelle_georisques})" if libelle_georisques else "")
+                + f" : {creees} habitation(s) créée(s) sur "
                 f"{len(resultat['adresses'])} adresse(s) trouvée(s) ({resultat['voies_totales']} voie(s), "
                 f"{resultat['voies_en_echec']} en échec)"
             ),
@@ -5963,6 +6026,7 @@ class HabitationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             "adresses_trouvees": len(resultat["adresses"]),
             "voies_totales": resultat["voies_totales"],
             "voies_en_echec": resultat["voies_en_echec"],
+            "filtre_georisques": libelle_georisques,
         })
 
 
@@ -15597,7 +15661,7 @@ class SatelliteViewSet(
             return [AllowAny()]
         if self.action in ('contact', 'donnees', 'synchroniser'):
             return [permissions.IsAuthenticated()]
-        if self.action in ('generer_jeton', 'valider', 'revoquer'):
+        if self.action in ('generer_jeton', 'valider', 'revoquer', 'regenerer_identifiants'):
             return [IsInstitutionalActor(), DenyInDemo()]
         return [IsInstitutionalActor()]
 
@@ -15697,6 +15761,32 @@ class SatelliteViewSet(
             # Identifiants renvoyés UNE SEULE FOIS ici — le mot de passe n'est jamais stocké en
             # clair (User.set_password via create_user) et n'est plus jamais relisible ensuite.
             "identifiants_compte_service": {"email": email_service, "password": mot_de_passe},
+        })
+
+    @action(detail=True, methods=['post'], url_path='regenerer-identifiants')
+    def regenerer_identifiants(self, request, pk=None):
+        """Nouveau mot de passe pour le compte de service d'un satellite VALIDÉ -- l'ancien cesse
+        immédiatement de fonctionner. Les identifiants de `valider` ne s'affichent qu'une fois et
+        ne sont jamais relisibles : sans cette action, un affichage manqué (constaté le
+        20/10/2026, panneau hors de l'écran) obligeait à révoquer et réenrôler le satellite."""
+        satellite = self.get_object()
+        if satellite.statut_enrolement != StatutEnrolementSatellite.APPROUVE or satellite.compte_service is None:
+            return Response(
+                {"error": "Seul un satellite validé (et non révoqué) a des identifiants à régénérer."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        mot_de_passe = secrets.token_urlsafe(24)
+        compte = satellite.compte_service
+        compte.set_password(mot_de_passe)
+        compte.save(update_fields=['password'])
+
+        audit_log(
+            request=request, action_code="MODIFICATION", objet_type="Satellite", objet_id=satellite.id,
+            commentaire=f"Satellite {satellite.nom} ({satellite.institution.nom}) — identifiants du compte de service régénérés.",
+        )
+        return Response({
+            **SatelliteSerializer(satellite).data,
+            "identifiants_compte_service": {"email": compte.email, "password": mot_de_passe},
         })
 
     @action(detail=True, methods=['post'], url_path='revoquer')

@@ -65,7 +65,13 @@ def _bbox_commune(commune_code: str):
     geo.api.gouv.fr (jamais stocké en base contrairement à Commune.centre* -- seulement utile le
     temps de construire la grille, voir grille_altitude_commune)."""
     url = f"https://geo.api.gouv.fr/communes/{urllib.parse.quote(commune_code)}?fields=contour"
-    data = _fetch_json(url)
+    data = None
+    for tentative in range(3):   # geo.api.gouv.fr a des ratés passagers (constaté le 20/10/2026)
+        if tentative:
+            time.sleep(1)
+        data = _fetch_json(url)
+        if data:
+            break
     if not data:
         return None
     contour = data.get("contour")

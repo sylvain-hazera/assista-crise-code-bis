@@ -71,3 +71,49 @@ class TestGrilleAltitude:
         ign.assert_not_called()
         assert points_demo == points_prod
         assert GrilleAltimetrieCommune.objects.filter(commune_code="99003", environment="DEMO").exists()
+
+
+GEOJSON_DEUX_ZONES = (
+    '{"type":"FeatureCollection","features":['
+    '{"type":"Feature","properties":{},"geometry":{"type":"Polygon","coordinates":[[[5.0,45.0],[5.01,45.0],[5.01,45.01],[5.0,45.01],[5.0,45.0]]]}},'
+    '{"type":"Feature","properties":{},"geometry":{"type":"Polygon","coordinates":[[[5.02,45.0],[5.03,45.0],[5.03,45.01],[5.02,45.01],[5.02,45.0]]]}}'
+    ']}'
+)
+
+
+class _ReponseFactice:
+    def __init__(self, corps):
+        self.corps = corps.encode()
+
+    def read(self):
+        return self.corps
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+
+class TestZonesDebordementGeorisques:
+
+    def _zones(self, corps):
+        from core.habitations import zones_georisques
+        with patch.object(inondation, "_bbox_commune", return_value=(5.0, 45.0, 5.05, 45.02)), \
+             patch("core.habitations.urllib.request.urlopen", return_value=_ReponseFactice(corps)):
+            return zones_georisques("99010", "ALEA_SYNT_01_02MOY_FXX")
+
+    def test_zones_unies(self):
+        resultat = self._zones(GEOJSON_DEUX_ZONES)
+        assert resultat["erreur"] is None
+        assert resultat["polygone"].num_geom == 2
+
+    def test_corps_vide_signifie_aucune_zone(self):
+        resultat = self._zones("")
+        assert resultat == {"polygone": None, "erreur": None}
+
+    def test_point_dans_zone(self):
+        from django.contrib.gis.geos import Point
+        polygone = self._zones(GEOJSON_DEUX_ZONES)["polygone"]
+        assert polygone.contains(Point(5.005, 45.005, srid=4326))
+        assert not polygone.contains(Point(5.015, 45.005, srid=4326))

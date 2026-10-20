@@ -31,6 +31,14 @@ export class SatelliteService {
     );
   }
 
+  /** POST /api/satellites/<id>/regenerer-identifiants/ — nouveau mot de passe pour le compte de
+   * service d'un satellite validé (l'ancien cesse de fonctionner) ; renvoyé une seule fois. */
+  regenererIdentifiants(id: string): Observable<Satellite & { identifiants_compte_service: IdentifiantsCompteServiceSatellite }> {
+    return this.http.post<Satellite & { identifiants_compte_service: IdentifiantsCompteServiceSatellite }>(
+      `${this.url}/${id}/regenerer-identifiants/`, {}
+    );
+  }
+
   revoquer(id: string): Observable<Satellite> {
     return this.http.post<Satellite>(`${this.url}/${id}/revoquer/`, {});
   }

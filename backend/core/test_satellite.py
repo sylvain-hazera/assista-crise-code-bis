@@ -307,3 +307,46 @@ class TestVisibiliteInstitution:
         assert response.status_code == status.HTTP_200_OK
         ids = [item['id'] for item in response.data['results']] if isinstance(response.data, dict) and 'results' in response.data else [item['id'] for item in response.data]
         assert str(satellite_en_attente.id) not in ids
+
+
+@pytest.mark.django_db
+class TestRegenererIdentifiants:
+    """Identifiants du compte de service perdus (affichage unique manqué) : régénération."""
+
+    def _valider(self, client, satellite):
+        return client.post(reverse('satellite-valider', args=[satellite.id]), {}, format='json').data['identifiants_compte_service']
+
+    def _jeton_ok(self, email, password):
+        return APIClient().post(reverse('token_obtain_pair'), {"email": email, "password": password}, format='json').status_code
+
+    def test_nouveau_mot_de_passe_fonctionne_et_ancien_invalide(self, mairie_a_client, satellite_en_attente):
+        client, _ = mairie_a_client
+        anciens = self._valider(client, satellite_en_attente)
+
+        response = client.post(reverse('satellite-regenerer-identifiants', args=[satellite_en_attente.id]), {}, format='json')
+
+        assert response.status_code == status.HTTP_200_OK
+        nouveaux = response.data['identifiants_compte_service']
+        assert nouveaux['email'] == anciens['email']
+        assert nouveaux['password'] != anciens['password']
+        assert self._jeton_ok(nouveaux['email'], nouveaux['password']) == status.HTTP_200_OK
+        assert self._jeton_ok(anciens['email'], anciens['password']) != status.HTTP_200_OK
+
+    def test_refuse_si_pas_encore_valide(self, mairie_a_client, satellite_en_attente):
+        client, _ = mairie_a_client
+        response = client.post(reverse('satellite-regenerer-identifiants', args=[satellite_en_attente.id]), {}, format='json')
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_autre_institution_ne_peut_pas(self, mairie_a_client, mairie_b_client, satellite_en_attente):
+        client_a, _ = mairie_a_client
+        self._valider(client_a, satellite_en_attente)
+        client_b, _ = mairie_b_client
+        response = client_b.post(reverse('satellite-regenerer-identifiants', args=[satellite_en_attente.id]), {}, format='json')
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_bloque_en_zone_demo(self, mairie_a_client, satellite_en_attente):
+        client, _ = mairie_a_client
+        self._valider(client, satellite_en_attente)
+        client.credentials(HTTP_X_ENVIRONMENT='DEMO')
+        response = client.post(reverse('satellite-regenerer-identifiants', args=[satellite_en_attente.id]), {}, format='json')
+        assert response.status_code == status.HTTP_403_FORBIDDEN
