@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { Subscription } from 'rxjs';
 import { takeWhile } from 'rxjs/operators';
 import maplibregl from 'maplibre-gl';
-import type { Feature, FeatureCollection, Point, Polygon } from 'geojson';
+import type { Feature, FeatureCollection, MultiPolygon, Point, Polygon } from 'geojson';
 
 import { pollWhileVisible } from '../../shared/utils/polling.util';
 import { TagSearchInputComponent } from '../../shared/components/common/tag-search-input/tag-search-input.component';
@@ -15,6 +15,20 @@ import { AdresseSimulee, NiveauObserve, SimulationAdresses, SimulationInondation
 const ZONE_SOURCE_ID = 'inondation-zone';
 const ADRESSES_SOURCE_ID = 'inondation-adresses';
 const RUISSELLEMENT_SOURCE_ID = 'inondation-ruissellement';
+const COMMUNE_SOURCE_ID = 'commune-contour';
+const GEORISQUES_SOURCE_ID = 'georisques-alea';
+// Flux WMS officiel Géorisques (BRGM/DGPR) -- surfaces inondables de référence (rapportage 2020),
+// superposées à titre de comparaison avec la simulation indicative. Noms de couches relevés dans
+// le GetCapabilities (20/10/2026). {bbox-epsg-3857} : placeholder raster MapLibre (CRS web).
+const GEORISQUES_WMS = 'https://www.georisques.gouv.fr/services?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap'
+  + '&STYLES=&FORMAT=image/png&TRANSPARENT=true&CRS=EPSG:3857&WIDTH=256&HEIGHT=256&BBOX={bbox-epsg-3857}&LAYERS=';
+const GEORISQUES_COUCHES = [
+  { valeur: 'ALEA_SYNT_01_01FOR_FXX', libelle: 'Débordement de cours d\'eau — fréquent (décennal)' },
+  { valeur: 'ALEA_SYNT_01_02MOY_FXX', libelle: 'Débordement de cours d\'eau — moyen (centennal, réf. PPRI)' },
+  { valeur: 'ALEA_SYNT_01_04FAI_FXX', libelle: 'Débordement de cours d\'eau — rare (millénal)' },
+  { valeur: 'ALEA_SYNT_02_02MOY_FXX', libelle: 'Ruissellement — moyen (centennal)' },
+  { valeur: 'ALEA_SYNT_03_02MOY_FXX', libelle: 'Submersion marine — moyen (centennal)' },
+];
 const CLE_DERNIERE_COMMUNE = 'simulation-inondation-derniere-commune';
 const INTERVALLE_POLLING_MS = 6_000;
 const METRES_PAR_DEGRE_LAT = 111_320; // même valeur que core/inondation.py, pour la cohérence
@@ -85,6 +99,11 @@ export class SimulationInondationComponent implements AfterViewInit, OnDestroy {
    * une lecture temps réel déjà mise en cache 5 min côté serveur, voir core/hydrometrie.py). */
   niveauObserve: NiveauObserve | null = null;
 
+  // Overlay des zones inondables officielles (Géorisques), indépendant de la simulation.
+  readonly georisquesCouches = GEORISQUES_COUCHES;
+  coucheGeorisquesActive = false;
+  georisquesCouche = 'ALEA_SYNT_01_02MOY_FXX';
+
   coucheRiviereActive = true;
   coucheRuissellementActive = false;
   ruissellement: SimulationRuissellement | null = null;
@@ -144,6 +163,7 @@ export class SimulationInondationComponent implements AfterViewInit, OnDestroy {
 
   choisirCommune(commune: Commune): void {
     this.communeSelectionnee = commune;
+    this.cadrerSurCommune(commune);
     this.simulation = null;
     this.erreur = '';
     this.enCours = true;
@@ -335,6 +355,57 @@ export class SimulationInondationComponent implements AfterViewInit, OnDestroy {
     lien.download = `simulation-inondation-${this.communeSelectionnee?.code ?? 'commune'}.csv`;
     lien.click();
     URL.revokeObjectURL(url);
+  }
+
+  /** Zoom + centrage sur la commune dès sa sélection : la commune remplit la vue, sans
+   * attendre la fin du calcul (demande utilisateur du 20/10/2026). Trace aussi son contour. */
+  private cadrerSurCommune(commune: Commune): void {
+    this.locationService.getCommuneContour(commune.code).subscribe({
+      next: (geo) => this.runWhenMapReady(() => this.afficherContourCommune(geo?.contour ?? null)),
+      error: () => { /* contour indisponible : le cadrage sur la zone simulée prendra le relais */ },
+    });
+  }
+
+  private afficherContourCommune(geometry: Polygon | MultiPolygon | null): void {
+    if (!this.map) return;
+    const data: Feature = { type: 'Feature', properties: {}, geometry: geometry as any };
+    const source = this.map.getSource(COMMUNE_SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
+    if (source) source.setData(data as any);
+    else if (geometry) {
+      this.map.addSource(COMMUNE_SOURCE_ID, { type: 'geojson', data: data as any });
+      this.map.addLayer({
+        id: `${COMMUNE_SOURCE_ID}-layer`, type: 'line', source: COMMUNE_SOURCE_ID,
+        paint: { 'line-color': '#1d4ed8', 'line-width': 2, 'line-dasharray': [2, 1] },
+      });
+    }
+    if (!geometry) return;
+    const anneaux = geometry.type === 'Polygon' ? geometry.coordinates : geometry.coordinates.flat();
+    const coords = anneaux.flat() as [number, number][];
+    if (!coords.length) return;
+    const bounds = coords.reduce(
+      (b, c) => b.extend(c as [number, number]),
+      new maplibregl.LngLatBounds(coords[0], coords[0]),
+    );
+    this.map.fitBounds(bounds, { padding: 30, animate: true, duration: 600 });
+  }
+
+  /** Overlay Géorisques (zones inondables officielles) -- ajouté/retiré/changé selon
+   * l'interrupteur et la couche choisie. Sous les repères de la simulation (adresses/zone). */
+  majCoucheGeorisques(): void {
+    this.runWhenMapReady(() => {
+      if (!this.map) return;
+      if (this.map.getLayer(`${GEORISQUES_SOURCE_ID}-layer`)) this.map.removeLayer(`${GEORISQUES_SOURCE_ID}-layer`);
+      if (this.map.getSource(GEORISQUES_SOURCE_ID)) this.map.removeSource(GEORISQUES_SOURCE_ID);
+      if (!this.coucheGeorisquesActive) return;
+      this.map.addSource(GEORISQUES_SOURCE_ID, {
+        type: 'raster', tiles: [GEORISQUES_WMS + this.georisquesCouche], tileSize: 256,
+      });
+      const avant = this.map.getLayer(`${ZONE_SOURCE_ID}-layer`) ? `${ZONE_SOURCE_ID}-layer` : undefined;
+      this.map.addLayer({
+        id: `${GEORISQUES_SOURCE_ID}-layer`, type: 'raster', source: GEORISQUES_SOURCE_ID,
+        paint: { 'raster-opacity': 0.55 },
+      }, avant);
+    });
   }
 
   private runWhenMapReady(cb: () => void): void {

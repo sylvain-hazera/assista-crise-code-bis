@@ -34,6 +34,18 @@
         <input type="checkbox" [ngModel]="coucheRuissellementActive" (ngModelChange)="basculerCoucheRuissellement()">
         Ruissellement (orage)
       </label>
+
+      <label class="case-couche">
+        <input type="checkbox" [(ngModel)]="coucheGeorisquesActive" (ngModelChange)="majCoucheGeorisques()">
+        Zones inondables officielles (Géorisques)
+      </label>
+      @if (coucheGeorisquesActive) {
+        <select class="select-georisques" [(ngModel)]="georisquesCouche" (ngModelChange)="majCoucheGeorisques()">
+          @for (c of georisquesCouches; track c.valeur) {
+            <option [value]="c.valeur">{{ c.libelle }}</option>
+          }
+        </select>
+      }
     </div>
   }
 
