@@ -1,5 +1,6 @@
 import { AfterViewInit, Component, ElementRef, Input, OnChanges, OnDestroy, SimpleChanges, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { styleCarte } from '../../../utils/carte-style';
 import maplibregl from 'maplibre-gl';
 import type { Polygon } from 'geojson';
 
@@ -87,7 +88,7 @@ export class MinimapComponent implements AfterViewInit, OnChanges, OnDestroy {
   private initMap(): void {
     this.map = new maplibregl.Map({
       container: this.mapContainer.nativeElement,
-      style: 'https://raw.githubusercontent.com/go2garret/maps/main/src/assets/json/openStreetMap.json',
+      style: styleCarte(),
       center: [this.longitude, this.latitude],
       zoom: this.zoom,
       attributionControl: false,

@@ -1,5 +1,6 @@
 import { AfterViewInit, Component, ElementRef, EventEmitter, Input, OnChanges, OnDestroy, Output, SimpleChanges, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { styleCarte } from '../../../utils/carte-style';
 import maplibregl from 'maplibre-gl';
 import { TerraDraw, TerraDrawPolygonMode, TerraDrawSelectMode } from 'terra-draw';
 import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter';
@@ -51,7 +52,7 @@ export class ZoneMapComponent implements AfterViewInit, OnChanges, OnDestroy {
   private initMap(): void {
     this.map = new maplibregl.Map({
       container: this.mapContainer.nativeElement,
-      style: 'https://raw.githubusercontent.com/go2garret/maps/main/src/assets/json/openStreetMap.json',
+      style: styleCarte(),
       center: this.center,
       zoom: this.zoom,
     });

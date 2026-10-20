@@ -86,3 +86,54 @@ async def test_boucle_une_iteration_ecrit_letat_hors_ligne(tmp_path):
     assert resultat is False
     with open(fichier, encoding="utf-8") as f:
         assert json.load(f)["en_ligne"] is False
+
+
+@pytest.mark.asyncio
+async def test_signal_de_vie_envoye_quand_en_ligne(tmp_path, monkeypatch):
+    monkeypatch.setattr(ec, "SATELLITE_ID", "sat-1")
+    monkeypatch.setattr(ec, "SATELLITE_EMAIL", "satellite-1@service.assista-crise.local")
+    monkeypatch.setattr(ec, "SATELLITE_PASSWORD", "secret")
+    monkeypatch.setattr(ec, "VERSION_LOGICIELLE", "abc123")
+    appels = []
+
+    def handler(request):
+        appels.append((request.method, request.url.path, request.headers.get("authorization"), request.content))
+        if request.url.path == "/api/token/":
+            return httpx.Response(200, json={"access": "jeton-test"})
+        return httpx.Response(200, json={"ok": True})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        await ec.boucle(client=client, fichier_etat=str(tmp_path / "etat.json"), une_seule_iteration=True)
+
+    contact = [a for a in appels if a[1] == "/api/satellites/sat-1/contact/"]
+    assert contact and contact[0][0] == "POST" and contact[0][2] == "Bearer jeton-test"
+    assert b"abc123" in contact[0][3]
+
+
+@pytest.mark.asyncio
+async def test_pas_de_signal_de_vie_sans_identifiants(tmp_path, monkeypatch):
+    monkeypatch.setattr(ec, "SATELLITE_ID", "")
+    appels = []
+
+    def handler(request):
+        appels.append(request.url.path)
+        return httpx.Response(200)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        await ec.boucle(client=client, fichier_etat=str(tmp_path / "etat.json"), une_seule_iteration=True)
+    assert all("contact" not in p for p in appels)
+
+
+@pytest.mark.asyncio
+async def test_signal_de_vie_refuse_ne_casse_pas_la_boucle(tmp_path, monkeypatch):
+    monkeypatch.setattr(ec, "SATELLITE_ID", "sat-1")
+    monkeypatch.setattr(ec, "SATELLITE_EMAIL", "x")
+    monkeypatch.setattr(ec, "SATELLITE_PASSWORD", "y")
+
+    def handler(request):
+        if request.url.path == "/api/token/":
+            return httpx.Response(401)
+        return httpx.Response(200)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        assert await ec.boucle(client=client, fichier_etat=str(tmp_path / "etat.json"), une_seule_iteration=True) is True

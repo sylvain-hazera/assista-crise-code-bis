@@ -1,5 +1,6 @@
 import { Component, OnInit, OnDestroy, AfterViewInit, Input, Output, EventEmitter, ViewChild, ElementRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { styleCarte } from '../../../shared/utils/carte-style';
 import maplibregl from 'maplibre-gl';
 import type { FeatureCollection, Geometry } from 'geojson';
 
@@ -41,7 +42,7 @@ export class HabitationCarteComponent implements OnInit, AfterViewInit, OnDestro
   ngAfterViewInit(): void {
     this.map = new maplibregl.Map({
       container: this.mapContainer.nativeElement,
-      style: 'https://raw.githubusercontent.com/go2garret/maps/main/src/assets/json/openStreetMap.json',
+      style: styleCarte(),
       center: this.center,
       zoom: this.zoom,
     });

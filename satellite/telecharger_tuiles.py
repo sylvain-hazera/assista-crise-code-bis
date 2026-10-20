@@ -18,10 +18,14 @@ au sens de cet usage). Vérifié sur des cas connus (75 borde 92/93/94, 38 borde
 alpins/rhodaniens, 33 borde 17/24/40/47) — voir la commande de régénération en bas de fichier.
 Départements métropolitains uniquement (96) ; l'outre-mer n'est pas couvert par ce fichier."""
 import argparse
+import io
 import json
 import logging
 import os
+import shutil
 import subprocess
+import urllib.request
+import zipfile
 
 logger = logging.getLogger("telecharger-tuiles")
 
@@ -31,6 +35,9 @@ DATA_DEPARTEMENTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "da
 # besoin de recopier une URL datée depuis https://maps.protomaps.com/builds (20/10/2026).
 PMTILES_SOURCE_DEFAUT = os.environ.get("PMTILES_SOURCE")
 BUILDS_PROTOMAPS = "https://build-metadata.protomaps.dev/builds.json"
+# L'agent par défaut « Python-urllib » est refusé (403) par build-metadata.protomaps.dev
+# (constaté le 20/10/2026) : sans lui, aucun satellite n'obtenait son fond de carte.
+ENTETES_HTTP = {"User-Agent": "assista-crise-satellite/1.0 (+https://assista-crise.fr)"}
 URL_BUILD_PROTOMAPS = "https://build.protomaps.com/{cle}"
 
 
@@ -42,7 +49,7 @@ def dernier_build(lecteur=None):
 
     if lecteur is None:
         def lecteur(url):
-            with urllib.request.urlopen(url, timeout=30) as reponse:
+            with urllib.request.urlopen(urllib.request.Request(url, headers=ENTETES_HTTP), timeout=30) as reponse:
                 return reponse.read()
     builds = json.loads(lecteur(BUILDS_PROTOMAPS))
     cles = sorted(b["key"] for b in builds if str(b.get("key", "")).endswith(".pmtiles"))
@@ -100,6 +107,37 @@ def extraire(code_departement, sortie, source=None, maxzoom=None, inclure_limitr
     return sortie
 
 
+# Polices et pictogrammes du fond de carte Protomaps (style construit par le frontend, voir
+# frontend/src/app/shared/utils/carte-style.ts) : ~7 Mo, sans eux la carte hors ligne n'aurait
+# ni noms de rues ni icônes. Servis par nginx-satellite.conf sous /tuiles/assets/.
+URL_ASSETS_CARTE = "https://github.com/protomaps/basemaps-assets/archive/refs/heads/main.zip"
+
+
+def telecharger_assets(dossier, lecteur=None):
+    """Extrait fonts/ et sprites/ de l'archive basemaps-assets dans `dossier`. `lecteur`
+    injectable pour les tests."""
+    lecteur = lecteur or (lambda url: urllib.request.urlopen(urllib.request.Request(url, headers=ENTETES_HTTP), timeout=120).read())
+    archive = zipfile.ZipFile(io.BytesIO(lecteur(URL_ASSETS_CARTE)))
+    temporaire = dossier + ".tmp"
+    shutil.rmtree(temporaire, ignore_errors=True)
+    nb = 0
+    for nom in archive.namelist():
+        morceaux = nom.split("/", 1)   # "basemaps-assets-main/fonts/..." -> "fonts/..."
+        if len(morceaux) < 2 or not morceaux[1].startswith(("fonts/", "sprites/")) or nom.endswith("/"):
+            continue
+        chemin = os.path.join(temporaire, morceaux[1])
+        if not os.path.abspath(chemin).startswith(os.path.abspath(temporaire) + os.sep):
+            continue   # chemin hors du dossier : ignoré
+        os.makedirs(os.path.dirname(chemin), exist_ok=True)
+        with open(chemin, "wb") as f:
+            f.write(archive.read(nom))
+        nb += 1
+    shutil.rmtree(dossier, ignore_errors=True)
+    os.replace(temporaire, dossier)
+    logger.info("Polices et pictogrammes de la carte : %d fichiers dans %s", nb, dossier)
+    return nb
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("departement", help="Code département (ex: 38)")
@@ -107,12 +145,21 @@ if __name__ == "__main__":
     parser.add_argument("--source", default=None, help="URL du build PMTiles (def. $PMTILES_SOURCE)")
     parser.add_argument("--maxzoom", type=int, default=None)
     parser.add_argument("--sans-limitrophes", action="store_true")
+    parser.add_argument("--forcer", action="store_true", help="Retélécharger même si déjà présent")
     args = parser.parse_args()
     logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"), format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-    extraire(
-        args.departement, args.sortie, source=args.source, maxzoom=args.maxzoom,
-        inclure_limitrophes=not args.sans_limitrophes,
-    )
+    # Lancé à chaque démarrage du satellite (service one-shot du profil full) : un fond déjà
+    # téléchargé est gardé, --forcer pour le régénérer (changement de département, mise à jour).
+    if os.path.exists(args.sortie) and not args.forcer:
+        logger.info("Fond de carte déjà présent (%s) : conservé (--forcer pour le refaire).", args.sortie)
+    else:
+        extraire(
+            args.departement, args.sortie, source=args.source, maxzoom=args.maxzoom,
+            inclure_limitrophes=not args.sans_limitrophes,
+        )
+    assets = os.path.join(os.path.dirname(os.path.abspath(args.sortie)), "assets")
+    if args.forcer or not os.path.isdir(os.path.join(assets, "fonts")):
+        telecharger_assets(assets)
 
 # Régénération de data/departements_limitrophes.json (si le contour officiel change, ce qui
 # n'arrive normalement jamais pour des limites administratives françaises) :

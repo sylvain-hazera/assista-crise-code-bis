@@ -337,10 +337,12 @@ class DjangoClient:
             payload["erreur"] = erreur
         await self._request("PATCH", f"/messages-canal-meshcore/{message_id}/", json=payload)
 
-    async def rapporter_batterie(self, compagnon_id, niveau):
+    async def rapporter_batterie(self, compagnon_id, niveau, latitude=None, longitude=None):
+        corps = {"niveau": niveau}
+        if latitude is not None and longitude is not None:
+            corps.update(latitude=latitude, longitude=longitude)
         await self._request(
-            "POST", f"/compagnons-meshcore/{compagnon_id}/rapporter-batterie/",
-            json={"niveau": niveau},
+            "POST", f"/compagnons-meshcore/{compagnon_id}/rapporter-batterie/", json=corps,
         )
 
     async def traceroutes_a_executer(self, compagnon_id):
@@ -844,6 +846,17 @@ async def boucle_envoi_canaux(meshcore, django):
         await asyncio.sleep(POLL_INTERVAL_SECONDS)
 
 
+def position_compagnon(meshcore):
+    """Position annoncée par le companion lui-même (réglée dans l'appli MeshCore ou GPS), lue
+    dans self_info -- sans elle le nœud n'apparaît pas sur la carte du central (constaté le
+    20/10/2026). (None, None) si le nœud n'a pas de position (0, 0 = non réglée)."""
+    infos = getattr(meshcore, "self_info", None) or {}
+    lat, lon = infos.get("adv_lat"), infos.get("adv_lon")
+    if lat is None or lon is None or (abs(lat) < 1e-6 and abs(lon) < 1e-6):
+        return None, None
+    return lat, lon
+
+
 async def boucle_batterie_compagnon(meshcore, django, compagnon_id):
     """Batterie du companion lui-même (voir docstring de CompagnonMeshCore.
     derniere_batterie_niveau) -- commande locale (get_bat), aucun coût d'antenne mesh."""
@@ -857,8 +870,9 @@ async def boucle_batterie_compagnon(meshcore, django, compagnon_id):
             niveau = (resultat.payload or {}).get("level")
             if niveau is None:
                 continue
-            await django.rapporter_batterie(compagnon_id, niveau)
-            logger.debug("Batterie du companion rapportée : %s.", niveau)
+            lat, lon = position_compagnon(meshcore)
+            await django.rapporter_batterie(compagnon_id, niveau, lat, lon)
+            logger.debug("Batterie du companion rapportée : %s (position %s, %s).", niveau, lat, lon)
         except Exception:
             logger.exception("Échec du cycle de lecture de la batterie du companion.")
 

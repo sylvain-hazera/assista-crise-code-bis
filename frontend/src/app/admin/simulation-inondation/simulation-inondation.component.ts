@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subscription } from 'rxjs';
 import { takeWhile } from 'rxjs/operators';
+import { styleCarte } from '../../shared/utils/carte-style';
 import maplibregl from 'maplibre-gl';
 import type { Feature, FeatureCollection, MultiPolygon, Point, Polygon } from 'geojson';
 
@@ -94,7 +95,7 @@ export class SimulationInondationComponent implements AfterViewInit, OnDestroy {
   ngAfterViewInit(): void {
     this.map = new maplibregl.Map({
       container: this.mapContainer.nativeElement,
-      style: 'https://raw.githubusercontent.com/go2garret/maps/main/src/assets/json/openStreetMap.json',
+      style: styleCarte(),
       center: [2.5, 46.6],
       zoom: 5,
       attributionControl: false,

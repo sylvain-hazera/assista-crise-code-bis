@@ -1,6 +1,7 @@
 import { Component, OnInit, OnDestroy, AfterViewInit, Input, ViewChild, ElementRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { styleCarte } from '../../../utils/carte-style';
 import maplibregl from 'maplibre-gl';
 import * as turf from '@turf/turf';
 import { CrisisService } from '../../../../services/crisis.service';
@@ -1258,7 +1259,7 @@ private addHoverEffect() { // Show convex hull around clusters on hover
   private initializeMap(): void { // Initialize MapLibre map and add controls
     this.map = new maplibregl.Map({
       container: this.mapContainer.nativeElement,
-      style: 'https://raw.githubusercontent.com/go2garret/maps/main/src/assets/json/openStreetMap.json', 
+      style: styleCarte(),
       center: this.center,
       zoom: this.zoom
     });

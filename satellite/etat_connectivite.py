@@ -24,6 +24,39 @@ INTERVALLE_VERIFICATION_SECONDES = int(os.environ.get("INTERVALLE_VERIFICATION_S
 TIMEOUT_VERIFICATION_SECONDES = float(os.environ.get("TIMEOUT_VERIFICATION_SECONDES", "5"))
 FICHIER_ETAT = os.environ.get("FICHIER_ETAT_CONNECTIVITE", "/var/run/satellite/etat_connectivite.json")
 
+# Signal de vie au central (POST /api/satellites/<id>/contact/) : c'est lui qui fait passer le
+# satellite « Actif » dans la page Satellites. Rien ne l'appelait jusqu'ici (constaté le
+# 20/10/2026 : satellite approuvé, ponts radio actifs, mais « jamais contacté »).
+SATELLITE_ID = os.environ.get("SATELLITE_ID", "")
+SATELLITE_EMAIL = os.environ.get("SATELLITE_EMAIL", "")
+SATELLITE_PASSWORD = os.environ.get("SATELLITE_PASSWORD", "")
+VERSION_LOGICIELLE = os.environ.get("VERSION_LOGICIELLE", "")
+INTERVALLE_CONTACT_SECONDES = int(os.environ.get("INTERVALLE_CONTACT_SECONDES", "120"))
+
+
+async def signaler_contact(client: httpx.AsyncClient) -> bool:
+    """Connexion avec le compte de service du satellite puis signal de vie. Jamais d'exception :
+    un échec est journalisé et retenté au prochain intervalle."""
+    if not (SATELLITE_ID and SATELLITE_EMAIL and SATELLITE_PASSWORD):
+        return False
+    try:
+        jeton = await client.post(
+            f"{CENTRAL_URL}/api/token/", json={"email": SATELLITE_EMAIL, "password": SATELLITE_PASSWORD},
+            timeout=TIMEOUT_VERIFICATION_SECONDES,
+        )
+        jeton.raise_for_status()
+        corps = {"version_logicielle": VERSION_LOGICIELLE} if VERSION_LOGICIELLE else {}
+        reponse = await client.post(
+            f"{CENTRAL_URL}/api/satellites/{SATELLITE_ID}/contact/", json=corps,
+            headers={"Authorization": f"Bearer {jeton.json()['access']}"},
+            timeout=TIMEOUT_VERIFICATION_SECONDES,
+        )
+        reponse.raise_for_status()
+        return True
+    except (httpx.HTTPError, KeyError, ValueError) as exc:
+        logger.warning("Signal de vie au central refusé ou impossible : %s", exc)
+        return False
+
 
 async def verifier_une_fois(client: httpx.AsyncClient) -> bool:
     """En ligne = le SITE répond (même une erreur 4xx/5xx applicative prouve qu'on l'a
@@ -55,6 +88,7 @@ def ecrire_etat(en_ligne: bool, depuis: float, fichier=None):
 async def boucle(client=None, fichier_etat=None, une_seule_iteration=False):
     etat_precedent = None
     depuis = time.time()
+    dernier_contact = 0.0
     ferme_client = client is None
     client = client or httpx.AsyncClient()
     try:
@@ -69,6 +103,9 @@ async def boucle(client=None, fichier_etat=None, une_seule_iteration=False):
                 depuis = maintenant
                 etat_precedent = en_ligne
             ecrire_etat(en_ligne, depuis, fichier=fichier_etat)
+            if en_ligne and maintenant - dernier_contact >= INTERVALLE_CONTACT_SECONDES:
+                if await signaler_contact(client):
+                    dernier_contact = maintenant
             if une_seule_iteration:
                 return en_ligne
             await asyncio.sleep(INTERVALLE_VERIFICATION_SECONDES)

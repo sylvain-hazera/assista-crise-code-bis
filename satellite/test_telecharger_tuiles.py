@@ -76,3 +76,20 @@ def test_dernier_build_prend_la_cle_la_plus_recente():
     from telecharger_tuiles import dernier_build
     liste = [{"key": "20260901.pmtiles"}, {"key": "20261020.pmtiles"}, {"key": "20250101.pmtiles"}, {"key": "notes.txt"}]
     assert dernier_build(lecteur=lambda url: _json.dumps(liste).encode()) == "https://build.protomaps.com/20261020.pmtiles"
+
+
+def test_telecharger_assets_extrait_polices_et_pictogrammes(tmp_path):
+    import io
+    import zipfile
+    tampon = io.BytesIO()
+    with zipfile.ZipFile(tampon, "w") as z:
+        z.writestr("basemaps-assets-main/fonts/Noto Sans Regular/0-255.pbf", b"police")
+        z.writestr("basemaps-assets-main/sprites/v4/light.json", b"{}")
+        z.writestr("basemaps-assets-main/README.md", b"ignore")
+        z.writestr("basemaps-assets-main/fonts/../../evasion.txt", b"jamais")
+    dossier = str(tmp_path / "assets")
+    nb = tt.telecharger_assets(dossier, lecteur=lambda url: tampon.getvalue())
+    assert nb == 2
+    assert (tmp_path / "assets" / "fonts" / "Noto Sans Regular" / "0-255.pbf").read_bytes() == b"police"
+    assert (tmp_path / "assets" / "sprites" / "v4" / "light.json").exists()
+    assert not (tmp_path / "evasion.txt").exists()

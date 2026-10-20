@@ -340,6 +340,12 @@ SATELLITE_SUPERVISION_RAYON_LIMITROPHE_KM = int(os.environ.get('SATELLITE_SUPERV
 # True uniquement sur un satellite « full » : le central ne doit jamais se synchroniser vers lui-même
 INSTANCE_SATELLITE_LOCALE = os.environ.get('INSTANCE_SATELLITE_LOCALE', 'False') == 'True'
 
+# Satellite : l'application est ouverte depuis un téléphone ou un PC du réseau local, par l'IP
+# du satellite (inconnue d'avance). Tout nom d'hôte est accepté ; le filtrage aux seules
+# adresses privées (RFC 1918) est fait par le nginx du satellite (satellite/nginx-satellite.conf).
+if os.environ.get('SATELLITE_WEB_LOCAL', 'False') == 'True':
+    ALLOWED_HOSTS = ['*']
+
 SATELLITE_SYNC_SORTANT_INTERVALLE_S = int(os.environ.get('SATELLITE_SYNC_SORTANT_INTERVALLE_S', 300))
 
 # compte de service de ce satellite auprès du central (SATELLITE_ID : obtenu à l'enrôlement)

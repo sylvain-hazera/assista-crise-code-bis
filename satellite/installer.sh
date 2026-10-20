@@ -129,13 +129,25 @@ fixer_env() {
     fi
 }
 
+cles_chiffrement() {
+    # Clés de chiffrement des champs personnels du backend local (core/crypto_fields.py) :
+    # sans elles il ne démarre pas (« FIELD_BLIND_INDEX_KEY n'est pas configurée », constaté le
+    # 20/10/2026). Générées une seule fois : les changer rendrait les données locales illisibles.
+    if [ -z "$(valeur_env FIELD_ENCRYPTION_KEY)" ]; then
+        fixer_env FIELD_ENCRYPTION_KEY "$(python3 -c 'import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())')"
+    fi
+    if [ -z "$(valeur_env FIELD_BLIND_INDEX_KEY)" ]; then
+        fixer_env FIELD_BLIND_INDEX_KEY "$(secret_aleatoire)"
+    fi
+}
+
 ports_publies() {
-    # Ports publiés par le profil full (backend local, tuiles) : si un autre programme les
+    # Ports publiés par le profil full (backend local, application web) : si un autre programme les
     # occupe déjà sur la machine (ex. une autre appli en 8000, constaté le 20/10/2026 : « failed
     # to set up container networking ... external connectivity »), on prend le suivant libre.
     # Un port déjà tenu par CE satellite (relance) est gardé tel quel.
     local cle defaut service actuel
-    for cle_defaut_service in BACKEND_PORT:8010:backend TUILES_PORT:8080:tileserver; do
+    for cle_defaut_service in BACKEND_PORT:8010:backend WEB_PORT:80:frontend; do
         IFS=: read -r cle defaut service <<< "$cle_defaut_service"
         actuel="$(valeur_env "$cle")"; actuel="${actuel:-$defaut}"
         if port_occupe "$actuel" && [ -z "$(cd "$REPERTOIRE_SCRIPT" && docker compose ps -q "$service" 2>/dev/null)" ]; then
@@ -148,9 +160,42 @@ ports_publies() {
     done
 }
 
+ips_privees() {
+    # Adresses IPv4 privées (RFC 1918) de la machine, hors réseaux internes de Docker : celles
+    # par lesquelles un téléphone du site ouvre l'appli
+    ip -4 -o addr show 2>/dev/null \
+        | awk '$2 !~ /^(lo|docker|br-|veth|virbr)/ {split($4, a, "/"); print a[1]}' \
+        | grep -E '^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)' || true
+}
+
+afficher_acces_web() {
+    # URL de l'application locale et compte admin local (profil full uniquement)
+    local port email mot_de_passe ip suffixe
+    port="$(valeur_env WEB_PORT)"; port="${port:-80}"
+    suffixe="$([ "$port" = "80" ] && echo "" || echo ":$port")"
+    email="$(valeur_env DJANGO_SUPERUSER_EMAIL)"
+    mot_de_passe="$(valeur_env DJANGO_SUPERUSER_PASSWORD)"
+    echo
+    echo "================  Accès à l'application du satellite (sans internet)  ================"
+    echo "  Depuis un téléphone ou un PC connecté au même réseau (Wi-Fi / câble) :"
+    local trouve=0
+    for ip in $(ips_privees); do
+        echo "    http://$ip$suffixe/"
+        trouve=1
+    done
+    [ "$trouve" = 1 ] || echo "    http://<adresse IP de cette machine>$suffixe/   (aucune IP privée détectée)"
+    echo "  Compte administrateur local :"
+    echo "    identifiant  : ${email:-(non défini)}"
+    echo "    mot de passe : ${mot_de_passe:-(non défini)}"
+    echo "  Les comptes de l'institution sont aussi recopiés ici (synchronisation toutes les"
+    echo "  5 min tant qu'internet est disponible) : chacun garde son identifiant habituel."
+    echo "  Réafficher ces informations : $0 acces-web"
+    echo "======================================================================================"
+}
+
 valeur_fichier() {
     # valeur_fichier <fichier> <CLE> -> valeur (vide si absente)
-    grep -E "^$2=" "$1" 2>/dev/null | tail -n1 | cut -d= -f2-
+    { grep -E "^$2=" "$1" 2>/dev/null || true; } | tail -n1 | cut -d= -f2-
 }
 
 # Docker juste installé : l'utilisateur n'est pas encore dans le groupe "docker" (il faudrait
@@ -261,7 +306,9 @@ installer_docker_si_absent() {
 
 # Valeur d'une variable du .env du satellite (vide si absente).
 valeur_env() {
-    grep -E "^$1=" "$FICHIER_ENV" 2>/dev/null | tail -n1 | cut -d= -f2-
+    # `|| true` : une clé absente n'est pas une erreur (set -o pipefail arrêtait sinon le script
+    # en silence sur un .env plus ancien, constaté le 20/10/2026).
+    { grep -E "^$1=" "$FICHIER_ENV" 2>/dev/null || true; } | tail -n1 | cut -d= -f2-
 }
 
 phase_demarrer() {
@@ -368,7 +415,12 @@ EOF
         scale_args+=(--scale meshtastic-bridge=0)
     fi
 
-    [ "$profil" = "full" ] && ports_publies
+    # version affichée sur la page Satellites (signal de vie, etat_connectivite.py)
+    fixer_env VERSION_LOGICIELLE "$(git -C "$REPERTOIRE_SCRIPT" describe --always 2>/dev/null || echo inconnue)"
+    if [ "$profil" = "full" ]; then
+        cles_chiffrement
+        ports_publies
+    fi
 
     log "Démarrage (profil $profil)..."
     (cd "$REPERTOIRE_SCRIPT" && docker compose --profile "$profil" up -d --build "${scale_args[@]}")
@@ -376,6 +428,9 @@ EOF
     log "Terminé. Vérifier l'état :"
     echo "  cd $REPERTOIRE_SCRIPT && docker compose --profile $profil ps"
     echo "  docker compose --profile $profil logs -f meshcore-proxy meshcore-bridge"
+    if [ "$profil" = "full" ]; then
+        afficher_acces_web
+    fi
 }
 
 configurer_radios() {
@@ -558,12 +613,16 @@ case "${1:-}" in
         verifier_prerequis
         phase_connecter_noeud
         ;;
+    acces-web)
+        afficher_acces_web
+        ;;
     *)
         echo "Usage :"
         echo "  $0 installer <JETON>    # installation complète, sans question (recommandé)"
         echo "  $0 installer            # reprendre une installation interrompue"
         echo "  $0 connecter-noeud      # radio branchée après l'installation"
         echo "  $0 demarrer             # redémarrer le satellite (après une mise à jour : git pull d'abord)"
+        echo "  $0 acces-web            # URL de l'application et compte admin local (profil full)"
         echo
         echo "Ancien parcours (installations commencées avant le 20/10/2026) :"
         echo "  $0 enroler <jeton> <nom> <gw|full>  puis  $0 demarrer"

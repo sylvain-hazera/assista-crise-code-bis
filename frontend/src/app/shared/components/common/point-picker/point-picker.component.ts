@@ -1,5 +1,6 @@
 import { AfterViewInit, Component, ElementRef, EventEmitter, Input, OnChanges, OnDestroy, Output, SimpleChanges, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { styleCarte } from '../../../utils/carte-style';
 import maplibregl from 'maplibre-gl';
 
 /**
@@ -41,7 +42,7 @@ export class PointPickerComponent implements AfterViewInit, OnChanges, OnDestroy
 
     this.map = new maplibregl.Map({
       container: this.mapContainer.nativeElement,
-      style: 'https://raw.githubusercontent.com/go2garret/maps/main/src/assets/json/openStreetMap.json',
+      style: styleCarte(),
       center,
       zoom: this.zoom,
     });

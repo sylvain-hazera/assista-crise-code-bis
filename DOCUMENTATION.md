@@ -1049,11 +1049,6 @@ Variables CI (protégées et masquées) : `HARBOR_URL`, `HARBOR_PROJECT`, `HARBO
   `MessageMeshLog`) et délai entre une demande et sa prise en charge.
 - Logs centralisés (Loki + Grafana Alloy) : en place sur .114 pour le WAF et fail2ban (20/10/2026) ;
   restent les journaux applicatifs (backend, Celery, Synapse).
-- **Cartes hors ligne des satellites** : le satellite `full` télécharge et sert des tuiles
-  (`tileserver` de `satellite/docker-compose.yml`), mais le frontend charge toujours un style
-  de carte externe (en dur dans `map.component.ts` et `simulation-inondation.component.ts`) :
-  sans internet, le fond de carte est vide. Sortir l'URL du style dans `environment.ts` et la
-  pointer, sur un satellite, vers le tileserver local via une route Nginx.
 - Mettre à jour l'image Grafana (vulnérabilités signalées sur `13.0.11`) et les digests des
   images de base.
 - Documents obsolètes à archiver : `DOCUMENTATION.pdf`, `Documentation_technique.pdf`,

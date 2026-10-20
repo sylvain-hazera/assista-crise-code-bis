@@ -2,6 +2,7 @@ import { Component, OnDestroy, OnInit, ViewChild, ElementRef } from '@angular/co
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
+import { styleCarte } from '../../shared/utils/carte-style';
 import maplibregl from 'maplibre-gl';
 
 import { TeamService } from '../../services/team.service';
@@ -229,7 +230,7 @@ export class MesInterventionsComponent implements OnInit, OnDestroy {
     if (!this.map) {
       this.map = new maplibregl.Map({
         container: this.minimapContainer.nativeElement,
-        style: 'https://raw.githubusercontent.com/go2garret/maps/main/src/assets/json/openStreetMap.json',
+        style: styleCarte(),
         center: coords[0] ?? [2.2137, 46.2276],
         zoom: coords.length ? 11 : 5,
       });

@@ -14094,7 +14094,17 @@ class CompagnonMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelView
             return Response({"detail": "niveau est requis."}, status=status.HTTP_400_BAD_REQUEST)
         compagnon.derniere_batterie_niveau = niveau
         compagnon.derniere_batterie_date = timezone.now()
-        compagnon.save(update_fields=['derniere_batterie_niveau', 'derniere_batterie_date'])
+        champs = ['derniere_batterie_niveau', 'derniere_batterie_date']
+        # Position annoncée par le companion (self_info) : le place sur la carte du central.
+        try:
+            lat, lon = float(request.data.get('latitude')), float(request.data.get('longitude'))
+        except (TypeError, ValueError):
+            lat = lon = None
+        if lat is not None and -90 <= lat <= 90 and -180 <= lon <= 180 and (lat, lon) != (0.0, 0.0):
+            from django.contrib.gis.geos import Point
+            compagnon.location = Point(lon, lat, srid=4326)
+            champs.append('location')
+        compagnon.save(update_fields=champs)
         return Response({"ok": True})
 
     @action(detail=True, methods=['post'], url_path='lancer-traceroute')
@@ -15832,7 +15842,7 @@ class SatelliteViewSet(
     def get_permissions(self):
         if self.action in ('enroler', 'recuperer_identifiants'):
             return [AllowAny()]
-        if self.action in ('contact', 'donnees', 'synchroniser'):
+        if self.action in ('contact', 'donnees', 'comptes', 'synchroniser'):
             return [permissions.IsAuthenticated()]
         if self.action in ('generer_jeton', 'valider', 'revoquer', 'regenerer_identifiants'):
             return [IsInstitutionalActor(), DenyInDemo()]
@@ -15840,7 +15850,7 @@ class SatelliteViewSet(
 
     def get_queryset(self):
         qs = super().get_queryset()
-        if self.action in ('contact', 'donnees', 'synchroniser', 'recuperer_identifiants'):
+        if self.action in ('contact', 'donnees', 'comptes', 'synchroniser', 'recuperer_identifiants'):
             # Le contrôle d'identité se fait dans l'action elle-même (compte_service ==
             # request.user) — le compte de service d'un satellite n'a volontairement aucun
             # ContactInstitution (voir SatelliteViewSet.valider), donc le filtrage par
@@ -16126,6 +16136,48 @@ class SatelliteViewSet(
             "missions": [_payload_donnees_mutable(m, "Mission") for m in missions_qs],
             "offres": [construire_payload_pull(o, "Offer") for o in offres_qs],
             "signalements": [construire_payload_pull(s, "Information") for s in signalements_qs],
+        })
+
+    @action(detail=True, methods=['get'], url_path='comptes')
+    def comptes(self, request, pk=None):
+        """Comptes de l'institution du satellite, copiés sur son instance locale (profil FULL)
+        pour que chacun s'y connecte avec ses identifiants habituels sans internet. Le mot de
+        passe ne voyage que sous forme de hash Django (jamais en clair) ; données réduites au
+        nécessaire pour se connecter (pas de téléphone ni d'adresse). Comptes de service exclus."""
+        satellite = self.get_object()
+        self._exiger_compte_service(request, satellite)
+        if satellite.profil != ProfilSatellite.FULL:
+            raise PermissionDenied("Seul un satellite FULL héberge une instance locale.")
+
+        institution = satellite.institution
+        utilisateurs = (
+            User.objects.filter(institution=institution, is_active=True, enabled=True)
+            .exclude(pk=request.user.pk)
+        )
+        comptes = [
+            {
+                "id": str(u.id), "username": u.username, "email": u.email,
+                "first_name": u.first_name, "last_name": u.last_name, "type": u.type,
+                "password": u.password,
+            }
+            for u in utilisateurs
+            if not (u.email or "").endswith(".assista-crise.local")
+        ]
+        audit_log(
+            request=request, action_code="EXPORT", objet_type="Satellite", objet_id=satellite.id,
+            commentaire=f"Copie des comptes de « {institution.nom} » vers le satellite {satellite.nom} : {len(comptes)} compte(s)",
+        )
+        return Response({
+            "institution": {
+                "id": str(institution.id), "nom": institution.nom,
+                "type_code": institution.type.code, "type_libelle": institution.type.libelle,
+                "commune_code": institution.commune_code, "commune_nom": institution.commune_nom,
+                "epci_code": institution.epci_code, "departement_code": institution.departement_code,
+                "region_code": institution.region_code,
+                "secteur_niveau_effectif": institution.secteur_niveau_effectif,
+                "secteur_nom": institution.secteur_nom, "environment": institution.environment,
+            },
+            "comptes": comptes,
         })
 
     @action(detail=True, methods=['post'], url_path='synchroniser')

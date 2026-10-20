@@ -71,13 +71,12 @@ désormais correctement mémorisé), `.profil`.
 | `meshcore-proxy` | gw, full | Détient la connexion réelle au nœud MeshCore (USB/série ou TCP), s'annonce en mDNS sur le LAN — voir `meshcore-bridge/proxy.py`. |
 | `meshcore-bridge` | gw, full | Relaie les messages entre le proxy et `assista-crise.fr` (ou le central configuré). Bascule vers l'assista-crise local si le central passe hors-ligne (profil full, voir `meshcore-bridge/README.md`). |
 | `etat-connectivite` | gw, full | Vérifie périodiquement si le central répond, écrit l'état dans un volume partagé (`etat_connectivite.py`) — source de vérité unique pour tout futur composant qui en a besoin (bannière, écran de statut). |
-| `db`, `mosquitto`, `backend`, `frontend` | full | Instance assista-crise locale, identique au déploiement central. |
-| `telecharger-tuiles` | full | Conteneur one-shot : télécharge les tuiles du département + limitrophes (`telecharger_tuiles.py`). |
-| `tileserver` | full | Sert les tuiles téléchargées (`maptiler/tileserver-gl`) ; pas encore utilisé par le frontend (voir DOCUMENTATION.md, chantiers ouverts). |
+| `db`, `mosquitto`, `backend`, `frontend` | full | Instance assista-crise locale, identique au déploiement central. **Application web** pour les téléphones et PC du site, sans internet : `http://<IP du satellite>/` (port `WEB_PORT`, 80 par défaut, réseaux privés RFC 1918 uniquement, voir `nginx-satellite.conf`). URL et compte admin local affichés en fin d'installation et par `./installer.sh acces-web`. |
+| `telecharger-tuiles` | full | Conteneur one-shot : télécharge le fond de carte du département + limitrophes (PMTiles Protomaps, ~0,5 à 1 Go) et ses polices/pictogrammes, lus directement par l'application (`frontend/src/app/shared/utils/carte-style.ts`). Gardé ensuite ; `--forcer` pour le refaire. |
 | `annoncer-backend-local` | full | Annonce ce backend en mDNS sur le LAN, pour qu'un satellite GW séparé sur le même site le trouve sans IP configurée à la main. |
 | `meshtastic-bridge` | gw, full | Optionnel — pilote un ou plusieurs `CompagnonMeshtastic` (MQTT, TCP ou SERIE) ; voir la note ci-dessous. |
 | `sync-sortant` | full | Pousse périodiquement vers le central les écritures locales en attente — voir "Synchronisation local → central" ci-dessous. |
-| `sync-entrant` | full | Sens inverse : applique localement le rafraîchissement central → local pour Dossier/Mission. |
+| `sync-entrant` | full | Sens inverse : applique localement le rafraîchissement central → local (crises, demandes, dossiers, missions…) et **copie les comptes de l'institution** (hash du mot de passe seulement) : chacun se connecte à l'application locale avec ses identifiants habituels. |
 | `appliquer-config-proxy` | gw, full | Reconfigure `meshcore-proxy` à distance (voir "Reconfiguration distante" ci-dessous), sans action locale/SSH. |
 
 ## Nœuds branchés en USB/série

@@ -1397,3 +1397,24 @@ class TestEnregistrerDepuisSatellite:
             {"pubkey_hex": "abc123"}, format='json',
         )
         assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+@pytest.mark.django_db
+class TestPositionCompagnonRapportee:
+    """La position annoncée par le companion (self_info) le place sur la carte (20/10/2026)."""
+
+    def _rapporter(self, client, compagnon, **corps):
+        return client.post(reverse('compagnonmeshcore-rapporter-batterie', args=[compagnon.id]), corps, format='json')
+
+    def test_position_enregistree(self, satellite_client, compagnon):
+        r = self._rapporter(satellite_client, compagnon, niveau=3900, latitude=45.47, longitude=4.51)
+        assert r.status_code == 200, r.data
+        compagnon.refresh_from_db()
+        assert round(compagnon.location.y, 2) == 45.47 and round(compagnon.location.x, 2) == 4.51
+        assert compagnon.derniere_batterie_niveau == 3900
+
+    def test_position_absente_ou_nulle_ignoree(self, satellite_client, compagnon):
+        self._rapporter(satellite_client, compagnon, niveau=3900)
+        self._rapporter(satellite_client, compagnon, niveau=3900, latitude=0, longitude=0)
+        compagnon.refresh_from_db()
+        assert compagnon.location is None

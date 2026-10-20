@@ -2,6 +2,7 @@ import { Component, OnDestroy, OnInit, ViewChild, ElementRef, AfterViewInit } fr
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { forkJoin } from 'rxjs';
+import { styleCarte } from '../../shared/utils/carte-style';
 import maplibregl from 'maplibre-gl';
 
 import { TeamService } from '../../services/team.service';
@@ -132,7 +133,7 @@ export class MonEquipeComponent implements OnInit, AfterViewInit, OnDestroy {
 
     this.map = new maplibregl.Map({
       container: this.minimapContainer.nativeElement,
-      style: 'https://raw.githubusercontent.com/go2garret/maps/main/src/assets/json/openStreetMap.json',
+      style: styleCarte(),
       center,
       zoom: allCoords.length ? 11 : 5,
     });

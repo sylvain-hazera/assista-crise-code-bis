@@ -19,7 +19,9 @@ régimes, voir core/sync_outbox.py pour le détail complet de chacun :
   résolues par clé naturelle (nom métier) plutôt que par id, get_or_create localement si
   absentes — voir sync_outbox.MODELES_PULL_SEUL. Un auteur (`author`) pas encore connu
   localement (aucun mécanisme de synchronisation des comptes utilisateurs à ce jour) est mis à
-  None plutôt que de bloquer tout l'enregistrement."""
+  None plutôt que de bloquer tout l'enregistrement.
+- **Comptes** de l'institution du satellite (voir core/sync_comptes.py) : connexion locale avec
+  les identifiants habituels."""
 import logging
 
 import requests
@@ -126,6 +128,25 @@ class Command(BaseCommand):
                 except Exception:
                     logger.exception("Échec application entrante %s %s", nom_modele, item.get("id"))
                     compteurs["erreur"] += 1
+
+        # Comptes de l'institution (connexion locale sans internet, voir core/sync_comptes.py)
+        try:
+            reponse_comptes = requests.get(
+                f"{central_url.rstrip('/')}/api/satellites/{satellite_id}/comptes/",
+                headers={"Authorization": f"Bearer {jeton}"},
+                timeout=60,
+            )
+            reponse_comptes.raise_for_status()
+            from core.sync_comptes import appliquer_comptes
+            resultat_comptes = appliquer_comptes(reponse_comptes.json())
+            self.stdout.write(
+                f"Comptes : {resultat_comptes['crees']} créé(s), {resultat_comptes['mis_a_jour']} mis à jour, "
+                f"{resultat_comptes['desactives']} désactivé(s), {resultat_comptes['ignores']} ignoré(s)."
+            )
+        except requests.RequestException as exc:
+            logger.warning("Copie des comptes échouée (%s) — retentée au prochain passage.", exc)
+        except Exception:
+            logger.exception("Échec de l'application des comptes")
 
         self.stdout.write(
             f"Synchronisation entrante : {compteurs['applique']} appliqué(s), "
