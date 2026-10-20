@@ -46,6 +46,8 @@ DJANGO_PASSWORD = os.environ["DJANGO_BRIDGE_PASSWORD"]
 # meshcore-bridge/bridge.py:DjangoClient (voir son docstring pour le détail et la limite
 # connue sur la réconciliation UUID). Tous optionnels : absents = comportement historique.
 LOCAL_API_URL = os.environ.get("LOCAL_API_URL")
+# Port publié du backend local du satellite (installer.sh le décale si 8000 est déjà pris)
+PORT_BACKEND_LOCAL = int(os.environ.get("BACKEND_PORT") or 8000)
 LOCAL_BRIDGE_EMAIL = os.environ.get("LOCAL_BRIDGE_EMAIL")
 LOCAL_BRIDGE_PASSWORD = os.environ.get("LOCAL_BRIDGE_PASSWORD")
 FICHIER_ETAT_CONNECTIVITE = os.environ.get("FICHIER_ETAT_CONNECTIVITE", "/var/run/satellite/etat_connectivite.json")
@@ -90,7 +92,8 @@ def _nom_hardware(valeur: int) -> str | None:
         return None
 
 
-async def _tester_localhost_backend(port=8000, timeout=2.0):
+async def _tester_localhost_backend(port=None, timeout=2.0):
+    port = port or PORT_BACKEND_LOCAL
     """Voir meshcore-bridge/bridge.py, même fonction : cas le plus courant, ce pont et le
     backend local sur le MÊME Pi (profil Full)."""
     try:
@@ -147,8 +150,8 @@ async def resoudre_url_locale():
         logger.info("URL locale configurée manuellement : %s", LOCAL_API_URL)
         return LOCAL_API_URL
     if await _tester_localhost_backend():
-        logger.info("Backend local détecté sur localhost:8000 (même machine).")
-        return "http://localhost:8000/api"
+        logger.info("Backend local détecté sur localhost:%s (même machine).", PORT_BACKEND_LOCAL)
+        return f"http://localhost:{PORT_BACKEND_LOCAL}/api"
     url_mdns = await _decouvrir_backend_local_mdns()
     if url_mdns:
         logger.info("Backend local découvert en mDNS : %s", url_mdns)

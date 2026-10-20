@@ -104,6 +104,50 @@ secret_aleatoire() {
     python3 -c 'import secrets; print(secrets.token_urlsafe(36))'
 }
 
+port_occupe() {
+    # port_occupe <port> -> vrai si un programme de la machine écoute déjà sur ce port TCP
+    if command -v ss >/dev/null 2>&1; then
+        ss -ltnH 2>/dev/null | awk '{print $4}' | grep -Eq "[:.]$1\$"
+    else
+        (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null
+    fi
+}
+
+port_libre() {
+    # port_libre <port souhaité> -> ce port s'il est libre, sinon le suivant libre
+    local port="$1"
+    while port_occupe "$port"; do port=$((port + 1)); done
+    echo "$port"
+}
+
+fixer_env() {
+    # fixer_env <CLE> <valeur> : remplace ou ajoute la ligne dans .env
+    if grep -qE "^$1=" "$FICHIER_ENV"; then
+        sed -i "s|^$1=.*|$1=$2|" "$FICHIER_ENV"
+    else
+        echo "$1=$2" >> "$FICHIER_ENV"
+    fi
+}
+
+ports_publies() {
+    # Ports publiés par le profil full (backend local, tuiles) : si un autre programme les
+    # occupe déjà sur la machine (ex. une autre appli en 8000, constaté le 20/10/2026 : « failed
+    # to set up container networking ... external connectivity »), on prend le suivant libre.
+    # Un port déjà tenu par CE satellite (relance) est gardé tel quel.
+    local cle defaut service actuel
+    for cle_defaut_service in BACKEND_PORT:8000:backend TUILES_PORT:8080:tileserver; do
+        IFS=: read -r cle defaut service <<< "$cle_defaut_service"
+        actuel="$(valeur_env "$cle")"; actuel="${actuel:-$defaut}"
+        if port_occupe "$actuel" && [ -z "$(cd "$REPERTOIRE_SCRIPT" && docker compose ps -q "$service" 2>/dev/null)" ]; then
+            local nouveau
+            nouveau="$(port_libre "$((actuel + 1))")"
+            log "Port $actuel déjà utilisé sur cette machine : $service publié sur $nouveau."
+            actuel="$nouveau"
+        fi
+        fixer_env "$cle" "$actuel"
+    done
+}
+
 valeur_fichier() {
     # valeur_fichier <fichier> <CLE> -> valeur (vide si absente)
     grep -E "^$2=" "$1" 2>/dev/null | tail -n1 | cut -d= -f2-
@@ -323,6 +367,8 @@ EOF
         log "Radio Meshtastic introuvable ($meshtastic_dev) -- meshtastic-bridge mis en attente (0 réplique)."
         scale_args+=(--scale meshtastic-bridge=0)
     fi
+
+    [ "$profil" = "full" ] && ports_publies
 
     log "Démarrage (profil $profil)..."
     (cd "$REPERTOIRE_SCRIPT" && docker compose --profile "$profil" up -d --build "${scale_args[@]}")

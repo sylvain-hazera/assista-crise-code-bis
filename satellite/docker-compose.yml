@@ -146,6 +146,7 @@ services:
       # superuser local déjà provisionné (DJANGO_SUPERUSER_EMAIL/PASSWORD, service `backend`
       # ci-dessous) comme identifiants du pont sur le backend local.
       - LOCAL_API_URL=${LOCAL_API_URL:-}
+      - BACKEND_PORT=${BACKEND_PORT:-8000}
       - LOCAL_BRIDGE_EMAIL=${DJANGO_SUPERUSER_EMAIL}
       - LOCAL_BRIDGE_PASSWORD=${DJANGO_SUPERUSER_PASSWORD}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
@@ -173,6 +174,7 @@ services:
       # meshcore-bridge ci-dessus, voir son commentaire (détection automatique localhost/mDNS,
       # LOCAL_API_URL à ne remplir que pour forcer une IP précise).
       - LOCAL_API_URL=${LOCAL_API_URL:-}
+      - BACKEND_PORT=${BACKEND_PORT:-8000}
       - LOCAL_BRIDGE_EMAIL=${DJANGO_SUPERUSER_EMAIL}
       - LOCAL_BRIDGE_PASSWORD=${DJANGO_SUPERUSER_PASSWORD}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
@@ -234,7 +236,7 @@ services:
     # résolution interne "backend" que frontend/mosquitto continuent d'utiliser normalement
     # (réseau Compose par défaut, inchangé).
     ports:
-      - "8000:8000"
+      - "${BACKEND_PORT:-8000}:8000"   # choisi libre par installer.sh (ports_publies)
     volumes:
       - media_volume:/app/media
     environment:
@@ -326,7 +328,7 @@ services:
     network_mode: host
     environment:
       - SATELLITE_NOM=${SATELLITE_NOM:-satellite-assista-crise}
-      - BACKEND_PORT=8000
+      - BACKEND_PORT=${BACKEND_PORT:-8000}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
     restart: unless-stopped
     profiles: ["full"]
@@ -361,7 +363,7 @@ services:
     volumes:
       - tuiles_data:/data
     ports:
-      - "8080:8080"
+      - "${TUILES_PORT:-8080}:8080"
     restart: unless-stopped
     profiles: ["full"]
 
