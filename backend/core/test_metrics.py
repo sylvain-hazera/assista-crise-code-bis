@@ -114,3 +114,10 @@ def test_pending_accounts_gauges():
     User.objects.filter(pk=attente.pk).update(date_joined=timezone.now() - timezone.timedelta(hours=30))
     assert gauge("assista_accounts_pending_validation") == 1
     assert gauge("assista_oldest_pending_account_age_seconds") >= 30 * 3600
+
+
+@pytest.mark.django_db
+def test_active_crises_gauge_ignores_test_crises():
+    Crisis.objects.create(name="Crue réelle", type="INONDATION", location="POINT (5.72 45.18)")
+    Crisis.objects.create(name="Crue d'essai", type="INONDATION", location="POINT (5.72 45.18)", essai=True)
+    assert gauge("assista_active_crises") == 1

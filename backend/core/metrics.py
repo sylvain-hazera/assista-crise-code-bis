@@ -84,9 +84,11 @@ class BusinessStateCollector(Collector):
 
     @staticmethod
     def _active_crises():
+        # Crises d'essai exclues (Crisis.essai) : ouvertes pour des tests, jamais une vraie crise.
         family = GaugeMetricFamily("assista_active_crises",
-                                   "Crises without an end date, by type", labels=["type", "environment"])
-        rows = Crisis.objects.filter(end_date__isnull=True).values("type", "environment").annotate(n=Count("pk"))
+                                   "Crises without an end date, by type (test crises excluded)", labels=["type", "environment"])
+        rows = (Crisis.objects.filter(end_date__isnull=True, essai=False)
+                .values("type", "environment").annotate(n=Count("pk")))
         for row in rows:
             family.add_metric([row["type"], row["environment"]], row["n"])
         return family

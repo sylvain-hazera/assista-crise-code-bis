@@ -411,3 +411,10 @@
     cursor: pointer;
   }
 }
+
+.checkbox-row {
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+  cursor: pointer;
+}

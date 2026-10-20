@@ -331,6 +331,11 @@ class Crisis(EnvironmentScopedModel):
     )
     start_date = models.DateTimeField(auto_now_add=True)
     end_date = models.DateTimeField(null=True, blank=True)
+    # Crise créée pour des essais (demande utilisateur du 20/10) : reste ouverte et pleinement
+    # utilisable, mais ignorée par le monitoring -- sinon "crise active sans demande d'aide"
+    # alerte en permanence sur des crises de test que personne ne veut clôturer (la clôture
+    # déclenche la purge RGPD à 30 jours, voir cleanup_crises).
+    essai = models.BooleanField(default=False)
 
     author = models.ForeignKey(
         User,

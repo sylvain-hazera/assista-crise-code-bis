@@ -134,6 +134,14 @@
             }
           </section>
 
+          <!-- Crise d'essai -->
+          <section class="section-block">
+            <label class="checkbox-row" title="Une crise d'essai reste ouverte et utilisable, mais le monitoring l'ignore (aucune alerte).">
+              <input type="checkbox" [checked]="!!selectedCrisis.essai" (change)="updateEssai($any($event.target).checked)">
+              Crise d'essai (ignorée par le monitoring, aucune alerte)
+            </label>
+          </section>
+
           <!-- Zone précise -->
           <section class="section-block">
             <h3><span class="material-icons">draw</span> Zone précise</h3>
