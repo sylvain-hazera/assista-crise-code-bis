@@ -178,7 +178,7 @@
       <button class="btn-primary sm" (click)="openBulkOfferModal()">
         <span class="material-icons">group_add</span> Affecter à une équipe
       </button>
-      <button class="btn-ghost sm" (click)="selectedOfferIds.clear()">Annuler la sélection</button>
+      <button class="btn-ghost sm" (click)="annulerSelection('Offer')">Annuler la sélection</button>
     </div>
   }
   @if (!pickerModeActive && selectedRequestIds.size > 0) {
@@ -187,7 +187,7 @@
       <button class="btn-primary sm" (click)="openBulkRequestModal()">
         <span class="material-icons">assignment_add</span> Affecter à une mission + une équipe
       </button>
-      <button class="btn-ghost sm" (click)="selectedRequestIds.clear()">Annuler la sélection</button>
+      <button class="btn-ghost sm" (click)="annulerSelection('Request')">Annuler la sélection</button>
       @if (!bulkRequestsShareCrisis) {
         <span class="bulk-warning">
           <span class="material-icons">warning</span> Ces demandes ne partagent pas toutes la même crise
@@ -201,7 +201,7 @@
       <button class="btn-primary sm" (click)="openBulkInformationModal()">
         <span class="material-icons">group_add</span> Affecter à une équipe
       </button>
-      <button class="btn-ghost sm" (click)="selectedInformationIds.clear()">Annuler la sélection</button>
+      <button class="btn-ghost sm" (click)="annulerSelection('Information')">Annuler la sélection</button>
     </div>
   }
 

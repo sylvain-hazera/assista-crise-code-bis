@@ -673,3 +673,60 @@ class TestDomainesEtCompetences:
         )
 
         assert not team_a.competences.exists()
+
+
+@pytest.mark.django_db
+class TestCycleDeVieRessource:
+    """Relecture du 20/10/2026 : une ressource n'appartient qu'à une équipe, et redevient
+    disponible quand l'équipe qui la retient la lâche."""
+
+    def test_reassigning_moves_resource_out_of_previous_team(self, mairie_client, team_a, offer, institution_a):
+        client, _ = mairie_client
+        team_b = Team.objects.create(name='Équipe Ressources B', institution=institution_a)
+        client.post(reverse('team-assigner-ressource', args=[team_a.id]), {'offer_id': str(offer.id)}, format='json')
+
+        client.post(reverse('team-assigner-ressources', args=[team_b.id]), {'offer_ids': [str(offer.id)]}, format='json')
+
+        assert not team_a.assigned_offers.filter(id=offer.id).exists()
+        assert team_b.assigned_offers.filter(id=offer.id).exists()
+        offer.refresh_from_db()
+        assert offer.status == 'INDISPONIBLE'
+
+    def test_offer_from_team_created_without_mission_is_freed_when_removed(self, create_user, offer):
+        admin = create_user(username='admin-cycle@test.fr', email='admin-cycle@test.fr', type='ADMIN')
+        client = APIClient()
+        client.force_authenticate(user=admin)
+        response = client.post(
+            reverse('offer-bulk-create-team'), {'offer_ids': [str(offer.id)], 'team_name': 'Créée sans mission'}, format='json',
+        )
+        team = Team.objects.get(id=response.data['id'])
+
+        client.post(reverse('team-retirer-ressource', args=[team.id]), {'offer_id': str(offer.id)}, format='json')
+
+        offer.refresh_from_db()
+        assert offer.status == 'DISPONIBLE'
+
+    def test_offer_from_team_created_without_mission_is_freed_when_team_deleted(self, create_user, offer):
+        admin = create_user(username='admin-cycle2@test.fr', email='admin-cycle2@test.fr', type='ADMIN')
+        client = APIClient()
+        client.force_authenticate(user=admin)
+        response = client.post(
+            reverse('offer-bulk-create-team'), {'offer_ids': [str(offer.id)], 'team_name': 'Créée puis supprimée'}, format='json',
+        )
+
+        client.post(reverse('team-supprimer', args=[response.data['id']]))
+
+        offer.refresh_from_db()
+        assert offer.status == 'DISPONIBLE'
+
+    def test_removing_does_not_free_resource_retained_by_another_team(self, mairie_client, team_a, offer, institution_a):
+        client, _ = mairie_client
+        team_b = Team.objects.create(name='Équipe Ressources C', institution=institution_a)
+        client.post(reverse('team-assigner-ressource', args=[team_b.id]), {'offer_id': str(offer.id)}, format='json')
+        team_a.assigned_offers.add(offer)   # ancienne affectation restée (données d'avant le correctif)
+
+        client.post(reverse('team-retirer-ressource', args=[team_a.id]), {'offer_id': str(offer.id)}, format='json')
+
+        offer.refresh_from_db()
+        assert offer.status == 'INDISPONIBLE'
+        assert team_b.assigned_offers.filter(id=offer.id).exists()

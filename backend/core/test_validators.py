@@ -610,3 +610,30 @@ def test_chu_rejected_when_only_private_matches_found(mock_search, mock_fetch):
     )
 
     assert valid is False
+
+
+@pytest.mark.parametrize("domaine", [
+    "chu" + "-a" * 60 + "!",
+    "x.ars" + "-a" * 60 + "!",
+    "sdis" + "a" * 60 + "!",
+    "mairie" + "-a" * 60 + "!",
+    "a" * 300 + ".fr",
+])
+def test_validation_domaine_reste_rapide_sur_entree_piegee(domaine):
+    # Inscription publique : l'ancienne forme des motifs ((?:[.-][a-z0-9-]+)*) prenait un temps
+    # exponentiel sur ces domaines -- des heures pour 60 segments (relecture du 20/10/2026).
+    import time
+    debut = time.perf_counter()
+    valide, _message = InstitutionEmailValidator.validate_email_domain(f"agent@{domaine}")
+    assert time.perf_counter() - debut < 0.5
+    assert valide is False
+
+
+@pytest.mark.parametrize("domaine", [
+    "mairie-saint-etienne.fr", "ville.mairie-lyon.fr", "chu-grenoble.fr", "chu.fr",
+    "ars.sante.fr", "auvergne-rhone-alpes.ars.sante.fr", "sdis40.fr", "sdis-2a.fr",
+    "pompiers.sdis40.fr", "cc-pays-de-gex.fr", "interieur.gouv.fr",
+])
+def test_domaines_institutionnels_toujours_acceptes(domaine):
+    valide, _message = InstitutionEmailValidator.validate_email_domain(f"agent@{domaine}")
+    assert valide is True

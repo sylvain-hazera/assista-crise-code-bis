@@ -997,6 +997,15 @@ export class ReportingComponent implements OnInit, OnDestroy {
     });
   }
 
+  /** « Annuler la sélection » des barres groupées : vide aussi les lignes mémorisées (Map),
+   * pas seulement les ids -- sinon openBulkOfferModal pré-remplissait le nom d'équipe depuis
+   * une sélection annulée. */
+  annulerSelection(type: 'Offer' | 'Request' | 'Information'): void {
+    if (type === 'Offer') { this.selectedOfferIds.clear(); this.selectedOfferRowsMap.clear(); }
+    if (type === 'Request') { this.selectedRequestIds.clear(); this.selectedRequestRowsMap.clear(); }
+    if (type === 'Information') { this.selectedInformationIds.clear(); this.selectedInformationRowsMap.clear(); }
+  }
+
   // ── Barre groupée offres : nouvelle équipe (+ régulateur) ou équipe existante ─
 
   openBulkOfferModal(): void {
@@ -1111,6 +1120,7 @@ export class ReportingComponent implements OnInit, OnDestroy {
         this.selectedOfferIds.clear();
         this.selectedOfferRowsMap.clear();
         this.showBulkOfferModal = false;
+        this.load();   // statut des offres passé à « Indisponible »
       },
       error: (err) => this.showError(err?.error?.error || "Impossible de créer l'équipe."),
     });

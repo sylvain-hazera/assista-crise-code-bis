@@ -2,7 +2,7 @@ import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule, ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { forkJoin, Observable, of, map, switchMap } from 'rxjs';
+import { forkJoin, Observable, of, map } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import type { Feature, FeatureCollection, MultiPolygon, Polygon } from 'geojson';
 
@@ -310,15 +310,22 @@ export class TeamsComponent implements OnInit {
       assigned_request_ids: [],
       competence_ids:       [],
     };
-    this.teamService.create(payload).pipe(
-      switchMap(team => missionTitre ? this.teamService.definirMission(team.id!, missionTitre) : of(team)),
-    ).subscribe({
-      next: () => {
-        this.reloadTeams();
-        this.showSuccess(missionTitre ? 'Équipe créée avec sa mission.' : 'Équipe créée — pensez à définir sa mission.');
+    this.teamService.create(payload).subscribe({
+      next: (team) => {
         this.closeModal();
+        if (!missionTitre) {
+          this.reloadTeams();
+          this.showSuccess('Équipe créée — pensez à définir sa mission.');
+          return;
+        }
+        // Équipe déjà créée à ce stade : un échec ne concerne que la mission, à redéfinir
+        // depuis la fiche (et non « erreur lors de la création », trompeur).
+        this.teamService.definirMission(team.id!, missionTitre).subscribe({
+          next: () => { this.reloadTeams(); this.showSuccess('Équipe créée avec sa mission.'); },
+          error: () => { this.reloadTeams(); this.showError("Équipe créée, mais la mission n'a pas pu être définie : redéfinissez-la depuis sa fiche."); },
+        });
       },
-      error: () => { this.reloadTeams(); this.showError('Erreur lors de la création.'); },
+      error: () => this.showError('Erreur lors de la création.'),
     });
   }
 
@@ -1346,8 +1353,9 @@ export class TeamsComponent implements OnInit {
     if (!this.selectedTeam?.id) return;
     this.teamService.definirStatutRessource(this.selectedTeam.id, offerId, statut).subscribe({
       next: (updated) => {
-        this.offerService.getAll({ exclude_type: 'Bénévolat' }).subscribe(offers => {
-          this.offers = offers;
+        // Seule cette offre a changé : la relire elle seule, pas toute la liste (~1 Mo en démo).
+        this.offerService.getById(offerId).subscribe(offer => {
+          this.offers = this.offers.map(o => o.id === offer.id ? offer : o);
           this.selectedTeam = { ...updated, missions: this.buildMissions(updated) };
           this.reloadTeams();
         });

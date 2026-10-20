@@ -4335,6 +4335,15 @@ def _affecter_ressource(request, team, offer):
     offer.mission = team.mission_active
     offer.status = Status.UNAVAILABLE
     offer.save(update_fields=['mission', 'status'])
+    # Une ressource n'appartient qu'à une équipe à la fois (un seul engagement, voir plus bas) :
+    # réaffectée ici, elle quitte l'équipe précédente -- sinon elle restait listée dans les deux
+    # (relecture du 20/10/2026, facile à provoquer depuis l'affectation groupée).
+    for ancienne in offer.assigned_teams.exclude(pk=team.pk):
+        ancienne.assigned_offers.remove(offer)
+        audit_log(
+            request=request, action_code="SUPPRESSION", objet_type="Team", objet_id=ancienne.id,
+            commentaire=f"Ressource « {offer.title} » réaffectée à l'équipe {team.name}",
+        )
     team.assigned_offers.add(offer)
     # N'ajoute comme membre que si la présence physique n'est pas explicitement exclue
     # (ex: un simple prêteur de chambre) — None (offres antérieures à ce champ) garde
@@ -4373,11 +4382,18 @@ def _affecter_ressource(request, team, offer):
 
 def _ressource_retenue_par_equipe(team, offer) -> bool:
     """L'offre est-elle retenue par CETTE équipe (et donc à libérer quand elle la quitte) ?
-    Engagement à son nom (assigner_ressource), ou lien vers sa mission active -- jamais une
-    offre déjà réaffectée ailleurs entre-temps."""
-    if EngagementRessource.objects.filter(offer=offer, team=team).exists():
-        return True
-    return bool(team.mission_active_id) and offer.mission_id == team.mission_active_id
+    Jamais si une autre équipe la retient (engagement, mission ou affectation), pour ne pas
+    couper une réaffectation faite entre-temps. Sinon oui : engagement à son nom
+    (assigner_ressource), mission de cette équipe, ou -- offres d'une équipe créée depuis la
+    page Signalements sans mission (bulk_create_team, ni engagement ni mission) -- simple
+    affectation à cette seule équipe. Ce dernier cas restait « Indisponible » pour toujours
+    une fois l'offre retirée ou l'équipe supprimée (relecture du 20/10/2026)."""
+    engagement = EngagementRessource.objects.filter(offer=offer).only('team_id').first()
+    if engagement is not None:
+        return engagement.team_id == team.pk
+    if offer.mission_id:
+        return offer.mission.equipes.filter(pk=team.pk).exists()
+    return not offer.assigned_teams.exclude(pk=team.pk).exists()
 
 
 def _liberer_ressource(team, offer):
