@@ -31,6 +31,8 @@ const GEORISQUES_COUCHES = [
 ];
 const CLE_DERNIERE_COMMUNE = 'simulation-inondation-derniere-commune';
 const INTERVALLE_POLLING_MS = 6_000;
+// Seuils de gravité par hauteur d'eau (m) -- limité ≤ 0,5 ; modéré ≤ 1 ; fort au-delà.
+const SEUILS_GRAVITE = { limite: 0.5, modere: 1 };
 const METRES_PAR_DEGRE_LAT = 111_320; // même valeur que core/inondation.py, pour la cohérence
 
 type ColonneTri = 'adresse' | 'altitude' | 'profondeur';
@@ -467,6 +469,10 @@ export class SimulationInondationComponent implements AfterViewInit, OnDestroy {
    * niveau (voir majCouleurAdresses) -- ce n'est PAS une nouvelle requête réseau, juste
    * source.setData() sur des données déjà en mémoire côté client. Vide tant que les adresses
    * n'ont pas été chargées (voir chargerAdresses). */
+  get aDesAdressesAffichees(): boolean {
+    return (this.adresses?.adresses?.length ?? 0) > 0 && this.coucheRiviereActive;
+  }
+
   private adressesEnGeoJSON(): FeatureCollection<Point> {
     const adresses = this.adresses?.adresses ?? [];
     return {
@@ -495,11 +501,15 @@ export class SimulationInondationComponent implements AfterViewInit, OnDestroy {
 
     const layerId = `${ADRESSES_SOURCE_ID}-layer`;
     if (!this.map.getLayer(layerId)) return;
+    // Gravité par HAUTEUR d'eau simulée (inspiré de la grille bluemapping, volet vitesse en
+    // moins : le modèle "baignoire" ne calcule pas de vitesse). Seuils SEUILS_GRAVITE.
     this.map.setPaintProperty(layerId, 'circle-color', [
       'case',
       ['==', ['get', 'seuil_inondation'], null], '#6b7280',
-      ['<=', ['get', 'seuil_inondation'], this.niveauCourant], '#dc2626',
-      '#2563eb',
+      ['==', ['get', 'profondeur_actuelle'], null], '#2563eb',
+      ['<=', ['get', 'profondeur_actuelle'], SEUILS_GRAVITE.limite], '#fbbf24',
+      ['<=', ['get', 'profondeur_actuelle'], SEUILS_GRAVITE.modere], '#f97316',
+      '#dc2626',
     ]);
   }
 

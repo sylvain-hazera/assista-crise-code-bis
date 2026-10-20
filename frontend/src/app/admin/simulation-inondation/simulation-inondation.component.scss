@@ -139,3 +139,16 @@
   margin-top: .4rem; padding: .35rem .5rem; font-size: .8rem;
   border: 1px solid var(--border, #d1d5db); border-radius: 6px; max-width: 100%;
 }
+
+.legende-gravite {
+  display: flex; flex-wrap: wrap; align-items: center; gap: .4rem 1rem;
+  margin: .5rem 0; font-size: .8rem; color: var(--text, #374151);
+  .legende-titre { font-weight: 600; }
+  .pastille { display: inline-flex; align-items: center; gap: .35rem; }
+  .point { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+  .point.limite { background: #fbbf24; }
+  .point.modere { background: #f97316; }
+  .point.fort   { background: #dc2626; }
+  .point.attente{ background: #2563eb; }
+  .point.jamais { background: #6b7280; }
+}

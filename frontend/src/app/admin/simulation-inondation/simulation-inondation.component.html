@@ -65,6 +65,17 @@
 
   <div #mapContainer class="carte-container"></div>
 
+  @if (aDesAdressesAffichees) {
+    <div class="legende-gravite" role="group" aria-label="Gravité par hauteur d'eau">
+      <span class="legende-titre">Hauteur d'eau simulée au niveau choisi :</span>
+      <span class="pastille"><i class="point limite"></i> Limité (≤ 0,5 m)</span>
+      <span class="pastille"><i class="point modere"></i> Modéré (0,5–1 m)</span>
+      <span class="pastille"><i class="point fort"></i> Fort (&gt; 1 m)</span>
+      <span class="pastille"><i class="point attente"></i> Pas atteinte à ce niveau</span>
+      <span class="pastille"><i class="point jamais"></i> Jamais atteinte</span>
+    </div>
+  }
+
   @if (coucheRuissellementActive) {
     @if (ruissellementEnCours) {
       <p class="hint">
