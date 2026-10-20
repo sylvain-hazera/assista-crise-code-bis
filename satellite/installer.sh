@@ -156,6 +156,11 @@ installer_docker_si_absent() {
     log "que l'appartenance au groupe 'docker' prenne effet sans sudo."
 }
 
+# Valeur d'une variable du .env du satellite (vide si absente).
+valeur_env() {
+    grep -E "^$1=" "$FICHIER_ENV" 2>/dev/null | tail -n1 | cut -d= -f2-
+}
+
 phase_demarrer() {
     installer_docker_si_absent
 
@@ -240,6 +245,24 @@ EOF
         log "Pas de nœud MeshCore connecté -- meshcore-proxy restera à 0 réplique jusqu'à :"
         log "  $0 connecter-noeud"
         scale_args=(--scale meshcore-proxy=0)
+    fi
+
+    # Périphériques série absents (PC sans radio branchée, nœud débranché) : docker compose
+    # refuse de démarrer un service dont le device /dev n'existe pas, et fait alors échouer TOUT
+    # le démarrage ("error gathering device information ... no such file or directory", constaté
+    # le 20/10/2026 sur un PC portable). Le service concerné est mis en attente (0 réplique) ; le
+    # reste du satellite démarre normalement. Rebrancher la radio puis relancer "demarrer".
+    local connexion meshcore_dev meshtastic_dev
+    connexion="$(valeur_env MESHCORE_CONNEXION_TYPE)"
+    meshcore_dev="$(valeur_env MESHCORE_SERIE_DEVICE)"; meshcore_dev="${meshcore_dev:-/dev/ttyUSB0}"
+    meshtastic_dev="$(valeur_env MESHTASTIC_SERIE_DEVICE)"; meshtastic_dev="${meshtastic_dev:-/dev/ttyACM0}"
+    if [ ! -f "$REPERTOIRE_SCRIPT/.sans_noeud" ] && [ "${connexion:-SERIE}" = "SERIE" ] && [ ! -e "$meshcore_dev" ]; then
+        log "Nœud MeshCore introuvable ($meshcore_dev) -- meshcore-proxy mis en attente (0 réplique)."
+        scale_args+=(--scale meshcore-proxy=0)
+    fi
+    if [ ! -e "$meshtastic_dev" ]; then
+        log "Radio Meshtastic introuvable ($meshtastic_dev) -- meshtastic-bridge mis en attente (0 réplique)."
+        scale_args+=(--scale meshtastic-bridge=0)
     fi
 
     log "Démarrage (profil $profil)..."
