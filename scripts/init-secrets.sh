@@ -57,6 +57,24 @@ create_secret() {
 }
 create_secret grafana_admin_password 24
 create_secret pg_monitoring_password 32
+# Paire de clés des jetons de connexion à Grafana (backend/core/grafana.py) : la publique est un
+# secret de Grafana, la privée est lue par le backend dans GRAFANA_JWT_PRIVATE_KEY.
+JWT_KEY="$SECRETS_DIR/grafana_jwt_private.pem"
+if [ -s "$JWT_KEY" ]; then
+    echo "  kept      $JWT_KEY"
+else
+    openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$JWT_KEY" 2>/dev/null
+    echo "  generated $JWT_KEY"
+fi
+chmod 600 "$JWT_KEY"
+openssl pkey -in "$JWT_KEY" -pubout -out "$SECRETS_DIR/grafana_jwt_public.pem"
+chmod 644 "$SECRETS_DIR/grafana_jwt_public.pem"
+if [ "$SECRETS_DIR" = "./secrets" ]; then
+    # dev : dans .env (PEM sur une ligne, \n littéraux) ; prod : à injecter dans l'env du backend
+    add_var GRAFANA_JWT_PRIVATE_KEY "$(awk '{printf "%s\\n", $0}' "$JWT_KEY")"
+else
+    echo "  TODO      GRAFANA_JWT_PRIVATE_KEY in the backend environment (one line: awk '{printf \"%s\\\\n\", \$0}' $JWT_KEY)"
+fi
 if [ ! -s "$SECRETS_DIR/email_password.txt" ]; then
     echo "  TODO      $SECRETS_DIR/email_password.txt (production only: the SMTP password used by Alertmanager)"
 fi

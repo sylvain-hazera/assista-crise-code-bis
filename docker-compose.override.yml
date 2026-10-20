@@ -28,6 +28,8 @@ services:
       - FIELD_ENCRYPTION_KEY=${FIELD_ENCRYPTION_KEY}
       - FIELD_BLIND_INDEX_KEY=${FIELD_BLIND_INDEX_KEY}
       - FILE_ENCRYPTION_KEY=${FILE_ENCRYPTION_KEY}
+      # jeton de connexion à Grafana (core/grafana.py) ; vide : supervision désactivée dans l'admin
+      - GRAFANA_JWT_PRIVATE_KEY=${GRAFANA_JWT_PRIVATE_KEY:-}
     depends_on:
       mailhog: { condition: service_started }
 
@@ -110,6 +112,8 @@ services:
   grafana:
     build: ./monitoring/grafana
     image: assista-crise-local/grafana:dev
+    environment:
+      - GF_SERVER_ROOT_URL=http://localhost/grafana/
     volumes:
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./monitoring/grafana/dashboards:/etc/grafana/dashboards:ro

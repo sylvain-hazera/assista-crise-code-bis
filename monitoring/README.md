@@ -21,7 +21,7 @@ docker compose up -d
 
 | URL | |
 |---|---|
-| http://localhost:3000 | Grafana — `admin`, mot de passe dans `secrets/grafana_admin_password.txt` |
+| http://localhost:3000/grafana/ | Grafana — `admin`, mot de passe dans `secrets/grafana_admin_password.txt` (aussi via http://localhost/admin/monitoring) |
 | http://localhost:9090 | Prometheus (cibles, alertes, PromQL) |
 | http://localhost:9093 | Alertmanager (alertes actives, silences) |
 | http://localhost:8025 | MailHog (emails de l'application et d'Alertmanager) |
@@ -65,7 +65,9 @@ docker compose exec grafana grafana cli admin reset-admin-password '<grafana_adm
 3. Créer le rôle `monitoring` dans la base existante (section précédente), avec un compte
    superuser (sur .114 : `svc_dbmaint`, pas `assista_app`).
 4. `docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile monitoring up -d`
-5. Grafana n'écoute que sur la VM : `ssh -L 3000:localhost:3000 <utilisateur>@<vm>` puis http://localhost:3000.
+5. Grafana est affiché dans l'admin (`/admin/monitoring`, voir DOCUMENTATION.md § 9.3.1) et reste
+   joignable en secours, même site en panne : `ssh -L 3000:localhost:3000 <utilisateur>@<vm>` puis
+   http://localhost:3000/grafana/login (compte `admin`).
 
 Mise à jour d'une image de base épinglée : `docker buildx imagetools inspect <image>`, remplacer
 le `@sha256:…` dans le Dockerfile, reconstruire et relancer les tests.

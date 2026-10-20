@@ -4,4 +4,6 @@ export const environment = {
   apiAdresseUrl: 'https://api-adresse.data.gouv.fr/search',
   // Element Web, servi sur son sous-domaine (proxy/nginx.conf, chat.assista-crise.fr).
   elementWebUrl: 'https://chat.assista-crise.fr',
+  // Grafana, servi par le proxy (/grafana/) : affiché dans /admin/monitoring.
+  grafanaUrl: '/grafana',
 };

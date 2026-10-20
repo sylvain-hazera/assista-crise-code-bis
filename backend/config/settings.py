@@ -321,6 +321,10 @@ OAUTH2_PROVIDER = {
     "ACCESS_TOKEN_EXPIRE_SECONDS": 600,
 }
 
+# Clé privée des jetons de connexion à Grafana (core/grafana.py), PEM sur une ligne comme
+# OIDC_RSA_PRIVATE_KEY. Vide : la supervision dans l'admin répond 503, le reste fonctionne.
+GRAFANA_JWT_PRIVATE_KEY = os.environ.get("GRAFANA_JWT_PRIVATE_KEY", "").replace("\\n", "\n")
+
 # identique dans matrix-bridge et dans la config Synapse (voir core/matrix.py)
 MATRIX_SERVER_NAME = os.environ.get("MATRIX_SERVER_NAME", "matrix.assista-crise.local")
 

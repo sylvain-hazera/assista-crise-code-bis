@@ -73,8 +73,10 @@ services:
   grafana:
     <<: *restart
     image: stefy237/assista-crise-grafana:${IMAGE_TAG:-latest}
+    environment:
+      - GF_SERVER_ROOT_URL=https://assista-crise.fr/grafana/
     ports: ["127.0.0.1:3000:3000"] # accès : ssh -L 3000:localhost:3000 <vm>
-    networks: [monitoring]
+    networks: [monitoring, front]
 
   postgres-exporter:
     <<: *restart

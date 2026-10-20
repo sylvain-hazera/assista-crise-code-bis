@@ -139,7 +139,7 @@ docker compose up -d --build   # application + monitoring
 | http://localhost:8000/api/ — `/api/docs/` | API REST — documentation Swagger |
 | http://localhost/django-admin/ | administration Django |
 | http://localhost:8025 | MailHog : tous les emails envoyés en dev |
-| http://localhost:3000 / :9090 / :9093 | Grafana (`admin`, mot de passe dans `secrets/`) / Prometheus / Alertmanager |
+| http://localhost:3000/grafana/ / :9090 / :9093 | Grafana (`admin`, mot de passe dans `secrets/`) / Prometheus / Alertmanager |
 
 `init-secrets.sh` génère aussi les trois clés de chiffrement des données personnelles
 (§ 10.1). **Sauvegardez votre `.env`** : sans ces clés, les données chiffrées de votre base de
@@ -748,9 +748,50 @@ Chaque règle est couverte par `alerts_test.yml` (`promtool test rules`).
 ### 9.3 Notifications et visualisation
 
 - Alertmanager : dev → MailHog ; prod → SMTP Ionos + healthchecks.io (Watchdog renvoyé chaque minute).
-- Grafana : tableau de bord « Assista-Crise Overview » (santé → mission → infrastructure),
-  provisionné depuis `monitoring/grafana/dashboards/` ; une modification faite dans l'interface
-  n'est pas conservée.
+- Grafana : quatre tableaux provisionnés depuis `monitoring/grafana/dashboards/`, reliés par
+  le tag `assista` :
+
+  | Onglet de l'admin | uid | Contenu |
+  |---|---|---|
+  | Vue complète | `assista-overview` | santé → mission → infrastructure |
+  | Santé du site | `assista-sante` | disponibilité, erreurs 5xx, latence, certificat, alertes |
+  | Métriques métier | `assista-metier` | crises actives, demandes, offres, emails en échec |
+  | Infrastructure | `assista-infra` | conteneurs, VM, PostgreSQL, MQTT |
+
+  Les conteneurs du profil monitoring portent le label `assista.role=monitoring` (ancre
+  `x-monitoring` de `docker-compose.yml`), que cAdvisor expose en `container_label_assista_role`.
+  Les panneaux par conteneur filtrent sur `container_label_assista_role!="$monitoring"` : la
+  variable `monitoring` vaut `monitoring` (masquer, par défaut) ou `aucun` (afficher). Le
+  frontend ne choisit que cette valeur (`&var-monitoring=`), jamais la requête PromQL.
+
+  Une modification faite dans l'interface n'est pas conservée. Pour modifier un tableau : le
+  modifier en local, *Export → Export as JSON* en **JSON classique** (pas « v2 resource »), sans
+  « Export for sharing externally » (sinon `${DS_…}` que le provisioning ne résout pas), puis
+  `"id": null`, `uid` inchangé (le frontend construit l'URL avec) et source de données
+  `{"type":"prometheus","uid":"prometheus"}`.
+
+### 9.3.1 Grafana dans l'administration (`/admin/monitoring`)
+
+```
+Angular (sysadmin)  ── POST /api/monitoring/grafana-token/ ──▶  Django (core/grafana.py)
+                    ◀── jeton RS256, 1 h, sub/role seulement ──  rôle réel ADMIN, sinon 403
+<iframe src="/grafana/d/<uid>/?kiosk&auth_token=…">  ──▶  nginx /grafana/  ──▶  Grafana [auth.jwt]
+                                                          vérifie avec la clé publique (secret)
+```
+
+- **Pas de second mot de passe** : Grafana vérifie la signature avec `grafana_jwt_public.pem`
+  et crée l'utilisateur (`assista-<id>`, rôle *Viewer*). Il ne pose pas de session : son
+  interface renvoie le jeton à chaque requête, d'où la durée d'1 h et le renouvellement par le
+  composant 5 min avant expiration.
+- **Le jeton passe dans l'URL** : aucune donnée personnelle dedans, et nginx le remplace par
+  `MASQUE` dans ses journaux (`log_format masque`, URL et Referer).
+- **Clés** : `scripts/init-secrets.sh` génère la paire. Privée → `GRAFANA_JWT_PRIVATE_KEY` du
+  backend (PEM sur une ligne) ; absente, le point d'API répond 503 et le reste du site marche.
+- **nginx** résout `grafana` à chaque requête (`resolver 127.0.0.11` + variable) : sans le
+  profil monitoring, seul `/grafana/` répond 502, le proxy démarre quand même.
+- **Accès de secours** (site ou backend en panne) : Grafana ne dépend que de Prometheus.
+  `ssh -L 3000:localhost:3000 <utilisateur>@<vm>` puis http://localhost:3000/grafana/login,
+  compte local `admin`.
 
 ### 9.4 Images de monitoring
 

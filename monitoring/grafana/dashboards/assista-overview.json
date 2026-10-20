@@ -1,7 +1,8 @@
 {
   "uid": "assista-overview",
-  "title": "Assista-Crise Overview",
+  "title": "Assista-Crise — Vue complète",
   "tags": [
+    "assista",
     "assista-crise"
   ],
   "timezone": "browser",
@@ -16,7 +17,7 @@
   "panels": [
     {
       "type": "row",
-      "title": "Health — is everything OK?",
+      "title": "Santé — tout fonctionne-t-il ?",
       "id": 1,
       "collapsed": false,
       "gridPos": {
@@ -29,8 +30,8 @@
     },
     {
       "type": "stat",
-      "title": "Public site",
-      "description": "External HTTPS probe of assista-crise.fr",
+      "title": "Site public",
+      "description": "Sonde HTTPS externe de assista-crise.fr",
       "id": 2,
       "datasource": {
         "type": "prometheus",
@@ -65,10 +66,10 @@
               "type": "value",
               "options": {
                 "0": {
-                  "text": "DOWN"
+                  "text": "HORS LIGNE"
                 },
                 "1": {
-                  "text": "UP"
+                  "text": "EN LIGNE"
                 }
               }
             }
@@ -100,8 +101,8 @@
     },
     {
       "type": "stat",
-      "title": "Targets down",
-      "description": "Scrape targets Prometheus cannot reach",
+      "title": "Cibles injoignables",
+      "description": "Cibles que Prometheus n'arrive pas à interroger",
       "id": 3,
       "datasource": {
         "type": "prometheus",
@@ -158,7 +159,7 @@
     },
     {
       "type": "stat",
-      "title": "API 5xx ratio (5m)",
+      "title": "Taux d'erreurs 5xx de l'API (5 min)",
       "description": "",
       "id": 4,
       "datasource": {
@@ -221,7 +222,7 @@
     },
     {
       "type": "stat",
-      "title": "API p95 latency",
+      "title": "Latence p95 de l'API",
       "description": "",
       "id": 5,
       "datasource": {
@@ -284,7 +285,7 @@
     },
     {
       "type": "stat",
-      "title": "TLS certificate expires in",
+      "title": "Expiration du certificat TLS dans",
       "description": "",
       "id": 6,
       "datasource": {
@@ -347,8 +348,8 @@
     },
     {
       "type": "stat",
-      "title": "Alerts firing",
-      "description": "Excluding the Watchdog heartbeat",
+      "title": "Alertes actives",
+      "description": "Hors battement de cœur du Watchdog",
       "id": 7,
       "datasource": {
         "type": "prometheus",
@@ -405,7 +406,7 @@
     },
     {
       "type": "timeseries",
-      "title": "API requests per second, by status",
+      "title": "Requêtes API par seconde, par statut",
       "description": "",
       "id": 8,
       "datasource": {
@@ -438,7 +439,7 @@
     },
     {
       "type": "timeseries",
-      "title": "API latency percentiles",
+      "title": "Percentiles de latence de l'API",
       "description": "",
       "id": 9,
       "datasource": {
@@ -489,7 +490,7 @@
     },
     {
       "type": "row",
-      "title": "Mission — is Assista-Crise helping people?",
+      "title": "Mission — Assista-Crise aide-t-il les gens ?",
       "id": 10,
       "collapsed": false,
       "gridPos": {
@@ -502,7 +503,7 @@
     },
     {
       "type": "stat",
-      "title": "Active crises",
+      "title": "Crises actives",
       "description": "",
       "id": 11,
       "datasource": {
@@ -560,8 +561,8 @@
     },
     {
       "type": "stat",
-      "title": "Requests waiting",
-      "description": "Help requests not processed yet",
+      "title": "Demandes en attente",
+      "description": "Demandes d'aide pas encore traitées",
       "id": 12,
       "datasource": {
         "type": "prometheus",
@@ -622,7 +623,7 @@
     },
     {
       "type": "stat",
-      "title": "Failed emails (24h)",
+      "title": "Emails en échec (24 h)",
       "description": "",
       "id": 13,
       "datasource": {
@@ -680,7 +681,7 @@
     },
     {
       "type": "bargauge",
-      "title": "Help requests by status",
+      "title": "Demandes d'aide par statut",
       "description": "",
       "id": 14,
       "datasource": {
@@ -715,7 +716,7 @@
     },
     {
       "type": "timeseries",
-      "title": "Help requests created per hour, by type",
+      "title": "Demandes d'aide créées par heure, par type",
       "description": "",
       "id": 15,
       "datasource": {
@@ -752,7 +753,7 @@
     },
     {
       "type": "timeseries",
-      "title": "Offers created per hour, by type",
+      "title": "Offres créées par heure, par type",
       "description": "",
       "id": 16,
       "datasource": {
@@ -789,7 +790,7 @@
     },
     {
       "type": "row",
-      "title": "Infrastructure — why not?",
+      "title": "Infrastructure — d'où vient le problème ?",
       "id": 17,
       "collapsed": false,
       "gridPos": {
@@ -802,7 +803,7 @@
     },
     {
       "type": "timeseries",
-      "title": "CPU per container",
+      "title": "CPU par conteneur",
       "description": "",
       "id": 18,
       "datasource": {
@@ -828,14 +829,14 @@
             "uid": "prometheus"
           },
           "refId": "A",
-          "expr": "sum by (name) (rate(container_cpu_usage_seconds_total{name!=\"\"}[5m]))",
+          "expr": "sum by (name) (rate(container_cpu_usage_seconds_total{name!=\"\", container_label_assista_role!=\"$monitoring\"}[5m]))",
           "legendFormat": "{{name}}"
         }
       ]
     },
     {
       "type": "timeseries",
-      "title": "Memory per container",
+      "title": "Mémoire par conteneur",
       "description": "",
       "id": 19,
       "datasource": {
@@ -861,14 +862,14 @@
             "uid": "prometheus"
           },
           "refId": "A",
-          "expr": "sum by (name) (container_memory_working_set_bytes{name!=\"\"})",
+          "expr": "sum by (name) (container_memory_working_set_bytes{name!=\"\", container_label_assista_role!=\"$monitoring\"})",
           "legendFormat": "{{name}}"
         }
       ]
     },
     {
       "type": "gauge",
-      "title": "Disk free (/)",
+      "title": "Disque libre (/)",
       "description": "",
       "id": 20,
       "datasource": {
@@ -921,7 +922,7 @@
     },
     {
       "type": "gauge",
-      "title": "Memory available",
+      "title": "Mémoire disponible",
       "description": "",
       "id": 21,
       "datasource": {
@@ -974,7 +975,7 @@
     },
     {
       "type": "timeseries",
-      "title": "PostgreSQL connections",
+      "title": "Connexions PostgreSQL",
       "description": "",
       "id": 22,
       "datasource": {
@@ -1005,7 +1006,7 @@
     },
     {
       "type": "timeseries",
-      "title": "MQTT clients connected",
+      "title": "Clients MQTT connectés",
       "description": "",
       "id": 23,
       "datasource": {
@@ -1036,9 +1037,51 @@
     }
   ],
   "templating": {
-    "list": []
+    "list": [
+      {
+        "name": "monitoring",
+        "label": "Conteneurs de monitoring",
+        "type": "custom",
+        "description": "Masque ou affiche les conteneurs du profil monitoring (label assista.role=monitoring)",
+        "query": "Masquer : monitoring,Afficher : aucun",
+        "current": {
+          "text": "Masquer",
+          "value": "monitoring"
+        },
+        "options": [
+          {
+            "text": "Masquer",
+            "value": "monitoring",
+            "selected": true
+          },
+          {
+            "text": "Afficher",
+            "value": "aucun",
+            "selected": false
+          }
+        ],
+        "hide": 0,
+        "includeAll": false,
+        "multi": false,
+        "skipUrlSync": false
+      }
+    ]
   },
   "annotations": {
     "list": []
-  }
+  },
+  "links": [
+    {
+      "type": "dashboards",
+      "tags": [
+        "assista"
+      ],
+      "asDropdown": false,
+      "includeVars": false,
+      "keepTime": true,
+      "targetBlank": false,
+      "title": "Tableaux Assista-Crise",
+      "icon": "external link"
+    }
+  ]
 }

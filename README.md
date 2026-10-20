@@ -50,7 +50,7 @@ sans lui les données chiffrées de votre base deviennent illisibles.
 | http://localhost:8000/api/docs/ | documentation de l'API (Swagger) |
 | http://localhost/django-admin/ | administration Django |
 | http://localhost:8025 | emails envoyés en développement (MailHog) |
-| http://localhost:3000 | Grafana (monitoring) |
+| http://localhost:3000/grafana/ | Grafana (monitoring), aussi dans l'admin : `/admin/monitoring` |
 
 Créer le premier administrateur, puis des données de test :
 

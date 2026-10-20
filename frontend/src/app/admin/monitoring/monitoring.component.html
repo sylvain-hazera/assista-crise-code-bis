@@ -1,0 +1,51 @@
+<div class="supervision">
+  <header class="entete">
+    <h1><span class="material-icons">monitor_heart</span> Supervision technique</h1>
+    @if (url) {
+      <a class="ouvrir" [href]="urlBrute" target="_blank" rel="noopener">
+        <span class="material-icons">open_in_new</span> Ouvrir dans Grafana
+      </a>
+    }
+  </header>
+
+  <div class="onglets" role="tablist">
+    @for (o of onglets; track o.id) {
+      <button role="tab" class="onglet" [class.actif]="o.id === onglet.id"
+              [attr.aria-selected]="o.id === onglet.id" (click)="choisir(o)">
+        <span class="material-icons">{{ o.icon }}</span> {{ o.label }}
+      </button>
+    }
+  </div>
+
+  @if (url && onglet.conteneurs) {
+    <label class="option">
+      <input type="checkbox" [checked]="afficherMonitoring"
+             (change)="basculerMonitoring($any($event.target).checked)">
+      Afficher les conteneurs de monitoring (Prometheus, Grafana, exporters…)
+    </label>
+  }
+
+  @if (url) {
+    <iframe class="tableau" [src]="url" [title]="'Grafana : ' + onglet.label"></iframe>
+    <p class="secours">
+      Tableau vide ou erreur 502 ? Grafana est arrêté ou le site est en panne : passer par le
+      tunnel SSH, <code>ssh -L 3000:localhost:3000 &lt;serveur&gt;</code> puis
+      <code>http://localhost:3000/grafana/</code>.
+    </p>
+  } @else if (erreur) {
+    <div class="erreur">
+      <span class="material-icons">error_outline</span>
+      @switch (erreur) {
+        @case ('refus') { <p>La supervision technique est réservée aux administrateurs.</p> }
+        @case ('non-configuree') { <p>La supervision n'est pas configurée sur ce serveur (clé GRAFANA_JWT_PRIVATE_KEY absente).</p> }
+        @default {
+          <p>Impossible d'obtenir l'accès à Grafana. En cas de panne du site, passer par le tunnel SSH :
+            <code>ssh -L 3000:localhost:3000 &lt;serveur&gt;</code> puis <code>http://localhost:3000/grafana/</code>.</p>
+          <button class="reessayer" (click)="chargerJeton()">Réessayer</button>
+        }
+      }
+    </div>
+  } @else {
+    <p class="chargement">Connexion à Grafana…</p>
+  }
+</div>

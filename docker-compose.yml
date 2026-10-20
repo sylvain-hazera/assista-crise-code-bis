@@ -9,10 +9,14 @@ x-logging: &logging              # rotation : sans elle, les logs Docker remplis
 x-monitoring: &monitoring
   profiles: [monitoring]
   logging: *logging
+  # lu par cAdvisor (container_label_assista_role) : la variable « Conteneurs de monitoring »
+  # des tableaux Grafana masque ces conteneurs
+  labels: { assista.role: monitoring }
 
 secrets:
   grafana_admin_password: { file: "${SECRETS_DIR:-./secrets}/grafana_admin_password.txt" }
   pg_monitoring_password: { file: "${SECRETS_DIR:-./secrets}/pg_monitoring_password.txt" }
+  grafana_jwt_public:     { file: "${SECRETS_DIR:-./secrets}/grafana_jwt_public.pem" }
 
 services:
   # ---------------------------------------------------------------- application
@@ -92,7 +96,21 @@ services:
     environment:
       - GF_SECURITY_ADMIN_PASSWORD__FILE=/run/secrets/grafana_admin_password   # deux underscores
       - GF_USERS_ALLOW_SIGN_UP=false
-    secrets: [grafana_admin_password]
+      # servi sous /grafana/ par le proxy, en iframe dans /admin/monitoring ; ROOT_URL : override/prod
+      - GF_SERVER_SERVE_FROM_SUB_PATH=true
+      - GF_SECURITY_ALLOW_EMBEDDING=true
+      # Connexion depuis l'admin par un jeton court signé par Django (core/grafana.py), passé en
+      # ?auth_token=. Le formulaire local (compte admin) reste disponible pour le tunnel SSH.
+      - GF_AUTH_JWT_ENABLED=true
+      - GF_AUTH_JWT_URL_LOGIN=true
+      - GF_AUTH_JWT_HEADER_NAME=X-JWT-Assertion
+      - GF_AUTH_JWT_KEY_FILE=/run/secrets/grafana_jwt_public
+      - GF_AUTH_JWT_EXPECT_CLAIMS={"iss":"assista-crise","aud":"grafana"}
+      - GF_AUTH_JWT_USERNAME_CLAIM=sub
+      - GF_AUTH_JWT_AUTO_SIGN_UP=true
+      - GF_AUTH_JWT_ROLE_ATTRIBUTE_PATH=role
+      - GF_AUTH_JWT_ROLE_ATTRIBUTE_STRICT=true
+    secrets: [grafana_admin_password, grafana_jwt_public]
     volumes:
       - grafana_data:/var/lib/grafana
     depends_on: [prometheus]
