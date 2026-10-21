@@ -4566,6 +4566,26 @@ class AuditLog(EnvironmentScopedModel):
             "-date_action"
         ]
 
+        # Table la plus volumineuse du projet (2,5 M de lignes / 570 Mo au 21/10/2026, alimentée
+        # à chaque requête /api/ par AuditTraceMiddleware) : sans index, TOUTE lecture de la main
+        # courante faisait un parcours complet de la table (523 Mo lus par affichage de page,
+        # mesuré), ce qui écrasait au passage le cache disque de toute l'application.
+        # `environment` en tête (et pas seulement `-date_action`) : la zone DEMO ne pèse que
+        # 0,2 % des lignes, sans elle un affichage en DEMO parcourrait tout l'index avant de
+        # trouver ses 4 000 lignes. Un index par colonne filtrable de la page Main courante,
+        # toujours terminé par `-date_action` qui est le tri imposé (voir Meta.ordering) :
+        # Postgres sert alors filtre + tri + LIMIT par le seul index.
+        indexes = [
+            models.Index(fields=["environment", "-date_action"], name="auditlog_env_date_idx"),
+            models.Index(fields=["environment", "action", "-date_action"], name="auditlog_env_action_idx"),
+            models.Index(fields=["environment", "utilisateur", "-date_action"], name="auditlog_env_user_idx"),
+            models.Index(fields=["environment", "institution", "-date_action"], name="auditlog_env_inst_idx"),
+            # Sert deux usages : l'historique d'une fiche précise (?objet_type=&objet_id=, le
+            # widget présent sur de nombreux écrans — 550 ms de parcours complet avant) et, par
+            # son seul préfixe objet_type, le filtre « Type d'objet » de la main courante.
+            models.Index(fields=["objet_type", "objet_id", "environment", "-date_action"], name="auditlog_objet_idx"),
+        ]
+
     def __str__(self):
 
         return (

@@ -5,7 +5,9 @@
       <span class="material-icons title-icon">fact_check</span>
       <h1>Main courante</h1>
       @if (!isLoading) {
-        <span class="badge-total">{{ totalCount }} entrée{{ totalCount > 1 ? 's' : '' }}</span>
+        <span class="badge-total" [title]="totalPlafonne ? 'Le registre compte plus de 10 000 entrées : les dénombrer exactement obligerait à relire toute la table à chaque affichage. Filtrez (dates, action, utilisateur) pour obtenir un total exact.' : ''">
+          {{ totalPlafonne ? 'plus de ' : '' }}{{ nombreFr(totalCount) }} entrée{{ totalCount > 1 ? 's' : '' }}
+        </span>
       }
     </div>
     <button class="btn-primary" (click)="exportCsv()" [disabled]="isExporting">
@@ -113,8 +115,8 @@
         <button class="btn-icon" (click)="goToPage(page - 1)" [disabled]="page <= 1">
           <span class="material-icons">chevron_left</span>
         </button>
-        <span>Page {{ page }} / {{ totalPages }}</span>
-        <button class="btn-icon" (click)="goToPage(page + 1)" [disabled]="page >= totalPages">
+        <span>Page {{ page }}{{ totalPlafonne ? '' : ' / ' + nombreFr(totalPages) }}</span>
+        <button class="btn-icon" (click)="goToPage(page + 1)" [disabled]="!hasNext">
           <span class="material-icons">chevron_right</span>
         </button>
       </div>

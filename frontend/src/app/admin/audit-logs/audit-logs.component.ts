@@ -25,6 +25,12 @@ export class AuditLogsComponent implements OnInit, OnDestroy {
 
   entries: AuditLogAdminEntry[] = [];
   totalCount = 0;
+  /** Au-delà de 10 000 entrées le serveur arrête de compter (voir AuditLogPage.count_plafonne) :
+   *  on affiche « plus de 10 000 entrées », jamais un chiffre inventé. */
+  totalPlafonne = false;
+  /** Vient de `next` renvoyé par le serveur, pas d'un calcul sur le total : seule façon fiable
+   *  de savoir s'il existe une page suivante quand le total est plafonné. */
+  hasNext = false;
   page = 1;
   readonly pageSize = 50;
 
@@ -58,8 +64,16 @@ export class AuditLogsComponent implements OnInit, OnDestroy {
   ngOnInit(): void { this.load(); }
   ngOnDestroy(): void { this.destroy$.next(); this.destroy$.complete(); }
 
+  /** Nombre de pages connu, c'est-à-dire seulement quand le total est exact. */
   get totalPages(): number {
     return Math.max(1, Math.ceil(this.totalCount / this.pageSize));
+  }
+
+  /** Séparateur de milliers français. Fait ici plutôt qu'avec le pipe `number` : aucune locale
+   *  n'est enregistrée dans l'application (le pipe formaterait « 2,489,938»), et l'enregistrer
+   *  globalement changerait l'affichage de toutes les autres pages. */
+  nombreFr(valeur: number): string {
+    return valeur.toLocaleString('fr-FR');
   }
 
   load(): void {
@@ -71,6 +85,8 @@ export class AuditLogsComponent implements OnInit, OnDestroy {
         next: (result) => {
           this.entries = result.results;
           this.totalCount = result.count;
+          this.totalPlafonne = !!result.count_plafonne;
+          this.hasNext = result.next !== null;
           this.isLoading = false;
         },
         error: () => {
@@ -92,7 +108,9 @@ export class AuditLogsComponent implements OnInit, OnDestroy {
   }
 
   goToPage(page: number): void {
-    if (page < 1 || page > this.totalPages) return;
+    // Borne haute volontairement tirée de hasNext et non de totalPages : ce dernier est estimé
+    // sur un gros registre, s'y fier ferait apparaître (ou disparaître) une page de trop.
+    if (page < 1 || (page > this.page && !this.hasNext)) return;
     this.page = page;
     this.load();
   }

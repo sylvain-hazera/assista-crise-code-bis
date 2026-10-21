@@ -52,7 +52,9 @@ class TestAuditLogBrowseMode:
         assert len(response.data) >= 1
 
         paginated = client.get(reverse('auditlog-list'), {"page": 1, "page_size": 5})
-        assert set(paginated.data.keys()) == {"count", "next", "previous", "results"}
+        # count_plafonne : voir MainCourantePagination -- sous le seuil, comptage exact (False).
+        assert set(paginated.data.keys()) == {"count", "count_plafonne", "next", "previous", "results"}
+        assert paginated.data["count_plafonne"] is False
 
     def test_institutional_actor_only_sees_own_institution(self, create_user):
         """Un acteur institutionnel (non super-admin) ne doit voir QUE les actes rattachés à sa
@@ -101,6 +103,86 @@ class TestAuditLogBrowseMode:
 
         not_matching = client.get(reverse('auditlog-list'), {"utilisateur": "personne-inexistante-xyz"})
         assert not_matching.data == []
+
+    def test_filter_by_utilisateur_ne_parcourt_pas_le_registre(self, create_user, django_assert_max_num_queries):
+        """Le filtre « Utilisateur » doit déchiffrer les COMPTES, jamais les lignes de journal :
+        la version précédente lisait l'email de chaque ligne du registre filtré, ce qui ne
+        revenait plus du tout sur la table de production (2,5 M de lignes, > 60 s le
+        21/10/2026). Le nombre de requêtes ne doit donc pas dépendre du volume du registre."""
+        admin = create_user(username="admin-cout-user@test.fr", email="admin-cout-user@test.fr", type="ADMIN", is_superuser=True)
+        autre = create_user(username="autre-cout-user@test.fr", email="autre-cout-user@test.fr", type="AUT_LOCALE")
+        for _ in range(30):
+            _make_log(utilisateur=admin)
+            _make_log(utilisateur=autre)
+        client = APIClient()
+        client.force_authenticate(user=admin)
+
+        with django_assert_max_num_queries(12):
+            reponse = client.get(reverse('auditlog-list'), {"utilisateur": "admin-cout-user", "page": 1, "page_size": 10})
+
+        assert reponse.status_code == 200
+        assert reponse.data["count"] == 30
+        assert all(e["utilisateur_email"] == "admin-cout-user@test.fr" for e in reponse.data["results"])
+
+
+@pytest.mark.django_db
+class TestMainCourantePagination:
+    """Comptage et navigation d'un registre volumineux -- voir core/pagination.py
+    (MainCourantePagination). Le seuil est abaissé dans ces tests pour déclencher le mode estimé
+    sans avoir à fabriquer 10 000 lignes."""
+
+    @pytest.fixture
+    def admin_client(self, create_user):
+        admin = create_user(username="admin-pagin@test.fr", email="admin-pagin@test.fr", type="ADMIN", is_superuser=True)
+        client = APIClient()
+        client.force_authenticate(user=admin)
+        return client
+
+    def test_comptage_exact_sous_le_seuil(self, admin_client):
+        for _ in range(7):
+            _make_log()
+
+        reponse = admin_client.get(reverse('auditlog-list'), {"page": 1, "page_size": 3})
+
+        assert reponse.data["count"] == 7 and reponse.data["count_plafonne"] is False
+        assert len(reponse.data["results"]) == 3
+        assert reponse.data["next"] is not None and reponse.data["previous"] is None
+
+    def test_au_dela_du_seuil_le_total_est_plafonne(self, admin_client, monkeypatch):
+        from core.pagination import MainCourantePagination
+        monkeypatch.setattr(MainCourantePagination, "SEUIL_COMPTAGE_EXACT", 2)
+        for _ in range(6):
+            _make_log()
+
+        reponse = admin_client.get(reverse('auditlog-list'), {"page": 1, "page_size": 2})
+
+        # « plus de 2 », jamais un chiffre inventé : le total vaut exactement le plafond.
+        assert reponse.data["count_plafonne"] is True
+        assert reponse.data["count"] == 2
+        assert len(reponse.data["results"]) == 2
+
+    def test_la_navigation_ne_depend_pas_du_total(self, admin_client, monkeypatch):
+        """Avec un total estimé, « page suivante » doit rester exact : il vient d'une ligne lue
+        en plus, pas d'une division du total."""
+        from core.pagination import MainCourantePagination
+        monkeypatch.setattr(MainCourantePagination, "SEUIL_COMPTAGE_EXACT", 1)
+        for _ in range(5):
+            _make_log()
+
+        derniere = admin_client.get(reverse('auditlog-list'), {"page": 3, "page_size": 2})
+        assert len(derniere.data["results"]) == 1
+        assert derniere.data["next"] is None          # plus rien après, malgré un total plafonné
+        assert derniere.data["previous"] is not None
+
+        au_dela = admin_client.get(reverse('auditlog-list'), {"page": 4, "page_size": 2})
+        assert au_dela.data["results"] == [] and au_dela.data["next"] is None
+
+    def test_sans_page_la_reponse_reste_un_tableau_brut(self, admin_client):
+        """Opt-in hérité d'OptionalPageNumberPagination : le widget d'historique par fiche et
+        les autres appelants existants ne passent pas ?page= et attendent un tableau."""
+        _make_log()
+        reponse = admin_client.get(reverse('auditlog-list'))
+        assert isinstance(reponse.data, list)
 
 
 @pytest.mark.django_db

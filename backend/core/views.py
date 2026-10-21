@@ -94,7 +94,7 @@ from .imports import (
     importer_materiel_point,
     parse_fichier,
 )
-from .pagination import OptionalPageNumberPagination, InstitutionPagination
+from .pagination import OptionalPageNumberPagination, InstitutionPagination, MainCourantePagination
 from .zone_scoping import (
     SECTEUR_CHAMP_PAR_NIVEAU,
     _institution_commune_or_400,
@@ -10356,7 +10356,9 @@ class AuditLogViewSet(EnvironmentScopedViewSetMixin, viewsets.ReadOnlyModelViewS
     queryset = AuditLog.objects.all()
     serializer_class = AuditLogSerializer
     permission_classes = [IsInstitutionalActor]
-    pagination_class = OptionalPageNumberPagination
+    # MainCourantePagination et pas OptionalPageNumberPagination : registre à plusieurs millions
+    # de lignes, où le comptage exact à chaque page coûtait plus cher que la page elle-même.
+    pagination_class = MainCourantePagination
 
     def get_serializer_class(self):
         if self._is_browse_mode():
@@ -10417,15 +10419,18 @@ class AuditLogViewSet(EnvironmentScopedViewSetMixin, viewsets.ReadOnlyModelViewS
             queryset = queryset.filter(objet_type=params['objet_type'])
         if params.get('utilisateur'):
             # User.email chiffré (voir core/crypto_fields.py) -- icontains impossible sur un
-            # ciphertext, filtrage côté Python après déchiffrement (décision utilisateur du
-            # 2026-10-06). Appliqué après les filtres date/action/objet_type ci-dessus, qui
-            # réduisent déjà le candidat avant ce passage.
+            # ciphertext, il faut déchiffrer en Python (décision utilisateur du 2026-10-06).
+            # On déchiffre les COMPTES (quelques dizaines de lignes), jamais la main courante :
+            # la version précédente parcourait tout le registre filtré pour lire l'email de
+            # chaque ligne, soit 2,5 M de déchiffrements -- la requête ne revenait jamais
+            # (> 60 s, constaté le 21/10/2026). Résultat identique, l'email étant porté par le
+            # compte et non par la ligne de journal.
             terme = params['utilisateur'].lower()
-            ids = [
-                a.id for a in queryset
-                if a.utilisateur_id and terme in (a.utilisateur.email or '').lower()
+            comptes = [
+                u.id for u in User.objects.only('id', 'email')
+                if terme in (u.email or '').lower()
             ]
-            queryset = queryset.filter(id__in=ids)
+            queryset = queryset.filter(utilisateur_id__in=comptes)
         if params.get('succes') in ('true', 'false'):
             queryset = queryset.filter(succes=(params['succes'] == 'true'))
         return queryset

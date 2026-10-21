@@ -41,6 +41,10 @@ export interface AuditLogFilters {
 
 export interface AuditLogPage {
   count: number;
+  /** true : il y a PLUS de `count` entrées -- le comptage s'arrête à 10 000, au-delà le
+   *  compter exactement obligerait à relire tout le registre à chaque affichage (voir
+   *  MainCourantePagination côté backend). La navigation s'appuie sur `next`, jamais sur `count`. */
+  count_plafonne: boolean;
   next: string | null;
   previous: string | null;
   results: AuditLogAdminEntry[];
