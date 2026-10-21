@@ -21,7 +21,11 @@ régimes, voir core/sync_outbox.py pour le détail complet de chacun :
   localement (aucun mécanisme de synchronisation des comptes utilisateurs à ce jour) est mis à
   None plutôt que de bloquer tout l'enregistrement.
 - **Comptes** de l'institution du satellite (voir core/sync_comptes.py) : connexion locale avec
-  les identifiants habituels."""
+  les identifiants habituels. Copiés en premier.
+- **Équipes et radio** de l'institution (companions, canaux, contacts, nœuds attribués,
+  répéteurs, voir core/sync_referentiel.py) : sans elles, le pont radio basculé sur le backend
+  local hors ligne n'y trouvait pas son propre companion.
+- Le tout deux fois : zone de production, puis zone de démonstration."""
 import logging
 
 import requests
@@ -74,10 +78,6 @@ class Command(BaseCommand):
     help = "Applique localement le rafraîchissement central -> local (SatelliteViewSet.donnees)."
 
     def handle(self, *args, **options):
-        from django.apps import apps
-
-        from core.sync_outbox import appliquer_payload_pull
-
         central_url = settings.SATELLITE_CENTRAL_URL
         satellite_id = settings.SATELLITE_ID
         email = settings.SATELLITE_EMAIL
@@ -89,25 +89,46 @@ class Command(BaseCommand):
             )
             return
 
+        base = f"{central_url.rstrip('/')}/api/satellites/{satellite_id}"
         try:
             reponse_token = requests.post(
                 f"{central_url.rstrip('/')}/api/token/", json={"email": email, "password": password}, timeout=15,
             )
             reponse_token.raise_for_status()
             jeton = reponse_token.json()["access"]
-
-            reponse = requests.get(
-                f"{central_url.rstrip('/')}/api/satellites/{satellite_id}/donnees/",
-                headers={"Authorization": f"Bearer {jeton}"},
-                timeout=60,
-            )
-            reponse.raise_for_status()
         except requests.RequestException as exc:
             logger.warning("Synchronisation entrante échouée (%s) — retentée au prochain passage.", exc)
             self.stdout.write(f"Échec de connexion au central : {exc}")
             return
 
-        donnees = reponse.json()
+        # Comptes d'abord : les équipes (membres) et les nœuds radio attribués à une personne
+        # (core/sync_referentiel.py) ne peuvent citer que des comptes déjà présents localement.
+        self._copier_comptes(base, jeton)
+
+        # Production puis zone de démonstration (21/10/2026) : la même copie pour chacune, le
+        # central choisit la zone d'après l'en-tête X-Environment (get_active_environment). Une
+        # passe en échec n'empêche pas l'autre -- un central pas encore à jour refuse la démo
+        # (compte de service sans demo_role, voir migration 0211) sans bloquer la production.
+        for environnement in ("PROD", "DEMO"):
+            try:
+                reponse = requests.get(
+                    f"{base}/donnees/",
+                    headers={"Authorization": f"Bearer {jeton}", "X-Environment": environnement},
+                    timeout=60,
+                )
+                reponse.raise_for_status()
+            except requests.RequestException as exc:
+                logger.warning("Synchronisation entrante %s échouée (%s) — retentée au prochain passage.", environnement, exc)
+                self.stdout.write(f"Échec de la synchronisation {environnement} : {exc}")
+                continue
+            self._appliquer_donnees(environnement, reponse.json())
+
+    def _appliquer_donnees(self, environnement, donnees):
+        from django.apps import apps
+
+        from core.sync_outbox import appliquer_payload_pull
+        from core.sync_referentiel import appliquer_referentiel
+
         compteurs = {"applique": 0, "ignore_local_en_attente": 0, "erreur": 0}
 
         for nom_modele in MODELES_MUTABLES_ENTRANTS:
@@ -129,12 +150,22 @@ class Command(BaseCommand):
                     logger.exception("Échec application entrante %s %s", nom_modele, item.get("id"))
                     compteurs["erreur"] += 1
 
-        # Comptes de l'institution (connexion locale sans internet, voir core/sync_comptes.py)
+        # Équipes et radio (core/sync_referentiel.py) : après les crises, missions et annonces,
+        # qu'une équipe ou un canal peut citer.
+        referentiel = appliquer_referentiel(donnees.get("referentiel") or {})
+
+        self.stdout.write(
+            f"Synchronisation entrante {environnement} : {compteurs['applique']} appliqué(s), "
+            f"{compteurs['ignore_local_en_attente']} ignoré(s) (écriture locale en attente), "
+            f"{compteurs['erreur']} erreur(s) ; équipes et radio : {referentiel['applique']} appliqué(s), "
+            f"{referentiel['ignore']} ignoré(s), {referentiel['erreur']} erreur(s)."
+        )
+
+    def _copier_comptes(self, base, jeton):
+        """Comptes de l'institution (connexion locale sans internet, voir core/sync_comptes.py)."""
         try:
             reponse_comptes = requests.get(
-                f"{central_url.rstrip('/')}/api/satellites/{satellite_id}/comptes/",
-                headers={"Authorization": f"Bearer {jeton}"},
-                timeout=60,
+                f"{base}/comptes/", headers={"Authorization": f"Bearer {jeton}"}, timeout=60,
             )
             reponse_comptes.raise_for_status()
             from core.sync_comptes import appliquer_comptes
@@ -147,9 +178,3 @@ class Command(BaseCommand):
             logger.warning("Copie des comptes échouée (%s) — retentée au prochain passage.", exc)
         except Exception:
             logger.exception("Échec de l'application des comptes")
-
-        self.stdout.write(
-            f"Synchronisation entrante : {compteurs['applique']} appliqué(s), "
-            f"{compteurs['ignore_local_en_attente']} ignoré(s) (écriture locale en attente), "
-            f"{compteurs['erreur']} erreur(s)."
-        )

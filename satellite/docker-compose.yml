@@ -269,6 +269,15 @@ services:
         condition: service_healthy
       mosquitto:
         condition: service_started
+    # « Prêt » = migrations appliquées et API qui répond : sync-sortant/sync-entrant attendent
+    # ce signal (voir leur `entrypoint`). Délai de démarrage large : à la première installation
+    # les migrations prennent plusieurs minutes, sur un Raspberry Pi davantage.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/branding/', timeout=5)"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 900s
     restart: unless-stopped
     profiles: ["full"]
 
@@ -297,8 +306,13 @@ services:
       - SATELLITE_ID=${SATELLITE_ID}
       - SATELLITE_EMAIL=${SATELLITE_EMAIL}
       - SATELLITE_PASSWORD=${SATELLITE_PASSWORD}
+    # Pas les migrations de l'image (entrypoint.sh) : le backend les applique, et trois
+    # conteneurs qui migrent en même temps au premier démarrage se marchaient dessus (relation
+    # « already exists », conteneur en redémarrage -- constaté le 21/10/2026). On attend donc
+    # que le backend soit prêt.
+    entrypoint: []
     depends_on:
-      db:
+      backend:
         condition: service_healthy
     restart: unless-stopped
     profiles: ["full"]
@@ -328,8 +342,13 @@ services:
       # SANS INSTANCE_SATELLITE_LOCALE : ce conteneur ne doit jamais peupler la file sortante
       # lui-même (le marqueur _synchronisation_entrante suffirait déjà à l'empêcher, voir
       # sync_outbox.py, mais autant ne pas dépendre uniquement de ce garde-fou applicatif).
+    # Pas les migrations de l'image (entrypoint.sh) : le backend les applique, et trois
+    # conteneurs qui migrent en même temps au premier démarrage se marchaient dessus (relation
+    # « already exists », conteneur en redémarrage -- constaté le 21/10/2026). On attend donc
+    # que le backend soit prêt.
+    entrypoint: []
     depends_on:
-      db:
+      backend:
         condition: service_healthy
     restart: unless-stopped
     profiles: ["full"]

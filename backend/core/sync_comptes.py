@@ -8,6 +8,7 @@ pour que chacun se connecte à l'instance locale avec ses identifiants habituels
   touchés.
 - Un compte de l'institution qui n'est plus dans la liste du central (parti, désactivé) est
   désactivé localement, pas supprimé : ses écritures locales gardent leur auteur.
+- L'accès à la zone de démonstration (demo_role) suit celui du central.
 """
 from django.db import IntegrityError, transaction
 
@@ -47,6 +48,9 @@ def appliquer_comptes(donnees: dict) -> dict:
             continue
         for champ in CHAMPS_COMPTE:
             setattr(utilisateur, champ, compte.get(champ) or "")
+        # Accès à la zone de démonstration (null = aucun) : recopié tel quel, pour qu'une démo
+        # puisse se faire sur le satellite avec les mêmes droits qu'au central.
+        utilisateur.demo_role = compte.get("demo_role") or None
         utilisateur.password = compte["password"]
         utilisateur.institution_id = infos["id"]
         utilisateur.is_active = True

@@ -15921,13 +15921,16 @@ class SatelliteViewSet(
         return [IsInstitutionalActor()]
 
     def get_queryset(self):
-        qs = super().get_queryset()
         if self.action in ('contact', 'donnees', 'comptes', 'synchroniser', 'recuperer_identifiants'):
             # Le contrôle d'identité se fait dans l'action elle-même (compte_service ==
             # request.user) — le compte de service d'un satellite n'a volontairement aucun
             # ContactInstitution (voir SatelliteViewSet.valider), donc le filtrage par
             # institution ci-dessous l'exclurait à tort de sa PROPRE fiche.
-            return qs
+            # Sans filtre de zone non plus : le satellite est enregistré en production, mais
+            # `donnees` est aussi appelée en zone démo pour en recopier les données (21/10/2026)
+            # -- c'est le contenu renvoyé qui suit la zone demandée, pas la fiche du satellite.
+            return self.queryset
+        qs = super().get_queryset()
         if get_effective_role(self.request) == UserRole.ADMINISTRATOR:
             return qs
         mes_institutions = ContactInstitution.objects.filter(
@@ -16056,9 +16059,11 @@ class SatelliteViewSet(
         # l'institution, voir get_queryset ci-dessus).
         mot_de_passe = secrets.token_urlsafe(24)
         email_service = f"satellite-{satellite.id}@service.assista-crise.local"
+        # demo_role : le satellite recopie aussi la zone de démonstration (crises, équipes de
+        # démo), que le central ne sert qu'à un compte qui y a accès (get_effective_role).
         compte_service = User.objects.create_user(
             username=email_service, email=email_service, password=mot_de_passe,
-            type=UserRole.SIMPLE_USER, institution=satellite.institution,
+            type=UserRole.SIMPLE_USER, demo_role=UserRole.SIMPLE_USER, institution=satellite.institution,
             enabled=True, is_active=True,
         )
         satellite.compte_service = compte_service
@@ -16201,7 +16206,15 @@ class SatelliteViewSet(
         missions_qs = Mission.objects.filter(environment=env).filter(Q(crise_id__in=crise_ids) | Q(crise__isnull=True))
 
         from .sync_outbox import construire_payload_pull
+        from .sync_referentiel import referentiel_pour_satellite
+        # Équipes et radio de l'institution (voir core/sync_referentiel.py) : seulement pour un
+        # satellite FULL, le seul à avoir une instance locale où les appliquer.
+        referentiel = (
+            referentiel_pour_satellite(satellite.institution, env)
+            if satellite.profil == ProfilSatellite.FULL else {}
+        )
         return Response({
+            "referentiel": referentiel,
             "crises": [construire_payload_pull(c, "Crisis") for c in crises_qs],
             "demandes": [construire_payload_pull(d, "Request") for d in demandes_qs],
             "dossiers": [_payload_donnees_mutable(d, "Dossier") for d in dossiers_qs],
@@ -16230,6 +16243,7 @@ class SatelliteViewSet(
             {
                 "id": str(u.id), "username": u.username, "email": u.email,
                 "first_name": u.first_name, "last_name": u.last_name, "type": u.type,
+                "demo_role": u.demo_role,
                 "password": u.password,
             }
             for u in utilisateurs
