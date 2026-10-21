@@ -7,6 +7,7 @@ import { OfferMessage } from '../shared/models/offer-message.model';
 import { geoPointToLatLng, latLngToGeoJson } from '../shared/models/geopoint.model';
 import { StatsResponse, PageResponse } from '../shared/models/api.model';
 import { Team } from '../shared/models/team.model';
+import { AVEC_COORDONNEES } from './coordonnees';
 
 @Injectable({
   providedIn: 'root'
@@ -29,7 +30,7 @@ export class OfferService {
 
   /** GET /api/offres/my_offres/ */
   getMines(email: string): Observable<Offer[]> {
-      return this.getAll({ author_email: email });
+      return this.getAll({ author_email: email, ...AVEC_COORDONNEES });
   }
 
   getById(id: string): Observable<Offer> {

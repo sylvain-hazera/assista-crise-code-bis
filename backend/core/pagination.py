@@ -108,7 +108,10 @@ class MainCourantePagination(OptionalPageNumberPagination):
         Le LIMIT interne fait que Postgres s'arrête au plafond au lieu de parcourir le registre
         entier (2,7 ms contre 150 à 350 ms et 500 Mo lus, mesuré le 21/10/2026)."""
         plafond = self.SEUIL_COMPTAGE_EXACT
-        exact = queryset[:plafond + 1].count()
+        # Sans tri : compter n'en a pas besoin, et un ORDER BY date forcerait Postgres à
+        # parcourir l'index des dates en filtrant, au lieu de l'index du critère (fiche précise,
+        # périmètre non déterminable : 0,2 à 1,1 s avec le tri, mesuré le 21/10/2026).
+        exact = queryset.order_by()[:plafond + 1].count()
         if exact <= plafond:
             return exact, False
         return plafond, True

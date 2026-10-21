@@ -7,6 +7,7 @@ import { ZoneService } from '../../../services/zone.service';
 import { PersonneVulnerable, TypeVulnerabilite } from '../../../shared/models/vulnerabilite.model';
 import { Zone } from '../../../shared/models/zone.model';
 import { TagSearchInputComponent } from '../../../shared/components/common/tag-search-input/tag-search-input.component';
+import { QuiAConsulteComponent } from '../../../shared/components/qui-a-consulte/qui-a-consulte.component';
 
 /**
  * Créer/éditer une fiche du registre des personnes vulnérables (voir PersonneVulnerable côté
@@ -18,7 +19,7 @@ import { TagSearchInputComponent } from '../../../shared/components/common/tag-s
 @Component({
   selector: 'app-personne-vulnerable-modal',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, TagSearchInputComponent],
+  imports: [CommonModule, ReactiveFormsModule, TagSearchInputComponent, QuiAConsulteComponent],
   templateUrl: './personne-vulnerable-modal.component.html',
   styleUrl: './personne-vulnerable-modal.component.scss',
 })

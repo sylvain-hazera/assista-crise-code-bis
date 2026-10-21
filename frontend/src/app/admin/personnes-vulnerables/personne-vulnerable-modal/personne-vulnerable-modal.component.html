@@ -105,6 +105,10 @@
         <button type="button" class="btn-secondary" (click)="close()">Annuler</button>
       </div>
 
+      @if (personne?.id) {
+        <app-qui-a-consulte [objetId]="personne!.id"></app-qui-a-consulte>
+      }
+
     </form>
 
   </div>

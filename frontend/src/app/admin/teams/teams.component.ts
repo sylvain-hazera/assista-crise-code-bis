@@ -45,6 +45,7 @@ import { Competence } from '../../shared/models/competence.model';
 import { Besoin } from '../../shared/models/besoin.model';
 import { Institution } from '../../shared/models/institution.model';
 import { PointOperationnel, PointType } from '../../shared/models/point-operationnel.model';
+import { AVEC_COORDONNEES } from '../../services/coordonnees';
 
 type ModalView = 'none' | 'create' | 'detail' | 'edit' | 'delete' | 'assign' | 'planning';
 
@@ -199,7 +200,8 @@ export class TeamsComponent implements OnInit {
       // exclude_type=Bénévolat : l'annuaire permanent de bénévoles n'a pas vocation à être
       // proposé comme ressource affectable à une équipe (voir ReportingComponent.loadAll).
       offers:   this.offerService.getAll({ exclude_type: 'Bénévolat' }),
-      requests: this.requestService.getAll(),
+      // téléphone/email affichés dans le détail d'une demande (voir AVEC_COORDONNEES)
+      requests: this.requestService.getAll(AVEC_COORDONNEES),
       dossiers: this.dossierService.getAll(),
       points: this.pointOperationnelService.getAll(),
     }).subscribe({

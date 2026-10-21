@@ -6,6 +6,7 @@ from django.contrib.auth.models import UserManager as DjangoUserManager
 from django.contrib.gis.db import models as gis_models
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.db import models
+from django.contrib.postgres.fields import ArrayField
 from django.contrib.postgres.indexes import GinIndex
 from core.validators import validate_image_file
 from .validators import validate_image_file, validate_identity_document_file
@@ -4560,6 +4561,35 @@ class AuditLog(EnvironmentScopedModel):
         null=True
     )
 
+    # ── Traçabilité des consultations (21/10/2026, voir core/tracabilite.py) ───────────────
+    # Retrouver, à partir d'une fiche, qui l'a vue, quand et comment : les champs ci-dessous
+    # sont remplis par AuditTraceMiddleware d'après la réponse elle-même.
+
+    class Exposition(models.TextChoices):
+        FICHE = "FICHE", "Fiche ouverte"
+        LISTE = "LISTE", "Liste (avec coordonnées)"
+        LISTE_SANS_COORDONNEES = "LISTE_SANS_COORDONNEES", "Liste (sans coordonnées)"
+        EXPORT = "EXPORT", "Export"
+
+    class Perimetre(models.TextChoices):
+        CRISE = "CRISE", "Crise"
+        MULTI = "MULTI", "Plusieurs crises"
+        GENERAL = "GENERAL", "Fonctionnement général"
+
+    # Identifiants des fiches renvoyées par la requête (toutes celles d'une liste, la fiche
+    # seule, ou celles d'un export) : « qui a vu cette fiche » = objets_ids @> [id]. Une seule
+    # ligne par requête, même pour une liste de plusieurs milliers de fiches.
+    objets_ids = ArrayField(models.UUIDField(), null=True, blank=True)
+    exposition = models.CharField(max_length=24, choices=Exposition.choices, null=True, blank=True)
+    # Rattachement : une crise (champ `crise`), plusieurs, ou le fonctionnement général.
+    # Null = non déterminable (historique antérieur au 21/10/2026, lectures de listes surtout).
+    perimetre = models.CharField(max_length=10, choices=Perimetre.choices, null=True, blank=True)
+    # Ponts radio, satellites, automates (voir tracabilite.est_compte_systeme) : posé à
+    # l'écriture pour que la case « Masquer les comptes système » reste servie par un index.
+    compte_systeme = models.BooleanField(default=False)
+    # Termes et filtres de recherche de la requête (sans secrets ni pagination).
+    recherche = models.JSONField(null=True, blank=True)
+
     class Meta:
 
         ordering = [
@@ -4584,6 +4614,23 @@ class AuditLog(EnvironmentScopedModel):
             # widget présent sur de nombreux écrans — 550 ms de parcours complet avant) et, par
             # son seul préfixe objet_type, le filtre « Type d'objet » de la main courante.
             models.Index(fields=["objet_type", "objet_id", "environment", "-date_action"], name="auditlog_objet_idx"),
+            # Traçabilité des consultations (migration 0210) : « qui a vu cette fiche »,
+            # filtres crise / périmètre / adresse IP (plages comprises : Postgres sert
+            # `adresse_ip <<= réseau` par cet index), case « Masquer les comptes système » et
+            # recherche dans les termes cherchés -- ces deux derniers en index partiels, qui ne
+            # contiennent que les lignes concernées.
+            GinIndex(fields=["objets_ids"], name="auditlog_objets_gin"),
+            # « Qui a vu cette fiche » cherche objet_id OU objets_ids : sans index sur objet_id
+            # seul (auditlog_objet_idx commence par objet_type), Postgres parcourait toute la
+            # table -- 1,3 s pour une fiche rarement vue, 0,3 ms avec (mesuré le 21/10/2026).
+            models.Index(fields=["objet_id"], name="auditlog_objet_id_idx"),
+            models.Index(fields=["environment", "crise", "-date_action"], name="auditlog_env_crise_idx"),
+            models.Index(fields=["environment", "perimetre", "-date_action"], name="auditlog_env_perim_idx"),
+            models.Index(fields=["environment", "adresse_ip", "-date_action"], name="auditlog_env_ip_idx"),
+            models.Index(fields=["environment", "-date_action"], name="auditlog_humains_idx",
+                         condition=models.Q(compte_systeme=False)),
+            models.Index(fields=["environment", "-date_action"], name="auditlog_recherche_idx",
+                         condition=models.Q(recherche__isnull=False)),
         ]
 
     def __str__(self):

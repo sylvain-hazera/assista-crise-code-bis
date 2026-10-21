@@ -28,7 +28,7 @@ from django_filters import rest_framework as filters
 from rest_framework.filters import OrderingFilter
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import IntegrityError, transaction
-from django.db.models import Q, F, Prefetch, Count, Exists, Max, OuterRef
+from django.db.models import Q, F, Func, IntegerField, Prefetch, Count, Exists, Max, OuterRef
 from django.db.models.functions import TruncDate
 from dateutil.relativedelta import relativedelta
 from django.contrib.gis.db.models.functions import Distance
@@ -38,6 +38,7 @@ from django.utils.dateparse import parse_datetime
 from .auth_validation import InstitutionEmailValidator
 import csv
 import io
+import json
 from decimal import Decimal, InvalidOperation
 import datetime
 import os
@@ -95,6 +96,7 @@ from .imports import (
     parse_fichier,
 )
 from .pagination import OptionalPageNumberPagination, InstitutionPagination, MainCourantePagination
+from .main_courante import TYPES_FICHES, appliquer_filtres, libelles as libelles_fiches, rechercher_fiches
 from .zone_scoping import (
     SECTEUR_CHAMP_PAR_NIVEAU,
     _institution_commune_or_400,
@@ -1184,8 +1186,17 @@ class DossierViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         return Response({"status": "ok", "statut": dossier.statut})
 
 
+class UUIDInFilter(filters.BaseInFilter, filters.UUIDFilter):
+    """?ids=<uuid>,<uuid>,... -- liste d'identifiants séparés par des virgules."""
+
+
 class AuthorEmailFilter(filters.FilterSet):
     author_email = filters.CharFilter(method='filter_author_email')
+    # Base commune des trois FilterSet d'annonces (offres, demandes, informations) : l'export
+    # de la page Signalements relit d'un coup les fiches affichées avec leurs coordonnées
+    # (?ids=...&avec_coordonnees=1&motif=export), une seule ligne de main courante par type,
+    # tracée comme export (voir core/tracabilite.py).
+    ids = UUIDInFilter(field_name='id', lookup_expr='in')
 
     def filter_author_email(self, queryset, name, value):
         # author__email est chiffré (voir core/crypto_fields.py) : une recherche exacte passe
@@ -2730,6 +2741,10 @@ class CrisisViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             objet_type="Crisis",
             objet_id=crise.id,
             crise=crise,
+            # La crise et ses dossiers (le zip contient leur historique et leurs commentaires) :
+            # retrouvables par « qui a vu cette fiche » au même titre qu'une consultation.
+            exposition=AuditLog.Exposition.EXPORT,
+            objets_ids=[crise.id, *crise.dossiers.values_list('id', flat=True)],
             commentaire=f"Export de la main courante de la crise {crise.name} par {user.email}",
         )
 
@@ -6088,6 +6103,7 @@ class HabitationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
 
         audit_log(
             request=request, action_code="EXPORT", objet_type="Habitation", objet_id=None,
+            crise=crise, exposition=AuditLog.Exposition.EXPORT, objets_ids=[h.id for h in lignes],
             commentaire=f"Export CSV des adresses {'référencées' if request.query_params.get('toutes') == '1' else 'impactées'} "
                         f"de la crise « {crise.name} » : {len(lignes)} ligne(s)",
         )
@@ -10402,38 +10418,83 @@ class AuditLogViewSet(EnvironmentScopedViewSetMixin, viewsets.ReadOnlyModelViewS
         return self._filtered_browse_queryset().filter(institution=institution)
 
     def _filtered_browse_queryset(self):
-        params = self.request.query_params
+        """Tous les critères de la page Main courante, cumulables, avec inclusion et exclusion
+        sur chacun -- voir core/main_courante.py (règle de combinaison, index utilisés).
+
+        Le filtre « Utilisateur » déchiffre les COMPTES (quelques dizaines de lignes), jamais la
+        main courante : la version d'avant le 21/10/2026 parcourait tout le registre filtré
+        pour lire l'email de chaque ligne (2,5 M de déchiffrements, requête sans fin)."""
         queryset = AuditLog.objects.filter(
             environment=get_active_environment(self.request),
-        ).select_related('utilisateur', 'institution', 'action').order_by('-date_action')
+        ).select_related('utilisateur', 'institution', 'action', 'crise').order_by('-date_action')
+        # objets_ids peut compter des milliers d'identifiants par ligne (une liste) : jamais
+        # rapatrié pour l'affichage, son nombre est calculé en base (voir list) ; les états
+        # avant/après ne sont pas affichés par cette page.
+        queryset = queryset.defer('objets_ids', 'ancien_etat', 'nouvel_etat')
+        return appliquer_filtres(queryset, self.request.query_params)
 
-        date_debut = parse_datetime_param(params.get('date_debut'))
-        if date_debut:
-            queryset = queryset.filter(date_action__gte=date_debut)
-        date_fin = parse_datetime_param(params.get('date_fin'))
-        if date_fin:
-            queryset = queryset.filter(date_action__lte=date_fin)
-        if params.get('action'):
-            queryset = queryset.filter(action__code=params['action'])
-        if params.get('objet_type'):
-            queryset = queryset.filter(objet_type=params['objet_type'])
-        if params.get('utilisateur'):
-            # User.email chiffré (voir core/crypto_fields.py) -- icontains impossible sur un
-            # ciphertext, il faut déchiffrer en Python (décision utilisateur du 2026-10-06).
-            # On déchiffre les COMPTES (quelques dizaines de lignes), jamais la main courante :
-            # la version précédente parcourait tout le registre filtré pour lire l'email de
-            # chaque ligne, soit 2,5 M de déchiffrements -- la requête ne revenait jamais
-            # (> 60 s, constaté le 21/10/2026). Résultat identique, l'email étant porté par le
-            # compte et non par la ligne de journal.
-            terme = params['utilisateur'].lower()
-            comptes = [
-                u.id for u in User.objects.only('id', 'email')
-                if terme in (u.email or '').lower()
-            ]
-            queryset = queryset.filter(utilisateur_id__in=comptes)
-        if params.get('succes') in ('true', 'false'):
-            queryset = queryset.filter(succes=(params['succes'] == 'true'))
-        return queryset
+    def list(self, request, *args, **kwargs):
+        if not self._is_browse_mode():
+            return super().list(request, *args, **kwargs)
+        # Comme ListModelMixin.list, plus les libellés des fiches citées par la page (une
+        # requête par type de fiche, pas une par ligne -- voir main_courante.libelles).
+        queryset = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(queryset)
+        lignes = page if page is not None else list(queryset)
+        contexte = self.get_serializer_context()
+        contexte['libelles'] = libelles_fiches((l.objet_type, l.objet_id) for l in lignes)
+        contexte['nb_objets'] = dict(
+            AuditLog.objects.filter(pk__in=[l.pk for l in lignes])
+            .annotate(nb=Func(F('objets_ids'), function='cardinality', output_field=IntegerField()))
+            .values_list('pk', 'nb')
+        )
+        data = AuditLogAdminSerializer(lignes, many=True, context=contexte).data
+        return self.get_paginated_response(data) if page is not None else Response(data)
+
+    @action(detail=False, methods=["get"], url_path="fiches")
+    def fiches(self, request):
+        """GET /api/audit-logs/fiches/?q=<texte ou id>&type=<Offer>... -- retrouver une fiche
+        (annonce, personne, crise...) par son libellé, ses coordonnées ou son identifiant, pour
+        le critère « Objet » de la main courante. Réservé au super-admin, comme la main courante
+        générale : la recherche couvre les fiches de toutes les institutions, coordonnées
+        comprises -- ce serait sinon un moyen détourné de les consulter.
+        Sans `q` : la liste des types de fiches proposés."""
+        if not request.user.is_superuser:
+            raise PermissionDenied("Recherche de fiches réservée au super-administrateur.")
+        types = [{'type': t, 'libelle': v[0]} for t, v in TYPES_FICHES.items()]
+        if not request.query_params.get('q'):
+            return Response({'types': types, 'resultats': []})
+        resultats = rechercher_fiches(
+            request.query_params['q'], request.query_params.getlist('type') or None,
+            get_active_environment(request),
+        )
+        return Response({'types': types, 'resultats': resultats})
+
+    @action(detail=False, methods=["post"], url_path="tracer-export")
+    def tracer_export(self, request):
+        """POST {objet_type, ids, fichier} -- un fichier fabriqué dans le navigateur à partir de
+        données déjà chargées (export CSV de « Ressources mobilisées », par exemple) ne passe
+        par aucun endpoint d'export : l'écran le signale ici pour qu'il figure dans la main
+        courante, fiche par fiche, comme un export serveur. Les données elles-mêmes ont déjà
+        été tracées à leur chargement ; cette ligne dit qu'elles sont sorties dans un fichier."""
+        objet_type = str(request.data.get('objet_type') or '')[:100]
+        fichier = str(request.data.get('fichier') or '')[:200]
+        brut = request.data.get('ids') or []
+        if not objet_type or not isinstance(brut, list) or len(brut) > 20_000:
+            return Response({"error": "objet_type et ids (liste, 20 000 au plus) sont obligatoires."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        ids = []
+        for valeur in brut:
+            try:
+                ids.append(uuid.UUID(str(valeur)))
+            except (ValueError, TypeError):
+                return Response({"error": f"Identifiant invalide : {valeur}"}, status=status.HTTP_400_BAD_REQUEST)
+        audit_log(
+            request=request, action_code="EXPORT", objet_type=objet_type,
+            exposition=AuditLog.Exposition.EXPORT, objets_ids=ids,
+            commentaire=f"Export « {fichier or 'sans nom'} » généré dans le navigateur : {len(ids)} fiche(s)",
+        )
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=False, methods=["get"])
     def export(self, request):
@@ -10451,6 +10512,7 @@ class AuditLogViewSet(EnvironmentScopedViewSetMixin, viewsets.ReadOnlyModelViewS
             writer.writerow([
                 "Date", "Heure", "Utilisateur", "Institution", "Adresse IP", "Action",
                 "Type d'objet", "ID objet", "Commentaire", "Succès", "Environnement", "Navigateur",
+                "Périmètre", "Crise", "Exposition", "Compte système", "Recherche",
             ])
             yield buffer.getvalue()
             buffer.seek(0); buffer.truncate(0)
@@ -10474,6 +10536,11 @@ class AuditLogViewSet(EnvironmentScopedViewSetMixin, viewsets.ReadOnlyModelViewS
                     "Oui" if entry.succes else "Non",
                     entry.environment,
                     entry.user_agent or "",
+                    entry.get_perimetre_display() if entry.perimetre else "",
+                    entry.crise.name if entry.crise else "",
+                    entry.get_exposition_display() if entry.exposition else "",
+                    "Oui" if entry.compte_systeme else "Non",
+                    json.dumps(entry.recherche, ensure_ascii=False) if entry.recherche else "",
                 ])
                 yield buffer.getvalue()
                 buffer.seek(0); buffer.truncate(0)

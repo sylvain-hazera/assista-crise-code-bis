@@ -11,6 +11,7 @@ import { TeamService } from '../../services/team.service';
 import { SecteurRecherche, StatutSecteurRecherche } from '../../shared/models/secteur-recherche.model';
 import { Team, teamDisplayName } from '../../shared/models/team.model';
 import { ZoneMapComponent } from '../../shared/components/common/zone-map/zone-map.component';
+import { QuiAConsulteComponent } from '../../shared/components/qui-a-consulte/qui-a-consulte.component';
 
 @Component({
   selector: 'app-recherche-personne-detail',
@@ -19,6 +20,7 @@ import { ZoneMapComponent } from '../../shared/components/common/zone-map/zone-m
     CommonModule,
     FormsModule,
     ZoneMapComponent,
+    QuiAConsulteComponent,
   ],
   templateUrl: './recherche-personne-detail.component.html',
   styleUrls: ['./recherche-personne-detail.component.scss']

@@ -26,6 +26,7 @@ import { AuthService } from '../../auth/services/auth.service';
 import { MinimapComponent } from '../../shared/components/common/minimap/minimap.component';
 import { MatrixSalonChatComponent } from '../teams/matrix-salon-chat/matrix-salon-chat.component';
 import { dureeDepuis } from '../../shared/utils/duree.util';
+import { AVEC_COORDONNEES } from '../../services/coordonnees';
 
 type OngletRessource = 'demandes' | 'offres' | 'disponibilites' | 'signalements' | 'retours';
 
@@ -256,7 +257,7 @@ export class CelluleCriseComponent implements OnInit, OnDestroy {
       },
       error: () => { this.chargementRessource = false; },
     });
-    this.offerService.getAll({ crisis: this.criseId, status: 'DISPONIBLE' }).subscribe({
+    this.offerService.getAll({ crisis: this.criseId, status: 'DISPONIBLE', ...AVEC_COORDONNEES }).subscribe({
       next: (offres) => {
         this.offresDisponibles = offres;
         this.disponibiliteOffreService.getByOffers(offres.map(o => o.id)).subscribe({

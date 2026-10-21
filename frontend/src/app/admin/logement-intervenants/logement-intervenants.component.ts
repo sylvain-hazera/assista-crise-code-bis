@@ -11,6 +11,7 @@ import { PointOperationnel, PointType } from '../../shared/models/point-operatio
 import { Offer } from '../../shared/models/offer.model';
 import { Institution } from '../../shared/models/institution.model';
 import { PointModalComponent } from '../crises/point-modal/point-modal.component';
+import { AVEC_COORDONNEES } from '../../services/coordonnees';
 
 /** Logement des intervenants : points de type Hébergement et offres de particuliers cochées
  * « accueil_intervenants » (distinct d'accueil_sinistres). Une offre de particulier reste en
@@ -65,8 +66,8 @@ export class LogementIntervenantsComponent implements OnInit {
     forkJoin({
       points: this.pointService.getAll(),
       pointTypes: this.pointTypeService.getAll(),
-      offresEnAttente: this.offerService.getAll({ accueil_intervenants: 'true', accueil_intervenants_valide: 'false' }),
-      offresValidees: this.offerService.getAll({ accueil_intervenants: 'true', accueil_intervenants_valide: 'true' }),
+      offresEnAttente: this.offerService.getAll({ accueil_intervenants: 'true', accueil_intervenants_valide: 'false', ...AVEC_COORDONNEES }),
+      offresValidees: this.offerService.getAll({ accueil_intervenants: 'true', accueil_intervenants_valide: 'true', ...AVEC_COORDONNEES }),
     }).subscribe({
       next: ({ points, pointTypes, offresEnAttente, offresValidees }) => {
         this.points = points.filter(p => p.type_code === 'HEBERGEMENT');

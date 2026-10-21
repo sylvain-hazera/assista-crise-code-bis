@@ -2,7 +2,7 @@ import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import { catchError, forkJoin, Observable, of, Subject, switchMap, takeUntil } from 'rxjs';
+import { catchError, forkJoin, map, Observable, of, Subject, switchMap, takeUntil } from 'rxjs';
 
 import { CrisisService }  from '../../services/crisis.service';
 import { OfferService }   from '../../services/offer.service';
@@ -16,7 +16,9 @@ import { MissionService } from '../../services/mission.service';
 import { UserService } from '../../services/user.service';
 import { CompetenceService } from '../../services/competence.service';
 import { PointOperationnelService } from '../../services/point-operationnel.service';
+import { AVEC_COORDONNEES } from '../../services/coordonnees';
 import { MinimapComponent } from '../../shared/components/common/minimap/minimap.component';
+import { QuiAConsulteComponent } from '../../shared/components/qui-a-consulte/qui-a-consulte.component';
 import { Competence } from '../../shared/models/competence.model';
 
 import { DisponibiliteOffre } from '../../shared/models/disponibilite-offre.model';
@@ -94,7 +96,7 @@ const ORDERING_FIELD_MAP: Partial<Record<SortField, string>> = {
 @Component({
   selector: 'app-reporting',
   standalone: true,
-  imports: [CommonModule, FormsModule, MinimapComponent],
+  imports: [CommonModule, FormsModule, MinimapComponent, QuiAConsulteComponent],
   templateUrl: './reporting.component.html',
   styleUrls: ['./reporting.component.scss'],
 })
@@ -166,6 +168,8 @@ export class ReportingComponent implements OnInit, OnDestroy {
   selectedRow: ReportRow | null = null;
   selectedRowAddress: string | null = null;
   isLoadingAddress = false;
+  /** Fiche en cours de relecture au serveur (coordonnées pas encore arrivées). */
+  isLoadingFiche = false;
   newStatus:   Status | ''      = '';
 
   // ── Sélection multiple + actions groupées ─────────────────────
@@ -532,7 +536,29 @@ export class ReportingComponent implements OnInit, OnDestroy {
       Information: this.informationService.getById(targetId).pipe(catchError(() => of(null))),
     }).pipe(takeUntil(this.destroy$)).subscribe(found => {
       const kind = (Object.keys(found) as ReportKind[]).find(k => found[k] != null);
-      if (kind) this.openDetail(this.toRow(kind, found[kind] as any));
+      if (kind) this.openDetail(this.toRow(kind, found[kind] as any), true);
+    });
+  }
+
+  private ficheParId(kind: ReportKind, id: string): Observable<Crisis | Offer | Request | Information> {
+    switch (kind) {
+      case 'Crisis':      return this.crisisService.getById(id);
+      case 'Offer':       return this.offerService.getById(id);
+      case 'Request':     return this.requestService.getById(id);
+      case 'Information': return this.informationService.getById(id);
+    }
+  }
+
+  private chargerFiche(row: ReportRow): void {
+    this.ficheParId(row.kind, row.id).pipe(takeUntil(this.destroy$)).subscribe({
+      next: (fiche) => {
+        // La modale a pu être fermée ou passer à une autre ligne entre-temps.
+        if (this.selectedRow?.id !== row.id) return;
+        const complete = this.toRow(row.kind, fiche);
+        this.selectedRow = { ...this.selectedRow, email: complete.email, telephone: complete.telephone };
+        this.isLoadingFiche = false;
+      },
+      error: () => { if (this.selectedRow?.id === row.id) this.isLoadingFiche = false; },
     });
   }
 
@@ -657,9 +683,15 @@ export class ReportingComponent implements OnInit, OnDestroy {
   // ACTIONS
   // ────────────────────────────────────────────────────────────────────────────
 
-  openDetail(row: ReportRow): void {
+  /** `ficheChargee` : la ligne vient déjà de la fiche complète (lien `?id=`), inutile de la
+   *  redemander. Sinon la fiche est relue au serveur : les listes arrivent sans email ni
+   *  téléphone, et c'est cette lecture qui trace dans la main courante QUI a ouvert QUELLE
+   *  fiche (voir backend/core/tracabilite.py). */
+  openDetail(row: ReportRow, ficheChargee = false): void {
     this.selectedRow    = row;
     this.showDetailModal = true;
+    this.isLoadingFiche = !ficheChargee;
+    if (!ficheChargee) this.chargerFiche(row);
     this.selectedRowAddress = null;
     this.selectedOfferDispos = [];
     this.assignTeamId = null;
@@ -1201,8 +1233,36 @@ export class ReportingComponent implements OnInit, OnDestroy {
   // EXPORT CSV (page affichée uniquement ; un export serveur complet reste à faire)
   // ────────────────────────────────────────────────────────────────────────────
 
+  /** Coordonnées des lignes à exporter : les listes arrivent sans, on les relit en une requête
+   *  par type (?ids=...&avec_coordonnees=1&motif=export), tracée comme EXPORT dans la main
+   *  courante avec la liste des fiches exportées. */
+  private avecCoordonnees(rows: ReportRow[]): Observable<ReportRow[]> {
+    const parType = (['Offer', 'Request', 'Information'] as ReportKind[])
+      .map(kind => ({ kind, ids: rows.filter(r => r.kind === kind).map(r => r.id) }))
+      .filter(g => g.ids.length > 0);
+    if (!parType.length) return of(rows);
+    const params = (ids: string[]) => ({ ids: ids.join(','), ...AVEC_COORDONNEES, motif: 'export' });
+    const appels = parType.map(({ kind, ids }) => {
+      const source: Observable<(Offer | Request | Information)[]> =
+        kind === 'Offer' ? this.offerService.getAll(params(ids))
+        : kind === 'Request' ? this.requestService.getAll(params(ids))
+        : this.informationService.getAll(params(ids));
+      return source.pipe(map(fiches => fiches.map(f => this.toRow(kind, f))));
+    });
+    return forkJoin(appels).pipe(map(groupes => {
+      const parId = new Map(groupes.flat().map(r => [r.id, r]));
+      return rows.map(r => {
+        const complete = parId.get(r.id);
+        return complete ? { ...r, email: complete.email, telephone: complete.telephone } : r;
+      });
+    }));
+  }
+
   exportCSV(): void {
-    const rows = this.pagedRows;
+    this.avecCoordonnees(this.pagedRows).pipe(takeUntil(this.destroy$)).subscribe(rows => this.ecrireCSV(rows));
+  }
+
+  private ecrireCSV(rows: ReportRow[]): void {
     const headers = ['ID','Type','Titre','Contact','Email','Téléphone','Statut','Date','Date expiration','Latitude','Longitude','Crise','Auteur'];
     const lines = rows.map(r => [
       r.id, r.kind, r.title, r.contact, r.email,
@@ -1222,6 +1282,10 @@ export class ReportingComponent implements OnInit, OnDestroy {
 
   exportRow(row: ReportRow, event: Event): void {
     event.stopPropagation();
+    this.avecCoordonnees([row]).pipe(takeUntil(this.destroy$)).subscribe(([complete]) => this.ecrireLigneCSV(complete));
+  }
+
+  private ecrireLigneCSV(row: ReportRow): void {
     const headers = ['ID','Type','Titre','Contact','Email','Téléphone','Statut','Date','Latitude','Longitude'];
     const values  = [row.id, row.kind, row.title, row.contact, row.email,
                      row.telephone ?? '', row.status, this.fmtDate(row.date),

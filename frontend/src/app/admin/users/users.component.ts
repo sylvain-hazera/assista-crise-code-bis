@@ -7,11 +7,12 @@ import { UserService } from '../../services/user.service';
 import { User, UserRole } from '../../shared/models/user.model';
 import { AuthService } from '../../auth/services/auth.service';
 import { UserAvatarComponent } from '../../shared/components/common/user-avatar/user-avatar.component';
+import { QuiAConsulteComponent } from '../../shared/components/qui-a-consulte/qui-a-consulte.component';
 
 @Component({
   selector: 'app-users',
   standalone: true,
-  imports: [CommonModule, FormsModule, ReactiveFormsModule, RouterLink, UserAvatarComponent],
+  imports: [CommonModule, FormsModule, ReactiveFormsModule, RouterLink, UserAvatarComponent, QuiAConsulteComponent],
   templateUrl: './users.component.html',
   styleUrls: ['./users.component.scss']
 })

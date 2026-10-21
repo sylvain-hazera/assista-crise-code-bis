@@ -17,6 +17,7 @@ from .permissions import (
     strip_masked_fields_in_demo, _peut_gerer_stock_point,
 )
 from .zone_scoping import object_in_viewer_zone, object_in_viewer_zone_via_commune
+from .tracabilite import coordonnees_retirees, retirer_coordonnees
 from .models import (
     Environment,
     UserRole,
@@ -624,6 +625,10 @@ class RequestSerializer(serializers.ModelSerializer):
                 data['email_request'] = mask_email(data.get('email_request'))
                 data['phone_request'] = mask_phone(data.get('phone_request'))
                 data['author_email'] = mask_email(data.get('author_email'))
+        # Liste : sans email ni téléphone, ils ne viennent qu'avec la fiche ouverte, tracée
+        # objet par objet (voir core/tracabilite.py, « Coordonnées retirées des listes »).
+        if coordonnees_retirees(self.context.get('request'), self.context.get('view'), 'Request'):
+            retirer_coordonnees(data, 'Request')
         return data
 
     def get_author_nom(self, obj):
@@ -783,6 +788,10 @@ class OfferSerializer(serializers.ModelSerializer):
                 data['author_email'] = mask_email(data.get('author_email'))
                 data['phone_offer'] = mask_phone(data.get('phone_offer'))
                 data['author_phone'] = mask_phone(data.get('author_phone'))
+        # Liste : sans email ni téléphone, ils ne viennent qu'avec la fiche ouverte, tracée
+        # objet par objet (voir core/tracabilite.py, « Coordonnées retirées des listes »).
+        if coordonnees_retirees(self.context.get('request'), self.context.get('view'), 'Offer'):
+            retirer_coordonnees(data, 'Offer')
         return data
 
     def get_author_nom(self, obj):
@@ -1153,6 +1162,10 @@ class InformationSerializer(serializers.ModelSerializer):
                 data['email_information'] = mask_email(data.get('email_information'))
                 data['phone_information'] = mask_phone(data.get('phone_information'))
                 data['author_email'] = mask_email(data.get('author_email'))
+        # Liste : sans email ni téléphone, ils ne viennent qu'avec la fiche ouverte, tracée
+        # objet par objet (voir core/tracabilite.py, « Coordonnées retirées des listes »).
+        if coordonnees_retirees(self.context.get('request'), self.context.get('view'), 'Information'):
+            retirer_coordonnees(data, 'Information')
         return data
 
     def get_author_nom(self, obj):
@@ -1966,19 +1979,42 @@ class AuditLogAdminSerializer(serializers.ModelSerializer):
     institution_nom = serializers.CharField(source='institution.nom', read_only=True, default=None)
     action_code = serializers.CharField(source='action.code', read_only=True, default=None)
     action_libelle = serializers.CharField(source='action.libelle', read_only=True, default=None)
+    crise_nom = serializers.CharField(source='crise.name', read_only=True, default=None)
+    objet_type_libelle = serializers.SerializerMethodField()
+    objet_libelle = serializers.SerializerMethodField()
+    nb_objets = serializers.SerializerMethodField()
 
     class Meta:
         model = AuditLog
         fields = [
-            'id', 'date_action', 'utilisateur_email', 'utilisateur_nom', 'institution_nom',
-            'adresse_ip', 'user_agent', 'action_code', 'action_libelle', 'objet_type',
-            'objet_id', 'commentaire', 'succes', 'environment',
+            'id', 'date_action', 'utilisateur_id', 'utilisateur_email', 'utilisateur_nom',
+            'institution_id', 'institution_nom', 'adresse_ip', 'user_agent', 'action_code',
+            'action_libelle', 'objet_type', 'objet_type_libelle', 'objet_id', 'objet_libelle',
+            'nb_objets', 'exposition', 'perimetre', 'crise_id', 'crise_nom', 'compte_systeme',
+            'recherche', 'commentaire', 'succes', 'environment',
         ]
 
     def get_utilisateur_nom(self, obj):
         if not obj.utilisateur:
             return "Système / anonyme"
         return f"{obj.utilisateur.first_name} {obj.utilisateur.last_name}".strip() or obj.utilisateur.username
+
+    def get_objet_type_libelle(self, obj):
+        from .main_courante import TYPES_FICHES
+        return TYPES_FICHES[obj.objet_type][0] if obj.objet_type in TYPES_FICHES else None
+
+    def get_objet_libelle(self, obj):
+        # Résolus par lot dans AuditLogViewSet.list (contexte `libelles`), jamais recopiés dans
+        # le journal (voir main_courante.libelles).
+        if not obj.objet_id:
+            return None
+        return self.context.get('libelles', {}).get((obj.objet_type, str(obj.objet_id)))
+
+    def get_nb_objets(self, obj):
+        # Liste ou export : nombre de fiches exposées, calculé en base par AuditLogViewSet.list
+        # (contexte `nb_objets`) -- objets_ids n'est pas chargé, une liste peut en compter des
+        # milliers ; le détail s'interroge par le critère « Objet ».
+        return self.context.get('nb_objets', {}).get(obj.pk) or 0
 
 
 class DossierHistoriqueSerializer(serializers.ModelSerializer):

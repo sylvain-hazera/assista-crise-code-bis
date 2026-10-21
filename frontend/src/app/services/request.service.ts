@@ -5,6 +5,7 @@ import { environment } from '../../environments/environment';
 import { Request, RequestPayload, RequestType } from '../shared/models/request.model';
 import { StatsResponse, PageResponse } from '../shared/models/api.model';
 import { geoPointToLatLng, latLngToGeoJson } from '../shared/models/geopoint.model';
+import { AVEC_COORDONNEES } from './coordonnees';
 
 @Injectable({
   providedIn: 'root'
@@ -41,7 +42,7 @@ export class RequestService {
 
   /** GET /api/demandes/my_requests/ */
   getMines(email: string): Observable<Request[]> {
-    return this.getAll({ author_email: email });
+    return this.getAll({ author_email: email, ...AVEC_COORDONNEES });
   }
 
   /** GET /api/demandes/<id>/ */

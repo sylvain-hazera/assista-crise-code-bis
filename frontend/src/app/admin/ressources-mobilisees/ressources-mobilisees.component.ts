@@ -8,6 +8,7 @@ import { AffecterLogementResultat } from '../../shared/models/logement-intervena
 import { LogementPickerModalComponent } from '../../shared/components/common/logement-picker-modal/logement-picker-modal.component';
 import { FicheIntervenantModalComponent } from '../../shared/components/common/fiche-intervenant-modal/fiche-intervenant-modal.component';
 import { FicheMaterielModalComponent } from '../../shared/components/common/fiche-materiel-modal/fiche-materiel-modal.component';
+import { AuditLogService } from '../../services/audit-log.service';
 
 type TypeFilter = 'ALL' | 'personne' | 'materiel';
 
@@ -53,7 +54,7 @@ export class RessourcesMobiliseesComponent implements OnInit {
   pickerIntervenantIds: string[] = [];
   pickerCriseId: string | null = null;
 
-  constructor(private teamService: TeamService) {}
+  constructor(private teamService: TeamService, private auditLogService: AuditLogService) {}
 
   ngOnInit(): void {
     this.load();
@@ -275,5 +276,10 @@ export class RessourcesMobiliseesComponent implements OnInit {
     a.download = `ressources_mobilisees_${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(a.href);
+
+    // Fichier fabriqué ici, sans passer par un export serveur : on le signale pour qu'il figure
+    // dans la main courante, personne par personne (voir AuditLogService.tracerExport).
+    const ids = rows.map(r => r.user_id ?? r.offre_id).filter((id): id is string => !!id);
+    this.auditLogService.tracerExport('RessourceMobilisee', ids, a.download).subscribe({ error: () => {} });
   }
 }

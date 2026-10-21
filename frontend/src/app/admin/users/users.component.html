@@ -415,6 +415,8 @@
           </div>
         </div>
 
+        <app-qui-a-consulte *ngIf="isEditMode && selectedUser" [objetId]="selectedUser.id"></app-qui-a-consulte>
+
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" (click)="closeModal()">
             Annuler

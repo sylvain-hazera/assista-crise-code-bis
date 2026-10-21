@@ -11,13 +11,14 @@ import {
   LABELS_STATUT_EVALUATION, LABELS_STATUT_CHANTIER, ReleveHabitation, EstimationDvf,
 } from '../../../shared/models/habitation.model';
 import { DossierDocument } from '../../../shared/models/dossier-document.model';
+import { QuiAConsulteComponent } from '../../../shared/components/qui-a-consulte/qui-a-consulte.component';
 
 type Onglet = 'details' | 'photos' | 'commentaires' | 'historique' | 'rattachement';
 
 @Component({
   selector: 'app-habitation-fiche',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, QuiAConsulteComponent],
   templateUrl: './habitation-fiche.component.html',
   styleUrl: './habitation-fiche.component.scss',
 })

@@ -9,6 +9,10 @@
           {{ totalPlafonne ? 'plus de ' : '' }}{{ nombreFr(totalCount) }} entrée{{ totalCount > 1 ? 's' : '' }}
         </span>
       }
+      <label class="toggle-systeme" title="Ponts radio, satellites et automates : ils écrivent en continu et noient les actions humaines.">
+        <input type="checkbox" [(ngModel)]="filtres.masquer_systeme" (change)="appliquer()" />
+        Masquer les comptes système
+      </label>
     </div>
     <button class="btn-primary" (click)="exportCsv()" [disabled]="isExporting">
       <span class="material-icons">download</span>
@@ -23,47 +27,135 @@
     </div>
   }
 
-  <section class="filters-bar">
-    <div class="filter-field">
-      <label>Depuis</label>
-      <input type="date" [(ngModel)]="filters.date_debut" />
-    </div>
-    <div class="filter-field">
-      <label>Jusqu'au</label>
-      <input type="date" [(ngModel)]="filters.date_fin" />
-    </div>
-    <div class="filter-field">
-      <label>Action</label>
-      <select [(ngModel)]="filters.action">
-        <option [ngValue]="undefined">Toutes</option>
-        @for (opt of actionOptions; track opt.code) {
-          <option [value]="opt.code">{{ opt.libelle }}</option>
+  <section class="filters-card">
+    <!-- Critères cumulables : chacun peut être inclus (vert) ou exclu (rouge), plusieurs fois -->
+    <div class="critere-saisie">
+      <div class="filter-field champ-select">
+        <label for="mc-champ">Critère</label>
+        <select id="mc-champ" [(ngModel)]="champ" (ngModelChange)="changerChamp()">
+          @for (c of champs; track c.cle) {
+            <option [ngValue]="c.cle">{{ c.libelle }}</option>
+          }
+        </select>
+      </div>
+
+      <div class="filter-field champ-valeur">
+        <label for="mc-valeur">Valeur</label>
+        @switch (champ) {
+          @case ('action') {
+            <select id="mc-valeur" [(ngModel)]="saisie">
+              <option value="">Choisir une action…</option>
+              @for (opt of actionOptions; track opt.code) {
+                <option [value]="opt.code">{{ opt.libelle }}</option>
+              }
+            </select>
+          }
+          @case ('crise') {
+            <select id="mc-valeur" [(ngModel)]="saisie">
+              <option value="">Choisir une crise…</option>
+              @for (c of crises; track c.id) {
+                <option [value]="c.id">{{ c.name }}</option>
+              }
+            </select>
+          }
+          @default {
+            <div class="saisie-wrap">
+              <input id="mc-valeur" type="text" [(ngModel)]="saisie" (ngModelChange)="surSaisie()"
+                     [placeholder]="champ === 'objet' && !rechercheFichesDisponible ? 'identifiant de la fiche' : champCourant.aide"
+                     (keydown.enter)="ajouterSaisie(false)" autocomplete="off" />
+              @if (champ === 'objet' && suggestions.length) {
+                <ul class="suggestions" role="listbox">
+                  @for (s of suggestions; track s.type + s.id) {
+                    <li role="option" (click)="choisirFiche(s)">
+                      <span class="sugg-type">{{ s.type_libelle }}</span> {{ s.libelle }}
+                    </li>
+                  }
+                </ul>
+              }
+            </div>
+          }
         }
-      </select>
+      </div>
+
+      <div class="critere-boutons">
+        <button class="btn-inclure" (click)="ajouterSaisie(false)" [disabled]="!saisie.trim()" title="Ne garder que les lignes qui correspondent">
+          <span class="material-icons">add_circle_outline</span> Inclure
+        </button>
+        <button class="btn-exclure" (click)="ajouterSaisie(true)" [disabled]="!saisie.trim()" title="Écarter les lignes qui correspondent">
+          <span class="material-icons">remove_circle_outline</span> Exclure
+        </button>
+      </div>
     </div>
-    <div class="filter-field">
-      <label>Type d'objet</label>
-      <input type="text" placeholder="ex: Offer, User, Crisis…" [(ngModel)]="filters.objet_type" />
-    </div>
-    <div class="filter-field">
-      <label>Utilisateur</label>
-      <input type="text" placeholder="email…" [(ngModel)]="filters.utilisateur" />
-    </div>
-    <div class="filter-field">
-      <label>Statut</label>
-      <select [(ngModel)]="filters.succes">
-        <option [ngValue]="undefined">Tous</option>
-        <option value="true">Succès</option>
-        <option value="false">Échec</option>
-      </select>
-    </div>
-    <div class="filter-actions">
-      <button class="btn-secondary" (click)="applyFilters()">
-        <span class="material-icons">filter_alt</span> Filtrer
-      </button>
-      <button class="btn-ghost" (click)="resetFilters()">Réinitialiser</button>
+
+    @if (filtres.criteres.length) {
+      <div class="pastilles" aria-label="Critères actifs">
+        @for (c of filtres.criteres; track c.cle + c.valeur) {
+          <span class="pastille" [class.exclue]="c.exclu">
+            <button class="pastille-sens" (click)="basculer(c)"
+                    [title]="c.exclu ? 'Exclu — cliquer pour inclure' : 'Inclus — cliquer pour exclure'">
+              {{ c.exclu ? '≠' : '=' }}
+            </button>
+            <span class="pastille-champ">{{ libelleChamp(c.cle) }}</span>
+            <span class="pastille-valeur" [title]="c.valeur">{{ c.libelle }}</span>
+            <button class="pastille-retirer" (click)="retirer(c)" title="Retirer ce critère">
+              <span class="material-icons">close</span>
+            </button>
+          </span>
+        }
+      </div>
+    }
+
+    <div class="filtres-rapides">
+      <div class="filter-field">
+        <label for="mc-debut">Depuis</label>
+        <input id="mc-debut" type="datetime-local" [(ngModel)]="filtres.date_debut" />
+      </div>
+      <div class="filter-field">
+        <label for="mc-fin">Jusqu'au</label>
+        <input id="mc-fin" type="datetime-local" [(ngModel)]="filtres.date_fin" />
+      </div>
+      <div class="filter-field">
+        <label for="mc-perimetre">Périmètre</label>
+        <select id="mc-perimetre" [(ngModel)]="filtres.perimetre">
+          @for (p of perimetres; track p.code) {
+            <option [ngValue]="p.code || undefined">{{ p.libelle }}</option>
+          }
+        </select>
+      </div>
+      <div class="filter-field">
+        <label for="mc-exposition">Consultation</label>
+        <select id="mc-exposition" [(ngModel)]="filtres.exposition">
+          @for (e of expositions; track e.code) {
+            <option [ngValue]="e.code || undefined">{{ e.libelle }}</option>
+          }
+        </select>
+      </div>
+      <div class="filter-field">
+        <label for="mc-statut">Statut</label>
+        <select id="mc-statut" [(ngModel)]="filtres.succes">
+          <option [ngValue]="undefined">Tous</option>
+          <option value="true">Succès</option>
+          <option value="false">Échec</option>
+        </select>
+      </div>
+      <div class="filter-actions">
+        <button class="btn-secondary" (click)="appliquer()">
+          <span class="material-icons">filter_alt</span> Filtrer
+        </button>
+        <button class="btn-ghost" (click)="resetFilters()">Réinitialiser</button>
+      </div>
     </div>
   </section>
+
+  @if (ficheSuivie; as fiche) {
+    <div class="bandeau-fiche">
+      <span class="material-icons">manage_search</span>
+      <div>
+        <strong>Historique de la fiche « {{ fiche.libelle }} »</strong>
+        <span>Toutes les fois où elle a été ouverte, affichée dans une liste ou exportée — par qui, quand, depuis quelle adresse.</span>
+      </div>
+    </div>
+  }
 
   <section class="table-card">
     @if (isLoading) {
@@ -76,34 +168,91 @@
           <thead>
             <tr>
               <th>Date</th>
-              <th>Utilisateur</th>
-              <th>Institution</th>
+              <th>Qui</th>
               <th>IP</th>
               <th>Action</th>
+              <th>Périmètre</th>
               <th>Objet</th>
-              <th>Commentaire</th>
-              <th>Statut</th>
+              <th>Détail</th>
             </tr>
           </thead>
           <tbody>
             @for (entry of entries; track entry.id) {
               <tr [class.row-echec]="!entry.succes">
-                <td class="date-cell">{{ entry.date_action | date:'dd/MM/yyyy HH:mm:ss' }}</td>
+                <td class="date-cell">{{ entry.date_action | date:'dd/MM/yyyy' }}<span class="heure">{{ entry.date_action | date:'HH:mm:ss' }}</span></td>
                 <td>
-                  <div class="user-cell">
-                    <span>{{ entry.utilisateur_nom }}</span>
-                    @if (entry.utilisateur_email) { <span class="user-email">{{ entry.utilisateur_email }}</span> }
+                  <div class="user-cell filtrable">
+                    <span>
+                      {{ entry.utilisateur_nom }}
+                      @if (entry.compte_systeme) { <span class="badge-systeme">système</span> }
+                    </span>
+                    @if (entry.utilisateur_email) {
+                      <span class="user-email">
+                        {{ entry.utilisateur_email }}
+                        <span class="filtre-rapide">
+                          <button (click)="filtrerSur('utilisateur', entry.utilisateur_email, entry.utilisateur_nom, false)" title="Ne garder que cet utilisateur"><span class="material-icons">add_circle_outline</span></button>
+                          <button (click)="filtrerSur('utilisateur', entry.utilisateur_email, entry.utilisateur_nom, true)" title="Exclure cet utilisateur"><span class="material-icons">remove_circle_outline</span></button>
+                        </span>
+                      </span>
+                    }
+                  </div>
+                  @if (entry.institution_nom) {
+                    <div class="institution-ligne filtrable">
+                      {{ entry.institution_nom }}
+                      @if (entry.institution_id) {
+                        <span class="filtre-rapide">
+                          <button (click)="filtrerSur('institution', entry.institution_id, entry.institution_nom, false)" title="Ne garder que cette institution"><span class="material-icons">add_circle_outline</span></button>
+                          <button (click)="filtrerSur('institution', entry.institution_id, entry.institution_nom, true)" title="Exclure cette institution"><span class="material-icons">remove_circle_outline</span></button>
+                        </span>
+                      }
+                    </div>
+                  }
+                </td>
+                <td class="ip-cell">
+                  <div class="filtrable">
+                    <span>{{ entry.adresse_ip || '—' }}</span>
+                    @if (entry.adresse_ip) {
+                      <span class="filtre-rapide">
+                        <button (click)="filtrerSur('ip', entry.adresse_ip, entry.adresse_ip, false)" title="Ne garder que cette adresse"><span class="material-icons">add_circle_outline</span></button>
+                        <button (click)="filtrerSur('ip', entry.adresse_ip, entry.adresse_ip, true)" title="Exclure cette adresse"><span class="material-icons">remove_circle_outline</span></button>
+                      </span>
+                    }
                   </div>
                 </td>
-                <td>{{ entry.institution_nom || '—' }}</td>
-                <td class="ip-cell">{{ entry.adresse_ip || '—' }}</td>
-                <td><span class="action-chip">{{ actionLibelle(entry.action_code) }}</span></td>
-                <td>{{ entry.objet_type }}</td>
-                <td class="comment-cell" [title]="entry.commentaire || ''">{{ entry.commentaire || '—' }}</td>
                 <td>
-                  <span class="status-chip" [class.status-ok]="entry.succes" [class.status-ko]="!entry.succes">
-                    {{ entry.succes ? 'OK' : 'Échec' }}
-                  </span>
+                  <span class="action-chip">{{ actionLibelle(entry.action_code) }}</span>
+                  @if (!entry.succes) { <span class="status-chip status-ko">Échec</span> }
+                </td>
+                <td>
+                  @if (entry.perimetre === 'CRISE' && entry.crise_id) {
+                    <button class="perimetre-chip perimetre-crise" (click)="filtrerSur('crise', entry.crise_id, entry.crise_nom, false)" title="Ne garder que cette crise">
+                      {{ perimetreLibelle(entry) }}
+                    </button>
+                  } @else {
+                    <span class="perimetre-chip" [class.perimetre-general]="entry.perimetre === 'GENERAL'">{{ perimetreLibelle(entry) }}</span>
+                  }
+                </td>
+                <td class="objet-cell">
+                  <div class="filtrable">
+                    <span class="objet-type">{{ entry.objet_type_libelle || entry.objet_type }}</span>
+                    @if (entry.objet_libelle) {
+                      <span class="objet-libelle" [class.supprimee]="entry.objet_libelle === 'fiche supprimée'">{{ entry.objet_libelle }}</span>
+                    }
+                    @if (entry.objet_id) {
+                      <span class="filtre-rapide">
+                        <button (click)="filtrerSur('objet', entry.objet_id, (entry.objet_type_libelle || entry.objet_type) + ' — ' + (entry.objet_libelle || entry.objet_id), false)" title="Qui a vu cette fiche ? (historique complet)"><span class="material-icons">manage_search</span></button>
+                      </span>
+                    }
+                  </div>
+                  @if (expositionLibelle(entry); as expo) {
+                    <span class="exposition-chip" [class.expo-coordonnees]="entry.exposition === 'LISTE' || entry.exposition === 'EXPORT' || entry.exposition === 'FICHE'">{{ expo }}</span>
+                  }
+                </td>
+                <td class="comment-cell">
+                  <span [title]="entry.commentaire || ''">{{ entry.commentaire || '—' }}</span>
+                  @if (rechercheTexte(entry); as r) {
+                    <span class="recherche-ligne" [title]="r"><span class="material-icons">search</span>{{ r }}</span>
+                  }
                 </td>
               </tr>
             }
@@ -112,18 +261,18 @@
       </div>
 
       <div class="pagination">
-        <button class="btn-icon" (click)="goToPage(page - 1)" [disabled]="page <= 1">
+        <button class="btn-icon" (click)="goToPage(page - 1)" [disabled]="page <= 1" aria-label="Page précédente">
           <span class="material-icons">chevron_left</span>
         </button>
         <span>Page {{ page }}{{ totalPlafonne ? '' : ' / ' + nombreFr(totalPages) }}</span>
-        <button class="btn-icon" (click)="goToPage(page + 1)" [disabled]="!hasNext">
+        <button class="btn-icon" (click)="goToPage(page + 1)" [disabled]="!hasNext" aria-label="Page suivante">
           <span class="material-icons">chevron_right</span>
         </button>
       </div>
     } @else {
       <div class="empty-state">
         <span class="material-icons">inbox</span>
-        <p>Aucune entrée pour ces filtres</p>
+        <p>Aucune entrée pour ces critères</p>
       </div>
     }
   </section>

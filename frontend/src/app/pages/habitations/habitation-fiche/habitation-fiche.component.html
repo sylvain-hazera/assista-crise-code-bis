@@ -295,6 +295,11 @@
         }
       }
 
+      <!-- Pas sur la vue publique (lien magique d'un demandeur) : réservé aux institutionnels -->
+      @if (!lectureSeule) {
+        <app-qui-a-consulte [objetId]="habitation.id"></app-qui-a-consulte>
+      }
+
     </div>
   </div>
 </div>

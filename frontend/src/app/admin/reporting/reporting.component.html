@@ -328,7 +328,11 @@
                           <span class="secours-badge" title="Compte secours organisés">SECOURS</span>
                         }
                       </span>
-                      <span class="contact-email">{{ row.email }}</span>
+                      <!-- email/téléphone : présents seulement si la liste les a fournis ; sinon
+                           ils s'affichent à l'ouverture de la fiche, dont la lecture est tracée -->
+                      @if (row.email) {
+                        <span class="contact-email">{{ row.email }}</span>
+                      }
                       @if (row.telephone) {
                         <span class="contact-phone">{{ row.telephone }}</span>
                       }
@@ -488,7 +492,7 @@
               </div>
               <div class="detail-item">
                 <span class="material-icons">mail</span>
-                <div><label>Email</label><span>{{ selectedRow.email }}</span></div>
+                <div><label>Email</label><span>{{ isLoadingFiche ? 'Chargement…' : (selectedRow.email || '—') }}</span></div>
               </div>
               @if (selectedRow.telephone) {
                 <div class="detail-item">
@@ -667,6 +671,8 @@
             }
           </div>
         }
+
+        <app-qui-a-consulte [objetId]="selectedRow.id"></app-qui-a-consulte>
       </div>
 
       <div class="modal-footer">

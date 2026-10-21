@@ -6,6 +6,7 @@ import { map, Observable } from 'rxjs';
 import { geoPointToLatLng, latLngToGeoJson } from '../shared/models/geopoint.model';
 import { Team } from '../shared/models/team.model';
 import { PageResponse } from '../shared/models/api.model';
+import { AVEC_COORDONNEES } from './coordonnees';
 
 export interface BulkAssignInformationResult {
   team: Team;
@@ -81,7 +82,7 @@ export class InformationService {
   /** GET /api/informations/?author_email=... — signalements créés par l'utilisateur connecté
    * lui-même (compte lié à la création, voir InformationViewSet.perform_create). */
   getMines(email: string): Observable<Information[]> {
-    return this.getAll({ author_email: email });
+    return this.getAll({ author_email: email, ...AVEC_COORDONNEES });
   }
 
   /** POST /api/informations/bulk_assign_team/ — affecte une sélection de signalements à une

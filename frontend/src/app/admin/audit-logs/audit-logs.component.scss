@@ -84,10 +84,66 @@
   border-radius: 10px; padding: .75rem 1rem; font-size: .9rem;
 }
 
-.filters-bar {
-  display: flex; flex-wrap: wrap; align-items: flex-end; gap: 1rem;
+.filters-card {
+  display: flex; flex-direction: column; gap: .9rem;
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
   padding: 1rem 1.25rem; box-shadow: var(--shadow);
+}
+
+.critere-saisie, .filtres-rapides {
+  display: flex; flex-wrap: wrap; align-items: flex-end; gap: 1rem;
+}
+.filtres-rapides { padding-top: .9rem; border-top: 1px solid var(--border); }
+
+.champ-valeur { flex: 1 1 280px; }
+.saisie-wrap { position: relative; display: flex; flex-direction: column; }
+
+.suggestions {
+  position: absolute; top: 100%; left: 0; right: 0; z-index: 20; margin: .2rem 0 0; padding: .25rem 0;
+  list-style: none; background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: var(--shadow); max-height: 280px; overflow-y: auto;
+  li { padding: .45rem .7rem; font-size: .85rem; cursor: pointer; &:hover { background: var(--bg); } }
+  .sugg-type { font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .3px; color: var(--muted); margin-right: .3rem; }
+}
+
+.critere-boutons { display: flex; gap: .5rem; }
+.btn-inclure, .btn-exclure {
+  display: inline-flex; align-items: center; gap: .3rem; border-radius: 8px; padding: .5rem .8rem;
+  font-size: .85rem; cursor: pointer; border: 1px solid;
+  .material-icons { font-size: 18px; }
+  &:disabled { opacity: .45; cursor: not-allowed; }
+}
+.btn-inclure { background: #f0fdf4; color: #166534; border-color: #bbf7d0; &:hover:not(:disabled) { background: #dcfce7; } }
+.btn-exclure { background: #fef2f2; color: #991b1b; border-color: #fecaca; &:hover:not(:disabled) { background: #fee2e2; } }
+
+// Pastilles : vert = inclus, rouge = exclu ; le signe à gauche bascule, la croix retire.
+.pastilles { display: flex; flex-wrap: wrap; gap: .45rem; }
+.pastille {
+  display: inline-flex; align-items: center; gap: .35rem; max-width: 100%;
+  background: #f0fdf4; border: 1px solid #bbf7d0; color: #14532d;
+  border-radius: 99px; padding: .15rem .3rem .15rem .2rem; font-size: .8rem;
+  &.exclue { background: #fef2f2; border-color: #fecaca; color: #7f1d1d; }
+  button { background: none; border: none; cursor: pointer; color: inherit; display: inline-flex; align-items: center; padding: 0; }
+  .pastille-sens {
+    width: 1.35rem; height: 1.35rem; justify-content: center; border-radius: 50%;
+    background: rgba(255,255,255,.7); font-weight: 700;
+  }
+  .pastille-champ { font-weight: 600; }
+  .pastille-valeur { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 320px; }
+  .pastille-retirer .material-icons { font-size: 16px; opacity: .7; }
+}
+
+.toggle-systeme {
+  display: inline-flex; align-items: center; gap: .35rem; margin-left: .5rem;
+  font-size: .82rem; color: var(--muted); cursor: pointer;
+  input { accent-color: #374151; }
+}
+
+.bandeau-fiche {
+  display: flex; align-items: flex-start; gap: .65rem;
+  background: #eff6ff; border: 1px solid #bfdbfe; color: #1e3a8a; border-radius: 10px; padding: .75rem 1rem;
+  div { display: flex; flex-direction: column; gap: .15rem; font-size: .88rem; }
+  span:not(.material-icons) { color: #1e40af; font-size: .82rem; }
 }
 
 .filter-field {
@@ -122,16 +178,68 @@ tbody td { padding: .65rem 1rem; border-bottom: 1px solid var(--border); vertica
 tbody tr:last-child td { border-bottom: none; }
 tbody tr.row-echec { background: #fff7f7; }
 
-.date-cell { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.date-cell {
+  white-space: nowrap; font-variant-numeric: tabular-nums;
+  .heure { display: block; font-size: .75rem; color: var(--muted); }
+}
 .ip-cell { font-variant-numeric: tabular-nums; color: var(--muted); }
 
 .user-cell {
   display: flex; flex-direction: column;
   .user-email { font-size: .75rem; color: var(--muted); }
 }
+.institution-ligne { margin-top: .15rem; font-size: .75rem; color: #374151; }
 
 .comment-cell {
-  max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  max-width: 260px;
+  > span:first-child { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
+.recherche-ligne {
+  display: flex; align-items: center; gap: .2rem; margin-top: .2rem;
+  font-size: .75rem; color: #92400e; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  .material-icons { font-size: 14px; }
+}
+
+// Valeur du tableau avec ses boutons « + / − » : superposés en haut à droite de la cellule
+// (sans réserver de place), visibles au survol ou au clavier.
+.filtrable {
+  position: relative;
+  .filtre-rapide {
+    position: absolute; top: -.2rem; right: 0; z-index: 2;
+    display: inline-flex; gap: .1rem; opacity: 0; transition: opacity .1s;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: .1rem .15rem;
+    button {
+      background: none; border: none; padding: 0; cursor: pointer; color: var(--muted); display: inline-flex;
+      .material-icons { font-size: 16px; }
+      &:hover { color: var(--text); }
+      &:focus-visible { outline: 2px solid #2563eb; border-radius: 4px; }
+    }
+  }
+  &:hover .filtre-rapide, &:focus-within .filtre-rapide { opacity: 1; }
+}
+
+.badge-systeme {
+  margin-left: .3rem; font-size: .65rem; font-weight: 700; text-transform: uppercase; letter-spacing: .3px;
+  background: #e5e7eb; color: #4b5563; border-radius: 4px; padding: .05rem .3rem;
+}
+
+.perimetre-chip {
+  display: inline-block; white-space: nowrap; font-size: .75rem; border-radius: 99px; padding: .15rem .55rem;
+  background: var(--bg); border: 1px solid var(--border); color: var(--muted);
+  &.perimetre-general { color: #374151; }
+  &.perimetre-crise { background: #fff7ed; border-color: #fed7aa; color: #9a3412; cursor: pointer; font-family: inherit; }
+}
+
+.objet-cell {
+  min-width: 180px;
+  .objet-type { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .3px; color: var(--muted); margin-right: .3rem; }
+  .objet-libelle { &.supprimee { font-style: italic; color: var(--muted); } }
+}
+.exposition-chip {
+  display: inline-block; margin-top: .25rem; font-size: .72rem; border-radius: 4px; padding: .05rem .4rem;
+  background: var(--bg); color: var(--muted);
+  // coordonnées effectivement exposées (fiche, liste avec coordonnées, export) : à regarder en premier
+  &.expo-coordonnees { background: #fef3c7; color: #92400e; }
 }
 
 .action-chip {
@@ -140,7 +248,7 @@ tbody tr.row-echec { background: #fff7f7; }
 }
 
 .status-chip {
-  padding: .15rem .55rem; border-radius: 99px; font-size: .75rem; font-weight: 600;
+  margin-left: .3rem; padding: .15rem .55rem; border-radius: 99px; font-size: .75rem; font-weight: 600;
 }
 .status-ok { background: #dcfce7; color: var(--ok); }
 .status-ko { background: #fee2e2; color: var(--ko); }

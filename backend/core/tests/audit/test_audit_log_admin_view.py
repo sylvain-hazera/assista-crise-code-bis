@@ -242,6 +242,8 @@ class TestAuditLogExport:
         assert rows[0] == [
             "Date", "Heure", "Utilisateur", "Institution", "Adresse IP", "Action",
             "Type d'objet", "ID objet", "Commentaire", "Succès", "Environnement", "Navigateur",
+            # traçabilité des consultations (21/10/2026)
+            "Périmètre", "Crise", "Exposition", "Compte système", "Recherche",
         ]
         assert len(rows) > 1
 
