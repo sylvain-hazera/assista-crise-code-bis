@@ -48,10 +48,10 @@ services:
       # Marque blanche : validation ACME des domaines partenaires (voir proxy/README.md).
       - ./proxy/waf-partenaires-acme.conf:/etc/nginx/templates/conf.d/partenaires-acme.conf.template:ro
       - certbot_webroot:/var/www/certbot
-      # ⚠ À DÉCOMMENTER SEULEMENT APRÈS la première émission du certificat partenaire : ce
-      # fichier référence /etc/letsencrypt/live/reserve-resilience.org/, et nginx refuse de
-      # démarrer si le certificat n'existe pas encore -- tout le site tomberait.
-      # - ./proxy/waf-partenaires-tls.conf:/etc/nginx/templates/conf.d/partenaires-tls.conf.template:ro
+      # Certificat partenaire émis le 22/10/2026 (expire le 2027-01-20). Ce fichier référence
+      # /etc/letsencrypt/live/reserve-resilience.org/ : ne jamais le laisser monté si ce
+      # certificat venait à disparaître, nginx refuserait de démarrer et tout le site tomberait.
+      - ./proxy/waf-partenaires-tls.conf:/etc/nginx/templates/conf.d/partenaires-tls.conf.template:ro
       - waf_modsec_logs:/var/log/modsecurity
       - waf_nginx_logs:/var/log/nginx-real
     networks: [front]

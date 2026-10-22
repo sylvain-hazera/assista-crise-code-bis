@@ -174,6 +174,10 @@ Deux fichiers additifs, montés dans `ac_waf` comme gabarits `conf.d` (ils ne re
 
 #### Émission, en trois temps
 
+**Fait le 22/10/2026** : certificat `reserve-resilience.org` émis pour les quatre
+sous-domaines, expiration le 2027-01-20, renouvellement automatique validé par
+`certbot renew --dry-run`. La procédure ci-dessous sert pour un prochain partenaire.
+
 Dans cet ordre, sans sauter d'étape : le bloc TLS référence un certificat, et nginx refuse de
 démarrer s'il n'existe pas — tout le site tomberait.
 
@@ -226,29 +230,36 @@ retombe de toute façon sur le premier bloc du port.
 `SERVER_NAME`. Vérifier après chaque redéploiement :
 `docker logs ac_waf 2>&1 | grep -c "conflicting server name"` doit renvoyer `0`.
 
-#### ⚠ Le port 80 doit être joignable depuis Internet
+#### ⚠ Le port 80 doit être joignable depuis le monde entier
 
-HTTP-01 l'exige. Au 22/10/2026 il ne l'est pas : la machine écoute bien sur :80, aucun pare-feu
-local ne bloque (`ufw` désactivé, `firewalld` inactif), mais Let's Encrypt n'atteint pas
-176.141.139.81:80 — « Timeout during connect (likely firewall problem) » sur les quatre
-domaines, alors que :443 fonctionne. La redirection 80→443 ne sert donc aujourd'hui que le
-trafic local. Il manque une redirection de port 80 sur le routeur.
+HTTP-01 l'exige, et c'est ce qui a bloqué la première tentative le 22/10/2026 : le port 443 est
+volontairement restreint aux IP françaises, et le filtrage couvrait aussi le port 80. Let's
+Encrypt répondait « Timeout during connect (likely firewall problem) » sur les quatre domaines.
 
-**Conclusion du 22/10/2026 : HTTP-01 est une impasse ici.** Le port 443 est volontairement
-restreint aux IP françaises, et la restriction couvre aussi le port 80 (vérifié depuis deux
-sondes externes indépendantes, témoin `example.com` à 200 et nos domaines en délai dépassé).
-Or Let's Encrypt valide depuis **plusieurs points du globe**, dont les adresses ne sont ni
-publiées ni stables, donc impossibles à mettre en liste blanche ; le CA/Browser Forum impose au
-moins cinq perspectives distantes réparties sur deux RIR à compter du 2026-12-15. Une politique
-« France seulement » et HTTP-01 sont donc structurellement incompatibles.
+**Le filtrage géographique a été retiré du port 80 le 22/10/2026, et le certificat est passé.**
+Il doit le rester : Let's Encrypt valide depuis plusieurs points du globe, dont les adresses ne
+sont ni publiées ni stables, donc impossibles à mettre en liste blanche. Le CA/Browser Forum
+impose au moins cinq perspectives distantes sur deux RIR à compter du 2026-12-15. Remettre un
+filtrage « France seulement » sur le port 80 casserait le renouvellement.
 
-Les blocs `waf-partenaires-acme.conf` et le volume `ac_certbot_webroot` restent en place : ils
-ne coûtent rien et resserviront si le port 80 est un jour ouvert sans filtrage géographique.
+Garder le 443 restreint à la France ne gêne pas : le chemin `/.well-known/acme-challenge/` est
+servi **en clair sur le port 80, sans redirection** (voir `waf-partenaires-acme.conf`).
 
-#### Voie retenue : DNS-01 via OVH
+Piège de diagnostic : une sonde externe qui teste `http://` suit la redirection 301 vers le 443,
+se fait filtrer, et conclut à tort que le port 80 est fermé. Pour trancher, viser une URL unique
+depuis l'extérieur et la chercher dans les journaux :
 
-La zone du partenaire est chez OVH. `proxy/certbot/Dockerfile` embarque désormais les DEUX
-greffons, `certbot-dns-ionos` et `certbot-dns-ovh` :
+```bash
+docker exec ac_waf grep '<url-unique>' /var/log/nginx-real/access.log
+```
+
+Une ligne `301` avec une IP étrangère prouve que le port 80 est bien joignable.
+
+#### Solution de repli : DNS-01 via OVH
+
+Non utilisée — gardée au cas où le port 80 devrait être refermé. La zone du partenaire est chez
+OVH, et `proxy/certbot/Dockerfile` embarque les DEUX greffons, `certbot-dns-ionos` et
+`certbot-dns-ovh` :
 
 ```bash
 docker build -t assista-certbot-ionos:latest proxy/certbot/
