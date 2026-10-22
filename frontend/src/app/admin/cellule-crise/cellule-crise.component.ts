@@ -11,7 +11,9 @@ import { CelluleCriseService } from '../../services/cellule-crise.service';
 import { CelluleCrise } from '../../shared/models/cellule-crise.model';
 import { TeamService } from '../../services/team.service';
 import { Team, MatrixMessage, teamDisplayName } from '../../shared/models/team.model';
-import { DossierService } from '../../services/dossier.service';
+import { Apprentissage, DossierService } from '../../services/dossier.service';
+import { AffectationCompetenceService } from '../../services/affectation-competence.service';
+import { AffectationCompetence } from '../../shared/models/affectation-competence.model';
 import { Dossier } from '../../shared/models/dossier.model';
 import { RessourceMobilisee } from '../../shared/models/ressource-mobilisee.model';
 import { OfferService } from '../../services/offer.service';
@@ -82,6 +84,18 @@ export class CelluleCriseComponent implements OnInit, OnDestroy {
   chargementRessource = false;
   categoriesExclues = new Set<string>();
 
+  // --- Affectation depuis la cellule, qui « apprend » (22/10/2026, voir apprendre_affectation
+  // côté backend) : le choix de Fred pour un dossier devient la suggestion des suivants. ---
+  dossiersMateriel: Dossier[] = [];
+  affectationsCrise: AffectationCompetence[] = [];
+  equipeChoisie: Record<string, string> = {};
+  selection = new Set<string>();
+  equipeLot = '';
+  filtreCategorie = '';
+  affectationEnCours = false;
+  toast: { texte: string; annuler?: () => void } | null = null;
+  private toastTimer?: ReturnType<typeof setTimeout>;
+
   // --- Panneau Coordination ---
   dossiersAValider: Dossier[] = [];
   implicationsEnAttente: ImplicationInstitution[] = [];
@@ -100,6 +114,7 @@ export class CelluleCriseComponent implements OnInit, OnDestroy {
     private disponibiliteOffreService: DisponibiliteOffreService,
     private implicationService: ImplicationService,
     private journalService: JournalCollectiviteService,
+    private affectationCompetenceService: AffectationCompetenceService,
     public authService: AuthService,
   ) {}
 
@@ -122,6 +137,7 @@ export class CelluleCriseComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.sub?.unsubscribe();
+    if (this.toastTimer) clearTimeout(this.toastTimer);
   }
 
   // ── Panneaux repliables (persistance) ──────────────────────────────
@@ -248,7 +264,11 @@ export class CelluleCriseComponent implements OnInit, OnDestroy {
   }
 
   // ── Panneau Ressource ───────────────────────────────────────────────
-  changerOngletRessource(o: OngletRessource): void { this.ongletRessource = o; }
+  changerOngletRessource(o: OngletRessource): void {
+    this.ongletRessource = o;
+    this.filtreCategorie = '';
+    this.selection.clear();
+  }
 
   private chargerRessource(): void {
     this.chargementRessource = true;
@@ -260,6 +280,10 @@ export class CelluleCriseComponent implements OnInit, OnDestroy {
         );
         this.dossiersNonAffectes = enAttente.filter(d => !d.information && (d.besoin_nature === 'COMPETENCE' || d.besoin_nature === 'MIXTE' || !d.besoin_nature));
         this.signalementsNonAffectes = enAttente.filter(d => !!d.information && (d.besoin_nature === 'COMPETENCE' || d.besoin_nature === 'MIXTE' || !d.besoin_nature));
+        this.dossiersMateriel = enAttente.filter(d => d.besoin_nature === 'MATERIEL');
+        // Sélection et choix en cours : seulement ce qui est encore en attente.
+        const ids = new Set(enAttente.map(d => d.id));
+        this.selection = new Set([...this.selection].filter(id => ids.has(id)));
         this.chargementRessource = false;
       },
       error: () => { this.chargementRessource = false; },
@@ -276,6 +300,10 @@ export class CelluleCriseComponent implements OnInit, OnDestroy {
     });
     this.offerService.retoursExternes(this.criseId).subscribe({
       next: (offres) => { this.retoursExternes = offres; },
+      error: () => {},
+    });
+    this.affectationCompetenceService.getAll().subscribe({
+      next: (affectations) => { this.affectationsCrise = affectations.filter(a => a.crise === this.criseId && a.active); },
       error: () => {},
     });
   }
@@ -302,9 +330,119 @@ export class CelluleCriseComponent implements OnInit, OnDestroy {
     return this.signalementsNonAffectes.filter(d => !this.estExclue(d.competence_nom));
   }
 
+  // ── Affecter depuis la cellule (1 clic si une équipe est suggérée, 2 sinon) ─────────
+
+  /** Équipes de la crise pour ce dossier : la suggérée, puis celles qui prennent déjà sa
+   * compétence, puis les autres. */
+  equipesPour(d: Dossier): { id: string; libelle: string }[] {
+    const prennent = new Set(this.affectationsCrise.filter(a => a.competence === d.competence).map(a => a.equipe));
+    const rang = (t: Team) => t.id === d.equipe ? 0 : prennent.has(t.id!) ? 1 : 2;
+    return this.equipes.map(e => e.team)
+      .sort((a, b) => rang(a) - rang(b) || teamDisplayName(a).localeCompare(teamDisplayName(b)))
+      .map(t => ({
+        id: t.id!,
+        libelle: teamDisplayName(t) + (t.id === d.equipe ? ' (suggérée)' : prennent.has(t.id!) ? ` (prend ${d.competence_nom})` : ''),
+      }));
+  }
+
+  choixPour(d: Dossier): string {
+    return this.equipeChoisie[d.id] ?? d.equipe ?? '';
+  }
+
   affecterDossier(dossier: Dossier, equipeId: string): void {
-    if (!equipeId) return;
-    this.dossierService.affecterEquipe(dossier.id, equipeId).subscribe(() => this.chargerRessource());
+    if (!equipeId || this.affectationEnCours) return;
+    this.affectationEnCours = true;
+    this.dossierService.affecterEquipe(dossier.id, equipeId, true).subscribe({
+      next: (res) => {
+        this.affectationEnCours = false;
+        delete this.equipeChoisie[dossier.id];
+        this.apresAffectation(1, this.nomEquipe(equipeId), res.apprentissages || [], !dossier.competence);
+      },
+      error: (err) => { this.affectationEnCours = false; alert(this.messageErreur(err, "Impossible d'affecter ce dossier.")); },
+    });
+  }
+
+  basculerSelection(d: Dossier): void {
+    if (this.selection.has(d.id)) this.selection.delete(d.id); else this.selection.add(d.id);
+  }
+
+  toutEstCoche(liste: Dossier[]): boolean {
+    return liste.length > 0 && liste.every(d => this.selection.has(d.id));
+  }
+
+  basculerTout(liste: Dossier[]): void {
+    if (this.toutEstCoche(liste)) liste.forEach(d => this.selection.delete(d.id));
+    else liste.forEach(d => this.selection.add(d.id));
+  }
+
+  affecterSelection(): void {
+    const ids = [...this.selection];
+    if (!ids.length || !this.equipeLot || this.affectationEnCours) return;
+    this.affectationEnCours = true;
+    this.dossierService.affecterEquipeBulk(ids, this.equipeLot, true).subscribe({
+      next: (res) => {
+        this.affectationEnCours = false;
+        this.selection.clear();
+        this.apresAffectation(res.affectes, this.nomEquipe(this.equipeLot), res.apprentissages || [], false);
+      },
+      error: (err) => { this.affectationEnCours = false; alert(this.messageErreur(err, "Impossible d'affecter la sélection.")); },
+    });
+  }
+
+  /** Catégories (compétences) présentes dans une liste, pour le filtre « Catégorie ». */
+  categoriesDe(liste: Dossier[]): { nom: string; total: number }[] {
+    const parNom = new Map<string, number>();
+    liste.forEach(d => parNom.set(d.competence_nom || 'Sans compétence', (parNom.get(d.competence_nom || 'Sans compétence') || 0) + 1));
+    return [...parNom.entries()].map(([nom, total]) => ({ nom, total })).sort((a, b) => b.total - a.total);
+  }
+
+  filtrerCategorie(liste: Dossier[]): Dossier[] {
+    if (!this.filtreCategorie) return liste;
+    return liste.filter(d => (d.competence_nom || 'Sans compétence') === this.filtreCategorie);
+  }
+
+  private nomEquipe(id: string): string {
+    const e = this.equipes.find(x => x.team.id === id);
+    return e ? teamDisplayName(e.team) : '';
+  }
+
+  private apresAffectation(nombre: number, equipe: string, appris: Apprentissage[], sansCompetence: boolean): void {
+    this.chargerRessource();
+    this.chargerCoordination();
+    this.chargerCellule();
+    const base = nombre > 1 ? `${nombre} dossiers affectés à ${equipe}.` : `Affecté à ${equipe}.`;
+    if (appris.length) {
+      const a = appris[0];
+      const autres = a.dossiers_resuggeres ? ` ${a.dossiers_resuggeres} dossier(s) en attente lui sont maintenant suggérés.` : '';
+      this.afficherToast(`${base} Désormais, les demandes « ${a.competence_nom} » lui seront suggérées.${autres}`,
+        () => this.annulerApprentissages(appris));
+    } else if (sansCompetence) {
+      this.afficherToast(`${base} Ce type de demande n'a pas de compétence : pas de suggestion automatique pour les suivantes.`);
+    } else {
+      this.afficherToast(base);
+    }
+  }
+
+  private annulerApprentissages(appris: Apprentissage[]): void {
+    const appels = appris.map(a => a.cree
+      ? this.affectationCompetenceService.delete(a.id)
+      : this.affectationCompetenceService.patch(a.id, { active: false }));
+    forkJoin(appels).subscribe({
+      next: () => { this.afficherToast('Apprentissage annulé : les affectations faites sont conservées.'); this.chargerRessource(); },
+      error: (err) => alert(this.messageErreur(err, "Impossible d'annuler.")),
+    });
+  }
+
+  private afficherToast(texte: string, annuler?: () => void): void {
+    if (this.toastTimer) clearTimeout(this.toastTimer);
+    this.toast = { texte, annuler };
+    this.toastTimer = setTimeout(() => { this.toast = null; }, annuler ? 12000 : 5000);
+  }
+
+  annulerDepuisToast(): void {
+    const annuler = this.toast?.annuler;
+    this.toast = null;
+    annuler?.();
   }
 
   // ── Panneau Coordination ────────────────────────────────────────────

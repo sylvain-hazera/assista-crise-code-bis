@@ -26,6 +26,11 @@ export class AffectationCompetenceService {
     return this.http.put<AffectationCompetence>(`${this.url}/${id}/`, data);
   }
 
+  /** PATCH partiel (ex: { active: false } pour annuler un apprentissage de la cellule de crise). */
+  patch(id: string, data: Partial<AffectationCompetence>): Observable<AffectationCompetence> {
+    return this.http.patch<AffectationCompetence>(`${this.url}/${id}/`, data);
+  }
+
   delete(id: string): Observable<void> {
     return this.http.delete<void>(`${this.url}/${id}/`);
   }

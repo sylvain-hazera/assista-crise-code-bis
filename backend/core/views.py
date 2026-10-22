@@ -729,8 +729,10 @@ class AffectationCompetenceViewSet(EnvironmentScopedViewSetMixin, viewsets.Model
                 f"{affectation.competence.nom} sur la crise {affectation.crise.name}"
             ),
         )
+        resuggerer_dossiers(affectation.crise_id, affectation.competence_id)
 
     def perform_update(self, serializer):
+        ancienne = AffectationCompetence.objects.get(pk=serializer.instance.pk)
         affectation = serializer.save()
         audit_log(
             request=self.request,
@@ -739,6 +741,22 @@ class AffectationCompetenceViewSet(EnvironmentScopedViewSetMixin, viewsets.Model
             objet_id=affectation.id,
             commentaire=f"Modification affectation compétence : {affectation}",
         )
+        # Suggestions des dossiers en attente à jour, y compris pour l'ancienne compétence/crise.
+        resuggerer_dossiers(affectation.crise_id, affectation.competence_id)
+        if (ancienne.crise_id, ancienne.competence_id) != (affectation.crise_id, affectation.competence_id):
+            resuggerer_dossiers(ancienne.crise_id, ancienne.competence_id)
+
+    def perform_destroy(self, instance):
+        crise_id, competence_id = instance.crise_id, instance.competence_id
+        audit_log(
+            request=self.request,
+            action_code="SUPPRESSION",
+            objet_type="AffectationCompetence",
+            objet_id=instance.id,
+            commentaire=f"Suppression affectation compétence : {instance}",
+        )
+        instance.delete()
+        resuggerer_dossiers(crise_id, competence_id)
 
 def _notify_dossier_closure(dossier, request):
     """Prévient la personne à l'origine du dossier (demandeur ou signalant) que son dossier
@@ -1062,7 +1080,12 @@ class DossierViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             return Response({"error": "Équipe requise."}, status=status.HTTP_400_BAD_REQUEST)
         team = get_object_or_404(Team, pk=team_id)
         dossier = self._affecter_equipe_un_dossier(dossier, team, request)
-        return Response(DossierSerializer(dossier, context=self.get_serializer_context()).data)
+        data = dict(DossierSerializer(dossier, context=self.get_serializer_context()).data)
+        # `apprendre` : voir apprendre_affectation (cellule de crise).
+        if request.data.get('apprendre'):
+            appris = apprendre_affectation(dossier, team, request)
+            data["apprentissages"] = [appris] if appris else []
+        return Response(data)
 
     @action(detail=False, methods=["post"], url_path="affecter-equipe-masse", permission_classes=[IsInstitutionalActor])
     def affecter_equipe_masse(self, request):
@@ -1078,12 +1101,18 @@ class DossierViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         team = get_object_or_404(Team, pk=team_id)
 
         dossiers = list(self.get_queryset().filter(pk__in=dossier_ids))
+        apprentissages = []
         for dossier in dossiers:
             self._affecter_equipe_un_dossier(dossier, team, request)
+            if request.data.get('apprendre'):
+                appris = apprendre_affectation(dossier, team, request)
+                if appris:
+                    apprentissages.append(appris)
 
         return Response({
             "affectes": len(dossiers),
             "dossiers": DossierSerializer(dossiers, many=True, context=self.get_serializer_context()).data,
+            "apprentissages": apprentissages,
         })
 
     @action(detail=True, methods=["post"], url_path="definir-statut", permission_classes=[permissions.IsAuthenticated])
@@ -3127,6 +3156,75 @@ def parse_datetime_param(value):
     except ValueError:
         return None
     return timezone.make_aware(datetime.datetime.combine(d, datetime.time.min))
+
+
+STATUTS_DOSSIER_EN_ATTENTE = (Dossier.Statut.EN_ATTENTE_AFFECTATION, Dossier.Statut.EN_ATTENTE_DISTRIBUTION)
+
+
+def resuggerer_dossiers(crise_id, competence_id):
+    """Recalcule l'équipe SUGGÉRÉE des dossiers encore en attente de `crise` / `competence`
+    (equipe posée sur un dossier en attente = simple suggestion, voir RequestViewSet.
+    perform_create ; une affectation confirmée le fait passer à AFFECTE). Appelé quand les
+    affectations de compétence de la crise changent : sans ça, la suggestion n'était calculée
+    qu'à la création du dossier, et une équipe affectée ensuite ne profitait jamais aux dossiers
+    déjà en file (22/10/2026). Renvoie le nombre de dossiers dont la suggestion a changé."""
+    crise = Crisis.objects.filter(pk=crise_id).first()
+    competence = Competence.objects.filter(pk=competence_id).first()
+    if crise is None or competence is None:
+        return 0
+    modifies = 0
+    dossiers = Dossier.objects.filter(
+        crise=crise, competence=competence, statut__in=STATUTS_DOSSIER_EN_ATTENTE,
+    ).select_related('demande', 'information')
+    for dossier in dossiers:
+        objet = dossier.demande or dossier.information
+        if objet is None:
+            continue
+        equipe = meilleure_equipe_pour_competence(crise, competence, objet)
+        if (equipe.id if equipe else None) != dossier.equipe_id:
+            dossier.equipe = equipe
+            dossier.save(update_fields=['equipe'])
+            modifies += 1
+    return modifies
+
+
+def apprendre_affectation(dossier, equipe, request):
+    """« Le site apprend » (demande du 22/10/2026) : affecter depuis la cellule de crise un
+    dossier d'une compétence à une équipe enregistre que cette équipe prend cette compétence sur
+    la crise (AffectationCompetence), comme si l'utilisateur l'avait déclaré sur la page
+    Affectations -- les dossiers suivants de cette compétence lui sont alors suggérés. Rien si
+    le dossier n'a pas de compétence (rien à apprendre) ou si l'affectation existe déjà active.
+    Renvoie {id, cree, competence_nom, equipe_nom, dossiers_resuggeres} ou None."""
+    if not (dossier.competence_id and dossier.crise_id):
+        return None
+    affectation = AffectationCompetence.objects.filter(
+        crise_id=dossier.crise_id, competence_id=dossier.competence_id, equipe=equipe,
+    ).first()
+    if affectation is not None and affectation.active:
+        return None
+    cree = affectation is None
+    if cree:
+        affectation = AffectationCompetence.objects.create(
+            crise_id=dossier.crise_id, competence_id=dossier.competence_id, equipe=equipe,
+            active=True, environment=dossier.environment,
+            commentaire="Appris d'une affectation faite depuis la cellule de crise.",
+        )
+    else:
+        affectation.active = True
+        affectation.save(update_fields=['active'])
+    audit_log(
+        request=request, action_code="AFFECTATION", objet_type="AffectationCompetence",
+        objet_id=affectation.id, crise=dossier.crise,
+        commentaire=(
+            f"Équipe {equipe.name} affectée à la compétence {dossier.competence.nom} sur la crise "
+            f"{dossier.crise.name} (apprise du dossier {dossier.numero})"
+        ),
+    )
+    return {
+        "id": str(affectation.id), "cree": cree,
+        "competence_nom": dossier.competence.nom, "equipe_nom": equipe.name,
+        "dossiers_resuggeres": resuggerer_dossiers(dossier.crise_id, dossier.competence_id),
+    }
 
 
 def resolve_competence_for_request(demande):

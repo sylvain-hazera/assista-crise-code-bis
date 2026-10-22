@@ -100,30 +100,7 @@
           } @else {
 
             @if (ongletRessource === 'demandes') {
-              <table class="table-dense">
-                <thead><tr><th>Titre</th><th>Compétence</th><th>Priorité</th><th>Équipe suggérée</th><th></th></tr></thead>
-                <tbody>
-                  @for (d of dossiersNonAffectesFiltres; track d.id) {
-                    <tr>
-                      <td>{{ d.titre }}</td>
-                      <td>
-                        @if (d.competence_nom) {
-                          <a (click)="basculerExclusion(d.competence_nom)" title="Masquer cette catégorie">{{ d.competence_nom }}</a>
-                        } @else { — }
-                      </td>
-                      <td>{{ d.priorite_libelle || d.priorite }}</td>
-                      <td>{{ d.equipe_nom || '—' }}</td>
-                      <td>
-                        @if (d.equipe) {
-                          <button type="button" (click)="affecterDossier(d, d.equipe)">Confirmer</button>
-                        }
-                      </td>
-                    </tr>
-                  } @empty {
-                    <tr><td colspan="5" class="hint">Aucune demande en attente.</td></tr>
-                  }
-                </tbody>
-              </table>
+              <ng-container *ngTemplateOutlet="tableDossiers; context: { $implicit: dossiersNonAffectesFiltres, vide: 'Aucune demande en attente.' }"></ng-container>
             }
 
             @if (ongletRessource === 'offres') {
@@ -158,26 +135,7 @@
             }
 
             @if (ongletRessource === 'signalements') {
-              <table class="table-dense">
-                <thead><tr><th>Titre</th><th>Compétence</th><th>Priorité</th><th>Équipe suggérée</th><th></th></tr></thead>
-                <tbody>
-                  @for (d of signalementsNonAffectesFiltres; track d.id) {
-                    <tr>
-                      <td>{{ d.titre }}</td>
-                      <td>{{ d.competence_nom || '—' }}</td>
-                      <td>{{ d.priorite_libelle || d.priorite }}</td>
-                      <td>{{ d.equipe_nom || '—' }}</td>
-                      <td>
-                        @if (d.equipe) {
-                          <button type="button" (click)="affecterDossier(d, d.equipe)">Confirmer</button>
-                        }
-                      </td>
-                    </tr>
-                  } @empty {
-                    <tr><td colspan="5" class="hint">Aucun signalement en attente.</td></tr>
-                  }
-                </tbody>
-              </table>
+              <ng-container *ngTemplateOutlet="tableDossiers; context: { $implicit: signalementsNonAffectesFiltres, vide: 'Aucun signalement en attente.' }"></ng-container>
             }
 
             @if (ongletRessource === 'retours') {
@@ -210,6 +168,10 @@
 
       @if (panneaux.moyen) {
         <div class="panneau-corps">
+          @if (dossiersMateriel.length) {
+            <h4>Demandes de matériel en attente</h4>
+            <ng-container *ngTemplateOutlet="tableDossiers; context: { $implicit: dossiersMateriel, vide: '' }"></ng-container>
+          }
           @for (equipe of equipes; track equipe.team.id) {
             <div class="carte-equipe">
               <button type="button" class="carte-equipe-entete" (click)="basculerEquipe(equipe.team.id!)">
@@ -347,6 +309,82 @@
           </div>
         </div>
       }
+    </div>
+  }
+
+  <!-- Tableau commun aux demandes, signalements et demandes de matériel en attente : affecter
+       en 1 clic (équipe suggérée) ou 2 (choisir puis Affecter), ou par lot. Chaque choix est
+       retenu par le site (voir apprendre_affectation côté backend). -->
+  <ng-template #tableDossiers let-liste let-vide="vide">
+    @if (categoriesDe(liste).length > 1) {
+      <div class="barre-filtre">
+        <label>Catégorie
+          <select [(ngModel)]="filtreCategorie">
+            <option value="">Toutes ({{ liste.length }})</option>
+            @for (c of categoriesDe(liste); track c.nom) {
+              <option [value]="c.nom">{{ c.nom }} ({{ c.total }})</option>
+            }
+          </select>
+        </label>
+      </div>
+    }
+    @if (selection.size > 0) {
+      <div class="barre-lot">
+        <strong>{{ selection.size }} sélectionné(s)</strong>
+        <select [(ngModel)]="equipeLot">
+          <option value="">— Équipe —</option>
+          @for (e of equipes; track e.team.id) {
+            <option [value]="e.team.id">{{ teamDisplayName(e.team) }}</option>
+          }
+        </select>
+        <button type="button" [disabled]="!equipeLot || affectationEnCours" (click)="affecterSelection()">Affecter la sélection</button>
+        <button type="button" class="btn-secondaire" (click)="selection.clear()">Tout décocher</button>
+      </div>
+    }
+    <table class="table-dense">
+      <thead>
+        <tr>
+          <th><input type="checkbox" [checked]="toutEstCoche(filtrerCategorie(liste))" (change)="basculerTout(filtrerCategorie(liste))" title="Tout cocher (liste affichée)"></th>
+          <th>Titre</th><th>Compétence</th><th>Priorité</th><th>Affecter à</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (d of filtrerCategorie(liste); track d.id) {
+          <tr [class.coche]="selection.has(d.id)">
+            <td><input type="checkbox" [checked]="selection.has(d.id)" (change)="basculerSelection(d)"></td>
+            <td>{{ d.titre }}</td>
+            <td>
+              @if (d.competence_nom) {
+                <a (click)="basculerExclusion(d.competence_nom)" title="Masquer cette catégorie">{{ d.competence_nom }}</a>
+              } @else { <span class="hint-petit">sans compétence</span> }
+            </td>
+            <td>{{ d.priorite_libelle || d.priorite }}</td>
+            <td class="cellule-affecter">
+              <select [ngModel]="choixPour(d)" (ngModelChange)="equipeChoisie[d.id] = $event">
+                <option value="">— Choisir —</option>
+                @for (e of equipesPour(d); track e.id) {
+                  <option [value]="e.id">{{ e.libelle }}</option>
+                }
+              </select>
+              <button type="button" [disabled]="!choixPour(d) || affectationEnCours" (click)="affecterDossier(d, choixPour(d))">
+                {{ d.equipe && choixPour(d) === d.equipe ? 'Confirmer' : 'Affecter' }}
+              </button>
+            </td>
+          </tr>
+        } @empty {
+          @if (vide) { <tr><td colspan="5" class="hint">{{ vide }}</td></tr> }
+        }
+      </tbody>
+    </table>
+  </ng-template>
+
+  @if (toast) {
+    <div class="toast" role="status">
+      <span>{{ toast.texte }}</span>
+      @if (toast.annuler) {
+        <button type="button" (click)="annulerDepuisToast()">Annuler</button>
+      }
+      <button type="button" class="toast-fermer" (click)="toast = null" aria-label="Fermer">×</button>
     </div>
   }
 </div>

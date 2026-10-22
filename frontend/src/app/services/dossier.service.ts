@@ -5,6 +5,16 @@ import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
 import { Dossier } from '../shared/models/dossier.model';
 
+/** `apprendre: true` (cellule de crise) : l'équipe est enregistrée comme prenant la compétence du
+ * dossier sur la crise -- voir apprendre_affectation côté backend. */
+export interface Apprentissage {
+  id: string;
+  cree: boolean;
+  competence_nom: string;
+  equipe_nom: string;
+  dossiers_resuggeres: number;
+}
+
 @Injectable({
   providedIn: 'root'
 })
@@ -55,8 +65,10 @@ export class DossierService {
   /** POST /api/dossiers/<id>/affecter-equipe/ — affecte (ou réaffecte) une équipe directement
    * depuis la vue régulateur, peuple les participants et notifie ses régulateurs. Réservé
    * institutionnel. */
-  affecterEquipe(id: string, equipeId: string): Observable<Dossier> {
-    return this.http.post<Dossier>(`${this.url}/${id}/affecter-equipe/`, { equipe: equipeId });
+  affecterEquipe(id: string, equipeId: string, apprendre = false): Observable<Dossier & { apprentissages?: Apprentissage[] }> {
+    return this.http.post<Dossier & { apprentissages?: Apprentissage[] }>(`${this.url}/${id}/affecter-equipe/`, {
+      equipe: equipeId, ...(apprendre ? { apprendre: true } : {}),
+    });
   }
 
   /** POST /api/dossiers/<id>/definir-statut/ — statuts intermédiaires uniquement (avant
@@ -68,9 +80,9 @@ export class DossierService {
   /** POST /api/dossiers/affecter-equipe-masse/ — réaffecte plusieurs dossiers à une même équipe
    * en une fois (même effet que affecterEquipe appelé dossier par dossier). Réservé
    * institutionnel. */
-  affecterEquipeBulk(dossierIds: string[], equipeId: string): Observable<{ affectes: number; dossiers: Dossier[] }> {
-    return this.http.post<{ affectes: number; dossiers: Dossier[] }>(`${this.url}/affecter-equipe-masse/`, {
-      dossiers: dossierIds, equipe: equipeId,
+  affecterEquipeBulk(dossierIds: string[], equipeId: string, apprendre = false): Observable<{ affectes: number; dossiers: Dossier[]; apprentissages?: Apprentissage[] }> {
+    return this.http.post<{ affectes: number; dossiers: Dossier[]; apprentissages?: Apprentissage[] }>(`${this.url}/affecter-equipe-masse/`, {
+      dossiers: dossierIds, equipe: equipeId, ...(apprendre ? { apprendre: true } : {}),
     });
   }
 }
