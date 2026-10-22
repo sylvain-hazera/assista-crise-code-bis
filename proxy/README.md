@@ -205,9 +205,39 @@ for d in app auth chat matrix; do
 done
 ```
 
-Le renouvellement automatique (`certbot renew`, cron de 4h30) reprend seul ce certificat : il
-mémorise `--webroot`. **Il dépend du bloc ACME** — retirer `waf-partenaires-acme.conf` casserait
-le renouvellement 60 jours plus tard, en silence.
+#### Renouvellement automatique
+
+Le domaine est chez **OVH** (registrar et DNS : `dns200.anycast.me`, SOA `tech.ovh.net`),
+expiration du domaine le 2027-03-25 — donc hors de portée des identifiants IONOS, d'où HTTP-01.
+
+`certbot renew` (cron de 4h30, `~/scripts/renew-certs.sh`) reprend TOUS les certificats, chacun
+avec la méthode mémorisée à son émission dans `/etc/letsencrypt/renewal/<nom>.conf` : DNS-01
+pour assista-crise.fr, webroot pour reserve-resilience.org. **Aucune action du partenaire n'est
+nécessaire, jamais.**
+
+Deux dépendances à ne pas casser, sous peine d'un échec 60 jours plus tard :
+
+1. **Le bloc ACME** (`waf-partenaires-acme.conf`) doit rester monté : c'est lui qui sert le
+   jeton de validation.
+2. **`~/scripts/renew-certs.sh` doit monter le volume du webroot** — `-v
+   ac_certbot_webroot:/var/www/certbot`, ajouté le 22/10/2026 (sauvegarde :
+   `renew-certs.sh.bak-2026-10-22`). Sans lui, le conteneur certbot n'a pas le répertoire où
+   écrire le jeton. Script hors dépôt, d'où cette note.
+
+L'échec serait signalé par mail (`certbot renew` sort en code non nul, le script envoie
+l'alerte), pas silencieux — mais il laisserait quand même le certificat expirer s'il n'est pas
+traité.
+
+#### Et si le partenaire change ses CNAME ?
+
+HTTP-01 dépend de leurs CNAME pointant chez nous. S'ils les retirent, le renouvellement échoue
+— mais leurs domaines ne pointeraient plus sur nous de toute façon, donc le certificat n'aurait
+plus d'objet. Pas de fragilité réelle.
+
+L'alternative serait DNS-01 avec le plugin `certbot-dns-ovh` : plus robuste si un jour leurs
+domaines cessent de pointer chez nous tout en gardant le certificat, mais il faut que le
+partenaire crée des identifiants d'API OVH et nous les confie. À ne faire que s'il y a une
+raison précise.
 
 Un nouveau partenaire s'ajoute en complétant `server_name` dans les DEUX fichiers, puis en
 réémettant le certificat avec la liste complète des domaines partenaires (même piège `--expand`
