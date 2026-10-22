@@ -104,18 +104,41 @@
             }
 
             @if (ongletRessource === 'offres') {
-              <table class="table-dense">
-                <thead><tr><th>Titre</th><th>Type</th><th>Compétences</th><th>Distance</th></tr></thead>
+              <table class="table-dense table-fiches">
+                <thead><tr><th></th><th>Offre</th><th>Compétences</th><th>Distance</th><th>Affecter à</th></tr></thead>
                 <tbody>
                   @for (o of offresDisponibles; track o.id) {
-                    <tr>
-                      <td>{{ o.title }}</td>
-                      <td>{{ o.offer_type_nom }}</td>
+                    <tr class="ligne-fiche genre-offre" [class.ouverte]="estOuvert('o:' + o.id)">
+                      <td><span class="genre-badge"><span class="material-icons">{{ iconeGenre('offre') }}</span></span></td>
+                      <td class="cellule-titre" (click)="basculerApercu('o:' + o.id, 'offre', o.id, o.has_photo)" title="Voir l'aperçu">
+                        <span class="titre">{{ o.title }}</span>
+                        @if (o.has_photo) { <span class="material-icons icone-photo" title="Photo">photo_camera</span> }
+                        <span class="sous-titre">{{ o.offer_type_nom || 'Offre' }} · {{ o.commune || '—' }} · {{ o.created_at | date:'dd/MM HH:mm' }}</span>
+                        @if (equipeDeLOffre(o)) { <span class="deja-affectee">dans {{ equipeDeLOffre(o) }}</span> }
+                      </td>
                       <td>{{ (o.competences_libelles || []).join(', ') || '—' }}</td>
                       <td>{{ o.distance_from_crisis_km != null ? (o.distance_from_crisis_km | number:'1.0-1') + ' km' : '—' }}</td>
+                      <td class="cellule-affecter">
+                        <select [(ngModel)]="equipeOffre[o.id]">
+                          <option [ngValue]="undefined">— Choisir —</option>
+                          @for (e of equipes; track e.team.id) {
+                            <option [ngValue]="e.team.id">{{ teamDisplayName(e.team) }}</option>
+                          }
+                        </select>
+                        <button type="button" [disabled]="!equipeOffre[o.id] || affectationEnCours" (click)="affecterOffre(o)">Affecter</button>
+                      </td>
                     </tr>
+                    @if (estOuvert('o:' + o.id)) {
+                      <tr class="ligne-apercu genre-offre"><td colspan="5">
+                        <ng-container *ngTemplateOutlet="apercu; context: {
+                          photo: photos[o.id], aPhoto: o.has_photo, description: o.description,
+                          contact: (o.first_name_offer || '') + ' ' + (o.last_name_offer || ''), commune: o.commune,
+                          date: o.created_at, lat: o.latitude, lng: o.longitude, idFiche: o.id
+                        }"></ng-container>
+                      </td></tr>
+                    }
                   } @empty {
-                    <tr><td colspan="4" class="hint">Aucune offre disponible.</td></tr>
+                    <tr><td colspan="5" class="hint">Aucune offre disponible.</td></tr>
                   }
                 </tbody>
               </table>
@@ -341,7 +364,7 @@
         <button type="button" class="btn-secondaire" (click)="selection.clear()">Tout décocher</button>
       </div>
     }
-    <table class="table-dense">
+    <table class="table-dense table-fiches">
       <thead>
         <tr>
           <th><input type="checkbox" [checked]="toutEstCoche(filtrerCategorie(liste))" (change)="basculerTout(filtrerCategorie(liste))" title="Tout cocher (liste affichée)"></th>
@@ -350,9 +373,14 @@
       </thead>
       <tbody>
         @for (d of filtrerCategorie(liste); track d.id) {
-          <tr [class.coche]="selection.has(d.id)">
+          <tr class="ligne-fiche" [ngClass]="'genre-' + genreDossier(d)" [class.coche]="selection.has(d.id)" [class.ouverte]="estOuvert('d:' + d.id)">
             <td><input type="checkbox" [checked]="selection.has(d.id)" (change)="basculerSelection(d)"></td>
-            <td>{{ d.titre }}</td>
+            <td class="cellule-titre" (click)="basculerApercu('d:' + d.id, genreDossier(d), idSource(d), d.has_photo)" title="Voir l'aperçu">
+              <span class="genre-badge"><span class="material-icons">{{ iconeGenre(genreDossier(d)) }}</span>{{ libelleGenre(genreDossier(d)) }}</span>
+              <span class="titre">{{ d.titre }}</span>
+              @if (d.has_photo) { <span class="material-icons icone-photo" title="Photo">photo_camera</span> }
+              <span class="sous-titre">{{ d.commune || '—' }} · {{ d.date_creation | date:'dd/MM HH:mm' }}</span>
+            </td>
             <td>
               @if (d.competence_nom) {
                 <a (click)="basculerExclusion(d.competence_nom)" title="Masquer cette catégorie">{{ d.competence_nom }}</a>
@@ -371,11 +399,50 @@
               </button>
             </td>
           </tr>
+          @if (estOuvert('d:' + d.id)) {
+            <tr class="ligne-apercu" [ngClass]="'genre-' + genreDossier(d)"><td colspan="5">
+              <ng-container *ngTemplateOutlet="apercu; context: {
+                photo: idSource(d) ? photos[idSource(d)!] : null, aPhoto: d.has_photo, description: d.description_origine,
+                contact: d.contact_nom, commune: d.commune, date: d.date_creation,
+                lat: d.latitude, lng: d.longitude, idFiche: idSource(d)
+              }"></ng-container>
+            </td></tr>
+          }
         } @empty {
           @if (vide) { <tr><td colspan="5" class="hint">{{ vide }}</td></tr> }
         }
       </tbody>
     </table>
+  </ng-template>
+
+  <!-- Aperçu d'une fiche (demande, signalement, offre) : photo, description, contact, mini-carte,
+       comme la fiche de la page Signalements. Le lien ouvre la fiche complète (consultation
+       tracée, coordonnées) dans un nouvel onglet. -->
+  <ng-template #apercu let-photo="photo" let-aPhoto="aPhoto" let-description="description" let-contact="contact"
+               let-commune="commune" let-date="date" let-lat="lat" let-lng="lng" let-idFiche="idFiche">
+    <div class="apercu">
+      @if (aPhoto) {
+        <div class="apercu-photo">
+          @if (photo) { <img [src]="photo" alt="Photo jointe"> } @else { <span class="hint-petit">Chargement de la photo…</span> }
+        </div>
+      }
+      <div class="apercu-infos">
+        <p class="apercu-description">{{ description || 'Pas de description.' }}</p>
+        <dl>
+          @if (contact?.trim()) { <dt>Contact</dt><dd>{{ contact }}</dd> }
+          <dt>Commune</dt><dd>{{ commune || '—' }}</dd>
+          <dt>Déposé le</dt><dd>{{ date | date:'dd/MM/yyyy HH:mm' }}</dd>
+        </dl>
+        @if (idFiche) {
+          <a class="lien-fiche" [routerLink]="['/admin/signalements']" [queryParams]="{ id: idFiche }" target="_blank">Fiche complète →</a>
+        }
+      </div>
+      @if (lat != null && lng != null) {
+        <div class="apercu-carte">
+          <app-minimap [latitude]="lat" [longitude]="lng" [zoom]="13"></app-minimap>
+        </div>
+      }
+    </div>
   </ng-template>
 
   @if (toast) {

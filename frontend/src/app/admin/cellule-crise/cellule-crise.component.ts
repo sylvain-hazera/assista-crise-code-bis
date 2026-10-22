@@ -29,6 +29,11 @@ import { MinimapComponent } from '../../shared/components/common/minimap/minimap
 import { MatrixSalonChatComponent } from '../teams/matrix-salon-chat/matrix-salon-chat.component';
 import { dureeDepuis } from '../../shared/utils/duree.util';
 import { AVEC_COORDONNEES } from '../../services/coordonnees';
+import { RequestService } from '../../services/request.service';
+import { InformationService } from '../../services/information.service';
+
+/** Code couleur et libellés de la page Signalements (reporting.component.scss). */
+export type GenreFiche = 'demande' | 'signalement' | 'offre';
 
 type OngletRessource = 'demandes' | 'offres' | 'disponibilites' | 'signalements' | 'retours';
 
@@ -94,6 +99,12 @@ export class CelluleCriseComponent implements OnInit, OnDestroy {
   filtreCategorie = '';
   affectationEnCours = false;
   toast: { texte: string; annuler?: () => void } | null = null;
+
+  // --- Aperçu dépliable d'une ligne (photo, description, mini-carte), comme la fiche de la
+  // page Signalements, pour affecter à la bonne équipe sans changer de page. ---
+  apercus = new Set<string>();
+  photos: Record<string, string> = {};
+  equipeOffre: Record<string, string> = {};
   private toastTimer?: ReturnType<typeof setTimeout>;
 
   // --- Panneau Coordination ---
@@ -115,6 +126,8 @@ export class CelluleCriseComponent implements OnInit, OnDestroy {
     private implicationService: ImplicationService,
     private journalService: JournalCollectiviteService,
     private affectationCompetenceService: AffectationCompetenceService,
+    private requestService: RequestService,
+    private informationService: InformationService,
     public authService: AuthService,
   ) {}
 
@@ -138,6 +151,7 @@ export class CelluleCriseComponent implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     this.sub?.unsubscribe();
     if (this.toastTimer) clearTimeout(this.toastTimer);
+    Object.values(this.photos).forEach(url => URL.revokeObjectURL(url));
   }
 
   // ── Panneaux repliables (persistance) ──────────────────────────────
@@ -474,6 +488,66 @@ export class CelluleCriseComponent implements OnInit, OnDestroy {
     this.implicationService.refuser(implication.id).subscribe({
       next: () => this.chargerCoordination(),
       error: err => alert(this.messageErreur(err, 'Impossible de refuser cette institution.')),
+    });
+  }
+
+  // ── Aperçu dépliable ────────────────────────────────────────────────
+
+  genreDossier(d: Dossier): GenreFiche {
+    return d.information ? 'signalement' : 'demande';
+  }
+
+  libelleGenre(g: GenreFiche): string {
+    return { demande: 'Demande', signalement: 'Signalement', offre: 'Offre' }[g];
+  }
+
+  iconeGenre(g: GenreFiche): string {
+    return { demande: 'help_outline', signalement: 'info', offre: 'volunteer_activism' }[g];
+  }
+
+  estOuvert(cle: string): boolean { return this.apercus.has(cle); }
+
+  /** Déplie / replie l'aperçu ; la photo n'est chargée qu'à la première ouverture (une requête
+   * par fiche consultée, pas par ligne affichée). */
+  basculerApercu(cle: string, genre: GenreFiche, objetId: string | null | undefined, aPhoto: boolean | undefined): void {
+    if (this.apercus.has(cle)) { this.apercus.delete(cle); return; }
+    this.apercus.add(cle);
+    if (!objetId || !aPhoto || this.photos[objetId]) return;
+    const service = genre === 'offre' ? this.offerService : genre === 'signalement' ? this.informationService : this.requestService;
+    service.preview(objetId).subscribe({
+      next: (blob) => { this.photos[objetId] = URL.createObjectURL(blob); },
+      error: () => {},
+    });
+  }
+
+  idSource(d: Dossier): string | null {
+    return (d.information || d.demande) ?? null;
+  }
+
+  // ── Offres : affecter à une équipe (même effet que la page Signalements) ──
+
+  equipeDeLOffre(o: Offer): string {
+    const e = this.equipes.find(x => (x.team.assigned_offer_ids || []).includes(o.id));
+    return e ? teamDisplayName(e.team) : '';
+  }
+
+  affecterOffre(o: Offer): void {
+    const equipe = this.equipes.find(e => e.team.id === this.equipeOffre[o.id])?.team;
+    if (!equipe || this.affectationEnCours) return;
+    const offres = (equipe.assigned_offer_ids || []).includes(o.id) ? equipe.assigned_offer_ids : [...(equipe.assigned_offer_ids || []), o.id];
+    // Comme la page Signalements : affecter l'offre ajoute aussi son auteur à l'équipe.
+    let membres = equipe.member_ids ?? [];
+    if (o.author && !membres.includes(o.author)) membres = [...membres, o.author];
+    this.affectationEnCours = true;
+    this.teamService.patch(equipe.id!, { assigned_offer_ids: offres, member_ids: membres }).subscribe({
+      next: (maj) => {
+        this.affectationEnCours = false;
+        const e = this.equipes.find(x => x.team.id === maj.id);
+        if (e) e.team = maj;
+        delete this.equipeOffre[o.id];
+        this.afficherToast(`Offre « ${o.title} » affectée à ${teamDisplayName(maj)}.`);
+      },
+      error: (err) => { this.affectationEnCours = false; alert(this.messageErreur(err, "Impossible d'affecter cette offre.")); },
     });
   }
 

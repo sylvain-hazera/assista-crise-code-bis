@@ -294,3 +294,49 @@
   button { background: transparent; border: 1px solid #c4b5fd; color: #c4b5fd; border-radius: 6px; padding: 0.2rem 0.6rem; cursor: pointer; }
   .toast-fermer { border: none; font-size: 1.1rem; padding: 0 0.2rem; color: #9ca3af; }
 }
+
+/* ── Fiches compactes au code couleur de la page Signalements ──────────── */
+.table-fiches {
+  --genre: #64748b; --genre-fond: #f8fafc;
+  .genre-demande     { --genre: #f97316; --genre-fond: #fff7ed; }
+  .genre-signalement { --genre: #3b82f6; --genre-fond: #eff6ff; }
+  .genre-offre       { --genre: #22c55e; --genre-fond: #f0fdf4; }
+
+  tr.ligne-fiche > td:first-child { box-shadow: inset 4px 0 0 var(--genre); }
+  tr.ligne-fiche.ouverte > td { background: var(--genre-fond); border-bottom-color: transparent; }
+  tr.ligne-apercu > td { background: var(--genre-fond); box-shadow: inset 4px 0 0 var(--genre); padding: 0 0.6rem 0.7rem; }
+
+  .cellule-titre { cursor: pointer; line-height: 1.3; }
+  .cellule-titre:hover .titre { text-decoration: underline; }
+  .titre { font-weight: 600; color: #111827; }
+  .sous-titre { display: block; font-size: 0.72rem; color: #6b7280; }
+  .icone-photo { font-size: 14px; color: #9ca3af; vertical-align: -2px; margin-left: 0.25rem; }
+  .deja-affectee { display: inline-block; margin-top: 0.15rem; font-size: 0.7rem; color: #15803d; }
+
+  .genre-badge {
+    display: inline-flex; align-items: center; gap: 0.2rem; margin-right: 0.35rem;
+    padding: 0.05rem 0.45rem; border-radius: 99px;
+    background: var(--genre-fond); color: var(--genre);
+    font-size: 0.68rem; font-weight: 700; vertical-align: 1px;
+    .material-icons { font-size: 12px; }
+  }
+}
+
+.apercu {
+  display: grid;
+  grid-template-columns: minmax(0, 11rem) minmax(0, 1fr) minmax(0, 15rem);
+  gap: 0.8rem;
+  align-items: start;
+  padding-top: 0.4rem;
+  .apercu-photo img { width: 100%; max-height: 10rem; object-fit: cover; border-radius: 8px; }
+  .apercu-description { margin: 0 0 0.4rem; font-size: 0.82rem; white-space: pre-line; }
+  dl { display: grid; grid-template-columns: auto 1fr; gap: 0.1rem 0.6rem; margin: 0 0 0.4rem; font-size: 0.76rem; }
+  dt { color: #6b7280; }
+  dd { margin: 0; }
+  .lien-fiche { font-size: 0.78rem; color: #7c3aed; }
+  .apercu-carte { min-height: 10rem; border-radius: 8px; overflow: hidden; }
+}
+
+@media (max-width: 800px) {
+  .apercu { grid-template-columns: 1fr; }
+}
