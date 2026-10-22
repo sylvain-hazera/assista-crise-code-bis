@@ -205,6 +205,39 @@ for d in app auth chat matrix; do
 done
 ```
 
+#### ⚠ Un domaine partenaire ne doit PAS rester dans `SERVER_NAME` du WAF
+
+Piège rencontré le 22/10/2026. `app.reserve-resilience.org` figurait dans `SERVER_NAME`
+(`waf.env`), donc dans le `server_name` du bloc PAR DÉFAUT de l'image. Deux blocs revendiquaient
+le même nom sur le port 8080, et nginx garde **le premier défini** — `default.conf` passe avant
+`partenaires-acme.conf` dans l'ordre alphabétique de `conf.d/*.conf` :
+
+```
+[warn] conflicting server name "app.reserve-resilience.org" on 0.0.0.0:8080, ignored
+```
+
+Résultat : le jeton ACME de `app.` tombait sur la redirection 301 du bloc par défaut, et sa
+validation échouait, alors que les trois autres domaines passaient. Le nom a donc été retiré de
+`SERVER_NAME` (sauvegarde : `waf.env.bak-2026-10-22`) ; les blocs `partenaires-*.conf` le
+servent désormais seuls, sur :80 comme sur :443. Aucune régression : sur :443 un nom non reconnu
+retombe de toute façon sur le premier bloc du port.
+
+**Règle** : un domaine partenaire est déclaré dans `waf-partenaires-*.conf`, jamais dans
+`SERVER_NAME`. Vérifier après chaque redéploiement :
+`docker logs ac_waf 2>&1 | grep -c "conflicting server name"` doit renvoyer `0`.
+
+#### ⚠ Le port 80 doit être joignable depuis Internet
+
+HTTP-01 l'exige. Au 22/10/2026 il ne l'est pas : la machine écoute bien sur :80, aucun pare-feu
+local ne bloque (`ufw` désactivé, `firewalld` inactif), mais Let's Encrypt n'atteint pas
+176.141.139.81:80 — « Timeout during connect (likely firewall problem) » sur les quatre
+domaines, alors que :443 fonctionne. La redirection 80→443 ne sert donc aujourd'hui que le
+trafic local. Il manque une redirection de port 80 sur le routeur.
+
+Tant que ce n'est pas fait, le certificat partenaire ne peut pas être émis par HTTP-01.
+L'alternative est DNS-01 avec `certbot-dns-ovh` (la zone du partenaire est chez OVH), qui ne
+demande aucun port ouvert mais exige des identifiants d'API OVH fournis par le partenaire.
+
 #### Renouvellement automatique
 
 Le domaine est chez **OVH** (registrar et DNS : `dns200.anycast.me`, SOA `tech.ovh.net`),
