@@ -320,8 +320,12 @@
             @for (i of implicationsEnAttente; track i.id) {
               <li>
                 {{ i.institution_nom }} — {{ (i.themes_libelles || []).join(', ') }}
-                <button type="button" (click)="validerImplication(i)">Valider</button>
-                <button type="button" class="btn-secondaire" (click)="refuserImplication(i)">Refuser</button>
+                @if (i.peut_valider) {
+                  <button type="button" (click)="validerImplication(i)">Valider</button>
+                  <button type="button" class="btn-secondaire" (click)="refuserImplication(i)">Refuser</button>
+                } @else {
+                  <span class="hint-petit">à valider par un régulateur d'une autorité locale impliquée</span>
+                }
               </li>
             } @empty {
               <li class="hint">Rien à valider.</li>

@@ -92,7 +92,12 @@ def is_regulateur_aut_locale_de_la_crise(request, crise) -> bool:
     circulaire — même raison que _peut_gerer_stock_point."""
     if not request.user or not request.user.is_authenticated:
         return False
-    if effective_role_or_none(request) != UserRole.LOCAL_AUTHORITY:
+    role = effective_role_or_none(request)
+    # L'administrateur aussi (oubli constaté le 22/10/2026 en démo sur la cellule de crise :
+    # bouton Valider refusé en 403 pour un compte ADMIN), comme partout ailleurs dans l'appli.
+    if role == UserRole.ADMINISTRATOR:
+        return True
+    if role != UserRole.LOCAL_AUTHORITY:
         return False
 
     # ContactInstitution (rattachement institutionnel), pas User.institution (FK direct

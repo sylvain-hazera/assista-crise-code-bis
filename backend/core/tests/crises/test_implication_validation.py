@@ -151,6 +151,20 @@ class TestValiderRefuserImplication:
         implication_en_attente.refresh_from_db()
         assert implication_en_attente.statut == "VALIDEE"
 
+    def test_administrateur_peut_valider(self, create_user, implication_en_attente):
+        # 22/10/2026 : bouton Valider de la cellule de crise refusé en 403 pour un compte ADMIN.
+        admin = create_user(username="admin-implic@test.fr", email="admin-implic@test.fr", type="ADMIN")
+        client = APIClient()
+        client.force_authenticate(user=admin)
+
+        response = client.post(
+            reverse('implicationinstitution-valider', args=[implication_en_attente.id])
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        implication_en_attente.refresh_from_db()
+        assert implication_en_attente.statut == "VALIDEE"
+
     def test_regulateur_mairie_peut_refuser(self, regulateur_mairie, implication_en_attente):
         client = APIClient()
         client.force_authenticate(user=regulateur_mairie)

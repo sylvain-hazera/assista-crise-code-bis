@@ -1454,9 +1454,12 @@ class TeamSerializer(serializers.ModelSerializer):
             'canal_meshtastic_nom',
             'salon_matrix_id',
             'salon_matrix_room_id',
+            'engagement_debut',
         ]
-        # Modifiables seulement par les actions dédiées (historique, anti-cycle, permissions).
-        read_only_fields = ['id', 'created_at', 'actif', 'institution_delegataire', 'equipe_parente', 'est_equipe_rcsc']
+        # Modifiables seulement par les actions dédiées (historique, anti-cycle, permissions,
+        # demarrer-engagement / mettre-au-repos).
+        read_only_fields = ['id', 'created_at', 'actif', 'institution_delegataire', 'equipe_parente', 'est_equipe_rcsc',
+                            'engagement_debut']
 
     def get_zone_precise_geojson(self, obj):
         return json.loads(obj.zone_precise.geojson) if obj.zone_precise else None

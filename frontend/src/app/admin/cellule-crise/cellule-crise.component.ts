@@ -233,11 +233,17 @@ export class CelluleCriseComponent implements OnInit, OnDestroy {
   reagirMessageEquipe = (equipeId: string) => (eventId: string) => this.teamService.reagirSalonMatrix(equipeId, eventId);
 
   demarrerEngagement(team: Team): void {
-    this.teamService.demarrerEngagement(team.id!).subscribe(t => { team.engagement_debut = t.engagement_debut; });
+    this.teamService.demarrerEngagement(team.id!).subscribe({
+      next: t => { team.engagement_debut = t.engagement_debut; },
+      error: err => alert(this.messageErreur(err, "Impossible de démarrer l'engagement.")),
+    });
   }
 
   mettreAuRepos(team: Team): void {
-    this.teamService.mettreAuRepos(team.id!).subscribe(t => { team.engagement_debut = t.engagement_debut; });
+    this.teamService.mettreAuRepos(team.id!).subscribe({
+      next: t => { team.engagement_debut = t.engagement_debut; },
+      error: err => alert(this.messageErreur(err, 'Impossible de mettre cette équipe au repos.')),
+    });
   }
 
   // ── Panneau Ressource ───────────────────────────────────────────────
@@ -319,11 +325,22 @@ export class CelluleCriseComponent implements OnInit, OnDestroy {
   }
 
   validerImplication(implication: ImplicationInstitution): void {
-    this.implicationService.valider(implication.id).subscribe(() => this.chargerCoordination());
+    this.implicationService.valider(implication.id).subscribe({
+      next: () => this.chargerCoordination(),
+      error: err => alert(this.messageErreur(err, 'Impossible de valider cette institution.')),
+    });
   }
 
   refuserImplication(implication: ImplicationInstitution): void {
-    this.implicationService.refuser(implication.id).subscribe(() => this.chargerCoordination());
+    this.implicationService.refuser(implication.id).subscribe({
+      next: () => this.chargerCoordination(),
+      error: err => alert(this.messageErreur(err, 'Impossible de refuser cette institution.')),
+    });
+  }
+
+  /** Message renvoyé par l'API (`error` de nos actions, `detail` d'un 403 DRF) ou repli. */
+  private messageErreur(err: any, repli: string): string {
+    return err?.error?.error || err?.error?.detail || repli;
   }
 
   envoyerEntreeJournal(): void {
