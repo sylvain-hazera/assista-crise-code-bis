@@ -234,9 +234,66 @@ local ne bloque (`ufw` désactivé, `firewalld` inactif), mais Let's Encrypt n'a
 domaines, alors que :443 fonctionne. La redirection 80→443 ne sert donc aujourd'hui que le
 trafic local. Il manque une redirection de port 80 sur le routeur.
 
-Tant que ce n'est pas fait, le certificat partenaire ne peut pas être émis par HTTP-01.
-L'alternative est DNS-01 avec `certbot-dns-ovh` (la zone du partenaire est chez OVH), qui ne
-demande aucun port ouvert mais exige des identifiants d'API OVH fournis par le partenaire.
+**Conclusion du 22/10/2026 : HTTP-01 est une impasse ici.** Le port 443 est volontairement
+restreint aux IP françaises, et la restriction couvre aussi le port 80 (vérifié depuis deux
+sondes externes indépendantes, témoin `example.com` à 200 et nos domaines en délai dépassé).
+Or Let's Encrypt valide depuis **plusieurs points du globe**, dont les adresses ne sont ni
+publiées ni stables, donc impossibles à mettre en liste blanche ; le CA/Browser Forum impose au
+moins cinq perspectives distantes réparties sur deux RIR à compter du 2026-12-15. Une politique
+« France seulement » et HTTP-01 sont donc structurellement incompatibles.
+
+Les blocs `waf-partenaires-acme.conf` et le volume `ac_certbot_webroot` restent en place : ils
+ne coûtent rien et resserviront si le port 80 est un jour ouvert sans filtrage géographique.
+
+#### Voie retenue : DNS-01 via OVH
+
+La zone du partenaire est chez OVH. `proxy/certbot/Dockerfile` embarque désormais les DEUX
+greffons, `certbot-dns-ionos` et `certbot-dns-ovh` :
+
+```bash
+docker build -t assista-certbot-ionos:latest proxy/certbot/
+```
+
+Ce que le partenaire doit créer sur https://api.ovh.com/createToken/ (endpoint `ovh-eu`), avec
+les droits limités à sa seule zone :
+
+```
+GET    /domain/zone/
+GET    /domain/zone/reserve-resilience.org/*
+PUT    /domain/zone/reserve-resilience.org/*
+POST   /domain/zone/reserve-resilience.org/*
+DELETE /domain/zone/reserve-resilience.org/*
+```
+
+Il transmet les trois valeurs obtenues (clé d'application, secret, clé de consommateur). À
+déposer dans `/etc/letsencrypt/ovh/credentials.ini`, `chmod 600` (certbot refuse un fichier
+lisible par d'autres) :
+
+```
+dns_ovh_endpoint = ovh-eu
+dns_ovh_application_key = ...
+dns_ovh_application_secret = ...
+dns_ovh_consumer_key = ...
+```
+
+Émission :
+
+```bash
+docker run --rm \
+  -v /etc/letsencrypt:/etc/letsencrypt \
+  -v /var/lib/letsencrypt:/var/lib/letsencrypt \
+  -v /etc/letsencrypt/ovh/credentials.ini:/creds/ovh.ini:ro \
+  assista-certbot-ionos:latest certonly --non-interactive --agree-tos \
+  --authenticator dns-ovh --dns-ovh-credentials /creds/ovh.ini \
+  --dns-ovh-propagation-seconds 60 \
+  --cert-name reserve-resilience.org \
+  -d app.reserve-resilience.org -d auth.reserve-resilience.org \
+  -d chat.reserve-resilience.org -d matrix.reserve-resilience.org
+```
+
+Le renouvellement automatique reprendra ce certificat tout seul (méthode mémorisée), à condition
+d'ajouter le montage des identifiants OVH dans `~/scripts/renew-certs.sh`, à côté de celui
+d'IONOS.
 
 #### Renouvellement automatique
 
