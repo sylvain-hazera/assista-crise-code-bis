@@ -85,3 +85,22 @@ def test_lecture_par_l_interface_reste_cloisonnee(create_user, canal_meshcore_de
 
     assert reponse.status_code == 200
     assert len(reponse.data) == 0          # en PROD, rien de la démo
+
+
+@pytest.mark.django_db
+def test_messagerie_unifiee_masque_l_echo_de_nos_messages(create_user):
+    from core.models import SalonMatrixEquipe, Team
+    admin = create_user(username="admin-echo@test.fr", email="admin-echo@test.fr", type="ADMIN")
+    equipe = Team.objects.create(name="CAI")
+    SalonMatrixEquipe.objects.create(equipe=equipe)            # sans room_id : pas d'appel Matrix
+    canal = CanalMeshtastic.objects.create(nom="EquipeCAI", equipe=equipe, psk_hex="00" * 16)
+    MessageCanalMeshtastic.objects.create(canal=canal, direction="SORTANT", contenu="recois tu le mesh ?", statut="ENVOYE")
+    MessageCanalMeshtastic.objects.create(canal=canal, direction="ENTRANT", contenu="Sylvain Moi : recois tu le mesh ?")
+    MessageCanalMeshtastic.objects.create(canal=canal, direction="ENTRANT", contenu="Jean : reçu 5/5")
+    client = APIClient()
+    client.force_authenticate(user=admin)
+
+    reponse = client.get(reverse('team-messagerie-unifiee', args=[equipe.id]))
+
+    assert reponse.status_code == 200, reponse.data
+    assert [m["texte"] for m in reponse.data["messages"]] == ["recois tu le mesh ?", "Jean : reçu 5/5"]

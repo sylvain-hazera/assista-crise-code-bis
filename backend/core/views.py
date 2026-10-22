@@ -4545,6 +4545,31 @@ def _detecter_mot_cle_sos(contenu: str) -> str | None:
     return None
 
 
+def _sans_echos(messages, minutes: int = 60):
+    """Retire d'un fil de canal radio (ordre chronologique) les messages REÇUS qui ne sont que
+    l'écho d'un des nôtres : nos autres companions réentendent ce que nous venons d'émettre et
+    le pont le redépose, préfixé du nom de l'émetteur (« Sylvain Moi : recois tu le mesh ? »).
+    Même critère que _echo_de_nos_messages ; sans ce filtre, chaque message envoyé depuis la
+    messagerie unifiée y apparaissait deux ou trois fois (constaté le 22/10/2026)."""
+    fenetre = datetime.timedelta(minutes=minutes)
+    emis = []
+    resultat = []
+    for m in messages:
+        if m.direction == DirectionMessageMesh.SORTANT:
+            emis.append(m)
+            resultat.append(m)
+            continue
+        texte = (m.contenu or '').strip()
+        echo = texte and any(
+            e.contenu and texte.endswith(e.contenu.strip())
+            and datetime.timedelta(0) <= m.date_creation - e.date_creation <= fenetre
+            for e in emis
+        )
+        if not echo:
+            resultat.append(m)
+    return resultat
+
+
 def _echo_de_nos_messages(modele_message, contenu: str, minutes: int = 60) -> bool:
     """True si `contenu` reprend un message que NOUS avons émis récemment sur ce protocole :
     nos diffusions (alertes séisme sur le canal d'urgence, par exemple) sont entendues par nos
@@ -8111,7 +8136,7 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
                 })
 
         if canal_meshtastic is not None:
-            for m in canal_meshtastic.messages.select_related('expediteur').order_by('date_creation'):
+            for m in _sans_echos(canal_meshtastic.messages.select_related('expediteur').order_by('date_creation')):
                 resultat.append({
                     "event_id": str(m.id), "source": "meshtastic",
                     "texte": m.contenu, "horodatage": int(m.date_creation.timestamp() * 1000),
@@ -8122,7 +8147,7 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
                 })
 
         if canal_meshcore is not None:
-            for m in canal_meshcore.messages.select_related('expediteur').order_by('date_creation'):
+            for m in _sans_echos(canal_meshcore.messages.select_related('expediteur').order_by('date_creation')):
                 resultat.append({
                     "event_id": str(m.id), "source": "meshcore",
                     "texte": m.contenu, "horodatage": int(m.date_creation.timestamp() * 1000),
@@ -15257,6 +15282,7 @@ class CompagnonMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
 
         defaults = {
             "institution": satellite.institution,
+            "satellite": satellite,
             "nom": request.data.get('nom') or f"Satellite {satellite.nom}",
             "connexion_type": request.data.get('connexion_type', MeshtasticConnexionType.SERIE),
             "serie_device": request.data.get('serie_device'),
@@ -15344,8 +15370,20 @@ class CompagnonMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
         """Config complète (mqtt_password, x25519_private_key_hex) de tous les companions actifs
         — jamais via la sérialisation normale. Le pont s'en sert au démarrage pour ouvrir UNE
         connexion MQTT par broker configuré, en parallèle (plusieurs brokers actifs en même
-        temps, demande explicite du 14/09), plutôt que d'être épinglé à un seul COMPAGNON_ID."""
+        temps, demande explicite du 14/09), plutôt que d'être épinglé à un seul COMPAGNON_ID.
+
+        Chaque companion n'est servi qu'au pont qui peut l'ouvrir (22/10/2026) : le pont d'un
+        satellite (son compte de service) ne reçoit que les radios branchées sur sa machine ;
+        le pont du central, tout sauf celles-ci. Avant, tous recevaient tout : le central
+        réessayait sans fin d'ouvrir /dev/ttyACM0 du satellite de la Loire, et ce satellite
+        ouvrait la connexion MQTT du central avec ses identifiants -- la même identité radio
+        connectée deux fois au broker."""
         compagnons = self.get_queryset().filter(actif=True)
+        satellite = Satellite.objects.filter(compte_service=request.user).first()
+        if satellite is not None:
+            compagnons = compagnons.filter(satellite=satellite)
+        else:
+            compagnons = compagnons.filter(satellite__isnull=True)
         return Response([
             {
                 'id': str(c.id), 'nom': c.nom, 'node_num': c.node_num,

@@ -5234,6 +5234,13 @@ class CompagnonMeshtastic(EnvironmentScopedModel):
         "Institution", on_delete=models.CASCADE, null=True, blank=True, related_name="compagnons_meshtastic",
     )
 
+    # Satellite qui a déclaré ce companion (enregistrer_depuis_satellite) : la radio est branchée
+    # sur CETTE machine, seul son pont peut l'ouvrir. Vide = companion du central (MQTT, TCP...).
+    # Voir CompagnonMeshtasticViewSet.actifs_avec_identifiants.
+    satellite = models.ForeignKey(
+        "Satellite", on_delete=models.SET_NULL, null=True, blank=True, related_name="compagnons_meshtastic",
+    )
+
     nom = models.CharField(max_length=100)
 
     connexion_type = models.CharField(max_length=10, choices=MeshtasticConnexionType.choices, default=MeshtasticConnexionType.MQTT)
