@@ -472,9 +472,11 @@ configurer_radios() {
     profil_actuel="$(cat "$REPERTOIRE_SCRIPT/.profil" 2>/dev/null || echo full)"
     (cd "$REPERTOIRE_SCRIPT" && docker compose --profile "$profil_actuel" stop \
         meshcore-bridge meshcore-proxy meshtastic-bridge surveiller-noeuds >/dev/null 2>&1 || true)
+    # --build : sans lui, `run` réutilise l'image de détection construite à la première
+    # installation, avec l'ancien code (constaté le 22/10/2026).
     local radios journal
     journal="$(mktemp)"
-    radios="$(cd "$REPERTOIRE_SCRIPT" && docker compose --profile outillage run --rm -e DETECTION_TOUTES=true detecter-noeud 2>"$journal" | tail -n1)"
+    radios="$(cd "$REPERTOIRE_SCRIPT" && docker compose --profile outillage run --build --rm -e DETECTION_TOUTES=true detecter-noeud 2>"$journal" | tail -n1)"
     [ -n "$radios" ] || { radios="[]"; log "  Détection en échec :"; tail -n 5 "$journal" | sed 's/^/    /'; }
     rm -f "$journal"
 

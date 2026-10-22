@@ -129,7 +129,7 @@ qui peut changer après un redémarrage). Une fois un device confirmé, **la con
 et réutilisée telle quelle tant qu'il répond** — pas de re-sondage à chaque démarrage :
 
 ```bash
-docker compose --profile outillage run --rm detecter-noeud
+docker compose --profile outillage run --build --rm detecter-noeud
 ```
 
 Si le central est injoignable au moment du sondage, la détection locale reste valable
