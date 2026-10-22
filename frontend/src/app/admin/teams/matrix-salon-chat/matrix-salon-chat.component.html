@@ -25,7 +25,8 @@
           @if (m.vu_par.length > 0) {
             <div class="message-vu">✅ Vu par {{ m.vu_par.join(', ') }}</div>
           }
-          @if (cadre && reagir && m.vu_par.length === 0) {
+          <!-- « Vu » = réaction Matrix : sans objet pour un message reçu par radio. -->
+          @if (cadre && reagir && (!m.source || m.source === 'matrix') && m.vu_par.length === 0) {
             <button type="button" class="btn-vu" [disabled]="reactionEnCoursEventId === m.event_id" (click)="marquerVu(m)">
               Marquer vu
             </button>

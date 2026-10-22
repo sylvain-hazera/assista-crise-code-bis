@@ -258,20 +258,18 @@
                     }
                   </ul>
 
-                  @if (equipe.team.salon_matrix_room_id) {
-                    <app-matrix-salon-chat
-                      [cle]="equipe.team.id!"
-                      [titre]="'Salon — ' + teamDisplayName(equipe.team)"
-                      [pretACharger]="estDepliee(equipe.team.id!)"
-                      [autoriserUrgent]="true"
-                      [cadre]="estCadreEquipe(equipe.team)"
-                      [chargerMessages]="chargerMessagesEquipe(equipe.team.id!)"
-                      [envoyerMessage]="envoyerMessageEquipe(equipe.team.id!)"
-                      [reagir]="reagirMessageEquipe(equipe.team.id!)">
-                    </app-matrix-salon-chat>
-                  } @else {
-                    <p class="hint-petit">Salon Matrix non provisionné pour cette équipe.</p>
-                  }
+                  <!-- Messagerie unifiée (Matrix + MeshCore + Meshtastic), comme la page Équipes :
+                       affichée même sans salon Matrix, la radio ne doit pas en dépendre. -->
+                  <app-matrix-salon-chat
+                    [cle]="equipe.team.id!"
+                    [titre]="'Messagerie — ' + teamDisplayName(equipe.team)"
+                    [pretACharger]="estDepliee(equipe.team.id!)"
+                    [autoriserUrgent]="true"
+                    [cadre]="estCadreEquipe(equipe.team)"
+                    [chargerMessages]="chargerMessagesEquipe(equipe.team.id!)"
+                    [envoyerMessage]="envoyerMessageEquipe(equipe.team.id!)"
+                    [reagir]="reagirMessageEquipe(equipe.team.id!)">
+                  </app-matrix-salon-chat>
                 </div>
               }
             </div>

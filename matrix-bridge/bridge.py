@@ -52,6 +52,12 @@ SYNC_TIMEOUT_MS = int(os.environ.get("SYNC_TIMEOUT_MS", "30000"))
 
 GEO_URI_RE = re.compile(r"^geo:(-?[0-9.]+),(-?[0-9.]+)")
 
+# Les salons sont des modèles isolés par environnement (EnvironmentScopedViewSetMixin côté
+# Django) : sans en-tête X-Environment, le pont ne voyait que PROD -- constaté le 22/10/2026,
+# aucun des 12 salons d'équipe de démo n'avait jamais été créé côté Synapse.
+ENVIRONNEMENTS = ("PROD", "DEMO")
+PREFIXE_NOM_SALON = {"PROD": "", "DEMO": "[Démo] "}
+
 
 # --- Django -----------------------------------------------------------------------------------
 
@@ -73,33 +79,33 @@ class DjangoClient:
         self.access_token = response.json()["access"]
         logger.info("Authentifié auprès de Django.")
 
-    async def _request(self, method, path, **kwargs):
+    async def _request(self, method, path, environnement="PROD", **kwargs):
         if self.access_token is None:
             await self._authenticate()
-        headers = {"Authorization": f"Bearer {self.access_token}"}
+        headers = {"Authorization": f"Bearer {self.access_token}", "X-Environment": environnement}
         response = await self._client.request(method, f"{self.base_url}{path}", headers=headers, **kwargs)
         if response.status_code == 401:
             await self._authenticate()
-            headers = {"Authorization": f"Bearer {self.access_token}"}
+            headers = {"Authorization": f"Bearer {self.access_token}", "X-Environment": environnement}
             response = await self._client.request(method, f"{self.base_url}{path}", headers=headers, **kwargs)
         response.raise_for_status()
         return response
 
-    async def salons_a_synchroniser(self):
-        response = await self._request("GET", "/salons-matrix/")
+    async def salons_a_synchroniser(self, environnement):
+        response = await self._request("GET", "/salons-matrix/", environnement)
         data = response.json()
         return data["results"] if isinstance(data, dict) else data  # pagination éventuelle
 
-    async def rapporter_salon(self, salon_id, room_id):
-        await self._request("PATCH", f"/salons-matrix/{salon_id}/", json={"room_id": room_id})
+    async def rapporter_salon(self, salon_id, room_id, environnement):
+        await self._request("PATCH", f"/salons-matrix/{salon_id}/", environnement, json={"room_id": room_id})
 
-    async def salons_institution_a_synchroniser(self):
-        response = await self._request("GET", "/salons-matrix-institution/")
+    async def salons_institution_a_synchroniser(self, environnement):
+        response = await self._request("GET", "/salons-matrix-institution/", environnement)
         data = response.json()
         return data["results"] if isinstance(data, dict) else data
 
-    async def rapporter_salon_institution(self, salon_id, room_id):
-        await self._request("PATCH", f"/salons-matrix-institution/{salon_id}/", json={"room_id": room_id})
+    async def rapporter_salon_institution(self, salon_id, room_id, environnement):
+        await self._request("PATCH", f"/salons-matrix-institution/{salon_id}/", environnement, json={"room_id": room_id})
 
     async def rapporter_position(self, matrix_user_id, latitude, longitude, horodatage_iso):
         await self._request("POST", "/matrix/positions/", json={
@@ -183,6 +189,12 @@ class SynapseClient:
         )
         if existant.status_code != 200:
             return False
+        # Réécrire un nom INCHANGÉ n'est pas gratuit : Synapse republie alors la fiche de membre
+        # de la personne dans tous ses salons (tâche update_join_states). Fait à chaque cycle de
+        # 30 s pour chaque membre de chaque salon, ça a accumulé 342 000 tâches et fini en
+        # limitation de débit (429) le 22/10/2026 -- même correctif que core/matrix.py.
+        if existant.json().get("displayname") == displayname:
+            return True
         response = await self._client.put(
             f"{self.base_url}/_synapse/admin/v2/users/{matrix_user_id}",
             headers=self._headers(), json={"displayname": displayname},
@@ -271,48 +283,54 @@ async def boucle_provisionnement_salons(django, synapse):
     régénération de clé), une invitation Matrix se retire tout aussi facilement qu'elle
     s'accorde, donc rien n'empêche une resynchronisation permanente et automatique."""
     while True:
-        try:
-            salons = await django.salons_a_synchroniser()
-            for salon in salons:
-                # Un membre dont le compte n'existe pas encore (jamais connecté via MAS, voir
-                # assurer_compte) est exclu de `cibles` -- il ne doit pas être invité/expulsé ce
-                # passage-ci, seulement dès qu'il aura son compte (prochain passage après sa
-                # première connexion).
-                tous_cibles = {m["matrix_user_id"]: m["nom"] for m in salon["membres"]}
-                cibles = {
-                    matrix_id: nom for matrix_id, nom in tous_cibles.items()
-                    if await synapse.assurer_compte(matrix_id, nom)
-                }
-
-                room_id = salon.get("room_id")
-                if not room_id:
-                    room_id = await synapse.creer_salon(f"Équipe {salon['equipe_nom']}"[:64])
-                    await django.rapporter_salon(salon["id"], room_id)
-                    logger.info("Salon créé pour l'équipe « %s » : %s", salon["equipe_nom"], room_id)
-
-                if salon.get("sujet_salon"):
-                    await synapse.definir_sujet(room_id, salon["sujet_salon"])
-
-                actuels = await synapse.membres_actuels(room_id)
-                for matrix_id in cibles:
-                    if matrix_id not in actuels:
-                        await synapse.rejoindre_de_force(room_id, matrix_id)
-                        logger.info("Membre %s ajouté au salon de « %s ».", matrix_id, salon["equipe_nom"])
-                # `expulsion_activee=False` (équipe "cellule de crise", voir
-                # SalonMatrixEquipeSerializer.get_expulsion_activee côté Django) : n'importe qui
-                # peut y entrer via assurer_membre_salon au premier accès (matrix.py), jamais
-                # expulsé au cycle suivant faute d'être un membre formel de l'équipe -- constaté
-                # en direct le 2026-09-28 (rejoint puis aussitôt exclu "Ne fait plus partie de
-                # l'équipe"), corrigé ici plutôt que de rendre ce salon un cas particulier
-                # ailleurs dans le pont.
-                if salon.get("expulsion_activee", True):
-                    for matrix_id in actuels:
-                        if matrix_id != synapse.user_id and matrix_id not in cibles:
-                            await synapse.expulser(room_id, matrix_id)
-                            logger.info("Membre %s retiré du salon de « %s ».", matrix_id, salon["equipe_nom"])
-        except Exception:
-            logger.exception("Échec du cycle de provisionnement des salons.")
+        for environnement in ENVIRONNEMENTS:
+            try:
+                await _synchroniser_salons_equipe(django, synapse, environnement)
+            except Exception:
+                logger.exception("Échec du cycle de provisionnement des salons (%s).", environnement)
         await asyncio.sleep(SALONS_POLL_INTERVAL_SECONDS)
+
+
+async def _synchroniser_salons_equipe(django, synapse, environnement):
+    salons = await django.salons_a_synchroniser(environnement)
+    for salon in salons:
+        # Un membre dont le compte n'existe pas encore (jamais connecté via MAS, voir
+        # assurer_compte) est exclu de `cibles` -- il ne doit pas être invité/expulsé ce
+        # passage-ci, seulement dès qu'il aura son compte (prochain passage après sa
+        # première connexion).
+        tous_cibles = {m["matrix_user_id"]: m["nom"] for m in salon["membres"]}
+        cibles = {
+            matrix_id: nom for matrix_id, nom in tous_cibles.items()
+            if await synapse.assurer_compte(matrix_id, nom)
+        }
+
+        room_id = salon.get("room_id")
+        if not room_id:
+            nom_salon = f"{PREFIXE_NOM_SALON[environnement]}Équipe {salon['equipe_nom']}"
+            room_id = await synapse.creer_salon(nom_salon[:64])
+            await django.rapporter_salon(salon["id"], room_id, environnement)
+            logger.info("Salon créé pour l'équipe « %s » : %s", salon["equipe_nom"], room_id)
+
+        if salon.get("sujet_salon"):
+            await synapse.definir_sujet(room_id, salon["sujet_salon"])
+
+        actuels = await synapse.membres_actuels(room_id)
+        for matrix_id in cibles:
+            if matrix_id not in actuels:
+                await synapse.rejoindre_de_force(room_id, matrix_id)
+                logger.info("Membre %s ajouté au salon de « %s ».", matrix_id, salon["equipe_nom"])
+        # `expulsion_activee=False` (équipe "cellule de crise", voir
+        # SalonMatrixEquipeSerializer.get_expulsion_activee côté Django) : n'importe qui
+        # peut y entrer via assurer_membre_salon au premier accès (matrix.py), jamais
+        # expulsé au cycle suivant faute d'être un membre formel de l'équipe -- constaté
+        # en direct le 2026-09-28 (rejoint puis aussitôt exclu "Ne fait plus partie de
+        # l'équipe"), corrigé ici plutôt que de rendre ce salon un cas particulier
+        # ailleurs dans le pont.
+        if salon.get("expulsion_activee", True):
+            for matrix_id in actuels:
+                if matrix_id != synapse.user_id and matrix_id not in cibles:
+                    await synapse.expulser(room_id, matrix_id)
+                    logger.info("Membre %s retiré du salon de « %s ».", matrix_id, salon["equipe_nom"])
 
 
 TYPE_SALON_INSTITUTION_LIBELLE = {"PERMANENTS": "Permanents", "BENEVOLES": "Bénévoles mobilisés"}
@@ -323,37 +341,42 @@ async def boucle_provisionnement_salons_institution(django, synapse):
     institution (voir SalonMatrixInstitution côté Django -- personnel permanent / bénévoles
     actuellement mobilisés sur les équipes actives, composition recalculée à chaque cycle)."""
     while True:
-        try:
-            salons = await django.salons_institution_a_synchroniser()
-            for salon in salons:
-                # Voir le même filtrage dans boucle_provisionnement_salons ci-dessus.
-                tous_cibles = {m["matrix_user_id"]: m["nom"] for m in salon["membres"]}
-                cibles = {
-                    matrix_id: nom for matrix_id, nom in tous_cibles.items()
-                    if await synapse.assurer_compte(matrix_id, nom)
-                }
-
-                libelle = TYPE_SALON_INSTITUTION_LIBELLE.get(salon["type"], salon["type"])
-                nom_salon = f"{salon['institution_nom']} — {libelle}"
-
-                room_id = salon.get("room_id")
-                if not room_id:
-                    room_id = await synapse.creer_salon(nom_salon[:64])
-                    await django.rapporter_salon_institution(salon["id"], room_id)
-                    logger.info("Salon institution créé pour « %s » : %s", nom_salon, room_id)
-
-                actuels = await synapse.membres_actuels(room_id)
-                for matrix_id in cibles:
-                    if matrix_id not in actuels:
-                        await synapse.rejoindre_de_force(room_id, matrix_id)
-                        logger.info("Membre %s ajouté au salon « %s ».", matrix_id, nom_salon)
-                for matrix_id in actuels:
-                    if matrix_id != synapse.user_id and matrix_id not in cibles:
-                        await synapse.expulser(room_id, matrix_id)
-                        logger.info("Membre %s retiré du salon « %s ».", matrix_id, nom_salon)
-        except Exception:
-            logger.exception("Échec du cycle de provisionnement des salons d'institution.")
+        for environnement in ENVIRONNEMENTS:
+            try:
+                await _synchroniser_salons_institution(django, synapse, environnement)
+            except Exception:
+                logger.exception("Échec du cycle de provisionnement des salons d'institution (%s).", environnement)
         await asyncio.sleep(SALONS_POLL_INTERVAL_SECONDS)
+
+
+async def _synchroniser_salons_institution(django, synapse, environnement):
+    salons = await django.salons_institution_a_synchroniser(environnement)
+    for salon in salons:
+        # Voir le même filtrage dans boucle_provisionnement_salons ci-dessus.
+        tous_cibles = {m["matrix_user_id"]: m["nom"] for m in salon["membres"]}
+        cibles = {
+            matrix_id: nom for matrix_id, nom in tous_cibles.items()
+            if await synapse.assurer_compte(matrix_id, nom)
+        }
+
+        libelle = TYPE_SALON_INSTITUTION_LIBELLE.get(salon["type"], salon["type"])
+        nom_salon = f"{PREFIXE_NOM_SALON[environnement]}{salon['institution_nom']} — {libelle}"
+
+        room_id = salon.get("room_id")
+        if not room_id:
+            room_id = await synapse.creer_salon(nom_salon[:64])
+            await django.rapporter_salon_institution(salon["id"], room_id, environnement)
+            logger.info("Salon institution créé pour « %s » : %s", nom_salon, room_id)
+
+        actuels = await synapse.membres_actuels(room_id)
+        for matrix_id in cibles:
+            if matrix_id not in actuels:
+                await synapse.rejoindre_de_force(room_id, matrix_id)
+                logger.info("Membre %s ajouté au salon « %s ».", matrix_id, nom_salon)
+        for matrix_id in actuels:
+            if matrix_id != synapse.user_id and matrix_id not in cibles:
+                await synapse.expulser(room_id, matrix_id)
+                logger.info("Membre %s retiré du salon « %s ».", matrix_id, nom_salon)
 
 
 def _lire_since():

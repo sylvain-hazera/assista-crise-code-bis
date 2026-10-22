@@ -157,9 +157,9 @@ export class CelluleCriseComponent implements OnInit, OnDestroy {
   // ── Barre "Urgences" : agrège les messages urgents de tous les salons d'équipe de la crise ──
   private chargerUrgences(): void {
     this.messagesUrgents = [];
-    const equipesDeLaCrise = this.equipes.map(e => e.team);
+    // Filtrées AVANT l'indexation : resultats[i] doit correspondre à equipesDeLaCrise[i].
+    const equipesDeLaCrise = this.equipes.map(e => e.team).filter(t => !!t.salon_matrix_room_id);
     const appels = equipesDeLaCrise
-      .filter(t => !!t.salon_matrix_room_id)
       .map(t => this.teamService.getSalonMatrixMessages(t.id!).pipe(
         catchError(() => of({ messages: [] as MatrixMessage[] })),
       ));
@@ -228,8 +228,9 @@ export class CelluleCriseComponent implements OnInit, OnDestroy {
     return this.authService.isInstitutionalEffective() || team.leader === this.authService.getCurrentUser()?.id;
   }
 
-  chargerMessagesEquipe = (equipeId: string) => () => this.teamService.getSalonMatrixMessages(equipeId);
-  envoyerMessageEquipe = (equipeId: string) => (texte: string, urgent = false) => this.teamService.envoyerMessageSalonMatrix(equipeId, texte, urgent);
+  // Messagerie unifiée (TeamViewSet.messagerie_unifiee) : Matrix + MeshCore + Meshtastic.
+  chargerMessagesEquipe = (equipeId: string) => () => this.teamService.getMessagerieUnifiee(equipeId);
+  envoyerMessageEquipe = (equipeId: string) => (texte: string, urgent = false) => this.teamService.envoyerMessageUnifie(equipeId, texte, urgent);
   reagirMessageEquipe = (equipeId: string) => (eventId: string) => this.teamService.reagirSalonMatrix(equipeId, eventId);
 
   demarrerEngagement(team: Team): void {
