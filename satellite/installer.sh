@@ -464,9 +464,19 @@ configurer_radios() {
     # enregistre au central et écrit leur configuration dans .env -- aucune question. Une radio
     # absente met simplement son service en attente (.sans_noeud / .sans_meshtastic).
     log "Recherche des radios branchées (MeshCore / Meshtastic)..."
-    local radios
-    radios="$(cd "$REPERTOIRE_SCRIPT" && docker compose --profile outillage run --rm -e DETECTION_TOUTES=true detecter-noeud 2>/dev/null | tail -n1)"
-    [ -n "$radios" ] || radios="[]"
+    # Les services radio d'une installation existante tiennent les ports série ouverts : sondés
+    # pendant qu'ils tournent, les radios ne répondent pas et aucune n'est reconnue (constaté le
+    # 22/10/2026 à la mise à jour du satellite de la Loire). On les arrête le temps de la
+    # détection ; phase_demarrer les relance juste après.
+    local profil_actuel
+    profil_actuel="$(cat "$REPERTOIRE_SCRIPT/.profil" 2>/dev/null || echo full)"
+    (cd "$REPERTOIRE_SCRIPT" && docker compose --profile "$profil_actuel" stop \
+        meshcore-bridge meshcore-proxy meshtastic-bridge surveiller-noeuds >/dev/null 2>&1 || true)
+    local radios journal
+    journal="$(mktemp)"
+    radios="$(cd "$REPERTOIRE_SCRIPT" && docker compose --profile outillage run --rm -e DETECTION_TOUTES=true detecter-noeud 2>"$journal" | tail -n1)"
+    [ -n "$radios" ] || { radios="[]"; log "  Détection en échec :"; tail -n 5 "$journal" | sed 's/^/    /'; }
+    rm -f "$journal"
 
     local meshcore meshtastic
     meshcore="$(python3 -c 'import json,sys
@@ -484,6 +494,11 @@ print(json.dumps(r[0]) if r else "")' "$radios" 2>/dev/null || true)"
                -e "s|^MESHCORE_COMPAGNON_ID=.*|MESHCORE_COMPAGNON_ID=$compagnon|" "$FICHIER_ENV"
         rm -f "$REPERTOIRE_SCRIPT/.sans_noeud"
         log "  MeshCore    : $device${compagnon:+ (enregistré au central)}"
+    elif [ "$(valeur_env MESHCORE_CONNEXION_TYPE)" = "SERIE" ] && [ -e "$(valeur_env MESHCORE_SERIE_DEVICE)" ]; then
+        # Non reconnue au sondage mais déjà configurée et présente : on garde la configuration
+        # plutôt que de couper une radio qui fonctionnait.
+        rm -f "$REPERTOIRE_SCRIPT/.sans_noeud"
+        log "  MeshCore    : non reconnue au sondage, configuration actuelle conservée ($(valeur_env MESHCORE_SERIE_DEVICE))"
     else
         touch "$REPERTOIRE_SCRIPT/.sans_noeud"
         log "  MeshCore    : aucune radio -- service en attente"
@@ -498,6 +513,8 @@ print(json.dumps(r[0]) if r else "")' "$radios" 2>/dev/null || true)"
         fi
         rm -f "$REPERTOIRE_SCRIPT/.sans_meshtastic"
         log "  Meshtastic  : $device"
+    elif [ ! -f "$REPERTOIRE_SCRIPT/.sans_meshtastic" ] && [ -e "$(valeur_env MESHTASTIC_SERIE_DEVICE)" ]; then
+        log "  Meshtastic  : non reconnue au sondage, configuration actuelle conservée ($(valeur_env MESHTASTIC_SERIE_DEVICE))"
     else
         touch "$REPERTOIRE_SCRIPT/.sans_meshtastic"
         log "  Meshtastic  : aucune radio -- service en attente"

@@ -51,6 +51,24 @@ def chemin_stable(device):
     return device
 
 
+def devices_occupes():
+    """Ports série déjà ouverts par les services radio du satellite (meshcore-proxy,
+    meshtastic-bridge : variables de .env passées à surveiller-noeuds). La surveillance continue
+    ne doit JAMAIS les sonder : ouvrir le port d'une radio ESP32 la redémarre souvent, et deux
+    programmes sur le même port se volent les réponses -- toutes les 30 s, le sondage d'un port
+    occupé échouait, relançait une découverte complète et perturbait les deux radios (22/10/2026,
+    satellite de la Loire, radio Meshtastic déconnectée depuis le matin)."""
+    occupes = set()
+    variables = ["MESHTASTIC_SERIE_DEVICE"]
+    if os.environ.get("MESHCORE_CONNEXION_TYPE", "SERIE").upper() == "SERIE":
+        variables.append("MESHCORE_SERIE_DEVICE")
+    for variable in variables:
+        device = os.environ.get(variable)
+        if device and os.path.exists(device):
+            occupes.add(os.path.realpath(device))
+    return occupes
+
+
 def lire_config_persistee(fichier=None):
     fichier = fichier or FICHIER_ETAT
     if not os.path.exists(fichier):
@@ -137,21 +155,26 @@ async def identifier_device(device):
     return None
 
 
-async def decouvrir_et_identifier():
-    """Sonde tous les devices candidats, renvoie la première identification réussie (un
-    satellite n'a normalement qu'un seul nœud branché à la fois) ou None."""
+async def decouvrir_et_identifier(occupes=frozenset()):
+    """Sonde tous les devices candidats (hors `occupes`, voir devices_occupes), renvoie la
+    première identification réussie ou None."""
     for device in lister_devices_candidats():
+        if os.path.realpath(device) in occupes:
+            continue
         identite = await identifier_device(device)
         if identite:
             return {"device": chemin_stable(device), **identite}
     return None
 
 
-async def config_verifiee_ou_redecouverte(fichier_etat=None):
+async def config_verifiee_ou_redecouverte(fichier_etat=None, occupes=frozenset()):
     """Cœur de "garder la config tant qu'elle marche" : si une config persistée existe, revérifie
     juste que SON device répond encore au protocole attendu (rapide) avant de la réutiliser —
     ne relance un sondage complet de tous les devices que si elle a disparu ou ne répond plus."""
     config = lire_config_persistee(fichier_etat)
+    if config and os.path.realpath(config["device"]) in occupes:
+        # Ouvert par son service radio : il fonctionne, et le sonder le perturberait.
+        return config
     if config:
         sondeur = sonder_meshcore if config["protocole"] == "meshcore" else None
         if sondeur:
@@ -167,7 +190,7 @@ async def config_verifiee_ou_redecouverte(fichier_etat=None):
             return config
         logger.warning("Le device persisté %s ne répond plus (%s attendu) — nouvelle découverte.", config["device"], config["protocole"])
 
-    nouvelle = await decouvrir_et_identifier()
+    nouvelle = await decouvrir_et_identifier(occupes)
     if nouvelle:
         ecrire_config_persistee(nouvelle, fichier_etat)
         logger.info("Nouveau nœud identifié : %s (%s).", nouvelle["device"], nouvelle["protocole"])
@@ -208,12 +231,12 @@ async def enregistrer_aupres_du_central(identite, central_url, email, password, 
             await client.aclose()
 
 
-async def decouvrir_identifier_et_enregistrer(central_url, email, password, fichier_etat=None, client=None):
+async def decouvrir_identifier_et_enregistrer(central_url, email, password, fichier_etat=None, client=None, occupes=frozenset()):
     """Enchaîne la détection/persistance locale (config_verifiee_ou_redecouverte) et
     l'auto-enregistrement central — best-effort sur la partie centrale : si le central est
     injoignable, la détection locale reste valable et utilisable (voir la bascule vers le local
     prévue côté bridge.py), seul compagnon_id manquera tant que le central n'est pas revenu."""
-    identite = await config_verifiee_ou_redecouverte(fichier_etat)
+    identite = await config_verifiee_ou_redecouverte(fichier_etat, occupes)
     if identite is None:
         return None
     if identite.get("compagnon_id"):
@@ -258,12 +281,13 @@ async def boucle(central_url=None, email=None, password=None, fichier_etat=None,
     que si le device persisté a disparu/ne répond plus, voir sa docstring) : cette boucle ne
     fait donc pas un sondage complet à chaque itération dans le cas courant."""
     while True:
+        occupes = devices_occupes()
         if central_url and email and password:
             resultat = await decouvrir_identifier_et_enregistrer(
-                central_url, email, password, fichier_etat=fichier_etat, client=client,
+                central_url, email, password, fichier_etat=fichier_etat, client=client, occupes=occupes,
             )
         else:
-            resultat = await config_verifiee_ou_redecouverte(fichier_etat)
+            resultat = await config_verifiee_ou_redecouverte(fichier_etat, occupes)
         if une_seule_iteration:
             return resultat
         await asyncio.sleep(INTERVALLE_DETECTION_SECONDES)

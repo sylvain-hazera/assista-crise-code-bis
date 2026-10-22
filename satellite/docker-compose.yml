@@ -66,6 +66,10 @@ services:
       - SATELLITE_PASSWORD=${SATELLITE_PASSWORD}
       - DETECTION_CONTINUE=true
       - INTERVALLE_DETECTION_SECONDES=${INTERVALLE_DETECTION_SECONDES:-30}
+      # Ports des radios déjà configurées : jamais sondés (voir detecter_noeud_serie.devices_occupes).
+      - MESHCORE_CONNEXION_TYPE=${MESHCORE_CONNEXION_TYPE:-SERIE}
+      - MESHCORE_SERIE_DEVICE=${MESHCORE_SERIE_DEVICE:-}
+      - MESHTASTIC_SERIE_DEVICE=${MESHTASTIC_SERIE_DEVICE:-}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
     privileged: true
     restart: unless-stopped

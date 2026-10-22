@@ -328,3 +328,37 @@ async def test_config_persistee_ancienne_convertie_en_chemin_stable(tmp_path, mo
 
     assert config["device"] == str(by_id / "usb-Heltec_V3_meshcore-if00")
     assert dns.lire_config_persistee(fichier)["device"] == config["device"]
+
+
+def test_ports_des_radios_configurees_occupes(tmp_path, monkeypatch):
+    by_id = _faux_dev(tmp_path, monkeypatch)
+    monkeypatch.setenv("MESHCORE_CONNEXION_TYPE", "SERIE")
+    monkeypatch.setenv("MESHCORE_SERIE_DEVICE", str(by_id / "usb-Heltec_V3_meshcore-if00"))
+    monkeypatch.setenv("MESHTASTIC_SERIE_DEVICE", str(tmp_path / "ttyACM0"))
+    assert dns.devices_occupes() == {str(tmp_path / "ttyACM1"), str(tmp_path / "ttyACM0")}
+
+    monkeypatch.setenv("MESHCORE_CONNEXION_TYPE", "TCP")                 # radio MeshCore en réseau
+    assert dns.devices_occupes() == {str(tmp_path / "ttyACM0")}
+
+
+async def test_surveillance_ne_sonde_jamais_un_port_occupe(tmp_path, monkeypatch):
+    # 22/10/2026 : le sondage toutes les 30 s des ports ouverts par les ponts perturbait les radios.
+    _faux_dev(tmp_path, monkeypatch)
+    fichier = str(tmp_path / "etat" / "noeud.json")
+    dns.ecrire_config_persistee({"device": str(tmp_path / "ttyACM1"), "protocole": "meshcore", "pubkey_hex": "abc"}, fichier=fichier)
+    monkeypatch.setattr(dns, "lister_devices_candidats", lambda: [str(tmp_path / "ttyACM0"), str(tmp_path / "ttyACM1")])
+    sondes = []
+
+    async def identifier(device):
+        sondes.append(device)
+        return None
+
+    monkeypatch.setattr(dns, "identifier_device", identifier)
+    sonder = AsyncMock(return_value=None)
+    monkeypatch.setattr(dns, "sonder_meshcore", sonder)
+    occupes = {str(tmp_path / "ttyACM0"), str(tmp_path / "ttyACM1")}
+
+    config = await dns.config_verifiee_ou_redecouverte(fichier, occupes)
+
+    assert config["device"] == str(tmp_path / "ttyACM1")                  # gardée telle quelle
+    assert sonder.await_count == 0 and sondes == []                       # aucun port ouvert
