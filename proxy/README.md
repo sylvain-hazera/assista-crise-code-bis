@@ -152,3 +152,63 @@ c'est fait.
 5. `~/scripts/redeploy-waf.sh` : recrée `ac_waf` pour qu'il prenne en compte le nouveau
    `SERVER_NAME` (un simple reload ne suffit pas pour une variable d'environnement).
 6. Vérifier avec `curl -H "Host: <domaine>" https://<ip-ou-domaine>/` et un vrai navigateur.
+
+### Cas particulier : domaine appartenant au partenaire (pas un sous-domaine d'assista-crise.fr)
+
+`app.reserve-resilience.org` et consorts ne sont PAS dans la zone IONOS : la validation DNS-01
+utilisée pour le certificat principal ne peut pas les couvrir (voir plus haut). Depuis que le
+partenaire a posé ses CNAME vers nous, la validation **HTTP-01** fonctionne sans rien lui
+demander de plus.
+
+Choix retenu le 2026-10-22 : **un certificat séparé** `reserve-resilience.org`, jamais fusionné
+avec celui d'assista-crise.fr. Le certificat principal et son renouvellement DNS-01 restent
+intacts — une erreur sur le certificat partenaire ne peut donc pas faire tomber le domaine
+principal, contrairement à l'incident du 15/10.
+
+Deux fichiers additifs, montés dans `ac_waf` comme gabarits `conf.d` (ils ne remplacent rien) :
+
+| Fichier | Rôle | Monté |
+| --- | --- | --- |
+| `waf-partenaires-acme.conf` | Sert le jeton ACME en clair sur :80 au lieu de rediriger | dès le départ |
+| `waf-partenaires-tls.conf` | Bloc :443 avec le certificat partenaire, choisi par SNI | seulement après la 1re émission |
+
+#### Émission, en trois temps
+
+Dans cet ordre, sans sauter d'étape : le bloc TLS référence un certificat, et nginx refuse de
+démarrer s'il n'existe pas — tout le site tomberait.
+
+```bash
+# 1. Le bloc ACME seul (le TLS reste commenté dans docker-compose.114.yml)
+cd ~/assista-crise-code-bis && git pull
+~/scripts/redeploy-waf.sh
+docker exec ac_waf nginx -t
+
+# 2. Émission du certificat partenaire, par HTTP-01
+docker run --rm \
+  -v /etc/letsencrypt:/etc/letsencrypt \
+  -v /var/lib/letsencrypt:/var/lib/letsencrypt \
+  -v ac_certbot_webroot:/var/www/certbot \
+  assista-certbot-ionos:latest certonly --non-interactive --agree-tos \
+  --webroot --webroot-path /var/www/certbot \
+  --cert-name reserve-resilience.org \
+  -d app.reserve-resilience.org -d auth.reserve-resilience.org \
+  -d chat.reserve-resilience.org -d matrix.reserve-resilience.org
+sudo ls /etc/letsencrypt/live/reserve-resilience.org/   # doit lister fullchain.pem
+
+# 3. Activer le bloc TLS : décommenter la ligne waf-partenaires-tls.conf dans
+#    docker-compose.114.yml, puis
+~/scripts/redeploy-waf.sh
+docker exec ac_waf nginx -t
+for d in app auth chat matrix; do
+  curl -sS -o /dev/null -w "$d %{http_code}\n" --resolve "$d.reserve-resilience.org:443:127.0.0.1" \
+    "https://$d.reserve-resilience.org/"
+done
+```
+
+Le renouvellement automatique (`certbot renew`, cron de 4h30) reprend seul ce certificat : il
+mémorise `--webroot`. **Il dépend du bloc ACME** — retirer `waf-partenaires-acme.conf` casserait
+le renouvellement 60 jours plus tard, en silence.
+
+Un nouveau partenaire s'ajoute en complétant `server_name` dans les DEUX fichiers, puis en
+réémettant le certificat avec la liste complète des domaines partenaires (même piège `--expand`
+que pour le certificat principal : toujours tout lister).

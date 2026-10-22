@@ -45,6 +45,13 @@ services:
       - ./proxy/waf-fix-log-symlinks.sh:/docker-entrypoint.d/99-fix-log-symlinks.sh
       - /etc/letsencrypt:/etc/letsencrypt
       - ./proxy/modsecurity-override.conf:/etc/nginx/templates/modsecurity.d/modsecurity-override.conf.template:ro
+      # Marque blanche : validation ACME des domaines partenaires (voir proxy/README.md).
+      - ./proxy/waf-partenaires-acme.conf:/etc/nginx/templates/conf.d/partenaires-acme.conf.template:ro
+      - certbot_webroot:/var/www/certbot
+      # ⚠ À DÉCOMMENTER SEULEMENT APRÈS la première émission du certificat partenaire : ce
+      # fichier référence /etc/letsencrypt/live/reserve-resilience.org/, et nginx refuse de
+      # démarrer si le certificat n'existe pas encore -- tout le site tomberait.
+      # - ./proxy/waf-partenaires-tls.conf:/etc/nginx/templates/conf.d/partenaires-tls.conf.template:ro
       - waf_modsec_logs:/var/log/modsecurity
       - waf_nginx_logs:/var/log/nginx-real
     networks: [front]
@@ -420,6 +427,9 @@ volumes:
   ssh_journal_logs:       { external: true, name: ssh_journal_logs }
   waf_modsec_logs:        { external: true, name: waf_modsec_logs }
   waf_nginx_logs:         { external: true, name: waf_nginx_logs }
+  # Jetons de validation ACME HTTP-01 des domaines partenaires : écrits par certbot,
+  # lus par ac_waf (voir proxy/waf-partenaires-acme.conf).
+  certbot_webroot:        { name: ac_certbot_webroot }
   # Anciens volumes anonymes (sans nom) de ac_fail2ban et redis : copiés dans ces volumes nommés
   # par migrer-vers-compose.sh.
   fail2ban_data:          { external: true, name: ac_fail2ban_data }
