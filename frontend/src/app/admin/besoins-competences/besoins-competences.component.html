@@ -5,9 +5,52 @@
   un besoin non encore qualifié reste proposé dans les deux sections.
 </p>
 
+<p class="page-hint">
+  Une demande ou un signalement reçoit sa compétence par la chaîne <strong>type → besoin →
+  compétence</strong> ; sans compétence, aucune équipe ne peut lui être suggérée. Ajouter une
+  correspondance met aussitôt à jour les dossiers encore en attente.
+  @if (!estAdmin) { <br><em>Lecture seule : seuls les administrateurs peuvent modifier ces correspondances.</em> }
+</p>
+
+<h3>À compléter</h3>
+<ul class="a-completer">
+  <li><strong>Types de demande sans besoin :</strong> {{ typesSansBesoin('demande').join(', ') || 'aucun' }}</li>
+  <li><strong>Types de signalement sans besoin :</strong> {{ typesSansBesoin('signalement').join(', ') || 'aucun' }}</li>
+  <li><strong>Besoins sans compétence :</strong> {{ besoinsSansSuite().join(', ') || 'aucun' }}</li>
+</ul>
+
+@for (a of axes; track a.axe) {
+  <h3>{{ a.titre }}</h3>
+  @if (estAdmin) {
+    <div class="create-row">
+      <select [(ngModel)]="choixType[a.axe]">
+        <option [ngValue]="null">— Type —</option>
+        @for (t of typesParAxe[a.axe]; track t.id) { <option [ngValue]="t.id">{{ t.type }}</option> }
+      </select>
+      <select [(ngModel)]="choixBesoin[a.axe]">
+        <option [ngValue]="null">— Besoin —</option>
+        @for (b of besoins; track b.id) { <option [ngValue]="b.id">{{ b.nom }}</option> }
+      </select>
+      <button type="button" [disabled]="!choixType[a.axe] || !choixBesoin[a.axe]" (click)="submitType(a.axe)">Ajouter</button>
+    </div>
+  }
+  <table>
+    <thead><tr><th>Type</th><th>Besoin</th><th></th></tr></thead>
+    <tbody>
+      @for (c of correspondancesType[a.axe]; track c.id) {
+        <tr>
+          <td>{{ nomType(a.axe, c) }}</td>
+          <td>{{ c.besoin_nom }}</td>
+          <td>@if (estAdmin) { <button type="button" (click)="deleteType(a.axe, c.id)">Supprimer</button> }</td>
+        </tr>
+      }
+    </tbody>
+  </table>
+}
+
 <h3>Besoin → Compétence</h3>
 
-<div class="create-row">
+<div class="create-row" *ngIf="estAdmin">
   <select [(ngModel)]="selectedBesoinIdCompetence">
     <option [ngValue]="null">— Besoin —</option>
     <option *ngFor="let b of besoinsPourCompetence()" [ngValue]="b.id">{{ b.nom }}</option>
@@ -40,14 +83,14 @@
     <tr *ngFor="let c of correspondancesCompetence">
       <td>{{ c.besoin_nom }}</td>
       <td>{{ c.competence_nom }}</td>
-      <td><button type="button" (click)="deleteCompetence(c.id)">Supprimer</button></td>
+      <td><button *ngIf="estAdmin" type="button" (click)="deleteCompetence(c.id)">Supprimer</button></td>
     </tr>
   </tbody>
 </table>
 
 <h3>Besoin → Matériel</h3>
 
-<div class="create-row">
+<div class="create-row" *ngIf="estAdmin">
   <select [(ngModel)]="selectedBesoinIdMateriel">
     <option [ngValue]="null">— Besoin —</option>
     <option *ngFor="let b of besoinsPourMateriel()" [ngValue]="b.id">{{ b.nom }}</option>
@@ -80,7 +123,7 @@
     <tr *ngFor="let m of correspondancesMateriel">
       <td>{{ m.besoin_nom }}</td>
       <td>{{ m.materiel_nom }}</td>
-      <td><button type="button" (click)="deleteMateriel(m.id)">Supprimer</button></td>
+      <td><button *ngIf="estAdmin" type="button" (click)="deleteMateriel(m.id)">Supprimer</button></td>
     </tr>
   </tbody>
 </table>

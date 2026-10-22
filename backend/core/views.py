@@ -554,23 +554,51 @@ class BesoinViewSet(TagLikeViewSetMixin, viewsets.ModelViewSet):
             commentaire=f"Création besoin : {besoin}",
         )
 
-class BesoinCompetenceViewSet(viewsets.ModelViewSet):
+class CorrespondanceViewSetMixin:
+    """Correspondances du référentiel (type -> besoin -> compétence / matériel), communes à PROD
+    et DEMO : lecture pour tout compte connecté, modification réservée aux administrateurs
+    (22/10/2026 -- jusqu'ici n'importe quel compte connecté pouvait les changer). Une
+    correspondance ajoutée requalifie aussitôt les dossiers en attente qu'elle concerne (voir
+    requalifier_dossiers_en_attente)."""
+
+    def get_permissions(self):
+        if self.action in ('list', 'retrieve'):
+            return [permissions.IsAuthenticated()]
+        return [IsAdministrator()]
+
+    def perform_create(self, serializer):
+        correspondance = serializer.save()
+        audit_log(
+            request=self.request, action_code="CREATION", objet_type=correspondance.__class__.__name__,
+            objet_id=correspondance.id, commentaire=f"Correspondance ajoutée : {correspondance}",
+        )
+        requalifier_dossiers_en_attente()
+
+    def perform_destroy(self, instance):
+        audit_log(
+            request=self.request, action_code="SUPPRESSION", objet_type=instance.__class__.__name__,
+            objet_id=instance.id, commentaire=f"Correspondance supprimée : {instance}",
+        )
+        instance.delete()
+
+
+class BesoinCompetenceViewSet(CorrespondanceViewSetMixin, viewsets.ModelViewSet):
     queryset = BesoinCompetence.objects.select_related('besoin', 'competence').all()
     serializer_class = BesoinCompetenceSerializer
 
-class BesoinMaterielViewSet(viewsets.ModelViewSet):
+class BesoinMaterielViewSet(CorrespondanceViewSetMixin, viewsets.ModelViewSet):
     queryset = BesoinMateriel.objects.select_related('besoin', 'materiel').all()
     serializer_class = BesoinMaterielSerializer
 
-class RequestTypeBesoinViewSet(viewsets.ModelViewSet):
+class RequestTypeBesoinViewSet(CorrespondanceViewSetMixin, viewsets.ModelViewSet):
     queryset = RequestTypeBesoin.objects.select_related('request_type', 'besoin').all()
     serializer_class = RequestTypeBesoinSerializer
 
-class OfferTypeBesoinViewSet(viewsets.ModelViewSet):
+class OfferTypeBesoinViewSet(CorrespondanceViewSetMixin, viewsets.ModelViewSet):
     queryset = OfferTypeBesoin.objects.select_related('offer_type', 'besoin').all()
     serializer_class = OfferTypeBesoinSerializer
 
-class InformationTypeBesoinViewSet(viewsets.ModelViewSet):
+class InformationTypeBesoinViewSet(CorrespondanceViewSetMixin, viewsets.ModelViewSet):
     queryset = InformationTypeBesoin.objects.select_related('information_type', 'besoin').all()
     serializer_class = InformationTypeBesoinSerializer
 
@@ -3186,6 +3214,43 @@ def resuggerer_dossiers(crise_id, competence_id):
             dossier.save(update_fields=['equipe'])
             modifies += 1
     return modifies
+
+
+def requalifier_dossiers_en_attente():
+    """Dossiers encore en attente SANS compétence (créés quand leur type de demande ou de
+    signalement n'était relié à aucune compétence) : compétence et besoin recalculés d'après les
+    correspondances actuelles, puis équipe suggérée. Appelé quand un administrateur ajoute une
+    correspondance (CorrespondanceViewSetMixin) : sans ça, seuls les dossiers créés APRÈS en
+    profitaient. Renvoie le nombre de dossiers requalifiés."""
+    requalifies = 0
+    a_resuggerer = set()
+    dossiers = Dossier.objects.filter(
+        statut__in=STATUTS_DOSSIER_EN_ATTENTE, competence__isnull=True,
+    ).select_related('demande', 'information')
+    for dossier in dossiers:
+        if dossier.demande_id:
+            competence = resolve_competence_for_request(dossier.demande)
+            besoin = resolve_besoin_for_request(dossier.demande)
+        elif dossier.information_id:
+            competence = resolve_competence_for_information(dossier.information)
+            besoin = resolve_besoin_for_information(dossier.information)
+        else:
+            continue
+        champs = []
+        if competence is not None:
+            dossier.competence = competence
+            champs.append('competence')
+        if besoin is not None and dossier.besoin_id != besoin.id:
+            dossier.besoin = besoin
+            champs.append('besoin')
+        if champs:
+            dossier.save(update_fields=champs)
+            requalifies += 1
+        if competence is not None:
+            a_resuggerer.add((dossier.crise_id, competence.id))
+    for crise_id, competence_id in a_resuggerer:
+        resuggerer_dossiers(crise_id, competence_id)
+    return requalifies
 
 
 def apprendre_affectation(dossier, equipe, request):

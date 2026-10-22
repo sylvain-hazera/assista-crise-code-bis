@@ -38,7 +38,10 @@ class TestBesoinNature:
 class TestBesoinMateriel:
 
     def test_create_and_list_correspondance(self, authenticated_client):
-        client, _ = authenticated_client
+        # Modification réservée aux administrateurs depuis le 22/10/2026 (CorrespondanceViewSetMixin).
+        client, user = authenticated_client
+        user.type = 'ADMIN'
+        user.save()
         besoin = Besoin.objects.create(nom="Besoin materiel test", nature='MATERIEL')
         materiel = MaterielCatalogue.objects.create(nom="Materiel correspondance test")
 
@@ -55,7 +58,9 @@ class TestBesoinMateriel:
         assert any(row['id'] == response.data['id'] for row in listing.data)
 
     def test_delete_correspondance(self, authenticated_client):
-        client, _ = authenticated_client
+        client, user = authenticated_client
+        user.type = 'ADMIN'
+        user.save()
         besoin = Besoin.objects.create(nom="Besoin materiel suppr test", nature='MATERIEL')
         materiel = MaterielCatalogue.objects.create(nom="Materiel correspondance suppr test")
         lien = BesoinMateriel.objects.create(besoin=besoin, materiel=materiel)
@@ -64,6 +69,15 @@ class TestBesoinMateriel:
 
         assert response.status_code == status.HTTP_204_NO_CONTENT
         assert not BesoinMateriel.objects.filter(id=lien.id).exists()
+
+    def test_compte_non_administrateur_ne_modifie_pas(self, authenticated_client):
+        client, _ = authenticated_client
+        besoin = Besoin.objects.create(nom="Besoin materiel interdit test", nature='MATERIEL')
+        materiel = MaterielCatalogue.objects.create(nom="Materiel interdit test")
+        response = client.post(reverse('besoinmateriel-list'), {
+            'besoin': str(besoin.id), 'materiel': str(materiel.id),
+        }, format='json')
+        assert response.status_code == status.HTTP_403_FORBIDDEN
 
     def test_requires_authentication(self, api_client):
         response = api_client.get(reverse('besoinmateriel-list'))
