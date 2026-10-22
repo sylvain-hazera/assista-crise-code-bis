@@ -4854,15 +4854,55 @@ def _decouper_message_mesh(texte: str, max_octets: int) -> list:
     return [f"{m} ({i}/{total})" for i, m in enumerate(morceaux, start=1)]
 
 
+# Limite du firmware Meshtastic pour un nom de canal (ChannelSettings.name : 11 octets). Un nom
+# plus long ne peut pas être saisi tel quel sur la radio, et le hash du canal (nom + clé) ne
+# correspond alors plus à celui du pont : messages jamais déchiffrés (constaté le 22/10/2026,
+# « EquipeLes Cuves Pomp », 20 caractères).
+MESHTASTIC_NOM_CANAL_MAX_OCTETS = 11
+
+
+def nom_canal_meshtastic_valide(nom: str) -> str:
+    """`nom` ramené à ce que la radio accepte : sans accents ni espaces, 11 octets au plus."""
+    import unicodedata
+    ascii_ = unicodedata.normalize('NFKD', nom).encode('ascii', 'ignore').decode()
+    compact = ''.join(ch for ch in ascii_ if ch.isalnum() or ch in '-_')
+    return compact[:MESHTASTIC_NOM_CANAL_MAX_OCTETS]
+
+
 def _nom_canal_meshtastic_equipe(team) -> str:
-    """"Equipe" + nom d'équipe, sans le doubler quand le nom de l'équipe commence déjà par
-    "Équipe"/"Equipe" (convention de nommage très répandue côté équipes, ex: "Équipe Voirie —
-    Points de transit" aurait sinon donné "EquipeÉquipe Voirie..."). Tronqué à 20 caractères :
-    au-delà, certains firmwares Meshtastic affichent mal le nom du canal."""
-    nom_equipe = team.name.strip()
-    prefixe_deja_present = nom_equipe.lower().startswith(('équipe', 'equipe'))
-    base = nom_equipe if prefixe_deja_present else f"Equipe{nom_equipe}"
-    return base[:20]
+    """"Equipe" + nom d'équipe (sans le doubler quand le nom commence déjà par "Équipe") si ça
+    tient dans la limite du firmware, sinon le nom de l'équipe seul -- « EquipeCAI », mais
+    « LesCuvesPom » plutôt que « EquipeLes C » (voir MESHTASTIC_NOM_CANAL_MAX_OCTETS)."""
+    nom_equipe = nom_canal_meshtastic_valide(team.name.strip())
+    if nom_equipe.lower().startswith('equipe'):
+        return nom_equipe
+    avec_prefixe = f"Equipe{nom_equipe}"
+    return avec_prefixe if len(avec_prefixe) <= MESHTASTIC_NOM_CANAL_MAX_OCTETS else nom_equipe
+
+
+def psk_meshtastic_base64(psk_hex: str) -> str:
+    """Clé d'un canal telle que l'application Meshtastic la demande : en base64 (24 caractères
+    finissant par « == »). Envoyée jusqu'ici en hexadécimal, que l'application relisait comme du
+    base64 -- une autre clé, canal jamais déchiffré (constaté le 22/10/2026)."""
+    import base64
+    return base64.b64encode(bytes.fromhex(psk_hex)).decode()
+
+
+def message_cle_canal_meshtastic(canal) -> str:
+    """Texte du message privé qui transmet un canal d'équipe : clé d'abord (copier-coller)."""
+    return f"{psk_meshtastic_base64(canal.psk_hex)} - {canal.nom}"
+
+
+def _compagnon_pour_equipe(modele_compagnon, team):
+    """Radio qui envoie les clés d'un canal d'équipe à ses membres : celle de l'institution de
+    l'équipe d'abord (radio de son satellite, à portée de ses membres -- une clé partie de
+    Bordeaux n'atteint pas la Loire), puis la radio principale, puis n'importe laquelle."""
+    actifs = modele_compagnon.objects.filter(actif=True)
+    if team.institution_id:
+        locale = actifs.filter(institution_id=team.institution_id).order_by('-principal').first()
+        if locale is not None:
+            return locale
+    return actifs.filter(principal=True).first() or actifs.first()
 
 
 def _assurer_canal_meshtastic_et_notifier(request, team, user):
@@ -4885,8 +4925,7 @@ def _assurer_canal_meshtastic_et_notifier(request, team, user):
             environment=get_active_environment(request),
         )
 
-    compagnon = CompagnonMeshtastic.objects.filter(actif=True, principal=True).first() \
-        or CompagnonMeshtastic.objects.filter(actif=True).first()
+    compagnon = _compagnon_pour_equipe(CompagnonMeshtastic, team)
     if compagnon is None:
         return
 
@@ -4895,7 +4934,7 @@ def _assurer_canal_meshtastic_et_notifier(request, team, user):
         canal=None,
         direction=DirectionMessageMesh.SORTANT,
         contact_node_num=noeud.node_num,
-        contenu=f"{canal.psk_hex} - {canal.nom}",
+        contenu=message_cle_canal_meshtastic(canal),
         statut=StatutMessageMesh.EN_ATTENTE,
         expediteur=request.user if request.user.is_authenticated else None,
         equipe=team,
@@ -4923,8 +4962,7 @@ def _assurer_canal_meshcore_et_notifier(request, team, user):
             environment=get_active_environment(request),
         )
 
-    compagnon = CompagnonMeshCore.objects.filter(actif=True, principal=True).first() \
-        or CompagnonMeshCore.objects.filter(actif=True).first()
+    compagnon = _compagnon_pour_equipe(CompagnonMeshCore, team)
     if compagnon is None:
         return
 
@@ -7834,8 +7872,7 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             # réinstaller le canal avec la nouvelle clé (voir canaux_a_provisionner).
             canal.provisions.all().delete()
 
-        compagnon = CompagnonMeshCore.objects.filter(actif=True, principal=True).first() \
-            or CompagnonMeshCore.objects.filter(actif=True).first()
+        compagnon = _compagnon_pour_equipe(CompagnonMeshCore, team)
 
         destinataires = []
         if compagnon is not None:
@@ -8228,8 +8265,7 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             canal.psk_hex = secrets.token_hex(16)
             canal.save(update_fields=['psk_hex'])
 
-        compagnon = CompagnonMeshtastic.objects.filter(actif=True, principal=True).first() \
-            or CompagnonMeshtastic.objects.filter(actif=True).first()
+        compagnon = _compagnon_pour_equipe(CompagnonMeshtastic, team)
 
         destinataires = []
         if compagnon is not None:
@@ -8243,7 +8279,7 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
                     canal=None,
                     direction=DirectionMessageMesh.SORTANT,
                     contact_node_num=noeud.node_num,
-                    contenu=f"{canal.psk_hex} - {canal.nom}",
+                    contenu=message_cle_canal_meshtastic(canal),
                     statut=StatutMessageMesh.EN_ATTENTE,
                     expediteur=request.user,
                     equipe=team,

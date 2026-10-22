@@ -3227,6 +3227,12 @@ class CanalMeshtasticSerializer(serializers.ModelSerializer):
         fields = "__all__"
         extra_kwargs = {'psk_hex': {'write_only': True}}
 
+    def validate_nom(self, nom):
+        # Limite du firmware Meshtastic, voir views.MESHTASTIC_NOM_CANAL_MAX_OCTETS.
+        if len(nom.encode('utf-8')) > 11:
+            raise serializers.ValidationError("11 octets au plus : c'est la limite des radios Meshtastic.")
+        return nom
+
 
 class ContactMeshtasticSerializer(serializers.ModelSerializer):
     compagnon_nom = serializers.CharField(source='compagnon.nom', read_only=True)
