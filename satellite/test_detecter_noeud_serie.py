@@ -276,3 +276,55 @@ def test_detecter_et_enregistrer_toutes_les_radios(monkeypatch):
     assert [(r["device"], r["protocole"], r["compagnon_id"]) for r in radios] == [
         ("/dev/ttyUSB0", "meshcore", "id-meshcore"), ("/dev/ttyACM0", "meshtastic", "id-meshtastic"),
     ]
+
+
+def _faux_dev(tmp_path, monkeypatch):
+    """/dev miniature : deux radios et leurs noms stables udev."""
+    (tmp_path / "ttyACM0").touch()
+    (tmp_path / "ttyACM1").touch()
+    by_id = tmp_path / "serial" / "by-id"
+    by_id.mkdir(parents=True)
+    (by_id / "usb-Heltec_V3_meshcore-if00").symlink_to(tmp_path / "ttyACM1")
+    (by_id / "usb-RAK4631_meshtastic-if00").symlink_to(tmp_path / "ttyACM0")
+    monkeypatch.setattr(dns, "DOSSIERS_CHEMINS_STABLES", [str(by_id), str(tmp_path / "serial" / "by-path")])
+    return by_id
+
+
+def test_chemin_stable_par_numero_de_serie(tmp_path, monkeypatch):
+    # 22/10/2026 : ttyACM0/ttyACM1 s'inversent au redémarrage, by-id suit la radio elle-même.
+    by_id = _faux_dev(tmp_path, monkeypatch)
+    assert dns.chemin_stable(str(tmp_path / "ttyACM1")) == str(by_id / "usb-Heltec_V3_meshcore-if00")
+    assert dns.chemin_stable(str(tmp_path / "ttyACM0")) == str(by_id / "usb-RAK4631_meshtastic-if00")
+
+
+def test_chemin_stable_absent_garde_le_device(tmp_path, monkeypatch):
+    _faux_dev(tmp_path, monkeypatch)
+    (tmp_path / "ttyUSB0").touch()
+    assert dns.chemin_stable(str(tmp_path / "ttyUSB0")) == str(tmp_path / "ttyUSB0")
+
+
+async def test_detection_de_toutes_les_radios_donne_les_chemins_stables(tmp_path, monkeypatch):
+    by_id = _faux_dev(tmp_path, monkeypatch)
+    monkeypatch.setattr(dns, "lister_devices_candidats", lambda: [str(tmp_path / "ttyACM0"), str(tmp_path / "ttyACM1")])
+
+    async def identifier(device):
+        return {"protocole": "meshcore", "pubkey_hex": "x"} if device.endswith("ttyACM1") else {"protocole": "meshtastic", "node_num": 1}
+
+    monkeypatch.setattr(dns, "identifier_device", identifier)
+    radios = await dns.detecter_et_enregistrer_toutes()
+    assert {r["protocole"]: r["device"] for r in radios} == {
+        "meshcore": str(by_id / "usb-Heltec_V3_meshcore-if00"),
+        "meshtastic": str(by_id / "usb-RAK4631_meshtastic-if00"),
+    }
+
+
+async def test_config_persistee_ancienne_convertie_en_chemin_stable(tmp_path, monkeypatch):
+    by_id = _faux_dev(tmp_path, monkeypatch)
+    fichier = str(tmp_path / "etat" / "noeud.json")
+    dns.ecrire_config_persistee({"device": str(tmp_path / "ttyACM1"), "protocole": "meshcore", "pubkey_hex": "abc"}, fichier=fichier)
+    monkeypatch.setattr(dns, "sonder_meshcore", AsyncMock(return_value={"pubkey_hex": "abc"}))
+
+    config = await dns.config_verifiee_ou_redecouverte(fichier)
+
+    assert config["device"] == str(by_id / "usb-Heltec_V3_meshcore-if00")
+    assert dns.lire_config_persistee(fichier)["device"] == config["device"]

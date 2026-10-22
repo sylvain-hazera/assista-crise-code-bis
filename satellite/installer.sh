@@ -295,10 +295,13 @@ demander_connexion_meshcore() {
     case "$_connexion_type" in
         SERIE)
             echo
-            log "Devices série détectés sur cette machine :"
+            log "Devices série détectés sur cette machine (préférez un nom /dev/serial/by-id/... :"
+            log "il suit la radio, alors que /dev/ttyACM0 et /dev/ttyACM1 peuvent s'inverser au redémarrage) :"
+            ls -l /dev/serial/by-id/ 2>/dev/null | sed -n 's/^.* \(usb-[^ ]*\) -> .*\/\(tty[^/]*\)$/  \/dev\/serial\/by-id\/\1  (\2)/p'
             ls /dev/ttyUSB* /dev/ttyACM* 2>/dev/null || echo "  (aucun trouvé — branchez le nœud puis relancez, ou choisissez AUCUN pour continuer sans)"
             echo
-            _serie_device="$(demander "Device série du nœud MeshCore" "/dev/ttyUSB0")"
+            _serie_device="$(demander "Device série du nœud MeshCore" "$(ls /dev/serial/by-id/* 2>/dev/null | head -n1 || true)")"
+            _serie_device="${_serie_device:-/dev/ttyUSB0}"
             ;;
         TCP)
             _serie_device="/dev/ttyUSB0"

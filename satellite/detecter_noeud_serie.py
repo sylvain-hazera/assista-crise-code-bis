@@ -23,6 +23,11 @@ logger = logging.getLogger("detecter-noeud-serie")
 
 FICHIER_ETAT = os.environ.get("FICHIER_ETAT_NOEUD_SERIE", "/var/run/satellite/noeud_serie.json")
 MOTIFS_DEVICES = ["/dev/ttyUSB*", "/dev/ttyACM*"]
+# Noms stables créés par udev : by-id (modèle + numéro de série de la radio), à défaut by-path
+# (port USB physique). /dev/ttyACM0 et /dev/ttyACM1 sont attribués dans l'ordre d'apparition et
+# s'inversent d'un démarrage à l'autre quand deux radios sont branchées (constaté sur le
+# satellite de la Loire, 22/10/2026) : chaque bridge ouvrait alors la radio de l'autre protocole.
+DOSSIERS_CHEMINS_STABLES = ["/dev/serial/by-id", "/dev/serial/by-path"]
 TIMEOUT_SONDAGE_SECONDES = float(os.environ.get("TIMEOUT_SONDAGE_SECONDES", "5"))
 INTERVALLE_DETECTION_SECONDES = int(os.environ.get("INTERVALLE_DETECTION_SECONDES", "30"))
 
@@ -32,6 +37,18 @@ def lister_devices_candidats():
     for motif in MOTIFS_DEVICES:
         devices.extend(glob.glob(motif))
     return sorted(devices)
+
+
+def chemin_stable(device):
+    """Nom stable (voir DOSSIERS_CHEMINS_STABLES) du port série `device`, ou `device` lui-même
+    s'il n'en a pas. C'est ce nom qui part dans .env et au central : Docker le résout vers le bon
+    /dev/ttyACMx à chaque démarrage du conteneur."""
+    reel = os.path.realpath(device)
+    for dossier in DOSSIERS_CHEMINS_STABLES:
+        for lien in sorted(glob.glob(os.path.join(dossier, "*"))):
+            if os.path.realpath(lien) == reel:
+                return lien
+    return device
 
 
 def lire_config_persistee(fichier=None):
@@ -126,7 +143,7 @@ async def decouvrir_et_identifier():
     for device in lister_devices_candidats():
         identite = await identifier_device(device)
         if identite:
-            return {"device": device, **identite}
+            return {"device": chemin_stable(device), **identite}
     return None
 
 
@@ -143,6 +160,10 @@ async def config_verifiee_ou_redecouverte(fichier_etat=None):
             reponse = await asyncio.get_running_loop().run_in_executor(None, sonder_meshtastic, config["device"])
         if reponse:
             logger.info("Config persistée toujours valide : %s (%s).", config["device"], config["protocole"])
+            stable = chemin_stable(config["device"])
+            if stable != config["device"]:
+                config["device"] = stable
+                ecrire_config_persistee(config, fichier_etat)
             return config
         logger.warning("Le device persisté %s ne répond plus (%s attendu) — nouvelle découverte.", config["device"], config["protocole"])
 
@@ -218,7 +239,7 @@ async def detecter_et_enregistrer_toutes(central_url=None, email=None, password=
         identite = await identifier_device(device)
         if not identite:
             continue
-        identite = {"device": device, **identite}
+        identite = {"device": chemin_stable(device), **identite}
         if central_url and email and password:
             try:
                 identite["compagnon_id"] = await enregistrer_aupres_du_central(identite, central_url, email, password, client=client)

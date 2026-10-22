@@ -12,7 +12,7 @@ from rest_framework.test import APIClient
 
 from core.models import (
     CanalMeshCore, CompagnonMeshCore, CompagnonMeshtastic, Commune, ContactMeshCore, Crisis,
-    Institution, InstitutionType, NoeudMeshUtilisateur, RelaisMeshCore, Satellite,
+    Institution, InstitutionType, NoeudMeshUtilisateur, ProvisionCanalMeshCore, RelaisMeshCore, Satellite,
     StatutEnrolementSatellite, Team, User,
 )
 from core.sync_comptes import appliquer_comptes
@@ -70,7 +70,8 @@ def radio(create_user, institution, autre_institution):
         serie_device="/dev/ttyACM1", location=Point(4.39, 45.43, srid=4326),
     )
     contact = ContactMeshCore.objects.create(compagnon=compagnon, pubkey_hex="ab" * 32, nom="Radio de Jeanne")
-    canal = CanalMeshCore.objects.create(institution=institution, equipe=equipe, nom="#nord", compagnon=compagnon, canal_idx=2)
+    canal = CanalMeshCore.objects.create(institution=institution, equipe=equipe, nom="#nord")
+    provision = ProvisionCanalMeshCore.objects.create(canal=canal, compagnon=compagnon, canal_idx=2)
     noeud = NoeudMeshUtilisateur.objects.create(utilisateur=membre, pubkey_hex="cd" * 32, nom_noeud="T-Deck Jeanne")
     relais_commun = RelaisMeshCore.objects.create(nom="Relais Pilat", pubkey_hex="ef" * 32)
     relais_ailleurs = RelaisMeshCore.objects.create(nom="Relais Lille", pubkey_hex="01" * 32, institution=autre_institution)
@@ -92,6 +93,7 @@ class TestReferentielCentral:
         assert ids("compagnons_meshcore") == {str(radio["compagnon"].id)}
         assert ids("contacts_meshcore") == {str(radio["contact"].id)}
         assert ids("canaux_meshcore") == {str(radio["canal"].id)}
+        assert ids("provisions_canaux_meshcore") == {str(radio["provision"].id)}
         assert ids("noeuds_meshcore") == {str(radio["noeud"].id)}
         assert str(radio["relais_commun"].id) in ids("relais_meshcore")
         assert str(radio["relais_ailleurs"].id) not in ids("relais_meshcore")
@@ -138,7 +140,7 @@ class TestReferentielSatellite:
     def test_recree_a_l_identique_avec_relations_et_champs_chiffres(self, institution, radio):
         ref = referentiel_pour_satellite(institution, "PROD")
         date_creation = radio["compagnon"].date_creation
-        ids = {cle: radio[cle].id for cle in ("canal", "contact", "noeud", "compagnon", "equipe")}
+        ids = {cle: radio[cle].id for cle in ("canal", "contact", "noeud", "compagnon", "equipe", "provision")}
         for cle in ids:
             radio[cle].delete()          # (delete() remet l'id de l'objet Python à None)
 
@@ -151,7 +153,9 @@ class TestReferentielSatellite:
         assert ContactMeshCore.objects.get(pk=ids["contact"]).nom == "Radio de Jeanne"   # chiffré relu
         assert NoeudMeshUtilisateur.objects.get(pk=ids["noeud"]).nom_noeud == "T-Deck Jeanne"
         canal = CanalMeshCore.objects.get(pk=ids["canal"])
-        assert canal.equipe_id == ids["equipe"] and canal.compagnon_id == compagnon.id
+        assert canal.equipe_id == ids["equipe"]
+        provision = ProvisionCanalMeshCore.objects.get(pk=ids["provision"])     # slot du canal sur la radio
+        assert (provision.canal_id, provision.compagnon_id, provision.canal_idx) == (canal.id, compagnon.id, 2)
         assert list(Team.objects.get(pk=ids["equipe"]).members.all()) == [radio["membre"]]
 
     def test_contact_decouvert_hors_ligne_mis_a_jour_sans_doublon(self, institution, radio):

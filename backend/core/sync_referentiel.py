@@ -52,6 +52,10 @@ SPEC = (
     ("RelaisMeshCore", "relais_meshcore", {"cles_naturelles": (("pubkey_hex",),)}),
     ("CanalMeshCore", "canaux_meshcore", {"cles_naturelles": (("equipe",),)}),
     ("CanalMeshtastic", "canaux_meshtastic", {"cles_naturelles": (("equipe",),)}),
+    # Slots des canaux sur les radios du satellite : son pont en a besoin hors ligne.
+    ("ProvisionCanalMeshCore", "provisions_canaux_meshcore", {
+        "cles_naturelles": (("canal", "compagnon"), ("compagnon", "canal_idx")),
+    }),
     ("ContactMeshCore", "contacts_meshcore", {"cles_naturelles": (("compagnon", "pubkey_hex"),)}),
     ("ContactMeshtastic", "contacts_meshtastic", {"cles_naturelles": (("compagnon", "node_num"),)}),
     ("NoeudMeshUtilisateur", "noeuds_meshcore", {"cles_naturelles": (("pubkey_hex",),)}),
@@ -79,6 +83,8 @@ def selection(institution, environnement):
             .filter(Q(institution=institution) | Q(institution__isnull=True)),
         "canaux_meshcore": m("CanalMeshCore").objects.filter(environment=environnement, institution=institution),
         "canaux_meshtastic": m("CanalMeshtastic").objects.filter(environment=environnement, institution=institution),
+        "provisions_canaux_meshcore": m("ProvisionCanalMeshCore").objects.filter(
+            compagnon__in=compagnons_mc, canal__environment=environnement),
         "contacts_meshcore": m("ContactMeshCore").objects.filter(compagnon__in=compagnons_mc),
         "contacts_meshtastic": m("ContactMeshtastic").objects.filter(compagnon__in=compagnons_mt),
         "noeuds_meshcore": m("NoeudMeshUtilisateur").objects.filter(

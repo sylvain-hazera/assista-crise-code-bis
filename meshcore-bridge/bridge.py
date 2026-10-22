@@ -322,8 +322,11 @@ class DjangoClient:
             json={"canal_id": canal_id, "canal_idx": canal_idx},
         )
 
-    async def messages_canal_a_envoyer(self):
-        response = await self._request("GET", "/messages-canal-meshcore/a-envoyer/")
+    async def messages_canal_a_envoyer(self, compagnon_id):
+        """Seulement les messages que CE companion doit émettre, avec le slot du canal sur CETTE
+        radio -- voir MessageCanalMeshCoreViewSet.a_envoyer (un même canal a un slot différent
+        sur chaque radio, et un seul pont émet chaque message)."""
+        response = await self._request("GET", "/messages-canal-meshcore/a-envoyer/", params={"compagnon": compagnon_id})
         return response.json()
 
     async def logger_message_canal_entrant(self, canal_id, contenu):
@@ -816,13 +819,13 @@ async def boucle_decodage_logiciel_canaux(meshcore, django, compagnon_id, canaux
         await asyncio.sleep(CANAUX_POLL_INTERVAL_SECONDS)
 
 
-async def boucle_envoi_canaux(meshcore, django):
+async def boucle_envoi_canaux(meshcore, django, compagnon_id):
     """Même principe que boucle_envoi, pour les messages de canal — nécessite que le canal
     soit déjà provisionné localement (canal_idx connu, voir boucle_provisionnement_canaux) ;
     un message dont le canal n'est pas encore prêt est simplement resservi au cycle suivant."""
     while True:
         try:
-            en_attente = await django.messages_canal_a_envoyer()
+            en_attente = await django.messages_canal_a_envoyer(compagnon_id)
             for message in en_attente:
                 canal_idx = message.get("canal_idx")
                 if canal_idx is None:
@@ -1021,7 +1024,7 @@ async def executer_une_session(django):
     tache_positions = asyncio.create_task(boucle_positions_missions(meshcore, django, COMPAGNON_ID))
     tache_canaux_provisionnement = asyncio.create_task(boucle_provisionnement_canaux(meshcore, django, COMPAGNON_ID, canaux_idx_map))
     tache_decodage_logiciel_canaux = asyncio.create_task(boucle_decodage_logiciel_canaux(meshcore, django, COMPAGNON_ID, canaux_virtuels_par_hash, canaux_idx_map))
-    tache_canaux_envoi = asyncio.create_task(boucle_envoi_canaux(meshcore, django))
+    tache_canaux_envoi = asyncio.create_task(boucle_envoi_canaux(meshcore, django, COMPAGNON_ID))
     tache_canaux_detectes = asyncio.create_task(boucle_signalement_canaux_detectes(django, COMPAGNON_ID, canaux_detectes_compteur))
     tache_nettoyage_canaux = asyncio.create_task(boucle_nettoyage_canaux(meshcore, django, COMPAGNON_ID))
     tache_batterie_compagnon = asyncio.create_task(boucle_batterie_compagnon(meshcore, django, COMPAGNON_ID))

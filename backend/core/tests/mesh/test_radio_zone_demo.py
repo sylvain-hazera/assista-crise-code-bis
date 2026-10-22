@@ -8,6 +8,8 @@ from rest_framework.test import APIClient
 
 from core.models import (
     CanalMeshCore,
+    CompagnonMeshCore,
+    ProvisionCanalMeshCore,
     CanalMeshtastic,
     MessageCanalMeshCore,
     MessageCanalMeshtastic,
@@ -24,8 +26,15 @@ def pont(create_user):
 
 
 @pytest.fixture
-def canal_meshcore_demo(db):
-    return CanalMeshCore.objects.create(nom="Équipe CAI", canal_idx=11, environment="DEMO")
+def compagnon_meshcore(db):
+    return CompagnonMeshCore.objects.create(nom="Bureau", connexion_type="TCP", dernier_etat="CONNECTE")
+
+
+@pytest.fixture
+def canal_meshcore_demo(compagnon_meshcore):
+    canal = CanalMeshCore.objects.create(nom="Équipe CAI", environment="DEMO")
+    ProvisionCanalMeshCore.objects.create(canal=canal, compagnon=compagnon_meshcore, canal_idx=11)
+    return canal
 
 
 @pytest.fixture
@@ -36,12 +45,12 @@ def canal_meshtastic_demo(db):
 @pytest.mark.django_db
 class TestFilesDesPontsCouvrentLaDemo:
 
-    def test_meshcore_message_de_demo_dans_la_file_puis_accuse(self, pont, canal_meshcore_demo):
+    def test_meshcore_message_de_demo_dans_la_file_puis_accuse(self, pont, canal_meshcore_demo, compagnon_meshcore):
         message = MessageCanalMeshCore.objects.create(
             canal=canal_meshcore_demo, direction="SORTANT", contenu="[Démo] recois tu le mesh ?", environment="DEMO",
         )
 
-        file = pont.get(reverse('messagecanalmeshcore-a-envoyer'))
+        file = pont.get(reverse('messagecanalmeshcore-a-envoyer'), {"compagnon": str(compagnon_meshcore.id)})
         assert [m["id"] for m in file.data] == [str(message.id)]
         assert file.data[0]["canal_idx"] == 11
 

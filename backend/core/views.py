@@ -183,7 +183,7 @@ from .models import (
     CommandeMeshCore, TypeCommandeMeshCore, StatutCommandeMeshCore,
     TracerouteMeshCore, StatutTraceroute,
     RelaisMeshCore, CanalMeshCore, MessageCanalMeshCore, ContactMeshCore, TypeContactMeshCore,
-    CanalMeshCoreDetecte, CanalMeshCoreObsolete, AlerteMeshSOS, ProtocoleMesh,
+    CanalMeshCoreDetecte, CanalMeshCoreObsolete, ProvisionCanalMeshCore, AlerteMeshSOS, ProtocoleMesh,
     MeshCoreConnexionType, MeshtasticConnexionType,
     CompagnonMeshtastic, NoeudUtilisateurMeshtastic, MessageMeshtasticLog,
     CanalMeshtastic, MessageCanalMeshtastic, ContactMeshtastic,
@@ -7821,20 +7821,18 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             # puisse le libérer lui-même 48h plus tard (voir CanalMeshCoreObsolete) -- une fois
             # canal.save() exécuté ci-dessous, cette information n'existe plus nulle part
             # ailleurs.
-            if canal.canal_idx is not None and canal.compagnon_id is not None:
+            # Un ancien slot par radio où le canal était installé (ProvisionCanalMeshCore).
+            for provision in canal.provisions.all():
                 CanalMeshCoreObsolete.objects.create(
-                    canal=canal, compagnon=canal.compagnon, canal_idx=canal.canal_idx,
+                    canal=canal, compagnon_id=provision.compagnon_id, canal_idx=provision.canal_idx,
                     supprimer_apres=timezone.now() + datetime.timedelta(hours=48),
                     environment=get_active_environment(request),
                 )
             canal.cle_partagee_hex = secrets.token_hex(16)
-            # La clé change : l'ancien provisionnement local (compagnon/canal_idx) ne
-            # correspond plus à rien, le pont doit reconfigurer son slot avec la nouvelle clé
-            # avant de pouvoir renvoyer/recevoir dessus (voir canaux_a_provisionner, qui
-            # sélectionne aussi sur canal_idx vide).
-            canal.canal_idx = None
-            canal.compagnon = None
-            canal.save(update_fields=['cle_partagee_hex', 'canal_idx', 'compagnon'])
+            canal.save(update_fields=['cle_partagee_hex'])
+            # La clé change : les slots actuels ne correspondent plus à rien, chaque pont doit
+            # réinstaller le canal avec la nouvelle clé (voir canaux_a_provisionner).
+            canal.provisions.all().delete()
 
         compagnon = CompagnonMeshCore.objects.filter(actif=True, principal=True).first() \
             or CompagnonMeshCore.objects.filter(actif=True).first()
@@ -14436,11 +14434,7 @@ class CompagnonMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelView
         toucher. Expose la clé en clair : action réservée au compte de service du pont, seul
         habilité à appeler set_channel."""
         compagnon = self.get_object()
-        canaux = CanalMeshCore.objects.filter(actif=True).filter(
-            Q(equipe__isnull=False) | Q(nom__startswith='#')
-        ).filter(
-            Q(canal_idx__isnull=True) | ~Q(compagnon=compagnon)
-        )
+        canaux = _canaux_meshcore_du_compagnon(compagnon).exclude(provisions__compagnon=compagnon)
         return Response([
             {"id": str(c.id), "nom": c.nom, "cle_partagee_hex": c.cle_partagee_hex}
             for c in canaux
@@ -14457,8 +14451,8 @@ class CompagnonMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelView
         défaut (idx 0, jamais passé par set_channel, voir SECRET_PUBLIC_PAR_DEFAUT), qui
         n'existe que par ce chemin."""
         compagnon = self.get_object()
-        canaux = CanalMeshCore.objects.filter(actif=True, compagnon=compagnon, canal_idx__isnull=False)
-        return Response([{"id": str(c.id), "canal_idx": c.canal_idx} for c in canaux])
+        provisions = compagnon.provisions_canaux.filter(canal__actif=True)
+        return Response([{"id": str(p.canal_id), "canal_idx": p.canal_idx} for p in provisions])
 
     @action(detail=True, methods=['get'], url_path='canaux-pour-decodage-logiciel')
     def canaux_pour_decodage_logiciel(self, request, pk=None):
@@ -14476,8 +14470,9 @@ class CompagnonMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelView
         canaux = CanalMeshCore.objects.filter(actif=True).filter(
             Q(equipe__isnull=False) | Q(nom__startswith='#')
         )
+        slots = dict(compagnon.provisions_canaux.values_list('canal_id', 'canal_idx'))
         return Response([
-            {"id": str(c.id), "nom": c.nom, "cle_partagee_hex": c.cle_partagee_hex, "canal_idx": c.canal_idx}
+            {"id": str(c.id), "nom": c.nom, "cle_partagee_hex": c.cle_partagee_hex, "canal_idx": slots.get(c.id)}
             for c in canaux
         ])
 
@@ -14495,9 +14490,12 @@ class CompagnonMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelView
             canal = CanalMeshCore.objects.get(id=canal_id)
         except (CanalMeshCore.DoesNotExist, ValueError, TypeError):
             return Response({"detail": "Canal introuvable."}, status=status.HTTP_404_NOT_FOUND)
-        canal.compagnon = compagnon
-        canal.canal_idx = canal_idx
-        canal.save(update_fields=['compagnon', 'canal_idx'])
+        with transaction.atomic():
+            # Le slot ne peut porter qu'un canal sur cette radio : un ancien occupant est écrasé.
+            ProvisionCanalMeshCore.objects.filter(compagnon=compagnon, canal_idx=canal_idx).exclude(canal=canal).delete()
+            ProvisionCanalMeshCore.objects.update_or_create(
+                canal=canal, compagnon=compagnon, defaults={"canal_idx": canal_idx},
+            )
         return Response({"ok": True})
 
     @action(detail=True, methods=['post'], url_path='signaler-canaux-detectes')
@@ -14523,12 +14521,15 @@ class CompagnonMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelView
             except (TypeError, ValueError):
                 continue
             if chan_hash == hash_public:
-                CanalMeshCore.objects.get_or_create(
-                    compagnon=compagnon,
-                    cle_partagee_hex=CanalMeshCore.SECRET_PUBLIC_PAR_DEFAUT,
-                    environment=get_active_environment(request),
-                    defaults={"nom": "Public", "canal_idx": 0, "actif": True},
-                )
+                # Un canal « Public » par radio (comme avant), installé d'usine au slot 0.
+                if not compagnon.provisions_canaux.filter(canal__cle_partagee_hex=CanalMeshCore.SECRET_PUBLIC_PAR_DEFAUT).exists():
+                    with transaction.atomic():
+                        public = CanalMeshCore.objects.create(
+                            nom="Public", cle_partagee_hex=CanalMeshCore.SECRET_PUBLIC_PAR_DEFAUT, actif=True,
+                            environment=get_active_environment(request),
+                        )
+                        ProvisionCanalMeshCore.objects.filter(compagnon=compagnon, canal_idx=0).delete()
+                        ProvisionCanalMeshCore.objects.create(canal=public, compagnon=compagnon, canal_idx=0)
                 CanalMeshCoreDetecte.objects.filter(compagnon=compagnon, chan_hash=chan_hash).delete()
                 continue
             detecte, _ = CanalMeshCoreDetecte.objects.get_or_create(
@@ -14791,6 +14792,33 @@ class NoeudMeshUtilisateurViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelV
 # la radio LoRa a un payload limité). Demande explicite du 14/09.
 DEMO_MESH_MESSAGE_PREFIX = "[démo] "
 DEMO_MESH_MESSAGE_MAX_LEN = 100
+
+
+def _canaux_meshcore_du_compagnon(compagnon):
+    """Canaux qu'un pont installe sur SA radio : canaux d'équipe et publics `#nom` -- limités,
+    pour une radio d'institution (satellite), à son institution et aux canaux sans institution :
+    les slots sont comptés, inutile d'y installer les équipes des autres départements."""
+    canaux = CanalMeshCore.objects.filter(actif=True).filter(Q(equipe__isnull=False) | Q(nom__startswith='#'))
+    if compagnon.institution_id:
+        canaux = canaux.filter(Q(institution_id=compagnon.institution_id) | Q(institution__isnull=True))
+    return canaux
+
+
+def _provision_designee(canal):
+    """La radio qui émettra un message de ce canal, parmi celles où il est installé : une
+    radio connectée d'abord, puis celle de l'institution du canal (l'équipe CAI de la Loire
+    passe par la radio du satellite de la Loire), puis la radio principale ; l'identifiant
+    départage, pour que tous les ponts fassent le même choix et qu'un seul émette."""
+    def rang(provision):
+        c = provision.compagnon
+        return (
+            c.dernier_etat != 'CONNECTE',
+            not (canal.institution_id and c.institution_id == canal.institution_id),
+            not c.principal,
+            str(c.id),
+        )
+    candidates = [p for p in canal.provisions.all() if p.compagnon.actif]
+    return min(candidates, key=rang) if candidates else None
 
 
 def _environnement_message_canal(request, direction, canal):
@@ -15157,22 +15185,31 @@ class MessageCanalMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelV
         # ignore silencieusement (`continue`) tout message sans canal_idx. Contrairement à
         # Meshtastic (filtré canal par canal côté pont via son registre), le pont MeshCore
         # récupère TOUS les messages en attente en un seul appel, tous canaux confondus.
+        #
+        # `?compagnon=<id>` obligatoire (22/10/2026) : le slot d'un canal dépend de la radio
+        # (ProvisionCanalMeshCore), et chaque message n'est servi qu'à UNE radio, celle désignée
+        # par _provision_designee -- sinon deux ponts l'envoyaient chacun de leur côté. Un pont
+        # d'avant ce changement (sans le paramètre) ne reçoit rien : avec l'ancien slot unique,
+        # il risquait d'émettre sur le mauvais canal.
+        compagnon_id = request.query_params.get('compagnon')
+        if not compagnon_id:
+            return Response([])
         canal_id = request.query_params.get('canal')
         qs = self.get_queryset().filter(
             direction=DirectionMessageMesh.SORTANT, statut=StatutMessageMesh.EN_ATTENTE,
-        ).select_related('canal__institution')
+            canal__provisions__compagnon_id=compagnon_id,
+        ).select_related('canal__institution').prefetch_related('canal__provisions__compagnon').distinct()
         if canal_id:
             qs = qs.filter(canal_id=canal_id)
 
         resultat = []
         for m in qs:
-            institution = m.canal.institution if m.canal_id else None
-            prefixe = _prefixe_expediteur_mesh_sortant(m.expediteur, institution)
+            provision = _provision_designee(m.canal)
+            if provision is None or str(provision.compagnon_id) != str(compagnon_id):
+                continue
+            prefixe = _prefixe_expediteur_mesh_sortant(m.expediteur, m.canal.institution)
             for morceau in _decouper_message_mesh(f"{prefixe} : {m.contenu}", MESHCORE_MAX_OCTETS):
-                resultat.append({
-                    "id": str(m.id), "contenu": morceau,
-                    "canal_idx": m.canal.canal_idx if m.canal_id else None,
-                })
+                resultat.append({"id": str(m.id), "contenu": morceau, "canal_idx": provision.canal_idx})
         return Response(resultat)
 
 

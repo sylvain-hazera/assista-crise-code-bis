@@ -1403,7 +1403,7 @@ class TeamSerializer(serializers.ModelSerializer):
 
     def get_canal_meshcore_provisionne(self, obj):
         canal = getattr(obj, 'canal_meshcore', None)
-        return canal is not None and canal.canal_idx is not None
+        return canal is not None and canal.provisions.exists()
 
     def get_commune_centre(self, obj):
         # Centre de la minimap : commune de l'institution.
@@ -3157,7 +3157,7 @@ class CanalMeshCoreSerializer(serializers.ModelSerializer):
         extra_kwargs = {'cle_partagee_hex': {'write_only': True, 'required': False}}
 
     def get_provisionne(self, obj):
-        return obj.canal_idx is not None
+        return obj.provisions.exists()
 
     def validate(self, attrs):
         # Canal public « #nom » : clé dérivée du nom, nécessaire au provisionnement par le pont.
@@ -3306,8 +3306,6 @@ class MessageCanalMeshtasticSerializer(serializers.ModelSerializer):
 
 class MessageCanalMeshCoreSerializer(serializers.ModelSerializer):
     canal_nom = serializers.CharField(source='canal.nom', read_only=True)
-    # Index local du canal, nécessaire à send_chan_msg côté pont.
-    canal_idx = serializers.IntegerField(source='canal.canal_idx', read_only=True)
     expediteur_nom = serializers.SerializerMethodField()
 
     class Meta:

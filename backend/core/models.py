@@ -4968,8 +4968,8 @@ class RelaisMeshCore(EnvironmentScopedModel):
 
 class CanalMeshCore(EnvironmentScopedModel):
     """Canal MeshCore (clé partagée), pour la coordination, jamais pour du contenu sensible.
-    equipe en fait le canal privé d'une équipe (clé distribuée par DM). compagnon/canal_idx :
-    slot configuré par le pont sur son companion ; chaque membre configure le sien."""
+    equipe en fait le canal privé d'une équipe (clé distribuée par DM). Le slot qu'il occupe sur
+    chaque companion du pont est dans ProvisionCanalMeshCore ; chaque membre configure le sien."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
@@ -4989,11 +4989,6 @@ class CanalMeshCore(EnvironmentScopedModel):
 
     # Clé de 16 octets, jamais renvoyée par l'API (write_only).
     cle_partagee_hex = models.CharField(max_length=64, null=True, blank=True)
-
-    compagnon = models.ForeignKey(
-        "CompagnonMeshCore", on_delete=models.SET_NULL, null=True, blank=True, related_name="canaux_provisionnes",
-    )
-    canal_idx = models.PositiveSmallIntegerField(null=True, blank=True)
 
     actif = models.BooleanField(default=True)
 
@@ -5015,6 +5010,34 @@ class CanalMeshCore(EnvironmentScopedModel):
 
     def __str__(self):
         return self.nom
+
+
+class ProvisionCanalMeshCore(models.Model):
+    """Slot occupé par un canal sur UN companion (set_channel fait par son pont). Une ligne par
+    (canal, companion) : le même canal a en général un slot différent sur chaque radio.
+
+    Remplace les champs uniques CanalMeshCore.compagnon/canal_idx (22/10/2026) : avec deux
+    companions (Bureau sur .114, satellite de la Loire), chaque pont voyait le canal noté sur
+    l'autre radio, le réinstallait sur la sienne et s'en déclarait propriétaire -- environ 200
+    réinstallations par heure et par radio depuis le 20/10, et des messages envoyés avec le slot
+    de l'autre radio, donc sur le mauvais canal."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    canal = models.ForeignKey("CanalMeshCore", on_delete=models.CASCADE, related_name="provisions")
+    compagnon = models.ForeignKey("CompagnonMeshCore", on_delete=models.CASCADE, related_name="provisions_canaux")
+    canal_idx = models.PositiveSmallIntegerField()
+
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['canal', 'compagnon'], name='provision_canal_compagnon_unique'),
+            models.UniqueConstraint(fields=['compagnon', 'canal_idx'], name='provision_slot_compagnon_unique'),
+        ]
+
+    def __str__(self):
+        return f"{self.canal_id} sur le slot {self.canal_idx} de {self.compagnon_id}"
 
 
 class CanalMeshCoreDetecte(EnvironmentScopedModel):

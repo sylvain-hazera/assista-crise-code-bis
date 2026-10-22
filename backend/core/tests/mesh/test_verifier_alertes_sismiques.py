@@ -27,7 +27,7 @@ class TestDiffusionEmcom:
         CompagnonMeshtastic.objects.create(nom='Compagnon test', node_num=12345)
         canal_mt = CanalMeshtastic.objects.create(nom='Fr_EMCOM', actif=True)
         canal_mc = CanalMeshCore.objects.create(
-            nom='Public', cle_partagee_hex=CanalMeshCore.SECRET_PUBLIC_PAR_DEFAUT, canal_idx=0, actif=True,
+            nom='Public', cle_partagee_hex=CanalMeshCore.SECRET_PUBLIC_PAR_DEFAUT, actif=True,
         )
 
         diffuse = Command()._diffuser_emcom(EVT)
@@ -43,7 +43,7 @@ class TestDiffusionEmcom:
         """Les deux diffusions sont indépendantes : l'absence de Fr_EMCOM ne doit jamais
         empêcher la diffusion MeshCore (ni l'inverse, voir le test symétrique ci-dessous)."""
         canal_mc = CanalMeshCore.objects.create(
-            nom='Public', cle_partagee_hex=CanalMeshCore.SECRET_PUBLIC_PAR_DEFAUT, canal_idx=0, actif=True,
+            nom='Public', cle_partagee_hex=CanalMeshCore.SECRET_PUBLIC_PAR_DEFAUT, actif=True,
         )
 
         diffuse = Command()._diffuser_emcom({**EVT, "event_id": "fr-test-2"})
@@ -75,7 +75,7 @@ class TestDiffusionEmcom:
         """Un canal MeshCore "Public" désactivé (actif=False) ne doit jamais recevoir de
         diffusion -- même garde que pour les canaux par institution."""
         CanalMeshCore.objects.create(
-            nom='Public', cle_partagee_hex=CanalMeshCore.SECRET_PUBLIC_PAR_DEFAUT, canal_idx=0, actif=False,
+            nom='Public', cle_partagee_hex=CanalMeshCore.SECRET_PUBLIC_PAR_DEFAUT, actif=False,
         )
 
         diffuse = Command()._diffuser_emcom({**EVT, "event_id": "fr-test-5"})
@@ -87,15 +87,15 @@ class TestDiffusionEmcom:
         """Plusieurs companions ayant chacun détecté le canal Public (voir
         signaler_canaux_detectes) reçoivent chacun leur propre message -- pas de risque de
         collision ici, contrairement à Meshtastic (MessageCanalMeshCore n'a pas de champ
-        `compagnon`, chaque CanalMeshCore "Public" est déjà lié à SON companion)."""
+        `compagnon`, chaque CanalMeshCore "Public" est déjà lié à SON companion, au slot 0)."""
+        from core.models import ProvisionCanalMeshCore
         c1 = CompagnonMeshCore.objects.create(nom='Companion 1', connexion_type='TCP', tcp_host='127.0.0.1', tcp_port=5000)
         c2 = CompagnonMeshCore.objects.create(nom='Companion 2', connexion_type='TCP', tcp_host='127.0.0.1', tcp_port=5001)
-        CanalMeshCore.objects.create(
-            nom='Public', cle_partagee_hex=CanalMeshCore.SECRET_PUBLIC_PAR_DEFAUT, canal_idx=0, actif=True, compagnon=c1,
-        )
-        CanalMeshCore.objects.create(
-            nom='Public', cle_partagee_hex=CanalMeshCore.SECRET_PUBLIC_PAR_DEFAUT, canal_idx=0, actif=True, compagnon=c2,
-        )
+        for c in (c1, c2):
+            public = CanalMeshCore.objects.create(
+                nom='Public', cle_partagee_hex=CanalMeshCore.SECRET_PUBLIC_PAR_DEFAUT, actif=True,
+            )
+            ProvisionCanalMeshCore.objects.create(canal=public, compagnon=c, canal_idx=0)
 
         diffuse = Command()._diffuser_emcom({**EVT, "event_id": "fr-test-6"})
 
