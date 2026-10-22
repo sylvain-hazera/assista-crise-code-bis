@@ -19,7 +19,10 @@ import httpx
 logger = logging.getLogger("etat-connectivite")
 
 CENTRAL_URL = os.environ.get("CENTRAL_URL", "https://assista-crise.fr").rstrip("/")
-CHEMIN_VERIFICATION = os.environ.get("CHEMIN_VERIFICATION", "/api/")
+# Point d'accès dédié (SondeView côté central) : la vérification y est tracée comme
+# « Vérification de fonctionnement » de CE satellite, pas comme une consultation anonyme en
+# échec de la racine /api/ (2 900 lignes par jour dans la main courante avant le 22/10/2026).
+CHEMIN_VERIFICATION = os.environ.get("CHEMIN_VERIFICATION", "/api/sonde/")
 INTERVALLE_VERIFICATION_SECONDES = int(os.environ.get("INTERVALLE_VERIFICATION_SECONDES", "30"))
 TIMEOUT_VERIFICATION_SECONDES = float(os.environ.get("TIMEOUT_VERIFICATION_SECONDES", "5"))
 FICHIER_ETAT = os.environ.get("FICHIER_ETAT_CONNECTIVITE", "/var/run/satellite/etat_connectivite.json")
@@ -65,7 +68,10 @@ async def verifier_une_fois(client: httpx.AsyncClient) -> bool:
     bloque spécifiquement assista-crise.fr doivent compter comme hors-ligne même si le reste
     d'internet fonctionne."""
     try:
-        await client.get(f"{CENTRAL_URL}{CHEMIN_VERIFICATION}", timeout=TIMEOUT_VERIFICATION_SECONDES)
+        await client.get(
+            f"{CENTRAL_URL}{CHEMIN_VERIFICATION}", timeout=TIMEOUT_VERIFICATION_SECONDES,
+            headers={"X-Sonde-Source": f"satellite:{SATELLITE_ID}"} if SATELLITE_ID else None,
+        )
         return True
     except httpx.HTTPError:
         return False

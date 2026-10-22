@@ -331,6 +331,13 @@ MATRIX_SERVER_NAME = os.environ.get("MATRIX_SERVER_NAME", "matrix.assista-crise.
 # jours de conservation de l'AuditLog (purge : manage.py purge_audit_logs)
 AUDIT_LOG_RETENTION_DAYS = int(os.environ.get('AUDIT_LOG_RETENTION_DAYS', 30))
 
+# Détection automatique de messages d'urgence (mots-clés, canal EMCOM) sur le réseau Meshtastic :
+# coupée le 22/10/2026 à la demande de l'exploitant -- trop de faux positifs sur les canaux
+# communautaires (télémétrie « !SOS » d'autres réseaux, tout le trafic de Fr_EMCOM, et nos
+# propres alertes séisme réentendues). True pour la réactiver ; MeshCore n'est pas concerné.
+DETECTION_SOS_MESHTASTIC = os.environ.get('DETECTION_SOS_MESHTASTIC', 'False') == 'True'
+
+
 # Satellites : DOCUMENTATION.md, § 7.3
 SATELLITE_SEUIL_INACTIF_MINUTES = int(os.environ.get('SATELLITE_SEUIL_INACTIF_MINUTES', 15))
 SATELLITE_SEUIL_PERDU_MINUTES = int(os.environ.get('SATELLITE_SEUIL_PERDU_MINUTES', 120))

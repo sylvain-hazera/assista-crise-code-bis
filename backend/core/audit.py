@@ -34,6 +34,7 @@ def audit_log(
     exposition=None,
     perimetre=None,
     recherche=None,
+    compte_systeme=None,
 ):
     """Écrit une ligne de main courante (AuditLog) et la renvoie (None en cas d'échec). Ne doit
     jamais faire échouer l'action métier appelante.
@@ -77,7 +78,10 @@ def audit_log(
             objets_ids=objets_ids or None,
             exposition=exposition,
             perimetre=perimetre,
-            compte_systeme=est_compte_systeme(request.user) if is_authenticated else False,
+            # Imposé par l'appelant pour un automate anonyme (sonde, voir SondeView) ; déduit du
+            # compte sinon.
+            compte_systeme=compte_systeme if compte_systeme is not None
+            else (est_compte_systeme(request.user) if is_authenticated else False),
             recherche=recherche,
         )
         # Marque la requête comme déjà journalisée : voir AuditTraceMiddleware, qui n'écrit sa

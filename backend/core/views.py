@@ -4527,6 +4527,22 @@ def _detecter_mot_cle_sos(contenu: str) -> str | None:
     return None
 
 
+def _echo_de_nos_messages(modele_message, contenu: str, minutes: int = 60) -> bool:
+    """True si `contenu` reprend un message que NOUS avons émis récemment sur ce protocole :
+    nos diffusions (alertes séisme sur le canal d'urgence, par exemple) sont entendues par nos
+    autres companions et reviennent en ENTRANT, préfixées du nom de l'émetteur par la radio
+    (« Assista-Crise : Seisme M3.0 ... »). Sans ce test, la détection se déclenchait sur nos
+    propres alertes -- quatre fois chacune, une par companion (constaté le 22/10/2026)."""
+    texte = (contenu or '').strip()
+    if not texte:
+        return False
+    depuis = timezone.now() - datetime.timedelta(minutes=minutes)
+    emis = modele_message.objects.filter(
+        direction=DirectionMessageMesh.SORTANT, date_creation__gte=depuis,
+    ).values_list('contenu', flat=True)
+    return any(e and texte.endswith(e.strip()) for e in emis)
+
+
 def _canal_est_dedie_urgence(canal_nom: str) -> bool:
     """Convention communautaire Meshtastic (et reprise par certains réseaux MeshCore) : un
     canal nommé "EMCOM" (ex: "Fr_EMCOM" chez Gaulix/mqtt.gaulix.fr, voir docstring de
@@ -9678,6 +9694,39 @@ class MyTokenRefreshView(TokenRefreshView):
     """Rafraîchir un token ne nécessite qu'un refresh token valide, pas une session déjà authentifiée."""
     permission_classes = [permissions.AllowAny]
     authentication_classes = []
+
+class SondeView(APIView):
+    """GET /api/sonde/ -- vérification de fonctionnement : un automate (sonde de connectivité
+    d'un satellite, supervision...) s'assure que le central répond. Public, ne renvoie rien
+    d'autre que « ok » ; tracé dans la main courante sous l'action VERIFICATION et comme compte
+    système (masqué par défaut), avec la source quand elle se présente par l'en-tête
+    X-Sonde-Source (« satellite:<id> »). Avant le 22/10/2026 les satellites sondaient la racine
+    /api/ sans s'identifier : 2 900 lignes par jour et par satellite, notées « Consultation
+    (api-root) » en échec -- voir aussi AuditTraceMiddleware pour ces anciens satellites."""
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def get(self, request):
+        source = request.META.get("HTTP_X_SONDE_SOURCE", "")
+        satellite = None
+        if source.startswith("satellite:"):
+            try:
+                satellite = Satellite.objects.select_related('institution').filter(
+                    pk=uuid.UUID(source.split(":", 1)[1])).first()
+            except ValueError:
+                satellite = None
+        audit_log(
+            request=request, action_code="VERIFICATION",
+            objet_type="Satellite" if satellite else "sonde",
+            objet_id=satellite.id if satellite else None,
+            commentaire=(
+                f"Vérification de fonctionnement — satellite « {satellite.nom} » ({satellite.institution.nom})"
+                if satellite else f"Vérification de fonctionnement — source {source or 'non identifiée'}"
+            ),
+            compte_systeme=True,
+        )
+        return Response({"ok": True})
+
 
 class BrandingView(APIView):
     """GET /api/branding/ -- résout le branding marque blanche depuis le Host de LA requête
@@ -15014,7 +15063,7 @@ class MessageCanalMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelV
             save_kwargs['contenu'] = _contenu_message_mesh_demo(serializer.validated_data.get('contenu'))
 
         message = serializer.save(**save_kwargs)
-        if message.direction == DirectionMessageMesh.ENTRANT:
+        if message.direction == DirectionMessageMesh.ENTRANT and not _echo_de_nos_messages(MessageCanalMeshCore, message.contenu):
             mot_cle = _detecter_mot_cle_sos(message.contenu)
             canal_urgence = canal is not None and _canal_est_dedie_urgence(canal.nom)
             if mot_cle or canal_urgence:
@@ -15531,7 +15580,8 @@ class MessageMeshtasticLogViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelV
         if message.direction == DirectionMessageMesh.ENTRANT and message.statut == StatutMessageMesh.EN_ATTENTE:
             message.statut = StatutMessageMesh.RECU
             message.save(update_fields=['statut'])
-        if message.direction == DirectionMessageMesh.ENTRANT:
+        # Détection SOS Meshtastic coupée par défaut (settings.DETECTION_SOS_MESHTASTIC).
+        if message.direction == DirectionMessageMesh.ENTRANT and settings.DETECTION_SOS_MESHTASTIC:
             mot_cle = _detecter_mot_cle_sos(message.contenu)
             if mot_cle:
                 try:
@@ -15660,7 +15710,11 @@ class MessageCanalMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.Mode
             _verifier_debit_mesh_sortant(MessageCanalMeshtastic, expediteur, environment, canal=canal)
 
         message = serializer.save(environment=environment, expediteur=expediteur)
-        if message.direction == DirectionMessageMesh.ENTRANT:
+        # Détection SOS Meshtastic coupée par défaut (settings.DETECTION_SOS_MESHTASTIC).
+        if (
+            message.direction == DirectionMessageMesh.ENTRANT and settings.DETECTION_SOS_MESHTASTIC
+            and not _echo_de_nos_messages(MessageCanalMeshtastic, message.contenu)
+        ):
             mot_cle = _detecter_mot_cle_sos(message.contenu)
             # Convention "Fr_EMCOM" (Meshtastic/Gaulix, signalée par l'utilisateur le 10/10) :
             # c'est précisément ICI qu'elle s'applique, un canal de ce type arrivant toujours

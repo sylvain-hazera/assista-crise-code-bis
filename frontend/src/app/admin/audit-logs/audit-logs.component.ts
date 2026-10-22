@@ -114,6 +114,9 @@ export class AuditLogsComponent implements OnInit, OnDestroy {
     { code: 'EXPORT', libelle: 'Export de données' },
     { code: 'JOURNAL_BORD', libelle: 'Écriture au journal de bord' },
     { code: 'IMPORT_LISTE', libelle: "Import d'une liste (CSV/XLS)" },
+    // Sonde de connectivité des satellites, supervision (voir SondeView) : comptée comme
+    // compte système, donc masquée par défaut.
+    { code: 'VERIFICATION', libelle: 'Vérification de fonctionnement' },
   ];
 
   constructor(

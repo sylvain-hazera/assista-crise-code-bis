@@ -303,3 +303,42 @@ class TestOutilsEnquete:
         assert connexion.perimetre == "GENERAL"
         assert liste.perimetre is None                     # liste sans fiche : non déterminable
         assert machine.compte_systeme is True and machine.perimetre == "GENERAL"
+
+
+@pytest.mark.django_db
+class TestVerificationDeFonctionnement:
+    """Sonde de connectivité des satellites (22/10/2026) : tracée comme « Vérification de
+    fonctionnement » d'une source identifiée, et masquée avec les comptes système -- plus comme
+    une consultation anonyme en échec de la racine /api/."""
+
+    @pytest.fixture(autouse=True)
+    def _action(self):
+        AuditAction.objects.get_or_create(code="VERIFICATION", defaults={"libelle": "Vérification de fonctionnement"})
+
+    def test_sonde_identifiee(self):
+        from core.models import Institution, InstitutionType, Satellite
+        itype, _ = InstitutionType.objects.get_or_create(code="MAIRIE", defaults={"libelle": "Mairie"})
+        institution = Institution.objects.create(nom="Mairie sonde", type=itype)
+        satellite = Satellite.objects.create(institution=institution, nom="gmc-poste-2", profil="FULL")
+
+        reponse = APIClient().get(reverse('sonde'), HTTP_X_SONDE_SOURCE=f"satellite:{satellite.id}")
+
+        assert reponse.status_code == 200
+        ligne = AuditLog.objects.filter(action__code="VERIFICATION").latest('date_action')
+        assert ligne.succes and ligne.compte_systeme and ligne.objet_id == satellite.id
+        assert "gmc-poste-2" in ligne.commentaire
+        assert not AuditLog.objects.filter(commentaire__icontains="api-root").exists()
+
+    def test_ancien_satellite_sur_la_racine(self):
+        APIClient().get("/api/")
+
+        ligne = AuditLog.objects.latest('date_action')
+        assert ligne.action.code == "VERIFICATION" and ligne.compte_systeme and ligne.succes
+
+    def test_masquee_avec_les_comptes_systeme(self, client_admin):
+        APIClient().get(reverse('sonde'))
+        sonde = AuditLog.objects.filter(action__code="VERIFICATION").latest('date_action')
+
+        reponse = client_admin.get(reverse('auditlog-list'), {"page": 1, "page_size": 100, "masquer_systeme": "1"})
+
+        assert str(sonde.id) not in {e["id"] for e in reponse.data["results"]}

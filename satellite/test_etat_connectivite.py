@@ -137,3 +137,27 @@ async def test_signal_de_vie_refuse_ne_casse_pas_la_boucle(tmp_path, monkeypatch
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         assert await ec.boucle(client=client, fichier_etat=str(tmp_path / "etat.json"), une_seule_iteration=True) is True
+
+
+@pytest.mark.asyncio
+async def test_sonde_identifiee_aupres_du_central(monkeypatch):
+    # Le central trace l'appel comme « Vérification de fonctionnement » de CE satellite
+    # (SondeView) au lieu d'une consultation anonyme en échec de /api/.
+    vus = []
+
+    def handler(request):
+        vus.append((request.url.path, request.headers.get("X-Sonde-Source")))
+        return httpx.Response(200, json={"ok": True})
+
+    monkeypatch.setattr(ec, "SATELLITE_ID", "5d45e235-574c-4e7f-8e2c-fd8a3a00be28")
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        assert await ec.verifier_une_fois(client) is True
+    assert vus == [("/api/sonde/", "satellite:5d45e235-574c-4e7f-8e2c-fd8a3a00be28")]
+
+
+@pytest.mark.asyncio
+async def test_ancien_central_sans_sonde_reste_en_ligne():
+    # Central pas encore à jour : /api/sonde/ répond 404, ce qui prouve quand même qu'il est
+    # joignable -- le satellite ne doit pas se croire hors ligne pour autant.
+    async with httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(404))) as client:
+        assert await ec.verifier_une_fois(client) is True

@@ -68,9 +68,33 @@ class AuditTraceMiddleware:
         ):
             if getattr(request, '_audit_log_written', False):
                 self._enrichir_ligne_explicite(request, response)
+            elif self._sonde_ancien_satellite(request):
+                self._log_sonde(request)
             elif not self._lecture_compte_service(request):
                 self._log(request, response)
         return response
+
+    def _sonde_ancien_satellite(self, request):
+        """Lecture anonyme de la racine /api/ : c'est ainsi que les satellites installés avant le
+        22/10/2026 vérifient que le central répond (toutes les 30 s). Désormais ils appellent
+        /api/sonde/ en s'identifiant (voir SondeView) ; en attendant leur mise à jour, même
+        traitement : une vérification de fonctionnement, pas une consultation en échec."""
+        user = getattr(request, 'user', None)
+        return (
+            request.path == '/api/' and request.method in ('GET', 'HEAD')
+            and not (user is not None and user.is_authenticated)
+        )
+
+    def _log_sonde(self, request):
+        try:
+            from .audit import audit_log
+            audit_log(
+                request=request, action_code="VERIFICATION", objet_type="sonde",
+                commentaire="Vérification de fonctionnement — source non identifiée (racine /api/, satellite pas encore à jour)",
+                compte_systeme=True,
+            )
+        except Exception:
+            logger.exception("Échec de la journalisation d'une sonde (%s %s)", request.method, request.path)
 
     def _lecture_compte_service(self, request):
         if self.ACTION_BY_METHOD[request.method] != "LECTURE":
