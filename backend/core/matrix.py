@@ -74,6 +74,39 @@ def _bot_headers() -> dict:
     return {"Authorization": f"Bearer {_bot_access_token()}"}
 
 
+def _fiche_compte_matrix(user):
+    """Fiche Synapse du compte (dict, displayname compris), ou None s'il n'existe pas encore --
+    voir _compte_matrix_existe pour la règle (ne jamais le créer ici)."""
+    reponse = requests.get(
+        f"{SYNAPSE_URL}/_synapse/admin/v2/users/{matrix_user_id(user)}",
+        headers=_bot_headers(), timeout=10,
+    )
+    return reponse.json() if reponse.status_code == 200 else None
+
+
+def _accorder_nom_affiche(user, fiche, displayname=None) -> None:
+    """Pose le nom affiché seulement s'il diffère de celui que Synapse connaît déjà. Le réécrire à
+    l'identique n'est pas anodin : Synapse republie alors la fiche de membre de la personne dans
+    TOUS ses salons (tâche de fond « update_join_states ») -- appelé à chaque rafraîchissement
+    du panneau de messagerie (toutes les 8 s), ces tâches s'empilaient jusqu'à ce que Synapse
+    limite le débit (429, erreur 500 sur la messagerie unifiée, constaté le 22/10/2026 avec une
+    tâche en cours depuis 41 h)."""
+    voulu = displayname or str(user)
+    if (fiche or {}).get("displayname") == voulu:
+        return
+    requests.put(
+        f"{SYNAPSE_URL}/_synapse/admin/v2/users/{matrix_user_id(user)}",
+        headers=_bot_headers(), json={"displayname": voulu},
+        timeout=10,
+    ).raise_for_status()
+
+
+# Une adhésion déjà assurée n'est pas revérifiée avant ce délai (voir assurer_membre_salon) ; une
+# personne sans compte Matrix l'est un peu plus souvent, pour voir arriver sa première connexion.
+DUREE_MEMOIRE_ADHESION_S = 6 * 3600
+DUREE_MEMOIRE_SANS_COMPTE_S = 5 * 60
+
+
 def _compte_matrix_existe(user) -> bool:
     """True si ce compte a déjà été provisionné côté Synapse, peu importe par qui -- NE JAMAIS
     créer un compte via PUT /_synapse/admin/v2/users/ pour quelqu'un qui n'existe pas encore :
@@ -106,23 +139,29 @@ def assurer_membre_salon(user, room_id, displayname=None) -> None:
     déclenchait cet appel à CHAQUE accès, bloquant durablement la page pour quiconque avait déjà
     rejoint une fois). Ne fait rien (silencieusement, retenté au prochain appel) si le compte
     n'existe pas encore."""
-    if not _compte_matrix_existe(user):
+    from django.core.cache import cache
+
+    # Appelé à chaque rafraîchissement du panneau de messagerie (toutes les 8 s) : une adhésion
+    # déjà faite est mémorisée, sans quoi chaque rafraîchissement refaisait trois appels
+    # d'administration à Synapse (voir _accorder_nom_affiche pour la conséquence).
+    cle = f"matrix-adhesion:{user.pk}:{room_id}"
+    cle_sans_compte = f"matrix-sans-compte:{user.pk}"
+    if cache.get(cle) or cache.get(cle_sans_compte):
         return
+    fiche = _fiche_compte_matrix(user)
+    if fiche is None:
+        cache.set(cle_sans_compte, True, DUREE_MEMOIRE_SANS_COMPTE_S)
+        return
+    _accorder_nom_affiche(user, fiche, displayname)
     mid = matrix_user_id(user)
-    headers = _bot_headers()
-    requests.put(
-        f"{SYNAPSE_URL}/_synapse/admin/v2/users/{mid}",
-        headers=headers, json={"displayname": displayname or str(user)},
-        timeout=10,
-    ).raise_for_status()
     reponse = requests.post(
         f"{SYNAPSE_URL}/_synapse/admin/v1/join/{room_id}",
-        headers=headers, json={"user_id": mid},
+        headers=_bot_headers(), json={"user_id": mid},
         timeout=10,
     )
-    if reponse.status_code == 403 and "already in the room" in reponse.text:
-        return
-    reponse.raise_for_status()
+    if not (reponse.status_code == 403 and "already in the room" in reponse.text):
+        reponse.raise_for_status()
+    cache.set(cle, True, DUREE_MEMOIRE_ADHESION_S)
 
 
 def lister_messages_salon(room_id, limite=30) -> list:
@@ -198,13 +237,10 @@ def _assurer_compte_matrix(user, displayname=None) -> bool:
     précis. Renvoie False si le compte n'existe pas encore (personne jamais connectée via MAS)
     -- aux appelants (voir envoyer_dm) de renoncer proprement pour cette fois plutôt que de
     planter ou de précréer un compte orphelin."""
-    if not _compte_matrix_existe(user):
+    fiche = _fiche_compte_matrix(user)
+    if fiche is None:
         return False
-    requests.put(
-        f"{SYNAPSE_URL}/_synapse/admin/v2/users/{matrix_user_id(user)}",
-        headers=_bot_headers(), json={"displayname": displayname or str(user)},
-        timeout=10,
-    ).raise_for_status()
+    _accorder_nom_affiche(user, fiche, displayname)
     return True
 
 

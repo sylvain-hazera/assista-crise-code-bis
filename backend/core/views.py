@@ -39,6 +39,7 @@ from .auth_validation import InstitutionEmailValidator
 import csv
 import io
 import json
+import requests
 from decimal import Decimal, InvalidOperation
 import datetime
 import os
@@ -6671,6 +6672,18 @@ class PlanMissionModeleViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelView
         )
 
 
+def _assurer_membre_salon_sans_bloquer(user, room_id, nom):
+    """Fait rejoindre le salon Matrix de l'équipe à un cadre qui la consulte sans en être membre
+    (voir matrix.assurer_membre_salon). Un confort, pas une condition : si Synapse refuse
+    (débit limité, indisponible), les messages s'affichent quand même -- c'était une erreur 500
+    sur tout le panneau jusqu'au 22/10/2026. Retenté au rafraîchissement suivant."""
+    from .matrix import assurer_membre_salon
+    try:
+        assurer_membre_salon(user, room_id, displayname=nom)
+    except requests.RequestException as exc:
+        logger.warning("Adhésion au salon Matrix %s reportée pour %s : %s", room_id, user.pk, exc)
+
+
 class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     # TeamSerializer déréférence aussi institution/institution_delegataire/regulateur (FK) et
     # themes/competences/assigned_informations (M2M) en plus de ce qui était déjà prefetch —
@@ -7902,7 +7915,7 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         jamais un jeton exposé au navigateur. Accessible à un membre de l'équipe OU à un acteur
         institutionnel qui la gère (régulateur), même s'il n'est pas lui-même membre : dans ce
         second cas on le fait rejoindre le salon à la volée pour qu'il y ait un compte visible."""
-        from .matrix import assurer_membre_salon, envoyer_message_salon, lister_messages_salon, matrix_user_id, CLE_REACTION_VU
+        from .matrix import envoyer_message_salon, lister_messages_salon, matrix_user_id, CLE_REACTION_VU
 
         team = self.get_object()
         est_membre = team.members.filter(id=request.user.id).exists()
@@ -7921,7 +7934,7 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
 
         nom = f"{request.user.first_name} {request.user.last_name}".strip() or request.user.email
         if not est_membre:
-            assurer_membre_salon(request.user, salon.room_id, displayname=nom)
+            _assurer_membre_salon_sans_bloquer(request.user, salon.room_id, nom)
 
         if request.method == 'POST':
             texte = (request.data.get('texte') or '').strip()
@@ -7993,7 +8006,7 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         bilatéraux hors équipe) ne sont PAS mélangés ici -- seuls les messages du canal de
         DIFFUSION de l'équipe le sont (mélanger du 1-à-1 privé dans une vue d'équipe partagée
         serait un problème de confidentialité distinct, pas demandé)."""
-        from .matrix import assurer_membre_salon, envoyer_message_salon, lister_messages_salon
+        from .matrix import envoyer_message_salon, lister_messages_salon
 
         team = self.get_object()
         est_membre = team.members.filter(id=request.user.id).exists()
@@ -8014,7 +8027,7 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             equipe=team, defaults={"environment": environment},
         )
         if salon.room_id and not est_membre:
-            assurer_membre_salon(request.user, salon.room_id, displayname=nom)
+            _assurer_membre_salon_sans_bloquer(request.user, salon.room_id, nom)
 
         # Résolus via une requête fraîche (pas `getattr(team, 'canal_meshtastic'/'canal_meshcore')`,
         # qui mettrait en cache "aucun canal" sur CET objet `team` dès le premier accès -- si ce
