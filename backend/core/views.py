@@ -633,11 +633,28 @@ class EnvironmentScopedViewSetMixin:
     explicite sur quels modèles sont isolés (voir la répartition contenu/vocabulaire du plan) —
     même choix de conception que TagLikeViewSetMixin ci-dessus."""
 
+    # Actions servies sans filtre d'environnement : celles des ponts radio, qui relaient les
+    # deux zones sur les mêmes radios physiques (voir ACTIONS_PONTS_RADIO).
+    actions_tous_environnements = ()
+
     def get_queryset(self):
-        return super().get_queryset().filter(environment=get_active_environment(self.request))
+        qs = super().get_queryset()
+        if self.action in self.actions_tous_environnements:
+            return qs
+        return qs.filter(environment=get_active_environment(self.request))
 
     def perform_create(self, serializer):
         serializer.save(environment=get_active_environment(self.request))
+
+
+# Files d'envoi et accusés des ponts radio (meshcore-bridge, meshtastic-bridge). Une seule
+# radio physique sert PROD et DEMO -- companions et nœuds sont déjà lus sans filtre de zone, les
+# canaux de démo déjà installés sur les vraies radios (CompagnonMeshCoreViewSet) et les messages
+# de démo déjà préfixés « [Démo] » (_contenu_message_mesh_demo). Mais les ponts n'envoient pas
+# d'en-tête X-Environment : filtrées sur PROD, ces files laissaient les messages de démo en
+# attente pour toujours (constaté le 22/10/2026, équipe CAI). Le frontend n'appelle ni
+# a_envoyer ni la mise à jour (PATCH du statut) : seuls les ponts sont concernés.
+ACTIONS_PONTS_RADIO = ('a_envoyer', 'update', 'partial_update')
 
 
 class CompetenceViewSet(TagLikeViewSetMixin, viewsets.ModelViewSet):
@@ -14751,6 +14768,16 @@ DEMO_MESH_MESSAGE_PREFIX = "[démo] "
 DEMO_MESH_MESSAGE_MAX_LEN = 100
 
 
+def _environnement_message_canal(request, direction, canal):
+    """Zone d'un message de canal radio : celle du canal pour un message REÇU (le pont qui le
+    dépose ne précise pas de zone, voir ACTIONS_PONTS_RADIO -- sans ça, une réponse radio sur le
+    canal d'une équipe de démo atterrissait en PROD, invisible de la démo) ; celle de la requête
+    pour un message composé dans l'interface."""
+    if direction == DirectionMessageMesh.ENTRANT and canal is not None:
+        return canal.environment
+    return get_active_environment(request)
+
+
 def _contenu_message_mesh_demo(contenu: str) -> str:
     contenu = (contenu or "").strip()
     prefix = "" if contenu.lower().startswith("[démo]") else DEMO_MESH_MESSAGE_PREFIX
@@ -14768,6 +14795,7 @@ class MessageMeshLogViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet
 
     queryset = MessageMeshLog.objects.select_related('compagnon', 'expediteur', 'equipe').all()
     serializer_class = MessageMeshLogSerializer
+    actions_tous_environnements = ACTIONS_PONTS_RADIO
 
     def get_permissions(self):
         if self.action in ('list', 'retrieve'):
@@ -15048,6 +15076,7 @@ class MessageCanalMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelV
 
     queryset = MessageCanalMeshCore.objects.select_related('canal', 'expediteur').all()
     serializer_class = MessageCanalMeshCoreSerializer
+    actions_tous_environnements = ACTIONS_PONTS_RADIO
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -15066,8 +15095,8 @@ class MessageCanalMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelV
     def perform_create(self, serializer):
         direction = serializer.validated_data.get('direction')
         expediteur = self.request.user if direction == DirectionMessageMesh.SORTANT and self.request.user.is_authenticated else None
-        environment = get_active_environment(self.request)
         canal = serializer.validated_data.get('canal')
+        environment = _environnement_message_canal(self.request, direction, canal)
         if direction == DirectionMessageMesh.SORTANT:
             _verifier_debit_mesh_sortant(MessageCanalMeshCore, expediteur, environment, canal=canal)
 
@@ -15551,6 +15580,7 @@ class MessageMeshtasticLogViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelV
 
     queryset = MessageMeshtasticLog.objects.select_related('compagnon', 'expediteur', 'equipe', 'canal').all()
     serializer_class = MessageMeshtasticLogSerializer
+    actions_tous_environnements = ACTIONS_PONTS_RADIO
 
     def get_permissions(self):
         if self.action in ('list', 'retrieve'):
@@ -15635,6 +15665,8 @@ class CanalMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSe
 
     queryset = CanalMeshtastic.objects.select_related('institution', 'crise').all()
     serializer_class = CanalMeshtasticSerializer
+    # Clés des canaux des deux zones pour le pont (voir ACTIONS_PONTS_RADIO).
+    actions_tous_environnements = ('avec_cle',)
 
     def get_permissions(self):
         if self.action in ('create', 'update', 'partial_update', 'destroy'):
@@ -15689,6 +15721,7 @@ class MessageCanalMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.Mode
 
     queryset = MessageCanalMeshtastic.objects.select_related('canal', 'expediteur').all()
     serializer_class = MessageCanalMeshtasticSerializer
+    actions_tous_environnements = ACTIONS_PONTS_RADIO
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -15717,8 +15750,8 @@ class MessageCanalMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.Mode
             expediteur = noeud.utilisateur if noeud else None
         elif direction == DirectionMessageMesh.SORTANT:
             expediteur = self.request.user if self.request.user.is_authenticated else None
-        environment = get_active_environment(self.request)
         canal = serializer.validated_data.get('canal')
+        environment = _environnement_message_canal(self.request, direction, canal)
         if direction == DirectionMessageMesh.SORTANT:
             _verifier_debit_mesh_sortant(MessageCanalMeshtastic, expediteur, environment, canal=canal)
 
