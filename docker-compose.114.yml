@@ -64,6 +64,10 @@ services:
     container_name: ac_proxy
     volumes:
       - proxy_nginx_logs:/var/log/nginx-real
+      # Fichiers publics servis en direct par nginx (voir location = /prefecture dans
+      # proxy/nginx.conf) : montés, pas copiés dans l'image, pour pouvoir remplacer un document
+      # sans reconstruire ni redéployer le proxy.
+      - ./proxy/public:/var/www/public:ro
     networks: [front, back, grafana-proxy]
     depends_on: [backend, frontend]
 
