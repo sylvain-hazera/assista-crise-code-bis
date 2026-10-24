@@ -1,55 +1,13 @@
 <div class="legal-page">
   <div class="legal-wrapper">
     <h1>Politique de confidentialité</h1>
-    <p class="legal-updated">Dernière mise à jour : 18/09/2026 (revue initiale : 28/08/2026)</p>
+    <p class="legal-updated">Dernière mise à jour : 24/10/2026</p>
 
-    <div class="legal-notice legal-notice-warning">
-      <span class="material-icons">warning</span>
-      <p>
-        <strong>[Corrections du 2026-09-18]</strong> Ce texte décrit fidèlement les traitements
-        techniquement réalisés par l'application. Les points ci-dessous, signalés lors d'une revue
-        du 28/08/2026, ont été traités depuis — le détail de chaque correction reste noté pour
-        traçabilité. Le texte n'a cependant toujours pas été validé par un délégué à la protection
-        des données (DPO) ni un juriste indépendant, et le point le plus important reste ouvert :
-        <strong>aucune convention de sous-traitance n'est encore signée avec les collectivités
-        utilisatrices</strong> (voir section 1).
-      </p>
-    </div>
-    <ul class="legal-doubts">
-      <li>
-        <strong>Recueil d'information au moment de la collecte — corrigé.</strong> Les 4 formulaires
-        publics (demande d'aide, offre d'aide, signalement, "je suis en sécurité") affichent
-        désormais une mention d'information avec un lien vers cette page, juste avant l'envoi (voir
-        <code>app-rgpd-notice</code>) — obligation de l'article 13 du RGPD.
-      </li>
-      <li>
-        <strong>Champs pouvant révéler des données de santé — nuancé.</strong> Le "régime
-        alimentaire spécifique" (déclaration de sécurité) est un simple indicateur binaire
-        (oui/non), pas un champ décrivant une pathologie — risque plus faible qu'un champ libre.
-        Les commentaires libres (déclaration de sécurité, recherche de personne), eux, peuvent
-        toujours involontairement contenir des informations de santé, de handicap ou de conviction
-        religieuse — catégories dites "sensibles" au sens de l'article 9 du RGPD. Un texte
-        d'avertissement invite désormais la personne qui saisit ces champs à ne pas y indiquer ce
-        type d'information ; le risque résiduel n'est pas éliminé pour autant (voir section 2).
-      </li>
-      <li>
-        <strong>Recherche de personnes disparues — accès restreint pour correspondre au texte.</strong>
-        Il ne s'agit pas d'un avis de recherche public : la fonctionnalité sert à demander aux
-        équipes municipales, par délégation du maire, si elles ont des nouvelles d'une personne
-        évacuée. Une vérification technique a montré que l'accès n'était en réalité restreint
-        qu'aux comptes authentifiés, pas spécifiquement institutionnels comme le texte le
-        prétendait — corrigé pour que seuls les comptes institutionnels y accèdent réellement. Le
-        cadre légal exact (mission d'intérêt public déléguée, urgence vitale) mérite toujours
-        d'être formellement confirmé avec un juriste, de même que l'articulation avec le rôle de
-        sous-traitant précisé en section 1.
-      </li>
-      <li>
-        <strong>Polices Google Fonts — corrigé.</strong> Les polices (Roboto, Material Icons,
-        Material Symbols Outlined) sont désormais auto-hébergées depuis nos propres serveurs —
-        plus aucun chargement depuis fonts.googleapis.com/fonts.gstatic.com, donc plus de
-        transmission de l'adresse IP du visiteur à Google (voir section 7).
-      </li>
-    </ul>
+    <p>
+      Cette politique décrit les données personnelles traitées par Assista Crise, pourquoi elles le
+      sont, qui y accède, combien de temps elles sont conservées et comment exercer vos droits. Elle
+      s'applique à l'ensemble du service, que vous l'utilisiez avec ou sans compte.
+    </p>
 
     <section>
       <h2>1. Responsable du traitement</h2>
@@ -67,10 +25,9 @@
           <strong>{{ contactNom }}</strong>, qui développe et héberge la plateforme, agit comme
           <strong>sous-traitant</strong> au sens de l'article 28 du RGPD pour ces mêmes données —
           il les traite sur instruction de chaque collectivité, pour son compte, sans en
-          déterminer lui-même les finalités. <strong>Un contrat de sous-traitance (convention)
-          doit être formalisé avec chaque collectivité utilisatrice</strong> ; à ce stade, aucune
-          convention de ce type n'est encore signée — point à traiter avant tout déploiement
-          au-delà d'un usage expérimental/interne ;
+          déterminer lui-même les finalités. Les conditions de ce traitement sont fixées par une
+          <a routerLink="/convention-sous-traitance">convention de sous-traitance</a>, conclue avec
+          chaque collectivité utilisatrice et dont le texte est publié sur ce site ;
         </li>
         <li>
           pour les traitements propres au fonctionnement de la plateforme elle-même (création de
@@ -84,14 +41,12 @@
         <a [href]="'mailto:' + contactEmail">{{ contactEmail }}</a>
       </address>
       <p>
-        <strong>Délégué à la protection des données (DPO)</strong> : {{ contactNom }}, aux
-        coordonnées ci-dessus, pour ses propres obligations de sous-traitant et pour les
-        traitements dont il est responsable (fonctionnement de la plateforme elle-même). <em>Cela
-        ne dispense pas chaque collectivité responsable de traitement de désigner ou de confirmer
-        son propre DPO (souvent mutualisé via un centre de gestion ou une intercommunalité) pour
-        ses propres obligations — cette articulation, comme la qualification retenue ci-dessus,
-        mérite d'être formellement confirmée avec un juriste avant toute mise en production
-        réelle.</em>
+        <strong>Contact pour la protection des données</strong> : {{ contactNom }}, aux
+        coordonnées ci-dessus, pour ses obligations de sous-traitant et pour les traitements dont
+        il est responsable (fonctionnement de la plateforme elle-même). Chaque collectivité
+        responsable de traitement conserve de son côté son propre délégué à la protection des
+        données, souvent mutualisé via un centre de gestion ou une intercommunalité, pour les
+        traitements qui relèvent d'elle.
       </p>
     </section>
 
@@ -143,11 +98,10 @@
       <p class="legal-note">
         Le "régime alimentaire spécifique" est un simple indicateur oui/non, jamais un champ
         décrivant une pathologie. Les champs de commentaire libre ("je suis en sécurité",
-        recherche de personnes), en revanche, peuvent toujours involontairement contenir des
-        informations de santé, de handicap ou de conviction religieuse — catégories dites
-        "sensibles" au sens de l'article 9 du RGPD. Un texte d'avertissement invite désormais à
-        ne pas y indiquer ce type d'information, mais le risque résiduel n'est pas éliminé pour
-        autant : n'y indiquez que ce qui est strictement nécessaire à la prise en charge.
+        recherche de personnes) pourraient en revanche contenir involontairement des informations
+        de santé, de handicap ou de conviction religieuse — catégories dites "sensibles" au sens
+        de l'article 9 du RGPD. Un avertissement y rappelle de ne pas en indiquer :
+        n'y renseignez que ce qui est strictement nécessaire à la prise en charge.
       </p>
     </section>
 
@@ -160,11 +114,10 @@
         intérêts vitaux</strong> des personnes concernées et sur <strong>l'exécution d'une mission
         d'intérêt public</strong> de sécurité civile. {{ contactNom }}, en tant que sous-traitant
         pour ces traitements, n'a pas à définir lui-même cette base mais doit la respecter
-        et la documenter avec chaque autorité concernée (voir la convention à formaliser,
-        section 1). La création d'un compte et son fonctionnement courant, propres à la
-        plateforme, relèvent quant à eux de <strong>l'exécution du contrat</strong> d'utilisation
-        du service (voir nos <a routerLink="/cgu">CGU</a>). <em>[À confirmer/affiner avec un
-        juriste avant toute mise en production réelle.]</em>
+        et la documenter avec chaque autorité concernée (voir la convention, section 1). La
+        création d'un compte et son fonctionnement courant, propres à la plateforme, relèvent quant
+        à eux de <strong>l'exécution du contrat</strong> d'utilisation du service (voir nos
+        <a routerLink="/cgu">CGU</a>).
       </p>
     </section>
 
@@ -253,10 +206,9 @@
       </p>
       <p>
         Les polices d'écriture et icônes (Roboto, Material Icons, Material Symbols Outlined) sont
-        <strong>auto-hébergées</strong> depuis nos propres serveurs — plus aucun chargement depuis
-        les serveurs de Google (fonts.googleapis.com, fonts.gstatic.com), donc plus de
-        transmission de votre adresse IP à un tiers au chargement de la page. C'était le cas avant
-        le 2026-09-18 ; corrigé depuis, conformément à la recommandation de la CNIL.
+        <strong>auto-hébergées</strong> depuis nos propres serveurs. Aucun chargement n'est
+        effectué depuis les serveurs de Google, et votre adresse IP n'est donc transmise à aucun
+        tiers au chargement de la page, conformément à la recommandation de la CNIL.
       </p>
     </section>
 
