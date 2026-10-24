@@ -3309,6 +3309,52 @@ def apprendre_affectation(dossier, equipe, request):
     }
 
 
+def affecter_competences_aux_crises(team, request=None):
+    """Tient l'invariant « une équipe a ses spécialités sur les crises où elle intervient » :
+    pour chaque compétence de la fiche équipe et chaque crise à laquelle elle est affectée, crée
+    l'AffectationCompetence correspondante si elle manque (24/10/2026).
+
+    Pourquoi : `Team.competences` ne sert QU'À l'affichage de la fiche ; seule une
+    AffectationCompetence est lue par meilleure_equipe_pour_competence. Cocher une spécialité sur
+    la page Équipes ne produisait donc aucune suggestion, exactement comme dans le wizard avant
+    correction. Centralisé ici pour couvrir d'un coup la page Équipes, le wizard et tout autre
+    appelant de l'API.
+
+    **Strictement additif.** Retirer une compétence de la fiche ne supprime JAMAIS l'affectation :
+    elle a pu être posée à la main depuis la page Affectations, ou apprise d'une affectation faite
+    en cellule de crise (voir apprendre_affectation) — ces deux-là ne se reflètent pas dans
+    `Team.competences` et seraient perdues. La suppression reste le geste explicite de la page
+    Affectations.
+
+    Renvoie le nombre d'affectations créées."""
+    crises = list(team.assigned_crises.all())
+    competences = list(team.competences.all())
+    if not crises or not competences:
+        return 0
+
+    creees = 0
+    for crise in crises:
+        for competence in competences:
+            affectation, cree = AffectationCompetence.objects.get_or_create(
+                crise=crise, competence=competence, equipe=team,
+                defaults={"active": True, "environment": team.environment,
+                          "commentaire": "Créée depuis les spécialités de la fiche équipe."},
+            )
+            if cree:
+                creees += 1
+                if request is not None:
+                    audit_log(
+                        request=request, action_code="AFFECTATION", objet_type="AffectationCompetence",
+                        objet_id=affectation.id, crise=crise,
+                        commentaire=(
+                            f"Équipe {team.name} affectée à la compétence {competence.nom} sur la "
+                            f"crise {crise.name} (spécialité de la fiche équipe)"
+                        ),
+                    )
+            resuggerer_dossiers(crise.id, competence.id)
+    return creees
+
+
 def resolve_competence_for_request(demande):
     """Compétence déduite du type de demande (RequestType -> Besoin -> Competence),
     utilisée aussi bien pour le matching automatique (perform_create) que pour fiabiliser
@@ -7098,6 +7144,9 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         if 'themes' in serializer.validated_data and 'competences' not in serializer.validated_data:
             _synchroniser_competences_des_domaines(team, [])
 
+        # Spécialités de la fiche -> affectations sur les crises de l'équipe (voir la docstring).
+        affecter_competences_aux_crises(team, self.request)
+
         if institution is not None:
             _notify_institution_referent_of_team(team, institution, self.request)
 
@@ -7207,6 +7256,10 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         # envoie aussi competence_ids, c'est un choix explicite, laissé tel quel.
         if 'themes' in serializer.validated_data and 'competences' not in serializer.validated_data:
             _synchroniser_competences_des_domaines(team, anciens_domaine_ids)
+
+        # Spécialités de la fiche -> affectations sur les crises de l'équipe (voir la docstring).
+        # Couvre aussi bien une compétence ajoutée qu'une crise nouvellement affectée à l'équipe.
+        affecter_competences_aux_crises(team, self.request)
 
         if institution_changed:
             audit_log(

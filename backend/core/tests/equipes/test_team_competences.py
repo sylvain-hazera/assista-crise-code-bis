@@ -87,3 +87,52 @@ class TestAffectationCompetencePermissions:
 
         assert response.status_code == status.HTTP_200_OK
         assert AuditLog.objects.filter(objet_type="AffectationCompetence", action__code="MODIFICATION").exists()
+
+
+@pytest.mark.django_db
+class TestSpecialitesVersAffectations:
+    """Cocher une spécialité sur la fiche équipe ne produisait aucune suggestion : seule une
+    AffectationCompetence est lue par le moteur. La fiche la crée désormais pour chaque crise de
+    l'équipe (24/10/2026) -- même correctif que dans le wizard de démarrage de crise."""
+
+    def test_competence_et_crise_creent_l_affectation(self, institutional_client, team, competence, crisis):
+        client, _ = institutional_client
+
+        reponse = client.patch(
+            reverse('team-detail', args=[team.id]),
+            {"competence_ids": [str(competence.id)], "assigned_crisis_ids": [str(crisis.id)]},
+            format='json',
+        )
+
+        assert reponse.status_code == status.HTTP_200_OK
+        assert AffectationCompetence.objects.filter(
+            crise=crisis, competence=competence, equipe=team, active=True,
+        ).count() == 1
+
+    def test_sans_crise_aucune_affectation(self, institutional_client, team, competence):
+        client, _ = institutional_client
+
+        client.patch(reverse('team-detail', args=[team.id]),
+                     {"competence_ids": [str(competence.id)]}, format='json')
+
+        assert not AffectationCompetence.objects.exists()
+
+    def test_rejouer_la_meme_modification_ne_duplique_pas(self, institutional_client, team, competence, crisis):
+        client, _ = institutional_client
+        corps = {"competence_ids": [str(competence.id)], "assigned_crisis_ids": [str(crisis.id)]}
+
+        client.patch(reverse('team-detail', args=[team.id]), corps, format='json')
+        client.patch(reverse('team-detail', args=[team.id]), corps, format='json')
+
+        assert AffectationCompetence.objects.filter(crise=crisis, competence=competence, equipe=team).count() == 1
+
+    def test_retirer_la_competence_ne_supprime_pas_l_affectation(self, institutional_client, team, competence, crisis):
+        # Une affectation a pu être posée à la main, ou apprise depuis la cellule de crise : elle
+        # ne se reflète pas dans Team.competences et ne doit jamais être perdue par une édition.
+        client, _ = institutional_client
+        client.patch(reverse('team-detail', args=[team.id]),
+                     {"competence_ids": [str(competence.id)], "assigned_crisis_ids": [str(crisis.id)]}, format='json')
+
+        client.patch(reverse('team-detail', args=[team.id]), {"competence_ids": []}, format='json')
+
+        assert AffectationCompetence.objects.filter(crise=crisis, competence=competence, equipe=team).exists()
