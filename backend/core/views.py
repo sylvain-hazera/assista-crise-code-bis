@@ -746,6 +746,23 @@ class AffectationCompetenceViewSet(EnvironmentScopedViewSetMixin, viewsets.Model
         return [permissions.IsAuthenticated()]
 
     def perform_create(self, serializer):
+        # Idempotent (24/10/2026) : le wizard de démarrage de crise crée une affectation par
+        # compétence cochée, et peut être rejoué (retour en arrière, double clic, reprise d'une
+        # crise déjà démarrée). Sans ce get_or_create, chaque passage empilait des doublons —
+        # rien ne l'interdit en base, et la page Affectations devenait illisible. Une affectation
+        # existante mais désactivée est réactivée : c'est l'intention de l'appelant.
+        donnees = serializer.validated_data
+        existante = AffectationCompetence.objects.filter(
+            crise=donnees.get('crise'), competence=donnees.get('competence'), equipe=donnees.get('equipe'),
+        ).first()
+        if existante is not None:
+            if not existante.active:
+                existante.active = True
+                existante.save(update_fields=['active'])
+            serializer.instance = existante
+            resuggerer_dossiers(existante.crise_id, existante.competence_id)
+            return
+
         affectation = serializer.save(environment=get_active_environment(self.request))
         audit_log(
             request=self.request,

@@ -9,6 +9,7 @@ import { PlanService } from '../../services/plan.service';
 import { PointOperationnelService } from '../../services/point-operationnel.service';
 import { PointTypeService } from '../../services/point-type.service';
 import { TeamService } from '../../services/team.service';
+import { AffectationCompetenceService } from '../../services/affectation-competence.service';
 import { RoleOperationnelService } from '../../services/role-operationnel.service';
 import { BesoinService } from '../../services/besoin.service';
 import { CompetenceService } from '../../services/competence.service';
@@ -123,6 +124,7 @@ export class CriseDemarrageComponent implements OnInit {
     private pointService: PointOperationnelService,
     private pointTypeService: PointTypeService,
     private teamService: TeamService,
+    private affectationCompetenceService: AffectationCompetenceService,
     private planService: PlanService,
     private roleOperationnelService: RoleOperationnelService,
     private besoinService: BesoinService,
@@ -361,10 +363,24 @@ export class CriseDemarrageComponent implements OnInit {
     etape.competenceIds = checked ? [...etape.competenceIds, id] : etape.competenceIds.filter(x => x !== id);
   }
 
+  /** Spécialité et mission sont EXIGÉES ici (décision du 24/10/2026) : sans au moins une
+   * compétence, aucune affectation de compétence n'est créée sur la crise et plus rien ne peut
+   * être suggéré automatiquement ensuite ; sans mission, l'équipe n'a rien à quoi rattacher ses
+   * ressources ni ses bénévoles recrutés. Une équipe laissée incomplète ici est une équipe qui
+   * ne servira à rien le jour où la crise démarre. */
+  equipeIncomplete(etape: EtapePoint): boolean {
+    return etape.competenceIds.length === 0 || !etape.missionDescription.trim();
+  }
+
   /** Complète l'équipe juste créée (contact, thèmes, spécialité, mission) pour que les
    * automatisations (hébergement, recrutement) fonctionnent ; zone déduite du territoire de la crise. */
   enregistrerEquipe(etape: EtapePoint): void {
     if (!etape.equipeId) { return; }
+    if (this.equipeIncomplete(etape)) {
+      etape.infosError = "Indiquez au moins une spécialité et la mission confiée : "
+        + "sans elles, aucune demande ne pourra être suggérée automatiquement à cette équipe.";
+      return;
+    }
     const r = etape.responsable;
     const invite = !!(r.prenom.trim() && r.nom.trim() && r.email.trim() && r.roleCode);
 
@@ -387,8 +403,17 @@ export class CriseDemarrageComponent implements OnInit {
         email: r.email.trim(), phone_number: r.telephone.trim(), role_code: r.roleCode!,
       }));
     }
-    if (etape.missionDescription.trim()) {
-      appels.push(this.teamService.definirMission(etape.equipeId, etape.missionDescription.trim(), this.criseId));
+    appels.push(this.teamService.definirMission(etape.equipeId, etape.missionDescription.trim(), this.criseId));
+
+    // Ce qui rend l'affectation automatique possible : `competence_ids` ci-dessus ne remplit que
+    // les compétences de la FICHE équipe, que le moteur de suggestion ne regarde pas. Seule une
+    // AffectationCompetence (équipe ↔ compétence ↔ crise) est lue par
+    // meilleure_equipe_pour_competence. Sans ces appels, on créait des équipes avec leurs
+    // spécialités et aucune demande ne leur était jamais suggérée.
+    for (const competenceId of etape.competenceIds) {
+      appels.push(this.affectationCompetenceService.create({
+        crise: this.criseId, competence: competenceId, equipe: etape.equipeId, active: true,
+      }));
     }
 
     forkJoin(appels).subscribe({

@@ -218,7 +218,11 @@
                       }
                     </div>
 
-                    <label class="form-label">Spécialité de l'équipe</label>
+                    <label class="form-label">Spécialité de l'équipe *</label>
+                    <p class="page-hint">
+                      Au moins une : c'est elle qui permettra de proposer automatiquement les
+                      demandes correspondantes à cette équipe.
+                    </p>
                     <div class="checklist-box">
                       @for (c of competences; track c.id) {
                         <label class="checkbox-label">
@@ -230,7 +234,11 @@
                       }
                     </div>
 
-                    <label class="form-label">Mission confiée</label>
+                    <label class="form-label">Mission confiée *</label>
+                    <p class="page-hint">
+                      Ce à quoi seront rattachés les moyens engagés et les bénévoles recrutés pour
+                      cette équipe.
+                    </p>
                     <textarea class="form-input" rows="2" [(ngModel)]="etape.missionDescription"
                               placeholder="Ex : Accueillir et recenser les personnes évacuées"></textarea>
 
@@ -241,7 +249,8 @@
                       <button type="button" class="btn-secondary" (click)="passerEquipe(etape)" [disabled]="etape.infosSaving">
                         Plus tard
                       </button>
-                      <button type="button" class="btn-primary" (click)="enregistrerEquipe(etape)" [disabled]="etape.infosSaving">
+                      <button type="button" class="btn-primary" (click)="enregistrerEquipe(etape)"
+                              [disabled]="etape.infosSaving || equipeIncomplete(etape)">
                         Enregistrer
                       </button>
                     </div>
@@ -251,6 +260,16 @@
                     <span class="material-icons">check_circle</span>
                     Informations enregistrées pour cette équipe.
                   </p>
+                } @else if (etape.infosSkipped) {
+                  <p class="disclaimer">
+                    <span class="material-icons">error_outline</span>
+                    Équipe à compléter : sans spécialité ni mission, aucune demande ne lui sera
+                    proposée automatiquement.
+                  </p>
+                  <a [routerLink]="['/admin/equipes']" [queryParams]="{openTeam: etape.point?.equipe}"
+                     class="recap-team-link">
+                    Compléter la fiche équipe
+                  </a>
                 } @else {
                   <a [routerLink]="['/admin/equipes']" [queryParams]="{openTeam: etape.point?.equipe}"
                      class="recap-team-link">

@@ -109,3 +109,39 @@ class TestApprentissage:
         assert reponse.status_code == 200, reponse.data
         assert reponse.data["affectes"] == 3 and len(reponse.data["apprentissages"]) == 1
         assert all(Dossier.objects.get(pk=d.pk).statut == Dossier.Statut.AFFECTE for d in dossiers)
+
+
+@pytest.mark.django_db
+class TestAffectationIdempotente:
+    """Le wizard de démarrage de crise crée une affectation par compétence cochée et peut être
+    rejoué (retour en arrière, double clic, reprise d'une crise déjà démarrée) -- 24/10/2026."""
+
+    def test_creer_deux_fois_la_meme_affectation_ne_cree_pas_de_doublon(self, client_cadre, crise, nettoyage, cai):
+        corps = {"crise": str(crise.id), "competence": str(nettoyage.id), "equipe": str(cai.id)}
+
+        premiere = client_cadre.post(reverse('affectationcompetence-list'), corps, format="json")
+        seconde = client_cadre.post(reverse('affectationcompetence-list'), corps, format="json")
+
+        assert premiere.status_code == 201 and seconde.status_code == 201
+        assert AffectationCompetence.objects.filter(crise=crise, competence=nettoyage, equipe=cai).count() == 1
+
+    def test_recreer_une_affectation_desactivee_la_reactive(self, client_cadre, crise, nettoyage, cai):
+        AffectationCompetence.objects.create(crise=crise, competence=nettoyage, equipe=cai, active=False)
+
+        reponse = client_cadre.post(reverse('affectationcompetence-list'),
+                                    {"crise": str(crise.id), "competence": str(nettoyage.id), "equipe": str(cai.id)},
+                                    format="json")
+
+        assert reponse.status_code == 201
+        affectations = AffectationCompetence.objects.filter(crise=crise, competence=nettoyage, equipe=cai)
+        assert affectations.count() == 1 and affectations.get().active is True
+
+    def test_une_affectation_creee_rend_la_suggestion_possible(self, client_cadre, crise, nettoyage, cai):
+        dossier = _dossier(crise, nettoyage, "DOS-W1")
+
+        client_cadre.post(reverse('affectationcompetence-list'),
+                          {"crise": str(crise.id), "competence": str(nettoyage.id), "equipe": str(cai.id)},
+                          format="json")
+
+        dossier.refresh_from_db()
+        assert dossier.equipe_id == cai.id        # suggérée sans intervention humaine
