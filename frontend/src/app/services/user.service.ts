@@ -38,6 +38,13 @@ export class UserService {
     return this.http.get(`${this.apiUrl}/users/${id}/preview/`, { responseType: 'blob' });
   }
 
+  /** POST /api/users/<id>/renvoyer-activation/ — renvoie le lien d'activation à un compte
+   * « Autorité locale » pas encore activé. Le lien est régénéré à l'envoi (les liens expirent
+   * au bout de 7 jours). Refusé si le compte est déjà activé. Réservé institutionnel. */
+  renvoyerActivation(id: string): Observable<{ message: string }> {
+    return this.http.post<{ message: string }>(`${this.apiUrl}/users/${id}/renvoyer-activation/`, {});
+  }
+
   /** POST /api/users/<id>/reactiver/ — réactive un compte désactivé (voir delete). */
   reactiver(id: string): Observable<User> {
     return this.http.post<User>(`${this.apiUrl}/users/${id}/reactiver/`, {});

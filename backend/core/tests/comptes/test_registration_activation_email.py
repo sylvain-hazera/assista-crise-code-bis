@@ -68,3 +68,83 @@ class TestActivationEmailAutoriteLocale:
         assert log is not None
         assert log.succes is False
         assert "SMTP down" in log.commentaire
+
+
+@pytest.mark.django_db
+class TestInscriptionPubliqueEnvoieLeLien:
+    """Le formulaire public poste sur /api/register/ (RegisterView), PAS sur
+    /api/users/register/ : ce chemin-là ne envoyait aucun email, donc tout compte créé depuis le
+    site l'était muet, sans lien d'activation (constaté le 25/10/2026). Les tests existants ne
+    couvraient que l'autre URL, d'où un bug invisible."""
+
+    @patch("core.auth_validation.InstitutionEmailValidator._search_annuaire", return_value=None)
+    def test_le_chemin_reellement_appele_envoie_l_email(self, mock_search, api_client, user_data):
+        payload = {
+            **user_data,
+            "email": "maire@collectivite-public-test.fr",
+            "username": "maire@collectivite-public-test.fr",
+            "type": "AUT_LOCALE",
+            "institution_name": "Mairie Public Test",
+            "commune_name": "Grenoble",
+            "commune_code": "38185",
+        }
+
+        reponse = api_client.post(reverse("auth_register"), payload, format="json")
+
+        assert reponse.status_code == status.HTTP_201_CREATED, reponse.data
+        assert len(mail.outbox) == 1
+        assert mail.outbox[0].to == ["maire@collectivite-public-test.fr"]
+        assert "activation" in mail.outbox[0].body.lower()
+
+
+@pytest.mark.django_db
+class TestRenvoiDuLienActivation:
+
+    def _compte(self, create_user, enabled=False, **kwargs):
+        # create_user force enabled=True après création : on repose l'état voulu ensuite.
+        compte = create_user(**{"type": "AUT_LOCALE", **kwargs})
+        compte.enabled = enabled
+        compte.save(update_fields=["enabled"])
+        return compte
+
+    def _client_institutionnel(self, create_user):
+        from rest_framework.test import APIClient
+        client = APIClient()
+        client.force_authenticate(user=create_user(
+            username="cadre-renvoi@test.fr", email="cadre-renvoi@test.fr", type="AUT_LOCALE"))
+        return client
+
+    def test_renvoi_a_un_compte_non_active(self, create_user):
+        cible = self._compte(create_user, username="muet@mairie-test.fr", email="muet@mairie-test.fr")
+        client = self._client_institutionnel(create_user)
+        mail.outbox.clear()
+
+        reponse = client.post(reverse("user-renvoyer-activation", args=[cible.id]))
+
+        assert reponse.status_code == status.HTTP_200_OK, reponse.data
+        assert [m.to for m in mail.outbox] == [["muet@mairie-test.fr"]]
+        assert "activation" in mail.outbox[0].body.lower()
+        assert AuditLog.objects.filter(
+            objet_id=cible.id, commentaire__icontains="renvoyé").exists()
+
+    def test_refus_si_le_compte_est_deja_active(self, create_user):
+        cible = self._compte(create_user, enabled=True, username="actif@mairie-test.fr",
+                             email="actif@mairie-test.fr")
+        client = self._client_institutionnel(create_user)
+        mail.outbox.clear()
+
+        reponse = client.post(reverse("user-renvoyer-activation", args=[cible.id]))
+
+        assert reponse.status_code == status.HTTP_400_BAD_REQUEST
+        assert mail.outbox == []
+
+    def test_refus_pour_un_type_valide_par_un_administrateur(self, create_user):
+        cible = self._compte(create_user, username="secours@test.fr",
+                             email="secours@test.fr", type="SECOURS")
+        client = self._client_institutionnel(create_user)
+        mail.outbox.clear()
+
+        reponse = client.post(reverse("user-renvoyer-activation", args=[cible.id]))
+
+        assert reponse.status_code == status.HTTP_400_BAD_REQUEST
+        assert mail.outbox == []

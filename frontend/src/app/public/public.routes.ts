@@ -28,6 +28,12 @@ export const PUBLIC_ROUTES: Routes = [
           .then(m => m.RegisterComponent)
       },
       {
+        // Écran d'attente affiché juste après l'inscription (voir VerifierEmailComponent).
+        path: 'verifier-email',
+        loadComponent: () => import('../auth/component/verifier-email/verifier-email.component')
+          .then(m => m.VerifierEmailComponent)
+      },
+      {
         path: 'activate-account/:uidb64/:token',
         loadComponent: () => import('../auth/component/activate-account/activate-account.component')
           .then(m => m.ActivateAccountComponent)

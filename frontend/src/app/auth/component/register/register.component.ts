@@ -325,8 +325,12 @@ export class RegisterComponent implements OnInit, OnDestroy {
         .subscribe({
           next: (response: any) => {
             if (response.requires_validation || !response.token) {
-              this.successMessage = response.message || 'Votre compte a été créé. Un email vous a été envoyé avec les liens d’activation et de connexion.';
-              this.router.navigate(['/login']);
+              // Écran d'attente dédié plutôt qu'un message sur /login, que le changement de page
+              // faisait disparaître : la personne doit savoir qu'un email l'attend et qu'elle
+              // doit cliquer dessus. L'adresse passe par l'état de navigation, jamais par l'URL.
+              this.router.navigate(['/verifier-email'], {
+                state: { email: registerData.email },
+              });
             } else {
               this.successMessage = response.message || 'Inscription réussie !';
               this.router.navigate(['/accueil']);

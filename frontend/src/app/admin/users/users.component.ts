@@ -387,6 +387,29 @@ export class UsersComponent implements OnInit, OnDestroy {
   /**
    * Réactive un compte utilisateur désactivé (voir deleteUser).
    */
+  /** Renvoie le lien d'activation à un compte créé sans l'avoir reçu (25/10/2026). Le lien est
+   * régénéré côté serveur : celui d'origine a pu expirer (7 jours). */
+  renvoyerActivation(user: User): void {
+    if (!confirm(`Renvoyer le lien d'activation à ${user.email} ?`)) {
+      return;
+    }
+
+    this.isLoading = true;
+
+    this.userService.renvoyerActivation(user.id)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (res) => {
+          this.successMessage = res.message || `Lien d'activation renvoyé à ${user.email}.`;
+          this.isLoading = false;
+        },
+        error: (err) => {
+          this.errorMessage = err?.error?.error || "Impossible de renvoyer le lien d'activation.";
+          this.isLoading = false;
+        },
+      });
+  }
+
   reactiverUser(user: User): void {
     if (!confirm(`Réactiver le compte de ${user.first_name} ${user.last_name} ?`)) {
       return;

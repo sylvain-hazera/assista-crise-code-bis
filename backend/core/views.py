@@ -305,6 +305,67 @@ def send_institution_account_email(request, user):
     )
 
 
+def envoyer_email_creation_compte(request, user):
+    """Email de cycle de vie envoyé juste après la création d'un compte, selon son type.
+
+    Centralisé ici depuis le 25/10/2026 : il existait DEUX chemins d'inscription divergents —
+    `RegisterView` (/api/register/, celui réellement appelé par le formulaire public) et
+    `UserViewSet.register` (/api/users/register/, jamais appelé). Seul le second envoyait les
+    emails. Résultat : tout compte créé depuis le site était créé muet, sans lien d'activation
+    et sans que rien ne le signale. Les deux passent désormais par cette fonction, pour qu'ils
+    ne puissent plus diverger.
+
+    - Autorité locale : lien d'activation, l'adresse fait foi (pas de validation humaine).
+    - Secours organisés / administrateur : compte en attente de validation par un administrateur,
+      donc pas de lien d'activation à envoyer.
+    - Autres (bénévole, citoyen) : compte actif immédiatement, aucun email de cycle de vie.
+
+    Jamais bloquant pour la création du compte : un échec est journalisé et tracé en main
+    courante, pour qu'un administrateur puisse renvoyer l'email (voir
+    UserViewSet.renvoyer_activation). Renvoie True si un email est effectivement parti."""
+    if getattr(user, 'type', None) == UserRole.LOCAL_AUTHORITY:
+        try:
+            send_institution_account_email(request, user)
+            return True
+        except Exception as e:
+            logger.exception(
+                "Échec de l'envoi de l'email d'activation institutionnelle (user_id=%s, %s)",
+                user.id, user.email,
+            )
+            EMAILS_FAILED.labels(kind="activation").inc()
+            audit_log(
+                request=request, action_code="ENVOI_EMAIL", objet_type="Email", objet_id=user.id,
+                commentaire=f'Envoi du lien d\'activation à {user.email} : échec ({e})',
+                succes=False,
+            )
+            return False
+
+    if not user.enabled:
+        try:
+            send_mail_logged(
+                request,
+                subject="Compte créé - En attente de validation",
+                message=(
+                    f"Bonjour {user.first_name} {user.last_name},\n\n"
+                    f"Votre compte ({user.get_type_display()}) a bien été créé.\n"
+                    "Cependant, il est en attente de validation par un administrateur.\n"
+                    "Vous recevrez un email dès que votre compte sera validé.\n\n"
+                    "Cordialement,\n"
+                    "L'équipe Assista-Crise"
+                ),
+                from_email=None,
+                recipient_list=[user.email],
+                fail_silently=False,
+            )
+            return True
+        except Exception:
+            logger.exception("Échec de l'email de compte en attente (user_id=%s)", user.pk)
+            EMAILS_FAILED.labels(kind="registration_pending").inc()
+            return False
+
+    return False
+
+
 def _traiter_acceptation_convention(request, institution, user):
     """Appelée APRÈS avoir résolu/créé l'institution mais AVANT le rattachement effectif de
     l'utilisateur (attach_user_with_role) — voir UserViewSet.confirmer_institution/
@@ -1550,6 +1611,40 @@ class UserViewSet(viewsets.ModelViewSet):
             commentaire=f"Désactivation compte : {instance.email}",
         )
 
+    @action(detail=True, methods=["post"], url_path="renvoyer-activation",
+            permission_classes=[IsInstitutionalActor])
+    def renvoyer_activation(self, request, pk=None):
+        """Renvoie le lien d'activation à un compte qui ne l'a jamais reçu (demande du
+        25/10/2026, après des comptes créés muets — voir envoyer_email_creation_compte).
+
+        Le lien est régénéré à l'envoi : un lien de plus de 7 jours est expiré, le renvoyer à
+        l'identique ne servirait à rien. Refusé pour un compte déjà activé, pour que le bouton
+        ne serve jamais à envoyer un lien d'activation à quelqu'un qui n'en a plus besoin."""
+        utilisateur = self.get_object()
+        if utilisateur.enabled:
+            return Response(
+                {"error": "Ce compte est déjà activé : aucun lien d'activation à renvoyer."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if utilisateur.type != UserRole.LOCAL_AUTHORITY:
+            return Response(
+                {"error": "Ce type de compte n'est pas activé par email : il est validé par un "
+                          "administrateur depuis la page Validations de comptes."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        envoye = envoyer_email_creation_compte(request, utilisateur)
+        if not envoye:
+            return Response(
+                {"error": "L'envoi a échoué. Le détail figure dans la main courante."},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        audit_log(
+            request=request, action_code="MODIFICATION", objet_type="User", objet_id=utilisateur.id,
+            commentaire=f"Lien d'activation renvoyé à {utilisateur.email}",
+        )
+        return Response({"message": f"Lien d'activation renvoyé à {utilisateur.email}."})
+
     @action(detail=True, methods=["post"])
     def reactiver(self, request, pk=None):
         """Réactive un compte désactivé (voir perform_destroy) — réservé aux acteurs
@@ -1586,28 +1681,7 @@ class UserViewSet(viewsets.ModelViewSet):
                 # que l'email n'est pas confirmé : pas de token ici. Le rattachement à une
                 # institution n'a lieu qu'après le clic sur le lien d'activation
                 # (AccountActivationView) — jamais sur la seule foi d'un email non vérifié.
-                try:
-                    send_institution_account_email(request, user)
-                except Exception as e:
-                    # send_mail_logged journalise déjà les échecs SMTP dans la main courante ET
-                    # déclenche l'alerte mail_admins/Matrix (voir LOGGING, config/settings.py),
-                    # mais un échec AVANT cet appel (ex: build_magic_link) ne déclenchait
-                    # jusqu'ici ni l'un ni l'autre — juste un print() perdu dans les logs du
-                    # conteneur, jamais visible depuis l'app. Repéré en direct : un compte
-                    # "Autorité locale" créé sans que la personne ne reçoive jamais son lien
-                    # d'activation, sans qu'un administrateur n'ait aucun moyen de le savoir.
-                    logger.exception(
-                        'Échec de l\'envoi de l\'email d\'activation institutionnelle (user_id=%s, %s)',
-                        user.id, user.email,
-                    )
-                    audit_log(
-                        request=request,
-                        action_code="ENVOI_EMAIL",
-                        objet_type="Email",
-                        objet_id=user.id,
-                        commentaire=f'Envoi "Votre accès institutionnel Assista-Crise" à {user.email} : échec ({e})',
-                        succes=False,
-                    )
+                envoyer_email_creation_compte(request, user)
 
                 return Response({
                     'user': UserSerializer(user).data,
@@ -1618,27 +1692,8 @@ class UserViewSet(viewsets.ModelViewSet):
 
             # Si le compte nécessite validation (Secours, Admin)
             if not user.enabled:
-                # Envoyer email à l'utilisateur
-                try:
-                    send_mail_logged(
-                        request,
-                        subject="Compte créé - En attente de validation",
-                        message=(
-                            f"Bonjour {user.first_name} {user.last_name},\n\n"
-                            f"Votre compte ({user.get_type_display()}) a bien été créé.\n"
-                            "Cependant, il est en attente de validation par un administrateur.\n"
-                            "Vous recevrez un email dès que votre compte sera validé.\n\n"
-                            "Cordialement,\n"
-                            "L'équipe Assista-Crise"
-                        ),
-                        from_email=None,
-                        recipient_list=[user.email],
-                        fail_silently=False,
-                    )
-                except Exception:
-                    logger.exception("Registration email failed for user %s", user.pk)
-                    EMAILS_FAILED.labels(kind="registration_pending").inc()
-                
+                envoyer_email_creation_compte(request, user)
+
                 # Notifier les administrateurs (voir core/notifications_admin.py -- hors
                 # adresses factices des comptes démo, jamais d'exception propagée).
                 notifier_administrateurs(
@@ -10149,6 +10204,10 @@ class RegisterView(generics.CreateAPIView):
             objet_id=user.id,
             commentaire=f"Création de compte : {user.email}",
         )
+
+        # Le lien d'activation part d'ici -- c'est CE chemin que le formulaire public appelle
+        # (voir envoyer_email_creation_compte pour l'historique des deux inscriptions divergentes).
+        envoyer_email_creation_compte(self.request, user)
 
         # Case "Je souhaite rejoindre la réserve" (voir User.souhaite_rejoindre_reserve,
         # Institution.reserve_active) -- résolu depuis le Host de CETTE requête d'inscription,

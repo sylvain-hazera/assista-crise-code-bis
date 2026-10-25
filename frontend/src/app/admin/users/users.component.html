@@ -187,8 +187,18 @@
                   <span class="material-icons">lock_reset</span>
                 </button>
 
+                <!-- Renvoi du lien d'activation : seulement pour un compte « Autorité locale »
+                     qui n'a pas encore cliqué sur son lien (les autres types sont validés par un
+                     administrateur, pas par email). -->
+                @if (!user.enabled && user.type === 'AUT_LOCALE') {
+                  <button class="action-btn reset-password-btn" (click)="renvoyerActivation(user)"
+                          title="Renvoyer le lien d'activation par email">
+                    <span class="material-icons">forward_to_inbox</span>
+                  </button>
+                }
+
                 <!-- Activation/Désactivation -->
-                <button 
+                <button
                   class="action-btn toggle-btn" 
                   [class.active]="user.enabled"
                   (click)="toggleUserStatus(user)"

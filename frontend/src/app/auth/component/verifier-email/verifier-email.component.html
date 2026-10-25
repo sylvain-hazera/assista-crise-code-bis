@@ -1,0 +1,42 @@
+<div class="activate-container">
+  <div class="activate-wrapper">
+    <div class="state-block">
+      <span class="material-icons state-icon mail-icon">mark_email_unread</span>
+
+      <h1 class="activate-title">Vérifiez votre boîte mail</h1>
+
+      @if (email) {
+        <p class="activate-text">
+          Votre compte a été créé. Un email vient d'être envoyé à
+          <strong>{{ email }}</strong>.
+        </p>
+      } @else {
+        <p class="activate-text">
+          Votre compte a été créé. Un email vient d'être envoyé à l'adresse que vous avez
+          indiquée.
+        </p>
+      }
+
+      <p class="activate-text espace">
+        Ouvrez-le et cliquez sur le lien d'activation pour confirmer votre adresse. Votre compte
+        ne sera utilisable qu'après ce clic.
+      </p>
+
+      <ul class="rappels">
+        <li>Le lien est valable <strong>7 jours</strong>.</li>
+        <li>L'email peut mettre quelques minutes à arriver.</li>
+        <li>Pensez à regarder dans vos <strong>courriers indésirables</strong>.</li>
+      </ul>
+
+      <p class="activate-subtext">
+        Toujours rien après quelques minutes ? Contactez-nous à
+        <a href="mailto:contact&#64;assista-crise.fr" class="btn-link">contact&#64;assista-crise.fr</a>,
+        nous vous renverrons le lien.
+      </p>
+
+      <div class="actions">
+        <a routerLink="/login" class="btn-link">Retour à la connexion</a>
+      </div>
+    </div>
+  </div>
+</div>
