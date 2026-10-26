@@ -405,3 +405,13 @@
   /* Invitation commencée mais incomplète : signalée sans bloquer la frappe. */
   &.invitation-incomplete { border-color: #fcd34d; background: #fffbeb; }
 }
+
+/* Avertissement du bouton « Plus tard » : aligné en haut, le texte faisant plusieurs lignes
+   (.disclaimer centre verticalement, ce qui décalerait l'icône au milieu du paragraphe). */
+.avertissement-plus-tard {
+  align-items: flex-start;
+  line-height: 1.45;
+
+  .material-icons { margin-top: .1rem; flex-shrink: 0; }
+  strong { font-weight: 700; }
+}

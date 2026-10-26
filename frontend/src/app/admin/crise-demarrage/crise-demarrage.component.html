@@ -304,8 +304,23 @@
                     @if (etape.infosError) {
                       <p class="error-message">{{ etape.infosError }}</p>
                     }
+
+                    <div class="disclaimer avertissement-plus-tard">
+                      <span class="material-icons">warning</span>
+                      <div>
+                        <strong>« Plus tard » laisse cette équipe inutilisable.</strong>
+                        Tant qu'elle n'a ni spécialité ni mission sur cette crise, aucune demande
+                        ne lui sera proposée automatiquement, aucun bénévole ne pourra y être
+                        recruté et aucun moyen ne pourra lui être rattaché. Vous devrez la
+                        compléter vous-même dans le menu <strong>Équipes</strong> — rien ne vous
+                        le rappellera en pleine crise.
+                      </div>
+                    </div>
+
                     <div class="step-actions">
-                      <button type="button" class="btn-secondary" (click)="passerEquipe(etape)" [disabled]="etape.infosSaving">
+                      <button type="button" class="btn-secondary" (click)="passerEquipe(etape)"
+                              [disabled]="etape.infosSaving"
+                              title="L'équipe restera inutilisable jusqu'à ce que vous la complétiez depuis le menu Équipes">
                         Plus tard
                       </button>
                       <button type="button" class="btn-primary" (click)="enregistrerEquipe(etape)"
@@ -322,12 +337,14 @@
                 } @else if (etape.infosSkipped) {
                   <p class="disclaimer">
                     <span class="material-icons">error_outline</span>
-                    Équipe à compléter : sans spécialité ni mission, aucune demande ne lui sera
-                    proposée automatiquement.
+                    Équipe inutilisable en l'état : sans spécialité ni mission sur cette crise,
+                    aucune demande ne lui sera proposée automatiquement, aucun bénévole ne pourra
+                    y être recruté et aucun moyen ne pourra lui être rattaché. À compléter depuis
+                    le menu <strong>Équipes</strong>.
                   </p>
                   <a [routerLink]="['/admin/equipes']" [queryParams]="{openTeam: etape.point?.equipe}"
                      class="recap-team-link">
-                    Compléter la fiche équipe
+                    Compléter la fiche équipe maintenant
                   </a>
                 } @else {
                   <a [routerLink]="['/admin/equipes']" [queryParams]="{openTeam: etape.point?.equipe}"
