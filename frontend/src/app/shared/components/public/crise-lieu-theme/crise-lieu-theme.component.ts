@@ -43,6 +43,9 @@ export class CriseLieuThemeComponent implements OnInit {
 
   chargementThemes = false;
   besoins: Besoin[] = [];
+  /** Le backend n'a trouvé aucun type correspondant aux thèmes déclarés et a renvoyé tout le
+   * catalogue : le dépôt reste possible, on le dit au visiteur au lieu de le bloquer. */
+  repli = false;
   private appele = false;
 
   constructor(
@@ -78,6 +81,7 @@ export class CriseLieuThemeComponent implements OnInit {
 
   private rechargerThemes(): void {
     this.besoins = [];
+    this.repli = false;
     this.typesAutorises.emit([]);
     this.appele = false;
 
@@ -90,13 +94,16 @@ export class CriseLieuThemeComponent implements OnInit {
         this.chargementThemes = false;
         this.appele = true;
         this.besoins = res.besoins;
+        this.repli = !!res.repli;
         this.typesAutorises.emit(res.type_ids);
       },
       error: () => { this.chargementThemes = false; this.appele = true; },
     });
   }
 
+  /** Plus de cul-de-sac : le backend renvoie tout le catalogue en repli, donc il n'y a
+   * « aucun thème » à afficher que lorsque l'appel lui-même a échoué. */
   get aucunTheme(): boolean {
-    return this.appele && !this.chargementThemes && this.besoins.length === 0;
+    return this.appele && !this.chargementThemes && this.besoins.length === 0 && !this.repli;
   }
 }

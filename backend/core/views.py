@@ -671,6 +671,14 @@ _PONT_BESOIN_PAR_AXE = {
     "information": (InformationTypeBesoin, "information_type_id"),
 }
 
+# Catalogue complet par axe, servi en repli quand le filtrage par thèmes ne laisse rien (voir
+# TypesALecouteView) : InformationType n'a pas de drapeau `actif`, les deux autres si.
+_CATALOGUE_TYPE_PAR_AXE = {
+    "request": RequestType,
+    "offer": OfferType,
+    "information": InformationType,
+}
+
 
 class TypesALecouteView(generics.GenericAPIView):
     """Filtre le sélecteur de type des formulaires publics (Request/Offer/Information) aux
@@ -707,11 +715,30 @@ class TypesALecouteView(generics.GenericAPIView):
         # l'utilisateur (25/09), voir besoins_ecoute.besoins_a_lecoute.
         besoins = besoins_a_lecoute(crise, None if axe == 'offer' else commune_code)
         pont_model, champ_type_id = _PONT_BESOIN_PAR_AXE[axe]
-        type_ids = pont_model.objects.filter(besoin__in=besoins).values_list(champ_type_id, flat=True).distinct()
+        type_ids = list(
+            pont_model.objects.filter(besoin__in=besoins)
+            .values_list(champ_type_id, flat=True).distinct()
+        )
+
+        # Repli : aucun type à proposer, soit parce qu'aucune institution n'a déclaré de thème
+        # (une implication ACTEUR créée automatiquement — déclaration de crise, point confié à
+        # une équipe — n'en a aucun, la validation « au moins un thème » ne couvrant que la
+        # déclaration manuelle), soit parce que les thèmes déclarés ne correspondent à aucun
+        # type de ce formulaire. Jusqu'ici le visiteur se heurtait à « Aucun thème à l'écoute »
+        # et ne pouvait RIEN déposer : ni demander de l'aide, ni en proposer, ni signaler un
+        # danger. Mieux vaut recueillir un dépôt mal rangé que de laisser quelqu'un sans voix
+        # un jour de crise — le formulaire le dit explicitement au visiteur (`repli`).
+        repli = not type_ids
+        if repli:
+            catalogue = _CATALOGUE_TYPE_PAR_AXE[axe].objects.all()
+            if axe != 'information':  # InformationType n'a pas de drapeau `actif`
+                catalogue = catalogue.filter(actif=True)
+            type_ids = list(catalogue.values_list('id', flat=True))
 
         return Response({
             "besoins": BesoinSerializer(besoins, many=True).data,
             "type_ids": [str(i) for i in type_ids],
+            "repli": repli,
         })
 
 

@@ -60,3 +60,19 @@
 
   li { margin-bottom: 0.2rem; }
 }
+
+/* Repli : le dépôt reste ouvert, on explique simplement pourquoi aucun thème n'est listé.
+   Ton informatif, pas un avertissement — le visiteur n'a rien à corriger. */
+.alerte-repli {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  color: #1e40af;
+  background: #eff6ff;
+  border-radius: 6px;
+  padding: 0.6rem 0.8rem;
+  font-size: 0.88rem;
+  margin: 0;
+
+  .material-icons { font-size: 18px; flex-shrink: 0; }
+}

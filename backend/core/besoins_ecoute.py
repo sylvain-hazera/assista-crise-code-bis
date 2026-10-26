@@ -62,4 +62,17 @@ def besoins_a_lecoute(crise, commune_code: str | None = None):
     for implication in implications:
         besoin_ids.update(implication.themes.values_list("id", flat=True))
 
+    # Écouter une FAMILLE, c'est écouter ce qu'elle contient (26/10/2026). Les thèmes proposés à
+    # une institution sont les besoins racine (« Accueil & alimentation », « Secours & soins »,
+    # « Pompage & citernes »...), mais les correspondances thème -> type de formulaire ont été
+    # posées sur les SOUS-besoins (« Hébergement », « Nourriture et eau », « Pompage »...). Une
+    # mairie qui cochait les familles les plus évidentes n'avait donc AUCUN type à l'écoute, et
+    # le public ne pouvait plus rien déposer du tout : ni demande, ni offre, ni signalement.
+    # Un seul niveau, comme la hiérarchie elle-même (Besoin.parent, cf. Competence.parent).
+    # Sens unique : écouter un sous-besoin n'implique pas d'écouter toute sa famille, un choix
+    # précis restant un choix précis.
+    besoin_ids.update(
+        Besoin.objects.filter(parent_id__in=besoin_ids).values_list("id", flat=True)
+    )
+
     return Besoin.objects.filter(id__in=besoin_ids)

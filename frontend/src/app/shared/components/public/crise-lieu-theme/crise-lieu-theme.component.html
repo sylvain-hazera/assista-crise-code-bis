@@ -37,6 +37,16 @@
           pour signaler votre besoin autrement.
         }
       </p>
+    } @else if (repli) {
+      <p class="alerte-repli">
+        <span class="material-icons">info</span>
+        L'institution en charge de cette crise n'a pas encore précisé les sujets qu'elle suit.
+        @if (sansRestrictionGeo) {
+          Décrivez votre proposition comme vous le souhaitez : elle lui sera transmise telle quelle.
+        } @else {
+          Décrivez votre situation comme vous le souhaitez : elle lui sera transmise telle quelle.
+        }
+      </p>
     } @else {
       <p class="section-description">Thèmes actuellement à l'écoute pour cette crise{{ sansRestrictionGeo ? '' : ', à cet endroit' }} :</p>
       <ul class="liste-themes">
