@@ -23,6 +23,20 @@ import { RoleOperationnel } from '../../shared/models/institution.model';
 import { Besoin } from '../../shared/models/besoin.model';
 import { Competence } from '../../shared/models/competence.model';
 import { User } from '../../shared/models/user.model';
+import { AddressResult } from '../../shared/models/address-result.model';
+import { AddressPickerComponent } from '../../shared/components/common/address-picker/address-picker.component';
+
+/** Une personne à inviter dans l'équipe. Invitée = rattachée à l'institution de l'équipe avec
+ * les droits collectivité locale (voir TeamViewSet.inviter_membre) : c'est le même geste que
+ * depuis la page Équipes, rendu répétable ici pour poser une équipe complète d'un coup
+ * (demande Nicolas Larvor du 26/10/2026). */
+interface InvitationMembre {
+  prenom: string;
+  nom: string;
+  email: string;
+  telephone: string;
+  roleCode: string | null;
+}
 
 interface EtapePoint {
   // null tant que le type n'est pas choisi (lignes ajoutées par ajouterPoint()).
@@ -33,12 +47,20 @@ interface EtapePoint {
   // Distingue les 3 lignes par défaut d'une ligne ajoutée (type + nom seulement).
   isDefault: boolean;
   nom: string;
+  // Adresse postale du point, exigée à la création : sans coordonnées, le point n'apparaît sur
+  // aucune carte, aucune distance n'est calculable depuis une demande, et sa commune reste
+  // inconnue (PointOperationnel n'a pas de commune_code, elle est déduite du point GPS).
+  adresse: string;
+  latitude: number | null;
+  longitude: number | null;
   cree: boolean;
   point: PointOperationnel | null;
   equipeId: string | null;
   nouvelleEquipeNom: string;
   // Saisi au récapitulatif pour une équipe juste créée ; zone déduite du territoire de la crise.
   responsable: { prenom: string; nom: string; email: string; telephone: string; roleCode: string | null; membreExistantId: string | null };
+  // Personnes externes à inviter, en plus du contact principal ci-dessus.
+  invitations: InvitationMembre[];
   membresAjoutes: string[];
   themeIds: string[];
   competenceIds: string[];
@@ -57,7 +79,7 @@ interface EtapePoint {
 @Component({
   selector: 'app-crise-demarrage',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink],
+  imports: [CommonModule, FormsModule, RouterLink, AddressPickerComponent],
   templateUrl: './crise-demarrage.component.html',
   styleUrl: './crise-demarrage.component.scss',
 })
@@ -82,11 +104,12 @@ export class CriseDemarrageComponent implements OnInit {
   planErrorMessage = '';
 
   private extrasEtape(): Pick<EtapePoint,
-    'responsable' | 'membresAjoutes' | 'themeIds' | 'competenceIds' | 'missionDescription' |
+    'responsable' | 'invitations' | 'membresAjoutes' | 'themeIds' | 'competenceIds' | 'missionDescription' |
     'infosSaving' | 'infosDone' | 'infosSkipped' | 'infosError' | 'candidateMembers'
   > {
     return {
       responsable: { prenom: '', nom: '', email: '', telephone: '', roleCode: null, membreExistantId: null },
+      invitations: [],
       membresAjoutes: [], themeIds: [], competenceIds: [], missionDescription: '',
       infosSaving: false, infosDone: false, infosSkipped: false, infosError: '',
       candidateMembers: [],
@@ -98,21 +121,24 @@ export class CriseDemarrageComponent implements OnInit {
       pointTypeCode: 'CELLULE_CRISE', titre: 'Cellule de crise',
       description: "Le lieu depuis lequel la crise est pilotée.",
       suggestions: ['Mairie'], isDefault: true,
-      nom: 'Mairie', cree: false, point: null, equipeId: null, nouvelleEquipeNom: '',
+      nom: 'Mairie', adresse: '', latitude: null, longitude: null,
+      cree: false, point: null, equipeId: null, nouvelleEquipeNom: '',
       ...this.extrasEtape(),
     },
     {
       pointTypeCode: 'HEBERGEMENT', titre: 'Centre d\'accueil des populations',
       description: "Où les personnes évacuées ou sinistrées sont accueillies.",
       suggestions: ['Salle des fêtes'], isDefault: true,
-      nom: 'Salle des fêtes', cree: false, point: null, equipeId: null, nouvelleEquipeNom: '',
+      nom: 'Salle des fêtes', adresse: '', latitude: null, longitude: null,
+      cree: false, point: null, equipeId: null, nouvelleEquipeNom: '',
       ...this.extrasEtape(),
     },
     {
       pointTypeCode: 'REGROUPEMENT_MOYENS', titre: 'Centre de regroupement des moyens',
       description: "Où le matériel et les ressources mobilisées sont centralisés.",
       suggestions: ['Salle des fêtes', 'Centre technique municipal'], isDefault: true,
-      nom: 'Salle des fêtes', cree: false, point: null, equipeId: null, nouvelleEquipeNom: '',
+      nom: 'Salle des fêtes', adresse: '', latitude: null, longitude: null,
+      cree: false, point: null, equipeId: null, nouvelleEquipeNom: '',
       ...this.extrasEtape(),
     },
   ];
@@ -230,15 +256,43 @@ export class CriseDemarrageComponent implements OnInit {
   }
 
   /** Relit l'institution via l'équipe elle-même, jamais l'institution en cache : un compte
-   * multi-institutions résoudrait sinon la mauvaise liste. */
+   * multi-institutions résoudrait sinon la mauvaise liste. Préremplit aussi thèmes et
+   * spécialités depuis la fiche quand l'équipe existe déjà, pour que la compléter au
+   * récapitulatif soit une confirmation d'un clic et non une ressaisie. */
   private chargerContexteEquipe(etape: EtapePoint): void {
     if (!etape.equipeId) { return; }
     this.teamService.getById(etape.equipeId).subscribe(team => {
+      if (etape.competenceIds.length === 0) { etape.competenceIds = [...(team.competence_ids || [])]; }
+      if (etape.themeIds.length === 0) { etape.themeIds = [...(team.theme_ids || [])]; }
       if (!team.institution) { return; }
       this.userService.getAll({ institution: [team.institution] }).subscribe(users => {
         etape.candidateMembers = users;
       });
     });
+  }
+
+  ajouterInvitation(etape: EtapePoint): void {
+    etape.invitations = [
+      ...etape.invitations,
+      { prenom: '', nom: '', email: '', telephone: '', roleCode: null },
+    ];
+  }
+
+  retirerInvitation(etape: EtapePoint, invitation: InvitationMembre): void {
+    etape.invitations = etape.invitations.filter(i => i !== invitation);
+  }
+
+  /** Une invitation commencée doit être complète : prénom, nom, email et rôle. */
+  invitationIncomplete(invitation: InvitationMembre): boolean {
+    const commencee = !!(invitation.prenom.trim() || invitation.nom.trim()
+      || invitation.email.trim() || invitation.telephone.trim() || invitation.roleCode);
+    return commencee && !(invitation.prenom.trim() && invitation.nom.trim()
+      && invitation.email.trim() && invitation.roleCode);
+  }
+
+  private invitationsCompletes(etape: EtapePoint): InvitationMembre[] {
+    return etape.invitations.filter(i =>
+      i.prenom.trim() && i.nom.trim() && i.email.trim() && i.roleCode);
   }
 
   private typeIdFor(code: string): string | null {
@@ -253,12 +307,21 @@ export class CriseDemarrageComponent implements OnInit {
     etape.nom = nom;
   }
 
+  /** Le composant émet null quand le champ est vidé après une sélection : on repasse alors le
+   * point en « adresse non renseignée » plutôt que de garder des coordonnées orphelines. */
+  onAdressePoint(etape: EtapePoint, adresse: AddressResult | null): void {
+    etape.adresse = adresse?.label ?? '';
+    etape.latitude = adresse?.latitude ?? null;
+    etape.longitude = adresse?.longitude ?? null;
+  }
+
   ajouterPoint(): void {
     this.etapes = [
       ...this.etapes,
       {
         pointTypeCode: null, titre: 'Nouveau point', description: '', suggestions: [], isDefault: false,
-        nom: '', cree: false, point: null, equipeId: null, nouvelleEquipeNom: '',
+        nom: '', adresse: '', latitude: null, longitude: null,
+        cree: false, point: null, equipeId: null, nouvelleEquipeNom: '',
         ...this.extrasEtape(),
       },
     ];
@@ -274,6 +337,15 @@ export class CriseDemarrageComponent implements OnInit {
     const sansType = aCreer.find(e => !e.pointTypeCode);
     if (sansType) {
       this.errorMessage = `Choisissez un type pour "${sansType.nom}".`;
+      return;
+    }
+    // L'adresse est exigée (26/10/2026) : un point sans coordonnées n'apparaît sur aucune
+    // carte, ne peut être proposé à personne par proximité, et sa commune reste inconnue —
+    // « Salle des fêtes » sans adresse n'aide personne à s'y rendre le jour de la crise.
+    const sansAdresse = aCreer.find(e => e.latitude == null || e.longitude == null);
+    if (sansAdresse) {
+      this.errorMessage = `Indiquez l'adresse de « ${sansAdresse.nom} » : sans elle, le point `
+        + `n'apparaîtra sur aucune carte et personne ne pourra y être orienté.`;
       return;
     }
     this.errorMessage = '';
@@ -298,7 +370,11 @@ export class CriseDemarrageComponent implements OnInit {
     aCreer.forEach(etape => {
       const typeId = this.typeIdFor(etape.pointTypeCode!);
       if (!typeId) { echec = true; fini(); return; }
-      this.pointService.create({ nom: etape.nom.trim(), type: typeId, crise: this.criseId }).subscribe({
+      this.pointService.create({
+        nom: etape.nom.trim(), type: typeId, crise: this.criseId,
+        adresse: etape.adresse,
+        location: JSON.stringify({ type: 'Point', coordinates: [etape.longitude, etape.latitude] }),
+      }).subscribe({
         next: (point) => { etape.cree = true; etape.point = point; fini(); },
         error: () => { echec = true; fini(); },
       });
@@ -342,7 +418,10 @@ export class CriseDemarrageComponent implements OnInit {
           if (updated.equipe) {
             etape.equipeId = updated.equipe;
             equipesACrise.add(updated.equipe);
-            if (nomNouvelleEquipe) { this.chargerContexteEquipe(etape); }
+            // Aussi pour une équipe EXISTANTE : elle doit recevoir spécialités et mission sur
+            // CETTE crise, sinon aucune demande ne lui sera suggérée ici (le formulaire du
+            // récapitulatif ne s'affichait que pour une équipe créée à la volée).
+            this.chargerContexteEquipe(etape);
           }
           terminerSiFini();
         },
@@ -381,6 +460,11 @@ export class CriseDemarrageComponent implements OnInit {
         + "sans elles, aucune demande ne pourra être suggérée automatiquement à cette équipe.";
       return;
     }
+    if (etape.invitations.some(i => this.invitationIncomplete(i))) {
+      etape.infosError = "Complétez (ou retirez) les invitations commencées : prénom, nom, "
+        + "email et rôle sont nécessaires pour créer l'accès de la personne.";
+      return;
+    }
     const r = etape.responsable;
     const invite = !!(r.prenom.trim() && r.nom.trim() && r.email.trim() && r.roleCode);
 
@@ -403,6 +487,16 @@ export class CriseDemarrageComponent implements OnInit {
         email: r.email.trim(), phone_number: r.telephone.trim(), role_code: r.roleCode!,
       }));
     }
+    // Chaque invitation rattache la personne à l'institution de l'équipe avec les droits
+    // collectivité locale, et lui envoie son lien d'activation (TeamViewSet.inviter_membre) —
+    // y compris quelqu'un qui n'a aucun compte sur la plateforme.
+    for (const invitation of this.invitationsCompletes(etape)) {
+      appels.push(this.teamService.inviterMembre(etape.equipeId, {
+        first_name: invitation.prenom.trim(), last_name: invitation.nom.trim(),
+        email: invitation.email.trim(), phone_number: invitation.telephone.trim(),
+        role_code: invitation.roleCode!,
+      }));
+    }
     appels.push(this.teamService.definirMission(etape.equipeId, etape.missionDescription.trim(), this.criseId));
 
     // Ce qui rend l'affectation automatique possible : `competence_ids` ci-dessus ne remplit que
@@ -419,6 +513,7 @@ export class CriseDemarrageComponent implements OnInit {
     forkJoin(appels).subscribe({
       next: () => {
         if (r.membreExistantId) { etape.membresAjoutes = [...etape.membresAjoutes, r.membreExistantId]; }
+        etape.invitations = [];
         etape.infosSaving = false;
         etape.infosDone = true;
       },

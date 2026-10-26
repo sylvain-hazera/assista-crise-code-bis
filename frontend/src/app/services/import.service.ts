@@ -15,6 +15,15 @@ export interface ImportResultat {
   erreurs: { ligne: number; message: string }[];
 }
 
+export interface SaisiePersonne {
+  prenom: string;
+  nom: string;
+  email: string;
+  telephone: string;
+  fonction: string;
+  inviter: boolean;
+}
+
 @Injectable({ providedIn: 'root' })
 export class ImportService {
   private readonly url = `${environment.apiUrl}/imports`;
@@ -39,6 +48,14 @@ export class ImportService {
       if (colonne) fd.append(`mapping_${champ}`, colonne);
     });
     return this.http.post<ImportResultat>(`${this.url}/personnel-communal/`, fd);
+  }
+
+  /** POST /api/imports/personnel-communal/saisie/ — mêmes comptes créés que l'import de
+   * fichier, mais pour quelques personnes tapées à la main. `inviter` (vrai par défaut) ne
+   * décide que de l'envoi du mail d'invitation ; le rattachement à la collectivité a lieu
+   * dans tous les cas. */
+  saisirPersonnelCommunal(personnes: SaisiePersonne[]): Observable<ImportResultat> {
+    return this.http.post<ImportResultat>(`${this.url}/personnel-communal/saisie/`, { personnes });
   }
 
   /** GET /api/imports/personnel-communal/exemple/ — fichier CSV d'exemple à télécharger avant

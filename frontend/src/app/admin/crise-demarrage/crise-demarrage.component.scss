@@ -385,3 +385,23 @@
   .material-icons { font-size: 18px; }
   &:hover { border-color: #2563eb; color: #2563eb; }
 }
+
+/* ── Adresse du point (étape 1) ─────────────────────────────────────────────── */
+.point-adresse {
+  margin-top: .75rem;
+
+  .adresse-ok {
+    display: flex; align-items: center; gap: .3rem;
+    margin: .4rem 0 0; font-size: .82rem; font-weight: 600; color: #166534;
+    .material-icons { font-size: 1rem; }
+  }
+}
+
+/* ── Invitations de membres (étape 3) ───────────────────────────────────────── */
+.invitation-row {
+  padding: .75rem; margin-bottom: .6rem;
+  border: 1px solid var(--border); border-radius: 10px;
+
+  /* Invitation commencée mais incomplète : signalée sans bloquer la frappe. */
+  &.invitation-incomplete { border-color: #fcd34d; background: #fffbeb; }
+}

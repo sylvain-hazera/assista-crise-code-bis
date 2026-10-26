@@ -8,6 +8,7 @@ Garde-fou volontaire : cette app ne doit JAMAIS héberger de donnée de santé (
 déjà posé sur DeclarationSecurite). Les champs cibles d'un import sont une liste FERMÉE
 (CHAMPS_PERSONNEL_COMMUNAL) — aucune colonne du fichier source au-delà de ceux mappés
 explicitement n'est jamais lue ni stockée, quelle que soit sa présence dans le fichier."""
+import codecs
 import csv
 import io
 
@@ -36,14 +37,63 @@ def parse_fichier(fichier):
     raise ValueError("Format de fichier non reconnu — utilisez un fichier .csv ou .xlsx.")
 
 
+# Encodages essayés dans l'ordre pour un CSV. utf-8 d'abord (le bon cas), puis cp1252 :
+# c'est ce qu'écrit Excel sous Windows avec « CSV (séparateur point-virgule) », de loin le
+# chemin le plus courant pour une mairie, et le seul caractère accentué suffit à faire échouer
+# un décodage utf-8 strict. latin-1 en dernier ne peut jamais lever (tout octet y est valide) :
+# il sert de filet pour ne JAMAIS rejeter un fichier sur son encodage -- au pire un accent
+# s'affiche de travers dans l'aperçu, ce que l'utilisateur voit et peut corriger, au lieu d'une
+# erreur technique incompréhensible (constat terrain du 2026-10-25 : trois tentatives d'import
+# refusées avec « 'utf-8' codec can't decode byte 0xe9 »).
+ENCODAGES_CSV = ("utf-8", "cp1252", "latin-1")
+
+# Séparateurs candidats, départagés sur la seule ligne d'en-têtes : compter sur tout le fichier
+# faisait choisir la virgule dès qu'une seule cellule de données en contenait une (« Dupont,
+# Jean » dans un commentaire, un montant « 1,5 »...).
+SEPARATEURS_CSV = (";", ",", "\t")
+
+
+def _decoder_csv(octets):
+    """Texte décodé sans BOM, quel que soit l'encodage d'origine (voir ENCODAGES_CSV)."""
+    if octets.startswith(codecs.BOM_UTF8):
+        octets = octets[len(codecs.BOM_UTF8):]
+    for encodage in ENCODAGES_CSV:
+        try:
+            return octets.decode(encodage)
+        except UnicodeDecodeError:
+            continue
+    # Inatteignable tant que latin-1 est dans la liste, gardé pour que la fonction reste
+    # correcte si ENCODAGES_CSV change un jour.
+    raise ValueError(
+        "Impossible de lire le texte de ce fichier — réenregistrez-le depuis votre tableur "
+        "au format « CSV UTF-8 »."
+    )
+
+
+def _separateur_csv(premiere_ligne):
+    occurrences = {sep: premiere_ligne.count(sep) for sep in SEPARATEURS_CSV}
+    meilleur = max(occurrences, key=lambda sep: occurrences[sep])
+    # Une seule colonne (aucun séparateur trouvé) : le choix est sans effet, on garde le
+    # point-virgule, convention française.
+    return meilleur if occurrences[meilleur] else ";"
+
+
 def _parse_csv(fichier):
-    # utf-8-sig : tolère le BOM ajouté par Excel à l'export CSV, sinon la première colonne
-    # serait lue avec un caractère invisible en préfixe (ex: "﻿Prénom" au lieu de "Prénom").
-    contenu = fichier.read().decode("utf-8-sig")
-    delimiteur = ";" if contenu.count(";") >= contenu.count(",") else ","
-    reader = csv.DictReader(io.StringIO(contenu), delimiter=delimiteur)
-    lignes = [dict(row) for row in reader]
-    colonnes = list(reader.fieldnames or [])
+    contenu = _decoder_csv(fichier.read())
+    premiere_ligne = contenu.splitlines()[0] if contenu else ""
+    reader = csv.reader(io.StringIO(contenu), delimiter=_separateur_csv(premiere_ligne))
+    try:
+        entetes = next(reader)
+    except StopIteration:
+        raise ValueError("Ce fichier est vide — la première ligne doit contenir les en-têtes de colonnes.")
+    # En-têtes nettoyées : un espace de fin invisible (« Email » / « Email ») empêchait la
+    # pré-sélection de la colonne et obligeait à tout remapper à la main.
+    colonnes = [str(c).strip() for c in entetes]
+    lignes = []
+    for row in reader:
+        if not any((v or "").strip() for v in row):
+            continue
+        lignes.append({colonnes[i]: row[i] if i < len(row) else None for i in range(len(colonnes))})
     return colonnes, lignes
 
 
@@ -69,14 +119,20 @@ def _valeur(ligne, mapping, champ):
     return str(valeur).strip() if valeur is not None else ""
 
 
-def importer_personnel_communal(request, institution, lignes, mapping):
+def importer_personnel_communal(request, institution, lignes, mapping, cle_invitation=None,
+                                premiere_ligne=2):
     """mapping : {champ_cible: colonne_source}, champ_cible parmi CHAMPS_PERSONNEL_COMMUNAL.
     Crée ou rattache un compte complet par ligne (User + ContactInstitution +
     AffectationRoleOperationnel REFERENT + accès démo, voir
     institution_attachment.grant_institution_and_demo_access) — email et nom obligatoires, les
     lignes sans l'un des deux sont ignorées et reportées en erreur plutôt que d'échouer tout
     l'import. Un email déjà existant dans le système est simplement rattaché à `institution`
-    (jamais recréé), pour que ré-importer le même fichier après correction soit sans risque."""
+    (jamais recréé), pour que ré-importer le même fichier après correction soit sans risque.
+
+    `cle_invitation` : nom d'une clé booléenne portée par chaque ligne, qui décide de l'envoi du
+    mail d'invitation (None = on invite toujours, comportement d'un import de fichier).
+    `premiere_ligne` : numéro de la première ligne de données dans les messages d'erreur (2 pour
+    un fichier à en-têtes, 1 pour une saisie à la main)."""
     from .audit import audit_log
     from .crypto_fields import blind_index
     from .institution_attachment import grant_institution_and_demo_access
@@ -86,7 +142,7 @@ def importer_personnel_communal(request, institution, lignes, mapping):
     role_referent = RoleOperationnel.objects.filter(code="REFERENT").first()
 
     crees, rattaches, erreurs = [], [], []
-    for numero, ligne in enumerate(lignes, start=2):  # ligne 1 = en-têtes, données à partir de 2
+    for numero, ligne in enumerate(lignes, start=premiere_ligne):
         email = _valeur(ligne, mapping, "email").lower()
         nom = _valeur(ligne, mapping, "nom")
         prenom = _valeur(ligne, mapping, "prenom")
@@ -97,6 +153,8 @@ def importer_personnel_communal(request, institution, lignes, mapping):
             erreurs.append({"ligne": numero, "message": "Email et nom sont obligatoires."})
             continue
 
+        inviter = True if cle_invitation is None else bool(ligne.get(cle_invitation, True))
+
         # email chiffré (voir core/crypto_fields.py) -- recherche exacte par index aveugle.
         user = User.objects.filter(email_bidx=blind_index(email)).first()
         if user is None:
@@ -106,10 +164,11 @@ def importer_personnel_communal(request, institution, lignes, mapping):
                 type=UserRole.LOCAL_AUTHORITY, enabled=True, is_active=False,
             )
             crees.append(email)
-            try:
-                send_institution_account_email(request, user)
-            except Exception:
-                pass
+            if inviter:
+                try:
+                    send_institution_account_email(request, user)
+                except Exception:
+                    pass
         else:
             rattaches.append(email)
             if user.type == UserRole.SIMPLE_USER:
@@ -144,6 +203,30 @@ def importer_personnel_communal(request, institution, lignes, mapping):
         ),
     )
     return {"crees": len(crees), "rattaches": len(rattaches), "erreurs": erreurs}
+
+
+def importer_personnel_communal_saisie(request, institution, personnes):
+    """Saisie à la main, ligne par ligne, du personnel communal — même traitement exactement
+    qu'un import de fichier (importer_personnel_communal : compte complet, rattachement à
+    l'institution, rôle REFERENT, accès démo), pour quelques personnes seulement : refaire un
+    CSV pour deux agents n'a aucun sens (demande Nicolas Larvor du 2026-10-26).
+
+    `personnes` : liste de dicts {prenom, nom, email, telephone, fonction, inviter}. `inviter`
+    (vrai par défaut) décide du seul envoi du mail d'invitation : la personne est de toute façon
+    rattachée à la collectivité, c'est le propre de cette page — on peut simplement l'enregistrer
+    d'abord et lui écrire plus tard (bouton « Renvoyer l'activation » de la page Utilisateurs).
+    Seuls les champs de CHAMPS_PERSONNEL_COMMUNAL sont lus, comme pour un fichier : aucune autre
+    clé envoyée par le client n'est jamais regardée (même garde-fou « aucune donnée de santé »)."""
+    lignes = []
+    for personne in personnes:
+        ligne = {champ: personne.get(champ) or "" for champ in CHAMPS_PERSONNEL_COMMUNAL}
+        ligne["inviter"] = personne.get("inviter", True) is not False
+        lignes.append(ligne)
+    # mapping identité : les clés des lignes construites ci-dessus SONT les champs cibles.
+    mapping = {champ: champ for champ in CHAMPS_PERSONNEL_COMMUNAL}
+    return importer_personnel_communal(
+        request, institution, lignes, mapping, cle_invitation="inviter", premiere_ligne=1,
+    )
 
 
 def exemple_csv_personnel_communal() -> str:

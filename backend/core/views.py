@@ -89,6 +89,7 @@ from .imports import (
     exemple_csv_interlocuteurs_pcs,
     exemple_csv_materiel_point,
     importer_personnel_communal,
+    importer_personnel_communal_saisie,
     importer_institutions,
     importer_habitations,
     importer_correspondants_pcs,
@@ -2191,6 +2192,44 @@ class ImportPersonnelCommunalView(APIView):
         except ValueError as exc:
             return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         resultat = importer_personnel_communal(request, institution, lignes, mapping)
+        return Response(resultat)
+
+
+class SaisiePersonnelCommunalView(APIView):
+    """Saisie à la main du personnel communal, à côté de l'import de fichier : quelques lignes
+    tapées directement dans la page plutôt qu'un CSV à fabriquer pour deux agents (voir
+    imports.importer_personnel_communal_saisie). Mêmes permissions et même traitement que
+    l'import de fichier — c'est la même page et la même institution."""
+    permission_classes = [IsInstitutionalActor]
+
+    # Au-delà, c'est un fichier qu'il faut : le formulaire de saisie n'a pas de sens à cette
+    # taille, et une boucle de création de comptes doit rester bornée.
+    MAX_PERSONNES = 100
+
+    def post(self, request):
+        institution = getattr(request.user, 'institution', None)
+        if institution is None:
+            return Response(
+                {"error": "Aucune institution associée à votre compte."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        personnes = request.data.get('personnes')
+        if not isinstance(personnes, list) or not personnes:
+            return Response(
+                {"error": "Aucune personne à enregistrer."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if len(personnes) > self.MAX_PERSONNES:
+            return Response(
+                {"error": f"Pas plus de {self.MAX_PERSONNES} personnes à la fois — au-delà, utilisez l'import de fichier."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not all(isinstance(p, dict) for p in personnes):
+            return Response(
+                {"error": "Format de saisie invalide."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        resultat = importer_personnel_communal_saisie(request, institution, personnes)
         return Response(resultat)
 
 
@@ -4755,6 +4794,7 @@ def _definir_mission(request, team, titre, crise=None):
     # stats qui filtrent dessus (voir doc de conception, doublon relevé explicitement).
     if crise:
         team.assigned_crises.add(crise)
+        affecter_competences_aux_crises(team, request)
         _assurer_implication_impliquee(request, team.institution_id, crise)
 
     _notifier_membres_equipe(
@@ -8050,6 +8090,8 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         point.save(update_fields=['equipe'])
         if point.crise_id:
             team.assigned_crises.add(point.crise)
+            # Voir assigner_crise : même invariant spécialités ↔ crise.
+            affecter_competences_aux_crises(team, request)
             _assurer_implication_impliquee(request, team.institution_id, point.crise)
 
         audit_log(
@@ -8089,6 +8131,13 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             return Response({"error": "Crise introuvable."}, status=status.HTTP_400_BAD_REQUEST)
 
         team.assigned_crises.add(crise)
+        # Les spécialités de la fiche équipe doivent exister comme AffectationCompetence SUR
+        # CETTE CRISE, sinon meilleure_equipe_pour_competence ne connaît pas l'équipe et aucune
+        # demande ne lui est jamais suggérée : une équipe EXISTANTE rattachée à une nouvelle
+        # crise (le cas courant du wizard de démarrage) restait muette, alors qu'une équipe
+        # créée au même moment fonctionnait. Strictement additif (voir
+        # affecter_competences_aux_crises).
+        affecter_competences_aux_crises(team, request)
         _assurer_implication_impliquee(request, team.institution_id, crise)
         _notifier_membres_equipe(
             request, team, "Équipe rattachée à une crise",
@@ -12534,6 +12583,9 @@ class PointOperationnelViewSet(
         # crise ou d'une équipe ajoutée/changée après coup sur un point déjà existant.
         if point.crise_id and point.equipe_id:
             point.equipe.assigned_crises.add(point.crise)
+            # Voir TeamViewSet.assigner_crise : sans AffectationCompetence sur CETTE crise,
+            # l'équipe du point ne reçoit aucune suggestion automatique.
+            affecter_competences_aux_crises(point.equipe, self.request)
             _assurer_implication_impliquee(self.request, point.equipe.institution_id, point.crise)
 
     def _resolve_institution_for_new_team(self):
@@ -12623,6 +12675,9 @@ class PointOperationnelViewSet(
         # créée à la volée juste au-dessus, ou équipe existante choisie directement au payload.
         if point.crise_id and point.equipe_id:
             point.equipe.assigned_crises.add(point.crise)
+            # Voir TeamViewSet.assigner_crise : sans AffectationCompetence sur CETTE crise,
+            # l'équipe du point ne reçoit aucune suggestion automatique.
+            affecter_competences_aux_crises(point.equipe, self.request)
             _assurer_implication_impliquee(self.request, point.equipe.institution_id, point.crise)
 
     HEURES_PAR_CRENEAU = 6  # MATIN/MIDI/SOIR/NUIT ≈ 4 créneaux de 6h sur 24h — approximation

@@ -103,6 +103,24 @@
           }
 
           <input type="text" class="form-input" [(ngModel)]="etape.nom" placeholder="Nom du point (laisser vide = non pourvu)">
+
+          @if (etape.nom.trim()) {
+            <div class="point-adresse">
+              <app-address-picker label="Adresse du point" [required]="true"
+                                  placeholder="Rechercher l'adresse…"
+                                  (addressSelected)="onAdressePoint(etape, $event)"></app-address-picker>
+              @if (etape.adresse) {
+                <p class="adresse-ok">
+                  <span class="material-icons">place</span> {{ etape.adresse }}
+                </p>
+              } @else {
+                <p class="page-hint">
+                  Nécessaire pour que le point apparaisse sur la carte et que les personnes
+                  puissent y être orientées.
+                </p>
+              }
+            </div>
+          }
         </div>
       }
 
@@ -174,9 +192,18 @@
               @if (etape.point?.equipe_nom) {
                 (équipe : {{ etape.point?.equipe_nom }})
 
-                @if (etape.nouvelleEquipeNom.trim() && !etape.infosDone && !etape.infosSkipped) {
+                @if (!etape.infosDone && !etape.infosSkipped) {
                   <div class="responsable-form">
-                    <p class="page-hint">Informations de l'équipe (le minimum nécessaire — la zone d'intervention est déduite automatiquement du territoire communal de la crise) :</p>
+                    <p class="page-hint">
+                      @if (etape.nouvelleEquipeNom.trim()) {
+                        Informations de l'équipe (le minimum nécessaire — la zone d'intervention
+                        est déduite automatiquement du territoire communal de la crise) :
+                      } @else {
+                        Cette équipe existe déjà : confirmez ce qu'elle fait <strong>sur cette
+                        crise</strong>. Ses spécialités sont préremplies depuis sa fiche, mais
+                        la mission et l'affectation des spécialités sont propres à chaque crise.
+                      }
+                    </p>
 
                     <label class="form-label">Contact</label>
                     <select class="form-input" [(ngModel)]="etape.responsable.membreExistantId"
@@ -205,6 +232,38 @@
                         <option [ngValue]="r.code">{{ r.libelle }}</option>
                       }
                     </select>
+
+                    <label class="form-label">Autres membres à inviter</label>
+                    <p class="page-hint">
+                      Une personne invitée ici est rattachée à votre collectivité et reçoit son
+                      lien d'accès — même si elle n'a aucun compte sur la plateforme.
+                    </p>
+                    @for (invitation of etape.invitations; track invitation) {
+                      <div class="invitation-row" [class.invitation-incomplete]="invitationIncomplete(invitation)">
+                        <div class="form-row">
+                          <input type="text" class="form-input" [(ngModel)]="invitation.prenom" placeholder="Prénom">
+                          <input type="text" class="form-input" [(ngModel)]="invitation.nom" placeholder="Nom">
+                        </div>
+                        <div class="form-row">
+                          <input type="email" class="form-input" [(ngModel)]="invitation.email" placeholder="Email">
+                          <input type="tel" class="form-input" [(ngModel)]="invitation.telephone" placeholder="Téléphone">
+                        </div>
+                        <div class="form-row">
+                          <select class="form-input" [(ngModel)]="invitation.roleCode">
+                            <option [ngValue]="null">— Rôle dans l'équipe —</option>
+                            @for (r of roles; track r.id) {
+                              <option [ngValue]="r.code">{{ r.libelle }}</option>
+                            }
+                          </select>
+                          <button type="button" class="btn-secondary" (click)="retirerInvitation(etape, invitation)">
+                            Retirer
+                          </button>
+                        </div>
+                      </div>
+                    }
+                    <button type="button" class="btn-ajouter-point" (click)="ajouterInvitation(etape)">
+                      <span class="material-icons">person_add</span> Inviter une personne
+                    </button>
 
                     <label class="form-label">Thèmes d'intervention</label>
                     <div class="checklist-box">

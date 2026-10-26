@@ -40,6 +40,92 @@
     </section>
   }
 
+  @if (etape === 'selection') {
+    <section class="block">
+      <h2>Ou saisissez les personnes à la main</h2>
+      <p class="empty-text section-note">
+        Pour quelques personnes seulement, pas besoin de préparer un fichier : ajoutez une ligne,
+        complétez-la, et recommencez autant de fois que nécessaire. Chaque personne enregistrée est
+        rattachée à votre collectivité exactement comme par un import de fichier — cochez
+        « Inviter » pour qu'elle reçoive tout de suite son lien d'activation.
+      </p>
+
+      @if (lignesSaisie.length > 0) {
+        <div class="table-scroll">
+          <table class="data-table saisie-table">
+            <thead>
+              <tr>
+                <th>Prénom</th>
+                <th>Nom <span class="required">*</span></th>
+                <th>Email <span class="required">*</span></th>
+                <th>Téléphone</th>
+                <th>Fonction</th>
+                <th>Inviter</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (ligne of lignesSaisie; track ligne) {
+                <tr [class.ligne-incomplete]="ligneIncomplete(ligne)">
+                  <td><input type="text" class="form-input" [(ngModel)]="ligne.prenom" placeholder="Jeanne"></td>
+                  <td><input type="text" class="form-input" [(ngModel)]="ligne.nom" placeholder="Martin"></td>
+                  <td><input type="email" class="form-input" [(ngModel)]="ligne.email" placeholder="jeanne.martin@ma-commune.fr"></td>
+                  <td><input type="tel" class="form-input" [(ngModel)]="ligne.telephone" placeholder="0600000000"></td>
+                  <td><input type="text" class="form-input" [(ngModel)]="ligne.fonction" placeholder="Maire, DGS, agent technique…"></td>
+                  <td class="cell-centre">
+                    <input type="checkbox" class="form-checkbox" [(ngModel)]="ligne.inviter"
+                           title="Envoyer maintenant le lien d'activation du compte">
+                  </td>
+                  <td>
+                    <button type="button" class="btn-ghost sm" (click)="retirerLigne(ligne)" title="Retirer cette ligne">
+                      <span class="material-icons">close</span>
+                    </button>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        <p class="empty-text section-note">Nom et email sont obligatoires sur chaque ligne commencée.</p>
+      }
+
+      <div class="actions-row">
+        <button type="button" class="btn-secondary" (click)="ajouterLigne()">
+          <span class="material-icons">add</span> Ajouter une personne
+        </button>
+        @if (lignesSaisie.length > 0) {
+          <button type="button" class="btn-primary" [disabled]="!saisieValide || saisieEnCours" (click)="enregistrerSaisie()">
+            {{ saisieEnCours ? 'Enregistrement…' : 'Enregistrer ces personnes' }}
+          </button>
+        }
+      </div>
+
+      @if (saisieErreur) {
+        <div class="alert-error">
+          <span class="material-icons">error_outline</span>
+          {{ saisieErreur }}
+        </div>
+      }
+
+      @if (resultatSaisie) {
+        <div class="resultat-summary">
+          <div class="resultat-chip resultat-crees">{{ resultatSaisie.crees }} compte(s) créé(s)</div>
+          <div class="resultat-chip resultat-rattaches">{{ resultatSaisie.rattaches }} déjà existant(s), rattaché(s)</div>
+          @if (resultatSaisie.erreurs.length > 0) {
+            <div class="resultat-chip resultat-erreurs">{{ resultatSaisie.erreurs.length }} ligne(s) à corriger</div>
+          }
+        </div>
+        @if (resultatSaisie.erreurs.length > 0) {
+          <ul class="erreurs-list">
+            @for (erreur of resultatSaisie.erreurs; track erreur.ligne) {
+              <li>Ligne {{ erreur.ligne }} : {{ erreur.message }}</li>
+            }
+          </ul>
+        }
+      }
+    </section>
+  }
+
   @if (etape === 'correspondance' && apercu) {
     <section class="block">
       <h2>2. Faites correspondre les colonnes</h2>

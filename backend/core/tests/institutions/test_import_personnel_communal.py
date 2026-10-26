@@ -10,7 +10,12 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 from rest_framework.test import APIClient
 
-from core.imports import exemple_csv_personnel_communal, importer_personnel_communal, parse_fichier
+from core.imports import (
+    exemple_csv_personnel_communal,
+    importer_personnel_communal,
+    importer_personnel_communal_saisie,
+    parse_fichier,
+)
 from core.crypto_fields import blind_index
 from core.models import ContactInstitution, Institution, InstitutionType, User
 
@@ -60,6 +65,53 @@ class TestParseFichier:
         colonnes, lignes = parse_fichier(fichier)
         assert colonnes == ["Prénom", "Nom", "Email"]
         assert lignes == [{"Prénom": "Paul", "Nom": "Durand", "Email": "paul@test.fr"}]
+
+    def test_parses_csv_written_by_excel_windows(self):
+        """Excel sous Windows écrit du cp1252, pas de l'utf-8 : le décodage strict en utf-8
+        faisait échouer l'import entier avec un message technique ("'utf-8' codec can't decode
+        byte 0xe9"), ce qui s'est produit en vrai le 25/10/2026 — trois tentatives refusées."""
+        contenu = "Prénom;Nom;Email\nFrédéric;Lévêque;f.leveque@test.fr\n".encode("cp1252")
+        fichier = SimpleUploadedFile("excel.csv", contenu, content_type="text/csv")
+
+        colonnes, lignes = parse_fichier(fichier)
+
+        assert colonnes == ["Prénom", "Nom", "Email"]
+        assert lignes[0]["Prénom"] == "Frédéric"
+        assert lignes[0]["Nom"] == "Lévêque"
+
+    def test_delimiter_is_decided_on_the_header_line_only(self):
+        """Une virgule dans une CELLULE de données ne doit pas faire croire à un CSV à
+        virgules : le fichier ci-dessous est séparé par des points-virgules et contient
+        « Martin, Jeanne » en valeur."""
+        contenu = "Nom;Email;Fonction\nMartin;j@test.fr;Adjointe, 1er rang\n".encode("utf-8")
+        fichier = SimpleUploadedFile("virgules.csv", contenu, content_type="text/csv")
+
+        colonnes, lignes = parse_fichier(fichier)
+
+        assert colonnes == ["Nom", "Email", "Fonction"]
+        assert lignes[0]["Fonction"] == "Adjointe, 1er rang"
+
+    def test_parses_comma_separated_csv(self):
+        contenu = "Nom,Email\nMartin,j@test.fr\n".encode("utf-8")
+        fichier = SimpleUploadedFile("virgule.csv", contenu, content_type="text/csv")
+
+        colonnes, lignes = parse_fichier(fichier)
+
+        assert colonnes == ["Nom", "Email"]
+        assert lignes[0]["Email"] == "j@test.fr"
+
+    def test_header_whitespace_is_stripped(self):
+        contenu = "Nom ; Email \nMartin;j@test.fr\n".encode("utf-8")
+        fichier = SimpleUploadedFile("espaces.csv", contenu, content_type="text/csv")
+
+        colonnes, _lignes = parse_fichier(fichier)
+
+        assert colonnes == ["Nom", "Email"]
+
+    def test_empty_file_raises(self):
+        fichier = SimpleUploadedFile("vide.csv", b"", content_type="text/csv")
+        with pytest.raises(ValueError):
+            parse_fichier(fichier)
 
     def test_unrecognised_extension_raises(self):
         fichier = SimpleUploadedFile("import.txt", b"contenu", content_type="text/plain")
@@ -144,6 +196,107 @@ class TestImporterPersonnelCommunal:
         # Aucun champ santé n'existe sur User : la seule vérification possible est qu'aucune
         # trace de "Allergies"/"Pénicilline" ne s'est glissée nulle part sur le compte créé.
         assert "Pénicilline" not in (user.first_name, user.last_name, user.phone_number or "")
+
+
+@pytest.mark.django_db
+class TestSaisieManuelle:
+    """Saisie ligne par ligne depuis la page d'import (bouton « + »), pour quelques personnes
+    sans fabriquer de fichier — mêmes comptes créés que par un import."""
+
+    def test_creates_accounts_like_a_file_import(self, rf, create_user):
+        institution = _make_institution()
+        admin = create_user(username="admin-saisie@test.fr", email="admin-saisie@test.fr", type="AUT_LOCALE", institution=institution)
+        request = rf.post("/")
+        request.user = admin
+
+        resultat = importer_personnel_communal_saisie(request, institution, [
+            {"prenom": "Jeanne", "nom": "Martin", "email": "saisie1@test.fr", "telephone": "0600000000", "fonction": "Maire"},
+        ])
+
+        assert resultat == {"crees": 1, "rattaches": 0, "erreurs": []}
+        user = User.objects.get(email_bidx=blind_index("saisie1@test.fr"))
+        assert user.last_name == "Martin"
+        assert user.institution_id == institution.id
+        assert ContactInstitution.objects.filter(institution=institution, utilisateur=user).exists()
+
+    def test_errors_are_numbered_from_the_first_row(self, rf, create_user):
+        institution = _make_institution()
+        admin = create_user(username="admin-saisie2@test.fr", email="admin-saisie2@test.fr", type="AUT_LOCALE", institution=institution)
+        request = rf.post("/")
+        request.user = admin
+
+        resultat = importer_personnel_communal_saisie(request, institution, [
+            {"prenom": "Sans", "nom": "Email", "email": ""},
+        ])
+
+        # Pas d'en-têtes dans une saisie à la main : la première ligne est la ligne 1.
+        assert resultat["erreurs"] == [{"ligne": 1, "message": "Email et nom sont obligatoires."}]
+
+    def test_inviter_false_attaches_without_sending_the_email(self, rf, create_user, mailoutbox):
+        institution = _make_institution()
+        admin = create_user(username="admin-saisie3@test.fr", email="admin-saisie3@test.fr", type="AUT_LOCALE", institution=institution)
+        request = rf.post("/")
+        request.user = admin
+        mailoutbox.clear()
+
+        resultat = importer_personnel_communal_saisie(request, institution, [
+            {"prenom": "Paul", "nom": "Durand", "email": "saisie-sans-mail@test.fr", "inviter": False},
+        ])
+
+        assert resultat["crees"] == 1
+        user = User.objects.get(email_bidx=blind_index("saisie-sans-mail@test.fr"))
+        assert ContactInstitution.objects.filter(institution=institution, utilisateur=user).exists()
+        # Seul le mail d'invitation (lien d'activation) est retenu ; celui d'accès à la
+        # messagerie de l'équipe vient du rattachement lui-même et part dans tous les cas.
+        assert not any("activate-account" in m.body for m in mailoutbox)
+
+    def test_inviter_true_sends_the_activation_email(self, rf, create_user, mailoutbox):
+        institution = _make_institution()
+        admin = create_user(username="admin-saisie4@test.fr", email="admin-saisie4@test.fr", type="AUT_LOCALE", institution=institution)
+        request = rf.post("/")
+        request.user = admin
+        mailoutbox.clear()
+
+        importer_personnel_communal_saisie(request, institution, [
+            {"prenom": "Lea", "nom": "Bernard", "email": "saisie-avec-mail@test.fr", "inviter": True},
+        ])
+
+        assert any("activate-account" in m.body for m in mailoutbox)
+
+    def test_view_requires_institutional_actor(self, create_user):
+        user = create_user(username="simple-saisie@test.fr", email="simple-saisie@test.fr", type="UTIL_SIMPLE")
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        response = client.post(reverse("saisie_personnel_communal"), {
+            "personnes": [{"nom": "X", "email": "x@test.fr"}],
+        }, format="json")
+
+        assert response.status_code == 403
+
+    def test_view_rejects_empty_payload(self, create_user):
+        institution = _make_institution()
+        user = create_user(username="saisie-vide@test.fr", email="saisie-vide@test.fr", type="AUT_LOCALE", institution=institution)
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        response = client.post(reverse("saisie_personnel_communal"), {"personnes": []}, format="json")
+
+        assert response.status_code == 400
+
+    def test_view_end_to_end(self, create_user):
+        institution = _make_institution()
+        user = create_user(username="saisie-e2e@test.fr", email="saisie-e2e@test.fr", type="AUT_LOCALE", institution=institution)
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        response = client.post(reverse("saisie_personnel_communal"), {
+            "personnes": [{"prenom": "Jeanne", "nom": "Martin", "email": "saisie-e2e-1@test.fr", "fonction": "DGS", "inviter": True}],
+        }, format="json")
+
+        assert response.status_code == 200
+        assert response.data["crees"] == 1
+        assert User.objects.filter(email_bidx=blind_index("saisie-e2e-1@test.fr")).exists()
 
 
 @pytest.mark.django_db

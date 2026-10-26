@@ -3,7 +3,16 @@ from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from core.models import AffectationCompetence, AuditLog, Competence, Crisis, Team
+from core.models import (
+    AffectationCompetence,
+    AuditLog,
+    Competence,
+    ContactInstitution,
+    Crisis,
+    Institution,
+    InstitutionType,
+    Team,
+)
 
 
 @pytest.fixture
@@ -136,3 +145,62 @@ class TestSpecialitesVersAffectations:
         client.patch(reverse('team-detail', args=[team.id]), {"competence_ids": []}, format='json')
 
         assert AffectationCompetence.objects.filter(crise=crisis, competence=competence, equipe=team).exists()
+
+
+def _rattacher(team, user):
+    """L'équipe et l'acteur doivent partager une institution : assigner une crise n'est permis
+    qu'aux équipes de sa propre institution, et l'appartenance se lit sur ContactInstitution,
+    pas sur User.institution (voir _appartient_a_institution)."""
+    itype, _ = InstitutionType.objects.get_or_create(code="MAIRIE", defaults={"libelle": "MAIRIE"})
+    institution, _ = Institution.objects.get_or_create(nom="Mairie affectation test", defaults={"type": itype})
+    user.institution = institution
+    user.save(update_fields=['institution'])
+    ContactInstitution.objects.get_or_create(
+        institution=institution, utilisateur=user, defaults={"fonction": "Référent", "actif": True},
+    )
+    team.institution = institution
+    team.save(update_fields=['institution'])
+
+
+@pytest.mark.django_db
+class TestAffectationsAuRattachementCrise:
+    """Le wizard de démarrage de crise affecte souvent une équipe qui EXISTE DÉJÀ, avec ses
+    spécialités renseignées de longue date. Rattacher cette équipe à la nouvelle crise ne créait
+    aucune AffectationCompetence, et le moteur de suggestion
+    (meilleure_equipe_pour_competence, qui ne lit QUE ces affectations) ne la voyait pas :
+    l'équipe restait muette sur la crise, alors qu'une équipe créée au même moment fonctionnait
+    (signalé par Nicolas Larvor le 26/10/2026)."""
+
+    def test_assigner_crise_cree_les_affectations_des_specialites(self, institutional_client, team, competence, crisis):
+        client, user = institutional_client
+        _rattacher(team, user)
+        team.competences.add(competence)
+
+        response = client.post(
+            reverse('team-assigner-crise', args=[team.id]),
+            {"crise_id": str(crisis.id)},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert AffectationCompetence.objects.filter(
+            crise=crisis, competence=competence, equipe=team, active=True,
+        ).count() == 1
+
+    def test_assigner_crise_est_idempotent(self, institutional_client, team, competence, crisis):
+        client, user = institutional_client
+        _rattacher(team, user)
+        team.competences.add(competence)
+
+        client.post(reverse('team-assigner-crise', args=[team.id]), {"crise_id": str(crisis.id)}, format='json')
+        client.post(reverse('team-assigner-crise', args=[team.id]), {"crise_id": str(crisis.id)}, format='json')
+
+        assert AffectationCompetence.objects.filter(crise=crisis, competence=competence, equipe=team).count() == 1
+
+    def test_equipe_sans_specialite_ne_cree_rien(self, institutional_client, team, crisis):
+        client, user = institutional_client
+        _rattacher(team, user)
+
+        client.post(reverse('team-assigner-crise', args=[team.id]), {"crise_id": str(crisis.id)}, format='json')
+
+        assert not AffectationCompetence.objects.exists()
