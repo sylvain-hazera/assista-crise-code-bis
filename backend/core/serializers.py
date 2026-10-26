@@ -2816,7 +2816,10 @@ class PlanMissionModeleSerializer(serializers.ModelSerializer):
 
 
 class PointOperationnelPublicSerializer(serializers.ModelSerializer):
-    """Point opérationnel à champs restreints, pour les formulaires et la carte publics."""
+    """Point opérationnel à champs restreints, pour les formulaires et la carte publics.
+
+    Champs volontairement limités à ce qu'un habitant a besoin de savoir pour se rendre dans un
+    centre : jamais de responsable, de contact, d'équipe ni de commentaire interne."""
 
     latitude = serializers.SerializerMethodField()
     longitude = serializers.SerializerMethodField()
@@ -2824,10 +2827,16 @@ class PointOperationnelPublicSerializer(serializers.ModelSerializer):
     # Type public : distingue centres d'accueil et postes de secours.
     type_code = serializers.CharField(source="type.code", read_only=True, default=None)
     type_libelle = serializers.CharField(source="type.libelle", read_only=True, default=None)
+    # Nom de la crise, pour rattacher un centre à sa crise dans le récapitulatif de la page
+    # d'accueil sans un appel par centre. `commentaire` reste exclu : c'est le champ de notes
+    # internes, `description` est celui rédigé pour être lu.
+    crise_nom = serializers.CharField(source="crise.name", read_only=True, default=None)
 
     class Meta:
         model = PointOperationnel
-        fields = ['id', 'nom', 'adresse', 'latitude', 'longitude', 'capacite_accueil', 'personnes_presentes', 'crise', 'type_code', 'type_libelle', 'accepte_animaux']
+        fields = ['id', 'nom', 'description', 'adresse', 'latitude', 'longitude',
+                  'capacite_accueil', 'personnes_presentes', 'crise', 'crise_nom',
+                  'type_code', 'type_libelle', 'accepte_animaux']
 
     def get_latitude(self, obj):
         return obj.location.y if obj.location else None

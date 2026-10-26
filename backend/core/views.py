@@ -12511,14 +12511,22 @@ class PointOperationnelViewSet(
 
     @action(detail=False, methods=["get"], permission_classes=[AllowAny])
     def carte_publique(self, request):
-        """Centres visibles sans authentification sur la carte de la page d'accueil : centres
-        d'accueil (HEBERGEMENT) et postes de secours (SECOURS) actifs, toutes crises confondues
-        — contrairement à centres_accueil (scopé à une seule crise pour le formulaire "je suis
-        en sécurité"), cette liste alimente une carte globale, sans crise présélectionnée."""
+        """Centres visibles sans authentification sur la carte ET dans le récapitulatif de la
+        page d'accueil : centres d'accueil (HEBERGEMENT) et postes de secours (SECOURS) encore
+        ouverts, toutes crises confondues — contrairement à centres_accueil (scopé à une seule
+        crise pour le formulaire "je suis en sécurité"), cette liste alimente une vue globale,
+        sans crise présélectionnée.
+
+        « Ouvert » = actif, dont la crise n'est pas terminée (Crisis.end_date, même règle que
+        CrisisSerializer.is_open) et dont la date de fermeture éventuellement saisie n'est pas
+        déjà passée. Un habitant ne doit jamais être envoyé vers un centre fermé : c'est la
+        seule information de cette page sur laquelle il se déplace physiquement."""
         queryset = PointOperationnel.objects.filter(
+            Q(crise__isnull=True) | Q(crise__end_date__isnull=True),
+            Q(date_fermeture__isnull=True) | Q(date_fermeture__gt=timezone.now()),
             actif=True, type__code__in=["HEBERGEMENT", "SECOURS"],
             environment=get_active_environment(request),
-        ).select_related("type")
+        ).select_related("type", "crise")
         return Response(PointOperationnelPublicSerializer(queryset, many=True).data)
 
     @action(detail=False, methods=["get"], permission_classes=[AllowAny])
