@@ -231,6 +231,26 @@ class InformationTypeBesoinSerializer(serializers.ModelSerializer):
         model = InformationTypeBesoin
         fields = "__all__"
 
+class SansIndexAveugleMixin:
+    """Retire les index aveugles (`*_bidx`) de toute sortie d'API (26/10/2026).
+
+    Ce sont des empreintes calculées à partir d'une clé secrète du serveur, qui servent à
+    retrouver une ligne par email sans la déchiffrer. Elles n'ont aucun usage côté client -- le
+    frontend n'en lit aucune -- mais exposées elles forment un identifiant STABLE : deux fiches
+    portant le même index viennent de la même adresse, ce qui permet de recouper les dépôts
+    d'une personne, y compris pour un visiteur anonyme. Constaté sur la liste publique des
+    demandes, où `email_request_bidx` sortait en clair.
+
+    `read_only` ne suffisait pas : le champ restait sérialisé en sortie, il n'était qu'interdit
+    en entrée."""
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        for champ in [c for c in data if c.endswith('_bidx')]:
+            data.pop(champ)
+        return data
+
+
 class UserSerializer(serializers.ModelSerializer):
     """Serializer pour les utilisateurs"""
     password = serializers.CharField(write_only=True, required=True)
@@ -541,7 +561,7 @@ class CrisisSerializer(serializers.ModelSerializer):
         # .filter().exists() qui ignorerait le cache et relancerait une requête par crise.
         return any(i.responsable_id and i.actif for i in obj.implications.all())
 
-class RequestSerializer(serializers.ModelSerializer):
+class RequestSerializer(SansIndexAveugleMixin, serializers.ModelSerializer):
     """Demande d'aide. La localisation n'est visible que de la mairie, des secours et des
     bénévoles affectés au dossier ; null pour les autres."""
     latitude = serializers.SerializerMethodField()
@@ -616,6 +636,7 @@ class RequestSerializer(serializers.ModelSerializer):
             data['location'] = None
             data['first_name_request'] = None
             data['last_name_request'] = None
+            data['author_nom'] = None
             data['email_request'] = None
             data['phone_request'] = None
             data['author_email'] = None
@@ -683,7 +704,7 @@ class RequestPhotoSerializer(serializers.ModelSerializer):
         return attrs
 
 
-class OfferSerializer(serializers.ModelSerializer):
+class OfferSerializer(SansIndexAveugleMixin, serializers.ModelSerializer):
     """Offre d'aide. La localisation n'est visible que des acteurs institutionnels de la zone ;
     null pour les autres."""
     latitude = serializers.SerializerMethodField()
@@ -777,6 +798,7 @@ class OfferSerializer(serializers.ModelSerializer):
             data['location'] = None
             data['first_name_offer'] = None
             data['last_name_offer'] = None
+            data['author_nom'] = None
             data['email_offer'] = None
             data['phone_offer'] = None
             data['author_email'] = None
@@ -1086,7 +1108,7 @@ class AffectationPointBenevoleSerializer(serializers.ModelSerializer):
         return full_name or obj.benevole.email
 
 
-class InformationSerializer(serializers.ModelSerializer):
+class InformationSerializer(SansIndexAveugleMixin, serializers.ModelSerializer):
     """Signalement. La localisation n'est visible que de la mairie, des secours et des bénévoles
     affectés au dossier ; null pour les autres."""
     latitude = serializers.SerializerMethodField()
@@ -1153,6 +1175,7 @@ class InformationSerializer(serializers.ModelSerializer):
             data['location'] = None
             data['first_name_information'] = None
             data['last_name_information'] = None
+            data['author_nom'] = None
             data['email_information'] = None
             data['phone_information'] = None
             data['author_email'] = None
@@ -3474,7 +3497,7 @@ class RattachementHabitationSerializer(serializers.ModelSerializer):
         return bool(obj.justificatif)
 
 
-class PieceIdentiteReserveSerializer(serializers.ModelSerializer):
+class PieceIdentiteReserveSerializer(SansIndexAveugleMixin, serializers.ModelSerializer):
     """utilisateur forcé à request.user par la vue. Permis en write_only, téléchargés déchiffrés
     via les actions dédiées après contrôle d'accès."""
 
