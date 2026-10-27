@@ -17152,8 +17152,10 @@ class SiteSensibleViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
                 environment,
             )
             resultats[source] = {"asynchrone": True} if asynchrone else resultat
+        # IMPORT_LISTE et pas une consultation : l'appel écrit des lignes en base. Même code
+        # que l'estimation BAN des habitations, qui importe aussi depuis une API publique.
         audit_log(
-            request=request, action_code="CONSULTATION", objet_type="SiteSensible",
+            request=request, action_code="IMPORT_LISTE", objet_type="SiteSensible",
             objet_id=institution.id,
             commentaire=f"Import open data des sites sensibles de {institution.commune_nom or institution.commune_code} "
                         f"({', '.join(demandees)}).",

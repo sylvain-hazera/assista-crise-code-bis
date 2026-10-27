@@ -128,6 +128,44 @@ class TestEnregistrerProposes:
         assert site.effectif_estime == 320
         assert site.commentaire == "Clés chez le gardien"
 
+    def test_reimport_reclasse_une_ligne_que_personne_na_relue(self, mairie):
+        """Le classement des sources s'améliore : les élevages ont d'abord atterri avec les
+        usines. Tant qu'aucun agent n'a statué, un ré-import doit pouvoir les ranger
+        correctement — sinon la correction n'atteint jamais les communes qui ont importé
+        avant."""
+        enregistrer_proposes(mairie, "PROD", "29027", None, [
+            _propose(source=SourceSiteSensible.ICPE, source_id="0004310066", nom="GAEC BAUT",
+                     categorie=CategorieSiteSensible.INDUSTRIE)
+        ])
+        enregistrer_proposes(mairie, "PROD", "29027", None, [
+            _propose(source=SourceSiteSensible.ICPE, source_id="0004310066", nom="GAEC BAUT",
+                     categorie=CategorieSiteSensible.ELEVAGE)
+        ])
+
+        site = SiteSensible.objects.get()
+        assert site.categorie == CategorieSiteSensible.ELEVAGE
+        assert site.statut == StatutSiteSensible.PROPOSE
+
+    def test_reimport_ne_reclasse_pas_une_ligne_statuee(self, mairie, agent_client):
+        """L'autre moitié de la règle : une fois qu'un agent a rangé le site, c'est son
+        rangement. La source n'a plus voix au chapitre."""
+        enregistrer_proposes(mairie, "PROD", "29027", None, [
+            _propose(source=SourceSiteSensible.ICPE, source_id="0004310066", nom="GAEC BAUT",
+                     categorie=CategorieSiteSensible.INDUSTRIE)
+        ])
+        site = SiteSensible.objects.get()
+        site.statut = StatutSiteSensible.RETENU
+        site.valide_par = agent_client[1]
+        site.save()
+
+        enregistrer_proposes(mairie, "PROD", "29027", None, [
+            _propose(source=SourceSiteSensible.ICPE, source_id="0004310066", nom="GAEC BAUT",
+                     categorie=CategorieSiteSensible.ELEVAGE)
+        ])
+
+        site.refresh_from_db()
+        assert site.categorie == CategorieSiteSensible.INDUSTRIE
+
     def test_reimport_rafraichit_les_attributs_de_la_source(self, mairie):
         """Un site qui passe Seveso seuil haut doit le dire, même si l'agent a déjà statué."""
         enregistrer_proposes(mairie, "PROD", "29027", None, [

@@ -422,7 +422,10 @@ Règles qui structurent le paquet :
   par commune, relus sur plusieurs séances.
 - **Un ré-import n'écrase jamais le travail d'un agent** (`core/sites_sensibles.py`) : le nom
   corrigé, l'adresse, l'effectif, le commentaire et la décision lui appartiennent ; la source ne
-  rafraîchit que ses propres `attributs` et complète les champs encore vides. La clé de
+  rafraîchit que ses propres `attributs`, complète les champs encore vides et reclasse les lignes
+  que personne n'a relues (statut `PROPOSE` et aucun validateur). Ce dernier point est ce qui
+  permet à une amélioration du classement — la sortie des élevages, par exemple — d'atteindre
+  les communes qui avaient déjà importé : il leur suffit de relancer la recherche. La clé de
   rapprochement est `(institution, source, source_id, environment)`, `source_id` étant
   l'identifiant stable de la source (UAI, n° FINESS, code AIOT, n° d'installation).
 - **FINESS seul est asynchrone** (`importer_sites_sensibles_task`) : son flux national ne tient

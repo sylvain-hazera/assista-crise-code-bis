@@ -6,8 +6,9 @@ Deux principes, tenus par les tests :
    pas le plan de sauvegarde.
 2. Un ré-import n'écrase JAMAIS le travail d'un agent. Le nom corrigé, l'effectif estimé, le
    commentaire et la décision (retenu/écarté) sont à lui ; la source ne peut que rafraîchir ses
-   propres attributs et COMPLÉTER ce qui est encore vide. Sans cette règle, le bouton
-   « Actualiser » détruirait silencieusement des heures de relecture."""
+   propres attributs, COMPLÉTER ce qui est encore vide, et reclasser une ligne que personne n'a
+   encore relue. Sans cette règle, le bouton « Actualiser » détruirait silencieusement des
+   heures de relecture."""
 import datetime
 import logging
 
@@ -64,6 +65,15 @@ def _appliquer(existant, propose, commune_code, commune_nom):
     # Les attributs appartiennent à la source : un site qui passe Seveso seuil haut doit le dire.
     if existant.attributs != propose.attributs:
         existant.attributs = propose.attributs
+        modifie = True
+
+    # La catégorie vient de la source, et son classement s'améliore avec le temps : les
+    # élevages ont longtemps atterri avec les usines. On la rafraîchit, mais seulement sur une
+    # ligne vierge de toute décision — dès qu'un agent a retenu ou écarté le site, le rangement
+    # est le sien.
+    if (existant.statut == StatutSiteSensible.PROPOSE and existant.valide_par_id is None
+            and existant.categorie != propose.categorie):
+        existant.categorie = propose.categorie
         modifie = True
 
     # Le reste n'est que complété, jamais remplacé.

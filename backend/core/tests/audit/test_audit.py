@@ -1,11 +1,15 @@
+import re
+from datetime import timedelta
+from pathlib import Path
+
 import pytest
 from django.core.management import call_command
 from django.urls import reverse
 from django.utils import timezone
-from datetime import timedelta
 from rest_framework import status
 
-from core.models import AuditLog, InstitutionType, Institution
+import core
+from core.models import AuditAction, AuditLog, InstitutionType, Institution
 
 
 @pytest.mark.django_db
@@ -94,3 +98,40 @@ class TestPurgeAuditLogs:
         call_command('purge_audit_logs', '--dry-run')
 
         assert AuditLog.objects.filter(pk=old_log.pk).exists()
+
+
+@pytest.mark.django_db
+class TestCodesActionReferences:
+    """Tout code d'action écrit dans le code source doit exister dans la table de référence.
+
+    `audit_log` cherche l'action par son code et, s'il ne la trouve pas, renonce à écrire la
+    ligne sans faire échouer l'action métier — c'est voulu : la main courante ne doit jamais
+    casser une opération de crise. Mais le trou devient invisible, sauf dans les logs.
+
+    Constaté en production le 27/10/2026 sur deux codes à la fois : CONSULTATION (import open
+    data des sites sensibles) et ACTIVATION (activation des points opérationnels au démarrage
+    d'une crise), ce dernier jamais journalisé depuis sa mise en service. D'où ce test, qui
+    relit les sources plutôt que d'attendre qu'un appelant soit exercé par un autre test."""
+
+    MOTIF = re.compile(r"""action_code\s*=\s*["']([A-Z_]+)["']""")
+
+    def _codes_du_code_source(self):
+        racine = Path(core.__file__).parent
+        codes = {}
+        for fichier in racine.rglob("*.py"):
+            if {"migrations", "tests"} & set(fichier.relative_to(racine).parts):
+                continue
+            for code in self.MOTIF.findall(fichier.read_text(encoding="utf-8")):
+                codes.setdefault(code, []).append(fichier.relative_to(racine).as_posix())
+        return codes
+
+    def test_aucun_code_daction_orphelin(self):
+        codes = self._codes_du_code_source()
+        assert codes, "aucun appel à audit_log trouvé : le motif de recherche a dû changer"
+        connus = set(AuditAction.objects.values_list("code", flat=True))
+        orphelins = {code: sorted(set(fichiers))
+                     for code, fichiers in codes.items() if code not in connus}
+        assert not orphelins, (
+            "Codes d'action absents de la table AuditAction : la main courante les refusera "
+            f"silencieusement. Ajoutez une migration de semis. {orphelins}"
+        )

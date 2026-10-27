@@ -104,6 +104,8 @@ export class AuditLogsComponent implements OnInit, OnDestroy {
     { code: 'DESACTIVATION', libelle: 'Désactivation' },
     { code: 'REACTIVATION', libelle: 'Réactivation' },
     { code: 'AFFECTATION', libelle: 'Affectation' },
+    // Activation des points opérationnels au démarrage d'une crise.
+    { code: 'ACTIVATION', libelle: 'Activation' },
     { code: 'CLOTURE', libelle: 'Clôture de dossier' },
     { code: 'DELEGATION_COMPETENCE', libelle: 'Délégation de compétence' },
     { code: 'PRISE_PERMANENCE', libelle: 'Prise de permanence' },
@@ -113,7 +115,9 @@ export class AuditLogsComponent implements OnInit, OnDestroy {
     { code: 'ENVOI_EMAIL', libelle: "Envoi d'email" },
     { code: 'EXPORT', libelle: 'Export de données' },
     { code: 'JOURNAL_BORD', libelle: 'Écriture au journal de bord' },
-    { code: 'IMPORT_LISTE', libelle: "Import d'une liste (CSV/XLS)" },
+    // Fichier déposé par un agent, mais aussi import depuis une base publique (estimation BAN
+    // des habitations, sites sensibles) : le libellé ne doit pas promettre un fichier.
+    { code: 'IMPORT_LISTE', libelle: "Import d'une liste (fichier ou base publique)" },
     // Sonde de connectivité des satellites, supervision (voir SondeView) : comptée comme
     // compte système, donc masquée par défaut.
     { code: 'VERIFICATION', libelle: 'Vérification de fonctionnement' },
