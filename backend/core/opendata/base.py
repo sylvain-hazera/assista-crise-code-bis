@@ -121,12 +121,19 @@ def fetch_json(url, params=None):
         return None
 
 
+# Opendatasoft refuse `offset + limit > 10000` avec un 400. Mesuré en production sur le
+# recensement des équipements sportifs à l'échelle d'une région (Nouvelle-Aquitaine) : la
+# collecte s'arrêtait sur une erreur au lieu de s'arrêter proprement.
+OFFSET_MAX_ODS = 10000
+
+
 def collecter_ods(portail, dataset, where, mapper, select=None, maximum=MAX_RESULTATS):
     """Collecte paginée sur un portail Opendatasoft (Explore API v2.1) -- patron partagé par
     l'annuaire de l'éducation et le recensement des équipements sportifs, qui exposent tous deux
     cette API avec la même pagination (`limit` plafonné à 100 par l'éditeur, `offset`)."""
     sites, offset = [], 0
-    while offset < maximum:
+    plafond_offset = min(maximum, OFFSET_MAX_ODS)
+    while offset < plafond_offset:
         params = {"where": where, "limit": 100, "offset": offset}
         if select:
             params["select"] = select
@@ -140,4 +147,11 @@ def collecter_ods(portail, dataset, where, mapper, select=None, maximum=MAX_RESU
         if len(data["results"]) < 100:
             break
         offset += 100
+    if offset >= plafond_offset:
+        # Le dire : à l'échelle d'une région, un jeu de données dépasse ce que le portail
+        # accepte de paginer, et la liste rendue est incomplète.
+        logger.warning(
+            "Collecte %s tronquée à %s enregistrements (plafond du portail ou du périmètre)",
+            dataset, len(sites),
+        )
     return sites

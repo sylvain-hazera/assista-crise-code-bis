@@ -324,6 +324,13 @@ def importer_source(institution, source, perimetre, commune_nom=None, environmen
     """Collecte une source et enregistre ses propositions. Ne lève jamais : une source en panne
     rend un compte rendu à zéro, les autres continuent.
 
+    La garantie couvre AUSSI l'enregistrement, et pas seulement la collecte. Constaté en
+    production le 27/10/2026 : une erreur pendant l'enregistrement d'un import régional est
+    remontée jusqu'à la vue, qui a rendu une 500 — les sources suivantes n'ont pas tourné, et
+    `ImportOpenData` est resté bloqué sur l'état du matin, donc la page affichait un import
+    réussi qui n'avait pas eu lieu. Une source qui casse doit se signaler, pas emporter les
+    autres.
+
     `perimetre` est un code commune, un `{niveau, code}` ou un Perimetre (voir _perimetre).
     `options` est passé tel quel au connecteur : seul SIRENE en a besoin (`themes`, ce que la
     collectivité veut recenser)."""
@@ -338,7 +345,16 @@ def importer_source(institution, source, perimetre, commune_nom=None, environmen
         logger.warning("Import %s sur le périmètre %s %s : %s", source, territoire.niveau,
                        territoire.code, exc)
         return {"crees": 0, "mis_a_jour": 0, "inchanges": 0, "total": 0, "erreur": str(exc)}
-    return enregistrer_proposes(institution, environment, territoire.code, commune_nom, proposes)
+    try:
+        return enregistrer_proposes(institution, environment, territoire.code, commune_nom,
+                                    proposes)
+    except Exception as exc:
+        # `exception` et non `warning` : à la différence d'une source injoignable, une erreur
+        # ici est un défaut de notre code et la trace complète est nécessaire.
+        logger.exception("Enregistrement de l'import %s (%s %s) interrompu", source,
+                         territoire.niveau, territoire.code)
+        return {"crees": 0, "mis_a_jour": 0, "inchanges": 0, "total": 0,
+                "erreur": f"Enregistrement interrompu : {exc}"}
 
 
 def synthese_par_categorie(sites, institution, environment, echelon_propre=None):

@@ -26,10 +26,10 @@ from core.models import (
 )
 from core.opendata import ecoles, equipements, finess, icpe, sirene
 from core.opendata.base import (
-    Perimetre, SitePropose, perimetre_commune, plafond, where_territoire,
+    Perimetre, SitePropose, collecter_ods, perimetre_commune, plafond, where_territoire,
 )
 from core.sites_sensibles import (
-    _parse_date, enregistrer_proposes, executer_import, synthese_par_categorie,
+    _parse_date, enregistrer_proposes, executer_import, importer_source, synthese_par_categorie,
 )
 
 
@@ -596,6 +596,65 @@ class TestPersonnePhysiqueEnBase:
         site = SiteSensible.objects.get()
         assert site.location is not None
         assert site.donnees_personnelles == {}
+
+
+class TestRobustesseImport:
+    """« Ne lève jamais » : une source qui casse se signale, elle n'emporte pas les autres.
+
+    Constaté en production le 27/10/2026 sur un import régional : une erreur pendant
+    l'enregistrement est remontée jusqu'à la vue, qui a rendu une 500. Les sources suivantes
+    n'ont pas tourné, et l'état en base est resté celui du matin — la page affichait donc un
+    import réussi qui n'avait pas eu lieu."""
+
+    def test_une_erreur_denregistrement_ne_remonte_pas(self, mairie):
+        with patch("core.sites_sensibles.enregistrer_proposes",
+                   side_effect=TypeError("unhashable type: 'list'")), \
+             patch.object(ecoles, "collecter", return_value=[_propose()]):
+            resultat = importer_source(mairie, SourceSiteSensible.ANNUAIRE_EDUCATION, "29027")
+
+        assert resultat["total"] == 0
+        assert "unhashable" in resultat["erreur"]
+
+    def test_lechec_est_consigne_et_visible(self, mairie):
+        """Et il doit atterrir dans ImportOpenData : sans ça, la page continue d'afficher le
+        résultat du dernier import réussi."""
+        with patch("core.sites_sensibles.enregistrer_proposes", side_effect=RuntimeError("boum")), \
+             patch.object(ecoles, "collecter", return_value=[_propose()]):
+            executer_import(mairie, SourceSiteSensible.ANNUAIRE_EDUCATION, "29027", None, "PROD")
+
+        trace = ImportOpenData.objects.get(source=SourceSiteSensible.ANNUAIRE_EDUCATION)
+        assert trace.statut == StatutImportOpenData.ECHEC
+        assert "boum" in trace.erreur
+
+    def test_les_autres_sources_continuent(self, mairie):
+        """Le vrai dégât en production : les sources suivantes n'ont jamais tourné."""
+        with patch.object(ecoles, "collecter", side_effect=TypeError("boum")), \
+             patch.object(icpe, "collecter", return_value=[
+                 _propose(source=SourceSiteSensible.ICPE, source_id="aiot-1", nom="Usine",
+                          categorie=CategorieSiteSensible.INDUSTRIE)]):
+            echec = importer_source(mairie, SourceSiteSensible.ANNUAIRE_EDUCATION, "29027")
+            suivant = importer_source(mairie, SourceSiteSensible.ICPE, "29027")
+
+        assert "erreur" in echec
+        assert suivant["crees"] == 1
+
+
+class TestPlafondOpendatasoft:
+    """Opendatasoft refuse `offset + limit > 10000` avec un 400 : à l'échelle d'une région, la
+    collecte s'arrêtait sur une erreur au lieu de s'arrêter proprement."""
+
+    def test_la_pagination_sarrete_avant_le_plafond(self):
+        offsets = []
+
+        def faux_fetch(url, params=None):
+            offsets.append(params["offset"])
+            return {"results": [{"numero": f"I{params['offset']}", "nom": "X"}] * 100}
+
+        with patch("core.opendata.base.fetch_json", side_effect=faux_fetch):
+            collecter_ods("portail", "jeu", 'reg_code="75"', lambda r: None, maximum=12000)
+
+        assert max(offsets) < 10000
+        assert offsets[-1] == 9900
 
 
 class TestConnecteurEquipements:

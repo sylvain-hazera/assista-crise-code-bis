@@ -184,9 +184,11 @@ export class SitesSensiblesComponent implements OnInit, OnDestroy {
           const aMoi = sites.filter(s => s.echelon_competence === synthese.echelon_propre).length;
           this.filtreEchelon = aMoi ? synthese.echelon_propre : '';
         }
+        // Le plus ÉTROIT par défaut, jamais le plus large : on restreint par défaut, on élargit
+        // délibérément. Avec l'inverse, un compte de niveau régional a recensé 21 648 sites sur
+        // 3 313 communes d'un seul clic — personne n'avait demandé la Nouvelle-Aquitaine.
         if (synthese.perimetres_possibles?.length) {
-          this.perimetreChoisi = synthese.perimetres_possibles[
-            synthese.perimetres_possibles.length - 1];
+          this.perimetreChoisi = synthese.perimetres_possibles[0];
         }
         // Un import FINESS lancé précédemment peut encore tourner : son état vit en base, pas
         // dans le navigateur, donc il est toujours là après un changement de page.
