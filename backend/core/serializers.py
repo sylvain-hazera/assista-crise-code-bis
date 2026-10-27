@@ -3559,14 +3559,33 @@ class SiteSensibleSerializer(serializers.ModelSerializer):
     latitude = serializers.SerializerMethodField()
     longitude = serializers.SerializerMethodField()
     valide_par_nom = serializers.SerializerMethodField()
+    adresse_masquee = serializers.BooleanField(source="personne_physique", read_only=True)
 
     class Meta:
         model = SiteSensible
-        fields = "__all__"
+        # `exclude` et non `fields = "__all__"` : `donnees_personnelles` (coordonnées d'un
+        # domicile, chiffrées) ne doit JAMAIS sortir par la liste. Elles ne s'obtiennent que par
+        # l'action `devoiler`, qui laisse une trace en main courante.
+        exclude = ['donnees_personnelles']
         read_only_fields = [
             'institution', 'environment', 'source', 'source_id', 'attributs', 'date_source',
             'date_import', 'modifie_le', 'valide_par', 'commune_code', 'commune_nom',
+            # Fait de la source, pas appréciation d'un agent : c'est lui qui déclenche le
+            # masquage, on ne le laisse pas désactiver par une requête.
+            'personne_physique',
         ]
+
+    def to_representation(self, instance):
+        """Une personne en nom propre est recensée chez elle : ni son adresse ni ses coordonnées
+        ne sortent avec la liste. L'agent voit qu'il y a quelque chose à dévoiler, et ce
+        dévoilement est un appel serveur tracé — si le navigateur avait déjà la donnée, la trace
+        mentirait."""
+        donnees = super().to_representation(instance)
+        if instance.personne_physique:
+            donnees['adresse'] = None
+            donnees['latitude'] = None
+            donnees['longitude'] = None
+        return donnees
 
     def get_latitude(self, obj):
         return obj.location.y if obj.location else None

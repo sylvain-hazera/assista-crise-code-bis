@@ -11,16 +11,17 @@ import io
 from unittest.mock import patch
 
 import pytest
+from django.db import connection
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
 
 from core.models import (
-    CategorieSiteSensible, ContactInstitution, ImportOpenData, Institution, InstitutionType,
-    PointOperationnel, PointType, SiteSensible, SourceSiteSensible, StatutImportOpenData,
-    StatutSiteSensible,
+    AuditLog, CategorieSiteSensible, ContactInstitution, ImportOpenData, Institution,
+    InstitutionType, PointOperationnel, PointType, SiteSensible, SourceSiteSensible,
+    StatutImportOpenData, StatutSiteSensible,
 )
-from core.opendata import ecoles, equipements, finess, icpe
+from core.opendata import ecoles, equipements, finess, icpe, sirene
 from core.opendata.base import SitePropose
 from core.sites_sensibles import (
     _parse_date, enregistrer_proposes, executer_import, synthese_par_categorie,
@@ -398,6 +399,179 @@ class TestElevagesIcpe:
         assert site.attributs["etat_activite"] == "En fin d'exploitation"
 
 
+class TestConnecteurSirene:
+    """SIRENE apporte ce qu'aucune autre source ne donne — les moyens d'action — et le fait au
+    prix de deux difficultés que ces tests tiennent : elle enregistre des personnes physiques
+    chez elles, et elle ne distingue pas une activité réelle d'une simple domiciliation.
+
+    Enregistrements recopiés de l'API « Recherche d'entreprises » (commune 29027)."""
+
+    SOCIETE = {
+        "siren": "443061841", "nom_complet": "G.A.E.C. DU SPERNEN",
+        "nom_raison_sociale": "G.A.E.C. DU SPERNEN", "nature_juridique": "6533",
+        "statut_diffusion": "O", "activite_principale": "01.46Z",
+        "matching_etablissements": [{
+            "siret": "44306184100018", "activite_principale": "01.46Z",
+            "adresse": "1 LD VERU 29520 CHATEAUNEUF-DU-FAOU",
+            "latitude": "48.168399", "longitude": "-3.837182",
+            "etat_administratif": "A", "date_fermeture": None,
+            "statut_diffusion_etablissement": "O", "tranche_effectif_salarie": "02",
+            "liste_enseignes": None, "nom_commercial": None,
+            "liste_uai": None, "liste_finess": None, "date_mise_a_jour": "2026-01-14",
+        }],
+    }
+
+    PERSONNE = {
+        "siren": "812345678", "nom_complet": "LUDOVIC CARIOU",
+        "nom_raison_sociale": "LUDOVIC CARIOU", "nature_juridique": "1000",
+        "statut_diffusion": "O", "activite_principale": "01.41Z",
+        "matching_etablissements": [{
+            "siret": "81234567800011", "activite_principale": "01.41Z",
+            "adresse": "LD KERGOAT 29520 CHATEAUNEUF-DU-FAOU",
+            "latitude": "48.171", "longitude": "-3.844",
+            "etat_administratif": "A", "date_fermeture": None,
+            "statut_diffusion_etablissement": "O", "tranche_effectif_salarie": "02",
+            "liste_enseignes": None, "nom_commercial": None,
+            "liste_uai": None, "liste_finess": None, "date_mise_a_jour": "2026-02-03",
+        }],
+    }
+
+    THEME_ELEVAGE = sirene.THEMES[CategorieSiteSensible.ELEVAGE]
+
+    def _site(self, entreprise, categorie=CategorieSiteSensible.ELEVAGE, theme=None):
+        return sirene._vers_site(
+            entreprise, entreprise["matching_etablissements"][0], categorie,
+            theme or self.THEME_ELEVAGE,
+        )
+
+    def test_mapping_dune_societe(self):
+        site = self._site(self.SOCIETE)
+        assert site.source_id == "44306184100018"
+        assert site.categorie == CategorieSiteSensible.ELEVAGE
+        assert site.personne_physique is False
+        assert site.latitude == 48.168399
+        # Le code NAF seul ne dit rien à un agent : le libellé officiel voyage avec.
+        assert site.attributs["naf_libelle"] == "Élevage de porcins"
+        assert site.attributs["tranche_effectif"] == "02"
+
+    def test_une_ferme_est_a_la_fois_enjeu_et_ressource(self):
+        """Le cheptel est à sauver, le tracteur et la cuve sont mobilisables. Les deux, pas
+        l'un ou l'autre."""
+        site = self._site(self.SOCIETE)
+        assert site.est_enjeu is True
+        assert site.est_ressource is True
+
+    def test_un_transporteur_est_une_ressource_pas_un_enjeu(self):
+        site = self._site(self.SOCIETE, CategorieSiteSensible.MOYENS,
+                          sirene.THEMES[CategorieSiteSensible.MOYENS])
+        assert site.est_enjeu is False
+        assert site.est_ressource is True
+
+    def test_personne_physique_marquee(self):
+        """Nature juridique 1000 = entrepreneur individuel : l'adresse est un domicile. Le
+        marquage est ce qui déclenche tout le reste (masquage, dévoilement tracé, refus de
+        créer un point public)."""
+        site = self._site(self.PERSONNE)
+        assert site.personne_physique is True
+
+    def test_opposition_a_diffusion_respectee(self):
+        """Droit d'opposition INSEE : une unité non diffusible n'entre pas, même si l'API la
+        renvoie."""
+        assert self._site({**self.SOCIETE, "statut_diffusion": "N"}) is None
+        etablissement = {**self.SOCIETE["matching_etablissements"][0],
+                         "statut_diffusion_etablissement": "N"}
+        assert sirene._vers_site(self.SOCIETE, etablissement, CategorieSiteSensible.ELEVAGE,
+                                 self.THEME_ELEVAGE) is None
+
+    def test_etablissement_ferme_ignore(self):
+        etablissement = {**self.SOCIETE["matching_etablissements"][0],
+                         "date_fermeture": "2024-03-01"}
+        assert sirene._vers_site(self.SOCIETE, etablissement, CategorieSiteSensible.ELEVAGE,
+                                 self.THEME_ELEVAGE) is None
+
+    def test_accueil_du_jeune_enfant_hors_themes_par_defaut(self):
+        """En commune rurale, ce thème ramène surtout des assistantes maternelles, donc des noms
+        de personnes à leur domicile. Il s'active en connaissance de cause."""
+        assert CategorieSiteSensible.PETITE_ENFANCE not in sirene.THEMES_PAR_DEFAUT
+        assert CategorieSiteSensible.PETITE_ENFANCE in sirene.THEMES
+
+    def test_collecte_limitee_aux_themes_demandes(self):
+        appels = []
+
+        def faux_fetch(url, params=None):
+            appels.append(params["activite_principale"])
+            return {"results": [], "total_pages": 1}
+
+        with patch.object(sirene, "fetch_json", side_effect=faux_fetch):
+            sirene.collecter("29027", [CategorieSiteSensible.VETERINAIRE])
+        assert appels == ["75.00Z"]
+
+
+class TestPersonnePhysiqueEnBase:
+    """Ce que « on ne stocke rien en clair » veut dire concrètement, vérifié en SQL brut."""
+
+    def _propose_personne(self, **kwargs):
+        defauts = dict(
+            source=SourceSiteSensible.SIRENE, source_id="81234567800011",
+            categorie=CategorieSiteSensible.ELEVAGE, nom="LUDOVIC CARIOU",
+            adresse="LD KERGOAT 29520 CHATEAUNEUF-DU-FAOU",
+            latitude=48.171, longitude=-3.844, personne_physique=True,
+            est_enjeu=True, est_ressource=True,
+            attributs={"naf": "01.41Z", "date_maj_source": "2026-02-03"},
+        )
+        defauts.update(kwargs)
+        return SitePropose(**defauts)
+
+    def test_adresse_illisible_en_base(self, mairie):
+        enregistrer_proposes(mairie, "PROD", "29027", None, [self._propose_personne()])
+        site = SiteSensible.objects.get()
+        with connection.cursor() as curseur:
+            curseur.execute("SELECT adresse FROM core_sitesensible WHERE id = %s", [str(site.id)])
+            brut = curseur.fetchone()[0]
+        assert "KERGOAT" not in brut
+        # Et pourtant relue en clair par le modèle : c'est tout l'intérêt.
+        assert site.adresse == "LD KERGOAT 29520 CHATEAUNEUF-DU-FAOU"
+
+    def test_pas_de_coordonnees_en_clair_pour_un_domicile(self, mairie):
+        """Un point GPS désigne un domicile aussi sûrement que l'adresse : la colonne
+        géographique, elle, n'est pas chiffrable (elle sert aux requêtes spatiales). On n'y met
+        donc rien, et les coordonnées vont dans le champ chiffré."""
+        enregistrer_proposes(mairie, "PROD", "29027", None, [self._propose_personne()])
+        site = SiteSensible.objects.get()
+        assert site.location is None
+        assert site.donnees_personnelles == {"latitude": 48.171, "longitude": -3.844}
+
+    def test_une_adresse_en_clair_se_rechiffre_a_la_relecture(self, mairie):
+        """Le mécanisme sur lequel repose la migration 0220 : les lignes antérieures au
+        chiffrement contiennent du texte en clair, le champ les relit telles quelles, et une
+        simple réécriture les chiffre. Sans ça, la bascule des sites déjà importés serait
+        impossible sans perdre leurs adresses."""
+        enregistrer_proposes(mairie, "PROD", "29027", None, [self._propose_personne()])
+        site = SiteSensible.objects.get()
+        with connection.cursor() as curseur:
+            # On remet du clair en base, comme avant la migration.
+            curseur.execute("UPDATE core_sitesensible SET adresse = %s WHERE id = %s",
+                            ["LD KERGOAT 29520 CHATEAUNEUF-DU-FAOU", str(site.id)])
+
+        relu = SiteSensible.objects.get(pk=site.pk)
+        assert relu.adresse == "LD KERGOAT 29520 CHATEAUNEUF-DU-FAOU"
+
+        relu.save(update_fields=["adresse"])
+        with connection.cursor() as curseur:
+            curseur.execute("SELECT adresse FROM core_sitesensible WHERE id = %s", [str(site.id)])
+            assert "KERGOAT" not in curseur.fetchone()[0]
+
+    def test_un_etablissement_garde_ses_coordonnees_utilisables(self, mairie):
+        """L'inverse, sans quoi la carte et la création de points ne marcheraient plus pour les
+        écoles et les ICPE."""
+        enregistrer_proposes(mairie, "PROD", "29027", None, [
+            self._propose_personne(personne_physique=False, nom="G.A.E.C. DU SPERNEN")
+        ])
+        site = SiteSensible.objects.get()
+        assert site.location is not None
+        assert site.donnees_personnelles == {}
+
+
 class TestConnecteurEquipements:
     ENREGISTREMENT = {
         "numero": "I290270001", "nom": "Complexe sportif et culturel Ar Sterenn",
@@ -719,3 +893,145 @@ class TestCreerPoint:
         reponse = client.post(reverse("sitesensible-creer-point", args=[site.id]), {}, format="json")
         assert reponse.status_code == status.HTTP_400_BAD_REQUEST
         assert not PointOperationnel.objects.exists()
+
+
+@pytest.mark.django_db
+class TestMasquageEtDevoilement:
+    """Le dispositif qui rend SIRENE acceptable : une personne en nom propre est recensée chez
+    elle, donc son adresse ne part jamais avec la liste. Elle s'obtient par un appel serveur qui
+    laisse une ligne de main courante — « qui a vu cette fiche » reste interrogeable, comme pour
+    une personne vulnérable."""
+
+    ADRESSE = "LD KERGOAT 29520 CHATEAUNEUF-DU-FAOU"
+
+    def _personne(self, mairie, **kwargs):
+        champs = dict(
+            source=SourceSiteSensible.SIRENE, source_id="81234567800011",
+            categorie=CategorieSiteSensible.ELEVAGE, nom="LUDOVIC CARIOU",
+            adresse=self.ADRESSE, latitude=48.171, longitude=-3.844,
+            personne_physique=True, est_enjeu=True, est_ressource=True,
+            attributs={"naf": "01.41Z", "date_maj_source": "2026-02-03"},
+        )
+        champs.update(kwargs)
+        enregistrer_proposes(mairie, "PROD", "29027", "Châteauneuf-du-Faou", [_propose(**champs)])
+        return SiteSensible.objects.get()
+
+    def test_la_liste_masque_adresse_et_coordonnees(self, agent_client, mairie):
+        client, _ = agent_client
+        self._personne(mairie)
+
+        ligne = client.get(reverse("sitesensible-list")).data[0]
+
+        assert ligne["adresse"] is None
+        assert ligne["latitude"] is None and ligne["longitude"] is None
+        # L'agent doit voir qu'il y a quelque chose à dévoiler, sinon il croit la fiche vide.
+        assert ligne["adresse_masquee"] is True
+        assert ligne["personne_physique"] is True
+
+    def test_le_champ_chiffre_ne_sort_jamais_par_la_liste(self, agent_client, mairie):
+        client, _ = agent_client
+        self._personne(mairie)
+        assert "donnees_personnelles" not in client.get(reverse("sitesensible-list")).data[0]
+
+    def test_devoiler_rend_la_donnee_et_laisse_une_trace(self, agent_client, mairie):
+        client, user = agent_client
+        site = self._personne(mairie)
+
+        reponse = client.get(reverse("sitesensible-devoiler", args=[site.id]))
+
+        assert reponse.status_code == status.HTTP_200_OK
+        assert reponse.data["adresse"] == self.ADRESSE
+        assert reponse.data["latitude"] == 48.171
+        ligne = AuditLog.objects.filter(objet_type="SiteSensible", utilisateur=user).latest(
+            "date_action")
+        assert ligne.exposition == AuditLog.Exposition.FICHE
+        assert ligne.objet_id == site.id
+        assert "nom propre" in ligne.commentaire
+
+    def test_un_etablissement_reste_visible_sans_devoilement(self, agent_client, mairie):
+        """Le masquage ne doit pas se répandre : une école garde son adresse dans la liste."""
+        client, _ = agent_client
+        self._personne(mairie, personne_physique=False)
+        ligne = client.get(reverse("sitesensible-list")).data[0]
+        assert ligne["adresse"] == self.ADRESSE
+        assert ligne["adresse_masquee"] is False
+
+    def test_la_provenance_personne_physique_nest_pas_modifiable(self, agent_client, mairie):
+        """Sinon il suffirait d'un PATCH pour faire tomber le masquage."""
+        client, _ = agent_client
+        site = self._personne(mairie)
+
+        client.patch(reverse("sitesensible-detail", args=[site.id]),
+                     {"personne_physique": False}, format="json")
+
+        site.refresh_from_db()
+        assert site.personne_physique is True
+
+    def test_creer_point_refuse_une_personne_physique(self, agent_client, mairie):
+        """La sortie par laquelle tout le dispositif se viderait : un PointOperationnel est
+        public, il est montré aux habitants sur la carte."""
+        client, _ = agent_client
+        site = self._personne(mairie)
+        ptype, _ = PointType.objects.get_or_create(
+            code="HEBERGEMENT", defaults={"libelle": "Centre d'hébergement"})
+        site.statut = StatutSiteSensible.RETENU
+        site.save(update_fields=["statut"])
+
+        reponse = client.post(reverse("sitesensible-creer-point", args=[site.id]),
+                              {"type": str(ptype.id)}, format="json")
+
+        assert reponse.status_code == status.HTTP_400_BAD_REQUEST
+        assert "domicile" in reponse.data["error"]
+        assert not PointOperationnel.objects.exists()
+
+    def test_lagent_peut_corriger_le_role(self, agent_client, mairie):
+        """Le rôle vient de la source mais appartient à l'agent dès qu'il le touche."""
+        client, _ = agent_client
+        site = self._personne(mairie)
+
+        client.patch(reverse("sitesensible-detail", args=[site.id]),
+                     {"est_ressource": False}, format="json")
+
+        site.refresh_from_db()
+        assert site.est_ressource is False
+
+
+@pytest.mark.django_db
+class TestImportSirene:
+    def test_sirene_part_en_tache_de_fond(self, agent_client, mairie):
+        """Jusqu'à sept thèmes paginés 25 par 25 : une cinquantaine d'appels sur une grande
+        ville, impossible pendant que le navigateur attend."""
+        client, _ = agent_client
+        with patch("core.tasks.importer_sites_sensibles_task.delay") as delay:
+            reponse = client.post(reverse("sitesensible-importer"),
+                                  {"sources": [SourceSiteSensible.SIRENE]}, format="json")
+
+        assert reponse.status_code == status.HTTP_200_OK
+        assert reponse.data["resultats"][SourceSiteSensible.SIRENE]["asynchrone"] is True
+        assert delay.called
+
+    def test_les_themes_demandes_sont_transmis(self, agent_client, mairie):
+        client, _ = agent_client
+        with patch("core.tasks.importer_sites_sensibles_task.delay") as delay:
+            client.post(reverse("sitesensible-importer"),
+                        {"sources": [SourceSiteSensible.SIRENE],
+                         "categories": [CategorieSiteSensible.ELEVAGE]}, format="json")
+
+        assert delay.call_args[0][-1] == {"categories": [CategorieSiteSensible.ELEVAGE]}
+
+    def test_theme_inconnu_refuse(self, agent_client, mairie):
+        client, _ = agent_client
+        reponse = client.post(reverse("sitesensible-importer"),
+                              {"sources": [SourceSiteSensible.SIRENE],
+                               "categories": ["PISCINES"]}, format="json")
+        assert reponse.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_un_theme_ne_sapplique_pas_aux_autres_sources(self, agent_client, mairie):
+        """`categories` ne concerne que SIRENE : les quatre autres sources n'ont pas de thème et
+        ne doivent pas recevoir une option qu'elles ne savent pas lire."""
+        client, _ = agent_client
+        with patch.object(ecoles, "collecter", return_value=[]) as collecter:
+            client.post(reverse("sitesensible-importer"),
+                        {"sources": [SourceSiteSensible.ANNUAIRE_EDUCATION],
+                         "categories": [CategorieSiteSensible.ELEVAGE]}, format="json")
+        assert collecter.call_args == (("29027",), {})

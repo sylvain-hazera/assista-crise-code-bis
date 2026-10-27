@@ -4293,11 +4293,16 @@ class SourceSiteSensible(models.TextChoices):
     FINESS = "FINESS", "FINESS (Agence du numérique en santé)"
     ICPE = "ICPE", "Installations classées (Géorisques)"
     EQUIPEMENTS_SPORTIFS = "EQUIPEMENTS_SPORTIFS", "Équipements sportifs (ministère des Sports)"
+    SIRENE = "SIRENE", "Annuaire des entreprises (SIRENE / INSEE)"
     SAISIE = "SAISIE", "Saisie manuelle"
 
 
 class CategorieSiteSensible(models.TextChoices):
+    """Ce qu'est le site. Deux choses à ne pas confondre avec elle : son STATUT (proposé, retenu,
+    écarté), et son rôle — `est_enjeu` / `est_ressource`, qui disent s'il faut le protéger, s'en
+    servir, ou les deux."""
     ENSEIGNEMENT = "ENSEIGNEMENT", "Établissement d'enseignement"
+    PETITE_ENFANCE = "PETITE_ENFANCE", "Accueil du jeune enfant"
     SOINS = "SOINS", "Structure de soins ou médico-sociale"
     INDUSTRIE = "INDUSTRIE", "Site industriel ou installation classée"
     # Les élevages sortent de la même API que les sites industriels, mais ne se planifient pas
@@ -4305,7 +4310,12 @@ class CategorieSiteSensible(models.TextChoices):
     # (évacuation d'un cheptel, inondation, feu, coupure électrique longue qui arrête traite et
     # ventilation). Les mélanger aux usines les rendait invisibles.
     ELEVAGE = "ELEVAGE", "Élevage ou détention d'animaux"
+    VETERINAIRE = "VETERINAIRE", "Soins aux animaux"
+    HEBERGEMENT = "HEBERGEMENT", "Hébergement (hôtel, camping, village vacances)"
     RASSEMBLEMENT = "RASSEMBLEMENT", "Équipement recevant du public"
+    MOYENS = "MOYENS", "Moyens et travaux (transport, engins, bâchage)"
+    APPROVISIONNEMENT = "APPROVISIONNEMENT", "Approvisionnement (alimentation, carburant, repas)"
+    FUNERAIRE = "FUNERAIRE", "Opérateur funéraire"
     AUTRE = "AUTRE", "Autre"
 
 
@@ -4362,11 +4372,27 @@ class SiteSensible(EnvironmentScopedModel):
     # Adresse d'établissement, jamais le domicile d'un particulier : pas de chiffrement,
     # contrairement à Habitation.adresse. Les sources qui diffusent des adresses personnelles
     # (assistantes maternelles) sont délibérément hors de ce paquet.
-    adresse = models.TextField(blank=True, null=True)
+    # Chiffrée comme toute adresse du projet (§ 10.1). Même une liste d'enjeux communaux finit
+    # par contenir des adresses de personnes : un exploitant en nom propre recensé via SIRENE
+    # est enregistré chez lui. On ne stocke rien en clair, la règle ne souffre pas d'exception
+    # « parce que c'est un établissement ».
+    adresse = EncryptedTextField(blank=True, null=True)
 
+    # Point utilisable par la carte et par la création d'un point opérationnel — vide pour une
+    # personne en nom propre : des coordonnées GPS désignent son domicile aussi sûrement que
+    # l'adresse. Les siennes vivent dans `donnees_personnelles`, chiffrées.
     location = gis_models.PointField(srid=4326, null=True, blank=True)
 
     telephone = models.CharField(max_length=30, blank=True, null=True)
+
+    # Vrai quand la source désigne une personne physique et non une société (SIRENE : nature
+    # juridique 1000, entrepreneur individuel). Ce qui change alors : l'adresse et les
+    # coordonnées ne sortent de l'API que par l'action « dévoiler », qui laisse une ligne de
+    # main courante, et le site ne peut pas devenir un point opérationnel — celui-ci est public.
+    personne_physique = models.BooleanField(default=False)
+
+    # Ce qu'on ne montre qu'après un dévoilement tracé : {"latitude": …, "longitude": …}.
+    donnees_personnelles = EncryptedJSONField(default=dict, blank=True)
 
     effectif_estime = models.PositiveIntegerField(
         null=True, blank=True,
@@ -4375,6 +4401,14 @@ class SiteSensible(EnvironmentScopedModel):
     )
 
     attributs = models.JSONField(default=dict, blank=True)
+
+    # Deux questions différentes, posées à deux moments différents de la crise : « qui est
+    # menacé ? » et « avec quoi j'agis ? ». Deux booléens et non une catégorie, parce que les
+    # cas qui comptent sont les deux à la fois : un camping, c'est 200 personnes à évacuer ET
+    # 200 lits ; une ferme, c'est un cheptel à sauver ET un tracteur avec une cuve.
+    # Pré-positionnés par le connecteur selon la catégorie, corrigeables par l'agent.
+    est_enjeu = models.BooleanField(default=True)
+    est_ressource = models.BooleanField(default=False)
 
     statut = models.CharField(
         max_length=10, choices=StatutSiteSensible.choices, default=StatutSiteSensible.PROPOSE,

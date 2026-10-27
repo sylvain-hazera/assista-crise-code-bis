@@ -2,10 +2,11 @@
  * gymnase… Pré-alimenté depuis les bases publiques nationales (voir backend core/opendata/) et
  * toujours déposé en `PROPOSE` : une base ouverte se trompe et vieillit, la commune décide. */
 export type SourceSiteSensible =
-  'ANNUAIRE_EDUCATION' | 'FINESS' | 'ICPE' | 'EQUIPEMENTS_SPORTIFS' | 'SAISIE';
+  'ANNUAIRE_EDUCATION' | 'FINESS' | 'ICPE' | 'EQUIPEMENTS_SPORTIFS' | 'SIRENE' | 'SAISIE';
 
 export type CategorieSiteSensible =
-  'ENSEIGNEMENT' | 'SOINS' | 'INDUSTRIE' | 'ELEVAGE' | 'RASSEMBLEMENT' | 'AUTRE';
+  'ENSEIGNEMENT' | 'PETITE_ENFANCE' | 'SOINS' | 'INDUSTRIE' | 'ELEVAGE' | 'VETERINAIRE'
+  | 'HEBERGEMENT' | 'RASSEMBLEMENT' | 'MOYENS' | 'APPROVISIONNEMENT' | 'FUNERAIRE' | 'AUTRE';
 
 export type StatutSiteSensible = 'PROPOSE' | 'RETENU' | 'ECARTE';
 
@@ -32,6 +33,15 @@ export interface SiteSensible {
    * et pour un élevage les espèces et l'effectif animal autorisé (`especes`, `cheptel`). */
   attributs: Record<string, unknown>;
   commentaire: string | null;
+  /** À protéger : le site subit la crise (école, cheptel, camping occupé). */
+  est_enjeu: boolean;
+  /** Mobilisable : le site aide à y répondre (car, pelle, lits, cuisine, vétérinaire). */
+  est_ressource: boolean;
+  /** La source désigne une personne physique, donc une adresse de domicile. */
+  personne_physique: boolean;
+  /** Vrai quand `adresse`, `latitude` et `longitude` sont volontairement nuls : il faut passer
+   * par `devoiler()`, qui laisse une trace en main courante. */
+  adresse_masquee: boolean;
   valide_par_nom: string | null;
   /** Date de la donnée source telle qu'annoncée par le producteur, pas la date d'import. */
   date_source: string | null;
@@ -69,6 +79,13 @@ export interface SyntheseSitesSensibles {
   a_relire: number;
   imports: ImportOpenData[];
   sources: { code: SourceSiteSensible; libelle: string }[];
+}
+
+/** Ce que rend `devoiler()` : la donnée d'une personne, après une consultation tracée. */
+export interface CoordonneesDevoilees {
+  adresse: string | null;
+  latitude: number | null;
+  longitude: number | null;
 }
 
 export interface ResultatImport {

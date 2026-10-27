@@ -35,7 +35,9 @@
       pas dire « à écarter » : les <strong>élevages</strong> arrivent avec leur effectif animal,
       parce que la protection des animaux est une mission du plan — un cheptel s'évacue avec des
       bétaillères et des heures, et une coupure électrique longue arrête la traite,
-      l'abreuvement et la ventilation des bâtiments.
+      l'abreuvement et la ventilation des bâtiments. Chaque ligne dit aussi ce qu'elle est pour
+      vous : un site <strong>à protéger</strong>, un moyen <strong>mobilisable</strong>, ou les
+      deux — un camping, c'est du monde à évacuer et des lits disponibles.
     </span>
   </p>
 
@@ -119,6 +121,47 @@
       </ul>
     }
 
+    <section class="recensement">
+      <button type="button" class="depliant" (click)="sirenOuvert = !sirenOuvert">
+        <span class="material-icons">{{ sirenOuvert ? 'expand_less' : 'expand_more' }}</span>
+        Recenser aussi les moyens et les exploitations (annuaire des entreprises)
+      </button>
+      @if (sirenOuvert) {
+        <div class="recensement-corps">
+          <p class="recensement-aide">
+            Cette base dit qui possède un car, une bétaillère, une pelle, une cuisine
+            collective ou des lits — ce qu'aucune autre source ne donne. Elle recense aussi les
+            exploitations <strong>sous les seuils ICPE</strong>, les plus nombreuses. Choisissez
+            ce qui vous est utile : en ville, tout demander donnerait plus d'un millier de
+            lignes à relire.
+          </p>
+          <ul class="themes">
+            @for (theme of THEMES_SIRENE; track theme.code) {
+              <li>
+                <label>
+                  <input type="checkbox" [checked]="themesChoisis.has(theme.code)"
+                         (change)="basculerTheme(theme.code)" />
+                  <span class="theme-nom">{{ theme.libelle }}</span>
+                </label>
+                @if (theme.aide) { <span class="theme-aide">{{ theme.aide }}</span> }
+              </li>
+            }
+          </ul>
+          <p class="recensement-rgpd">
+            <span class="material-icons">lock</span>
+            Une partie de ces lignes désigne des <strong>personnes en nom propre</strong> —
+            un exploitant est enregistré chez lui. Leur adresse n'apparaît pas dans la liste :
+            elle se demande ligne à ligne, et chaque consultation est inscrite à la main
+            courante.
+          </p>
+          <button type="button" class="btn-primary" [disabled]="importEnCours || !themesChoisis.size"
+                  (click)="recenserSirene()">
+            <span class="material-icons">cloud_download</span> Recenser les thèmes cochés
+          </button>
+        </div>
+      }
+    </section>
+
     <div class="toolbar">
       <div class="search-box">
         <span class="material-icons">search</span>
@@ -129,6 +172,11 @@
         <option value="RETENU">Retenus au plan</option>
         <option value="ECARTE">Écartés</option>
         <option value="">Tous les statuts</option>
+      </select>
+      <select [(ngModel)]="filtreRole" class="filtre">
+        <option value="">Enjeux et ressources</option>
+        <option value="enjeu">À protéger ({{ compteRole('enjeu') }})</option>
+        <option value="ressource">Mobilisables ({{ compteRole('ressource') }})</option>
       </select>
       <select [(ngModel)]="filtreCategorie" class="filtre">
         <option value="">Toutes les catégories</option>
@@ -182,17 +230,41 @@
                 }
               </td>
 
-              <td>{{ site.categorie_libelle }}</td>
+              <td>
+                {{ site.categorie_libelle }}
+                <div class="roles">
+                  @if (site.est_enjeu) {
+                    <span class="etiquette etiquette-enjeu">à protéger</span>
+                  }
+                  @if (site.est_ressource) {
+                    <span class="etiquette etiquette-ressource">mobilisable</span>
+                  }
+                </div>
+              </td>
 
               <td>
-                <input class="champ-adresse" type="text" [value]="site.adresse || ''"
-                       placeholder="Adresse à compléter"
-                       (blur)="enregistrerChamp(site, 'adresse', $any($event.target).value)" />
+                @if (site.adresse_masquee) {
+                  @if (adresseAffichee(site)) {
+                    <span class="adresse-devoilee">{{ adresseAffichee(site) }}</span>
+                  } @else {
+                    <span class="adresse-masquee">
+                      <span class="material-icons">lock</span> personne en nom propre
+                    </span>
+                    <button type="button" class="btn-devoiler" (click)="devoiler(site)"
+                            title="La consultation sera inscrite à la main courante">
+                      <span class="material-icons">visibility</span> dévoiler l'adresse
+                    </button>
+                  }
+                } @else {
+                  <input class="champ-adresse" type="text" [value]="site.adresse || ''"
+                         placeholder="Adresse à compléter"
+                         (blur)="enregistrerChamp(site, 'adresse', $any($event.target).value)" />
+                }
                 @if (lienCarte(site)) {
                   <a class="lien-carte" [href]="lienCarte(site)" target="_blank" rel="noopener">
                     <span class="material-icons">map</span> situer
                   </a>
-                } @else {
+                } @else if (!site.adresse_masquee) {
                   <span class="sans-gps">pas de coordonnées</span>
                 }
               </td>
@@ -220,7 +292,7 @@
                     <span class="material-icons">close</span> Écarter
                   </button>
                 }
-                @if (site.statut === 'RETENU' && !site.point_operationnel) {
+                @if (peutCreerPoint(site)) {
                   @if (pointPourSite === site.id) {
                     <div class="creation-point">
                       <select [(ngModel)]="typePointChoisi">
@@ -257,8 +329,9 @@
     <p class="mention-licence">
       Données issues de l'annuaire de l'éducation (ministère de l'Éducation nationale), de FINESS
       (Agence du numérique en santé), de la base des installations classées (Géorisques, ministère
-      de la Transition écologique) et du recensement des équipements sportifs (ministère des
-      Sports) — Licence Ouverte. Les dates affichées sont celles annoncées par chaque producteur.
+      de la Transition écologique), du recensement des équipements sportifs (ministère des
+      Sports) et de l'annuaire des entreprises (SIRENE, INSEE) — Licence Ouverte. Les dates
+      affichées sont celles annoncées par chaque producteur.
     </p>
   }
 </div>

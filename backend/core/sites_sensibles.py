@@ -51,6 +51,13 @@ def _point(site):
         return None
 
 
+def _coordonnees_personnelles(propose):
+    """Les coordonnées d'une personne physique, destinées au champ chiffré."""
+    if propose.latitude is None or propose.longitude is None:
+        return {}
+    return {"latitude": propose.latitude, "longitude": propose.longitude}
+
+
 def _appliquer(existant, propose, commune_code, commune_nom):
     """Met à jour une ligne déjà connue, sans toucher à ce qui relève de la décision humaine.
 
@@ -71,9 +78,22 @@ def _appliquer(existant, propose, commune_code, commune_nom):
     # élevages ont longtemps atterri avec les usines. On la rafraîchit, mais seulement sur une
     # ligne vierge de toute décision — dès qu'un agent a retenu ou écarté le site, le rangement
     # est le sien.
-    if (existant.statut == StatutSiteSensible.PROPOSE and existant.valide_par_id is None
-            and existant.categorie != propose.categorie):
-        existant.categorie = propose.categorie
+    if existant.statut == StatutSiteSensible.PROPOSE and existant.valide_par_id is None:
+        if existant.categorie != propose.categorie:
+            existant.categorie = propose.categorie
+            modifie = True
+        # Même règle pour le rôle : tant que personne n'a statué, il appartient à la source.
+        if (existant.est_enjeu, existant.est_ressource) != (propose.est_enjeu,
+                                                            propose.est_ressource):
+            existant.est_enjeu = propose.est_enjeu
+            existant.est_ressource = propose.est_ressource
+            modifie = True
+
+    # Personne physique ou non est un fait de la source, pas une appréciation : toujours à jour,
+    # sinon une ligne cesserait d'être protégée (ou le resterait à tort) après un changement de
+    # forme juridique.
+    if existant.personne_physique != propose.personne_physique:
+        existant.personne_physique = propose.personne_physique
         modifie = True
 
     # Le reste n'est que complété, jamais remplacé.
@@ -83,7 +103,17 @@ def _appliquer(existant, propose, commune_code, commune_nom):
     if not existant.telephone and propose.telephone:
         existant.telephone = propose.telephone
         modifie = True
-    if existant.location is None:
+    if propose.personne_physique:
+        # Jamais de point en clair pour un domicile : des coordonnées GPS le désignent aussi
+        # sûrement que l'adresse.
+        coordonnees = _coordonnees_personnelles(propose)
+        if existant.location is not None:
+            existant.location = None
+            modifie = True
+        if coordonnees and not existant.donnees_personnelles:
+            existant.donnees_personnelles = coordonnees
+            modifie = True
+    elif existant.location is None:
         point = _point(propose)
         if point is not None:
             existant.location = point
@@ -123,7 +153,13 @@ def enregistrer_proposes(institution, environment, commune_code, commune_nom, pr
             nom=propose.nom[:255],
             adresse=propose.adresse,
             telephone=propose.telephone[:30],
-            location=_point(propose),
+            location=None if propose.personne_physique else _point(propose),
+            personne_physique=propose.personne_physique,
+            donnees_personnelles=(
+                _coordonnees_personnelles(propose) if propose.personne_physique else {}
+            ),
+            est_enjeu=propose.est_enjeu,
+            est_ressource=propose.est_ressource,
             attributs=propose.attributs,
             date_source=_parse_date(propose.attributs.get("date_maj_source")),
             statut=StatutSiteSensible.PROPOSE,
@@ -133,15 +169,19 @@ def enregistrer_proposes(institution, environment, commune_code, commune_nom, pr
             "total": crees + majs + inchanges}
 
 
-def importer_source(institution, source, commune_code, commune_nom=None, environment=None):
+def importer_source(institution, source, commune_code, commune_nom=None, environment=None,
+                    options=None):
     """Collecte une source et enregistre ses propositions. Ne lève jamais : une source en panne
-    rend un compte rendu à zéro, les autres continuent."""
+    rend un compte rendu à zéro, les autres continuent.
+
+    `options` est passé tel quel au connecteur : seul SIRENE en a besoin (`categories`, les
+    thèmes que la commune veut recenser)."""
     connecteur = CONNECTEURS.get(source)
     if connecteur is None:
         raise ValueError(f"Source inconnue : {source}")
     environment = environment or institution.environment
     try:
-        proposes = connecteur.collecter(commune_code)
+        proposes = connecteur.collecter(commune_code, **(options or {}))
     except Exception as exc:
         logger.warning("Import %s pour la commune %s : %s", source, commune_code, exc)
         return {"crees": 0, "mis_a_jour": 0, "inchanges": 0, "total": 0, "erreur": str(exc)}
@@ -179,7 +219,8 @@ def _marquer(institution, environment, source, **champs):
     return tache
 
 
-def executer_import(institution, source, commune_code, commune_nom=None, environment=None):
+def executer_import(institution, source, commune_code, commune_nom=None, environment=None,
+                    options=None):
     """Exécute un import de bout en bout et consigne son résultat dans ImportOpenData.
 
     Point d'entrée unique, appelé soit directement (sources API, quelques centaines de ms) soit
@@ -189,7 +230,8 @@ def executer_import(institution, source, commune_code, commune_nom=None, environ
     from .models import StatutImportOpenData
 
     environment = environment or institution.environment
-    resultat = importer_source(institution, source, commune_code, commune_nom, environment)
+    resultat = importer_source(institution, source, commune_code, commune_nom, environment,
+                               options)
     echec = "erreur" in resultat
     _marquer(
         institution, environment, source,
@@ -201,7 +243,8 @@ def executer_import(institution, source, commune_code, commune_nom=None, environ
     return resultat
 
 
-def lancer_import(institution, source, commune_code, commune_nom=None, environment=None):
+def lancer_import(institution, source, commune_code, commune_nom=None, environment=None,
+                  options=None):
     """Lance un import : synchrone pour les API filtrables par commune, délégué à Celery pour
     FINESS (voir opendata/__init__.py). Rend (resultat, asynchrone)."""
     from .models import StatutImportOpenData
@@ -216,7 +259,8 @@ def lancer_import(institution, source, commune_code, commune_nom=None, environme
             statut=StatutImportOpenData.EN_COURS, erreur=None, date_fin=None, resultat={},
         )
         importer_sites_sensibles_task.delay(
-            str(institution.id), source, commune_code, commune_nom, environment,
+            str(institution.id), source, commune_code, commune_nom, environment, options,
         )
         return None, True
-    return executer_import(institution, source, commune_code, commune_nom, environment), False
+    return (executer_import(institution, source, commune_code, commune_nom, environment, options),
+            False)

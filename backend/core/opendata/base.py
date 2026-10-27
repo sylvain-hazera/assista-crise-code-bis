@@ -33,10 +33,12 @@ class SitePropose:
     prise par la mairie sur une ligne vue lors d'un import précédent."""
 
     __slots__ = ("source", "source_id", "categorie", "nom", "adresse",
-                 "latitude", "longitude", "telephone", "attributs")
+                 "latitude", "longitude", "telephone", "attributs",
+                 "personne_physique", "est_enjeu", "est_ressource")
 
     def __init__(self, source, source_id, categorie, nom, adresse="",
-                 latitude=None, longitude=None, telephone="", attributs=None):
+                 latitude=None, longitude=None, telephone="", attributs=None,
+                 personne_physique=False, est_enjeu=True, est_ressource=False):
         self.source = source
         self.source_id = str(source_id)
         self.categorie = categorie
@@ -46,6 +48,12 @@ class SitePropose:
         self.longitude = longitude
         self.telephone = (telephone or "").strip()
         self.attributs = attributs or {}
+        # Une personne physique recensée chez elle : son adresse et ses coordonnées ne sortiront
+        # de l'API qu'après un dévoilement tracé (voir SiteSensible.personne_physique).
+        self.personne_physique = personne_physique
+        # À protéger, mobilisable, ou les deux : voir SiteSensible.est_enjeu / est_ressource.
+        self.est_enjeu = est_enjeu
+        self.est_ressource = est_ressource
 
 
 def fetch_json(url, params=None):

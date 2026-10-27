@@ -17144,12 +17144,31 @@ class SiteSensibleViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             return Response({"error": f"Sources inconnues : {', '.join(map(str, inconnues))}."},
                             status=status.HTTP_400_BAD_REQUEST)
 
+        # SIRENE est la seule source thématique : 105 établissements à Châteauneuf pour les
+        # thèmes par défaut, 3 409 à Bordeaux. La commune choisit ce qu'elle recense, sinon la
+        # liste est inexploitable en ville (voir opendata/sirene.py).
+        from .opendata import sirene
+
+        categories = request.data.get('categories')
+        if categories is not None:
+            if not isinstance(categories, list) or not categories:
+                return Response({"error": "`categories` doit être une liste non vide."},
+                                status=status.HTTP_400_BAD_REQUEST)
+            inconnues = [c for c in categories if c not in sirene.THEMES]
+            if inconnues:
+                return Response(
+                    {"error": f"Thèmes inconnus : {', '.join(map(str, inconnues))}."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
         environment = get_active_environment(request)
         resultats = {}
         for source in demandees:
+            options = ({"categories": categories}
+                       if categories and source == SourceSiteSensible.SIRENE else None)
             resultat, asynchrone = lancer_import(
                 institution, source, institution.commune_code, institution.commune_nom,
-                environment,
+                environment, options,
             )
             resultats[source] = {"asynchrone": True} if asynchrone else resultat
         # IMPORT_LISTE et pas une consultation : l'appel écrit des lignes en base. Même code
@@ -17161,6 +17180,33 @@ class SiteSensibleViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
                         f"({', '.join(demandees)}).",
         )
         return Response({"resultats": resultats})
+
+    @action(detail=True, methods=["get"])
+    def devoiler(self, request, pk=None):
+        """Rend l'adresse et les coordonnées d'un site, et laisse une trace en main courante.
+
+        Sert les lignes marquées `personne_physique` : un exploitant en nom propre est enregistré
+        chez lui, son adresse ne part donc pas avec la liste. Le dévoilement est un appel serveur
+        et non une bascule d'affichage — sinon la donnée serait déjà dans le navigateur et la
+        trace mentirait. Une ligne en exposition FICHE est écrite à chaque consultation, de sorte
+        que « qui a vu cette fiche » reste interrogeable, comme pour une personne vulnérable."""
+        site = self.get_object()
+        coordonnees = site.donnees_personnelles or {}
+        audit_log(
+            request=request, action_code="LECTURE", objet_type="SiteSensible",
+            objet_id=site.id,
+            exposition=AuditLog.Exposition.FICHE,
+            perimetre=AuditLog.Perimetre.GENERAL,
+            commentaire=f"Coordonnées dévoilées : « {site.nom} »"
+                        + (" (personne en nom propre)." if site.personne_physique else "."),
+        )
+        return Response({
+            "adresse": site.adresse,
+            "latitude": coordonnees.get("latitude") if site.personne_physique
+            else (site.location.y if site.location else None),
+            "longitude": coordonnees.get("longitude") if site.personne_physique
+            else (site.location.x if site.location else None),
+        })
 
     @action(detail=True, methods=["post"], url_path="creer-point")
     def creer_point(self, request, pk=None):
@@ -17174,6 +17220,16 @@ class SiteSensibleViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             return Response(
                 {"error": "Ce site a déjà un point opérationnel.",
                  "point": site.point_operationnel_id},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        # Un PointOperationnel est montré aux habitants, sur la carte publique. Recopier
+        # dedans le nom et l'adresse d'une personne en nom propre publierait son domicile :
+        # tout le dispositif de masquage se viderait par cette sortie.
+        if site.personne_physique:
+            return Response(
+                {"error": "Cette ligne désigne une personne en nom propre : son adresse est un "
+                          "domicile et un point opérationnel est public. Créez le point "
+                          "manuellement si le lieu est bien un équipement."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         type_id = request.data.get('type')

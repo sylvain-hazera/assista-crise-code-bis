@@ -411,6 +411,7 @@ publiques nationales, puis validés un à un par la commune. Page `/admin/sites-
 | FINESS (Agence du numérique en santé) | `opendata/finess.py` | fichier JSON national quotidien (~50 Mo compressés) | aucun : lecture en flot, filtrage local sur `cogCommune` |
 | Installations classées et élevages (Géorisques) | `opendata/icpe.py` | API REST | `code_insee` |
 | Équipements sportifs (ministère des Sports) | `opendata/equipements.py` | API Opendatasoft | `insee` |
+| Annuaire des entreprises (SIRENE / INSEE) | `opendata/sirene.py` | API « Recherche d'entreprises » (DINUM), sans clé | `code_commune` + `activite_principale` (par thème) |
 
 Règles qui structurent le paquet :
 
@@ -454,10 +455,41 @@ Règles qui structurent le paquet :
   repassée sous les seuils garde ses animaux. Un même bâtiment portant deux rubriques (50 000
   volailles autorisées puis enregistrées), le connecteur remonte les deux lignes brutes et c'est
   l'affichage qui dédoublonne — sinon la page annoncerait 100 000 animaux.
-- **RGPD.** Seules des adresses d'établissement, jamais de domicile de particulier (d'où
-  l'absence de chiffrement, contrairement à `Habitation.adresse`). Les listes d'assistantes
-  maternelles sont délibérément hors du paquet : il n'en existe aucune nationale, et leur adresse
-  est leur domicile.
+- **Un site est un enjeu, une ressource, ou les deux** (`est_enjeu` / `est_ressource`). Deux
+  booléens et non une catégorie, parce que les cas qui comptent sont les deux à la fois : un
+  camping, c'est 200 personnes à évacuer et 200 lits ; une ferme, c'est un cheptel à sauver et un
+  tracteur avec une cuve. En crise, « qui est menacé ? » et « avec quoi j'agis ? » sont deux
+  questions posées à deux moments différents — une seule liste n'y répond pas. Le connecteur
+  pré-positionne, l'agent corrige. À ne pas confondre avec une `Offer` : une ressource recensée
+  n'est **pas** une offre reçue, personne ne s'est engagé.
+- **SIRENE est thématique, les quatre autres non.** C'est la seule source qui donne les *moyens
+  d'action* (cars, bétaillères, engins, cuisines collectives, lits) et les exploitations sous les
+  seuils ICPE — mais son volume s'inverse avec la taille de la commune : 105 établissements à
+  Châteauneuf-du-Faou pour les thèmes par défaut, **3 409 à Bordeaux**. La commune choisit donc
+  ses thèmes (`categories` sur l'action `importer`), et le bouton « Rechercher dans les bases
+  publiques » ne la déclenche pas. Elle est asynchrone pour la même raison que FINESS : jusqu'à
+  sept thèmes paginés 25 par 25.
+- **SIRENE enregistre une existence juridique, pas une activité physique** : les 152 « élevages »
+  de Bordeaux sont à 85 % des personnes physiques domiciliées en centre-ville, code NAF agricole
+  et zéro animal. Une raison de plus pour que tout arrive en `PROPOSE`.
+- **RGPD.** Les adresses sont chiffrées sans exception (§ 10.1) : une liste d'enjeux communaux
+  contient forcément des adresses de personnes, puisque 61 % des élevages de Châteauneuf sont
+  des exploitants en nom propre — et qu'on ne peut pas les écarter sans perdre la majorité des
+  fermes. Les lignes marquées `personne_physique` (nature juridique SIRENE 1000) sont donc
+  traitées à part :
+  - l'adresse et les coordonnées **ne sortent pas** de la liste (`to_representation`), seul
+    `adresse_masquee` signale qu'il y a quelque chose à demander ;
+  - elles s'obtiennent par l'action `devoiler`, un appel serveur et non une bascule d'affichage
+    — sinon la donnée serait déjà dans le navigateur et la trace mentirait. Chaque appel écrit
+    une ligne de main courante en `exposition=FICHE`, donc « qui a vu cette fiche » reste
+    interrogeable, comme pour une `PersonneVulnerable` ;
+  - `creer-point` les **refuse** : un `PointOperationnel` est montré aux habitants sur la carte
+    publique, le recopier y publierait un domicile. C'est la sortie par laquelle tout le
+    dispositif se viderait ;
+  - `statut_diffusion` (droit d'opposition INSEE) est respecté à la collecte ;
+  - le thème « accueil du jeune enfant » est **décoché par défaut** : en commune rurale il
+    ramène surtout des assistantes maternelles, donc des noms de personnes à leur domicile. Il
+    existe (c'est un enjeu réel pour une évacuation), il ne s'active pas tout seul.
 - Un site retenu peut devenir un `PointOperationnel` (action `creer-point`), nom, adresse et
   coordonnées comprises — ce qui évite les centres d'accueil sans adresse, inutilisables par un
   habitant cherchant où aller.
@@ -888,9 +920,11 @@ dev, l'override construit les mêmes images puis monte les fichiers par-dessus.
 ### 10.1 Chiffrement des données personnelles
 
 Les colonnes contenant des données personnelles (demandeurs, bénévoles, signalements,
-personnes recherchées, déclarations de sécurité, interlocuteurs PCS, messages mesh, emails et
-téléphones des comptes…) sont chiffrées **par l'application** (`core/crypto_fields.py`) : un
-accès au disque, un `pg_dump` ou une requête SQL ne lit que du texte chiffré.
+personnes recherchées, déclarations de sécurité, interlocuteurs PCS, messages mesh, adresses des
+enjeux communaux, emails et téléphones des comptes…) sont chiffrées **par l'application**
+(`core/crypto_fields.py`) : un accès au disque, un `pg_dump` ou une requête SQL ne lit que du
+texte chiffré. La règle ne souffre pas d'exception « parce que c'est un établissement » : une
+liste d'enjeux finit toujours par contenir l'adresse d'une personne (voir § 5.12).
 
 | Clé | Algorithme | Usage |
 |---|---|---|
@@ -908,7 +942,9 @@ accès au disque, un `pg_dump` ou une requête SQL ne lit que du texte chiffré.
   chiffré.
 - Une valeur lue non chiffrée est renvoyée telle quelle (lignes antérieures au chiffrement).
 - **Hors périmètre** : géométries (PostGIS doit les lire), `AuditLog`, informations
-  publiques d'une institution (nom, marque blanche).
+  publiques d'une institution (nom, marque blanche). La géométrie étant inchiffrable, un objet
+  qui désigne une personne n'en porte pas : les coordonnées d'un domicile vont dans un
+  `EncryptedJSONField` et `location` reste nul (`SiteSensible.donnees_personnelles`).
 - En dev, `init-secrets.sh` génère les clés dans `.env`. En production, elles sont injectées
   hors du dépôt (`backend.env` sur la machine) : elles doivent être **sauvegardées ailleurs
   que sur le serveur**.
