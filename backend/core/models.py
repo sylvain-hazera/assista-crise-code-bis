@@ -5034,6 +5034,40 @@ class ContactInstitution(EnvironmentScopedModel):
 
         ]
 
+    def save(self, *args, **kwargs):
+        """Garantit l'invariant : un rattachement actif implique un `User.institution`.
+
+        « Dans quelle institution est cet utilisateur » a deux réponses en base. CETTE relation
+        fait autorité, mais une quarantaine d'endroits lisent le raccourci `User.institution` —
+        les vues territoriales (`zone_scoping`), l'accès au registre des personnes vulnérables,
+        l'estimation des habitations, le branding des emails. Un rattachement créé sans poser le
+        raccourci rend donc la personne aveugle à sa propre commune sur une partie de
+        l'application, avec pour seule explication « Aucune commune associée à votre institution :
+        contactez un administrateur » — alors que l'administrateur vient de la rattacher.
+
+        C'est arrivé : `ContactInstitutionViewSet` créait la ligne sans passer par
+        `grant_institution_and_demo_access`. Corriger ce chemin-là ne suffit pas, parce que le
+        prochain chemin de rattachement pourra l'oublier à son tour, et le symptôme est
+        silencieux. On tient donc l'invariant ICI, au seul endroit par lequel toute création
+        passe forcément.
+
+        Volontairement MINIMAL : seul le raccourci est posé. L'accueil complet (équipe de
+        l'institution, accès à la zone de démonstration, email de messagerie) reste dans
+        `grant_institution_and_demo_access`, qui a besoin d'une requête HTTP — ce filet n'en a
+        pas et ne doit ni envoyer d'email ni dépendre du réseau.
+
+        Jamais de détournement : le raccourci n'est posé que s'il est VIDE, donc un profil
+        membre de plusieurs collectivités garde le contexte « Vue Ma Collectivité » qu'il a
+        choisi."""
+        super().save(*args, **kwargs)
+        if not self.actif or not self.utilisateur_id or not self.institution_id:
+            return
+        # Relu en base plutôt que depuis `self.utilisateur` : l'instance en mémoire peut être
+        # périmée (rattachement posé entre-temps par un autre chemin), et on ne veut surtout
+        # pas écraser un contexte déjà choisi.
+        User.objects.filter(pk=self.utilisateur_id, institution__isnull=True).update(
+            institution_id=self.institution_id)
+
 class InstitutionDomaine(EnvironmentScopedModel):
 
     institution = models.ForeignKey(

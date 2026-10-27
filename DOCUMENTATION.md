@@ -424,8 +424,24 @@ rattachement d'une mairie.
     d'abord) les reprend. Il choisit, parmi les rattachements actifs, celui dont l'institution
     est encore en service puis celui où la personne est contact principal — le rattachement
     vivant plutôt qu'un vestige. 4 comptes concernés au 27/10/2026.
-  - Reste à faire : le scoping territorial devrait passer par `ContactInstitution` comme le
-    reste de l'application, au lieu de dépendre d'un raccourci qu'il faut penser à poser.
+  - **L'invariant est désormais tenu à l'ÉCRITURE**, dans `ContactInstitution.save()` : un
+    rattachement actif pose `User.institution` quand il est vide. C'est le seul endroit par
+    lequel toute création passe forcément, donc le prochain chemin de rattachement ne pourra
+    plus l'oublier. Délibérément minimal — seul le raccourci est posé, sans email ni appel
+    réseau ; l'accueil complet (équipe, démo, messagerie) reste dans
+    `grant_institution_and_demo_access`, qui a besoin d'une requête. Et jamais de
+    détournement : le raccourci n'est posé que s'il est vide, donc un profil membre de
+    plusieurs collectivités garde le contexte « Vue Ma Collectivité » qu'il a choisi.
+  - **Pourquoi l'invariant plutôt qu'un repli à la lecture** : une quarantaine d'endroits
+    lisent `User.institution`, dont des portes de contrôle d'accès au registre des personnes
+    vulnérables et à l'estimation des habitations. Les réécrire en bloc, c'est risquer
+    d'élargir un accès par inadvertance ; tenir l'invariant rend tous ces lecteurs corrects
+    d'un coup, sans toucher à la surface d'autorisation. Les migrations ne sont pas affectées :
+    `apps.get_model` rend un modèle historique sans méthode personnalisée.
+  - Les messages d'erreur territoriaux (`zone_scoping`) distinguent enfin « votre compte n'est
+    rattaché à aucune collectivité » de « cette collectivité n'a pas de commune renseignée »,
+    et nomment la collectivité. Le message unique précédent — « contactez un administrateur » —
+    envoyait chercher la solution auprès de quelqu'un qui ne pouvait rien y faire.
 - **Deux institutions peuvent désigner la même collectivité**, et c'est la création qui en est
   responsable : `find_or_create_institution_from_annuaire`
   (`institution_attachment.py`) fait son `get_or_create` sur le **seul nom**, sans recouper le

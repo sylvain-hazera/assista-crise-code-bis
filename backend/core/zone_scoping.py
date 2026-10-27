@@ -20,11 +20,33 @@ SECTEUR_CHAMP_PAR_NIVEAU = {
 
 def _institution_commune_or_400(request):
     """Code commune de l'institution de l'appelant, ou une Response 400 explicite (plutôt
-    qu'une liste vide qui masquerait la cause)."""
+    qu'une liste vide qui masquerait la cause).
+
+    Lit le raccourci `User.institution` et non `ContactInstitution`. L'invariant « un
+    rattachement actif implique un raccourci renseigné » est tenu à l'écriture
+    (`ContactInstitution.save`), ce qui est plus sûr que de le rattraper dans la quarantaine
+    d'endroits qui lisent ce raccourci — dont des portes de contrôle d'accès au registre des
+    personnes vulnérables, qu'on ne réécrit pas à l'aveugle.
+
+    Les deux messages ci-dessous sont distincts et nommés, parce que le message unique
+    précédent (« contactez un administrateur ») a coûté cher : un agent rattaché mais sans
+    raccourci l'a reçu 75 fois sur quatre sessions avant de cesser de revenir, et
+    l'administrateur, qui l'avait bel et bien rattaché, n'avait aucun moyen de comprendre que
+    son geste n'y changeait rien."""
     institution = getattr(request.user, 'institution', None)
-    if institution is None or not institution.commune_code:
+    if institution is None:
         return Response(
-            {"error": "Aucune commune associée à votre institution : contactez un administrateur."},
+            {"error": "Votre compte n'est rattaché à aucune collectivité. Si vous venez "
+                      "d'être ajouté comme contact d'une institution, déconnectez-vous et "
+                      "reconnectez-vous ; si le message persiste, signalez-le : c'est une "
+                      "anomalie de rattachement, pas un réglage de votre part."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if not institution.commune_code:
+        return Response(
+            {"error": f"Aucune commune n'est renseignée sur « {institution.nom} » : cette "
+                      f"vue est territoriale et ne peut rien afficher sans elle. Un "
+                      f"administrateur doit compléter la fiche de la collectivité."},
             status=status.HTTP_400_BAD_REQUEST,
         )
     return institution.commune_code

@@ -189,6 +189,16 @@ class TestAucunCompteOublie:
         assert orphelins == []
 
 
+def _simuler_etat_davant(agent):
+    """Remet un compte dans l'état d'avant la correction : rattaché, mais sans raccourci.
+
+    Par `update()` et non `save()`, précisément parce que `ContactInstitution.save()` tient
+    désormais l'invariant — on ne peut plus produire cet état par les voies normales, ce qui
+    est le but. Le rattrapage reste nécessaire pour les lignes créées AVANT, elles."""
+    User.objects.filter(pk=agent.pk).update(institution=None)
+    agent.refresh_from_db()
+
+
 class TestRattrapageDesComptesDejaCasses:
     """`backfill_rattachement_institution` : les comptes rattachés avant la correction
     ci-dessus restent aveugles aux vues territoriales tant qu'on ne les reprend pas."""
@@ -196,17 +206,20 @@ class TestRattrapageDesComptesDejaCasses:
     def test_le_raccourci_est_pose_pour_un_compte_oublie(self, mairie, agent):
         ContactInstitution.objects.create(
             institution=mairie, utilisateur=agent, fonction="Rcsc", actif=True)
-        assert agent.institution_id is None
+        _simuler_etat_davant(agent)
 
         call_command("backfill_rattachement_institution")
 
         agent.refresh_from_db()
         assert agent.institution_id == mairie.pk
+        # Le rattrapage, lui, passe par grant_institution_and_demo_access : il fait l'accueil
+        # complet, contrairement au filet posé dans le modèle.
         assert Team.objects.filter(institution=mairie, members=agent).exists()
 
     def test_le_dry_run_necrit_rien(self, mairie, agent):
         ContactInstitution.objects.create(
             institution=mairie, utilisateur=agent, fonction="Rcsc", actif=True)
+        _simuler_etat_davant(agent)
 
         call_command("backfill_rattachement_institution", dry_run=True)
 
@@ -231,6 +244,7 @@ class TestRattrapageDesComptesDejaCasses:
             institution=autre_mairie, utilisateur=agent, fonction="Ancien", actif=True)
         ContactInstitution.objects.create(
             institution=mairie, utilisateur=agent, fonction="Rcsc", actif=True)
+        _simuler_etat_davant(agent)
 
         call_command("backfill_rattachement_institution")
 
@@ -247,3 +261,105 @@ class TestRattrapageDesComptesDejaCasses:
 
         agent.refresh_from_db()
         assert agent.institution_id == autre_mairie.pk
+
+
+class TestInvariantTenuALaSource:
+    """`ContactInstitution.save()` tient l'invariant quel que soit le chemin.
+
+    Corriger `ContactInstitutionViewSet` ne suffisait pas : le prochain chemin de rattachement
+    pourrait l'oublier à son tour, et le symptôme est silencieux — la personne utilise
+    l'application et découvre seule que certaines pages lui sont fermées. L'invariant est donc
+    tenu au seul endroit par lequel toute création passe forcément."""
+
+    def test_une_creation_directe_en_base_pose_le_raccourci(self, mairie, agent):
+        """Le cas qui a mordu : du code qui crée la ligne sans passer par la vue."""
+        assert agent.institution_id is None
+
+        ContactInstitution.objects.create(
+            institution=mairie, utilisateur=agent, fonction="Rcsc", actif=True)
+
+        agent.refresh_from_db()
+        assert agent.institution_id == mairie.pk
+
+    def test_un_rattachement_inactif_ne_pose_rien(self, mairie, agent):
+        ContactInstitution.objects.create(
+            institution=mairie, utilisateur=agent, fonction="Rcsc", actif=False)
+
+        agent.refresh_from_db()
+        assert agent.institution_id is None
+
+    def test_un_contexte_deja_choisi_nest_jamais_ecrase(self, mairie, autre_mairie, agent):
+        """Un profil membre de plusieurs collectivités garde la vue qu'il a choisie."""
+        agent.institution = autre_mairie
+        agent.save(update_fields=["institution"])
+
+        ContactInstitution.objects.create(
+            institution=mairie, utilisateur=agent, fonction="Rcsc", actif=True)
+
+        agent.refresh_from_db()
+        assert agent.institution_id == autre_mairie.pk
+
+    def test_activer_un_rattachement_existant_pose_le_raccourci(self, mairie, agent):
+        contact = ContactInstitution.objects.create(
+            institution=mairie, utilisateur=agent, fonction="Rcsc", actif=False)
+        assert agent.institution_id is None
+
+        contact.actif = True
+        contact.save()
+
+        agent.refresh_from_db()
+        assert agent.institution_id == mairie.pk
+
+    def test_le_filet_nenvoie_ni_email_ni_requete_reseau(self, mairie, agent, mailoutbox):
+        """Volontairement minimal : l'accueil complet (équipe, démo, messagerie) reste dans
+        grant_institution_and_demo_access, qui a besoin d'une requête HTTP. Ce filet ne doit
+        pas se mettre à envoyer des emails depuis un script ou une migration."""
+        ContactInstitution.objects.create(
+            institution=mairie, utilisateur=agent, fonction="Rcsc", actif=True)
+
+        agent.refresh_from_db()
+        assert agent.institution_id == mairie.pk
+        assert mailoutbox == []
+        assert not Team.objects.filter(institution=mairie, members=agent).exists()
+
+
+class TestMessagesDErreurTerritoriaux:
+    """Le message unique « contactez un administrateur » a coûté un utilisateur : il envoyait
+    chercher la solution auprès de quelqu'un qui ne pouvait rien y faire."""
+
+    def test_un_compte_sans_rattachement_recoit_un_message_qui_dit_quoi_faire(
+            self, create_user):
+        from django.test import RequestFactory
+
+        from core.zone_scoping import _institution_commune_or_400
+
+        orphelin = create_user(username="orphelin@test.fr", email="orphelin@test.fr",
+                               type="AUT_LOCALE")
+        requete = RequestFactory().get("/")
+        requete.user = orphelin
+
+        reponse = _institution_commune_or_400(requete)
+
+        assert reponse.status_code == status.HTTP_400_BAD_REQUEST
+        assert "anomalie de rattachement" in reponse.data["error"]
+
+    def test_une_institution_sans_commune_le_dit_et_nomme_la_collectivite(
+            self, create_user, db):
+        from django.test import RequestFactory
+
+        from core.zone_scoping import _institution_commune_or_400
+
+        itype, _ = InstitutionType.objects.get_or_create(
+            code="ASSOCIATION_SANS_COMMUNE", defaults={"libelle": "Association"})
+        sans_commune = Institution.objects.create(nom="Croix-Rouge locale", type=itype)
+        membre = create_user(username="assoc@test.fr", email="assoc@test.fr",
+                             type="AUT_LOCALE")
+        membre.institution = sans_commune
+        membre.save(update_fields=["institution"])
+        requete = RequestFactory().get("/")
+        requete.user = membre
+
+        reponse = _institution_commune_or_400(requete)
+
+        assert reponse.status_code == status.HTTP_400_BAD_REQUEST
+        assert "Croix-Rouge locale" in reponse.data["error"]
