@@ -113,6 +113,31 @@ def find_institution_by_known_domain(user):
     return institution
 
 
+def _type_institution_de_lannuaire(annuaire_match):
+    """Le InstitutionType correspondant au type annoncé par l'annuaire officiel.
+
+    Réutilise un type existant SANS tenir compte de la casse, et n'en crée un qu'en dernier
+    recours, en majuscules. Ce bloc faisait auparavant un `get_or_create(code=type_code)` sur
+    un code mis en minuscules, d'où un catalogue où « MAIRIE » et « mairie » cohabitaient
+    (4 institutions d'un côté, 5 de l'autre au 27/10/2026), de même pour « CG » et « cg ».
+    Les lectures qui gouvernent l'accès aux fonctions PCS normalisent par `.upper()`
+    (`Institution.save`, `_institution_est_autorite_locale`), mais pas toutes — la commande
+    `backfill_zones_mon_territoire` sautait silencieusement cinq mairies sur neuf. Mieux vaut
+    ne pas fabriquer le doublon que compter sur chaque lecteur pour le rattraper.
+
+    Un type trouvé dans l'annuaire officiel des collectivités désigne un service public réel —
+    marqué public par défaut, sauf le repli « AUTRE » (annuaire muet sur le type, on ne sait
+    pas)."""
+    type_code = (annuaire_match.get('type_service_local') or '').strip().upper() or 'AUTRE'
+    existant = InstitutionType.objects.filter(code__iexact=type_code).order_by('code').first()
+    if existant is not None:
+        return existant
+    return InstitutionType.objects.create(
+        code=type_code, libelle=type_code.replace('_', ' ').title(),
+        est_public=type_code != 'AUTRE',
+    )
+
+
 def find_or_create_institution_from_annuaire(user, annuaire_match, request=None):
     """Trouve/crée l'institution confirmée par l'annuaire officiel et met en cache son domaine
     (InstitutionDomaine), sans rattacher personne — l'institution elle-même est réelle et
@@ -120,23 +145,51 @@ def find_or_create_institution_from_annuaire(user, annuaire_match, request=None)
     utilisateur (voir attach_user_with_role, décidé explicitement après confirmation)."""
     domain = annuaire_match.get('domain')
     nom = annuaire_match.get('nom') or domain
-    type_code = (annuaire_match.get('type_service_local') or 'autre').strip().lower() or 'autre'
+    commune_code = (user.pending_commune_code or '').strip()
+    institution_type = _type_institution_de_lannuaire(annuaire_match)
 
-    # Un type trouvé dans l'annuaire officiel des collectivités désigne un service public réel —
-    # marqué public par défaut, sauf le repli 'autre' (annuaire muet sur le type, on ne sait pas).
-    institution_type, _ = InstitutionType.objects.get_or_create(
-        code=type_code,
-        defaults={'libelle': type_code.title(), 'est_public': type_code != 'autre'},
-    )
+    # Le territoire AVANT le nom, et c'est tout l'enjeu : une même mairie porte des noms
+    # différents selon qui l'a enregistrée. Ce bloc faisait auparavant un
+    # `get_or_create(nom=nom)`, si bien que la mairie déjà connue sous « Châteauneuf-du-Faou »
+    # a été recréée sous « Mairie - Châteauneuf-du-Faou » dès qu'un adjoint s'est inscrit par
+    # l'annuaire (27/10/2026). Résultat : deux institutions pour une commune, les deux
+    # déclarées acteur sur la même crise, deux équipes jumelles, et un agent dont le compte
+    # pointait sur l'une pendant que son plan vivait sur l'autre. Une commune n'a qu'une
+    # mairie : le couple (commune, type) l'identifie, son nom non.
+    #
+    # Volontairement limité aux institutions EN SERVICE : une collectivité délibérément
+    # retirée ne doit pas être ressuscitée par l'inscription d'un inconnu. Dans ce cas, créer
+    # une nouvelle institution est le comportement juste.
+    institution = None
+    if commune_code:
+        institution = Institution.objects.filter(
+            commune_code=commune_code, type__code__iexact=institution_type.code, actif=True,
+        ).order_by('date_creation').first()
+    retrouvee_par_territoire = institution is not None
 
-    institution, institution_created = Institution.objects.get_or_create(
-        nom=nom,
-        defaults={
-            'type': institution_type, 'email': user.email, 'actif': True,
-            'commune_code': user.pending_commune_code or '',
-            'commune_nom': user.pending_commune_name or '',
-        },
-    )
+    if institution is None:
+        # Repli historique sur le nom exact : couvre les institutions sans commune renseignée
+        # (associations, services de l'État) que le filtre ci-dessus ne peut pas voir.
+        institution = Institution.objects.filter(nom=nom).first()
+
+    institution_created = institution is None
+    if institution_created:
+        institution = Institution.objects.create(
+            nom=nom, type=institution_type, email=user.email, actif=True,
+            commune_code=commune_code, commune_nom=user.pending_commune_name or '',
+        )
+    elif retrouvee_par_territoire and request is not None and institution.nom != nom:
+        # Trace délibérée : sans elle, « j'ai été rattaché à une institution qui ne porte pas
+        # le nom que l'annuaire m'a montré » reste inexplicable à qui lit la main courante.
+        audit_log(
+            request=request,
+            action_code="MODIFICATION",
+            objet_type="Institution",
+            objet_id=institution.id,
+            commentaire=f"Rattachement à l'institution existante « {institution.nom} » de la "
+                        f"commune {commune_code} ; l'annuaire officiel la nomme « {nom} » "
+                        f"(aucune seconde institution créée)",
+        )
     if institution_created and request is not None:
         audit_log(
             request=request,
@@ -146,7 +199,9 @@ def find_or_create_institution_from_annuaire(user, annuaire_match, request=None)
             commentaire=f"Création institution via annuaire officiel : {institution.nom}",
         )
     # Backfill pour une institution préexistante (créée avant l'ajout de ces champs, ou par un
-    # premier membre sans commune déclarée) : get_or_create ne pose les defaults qu'à la création.
+    # premier membre sans commune déclarée) : les champs de territoire ne sont posés qu'à la
+    # création. C'est aussi ce qui permet au recoupement par (commune, type) ci-dessus de
+    # fonctionner la fois suivante.
     if not institution_created and not institution.commune_code and user.pending_commune_code:
         institution.commune_code = user.pending_commune_code
         institution.commune_nom = user.pending_commune_name or ''

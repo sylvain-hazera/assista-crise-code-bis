@@ -54,6 +54,9 @@ interface EtapePoint {
   latitude: number | null;
   longitude: number | null;
   cree: boolean;
+  // Vrai quand le point existait DÉJÀ sur la crise avant d'ouvrir l'assistant : il ne sera
+  // pas recréé, et son nom/adresse ne s'éditent pas ici (voir reconcilierAvecLExistant).
+  dejaEnPlace: boolean;
   point: PointOperationnel | null;
   equipeId: string | null;
   nouvelleEquipeNom: string;
@@ -122,7 +125,7 @@ export class CriseDemarrageComponent implements OnInit {
       description: "Le lieu depuis lequel la crise est pilotée.",
       suggestions: ['Mairie'], isDefault: true,
       nom: 'Mairie', adresse: '', latitude: null, longitude: null,
-      cree: false, point: null, equipeId: null, nouvelleEquipeNom: '',
+      cree: false, dejaEnPlace: false, point: null, equipeId: null, nouvelleEquipeNom: '',
       ...this.extrasEtape(),
     },
     {
@@ -130,18 +133,41 @@ export class CriseDemarrageComponent implements OnInit {
       description: "Où les personnes évacuées ou sinistrées sont accueillies.",
       suggestions: ['Salle des fêtes'], isDefault: true,
       nom: 'Salle des fêtes', adresse: '', latitude: null, longitude: null,
-      cree: false, point: null, equipeId: null, nouvelleEquipeNom: '',
+      cree: false, dejaEnPlace: false, point: null, equipeId: null, nouvelleEquipeNom: '',
       ...this.extrasEtape(),
     },
     {
       pointTypeCode: 'REGROUPEMENT_MOYENS', titre: 'Centre de regroupement des moyens',
       description: "Où le matériel et les ressources mobilisées sont centralisés.",
-      suggestions: ['Salle des fêtes', 'Centre technique municipal'], isDefault: true,
-      nom: 'Salle des fêtes', adresse: '', latitude: null, longitude: null,
-      cree: false, point: null, equipeId: null, nouvelleEquipeNom: '',
+      // « Centre technique municipal » et non « Salle des fêtes » : le défaut proposait le
+      // MÊME bâtiment qu'à l'étape précédente, et deux communes l'ont accepté tel quel —
+      // sinistrés et dépôt de matériel dans la même salle, ce qui ne se décide pas par
+      // inadvertance. La salle des fêtes reste proposée en second, pour les communes qui n'ont
+      // pas de centre technique.
+      suggestions: ['Centre technique municipal', 'Salle des fêtes'], isDefault: true,
+      nom: 'Centre technique municipal', adresse: '', latitude: null, longitude: null,
+      cree: false, dejaEnPlace: false, point: null, equipeId: null, nouvelleEquipeNom: '',
       ...this.extrasEtape(),
     },
   ];
+
+  /** Les lieux désignés par plus d'une étape.
+   *
+   * Un même bâtiment peut légitimement tenir deux rôles — dans une petite commune, la mairie
+   * est souvent à la fois cellule de crise et point de regroupement. C'est donc un
+   * AVERTISSEMENT et jamais un refus : on le montre pour que ce soit un choix, pas un défaut
+   * subi. Comparaison insensible à la casse et aux accents, parce que « salle des fetes » et
+   * « Salle des Fêtes » sont le même endroit. */
+  get lieuxEnDoublon(): string[] {
+    const parLieu = new Map<string, string[]>();
+    for (const etape of this.etapes) {
+      const nom = etape.nom.trim();
+      if (!nom) { continue; }
+      const cle = nom.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      parLieu.set(cle, [...(parLieu.get(cle) ?? []), nom]);
+    }
+    return [...parLieu.values()].filter(noms => noms.length > 1).map(noms => noms[0]);
+  }
 
   constructor(
     private route: ActivatedRoute,
@@ -172,7 +198,18 @@ export class CriseDemarrageComponent implements OnInit {
       next: (res) => (this.criseCommuneCode = res.commune_code),
       error: () => {},
     });
-    this.pointTypeService.getAll().subscribe(types => (this.pointTypes = types));
+    // Les types ET les points déjà posés sur la crise, ensemble : la réconciliation a besoin
+    // des deux (voir reconcilierAvecLExistant).
+    forkJoin({
+      types: this.pointTypeService.getAll(),
+      points: this.pointService.getByCrise(this.criseId),
+    }).subscribe({
+      next: ({ types, points }) => {
+        this.pointTypes = types;
+        this.reconcilierAvecLExistant(points);
+      },
+      error: () => this.pointTypeService.getAll().subscribe(t => (this.pointTypes = t)),
+    });
     this.teamService.equipesInstitution().subscribe(teams => (this.teams = teams));
     this.roleOperationnelService.getAll().subscribe(roles => (this.roles = roles));
     this.besoinService.getAll().subscribe(besoins => (this.besoins = besoins));
@@ -321,7 +358,7 @@ export class CriseDemarrageComponent implements OnInit {
       {
         pointTypeCode: null, titre: 'Nouveau point', description: '', suggestions: [], isDefault: false,
         nom: '', adresse: '', latitude: null, longitude: null,
-        cree: false, point: null, equipeId: null, nouvelleEquipeNom: '',
+        cree: false, dejaEnPlace: false, point: null, equipeId: null, nouvelleEquipeNom: '',
         ...this.extrasEtape(),
       },
     ];
@@ -331,9 +368,65 @@ export class CriseDemarrageComponent implements OnInit {
     this.etapes = this.etapes.filter(e => e !== etape);
   }
 
-  /** Crée en un lot les points nommés (case vide = non pourvu). */
+  /** Les points de la crise au moment d'ouvrir l'assistant. Sert aussi à prévenir sur une
+   * ligne ajoutée qui redésigne un point existant. */
+  pointsExistants: PointOperationnel[] = [];
+
+  /** Reprend les points déjà posés sur la crise au lieu de proposer de les recréer.
+   *
+   * L'assistant repartait de ses trois étapes vierges à chaque ouverture et recréait tout.
+   * Constaté le 26/10/2026 : un adjoint l'a lancé trois fois sur la même crise en deux
+   * minutes, et le troisième passage a reproduit à l'identique le premier — trois points en
+   * doublon exact (même crise, même nom, même type). Rien ne l'en avait averti, et rien ne lui
+   * montrait que son premier passage avait abouti : c'est probablement pour ça qu'il a
+   * recommencé.
+   *
+   * Un point repris est marqué `cree` : il traverse donc les étapes suivantes (affectation
+   * d'équipe, récapitulatif) comme s'il venait d'être posé, ce qui est bien le but — on
+   * revient dans l'assistant pour COMPLÉTER, pas pour tout refaire. */
+  private reconcilierAvecLExistant(points: PointOperationnel[]): void {
+    this.pointsExistants = points;
+    for (const etape of this.etapes) {
+      if (!etape.pointTypeCode) { continue; }
+      const typeId = this.typeIdFor(etape.pointTypeCode);
+      const existant = points.find(p => p.type === typeId);
+      if (!existant) { continue; }
+      etape.dejaEnPlace = true;
+      etape.cree = true;
+      etape.point = existant;
+      etape.nom = existant.nom;
+      etape.adresse = existant.adresse ?? '';
+      etape.latitude = existant.latitude ?? null;
+      etape.longitude = existant.longitude ?? null;
+      etape.equipeId = existant.equipe ?? null;
+    }
+  }
+
+  get etapesDejaEnPlace(): EtapePoint[] {
+    return this.etapes.filter(e => e.dejaEnPlace);
+  }
+
+  /** Une ligne AJOUTÉE qui redésigne un point déjà présent sur la crise (même nom, même type).
+   * Avertissement et non refus : deux bâtiments homonymes dans deux communes d'une crise
+   * intercommunale sont parfaitement possibles. */
+  get etapesDoublonDeLExistant(): EtapePoint[] {
+    return this.etapes.filter(etape => {
+      if (etape.dejaEnPlace || !etape.pointTypeCode || !etape.nom.trim()) { return false; }
+      const typeId = this.typeIdFor(etape.pointTypeCode);
+      return this.pointsExistants.some(
+        p => p.type === typeId && this._memeLieu(p.nom, etape.nom));
+    });
+  }
+
+  private _memeLieu(a: string, b: string): boolean {
+    const normalise = (v: string) =>
+      v.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    return normalise(a) === normalise(b);
+  }
+
+  /** Crée en un lot les points nommés (case vide = non pourvu, déjà en place = non recréé). */
   terminerEtapePoints(): void {
-    const aCreer = this.etapes.filter(e => e.nom.trim());
+    const aCreer = this.etapes.filter(e => e.nom.trim() && !e.dejaEnPlace);
     const sansType = aCreer.find(e => !e.pointTypeCode);
     if (sansType) {
       this.errorMessage = `Choisissez un type pour "${sansType.nom}".`;

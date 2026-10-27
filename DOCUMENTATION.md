@@ -442,21 +442,30 @@ rattachement d'une mairie.
     rattaché à aucune collectivité » de « cette collectivité n'a pas de commune renseignée »,
     et nomment la collectivité. Le message unique précédent — « contactez un administrateur » —
     envoyait chercher la solution auprès de quelqu'un qui ne pouvait rien y faire.
-- **Deux institutions peuvent désigner la même collectivité**, et c'est la création qui en est
-  responsable : `find_or_create_institution_from_annuaire`
-  (`institution_attachment.py`) fait son `get_or_create` sur le **seul nom**, sans recouper le
-  code commune ni le type. Une mairie déjà enregistrée sous un nom court
-  (« Châteauneuf-du-Faou ») est donc recréée dès qu'un agent s'inscrit par l'annuaire officiel,
-  qui la nomme autrement (« Mairie - Châteauneuf-du-Faou »). Conséquences observées sur la
-  commune 29027 : les deux institutions déclarées acteur sur la même crise, deux équipes
-  jumelles, et un adjoint dont le compte pointait sur l'une pendant que son plan vivait sur
-  l'autre. La même fonction crée aussi son `InstitutionType` avec un code **en minuscules**
-  (`.lower()`), d'où un catalogue où « MAIRIE » et « mairie » coexistent (4 institutions contre
-  5 au 27/10/2026). Les lectures qui comptent normalisent par `.upper()`
-  (`Institution.save`, `_institution_est_autorite_locale`) — **toute nouvelle comparaison sur
-  `type.code` doit le faire aussi**, faute de quoi elle ignore silencieusement la moitié des
-  mairies, ce qui était le cas de `backfill_zones_mon_territoire` (4 institutions traitées sur
-  9).
+- **Une commune n'a qu'une mairie : c'est le couple (commune, type) qui identifie une
+  institution, pas son nom.** `find_or_create_institution_from_annuaire`
+  (`institution_attachment.py`) recoupait sur le **seul nom**, et comme une même mairie porte
+  des noms différents selon qui l'a enregistrée, celle déjà connue sous
+  « Châteauneuf-du-Faou » a été recréée sous « Mairie - Châteauneuf-du-Faou » dès qu'un adjoint
+  s'est inscrit par l'annuaire officiel. Conséquences observées sur la commune 29027 : les deux
+  institutions déclarées acteur sur la même crise, deux équipes jumelles, un adjoint dont le
+  compte pointait sur l'une pendant que son plan vivait sur l'autre — et une reprise manuelle
+  qui a détruit au passage sa fonction, son statut de contact principal et son rôle
+  opérationnel. Le recoupement se fait désormais sur `(commune_code, type)`, en se limitant aux
+  institutions **en service** : une collectivité délibérément retirée ne doit pas être
+  ressuscitée par l'inscription d'un inconnu. Le repli historique sur le nom exact reste, pour
+  les institutions sans code commune (associations, services de l'État). Un nom déjà choisi
+  n'est jamais écrasé par celui de l'annuaire, et le rattachement sous un autre nom laisse une
+  trace en main courante.
+- **Le code d'un `InstitutionType` est normalisé en MAJUSCULES**, et un type existant est
+  réutilisé sans tenir compte de la casse. La création depuis l'annuaire le mettait en
+  minuscules, d'où un catalogue où « MAIRIE » et « mairie » cohabitaient (4 institutions contre
+  5 au 27/10/2026), de même pour « CG » et « cg ». Les lectures qui comptent normalisent par
+  `.upper()` (`Institution.save`, `_institution_est_autorite_locale`) — **toute nouvelle
+  comparaison sur `type.code` doit le faire aussi**, faute de quoi elle ignore silencieusement
+  la moitié des mairies, ce qui était le cas de `backfill_zones_mon_territoire` (4 institutions
+  traitées sur 9). Les doublons de casse déjà en base subsistent : ils ne gênent plus la
+  création, mais une normalisation rétroactive reste à faire.
 - **Fusionner deux doublons** : `manage.py fusionner_institutions --garder <id> --absorber <id>`,
   **toujours avec `--a-blanc` d'abord** et après sauvegarde de la base. La commande repointe
   comptes, rattachements, équipes, plans, implications, rôles et demandes ; écarte les doublons
@@ -842,6 +851,31 @@ Deux notions de rôle coexistent, à ne pas confondre :
   de l'institution, notification, journalisation) et reçoit en silence la zone du territoire
   de la crise. L'ensemble peut être enregistré comme `Plan`, réactivable sur une prochaine
   crise.
+  - **Les trois défauts doivent désigner trois lieux distincts.** Le centre de regroupement
+    des moyens était prérempli sur « Salle des fêtes », comme le centre d'accueil des
+    populations juste au-dessus : deux communes l'ont accepté tel quel, mettant sinistrés et
+    dépôt de matériel dans la même salle. Il propose désormais « Centre technique municipal »
+    en premier. Un défaut qui se contredit lui-même est accepté sans être lu.
+  - **Un même lieu pour deux rôles est signalé, jamais refusé** (`lieuxEnDoublon`) : dans une
+    petite commune, la mairie est souvent à la fois cellule de crise et point de regroupement.
+    L'avertissement est là pour que ce soit un choix et non un défaut subi, et la comparaison
+    ignore casse et accents.
+  - **L'assistant reprend ce qui existe déjà au lieu de le recréer**
+    (`reconcilierAvecLExistant`). Il repartait de ses trois étapes vierges à chaque ouverture :
+    un adjoint l'a lancé trois fois sur la même crise en deux minutes le 26/10/2026, et le
+    troisième passage a reproduit à l'identique le premier — trois points en doublon exact
+    (même crise, même nom, même type), sans aucun avertissement et sans que rien ne lui montre
+    que son premier passage avait abouti, ce qui est probablement pourquoi il a recommencé.
+    Désormais les points de la crise sont chargés à l'ouverture, appariés par type, affichés en
+    lecture seule et marqués `cree` : ils traversent les étapes suivantes (affectation
+    d'équipe, récapitulatif) comme s'ils venaient d'être posés, puisqu'on revient dans
+    l'assistant pour COMPLÉTER et non pour tout refaire. Une ligne ajoutée qui redésigne un
+    point existant (même nom, même type) est signalée sans être refusée : deux bâtiments
+    homonymes dans deux communes d'une crise intercommunale sont parfaitement possibles.
+  - Pas de test automatisé sur cette logique : le projet n'a pas de harnais de test de
+    composant (seuls quelques `*.spec.ts` de services existent, et le frontend ne se construit
+    que dans Docker, par `ng build`). La vérification passe par la compilation — qui type-vérifie
+    aussi les gabarits — et par la présence des identifiants dans le bundle produit.
 - **Éléments désactivés** : équipes, offres, demandes et signalements ne sont jamais supprimés
   mais désactivés ; le backend les masque, `?actif=all` les fait réapparaître pour les
   réactiver.

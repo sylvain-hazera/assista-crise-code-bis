@@ -78,11 +78,25 @@
       <h3>Points stratégiques</h3>
       <p>Trois points sont proposés par défaut — retirez ceux qui ne s'appliquent pas, ou ajoutez-en autant que nécessaire.</p>
 
+      @if (etapesDejaEnPlace.length) {
+        <p class="deja-en-place-resume">
+          <span class="material-icons">check_circle</span>
+          <span>
+            {{ etapesDejaEnPlace.length }} point(s) {{ etapesDejaEnPlace.length > 1 ? 'sont' : 'est' }}
+            <strong>déjà en place</strong> sur cette crise : ils sont reportés tels quels et ne
+            seront pas recréés. Vous pouvez compléter les autres, puis continuer pour leur
+            affecter des équipes.
+          </span>
+        </p>
+      }
+
       @for (etape of etapes; track etape) {
-        <div class="point-card">
-          <button type="button" class="btn-retirer" (click)="retirerPoint(etape)" title="Retirer ce point">
-            <span class="material-icons">close</span>
-          </button>
+        <div class="point-card" [class.deja-en-place]="etape.dejaEnPlace">
+          @if (!etape.dejaEnPlace) {
+            <button type="button" class="btn-retirer" (click)="retirerPoint(etape)" title="Retirer ce point">
+              <span class="material-icons">close</span>
+            </button>
+          }
 
           @if (etape.isDefault) {
             <h4>{{ etape.titre }}</h4>
@@ -102,9 +116,22 @@
             </select>
           }
 
-          <input type="text" class="form-input" [(ngModel)]="etape.nom" placeholder="Nom du point (laisser vide = non pourvu)">
+          @if (etape.dejaEnPlace) {
+            <p class="point-existant">
+              <span class="material-icons">place</span>
+              <span>
+                <strong>{{ etape.nom }}</strong>
+                @if (etape.adresse) { — {{ etape.adresse }} }
+                <br>
+                <small>Déjà posé sur cette crise. Pour le renommer ou le déplacer, passez par
+                  la fiche du point.</small>
+              </span>
+            </p>
+          } @else {
+            <input type="text" class="form-input" [(ngModel)]="etape.nom" placeholder="Nom du point (laisser vide = non pourvu)">
+          }
 
-          @if (etape.nom.trim()) {
+          @if (etape.nom.trim() && !etape.dejaEnPlace) {
             <div class="point-adresse">
               <app-address-picker label="Adresse du point" [required]="true"
                                   placeholder="Rechercher l'adresse…"
@@ -127,6 +154,40 @@
       <button type="button" class="btn-ajouter-point" (click)="ajouterPoint()">
         <span class="material-icons">add</span> Ajouter un point
       </button>
+
+      @if (etapesDoublonDeLExistant.length) {
+        <p class="avertissement-doublon">
+          <span class="material-icons">warning_amber</span>
+          <span>
+            @for (etape of etapesDoublonDeLExistant; track etape) {
+              <strong>{{ etape.nom }}</strong>
+            }
+            existe déjà sur cette crise avec le même type. C'est possible — deux bâtiments
+            homonymes dans deux communes d'une crise intercommunale, par exemple — mais si
+            c'est le même lieu, retirez la ligne plutôt que d'en créer un second.
+          </span>
+        </p>
+      }
+
+      @if (lieuxEnDoublon.length) {
+        <p class="avertissement-doublon">
+          <span class="material-icons">warning_amber</span>
+          <span>
+            @for (lieu of lieuxEnDoublon; track lieu) {
+              <strong>{{ lieu }}</strong>
+            }
+            @if (lieuxEnDoublon.length > 1) {
+              sont désignés
+            } @else {
+              est désigné
+            }
+            par plusieurs points. C'est possible — dans une petite commune, la mairie est
+            souvent à la fois cellule de crise et point de regroupement — mais vérifiez que
+            c'est bien votre intention&nbsp;: accueillir des sinistrés et entreposer le
+            matériel mobilisé dans la même salle se décide. Vous pouvez continuer.
+          </span>
+        </p>
+      }
 
       <div class="step-actions">
         <button type="button" class="btn-primary" (click)="terminerEtapePoints()" [disabled]="saving">

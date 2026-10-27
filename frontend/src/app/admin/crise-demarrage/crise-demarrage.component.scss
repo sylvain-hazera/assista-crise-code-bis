@@ -415,3 +415,57 @@
   .material-icons { margin-top: .1rem; flex-shrink: 0; }
   strong { font-weight: 700; }
 }
+
+/* Un même lieu pour deux rôles : à voir, pas à interdire. Traitement d'avertissement, donc —
+   ni une erreur (ce n'en est pas une) ni une note discrète (ça se décide). */
+.avertissement-doublon {
+  display: flex;
+  align-items: flex-start;
+  gap: .5rem;
+  margin: .75rem 0 0;
+  padding: .7rem .9rem;
+  border: 1px solid #fdba74;
+  border-radius: 6px;
+  background: #fff7ed;
+  color: #9a3412;
+  font-size: .9rem;
+  line-height: 1.5;
+
+  .material-icons { font-size: 1.1rem; margin-top: .1rem; }
+  strong + strong::before { content: ", "; font-weight: 400; }
+}
+
+/* Un point déjà posé sur la crise : montré, pas reproposé. L'assistant repartait de zéro à
+   chaque ouverture et recréait tout — trois doublons exacts en deux minutes, le 26/10/2026. */
+.deja-en-place-resume {
+  display: flex;
+  align-items: flex-start;
+  gap: .5rem;
+  margin: .5rem 0 1rem;
+  padding: .7rem .9rem;
+  border: 1px solid #bbf7d0;
+  border-radius: 6px;
+  background: #f0fdf4;
+  color: #166534;
+  font-size: .9rem;
+  line-height: 1.5;
+
+  .material-icons { font-size: 1.1rem; margin-top: .1rem; }
+}
+
+.point-card.deja-en-place {
+  border-color: #bbf7d0;
+  background: #f7fdf9;
+}
+
+.point-existant {
+  display: flex;
+  align-items: flex-start;
+  gap: .4rem;
+  margin: .4rem 0 0;
+  font-size: .92rem;
+  line-height: 1.45;
+
+  .material-icons { font-size: 1.05rem; color: #166534; margin-top: .1rem; }
+  small { color: #6b7280; }
+}
