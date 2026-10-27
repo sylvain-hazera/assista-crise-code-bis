@@ -18,3 +18,10 @@ CONNECTEURS = {
 # millisecondes.
 SOURCES_ASYNCHRONES = {SourceSiteSensible.FINESS, SourceSiteSensible.SIRENE}
 SOURCES_SYNCHRONES = [code for code in CONNECTEURS if code not in SOURCES_ASYNCHRONES]
+
+# Le découpage d'un périmètre large en tranches départementales (voir sites_sensibles.tranches)
+# sert les sources interrogées par requête : il leur évite le plafond de résultats de leur API.
+# FINESS n'y gagne rien et y perdrait tout : son flux national est lu EN ENTIER quel que soit le
+# périmètre, donc le découper en douze ferait télécharger douze fois les mêmes 50 Mo et relire
+# douze fois les mêmes 750 Mo de JSON.
+SOURCES_SANS_DECOUPAGE = {SourceSiteSensible.FINESS}

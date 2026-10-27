@@ -407,11 +407,11 @@ publiques nationales, puis validés un à un par la commune. Page `/admin/sites-
 
 | Source | Connecteur | Accès | Filtrage |
 |---|---|---|---|
-| Annuaire de l'éducation (MENJ) | `opendata/ecoles.py` | API Opendatasoft | `code_commune` |
+| Annuaire de l'éducation (MENJ) | `opendata/ecoles.py` | API Opendatasoft (`exports` au-delà d'une page) | `code_commune`, ou `code_departement` / `code_region` |
 | FINESS (Agence du numérique en santé) | `opendata/finess.py` | fichier JSON national quotidien (~50 Mo compressés) | aucun : lecture en flot, filtrage local sur `cogCommune` |
-| Installations classées et élevages (Géorisques) | `opendata/icpe.py` | API REST | `code_insee` |
-| Équipements sportifs (ministère des Sports) | `opendata/equipements.py` | API Opendatasoft | `insee` |
-| Annuaire des entreprises (SIRENE / INSEE) | `opendata/sirene.py` | API « Recherche d'entreprises » (DINUM), sans clé | `code_commune` + `activite_principale` (par thème) |
+| Installations classées et élevages (Géorisques) | `opendata/icpe.py` | API REST paginée | `code_insee`, ou `departement` / `region` |
+| Équipements sportifs (ministère des Sports) | `opendata/equipements.py` | API Opendatasoft (`exports` au-delà d'une page) | `insee`, ou `dep_code` / `reg_code` |
+| Annuaire des entreprises (SIRENE / INSEE) | `opendata/sirene.py` | API « Recherche d'entreprises » (DINUM), sans clé | `code_commune` / `departement` / `region` + `activite_principale` (par thème) |
 
 Règles qui structurent le paquet :
 
@@ -469,13 +469,66 @@ Règles qui structurent le paquet :
 - **Le périmètre d'import est choisi, borné par le niveau de la collectivité** (`perimetre` sur
   l'action `importer` : commune / epci / departement / region). On restreint, on n'élargit
   jamais — même règle que `SECTEUR_NIVEAU_PAR_TYPE_INSTITUTION`, qui donne déjà « departement »
-  à un `CG` et « region » à un `CR`. Trois sources ont un filtre de secteur natif, ce qui évite
-  277 appels : Géorisques (`departement`, vérifié — 40 pages pour le Finistère contre 1 389 pour
-  la France), SIRENE (`departement`) et l'annuaire de l'éducation (`code_departement`, à
-  zéro-compléter sur trois caractères). FINESS lit de toute façon son flux national en entier.
-  Seul l'EPCI passe par un `IN` sur ses codes commune, aucun jeu ne le portant. Les plafonds
-  suivent le niveau (`PLAFONDS`), sans quoi un plafond communal de 500 tronquerait les 852
-  établissements d'un département.
+  à un `CG` et « region » à un `CR`. Le défaut de la page est le périmètre **le plus étroit**
+  autorisé, jamais le plus large : l'inverse a produit un recensement de 21 648 fiches sur
+  3 313 communes d'un seul clic depuis un compte de niveau régional. Trois sources ont un filtre
+  de secteur natif, ce qui évite 277 appels : Géorisques (`departement`), SIRENE (`departement`,
+  `region`) et l'annuaire de l'éducation (`code_departement`, à zéro-compléter sur trois
+  caractères). FINESS lit de toute façon son flux national en entier. Seul l'EPCI passe par un
+  `IN` sur ses codes commune, aucun jeu ne le portant.
+- **Les sources plafonnent le nombre de résultats qu'elles servent, et certaines ne le disent
+  pas.** C'est la contrainte la plus dangereuse du paquet, parce qu'elle produit un inventaire
+  qui a l'air complet. Mesuré en direct le 27/10/2026 :
+  | Source | Plafond réel | Conséquence |
+  |---|---|---|
+  | Portails Opendatasoft, endpoint `records` | `offset + limit ≤ 10000`, refus 400 explicite | 7 344 des 17 344 équipements sportifs de Nouvelle-Aquitaine hors d'atteinte |
+  | Portails Opendatasoft, endpoint `exports` | **aucun** | 17 344 enregistrements en un appel, 10 s |
+  | Géorisques | aucun constaté (148 pages servies pour une région) | pagination complète |
+  | Annuaire des entreprises | `page × per_page ≤ 10000`, **et `total_results` lui-même plafonné à 10 000** | le thème « élevages » annonce 10 000 pour la Nouvelle-Aquitaine, là où ses 12 départements en comptent **48 499** |
+
+  Trois réponses, dans cet ordre d'importance :
+  1. **Découper le périmètre** (`sites_sensibles.tranches`) : une région est interrogée
+     département par département. C'est le seul remède réel — un plafond de pagination ne
+     s'écoule pas avec le temps, étaler les appels n'y change rien, l'offset 10 100 est refusé
+     aussi patiemment qu'on le demande. Un département n'est pas redécoupé : il reste sous les
+     plafonds de toutes les sources (le plus gros thème SIRENE mesuré y atteint 8 462). FINESS
+     est explicitement exclu du découpage (`SOURCES_SANS_DECOUPAGE`) : son flux national est lu
+     en entier quel que soit le périmètre, le découper en douze téléchargerait douze fois les
+     mêmes 50 Mo.
+  2. **Passer par `exports` sur Opendatasoft** dès que le jeu dépasse une page, avec un `select`
+     restreint aux champs du mapper (`ecoles.CHAMPS`, `equipements.CHAMPS`) : l'export régional
+     de l'annuaire de l'éducation passe de 14 Mo à 1 Mo, celui des équipements sportifs de 22 Mo
+     à 5 Mo. Un comptage préalable (`_compter_ods`) choisit l'endpoint et **refuse** un jeu
+     aberrant plutôt que de le charger en mémoire : un total national annoncé signifie que le
+     filtre territorial n'a pas été pris en compte.
+  3. **Dire ce qui manque** (`opendata.base.Collecte`, champ `tronque`, remonté dans
+     `ImportOpenData.resultat["incomplet"]` et affiché en permanence sur la page). Un
+     recensement incomplet qui se croit complet est plus dangereux qu'une absence de
+     recensement : on bâtit un plan de sauvegarde dessus et on ne cherche pas ce qu'on croit
+     déjà avoir. À l'échelle départementale, un recensement thématique SIRENE est un
+     **échantillon**, et la page le dit.
+- **Les appels sont espacés, et tout ce qui dépasse la commune part en tâche de fond.** Aucune
+  des API branchées ici ne publie de limite de débit ; on s'en impose donc une
+  (`PAUSE_ENTRE_APPELS`, `PAUSE_ENTRE_TRANCHES`) plutôt que d'enchaîner au rythme que le réseau
+  permet — ce sont des services publics gratuits et sans quota. `fetch_json` réessaie sur un
+  refus temporaire (429, 502-504) en respectant `Retry-After` : un 429 est une demande de
+  ralentir, pas une panne. Côté durée, `lancer_import` délègue à Celery dès que le périmètre
+  dépasse la commune, et plus seulement pour FINESS et SIRENE : le seul export des équipements
+  sportifs d'une région prend 10 s, et tenir la requête HTTP ouverte immobiliserait un worker
+  gunicorn pour un écran figé. Deux budgets de temps emboîtés, et l'ordre compte : l'import
+  s'arrête LUI-MÊME (`BUDGET_SECONDES`, 15 min) en consignant ce qui manque, bien avant que
+  Celery ne le tue (30 min). Une tâche tuée par Celery ne consigne rien et laisse « recherche en
+  cours » affiché indéfiniment — exactement ce qui a été observé en production.
+- **L'avancement vit en base, pas dans le navigateur** (`ImportOpenData.resultat` :
+  `tranches_faites`, `tranches_total`, `tranche_en_cours`). L'agent doit pouvoir quitter la page,
+  changer d'appareil ou revenir le lendemain et retrouver où en est son recensement — même
+  raisonnement que `TacheSimulationInondation`. Une tranche qui échoue ne perd pas les
+  précédentes, déjà enregistrées, et le statut reste `TERMINEE` tant qu'une tranche a rendu
+  quelque chose : afficher onze tranches de données utiles en « injoignable » reviendrait à les
+  cacher.
+- **Les plafonds internes suivent le niveau** (`PLAFONDS`, `sirene.MAX_PAR_THEME`), sans quoi un
+  plafond communal de 500 tronquerait les 852 établissements d'un département. Quand l'un d'eux
+  mord, il se signale à l'agent et pas seulement au journal.
 - **Chaque site porte SA commune**, pas celle de l'institution qui importe : évident mais faux
   jusqu'ici, et bloquant dès le premier import départemental. Pour Géorisques, c'est `codeInsee`
   qui fait foi et **pas** le libellé `commune`, qui est sale — un établissement bien situé dans

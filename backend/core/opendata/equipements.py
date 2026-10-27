@@ -52,9 +52,19 @@ def _vers_site(enregistrement):
     )
 
 
+# Les seuls champs que `_vers_site` lit — voir ecoles.CHAMPS pour le pourquoi : sans `select`,
+# le recensement rend 22 Mo pour une région (une colonne par type d'équipement et par
+# discipline praticable) contre 5 Mo avec.
+CHAMPS = (
+    "numero", "nom", "insee", "commune", "cp", "adresse", "coordonnees",
+    "acces_handi", "acces_transp_commun", "install_nb", "maj_date",
+)
+
+
 def collecter(perimetre):
     where = where_territoire(
         "insee", perimetre,
         champs_secteur={"departement": "dep_code", "region": "reg_code"},
     )
-    return collecter_ods(PORTAIL, DATASET, where, _vers_site, maximum=plafond(perimetre))
+    return collecter_ods(PORTAIL, DATASET, where, _vers_site, select=",".join(CHAMPS),
+                         maximum=plafond(perimetre))

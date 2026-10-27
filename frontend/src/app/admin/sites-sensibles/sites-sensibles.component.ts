@@ -190,9 +190,9 @@ export class SitesSensiblesComponent implements OnInit, OnDestroy {
         if (synthese.perimetres_possibles?.length) {
           this.perimetreChoisi = synthese.perimetres_possibles[0];
         }
-        // Un import FINESS lancé précédemment peut encore tourner : son état vit en base, pas
+        // Un recensement lancé précédemment peut encore tourner : son état vit en base, pas
         // dans le navigateur, donc il est toujours là après un changement de page.
-        if (this.finessEnCours) {
+        if (this.recensementEnCours) {
           this.surveillerImport();
         }
       },
@@ -215,20 +215,50 @@ export class SitesSensiblesComponent implements OnInit, OnDestroy {
     }));
   }
 
-  get finessEnCours(): boolean {
-    return (this.synthese?.imports || []).some(i => i.statut === 'EN_COURS');
+  /** Les recensements qui tournent en arrière-plan. Tout ce qui dépasse la commune y passe :
+   * un département, c'est une dizaine d'appels paginés par source, une région douze fois
+   * autant. */
+  get importsEnCours(): ImportOpenData[] {
+    return (this.synthese?.imports || []).filter(i => i.statut === 'EN_COURS');
   }
 
-  /** Rafraîchit la synthèse tant qu'un import de fond tourne (FINESS), puis s'arrête de
-   * lui-même. Sondage volontairement lent : l'import prend une vingtaine de secondes et
-   * l'agent n'attend pas devant l'écran — et suspendu quand l'onglet passe en arrière-plan
+  get recensementEnCours(): boolean {
+    return this.importsEnCours.length > 0;
+  }
+
+  /** « département 24 » quand il n'y a qu'un territoire à parcourir, « 5 territoires sur 12 —
+   * département 33 » quand il y en a plusieurs. Jamais « 0 sur 1 », qui n'informe personne. */
+  avancement(etat: ImportOpenData): string {
+    const faites = etat.resultat.tranches_faites ?? 0;
+    const total = etat.resultat.tranches_total ?? 0;
+    const ou = etat.resultat.tranche_en_cours || '';
+    if (total > 1) {
+      return `${faites} territoire(s) sur ${total}${ou ? ` — ${ou}` : ''}`;
+    }
+    return ou;
+  }
+
+  /** Ce qui manque aux recensements terminés, et pourquoi, source par source.
+   *
+   * Affiché tant que ça dure, pas rangé dans un journal : une liste incomplète qui se croit
+   * complète est plus dangereuse qu'une liste absente, parce qu'on bâtit un plan de sauvegarde
+   * dessus et qu'on ne cherche pas ce qu'on croit déjà avoir. */
+  get avertissements(): { libelle: string; raisons: string[] }[] {
+    return (this.synthese?.imports || [])
+      .filter(i => i.statut !== 'EN_COURS' && (i.resultat.incomplet || []).length > 0)
+      .map(i => ({ libelle: i.source_libelle, raisons: i.resultat.incomplet || [] }));
+  }
+
+  /** Rafraîchit la synthèse tant qu'un recensement de fond tourne, puis s'arrête de lui-même.
+   * Sondage volontairement lent : un import départemental dure des minutes et l'agent n'attend
+   * pas devant l'écran — et suspendu quand l'onglet passe en arrière-plan
    * (pollWhileVisible). */
   private surveillerImport(): void {
     if (this.suiviImport) return;
     this.suiviImport = pollWhileVisible(() => this.siteService.synthese(), 10000).subscribe({
       next: (synthese) => {
         this.synthese = synthese;
-        if (!this.finessEnCours) {
+        if (!this.recensementEnCours) {
           this.arreterSuivi();
           this.rechargerSites();
         }
@@ -337,14 +367,23 @@ export class SitesSensiblesComponent implements OnInit, OnDestroy {
     this.siteService.importer(demandees, themes, perimetre ?? this.perimetreChoisi).subscribe({
       next: (reponse) => {
         this.importEnCours = false;
-        const crees = Object.values(reponse.resultats)
-          .reduce((total, r) => total + (r.crees || 0), 0);
-        const attendues = Object.values(reponse.resultats).filter(r => r.asynchrone).length;
-        this.message = crees
-          ? `${crees} nouveau${crees > 1 ? 'x' : ''} site${crees > 1 ? 's' : ''} à vérifier.`
-          : 'Aucun nouveau site : les sources ne connaissent rien de plus que ce que vous avez déjà.';
-        if (attendues) {
-          this.message += " La recherche continue en arrière-plan.";
+        const retours = Object.values(reponse.resultats);
+        const crees = retours.reduce((total, r) => total + (r.crees || 0), 0);
+        const differees = retours.filter(r => r.asynchrone).length;
+        const immediates = retours.length - differees;
+        // Un recensement parti en tâche de fond n'a encore rien trouvé : annoncer « aucun
+        // nouveau site » serait faux, et c'est la réponse qu'on affichait.
+        if (crees) {
+          this.message = `${crees} nouveau${crees > 1 ? 'x' : ''} site${crees > 1 ? 's' : ''} à vérifier.`;
+        } else if (immediates) {
+          this.message = 'Aucun nouveau site : les sources ne connaissent rien de plus que ce que vous avez déjà.';
+        } else {
+          this.message = '';
+        }
+        if (differees) {
+          this.message += (this.message ? ' ' : '')
+            + `Le recensement de ${differees} source(s) se poursuit en arrière-plan : vous pouvez `
+            + `quitter cette page, le résultat vous attendra.`;
         }
         this.charger();
       },

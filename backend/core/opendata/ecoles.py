@@ -93,6 +93,19 @@ def _vers_site(enregistrement):
     )
 
 
+# Les seuls champs que `_vers_site` lit. Restreindre l'export n'est pas une micro-optimisation :
+# sans `select`, l'annuaire rend 14 Mo pour une région (plus de 200 colonnes, dont les effectifs
+# par niveau et une trentaine d'indicateurs pédagogiques) contre 1 Mo avec. À tenir en phase
+# avec `_vers_site` : un champ oublié ici arriverait vide, pas en erreur.
+CHAMPS = (
+    "etat", "identifiant_de_l_etablissement", "nom_etablissement",
+    "adresse_1", "adresse_2", "adresse_3", "code_postal", "nom_commune",
+    "latitude", "longitude", "telephone", "code_commune",
+    "type_etablissement", "statut_public_prive", "hebergement", "restauration",
+    "date_maj_ligne",
+)
+
+
 def collecter(perimetre):
     where = where_territoire(
         "code_commune", perimetre,
@@ -100,4 +113,5 @@ def collecter(perimetre):
         # L'annuaire zéro-complète le code département sur trois caractères (« 029 »).
         codes_secteur={"departement": str(perimetre.code).zfill(3)},
     )
-    return collecter_ods(PORTAIL, DATASET, where, _vers_site, maximum=plafond(perimetre))
+    return collecter_ods(PORTAIL, DATASET, where, _vers_site, select=",".join(CHAMPS),
+                         maximum=plafond(perimetre))

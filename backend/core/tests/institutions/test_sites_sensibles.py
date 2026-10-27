@@ -26,10 +26,12 @@ from core.models import (
 )
 from core.opendata import ecoles, equipements, finess, icpe, sirene
 from core.opendata.base import (
-    Perimetre, SitePropose, collecter_ods, perimetre_commune, plafond, where_territoire,
+    Collecte, Perimetre, SitePropose, collecter_ods, perimetre_commune, plafond,
+    where_territoire,
 )
 from core.sites_sensibles import (
-    _parse_date, enregistrer_proposes, executer_import, importer_source, synthese_par_categorie,
+    _parse_date, enregistrer_proposes, executer_import, importer_source, lancer_import,
+    synthese_par_categorie, tranches,
 )
 
 
@@ -640,21 +642,372 @@ class TestRobustesseImport:
 
 
 class TestPlafondOpendatasoft:
-    """Opendatasoft refuse `offset + limit > 10000` avec un 400 : à l'échelle d'une région, la
-    collecte s'arrêtait sur une erreur au lieu de s'arrêter proprement."""
+    """Opendatasoft refuse `offset + limit > 10000` sur `records`, avec un 400 explicite.
 
-    def test_la_pagination_sarrete_avant_le_plafond(self):
-        offsets = []
+    Vérifié en direct le 27/10/2026 : la Nouvelle-Aquitaine compte 17 344 équipements sportifs,
+    dont 7 344 étaient hors d'atteinte. Ce plafond ne s'écoule PAS avec le temps — étaler les
+    appels n'y change rien, l'offset 10 100 est refusé aussi patiemment qu'on le demande. Le
+    remède est l'endpoint `exports`, qui n'a pas ce plafond et rend le jeu filtré en un appel.
+    """
+
+    @staticmethod
+    def _faux_portail(total, enregistrements=None):
+        """Imite les deux endpoints : `records` pour le comptage, `exports/json` pour le jeu."""
+        appels = []
 
         def faux_fetch(url, params=None):
-            offsets.append(params["offset"])
-            return {"results": [{"numero": f"I{params['offset']}", "nom": "X"}] * 100}
+            appels.append((url.rsplit("/", 1)[-1], dict(params or {})))
+            if url.endswith("/records") and params.get("limit") == 1:
+                return {"total_count": total, "results": []}
+            lignes = enregistrements if enregistrements is not None else [
+                {"numero": f"I{i}", "nom": f"Site {i}"} for i in range(total)
+            ]
+            if url.endswith("/records"):
+                return {"total_count": total, "results": lignes}
+            return lignes
 
+        return appels, faux_fetch
+
+    def test_au_dela_dune_page_on_passe_par_lexport(self):
+        """Et donc UN seul appel de collecte, là où la pagination en faisait 174 — moins de
+        charge pour le producteur, et un recensement complet au lieu d'un tronqué."""
+        appels, faux_fetch = self._faux_portail(17344)
         with patch("core.opendata.base.fetch_json", side_effect=faux_fetch):
-            collecter_ods("portail", "jeu", 'reg_code="75"', lambda r: None, maximum=12000)
+            collecte = collecter_ods("portail", "jeu", 'reg_code="75"',
+                                     equipements._vers_site, maximum=20000)
 
-        assert max(offsets) < 10000
-        assert offsets[-1] == 9900
+        assert len(collecte) == 17344
+        assert collecte.tronque is None
+        assert [chemin for chemin, _ in appels] == ["records", "json"]
+        # Jamais d'offset : c'est lui qui butait sur le plafond.
+        assert all("offset" not in params for _, params in appels)
+
+    def test_une_seule_page_reste_sur_records(self):
+        """Inutile d'exporter pour une commune : son jeu tient dans une page."""
+        appels, faux_fetch = self._faux_portail(12)
+        with patch("core.opendata.base.fetch_json", side_effect=faux_fetch):
+            collecte = collecter_ods("portail", "jeu", 'insee="29027"', equipements._vers_site)
+
+        assert len(collecte) == 12
+        assert [chemin for chemin, _ in appels] == ["records", "records"]
+
+    def test_un_filtre_ignore_par_le_portail_est_refuse_pas_charge(self):
+        """Un jeu national annoncé, c'est que le filtre territorial n'a pas été pris en compte :
+        le charger en mémoire dans un worker n'aiderait personne."""
+        appels, faux_fetch = self._faux_portail(2_000_000)
+        with patch("core.opendata.base.fetch_json", side_effect=faux_fetch):
+            collecte = collecter_ods("portail", "jeu", 'insee="29027"', equipements._vers_site)
+
+        assert len(collecte) == 0
+        assert "au-delà de ce qu'un import peut charger" in collecte.tronque
+        assert [chemin for chemin, _ in appels] == ["records"]
+
+    def test_le_plafond_de_niveau_se_dit_au_lieu_de_se_taire(self):
+        """Le garde-fou par niveau reste, mais il prévient l'agent au lieu du seul journal."""
+        appels, faux_fetch = self._faux_portail(5000)
+        with patch("core.opendata.base.fetch_json", side_effect=faux_fetch):
+            collecte = collecter_ods("portail", "jeu", 'reg_code="75"',
+                                     equipements._vers_site, maximum=500)
+
+        assert len(collecte) == 500
+        assert "5000 enregistrements trouvés, 500 retenus" in collecte.tronque
+
+    def test_les_appels_sont_espaces(self):
+        """L'étalement demandé : on ne bombarde pas un service public gratuit."""
+        _, faux_fetch = self._faux_portail(17344)
+        with patch("core.opendata.base.fetch_json", side_effect=faux_fetch), \
+             patch("core.opendata.base.time.sleep") as dodo:
+            collecter_ods("portail", "jeu", 'reg_code="75"', equipements._vers_site,
+                          maximum=20000)
+
+        assert dodo.called
+
+
+class TestDecoupageDuPerimetre:
+    """Le vrai remède aux plafonds des sources : poser des questions assez étroites pour
+    qu'elles puissent y répondre entièrement.
+
+    Mesuré le 27/10/2026 : le thème « élevages » de l'annuaire des entreprises annonce 10 000
+    établissements pour la région Nouvelle-Aquitaine ; la somme de ses douze départements,
+    interrogés un par un, en donne 48 499. Quatre cinquièmes du territoire disparaissaient sans
+    un mot, et aucune cadence d'appels n'y aurait changé quoi que ce soit."""
+
+    def test_une_region_est_decoupee_en_departements(self, db):
+        from core.models import Commune
+
+        Commune.objects.create(code="24281", nom="Monsac", departement_code="24",
+                               region_code="75")
+        Commune.objects.create(code="24564", nom="Vanxains", departement_code="24",
+                               region_code="75")
+        Commune.objects.create(code="33063", nom="Bordeaux", departement_code="33",
+                               region_code="75")
+
+        decoupage = tranches(Perimetre("region", "75", ["24281", "24564", "33063"]))
+
+        assert [(t.niveau, t.code) for t in decoupage] == [
+            ("departement", "24"), ("departement", "33")]
+        assert decoupage[0].communes == ["24281", "24564"]
+
+    def test_un_departement_nest_pas_redecoupe(self, db):
+        """Il reste sous les plafonds de toutes les sources branchées ici : le plus gros thème
+        SIRENE mesuré y atteint 8 462 pour un plafond de 10 000."""
+        perimetre = Perimetre("departement", "24", ["24281", "24564"])
+        assert tranches(perimetre) == [perimetre]
+
+    def test_referentiel_incomplet_la_requete_large_marche_encore(self, db):
+        """Elle est seulement plafonnée. Mieux que ne rien rendre."""
+        perimetre = Perimetre("region", "75", ["24281"])
+        assert tranches(perimetre) == [perimetre]
+
+    def test_finess_nest_jamais_decoupe(self, db, mairie):
+        """Son flux national est lu EN ENTIER quel que soit le périmètre : le découper en douze
+        ferait télécharger douze fois les mêmes 50 Mo."""
+        from core.models import Commune
+
+        Commune.objects.create(code="24281", departement_code="24", region_code="75")
+        Commune.objects.create(code="33063", departement_code="33", region_code="75")
+
+        with patch.object(finess, "collecter", return_value=Collecte()) as collecter:
+            importer_source(mairie, SourceSiteSensible.FINESS,
+                            {"niveau": "region", "code": "75"}, None, "PROD")
+
+        assert collecter.call_count == 1
+        assert collecter.call_args.args[0].niveau == "region"
+
+    def test_chaque_tranche_est_interrogee_et_enregistree(self, db, mairie):
+        from core.models import Commune
+
+        Commune.objects.create(code="24281", departement_code="24", region_code="75")
+        Commune.objects.create(code="33063", departement_code="33", region_code="75")
+
+        def par_tranche(perimetre):
+            return Collecte([_propose(source_id=f"uai-{perimetre.code}",
+                                      nom=f"École {perimetre.code}")])
+
+        with patch.object(ecoles, "collecter", side_effect=par_tranche), \
+             patch("core.sites_sensibles.time.sleep"):
+            resultat = importer_source(mairie, SourceSiteSensible.ANNUAIRE_EDUCATION,
+                                       {"niveau": "region", "code": "75"}, None, "PROD")
+
+        assert resultat["crees"] == 2
+        assert set(SiteSensible.objects.values_list("source_id", flat=True)) == {
+            "uai-24", "uai-33"}
+
+    def test_une_tranche_cassee_ne_perd_pas_les_autres(self, db, mairie):
+        """Et le compte rendu reste un succès partiel, pas un échec : onze tranches de données
+        utiles affichées en « injoignable », ce serait les cacher."""
+        from core.models import Commune
+
+        Commune.objects.create(code="24281", departement_code="24", region_code="75")
+        Commune.objects.create(code="33063", departement_code="33", region_code="75")
+
+        def une_sur_deux(perimetre):
+            if perimetre.code == "24":
+                raise RuntimeError("502 Bad Gateway")
+            return Collecte([_propose(source_id="uai-33")])
+
+        with patch.object(ecoles, "collecter", side_effect=une_sur_deux), \
+             patch("core.sites_sensibles.time.sleep"):
+            resultat = importer_source(mairie, SourceSiteSensible.ANNUAIRE_EDUCATION,
+                                       {"niveau": "region", "code": "75"}, None, "PROD")
+
+        assert resultat["crees"] == 1
+        assert "erreur" not in resultat
+        assert any("département 24" in ligne for ligne in resultat["incomplet"])
+
+    def test_un_perimetre_trop_vaste_sarrete_en_le_disant(self, db, mairie):
+        """Plutôt que de se faire tuer par la limite de temps de Celery en laissant
+        « recherche en cours » affiché pour toujours — ce qui est exactement ce qu'on a vu."""
+        from core.models import Commune
+
+        for code, dep in (("24281", "24"), ("33063", "33"), ("40001", "40")):
+            Commune.objects.create(code=code, departement_code=dep, region_code="75")
+
+        horloge = iter([0, 10_000, 20_000, 30_000, 40_000])
+
+        with patch.object(ecoles, "collecter", return_value=Collecte()), \
+             patch("core.sites_sensibles.time.sleep"), \
+             patch("core.sites_sensibles.time.monotonic", side_effect=lambda: next(horloge)):
+            resultat = importer_source(mairie, SourceSiteSensible.ANNUAIRE_EDUCATION,
+                                       {"niveau": "region", "code": "75"}, None, "PROD")
+
+        assert any("budget de temps épuisé" in ligne for ligne in resultat["incomplet"])
+
+    def test_la_commune_de_repli_nest_pas_un_code_departement(self, db, mairie):
+        """Écrire « 24 » dans commune_code parce qu'on interroge la Dordogne serait faux."""
+        from core.models import Commune
+
+        Commune.objects.create(code="24281", departement_code="24", region_code="75")
+
+        with patch.object(ecoles, "collecter",
+                          return_value=Collecte([_propose(commune_code=None)])):
+            importer_source(mairie, SourceSiteSensible.ANNUAIRE_EDUCATION,
+                            {"niveau": "region", "code": "75"}, None, "PROD")
+
+        assert SiteSensible.objects.get().commune_code in (None, "")
+
+    def test_les_tranches_sont_espacees(self, db, mairie):
+        from core.models import Commune
+
+        Commune.objects.create(code="24281", departement_code="24", region_code="75")
+        Commune.objects.create(code="33063", departement_code="33", region_code="75")
+
+        with patch.object(ecoles, "collecter", return_value=Collecte()), \
+             patch("core.sites_sensibles.time.sleep") as dodo:
+            importer_source(mairie, SourceSiteSensible.ANNUAIRE_EDUCATION,
+                            {"niveau": "region", "code": "75"}, None, "PROD")
+
+        assert dodo.called
+
+
+class TestAvancementEtTroncature:
+    """Ce que l'écran doit pouvoir dire pendant et après : où l'on en est, et ce qui manque."""
+
+    def test_lavancement_est_ecrit_en_base_pas_en_memoire(self, db, mairie):
+        """L'agent doit pouvoir quitter la page, changer d'appareil ou revenir demain et
+        retrouver où en est son recensement."""
+        from core.models import Commune
+
+        Commune.objects.create(code="24281", departement_code="24", region_code="75")
+        Commune.objects.create(code="33063", departement_code="33", region_code="75")
+        vus = []
+
+        def noter(perimetre):
+            trace = ImportOpenData.objects.filter(
+                source=SourceSiteSensible.ANNUAIRE_EDUCATION).first()
+            vus.append(dict(trace.resultat) if trace else None)
+            return Collecte()
+
+        with patch.object(ecoles, "collecter", side_effect=noter), \
+             patch("core.sites_sensibles.time.sleep"):
+            executer_import(mairie, SourceSiteSensible.ANNUAIRE_EDUCATION,
+                            {"niveau": "region", "code": "75"}, None, "PROD")
+
+        assert vus[0]["tranches_total"] == 2
+        assert vus[0]["tranche_en_cours"] == "département 24"
+        assert vus[1]["tranches_faites"] == 1
+
+    def test_le_compte_rendu_final_remplace_lavancement(self, db, mairie):
+        """L'avancement est un état transitoire : une fois l'import fini, la ligne porte les
+        compteurs et plus les tranches, sinon la page afficherait éternellement « en cours de
+        traitement du territoire untel » sur un recensement terminé."""
+        with patch.object(ecoles, "collecter", return_value=Collecte([_propose()])):
+            executer_import(mairie, SourceSiteSensible.ANNUAIRE_EDUCATION, "29027", None, "PROD")
+
+        trace = ImportOpenData.objects.get(source=SourceSiteSensible.ANNUAIRE_EDUCATION)
+        assert "tranches_total" not in trace.resultat
+        assert trace.resultat["crees"] == 1
+
+    def test_la_troncature_dune_source_est_consignee(self, db, mairie):
+        """Un recensement incomplet qui se croit complet est plus dangereux qu'une absence de
+        recensement : on bâtit un plan de sauvegarde dessus."""
+        with patch.object(ecoles, "collecter", return_value=Collecte(
+                [_propose()], "500 retenus sur 5000 : resserrez le périmètre")):
+            executer_import(mairie, SourceSiteSensible.ANNUAIRE_EDUCATION, "29027", None, "PROD")
+
+        trace = ImportOpenData.objects.get(source=SourceSiteSensible.ANNUAIRE_EDUCATION)
+        assert trace.statut == StatutImportOpenData.TERMINEE
+        assert any("resserrez le périmètre" in ligne for ligne in trace.resultat["incomplet"])
+
+    def test_un_connecteur_peut_rendre_une_liste_nue(self, db, mairie):
+        """Il n'a alors rien à signaler — et aucun connecteur ne doit casser pour ça."""
+        with patch.object(ecoles, "collecter", return_value=[_propose()]):
+            resultat = importer_source(mairie, SourceSiteSensible.ANNUAIRE_EDUCATION, "29027")
+
+        assert resultat["crees"] == 1
+        assert "incomplet" not in resultat
+
+
+class TestDepartEnTacheDeFond:
+    """Tout ce qui ne tient pas dans une requête HTTP part en tâche de fond. Un export régional
+    d'équipements sportifs prend 10 s à lui seul : tenir la requête ouverte, c'est un worker
+    gunicorn immobilisé et un agent devant un écran figé."""
+
+    def test_une_commune_repond_dans_la_requete(self, db, mairie):
+        with patch.object(ecoles, "collecter", return_value=Collecte([_propose()])):
+            resultat, asynchrone = lancer_import(
+                mairie, SourceSiteSensible.ANNUAIRE_EDUCATION, "29027", None, "PROD")
+
+        assert asynchrone is False
+        assert resultat["crees"] == 1
+
+    def test_au_dela_de_la_commune_on_rend_la_main(self, db, mairie):
+        from core.models import Commune
+
+        Commune.objects.create(code="24281", departement_code="24", region_code="75")
+
+        with patch("core.tasks.importer_sites_sensibles_task.delay") as delay:
+            resultat, asynchrone = lancer_import(
+                mairie, SourceSiteSensible.ANNUAIRE_EDUCATION,
+                {"niveau": "departement", "code": "24"}, None, "PROD")
+
+        assert (resultat, asynchrone) == (None, True)
+        assert delay.called
+        trace = ImportOpenData.objects.get(source=SourceSiteSensible.ANNUAIRE_EDUCATION)
+        assert trace.statut == StatutImportOpenData.EN_COURS
+
+    def test_la_date_de_lancement_est_celle_de_ce_recensement(self, db, mairie):
+        """`auto_now_add` ne retouche pas une ligne existante : l'écran datait le recensement en
+        cours du tout premier, parfois des mois plus tôt."""
+        veille = timezone.now() - datetime.timedelta(days=30)
+        ImportOpenData.objects.create(
+            institution=mairie, environment="PROD",
+            source=SourceSiteSensible.ANNUAIRE_EDUCATION,
+            statut=StatutImportOpenData.TERMINEE, date_lancement=veille, date_fin=veille,
+        )
+        from core.models import Commune
+
+        Commune.objects.create(code="24281", departement_code="24", region_code="75")
+
+        with patch("core.tasks.importer_sites_sensibles_task.delay"):
+            lancer_import(mairie, SourceSiteSensible.ANNUAIRE_EDUCATION,
+                          {"niveau": "departement", "code": "24"}, None, "PROD")
+
+        trace = ImportOpenData.objects.get(source=SourceSiteSensible.ANNUAIRE_EDUCATION)
+        assert trace.date_lancement > veille + datetime.timedelta(days=29)
+
+
+class TestPlafondAnnuaireDesEntreprises:
+    """L'annuaire des entreprises refuse `page * per_page > 10 000` et PLAFONNE son propre
+    `total_results` à ce chiffre : une requête tronquée ressemble exactement à une requête
+    complète. C'est ce qui a fait disparaître 38 499 élevages sans un mot."""
+
+    def test_le_plafond_atteint_est_annonce_a_lagent(self):
+        def faux_fetch(url, params=None):
+            if params.get("per_page") == 1:
+                return {"total_results": 10000, "results": []}
+            return {"results": [], "total_pages": 1}
+
+        with patch.object(sirene, "fetch_json", side_effect=faux_fetch), \
+             patch("core.opendata.base.time.sleep"):
+            collecte = sirene.collecter(Perimetre("departement", "24", ["24281"]), ["ELEVAGE"])
+
+        assert "le nombre réel d'établissements est inconnu et supérieur" in collecte.tronque
+
+    def test_un_compte_normal_ne_declenche_rien(self):
+        def faux_fetch(url, params=None):
+            if params.get("per_page") == 1:
+                return {"total_results": 42, "results": []}
+            return {"results": [], "total_pages": 1}
+
+        with patch.object(sirene, "fetch_json", side_effect=faux_fetch), \
+             patch("core.opendata.base.time.sleep"):
+            collecte = sirene.collecter(Perimetre("departement", "24", ["24281"]), ["ELEVAGE"])
+
+        assert collecte.tronque is None
+
+    def test_une_commune_ne_paie_pas_le_comptage(self):
+        """Elle n'approche jamais le plafond : un appel de moins par thème."""
+        per_pages = []
+
+        def faux_fetch(url, params=None):
+            per_pages.append(params.get("per_page"))
+            return {"results": [], "total_pages": 1}
+
+        with patch.object(sirene, "fetch_json", side_effect=faux_fetch):
+            sirene.collecter(perimetre_commune("29027"), ["ELEVAGE"])
+
+        assert 1 not in per_pages
 
 
 class TestConnecteurEquipements:

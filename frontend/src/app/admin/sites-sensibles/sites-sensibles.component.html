@@ -57,11 +57,55 @@
   @if (message) {
     <div class="toast toast-ok"><span class="material-icons">check_circle</span> {{ message }}</div>
   }
-  @if (finessEnCours) {
+  @if (recensementEnCours) {
     <div class="toast toast-attente">
       <span class="material-icons">hourglass_top</span>
-      La recherche FINESS (structures de soins) tourne en arrière-plan : son fichier national fait
-      une cinquantaine de méga-octets. Vous pouvez quitter cette page, le résultat vous attendra.
+      <div>
+        <strong>Recensement en cours — la liste ci-dessous est encore incomplète.</strong>
+        Les bases publiques sont interrogées territoire par territoire, en espaçant les appels :
+        ce sont des services publics gratuits et sans quota, on ne les bombarde pas. Comptez
+        quelques minutes pour un département. <strong>Vous pouvez quitter cette page</strong> —
+        l'avancement est enregistré, pas gardé dans votre navigateur, et le résultat vous
+        attendra.
+        <ul class="attente-detail">
+          @for (etat of importsEnCours; track etat.source) {
+            <li>
+              {{ etat.source_libelle }}
+              @if (avancement(etat)) {
+                — {{ avancement(etat) }}
+              } @else {
+                — en cours
+              }
+            </li>
+          }
+        </ul>
+      </div>
+    </div>
+  }
+
+  @if (avertissements.length) {
+    <div class="toast toast-tronque">
+      <span class="material-icons">warning_amber</span>
+      <div>
+        <strong>Ce recensement est incomplet, et il faut le savoir avant d'en faire un plan.</strong>
+        Les sources publiques plafonnent le nombre de résultats qu'elles acceptent de servir, et
+        certaines ne disent pas qu'elles tronquent. Ce qui manque&nbsp;:
+        <ul class="attente-detail">
+          @for (a of avertissements; track a.libelle) {
+            <li>
+              <strong>{{ a.libelle }}</strong>
+              <ul>
+                @for (raison of a.raisons; track raison) {
+                  <li>{{ raison }}</li>
+                }
+              </ul>
+            </li>
+          }
+        </ul>
+        Pour recenser le reste, resserrez le périmètre&nbsp;: un recensement par intercommunalité
+        ou par commune passe sous les plafonds, là où un périmètre départemental ou régional les
+        dépasse.
+      </div>
     </div>
   }
 
@@ -125,8 +169,16 @@
           } @else if (source.etat.statut === 'TERMINEE') {
             consultée le {{ source.etat.date_fin | date:'dd/MM/yyyy à HH:mm' }}
             ({{ source.etat.resultat.total || 0 }} site(s))
+            @if (source.etat.resultat.incomplet?.length) {
+              <span class="marque-tronque"
+                    title="Recensement incomplet : voir l'avertissement en haut de page">—
+                incomplet</span>
+            }
           } @else if (source.etat.statut === 'EN_COURS') {
-            recherche en cours…
+            recherche en cours
+            @if (avancement(source.etat)) {
+              — {{ avancement(source.etat) }}
+            }
           } @else {
             injoignable — {{ source.etat.erreur }}
           }

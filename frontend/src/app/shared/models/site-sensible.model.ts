@@ -84,12 +84,32 @@ export interface SiteSensible {
   point_operationnel: string | null;
 }
 
+/** L'avancement d'un recensement, et surtout ce qui lui manque.
+ *
+ * Un périmètre large est interrogé territoire par territoire (un département à la fois pour une
+ * région), d'abord parce que les sources ont des plafonds de résultats qu'une requête régionale
+ * dépasse en silence : l'annuaire des entreprises annonçait 10 000 élevages en
+ * Nouvelle-Aquitaine là où ses douze départements en comptent 48 499. `tranches_faites` dit où
+ * l'on en est, `incomplet` dit en français ce qui manque et pourquoi. */
+export interface ResultatImportOpenData {
+  crees?: number;
+  mis_a_jour?: number;
+  inchanges?: number;
+  total?: number;
+  tranches_faites?: number;
+  tranches_total?: number;
+  tranche_en_cours?: string | null;
+  /** Vide quand le recensement est complet. Jamais masqué quand il ne l'est pas : on bâtit un
+   * plan de sauvegarde sur ces listes. */
+  incomplet?: string[];
+}
+
 export interface ImportOpenData {
   id: string;
   source: SourceSiteSensible;
   source_libelle: string;
   statut: 'EN_COURS' | 'TERMINEE' | 'ECHEC';
-  resultat: { crees?: number; mis_a_jour?: number; inchanges?: number; total?: number };
+  resultat: ResultatImportOpenData;
   erreur: string | null;
   date_lancement: string;
   date_fin: string | null;

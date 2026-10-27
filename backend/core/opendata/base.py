@@ -10,6 +10,7 @@ Ouverte (Etalab) -- attribution obligatoire, redistribution libre. Volontairemen
 d'OpenStreetMap, pourtant plus riche sur les salles des fêtes : sa licence ODbL impose le partage
 à l'identique des bases dérivées, ce qui contaminerait la base Assista-Crise entière."""
 import logging
+import time
 from collections import namedtuple
 
 import requests
@@ -20,6 +21,30 @@ logger = logging.getLogger(__name__)
 # soit dans une tâche Celery (FINESS). 10s est large pour une API qui répond normalement et
 # assez court pour qu'une source en panne ne bloque pas l'import des autres.
 TIMEOUT = 10
+
+# Pause entre deux appels au même producteur. Aucune des API branchées ici ne publie de limite
+# de débit (vérifié le 27/10/2026 : ni les portails Opendatasoft, ni Géorisques, ni l'annuaire
+# des entreprises n'en documentent). En l'absence de limite annoncée, on s'en impose une plutôt
+# que d'enchaîner au rythme que le réseau permet : un recensement départemental fait des
+# centaines d'appels, et un service public gratuit n'a pas à encaisser une rafale au motif que
+# nous n'avons pas pris la peine d'espacer.
+PAUSE_ENTRE_APPELS = 0.12
+
+# Pause entre deux tranches d'un même périmètre (voir sites_sensibles.tranches) : plus longue,
+# c'est le moment où l'on change de territoire et où rien ne presse.
+PAUSE_ENTRE_TRANCHES = 1.0
+
+# Budget de temps d'un import entier, toutes tranches confondues. La tâche Celery qui le porte
+# a une limite dure (voir tasks.py) : la dépasser ferait tuer la tâche au milieu d'une tranche,
+# sans compte rendu et en laissant « recherche en cours » affiché pour toujours. On s'arrête
+# nous-mêmes, et surtout on le DIT (voir importer_source).
+BUDGET_SECONDES = 900
+
+# Refus temporaires sur lesquels réessayer. Volontairement sans 500 : Géorisques en rend des
+# persistants sur certains endpoints, et réessayer trois fois ne ferait que gaspiller le budget.
+CODES_REESSAYABLES = {429, 502, 503, 504}
+TENTATIVES = 3
+ATTENTE_APRES_REFUS = 2.0
 
 # Garde-fou : une commune réaliste tient très en dessous. Au-delà, c'est que le filtre commune
 # n'a pas été pris en compte par la source -- on s'arrête plutôt que d'inonder la base.
@@ -106,52 +131,143 @@ class SitePropose:
         self.echelon_competence = echelon_competence
 
 
-def fetch_json(url, params=None):
+def pause(secondes=PAUSE_ENTRE_APPELS):
+    """Souffle entre deux appels à un même producteur (voir PAUSE_ENTRE_APPELS)."""
+    time.sleep(secondes)
+
+
+def _attente_demandee(reponse):
+    """L'en-tête `Retry-After` quand le producteur dit lui-même combien attendre."""
+    try:
+        return max(0.0, min(30.0, float(reponse.headers.get("Retry-After"))))
+    except (TypeError, ValueError, AttributeError):
+        return None
+
+
+def fetch_json(url, params=None, tentatives=TENTATIVES):
     """Appel d'une API ouverte : rend le JSON, ou None sur n'importe quel échec.
 
     Jamais d'exception vers l'appelant : une source indisponible ne doit pas faire échouer
     l'import des autres (mesuré en vrai sur Géorisques, qui rend des 500 sur certains
-    endpoints)."""
-    try:
-        reponse = requests.get(url, params=params, timeout=TIMEOUT)
-        reponse.raise_for_status()
-        return reponse.json()
-    except Exception as exc:
-        logger.warning("Source open data injoignable (%s) : %s", url, exc)
-        return None
+    endpoints).
+
+    Réessaie sur un refus TEMPORAIRE (voir CODES_REESSAYABLES), en respectant `Retry-After`
+    quand le producteur le fournit. Un 429 n'est pas une panne, c'est une demande de ralentir :
+    y répondre en abandonnant la source priverait la collectivité de ses données, y répondre en
+    insistant immédiatement serait impoli."""
+    for tentative in range(1, tentatives + 1):
+        reponse = None
+        try:
+            reponse = requests.get(url, params=params, timeout=TIMEOUT)
+            if reponse.status_code not in CODES_REESSAYABLES:
+                reponse.raise_for_status()
+                return reponse.json()
+        except Exception as exc:
+            logger.warning("Source open data injoignable (%s) : %s", url, exc)
+            return None
+        if tentative == tentatives:
+            logger.warning(
+                "Source open data refuse encore après %s tentatives (%s) : HTTP %s",
+                tentatives, url, reponse.status_code,
+            )
+            return None
+        pause(_attente_demandee(reponse) or ATTENTE_APRES_REFUS * tentative)
+    return None
 
 
-# Opendatasoft refuse `offset + limit > 10000` avec un 400. Mesuré en production sur le
-# recensement des équipements sportifs à l'échelle d'une région (Nouvelle-Aquitaine) : la
-# collecte s'arrêtait sur une erreur au lieu de s'arrêter proprement.
+class Collecte(list):
+    """La liste des sites proposés par une source, qui sait dire si elle est TRONQUÉE.
+
+    Une liste, et pas un objet à part, pour que tout ce qui l'itère ou la compte n'ait rien à
+    savoir de plus. `tronque` porte, en français lisible par un agent, la raison pour laquelle
+    le recensement est incomplet — et ce champ est la moitié importante : un recensement qui se
+    croit complet alors qu'il a perdu des lignes est plus dangereux que pas de recensement du
+    tout, parce qu'on bâtit un plan de sauvegarde dessus. Un connecteur qui n'a rien à signaler
+    peut rendre une liste nue : l'appelant lit `getattr(proposes, "tronque", None)`."""
+
+    def __init__(self, sites=(), tronque=None):
+        super().__init__(sites)
+        self.tronque = tronque
+
+
+# Opendatasoft refuse `offset + limit > 10000` sur l'endpoint `records`, avec un 400 explicite
+# (« Invalid value for sum of offset + limit API parameter »). Mesuré en production le
+# 27/10/2026 sur le recensement des équipements sportifs à l'échelle d'une région.
+#
+# Ce plafond n'est PAS une limite de débit : il ne s'écoule pas avec le temps, et étaler les
+# appels n'y change rien — l'offset 10 100 est refusé aussi patiemment qu'on le demande. La
+# Nouvelle-Aquitaine compte 17 344 équipements sportifs : 7 344 étaient hors d'atteinte.
+#
+# L'endpoint `exports`, lui, n'a pas ce plafond : il rend le jeu filtré en UN appel. Vérifié en
+# direct, 17 344 enregistrements en 10 s et 5 Mo. C'est donc moins d'appels, pas plus, et un
+# recensement complet au lieu d'un recensement tronqué.
 OFFSET_MAX_ODS = 10000
+
+# Taille d'une page `records`. Sert au comptage et au cas des petits périmètres.
+PAGE_ODS = 100
+
+# Au-delà, on ne charge pas : un export de cette taille signifie que le filtre territorial n'a
+# pas été pris en compte par le portail, et tenir le jeu national en mémoire dans un worker
+# n'aiderait personne.
+MAX_EXPORT_ODS = 60000
+
+
+def _compter_ods(portail, dataset, where):
+    """Nombre d'enregistrements que le filtre rend, en un appel à un enregistrement.
+
+    Payé volontairement : c'est lui qui permet de choisir entre `records` et `exports`, de
+    refuser un périmètre aberrant avant de le télécharger, et de dire à l'agent ce qui a été
+    tronqué plutôt que de le lui laisser découvrir."""
+    data = fetch_json(
+        f"https://{portail}/api/explore/v2.1/catalog/datasets/{dataset}/records",
+        {"where": where, "limit": 1},
+    )
+    return None if data is None else data.get("total_count")
 
 
 def collecter_ods(portail, dataset, where, mapper, select=None, maximum=MAX_RESULTATS):
-    """Collecte paginée sur un portail Opendatasoft (Explore API v2.1) -- patron partagé par
-    l'annuaire de l'éducation et le recensement des équipements sportifs, qui exposent tous deux
-    cette API avec la même pagination (`limit` plafonné à 100 par l'éditeur, `offset`)."""
-    sites, offset = [], 0
-    plafond_offset = min(maximum, OFFSET_MAX_ODS)
-    while offset < plafond_offset:
-        params = {"where": where, "limit": 100, "offset": offset}
-        if select:
-            params["select"] = select
-        data = fetch_json(f"https://{portail}/api/explore/v2.1/catalog/datasets/{dataset}/records", params)
-        if not data or not data.get("results"):
-            break
-        for enregistrement in data["results"]:
-            site = mapper(enregistrement)
-            if site is not None:
-                sites.append(site)
-        if len(data["results"]) < 100:
-            break
-        offset += 100
-    if offset >= plafond_offset:
-        # Le dire : à l'échelle d'une région, un jeu de données dépasse ce que le portail
-        # accepte de paginer, et la liste rendue est incomplète.
-        logger.warning(
-            "Collecte %s tronquée à %s enregistrements (plafond du portail ou du périmètre)",
-            dataset, len(sites),
-        )
-    return sites
+    """Collecte sur un portail Opendatasoft (Explore API v2.1) — patron partagé par l'annuaire
+    de l'éducation et le recensement des équipements sportifs.
+
+    Un comptage, puis UN seul appel : `records` quand une page suffit, `exports` au-delà. On ne
+    pagine plus `records`, parce que sa pagination a un plafond que le périmètre d'un
+    département dépasse (voir OFFSET_MAX_ODS) — et parce qu'un export unique est plus économe
+    pour le producteur qu'une centaine de pages.
+
+    `select` restreint les champs au strict nécessaire du mapper : l'export de l'annuaire de
+    l'éducation sur une région passe de 14 Mo à 1 Mo, celui des équipements sportifs de 22 Mo
+    à 5 Mo. Ce n'est pas un détail quand ça traverse un worker Celery."""
+    total = _compter_ods(portail, dataset, where)
+    if total is None:
+        return Collecte([], "le portail n'a pas répondu")
+    if total == 0:
+        return Collecte()
+    if total > MAX_EXPORT_ODS:
+        logger.warning("Collecte %s refusée : %s enregistrements annoncés", dataset, total)
+        return Collecte([], f"{total} enregistrements annoncés par le portail, c'est "
+                            f"au-delà de ce qu'un import peut charger : le filtre territorial "
+                            f"n'a probablement pas été pris en compte")
+
+    params = {"where": where}
+    if select:
+        params["select"] = select
+    if total <= PAGE_ODS:
+        chemin, params["limit"] = "records", PAGE_ODS
+    else:
+        chemin = "exports/json"
+    pause()
+    data = fetch_json(
+        f"https://{portail}/api/explore/v2.1/catalog/datasets/{dataset}/{chemin}", params)
+    if data is None:
+        return Collecte([], "le portail n'a pas répondu")
+    enregistrements = data.get("results", []) if isinstance(data, dict) else data
+
+    sites = [site for site in (mapper(e) for e in enregistrements) if site is not None]
+    tronque = None
+    if len(enregistrements) > maximum:
+        # Le plafond par niveau reste un garde-fou (voir PLAFONDS) : s'il mord, c'est l'agent
+        # qu'il faut prévenir, pas le journal.
+        sites = sites[:maximum]
+        tronque = (f"{total} enregistrements trouvés, {maximum} retenus : resserrez le "
+                   f"périmètre pour recenser le reste")
+    return Collecte(sites, tronque)

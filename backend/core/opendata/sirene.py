@@ -27,7 +27,7 @@ import logging
 from collections import namedtuple
 
 from ..models import CategorieSiteSensible, EchelonCompetence, SourceSiteSensible
-from .base import SitePropose, fetch_json
+from .base import Collecte, SitePropose, fetch_json, pause
 
 logger = logging.getLogger(__name__)
 
@@ -39,8 +39,20 @@ TAILLE_PAGE = 25
 # Par thème, et non global : un thème qui déborde ne doit pas priver les autres. Le plafond
 # dépend du périmètre — mesuré sur le Finistère, « transport de marchandises » rend 483
 # établissements et « travaux publics » 412, qu'un plafond de 200 tronquerait en silence.
-MAX_PAR_THEME = {"commune": 200}
-MAX_PAR_THEME_SECTEUR = 1500
+MAX_PAR_THEME = {"commune": 200, "epci": 800, "departement": 1500}
+MAX_PAR_THEME_DEFAUT = 1500
+
+# L'API refuse `page * per_page > 10 000`, et le dit elle-même sans ambiguïté : « Le nombre
+# total de résultats est restreint à 10 000. » Pire, elle PLAFONNE son propre `total_results` à
+# ce chiffre, si bien qu'une requête tronquée ressemble exactement à une requête complète.
+#
+# Mesuré le 27/10/2026 : le thème « élevages » sur la région Nouvelle-Aquitaine annonce 10 000
+# établissements. La somme de ses douze départements, interrogés un par un, en donne 48 499.
+# Quatre cinquièmes du territoire disparaissaient sans un mot. C'est la raison d'être du
+# découpage par tranches (voir sites_sensibles.tranches) : non pas étaler la charge, mais poser
+# des questions auxquelles l'API sait répondre entièrement. Et quand il reste tronqué malgré
+# tout, on le dit à l'agent (voir base.Collecte).
+PLAFOND_RESULTATS = 10000
 
 # Nature juridique 1000 = entrepreneur individuel, c'est-à-dire une personne physique.
 NATURE_JURIDIQUE_PERSONNE_PHYSIQUE = "1000"
@@ -236,50 +248,94 @@ def _filtres_territoire(perimetre):
     return [{"code_commune": code} for code in perimetre.communes]
 
 
+def _params_theme(theme):
+    return {"activite_principale": ",".join(theme.naf), "etat_administratif": "A"}
+
+
+def _total_annonce(filtre, theme):
+    """Ce que l'API dit du nombre d'établissements, en un appel à un résultat.
+
+    Payé volontairement : c'est le seul moyen de distinguer « 10 000 établissements » de
+    « au moins 10 000, et nous n'en saurons pas plus » (voir PLAFOND_RESULTATS)."""
+    data = fetch_json(URL, {**filtre, **_params_theme(theme), "per_page": 1})
+    return None if data is None else data.get("total_results")
+
+
+def _collecter_filtre(filtre, theme, maximum):
+    """Pagine un filtre. Rend (sites, complet) — `complet` dit si la source était au bout."""
+    sites, page = [], 1
+    pages_max = PLAFOND_RESULTATS // TAILLE_PAGE
+    while len(sites) < maximum and page <= pages_max:
+        if page > 1:
+            pause()
+        data = fetch_json(URL, {**filtre, **_params_theme(theme),
+                                "per_page": TAILLE_PAGE, "page": page})
+        if not data or not data.get("results"):
+            return sites[:maximum], True
+        for entreprise in data["results"]:
+            for etablissement in (entreprise.get("matching_etablissements") or []):
+                site = _vers_site(entreprise, etablissement, theme)
+                if site is not None:
+                    sites.append(site)
+        if page >= (data.get("total_pages") or 1):
+            return sites[:maximum], True
+        page += 1
+    return sites[:maximum], False
+
+
 def _collecter_theme(perimetre, theme, maximum):
-    sites = []
-    for filtre in _filtres_territoire(perimetre):
-        page = 1
-        while len(sites) < maximum:
-            data = fetch_json(URL, {
-                **filtre,
-                "activite_principale": ",".join(theme.naf),
-                "etat_administratif": "A",
-                "per_page": TAILLE_PAGE,
-                "page": page,
-            })
-            if not data or not data.get("results"):
-                break
-            for entreprise in data["results"]:
-                for etablissement in (entreprise.get("matching_etablissements") or []):
-                    site = _vers_site(entreprise, etablissement, theme)
-                    if site is not None:
-                        sites.append(site)
-            if page >= (data.get("total_pages") or 1):
-                break
-            page += 1
-    return sites
+    """Collecte un thème sur le périmètre. Rend (sites, raison d'incomplétude ou None)."""
+    filtres = _filtres_territoire(perimetre)
+    sites, raisons = [], []
+
+    # Le plafond de l'API ne se constate que sur un filtre de secteur : une commune seule n'en
+    # approche jamais. Un appel à un résultat suffit à le savoir avant de paginer pour rien.
+    if len(filtres) == 1 and "code_commune" not in filtres[0]:
+        total = _total_annonce(filtres[0], theme)
+        if total is not None and total >= PLAFOND_RESULTATS:
+            raisons.append(
+                f"l'annuaire des entreprises ne sert jamais plus de {PLAFOND_RESULTATS} "
+                f"résultats et plafonne son propre compte à ce chiffre — le nombre réel "
+                f"d'établissements est inconnu et supérieur")
+        pause()
+
+    for rang, filtre in enumerate(filtres):
+        if len(sites) >= maximum:
+            break
+        if rang:
+            pause()
+        trouves, complet = _collecter_filtre(filtre, theme, maximum - len(sites))
+        sites += trouves
+        if not complet:
+            break
+
+    if len(sites) >= maximum:
+        raisons.append(f"{maximum} établissements retenus au plus pour ce thème")
+    return sites, " ; ".join(raisons) or None
 
 
 def collecter(perimetre, themes=None):
     """Collecte les thèmes demandés (tous ceux marqués par défaut si rien n'est précisé).
 
     Un thème inconnu est ignoré sans bruit : l'appelant valide déjà la liste, et une faute de
-    frappe ne doit pas faire échouer les autres thèmes."""
+    frappe ne doit pas faire échouer les autres thèmes.
+
+    Ce qui est incomplet remonte dans la Collecte, thème par thème, en français : à l'échelle
+    d'un département un recensement thématique est un ÉCHANTILLON, et l'agent doit le savoir
+    avant d'en faire un plan de sauvegarde."""
     demandes = themes if themes else THEMES_PAR_DEFAUT
-    maximum = MAX_PAR_THEME.get(perimetre.niveau, MAX_PAR_THEME_SECTEUR)
-    sites = []
-    for code in demandes:
+    maximum = MAX_PAR_THEME.get(perimetre.niveau, MAX_PAR_THEME_DEFAUT)
+    sites, raisons = [], []
+    for rang, code in enumerate(demandes):
         theme = THEMES.get(code)
         if theme is None:
             continue
-        trouves = _collecter_theme(perimetre, theme, maximum)
-        if len(trouves) >= maximum:
-            # Tronqué : le dire dans les logs plutôt que de laisser croire à un recensement
-            # complet. À l'échelle d'un département, c'est le signal qu'il faut affiner.
-            logger.warning(
-                "SIRENE : thème %s tronqué à %s sur le périmètre %s %s",
-                code, maximum, perimetre.niveau, perimetre.code,
-            )
+        if rang:
+            pause()
+        trouves, raison = _collecter_theme(perimetre, theme, maximum)
         sites += trouves
-    return sites
+        if raison:
+            logger.warning("SIRENE : thème %s incomplet sur le périmètre %s %s — %s",
+                           code, perimetre.niveau, perimetre.code, raison)
+            raisons.append(f"{theme.libelle} : {raison}")
+    return Collecte(sites, " ; ".join(raisons) or None)

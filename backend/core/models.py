@@ -4594,7 +4594,12 @@ class ImportOpenData(EnvironmentScopedModel):
     )
 
     # {"crees": 12, "mis_a_jour": 0, "inchanges": 2, "total": 14} — tel que rendu par
-    # sites_sensibles.enregistrer_proposes.
+    # sites_sensibles.importer_source, plus deux choses pendant que l'import tourne :
+    # l'avancement ({"tranches_faites": 5, "tranches_total": 12, "tranche_en_cours":
+    # "département 24"}), et `incomplet`, la liste en français de ce qui manque et pourquoi.
+    # Cette dernière est la plus importante : les sources plafonnent le nombre de résultats
+    # qu'elles servent, parfois sans le dire, et un recensement tronqué qui se croit complet est
+    # plus dangereux qu'une absence de recensement (voir opendata/base.py:Collecte).
     resultat = models.JSONField(default=dict, blank=True)
 
     erreur = models.TextField(blank=True, null=True)

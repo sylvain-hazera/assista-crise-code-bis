@@ -17286,8 +17286,12 @@ class SiteSensibleViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     def importer(self, request):
         """Lance l'import des sources demandées (toutes par défaut) sur le périmètre demandé.
 
-        Les sources API répondent dans la requête ; FINESS et SIRENE partent en tâche de fond et
-        rendent `asynchrone: true` — le frontend rappelle `synthese` pour suivre leur état.
+        Rend la main tout de suite dès que l'import ne tient pas dans une requête HTTP : les
+        deux sources lourdes (FINESS, SIRENE) quel que soit le périmètre, et TOUTE source dès
+        que le périmètre dépasse la commune — un département, c'est une dizaine d'appels
+        paginés par source, une région douze fois autant (voir sites_sensibles.lancer_import).
+        Ces sources rendent `asynchrone: true` ; le frontend rappelle `synthese`, qui porte
+        l'avancement par territoire et la liste de ce qui a été tronqué.
 
         `perimetre` vaut « commune » par défaut. Une collectivité ne peut pas demander plus large
         que son propre niveau de secteur : un conseil départemental interroge son département,

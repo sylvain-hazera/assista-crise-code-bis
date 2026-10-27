@@ -17,14 +17,17 @@ Deux principes, tenus par les tests :
    heures de relecture."""
 import datetime
 import logging
+import time
 
 from django.contrib.gis.geos import Point
 
 from .models import (
     CategorieSiteSensible, EchelonCompetence, SiteSensible, StatutSiteSensible,
 )
-from .opendata import CONNECTEURS
-from .opendata.base import Perimetre, perimetre_commune
+from .opendata import CONNECTEURS, SOURCES_SANS_DECOUPAGE
+from .opendata.base import (
+    BUDGET_SECONDES, PAUSE_ENTRE_TRANCHES, Perimetre, perimetre_commune,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +84,46 @@ def _perimetre(valeur):
     if isinstance(valeur, dict):
         return construire_perimetre(valeur.get("niveau"), valeur.get("code"))
     return perimetre_commune(valeur)
+
+
+LIBELLE_NIVEAU = {"commune": "commune", "epci": "intercommunalité",
+                  "departement": "département", "region": "région"}
+
+
+def libelle_perimetre(perimetre):
+    """« département 24 » — de quoi nommer une tranche dans un compte rendu lisible."""
+    return f"{LIBELLE_NIVEAU.get(perimetre.niveau, perimetre.niveau)} {perimetre.code}"
+
+
+def tranches(perimetre):
+    """Découpe un périmètre en territoires interrogeables un par un.
+
+    Ce n'est PAS une question de cadence, et c'est le point important : étaler les appels dans
+    le temps ne lève aucun des plafonds des sources. Un portail Opendatasoft refuse
+    `offset + limit > 10000` aussi patiemment qu'on le lui demande ; l'annuaire des entreprises
+    ne sert jamais plus de 10 000 résultats quelle que soit l'heure. Le seul remède est de
+    poser des questions assez étroites pour que la source puisse y répondre entièrement.
+
+    Mesuré le 27/10/2026 sur la Nouvelle-Aquitaine : le thème « élevages » interrogé à l'échelle
+    de la région annonce 10 000 établissements ; interrogé département par département, il en
+    donne 48 499. Sans découpage, quatre cinquièmes du territoire manquaient en silence.
+
+    Un département n'est pas redécoupé : il reste sous les plafonds de toutes les sources
+    branchées ici (le plus gros thème SIRENE mesuré y atteint 8 462), et ce qui dépasse malgré
+    tout se signale au lieu de disparaître (voir opendata.base.Collecte)."""
+    if perimetre.niveau != "region":
+        return [perimetre]
+    from .geo_lookup import communes_par_departement
+
+    groupes = communes_par_departement(perimetre.code)
+    if not groupes:
+        # Référentiel des communes incomplet pour cette région : la requête régionale marche
+        # toujours, elle est seulement plafonnée. Mieux que ne rien rendre.
+        logger.warning("Région %s absente du référentiel des communes : import non découpé",
+                       perimetre.code)
+        return [perimetre]
+    return [Perimetre("departement", departement, sorted(communes))
+            for departement, communes in sorted(groupes.items())]
 
 
 def _siret(propose):
@@ -320,7 +363,7 @@ def enregistrer_proposes(institution, environment, commune_code, commune_nom, pr
 
 
 def importer_source(institution, source, perimetre, commune_nom=None, environment=None,
-                    options=None):
+                    options=None, progression=None):
     """Collecte une source et enregistre ses propositions. Ne lève jamais : une source en panne
     rend un compte rendu à zéro, les autres continuent.
 
@@ -331,30 +374,86 @@ def importer_source(institution, source, perimetre, commune_nom=None, environmen
     réussi qui n'avait pas eu lieu. Une source qui casse doit se signaler, pas emporter les
     autres.
 
+    Le périmètre est parcouru TRANCHE PAR TRANCHE (voir tranches), avec une pause entre deux et
+    un budget de temps global : une tranche qui échoue ne perd pas les précédentes, déjà
+    enregistrées, et un périmètre trop vaste s'arrête en le DISANT plutôt que de se faire tuer
+    par la limite de temps de Celery en laissant « recherche en cours » affiché pour toujours.
+
+    Trois comptes rendus distincts, parce que l'agent n'en tire pas les mêmes conclusions :
+    `erreur` (rien n'est entré), `incomplet` (une partie seulement, et pourquoi, en français),
+    et les compteurs. Un recensement incomplet qui se croit complet est plus dangereux que pas
+    de recensement : on bâtit un plan de sauvegarde dessus.
+
     `perimetre` est un code commune, un `{niveau, code}` ou un Perimetre (voir _perimetre).
     `options` est passé tel quel au connecteur : seul SIRENE en a besoin (`themes`, ce que la
-    collectivité veut recenser)."""
+    collectivité veut recenser). `progression` est appelé avant chaque tranche pour que l'écran
+    puisse dire où l'on en est (voir executer_import)."""
     connecteur = CONNECTEURS.get(source)
     if connecteur is None:
         raise ValueError(f"Source inconnue : {source}")
     environment = environment or institution.environment
     territoire = _perimetre(perimetre)
-    try:
-        proposes = connecteur.collecter(territoire, **(options or {}))
-    except Exception as exc:
-        logger.warning("Import %s sur le périmètre %s %s : %s", source, territoire.niveau,
-                       territoire.code, exc)
-        return {"crees": 0, "mis_a_jour": 0, "inchanges": 0, "total": 0, "erreur": str(exc)}
-    try:
-        return enregistrer_proposes(institution, environment, territoire.code, commune_nom,
-                                    proposes)
-    except Exception as exc:
-        # `exception` et non `warning` : à la différence d'une source injoignable, une erreur
-        # ici est un défaut de notre code et la trace complète est nécessaire.
-        logger.exception("Enregistrement de l'import %s (%s %s) interrompu", source,
-                         territoire.niveau, territoire.code)
-        return {"crees": 0, "mis_a_jour": 0, "inchanges": 0, "total": 0,
-                "erreur": f"Enregistrement interrompu : {exc}"}
+    decoupage = ([territoire] if source in SOURCES_SANS_DECOUPAGE
+                 else tranches(territoire))
+    depart = time.monotonic()
+    cumul = {"crees": 0, "mis_a_jour": 0, "inchanges": 0, "total": 0}
+    avertissements, erreurs = [], []
+
+    for rang, tranche in enumerate(decoupage):
+        if rang:
+            ecoule = time.monotonic() - depart
+            if ecoule > BUDGET_SECONDES:
+                avertissements.append(
+                    f"budget de temps épuisé après {rang} tranche(s) sur {len(decoupage)} : "
+                    f"resserrez le périmètre pour recenser le reste")
+                break
+            time.sleep(PAUSE_ENTRE_TRANCHES)
+        if progression is not None:
+            progression(faites=rang, total=len(decoupage),
+                        en_cours=libelle_perimetre(tranche))
+
+        # La commune de repli n'a de sens que si la tranche EST une commune : écrire « 24 »
+        # dans commune_code parce qu'on interroge la Dordogne serait faux.
+        repli_code = tranche.code if tranche.niveau == "commune" else None
+        repli_nom = commune_nom if tranche.niveau == "commune" else None
+
+        try:
+            proposes = connecteur.collecter(tranche, **(options or {}))
+        except Exception as exc:
+            logger.warning("Import %s sur %s : %s", source, libelle_perimetre(tranche), exc)
+            erreurs.append(f"{libelle_perimetre(tranche)} : {exc}")
+            continue
+
+        # Un connecteur peut rendre une liste nue : c'est alors qu'il n'a rien à signaler.
+        tronque = getattr(proposes, "tronque", None)
+        if tronque:
+            avertissements.append(f"{libelle_perimetre(tranche)} — {tronque}")
+
+        try:
+            compte = enregistrer_proposes(institution, environment, repli_code, repli_nom,
+                                          proposes)
+        except Exception as exc:
+            # `exception` et non `warning` : à la différence d'une source injoignable, une
+            # erreur ici est un défaut de notre code et la trace complète est nécessaire.
+            logger.exception("Enregistrement de l'import %s (%s) interrompu", source,
+                             libelle_perimetre(tranche))
+            erreurs.append(f"{libelle_perimetre(tranche)} : enregistrement interrompu ({exc})")
+            continue
+        for cle in cumul:
+            cumul[cle] += compte[cle]
+
+    if progression is not None:
+        progression(faites=len(decoupage), total=len(decoupage), en_cours=None)
+
+    resultat = dict(cumul)
+    signalements = avertissements + erreurs
+    if signalements:
+        resultat["incomplet"] = signalements
+    # ÉCHEC seulement si rien n'est entré : une tranche cassée sur douze laisse onze tranches
+    # de données utiles, et les afficher en « injoignable » reviendrait à les cacher.
+    if erreurs and not cumul["total"]:
+        resultat["erreur"] = " ; ".join(erreurs)
+    return resultat
 
 
 def synthese_par_categorie(sites, institution, environment, echelon_propre=None):
@@ -415,15 +514,28 @@ def executer_import(institution, source, perimetre, commune_nom=None, environmen
                     options=None):
     """Exécute un import de bout en bout et consigne son résultat dans ImportOpenData.
 
-    Point d'entrée unique, appelé soit directement (sources API, quelques centaines de ms) soit
-    depuis la tâche Celery (FINESS) : la trace en base est la même dans les deux cas."""
+    Point d'entrée unique, appelé soit directement (une commune, quelques centaines de ms) soit
+    depuis la tâche Celery (tout le reste) : la trace en base est la même dans les deux cas, et
+    c'est elle que l'écran lit pour dire où en est le recensement."""
     from django.utils import timezone
 
     from .models import StatutImportOpenData
 
     environment = environment or institution.environment
+
+    def progression(faites, total, en_cours):
+        """Avancement, écrit en base et pas en mémoire : l'agent doit pouvoir quitter la page,
+        changer d'appareil ou revenir demain et retrouver où en est son recensement.
+
+        Écrit même quand il n'y a qu'une tranche, et c'est le cas qui compte : un import
+        départemental n'en a qu'une, et c'est pourtant celui qui dure des minutes. Sans ça,
+        l'écran n'aurait rien d'autre à afficher que « en cours » pendant tout ce temps."""
+        _marquer(institution, environment, source, resultat={
+            "tranches_faites": faites, "tranches_total": total, "tranche_en_cours": en_cours,
+        })
+
     resultat = importer_source(institution, source, perimetre, commune_nom, environment,
-                               options)
+                               options, progression=progression)
     echec = "erreur" in resultat
     _marquer(
         institution, environment, source,
@@ -437,20 +549,35 @@ def executer_import(institution, source, perimetre, commune_nom=None, environmen
 
 def lancer_import(institution, source, perimetre, commune_nom=None, environment=None,
                   options=None):
-    """Lance un import : synchrone pour les API filtrables par commune, délégué à Celery pour
-    FINESS (voir opendata/__init__.py). Rend (resultat, asynchrone)."""
+    """Lance un import : synchrone pour une commune, délégué à Celery dès que ça dépasse.
+    Rend (resultat, asynchrone).
+
+    Deux raisons de partir en tâche de fond, et la seconde est nouvelle :
+
+    - la source ne tient pas dans une requête HTTP quel que soit le périmètre (FINESS lit un
+      flux national, SIRENE pagine par 25 — voir opendata/__init__.py) ;
+    - le périmètre dépasse la commune. Un département, c'est une dizaine d'appels paginés par
+      source ; une région, douze tranches de la même chose. Mesuré le 27/10/2026 : le seul
+      export des équipements sportifs d'une région prend 10 s. Tenir la requête HTTP ouverte
+      aussi longtemps, c'est un worker gunicorn immobilisé, un proxy qui finit par couper, et
+      un agent devant un écran figé qui ne sait pas si ça avance ni s'il peut partir."""
+    from django.utils import timezone
+
     from .models import StatutImportOpenData
     from .opendata import SOURCES_ASYNCHRONES
 
     environment = environment or institution.environment
-    if source in SOURCES_ASYNCHRONES:
+    territoire = _perimetre(perimetre)
+    if source in SOURCES_ASYNCHRONES or territoire.niveau != "commune":
         from .tasks import importer_sites_sensibles_task
 
         _marquer(
             institution, environment, source,
             statut=StatutImportOpenData.EN_COURS, erreur=None, date_fin=None, resultat={},
+            # Sans ça, `auto_now_add` ne retouche pas la ligne d'un import déjà lancé une fois
+            # et l'écran daterait le recensement en cours du tout premier, l'an dernier.
+            date_lancement=timezone.now(),
         )
-        territoire = _perimetre(perimetre)
         importer_sites_sensibles_task.delay(
             # Seuls le niveau et le code voyagent : la liste des communes se reconstruit côté
             # tâche (voir construire_perimetre).
@@ -459,5 +586,5 @@ def lancer_import(institution, source, perimetre, commune_nom=None, environment=
             commune_nom, environment, options,
         )
         return None, True
-    return (executer_import(institution, source, perimetre, commune_nom, environment, options),
+    return (executer_import(institution, source, territoire, commune_nom, environment, options),
             False)

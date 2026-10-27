@@ -27,7 +27,7 @@ import tempfile
 import requests
 
 from ..models import CategorieSiteSensible, EchelonCompetence, SourceSiteSensible
-from .base import SitePropose, fetch_json
+from .base import Collecte, SitePropose, fetch_json
 
 logger = logging.getLogger(__name__)
 
@@ -217,12 +217,12 @@ def collecter(perimetre):
     département ne demande donc pas 277 lectures."""
     url, date_source = _resource_du_jour()
     if not url:
-        return []
+        return Collecte([], "le catalogue data.gouv.fr ne publie pas de flux FINESS du jour")
     try:
         chemin = _telecharger(url)
     except Exception as exc:
         logger.warning("Téléchargement du flux FINESS impossible : %s", exc)
-        return []
+        return Collecte([], "le flux national FINESS n'a pas pu être téléchargé")
 
     sites = []
     communes = set(perimetre.communes)
@@ -236,4 +236,4 @@ def collecter(perimetre):
                 site = _vers_site(ege, adresse, denomination, date_source)
                 if site is not None:
                     sites.append(site)
-    return sites
+    return Collecte(sites)

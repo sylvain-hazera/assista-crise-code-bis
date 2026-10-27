@@ -20,7 +20,7 @@ clair sur la ligne pour le corriger d'un clic.
 import re
 
 from ..models import CategorieSiteSensible, EchelonCompetence, SourceSiteSensible
-from .base import SitePropose, fetch_json, plafond
+from .base import Collecte, SitePropose, fetch_json, pause, plafond
 
 URL = "https://georisques.gouv.fr/api/v1/installations_classees"
 
@@ -215,28 +215,56 @@ def _filtre_territoire(perimetre):
 
 
 def collecter(perimetre):
+    """Les installations classées du périmètre.
+
+    Géorisques, lui, n'a PAS de plafond de pagination : vérifié en direct le 27/10/2026, la
+    région Nouvelle-Aquitaine tient en 148 pages de 100 et la page 100 répond normalement, là
+    où les portails Opendatasoft refusent au-delà de 10 000 (voir base.OFFSET_MAX_ODS). Le seul
+    plafond ici est le nôtre (voir base.PLAFONDS), et quand il mord on le dit."""
     filtre_secteur = _filtre_territoire(perimetre)
-    if filtre_secteur is None:
-        sites = []
-        for commune_code in perimetre.communes:
-            sites += _collecter_filtre({"code_insee": commune_code}, plafond(perimetre) - len(sites))
-            if len(sites) >= plafond(perimetre):
-                break
-        return sites
-    return _collecter_filtre(filtre_secteur, plafond(perimetre))
+    maximum = plafond(perimetre)
+    if filtre_secteur is not None:
+        return _collecter_filtre(filtre_secteur, maximum)
+
+    # Ni département ni région : un appel par commune (le cas de l'EPCI et de la commune seule).
+    sites = []
+    for rang, commune_code in enumerate(perimetre.communes):
+        if rang:
+            pause()
+        collecte = _collecter_filtre({"code_insee": commune_code}, maximum - len(sites))
+        sites += collecte
+        if len(sites) >= maximum:
+            return Collecte(sites, _MESSAGE_PLAFOND.format(maximum=maximum))
+    return Collecte(sites)
+
+
+_MESSAGE_PLAFOND = ("plafond de {maximum} installations atteint : resserrez le périmètre pour "
+                    "recenser le reste")
 
 
 def _collecter_filtre(filtre, maximum):
+    """Pagine un filtre Géorisques.
+
+    Trois sorties, et il faut les distinguer : la source est au bout (complet), la source ne
+    répond pas (incomplet, et c'est elle qu'il faut incriminer), notre plafond mord (incomplet,
+    et c'est le périmètre qu'il faut resserrer). Les confondre coûte cher : une collecte vide
+    pour cause d'API muette s'est affichée « plafond de 12 000 atteint », ce qui envoyait
+    chercher la solution exactement du mauvais côté."""
     sites, page = [], 1
     while len(sites) < maximum:
+        if page > 1:
+            pause()
         data = fetch_json(URL, {**filtre, "page": page, "page_size": 100})
-        if not data or not data.get("data"):
-            break
+        if data is None:
+            return Collecte(sites[:maximum],
+                            "Géorisques n'a pas répondu à tous les appels : réessayez plus tard")
+        if not data.get("data"):
+            return Collecte(sites[:maximum])
         for enregistrement in data["data"]:
             site = _vers_site(enregistrement)
             if site is not None:
                 sites.append(site)
         if page >= (data.get("total_pages") or 1):
-            break
+            return Collecte(sites[:maximum])
         page += 1
-    return sites
+    return Collecte(sites[:maximum], _MESSAGE_PLAFOND.format(maximum=maximum))

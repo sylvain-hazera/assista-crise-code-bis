@@ -73,17 +73,23 @@ def calculer_ruissellement_task(commune_code: str, environment: str, forcer: boo
         _marquer_tache(commune_code, environment, TypeTacheInondation.RUISSELLEMENT, StatutTacheInondation.TERMINEE)
 
 
-@shared_task(acks_late=True, time_limit=900, soft_time_limit=840)
+@shared_task(acks_late=True, time_limit=1800, soft_time_limit=1740)
 def importer_sites_sensibles_task(institution_id, source, perimetre, commune_nom=None,
                                   environment=None, options=None):
-    """Les deux imports qui ne tiennent pas dans une requête HTTP.
+    """Tout import qui ne tient pas dans une requête HTTP : les deux sources lourdes quel que
+    soit le périmètre, et toute source dès que le périmètre dépasse la commune.
 
     FINESS : ~50 Mo à télécharger et ~750 Mo de JSON à parcourir pour en extraire une commune
     (voir core/opendata/finess.py). SIRENE : dix thèmes paginés 25 par 25, soit une centaine
     d'appels sur une grande ville et davantage sur un département (voir core/opendata/sirene.py),
     et `options` porte alors les thèmes demandés. `perimetre` arrive sous la forme
-    `{niveau, code}` : la liste des communes se reconstruit ici (voir construire_perimetre). Budget de 15 min, très au-dessus de la minute mesurée :
-    ce qui dépasse serait une anomalie du producteur, pas la taille de la commune."""
+    `{niveau, code}` : la liste des communes se reconstruit ici (voir construire_perimetre).
+
+    Deux limites de temps emboîtées, et l'ordre compte : l'import s'arrête LUI-MÊME au bout de
+    son budget (opendata.base.BUDGET_SECONDES, 15 min) en consignant ce qui manque, bien avant
+    que Celery ne le tue à 30 min. Une tâche tuée par Celery ne consigne rien : l'écran
+    resterait sur « recherche en cours » indéfiniment, ce qui est exactement ce qu'on a vu en
+    production le 27/10/2026. La limite dure n'est qu'un dernier filet."""
     from django.utils import timezone
 
     from .models import Institution, StatutImportOpenData

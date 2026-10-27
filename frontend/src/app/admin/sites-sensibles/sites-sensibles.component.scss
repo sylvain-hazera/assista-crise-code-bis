@@ -82,7 +82,39 @@
 }
 .toast-err { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
 .toast-ok { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
-.toast-attente { background: #fffbeb; color: #92400e; border: 1px solid #fde68a; }
+/* Ces deux toasts portent un bloc, pas une phrase : l'icône se cale en haut plutôt qu'au
+   centre d'un paragraphe de cinq lignes. */
+.toast-attente {
+  background: #fffbeb;
+  color: #92400e;
+  border: 1px solid #fde68a;
+  align-items: flex-start;
+}
+
+/* Un recensement tronqué est un avertissement de sécurité, pas une information de confort :
+   même traitement visuel qu'une erreur, et il reste affiché tant qu'il est vrai. */
+.toast-tronque {
+  background: #fff7ed;
+  color: #9a3412;
+  border: 1px solid #fdba74;
+  align-items: flex-start;
+
+  .material-icons { margin-top: .1rem; }
+}
+
+.attente-detail {
+  margin: .4rem 0 0;
+  padding-left: 1.1rem;
+  line-height: 1.5;
+
+  ul { margin: .15rem 0 .3rem; padding-left: 1.1rem; }
+}
+
+.marque-tronque {
+  color: #9a3412;
+  font-weight: 600;
+  cursor: help;
+}
 
 .loading, .vide {
   color: #6b7280;

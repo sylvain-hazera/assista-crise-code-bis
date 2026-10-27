@@ -380,3 +380,21 @@ def communes_de_secteur(niveau: str, code: str) -> list[str]:
                         "centre_longitude", "centre_latitude"],
     )
     return [o.code for o in objs]
+
+
+def communes_par_departement(region_code: str) -> dict[str, list[str]]:
+    """Les communes d'une région, groupées par département — lecture locale, aucun réseau.
+
+    Sert à découper un périmètre régional en tranches départementales (voir
+    sites_sensibles.tranches). Rend un dictionnaire vide si la table Commune ne connaît pas
+    cette région : l'appelant retombe alors sur le périmètre entier, ce qui marche toujours,
+    juste moins bien. `communes_de_secteur` ayant été appelé juste avant pour construire le
+    périmètre, la table est en pratique déjà peuplée."""
+    from .models import Commune
+
+    groupes: dict[str, list[str]] = {}
+    for code, departement in Commune.objects.filter(region_code=region_code).values_list(
+            "code", "departement_code"):
+        if departement:
+            groupes.setdefault(departement, []).append(code)
+    return groupes
