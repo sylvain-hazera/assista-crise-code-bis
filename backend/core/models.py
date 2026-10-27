@@ -4300,6 +4300,11 @@ class CategorieSiteSensible(models.TextChoices):
     ENSEIGNEMENT = "ENSEIGNEMENT", "Établissement d'enseignement"
     SOINS = "SOINS", "Structure de soins ou médico-sociale"
     INDUSTRIE = "INDUSTRIE", "Site industriel ou installation classée"
+    # Les élevages sortent de la même API que les sites industriels, mais ne se planifient pas
+    # pareil : la protection des animaux est une mission possible du plan de sauvegarde
+    # (évacuation d'un cheptel, inondation, feu, coupure électrique longue qui arrête traite et
+    # ventilation). Les mélanger aux usines les rendait invisibles.
+    ELEVAGE = "ELEVAGE", "Élevage ou détention d'animaux"
     RASSEMBLEMENT = "RASSEMBLEMENT", "Équipement recevant du public"
     AUTRE = "AUTRE", "Autre"
 
@@ -4313,7 +4318,8 @@ class StatutSiteSensible(models.TextChoices):
 
 
 class SiteSensible(EnvironmentScopedModel):
-    """Enjeu du territoire à connaître avant la crise : école, EHPAD, site industriel, gymnase…
+    """Enjeu du territoire à connaître avant la crise : école, EHPAD, site industriel, élevage,
+    gymnase…
 
     Pré-alimenté depuis des bases publiques nationales (voir core/opendata/) et TOUJOURS déposé
     en PROPOSE : une base ouverte se trompe et vieillit (FINESS garde des pharmacies fermées

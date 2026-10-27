@@ -22,6 +22,10 @@ import {
  * fermées depuis 2009, et le recensement des équipements sportifs classe les écluses du canal de
  * Nantes à Brest en « installation sportive ». Présenter ça comme établi produirait un plan faux
  * avec l'autorité de l'État derrière.
+ *
+ * « À vérifier » ne veut pas dire « à écarter » : les élevages, par exemple, ont leur catégorie
+ * et leur effectif animal affiché, parce que la protection des animaux est une mission du plan
+ * — un cheptel s'évacue, s'abreuve et se ventile, et ça se prépare avant.
  */
 @Component({
   selector: 'app-sites-sensibles',
@@ -61,6 +65,7 @@ export class SitesSensiblesComponent implements OnInit, OnDestroy {
     { code: 'ENSEIGNEMENT', libelle: "Établissement d'enseignement" },
     { code: 'SOINS', libelle: 'Structure de soins ou médico-sociale' },
     { code: 'INDUSTRIE', libelle: 'Site industriel ou installation classée' },
+    { code: 'ELEVAGE', libelle: "Élevage ou détention d'animaux" },
     { code: 'RASSEMBLEMENT', libelle: 'Équipement recevant du public' },
     { code: 'AUTRE', libelle: 'Autre' },
   ];
@@ -269,14 +274,47 @@ export class SitesSensiblesComponent implements OnInit, OnDestroy {
     return `${site.source_libelle} — ${date}`;
   }
 
+  /** Ce que contient un élevage, en clair : « 56 000 volailles », « 1 232 animaux-équivalents
+   * porcs ». C'est l'effectif autorisé par la rubrique ICPE, le seul ordre de grandeur public —
+   * et celui qui dit combien d'animaux seraient à déplacer, à abreuver ou à ventiler. */
+  private mentionsCheptel(attrs: Record<string, unknown>): string[] {
+    const cheptel = attrs['cheptel'];
+    if (!Array.isArray(cheptel)) return [];
+    const mentions = cheptel.map(ligne => {
+      const entree = ligne as { espece?: string | null; quantite?: number | null;
+                                unite?: string | null };
+      const espece = entree.espece || 'animaux';
+      if (entree.quantite == null) return espece;
+      const nombre = entree.quantite.toLocaleString('fr-FR');
+      // « Animaux-Eq » est l'unité réglementaire : un porc charcutier et une truie ne pèsent pas
+      // le même animal-équivalent. Le dire évite de lire l'effectif comme un compte de bêtes.
+      return (entree.unite || '').toLowerCase().startsWith('animaux')
+        ? `${nombre} animaux-équivalents ${espece}`
+        : `${nombre} ${espece}`;
+    });
+    // Un même bâtiment porte souvent deux rubriques (autorisation puis enregistrement) :
+    // afficher « 50 000 volailles » deux fois ferait croire à 100 000 animaux.
+    return [...new Set(mentions)];
+  }
+
   /** Ce que la source dit de particulier sur ce site, en clair. Volontairement court : trois
    * mentions au plus, celles qui changent une décision d'évacuation. */
   particularites(site: SiteSensible): string[] {
     const attrs = site.attributs || {};
-    const mentions: string[] = [];
+    const mentions: string[] = this.mentionsCheptel(attrs);
+    const especes = attrs['especes'];
+    if (!mentions.length && Array.isArray(especes) && especes.length) {
+      mentions.push(especes.join(', '));
+    }
     const seveso = attrs['statut_seveso'];
     if (typeof seveso === 'string' && seveso !== 'Non Seveso') mentions.push(seveso);
     if (attrs['ied'] === true) mentions.push('Directive IED');
+    // Géorisques signale les sites en cessation : l'activité s'arrête, pas forcément la présence
+    // d'animaux ou de stock pendant la remise en état.
+    const etat = attrs['etat_activite'];
+    if (typeof etat === 'string' && etat && etat !== 'En exploitation avec titre') {
+      mentions.push(etat);
+    }
     if (attrs['regime']) mentions.push(`Régime : ${attrs['regime']}`);
     if (attrs['hebergement'] === 1) mentions.push('Internat');
     if (attrs['restauration'] === 1) mentions.push('Restauration sur place');

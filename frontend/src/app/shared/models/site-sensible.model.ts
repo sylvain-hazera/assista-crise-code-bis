@@ -5,7 +5,7 @@ export type SourceSiteSensible =
   'ANNUAIRE_EDUCATION' | 'FINESS' | 'ICPE' | 'EQUIPEMENTS_SPORTIFS' | 'SAISIE';
 
 export type CategorieSiteSensible =
-  'ENSEIGNEMENT' | 'SOINS' | 'INDUSTRIE' | 'RASSEMBLEMENT' | 'AUTRE';
+  'ENSEIGNEMENT' | 'SOINS' | 'INDUSTRIE' | 'ELEVAGE' | 'RASSEMBLEMENT' | 'AUTRE';
 
 export type StatutSiteSensible = 'PROPOSE' | 'RETENU' | 'ECARTE';
 
@@ -28,7 +28,8 @@ export interface SiteSensible {
   telephone: string | null;
   /** À estimer par la commune : aucune source ouverte ne donne d'effectif fiable. */
   effectif_estime: number | null;
-  /** Brut utile de la source : statut Seveso, régime ICPE, internat, cantine, accessibilité… */
+  /** Brut utile de la source : statut Seveso, régime ICPE, internat, cantine, accessibilité,
+   * et pour un élevage les espèces et l'effectif animal autorisé (`especes`, `cheptel`). */
   attributs: Record<string, unknown>;
   commentaire: string | null;
   valide_par_nom: string | null;

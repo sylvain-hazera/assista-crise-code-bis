@@ -220,6 +220,145 @@ class TestConnecteurIcpe:
         plan de sauvegarde."""
         assert icpe._vers_site({**self.ENREGISTREMENT, "regime": "Non ICPE"}) is None
 
+    def test_abattoir_reste_un_site_industriel(self):
+        """Un abattoir manipule des animaux mais se planifie comme une usine : il ne doit pas
+        basculer en élevage sous prétexte que ses rubriques parlent de bêtes."""
+        site = icpe._vers_site({**self.ENREGISTREMENT, "rubriques": [
+            {"numeroRubrique": "3641", "nature": "Exploitation d’abattoirs",
+             "quantiteTotale": "480.000", "unite": "t/j"},
+            {"numeroRubrique": "4735", "nature": "Ammoniac", "quantiteTotale": "1.5",
+             "unite": "t"},
+        ]})
+        assert site.categorie == CategorieSiteSensible.INDUSTRIE
+        assert site.attributs["cheptel"] == []
+        assert site.attributs["especes"] == []
+
+
+class TestElevagesIcpe:
+    """Les élevages sortent de la même API que les usines, et sont la raison d'être d'une
+    catégorie à part : la protection des animaux est une mission du plan de sauvegarde. Un
+    élevage rangé en « site industriel » au milieu de cinquante stations-service est un élevage
+    que personne ne retrouve le jour où il faut évacuer un cheptel ou gérer une coupure longue.
+
+    Tous les enregistrements ci-dessous sont recopiés de l'API Géorisques (communes 29027 et
+    29019) : ils documentent aussi ce que la source ne dit pas."""
+
+    PORCS = {
+        "codeAIOT": "0004310066", "raisonSociale": "GAEC BAUT",
+        "adresse1": "KERDUDAL", "codePostal": "29520", "commune": "Châteauneuf-du-Faou",
+        "latitude": 48.158, "longitude": -3.843,
+        "regime": "Enregistrement", "statutSeveso": "Non Seveso", "ied": False,
+        "industrie": False, "codeNaf": "01", "bovins": False, "porcs": True, "volailles": False,
+        "etatActivite": "En exploitation avec titre", "date_maj": "2024-09-04/14-48-00",
+        "rubriques": [{"numeroRubrique": "2102",
+                       "nature": "Elevage de porcs de plus de 450 animaux-équivalents",
+                       "alinea": "1", "regimeAutoriseAlinea": "Enregistrement",
+                       "quantiteTotale": "1232.0", "unite": "Animaux-Eq"}],
+    }
+
+    def test_elevage_classe_a_part_avec_son_cheptel(self):
+        site = icpe._vers_site(self.PORCS)
+        assert site.categorie == CategorieSiteSensible.ELEVAGE
+        assert site.attributs["especes"] == ["porcs"]
+        assert site.attributs["cheptel"] == [{
+            "rubrique": "2102",
+            "nature": "Elevage de porcs de plus de 450 animaux-équivalents",
+            "espece": "porcs", "quantite": 1232.0, "unite": "Animaux-Eq",
+        }]
+
+    def test_rubrique_ied_sans_indicateur_despece(self):
+        """Géorisques laisse ses trois indicateurs (`bovins`/`porcs`/`volailles`) à faux sur des
+        élevages industriels que la rubrique désigne noir sur blanc : EARL MADEC, 56 000
+        emplacements de volailles, les trois indicateurs à faux."""
+        site = icpe._vers_site({
+            "codeAIOT": "0004310112", "raisonSociale": "EARL MADEC", "regime": "Autorisation",
+            "codePostal": "29520", "commune": "Châteauneuf-du-Faou", "statutSeveso": "Non Seveso",
+            "ied": True, "industrie": True, "codeNaf": None,
+            "bovins": False, "porcs": False, "volailles": False,
+            "rubriques": [{"numeroRubrique": "3660",
+                           "nature": "avec plus de 40 000 emplacements pour les volailles",
+                           "quantiteTotale": "56000.000", "unite": "u",
+                           "dateMotif": "21/10/2013"}],
+        })
+        assert site.categorie == CategorieSiteSensible.ELEVAGE
+        assert site.attributs["especes"] == ["volailles"]
+        assert site.attributs["cheptel"][0]["quantite"] == 56000.0
+
+    def test_indicateur_despece_sans_rubrique(self):
+        """L'inverse arrive aussi : l'indicateur est vrai, la rubrique absente. L'élevage doit
+        remonter quand même, sans effectif — « on ne sait pas combien » reste exploitable,
+        « on ne sait pas qu'il existe » non."""
+        site = icpe._vers_site({**self.PORCS, "rubriques": [], "codeNaf": None})
+        assert site.categorie == CategorieSiteSensible.ELEVAGE
+        assert site.attributs["especes"] == ["porcs"]
+        assert site.attributs["cheptel"] == []
+
+    def test_exploitation_declaree_sans_rubrique_ni_naf(self):
+        """Le cas le plus fréquent en commune rurale, et celui qui faisait tout rater : régime
+        « Autres régimes », aucune rubrique détaillée, aucun code NAF, aucun indicateur. Seule
+        la forme juridique dit la vérité — un GAEC, une EARL ou une SCEA ne peut rien être
+        d'autre qu'une exploitation agricole."""
+        for raison_sociale in ("KERGANEZ (GAEC de)", "EARL DE TRAON BIHAN", "CONAN (SCEA)"):
+            site = icpe._vers_site({
+                "codeAIOT": "0000100001", "raisonSociale": raison_sociale,
+                "regime": "Autres régimes", "codePostal": "29520", "commune": "Plonévez",
+                "statutSeveso": None, "ied": False, "industrie": False, "codeNaf": None,
+                "bovins": False, "porcs": False, "volailles": False, "rubriques": [],
+            })
+            assert site.categorie == CategorieSiteSensible.ELEVAGE, raison_sociale
+
+    def test_forme_juridique_voisine_ne_trompe_pas(self):
+        """« EURL » n'est pas « EARL » : la frontière de mot compte, sinon toutes les EURL de la
+        commune deviendraient des fermes."""
+        site = icpe._vers_site({
+            "codeAIOT": "0000100002", "raisonSociale": "AUGUSTE B EURL",
+            "regime": "Autorisation", "codePostal": "29200", "commune": "Brest",
+            "statutSeveso": None, "ied": False, "industrie": True, "codeNaf": "45",
+            "rubriques": [],
+        })
+        assert site.categorie == CategorieSiteSensible.INDUSTRIE
+
+    def test_exploitation_hors_regime_remonte_quand_meme(self):
+        """Une ferme repassée sous les seuils ICPE garde ses animaux. On écarte les « Non ICPE »
+        — mais pas celles-là, justement parce qu'il faut savoir qu'elles sont là."""
+        site = icpe._vers_site({**self.PORCS, "regime": "Non ICPE"})
+        assert site is not None
+        assert site.categorie == CategorieSiteSensible.ELEVAGE
+
+    def test_parc_animalier(self):
+        """Océanopolis (Brest) relève de la rubrique 2140. Ce ne sont pas des bêtes de ferme,
+        mais une coupure électrique longue les tue aussi."""
+        site = icpe._vers_site({
+            "codeAIOT": "0001900100", "raisonSociale": "OCEANOPOLIS", "regime": "Autorisation",
+            "codePostal": "29200", "commune": "Brest", "statutSeveso": "Non Seveso",
+            "ied": False, "industrie": False, "codeNaf": None, "rubriques": [
+                {"numeroRubrique": "2140",
+                 "nature": "Présentation au public d’animaux d’espèces non domestiques",
+                 "quantiteTotale": None, "unite": None},
+            ],
+        })
+        assert site.categorie == CategorieSiteSensible.ELEVAGE
+        assert site.attributs["especes"] == ["animaux d'espèces non domestiques"]
+        assert site.attributs["cheptel"][0]["quantite"] is None
+
+    def test_deux_rubriques_du_meme_batiment_restent_brutes(self):
+        """EARL MERCIER porte deux fois 50 000 volailles (autorisation puis enregistrement du
+        même bâtiment). Le connecteur ne tranche pas : il remonte les deux lignes telles quelles,
+        c'est l'affichage qui dédoublonne pour ne pas annoncer 100 000 animaux."""
+        rubrique = {"numeroRubrique": "2111", "nature": "Elevages de plus de 30 000 volailles",
+                    "quantiteTotale": "50000.000", "unite": "u"}
+        site = icpe._vers_site({**self.PORCS, "raisonSociale": "EARL MERCIER",
+                                "rubriques": [rubrique, dict(rubrique)]})
+        assert len(site.attributs["cheptel"]) == 2
+        assert site.attributs["especes"] == ["porcs", "volailles"]
+
+    def test_etat_dactivite_remonte_sans_filtrer(self):
+        """« En fin d'exploitation » n'est pas « vide » : le temps de la remise en état, il y a
+        encore du stock, parfois des animaux. On le montre, on ne décide pas à la place."""
+        site = icpe._vers_site({**self.PORCS, "etatActivite": "En fin d'exploitation"})
+        assert site is not None
+        assert site.attributs["etat_activite"] == "En fin d'exploitation"
+
 
 class TestConnecteurEquipements:
     ENREGISTREMENT = {

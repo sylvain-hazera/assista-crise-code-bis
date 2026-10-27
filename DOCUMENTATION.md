@@ -402,14 +402,14 @@ rattachement d'une mairie.
 ### 5.12 Sites sensibles et open data (`core/opendata/`)
 
 Les enjeux du territoire d'une commune (`SiteSensible` : écoles, structures de soins, sites
-industriels, équipements recevant du public) sont pré-alimentés depuis des bases publiques
-nationales, puis validés un à un par la commune. Page `/admin/sites-sensibles`.
+industriels, élevages, équipements recevant du public) sont pré-alimentés depuis des bases
+publiques nationales, puis validés un à un par la commune. Page `/admin/sites-sensibles`.
 
 | Source | Connecteur | Accès | Filtrage |
 |---|---|---|---|
 | Annuaire de l'éducation (MENJ) | `opendata/ecoles.py` | API Opendatasoft | `code_commune` |
 | FINESS (Agence du numérique en santé) | `opendata/finess.py` | fichier JSON national quotidien (~50 Mo compressés) | aucun : lecture en flot, filtrage local sur `cogCommune` |
-| Installations classées (Géorisques) | `opendata/icpe.py` | API REST | `code_insee` |
+| Installations classées et élevages (Géorisques) | `opendata/icpe.py` | API REST | `code_insee` |
 | Équipements sportifs (ministère des Sports) | `opendata/equipements.py` | API Opendatasoft | `insee` |
 
 Règles qui structurent le paquet :
@@ -434,6 +434,23 @@ Règles qui structurent le paquet :
   mention de la source et de sa date, affichée en pied de page. OpenStreetMap est
   volontairement exclu malgré sa richesse sur les salles des fêtes : sa licence ODbL impose le
   partage à l'identique des bases dérivées.
+- **Les élevages ont leur catégorie** (`CategorieSiteSensible.ELEVAGE`), bien qu'ils sortent de
+  la même API que les usines : la protection des animaux est une mission possible du plan de
+  sauvegarde, et un cheptel ne se planifie pas comme une usine (évacuation en bétaillères,
+  abreuvement, ventilation des bâtiments à l'arrêt lors d'une coupure longue). Le connecteur
+  remonte les espèces et l'effectif autorisé, lu dans les rubriques ICPE (« 56 000 volailles »,
+  « 1 232 animaux-équivalents porcs ») : c'est le seul ordre de grandeur public. La détection
+  cumule quatre signaux, car aucun ne suffit : rubrique animale (2101 bovins, 2102 porcs,
+  2111 volailles, 2140 espèces non domestiques, 3660 élevage intensif IED… ou libellé explicite),
+  indicateurs `bovins`/`porcs`/`volailles` de Géorisques — souvent à faux sur des élevages que la
+  rubrique désigne noir sur blanc —, code NAF en `01`, et enfin la forme juridique (GAEC, EARL,
+  SCEA, réservées par la loi à l'agriculture). Sans ce dernier repli, la moitié des élevages
+  d'une commune rurale arrivait en « site industriel » : Géorisques ne détaille pas les rubriques
+  des établissements simplement déclarés (« Autres régimes ») et y laisse le code NAF vide. Pour
+  la même raison, le filtre sur le régime `Non ICPE` cède devant une exploitation : une ferme
+  repassée sous les seuils garde ses animaux. Un même bâtiment portant deux rubriques (50 000
+  volailles autorisées puis enregistrées), le connecteur remonte les deux lignes brutes et c'est
+  l'affichage qui dédoublonne — sinon la page annoncerait 100 000 animaux.
 - **RGPD.** Seules des adresses d'établissement, jamais de domicile de particulier (d'où
   l'absence de chiffrement, contrairement à `Habitation.adresse`). Les listes d'assistantes
   maternelles sont délibérément hors du paquet : il n'en existe aucune nationale, et leur adresse
