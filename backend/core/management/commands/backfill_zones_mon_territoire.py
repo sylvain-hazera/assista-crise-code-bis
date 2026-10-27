@@ -1,4 +1,5 @@
 from django.core.management.base import BaseCommand
+from django.db.models.functions import Upper
 
 from core.models import Institution, TYPES_COLLECTIVITE_TERRITORIALE
 
@@ -21,8 +22,16 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        qs = Institution.objects.filter(
-            type__code__in=TYPES_COLLECTIVITE_TERRITORIALE,
+        # Comparaison sur le code MIS EN MAJUSCULES, comme partout ailleurs
+        # (Institution.save(), _institution_est_autorite_locale) : le catalogue des types
+        # contient des doublons de casse — « MAIRIE » et « mairie » coexistent, 4 institutions
+        # d'un côté et 5 de l'autre au 27/10/2026 — parce que
+        # find_or_create_institution_from_annuaire crée son type en minuscules. Sans cette
+        # normalisation, ce rattrapage sautait silencieusement cinq mairies sur neuf.
+        qs = Institution.objects.annotate(
+            code_type_majuscule=Upper("type__code"),
+        ).filter(
+            code_type_majuscule__in=TYPES_COLLECTIVITE_TERRITORIALE,
         ).exclude(commune_code__isnull=True).exclude(commune_code="")
 
         total = qs.count()

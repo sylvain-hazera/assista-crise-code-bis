@@ -398,6 +398,45 @@ rattachement d'une mairie.
 - **Requêtes N+1** : les serializers mémorisent sur l'instance les valeurs utilisées par
   plusieurs champs, et s'appuient sur les `prefetch_related` des ViewSets (filtrer en Python
   une relation préchargée).
+- **« Dans quelle institution est cet utilisateur » a DEUX réponses en base, et elles peuvent
+  se contredire.** `ContactInstitution` est la relation faisant autorité (voir
+  `_resolve_institution_or_400`, `UserSerializer.get_institution_id`), mais le scoping
+  territorial lit le raccourci `User.institution`
+  (`zone_scoping._institution_commune_or_400`, `_institution_secteur_or_400`, et l'import du
+  personnel communal). Un compte rattaché par `ContactInstitution` **sans** que
+  `User.institution` soit posé utilise donc normalement l'application, sauf les vues
+  `*-vue-mairie` / `*-vue-secteur` qui lui répondent *« Aucune commune associée à votre
+  institution : contactez un administrateur »*. Observé en production les 25 et 26/10/2026 :
+  75 échecs pour un agent, sur ses quatre sessions, jusqu'à ce qu'il cesse de revenir — et la
+  réparation tentée (ajouter un second `ContactInstitution`) ne touchait pas la cause. Ajouter
+  un rattachement **doit** poser `User.institution` quand il est vide, ou mieux, le scoping
+  doit passer par `ContactInstitution` comme le reste.
+- **Deux institutions peuvent désigner la même collectivité**, et c'est la création qui en est
+  responsable : `find_or_create_institution_from_annuaire`
+  (`institution_attachment.py`) fait son `get_or_create` sur le **seul nom**, sans recouper le
+  code commune ni le type. Une mairie déjà enregistrée sous un nom court
+  (« Châteauneuf-du-Faou ») est donc recréée dès qu'un agent s'inscrit par l'annuaire officiel,
+  qui la nomme autrement (« Mairie - Châteauneuf-du-Faou »). Conséquences observées sur la
+  commune 29027 : les deux institutions déclarées acteur sur la même crise, deux équipes
+  jumelles, et un adjoint dont le compte pointait sur l'une pendant que son plan vivait sur
+  l'autre. La même fonction crée aussi son `InstitutionType` avec un code **en minuscules**
+  (`.lower()`), d'où un catalogue où « MAIRIE » et « mairie » coexistent (4 institutions contre
+  5 au 27/10/2026). Les lectures qui comptent normalisent par `.upper()`
+  (`Institution.save`, `_institution_est_autorite_locale`) — **toute nouvelle comparaison sur
+  `type.code` doit le faire aussi**, faute de quoi elle ignore silencieusement la moitié des
+  mairies, ce qui était le cas de `backfill_zones_mon_territoire` (4 institutions traitées sur
+  9).
+- **Fusionner deux doublons** : `manage.py fusionner_institutions --garder <id> --absorber <id>`,
+  **toujours avec `--a-blanc` d'abord** et après sauvegarde de la base. La commande repointe
+  comptes, rattachements, équipes, plans, implications, rôles et demandes ; écarte les doublons
+  stricts **vides** et refuse d'écarter ce qui porte du travail humain (un risque dont l'état
+  des lieux est renseigné reste sur l'absorbée, et c'est dit à l'écran) ; puis désactive et
+  renomme l'absorbée au lieu de la supprimer. Deux pièges qu'elle contourne, et qui valent pour
+  toute opération du même genre : `Institution.save()` appelle
+  `_assurer_zone_mon_territoire`, qui **recrée** la Zone « Mon territoire » de l'institution
+  qu'on vide (d'où un `update()` et non un `save()` pour la pierre tombale) ; et
+  `uq_contact_principal_institution` n'autorise qu'un contact principal par institution, donc
+  le drapeau ne peut pas voyager tel quel.
 
 ### 5.12 Sites sensibles et open data (`core/opendata/`)
 
