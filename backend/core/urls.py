@@ -53,6 +53,7 @@ from .views import (
     ConfigurationAlerteSismiqueViewSet, SecteurRechercheViewSet,
     InterlocuteurAlertePCSViewSet, NotificationAlertePCSViewSet,
     RisqueMajeurTypeViewSet, RisqueCommunalViewSet,
+    SiteSensibleViewSet,
     TypeVulnerabiliteViewSet, PersonneVulnerableViewSet,
     PlanViewSet,
     PlanMissionModeleViewSet,
@@ -219,6 +220,7 @@ router.register(r'configurations-alerte-sismique', ConfigurationAlerteSismiqueVi
 router.register(r'interlocuteurs-alerte-pcs', InterlocuteurAlertePCSViewSet)
 router.register(r'risques-majeurs-types', RisqueMajeurTypeViewSet)
 router.register(r'risques-communaux', RisqueCommunalViewSet)
+router.register(r'sites-sensibles', SiteSensibleViewSet)
 router.register(r'types-vulnerabilite', TypeVulnerabiliteViewSet)
 router.register(r'personnes-vulnerables', PersonneVulnerableViewSet)
 router.register(r'notifications-alerte-pcs', NotificationAlertePCSViewSet)

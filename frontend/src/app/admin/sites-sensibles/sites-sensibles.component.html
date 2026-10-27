@@ -1,0 +1,260 @@
+<div class="sites-page">
+
+  <header class="page-header">
+    <div class="header-left">
+      <h1><span class="material-icons">domain</span> Sites sensibles</h1>
+      <p class="subtitle">
+        @if (synthese?.commune_nom) {
+          {{ synthese?.commune_nom }} —
+        }
+        {{ compte('RETENU') }} retenu(s) au plan,
+        {{ compte('PROPOSE') }} à vérifier,
+        {{ compte('ECARTE') }} écarté(s)
+      </p>
+    </div>
+    <div class="header-actions">
+      <button type="button" class="btn-secondary" (click)="ajoutOuvert = !ajoutOuvert">
+        <span class="material-icons">add</span> Ajouter un site
+      </button>
+      <button type="button" class="btn-primary" [disabled]="importEnCours" (click)="importer()">
+        <span class="material-icons">cloud_download</span>
+        {{ importEnCours ? 'Recherche…' : 'Rechercher dans les bases publiques' }}
+      </button>
+    </div>
+  </header>
+
+  <p class="help-text">
+    <span class="material-icons">info</span>
+    <span>
+      Les enjeux de votre territoire à connaître avant la crise. Les bases publiques nationales
+      (éducation nationale, FINESS, installations classées, équipements sportifs) vous évitent la
+      saisie, <strong>pas la vérification</strong> : tout arrive en « à vérifier », rien n'entre
+      à votre plan de sauvegarde avant que vous l'ayez dit. Ces bases se trompent et vieillissent
+      — FINESS conserve des pharmacies radiées depuis 2009, le recensement des équipements
+      sportifs compte des écluses parmi les installations sportives.
+    </span>
+  </p>
+
+  @if (erreur) {
+    <div class="toast toast-err"><span class="material-icons">error_outline</span> {{ erreur }}</div>
+  }
+  @if (message) {
+    <div class="toast toast-ok"><span class="material-icons">check_circle</span> {{ message }}</div>
+  }
+  @if (finessEnCours) {
+    <div class="toast toast-attente">
+      <span class="material-icons">hourglass_top</span>
+      La recherche FINESS (structures de soins) tourne en arrière-plan : son fichier national fait
+      une cinquantaine de méga-octets. Vous pouvez quitter cette page, le résultat vous attendra.
+    </div>
+  }
+
+  @if (chargement) {
+    <div class="loading">Chargement…</div>
+  } @else {
+
+    @if (ajoutOuvert) {
+      <form class="ajout-site" (ngSubmit)="ajouterSite()">
+        <h2>Ajouter un site que les bases publiques ne connaissent pas</h2>
+        <p class="ajout-aide">
+          Salle des fêtes, camping, exploitation agricole, local associatif… Un site que vous
+          saisissez est retenu d'emblée : vous n'avez pas à vous relire.
+        </p>
+        <div class="ajout-champs">
+          <label>
+            Nom
+            <input type="text" [(ngModel)]="nouveauSite.nom" name="nom" required
+                   placeholder="Salle des fêtes" />
+          </label>
+          <label>
+            Catégorie
+            <select [(ngModel)]="nouveauSite.categorie" name="categorie">
+              @for (categorie of CATEGORIES; track categorie.code) {
+                <option [value]="categorie.code">{{ categorie.libelle }}</option>
+              }
+            </select>
+          </label>
+          <label class="large">
+            Adresse
+            <input type="text" [(ngModel)]="nouveauSite.adresse" name="adresse"
+                   placeholder="place de la Mairie" />
+          </label>
+          <label>
+            Personnes présentes
+            <input type="number" min="0" [(ngModel)]="nouveauSite.effectif_estime"
+                   name="effectif" placeholder="—" />
+          </label>
+        </div>
+        <div class="ajout-actions">
+          <button type="button" class="btn-secondary" (click)="ajoutOuvert = false">Annuler</button>
+          <button type="submit" class="btn-primary" [disabled]="!nouveauSite.nom.trim()">
+            Ajouter
+          </button>
+        </div>
+      </form>
+    }
+
+    @if (synthese?.imports?.length) {
+      <ul class="sources-etat">
+        @for (etat of synthese?.imports; track etat.id) {
+          <li [class.en-echec]="etat.statut === 'ECHEC'">
+            <span class="material-icons">
+              {{ etat.statut === 'ECHEC' ? 'error_outline' : etat.statut === 'EN_COURS' ? 'hourglass_top' : 'check' }}
+            </span>
+            <strong>{{ etat.source_libelle }}</strong>
+            @if (etat.statut === 'TERMINEE') {
+              consultée le {{ etat.date_fin | date:'dd/MM/yyyy à HH:mm' }}
+              ({{ etat.resultat.total || 0 }} site(s))
+            } @else if (etat.statut === 'EN_COURS') {
+              recherche en cours…
+            } @else {
+              injoignable — {{ etat.erreur }}
+            }
+          </li>
+        }
+      </ul>
+    }
+
+    <div class="toolbar">
+      <div class="search-box">
+        <span class="material-icons">search</span>
+        <input type="text" placeholder="Rechercher un site ou une adresse…" [(ngModel)]="recherche" />
+      </div>
+      <select [(ngModel)]="filtreStatut" class="filtre">
+        <option value="PROPOSE">À vérifier</option>
+        <option value="RETENU">Retenus au plan</option>
+        <option value="ECARTE">Écartés</option>
+        <option value="">Tous les statuts</option>
+      </select>
+      <select [(ngModel)]="filtreCategorie" class="filtre">
+        <option value="">Toutes les catégories</option>
+        @for (categorie of CATEGORIES; track categorie.code) {
+          <option [value]="categorie.code">{{ categorie.libelle }}</option>
+        }
+      </select>
+    </div>
+
+    @if (!sitesFiltres.length) {
+      <p class="vide">
+        @if (!sites.length) {
+          Aucun site pour l'instant. « Rechercher dans les bases publiques » interroge les quatre
+          sources nationales pour votre commune.
+        } @else {
+          Aucun site ne correspond à ce filtre.
+        }
+      </p>
+    } @else {
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Site</th>
+            <th>Catégorie</th>
+            <th>Adresse</th>
+            <th class="col-effectif">Personnes</th>
+            <th>Provenance</th>
+            <th class="col-actions">Décision</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (site of sitesFiltres; track site.id) {
+            <tr [class.ligne-ecartee]="site.statut === 'ECARTE'">
+              <td>
+                <input class="champ-nom" type="text" [value]="site.nom"
+                       (blur)="enregistrerChamp(site, 'nom', $any($event.target).value)" />
+                @if (particularites(site).length) {
+                  <div class="particularites">
+                    @for (mention of particularites(site); track mention) {
+                      <span class="etiquette">{{ mention }}</span>
+                    }
+                  </div>
+                }
+                @if (site.telephone) {
+                  <a class="telephone" [href]="'tel:' + site.telephone">{{ site.telephone }}</a>
+                }
+                @if (site.point_operationnel) {
+                  <span class="etiquette etiquette-point">
+                    <span class="material-icons">place</span> Point opérationnel créé
+                  </span>
+                }
+              </td>
+
+              <td>{{ site.categorie_libelle }}</td>
+
+              <td>
+                <input class="champ-adresse" type="text" [value]="site.adresse || ''"
+                       placeholder="Adresse à compléter"
+                       (blur)="enregistrerChamp(site, 'adresse', $any($event.target).value)" />
+                @if (lienCarte(site)) {
+                  <a class="lien-carte" [href]="lienCarte(site)" target="_blank" rel="noopener">
+                    <span class="material-icons">map</span> situer
+                  </a>
+                } @else {
+                  <span class="sans-gps">pas de coordonnées</span>
+                }
+              </td>
+
+              <td class="col-effectif">
+                <input type="number" min="0" [value]="site.effectif_estime ?? ''" placeholder="—"
+                       (blur)="enregistrerChamp(site, 'effectif_estime', $any($event.target).value || null)" />
+              </td>
+
+              <td class="col-provenance">
+                {{ provenance(site) }}
+                @if (site.valide_par_nom) {
+                  <span class="valide-par">décision : {{ site.valide_par_nom }}</span>
+                }
+              </td>
+
+              <td class="col-actions">
+                @if (site.statut !== 'RETENU') {
+                  <button type="button" class="btn-retenir" (click)="statuer(site, 'RETENU')">
+                    <span class="material-icons">check</span> Retenir
+                  </button>
+                }
+                @if (site.statut !== 'ECARTE') {
+                  <button type="button" class="btn-ecarter" (click)="statuer(site, 'ECARTE')">
+                    <span class="material-icons">close</span> Écarter
+                  </button>
+                }
+                @if (site.statut === 'RETENU' && !site.point_operationnel) {
+                  @if (pointPourSite === site.id) {
+                    <div class="creation-point">
+                      <select [(ngModel)]="typePointChoisi">
+                        @for (type of pointTypes; track type.id) {
+                          <option [value]="type.id">{{ type.libelle }}</option>
+                        }
+                      </select>
+                      <input type="number" min="0" [(ngModel)]="capacitePoint"
+                             placeholder="Capacité" />
+                      <button type="button" class="btn-primary" (click)="creerPoint(site)">
+                        Créer
+                      </button>
+                      <button type="button" class="btn-secondary" (click)="annulerCreationPoint()">
+                        Annuler
+                      </button>
+                    </div>
+                  } @else {
+                    <button type="button" class="btn-point" (click)="ouvrirCreationPoint(site)">
+                      <span class="material-icons">add_location_alt</span> En faire un point
+                    </button>
+                  }
+                }
+                <button type="button" class="btn-supprimer" title="Supprimer de l'inventaire"
+                        (click)="supprimer(site)">
+                  <span class="material-icons">delete_outline</span>
+                </button>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    }
+
+    <p class="mention-licence">
+      Données issues de l'annuaire de l'éducation (ministère de l'Éducation nationale), de FINESS
+      (Agence du numérique en santé), de la base des installations classées (Géorisques, ministère
+      de la Transition écologique) et du recensement des équipements sportifs (ministère des
+      Sports) — Licence Ouverte. Les dates affichées sont celles annoncées par chaque producteur.
+    </p>
+  }
+</div>

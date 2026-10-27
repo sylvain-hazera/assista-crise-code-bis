@@ -20,6 +20,8 @@ from .zone_scoping import object_in_viewer_zone, object_in_viewer_zone_via_commu
 from .tracabilite import coordonnees_retirees, retirer_coordonnees
 from .models import (
     Environment,
+    SiteSensible,
+    ImportOpenData,
     UserRole,
     InstitutionType,
     DemandeMobilisation,
@@ -3541,3 +3543,50 @@ class ModuleDegatsCriseSerializer(serializers.ModelSerializer):
         read_only_fields = ['active_par', 'date_activation', 'date_desactivation']
 
 
+
+
+class SiteSensibleSerializer(serializers.ModelSerializer):
+    """Enjeu du territoire pour le plan de sauvegarde communal.
+
+    Les champs que la source alimente (`source`, `source_id`, `attributs`, `date_source`) sont en
+    lecture seule : un agent corrige le nom, l'adresse, l'effectif, le statut et le commentaire —
+    jamais la provenance, qui est la seule chose permettant de savoir d'où sort la ligne et de
+    ré-importer sans dupliquer."""
+
+    source_libelle = serializers.CharField(source="get_source_display", read_only=True)
+    categorie_libelle = serializers.CharField(source="get_categorie_display", read_only=True)
+    statut_libelle = serializers.CharField(source="get_statut_display", read_only=True)
+    latitude = serializers.SerializerMethodField()
+    longitude = serializers.SerializerMethodField()
+    valide_par_nom = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SiteSensible
+        fields = "__all__"
+        read_only_fields = [
+            'institution', 'environment', 'source', 'source_id', 'attributs', 'date_source',
+            'date_import', 'modifie_le', 'valide_par', 'commune_code', 'commune_nom',
+        ]
+
+    def get_latitude(self, obj):
+        return obj.location.y if obj.location else None
+
+    def get_longitude(self, obj):
+        return obj.location.x if obj.location else None
+
+    def get_valide_par_nom(self, obj):
+        if not obj.valide_par:
+            return None
+        return f"{obj.valide_par.first_name} {obj.valide_par.last_name}".strip() or obj.valide_par.username
+
+
+class ImportOpenDataSerializer(serializers.ModelSerializer):
+    """Dernier import par source — alimente la ligne « consulté le … » de chaque source à
+    l'écran, et l'état d'attente de l'import FINESS."""
+
+    source_libelle = serializers.CharField(source="get_source_display", read_only=True)
+
+    class Meta:
+        model = ImportOpenData
+        fields = ['id', 'source', 'source_libelle', 'statut', 'resultat', 'erreur',
+                  'date_lancement', 'date_fin']

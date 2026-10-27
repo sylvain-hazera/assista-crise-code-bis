@@ -39,6 +39,7 @@ export const ADMIN_ROUTES: Routes = [
   { path: 'zones', loadComponent: () => import('./zones/zones.component').then(m => m.ZonesComponent), canActivate: [institutionalEffectiveGuard, zonesGuard] },
   { path: 'simulation-inondation', loadComponent: () => import('./simulation-inondation/simulation-inondation.component').then(m => m.SimulationInondationComponent), canActivate: [institutionalEffectiveGuard, zonesGuard] },
   { path: 'plans', loadComponent: () => import('./plans/plans.component').then(m => m.PlansComponent), canActivate: [institutionalEffectiveGuard] },
+  { path: 'sites-sensibles', loadComponent: () => import('./sites-sensibles/sites-sensibles.component').then(m => m.SitesSensiblesComponent), canActivate: [institutionalEffectiveGuard] },
   { path: 'competences', loadComponent: () => import('./competences/competences.component').then(m => m.CompetencesComponent), canActivate: [institutionalEffectiveGuard] },
   { path: 'personnes-vulnerables', loadComponent: () => import('./personnes-vulnerables/personnes-vulnerables.component').then(m => m.PersonnesVulnerablesComponent), canActivate: [institutionalEffectiveGuard, vulnerabilitesGuard] },
 

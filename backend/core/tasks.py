@@ -71,3 +71,31 @@ def calculer_ruissellement_task(commune_code: str, environment: str, forcer: boo
         raise
     else:
         _marquer_tache(commune_code, environment, TypeTacheInondation.RUISSELLEMENT, StatutTacheInondation.TERMINEE)
+
+
+@shared_task(acks_late=True, time_limit=900, soft_time_limit=840)
+def importer_sites_sensibles_task(institution_id, source, commune_code, commune_nom=None,
+                                  environment=None):
+    """Import FINESS : ~50 Mo à télécharger et ~750 Mo de JSON à parcourir pour en extraire une
+    commune (voir core/opendata/finess.py), impossible dans une requête HTTP. Budget de 15 min,
+    très au-dessus de la minute mesurée : ce qui dépasse serait une anomalie du producteur, pas la
+    taille de la commune."""
+    from django.utils import timezone
+
+    from .models import Institution, StatutImportOpenData
+    from .sites_sensibles import _marquer, executer_import
+
+    institution = Institution.objects.filter(pk=institution_id).first()
+    if institution is None:
+        return
+    try:
+        executer_import(institution, source, commune_code, commune_nom, environment)
+    except Exception as exc:
+        # executer_import absorbe déjà les pannes de source ; on n'arrive ici que sur un imprévu
+        # (base indisponible, flux au format inattendu). L'état doit quand même cesser d'afficher
+        # « en cours » à l'écran, sinon l'agent attend indéfiniment.
+        _marquer(
+            institution, environment or institution.environment, source,
+            statut=StatutImportOpenData.ECHEC, erreur=str(exc), date_fin=timezone.now(),
+        )
+        raise

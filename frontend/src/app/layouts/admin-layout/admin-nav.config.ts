@@ -80,6 +80,9 @@ export const NAV_ITEMS: NavItem[] = [
   { icon: 'water_drop', label: 'Simulation inondation', route: '/admin/simulation-inondation', groupe: 'preparation', visibilite: 'autorite-locale' },
   // Dispositif PCS préparé à l'avance, activable sur une crise (PlanViewSet.activer).
   { icon: 'fact_check', label: 'Mon plan de sauvegarde', route: '/admin/plans', groupe: 'preparation' },
+  // Enjeux du territoire (écoles, soins, industrie, salles) pré-alimentés depuis l'open data
+  // national, puis validés un à un par la commune — voir core/opendata/ côté serveur.
+  { icon: 'domain', label: 'Sites sensibles', route: '/admin/sites-sensibles', groupe: 'preparation' },
   { icon: 'category', label: 'Compétences', route: '/admin/competences', groupe: 'preparation' },
   // RCSC/RESPONSABLE d'une mairie ou délégation active (core/vulnerabilites.py).
   { icon: 'accessible', label: 'Personnes vulnérables', route: '/admin/personnes-vulnerables', groupe: 'preparation', visibilite: 'registre-vulnerables' },

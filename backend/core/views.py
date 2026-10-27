@@ -158,6 +158,11 @@ def extract_exif_metadata(filepath):
 from .crypto_fields import blind_index
 from .models import (
     Environment,
+    SiteSensible,
+    ImportOpenData,
+    SourceSiteSensible,
+    StatutSiteSensible,
+    StatutImportOpenData,
     UserRole,
     InstitutionType,
     Institution,
@@ -437,6 +442,8 @@ def send_crisis_regulateur_invite_email(request, user, crisis, institution):
     )
 
 from .serializers import (
+    SiteSensibleSerializer,
+    ImportOpenDataSerializer,
     validate_crisis_open,
     AuditLogSerializer,
     AuditLogAdminSerializer,
@@ -17012,3 +17019,192 @@ class ConflitSynchronisationViewSet(
             commentaire=f"Conflit de synchronisation résolu : {choix}.",
         )
         return Response(ConflitSynchronisationSerializer(conflit).data)
+
+
+# ── Sites sensibles : les enjeux du territoire pour le plan de sauvegarde communal ───────────
+#
+# Même philosophie que RisqueCommunalViewSet.suggestions_georisques, poussée d'un cran : les
+# sources ouvertes nationales (écoles, FINESS, installations classées, équipements sportifs)
+# proposent, la commune décide. La différence avec les risques GASPAR, qui tiennent en sept
+# lignes et sont acceptés à la volée, est le volume : plusieurs dizaines de sites par commune, à
+# relire sur plusieurs séances, à annoter et à corriger — donc persistés en base avec leur
+# statut, et non recalculés à chaque affichage.
+class SiteSensibleViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
+    """Inventaire des enjeux d'une commune : écoles, structures de soins, sites industriels,
+    équipements recevant du public.
+
+    Pré-alimenté par `importer`, puis relu ligne à ligne par un agent qui retient, écarte,
+    corrige et estime les effectifs. Un site retenu peut devenir un point opérationnel
+    (`creer-point`) : c'est ce qui évite les centres d'accueil sans adresse."""
+
+    queryset = SiteSensible.objects.select_related('institution', 'point_operationnel').all()
+    serializer_class = SiteSensibleSerializer
+    permission_classes = [IsInstitutionalActor]
+
+    def _mes_institutions(self):
+        return ContactInstitution.objects.filter(
+            utilisateur=self.request.user, actif=True
+        ).values_list('institution_id', flat=True)
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        institution_id = self.request.query_params.get('institution')
+        if institution_id:
+            qs = qs.filter(institution_id=institution_id)
+        for champ in ('categorie', 'statut', 'source'):
+            valeur = self.request.query_params.get(champ)
+            if valeur:
+                qs = qs.filter(**{champ: valeur})
+        if get_effective_role(self.request) == UserRole.ADMINISTRATOR:
+            return qs
+        # Même règle que RisqueCommunalViewSet : le rattachement qui fait autorité est
+        # ContactInstitution, jamais User.institution.
+        return qs.filter(institution_id__in=self._mes_institutions())
+
+    def perform_create(self, serializer):
+        """Création manuelle d'un site que les bases publiques ne connaissent pas (salle des
+        fêtes, camping, exploitation agricole…). Toujours marquée SAISIE et RETENU : ce qu'un
+        agent prend la peine de saisir n'a pas à repasser par une file de relecture."""
+        institution = _resolve_institution_or_400(self.request)
+        serializer.save(
+            institution=institution,
+            environment=get_active_environment(self.request),
+            source=SourceSiteSensible.SAISIE,
+            source_id="",
+            commune_code=institution.commune_code,
+            commune_nom=institution.commune_nom,
+            statut=self.request.data.get('statut') or StatutSiteSensible.RETENU,
+            valide_par=self.request.user,
+        )
+
+    def perform_update(self, serializer):
+        """Trace qui a statué. Un plan de sauvegarde se relit à plusieurs sur plusieurs mois :
+        savoir qui a retenu ou écarté un site évite de refaire le débat."""
+        statut_avant = serializer.instance.statut
+        statut_apres = serializer.validated_data.get('statut', statut_avant)
+        if statut_apres != statut_avant:
+            serializer.save(valide_par=self.request.user)
+            audit_log(
+                request=self.request, action_code="MODIFICATION", objet_type="SiteSensible",
+                objet_id=serializer.instance.id,
+                commentaire=f"Site « {serializer.instance.nom} » : {statut_avant} → {statut_apres}.",
+            )
+            return
+        serializer.save()
+
+    @action(detail=False, methods=["get"])
+    def synthese(self, request):
+        """Compteurs par catégorie et par statut, plus l'état du dernier import de chaque
+        source : tout ce que l'en-tête de la page a besoin de savoir en un appel."""
+        from .sites_sensibles import synthese_par_categorie
+
+        institution = _resolve_institution_or_400(request)
+        environment = get_active_environment(request)
+        imports = ImportOpenData.objects.filter(institution=institution, environment=environment)
+        return Response({
+            "institution": institution.id,
+            "institution_nom": institution.nom,
+            "commune_code": institution.commune_code,
+            "commune_nom": institution.commune_nom,
+            **synthese_par_categorie(institution, environment),
+            "imports": ImportOpenDataSerializer(imports, many=True).data,
+            "sources": [
+                {"code": code, "libelle": libelle}
+                for code, libelle in SourceSiteSensible.choices
+                if code != SourceSiteSensible.SAISIE
+            ],
+        })
+
+    @action(detail=False, methods=["post"])
+    def importer(self, request):
+        """Lance l'import des sources demandées (toutes par défaut) pour la commune de
+        l'institution.
+
+        Les sources API répondent dans la requête ; FINESS part en tâche de fond et rend
+        `asynchrone: true` — le frontend rappelle `synthese` pour suivre son état."""
+        from .opendata import CONNECTEURS
+        from .sites_sensibles import lancer_import
+
+        institution = _resolve_institution_or_400(request)
+        if not institution.commune_code:
+            return Response(
+                {"error": "Aucune commune associée à cette institution : impossible de "
+                          "rechercher ses sites sensibles."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        demandees = request.data.get('sources')
+        if demandees is None:
+            demandees = [code for code in CONNECTEURS]
+        if not isinstance(demandees, list) or not demandees:
+            return Response({"error": "`sources` doit être une liste non vide."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        inconnues = [s for s in demandees if s not in CONNECTEURS]
+        if inconnues:
+            return Response({"error": f"Sources inconnues : {', '.join(map(str, inconnues))}."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        environment = get_active_environment(request)
+        resultats = {}
+        for source in demandees:
+            resultat, asynchrone = lancer_import(
+                institution, source, institution.commune_code, institution.commune_nom,
+                environment,
+            )
+            resultats[source] = {"asynchrone": True} if asynchrone else resultat
+        audit_log(
+            request=request, action_code="CONSULTATION", objet_type="SiteSensible",
+            objet_id=institution.id,
+            commentaire=f"Import open data des sites sensibles de {institution.commune_nom or institution.commune_code} "
+                        f"({', '.join(demandees)}).",
+        )
+        return Response({"resultats": resultats})
+
+    @action(detail=True, methods=["post"], url_path="creer-point")
+    def creer_point(self, request, pk=None):
+        """Transforme un site retenu en PointOperationnel, nom, adresse et coordonnées comprises.
+
+        C'est la réponse directe au défaut constaté en production : des centres d'accueil créés
+        sans adresse ni GPS, donc inutilisables par un habitant qui cherche où aller. Un site
+        déjà converti rend 400 plutôt qu'un doublon."""
+        site = self.get_object()
+        if site.point_operationnel_id:
+            return Response(
+                {"error": "Ce site a déjà un point opérationnel.",
+                 "point": site.point_operationnel_id},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        type_id = request.data.get('type')
+        point_type = PointType.objects.filter(pk=type_id).first() if type_id else None
+        if point_type is None:
+            return Response({"error": "Type de point obligatoire."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        crise = None
+        crise_id = request.data.get('crise')
+        if crise_id:
+            crise = Crisis.objects.filter(
+                pk=crise_id, environment=get_active_environment(request)
+            ).first()
+            if crise is None:
+                return Response({"error": "Crise introuvable."},
+                                status=status.HTTP_400_BAD_REQUEST)
+
+        point = PointOperationnel.objects.create(
+            nom=site.nom[:255],
+            type=point_type,
+            crise=crise,
+            adresse=site.adresse or None,
+            location=site.location,
+            capacite_accueil=request.data.get('capacite_accueil') or None,
+            environment=get_active_environment(request),
+        )
+        site.point_operationnel = point
+        site.statut = StatutSiteSensible.RETENU
+        site.valide_par = request.user
+        site.save(update_fields=['point_operationnel', 'statut', 'valide_par', 'modifie_le'])
+        audit_log(
+            request=request, action_code="CREATION", objet_type="PointOperationnel",
+            objet_id=point.id,
+            commentaire=f"Point créé depuis le site sensible « {site.nom} » ({site.get_source_display()}).",
+        )
+        return Response(PointOperationnelSerializer(point).data, status=status.HTTP_201_CREATED)

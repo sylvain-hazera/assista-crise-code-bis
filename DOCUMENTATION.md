@@ -399,6 +399,49 @@ rattachement d'une mairie.
   plusieurs champs, et s'appuient sur les `prefetch_related` des ViewSets (filtrer en Python
   une relation préchargée).
 
+### 5.12 Sites sensibles et open data (`core/opendata/`)
+
+Les enjeux du territoire d'une commune (`SiteSensible` : écoles, structures de soins, sites
+industriels, équipements recevant du public) sont pré-alimentés depuis des bases publiques
+nationales, puis validés un à un par la commune. Page `/admin/sites-sensibles`.
+
+| Source | Connecteur | Accès | Filtrage |
+|---|---|---|---|
+| Annuaire de l'éducation (MENJ) | `opendata/ecoles.py` | API Opendatasoft | `code_commune` |
+| FINESS (Agence du numérique en santé) | `opendata/finess.py` | fichier JSON national quotidien (~50 Mo compressés) | aucun : lecture en flot, filtrage local sur `cogCommune` |
+| Installations classées (Géorisques) | `opendata/icpe.py` | API REST | `code_insee` |
+| Équipements sportifs (ministère des Sports) | `opendata/equipements.py` | API Opendatasoft | `insee` |
+
+Règles qui structurent le paquet :
+
+- **Proposer, jamais décider.** Tout import dépose en `StatutSiteSensible.PROPOSE` ; seul un
+  agent passe une ligne en `RETENU` ou `ECARTE`. Ces bases se trompent et vieillissent (FINESS
+  conserve des pharmacies radiées en 2009, le recensement des équipements sportifs classe des
+  écluses en « installation sportive »). Même posture que
+  `RisqueCommunalViewSet.suggestions_georisques`, mais persistée : plusieurs dizaines de sites
+  par commune, relus sur plusieurs séances.
+- **Un ré-import n'écrase jamais le travail d'un agent** (`core/sites_sensibles.py`) : le nom
+  corrigé, l'adresse, l'effectif, le commentaire et la décision lui appartiennent ; la source ne
+  rafraîchit que ses propres `attributs` et complète les champs encore vides. La clé de
+  rapprochement est `(institution, source, source_id, environment)`, `source_id` étant
+  l'identifiant stable de la source (UAI, n° FINESS, code AIOT, n° d'installation).
+- **FINESS seul est asynchrone** (`importer_sites_sensibles_task`) : son flux national ne tient
+  pas dans une requête HTTP. `ImportOpenData` porte l'état par (institution, source,
+  environnement), comme `TacheSimulationInondation` pour l'inondation — l'agent peut quitter la
+  page. L'ancienne extraction CSV de FINESS n'est plus mise à jour depuis l'été 2026 : ne jamais
+  y revenir, l'URL du flux est résolue dynamiquement via l'API data.gouv.
+- **Licence.** Les quatre sources sont sous Licence Ouverte (Etalab) : réutilisation libre avec
+  mention de la source et de sa date, affichée en pied de page. OpenStreetMap est
+  volontairement exclu malgré sa richesse sur les salles des fêtes : sa licence ODbL impose le
+  partage à l'identique des bases dérivées.
+- **RGPD.** Seules des adresses d'établissement, jamais de domicile de particulier (d'où
+  l'absence de chiffrement, contrairement à `Habitation.adresse`). Les listes d'assistantes
+  maternelles sont délibérément hors du paquet : il n'en existe aucune nationale, et leur adresse
+  est leur domicile.
+- Un site retenu peut devenir un `PointOperationnel` (action `creer-point`), nom, adresse et
+  coordonnées comprises — ce qui évite les centres d'accueil sans adresse, inutilisables par un
+  habitant cherchant où aller.
+
 ---
 
 ## 6. Frontend Angular

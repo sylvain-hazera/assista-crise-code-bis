@@ -4286,6 +4286,179 @@ class RisqueCommunal(EnvironmentScopedModel):
         return f"{self.risque_type.nom} / {self.institution.nom}"
 
 
+class SourceSiteSensible(models.TextChoices):
+    """D'où vient une ligne de SiteSensible. Chaque valeur correspond à un connecteur de
+    core/opendata/, sauf SAISIE (ajout manuel par un agent)."""
+    ANNUAIRE_EDUCATION = "ANNUAIRE_EDUCATION", "Annuaire de l'éducation nationale"
+    FINESS = "FINESS", "FINESS (Agence du numérique en santé)"
+    ICPE = "ICPE", "Installations classées (Géorisques)"
+    EQUIPEMENTS_SPORTIFS = "EQUIPEMENTS_SPORTIFS", "Équipements sportifs (ministère des Sports)"
+    SAISIE = "SAISIE", "Saisie manuelle"
+
+
+class CategorieSiteSensible(models.TextChoices):
+    ENSEIGNEMENT = "ENSEIGNEMENT", "Établissement d'enseignement"
+    SOINS = "SOINS", "Structure de soins ou médico-sociale"
+    INDUSTRIE = "INDUSTRIE", "Site industriel ou installation classée"
+    RASSEMBLEMENT = "RASSEMBLEMENT", "Équipement recevant du public"
+    AUTRE = "AUTRE", "Autre"
+
+
+class StatutSiteSensible(models.TextChoices):
+    """Décision de la mairie sur une proposition. PROPOSE est l'état de sortie de tout import :
+    rien n'entre jamais directement au plan sans qu'un agent l'ait regardé."""
+    PROPOSE = "PROPOSE", "Proposé — à vérifier"
+    RETENU = "RETENU", "Retenu au plan de sauvegarde"
+    ECARTE = "ECARTE", "Écarté"
+
+
+class SiteSensible(EnvironmentScopedModel):
+    """Enjeu du territoire à connaître avant la crise : école, EHPAD, site industriel, gymnase…
+
+    Pré-alimenté depuis des bases publiques nationales (voir core/opendata/) et TOUJOURS déposé
+    en PROPOSE : une base ouverte se trompe et vieillit (FINESS garde des pharmacies fermées
+    depuis 2009, le recensement des équipements sportifs classe les écluses du canal de Nantes à
+    Brest en « installation sportive »). La mairie reste seule juge de ce qui entre à son plan de
+    sauvegarde — l'open data lui épargne la saisie, jamais la vérification.
+
+    `attributs` conserve le brut utile de la source (statut Seveso, régime ICPE, public/privé,
+    restauration, internat…) sans imposer une colonne par source : seules les notions communes à
+    toutes les sources sont des champs."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    institution = models.ForeignKey(
+        "Institution", on_delete=models.CASCADE, related_name="sites_sensibles",
+    )
+
+    # Dénormalisé comme sur Habitation : permet de filtrer sans jointure, et de garder la trace
+    # de la commune d'origine même si l'institution change de périmètre.
+    commune_code = models.CharField(max_length=10, blank=True, null=True, db_index=True)
+    commune_nom = models.CharField(max_length=255, blank=True, null=True)
+
+    source = models.CharField(
+        max_length=25, choices=SourceSiteSensible.choices, default=SourceSiteSensible.SAISIE,
+    )
+
+    source_id = models.CharField(
+        max_length=64, blank=True,
+        help_text="Identifiant stable dans la source (UAI, n° FINESS, code AIOT, n° RES) : "
+                  "permet de ré-importer sans dupliquer ni perdre la décision déjà prise.",
+    )
+
+    categorie = models.CharField(
+        max_length=20, choices=CategorieSiteSensible.choices,
+        default=CategorieSiteSensible.AUTRE,
+    )
+
+    nom = models.CharField(max_length=255)
+
+    # Adresse d'établissement, jamais le domicile d'un particulier : pas de chiffrement,
+    # contrairement à Habitation.adresse. Les sources qui diffusent des adresses personnelles
+    # (assistantes maternelles) sont délibérément hors de ce paquet.
+    adresse = models.TextField(blank=True, null=True)
+
+    location = gis_models.PointField(srid=4326, null=True, blank=True)
+
+    telephone = models.CharField(max_length=30, blank=True, null=True)
+
+    effectif_estime = models.PositiveIntegerField(
+        null=True, blank=True,
+        help_text="Personnes présentes à estimer par la commune (élèves, résidents, salariés) : "
+                  "aucune source ouverte ne le donne de façon fiable.",
+    )
+
+    attributs = models.JSONField(default=dict, blank=True)
+
+    statut = models.CharField(
+        max_length=10, choices=StatutSiteSensible.choices, default=StatutSiteSensible.PROPOSE,
+    )
+
+    commentaire = models.TextField(blank=True, null=True)
+
+    valide_par = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="sites_sensibles_valides",
+    )
+
+    # Rempli quand la commune transforme le site en point opérationnel (un gymnase retenu devient
+    # le centre d'accueil qu'on ouvrira le jour J, nom, adresse et coordonnées déjà renseignés).
+    # SET_NULL et pas CASCADE : supprimer un point ne doit pas effacer l'enjeu du territoire.
+    point_operationnel = models.ForeignKey(
+        "PointOperationnel", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="sites_sensibles",
+    )
+
+    # Date de la donnée source telle qu'annoncée par le producteur, pas la date d'import : c'est
+    # elle qui dit à l'agent à quel point l'information peut être périmée.
+    date_source = models.DateField(null=True, blank=True)
+
+    date_import = models.DateTimeField(auto_now_add=True)
+    modifie_le = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["categorie", "nom"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["institution", "source", "source_id", "environment"],
+                condition=~models.Q(source_id=""),
+                name="uq_site_sensible_institution_source_id",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.nom} ({self.get_categorie_display()})"
+
+
+class StatutImportOpenData(models.TextChoices):
+    EN_COURS = "EN_COURS", "En cours"
+    TERMINEE = "TERMINEE", "Terminé"
+    ECHEC = "ECHEC", "Échec"
+
+
+class ImportOpenData(EnvironmentScopedModel):
+    """Dernier import d'une source ouverte pour une institution : date, résultat, erreur.
+
+    Sert deux choses à l'écran : dire quand une source a été consultée pour la dernière fois (une
+    base publique vieillit, l'agent doit savoir sur quoi il travaille), et porter l'état de
+    l'import FINESS, qui tourne en Celery et peut durer une minute — l'état vit ici et pas dans le
+    navigateur, pour que changer de page ne le perde pas (même raisonnement que
+    TacheSimulationInondation)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    institution = models.ForeignKey(
+        "Institution", on_delete=models.CASCADE, related_name="imports_open_data",
+    )
+
+    source = models.CharField(max_length=25, choices=SourceSiteSensible.choices)
+
+    statut = models.CharField(
+        max_length=10, choices=StatutImportOpenData.choices,
+        default=StatutImportOpenData.EN_COURS,
+    )
+
+    # {"crees": 12, "mis_a_jour": 0, "inchanges": 2, "total": 14} — tel que rendu par
+    # sites_sensibles.enregistrer_proposes.
+    resultat = models.JSONField(default=dict, blank=True)
+
+    erreur = models.TextField(blank=True, null=True)
+
+    date_lancement = models.DateTimeField(auto_now_add=True)
+    date_fin = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["institution", "source", "environment"],
+                name="uq_import_open_data_institution_source",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.get_source_display()} / {self.institution.nom} — {self.statut}"
+
+
 class TypeVulnerabilite(models.Model):
     """Catalogue des besoins fonctionnels des personnes vulnérables (évacuation, alerte). Jamais
     de donnée de santé (RGPD art. 9) : catalogue à cocher, volontairement sans notes libres."""
