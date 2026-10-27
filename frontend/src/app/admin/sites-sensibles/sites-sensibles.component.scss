@@ -641,3 +641,11 @@
   font-size: .8rem;
   color: #4b5563;
 }
+
+/* La fiche est partagée : ce que les voisins en ont décidé évite de refaire leur travail. */
+.decisions-autres {
+  display: block;
+  margin-top: .2rem;
+  font-size: .74rem;
+  color: #5b21b6;
+}

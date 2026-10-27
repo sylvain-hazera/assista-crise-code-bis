@@ -421,6 +421,32 @@ Règles qui structurent le paquet :
   écluses en « installation sportive »). Même posture que
   `RisqueCommunalViewSet.suggestions_georisques`, mais persistée : plusieurs dizaines de sites
   par commune, relus sur plusieurs séances.
+- **Une fiche par établissement, partagée par les collectivités du territoire.** C'est la règle
+  structurante : `SiteSensible` est la fiche (nom, adresse, coordonnées, attributs, corrections
+  comprises), `SuiviSiteSensible` est ce qu'UNE collectivité en fait (décision, commentaire,
+  convention, point opérationnel), une ligne par (fiche, institution). Conséquences voulues :
+  - **Le bénéfice va dans les deux sens.** Si la mairie importe son collège, le département le
+    trouve ; si le département l'importe, la mairie le trouve. Avant cette séparation, chacun
+    avait sa copie et deux inventaires du même territoire divergeaient tranquillement.
+  - **Les corrections circulent.** Une adresse redressée par un agent communal sert au
+    département, et réciproquement. C'est aussi pourquoi la garde contre l'écrasement au
+    ré-import est passée de la décision à `corrige_le` / `corrige_par` : la décision n'est plus
+    sur la fiche, elle ne peut plus servir d'indice.
+  - **Chacun garde sa décision.** Un collège est retenu au plan du département et peut être
+    écarté de celui de la commune, qui n'en a pas la charge. Le filtre « à vérifier » signifie
+    « je n'ai pas encore statué », pas « personne n'a statué » — l'absence de suivi EST l'état à
+    vérifier, d'où l'absence de ligne créée à l'import. `decisions_autres` expose ce que les
+    voisins ont tranché, pour éviter de refaire leur travail.
+  - **Les conventions et les points opérationnels ne se partagent pas** : une convention lie une
+    collectivité précise à une entreprise précise, et commune et département peuvent chacun
+    ouvrir leur centre d'accueil sur le même bâtiment.
+  - **La visibilité devient territoriale** (`get_queryset`) : une mairie voit les fiches de sa
+    commune, un conseil départemental celles de son département. Plus de filtre par institution
+    propriétaire, qui était précisément la cause des doublons.
+  - **Supprimer retire la fiche de SON plan**, pas de celui des autres (`perform_destroy`) : le
+    suivi part, la fiche reste si une autre collectivité la suit — ou si elle vient d'une base
+    publique, auquel cas la détruire ne servirait à rien puisqu'elle reviendrait au prochain
+    import.
 - **Une collectivité ne valide pas un territoire, elle valide sa compétence**
   (`EchelonCompetence` sur chaque ligne). Mesuré sur le Finistère : 852 établissements
   scolaires, dont **75 collèges publics** relèvent du conseil départemental, 374 écoles
@@ -454,14 +480,6 @@ Règles qui structurent le paquet :
   jusqu'ici, et bloquant dès le premier import départemental. Pour Géorisques, c'est `codeInsee`
   qui fait foi et **pas** le libellé `commune`, qui est sale — un établissement bien situé dans
   le Finistère y est étiqueté « Pleudihen-sur-Rance », commune des Côtes-d'Armor.
-- **Un conseil départemental LIT les inventaires de ses communes, il ne les copie pas**
-  (action `territoire`). Ses 277 communes détiennent déjà leurs écoles, leurs installations
-  classées et leurs élevages, souvent corrigés à la main ; en recopier 5 000 lignes les figerait
-  au jour de l'import et lui ferait relire le travail des autres. Trois bornes : seulement les
-  communes de SON secteur, seulement le statut `RETENU` (ce qu'une mairie a validé, jamais ses
-  propositions en cours ni ses écartés — on ne lit pas le brouillon d'autrui), et le masquage
-  des personnes en nom propre s'applique à l'identique, `devoiler` restant réservé à sa propre
-  institution. La lecture est tracée en `exposition=LISTE` avec les identifiants lus.
 - **Les thèmes SIRENE sont plus fins que les catégories.** À l'échelle d'un département, un
   « moyens et travaux » unique rend 3 270 établissements dans le Finistère — inexploitable —
   alors que « transport de voyageurs » en rend 57, et ce sont précisément ces 57 autocaristes qui

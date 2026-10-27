@@ -44,6 +44,10 @@
       l'abreuvement et la ventilation des bâtiments. Chaque ligne dit aussi ce qu'elle est pour
       vous : un site <strong>à protéger</strong>, un moyen <strong>mobilisable</strong>, ou les
       deux — un camping, c'est du monde à évacuer et des lits disponibles.
+      <strong>Ces fiches sont partagées</strong> avec les autres collectivités de votre
+      territoire : si votre département recense un collège, vous le trouvez ici sans rien faire,
+      et vos corrections lui profitent en retour. Votre décision, votre convention et vos points
+      d'accueil restent les vôtres.
     </span>
   </p>
 
@@ -350,6 +354,9 @@
                 @if (site.valide_par_nom) {
                   <span class="valide-par">décision : {{ site.valide_par_nom }}</span>
                 }
+                @if (decisionsAutres(site)) {
+                  <span class="decisions-autres">{{ decisionsAutres(site) }}</span>
+                }
               </td>
 
               <td class="col-actions">
@@ -465,61 +472,6 @@
           }
         </tbody>
       </table>
-    }
-
-    @if (estSupraCommunal) {
-      <section class="territoire">
-        <button type="button" class="depliant" (click)="basculerTerritoire()">
-          <span class="material-icons">{{ territoireOuvert ? 'expand_less' : 'expand_more' }}</span>
-          Voir ce que les communes de mon secteur ont retenu
-        </button>
-        @if (territoireOuvert) {
-          <p class="territoire-aide">
-            Lecture seule, et rien n'est recopié dans votre inventaire : ces lignes restent
-            celles des communes, avec leurs corrections. Vous ne voyez que ce qu'elles ont
-            <strong>retenu</strong> — jamais leurs propositions en cours de relecture. Chaque
-            consultation est inscrite à la main courante.
-            @if (communesDuSecteur) {
-              <span class="territoire-compte">{{ communesDuSecteur }} commune(s) dans votre
-                secteur.</span>
-            }
-          </p>
-          @if (!territoire.length) {
-            <p class="vide">
-              Aucune commune de votre secteur n'a encore retenu de site dans Assista-Crise.
-            </p>
-          } @else {
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Site</th>
-                  <th>Catégorie</th>
-                  <th>Commune</th>
-                  <th>Retenu par</th>
-                </tr>
-              </thead>
-              <tbody>
-                @for (site of territoire; track site.id) {
-                  <tr>
-                    <td>
-                      {{ site.nom }}
-                      @if (site.adresse) { <div class="adresse-lue">{{ site.adresse }}</div> }
-                      @if (site.adresse_masquee) {
-                        <span class="adresse-masquee">
-                          <span class="material-icons">lock</span> personne en nom propre
-                        </span>
-                      }
-                    </td>
-                    <td>{{ site.categorie_libelle }}</td>
-                    <td>{{ site.commune_nom || site.commune_code }}</td>
-                    <td class="col-provenance">{{ site.institution_nom }}</td>
-                  </tr>
-                }
-              </tbody>
-            </table>
-          }
-        }
-      </section>
     }
 
     <p class="mention-licence">

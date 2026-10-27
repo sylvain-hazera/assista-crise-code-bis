@@ -9,8 +9,7 @@ import { PointType } from '../../shared/models/point-operationnel.model';
 import { pollWhileVisible } from '../../shared/utils/polling.util';
 import {
   CategorieSiteSensible, CoordonneesDevoilees, EchelonCompetence, NiveauSecteur,
-  SaisieConvention, SiteSensible, SiteTerritoire, SourceSiteSensible, StatutSiteSensible,
-  SyntheseSitesSensibles,
+  SaisieConvention, SiteSensible, SourceSiteSensible, StatutSiteSensible, SyntheseSitesSensibles,
 } from '../../shared/models/site-sensible.model';
 
 /**
@@ -31,8 +30,11 @@ import {
  * Troisième chose, qui rend la page utilisable par autre chose qu'une mairie : une collectivité
  * ne valide pas un territoire, elle valide SA compétence. Un conseil départemental arrive sur
  * ses collèges publics (75 dans le Finistère) et non sur les 852 établissements scolaires du
- * département ; le reste reste retrouvable par le filtre et la recherche, et ce que ses communes
- * ont retenu se LIT chez elles (voir basculerTerritoire) plutôt que de se recopier.
+ * département ; le reste reste retrouvable par le filtre et la recherche.
+ *
+ * Et la fiche est PARTAGÉE : la liste est celle du territoire, pas celle de la collectivité. Qui
+ * importe le premier en fait profiter les autres, les corrections circulent, mais chacun garde
+ * sa décision — `decisionsAutres` montre ce que les voisins ont tranché.
  *
  * Deuxième chose que la page tient : une ressource recensée n'est PAS une ressource acquise.
  * Seule une convention engage, d'où le volet qui permet de la déclarer, de la numéroter, de la
@@ -72,11 +74,6 @@ export class SitesSensiblesComponent implements OnInit, OnDestroy {
   themesChoisis = new Set<string>();
   perimetreChoisi: NiveauSecteur = 'commune';
 
-  /** Lecture du territoire : ce que les autres collectivités du secteur ont retenu. */
-  territoireOuvert = false;
-  territoireCharge = false;
-  territoire: SiteTerritoire[] = [];
-  communesDuSecteur = 0;
 
   /** Adresses dévoilées pendant cette visite, par identifiant de site. Rien n'est conservé :
    * revenir sur la page redemande un dévoilement, donc une nouvelle trace. */
@@ -388,24 +385,6 @@ export class SitesSensiblesComponent implements OnInit, OnDestroy {
     return site.statut === 'RETENU' && !site.point_operationnel && !site.personne_physique;
   }
 
-  /** Charge ce que les autres collectivités du secteur ont retenu. Lecture, pas copie : leurs
-   * corrections restent les leurs, et ce qui est lu est inscrit à la main courante. */
-  basculerTerritoire(): void {
-    this.territoireOuvert = !this.territoireOuvert;
-    if (!this.territoireOuvert || this.territoireCharge) return;
-    this.siteService.territoire().subscribe({
-      next: (lecture) => {
-        this.territoire = lecture.resultats;
-        this.communesDuSecteur = lecture.communes;
-        this.territoireCharge = true;
-      },
-      error: (err) => {
-        this.territoireOuvert = false;
-        this.erreur = err?.error?.error || 'Impossible de lire le territoire.';
-      },
-    });
-  }
-
   private conventionVide(): SaisieConvention {
     return { convention_existe: false, convention_numero: '', convention_date_signature: '',
              convention_echeance: '' };
@@ -580,6 +559,17 @@ export class SitesSensiblesComponent implements OnInit, OnDestroy {
     // Un même bâtiment porte souvent deux rubriques (autorisation puis enregistrement) :
     // afficher « 50 000 volailles » deux fois ferait croire à 100 000 animaux.
     return [...new Set(mentions)];
+  }
+
+  /** Ce que les autres collectivités ont décidé de la même fiche, en une phrase. Le dire évite
+   * qu'une mairie refasse le travail du département, et inversement. */
+  decisionsAutres(site: SiteSensible): string {
+    const prises = (site.decisions_autres || []).filter(d => d.statut !== 'PROPOSE');
+    if (!prises.length) return '';
+    return prises
+      .map(d => `${d.institution_nom} : ${d.statut_libelle.toLowerCase()}`
+                + (d.convention ? ' (convention)' : ''))
+      .join(' · ');
   }
 
   /** Ce que la source dit de particulier sur ce site, en clair. Volontairement court : trois

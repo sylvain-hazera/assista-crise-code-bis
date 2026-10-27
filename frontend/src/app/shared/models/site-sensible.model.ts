@@ -19,9 +19,20 @@ export type EchelonCompetence =
 /** Niveau de secteur d'une institution, tel que son type le lui donne. */
 export type NiveauSecteur = 'commune' | 'epci' | 'departement' | 'region' | 'national';
 
+/** Ce qu'une AUTRE collectivité a décidé de la même fiche. C'est ce qui rend le partage
+ * visible : une mairie voit que le département a retenu son collège, et réciproquement. */
+export interface DecisionAutre {
+  institution_nom: string;
+  statut: StatutSiteSensible;
+  statut_libelle: string;
+  convention: boolean;
+}
+
 export interface SiteSensible {
   id: string;
-  institution: string;
+  /** Qui a fait entrer la fiche — une trace, pas une appartenance : la fiche est partagée par
+   * les collectivités du territoire. */
+  institution_origine: string | null;
   commune_code: string | null;
   commune_nom: string | null;
   source: SourceSiteSensible;
@@ -43,6 +54,9 @@ export interface SiteSensible {
   attributs: Record<string, unknown>;
   commentaire: string | null;
   echelon_competence: EchelonCompetence;
+  echelon_libelle: string;
+  /** Les décisions des autres collectivités sur cette même fiche. */
+  decisions_autres: DecisionAutre[];
   /** À protéger : le site subit la crise (école, cheptel, camping occupé). */
   est_enjeu: boolean;
   /** Mobilisable : le site aide à y répondre (car, pelle, lits, cuisine, vétérinaire). */
@@ -120,17 +134,6 @@ export interface SyntheseSitesSensibles {
   sources: { code: SourceSiteSensible; libelle: string }[];
   themes: ThemeSirene[];
   echelons: { code: EchelonCompetence; libelle: string }[];
-}
-
-/** Un site retenu par une AUTRE collectivité du secteur, lu sans être recopié. */
-export interface SiteTerritoire extends SiteSensible {
-  institution_nom: string;
-  lecture_seule: true;
-}
-
-export interface LectureTerritoire {
-  communes: number;
-  resultats: SiteTerritoire[];
 }
 
 /** Les champs de convention qu'un agent saisit. */

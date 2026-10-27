@@ -161,6 +161,7 @@ from .models import (
     SiteSensible,
     ImportOpenData,
     SourceSiteSensible,
+    SuiviSiteSensible,
     EchelonCompetence,
     ECHELON_PAR_NIVEAU_SECTEUR,
     StatutSiteSensible,
@@ -17032,14 +17033,19 @@ class ConflitSynchronisationViewSet(
 # relire sur plusieurs séances, à annoter et à corriger — donc persistés en base avec leur
 # statut, et non recalculés à chaque affichage.
 class SiteSensibleViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
-    """Inventaire des enjeux d'une commune : écoles, structures de soins, sites industriels,
-    équipements recevant du public.
+    """Inventaire des enjeux d'un territoire : écoles, structures de soins, sites industriels,
+    élevages, équipements recevant du public, moyens d'action.
 
-    Pré-alimenté par `importer`, puis relu ligne à ligne par un agent qui retient, écarte,
-    corrige et estime les effectifs. Un site retenu peut devenir un point opérationnel
-    (`creer-point`) : c'est ce qui évite les centres d'accueil sans adresse."""
+    **Une fiche par établissement, partagée par les collectivités du territoire.** Qui importe
+    le premier en fait profiter les autres, dans les deux sens : si la mairie recense son
+    collège, le conseil départemental le trouve ; si le département le recense, la mairie le
+    trouve. Les corrections circulent de la même façon. Ce que chacun en fait reste à lui
+    (`SuiviSiteSensible` : décision, commentaire, convention, point opérationnel).
 
-    queryset = SiteSensible.objects.select_related('institution', 'point_operationnel').all()
+    La visibilité est donc TERRITORIALE et non plus institutionnelle : une mairie voit les
+    fiches de sa commune, un conseil départemental celles de son département."""
+
+    queryset = SiteSensible.objects.all()
     serializer_class = SiteSensibleSerializer
     permission_classes = [IsInstitutionalActor]
 
@@ -17047,6 +17053,38 @@ class SiteSensibleViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         return ContactInstitution.objects.filter(
             utilisateur=self.request.user, actif=True
         ).values_list('institution_id', flat=True)
+
+    def _institution_courante(self):
+        """La collectivité au nom de laquelle l'agent agit — celle dont le suivi est lu et
+        écrit. Même résolution que partout ailleurs (ContactInstitution fait autorité)."""
+        try:
+            return _resolve_institution_or_400(self.request)
+        except Exception:
+            return Institution.objects.filter(id__in=self._mes_institutions()).first()
+
+    def _communes_de_mon_territoire(self):
+        """Les communes que couvrent les collectivités de l'agent. Une mairie : la sienne. Un
+        conseil départemental : les 277 de son département."""
+        from .geo_lookup import communes_de_secteur
+
+        communes = set()
+        for institution in Institution.objects.filter(id__in=self._mes_institutions()):
+            niveau = institution.secteur_niveau_effectif or "commune"
+            if niveau == "commune":
+                if institution.commune_code:
+                    communes.add(institution.commune_code)
+                continue
+            code = self._code_secteur(institution, niveau)
+            if code:
+                communes.update(communes_de_secteur(niveau, code) or [])
+        return communes
+
+    def get_serializer_context(self):
+        contexte = super().get_serializer_context()
+        contexte['institution'] = getattr(self, '_institution_cache', None) \
+            or self._institution_courante()
+        self._institution_cache = contexte['institution']
+        return contexte
 
     # Du plus étroit au plus large : une collectivité peut toujours restreindre, jamais élargir.
     NIVEAUX_ORDONNES = ("commune", "epci", "departement", "region")
@@ -17079,31 +17117,65 @@ class SiteSensibleViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset()
-        institution_id = self.request.query_params.get('institution')
-        if institution_id:
-            qs = qs.filter(institution_id=institution_id)
-        for champ in ('categorie', 'statut', 'source', 'echelon_competence', 'commune_code'):
+        institution = self._institution_courante()
+        # Deux Prefetch sur la même relation : mon suivi d'un côté (celui qu'on lit et écrit),
+        # ceux des autres collectivités de l'autre (ce qui rend le partage visible). Sans eux,
+        # une liste de 945 fiches ferait 945 requêtes.
+        if institution is not None:
+            qs = qs.prefetch_related(
+                Prefetch('suivis', to_attr='mon_suivi', queryset=SuiviSiteSensible.objects
+                         .filter(institution=institution).select_related('valide_par')),
+                Prefetch('suivis', to_attr='autres_suivis',
+                         queryset=SuiviSiteSensible.objects.exclude(institution=institution)
+                         .select_related('institution')),
+            )
+        for champ in ('categorie', 'source', 'echelon_competence', 'commune_code'):
             valeur = self.request.query_params.get(champ)
             if valeur:
                 qs = qs.filter(**{champ: valeur})
+        # `statut` est propre à la collectivité : il se filtre sur le suivi, et « PROPOSE »
+        # comprend les fiches sans aucun suivi (personne n'a encore statué).
+        statut = self.request.query_params.get('statut')
+        if statut and institution is not None:
+            avec_suivi = SuiviSiteSensible.objects.filter(
+                institution=institution, statut=statut).values('site_id')
+            if statut == StatutSiteSensible.PROPOSE:
+                decides = SuiviSiteSensible.objects.filter(institution=institution).exclude(
+                    statut=StatutSiteSensible.PROPOSE).values('site_id')
+                qs = qs.exclude(id__in=decides)
+            else:
+                qs = qs.filter(id__in=avec_suivi)
         if get_effective_role(self.request) == UserRole.ADMINISTRATOR:
             return qs
-        # Même règle que RisqueCommunalViewSet : le rattachement qui fait autorité est
-        # ContactInstitution, jamais User.institution.
-        return qs.filter(institution_id__in=self._mes_institutions())
+        # Visibilité territoriale. Le filet des deux derniers Q couvre les fiches sans commune
+        # (saisie manuelle d'un lieu hors référentiel) : on ne perd pas son propre travail.
+        mes_institutions = list(self._mes_institutions())
+        return qs.filter(
+            Q(commune_code__in=self._communes_de_mon_territoire())
+            | Q(institution_origine_id__in=mes_institutions)
+            | Q(id__in=SuiviSiteSensible.objects.filter(
+                institution_id__in=mes_institutions).values('site_id'))
+        ).distinct()
 
     def perform_create(self, serializer):
         """Création manuelle d'un site que les bases publiques ne connaissent pas (salle des
         fêtes, camping, exploitation agricole…). Toujours marquée SAISIE et RETENU : ce qu'un
         agent prend la peine de saisir n'a pas à repasser par une file de relecture."""
         institution = _resolve_institution_or_400(self.request)
-        serializer.save(
-            institution=institution,
+        site = serializer.save(
+            institution_origine=institution,
             environment=get_active_environment(self.request),
             source=SourceSiteSensible.SAISIE,
             source_id="",
-            commune_code=institution.commune_code,
-            commune_nom=institution.commune_nom,
+            commune_code=self.request.data.get('commune_code') or institution.commune_code,
+            commune_nom=self.request.data.get('commune_nom') or institution.commune_nom,
+            # Saisi à la main, donc déjà vérifié : la fiche est marquée corrigée, et un futur
+            # rapprochement par une source ne la réécrira pas.
+            corrige_par=self.request.user,
+            corrige_le=timezone.now(),
+        )
+        SuiviSiteSensible.objects.create(
+            site=site, institution=institution, environment=site.environment,
             statut=self.request.data.get('statut') or StatutSiteSensible.RETENU,
             valide_par=self.request.user,
         )
@@ -17115,35 +17187,48 @@ class SiteSensibleViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         Trace aussi les conventions, pour la même raison : une convention est un engagement
         entre deux personnes morales, savoir qui l'a déclarée et quand vaut mieux qu'une case
         cochée sans auteur."""
-        statut_avant = serializer.instance.statut
-        convention_avant = (serializer.instance.convention_existe,
-                            serializer.instance.convention_numero,
-                            bool(serializer.instance.convention_document))
+        institution = self._institution_courante()
+        suivi_avant = SuiviSiteSensible.objects.filter(
+            site=serializer.instance, institution=institution,
+        ).first() if institution else None
+        statut_avant = suivi_avant.statut if suivi_avant else StatutSiteSensible.PROPOSE
+        convention_avant = (
+            bool(suivi_avant and suivi_avant.convention_existe),
+            suivi_avant.convention_numero if suivi_avant else None,
+            bool(suivi_avant and suivi_avant.convention_document),
+        )
+
+        statut_change = serializer.validated_data.get('statut', statut_avant) != statut_avant
+        site = serializer.save()
+        suivi = SuiviSiteSensible.objects.filter(
+            site=site, institution=institution).first() if institution else None
 
         # `valide_par` veut dire « a statué », pas « a touché la ligne » : seule une décision
         # retenu/écarté l'inscrit. Une convention se trace en main courante, elle ne fait pas de
         # son auteur le décideur du sort du site.
-        statut_change = serializer.validated_data.get('statut', statut_avant) != statut_avant
-        site = (serializer.save(valide_par=self.request.user) if statut_change
-                else serializer.save())
-
-        if statut_change:
+        if statut_change and suivi is not None:
+            suivi.valide_par = self.request.user
+            suivi.save(update_fields=['valide_par', 'modifie_le'])
             audit_log(
                 request=self.request, action_code="MODIFICATION", objet_type="SiteSensible",
                 objet_id=site.id,
-                commentaire=f"Site « {site.nom} » : {statut_avant} → {site.statut}.",
+                commentaire=f"Site « {site.nom} » : {statut_avant} → {suivi.statut}.",
             )
-        convention_apres = (site.convention_existe, site.convention_numero,
-                            bool(site.convention_document))
+        convention_apres = (
+            bool(suivi and suivi.convention_existe),
+            suivi.convention_numero if suivi else None,
+            bool(suivi and suivi.convention_document),
+        )
         if convention_apres != convention_avant:
             audit_log(
                 request=self.request, action_code="MODIFICATION", objet_type="SiteSensible",
                 objet_id=site.id,
                 commentaire=(
                     f"Convention de « {site.nom} » : "
-                    + ("déclarée" if site.convention_existe else "retirée")
-                    + (f", n° {site.convention_numero}" if site.convention_numero else "")
-                    + (", document joint" if site.convention_document else "")
+                    + ("déclarée" if suivi and suivi.convention_existe else "retirée")
+                    + (f", n° {suivi.convention_numero}"
+                       if suivi and suivi.convention_numero else "")
+                    + (", document joint" if suivi and suivi.convention_document else "")
                 ),
             )
 
@@ -17176,7 +17261,10 @@ class SiteSensibleViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             "secteur_nom": institution.secteur_nom,
             "echelon_propre": echelon_propre,
             "perimetres_possibles": self._niveaux_possibles(institution),
-            **synthese_par_categorie(institution, environment, echelon_pour_compteur),
+            # Sur les fiches VISIBLES (le territoire), avec le statut de MON suivi : une fiche
+            # retenue par la commune voisine reste « à vérifier » pour moi.
+            **synthese_par_categorie(self.get_queryset(), institution, environment,
+                                     echelon_pour_compteur),
             "imports": ImportOpenDataSerializer(imports, many=True).data,
             "sources": [
                 {"code": code, "libelle": libelle}
@@ -17191,72 +17279,6 @@ class SiteSensibleViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             "echelons": [
                 {"code": code, "libelle": libelle}
                 for code, libelle in EchelonCompetence.choices
-            ],
-        })
-
-    @action(detail=False, methods=["get"])
-    def territoire(self, request):
-        """Les sites RETENUS par les autres collectivités du secteur — en lecture seule.
-
-        C'est la réponse au problème d'échelle d'un conseil départemental : ses 277 communes
-        détiennent déjà leurs écoles, leurs installations classées et leurs élevages, souvent
-        corrigés à la main. En recopier 5 000 lignes dans son propre inventaire les figerait au
-        jour de l'import et lui ferait relire le travail des autres ; il les lit donc chez elles.
-
-        Trois bornes, délibérées :
-        - uniquement les collectivités dont la commune est dans SON secteur (un département ne
-          lit pas le département voisin) ;
-        - uniquement le statut RETENU : ce qu'une mairie a validé, jamais ses propositions en
-          cours de relecture ni ce qu'elle a écarté — on ne lit pas le brouillon d'autrui ;
-        - le masquage des personnes en nom propre s'applique à l'identique, et `devoiler` reste
-          réservé à sa propre institution.
-        """
-        from .geo_lookup import communes_de_secteur
-
-        institution = _resolve_institution_or_400(request)
-        niveau = institution.secteur_niveau_effectif or "commune"
-        if niveau == "commune":
-            return Response(
-                {"error": "Cette collectivité n'a qu'une commune : son propre inventaire la "
-                          "couvre déjà entièrement."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        code = self._code_secteur(institution, niveau)
-        communes = communes_de_secteur(niveau, code) if code else []
-        if not communes:
-            return Response({"resultats": [], "communes": 0})
-
-        commune_demandee = request.query_params.get('commune_code')
-        if commune_demandee:
-            if commune_demandee not in communes:
-                return Response(
-                    {"error": "Cette commune n'est pas dans votre secteur."},
-                    status=status.HTTP_403_FORBIDDEN,
-                )
-            communes = [commune_demandee]
-
-        sites = SiteSensible.objects.filter(
-            environment=get_active_environment(request),
-            statut=StatutSiteSensible.RETENU,
-            commune_code__in=communes,
-        ).exclude(institution=institution).select_related('institution')[:500]
-
-        audit_log(
-            request=request, action_code="LECTURE", objet_type="SiteSensible",
-            exposition=AuditLog.Exposition.LISTE,
-            perimetre=AuditLog.Perimetre.GENERAL,
-            objets_ids=[site.id for site in sites] or None,
-            commentaire=f"Lecture du territoire ({niveau} {code})"
-                        + (f", commune {commune_demandee}" if commune_demandee else "")
-                        + f" : {len(sites)} site(s) retenu(s) par d'autres collectivités.",
-        )
-        return Response({
-            "communes": len(communes),
-            "resultats": [
-                {**SiteSensibleSerializer(site).data,
-                 "institution_nom": site.institution.nom,
-                 "lecture_seule": True}
-                for site in sites
             ],
         })
 
@@ -17357,17 +17379,47 @@ class SiteSensibleViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         préfixe `documents/` bloqué par nginx, jamais d'URL /media/ directe. Une convention
         porte des noms et des signatures, parfois le domicile d'un exploitant en nom propre."""
         site = self.get_object()
-        if not site.convention_document:
-            return Response({"error": "Aucune convention n'est jointe à ce site."},
-                            status=status.HTTP_404_NOT_FOUND)
+        institution = self._institution_courante()
+        suivi = SuiviSiteSensible.objects.filter(
+            site=site, institution=institution).first() if institution else None
+        if suivi is None or not suivi.convention_document:
+            return Response(
+                {"error": "Aucune convention de votre collectivité n'est jointe à ce site."},
+                status=status.HTTP_404_NOT_FOUND)
         audit_log(
             request=request, action_code="TELECHARGEMENT", objet_type="SiteSensible",
             objet_id=site.id,
             commentaire=f"Convention de « {site.nom} »"
-                        + (f" (n° {site.convention_numero})" if site.convention_numero else ""),
+                        + (f" (n° {suivi.convention_numero})" if suivi.convention_numero else ""),
         )
         # .open("rb") et non .path : c'est le passage par le storage qui déchiffre.
-        return FileResponse(site.convention_document.open("rb"))
+        return FileResponse(suivi.convention_document.open("rb"))
+
+    def perform_destroy(self, instance):
+        """Retire la fiche de MON plan — pas de celui des autres.
+
+        Depuis que la fiche est partagée, une suppression qui l'effacerait vraiment ferait
+        disparaître le travail d'une autre collectivité. On supprime donc son propre suivi, et
+        la fiche elle-même seulement si plus personne ne s'y rattache ET qu'elle vient d'une
+        saisie manuelle — une fiche issue d'une base publique reviendrait au prochain import de
+        toute façon, la détruire ne sert à rien."""
+        institution = self._institution_courante()
+        if institution is not None:
+            SuiviSiteSensible.objects.filter(site=instance, institution=institution).delete()
+        reste_suivie = SuiviSiteSensible.objects.filter(site=instance).exists()
+        if not reste_suivie and instance.source == SourceSiteSensible.SAISIE:
+            instance.delete()
+            return
+        audit_log(
+            request=self.request, action_code="SUPPRESSION", objet_type="SiteSensible",
+            objet_id=instance.id,
+            commentaire=(
+                f"« {instance.nom} » retiré du plan de "
+                f"{institution.nom if institution else '?'}"
+                + (" (fiche conservée : d'autres collectivités la suivent)" if reste_suivie
+                   else " (fiche conservée : issue d'une base publique)")
+            ),
+        )
 
     @action(detail=True, methods=["get"])
     def devoiler(self, request, pk=None):
@@ -17404,10 +17456,12 @@ class SiteSensibleViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         sans adresse ni GPS, donc inutilisables par un habitant qui cherche où aller. Un site
         déjà converti rend 400 plutôt qu'un doublon."""
         site = self.get_object()
-        if site.point_operationnel_id:
+        institution = _resolve_institution_or_400(request)
+        suivi = SuiviSiteSensible.objects.filter(site=site, institution=institution).first()
+        if suivi is not None and suivi.point_operationnel_id:
             return Response(
-                {"error": "Ce site a déjà un point opérationnel.",
-                 "point": site.point_operationnel_id},
+                {"error": "Ce site a déjà un point opérationnel dans votre plan.",
+                 "point": suivi.point_operationnel_id},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         # Un PointOperationnel est montré aux habitants, sur la carte publique. Recopier
@@ -17444,10 +17498,17 @@ class SiteSensibleViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             capacite_accueil=request.data.get('capacite_accueil') or None,
             environment=get_active_environment(request),
         )
-        site.point_operationnel = point
-        site.statut = StatutSiteSensible.RETENU
-        site.valide_par = request.user
-        site.save(update_fields=['point_operationnel', 'statut', 'valide_par', 'modifie_le'])
+        # Le point et la décision vivent dans le suivi : une commune et un département peuvent
+        # chacun ouvrir leur propre centre sur le même gymnase sans se gêner.
+        SuiviSiteSensible.objects.update_or_create(
+            site=site, institution=institution,
+            defaults={
+                "environment": site.environment,
+                "point_operationnel": point,
+                "statut": StatutSiteSensible.RETENU,
+                "valide_par": request.user,
+            },
+        )
         audit_log(
             request=request, action_code="CREATION", objet_type="PointOperationnel",
             objet_id=point.id,

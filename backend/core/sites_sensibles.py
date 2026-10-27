@@ -4,9 +4,12 @@ Deux principes, tenus par les tests :
 
 1. Rien n'entre jamais ailleurs qu'en PROPOSE. L'open data remplit le formulaire, il ne signe
    pas le plan de sauvegarde.
-2. Un même établissement ne produit qu'UNE ligne, quel que soit le nombre de sources qui le
-   connaissent. Le SIRET sert de clé commune : 15 des 25 ICPE de Châteauneuf-du-Faou sont aussi
-   des établissements SIRENE, et l'agent n'a pas à relire deux fois la même ferme.
+2. Un même établissement ne produit qu'UNE fiche, quel que soit le nombre de sources qui le
+   connaissent ET le nombre de collectivités qui l'importent. Le SIRET sert de clé entre
+   sources (15 des 25 ICPE de Châteauneuf-du-Faou sont aussi des établissements SIRENE) ;
+   (source, source_id) sert de clé entre collectivités. Si la mairie importe son collège la
+   première, le département en profite ; si le département l'importe le premier, la mairie en
+   profite. Ce que chacun en fait vit dans SuiviSiteSensible.
 3. Un ré-import n'écrase JAMAIS le travail d'un agent. Le nom corrigé, l'effectif estimé, le
    commentaire et la décision (retenu/écarté) sont à lui ; la source ne peut que rafraîchir ses
    propres attributs, COMPLÉTER ce qui est encore vide, et reclasser une ligne que personne n'a
@@ -88,18 +91,19 @@ def _siret(propose):
     return siret or None
 
 
-def _site_du_meme_siret(institution, environment, propose):
+def _site_du_meme_siret(environment, propose):
     """Le même établissement, déjà connu par une AUTRE source.
 
     15 des 25 installations classées de Châteauneuf-du-Faou partagent leur SIRET avec un
     établissement SIRENE : sans ce rapprochement, l'agent relirait quinze fois la même ferme
     deux fois — une fois sous son code AIOT, une fois sous son SIRET — et le plan compterait
-    double."""
+    double. Plus de filtre par institution : la fiche est partagée, donc le rapprochement l'est
+    aussi."""
     siret = _siret(propose)
     if not siret:
         return None
     return SiteSensible.objects.filter(
-        institution=institution, environment=environment, attributs__siret=siret,
+        environment=environment, attributs__siret=siret,
     ).exclude(source=propose.source).order_by("date_import").first()
 
 
@@ -142,8 +146,8 @@ def _fusionner(existant, propose):
 
     # Une source peut révéler un usage que l'autre ignorait : une ferme connue comme enjeu par
     # Géorisques est aussi un moyen d'action pour SIRENE. Même garde que partout : tant que
-    # personne n'a statué.
-    if existant.statut == StatutSiteSensible.PROPOSE and existant.valide_par_id is None:
+    # personne n'a corrigé la fiche à la main.
+    if existant.corrige_le is None:
         if propose.est_enjeu and not existant.est_enjeu:
             existant.est_enjeu = True
             modifie = True
@@ -204,7 +208,7 @@ def _appliquer(existant, propose, commune_code, commune_nom):
     # élevages ont longtemps atterri avec les usines. On la rafraîchit, mais seulement sur une
     # ligne vierge de toute décision — dès qu'un agent a retenu ou écarté le site, le rangement
     # est le sien.
-    if existant.statut == StatutSiteSensible.PROPOSE and existant.valide_par_id is None:
+    if existant.corrige_le is None:
         if existant.categorie != propose.categorie:
             existant.categorie = propose.categorie
             modifie = True
@@ -261,13 +265,17 @@ def _appliquer(existant, propose, commune_code, commune_nom):
 
 
 def enregistrer_proposes(institution, environment, commune_code, commune_nom, proposes):
-    """Dépose une liste de SitePropose en base et rend le compte rendu de l'opération."""
+    """Dépose une liste de SitePropose en base et rend le compte rendu de l'opération.
+
+    `institution` ne devient pas propriétaire : elle n'est enregistrée que comme origine de la
+    fiche. Une fiche déjà présente — importée par une autre collectivité, peut-être corrigée par
+    elle — est enrichie, jamais dupliquée."""
     crees = majs = inchanges = 0
     for propose in proposes:
+        # `source_id` vide (saisie manuelle) n'identifie rien : jamais de rapprochement dessus.
         existant = SiteSensible.objects.filter(
-            institution=institution, environment=environment,
-            source=propose.source, source_id=propose.source_id,
-        ).first()
+            environment=environment, source=propose.source, source_id=propose.source_id,
+        ).first() if propose.source_id else None
         if existant is not None:
             if _appliquer(existant, propose, commune_code, commune_nom):
                 majs += 1
@@ -275,7 +283,7 @@ def enregistrer_proposes(institution, environment, commune_code, commune_nom, pr
                 inchanges += 1
             continue
         # Pas connu sous cet identifiant — mais peut-être sous celui d'une autre source.
-        jumeau = _site_du_meme_siret(institution, environment, propose)
+        jumeau = _site_du_meme_siret(environment, propose)
         if jumeau is not None:
             if _fusionner(jumeau, propose):
                 majs += 1
@@ -283,7 +291,7 @@ def enregistrer_proposes(institution, environment, commune_code, commune_nom, pr
                 inchanges += 1
             continue
         SiteSensible.objects.create(
-            institution=institution,
+            institution_origine=institution,
             environment=environment,
             # La commune du SITE : celle de l'institution ne sert plus que de repli, et serait
             # fausse dès qu'un département importe ses 277 communes d'un coup.
@@ -305,7 +313,6 @@ def enregistrer_proposes(institution, environment, commune_code, commune_nom, pr
             est_ressource=propose.est_ressource,
             attributs=propose.attributs,
             date_source=_parse_date(propose.attributs.get("date_maj_source")),
-            statut=StatutSiteSensible.PROPOSE,
         )
         crees += 1
     return {"crees": crees, "mis_a_jour": majs, "inchanges": inchanges,
@@ -334,17 +341,30 @@ def importer_source(institution, source, perimetre, commune_nom=None, environmen
     return enregistrer_proposes(institution, environment, territoire.code, commune_nom, proposes)
 
 
-def synthese_par_categorie(institution, environment, echelon_propre=None):
-    """Compte des sites par catégorie et par statut — l'en-tête de la page, qui doit dire d'un
+def synthese_par_categorie(sites, institution, environment, echelon_propre=None):
+    """Compte des fiches par catégorie et par statut — l'en-tête de la page, qui doit dire d'un
     coup d'œil ce qui reste à relire.
+
+    `sites` est le jeu de fiches visibles par la collectivité (son territoire), et le statut est
+    celui de SON suivi : une fiche sans suivi est « à vérifier » pour elle, même si la commune
+    voisine l'a déjà retenue.
 
     `a_relire` est borné à la compétence de la collectivité quand on la connaît. Sans ça, un
     conseil départemental lirait « 852 sites à vérifier » là où 75 collèges publics lui
     incombent : un compteur qui annonce dix fois le travail réel ne sert à rien."""
+    from .models import SuiviSiteSensible
+
+    mes_statuts = dict(
+        SuiviSiteSensible.objects.filter(
+            institution=institution, environment=environment,
+        ).values_list("site_id", "statut")
+    )
     synthese = {}
-    lignes = SiteSensible.objects.filter(
-        institution=institution, environment=environment,
-    ).values_list("categorie", "statut", "echelon_competence")
+    lignes = [
+        (categorie, mes_statuts.get(identifiant, StatutSiteSensible.PROPOSE), echelon)
+        for identifiant, categorie, echelon in sites.values_list(
+            "id", "categorie", "echelon_competence")
+    ]
     a_relire = 0
     for categorie, statut, echelon in lignes:
         case = synthese.setdefault(categorie, {code: 0 for code, _ in StatutSiteSensible.choices})

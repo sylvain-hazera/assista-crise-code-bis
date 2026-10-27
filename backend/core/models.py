@@ -4361,14 +4361,23 @@ class StatutSiteSensible(models.TextChoices):
 
 
 class SiteSensible(EnvironmentScopedModel):
-    """Enjeu du territoire à connaître avant la crise : école, EHPAD, site industriel, élevage,
-    gymnase…
+    """La FICHE d'un enjeu du territoire : école, EHPAD, site industriel, élevage, gymnase…
 
-    Pré-alimenté depuis des bases publiques nationales (voir core/opendata/) et TOUJOURS déposé
-    en PROPOSE : une base ouverte se trompe et vieillit (FINESS garde des pharmacies fermées
+    **Une fiche par établissement, partagée par toutes les collectivités concernées.** Le
+    collège de Châteauneuf n'existe qu'une fois : si la mairie l'importe la première, le
+    département en profite ; si le département l'importe le premier, la mairie en profite. Les
+    corrections aussi sont partagées — une adresse redressée par un agent communal sert au
+    conseil départemental, et réciproquement. C'est ce qui évite deux inventaires divergents du
+    même territoire, chacun se dégradant de son côté.
+
+    Ce que chaque collectivité fait de la fiche lui appartient en revanche : sa décision
+    (retenu/écarté), son commentaire, sa convention, son point opérationnel. C'est
+    `SuiviSiteSensible`, une ligne par (fiche, institution).
+
+    Pré-alimenté depuis des bases publiques nationales (voir core/opendata/) et jamais retenu
+    d'office : une base ouverte se trompe et vieillit (FINESS garde des pharmacies fermées
     depuis 2009, le recensement des équipements sportifs classe les écluses du canal de Nantes à
-    Brest en « installation sportive »). La mairie reste seule juge de ce qui entre à son plan de
-    sauvegarde — l'open data lui épargne la saisie, jamais la vérification.
+    Brest en « installation sportive »). L'open data épargne la saisie, jamais la vérification.
 
     `attributs` conserve le brut utile de la source (statut Seveso, régime ICPE, public/privé,
     restauration, internat…) sans imposer une colonne par source : seules les notions communes à
@@ -4376,8 +4385,12 @@ class SiteSensible(EnvironmentScopedModel):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
-    institution = models.ForeignKey(
-        "Institution", on_delete=models.CASCADE, related_name="sites_sensibles",
+    # Qui l'a fait entrer dans la base — trace, et rien de plus : la fiche n'appartient à
+    # personne. SET_NULL pour qu'une institution supprimée ne fasse pas disparaître l'enjeu du
+    # territoire, qui existe toujours.
+    institution_origine = models.ForeignKey(
+        "Institution", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="sites_sensibles_importes",
     )
 
     # Dénormalisé comme sur Habitation : permet de filtrer sans jointure, et de garder la trace
@@ -4451,6 +4464,67 @@ class SiteSensible(EnvironmentScopedModel):
         default=EchelonCompetence.INDETERMINE,
     )
 
+    # Date de la donnée source telle qu'annoncée par le producteur, pas la date d'import : c'est
+    # elle qui dit à l'agent à quel point l'information peut être périmée.
+    date_source = models.DateField(null=True, blank=True)
+
+    date_import = models.DateTimeField(auto_now_add=True)
+    modifie_le = models.DateTimeField(auto_now=True)
+
+    # Qui a corrigé la fiche à la main, et quand. Indispensable depuis qu'elle est partagée : un
+    # ré-import ne doit pas réécraser le nom qu'un agent a redressé, et comme la décision vit
+    # désormais ailleurs (SuiviSiteSensible), elle ne peut plus servir d'indice.
+    corrige_par = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="sites_sensibles_corriges",
+    )
+    corrige_le = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["categorie", "nom"]
+        constraints = [
+            # Une seule fiche par établissement et par environnement, toutes collectivités
+            # confondues : c'est la contrainte qui tient la promesse « pas de doublon ».
+            models.UniqueConstraint(
+                fields=["source", "source_id", "environment"],
+                condition=~models.Q(source_id=""),
+                name="uq_site_sensible_source_id",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.nom} ({self.get_categorie_display()})"
+
+
+class SuiviSiteSensible(EnvironmentScopedModel):
+    """Ce qu'UNE collectivité fait d'une fiche partagée : sa décision, et ce qui en découle.
+
+    La fiche est commune (SiteSensible), le suivi est propre : un collège est retenu au plan du
+    département et peut être écarté de celui de la commune, qui n'en a pas la charge. De même,
+    une convention lie une collectivité précise à une entreprise précise — elle n'est pas
+    transposable à la voisine.
+
+    Absence de ligne = aucune décision prise : c'est l'état « à vérifier », et c'est pourquoi il
+    n'y a pas de ligne créée à l'import."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    site = models.ForeignKey(SiteSensible, on_delete=models.CASCADE, related_name="suivis")
+    institution = models.ForeignKey(
+        "Institution", on_delete=models.CASCADE, related_name="suivis_sites_sensibles",
+    )
+
+    statut = models.CharField(
+        max_length=10, choices=StatutSiteSensible.choices, default=StatutSiteSensible.PROPOSE,
+    )
+
+    commentaire = models.TextField(blank=True, null=True)
+
+    valide_par = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="sites_sensibles_valides",
+    )
+
     # Une ressource recensée n'est pas une ressource acquise : seule une convention engage. La
     # case cochée est l'information opérationnelle (« a-t-on un accord ? »), les champs suivants
     # servent à la retrouver le jour où il faut l'invoquer à 3 h du matin.
@@ -4469,44 +4543,26 @@ class SiteSensible(EnvironmentScopedModel):
         null=True, blank=True, validators=[validate_convention_file],
     )
 
-    statut = models.CharField(
-        max_length=10, choices=StatutSiteSensible.choices, default=StatutSiteSensible.PROPOSE,
-    )
-
-    commentaire = models.TextField(blank=True, null=True)
-
-    valide_par = models.ForeignKey(
-        User, on_delete=models.SET_NULL, null=True, blank=True,
-        related_name="sites_sensibles_valides",
-    )
-
-    # Rempli quand la commune transforme le site en point opérationnel (un gymnase retenu devient
-    # le centre d'accueil qu'on ouvrira le jour J, nom, adresse et coordonnées déjà renseignés).
-    # SET_NULL et pas CASCADE : supprimer un point ne doit pas effacer l'enjeu du territoire.
+    # Rempli quand la collectivité transforme le site en point opérationnel (un gymnase retenu
+    # devient le centre d'accueil qu'on ouvrira le jour J, nom, adresse et coordonnées déjà
+    # renseignés). SET_NULL et pas CASCADE : supprimer un point ne doit pas effacer la décision.
     point_operationnel = models.ForeignKey(
         "PointOperationnel", on_delete=models.SET_NULL, null=True, blank=True,
-        related_name="sites_sensibles",
+        related_name="suivis_sites_sensibles",
     )
 
-    # Date de la donnée source telle qu'annoncée par le producteur, pas la date d'import : c'est
-    # elle qui dit à l'agent à quel point l'information peut être périmée.
-    date_source = models.DateField(null=True, blank=True)
-
-    date_import = models.DateTimeField(auto_now_add=True)
     modifie_le = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ["categorie", "nom"]
         constraints = [
             models.UniqueConstraint(
-                fields=["institution", "source", "source_id", "environment"],
-                condition=~models.Q(source_id=""),
-                name="uq_site_sensible_institution_source_id",
+                fields=["site", "institution", "environment"],
+                name="uq_suivi_site_sensible_institution",
             )
         ]
 
     def __str__(self):
-        return f"{self.nom} ({self.get_categorie_display()})"
+        return f"{self.site_id} — {self.institution_id} ({self.get_statut_display()})"
 
 
 class StatutImportOpenData(models.TextChoices):

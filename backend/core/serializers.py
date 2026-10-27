@@ -18,9 +18,12 @@ from .permissions import (
 )
 from .zone_scoping import object_in_viewer_zone, object_in_viewer_zone_via_commune
 from .tracabilite import coordonnees_retirees, retirer_coordonnees
+from .validators import validate_convention_file
 from .models import (
     Environment,
     SiteSensible,
+    StatutSiteSensible,
+    SuiviSiteSensible,
     ImportOpenData,
     UserRole,
     InstitutionType,
@@ -3546,21 +3549,54 @@ class ModuleDegatsCriseSerializer(serializers.ModelSerializer):
 
 
 class SiteSensibleSerializer(serializers.ModelSerializer):
-    """Enjeu du territoire pour le plan de sauvegarde communal.
+    """Une fiche partagée, vue par UNE collectivité.
 
-    Les champs que la source alimente (`source`, `source_id`, `attributs`, `date_source`) sont en
-    lecture seule : un agent corrige le nom, l'adresse, l'effectif, le statut et le commentaire —
-    jamais la provenance, qui est la seule chose permettant de savoir d'où sort la ligne et de
-    ré-importer sans dupliquer."""
+    La fiche (nom, adresse, coordonnées, attributs) est commune à toutes les collectivités du
+    territoire : si la mairie la corrige, le département en profite. Ce que la collectivité
+    connectée en fait — sa décision, son commentaire, sa convention, son point opérationnel —
+    vient de son `SuiviSiteSensible` et est écrit là. L'API garde volontairement la même forme
+    qu'avant cette séparation : `statut`, `commentaire` et les champs de convention se lisent et
+    s'écrivent comme s'ils étaient sur la fiche.
+
+    Les champs que la source alimente (`source`, `source_id`, `attributs`, `date_source`) restent
+    en lecture seule : un agent corrige le nom, l'adresse, l'effectif, le statut et le
+    commentaire — jamais la provenance, seule chose qui permette de savoir d'où sort la fiche et
+    de ré-importer sans dupliquer."""
 
     source_libelle = serializers.CharField(source="get_source_display", read_only=True)
     categorie_libelle = serializers.CharField(source="get_categorie_display", read_only=True)
-    statut_libelle = serializers.CharField(source="get_statut_display", read_only=True)
+    echelon_libelle = serializers.CharField(source="get_echelon_competence_display",
+                                            read_only=True)
     latitude = serializers.SerializerMethodField()
     longitude = serializers.SerializerMethodField()
-    valide_par_nom = serializers.SerializerMethodField()
     adresse_masquee = serializers.BooleanField(source="personne_physique", read_only=True)
+
+    # ── Le suivi de MA collectivité, présenté à plat ────────────────────────────────────────
+    statut = serializers.ChoiceField(choices=StatutSiteSensible.choices, required=False)
+    statut_libelle = serializers.SerializerMethodField()
+    commentaire = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    convention_existe = serializers.BooleanField(required=False)
+    convention_numero = serializers.CharField(required=False, allow_blank=True, allow_null=True,
+                                              max_length=100)
+    convention_date_signature = serializers.DateField(required=False, allow_null=True)
+    convention_echeance = serializers.DateField(required=False, allow_null=True)
+    # Chiffré au repos, préfixe bloqué par nginx : une URL /media/ ne servirait à rien. Le
+    # téléchargement passe par l'action dédiée, qui trace.
+    convention_document = serializers.FileField(required=False, allow_null=True, write_only=True,
+                                                validators=[validate_convention_file])
     a_convention_document = serializers.SerializerMethodField()
+    point_operationnel = serializers.SerializerMethodField()
+    valide_par_nom = serializers.SerializerMethodField()
+    decisions_autres = serializers.SerializerMethodField()
+
+    CHAMPS_SUIVI = (
+        "statut", "commentaire", "convention_existe", "convention_numero",
+        "convention_date_signature", "convention_echeance", "convention_document",
+    )
+    # Ce qu'un agent corrige sur la fiche COMMUNE : sa correction profite aux autres
+    # collectivités, et doit survivre au prochain ré-import (voir SiteSensible.corrige_le).
+    CHAMPS_CORRIGEABLES = ("nom", "adresse", "effectif_estime", "categorie",
+                           "echelon_competence", "est_enjeu", "est_ressource")
 
     class Meta:
         model = SiteSensible
@@ -3568,30 +3604,89 @@ class SiteSensibleSerializer(serializers.ModelSerializer):
         # domicile, chiffrées) ne doit JAMAIS sortir par la liste. Elles ne s'obtiennent que par
         # l'action `devoiler`, qui laisse une trace en main courante.
         exclude = ['donnees_personnelles']
-        extra_kwargs = {
-            # Le fichier est chiffré au repos et son préfixe bloqué par nginx : une URL /media/
-            # ne servirait à rien. Le téléchargement passe par l'action dédiée, qui trace.
-            'convention_document': {'write_only': True, 'required': False},
-        }
         read_only_fields = [
-            'institution', 'environment', 'source', 'source_id', 'attributs', 'date_source',
-            'date_import', 'modifie_le', 'valide_par', 'commune_code', 'commune_nom',
+            'institution_origine', 'environment', 'source', 'source_id', 'attributs',
+            'date_source', 'date_import', 'modifie_le', 'commune_code', 'commune_nom',
+            'corrige_par', 'corrige_le',
             # Fait de la source, pas appréciation d'un agent : c'est lui qui déclenche le
             # masquage, on ne le laisse pas désactiver par une requête.
             'personne_physique',
         ]
 
+    # ── Accès au suivi ──────────────────────────────────────────────────────────────────────
+    def _mon_institution(self):
+        return self.context.get('institution')
+
+    def _mon_suivi(self, obj):
+        """Le suivi de la collectivité connectée. `mon_suivi` est posé par la vue via un
+        Prefetch : sans lui, une liste de 945 fiches ferait 945 requêtes."""
+        prefetche = getattr(obj, 'mon_suivi', None)
+        if prefetche is not None:
+            return prefetche[0] if prefetche else None
+        institution = self._mon_institution()
+        if institution is None:
+            return None
+        return obj.suivis.filter(institution=institution).first()
+
     def to_representation(self, instance):
-        """Une personne en nom propre est recensée chez elle : ni son adresse ni ses coordonnées
-        ne sortent avec la liste. L'agent voit qu'il y a quelque chose à dévoiler, et ce
-        dévoilement est un appel serveur tracé — si le navigateur avait déjà la donnée, la trace
-        mentirait."""
+        """Pose les valeurs du suivi, et masque ce qui relève d'une personne.
+
+        Une personne en nom propre est recensée chez elle : ni son adresse ni ses coordonnées ne
+        sortent avec la liste. L'agent voit qu'il y a quelque chose à dévoiler, et ce dévoilement
+        est un appel serveur tracé — si le navigateur avait déjà la donnée, la trace mentirait."""
         donnees = super().to_representation(instance)
+        suivi = self._mon_suivi(instance)
+        donnees['statut'] = suivi.statut if suivi else StatutSiteSensible.PROPOSE
+        donnees['commentaire'] = suivi.commentaire if suivi else None
+        donnees['convention_existe'] = bool(suivi and suivi.convention_existe)
+        donnees['convention_numero'] = suivi.convention_numero if suivi else None
+        donnees['convention_date_signature'] = (
+            suivi.convention_date_signature.isoformat()
+            if suivi and suivi.convention_date_signature else None
+        )
+        donnees['convention_echeance'] = (
+            suivi.convention_echeance.isoformat()
+            if suivi and suivi.convention_echeance else None
+        )
         if instance.personne_physique:
             donnees['adresse'] = None
             donnees['latitude'] = None
             donnees['longitude'] = None
         return donnees
+
+    def get_statut_libelle(self, obj):
+        suivi = self._mon_suivi(obj)
+        return suivi.get_statut_display() if suivi else "Proposé — à vérifier"
+
+    def get_a_convention_document(self, obj):
+        suivi = self._mon_suivi(obj)
+        return bool(suivi and suivi.convention_document)
+
+    def get_point_operationnel(self, obj):
+        suivi = self._mon_suivi(obj)
+        return suivi.point_operationnel_id if suivi else None
+
+    def get_valide_par_nom(self, obj):
+        suivi = self._mon_suivi(obj)
+        utilisateur = suivi.valide_par if suivi else None
+        if not utilisateur:
+            return None
+        return (f"{utilisateur.first_name} {utilisateur.last_name}".strip()
+                or utilisateur.username)
+
+    def get_decisions_autres(self, obj):
+        """Ce que les AUTRES collectivités ont décidé de cette fiche. C'est ce qui rend le
+        partage visible : une mairie voit que le département a retenu son collège, et
+        réciproquement."""
+        autres = getattr(obj, 'autres_suivis', None)
+        if autres is None:
+            return []
+        return [
+            {"institution_nom": suivi.institution.nom, "statut": suivi.statut,
+             "statut_libelle": suivi.get_statut_display(),
+             "convention": suivi.convention_existe}
+            for suivi in autres
+        ]
 
     def get_latitude(self, obj):
         return obj.location.y if obj.location else None
@@ -3599,13 +3694,45 @@ class SiteSensibleSerializer(serializers.ModelSerializer):
     def get_longitude(self, obj):
         return obj.location.x if obj.location else None
 
-    def get_a_convention_document(self, obj):
-        return bool(obj.convention_document)
+    # ── Écriture : la fiche d'un côté, mon suivi de l'autre ─────────────────────────────────
+    def update(self, instance, validated_data):
+        from django.utils import timezone
 
-    def get_valide_par_nom(self, obj):
-        if not obj.valide_par:
+        donnees_suivi = {champ: validated_data.pop(champ)
+                         for champ in self.CHAMPS_SUIVI if champ in validated_data}
+
+        # Une correction sur la fiche partagée est datée : elle profite aux autres
+        # collectivités et doit survivre au prochain ré-import.
+        corrige = [champ for champ in self.CHAMPS_CORRIGEABLES
+                   if champ in validated_data
+                   and validated_data[champ] != getattr(instance, champ)]
+        if corrige:
+            utilisateur = getattr(self.context.get('request'), 'user', None)
+            instance.corrige_le = timezone.now()
+            if utilisateur is not None and utilisateur.is_authenticated:
+                instance.corrige_par = utilisateur
+        site = super().update(instance, validated_data)
+
+        if donnees_suivi:
+            self._ecrire_suivi(site, donnees_suivi)
+        return site
+
+    def _ecrire_suivi(self, site, donnees):
+        from .models import SuiviSiteSensible
+
+        institution = self._mon_institution()
+        if institution is None:
             return None
-        return f"{obj.valide_par.first_name} {obj.valide_par.last_name}".strip() or obj.valide_par.username
+        suivi, _ = SuiviSiteSensible.objects.get_or_create(
+            site=site, institution=institution, environment=site.environment,
+        )
+        for champ, valeur in donnees.items():
+            setattr(suivi, champ, valeur)
+        suivi.save()
+        # Le prefetch de la vue est périmé après écriture : on le remplace pour que la réponse
+        # reflète ce qui vient d'être enregistré.
+        site.mon_suivi = [suivi]
+        return suivi
 
 
 class ImportOpenDataSerializer(serializers.ModelSerializer):

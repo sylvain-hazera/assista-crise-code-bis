@@ -13,13 +13,14 @@ from unittest.mock import patch
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import connection
+from django.utils import timezone
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
 
 from core.models import (
     AuditLog, CategorieSiteSensible, ContactInstitution, EchelonCompetence,
-    ImportOpenData, Institution,
+    ImportOpenData, Institution, SuiviSiteSensible,
     InstitutionType, PointOperationnel, PointType, SiteSensible, SourceSiteSensible,
     StatutImportOpenData, StatutSiteSensible,
 )
@@ -49,6 +50,17 @@ def agent_client(create_user, mairie):
     client = APIClient()
     client.force_authenticate(user=user)
     return client, user
+
+
+def _decider(site, institution, statut=None, **champs):
+    """Pose la décision d'UNE collectivité sur une fiche partagée. L'absence de suivi vaut
+    « à vérifier » : c'est pourquoi rien n'est créé à l'import."""
+    suivi, _ = SuiviSiteSensible.objects.update_or_create(
+        site=site, institution=institution,
+        defaults={"environment": site.environment,
+                  "statut": statut or StatutSiteSensible.PROPOSE, **champs},
+    )
+    return suivi
 
 
 def _propose(source_id="0290252S", nom="Collège de l'Aulne", **kwargs):
@@ -92,7 +104,9 @@ class TestEnregistrerProposes:
 
         assert resultat == {"crees": 1, "mis_a_jour": 0, "inchanges": 0, "total": 1}
         site = SiteSensible.objects.get()
-        assert site.statut == StatutSiteSensible.PROPOSE
+        # Aucun suivi : la fiche n'est retenue par personne, c'est l'état « à vérifier ».
+        assert site.suivis.count() == 0
+        assert site.institution_origine_id == mairie.id
         assert site.commune_code == "29027"
         assert site.date_source == datetime.date(2026, 10, 27)
         assert round(site.location.y, 4) == 48.1908
@@ -117,10 +131,10 @@ class TestEnregistrerProposes:
         site = SiteSensible.objects.get()
         site.nom = "Collège de l'Aulne — bâtiment B"
         site.adresse = "29 rue des Fontaines (entrée arrière)"
-        site.statut = StatutSiteSensible.RETENU
         site.effectif_estime = 320
-        site.commentaire = "Clés chez le gardien"
+        site.corrige_le = timezone.now()
         site.save()
+        _decider(site, mairie, StatutSiteSensible.RETENU, commentaire="Clés chez le gardien")
 
         enregistrer_proposes(mairie, "PROD", "29027", None, [
             _propose(nom="COLLEGE DE L'AULNE", adresse="29 rue des Fontaines BP 23")
@@ -129,14 +143,15 @@ class TestEnregistrerProposes:
         site.refresh_from_db()
         assert site.nom == "Collège de l'Aulne — bâtiment B"
         assert site.adresse == "29 rue des Fontaines (entrée arrière)"
-        assert site.statut == StatutSiteSensible.RETENU
         assert site.effectif_estime == 320
-        assert site.commentaire == "Clés chez le gardien"
+        suivi = site.suivis.get()
+        assert suivi.statut == StatutSiteSensible.RETENU
+        assert suivi.commentaire == "Clés chez le gardien"
 
     def test_reimport_reclasse_une_ligne_que_personne_na_relue(self, mairie):
         """Le classement des sources s'améliore : les élevages ont d'abord atterri avec les
-        usines. Tant qu'aucun agent n'a statué, un ré-import doit pouvoir les ranger
-        correctement — sinon la correction n'atteint jamais les communes qui ont importé
+        usines. Tant qu'aucun agent n'a corrigé la fiche, un ré-import doit pouvoir les ranger
+        correctement — sinon la correction n'atteint jamais les collectivités qui ont importé
         avant."""
         enregistrer_proposes(mairie, "PROD", "29027", None, [
             _propose(source=SourceSiteSensible.ICPE, source_id="0004310066", nom="GAEC BAUT",
@@ -149,18 +164,18 @@ class TestEnregistrerProposes:
 
         site = SiteSensible.objects.get()
         assert site.categorie == CategorieSiteSensible.ELEVAGE
-        assert site.statut == StatutSiteSensible.PROPOSE
 
-    def test_reimport_ne_reclasse_pas_une_ligne_statuee(self, mairie, agent_client):
-        """L'autre moitié de la règle : une fois qu'un agent a rangé le site, c'est son
-        rangement. La source n'a plus voix au chapitre."""
+    def test_reimport_ne_reclasse_pas_une_fiche_corrigee(self, mairie, agent_client):
+        """L'autre moitié de la règle : une fois qu'un agent a corrigé la fiche, son rangement
+        prime. La fiche étant partagée, c'est la correction qui fait foi et non la décision —
+        une mairie peut avoir redressé une fiche que le département avait déjà retenue."""
         enregistrer_proposes(mairie, "PROD", "29027", None, [
             _propose(source=SourceSiteSensible.ICPE, source_id="0004310066", nom="GAEC BAUT",
                      categorie=CategorieSiteSensible.INDUSTRIE)
         ])
         site = SiteSensible.objects.get()
-        site.statut = StatutSiteSensible.RETENU
-        site.valide_par = agent_client[1]
+        site.corrige_par = agent_client[1]
+        site.corrige_le = timezone.now()
         site.save()
 
         enregistrer_proposes(mairie, "PROD", "29027", None, [
@@ -717,9 +732,9 @@ class TestExecuterImport:
             _propose(source=SourceSiteSensible.ICPE, categorie=CategorieSiteSensible.INDUSTRIE,
                      source_id="icpe-1", nom="Usine"),
         ])
-        SiteSensible.objects.filter(nom="Usine").update(statut=StatutSiteSensible.RETENU)
+        _decider(SiteSensible.objects.get(nom="Usine"), mairie, StatutSiteSensible.RETENU)
 
-        synthese = synthese_par_categorie(mairie, "PROD")
+        synthese = synthese_par_categorie(SiteSensible.objects.all(), mairie, "PROD")
 
         assert synthese["a_relire"] == 2
         par_categorie = {ligne["categorie"]: ligne for ligne in synthese["par_categorie"]}
@@ -764,7 +779,7 @@ class TestSiteSensibleViewSet:
 
         assert reponse.status_code == status.HTTP_200_OK
         assert reponse.data["resultats"][SourceSiteSensible.ANNUAIRE_EDUCATION]["crees"] == 1
-        assert SiteSensible.objects.get().statut == StatutSiteSensible.PROPOSE
+        assert SiteSensible.objects.get().suivis.count() == 0
 
     def test_importer_finess_part_en_tache_de_fond(self, agent_client, mairie):
         """FINESS ne tient pas dans une requête HTTP : la vue doit déléguer, pas télécharger
@@ -803,9 +818,14 @@ class TestSiteSensibleViewSet:
 
         assert reponse.status_code == status.HTTP_200_OK
         site.refresh_from_db()
-        assert site.statut == StatutSiteSensible.RETENU
         assert site.effectif_estime == 320
-        assert site.valide_par_id == user.id
+        # La décision et son auteur vivent dans le suivi de la collectivité, pas sur la fiche.
+        suivi = site.suivis.get()
+        assert suivi.statut == StatutSiteSensible.RETENU
+        assert suivi.institution_id == mairie.id
+        assert suivi.valide_par_id == user.id
+        # La correction de l'effectif, elle, est partagée — et datée pour survivre au ré-import.
+        assert site.corrige_par_id == user.id and site.corrige_le is not None
 
     def test_la_provenance_nest_pas_modifiable(self, agent_client, mairie):
         """Un agent corrige le nom et l'adresse, jamais la source : c'est elle qui permet de
@@ -833,8 +853,8 @@ class TestSiteSensibleViewSet:
         assert reponse.status_code == status.HTTP_201_CREATED
         site = SiteSensible.objects.get()
         assert site.source == SourceSiteSensible.SAISIE
-        assert site.statut == StatutSiteSensible.RETENU
-        assert site.institution_id == mairie.id
+        assert site.institution_origine_id == mairie.id
+        assert site.suivis.get().statut == StatutSiteSensible.RETENU
 
     def test_synthese(self, agent_client, mairie):
         client, _ = agent_client
@@ -885,8 +905,9 @@ class TestCreerPoint:
         assert round(point.location.y, 4) == 48.1920
         assert point.capacite_accueil == 120
         site.refresh_from_db()
-        assert site.point_operationnel_id == point.id
-        assert site.statut == StatutSiteSensible.RETENU
+        suivi = site.suivis.get()
+        assert suivi.point_operationnel_id == point.id
+        assert suivi.statut == StatutSiteSensible.RETENU
 
     def test_refuse_un_second_point(self, agent_client, mairie, point_type):
         client, _ = agent_client
@@ -987,8 +1008,7 @@ class TestMasquageEtDevoilement:
         site = self._personne(mairie)
         ptype, _ = PointType.objects.get_or_create(
             code="HEBERGEMENT", defaults={"libelle": "Centre d'hébergement"})
-        site.statut = StatutSiteSensible.RETENU
-        site.save(update_fields=["statut"])
+        _decider(site, mairie, StatutSiteSensible.RETENU)
 
         reponse = client.post(reverse("sitesensible-creer-point", args=[site.id]),
                               {"type": str(ptype.id)}, format="json")
@@ -1128,11 +1148,11 @@ class TestRapprochementParSiret:
         site = SiteSensible.objects.get()
         assert (site.est_enjeu, site.est_ressource) == (True, True)
 
-    def test_une_ligne_statuee_garde_son_role(self, mairie, agent_client):
+    def test_une_fiche_corrigee_garde_son_role(self, mairie, agent_client):
         enregistrer_proposes(mairie, "PROD", "29027", None, [self._icpe()])
         site = SiteSensible.objects.get()
-        site.statut = StatutSiteSensible.RETENU
-        site.valide_par = agent_client[1]
+        site.corrige_par = agent_client[1]
+        site.corrige_le = timezone.now()
         site.save()
 
         enregistrer_proposes(mairie, "PROD", "29027", None, [self._sirene()])
@@ -1175,15 +1195,22 @@ class TestRapprochementParSiret:
         assert SiteSensible.objects.count() == 1
         assert resultat["inchanges"] == 1
 
-    def test_le_rapprochement_ne_traverse_pas_les_institutions(self, mairie, create_user):
-        """Deux communes voisines peuvent recenser le même transporteur : chacune garde sa
-        ligne, avec sa décision et sa convention."""
+    def test_la_fiche_est_partagee_entre_collectivites(self, mairie, create_user):
+        """Le cœur du dispositif, et l'inverse de ce que faisait la version précédente : deux
+        collectivités qui recensent le même établissement obtiennent UNE fiche. Qui importe le
+        premier en fait profiter l'autre, dans les deux sens."""
         itype = InstitutionType.objects.get(code="MAIRIE")
-        voisine = Institution.objects.create(nom="Mairie voisine", type=itype,
+        voisine = Institution.objects.create(nom="Conseil départemental", type=itype,
                                              commune_code="29019", commune_nom="Brest")
         enregistrer_proposes(mairie, "PROD", "29027", None, [self._icpe()])
-        enregistrer_proposes(voisine, "PROD", "29019", None, [self._sirene()])
-        assert SiteSensible.objects.count() == 2
+        resultat = enregistrer_proposes(voisine, "PROD", "29019", None, [self._sirene()])
+
+        assert SiteSensible.objects.count() == 1
+        assert resultat["crees"] == 0
+        site = SiteSensible.objects.get()
+        # La fiche garde son origine, mais l'apport de la seconde collectivité est bien là.
+        assert site.institution_origine_id == mairie.id
+        assert site.attributs["sources_liees"] == ["ICPE", "SIRENE"]
 
 
 @pytest.mark.django_db
@@ -1213,10 +1240,11 @@ class TestConvention:
         }, format="json")
 
         assert reponse.status_code == status.HTTP_200_OK
-        site.refresh_from_db()
-        assert site.convention_existe is True
-        assert site.convention_numero == "2026-TR-14"
-        assert str(site.convention_echeance) == "2029-03-11"
+        suivi = site.suivis.get()
+        assert suivi.institution_id == mairie.id
+        assert suivi.convention_existe is True
+        assert suivi.convention_numero == "2026-TR-14"
+        assert str(suivi.convention_echeance) == "2029-03-11"
         ligne = AuditLog.objects.filter(objet_type="SiteSensible").latest("date_action")
         assert "Convention" in ligne.commentaire and "2026-TR-14" in ligne.commentaire
         assert ligne.utilisateur == user
@@ -1230,9 +1258,9 @@ class TestConvention:
         client.patch(reverse("sitesensible-detail", args=[site.id]),
                      {"convention_existe": True}, format="json")
 
-        site.refresh_from_db()
-        assert site.valide_par is None
-        assert site.statut == StatutSiteSensible.PROPOSE
+        suivi = site.suivis.get()
+        assert suivi.valide_par is None
+        assert suivi.statut == StatutSiteSensible.PROPOSE
 
     def test_televerser_puis_telecharger(self, agent_client, mairie):
         client, _ = agent_client
@@ -1262,8 +1290,7 @@ class TestConvention:
         client.patch(reverse("sitesensible-detail", args=[site.id]),
                      {"convention_document": fichier}, format="multipart")
 
-        site.refresh_from_db()
-        with open(site.convention_document.path, "rb") as brut:
+        with open(site.suivis.get().convention_document.path, "rb") as brut:
             octets = brut.read()
         assert not octets.startswith(b"%PDF-")
         assert b"%%EOF" not in octets
@@ -1496,18 +1523,23 @@ class TestCollectiviteSupraCommunale:
 
 
 @pytest.mark.django_db
-class TestLectureDuTerritoire:
-    """La réponse au problème d'échelle : un département lit les inventaires de ses communes au
-    lieu d'en recopier 5 000 lignes qui seraient figées au jour de l'import."""
+class TestPartageEntreCollectivites:
+    """Le cœur du dispositif : UNE fiche par établissement, chacun prend ce dont il a besoin.
+
+    Qui importe le premier en fait profiter les autres, dans les deux sens — c'est ce que ces
+    tests tiennent, parce que c'est l'inverse qui se produisait avant : chaque collectivité avait
+    sa copie, et deux inventaires du même territoire divergeaient tranquillement."""
 
     @pytest.fixture
     def decor(self, db, create_user):
         from core.models import Commune
 
-        for code, nom, dep in (("29027", "Châteauneuf-du-Faou", "29"), ("29019", "Brest", "29"),
-                               ("22168", "Pleudihen-sur-Rance", "22")):
+        for code, nom in (("29027", "Châteauneuf-du-Faou"), ("29019", "Brest")):
             Commune.objects.update_or_create(
-                code=code, defaults={"nom": nom, "departement_code": dep, "region_code": "53"})
+                code=code, defaults={"nom": nom, "departement_code": "29", "region_code": "53"})
+        Commune.objects.update_or_create(
+            code="22168", defaults={"nom": "Pleudihen-sur-Rance", "departement_code": "22",
+                                    "region_code": "53"})
 
         type_cg, _ = InstitutionType.objects.get_or_create(
             code="CG", defaults={"libelle": "Conseil départemental"})
@@ -1521,63 +1553,176 @@ class TestLectureDuTerritoire:
         hors = Institution.objects.create(nom="Mairie de Pleudihen", type=type_mairie,
                                           commune_code="22168",
                                           commune_nom="Pleudihen-sur-Rance")
-        user = create_user(username="cd@test.fr", email="cd@test.fr", type="AUT_LOCALE")
-        ContactInstitution.objects.create(institution=cd, utilisateur=user, actif=True)
+        return {"cd": cd, "commune": commune, "hors": hors,
+                "client_cd": self._client(create_user, cd, "cd@test.fr"),
+                "client_commune": self._client(create_user, commune, "mairie@test.fr"),
+                "client_hors": self._client(create_user, hors, "hors@test.fr")}
+
+    @staticmethod
+    def _client(create_user, institution, email):
+        user = create_user(username=email, email=email, type="AUT_LOCALE")
+        ContactInstitution.objects.create(institution=institution, utilisateur=user, actif=True)
         client = APIClient()
         client.force_authenticate(user=user)
-        return client, cd, commune, hors
+        return client, user
 
-    def _site(self, institution, statut, nom, commune_code="29027"):
-        enregistrer_proposes(institution, "PROD", commune_code, None, [
-            _propose(source_id=f"{nom}-id", nom=nom, commune_code=commune_code)])
-        site = SiteSensible.objects.get(institution=institution, nom=nom)
-        site.statut = statut
-        site.save(update_fields=["statut"])
-        return site
+    @staticmethod
+    def _college(institution, nom="Collège de l'Aulne"):
+        enregistrer_proposes(institution, "PROD", "29027", "Châteauneuf-du-Faou", [
+            _propose(source_id="0290252S", nom=nom, commune_code="29027",
+                     commune_nom="Châteauneuf-du-Faou",
+                     echelon_competence=EchelonCompetence.DEPARTEMENT)])
+        return SiteSensible.objects.get(source_id="0290252S")
 
-    def test_le_departement_lit_ce_que_ses_communes_ont_retenu(self, decor):
-        client, cd, commune, _ = decor
-        self._site(commune, StatutSiteSensible.RETENU, "Gymnase municipal")
+    def test_la_mairie_profite_de_limport_du_departement(self, decor):
+        """Le département importe ses collèges : la mairie les voit sans rien faire."""
+        self._college(decor["cd"])
+        client, _ = decor["client_commune"]
 
-        reponse = client.get(reverse("sitesensible-territoire"))
+        lignes = client.get(reverse("sitesensible-list")).data
 
-        assert reponse.status_code == status.HTTP_200_OK
-        noms = [r["nom"] for r in reponse.data["resultats"]]
-        assert noms == ["Gymnase municipal"]
-        assert reponse.data["resultats"][0]["institution_nom"] == "Mairie de Châteauneuf"
-        assert reponse.data["resultats"][0]["lecture_seule"] is True
+        assert [l["nom"] for l in lignes] == ["Collège de l'Aulne"]
+        # Pour elle, personne n'a encore statué : c'est SA décision qui manque, pas la fiche.
+        assert lignes[0]["statut"] == StatutSiteSensible.PROPOSE
 
-    def test_on_ne_lit_pas_le_brouillon_dautrui(self, decor):
-        """Ni les propositions en cours de relecture, ni ce que la commune a écarté : seul son
-        travail validé."""
-        client, cd, commune, _ = decor
-        self._site(commune, StatutSiteSensible.PROPOSE, "À vérifier")
-        self._site(commune, StatutSiteSensible.ECARTE, "Écarté")
+    def test_le_departement_profite_de_limport_de_la_mairie(self, decor):
+        """Et dans l'autre sens, ce qui est tout l'objet de la bascule."""
+        self._college(decor["commune"])
+        client, _ = decor["client_cd"]
 
-        assert client.get(reverse("sitesensible-territoire")).data["resultats"] == []
+        lignes = client.get(reverse("sitesensible-list")).data
 
-    def test_on_ne_lit_pas_le_departement_voisin(self, decor):
-        client, cd, _, hors = decor
-        self._site(hors, StatutSiteSensible.RETENU, "Salle des fêtes", commune_code="22168")
+        assert [l["nom"] for l in lignes] == ["Collège de l'Aulne"]
 
-        assert client.get(reverse("sitesensible-territoire")).data["resultats"] == []
+    def test_une_seule_fiche_meme_si_les_deux_importent(self, decor):
+        self._college(decor["commune"])
+        self._college(decor["cd"])
+        assert SiteSensible.objects.count() == 1
 
-    def test_une_commune_hors_secteur_est_refusee(self, decor):
-        client, *_ = decor
-        reponse = client.get(reverse("sitesensible-territoire"), {"commune_code": "22168"})
-        assert reponse.status_code == status.HTTP_403_FORBIDDEN
+    def test_chacun_sa_decision_sur_la_meme_fiche(self, decor):
+        """Un collège est retenu au plan du département et peut être écarté de celui de la
+        commune, qui n'en a pas la charge. Une fiche, deux décisions."""
+        site = self._college(decor["cd"])
+        client_cd, _ = decor["client_cd"]
+        client_commune, _ = decor["client_commune"]
 
-    def test_la_lecture_est_tracee(self, decor):
-        client, cd, commune, _ = decor
-        site = self._site(commune, StatutSiteSensible.RETENU, "Gymnase municipal")
+        client_cd.patch(reverse("sitesensible-detail", args=[site.id]),
+                        {"statut": StatutSiteSensible.RETENU}, format="json")
+        client_commune.patch(reverse("sitesensible-detail", args=[site.id]),
+                             {"statut": StatutSiteSensible.ECARTE}, format="json")
 
-        client.get(reverse("sitesensible-territoire"))
+        assert SuiviSiteSensible.objects.count() == 2
+        vue_cd = client_cd.get(reverse("sitesensible-detail", args=[site.id])).data
+        vue_commune = client_commune.get(reverse("sitesensible-detail", args=[site.id])).data
+        assert vue_cd["statut"] == StatutSiteSensible.RETENU
+        assert vue_commune["statut"] == StatutSiteSensible.ECARTE
 
-        ligne = AuditLog.objects.filter(objet_type="SiteSensible").latest("date_action")
-        assert ligne.exposition == AuditLog.Exposition.LISTE
-        assert site.id in (ligne.objets_ids or [])
+    def test_la_correction_de_lun_profite_a_lautre(self, decor):
+        """La raison d'être du partage : la mairie connaît le terrain, le département en
+        bénéficie sans avoir à ressaisir."""
+        site = self._college(decor["cd"], nom="COLLEGE DE L AULNE")
+        client_commune, _ = decor["client_commune"]
+        client_cd, _ = decor["client_cd"]
 
-    def test_une_mairie_na_pas_de_territoire_a_lire(self, agent_client, mairie):
-        client, _ = agent_client
-        reponse = client.get(reverse("sitesensible-territoire"))
-        assert reponse.status_code == status.HTTP_400_BAD_REQUEST
+        client_commune.patch(reverse("sitesensible-detail", args=[site.id]),
+                             {"nom": "Collège de l'Aulne — entrée rue des Fontaines"},
+                             format="json")
+
+        vue_cd = client_cd.get(reverse("sitesensible-detail", args=[site.id])).data
+        assert vue_cd["nom"] == "Collège de l'Aulne — entrée rue des Fontaines"
+
+    def test_on_voit_ce_que_les_autres_ont_decide(self, decor):
+        """Rendre le partage visible : la mairie voit que le département a retenu son collège."""
+        site = self._college(decor["cd"])
+        client_cd, _ = decor["client_cd"]
+        client_commune, _ = decor["client_commune"]
+        client_cd.patch(reverse("sitesensible-detail", args=[site.id]),
+                        {"statut": StatutSiteSensible.RETENU}, format="json")
+
+        vue = client_commune.get(reverse("sitesensible-detail", args=[site.id])).data
+
+        assert vue["decisions_autres"] == [
+            {"institution_nom": "CD 29", "statut": StatutSiteSensible.RETENU,
+             "statut_libelle": "Retenu au plan de sauvegarde", "convention": False}]
+
+    def test_la_convention_de_lun_nest_pas_celle_de_lautre(self, decor):
+        """Une convention lie une collectivité précise à une entreprise précise : elle n'est pas
+        transposable à la voisine."""
+        site = self._college(decor["cd"])
+        client_cd, _ = decor["client_cd"]
+        client_commune, _ = decor["client_commune"]
+
+        client_cd.patch(reverse("sitesensible-detail", args=[site.id]),
+                        {"convention_existe": True, "convention_numero": "CD-2026-01"},
+                        format="json")
+
+        assert client_commune.get(
+            reverse("sitesensible-detail", args=[site.id])).data["convention_existe"] is False
+
+    def test_chacun_son_point_operationnel(self, decor):
+        """Commune et département peuvent chacun ouvrir leur centre sur le même bâtiment."""
+        site = self._college(decor["cd"])
+        ptype, _ = PointType.objects.get_or_create(
+            code="HEBERGEMENT", defaults={"libelle": "Centre d'hébergement"})
+        client_cd, _ = decor["client_cd"]
+        client_commune, _ = decor["client_commune"]
+
+        premier = client_cd.post(reverse("sitesensible-creer-point", args=[site.id]),
+                                 {"type": str(ptype.id)}, format="json")
+        second = client_commune.post(reverse("sitesensible-creer-point", args=[site.id]),
+                                     {"type": str(ptype.id)}, format="json")
+
+        assert premier.status_code == status.HTTP_201_CREATED
+        assert second.status_code == status.HTTP_201_CREATED
+        assert PointOperationnel.objects.count() == 2
+
+    def test_le_second_point_de_la_meme_collectivite_est_refuse(self, decor):
+        site = self._college(decor["cd"])
+        ptype, _ = PointType.objects.get_or_create(
+            code="HEBERGEMENT", defaults={"libelle": "Centre d'hébergement"})
+        client_cd, _ = decor["client_cd"]
+
+        client_cd.post(reverse("sitesensible-creer-point", args=[site.id]),
+                       {"type": str(ptype.id)}, format="json")
+        second = client_cd.post(reverse("sitesensible-creer-point", args=[site.id]),
+                                {"type": str(ptype.id)}, format="json")
+
+        assert second.status_code == status.HTTP_400_BAD_REQUEST
+        assert PointOperationnel.objects.count() == 1
+
+    def test_supprimer_retire_de_son_plan_sans_effacer_celui_des_autres(self, decor):
+        """Depuis que la fiche est partagée, une suppression qui l'effacerait vraiment ferait
+        disparaître le travail d'une autre collectivité."""
+        site = self._college(decor["cd"])
+        client_cd, _ = decor["client_cd"]
+        client_commune, _ = decor["client_commune"]
+        client_cd.patch(reverse("sitesensible-detail", args=[site.id]),
+                        {"statut": StatutSiteSensible.RETENU}, format="json")
+        client_commune.patch(reverse("sitesensible-detail", args=[site.id]),
+                             {"statut": StatutSiteSensible.ECARTE}, format="json")
+
+        client_commune.delete(reverse("sitesensible-detail", args=[site.id]))
+
+        assert SiteSensible.objects.filter(pk=site.pk).exists()
+        assert SuiviSiteSensible.objects.filter(site=site).count() == 1
+        assert SuiviSiteSensible.objects.get(site=site).institution == decor["cd"]
+
+    def test_une_commune_dun_autre_departement_ne_voit_rien(self, decor):
+        """Le partage est territorial, pas universel."""
+        self._college(decor["cd"])
+        client_hors, _ = decor["client_hors"]
+        assert client_hors.get(reverse("sitesensible-list")).data == []
+
+    def test_le_filtre_a_verifier_porte_sur_ma_propre_decision(self, decor):
+        """« À vérifier » veut dire « je n'ai pas encore statué », pas « personne n'a statué »."""
+        site = self._college(decor["cd"])
+        client_cd, _ = decor["client_cd"]
+        client_commune, _ = decor["client_commune"]
+        client_cd.patch(reverse("sitesensible-detail", args=[site.id]),
+                        {"statut": StatutSiteSensible.RETENU}, format="json")
+
+        assert client_cd.get(reverse("sitesensible-list"),
+                             {"statut": StatutSiteSensible.PROPOSE}).data == []
+        restent = client_commune.get(reverse("sitesensible-list"),
+                                     {"statut": StatutSiteSensible.PROPOSE}).data
+        assert [l["nom"] for l in restent] == ["Collège de l'Aulne"]
