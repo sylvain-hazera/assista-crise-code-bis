@@ -161,6 +161,8 @@ from .models import (
     SiteSensible,
     ImportOpenData,
     SourceSiteSensible,
+    EchelonCompetence,
+    ECHELON_PAR_NIVEAU_SECTEUR,
     StatutSiteSensible,
     StatutImportOpenData,
     UserRole,
@@ -17046,12 +17048,41 @@ class SiteSensibleViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             utilisateur=self.request.user, actif=True
         ).values_list('institution_id', flat=True)
 
+    # Du plus étroit au plus large : une collectivité peut toujours restreindre, jamais élargir.
+    NIVEAUX_ORDONNES = ("commune", "epci", "departement", "region")
+
+    @classmethod
+    def _niveaux_possibles(cls, institution):
+        niveau = institution.secteur_niveau_effectif or "commune"
+        if niveau == "national":
+            return list(cls.NIVEAUX_ORDONNES)
+        if niveau not in cls.NIVEAUX_ORDONNES:
+            return ["commune"]
+        return list(cls.NIVEAUX_ORDONNES[: cls.NIVEAUX_ORDONNES.index(niveau) + 1])
+
+    @staticmethod
+    def _code_secteur(institution, niveau):
+        return {
+            "commune": institution.commune_code,
+            "epci": institution.epci_code,
+            "departement": institution.departement_code,
+            "region": institution.region_code,
+        }.get(niveau)
+
+    @staticmethod
+    def _echelon_de(institution):
+        """L'échelon de compétence d'une collectivité, déduit du niveau de secteur que son type
+        lui donne déjà (SECTEUR_NIVEAU_PAR_TYPE_INSTITUTION) : une mairie répond de sa commune,
+        un conseil départemental de son département."""
+        niveau = institution.secteur_niveau_effectif or "commune"
+        return ECHELON_PAR_NIVEAU_SECTEUR.get(niveau, EchelonCompetence.COMMUNE)
+
     def get_queryset(self):
         qs = super().get_queryset()
         institution_id = self.request.query_params.get('institution')
         if institution_id:
             qs = qs.filter(institution_id=institution_id)
-        for champ in ('categorie', 'statut', 'source'):
+        for champ in ('categorie', 'statut', 'source', 'echelon_competence', 'commune_code'):
             valeur = self.request.query_params.get(champ)
             if valeur:
                 qs = qs.filter(**{champ: valeur})
@@ -17122,32 +17153,126 @@ class SiteSensibleViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         source : tout ce que l'en-tête de la page a besoin de savoir en un appel."""
         from .sites_sensibles import synthese_par_categorie
 
+        from .opendata import sirene
+
         institution = _resolve_institution_or_400(request)
         environment = get_active_environment(request)
         imports = ImportOpenData.objects.filter(institution=institution, environment=environment)
+        echelon_propre = self._echelon_de(institution)
+        # Pour une mairie, TOUT ce qui est sur sa commune la concerne : ses installations
+        # classées, ses commerces, ses élevages. Borner son compteur à l'échelon « commune »
+        # masquerait l'essentiel de son plan. Le bornage ne vaut que pour une collectivité qui
+        # couvre plusieurs communes et doit distinguer sa compétence du reste du territoire.
+        niveau = institution.secteur_niveau_effectif or "commune"
+        echelon_pour_compteur = echelon_propre if niveau != "commune" else None
         return Response({
             "institution": institution.id,
             "institution_nom": institution.nom,
             "commune_code": institution.commune_code,
             "commune_nom": institution.commune_nom,
-            **synthese_par_categorie(institution, environment),
+            # De quoi faire marcher le filtrage par défaut côté page : son échelon, le nom de
+            # son secteur, et les périmètres qu'elle a le droit de demander.
+            "niveau": niveau,
+            "secteur_nom": institution.secteur_nom,
+            "echelon_propre": echelon_propre,
+            "perimetres_possibles": self._niveaux_possibles(institution),
+            **synthese_par_categorie(institution, environment, echelon_pour_compteur),
             "imports": ImportOpenDataSerializer(imports, many=True).data,
             "sources": [
                 {"code": code, "libelle": libelle}
                 for code, libelle in SourceSiteSensible.choices
                 if code != SourceSiteSensible.SAISIE
             ],
+            "themes": [
+                {"code": code, "libelle": theme.libelle, "categorie": theme.categorie,
+                 "defaut": theme.defaut}
+                for code, theme in sirene.THEMES.items()
+            ],
+            "echelons": [
+                {"code": code, "libelle": libelle}
+                for code, libelle in EchelonCompetence.choices
+            ],
+        })
+
+    @action(detail=False, methods=["get"])
+    def territoire(self, request):
+        """Les sites RETENUS par les autres collectivités du secteur — en lecture seule.
+
+        C'est la réponse au problème d'échelle d'un conseil départemental : ses 277 communes
+        détiennent déjà leurs écoles, leurs installations classées et leurs élevages, souvent
+        corrigés à la main. En recopier 5 000 lignes dans son propre inventaire les figerait au
+        jour de l'import et lui ferait relire le travail des autres ; il les lit donc chez elles.
+
+        Trois bornes, délibérées :
+        - uniquement les collectivités dont la commune est dans SON secteur (un département ne
+          lit pas le département voisin) ;
+        - uniquement le statut RETENU : ce qu'une mairie a validé, jamais ses propositions en
+          cours de relecture ni ce qu'elle a écarté — on ne lit pas le brouillon d'autrui ;
+        - le masquage des personnes en nom propre s'applique à l'identique, et `devoiler` reste
+          réservé à sa propre institution.
+        """
+        from .geo_lookup import communes_de_secteur
+
+        institution = _resolve_institution_or_400(request)
+        niveau = institution.secteur_niveau_effectif or "commune"
+        if niveau == "commune":
+            return Response(
+                {"error": "Cette collectivité n'a qu'une commune : son propre inventaire la "
+                          "couvre déjà entièrement."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        code = self._code_secteur(institution, niveau)
+        communes = communes_de_secteur(niveau, code) if code else []
+        if not communes:
+            return Response({"resultats": [], "communes": 0})
+
+        commune_demandee = request.query_params.get('commune_code')
+        if commune_demandee:
+            if commune_demandee not in communes:
+                return Response(
+                    {"error": "Cette commune n'est pas dans votre secteur."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+            communes = [commune_demandee]
+
+        sites = SiteSensible.objects.filter(
+            environment=get_active_environment(request),
+            statut=StatutSiteSensible.RETENU,
+            commune_code__in=communes,
+        ).exclude(institution=institution).select_related('institution')[:500]
+
+        audit_log(
+            request=request, action_code="LECTURE", objet_type="SiteSensible",
+            exposition=AuditLog.Exposition.LISTE,
+            perimetre=AuditLog.Perimetre.GENERAL,
+            objets_ids=[site.id for site in sites] or None,
+            commentaire=f"Lecture du territoire ({niveau} {code})"
+                        + (f", commune {commune_demandee}" if commune_demandee else "")
+                        + f" : {len(sites)} site(s) retenu(s) par d'autres collectivités.",
+        )
+        return Response({
+            "communes": len(communes),
+            "resultats": [
+                {**SiteSensibleSerializer(site).data,
+                 "institution_nom": site.institution.nom,
+                 "lecture_seule": True}
+                for site in sites
+            ],
         })
 
     @action(detail=False, methods=["post"])
     def importer(self, request):
-        """Lance l'import des sources demandées (toutes par défaut) pour la commune de
-        l'institution.
+        """Lance l'import des sources demandées (toutes par défaut) sur le périmètre demandé.
 
-        Les sources API répondent dans la requête ; FINESS part en tâche de fond et rend
-        `asynchrone: true` — le frontend rappelle `synthese` pour suivre son état."""
+        Les sources API répondent dans la requête ; FINESS et SIRENE partent en tâche de fond et
+        rendent `asynchrone: true` — le frontend rappelle `synthese` pour suivre leur état.
+
+        `perimetre` vaut « commune » par défaut. Une collectivité ne peut pas demander plus large
+        que son propre niveau de secteur : un conseil départemental interroge son département,
+        une mairie sa commune. C'est la même règle que partout ailleurs dans le projet
+        (SECTEUR_NIVEAU_PAR_TYPE_INSTITUTION), appliquée ici à l'import."""
         from .opendata import CONNECTEURS
-        from .sites_sensibles import lancer_import
+        from .sites_sensibles import construire_perimetre, lancer_import
 
         institution = _resolve_institution_or_400(request)
         if not institution.commune_code:
@@ -17169,29 +17294,48 @@ class SiteSensibleViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
                             status=status.HTTP_400_BAD_REQUEST)
 
         # SIRENE est la seule source thématique : 105 établissements à Châteauneuf pour les
-        # thèmes par défaut, 3 409 à Bordeaux. La commune choisit ce qu'elle recense, sinon la
-        # liste est inexploitable en ville (voir opendata/sirene.py).
+        # thèmes par défaut, 3 409 à Bordeaux, et 3 270 « moyens » pour le seul Finistère. La
+        # collectivité choisit ce qu'elle recense, sinon la liste est inexploitable
+        # (voir opendata/sirene.py).
         from .opendata import sirene
 
-        categories = request.data.get('categories')
-        if categories is not None:
-            if not isinstance(categories, list) or not categories:
-                return Response({"error": "`categories` doit être une liste non vide."},
+        themes = request.data.get('themes')
+        if themes is not None:
+            if not isinstance(themes, list) or not themes:
+                return Response({"error": "`themes` doit être une liste non vide."},
                                 status=status.HTTP_400_BAD_REQUEST)
-            inconnues = [c for c in categories if c not in sirene.THEMES]
+            inconnues = [t for t in themes if t not in sirene.THEMES]
             if inconnues:
                 return Response(
                     {"error": f"Thèmes inconnus : {', '.join(map(str, inconnues))}."},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
+        niveau_demande = request.data.get('perimetre') or "commune"
+        niveaux_possibles = self._niveaux_possibles(institution)
+        if niveau_demande not in niveaux_possibles:
+            return Response(
+                {"error": f"Périmètre « {niveau_demande} » hors de portée de cette "
+                          f"collectivité. Possibles : {', '.join(niveaux_possibles)}.",
+                 "perimetres": niveaux_possibles},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        perimetre = construire_perimetre(niveau_demande,
+                                         self._code_secteur(institution, niveau_demande))
+        if not perimetre.communes:
+            return Response(
+                {"error": "Le périmètre demandé ne renvoie aucune commune : le référentiel des "
+                          "communes n'est peut-être pas encore chargé (voir import_communes)."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         environment = get_active_environment(request)
         resultats = {}
         for source in demandees:
-            options = ({"categories": categories}
-                       if categories and source == SourceSiteSensible.SIRENE else None)
+            options = ({"themes": themes}
+                       if themes and source == SourceSiteSensible.SIRENE else None)
             resultat, asynchrone = lancer_import(
-                institution, source, institution.commune_code, institution.commune_nom,
+                institution, source, perimetre, institution.commune_nom,
                 environment, options,
             )
             resultats[source] = {"asynchrone": True} if asynchrone else resultat

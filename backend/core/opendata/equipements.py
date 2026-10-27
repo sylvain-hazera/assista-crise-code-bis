@@ -9,8 +9,8 @@ opérationnel » côté vue : le nom, l'adresse et les coordonnées sont déjà 
 Attention à la qualité : le recensement est large. Sur Châteauneuf-du-Faou, 9 des 15
 « installations » sont des écluses du canal de Nantes à Brest. C'est précisément pourquoi tout
 sort en PROPOSE."""
-from ..models import CategorieSiteSensible, SourceSiteSensible
-from .base import SitePropose, collecter_ods
+from ..models import CategorieSiteSensible, EchelonCompetence, SourceSiteSensible
+from .base import SitePropose, collecter_ods, plafond, where_territoire
 
 PORTAIL = "equipements.sports.gouv.fr"
 DATASET = "data-es-installation"
@@ -35,6 +35,11 @@ def _vers_site(enregistrement):
         adresse=adresse,
         latitude=coordonnees.get("lat"),
         longitude=coordonnees.get("lon"),
+        commune_code=enregistrement.get("insee"),
+        commune_nom=enregistrement.get("commune"),
+        # Le recensement ne dit pas qui est propriétaire : un gymnase peut être communal,
+        # adossé à un collège (département) ou à un lycée (région). On ne devine pas.
+        echelon_competence=EchelonCompetence.INDETERMINE,
         attributs={
             "numero_installation": numero,
             # Une salle accessible aux personnes à mobilité réduite n'est pas un centre d'accueil
@@ -47,5 +52,9 @@ def _vers_site(enregistrement):
     )
 
 
-def collecter(commune_code):
-    return collecter_ods(PORTAIL, DATASET, f'insee="{commune_code}"', _vers_site)
+def collecter(perimetre):
+    where = where_territoire(
+        "insee", perimetre,
+        champs_secteur={"departement": "dep_code", "region": "reg_code"},
+    )
+    return collecter_ods(PORTAIL, DATASET, where, _vers_site, maximum=plafond(perimetre))

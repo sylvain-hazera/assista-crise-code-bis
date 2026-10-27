@@ -74,14 +74,15 @@ def calculer_ruissellement_task(commune_code: str, environment: str, forcer: boo
 
 
 @shared_task(acks_late=True, time_limit=900, soft_time_limit=840)
-def importer_sites_sensibles_task(institution_id, source, commune_code, commune_nom=None,
+def importer_sites_sensibles_task(institution_id, source, perimetre, commune_nom=None,
                                   environment=None, options=None):
     """Les deux imports qui ne tiennent pas dans une requête HTTP.
 
     FINESS : ~50 Mo à télécharger et ~750 Mo de JSON à parcourir pour en extraire une commune
-    (voir core/opendata/finess.py). SIRENE : jusqu'à sept thèmes paginés 25 par 25, soit une
-    cinquantaine d'appels sur une grande ville (voir core/opendata/sirene.py), et `options`
-    porte alors les thèmes demandés. Budget de 15 min, très au-dessus de la minute mesurée :
+    (voir core/opendata/finess.py). SIRENE : dix thèmes paginés 25 par 25, soit une centaine
+    d'appels sur une grande ville et davantage sur un département (voir core/opendata/sirene.py),
+    et `options` porte alors les thèmes demandés. `perimetre` arrive sous la forme
+    `{niveau, code}` : la liste des communes se reconstruit ici (voir construire_perimetre). Budget de 15 min, très au-dessus de la minute mesurée :
     ce qui dépasse serait une anomalie du producteur, pas la taille de la commune."""
     from django.utils import timezone
 
@@ -92,7 +93,7 @@ def importer_sites_sensibles_task(institution_id, source, commune_code, commune_
     if institution is None:
         return
     try:
-        executer_import(institution, source, commune_code, commune_nom, environment, options)
+        executer_import(institution, source, perimetre, commune_nom, environment, options)
     except Exception as exc:
         # executer_import absorbe déjà les pannes de source ; on n'arrive ici que sur un imprévu
         # (base indisponible, flux au format inattendu). L'état doit quand même cesser d'afficher

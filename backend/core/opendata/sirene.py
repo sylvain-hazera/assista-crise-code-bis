@@ -23,53 +23,81 @@ Trois précautions, qui sont la raison de la forme de ce module :
    adresse est chiffrée comme le reste et ne sort de l'API qu'après un dévoilement tracé.
    `statut_diffusion` est respecté : une personne opposée à la diffusion de ses données n'entre
    pas, même si l'API la renvoie."""
+import logging
 from collections import namedtuple
 
-from ..models import CategorieSiteSensible, SourceSiteSensible
+from ..models import CategorieSiteSensible, EchelonCompetence, SourceSiteSensible
 from .base import SitePropose, fetch_json
+
+logger = logging.getLogger(__name__)
 
 URL = "https://recherche-entreprises.api.gouv.fr/search"
 
 # L'API plafonne `per_page` à 25.
 TAILLE_PAGE = 25
 
-# Par thème, et non global : un thème qui déborde ne doit pas priver les autres. Au-delà, la
-# commune est trop grande pour un recensement exhaustif et devra affiner.
-MAX_PAR_THEME = 200
+# Par thème, et non global : un thème qui déborde ne doit pas priver les autres. Le plafond
+# dépend du périmètre — mesuré sur le Finistère, « transport de marchandises » rend 483
+# établissements et « travaux publics » 412, qu'un plafond de 200 tronquerait en silence.
+MAX_PAR_THEME = {"commune": 200}
+MAX_PAR_THEME_SECTEUR = 1500
 
 # Nature juridique 1000 = entrepreneur individuel, c'est-à-dire une personne physique.
 NATURE_JURIDIQUE_PERSONNE_PHYSIQUE = "1000"
 
-Theme = namedtuple("Theme", "naf enjeu ressource defaut")
+Theme = namedtuple("Theme", "libelle categorie naf enjeu ressource defaut")
 
-# Ce que la commune peut demander à recenser. Chaque thème est une catégorie de SiteSensible,
-# une liste de codes NAF, et un rôle par défaut (à protéger / mobilisable / les deux).
+# Ce qu'une collectivité peut demander à recenser. Un thème porte une catégorie de SiteSensible,
+# une liste de codes NAF et un rôle par défaut (à protéger / mobilisable / les deux).
+#
+# Le thème est volontairement PLUS FIN que la catégorie : à l'échelle d'un département, un
+# « moyens et travaux » unique rendrait 3 270 établissements dans le Finistère, inexploitable,
+# alors que « transport de voyageurs » en rend 57 — et ce sont précisément les 57 autocaristes
+# qui constituent le levier d'évacuation d'un conseil départemental. La catégorie reste large
+# pour que les filtres de la page restent lisibles.
 THEMES = {
-    CategorieSiteSensible.ELEVAGE: Theme(
+    "ELEVAGE": Theme(
+        libelle="Élevages", categorie=CategorieSiteSensible.ELEVAGE,
         naf=("01.41Z", "01.42Z", "01.43Z", "01.45Z", "01.46Z", "01.47Z", "01.49Z", "01.50Z",
              "01.62Z"),
         # Un cheptel à sauver, mais aussi un tracteur, une cuve, une bétaillère et des bras.
         enjeu=True, ressource=True, defaut=True),
-    CategorieSiteSensible.VETERINAIRE: Theme(
+    "VETERINAIRE": Theme(
+        libelle="Vétérinaires", categorie=CategorieSiteSensible.VETERINAIRE,
         naf=("75.00Z",), enjeu=False, ressource=True, defaut=True),
-    CategorieSiteSensible.HEBERGEMENT: Theme(
+    "HEBERGEMENT": Theme(
+        libelle="Hôtels, campings, villages vacances",
+        categorie=CategorieSiteSensible.HEBERGEMENT,
         naf=("55.10Z", "55.20Z", "55.30Z", "55.90Z"),
         # Un camping, c'est une population saisonnière à évacuer ET des lits disponibles.
         enjeu=True, ressource=True, defaut=True),
-    CategorieSiteSensible.MOYENS: Theme(
-        naf=("49.31Z", "49.39A", "49.39B", "49.41A", "49.41B", "49.42Z",
-             "42.11Z", "43.11Z", "43.12A", "43.12B", "43.91A", "43.91B", "43.32A"),
-        enjeu=False, ressource=True, defaut=True),
-    CategorieSiteSensible.APPROVISIONNEMENT: Theme(
+    "TRANSPORT_VOYAGEURS": Theme(
+        libelle="Transport de voyageurs (autocars)", categorie=CategorieSiteSensible.MOYENS,
+        naf=("49.31Z", "49.39A", "49.39B"), enjeu=False, ressource=True, defaut=True),
+    "TRANSPORT_MARCHANDISES": Theme(
+        libelle="Transport de marchandises (dont bétaillères)",
+        categorie=CategorieSiteSensible.MOYENS,
+        naf=("49.41A", "49.41B", "49.42Z"), enjeu=False, ressource=True, defaut=True),
+    "TRAVAUX_PUBLICS": Theme(
+        libelle="Travaux publics, terrassement, routes", categorie=CategorieSiteSensible.MOYENS,
+        naf=("42.11Z", "43.11Z", "43.12A", "43.12B"), enjeu=False, ressource=True, defaut=True),
+    "BATIMENT_URGENCE": Theme(
+        libelle="Couverture et menuiserie (bâchage)", categorie=CategorieSiteSensible.MOYENS,
+        naf=("43.91A", "43.91B", "43.32A"), enjeu=False, ressource=True, defaut=True),
+    "APPROVISIONNEMENT": Theme(
+        libelle="Commerces, boulangeries, carburants, repas",
+        categorie=CategorieSiteSensible.APPROVISIONNEMENT,
         naf=("47.11B", "47.11C", "47.11D", "47.11E", "47.11F", "10.71C", "47.30Z",
              "56.29A", "56.29B"),
         enjeu=False, ressource=True, defaut=True),
-    CategorieSiteSensible.FUNERAIRE: Theme(
+    "FUNERAIRE": Theme(
+        libelle="Opérateurs funéraires", categorie=CategorieSiteSensible.FUNERAIRE,
         naf=("96.03Z",), enjeu=False, ressource=True, defaut=True),
     # Décoché par défaut, et c'est délibéré : en commune rurale, « accueil de jeunes enfants »
     # ramène surtout des assistantes maternelles, donc des noms de personnes à leur domicile.
     # À activer en connaissance de cause, pas par défaut.
-    CategorieSiteSensible.PETITE_ENFANCE: Theme(
+    "PETITE_ENFANCE": Theme(
+        libelle="Accueil du jeune enfant", categorie=CategorieSiteSensible.PETITE_ENFANCE,
         naf=("88.91A",), enjeu=True, ressource=False, defaut=False),
 }
 
@@ -146,7 +174,17 @@ def _nom(entreprise, etablissement):
             or entreprise.get("nom_complet") or entreprise.get("nom_raison_sociale") or "")
 
 
-def _vers_site(entreprise, etablissement, categorie, theme):
+def _echelon(entreprise):
+    """Les catégories juridiques 4xxx et 7xxx désignent des personnes morales de droit public.
+    Elles disent « public » sans dire quel échelon (État, région, département, commune) : on ne
+    tranche pas à leur place, l'agent le fera. Tout le reste est privé ou associatif."""
+    nature = str(entreprise.get("nature_juridique") or "")
+    if nature.startswith(("4", "7")):
+        return EchelonCompetence.INDETERMINE
+    return EchelonCompetence.PRIVE
+
+
+def _vers_site(entreprise, etablissement, theme):
     if not _diffusable(entreprise, etablissement) or not _ouvert(etablissement):
         return None
     siret = etablissement.get("siret")
@@ -159,7 +197,7 @@ def _vers_site(entreprise, etablissement, categorie, theme):
     return SitePropose(
         source=SourceSiteSensible.SIRENE,
         source_id=siret,
-        categorie=categorie,
+        categorie=theme.categorie,
         nom=_nom(entreprise, etablissement),
         adresse=etablissement.get("adresse") or "",
         latitude=_flottant(etablissement.get("latitude")),
@@ -167,6 +205,9 @@ def _vers_site(entreprise, etablissement, categorie, theme):
         personne_physique=personne_physique,
         est_enjeu=theme.enjeu,
         est_ressource=theme.ressource,
+        commune_code=etablissement.get("commune"),
+        commune_nom=etablissement.get("libelle_commune"),
+        echelon_competence=_echelon(entreprise),
         attributs={
             "siret": siret,
             "siren": entreprise.get("siren"),
@@ -185,39 +226,60 @@ def _vers_site(entreprise, etablissement, categorie, theme):
     )
 
 
-def _collecter_theme(commune_code, categorie, theme):
-    sites, page = [], 1
-    while len(sites) < MAX_PAR_THEME:
-        data = fetch_json(URL, {
-            "code_commune": commune_code,
-            "activite_principale": ",".join(theme.naf),
-            "etat_administratif": "A",
-            "per_page": TAILLE_PAGE,
-            "page": page,
-        })
-        if not data or not data.get("results"):
-            break
-        for entreprise in data["results"]:
-            for etablissement in (entreprise.get("matching_etablissements") or []):
-                site = _vers_site(entreprise, etablissement, categorie, theme)
-                if site is not None:
-                    sites.append(site)
-        if page >= (data.get("total_pages") or 1):
-            break
-        page += 1
+def _filtres_territoire(perimetre):
+    """L'API a un filtre `departement` et un filtre `region` natifs — une requête au lieu de
+    277. Sans eux (EPCI, commune), un filtre par commune."""
+    if perimetre.niveau == "departement":
+        return [{"departement": perimetre.code}]
+    if perimetre.niveau == "region":
+        return [{"region": perimetre.code}]
+    return [{"code_commune": code} for code in perimetre.communes]
+
+
+def _collecter_theme(perimetre, theme, maximum):
+    sites = []
+    for filtre in _filtres_territoire(perimetre):
+        page = 1
+        while len(sites) < maximum:
+            data = fetch_json(URL, {
+                **filtre,
+                "activite_principale": ",".join(theme.naf),
+                "etat_administratif": "A",
+                "per_page": TAILLE_PAGE,
+                "page": page,
+            })
+            if not data or not data.get("results"):
+                break
+            for entreprise in data["results"]:
+                for etablissement in (entreprise.get("matching_etablissements") or []):
+                    site = _vers_site(entreprise, etablissement, theme)
+                    if site is not None:
+                        sites.append(site)
+            if page >= (data.get("total_pages") or 1):
+                break
+            page += 1
     return sites
 
 
-def collecter(commune_code, categories=None):
+def collecter(perimetre, themes=None):
     """Collecte les thèmes demandés (tous ceux marqués par défaut si rien n'est précisé).
 
     Un thème inconnu est ignoré sans bruit : l'appelant valide déjà la liste, et une faute de
     frappe ne doit pas faire échouer les autres thèmes."""
-    demandes = categories if categories else THEMES_PAR_DEFAUT
+    demandes = themes if themes else THEMES_PAR_DEFAUT
+    maximum = MAX_PAR_THEME.get(perimetre.niveau, MAX_PAR_THEME_SECTEUR)
     sites = []
-    for categorie in demandes:
-        theme = THEMES.get(categorie)
+    for code in demandes:
+        theme = THEMES.get(code)
         if theme is None:
             continue
-        sites += _collecter_theme(commune_code, categorie, theme)
+        trouves = _collecter_theme(perimetre, theme, maximum)
+        if len(trouves) >= maximum:
+            # Tronqué : le dire dans les logs plutôt que de laisser croire à un recensement
+            # complet. À l'échelle d'un département, c'est le signal qu'il faut affiner.
+            logger.warning(
+                "SIRENE : thème %s tronqué à %s sur le périmètre %s %s",
+                code, maximum, perimetre.niveau, perimetre.code,
+            )
+        sites += trouves
     return sites

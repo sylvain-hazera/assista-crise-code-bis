@@ -4321,6 +4321,37 @@ class CategorieSiteSensible(models.TextChoices):
     AUTRE = "AUTRE", "Autre"
 
 
+class EchelonCompetence(models.TextChoices):
+    """Qui a la charge du site — et donc qui le valide dans SON plan.
+
+    Une collectivité ne valide pas un territoire, elle valide sa compétence : sur les 852
+    établissements scolaires du Finistère, 75 collèges publics relèvent du département, 374
+    écoles publiques des communes, 40 lycées publics de la région. Mélanger les trois donne une
+    liste de 852 lignes « à relire » qu'aucun agent départemental ne relira.
+
+    Le reste doit rester RETROUVABLE sans être à valider : d'où un échelon par ligne et un
+    filtre par défaut, plutôt qu'un import qui trierait à la place de l'agent."""
+    COMMUNE = "COMMUNE", "Commune"
+    EPCI = "EPCI", "Intercommunalité"
+    DEPARTEMENT = "DEPARTEMENT", "Département"
+    REGION = "REGION", "Région"
+    ETAT = "ETAT", "État"
+    PRIVE = "PRIVE", "Privé ou associatif"
+    INDETERMINE = "INDETERMINE", "À déterminer"
+
+
+# Le niveau de secteur d'une institution (Institution.secteur_niveau_effectif, voir
+# SECTEUR_NIVEAU_PAR_TYPE_INSTITUTION) vers l'échelon de compétence correspondant : c'est ce qui
+# permet à la page de n'afficher par défaut que ce qui relève de la collectivité connectée.
+ECHELON_PAR_NIVEAU_SECTEUR = {
+    "commune": EchelonCompetence.COMMUNE,
+    "epci": EchelonCompetence.EPCI,
+    "departement": EchelonCompetence.DEPARTEMENT,
+    "region": EchelonCompetence.REGION,
+    "national": EchelonCompetence.ETAT,
+}
+
+
 class StatutSiteSensible(models.TextChoices):
     """Décision de la mairie sur une proposition. PROPOSE est l'état de sortie de tout import :
     rien n'entre jamais directement au plan sans qu'un agent l'ait regardé."""
@@ -4411,6 +4442,14 @@ class SiteSensible(EnvironmentScopedModel):
     # Pré-positionnés par le connecteur selon la catégorie, corrigeables par l'agent.
     est_enjeu = models.BooleanField(default=True)
     est_ressource = models.BooleanField(default=False)
+
+    # Qui en a la charge. Déduit par le connecteur quand la source le dit (l'annuaire de
+    # l'éducation donne le type d'établissement et le statut public/privé, donc la compétence),
+    # corrigeable par l'agent, et INDETERMINE quand la source ne permet pas de conclure.
+    echelon_competence = models.CharField(
+        max_length=15, choices=EchelonCompetence.choices,
+        default=EchelonCompetence.INDETERMINE,
+    )
 
     # Une ressource recensée n'est pas une ressource acquise : seule une convention engage. La
     # case cochée est l'information opérationnelle (« a-t-on un accord ? »), les champs suivants

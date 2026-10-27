@@ -579,3 +579,65 @@
   gap: .5rem;
   margin-left: 1.5rem;
 }
+
+/* ── Compétence et territoire (collectivités supra-communales) ──────────────────────────── */
+.sur-total { color: #9ca3af; }
+
+.filtre-competence { font-weight: 600; }
+
+.etiquette-competence { background: #ede9fe; color: #5b21b6; }
+
+.commune-du-site {
+  font-size: .76rem;
+  color: #6b7280;
+  margin-top: .15rem;
+}
+
+.perimetre {
+  display: flex;
+  flex-direction: column;
+  gap: .25rem;
+  margin: 0 0 .9rem 0;
+  font-size: .82rem;
+  font-weight: 600;
+  color: #374151;
+
+  select {
+    align-self: flex-start;
+    border: 1px solid #d1d5db;
+    border-radius: 5px;
+    padding: .35rem .5rem;
+    font-size: .85rem;
+    font-weight: 400;
+  }
+
+  .perimetre-aide {
+    font-weight: 400;
+    font-size: .78rem;
+    color: #6b7280;
+  }
+}
+
+.territoire {
+  margin: 1.5rem 0 .5rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e5e7eb;
+}
+
+.territoire-aide {
+  margin: .6rem 0 .9rem;
+  padding: .55rem .8rem;
+  border: 1px solid #bfdbfe;
+  border-radius: 6px;
+  background: #eff6ff;
+  font-size: .82rem;
+  line-height: 1.45;
+  color: #1e3a8a;
+
+  .territoire-compte { display: block; margin-top: .25rem; color: #1d4ed8; }
+}
+
+.adresse-lue {
+  font-size: .8rem;
+  color: #4b5563;
+}

@@ -8,8 +8,9 @@ import { SiteSensibleService } from '../../services/site-sensible.service';
 import { PointType } from '../../shared/models/point-operationnel.model';
 import { pollWhileVisible } from '../../shared/utils/polling.util';
 import {
-  CategorieSiteSensible, CoordonneesDevoilees, SaisieConvention, SiteSensible,
-  SourceSiteSensible, StatutSiteSensible, SyntheseSitesSensibles,
+  CategorieSiteSensible, CoordonneesDevoilees, EchelonCompetence, NiveauSecteur,
+  SaisieConvention, SiteSensible, SiteTerritoire, SourceSiteSensible, StatutSiteSensible,
+  SyntheseSitesSensibles,
 } from '../../shared/models/site-sensible.model';
 
 /**
@@ -26,6 +27,12 @@ import {
  * « À vérifier » ne veut pas dire « à écarter » : les élevages, par exemple, ont leur catégorie
  * et leur effectif animal affiché, parce que la protection des animaux est une mission du plan
  * — un cheptel s'évacue, s'abreuve et se ventile, et ça se prépare avant.
+ *
+ * Troisième chose, qui rend la page utilisable par autre chose qu'une mairie : une collectivité
+ * ne valide pas un territoire, elle valide SA compétence. Un conseil départemental arrive sur
+ * ses collèges publics (75 dans le Finistère) et non sur les 852 établissements scolaires du
+ * département ; le reste reste retrouvable par le filtre et la recherche, et ce que ses communes
+ * ont retenu se LIT chez elles (voir basculerTerritoire) plutôt que de se recopier.
  *
  * Deuxième chose que la page tient : une ressource recensée n'est PAS une ressource acquise.
  * Seule une convention engage, d'où le volet qui permet de la déclarer, de la numéroter, de la
@@ -53,12 +60,23 @@ export class SitesSensiblesComponent implements OnInit, OnDestroy {
   filtreStatut: StatutSiteSensible | '' = 'PROPOSE';
   /** « Qui est menacé » et « avec quoi j'agis » sont deux questions distinctes en crise. */
   filtreRole: '' | 'enjeu' | 'ressource' = '';
+  /** Vide pour une mairie — toute sa commune la concerne. Positionné sur sa compétence pour une
+   * collectivité qui couvre plusieurs communes : un département arrive sur ses 75 collèges, pas
+   * sur les 852 établissements du territoire. Rien n'est inaccessible, la bascule est à côté. */
+  filtreEchelon: EchelonCompetence | '' = '';
+  filtreCommune = '';
   recherche = '';
 
-  /** Panneau de recensement SIRENE, et les thèmes cochés (remplis dans ngOnInit : THEMES_SIRENE
-   * est déclaré plus bas et n'existe pas encore à l'initialisation de ce champ). */
+  /** Panneau de recensement SIRENE : les thèmes cochés et le périmètre demandé. */
   sirenOuvert = false;
-  themesChoisis = new Set<CategorieSiteSensible>();
+  themesChoisis = new Set<string>();
+  perimetreChoisi: NiveauSecteur = 'commune';
+
+  /** Lecture du territoire : ce que les autres collectivités du secteur ont retenu. */
+  territoireOuvert = false;
+  territoireCharge = false;
+  territoire: SiteTerritoire[] = [];
+  communesDuSecteur = 0;
 
   /** Adresses dévoilées pendant cette visite, par identifiant de site. Rien n'est conservé :
    * revenir sur la page redemande un dévoilement, donc une nouvelle trace. */
@@ -98,26 +116,25 @@ export class SitesSensiblesComponent implements OnInit, OnDestroy {
     { code: 'AUTRE', libelle: 'Autre' },
   ];
 
-  /** Les thèmes que SIRENE sait recenser. Choix explicite et non bouton unique : 105
-   * établissements à Châteauneuf pour ces thèmes, 3 409 à Bordeaux — une commune doit pouvoir
-   * n'en demander qu'un. « Accueil du jeune enfant » part décoché : il ramène surtout des
-   * assistantes maternelles, donc des noms de personnes à leur domicile. */
-  readonly THEMES_SIRENE: { code: CategorieSiteSensible; libelle: string; aide: string;
-                            coche: boolean }[] = [
-    { code: 'ELEVAGE', libelle: 'Élevages', coche: true,
-      aide: 'Y compris les exploitations sous les seuils ICPE, les plus nombreuses' },
-    { code: 'MOYENS', libelle: 'Moyens et travaux', coche: true,
-      aide: 'Cars, bétaillères, engins de terrassement, couvreurs' },
-    { code: 'HEBERGEMENT', libelle: 'Hébergement', coche: true,
-      aide: 'Hôtels, campings, villages vacances : des lits, et du monde à évacuer' },
-    { code: 'APPROVISIONNEMENT', libelle: 'Approvisionnement', coche: true,
-      aide: 'Commerces, boulangeries, carburants, restauration collective' },
-    { code: 'VETERINAIRE', libelle: 'Vétérinaires', coche: true,
-      aide: 'Pour la prise en charge des animaux' },
-    { code: 'FUNERAIRE', libelle: 'Opérateurs funéraires', coche: true, aide: '' },
-    { code: 'PETITE_ENFANCE', libelle: 'Accueil du jeune enfant', coche: false,
-      aide: 'Surtout des assistantes maternelles : des personnes, à leur domicile' },
-  ];
+  /** La liste des thèmes vient du serveur (`synthese.themes`) : c'est lui qui connaît les codes
+   * NAF derrière chacun. La page n'ajoute que la phrase qui aide à cocher. */
+  readonly AIDES_THEMES: Record<string, string> = {
+    ELEVAGE: 'Y compris les exploitations sous les seuils ICPE, les plus nombreuses',
+    TRANSPORT_VOYAGEURS: "Le levier d'évacuation : 57 autocaristes dans le Finistère",
+    TRANSPORT_MARCHANDISES: 'Camions et bétaillères',
+    TRAVAUX_PUBLICS: 'Pelles, terrassement, déblaiement de routes',
+    BATIMENT_URGENCE: 'Bâchage après tempête',
+    HEBERGEMENT: 'Des lits disponibles, et du monde à évacuer en saison',
+    APPROVISIONNEMENT: 'Eau, repas, carburant',
+    VETERINAIRE: 'Pour la prise en charge des animaux',
+    PETITE_ENFANCE: 'Surtout des assistantes maternelles : des personnes, à leur domicile',
+  };
+
+  /** Libellés des périmètres, dans l'ordre du plus étroit au plus large. */
+  readonly LIBELLES_PERIMETRE: Record<string, string> = {
+    commune: 'ma commune', epci: 'mon intercommunalité', departement: 'mon département',
+    region: 'ma région', national: 'France entière',
+  };
 
   /** Tranches d'effectif salarié de l'INSEE. Renseignées pour les seuls employeurs. */
   private readonly TRANCHES_EFFECTIF: Record<string, string> = {
@@ -134,7 +151,6 @@ export class SitesSensiblesComponent implements OnInit, OnDestroy {
   ) {}
 
   ngOnInit(): void {
-    this.THEMES_SIRENE.filter(t => t.coche).forEach(t => this.themesChoisis.add(t.code));
     this.charger();
   }
 
@@ -159,6 +175,17 @@ export class SitesSensiblesComponent implements OnInit, OnDestroy {
         this.synthese = synthese;
         this.pointTypes = types.filter(t => t.actif);
         this.chargement = false;
+        if (!this.themesChoisis.size) {
+          synthese.themes.filter(t => t.defaut).forEach(t => this.themesChoisis.add(t.code));
+        }
+        // Une collectivité supra-communale arrive sur sa compétence ; une mairie sur tout.
+        if (this.filtreEchelon === '' && synthese.niveau !== 'commune') {
+          this.filtreEchelon = synthese.echelon_propre;
+        }
+        if (synthese.perimetres_possibles?.length) {
+          this.perimetreChoisi = synthese.perimetres_possibles[
+            synthese.perimetres_possibles.length - 1];
+        }
         // Un import FINESS lancé précédemment peut encore tourner : son état vit en base, pas
         // dans le navigateur, donc il est toujours là après un changement de page.
         if (this.finessEnCours) {
@@ -210,6 +237,8 @@ export class SitesSensiblesComponent implements OnInit, OnDestroy {
       if (this.filtreStatut && site.statut !== this.filtreStatut) return false;
       if (this.filtreRole === 'enjeu' && !site.est_enjeu) return false;
       if (this.filtreRole === 'ressource' && !site.est_ressource) return false;
+      if (this.filtreEchelon && site.echelon_competence !== this.filtreEchelon) return false;
+      if (this.filtreCommune && site.commune_code !== this.filtreCommune) return false;
       // L'adresse d'une ligne masquée n'est pas dans le navigateur : la recherche ne porte que
       // sur ce qui est affiché, sans quoi elle promettrait ce qu'elle ne peut pas tenir.
       if (q && !`${site.nom} ${site.adresse || ''}`.toLowerCase().includes(q)) return false;
@@ -219,6 +248,45 @@ export class SitesSensiblesComponent implements OnInit, OnDestroy {
 
   compteRole(role: 'enjeu' | 'ressource'): number {
     return this.sites.filter(s => (role === 'enjeu' ? s.est_enjeu : s.est_ressource)).length;
+  }
+
+  compteEchelon(echelon: EchelonCompetence): number {
+    return this.sites.filter(s => s.echelon_competence === echelon).length;
+  }
+
+  /** Les communes présentes dans l'inventaire, pour qu'un département puisse descendre sur
+   * l'une d'elles. Sans intérêt pour une mairie, qui n'en a qu'une. */
+  get communesPresentes(): { code: string; nom: string }[] {
+    const vues = new Map<string, string>();
+    for (const site of this.sites) {
+      if (site.commune_code) vues.set(site.commune_code, site.commune_nom || site.commune_code);
+    }
+    return [...vues.entries()].map(([code, nom]) => ({ code, nom }))
+      .sort((a, b) => a.nom.localeCompare(b.nom));
+  }
+
+  get estSupraCommunal(): boolean {
+    return !!this.synthese && this.synthese.niveau !== 'commune';
+  }
+
+  echelonLibelle(site: SiteSensible): string {
+    const trouve = (this.synthese?.echelons || []).find(e => e.code === site.echelon_competence);
+    return trouve?.libelle || site.echelon_competence;
+  }
+
+  /** Vrai quand la ligne relève de la collectivité connectée : c'est ce qu'elle valide dans son
+   * propre plan, le reste n'est là que pour être retrouvé. */
+  estMaCompetence(site: SiteSensible): boolean {
+    return !!this.synthese && this.estSupraCommunal
+      && site.echelon_competence === this.synthese.echelon_propre;
+  }
+
+  libellePerimetre(niveau: string): string {
+    return this.LIBELLES_PERIMETRE[niveau] || niveau;
+  }
+
+  aideTheme(code: string): string {
+    return this.AIDES_THEMES[code] || '';
   }
 
   compte(statut: StatutSiteSensible): number {
@@ -232,7 +300,7 @@ export class SitesSensiblesComponent implements OnInit, OnDestroy {
     return (this.synthese?.sources || []).map(s => s.code).filter(code => code !== 'SIRENE');
   }
 
-  basculerTheme(code: CategorieSiteSensible): void {
+  basculerTheme(code: string): void {
     if (this.themesChoisis.has(code)) this.themesChoisis.delete(code);
     else this.themesChoisis.add(code);
   }
@@ -240,16 +308,17 @@ export class SitesSensiblesComponent implements OnInit, OnDestroy {
   /** Recense les thèmes cochés via SIRENE. Part en tâche de fond, comme FINESS. */
   recenserSirene(): void {
     if (!this.themesChoisis.size) return;
-    this.importer(['SIRENE'], Array.from(this.themesChoisis));
+    this.importer(['SIRENE'], Array.from(this.themesChoisis), this.perimetreChoisi);
   }
 
-  importer(sources?: SourceSiteSensible[], categories?: CategorieSiteSensible[]): void {
+  importer(sources?: SourceSiteSensible[], themes?: string[],
+           perimetre?: NiveauSecteur): void {
     const demandees = sources ?? this.sourcesNonThematiques();
     if (!demandees.length) return;
     this.importEnCours = true;
     this.message = '';
     this.erreur = '';
-    this.siteService.importer(demandees, categories).subscribe({
+    this.siteService.importer(demandees, themes, perimetre ?? this.perimetreChoisi).subscribe({
       next: (reponse) => {
         this.importEnCours = false;
         const crees = Object.values(reponse.resultats)
@@ -317,6 +386,24 @@ export class SitesSensiblesComponent implements OnInit, OnDestroy {
    * personne. Le serveur refuse de toute façon, l'écran ne doit pas le promettre. */
   peutCreerPoint(site: SiteSensible): boolean {
     return site.statut === 'RETENU' && !site.point_operationnel && !site.personne_physique;
+  }
+
+  /** Charge ce que les autres collectivités du secteur ont retenu. Lecture, pas copie : leurs
+   * corrections restent les leurs, et ce qui est lu est inscrit à la main courante. */
+  basculerTerritoire(): void {
+    this.territoireOuvert = !this.territoireOuvert;
+    if (!this.territoireOuvert || this.territoireCharge) return;
+    this.siteService.territoire().subscribe({
+      next: (lecture) => {
+        this.territoire = lecture.resultats;
+        this.communesDuSecteur = lecture.communes;
+        this.territoireCharge = true;
+      },
+      error: (err) => {
+        this.territoireOuvert = false;
+        this.erreur = err?.error?.error || 'Impossible de lire le territoire.';
+      },
+    });
   }
 
   private conventionVide(): SaisieConvention {

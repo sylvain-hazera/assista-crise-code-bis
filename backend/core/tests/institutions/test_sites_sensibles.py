@@ -18,12 +18,15 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from core.models import (
-    AuditLog, CategorieSiteSensible, ContactInstitution, ImportOpenData, Institution,
+    AuditLog, CategorieSiteSensible, ContactInstitution, EchelonCompetence,
+    ImportOpenData, Institution,
     InstitutionType, PointOperationnel, PointType, SiteSensible, SourceSiteSensible,
     StatutImportOpenData, StatutSiteSensible,
 )
 from core.opendata import ecoles, equipements, finess, icpe, sirene
-from core.opendata.base import SitePropose
+from core.opendata.base import (
+    Perimetre, SitePropose, perimetre_commune, plafond, where_territoire,
+)
 from core.sites_sensibles import (
     _parse_date, enregistrer_proposes, executer_import, synthese_par_categorie,
 )
@@ -437,12 +440,11 @@ class TestConnecteurSirene:
         }],
     }
 
-    THEME_ELEVAGE = sirene.THEMES[CategorieSiteSensible.ELEVAGE]
+    THEME_ELEVAGE = sirene.THEMES["ELEVAGE"]
 
-    def _site(self, entreprise, categorie=CategorieSiteSensible.ELEVAGE, theme=None):
+    def _site(self, entreprise, theme=None):
         return sirene._vers_site(
-            entreprise, entreprise["matching_etablissements"][0], categorie,
-            theme or self.THEME_ELEVAGE,
+            entreprise, entreprise["matching_etablissements"][0], theme or self.THEME_ELEVAGE,
         )
 
     def test_mapping_dune_societe(self):
@@ -463,10 +465,20 @@ class TestConnecteurSirene:
         assert site.est_ressource is True
 
     def test_un_transporteur_est_une_ressource_pas_un_enjeu(self):
-        site = self._site(self.SOCIETE, CategorieSiteSensible.MOYENS,
-                          sirene.THEMES[CategorieSiteSensible.MOYENS])
+        site = self._site(self.SOCIETE, sirene.THEMES["TRANSPORT_VOYAGEURS"])
+        assert site.categorie == CategorieSiteSensible.MOYENS
         assert site.est_enjeu is False
         assert site.est_ressource is True
+
+    def test_les_themes_sont_plus_fins_que_les_categories(self):
+        """À l'échelle d'un département, « moyens et travaux » en bloc rend 3 270 établissements
+        dans le Finistère — inexploitable — alors que « transport de voyageurs » en rend 57, et
+        ce sont précisément les 57 autocaristes qui évacuent. Les thèmes se demandent fin, la
+        catégorie reste large pour que les filtres restent lisibles."""
+        themes_moyens = [code for code, theme in sirene.THEMES.items()
+                         if theme.categorie == CategorieSiteSensible.MOYENS]
+        assert len(themes_moyens) >= 3
+        assert "TRANSPORT_VOYAGEURS" in themes_moyens
 
     def test_personne_physique_marquee(self):
         """Nature juridique 1000 = entrepreneur individuel : l'adresse est un domicile. Le
@@ -481,20 +493,18 @@ class TestConnecteurSirene:
         assert self._site({**self.SOCIETE, "statut_diffusion": "N"}) is None
         etablissement = {**self.SOCIETE["matching_etablissements"][0],
                          "statut_diffusion_etablissement": "N"}
-        assert sirene._vers_site(self.SOCIETE, etablissement, CategorieSiteSensible.ELEVAGE,
-                                 self.THEME_ELEVAGE) is None
+        assert sirene._vers_site(self.SOCIETE, etablissement, self.THEME_ELEVAGE) is None
 
     def test_etablissement_ferme_ignore(self):
         etablissement = {**self.SOCIETE["matching_etablissements"][0],
                          "date_fermeture": "2024-03-01"}
-        assert sirene._vers_site(self.SOCIETE, etablissement, CategorieSiteSensible.ELEVAGE,
-                                 self.THEME_ELEVAGE) is None
+        assert sirene._vers_site(self.SOCIETE, etablissement, self.THEME_ELEVAGE) is None
 
     def test_accueil_du_jeune_enfant_hors_themes_par_defaut(self):
         """En commune rurale, ce thème ramène surtout des assistantes maternelles, donc des noms
         de personnes à leur domicile. Il s'active en connaissance de cause."""
-        assert CategorieSiteSensible.PETITE_ENFANCE not in sirene.THEMES_PAR_DEFAUT
-        assert CategorieSiteSensible.PETITE_ENFANCE in sirene.THEMES
+        assert "PETITE_ENFANCE" not in sirene.THEMES_PAR_DEFAUT
+        assert "PETITE_ENFANCE" in sirene.THEMES
 
     def test_collecte_limitee_aux_themes_demandes(self):
         appels = []
@@ -504,7 +514,7 @@ class TestConnecteurSirene:
             return {"results": [], "total_pages": 1}
 
         with patch.object(sirene, "fetch_json", side_effect=faux_fetch):
-            sirene.collecter("29027", [CategorieSiteSensible.VETERINAIRE])
+            sirene.collecter(perimetre_commune("29027"), ["VETERINAIRE"])
         assert appels == ["75.00Z"]
 
 
@@ -631,9 +641,11 @@ class TestConnecteurFiness:
         ege = {**self.EGE, "etatObjet": "I"}
         assert finess._vers_site(ege, ege["adresse"][0], None, self.DATE) is None
 
-    def test_adresse_dune_autre_commune_non_retenue(self):
-        assert finess._adresse_de_la_commune(self.EGE, "29026") is None
-        assert finess._adresse_de_la_commune(self.EGE, "29027") is not None
+    def test_adresse_hors_perimetre_non_retenue(self):
+        assert finess._adresse_du_perimetre(self.EGE, {"29026"}) is None
+        assert finess._adresse_du_perimetre(self.EGE, {"29027"}) is not None
+        # Le flux est national : un département passe ses 277 communes d'un coup.
+        assert finess._adresse_du_perimetre(self.EGE, {"29026", "29027"}) is not None
 
     def test_date_depuis_titre(self):
         assert finess._date_depuis_titre("finess-structures-journalier-20261027.json.gz") == self.DATE
@@ -1016,26 +1028,27 @@ class TestImportSirene:
         with patch("core.tasks.importer_sites_sensibles_task.delay") as delay:
             client.post(reverse("sitesensible-importer"),
                         {"sources": [SourceSiteSensible.SIRENE],
-                         "categories": [CategorieSiteSensible.ELEVAGE]}, format="json")
+                         "themes": ["ELEVAGE"]}, format="json")
 
-        assert delay.call_args[0][-1] == {"categories": [CategorieSiteSensible.ELEVAGE]}
+        assert delay.call_args[0][-1] == {"themes": ["ELEVAGE"]}
 
     def test_theme_inconnu_refuse(self, agent_client, mairie):
         client, _ = agent_client
         reponse = client.post(reverse("sitesensible-importer"),
                               {"sources": [SourceSiteSensible.SIRENE],
-                               "categories": ["PISCINES"]}, format="json")
+                               "themes": ["PISCINES"]}, format="json")
         assert reponse.status_code == status.HTTP_400_BAD_REQUEST
 
     def test_un_theme_ne_sapplique_pas_aux_autres_sources(self, agent_client, mairie):
-        """`categories` ne concerne que SIRENE : les quatre autres sources n'ont pas de thème et
-        ne doivent pas recevoir une option qu'elles ne savent pas lire."""
+        """`themes` ne concerne que SIRENE : les quatre autres sources n'ont pas de thème et ne
+        doivent pas recevoir une option qu'elles ne savent pas lire."""
         client, _ = agent_client
         with patch.object(ecoles, "collecter", return_value=[]) as collecter:
             client.post(reverse("sitesensible-importer"),
                         {"sources": [SourceSiteSensible.ANNUAIRE_EDUCATION],
-                         "categories": [CategorieSiteSensible.ELEVAGE]}, format="json")
-        assert collecter.call_args == (("29027",), {})
+                         "themes": ["ELEVAGE"]}, format="json")
+        assert collecter.call_args.kwargs == {}
+        assert collecter.call_args.args[0] == perimetre_commune("29027")
 
 
 @pytest.mark.django_db
@@ -1284,4 +1297,287 @@ class TestConvention:
         reponse = client.patch(reverse("sitesensible-detail", args=[site.id]),
                                {"convention_document": fichier}, format="multipart")
 
+        assert reponse.status_code == status.HTTP_400_BAD_REQUEST
+
+
+class TestEchelonScolaire:
+    """La hiérarchie des compétences scolaires, que l'annuaire de l'éducation porte en clair.
+
+    C'est elle qui rend la page utilisable par autre chose qu'une mairie : sur les 852
+    établissements du Finistère, 75 collèges publics relèvent du département. Sans cette
+    distinction, un conseil départemental reçoit 852 lignes à relire au lieu de 75."""
+
+    def _echelon(self, type_etablissement, statut="Public"):
+        return ecoles._echelon({"type_etablissement": type_etablissement,
+                                "statut_public_prive": statut})
+
+    def test_la_hierarchie(self):
+        assert self._echelon("Ecole") == EchelonCompetence.COMMUNE
+        assert self._echelon("Collège") == EchelonCompetence.DEPARTEMENT
+        assert self._echelon("Lycée") == EchelonCompetence.REGION
+
+    def test_laccent_ne_change_rien(self):
+        """« Collège » et « Lycée » arrivent accentués dans le jeu de données."""
+        assert self._echelon("College") == EchelonCompetence.DEPARTEMENT
+        assert self._echelon("LYCEE") == EchelonCompetence.REGION
+
+    def test_le_prive_nest_la_charge_daucune_collectivite(self):
+        """302 des 852 établissements du Finistère. Un collège privé sous contrat reste un enjeu
+        en crise, mais son bâtiment n'appartient pas au département."""
+        assert self._echelon("Collège", "Privé") == EchelonCompetence.PRIVE
+        assert self._echelon("Ecole", "Privé") == EchelonCompetence.PRIVE
+
+    def test_un_service_administratif_releve_de_letat(self):
+        assert self._echelon("Service Administratif", None) == EchelonCompetence.ETAT
+
+    def test_ce_quon_ne_sait_pas_reste_a_determiner(self):
+        """Médico-social public, « Information et orientation », types à venir : on ne devine
+        pas, l'agent tranche."""
+        assert self._echelon("Médico-social") == EchelonCompetence.INDETERMINE
+        assert self._echelon("Information et orientation") == EchelonCompetence.INDETERMINE
+
+    def test_lechelon_voyage_jusquau_site(self):
+        site = ecoles._vers_site({
+            "identifiant_de_l_etablissement": "0290123X", "etat": "OUVERT",
+            "nom_etablissement": "Collège de l'Aulne", "type_etablissement": "Collège",
+            "statut_public_prive": "Public", "code_commune": "29027",
+            "nom_commune": "Châteauneuf-du-Faou", "code_postal": "29520",
+        })
+        assert site.echelon_competence == EchelonCompetence.DEPARTEMENT
+        # La commune du SITE, pas celle de l'institution qui importe.
+        assert site.commune_code == "29027"
+        assert site.commune_nom == "Châteauneuf-du-Faou"
+
+
+class TestPerimetreDesSources:
+    """Chaque source sait-elle répondre à l'échelle d'un département sans 277 appels ?"""
+
+    def test_un_jeu_opendatasoft_utilise_son_champ_departemental(self):
+        perimetre = Perimetre("departement", "29", ["29027", "29019"])
+        where = where_territoire("code_commune", perimetre,
+                                 champs_secteur={"departement": "code_departement"},
+                                 codes_secteur={"departement": "029"})
+        # L'annuaire de l'éducation zéro-complète le code sur trois caractères.
+        assert where == 'code_departement="029"'
+
+    def test_sans_champ_pour_ce_niveau_repli_sur_les_communes(self):
+        """Aucun des jeux branchés ne porte l'EPCI : on liste ses communes."""
+        perimetre = Perimetre("epci", "242900561", ["29027", "29019"])
+        where = where_territoire("code_commune", perimetre,
+                                 champs_secteur={"departement": "code_departement"})
+        assert where == 'code_commune IN ("29027", "29019")'
+
+    def test_georisques_a_un_filtre_departemental_natif(self):
+        assert icpe._filtre_territoire(Perimetre("departement", "29", [])) == {"departement": "29"}
+        assert icpe._filtre_territoire(Perimetre("region", "53", [])) == {"region": "53"}
+        assert icpe._filtre_territoire(perimetre_commune("29027")) is None
+
+    def test_sirene_interroge_le_departement_en_une_fois(self):
+        assert sirene._filtres_territoire(Perimetre("departement", "29", ["a"] * 277)) == [
+            {"departement": "29"}]
+        # Sans filtre de secteur, une requête par commune — et c'est le coût à éviter.
+        assert sirene._filtres_territoire(Perimetre("epci", "x", ["29027", "29019"])) == [
+            {"code_commune": "29027"}, {"code_commune": "29019"}]
+
+    def test_le_plafond_suit_le_perimetre(self):
+        """852 établissements scolaires dans le Finistère : un plafond communal de 500 les
+        tronquerait."""
+        assert plafond(perimetre_commune("29027")) == 500
+        assert plafond(Perimetre("departement", "29", [])) > 852
+
+
+@pytest.mark.django_db
+class TestCollectiviteSupraCommunale:
+    """Ce qui change pour un conseil départemental : le périmètre d'import, le compteur borné à
+    sa compétence, et la lecture du territoire plutôt qu'une copie de 5 000 lignes."""
+
+    @pytest.fixture
+    def communes_29(self, db):
+        from core.models import Commune
+
+        for code, nom in (("29027", "Châteauneuf-du-Faou"), ("29019", "Brest")):
+            Commune.objects.update_or_create(
+                code=code, defaults={"nom": nom, "departement_code": "29", "region_code": "53",
+                                     "epci_code": "242900561"})
+        Commune.objects.update_or_create(
+            code="22168", defaults={"nom": "Pleudihen-sur-Rance", "departement_code": "22",
+                                    "region_code": "53"})
+
+    @pytest.fixture
+    def conseil_departemental(self, communes_29):
+        itype, _ = InstitutionType.objects.get_or_create(
+            code="CG", defaults={"libelle": "Conseil départemental"})
+        return Institution.objects.create(
+            nom="Conseil départemental du Finistère", type=itype,
+            commune_code="29019", commune_nom="Brest",
+        )
+
+    @pytest.fixture
+    def client_cd(self, conseil_departemental, create_user):
+        user = create_user(username="agent-cd@test.fr", email="agent-cd@test.fr",
+                           type="AUT_LOCALE")
+        ContactInstitution.objects.create(institution=conseil_departemental, utilisateur=user,
+                                          actif=True)
+        client = APIClient()
+        client.force_authenticate(user=user)
+        return client, user
+
+    def test_le_niveau_du_conseil_departemental_est_deduit_de_son_type(self,
+                                                                      conseil_departemental):
+        assert conseil_departemental.secteur_niveau_effectif == "departement"
+        assert conseil_departemental.departement_code == "29"
+
+    def test_un_departement_peut_importer_son_departement(self, client_cd):
+        client, _ = client_cd
+        with patch("core.tasks.importer_sites_sensibles_task.delay") as delay:
+            reponse = client.post(reverse("sitesensible-importer"), {
+                "sources": [SourceSiteSensible.SIRENE], "themes": ["TRANSPORT_VOYAGEURS"],
+                "perimetre": "departement",
+            }, format="json")
+
+        assert reponse.status_code == status.HTTP_200_OK
+        # Seuls le niveau et le code voyagent dans Celery : pas les 277 codes commune.
+        assert delay.call_args[0][2] == {"niveau": "departement", "code": "29"}
+
+    def test_une_mairie_ne_peut_pas_importer_le_departement(self, agent_client, mairie):
+        """Même règle que partout : on restreint, on n'élargit jamais."""
+        client, _ = agent_client
+        reponse = client.post(reverse("sitesensible-importer"), {
+            "sources": [SourceSiteSensible.ANNUAIRE_EDUCATION], "perimetre": "departement",
+        }, format="json")
+        assert reponse.status_code == status.HTTP_400_BAD_REQUEST
+        assert reponse.data["perimetres"] == ["commune"]
+
+    def test_la_synthese_annonce_le_secteur_et_les_perimetres(self, client_cd):
+        client, _ = client_cd
+        donnees = client.get(reverse("sitesensible-synthese")).data
+        assert donnees["niveau"] == "departement"
+        assert donnees["echelon_propre"] == EchelonCompetence.DEPARTEMENT
+        assert donnees["perimetres_possibles"] == ["commune", "epci", "departement"]
+        assert "TRANSPORT_VOYAGEURS" in [t["code"] for t in donnees["themes"]]
+
+    def test_a_relire_est_borne_a_la_competence_du_departement(self, client_cd,
+                                                               conseil_departemental):
+        """Le compteur doit annoncer le travail réel : les collèges, pas les 374 écoles."""
+        enregistrer_proposes(conseil_departemental, "PROD", "29", None, [
+            _propose(source_id="college-1", nom="Collège A",
+                     echelon_competence=EchelonCompetence.DEPARTEMENT, commune_code="29027"),
+            _propose(source_id="ecole-1", nom="École B",
+                     echelon_competence=EchelonCompetence.COMMUNE, commune_code="29027"),
+            _propose(source_id="lycee-1", nom="Lycée C",
+                     echelon_competence=EchelonCompetence.REGION, commune_code="29019"),
+        ])
+        donnees = client.get if False else client_cd[0].get(reverse("sitesensible-synthese"))
+        assert donnees.data["a_relire"] == 1
+        # Le total reste disponible : rien n'est caché, c'est le compteur qui est cadré.
+        assert donnees.data["a_relire_tous_echelons"] == 3
+
+    def test_une_mairie_voit_tout_ce_qui_est_sur_sa_commune(self, agent_client, mairie):
+        """L'inverse du cas départemental : une installation classée ou un commerce n'est la
+        charge d'aucune collectivité, mais une mairie doit le compter — c'est son plan."""
+        client, _ = agent_client
+        enregistrer_proposes(mairie, "PROD", "29027", None, [
+            _propose(source=SourceSiteSensible.ICPE, source_id="aiot-1", nom="Usine",
+                     categorie=CategorieSiteSensible.INDUSTRIE,
+                     echelon_competence=EchelonCompetence.INDETERMINE),
+        ])
+        assert client.get(reverse("sitesensible-synthese")).data["a_relire"] == 1
+
+    def test_la_commune_de_chaque_site_est_la_sienne(self, conseil_departemental):
+        """Un import départemental ne doit pas estampiller 277 communes avec celle du chef-lieu."""
+        enregistrer_proposes(conseil_departemental, "PROD", "29", "Finistère", [
+            _propose(source_id="a", nom="Collège de Châteauneuf", commune_code="29027",
+                     commune_nom="Châteauneuf-du-Faou"),
+            _propose(source_id="b", nom="Collège de Brest", commune_code="29019",
+                     commune_nom="Brest"),
+        ])
+        communes = set(SiteSensible.objects.values_list("commune_code", flat=True))
+        assert communes == {"29027", "29019"}
+
+
+@pytest.mark.django_db
+class TestLectureDuTerritoire:
+    """La réponse au problème d'échelle : un département lit les inventaires de ses communes au
+    lieu d'en recopier 5 000 lignes qui seraient figées au jour de l'import."""
+
+    @pytest.fixture
+    def decor(self, db, create_user):
+        from core.models import Commune
+
+        for code, nom, dep in (("29027", "Châteauneuf-du-Faou", "29"), ("29019", "Brest", "29"),
+                               ("22168", "Pleudihen-sur-Rance", "22")):
+            Commune.objects.update_or_create(
+                code=code, defaults={"nom": nom, "departement_code": dep, "region_code": "53"})
+
+        type_cg, _ = InstitutionType.objects.get_or_create(
+            code="CG", defaults={"libelle": "Conseil départemental"})
+        type_mairie, _ = InstitutionType.objects.get_or_create(
+            code="MAIRIE", defaults={"libelle": "Mairie"})
+        cd = Institution.objects.create(nom="CD 29", type=type_cg, commune_code="29019",
+                                        commune_nom="Brest")
+        commune = Institution.objects.create(nom="Mairie de Châteauneuf", type=type_mairie,
+                                             commune_code="29027",
+                                             commune_nom="Châteauneuf-du-Faou")
+        hors = Institution.objects.create(nom="Mairie de Pleudihen", type=type_mairie,
+                                          commune_code="22168",
+                                          commune_nom="Pleudihen-sur-Rance")
+        user = create_user(username="cd@test.fr", email="cd@test.fr", type="AUT_LOCALE")
+        ContactInstitution.objects.create(institution=cd, utilisateur=user, actif=True)
+        client = APIClient()
+        client.force_authenticate(user=user)
+        return client, cd, commune, hors
+
+    def _site(self, institution, statut, nom, commune_code="29027"):
+        enregistrer_proposes(institution, "PROD", commune_code, None, [
+            _propose(source_id=f"{nom}-id", nom=nom, commune_code=commune_code)])
+        site = SiteSensible.objects.get(institution=institution, nom=nom)
+        site.statut = statut
+        site.save(update_fields=["statut"])
+        return site
+
+    def test_le_departement_lit_ce_que_ses_communes_ont_retenu(self, decor):
+        client, cd, commune, _ = decor
+        self._site(commune, StatutSiteSensible.RETENU, "Gymnase municipal")
+
+        reponse = client.get(reverse("sitesensible-territoire"))
+
+        assert reponse.status_code == status.HTTP_200_OK
+        noms = [r["nom"] for r in reponse.data["resultats"]]
+        assert noms == ["Gymnase municipal"]
+        assert reponse.data["resultats"][0]["institution_nom"] == "Mairie de Châteauneuf"
+        assert reponse.data["resultats"][0]["lecture_seule"] is True
+
+    def test_on_ne_lit_pas_le_brouillon_dautrui(self, decor):
+        """Ni les propositions en cours de relecture, ni ce que la commune a écarté : seul son
+        travail validé."""
+        client, cd, commune, _ = decor
+        self._site(commune, StatutSiteSensible.PROPOSE, "À vérifier")
+        self._site(commune, StatutSiteSensible.ECARTE, "Écarté")
+
+        assert client.get(reverse("sitesensible-territoire")).data["resultats"] == []
+
+    def test_on_ne_lit_pas_le_departement_voisin(self, decor):
+        client, cd, _, hors = decor
+        self._site(hors, StatutSiteSensible.RETENU, "Salle des fêtes", commune_code="22168")
+
+        assert client.get(reverse("sitesensible-territoire")).data["resultats"] == []
+
+    def test_une_commune_hors_secteur_est_refusee(self, decor):
+        client, *_ = decor
+        reponse = client.get(reverse("sitesensible-territoire"), {"commune_code": "22168"})
+        assert reponse.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_la_lecture_est_tracee(self, decor):
+        client, cd, commune, _ = decor
+        site = self._site(commune, StatutSiteSensible.RETENU, "Gymnase municipal")
+
+        client.get(reverse("sitesensible-territoire"))
+
+        ligne = AuditLog.objects.filter(objet_type="SiteSensible").latest("date_action")
+        assert ligne.exposition == AuditLog.Exposition.LISTE
+        assert site.id in (ligne.objets_ids or [])
+
+    def test_une_mairie_na_pas_de_territoire_a_lire(self, agent_client, mairie):
+        client, _ = agent_client
+        reponse = client.get(reverse("sitesensible-territoire"))
         assert reponse.status_code == status.HTTP_400_BAD_REQUEST

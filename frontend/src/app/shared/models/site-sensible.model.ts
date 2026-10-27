@@ -10,6 +10,15 @@ export type CategorieSiteSensible =
 
 export type StatutSiteSensible = 'PROPOSE' | 'RETENU' | 'ECARTE';
 
+/** Qui a la charge du site. C'est ce qui permet à une collectivité supra-communale de ne relire
+ * que sa compétence : sur les 852 établissements scolaires du Finistère, 75 collèges publics
+ * relèvent du département, 374 écoles publiques des communes, 40 lycées de la région. */
+export type EchelonCompetence =
+  'COMMUNE' | 'EPCI' | 'DEPARTEMENT' | 'REGION' | 'ETAT' | 'PRIVE' | 'INDETERMINE';
+
+/** Niveau de secteur d'une institution, tel que son type le lui donne. */
+export type NiveauSecteur = 'commune' | 'epci' | 'departement' | 'region' | 'national';
+
 export interface SiteSensible {
   id: string;
   institution: string;
@@ -33,6 +42,7 @@ export interface SiteSensible {
    * et pour un élevage les espèces et l'effectif animal autorisé (`especes`, `cheptel`). */
   attributs: Record<string, unknown>;
   commentaire: string | null;
+  echelon_competence: EchelonCompetence;
   /** À protéger : le site subit la crise (école, cheptel, camping occupé). */
   est_enjeu: boolean;
   /** Mobilisable : le site aide à y répondre (car, pelle, lits, cuisine, vétérinaire). */
@@ -79,16 +89,48 @@ export interface LigneSynthese {
   ECARTE: number;
 }
 
+/** Un thème recensable par SIRENE. Plus fin qu'une catégorie : à l'échelle d'un département,
+ * « moyens et travaux » en bloc rend 3 270 établissements, « transport de voyageurs » 57. */
+export interface ThemeSirene {
+  code: string;
+  libelle: string;
+  categorie: CategorieSiteSensible;
+  defaut: boolean;
+}
+
 export interface SyntheseSitesSensibles {
   institution: string;
   institution_nom: string;
   commune_code: string | null;
   commune_nom: string | null;
+  /** Niveau de la collectivité connectée, et nom de son secteur (« Finistère »). */
+  niveau: NiveauSecteur;
+  secteur_nom: string | null;
+  /** Son échelon de compétence : ce qu'elle valide dans SON plan. */
+  echelon_propre: EchelonCompetence;
+  /** Les périmètres qu'elle a le droit de demander à l'import (jamais plus large que son
+   * niveau). */
+  perimetres_possibles: NiveauSecteur[];
   par_categorie: LigneSynthese[];
-  /** Sites encore en PROPOSE : ce qui reste à relire. */
+  /** Sites en PROPOSE relevant de sa compétence : le travail réel qui reste. */
   a_relire: number;
+  /** Tous échelons confondus : rien n'est caché, c'est le compteur qui est cadré. */
+  a_relire_tous_echelons: number;
   imports: ImportOpenData[];
   sources: { code: SourceSiteSensible; libelle: string }[];
+  themes: ThemeSirene[];
+  echelons: { code: EchelonCompetence; libelle: string }[];
+}
+
+/** Un site retenu par une AUTRE collectivité du secteur, lu sans être recopié. */
+export interface SiteTerritoire extends SiteSensible {
+  institution_nom: string;
+  lecture_seule: true;
+}
+
+export interface LectureTerritoire {
+  communes: number;
+  resultats: SiteTerritoire[];
 }
 
 /** Les champs de convention qu'un agent saisit. */

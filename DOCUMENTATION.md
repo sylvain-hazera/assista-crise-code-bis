@@ -421,6 +421,52 @@ Règles qui structurent le paquet :
   écluses en « installation sportive »). Même posture que
   `RisqueCommunalViewSet.suggestions_georisques`, mais persistée : plusieurs dizaines de sites
   par commune, relus sur plusieurs séances.
+- **Une collectivité ne valide pas un territoire, elle valide sa compétence**
+  (`EchelonCompetence` sur chaque ligne). Mesuré sur le Finistère : 852 établissements
+  scolaires, dont **75 collèges publics** relèvent du conseil départemental, 374 écoles
+  publiques des communes et 40 lycées publics de la région. Un inventaire qui mélange les trois
+  annonce 852 lignes « à vérifier » qu'aucun agent départemental ne relira.
+  - L'échelon est **déduit de la source** quand elle le dit : l'annuaire de l'éducation porte
+    `type_etablissement` et `statut_public_prive`, ce qui suffit (école → commune, collège →
+    département, lycée → région, privé sous contrat → `PRIVE` car son bâtiment n'est la charge
+    d'aucune collectivité, service administratif → `ETAT`). Les autres sources ne permettent pas
+    de conclure — Géorisques dit qui exploite et non qui a la charge, le recensement des
+    équipements sportifs ne nomme pas le propriétaire, FINESS ne dit pas qui finance — elles
+    déposent donc `INDETERMINE` plutôt que de deviner.
+  - Le compteur « à relire » est borné à la compétence **seulement pour une collectivité
+    supra-communale**. Pour une mairie, tout ce qui est sur sa commune la concerne, installations
+    classées et commerces compris : la borner à l'échelon « commune » masquerait l'essentiel de
+    son plan. `a_relire_tous_echelons` reste exposé — rien n'est caché, c'est le compteur qui est
+    cadré.
+  - Le filtre de la page suit la même règle, et la recherche ne filtre jamais par échelon : ce
+    qui ne relève pas de la collectivité doit rester **retrouvable**, c'était l'exigence.
+- **Le périmètre d'import est choisi, borné par le niveau de la collectivité** (`perimetre` sur
+  l'action `importer` : commune / epci / departement / region). On restreint, on n'élargit
+  jamais — même règle que `SECTEUR_NIVEAU_PAR_TYPE_INSTITUTION`, qui donne déjà « departement »
+  à un `CG` et « region » à un `CR`. Trois sources ont un filtre de secteur natif, ce qui évite
+  277 appels : Géorisques (`departement`, vérifié — 40 pages pour le Finistère contre 1 389 pour
+  la France), SIRENE (`departement`) et l'annuaire de l'éducation (`code_departement`, à
+  zéro-compléter sur trois caractères). FINESS lit de toute façon son flux national en entier.
+  Seul l'EPCI passe par un `IN` sur ses codes commune, aucun jeu ne le portant. Les plafonds
+  suivent le niveau (`PLAFONDS`), sans quoi un plafond communal de 500 tronquerait les 852
+  établissements d'un département.
+- **Chaque site porte SA commune**, pas celle de l'institution qui importe : évident mais faux
+  jusqu'ici, et bloquant dès le premier import départemental. Pour Géorisques, c'est `codeInsee`
+  qui fait foi et **pas** le libellé `commune`, qui est sale — un établissement bien situé dans
+  le Finistère y est étiqueté « Pleudihen-sur-Rance », commune des Côtes-d'Armor.
+- **Un conseil départemental LIT les inventaires de ses communes, il ne les copie pas**
+  (action `territoire`). Ses 277 communes détiennent déjà leurs écoles, leurs installations
+  classées et leurs élevages, souvent corrigés à la main ; en recopier 5 000 lignes les figerait
+  au jour de l'import et lui ferait relire le travail des autres. Trois bornes : seulement les
+  communes de SON secteur, seulement le statut `RETENU` (ce qu'une mairie a validé, jamais ses
+  propositions en cours ni ses écartés — on ne lit pas le brouillon d'autrui), et le masquage
+  des personnes en nom propre s'applique à l'identique, `devoiler` restant réservé à sa propre
+  institution. La lecture est tracée en `exposition=LISTE` avec les identifiants lus.
+- **Les thèmes SIRENE sont plus fins que les catégories.** À l'échelle d'un département, un
+  « moyens et travaux » unique rend 3 270 établissements dans le Finistère — inexploitable —
+  alors que « transport de voyageurs » en rend 57, et ce sont précisément ces 57 autocaristes qui
+  constituent le levier d'évacuation d'un conseil départemental. Le thème porte donc sa catégorie
+  (`sirene.THEMES`), et la catégorie reste large pour que les filtres restent lisibles.
 - **Un établissement ne produit qu'une ligne, même connu de plusieurs sources.** Le SIRET est la
   seule clé commune (Géorisques le donne sur les 27 ICPE de Châteauneuf-du-Faou, SIRENE en fait
   son identifiant) et **15 des 25 installations classées de cette commune sont aussi des

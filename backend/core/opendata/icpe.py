@@ -19,8 +19,8 @@ clair sur la ligne pour le corriger d'un clic.
 """
 import re
 
-from ..models import CategorieSiteSensible, SourceSiteSensible
-from .base import MAX_RESULTATS, SitePropose, fetch_json
+from ..models import CategorieSiteSensible, EchelonCompetence, SourceSiteSensible
+from .base import SitePropose, fetch_json, plafond
 
 URL = "https://georisques.gouv.fr/api/v1/installations_classees"
 
@@ -176,6 +176,14 @@ def _vers_site(enregistrement):
         adresse=_adresse(enregistrement),
         latitude=enregistrement.get("latitude"),
         longitude=enregistrement.get("longitude"),
+        # `codeInsee` et NON le libellé `commune`, qui est sale : un établissement bien situé
+        # dans le Finistère y est étiqueté « Pleudihen-sur-Rance », qui est dans les
+        # Côtes-d'Armor. Le code fait foi, le libellé n'est qu'un affichage.
+        commune_code=enregistrement.get("codeInsee"),
+        commune_nom=enregistrement.get("commune"),
+        # Le registre dit qui exploite, pas qui a la charge : un CHRU et une EARL y figurent
+        # pareillement. On laisse l'agent trancher plutôt que de deviner.
+        echelon_competence=EchelonCompetence.INDETERMINE,
         attributs={
             "code_aiot": code_aiot,
             "regime": enregistrement.get("regime"),
@@ -194,10 +202,34 @@ def _vers_site(enregistrement):
     )
 
 
-def collecter(commune_code):
+def _filtre_territoire(perimetre):
+    """Géorisques a un filtre départemental et régional natifs, vérifiés en direct (100 % des
+    enregistrements de `departement=29` portent bien un code INSEE du 29, et le département
+    tient en 40 pages contre 1 389 pour la France entière). Sans eux, il faudrait 277 appels
+    pour un département."""
+    if perimetre.niveau == "departement":
+        return {"departement": perimetre.code}
+    if perimetre.niveau == "region":
+        return {"region": perimetre.code}
+    return None
+
+
+def collecter(perimetre):
+    filtre_secteur = _filtre_territoire(perimetre)
+    if filtre_secteur is None:
+        sites = []
+        for commune_code in perimetre.communes:
+            sites += _collecter_filtre({"code_insee": commune_code}, plafond(perimetre) - len(sites))
+            if len(sites) >= plafond(perimetre):
+                break
+        return sites
+    return _collecter_filtre(filtre_secteur, plafond(perimetre))
+
+
+def _collecter_filtre(filtre, maximum):
     sites, page = [], 1
-    while len(sites) < MAX_RESULTATS:
-        data = fetch_json(URL, {"code_insee": commune_code, "page": page, "page_size": 100})
+    while len(sites) < maximum:
+        data = fetch_json(URL, {**filtre, "page": page, "page_size": 100})
         if not data or not data.get("data"):
             break
         for enregistrement in data["data"]:

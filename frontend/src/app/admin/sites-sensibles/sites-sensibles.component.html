@@ -4,11 +4,17 @@
     <div class="header-left">
       <h1><span class="material-icons">domain</span> Sites sensibles</h1>
       <p class="subtitle">
-        @if (synthese?.commune_nom) {
-          {{ synthese?.commune_nom }} —
+        @if (synthese?.secteur_nom) {
+          {{ synthese?.secteur_nom }} —
         }
         {{ compte('RETENU') }} retenu(s) au plan,
-        {{ compte('PROPOSE') }} à vérifier,
+        @if (estSupraCommunal) {
+          {{ synthese?.a_relire }} à vérifier dans votre compétence
+          <span class="sur-total">({{ synthese?.a_relire_tous_echelons }} sur tout le
+            territoire)</span>,
+        } @else {
+          {{ compte('PROPOSE') }} à vérifier,
+        }
         {{ compte('ECARTE') }} écarté(s)
       </p>
     </div>
@@ -136,17 +142,34 @@
             lignes à relire.
           </p>
           <ul class="themes">
-            @for (theme of THEMES_SIRENE; track theme.code) {
+            @for (theme of synthese?.themes; track theme.code) {
               <li>
                 <label>
                   <input type="checkbox" [checked]="themesChoisis.has(theme.code)"
                          (change)="basculerTheme(theme.code)" />
                   <span class="theme-nom">{{ theme.libelle }}</span>
                 </label>
-                @if (theme.aide) { <span class="theme-aide">{{ theme.aide }}</span> }
+                @if (aideTheme(theme.code)) {
+                  <span class="theme-aide">{{ aideTheme(theme.code) }}</span>
+                }
               </li>
             }
           </ul>
+
+          @if ((synthese?.perimetres_possibles?.length || 0) > 1) {
+            <label class="perimetre">
+              Sur quel périmètre ?
+              <select [(ngModel)]="perimetreChoisi" name="perimetre">
+                @for (niveau of synthese?.perimetres_possibles; track niveau) {
+                  <option [value]="niveau">{{ libellePerimetre(niveau) }}</option>
+                }
+              </select>
+              <span class="perimetre-aide">
+                Un département compte vite : 3 270 entreprises de transport et travaux dans le
+                Finistère, contre 57 autocaristes. Demandez le thème précis plutôt que le lot.
+              </span>
+            </label>
+          }
           <p class="recensement-rgpd">
             <span class="material-icons">lock</span>
             Une partie de ces lignes désigne des <strong>personnes en nom propre</strong> —
@@ -173,6 +196,29 @@
         <option value="ECARTE">Écartés</option>
         <option value="">Tous les statuts</option>
       </select>
+      @if (estSupraCommunal) {
+        <select [(ngModel)]="filtreEchelon" class="filtre filtre-competence">
+          <option [value]="synthese?.echelon_propre">
+            Ma compétence ({{ compteEchelon(synthese!.echelon_propre) }})
+          </option>
+          <option value="">Tout le territoire ({{ sites.length }})</option>
+          @for (echelon of synthese?.echelons; track echelon.code) {
+            @if (echelon.code !== synthese?.echelon_propre && compteEchelon(echelon.code)) {
+              <option [value]="echelon.code">
+                {{ echelon.libelle }} ({{ compteEchelon(echelon.code) }})
+              </option>
+            }
+          }
+        </select>
+        @if (communesPresentes.length > 1) {
+          <select [(ngModel)]="filtreCommune" class="filtre">
+            <option value="">Toutes les communes ({{ communesPresentes.length }})</option>
+            @for (commune of communesPresentes; track commune.code) {
+              <option [value]="commune.code">{{ commune.nom }}</option>
+            }
+          </select>
+        }
+      }
       <select [(ngModel)]="filtreRole" class="filtre">
         <option value="">Enjeux et ressources</option>
         <option value="enjeu">À protéger ({{ compteRole('enjeu') }})</option>
@@ -250,7 +296,16 @@
                   @if (site.est_ressource) {
                     <span class="etiquette etiquette-ressource">mobilisable</span>
                   }
+                  @if (estSupraCommunal) {
+                    <span class="etiquette"
+                          [class.etiquette-competence]="estMaCompetence(site)">
+                      {{ echelonLibelle(site) }}
+                    </span>
+                  }
                 </div>
+                @if (estSupraCommunal && site.commune_nom) {
+                  <div class="commune-du-site">{{ site.commune_nom }}</div>
+                }
               </td>
 
               <td>
@@ -410,6 +465,61 @@
           }
         </tbody>
       </table>
+    }
+
+    @if (estSupraCommunal) {
+      <section class="territoire">
+        <button type="button" class="depliant" (click)="basculerTerritoire()">
+          <span class="material-icons">{{ territoireOuvert ? 'expand_less' : 'expand_more' }}</span>
+          Voir ce que les communes de mon secteur ont retenu
+        </button>
+        @if (territoireOuvert) {
+          <p class="territoire-aide">
+            Lecture seule, et rien n'est recopié dans votre inventaire : ces lignes restent
+            celles des communes, avec leurs corrections. Vous ne voyez que ce qu'elles ont
+            <strong>retenu</strong> — jamais leurs propositions en cours de relecture. Chaque
+            consultation est inscrite à la main courante.
+            @if (communesDuSecteur) {
+              <span class="territoire-compte">{{ communesDuSecteur }} commune(s) dans votre
+                secteur.</span>
+            }
+          </p>
+          @if (!territoire.length) {
+            <p class="vide">
+              Aucune commune de votre secteur n'a encore retenu de site dans Assista-Crise.
+            </p>
+          } @else {
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Site</th>
+                  <th>Catégorie</th>
+                  <th>Commune</th>
+                  <th>Retenu par</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (site of territoire; track site.id) {
+                  <tr>
+                    <td>
+                      {{ site.nom }}
+                      @if (site.adresse) { <div class="adresse-lue">{{ site.adresse }}</div> }
+                      @if (site.adresse_masquee) {
+                        <span class="adresse-masquee">
+                          <span class="material-icons">lock</span> personne en nom propre
+                        </span>
+                      }
+                    </td>
+                    <td>{{ site.categorie_libelle }}</td>
+                    <td>{{ site.commune_nom || site.commune_code }}</td>
+                    <td class="col-provenance">{{ site.institution_nom }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          }
+        }
+      </section>
     }
 
     <p class="mention-licence">

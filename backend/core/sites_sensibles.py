@@ -17,8 +17,11 @@ import logging
 
 from django.contrib.gis.geos import Point
 
-from .models import CategorieSiteSensible, SiteSensible, StatutSiteSensible
+from .models import (
+    CategorieSiteSensible, EchelonCompetence, SiteSensible, StatutSiteSensible,
+)
 from .opendata import CONNECTEURS
+from .opendata.base import Perimetre, perimetre_commune
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +55,29 @@ def _point(site):
         return Point(float(site.longitude), float(site.latitude), srid=4326)
     except (TypeError, ValueError):
         return None
+
+
+def construire_perimetre(niveau, code):
+    """Reconstruit un périmètre depuis son niveau et son code, liste de communes comprise.
+
+    Séparé de `Perimetre` parce que cette liste ne voyage pas : un département en compte 277, et
+    les faire transiter par Celery alourdirait la file pour une information qui se recalcule en
+    une requête locale (`communes_de_secteur` lit la table Commune)."""
+    if not niveau or niveau == "commune":
+        return perimetre_commune(code)
+    from .geo_lookup import communes_de_secteur
+
+    return Perimetre(niveau, code, communes_de_secteur(niveau, code) or [])
+
+
+def _perimetre(valeur):
+    """Tolère les trois formes d'appel : un code commune (le cas courant et historique), un
+    dictionnaire `{niveau, code}` (ce qui traverse Celery), ou un Perimetre déjà construit."""
+    if isinstance(valeur, Perimetre):
+        return valeur
+    if isinstance(valeur, dict):
+        return construire_perimetre(valeur.get("niveau"), valeur.get("code"))
+    return perimetre_commune(valeur)
 
 
 def _siret(propose):
@@ -182,6 +208,12 @@ def _appliquer(existant, propose, commune_code, commune_nom):
         if existant.categorie != propose.categorie:
             existant.categorie = propose.categorie
             modifie = True
+        # L'échelon de compétence est une lecture de la source, pas une décision : il se corrige
+        # comme la catégorie, tant que personne n'a statué.
+        echelon = propose.echelon_competence
+        if echelon and existant.echelon_competence != echelon:
+            existant.echelon_competence = echelon
+            modifie = True
         # Même règle pour le rôle : tant que personne n'a statué, il appartient à la source.
         if (existant.est_enjeu, existant.est_ressource) != (propose.est_enjeu,
                                                             propose.est_ressource):
@@ -218,9 +250,9 @@ def _appliquer(existant, propose, commune_code, commune_nom):
         if point is not None:
             existant.location = point
             modifie = True
-    if not existant.commune_code and commune_code:
-        existant.commune_code = commune_code
-        existant.commune_nom = commune_nom
+    if not existant.commune_code and (propose.commune_code or commune_code):
+        existant.commune_code = propose.commune_code or commune_code
+        existant.commune_nom = propose.commune_nom or commune_nom
         modifie = True
 
     if modifie:
@@ -253,8 +285,11 @@ def enregistrer_proposes(institution, environment, commune_code, commune_nom, pr
         SiteSensible.objects.create(
             institution=institution,
             environment=environment,
-            commune_code=commune_code,
-            commune_nom=commune_nom,
+            # La commune du SITE : celle de l'institution ne sert plus que de repli, et serait
+            # fausse dès qu'un département importe ses 277 communes d'un coup.
+            commune_code=propose.commune_code or commune_code,
+            commune_nom=propose.commune_nom or commune_nom,
+            echelon_competence=propose.echelon_competence or EchelonCompetence.INDETERMINE,
             source=propose.source,
             source_id=propose.source_id,
             categorie=propose.categorie,
@@ -277,42 +312,55 @@ def enregistrer_proposes(institution, environment, commune_code, commune_nom, pr
             "total": crees + majs + inchanges}
 
 
-def importer_source(institution, source, commune_code, commune_nom=None, environment=None,
+def importer_source(institution, source, perimetre, commune_nom=None, environment=None,
                     options=None):
     """Collecte une source et enregistre ses propositions. Ne lève jamais : une source en panne
     rend un compte rendu à zéro, les autres continuent.
 
-    `options` est passé tel quel au connecteur : seul SIRENE en a besoin (`categories`, les
-    thèmes que la commune veut recenser)."""
+    `perimetre` est un code commune, un `{niveau, code}` ou un Perimetre (voir _perimetre).
+    `options` est passé tel quel au connecteur : seul SIRENE en a besoin (`themes`, ce que la
+    collectivité veut recenser)."""
     connecteur = CONNECTEURS.get(source)
     if connecteur is None:
         raise ValueError(f"Source inconnue : {source}")
     environment = environment or institution.environment
+    territoire = _perimetre(perimetre)
     try:
-        proposes = connecteur.collecter(commune_code, **(options or {}))
+        proposes = connecteur.collecter(territoire, **(options or {}))
     except Exception as exc:
-        logger.warning("Import %s pour la commune %s : %s", source, commune_code, exc)
+        logger.warning("Import %s sur le périmètre %s %s : %s", source, territoire.niveau,
+                       territoire.code, exc)
         return {"crees": 0, "mis_a_jour": 0, "inchanges": 0, "total": 0, "erreur": str(exc)}
-    return enregistrer_proposes(institution, environment, commune_code, commune_nom, proposes)
+    return enregistrer_proposes(institution, environment, territoire.code, commune_nom, proposes)
 
 
-def synthese_par_categorie(institution, environment):
+def synthese_par_categorie(institution, environment, echelon_propre=None):
     """Compte des sites par catégorie et par statut — l'en-tête de la page, qui doit dire d'un
-    coup d'œil ce qui reste à relire."""
+    coup d'œil ce qui reste à relire.
+
+    `a_relire` est borné à la compétence de la collectivité quand on la connaît. Sans ça, un
+    conseil départemental lirait « 852 sites à vérifier » là où 75 collèges publics lui
+    incombent : un compteur qui annonce dix fois le travail réel ne sert à rien."""
     synthese = {}
     lignes = SiteSensible.objects.filter(
         institution=institution, environment=environment,
-    ).values_list("categorie", "statut")
-    for categorie, statut in lignes:
+    ).values_list("categorie", "statut", "echelon_competence")
+    a_relire = 0
+    for categorie, statut, echelon in lignes:
         case = synthese.setdefault(categorie, {code: 0 for code, _ in StatutSiteSensible.choices})
         case[statut] = case.get(statut, 0) + 1
+        if statut == StatutSiteSensible.PROPOSE and (
+            echelon_propre is None or echelon == echelon_propre
+        ):
+            a_relire += 1
     return {
         "par_categorie": [
             {"categorie": code, "libelle": libelle, **synthese.get(code, {})}
             for code, libelle in CategorieSiteSensible.choices
             if code in synthese
         ],
-        "a_relire": sum(
+        "a_relire": a_relire,
+        "a_relire_tous_echelons": sum(
             case.get(StatutSiteSensible.PROPOSE, 0) for case in synthese.values()
         ),
     }
@@ -327,7 +375,7 @@ def _marquer(institution, environment, source, **champs):
     return tache
 
 
-def executer_import(institution, source, commune_code, commune_nom=None, environment=None,
+def executer_import(institution, source, perimetre, commune_nom=None, environment=None,
                     options=None):
     """Exécute un import de bout en bout et consigne son résultat dans ImportOpenData.
 
@@ -338,7 +386,7 @@ def executer_import(institution, source, commune_code, commune_nom=None, environ
     from .models import StatutImportOpenData
 
     environment = environment or institution.environment
-    resultat = importer_source(institution, source, commune_code, commune_nom, environment,
+    resultat = importer_source(institution, source, perimetre, commune_nom, environment,
                                options)
     echec = "erreur" in resultat
     _marquer(
@@ -351,7 +399,7 @@ def executer_import(institution, source, commune_code, commune_nom=None, environ
     return resultat
 
 
-def lancer_import(institution, source, commune_code, commune_nom=None, environment=None,
+def lancer_import(institution, source, perimetre, commune_nom=None, environment=None,
                   options=None):
     """Lance un import : synchrone pour les API filtrables par commune, délégué à Celery pour
     FINESS (voir opendata/__init__.py). Rend (resultat, asynchrone)."""
@@ -366,9 +414,14 @@ def lancer_import(institution, source, commune_code, commune_nom=None, environme
             institution, environment, source,
             statut=StatutImportOpenData.EN_COURS, erreur=None, date_fin=None, resultat={},
         )
+        territoire = _perimetre(perimetre)
         importer_sites_sensibles_task.delay(
-            str(institution.id), source, commune_code, commune_nom, environment, options,
+            # Seuls le niveau et le code voyagent : la liste des communes se reconstruit côté
+            # tâche (voir construire_perimetre).
+            str(institution.id), source,
+            {"niveau": territoire.niveau, "code": territoire.code},
+            commune_nom, environment, options,
         )
         return None, True
-    return (executer_import(institution, source, commune_code, commune_nom, environment, options),
+    return (executer_import(institution, source, perimetre, commune_nom, environment, options),
             False)

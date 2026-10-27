@@ -26,7 +26,7 @@ import tempfile
 
 import requests
 
-from ..models import CategorieSiteSensible, SourceSiteSensible
+from ..models import CategorieSiteSensible, EchelonCompetence, SourceSiteSensible
 from .base import SitePropose, fetch_json
 
 logger = logging.getLogger(__name__)
@@ -144,9 +144,11 @@ def _objets_du_tableau(flux, cle):
         tampon += morceau
 
 
-def _adresse_de_la_commune(entite, commune_code):
+def _adresse_du_perimetre(entite, communes):
+    """Le flux est national : c'est ici que le périmètre s'applique. `communes` est un ensemble,
+    pour qu'un département de 277 communes coûte le même test qu'une seule."""
     for adresse in entite.get("adresse") or []:
-        if adresse.get("cogCommune") == commune_code:
+        if adresse.get("cogCommune") in communes:
             return adresse
     return None
 
@@ -187,6 +189,12 @@ def _vers_site(ege, adresse, denomination_juridique, date_source):
         latitude=_coordonnee(geo.get("directionLatitude")),
         longitude=_coordonnee(geo.get("directionLongitude")),
         telephone=_telephone(ege),
+        commune_code=adresse.get("cogCommune"),
+        commune_nom=adresse.get("ligneAcheminement"),
+        # FINESS ne dit pas qui finance : un EHPAD peut relever du département, un hôpital de
+        # l'ARS, une clinique du privé. Le code de catégorie ne suffit pas à conclure sans la
+        # table de référence que l'ANS ne publie pas dans ce flux.
+        echelon_competence=EchelonCompetence.INDETERMINE,
         attributs={
             "numero_finess": numero,
             "date_maj_source": date_source.isoformat() if date_source else None,
@@ -201,9 +209,12 @@ def _vers_site(ege, adresse, denomination_juridique, date_source):
     )
 
 
-def collecter(commune_code):
-    """Structures FINESS en activité sur la commune. Liste vide si le flux est injoignable —
-    jamais d'exception : une source en panne ne doit pas faire échouer l'import des autres."""
+def collecter(perimetre):
+    """Structures FINESS en activité sur le périmètre. Liste vide si le flux est injoignable —
+    jamais d'exception : une source en panne ne doit pas faire échouer l'import des autres.
+
+    Le périmètre ne change rien au coût : le flux national est lu en entier de toute façon, un
+    département ne demande donc pas 277 lectures."""
     url, date_source = _resource_du_jour()
     if not url:
         return []
@@ -214,11 +225,12 @@ def collecter(commune_code):
         return []
 
     sites = []
+    communes = set(perimetre.communes)
     with gzip.open(chemin, "rt", encoding="utf-8") as flux:
         for pmej in _objets_du_tableau(flux, "pmej"):
             denomination = (pmej.get("informationsGeneralesPMEJ") or {}).get("denominationLonguePmSmsse")
             for ege in pmej.get("ege") or []:
-                adresse = _adresse_de_la_commune(ege, commune_code)
+                adresse = _adresse_du_perimetre(ege, communes)
                 if adresse is None:
                     continue
                 site = _vers_site(ege, adresse, denomination, date_source)

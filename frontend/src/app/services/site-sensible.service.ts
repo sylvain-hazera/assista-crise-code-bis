@@ -5,8 +5,8 @@ import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
 import { PointOperationnel } from '../shared/models/point-operationnel.model';
 import {
-  CategorieSiteSensible, CoordonneesDevoilees, ResultatImport, SaisieConvention, SiteSensible,
-  SourceSiteSensible, SyntheseSitesSensibles,
+  CoordonneesDevoilees, LectureTerritoire, NiveauSecteur, ResultatImport, SaisieConvention,
+  SiteSensible, SourceSiteSensible, SyntheseSitesSensibles,
 } from '../shared/models/site-sensible.model';
 
 @Injectable({ providedIn: 'root' })
@@ -26,15 +26,25 @@ export class SiteSensibleService {
   /** Lance l'import des sources demandées. FINESS et SIRENE partent en tâche de fond
    * (`asynchrone: true`) : leur état se suit en rappelant `synthese`.
    *
-   * `categories` ne concerne que SIRENE : ce sont les thèmes à recenser (élevages, moyens,
-   * hébergement…). Sans elles, SIRENE prendrait ses thèmes par défaut — inexploitable en ville,
-   * d'où le choix explicite dans la page. */
-  importer(sources: SourceSiteSensible[],
-           categories?: CategorieSiteSensible[]): Observable<ResultatImport> {
-    const corps: { sources: SourceSiteSensible[]; categories?: CategorieSiteSensible[] } =
+   * `themes` ne concerne que SIRENE : ce sont les thèmes à recenser (élevages, autocars,
+   * hébergement…). `perimetre` vaut « commune » par défaut et ne peut pas dépasser le niveau de
+   * la collectivité — le serveur refuse, la page ne propose que le possible. */
+  importer(sources: SourceSiteSensible[], themes?: string[],
+           perimetre?: NiveauSecteur): Observable<ResultatImport> {
+    const corps: { sources: SourceSiteSensible[]; themes?: string[]; perimetre?: NiveauSecteur } =
       { sources };
-    if (categories?.length) corps.categories = categories;
+    if (themes?.length) corps.themes = themes;
+    if (perimetre) corps.perimetre = perimetre;
     return this.http.post<ResultatImport>(`${this.url}/importer/`, corps);
+  }
+
+  /** Les sites RETENUS par les autres collectivités du secteur, en lecture seule. Un conseil
+   * départemental les lit chez elles au lieu de recopier 5 000 lignes qui seraient figées au
+   * jour de l'import. La consultation est inscrite à la main courante. */
+  territoire(communeCode?: string): Observable<LectureTerritoire> {
+    const params: Record<string, string> = {};
+    if (communeCode) params['commune_code'] = communeCode;
+    return this.http.get<LectureTerritoire>(`${this.url}/territoire/`, { params });
   }
 
   /** Dévoile l'adresse et les coordonnées d'une personne en nom propre. Appel serveur
