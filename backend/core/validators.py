@@ -18,6 +18,13 @@ def validate_image_file(file):
         raise ValidationError("Fichier image invalide. Le fichier est corrompu ou n'est pas une image.")
 
 
+def validate_convention_file(file):
+    """Convention signée entre une collectivité et une entreprise (voir SiteSensible) : mêmes
+    contraintes qu'un scan de pièce — PDF ou photo, 10 Mo — parce qu'une convention arrive de la
+    même façon, scannée au service ou photographiée en mairie."""
+    validate_identity_document_file(file)
+
+
 def validate_identity_document_file(file):
     """Pour les pièces d'identité (voir PieceIdentiteReserve) : contrairement à
     validate_image_file, accepte aussi un PDF (scan) en plus d'une photo, et une limite plus

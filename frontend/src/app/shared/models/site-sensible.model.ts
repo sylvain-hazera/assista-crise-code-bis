@@ -39,6 +39,16 @@ export interface SiteSensible {
   est_ressource: boolean;
   /** La source désigne une personne physique, donc une adresse de domicile. */
   personne_physique: boolean;
+  /** Une ressource recensée n'est pas une ressource acquise : seule une convention engage. */
+  convention_existe: boolean;
+  convention_numero: string | null;
+  convention_date_signature: string | null;
+  /** Une convention expirée est plus dangereuse qu'une absence de convention : on compte
+   * dessus. */
+  convention_echeance: string | null;
+  /** Le document n'est jamais servi comme URL (chiffré au repos, préfixe bloqué par nginx) :
+   * ce booléen dit seulement qu'il existe. */
+  a_convention_document: boolean;
   /** Vrai quand `adresse`, `latitude` et `longitude` sont volontairement nuls : il faut passer
    * par `devoiler()`, qui laisse une trace en main courante. */
   adresse_masquee: boolean;
@@ -79,6 +89,14 @@ export interface SyntheseSitesSensibles {
   a_relire: number;
   imports: ImportOpenData[];
   sources: { code: SourceSiteSensible; libelle: string }[];
+}
+
+/** Les champs de convention qu'un agent saisit. */
+export interface SaisieConvention {
+  convention_existe: boolean;
+  convention_numero: string;
+  convention_date_signature: string;
+  convention_echeance: string;
 }
 
 /** Ce que rend `devoiler()` : la donnée d'une personne, après une consultation tracée. */

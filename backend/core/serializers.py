@@ -3560,6 +3560,7 @@ class SiteSensibleSerializer(serializers.ModelSerializer):
     longitude = serializers.SerializerMethodField()
     valide_par_nom = serializers.SerializerMethodField()
     adresse_masquee = serializers.BooleanField(source="personne_physique", read_only=True)
+    a_convention_document = serializers.SerializerMethodField()
 
     class Meta:
         model = SiteSensible
@@ -3567,6 +3568,11 @@ class SiteSensibleSerializer(serializers.ModelSerializer):
         # domicile, chiffrées) ne doit JAMAIS sortir par la liste. Elles ne s'obtiennent que par
         # l'action `devoiler`, qui laisse une trace en main courante.
         exclude = ['donnees_personnelles']
+        extra_kwargs = {
+            # Le fichier est chiffré au repos et son préfixe bloqué par nginx : une URL /media/
+            # ne servirait à rien. Le téléchargement passe par l'action dédiée, qui trace.
+            'convention_document': {'write_only': True, 'required': False},
+        }
         read_only_fields = [
             'institution', 'environment', 'source', 'source_id', 'attributs', 'date_source',
             'date_import', 'modifie_le', 'valide_par', 'commune_code', 'commune_nom',
@@ -3592,6 +3598,9 @@ class SiteSensibleSerializer(serializers.ModelSerializer):
 
     def get_longitude(self, obj):
         return obj.location.x if obj.location else None
+
+    def get_a_convention_document(self, obj):
+        return bool(obj.convention_document)
 
     def get_valide_par_nom(self, obj):
         if not obj.valide_par:

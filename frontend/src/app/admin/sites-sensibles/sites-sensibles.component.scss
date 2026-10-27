@@ -459,3 +459,123 @@
   font-size: .85rem;
   color: #1f2937;
 }
+
+/* ── Rapprochement entre sources ────────────────────────────────────────────────────────── */
+.nom-autre {
+  font-size: .76rem;
+  font-style: italic;
+  color: #6b7280;
+  margin-top: .15rem;
+}
+
+.sources-liees {
+  display: block;
+  font-size: .74rem;
+  color: #6b7280;
+}
+
+/* ── Convention ─────────────────────────────────────────────────────────────────────────── */
+.etiquette-convention { background: #eef2ff; color: #3730a3; }
+.etiquette-perimee { background: #fef2f2; color: #b91c1c; }
+
+.etiquette-convention,
+.etiquette-perimee {
+  display: inline-flex;
+  align-items: center;
+  gap: .2rem;
+  margin-top: .3rem;
+
+  .material-icons { font-size: .85rem; }
+}
+
+.btn-convention {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #9ca3af;
+  padding: 0 .2rem;
+
+  .material-icons { font-size: 1.1rem; }
+  &:hover { color: #3730a3; }
+  &.actif { color: #3730a3; }
+}
+
+.ligne-convention > td {
+  background: #f9fafb;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.convention {
+  padding: .4rem .2rem;
+
+  .convention-case {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    font-size: .9rem;
+    font-weight: 600;
+    color: #1f2937;
+    cursor: pointer;
+  }
+
+  .convention-aide {
+    margin: .25rem 0 .75rem 1.5rem;
+    font-size: .8rem;
+    color: #6b7280;
+  }
+}
+
+.convention-champs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: .6rem 1rem;
+  margin: 0 0 .75rem 1.5rem;
+
+  label {
+    display: flex;
+    flex-direction: column;
+    gap: .2rem;
+    font-size: .78rem;
+    color: #4b5563;
+  }
+
+  input[type='text'],
+  input[type='date'] {
+    border: 1px solid #d1d5db;
+    border-radius: 5px;
+    padding: .35rem .5rem;
+    font-size: .85rem;
+  }
+
+  .convention-fichier { grid-column: 1 / -1; }
+  input[type='file'] { font-size: .8rem; }
+}
+
+.lien-document {
+  display: inline-flex;
+  align-items: center;
+  gap: .25rem;
+  margin: 0 .5rem .5rem 1.5rem;
+  padding: .25rem .6rem;
+  border: 1px solid #c7d2fe;
+  border-radius: 5px;
+  background: #eef2ff;
+  color: #3730a3;
+  font-size: .8rem;
+  cursor: pointer;
+
+  .material-icons { font-size: .95rem; }
+  &:hover { background: #e0e7ff; }
+}
+
+.convention-trace {
+  font-size: .74rem;
+  color: #6b7280;
+}
+
+.convention-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: .5rem;
+  margin-left: 1.5rem;
+}

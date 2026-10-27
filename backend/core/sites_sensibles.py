@@ -4,7 +4,10 @@ Deux principes, tenus par les tests :
 
 1. Rien n'entre jamais ailleurs qu'en PROPOSE. L'open data remplit le formulaire, il ne signe
    pas le plan de sauvegarde.
-2. Un ré-import n'écrase JAMAIS le travail d'un agent. Le nom corrigé, l'effectif estimé, le
+2. Un même établissement ne produit qu'UNE ligne, quel que soit le nombre de sources qui le
+   connaissent. Le SIRET sert de clé commune : 15 des 25 ICPE de Châteauneuf-du-Faou sont aussi
+   des établissements SIRENE, et l'agent n'a pas à relire deux fois la même ferme.
+3. Un ré-import n'écrase JAMAIS le travail d'un agent. Le nom corrigé, l'effectif estimé, le
    commentaire et la décision (retenu/écarté) sont à lui ; la source ne peut que rafraîchir ses
    propres attributs, COMPLÉTER ce qui est encore vide, et reclasser une ligne que personne n'a
    encore relue. Sans cette règle, le bouton « Actualiser » détruirait silencieusement des
@@ -49,6 +52,103 @@ def _point(site):
         return Point(float(site.longitude), float(site.latitude), srid=4326)
     except (TypeError, ValueError):
         return None
+
+
+def _siret(propose):
+    """Le SIRET annoncé par la source, seule clé partagée entre elles : Géorisques le donne sur
+    les 27 ICPE de Châteauneuf, et SIRENE en fait son identifiant d'établissement."""
+    siret = (propose.attributs or {}).get("siret")
+    siret = str(siret).strip() if siret else ""
+    return siret or None
+
+
+def _site_du_meme_siret(institution, environment, propose):
+    """Le même établissement, déjà connu par une AUTRE source.
+
+    15 des 25 installations classées de Châteauneuf-du-Faou partagent leur SIRET avec un
+    établissement SIRENE : sans ce rapprochement, l'agent relirait quinze fois la même ferme
+    deux fois — une fois sous son code AIOT, une fois sous son SIRET — et le plan compterait
+    double."""
+    siret = _siret(propose)
+    if not siret:
+        return None
+    return SiteSensible.objects.filter(
+        institution=institution, environment=environment, attributs__siret=siret,
+    ).exclude(source=propose.source).order_by("date_import").first()
+
+
+# Ce qu'une source peut apporter à une ligne tenue par une autre : son identifiant, ce qu'elle
+# sait de l'activité, et ce que l'autre n'a pas. On complète, on ne remplace pas.
+CLES_COMPLEMENTAIRES = (
+    "naf", "naf_libelle", "tranche_effectif", "siren", "nature_juridique",
+    "especes", "cheptel", "code_aiot", "statut_seveso", "regime", "ied", "uai", "finess",
+)
+
+
+def _fusionner(existant, propose):
+    """Verse ce qu'une seconde source sait dans la ligne qui existe déjà, sans rien lui retirer.
+
+    Rend True si quelque chose a changé."""
+    modifie = False
+    attributs = dict(existant.attributs or {})
+
+    for cle in CLES_COMPLEMENTAIRES:
+        valeur = (propose.attributs or {}).get(cle)
+        if valeur in (None, "", [], {}) or attributs.get(cle) not in (None, "", [], {}):
+            continue
+        attributs[cle] = valeur
+        modifie = True
+
+    # Le nom vu par l'autre source est souvent meilleur (SIRENE dit « SCEA CONAN » là où
+    # Géorisques dit « CONAN (SCEA) »), mais renommer une ligne n'est pas le travail d'un
+    # import : on le montre à l'agent, il tranche.
+    if propose.nom and propose.nom != existant.nom and not attributs.get("nom_autre_source"):
+        attributs["nom_autre_source"] = propose.nom
+        modifie = True
+
+    liees = sorted({existant.source, propose.source} | set(attributs.get("sources_liees") or []))
+    if liees != attributs.get("sources_liees"):
+        attributs["sources_liees"] = liees
+        modifie = True
+
+    if modifie:
+        existant.attributs = attributs
+
+    # Une source peut révéler un usage que l'autre ignorait : une ferme connue comme enjeu par
+    # Géorisques est aussi un moyen d'action pour SIRENE. Même garde que partout : tant que
+    # personne n'a statué.
+    if existant.statut == StatutSiteSensible.PROPOSE and existant.valide_par_id is None:
+        if propose.est_enjeu and not existant.est_enjeu:
+            existant.est_enjeu = True
+            modifie = True
+        if propose.est_ressource and not existant.est_ressource:
+            existant.est_ressource = True
+            modifie = True
+
+    # Si la seconde source identifie une personne physique, la ligne entière en devient une —
+    # y compris quand le registre d'origine publie l'adresse (c'est le cas de Géorisques). Sans
+    # ça, le même exploitant serait masqué d'un côté et exposé de l'autre, et le masquage ne
+    # vaudrait rien.
+    if propose.personne_physique and not existant.personne_physique:
+        existant.personne_physique = True
+        coordonnees = _coordonnees_personnelles(propose)
+        if not coordonnees and existant.location is not None:
+            coordonnees = {"latitude": existant.location.y, "longitude": existant.location.x}
+        if coordonnees:
+            existant.donnees_personnelles = coordonnees
+        existant.location = None
+        modifie = True
+
+    if not existant.adresse and propose.adresse:
+        existant.adresse = propose.adresse
+        modifie = True
+    if not existant.telephone and propose.telephone:
+        existant.telephone = propose.telephone
+        modifie = True
+
+    if modifie:
+        existant.save()
+    return modifie
 
 
 def _coordonnees_personnelles(propose):
@@ -138,6 +238,14 @@ def enregistrer_proposes(institution, environment, commune_code, commune_nom, pr
         ).first()
         if existant is not None:
             if _appliquer(existant, propose, commune_code, commune_nom):
+                majs += 1
+            else:
+                inchanges += 1
+            continue
+        # Pas connu sous cet identifiant — mais peut-être sous celui d'une autre source.
+        jumeau = _site_du_meme_siret(institution, environment, propose)
+        if jumeau is not None:
+            if _fusionner(jumeau, propose):
                 majs += 1
             else:
                 inchanges += 1

@@ -8,8 +8,8 @@ import { SiteSensibleService } from '../../services/site-sensible.service';
 import { PointType } from '../../shared/models/point-operationnel.model';
 import { pollWhileVisible } from '../../shared/utils/polling.util';
 import {
-  CategorieSiteSensible, CoordonneesDevoilees, SiteSensible, SourceSiteSensible,
-  StatutSiteSensible, SyntheseSitesSensibles,
+  CategorieSiteSensible, CoordonneesDevoilees, SaisieConvention, SiteSensible,
+  SourceSiteSensible, StatutSiteSensible, SyntheseSitesSensibles,
 } from '../../shared/models/site-sensible.model';
 
 /**
@@ -26,6 +26,11 @@ import {
  * « À vérifier » ne veut pas dire « à écarter » : les élevages, par exemple, ont leur catégorie
  * et leur effectif animal affiché, parce que la protection des animaux est une mission du plan
  * — un cheptel s'évacue, s'abreuve et se ventile, et ça se prépare avant.
+ *
+ * Deuxième chose que la page tient : une ressource recensée n'est PAS une ressource acquise.
+ * Seule une convention engage, d'où le volet qui permet de la déclarer, de la numéroter, de la
+ * dater et d'en joindre le document — et l'étiquette « convention expirée », parce qu'une
+ * convention périmée sur laquelle on compte est pire que pas de convention du tout.
  */
 @Component({
   selector: 'app-sites-sensibles',
@@ -58,6 +63,12 @@ export class SitesSensiblesComponent implements OnInit, OnDestroy {
   /** Adresses dévoilées pendant cette visite, par identifiant de site. Rien n'est conservé :
    * revenir sur la page redemande un dévoilement, donc une nouvelle trace. */
   adressesDevoilees: Record<string, CoordonneesDevoilees> = {};
+
+  /** Site dont le volet « convention » est ouvert, et sa saisie en cours. */
+  conventionPourSite: string | null = null;
+  saisieConvention: SaisieConvention = this.conventionVide();
+  fichierConvention: File | null = null;
+  conventionEnCours = false;
 
   /** Site pour lequel le choix du type de point est ouvert, et le type choisi. */
   pointPourSite: string | null = null;
@@ -308,6 +319,80 @@ export class SitesSensiblesComponent implements OnInit, OnDestroy {
     return site.statut === 'RETENU' && !site.point_operationnel && !site.personne_physique;
   }
 
+  private conventionVide(): SaisieConvention {
+    return { convention_existe: false, convention_numero: '', convention_date_signature: '',
+             convention_echeance: '' };
+  }
+
+  ouvrirConvention(site: SiteSensible): void {
+    this.conventionPourSite = site.id;
+    this.fichierConvention = null;
+    this.saisieConvention = {
+      convention_existe: site.convention_existe,
+      convention_numero: site.convention_numero || '',
+      convention_date_signature: site.convention_date_signature || '',
+      convention_echeance: site.convention_echeance || '',
+    };
+  }
+
+  fermerConvention(): void {
+    this.conventionPourSite = null;
+    this.fichierConvention = null;
+  }
+
+  choisirFichierConvention(evenement: Event): void {
+    const entree = evenement.target as HTMLInputElement;
+    this.fichierConvention = entree.files?.length ? entree.files[0] : null;
+  }
+
+  enregistrerConvention(site: SiteSensible): void {
+    this.conventionEnCours = true;
+    this.erreur = '';
+    this.siteService.enregistrerConvention(site.id, this.saisieConvention, this.fichierConvention)
+      .subscribe({
+        next: (maj) => {
+          this.sites = this.sites.map(s => (s.id === maj.id ? maj : s));
+          this.conventionEnCours = false;
+          this.fermerConvention();
+          this.message = `Convention enregistrée pour « ${maj.nom} ».`;
+        },
+        error: (err) => {
+          this.conventionEnCours = false;
+          this.erreur = err?.error?.convention_document?.[0]
+            || "Impossible d'enregistrer cette convention.";
+        },
+      });
+  }
+
+  /** Récupère le document puis le remet au navigateur. Il n'existe pas d'URL directe : le
+   * fichier est chiffré au repos et servi par une action qui trace la consultation. */
+  telechargerConvention(site: SiteSensible): void {
+    this.siteService.telechargerConvention(site.id).subscribe({
+      next: (blob) => {
+        const url = URL.createObjectURL(blob);
+        const lien = document.createElement('a');
+        lien.href = url;
+        lien.download = `convention-${site.convention_numero || site.nom}.pdf`;
+        lien.click();
+        URL.revokeObjectURL(url);
+      },
+      error: () => this.erreur = 'Impossible de télécharger cette convention.',
+    });
+  }
+
+  /** Une convention dont l'échéance est passée : on croit l'avoir, elle ne vaut plus rien. */
+  conventionExpiree(site: SiteSensible): boolean {
+    if (!site.convention_existe || !site.convention_echeance) return false;
+    return new Date(site.convention_echeance) < new Date();
+  }
+
+  /** Ce que la ligne doit afficher sur sa convention, en un mot. */
+  etiquetteConvention(site: SiteSensible): string | null {
+    if (!site.convention_existe) return null;
+    if (this.conventionExpiree(site)) return 'convention expirée';
+    return site.convention_numero ? `convention ${site.convention_numero}` : 'convention';
+  }
+
   ouvrirCreationPoint(site: SiteSensible): void {
     this.pointPourSite = site.id;
     this.typePointChoisi = this.pointTypes[0]?.id || '';
@@ -360,6 +445,22 @@ export class SitesSensiblesComponent implements OnInit, OnDestroy {
       },
       error: () => this.erreur = 'Impossible de supprimer ce site.',
     });
+  }
+
+  /** Les autres sources qui connaissent le même établissement (rapprochées par SIRET). Le dire
+   * évite de croire qu'une ligne vient d'un seul registre, et explique pourquoi elle porte à la
+   * fois un cheptel et un code d'activité. */
+  sourcesLiees(site: SiteSensible): string[] {
+    const liees = site.attributs?.['sources_liees'];
+    if (!Array.isArray(liees) || liees.length < 2) return [];
+    return (liees as string[]).filter(code => code !== site.source);
+  }
+
+  /** Le nom que l'autre source donne au même établissement (« SCEA CONAN » contre
+   * « CONAN (SCEA) ») : proposé à l'agent, jamais imposé par l'import. */
+  nomAutreSource(site: SiteSensible): string | null {
+    const nom = site.attributs?.['nom_autre_source'];
+    return typeof nom === 'string' && nom !== site.nom ? nom : null;
   }
 
   /** Mention que la source impose (Licence Ouverte) et qui renseigne l'agent sur la fraîcheur. */

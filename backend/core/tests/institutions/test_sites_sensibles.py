@@ -11,6 +11,7 @@ import io
 from unittest.mock import patch
 
 import pytest
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import connection
 from django.urls import reverse
 from rest_framework import status
@@ -1035,3 +1036,252 @@ class TestImportSirene:
                         {"sources": [SourceSiteSensible.ANNUAIRE_EDUCATION],
                          "categories": [CategorieSiteSensible.ELEVAGE]}, format="json")
         assert collecter.call_args == (("29027",), {})
+
+
+@pytest.mark.django_db
+class TestRapprochementParSiret:
+    """Un même établissement ne doit produire qu'une ligne, quel que soit le nombre de sources
+    qui le connaissent. Mesuré sur Châteauneuf-du-Faou : 15 des 25 installations classées sont
+    aussi des établissements SIRENE. Sans rapprochement, l'agent relit quinze fermes deux fois
+    et le plan les compte double."""
+
+    SIRET = "38087767000014"
+
+    def _icpe(self, **kwargs):
+        champs = dict(
+            source=SourceSiteSensible.ICPE, source_id="0004310066",
+            categorie=CategorieSiteSensible.ELEVAGE, nom="GAEC BAUT",
+            adresse="KERDUDAL, 29520 Châteauneuf-du-Faou", latitude=48.158, longitude=-3.843,
+            est_enjeu=True, est_ressource=False,
+            attributs={"siret": self.SIRET, "code_aiot": "0004310066",
+                       "cheptel": [{"espece": "porcs", "quantite": 1232.0}],
+                       "regime": "Enregistrement", "date_maj_source": "2024-09-04"},
+        )
+        champs.update(kwargs)
+        return _propose(**champs)
+
+    def _sirene(self, **kwargs):
+        champs = dict(
+            source=SourceSiteSensible.SIRENE, source_id=self.SIRET,
+            categorie=CategorieSiteSensible.ELEVAGE, nom="GAEC BAUT (SIRENE)",
+            adresse="1 LD VERU 29520 CHATEAUNEUF-DU-FAOU", latitude=48.159, longitude=-3.844,
+            est_enjeu=True, est_ressource=True,
+            attributs={"siret": self.SIRET, "naf": "01.46Z",
+                       "naf_libelle": "Élevage de porcins", "tranche_effectif": "02",
+                       "date_maj_source": "2026-01-14"},
+        )
+        champs.update(kwargs)
+        return _propose(**champs)
+
+    def test_deux_sources_un_seul_site(self, mairie):
+        enregistrer_proposes(mairie, "PROD", "29027", None, [self._icpe()])
+        resultat = enregistrer_proposes(mairie, "PROD", "29027", None, [self._sirene()])
+
+        assert SiteSensible.objects.count() == 1
+        assert resultat == {"crees": 0, "mis_a_jour": 1, "inchanges": 0, "total": 1}
+        site = SiteSensible.objects.get()
+        # La ligne reste celle de la source qui l'a créée : son identifiant ne bouge pas.
+        assert site.source == SourceSiteSensible.ICPE
+        assert site.attributs["sources_liees"] == ["ICPE", "SIRENE"]
+
+    def test_chaque_source_apporte_ce_quelle_sait(self, mairie):
+        """Géorisques a le cheptel, SIRENE a l'activité et l'effectif salarié. La fusion doit
+        donner les deux, sinon elle appauvrit au lieu d'enrichir."""
+        enregistrer_proposes(mairie, "PROD", "29027", None, [self._icpe()])
+        enregistrer_proposes(mairie, "PROD", "29027", None, [self._sirene()])
+
+        attributs = SiteSensible.objects.get().attributs
+        assert attributs["cheptel"][0]["quantite"] == 1232.0
+        assert attributs["naf_libelle"] == "Élevage de porcins"
+        assert attributs["tranche_effectif"] == "02"
+        assert attributs["code_aiot"] == "0004310066"
+
+    def test_le_nom_de_lautre_source_est_propose_pas_impose(self, mairie):
+        """SIRENE écrit « SCEA CONAN » là où Géorisques écrit « CONAN (SCEA) ». Souvent mieux,
+        mais renommer une ligne n'est pas le travail d'un import."""
+        enregistrer_proposes(mairie, "PROD", "29027", None, [self._icpe()])
+        enregistrer_proposes(mairie, "PROD", "29027", None, [self._sirene()])
+
+        site = SiteSensible.objects.get()
+        assert site.nom == "GAEC BAUT"
+        assert site.attributs["nom_autre_source"] == "GAEC BAUT (SIRENE)"
+
+    def test_une_source_peut_reveler_un_role(self, mairie):
+        """La ferme était un enjeu pour Géorisques ; SIRENE y voit aussi un moyen d'action."""
+        enregistrer_proposes(mairie, "PROD", "29027", None, [self._icpe()])
+        assert SiteSensible.objects.get().est_ressource is False
+
+        enregistrer_proposes(mairie, "PROD", "29027", None, [self._sirene()])
+        site = SiteSensible.objects.get()
+        assert (site.est_enjeu, site.est_ressource) == (True, True)
+
+    def test_une_ligne_statuee_garde_son_role(self, mairie, agent_client):
+        enregistrer_proposes(mairie, "PROD", "29027", None, [self._icpe()])
+        site = SiteSensible.objects.get()
+        site.statut = StatutSiteSensible.RETENU
+        site.valide_par = agent_client[1]
+        site.save()
+
+        enregistrer_proposes(mairie, "PROD", "29027", None, [self._sirene()])
+
+        site.refresh_from_db()
+        assert site.est_ressource is False
+
+    def test_personne_physique_decouverte_masque_la_ligne_entiere(self, mairie):
+        """Le cas qui rend le masquage crédible : Géorisques publie l'adresse d'un exploitant en
+        nom propre (c'est un registre public), SIRENE révèle que c'en est un. La ligne doit
+        basculer, sinon le même exploitant est masqué d'un côté et exposé de l'autre."""
+        enregistrer_proposes(mairie, "PROD", "29027", None, [self._icpe()])
+        assert SiteSensible.objects.get().location is not None
+
+        enregistrer_proposes(mairie, "PROD", "29027", None,
+                             [self._sirene(personne_physique=True)])
+
+        site = SiteSensible.objects.get()
+        assert site.personne_physique is True
+        assert site.location is None
+        # Les coordonnées ne sont pas perdues : elles passent dans le champ chiffré.
+        assert site.donnees_personnelles["latitude"] == 48.159
+
+    def test_sans_siret_aucun_rapprochement(self, mairie):
+        """Deux sources sans clé commune : on ne devine pas sur le nom, qui ne s'écrit jamais
+        pareil (« LE MOAL (GAEC) » contre « EARL LE MOAL »)."""
+        enregistrer_proposes(mairie, "PROD", "29027", None, [
+            self._icpe(attributs={"code_aiot": "0004310066"})])
+        enregistrer_proposes(mairie, "PROD", "29027", None, [
+            self._sirene(attributs={"naf": "01.46Z"})])
+        assert SiteSensible.objects.count() == 2
+
+    def test_un_reimport_ne_recree_pas_la_ligne_fusionnee(self, mairie):
+        """La fusion doit être idempotente : le second passage de SIRENE ne retrouve pas la
+        ligne par son propre identifiant, il doit la retrouver par le SIRET."""
+        enregistrer_proposes(mairie, "PROD", "29027", None, [self._icpe()])
+        enregistrer_proposes(mairie, "PROD", "29027", None, [self._sirene()])
+        resultat = enregistrer_proposes(mairie, "PROD", "29027", None, [self._sirene()])
+
+        assert SiteSensible.objects.count() == 1
+        assert resultat["inchanges"] == 1
+
+    def test_le_rapprochement_ne_traverse_pas_les_institutions(self, mairie, create_user):
+        """Deux communes voisines peuvent recenser le même transporteur : chacune garde sa
+        ligne, avec sa décision et sa convention."""
+        itype = InstitutionType.objects.get(code="MAIRIE")
+        voisine = Institution.objects.create(nom="Mairie voisine", type=itype,
+                                             commune_code="29019", commune_nom="Brest")
+        enregistrer_proposes(mairie, "PROD", "29027", None, [self._icpe()])
+        enregistrer_proposes(voisine, "PROD", "29019", None, [self._sirene()])
+        assert SiteSensible.objects.count() == 2
+
+
+@pytest.mark.django_db
+class TestConvention:
+    """Une ressource recensée n'est pas une ressource acquise : seule une convention engage. Ce
+    que ces tests tiennent, c'est que la convention est traçable (qui l'a déclarée, quand) et que
+    son document est protégé comme une pièce d'identité."""
+
+    PDF = b"%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n%%EOF\n"
+
+    def _site(self, mairie):
+        enregistrer_proposes(mairie, "PROD", "29027", "Châteauneuf-du-Faou", [
+            _propose(source=SourceSiteSensible.SIRENE, source_id="51050510000014",
+                     categorie=CategorieSiteSensible.MOYENS, nom="SARL TREHOAT",
+                     adresse="29520 Châteauneuf-du-Faou", est_enjeu=False, est_ressource=True,
+                     attributs={"siret": "51050510000014", "naf": "49.41B"})
+        ])
+        return SiteSensible.objects.get()
+
+    def test_declarer_une_convention_laisse_une_trace(self, agent_client, mairie):
+        client, user = agent_client
+        site = self._site(mairie)
+
+        reponse = client.patch(reverse("sitesensible-detail", args=[site.id]), {
+            "convention_existe": True, "convention_numero": "2026-TR-14",
+            "convention_date_signature": "2026-03-12", "convention_echeance": "2029-03-11",
+        }, format="json")
+
+        assert reponse.status_code == status.HTTP_200_OK
+        site.refresh_from_db()
+        assert site.convention_existe is True
+        assert site.convention_numero == "2026-TR-14"
+        assert str(site.convention_echeance) == "2029-03-11"
+        ligne = AuditLog.objects.filter(objet_type="SiteSensible").latest("date_action")
+        assert "Convention" in ligne.commentaire and "2026-TR-14" in ligne.commentaire
+        assert ligne.utilisateur == user
+
+    def test_declarer_une_convention_ne_fait_pas_de_lagent_le_decideur(self, agent_client,
+                                                                       mairie):
+        """`valide_par` veut dire « a statué sur le sort du site », pas « a touché la ligne »."""
+        client, _ = agent_client
+        site = self._site(mairie)
+
+        client.patch(reverse("sitesensible-detail", args=[site.id]),
+                     {"convention_existe": True}, format="json")
+
+        site.refresh_from_db()
+        assert site.valide_par is None
+        assert site.statut == StatutSiteSensible.PROPOSE
+
+    def test_televerser_puis_telecharger(self, agent_client, mairie):
+        client, _ = agent_client
+        site = self._site(mairie)
+        fichier = SimpleUploadedFile("convention.pdf", self.PDF, content_type="application/pdf")
+
+        envoi = client.patch(reverse("sitesensible-detail", args=[site.id]),
+                             {"convention_existe": True, "convention_document": fichier},
+                             format="multipart")
+
+        assert envoi.status_code == status.HTTP_200_OK
+        # Le fichier ne sort jamais comme URL : seul un booléen dit qu'il existe.
+        assert envoi.data["a_convention_document"] is True
+        assert "convention_document" not in envoi.data
+
+        telechargement = client.get(
+            reverse("sitesensible-telecharger-convention", args=[site.id]))
+        assert telechargement.status_code == status.HTTP_200_OK
+        assert b"".join(telechargement.streaming_content) == self.PDF
+
+    def test_le_document_est_chiffre_sur_le_disque(self, agent_client, mairie):
+        """Comme une pièce d'identité : un accès au volume média ne doit pas donner la
+        convention en clair."""
+        client, _ = agent_client
+        site = self._site(mairie)
+        fichier = SimpleUploadedFile("convention.pdf", self.PDF, content_type="application/pdf")
+        client.patch(reverse("sitesensible-detail", args=[site.id]),
+                     {"convention_document": fichier}, format="multipart")
+
+        site.refresh_from_db()
+        with open(site.convention_document.path, "rb") as brut:
+            octets = brut.read()
+        assert not octets.startswith(b"%PDF-")
+        assert b"%%EOF" not in octets
+
+    def test_le_telechargement_est_trace(self, agent_client, mairie):
+        client, user = agent_client
+        site = self._site(mairie)
+        fichier = SimpleUploadedFile("convention.pdf", self.PDF, content_type="application/pdf")
+        client.patch(reverse("sitesensible-detail", args=[site.id]),
+                     {"convention_document": fichier}, format="multipart")
+
+        client.get(reverse("sitesensible-telecharger-convention", args=[site.id]))
+
+        ligne = AuditLog.objects.filter(objet_type="SiteSensible",
+                                        action__code="TELECHARGEMENT").latest("date_action")
+        assert ligne.utilisateur == user
+        assert "Convention" in ligne.commentaire
+
+    def test_sans_convention_le_telechargement_rend_404(self, agent_client, mairie):
+        client, _ = agent_client
+        site = self._site(mairie)
+        reponse = client.get(reverse("sitesensible-telecharger-convention", args=[site.id]))
+        assert reponse.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_un_fichier_non_pdf_est_refuse(self, agent_client, mairie):
+        client, _ = agent_client
+        site = self._site(mairie)
+        fichier = SimpleUploadedFile("convention.exe", b"MZ\x90\x00 pas un document",
+                                     content_type="application/octet-stream")
+
+        reponse = client.patch(reverse("sitesensible-detail", args=[site.id]),
+                               {"convention_document": fichier}, format="multipart")
+
+        assert reponse.status_code == status.HTTP_400_BAD_REQUEST

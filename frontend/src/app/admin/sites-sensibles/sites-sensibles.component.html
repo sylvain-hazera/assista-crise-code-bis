@@ -223,6 +223,17 @@
                 @if (site.telephone) {
                   <a class="telephone" [href]="'tel:' + site.telephone">{{ site.telephone }}</a>
                 }
+                @if (nomAutreSource(site)) {
+                  <div class="nom-autre">aussi appelé « {{ nomAutreSource(site) }} »</div>
+                }
+                @if (etiquetteConvention(site)) {
+                  <span class="etiquette"
+                        [class.etiquette-convention]="!conventionExpiree(site)"
+                        [class.etiquette-perimee]="conventionExpiree(site)">
+                    <span class="material-icons">handshake</span>
+                    {{ etiquetteConvention(site) }}
+                  </span>
+                }
                 @if (site.point_operationnel) {
                   <span class="etiquette etiquette-point">
                     <span class="material-icons">place</span> Point opérationnel créé
@@ -276,6 +287,11 @@
 
               <td class="col-provenance">
                 {{ provenance(site) }}
+                @if (sourcesLiees(site).length) {
+                  <span class="sources-liees">
+                    recoupé avec {{ sourcesLiees(site).join(', ') }}
+                  </span>
+                }
                 @if (site.valide_par_nom) {
                   <span class="valide-par">décision : {{ site.valide_par_nom }}</span>
                 }
@@ -315,12 +331,82 @@
                     </button>
                   }
                 }
+                <button type="button" class="btn-convention"
+                        [class.actif]="site.convention_existe"
+                        title="Convention avec notre collectivité"
+                        (click)="conventionPourSite === site.id ? fermerConvention() : ouvrirConvention(site)">
+                  <span class="material-icons">handshake</span>
+                </button>
                 <button type="button" class="btn-supprimer" title="Supprimer de l'inventaire"
                         (click)="supprimer(site)">
                   <span class="material-icons">delete_outline</span>
                 </button>
               </td>
             </tr>
+
+            @if (conventionPourSite === site.id) {
+              <tr class="ligne-convention">
+                <td colspan="6">
+                  <div class="convention">
+                    <label class="convention-case">
+                      <input type="checkbox" [(ngModel)]="saisieConvention.convention_existe"
+                             name="convention_existe" />
+                      <span>
+                        Il existe une convention entre notre collectivité et
+                        « {{ site.nom }} »
+                      </span>
+                    </label>
+                    <p class="convention-aide">
+                      Recenser une ressource ne l'engage pas. Une convention, oui — et c'est elle
+                      qu'on cherche à 3 h du matin.
+                    </p>
+                    @if (saisieConvention.convention_existe) {
+                      <div class="convention-champs">
+                        <label>
+                          Numéro
+                          <input type="text" [(ngModel)]="saisieConvention.convention_numero"
+                                 name="convention_numero" placeholder="2026-TR-14" />
+                        </label>
+                        <label>
+                          Signée le
+                          <input type="date" name="convention_date_signature"
+                                 [(ngModel)]="saisieConvention.convention_date_signature" />
+                        </label>
+                        <label>
+                          Valable jusqu'au
+                          <input type="date" name="convention_echeance"
+                                 [(ngModel)]="saisieConvention.convention_echeance" />
+                        </label>
+                        <label class="convention-fichier">
+                          Document signé (PDF ou photo, 10 Mo max.)
+                          <input type="file" accept="application/pdf,image/jpeg,image/png"
+                                 (change)="choisirFichierConvention($event)" />
+                        </label>
+                      </div>
+                      @if (site.a_convention_document) {
+                        <button type="button" class="lien-document"
+                                (click)="telechargerConvention(site)">
+                          <span class="material-icons">download</span>
+                          Télécharger la convention jointe
+                        </button>
+                        <span class="convention-trace">
+                          chaque téléchargement est inscrit à la main courante
+                        </span>
+                      }
+                    }
+                    <div class="convention-actions">
+                      <button type="button" class="btn-secondary" (click)="fermerConvention()">
+                        Annuler
+                      </button>
+                      <button type="button" class="btn-primary" [disabled]="conventionEnCours"
+                              (click)="enregistrerConvention(site)">
+                        {{ conventionEnCours ? 'Enregistrement…' : 'Enregistrer' }}
+                      </button>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            }
           }
         </tbody>
       </table>

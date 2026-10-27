@@ -9,7 +9,9 @@ from django.db import models
 from django.contrib.postgres.fields import ArrayField
 from django.contrib.postgres.indexes import GinIndex
 from core.validators import validate_image_file
-from .validators import validate_image_file, validate_identity_document_file
+from .validators import (
+    validate_convention_file, validate_identity_document_file, validate_image_file,
+)
 from .crypto_fields import EncryptedTextField, EncryptedEmailField, EncryptedJSONField, blind_index
 from .file_crypto import get_encrypted_file_storage
 
@@ -4409,6 +4411,24 @@ class SiteSensible(EnvironmentScopedModel):
     # Pré-positionnés par le connecteur selon la catégorie, corrigeables par l'agent.
     est_enjeu = models.BooleanField(default=True)
     est_ressource = models.BooleanField(default=False)
+
+    # Une ressource recensée n'est pas une ressource acquise : seule une convention engage. La
+    # case cochée est l'information opérationnelle (« a-t-on un accord ? »), les champs suivants
+    # servent à la retrouver le jour où il faut l'invoquer à 3 h du matin.
+    convention_existe = models.BooleanField(default=False)
+    convention_numero = models.CharField(max_length=100, blank=True, null=True)
+    convention_date_signature = models.DateField(null=True, blank=True)
+    # Pas demandée, ajoutée quand même : une convention expirée est plus dangereuse qu'une
+    # absence de convention, parce qu'on compte dessus.
+    convention_echeance = models.DateField(null=True, blank=True)
+    # Chiffré au repos comme une pièce d'identité (core/file_crypto.py) : une convention porte
+    # des noms, des signatures, parfois l'adresse personnelle d'un exploitant en nom propre.
+    # Préfixe documents/ bloqué par proxy/nginx.conf, jamais servi comme URL /media/ directe —
+    # le téléchargement passe par l'action dédiée, qui trace.
+    convention_document = models.FileField(
+        storage=get_encrypted_file_storage, upload_to=secure_document_path, max_length=255,
+        null=True, blank=True, validators=[validate_convention_file],
+    )
 
     statut = models.CharField(
         max_length=10, choices=StatutSiteSensible.choices, default=StatutSiteSensible.PROPOSE,

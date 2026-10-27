@@ -17079,18 +17079,42 @@ class SiteSensibleViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         """Trace qui a statué. Un plan de sauvegarde se relit à plusieurs sur plusieurs mois :
-        savoir qui a retenu ou écarté un site évite de refaire le débat."""
+        savoir qui a retenu ou écarté un site évite de refaire le débat.
+
+        Trace aussi les conventions, pour la même raison : une convention est un engagement
+        entre deux personnes morales, savoir qui l'a déclarée et quand vaut mieux qu'une case
+        cochée sans auteur."""
         statut_avant = serializer.instance.statut
-        statut_apres = serializer.validated_data.get('statut', statut_avant)
-        if statut_apres != statut_avant:
-            serializer.save(valide_par=self.request.user)
+        convention_avant = (serializer.instance.convention_existe,
+                            serializer.instance.convention_numero,
+                            bool(serializer.instance.convention_document))
+
+        # `valide_par` veut dire « a statué », pas « a touché la ligne » : seule une décision
+        # retenu/écarté l'inscrit. Une convention se trace en main courante, elle ne fait pas de
+        # son auteur le décideur du sort du site.
+        statut_change = serializer.validated_data.get('statut', statut_avant) != statut_avant
+        site = (serializer.save(valide_par=self.request.user) if statut_change
+                else serializer.save())
+
+        if statut_change:
             audit_log(
                 request=self.request, action_code="MODIFICATION", objet_type="SiteSensible",
-                objet_id=serializer.instance.id,
-                commentaire=f"Site « {serializer.instance.nom} » : {statut_avant} → {statut_apres}.",
+                objet_id=site.id,
+                commentaire=f"Site « {site.nom} » : {statut_avant} → {site.statut}.",
             )
-            return
-        serializer.save()
+        convention_apres = (site.convention_existe, site.convention_numero,
+                            bool(site.convention_document))
+        if convention_apres != convention_avant:
+            audit_log(
+                request=self.request, action_code="MODIFICATION", objet_type="SiteSensible",
+                objet_id=site.id,
+                commentaire=(
+                    f"Convention de « {site.nom} » : "
+                    + ("déclarée" if site.convention_existe else "retirée")
+                    + (f", n° {site.convention_numero}" if site.convention_numero else "")
+                    + (", document joint" if site.convention_document else "")
+                ),
+            )
 
     @action(detail=False, methods=["get"])
     def synthese(self, request):
@@ -17180,6 +17204,26 @@ class SiteSensibleViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
                         f"({', '.join(demandees)}).",
         )
         return Response({"resultats": resultats})
+
+    @action(detail=True, methods=["get"], url_path="telecharger-convention")
+    def telecharger_convention(self, request, pk=None):
+        """Sert la convention signée, déchiffrée à la volée, et trace le téléchargement.
+
+        Même dispositif que les pièces d'identité de la réserve : fichier chiffré au repos,
+        préfixe `documents/` bloqué par nginx, jamais d'URL /media/ directe. Une convention
+        porte des noms et des signatures, parfois le domicile d'un exploitant en nom propre."""
+        site = self.get_object()
+        if not site.convention_document:
+            return Response({"error": "Aucune convention n'est jointe à ce site."},
+                            status=status.HTTP_404_NOT_FOUND)
+        audit_log(
+            request=request, action_code="TELECHARGEMENT", objet_type="SiteSensible",
+            objet_id=site.id,
+            commentaire=f"Convention de « {site.nom} »"
+                        + (f" (n° {site.convention_numero})" if site.convention_numero else ""),
+        )
+        # .open("rb") et non .path : c'est le passage par le storage qui déchiffre.
+        return FileResponse(site.convention_document.open("rb"))
 
     @action(detail=True, methods=["get"])
     def devoiler(self, request, pk=None):

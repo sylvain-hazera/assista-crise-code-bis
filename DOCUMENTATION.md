@@ -421,6 +421,28 @@ Règles qui structurent le paquet :
   écluses en « installation sportive »). Même posture que
   `RisqueCommunalViewSet.suggestions_georisques`, mais persistée : plusieurs dizaines de sites
   par commune, relus sur plusieurs séances.
+- **Un établissement ne produit qu'une ligne, même connu de plusieurs sources.** Le SIRET est la
+  seule clé commune (Géorisques le donne sur les 27 ICPE de Châteauneuf-du-Faou, SIRENE en fait
+  son identifiant) et **15 des 25 installations classées de cette commune sont aussi des
+  établissements SIRENE** : sans rapprochement, l'agent relirait quinze fermes deux fois et le
+  plan les compterait double. `_fusionner` verse ce que la seconde source sait dans la ligne
+  existante — le cheptel de Géorisques et le code d'activité de SIRENE cohabitent — sans jamais
+  rien retirer. Trois conséquences voulues : le nom vu par l'autre source est *proposé*
+  (`nom_autre_source`) et non imposé, parce que renommer n'est pas le travail d'un import ; un
+  rôle révélé par une source s'ajoute (une ferme « enjeu » pour Géorisques est aussi un moyen
+  d'action pour SIRENE) ; et si une source identifie une **personne physique**, la ligne entière
+  bascule en masquée, y compris quand le registre d'origine publie l'adresse — sinon le même
+  exploitant serait masqué d'un côté et exposé de l'autre.
+- **Une ressource recensée n'est pas une ressource acquise : seule une convention engage.** D'où
+  les champs `convention_existe` / `convention_numero` / `convention_date_signature` /
+  `convention_echeance` et le document joint. Le fichier est chiffré au repos
+  (`core/file_crypto.py`, même dispositif que les pièces d'identité de la réserve : préfixe
+  `documents/` bloqué par nginx, jamais d'URL `/media/`), `write_only` au serializer, et servi
+  par l'action `telecharger-convention` qui écrit une ligne de main courante. `convention_echeance`
+  n'était pas demandée : une convention périmée sur laquelle on compte est pire qu'une absence de
+  convention, l'écran affiche donc « convention expirée ». Déclarer une convention est tracé mais
+  **n'inscrit pas** l'agent dans `valide_par` : ce champ veut dire « a statué sur le sort du
+  site », pas « a touché la ligne ».
 - **Un ré-import n'écrase jamais le travail d'un agent** (`core/sites_sensibles.py`) : le nom
   corrigé, l'adresse, l'effectif, le commentaire et la décision lui appartiennent ; la source ne
   rafraîchit que ses propres `attributs`, complète les champs encore vides et reclasse les lignes
@@ -930,7 +952,7 @@ liste d'enjeux finit toujours par contenir l'adresse d'une personne (voir § 5.1
 |---|---|---|
 | `FIELD_ENCRYPTION_KEY` | Fernet (réversible) | `EncryptedTextField`, `EncryptedEmailField`, `EncryptedJSONField` |
 | `FIELD_BLIND_INDEX_KEY` | HMAC-SHA256 (irréversible) | index aveugles `*_bidx` : recherche **exacte** sur un email chiffré |
-| `FILE_ENCRYPTION_KEY` | Fernet | fichiers très sensibles (pièces d'identité, `core/file_crypto.py`) |
+| `FILE_ENCRYPTION_KEY` | Fernet | fichiers très sensibles (pièces d'identité, conventions signées, `core/file_crypto.py`) |
 
 - Trois clés distinctes : jamais la même clé pour deux usages. **Aucune valeur de repli** :
   sans clé, Django refuse de lire ou d'écrire le champ. Changer ou perdre une clé rend les
