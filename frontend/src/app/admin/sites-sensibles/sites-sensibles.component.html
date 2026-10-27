@@ -110,26 +110,29 @@
       </form>
     }
 
-    @if (synthese?.imports?.length) {
-      <ul class="sources-etat">
-        @for (etat of synthese?.imports; track etat.id) {
-          <li [class.en-echec]="etat.statut === 'ECHEC'">
-            <span class="material-icons">
-              {{ etat.statut === 'ECHEC' ? 'error_outline' : etat.statut === 'EN_COURS' ? 'hourglass_top' : 'check' }}
-            </span>
-            <strong>{{ etat.source_libelle }}</strong>
-            @if (etat.statut === 'TERMINEE') {
-              consultée le {{ etat.date_fin | date:'dd/MM/yyyy à HH:mm' }}
-              ({{ etat.resultat.total || 0 }} site(s))
-            } @else if (etat.statut === 'EN_COURS') {
-              recherche en cours…
-            } @else {
-              injoignable — {{ etat.erreur }}
-            }
-          </li>
-        }
-      </ul>
-    }
+    <ul class="sources-etat">
+      @for (source of etatsSources; track source.code) {
+        <li [class.en-echec]="source.etat?.statut === 'ECHEC'"
+            [class.jamais]="!source.etat">
+          <span class="material-icons">
+            {{ !source.etat ? 'remove'
+               : source.etat.statut === 'ECHEC' ? 'error_outline'
+               : source.etat.statut === 'EN_COURS' ? 'hourglass_top' : 'check' }}
+          </span>
+          <strong>{{ source.libelle }}</strong>
+          @if (!source.etat) {
+            jamais interrogée
+          } @else if (source.etat.statut === 'TERMINEE') {
+            consultée le {{ source.etat.date_fin | date:'dd/MM/yyyy à HH:mm' }}
+            ({{ source.etat.resultat.total || 0 }} site(s))
+          } @else if (source.etat.statut === 'EN_COURS') {
+            recherche en cours…
+          } @else {
+            injoignable — {{ source.etat.erreur }}
+          }
+        </li>
+      }
+    </ul>
 
     <section class="recensement">
       <button type="button" class="depliant" (click)="sirenOuvert = !sirenOuvert">

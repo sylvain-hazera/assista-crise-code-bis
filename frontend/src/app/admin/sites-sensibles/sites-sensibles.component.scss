@@ -649,3 +649,11 @@
   font-size: .74rem;
   color: #5b21b6;
 }
+
+/* Une source jamais interrogée reste visible : la masquer ferait croire qu'il en manque une. */
+.sources-etat li.jamais {
+  color: #9ca3af;
+
+  .material-icons { color: #d1d5db; }
+  strong { font-weight: 600; }
+}

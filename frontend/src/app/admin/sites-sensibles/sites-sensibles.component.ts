@@ -8,7 +8,7 @@ import { SiteSensibleService } from '../../services/site-sensible.service';
 import { PointType } from '../../shared/models/point-operationnel.model';
 import { pollWhileVisible } from '../../shared/utils/polling.util';
 import {
-  CategorieSiteSensible, CoordonneesDevoilees, EchelonCompetence, NiveauSecteur,
+  CategorieSiteSensible, CoordonneesDevoilees, EchelonCompetence, ImportOpenData, NiveauSecteur,
   SaisieConvention, SiteSensible, SourceSiteSensible, StatutSiteSensible, SyntheseSitesSensibles,
 } from '../../shared/models/site-sensible.model';
 
@@ -175,9 +175,14 @@ export class SitesSensiblesComponent implements OnInit, OnDestroy {
         if (!this.themesChoisis.size) {
           synthese.themes.filter(t => t.defaut).forEach(t => this.themesChoisis.add(t.code));
         }
-        // Une collectivité supra-communale arrive sur sa compétence ; une mairie sur tout.
+        // Une collectivité supra-communale arrive sur sa compétence — mais seulement si elle a
+        // quelque chose à y voir. Sinon on montre tout : atterrir sur une liste vide laisse
+        // croire que l'import a échoué. Le cas est fréquent au début, parce que Géorisques,
+        // FINESS et le recensement sportif ne disent pas qui a la charge et déposent
+        // « à déterminer ».
         if (this.filtreEchelon === '' && synthese.niveau !== 'commune') {
-          this.filtreEchelon = synthese.echelon_propre;
+          const aMoi = sites.filter(s => s.echelon_competence === synthese.echelon_propre).length;
+          this.filtreEchelon = aMoi ? synthese.echelon_propre : '';
         }
         if (synthese.perimetres_possibles?.length) {
           this.perimetreChoisi = synthese.perimetres_possibles[
@@ -194,6 +199,18 @@ export class SitesSensiblesComponent implements OnInit, OnDestroy {
         this.chargement = false;
       },
     });
+  }
+
+  /** L'état des CINQ sources, y compris celles qu'on n'a jamais interrogées — sans quoi la
+   * page n'en montre que quatre et laisse croire qu'il en manque une. */
+  get etatsSources(): { code: SourceSiteSensible; libelle: string;
+                        etat: ImportOpenData | null }[] {
+    const parSource = new Map((this.synthese?.imports || []).map(i => [i.source, i]));
+    return (this.synthese?.sources || []).map(source => ({
+      code: source.code,
+      libelle: source.libelle,
+      etat: parSource.get(source.code) || null,
+    }));
   }
 
   get finessEnCours(): boolean {
