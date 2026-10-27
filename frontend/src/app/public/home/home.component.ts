@@ -9,6 +9,19 @@ import { PointOperationnelService } from '../../services/point-operationnel.serv
 import { Crisis } from '../../shared/models/crisis.model';
 import { CentreAccueilPublic } from '../../shared/models/point-operationnel.model';
 
+/** Une crise en cours et les centres ouverts qui en dépendent : l'habitant lit « ce qui se passe
+ * ici » puis, juste en dessous, « où je peux aller pour ça ». Le dernier groupe (crise = null)
+ * rassemble les centres ouverts qui ne sont rattachés à aucune crise. */
+export interface GroupeSituation {
+  cle: string;
+  crise: Crisis | null;
+  titre: string;
+  type: string | null;
+  localisation: string | null;
+  debut: string | null;
+  centres: CentreAccueilPublic[];
+}
+
 @Component({
   selector: 'app-home',
   standalone: true,
@@ -29,8 +42,9 @@ export class HomeComponent implements OnInit {
   // deux seules questions auxquelles il répond sont « que se passe-t-il près de moi ? » et
   // « où puis-je aller ? ». Les deux endpoints utilisés sont publics (AllowAny) et à champs
   // restreints : CrisisViewSet.list et PointOperationnelViewSet.carte_publique.
-  crisesEnCours: Crisis[] = [];
-  centresOuverts: CentreAccueilPublic[] = [];
+  groupes: GroupeSituation[] = [];
+  nbCrises = 0;
+  nbCentres = 0;
   chargementRecap = true;
   recapIndisponible = false;
 
@@ -63,10 +77,10 @@ export class HomeComponent implements OnInit {
       centres: this.pointService.getCartePublique(),
     }).subscribe({
       next: ({ crises, centres }) => {
-        this.crisesEnCours = crises.filter(c => c.is_open !== false);
-        // carte_publique ne renvoie déjà que des centres ouverts (crise non terminée, pas de
-        // fermeture passée) : on ne refait pas ce tri ici, on se contente d'un ordre utile.
-        this.centresOuverts = [...centres].sort((a, b) => a.nom.localeCompare(b.nom, 'fr'));
+        this.groupes = this.construireGroupes(
+          crises.filter(c => c.is_open !== false),
+          centres,
+        );
         this.chargementRecap = false;
       },
       error: () => {
@@ -76,6 +90,63 @@ export class HomeComponent implements OnInit {
         this.recapIndisponible = true;
       },
     });
+  }
+
+  /** Regroupe les centres sous leur crise. Une crise sans centre reste affichée — « aucun centre
+   * ouvert » est une information utile, pas un trou. Les centres orphelins (sans crise, ou dont
+   * la crise n'est pas dans la liste publique) terminent la liste dans un groupe à part, jamais
+   * silencieusement écartés. */
+  private construireGroupes(crises: Crisis[], centres: CentreAccueilPublic[]): GroupeSituation[] {
+    // carte_publique ne renvoie déjà que des centres ouverts (crise non terminée, pas de
+    // fermeture passée) : on ne refait pas ce tri ici, on se contente d'un ordre utile.
+    const parNom = (a: CentreAccueilPublic, b: CentreAccueilPublic) => a.nom.localeCompare(b.nom, 'fr');
+
+    const groupes = new Map<string, GroupeSituation>();
+    // Crises les plus récentes en premier : c'est celle qui vient de se déclarer qu'on cherche.
+    const crisesTriees = [...crises].sort(
+      (a, b) => (b.start_date || '').localeCompare(a.start_date || ''),
+    );
+    for (const crise of crisesTriees) {
+      groupes.set(String(crise.id), {
+        cle: String(crise.id),
+        crise,
+        titre: crise.name,
+        type: this.typeCrise(crise),
+        localisation: this.localisationCrise(crise),
+        debut: crise.start_date || null,
+        centres: [],
+      });
+    }
+
+    const orphelins: CentreAccueilPublic[] = [];
+    for (const centre of centres) {
+      const groupe = centre.crise ? groupes.get(String(centre.crise)) : undefined;
+      if (groupe) {
+        groupe.centres.push(centre);
+      } else {
+        orphelins.push(centre);
+      }
+    }
+
+    const liste = Array.from(groupes.values());
+    for (const groupe of liste) {
+      groupe.centres.sort(parNom);
+    }
+    if (orphelins.length) {
+      liste.push({
+        cle: 'hors-crise',
+        crise: null,
+        titre: 'Autres centres ouverts',
+        type: null,
+        localisation: null,
+        debut: null,
+        centres: orphelins.sort(parNom),
+      });
+    }
+
+    this.nbCrises = crisesTriees.length;
+    this.nbCentres = centres.length;
+    return liste;
   }
 
   /** Ce qu'on sait dire du lieu d'une crise sans authentification : la commune résolue, sinon

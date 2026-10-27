@@ -24,109 +24,112 @@
   </div>
 
   <!-- Récapitulatif de la situation, au-dessus de la carte : lisible sans compte, pensé pour
-       un habitant qui cherche ce qui se passe près de lui et où il peut aller. -->
+       un habitant qui cherche ce qui se passe près de lui et où il peut aller. Les centres sont
+       affichés sous la crise dont ils dépendent, pour n'avoir aucun rapprochement à faire. -->
   @if (!recapIndisponible) {
     <section class="situation" aria-label="Situation en cours">
-
-      <div class="situation-bloc">
+      <header class="situation-entete">
         <h2>
           <span class="material-icons">warning_amber</span>
-          Crises en cours
-          @if (!chargementRecap && crisesEnCours.length) {
-            <span class="compteur">{{ crisesEnCours.length }}</span>
-          }
+          Situation en cours
         </h2>
-
-        @if (chargementRecap) {
-          <p class="situation-vide">Chargement…</p>
-        } @else if (!crisesEnCours.length) {
-          <p class="situation-vide">Aucune crise en cours actuellement.</p>
-        } @else {
-          <ul class="liste-crises">
-            @for (crise of crisesEnCours; track crise.id) {
-              <li>
-                <span class="crise-nom">{{ crise.name }}</span>
-                <span class="etiquette">{{ typeCrise(crise) }}</span>
-                <span class="crise-lieu">
-                  <span class="material-icons">place</span>
-                  {{ localisationCrise(crise) }}
-                </span>
-                <span class="crise-depuis">depuis le {{ crise.start_date | date:'dd/MM/yyyy' }}</span>
-              </li>
-            }
-          </ul>
+        @if (!chargementRecap && groupes.length) {
+          <p class="situation-compteurs">
+            {{ nbCrises }} crise{{ nbCrises > 1 ? 's' : '' }} en cours ·
+            {{ nbCentres }} centre{{ nbCentres > 1 ? 's' : '' }} ouvert{{ nbCentres > 1 ? 's' : '' }}
+          </p>
         }
-      </div>
+      </header>
 
-      <div class="situation-bloc">
-        <h2>
-          <span class="material-icons">home_work</span>
-          Centres ouverts
-          @if (!chargementRecap && centresOuverts.length) {
-            <span class="compteur">{{ centresOuverts.length }}</span>
-          }
-        </h2>
+      @if (chargementRecap) {
+        <p class="situation-vide">Chargement…</p>
+      } @else if (!groupes.length) {
+        <p class="situation-vide">
+          Aucune crise en cours et aucun centre d'accueil ouvert actuellement.
+        </p>
+      } @else {
+        <div class="situation-groupes">
+          @for (groupe of groupes; track groupe.cle) {
+            <article class="groupe">
 
-        @if (chargementRecap) {
-          <p class="situation-vide">Chargement…</p>
-        } @else if (!centresOuverts.length) {
-          <p class="situation-vide">Aucun centre d'accueil ouvert actuellement.</p>
-        } @else {
-          <ul class="liste-centres">
-            @for (centre of centresOuverts; track centre.id) {
-              <li>
-                <div class="centre-entete">
-                  <span class="centre-nom">{{ centre.nom }}</span>
-                  <span class="etiquette" [class.etiquette-secours]="estPosteDeSecours(centre)">
-                    {{ centre.type_libelle || (estPosteDeSecours(centre) ? 'Poste de secours' : "Centre d'accueil") }}
+              <div class="groupe-entete">
+                <span class="material-icons icone-groupe">
+                  {{ groupe.crise ? 'warning_amber' : 'home_work' }}
+                </span>
+                <span class="crise-nom">{{ groupe.titre }}</span>
+                @if (groupe.type) {
+                  <span class="etiquette">{{ groupe.type }}</span>
+                }
+                @if (groupe.localisation) {
+                  <span class="crise-lieu">
+                    <span class="material-icons">place</span>
+                    {{ groupe.localisation }}
                   </span>
-                  @if (centreComplet(centre)) {
-                    <span class="etiquette etiquette-complet">Complet</span>
-                  }
-                </div>
-
-                @if (centre.crise_nom) {
-                  <p class="centre-crise">{{ centre.crise_nom }}</p>
                 }
-
-                @if (centre.description) {
-                  <p class="centre-description">{{ centre.description }}</p>
+                @if (groupe.debut) {
+                  <span class="crise-depuis">depuis le {{ groupe.debut | date:'dd/MM/yyyy' }}</span>
                 }
+              </div>
 
-                <p class="centre-adresse">
-                  <span class="material-icons">place</span>
-                  @if (centre.adresse) {
-                    {{ centre.adresse }}
-                  } @else {
-                    <span class="sans-info">Adresse non renseignée — appelez votre mairie</span>
-                  }
+              @if (!groupe.centres.length) {
+                <p class="situation-vide">
+                  Aucun centre d'accueil ouvert pour cette crise — en cas de besoin, appelez votre mairie.
                 </p>
-
-                <ul class="centre-infos">
-                  @if (placesRestantes(centre) !== null) {
+              } @else {
+                <ul class="liste-centres">
+                  @for (centre of groupe.centres; track centre.id) {
                     <li>
-                      <span class="material-icons">groups</span>
-                      {{ placesRestantes(centre) }} place(s) disponible(s)
-                      <span class="sur-capacite">sur {{ centre.capacite_accueil }}</span>
+                      <div class="centre-entete">
+                        <span class="centre-nom">{{ centre.nom }}</span>
+                        <span class="etiquette" [class.etiquette-secours]="estPosteDeSecours(centre)">
+                          {{ centre.type_libelle || (estPosteDeSecours(centre) ? 'Poste de secours' : "Centre d'accueil") }}
+                        </span>
+                        @if (centreComplet(centre)) {
+                          <span class="etiquette etiquette-complet">Complet</span>
+                        }
+                      </div>
+
+                      @if (centre.description) {
+                        <p class="centre-description">{{ centre.description }}</p>
+                      }
+
+                      <p class="centre-adresse">
+                        <span class="material-icons">place</span>
+                        @if (centre.adresse) {
+                          {{ centre.adresse }}
+                        } @else {
+                          <span class="sans-info">Adresse non renseignée — appelez votre mairie</span>
+                        }
+                      </p>
+
+                      <ul class="centre-infos">
+                        @if (placesRestantes(centre) !== null) {
+                          <li>
+                            <span class="material-icons">groups</span>
+                            {{ placesRestantes(centre) }} place(s) disponible(s)
+                            <span class="sur-capacite">sur {{ centre.capacite_accueil }}</span>
+                          </li>
+                        }
+                        @if (centre.accepte_animaux) {
+                          <li><span class="material-icons">pets</span> Animaux acceptés</li>
+                        }
+                      </ul>
+
+                      @if (lienItineraire(centre)) {
+                        <a class="btn-itineraire" [href]="lienItineraire(centre)"
+                           target="_blank" rel="noopener noreferrer">
+                          <span class="material-icons">directions</span> M'y rendre
+                        </a>
+                      }
                     </li>
                   }
-                  @if (centre.accepte_animaux) {
-                    <li><span class="material-icons">pets</span> Animaux acceptés</li>
-                  }
                 </ul>
+              }
 
-                @if (lienItineraire(centre)) {
-                  <a class="btn-itineraire" [href]="lienItineraire(centre)"
-                     target="_blank" rel="noopener noreferrer">
-                    <span class="material-icons">directions</span> M'y rendre
-                  </a>
-                }
-              </li>
-            }
-          </ul>
-        }
-      </div>
-
+            </article>
+          }
+        </div>
+      }
     </section>
   }
 
