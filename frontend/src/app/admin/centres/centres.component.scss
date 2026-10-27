@@ -136,3 +136,17 @@
     color: #9ca3af;
   }
 }
+
+/* Un centre sans crise n'est pas un centre « sans rien » : c'est un centre préparé, en attente
+   d'être ouvert. L'afficher « — » le faisait passer pour une donnée manquante. */
+.prepare-avance {
+  display: inline-block;
+  padding: .1rem .45rem;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1e40af;
+  font-size: .78rem;
+  white-space: nowrap;
+  cursor: help;
+}

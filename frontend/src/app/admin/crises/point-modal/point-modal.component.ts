@@ -88,7 +88,14 @@ export class PointModalComponent implements OnChanges {
       this.refreshCandidateUsers();
     });
     this.competenceService.getAll().subscribe(c => this.allCompetences = c);
-    this.crisisService.getAll().subscribe(crises => this.crises = crises);
+    this.crisisService.getAll().subscribe(crises => {
+      this.crises = crises;
+      // La liste arrive APRÈS buildForm() : sans aucune crise à proposer, exiger un
+      // rattachement serait une impasse (le select resterait vide et le formulaire invalide).
+      if (!this.isEdit && !this.crisisId && !crises.length) {
+        this.choisirRattachement('avance');
+      }
+    });
   }
 
   /** Candidats responsables : membres de l'institution du point (via son équipe) ou de sa
@@ -178,9 +185,38 @@ export class PointModalComponent implements OnChanges {
     }
   }
 
+  /** Deux façons d'exister pour un centre, et il faut choisir explicitement laquelle.
+   *
+   * La crise était auparavant OBLIGATOIRE à la création hors contexte de crise — exactement à
+   * l'envers : quand on est DANS une crise, son identifiant est déjà fourni ; quand on n'y est
+   * pas, on se voyait imposer d'en choisir une. Impossible, donc, de préparer une salle des
+   * fêtes à froid, alors que c'est précisément le travail de préparation d'un plan de
+   * sauvegarde, que le modèle autorise (`PointOperationnel.crise` est nullable) et que la page
+   * Centres sait déjà lister (onglet « Centres prévus »). */
+  rattachement: 'crise' | 'avance' = 'crise';
+
+  choisirRattachement(valeur: 'crise' | 'avance'): void {
+    this.rattachement = valeur;
+    const champ = this.form.get('crise');
+    if (!champ) { return; }
+    if (valeur === 'avance') {
+      champ.setValue(null);
+      champ.clearValidators();
+    } else {
+      champ.setValidators([Validators.required]);
+    }
+    champ.updateValueAndValidity();
+  }
+
   private buildForm(): void {
-    // Crise obligatoire à la création si le contexte n'en impose pas (pas de centre orphelin).
-    const criseRequired = !this.isEdit && !this.crisisId;
+    // Hors contexte de crise, le rattachement est un CHOIX : pour une crise en cours, ou à
+    // l'avance pour réutilisation. Par défaut « pour une crise », qui est le cas courant ; le
+    // basculement vers « à l'avance » passe par choisirRattachement, qui retire la contrainte.
+    const horsCrise = !this.isEdit && !this.crisisId;
+    if (horsCrise) {
+      this.rattachement = 'crise';
+    }
+    const criseRequired = horsCrise;
     this.form = this.fb.group({
       institution: [null],
       crise: [this.point?.crise ?? this.crisisId ?? null, criseRequired ? [Validators.required] : []],

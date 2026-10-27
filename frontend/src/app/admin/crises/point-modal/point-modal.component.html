@@ -22,17 +22,51 @@
 
       @if (!isEdit && !crisisId) {
         <div class="form-group">
-          <label>Crise <span class="required">*</span></label>
-          <select formControlName="crise">
-            <option [ngValue]="null" disabled>— Sélectionner une crise —</option>
-            @for (c of crises; track c.id) {
-              <option [ngValue]="c.id">{{ c.name }}</option>
-            }
-          </select>
-          @if (form.get('crise')?.invalid && form.get('crise')?.touched) {
-            <p class="field-hint error">La crise est obligatoire.</p>
-          }
+          <label>Ce centre est créé</label>
+          <div class="choix-rattachement">
+            <button type="button" [class.actif]="rattachement === 'crise'"
+                    (click)="choisirRattachement('crise')">
+              <span class="material-icons">crisis_alert</span>
+              Pour une crise en cours
+            </button>
+            <button type="button" [class.actif]="rattachement === 'avance'"
+                    (click)="choisirRattachement('avance')">
+              <span class="material-icons">inventory_2</span>
+              À l'avance, pour réutilisation
+            </button>
+          </div>
         </div>
+
+        @if (rattachement === 'crise') {
+          <div class="form-group">
+            <label>Crise <span class="required">*</span></label>
+            <select formControlName="crise">
+              <option [ngValue]="null" disabled>— Sélectionner une crise —</option>
+              @for (c of crises; track c.id) {
+                <option [ngValue]="c.id">{{ c.name }}</option>
+              }
+            </select>
+            @if (form.get('crise')?.invalid && form.get('crise')?.touched) {
+              <p class="field-hint error">La crise est obligatoire.</p>
+            }
+            @if (!crises.length) {
+              <p class="field-hint">
+                Aucune crise à rattacher. Choisissez « À l'avance » pour préparer ce centre dès
+                maintenant.
+              </p>
+            }
+          </div>
+        } @else {
+          <p class="note-preparation">
+            <span class="material-icons">inventory_2</span>
+            <span>
+              <strong>Centre préparé à l'avance, pour réutilisation ultérieure.</strong>
+              Il sera listé dans l'onglet « Centres prévus » et vous le rattacherez à une crise
+              le jour où vous l'ouvrez. D'ici là il n'apparaît pas sur la carte publique&nbsp;:
+              un habitant ne doit pas être envoyé vers un centre que personne n'a ouvert.
+            </span>
+          </p>
+        }
       }
 
       <div class="form-group">

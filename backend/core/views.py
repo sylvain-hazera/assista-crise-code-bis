@@ -12527,13 +12527,21 @@ class PointOperationnelViewSet(
         crise pour le formulaire "je suis en sécurité"), cette liste alimente une vue globale,
         sans crise présélectionnée.
 
-        « Ouvert » = actif, dont la crise n'est pas terminée (Crisis.end_date, même règle que
+        « Ouvert » = actif, RATTACHÉ à une crise non terminée (Crisis.end_date, même règle que
         CrisisSerializer.is_open) et dont la date de fermeture éventuellement saisie n'est pas
         déjà passée. Un habitant ne doit jamais être envoyé vers un centre fermé : c'est la
         seule information de cette page sur laquelle il se déplace physiquement."""
+        # Un centre SANS crise est un centre préparé, pas un centre ouvert : la collectivité
+        # l'a créé à froid dans son travail de préparation (voir l'onglet « Centres prévus »
+        # de la page Centres, et le choix de rattachement de PointModalComponent) et le
+        # rattachera à une crise le jour où elle l'ouvrira. L'annoncer ici enverrait un
+        # habitant vers une salle que personne n'a ouverte, ce qui est pire que de l'envoyer
+        # vers un centre fermé — il n'y trouverait même pas une porte close et une affiche.
+        # `PointOperationnel.crise` est en CASCADE, donc un point sans crise n'est jamais le
+        # résidu d'une crise supprimée : l'absence de crise signifie bien « préparé ».
         queryset = PointOperationnel.objects.filter(
-            Q(crise__isnull=True) | Q(crise__end_date__isnull=True),
             Q(date_fermeture__isnull=True) | Q(date_fermeture__gt=timezone.now()),
+            crise__isnull=False, crise__end_date__isnull=True,
             actif=True, type__code__in=["HEBERGEMENT", "SECOURS"],
             environment=get_active_environment(request),
         ).select_related("type", "crise")

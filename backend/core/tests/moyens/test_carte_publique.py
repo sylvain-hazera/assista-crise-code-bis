@@ -85,6 +85,37 @@ class TestCartePublique:
 
         assert "Gymnase ferme ce soir" in _noms(response)
 
+    def test_centre_prepare_a_lavance_est_masque(self, type_hebergement):
+        """Un centre sans crise est un centre PRÉPARÉ, pas un centre ouvert : la collectivité
+        l'a créé à froid (onglet « Centres prévus ») et le rattachera à une crise le jour où
+        elle l'ouvrira. L'annoncer ici enverrait un habitant vers une salle que personne n'a
+        ouverte — pire qu'un centre fermé, où il trouverait au moins une porte close et une
+        affiche.
+
+        Latent jusqu'ici parce que le formulaire interdisait de créer un centre sans crise ;
+        cette interdiction était elle-même un défaut (impossible de préparer un plan de
+        sauvegarde à froid) et vient d'être levée."""
+        _point(None, type_hebergement, nom="Salle des fêtes préparée",
+               adresse="1 place de la Mairie")
+
+        response = APIClient().get(reverse('pointoperationnel-carte-publique'))
+
+        assert "Salle des fêtes préparée" not in _noms(response)
+
+    def test_un_centre_prepare_apparait_des_quil_est_rattache(self, crise_ouverte,
+                                                              type_hebergement):
+        """L'autre moitié de la règle : le rattachement à une crise EST le geste d'ouverture.
+        Sans ce test, on pourrait masquer les centres préparés pour toujours."""
+        point = _point(None, type_hebergement, nom="Salle des fêtes ouverte")
+        assert "Salle des fêtes ouverte" not in _noms(
+            APIClient().get(reverse('pointoperationnel-carte-publique')))
+
+        point.crise = crise_ouverte
+        point.save(update_fields=["crise"])
+
+        assert "Salle des fêtes ouverte" in _noms(
+            APIClient().get(reverse('pointoperationnel-carte-publique')))
+
     def test_centre_inactif_est_masque(self, crise_ouverte, type_hebergement):
         point = _point(crise_ouverte, type_hebergement, nom="Gymnase inactif")
         PointOperationnel.objects.filter(pk=point.pk).update(actif=False)

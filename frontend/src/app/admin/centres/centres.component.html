@@ -48,7 +48,15 @@
           <tr (click)="openPointModal(point)">
             <td>{{ point.nom }}</td>
             <td>{{ point.commune_nom || '—' }}</td>
-            <td>{{ point.crise_nom || '—' }}</td>
+            <td>
+              @if (point.crise_nom) {
+                {{ point.crise_nom }}
+              } @else {
+                <span class="prepare-avance"
+                      title="Créé hors crise, en préparation : à rattacher à une crise le jour où il est ouvert">Préparé
+                  à l'avance</span>
+              }
+            </td>
             <td>{{ point.type_libelle || '—' }}</td>
             <td>{{ point.responsable_nom || '—' }}</td>
             <td>{{ point.personnes_presentes ?? 0 }}</td>

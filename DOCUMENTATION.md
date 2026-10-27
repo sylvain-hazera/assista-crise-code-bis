@@ -876,6 +876,24 @@ Deux notions de rôle coexistent, à ne pas confondre :
     composant (seuls quelques `*.spec.ts` de services existent, et le frontend ne se construit
     que dans Docker, par `ng build`). La vérification passe par la compilation — qui type-vérifie
     aussi les gabarits — et par la présence des identifiants dans le bundle produit.
+- **Un centre peut être préparé AVANT toute crise** (`PointOperationnel.crise` est nullable).
+  C'est le travail normal de préparation d'un plan de sauvegarde : on repère la salle des fêtes
+  à froid, on la rattache à une crise le jour où on l'ouvre. Trois conséquences à tenir
+  ensemble :
+  - `PointModalComponent` demande explicitement **« pour une crise en cours »** ou **« à
+    l'avance, pour réutilisation »** (`rattachement`). La crise était auparavant *obligatoire*
+    à la création hors contexte de crise — exactement à l'envers : dans une crise, son
+    identifiant est déjà fourni ; hors crise, on se voyait imposer d'en choisir une.
+  - La page Centres les liste dans son onglet **« Centres prévus »**
+    (`?crise__isnull=true`), et la colonne Crise affiche « Préparé à l'avance » plutôt qu'un
+    tiret, qui les faisait passer pour une donnée manquante. **Le rattachement à une crise est
+    le geste d'ouverture** : c'est par là qu'un centre prévu entre en service, sans copie.
+  - **`carte_publique` les exclut.** Un centre préparé n'est pas un centre ouvert, et c'est la
+    seule information de la plateforme sur laquelle un habitant se déplace physiquement :
+    l'y annoncer l'enverrait vers une salle que personne n'a ouverte — pire qu'un centre fermé,
+    où il trouverait au moins une porte close et une affiche. `crise` étant en `CASCADE`, un
+    point sans crise n'est jamais le résidu d'une crise supprimée : l'absence de crise signifie
+    bien « préparé », sans ambiguïté, et aucun champ supplémentaire n'est nécessaire.
 - **Éléments désactivés** : équipes, offres, demandes et signalements ne sont jamais supprimés
   mais désactivés ; le backend les masque, `?actif=all` les fait réapparaître pour les
   réactiver.
