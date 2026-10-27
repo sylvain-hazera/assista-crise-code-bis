@@ -967,6 +967,65 @@ class TestDepartEnTacheDeFond:
         assert trace.date_lancement > veille + datetime.timedelta(days=29)
 
 
+class TestAnimauxCaptifs:
+    """Les parcs animaliers n'arrivaient que par Géorisques, et seulement les classés.
+
+    La rubrique ICPE 2140 (« présentation au public d'animaux d'espèces non domestiques ») rend
+    8 établissements pour le Loir-et-Cher et la Dordogne réunis. Tout ce qui est sous les seuils
+    du classement — fermes pédagogiques, petits aquariums, refuges, volières — n'apparaissait
+    nulle part, alors que ce sont des animaux captifs, donc entièrement dépendants de leurs
+    soigneurs en cas d'évacuation ou de coupure électrique longue."""
+
+    # Enregistrement réel de Géorisques (Zoo Parc de Beauval, Saint-Aignan, code AIOT
+    # 0054100535) : `industrie: true` et code NAF « 91 », ce qui pourrait le ranger avec les
+    # usines — c'est la rubrique qui tranche.
+    BEAUVAL = {
+        "raisonSociale": "ZOO PARC DE BEAUVAL", "adresse1": "Beauval",
+        "codePostal": "41110", "codeInsee": "41198", "commune": "Saint-Aignan",
+        "codeNaf": "91", "longitude": 1.347314, "latitude": 47.246331,
+        "industrie": True, "prioriteNationale": True, "statutSeveso": "Non Seveso",
+        "ied": False, "etatActivite": "En exploitation avec titre",
+        "codeAIOT": "0054100535", "siret": "38357843200015", "regime": "Autorisation",
+        "date_maj": "2026-09-25/15-00-49",
+        "rubriques": [{"numeroRubrique": "2140",
+                       "nature": "Présentation au public d\u2019animaux d\u2019espèces non "
+                                 "domestiques"}],
+    }
+
+    def test_un_zoo_classe_est_un_elevage_pas_une_usine(self):
+        """`industrie: true` et NAF « 91 » le rangeraient avec les sites industriels ; la
+        rubrique 2140 dit qu'il y a des animaux, et c'est elle qui compte pour le plan."""
+        site = icpe._vers_site(self.BEAUVAL)
+
+        assert site.categorie == CategorieSiteSensible.ELEVAGE
+        assert site.est_enjeu is True
+        assert site.attributs["especes"] == ["animaux d'espèces non domestiques"]
+
+    def test_la_nature_de_la_rubrique_reste_lisible(self):
+        """Sans effectif animal (Géorisques ne le donne pas sur cette rubrique), c'est le seul
+        indice que l'agent a pour dimensionner : il doit rester en clair sur la ligne."""
+        site = icpe._vers_site(self.BEAUVAL)
+
+        cheptel = site.attributs["cheptel"]
+        assert cheptel[0]["rubrique"] == "2140"
+        assert "Présentation au public" in cheptel[0]["nature"]
+
+    def test_les_parcs_non_classes_ont_leur_theme(self):
+        """Le complément par le bas, même logique que pour les élevages : SIRENE voit ceux qui
+        sont sous les seuils du classement ICPE."""
+        theme = sirene.THEMES["PARCS_ANIMALIERS"]
+
+        assert theme.categorie == CategorieSiteSensible.ELEVAGE
+        assert theme.naf == ("91.04Z",)
+        assert "PARCS_ANIMALIERS" in sirene.THEMES_PAR_DEFAUT
+
+    def test_le_libelle_naf_est_affiche_pour_permettre_larbitrage(self):
+        """91.04Z mélange zoos, parcs botaniques et associations de protection de la nature :
+        l'agent ne peut trier que s'il voit l'activité en clair, pas « 91.04Z »."""
+        assert sirene.LIBELLES_NAF["91.04Z"] == (
+            "Gestion des jardins botaniques et zoologiques et des réserves naturelles")
+
+
 class TestPlafondAnnuaireDesEntreprises:
     """L'annuaire des entreprises refuse `page * per_page > 10 000` et PLAFONNE son propre
     `total_results` à ce chiffre : une requête tronquée ressemble exactement à une requête
@@ -1444,7 +1503,7 @@ class TestMasquageEtDevoilement:
 @pytest.mark.django_db
 class TestImportSirene:
     def test_sirene_part_en_tache_de_fond(self, agent_client, mairie):
-        """Jusqu'à sept thèmes paginés 25 par 25 : une cinquantaine d'appels sur une grande
+        """Jusqu’à onze thèmes paginés 25 par 25 : une cinquantaine d’appels sur une grande
         ville, impossible pendant que le navigateur attend."""
         client, _ = agent_client
         with patch("core.tasks.importer_sites_sensibles_task.delay") as delay:

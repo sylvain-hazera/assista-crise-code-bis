@@ -538,6 +538,30 @@ Règles qui structurent le paquet :
   alors que « transport de voyageurs » en rend 57, et ce sont précisément ces 57 autocaristes qui
   constituent le levier d'évacuation d'un conseil départemental. Le thème porte donc sa catégorie
   (`sirene.THEMES`), et la catégorie reste large pour que les filtres restent lisibles.
+- **Les animaux captifs comptent, et pas seulement les cheptels d'élevage.** La protection des
+  animaux est une mission du plan de sauvegarde, et un animal en captivité est intégralement
+  dépendant de ses soigneurs : une évacuation, un feu qui approche ou une coupure électrique
+  longue ne lui laissent aucune autonomie. Deux chemins, volontairement complémentaires :
+  - **Géorisques, rubrique ICPE 2140** (« présentation au public d'animaux d'espèces non
+    domestiques ») attrape les parcs classés. Vérifié en direct : 8 établissements pour le
+    Loir-et-Cher et la Dordogne réunis — Beauval, l'aquarium du Périgord noir, la réserve
+    zoologique de Calviac, le parc animalier du Thot. Attention au piège : ces enregistrements
+    portent `industrie: true` et un code NAF « 91 », qui les rangeraient avec les usines. C'est
+    la **rubrique** qui tranche, et elle l'emporte — un zoo sort en `ELEVAGE`, avec la nature de
+    la rubrique lisible sur la ligne, seul indice de dimensionnement puisque Géorisques ne donne
+    pas d'effectif animal sur cette rubrique.
+  - **SIRENE, thème `PARCS_ANIMALIERS`** (NAF 91.04Z) complète par le bas, exactement comme pour
+    les élevages : les fermes pédagogiques, petits aquariums, refuges et volières sous les
+    seuils du classement n'apparaissaient nulle part. Mesuré : 1 040 en France, 32 en Dordogne,
+    17 dans le Finistère. Ce code mélange trois choses — zoos, parcs botaniques, associations de
+    protection de la nature — et il est rangé en `ELEVAGE` quand même : un parc botanique mal
+    classé se corrige d'un clic, un zoo absent de la liste des animaux est un trou dans le plan.
+    Le libellé NAF est affiché pour rendre l'arbitrage évident. Thème `ressource` autant
+    qu'`enjeu` : un parc animalier est souvent le seul endroit d'un département où des gens
+    savent contenir, soigner et transporter un animal de deux tonnes.
+  - Écarté après mesure : le NAF 96.09Z, qui héberge officiellement les services aux animaux de
+    compagnie, rend 1 151 établissements en Dordogne en mêlant tatoueurs, photomatons et sites
+    de rencontre pour deux pensions canines. Inexploitable comme thème.
 - **Un établissement ne produit qu'une ligne, même connu de plusieurs sources.** Le SIRET est la
   seule clé commune (Géorisques le donne sur les 27 ICPE de Châteauneuf-du-Faou, SIRENE en fait
   son identifiant) et **15 des 25 installations classées de cette commune sont aussi des
@@ -607,7 +631,7 @@ Règles qui structurent le paquet :
   Châteauneuf-du-Faou pour les thèmes par défaut, **3 409 à Bordeaux**. La commune choisit donc
   ses thèmes (`categories` sur l'action `importer`), et le bouton « Rechercher dans les bases
   publiques » ne la déclenche pas. Elle est asynchrone pour la même raison que FINESS : jusqu'à
-  sept thèmes paginés 25 par 25.
+  onze thèmes paginés 25 par 25.
 - **SIRENE enregistre une existence juridique, pas une activité physique** : les 152 « élevages »
   de Bordeaux sont à 85 % des personnes physiques domiciliées en centre-ville, code NAF agricole
   et zéro animal. Une raison de plus pour que tout arrive en `PROPOSE`.

@@ -102,6 +102,27 @@ THEMES = {
         naf=("47.11B", "47.11C", "47.11D", "47.11E", "47.11F", "10.71C", "47.30Z",
              "56.29A", "56.29B"),
         enjeu=False, ressource=True, defaut=True),
+    # Les parcs animaliers n'arrivaient que par Géorisques, et seulement les CLASSÉS : la
+    # rubrique ICPE 2140 (« présentation au public d'animaux d'espèces non domestiques ») rend
+    # 8 établissements pour le Loir-et-Cher et la Dordogne réunis — Beauval, l'aquarium du
+    # Périgord noir, la réserve zoologique de Calviac, le parc animalier du Thot. Tout ce qui
+    # est sous les seuils du classement — fermes pédagogiques, petits aquariums, refuges,
+    # volières — n'apparaissait nulle part, alors que ce sont des animaux captifs, donc
+    # entièrement dépendants de leurs soigneurs en cas d'évacuation ou de coupure longue.
+    #
+    # Le code NAF 91.04Z mélange trois choses (1 040 en France, 32 en Dordogne, 17 dans le
+    # Finistère) : des zoos, des parcs botaniques et des associations de protection de la
+    # nature. On le range quand même en ELEVAGE, et c'est un choix : un parc botanique mal
+    # classé se corrige d'un clic, alors qu'un zoo absent de la liste des animaux est un trou
+    # dans le plan. Le libellé NAF est affiché sur la ligne pour que l'arbitrage soit évident.
+    "PARCS_ANIMALIERS": Theme(
+        libelle="Parcs animaliers, zoos, aquariums",
+        categorie=CategorieSiteSensible.ELEVAGE,
+        naf=("91.04Z",),
+        # Ressource autant qu'enjeu : un parc animalier est souvent le seul endroit d'un
+        # département où des gens savent contenir, soigner et transporter un animal de deux
+        # tonnes — exactement la compétence qui manque quand il faut évacuer un cheptel.
+        enjeu=True, ressource=True, defaut=True),
     "FUNERAIRE": Theme(
         libelle="Opérateurs funéraires", categorie=CategorieSiteSensible.FUNERAIRE,
         naf=("96.03Z",), enjeu=False, ressource=True, defaut=True),
@@ -155,6 +176,7 @@ LIBELLES_NAF = {
     "56.29A": "Restauration collective sous contrat",
     "56.29B": "Autres services de restauration",
     "88.91A": "Accueil de jeunes enfants",
+    "91.04Z": "Gestion des jardins botaniques et zoologiques et des réserves naturelles",
     "96.03Z": "Services funéraires",
 }
 

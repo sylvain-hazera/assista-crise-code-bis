@@ -124,6 +124,8 @@ export class SitesSensiblesComponent implements OnInit, OnDestroy {
     HEBERGEMENT: 'Des lits disponibles, et du monde à évacuer en saison',
     APPROVISIONNEMENT: 'Eau, repas, carburant',
     VETERINAIRE: 'Pour la prise en charge des animaux',
+    PARCS_ANIMALIERS: 'Des animaux captifs, dépendants de leurs soigneurs — mêlés à des parcs '
+      + 'botaniques, à trier',
     PETITE_ENFANCE: 'Surtout des assistantes maternelles : des personnes, à leur domicile',
   };
 

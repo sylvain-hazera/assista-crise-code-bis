@@ -80,7 +80,7 @@ def importer_sites_sensibles_task(institution_id, source, perimetre, commune_nom
     soit le périmètre, et toute source dès que le périmètre dépasse la commune.
 
     FINESS : ~50 Mo à télécharger et ~750 Mo de JSON à parcourir pour en extraire une commune
-    (voir core/opendata/finess.py). SIRENE : dix thèmes paginés 25 par 25, soit une centaine
+    (voir core/opendata/finess.py). SIRENE : onze thèmes paginés 25 par 25, soit une centaine
     d'appels sur une grande ville et davantage sur un département (voir core/opendata/sirene.py),
     et `options` porte alors les thèmes demandés. `perimetre` arrive sous la forme
     `{niveau, code}` : la liste des communes se reconstruit ici (voir construire_perimetre).

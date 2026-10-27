@@ -13,7 +13,7 @@ CONNECTEURS = {
 
 # Deux sources ne tiennent pas dans une requête HTTP. FINESS : son flux national fait ~50 Mo
 # compressés, à lire en entier pour en extraire une commune (voir finess.py). SIRENE : jusqu'à
-# sept thèmes paginés 25 par 25, soit une cinquantaine d'appels sur une grande ville. Les trois
+# onze thèmes paginés 25 par 25, soit une cinquantaine d'appels sur une grande ville. Les trois
 # autres sont des API filtrables par code INSEE qui répondent en quelques centaines de
 # millisecondes.
 SOURCES_ASYNCHRONES = {SourceSiteSensible.FINESS, SourceSiteSensible.SIRENE}
