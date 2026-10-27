@@ -61,7 +61,7 @@ from .export import build_crisis_export_zip
 from .institution_attachment import (
     find_institution_for_pending_user, attach_user_with_role,
     attach_secours_user_to_institution, resolve_or_invite_responsable,
-    _get_or_create_contact_institution,
+    grant_institution_and_demo_access, _get_or_create_contact_institution,
 )
 from .permissions import (
     IsInstitutionalActor, IsAdministrator, IsOwnDeclarationOrInstitutional, IsOwnerOrInstitutional,
@@ -14334,8 +14334,32 @@ class ContactInstitutionViewSet(
                 {"contact_principal": "Le contact principal vient d'être modifié par ailleurs : rechargez la page et réessayez."}
             )
 
+    def _ouvrir_les_droits(self, contact):
+        """Rattache réellement la personne, et pas seulement sur le papier.
+
+        Ce chemin-ci créait la ligne de contact et s'arrêtait là : ni `User.institution`, ni
+        l'appartenance à l'équipe de l'institution, ni l'accès à la zone de démonstration, ni
+        l'email d'accès à la messagerie d'équipe. Comme `User.institution` est ce que lisent
+        les vues territoriales (`zone_scoping._institution_commune_or_400`), la personne
+        utilisait normalement l'application SAUF les sept vues `*-vue-mairie` /
+        `*-vue-secteur`, qui lui répondaient « Aucune commune associée à votre institution :
+        contactez un administrateur ». Message doublement cruel : l'administrateur, c'est
+        celui qui venait de la rattacher.
+
+        Mesuré en production le 27/10/2026 : 4 comptes actifs dans cet état, dont un agent qui
+        a accumulé 75 échecs sur quatre sessions avant de cesser de revenir.
+
+        `grant_institution_and_demo_access` est idempotente (elle ne pose `User.institution`
+        que s'il est vide, donc ne détourne jamais un profil multi-institutions) : on peut
+        l'appeler à la création comme à la mise à jour. Un contact inactif n'ouvre rien."""
+        if contact.actif:
+            grant_institution_and_demo_access(contact.utilisateur, contact.institution,
+                                              self.request)
+
     def perform_update(self, serializer):
-        self._enregistrer(serializer)
+        # Aussi à la mise à jour : réactiver un contact (actif False → True) est un
+        # rattachement comme un autre, et laissait le même trou.
+        self._ouvrir_les_droits(self._enregistrer(serializer))
 
     def perform_create(self, serializer):
         contact = self._enregistrer(serializer, environment=get_active_environment(self.request))
@@ -14346,6 +14370,7 @@ class ContactInstitutionViewSet(
             objet_id=contact.id,
             commentaire=f"Création contact institution : {contact.utilisateur} pour {contact.institution.nom}",
         )
+        self._ouvrir_les_droits(contact)
 
 class InstitutionDomaineViewSet(
     EnvironmentScopedViewSetMixin, viewsets.ModelViewSet

@@ -205,10 +205,17 @@ def grant_institution_and_demo_access(user, institution, request=None):
 
     Ajoute aussi `user` à l'équipe "de tête" de l'institution (voir
     get_or_create_institution_team) et lui envoie, la toute première fois seulement, l'email
-    d'accès à la messagerie d'équipe -- appelée par TOUS les chemins de rattachement
+    d'accès à la messagerie d'équipe -- à appeler par TOUS les chemins de rattachement
     (attach_user_with_role, attach_secours_user_to_institution, resolve_or_invite_responsable,
-    import CSV personnel communal), donc point unique pour garantir qu'aucun membre
-    d'institution n'y échappe. `request` volontairement optionnel (certains appelants
+    import CSV personnel communal, ContactInstitutionViewSet), pour qu'aucun membre
+    d'institution n'y échappe.
+
+    Ce commentaire affirmait que c'était déjà le cas : c'était faux, et c'est ce qui a rendu le
+    trou invisible pendant des semaines. `ContactInstitutionViewSet.perform_create` -- le
+    chemin « ajouter un contact » de l'administration, donc le plus utilisé -- créait la ligne
+    sans passer ici. Toute nouvelle façon de rattacher quelqu'un doit appeler cette fonction ;
+    une affirmation dans un commentaire ne remplace pas un test (voir
+    tests/institutions/test_contact_institution_rattachement.py). `request` volontairement optionnel (certains appelants
     historiques n'en avaient pas besoin) mais SANS request l'email n'est pas envoyé
     (send_mail_logged/audit_log en ont besoin) -- en pratique tous les appelants réels en
     disposent (actions de vue authentifiées ou import, jamais un script sans contexte)."""

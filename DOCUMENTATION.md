@@ -406,11 +406,26 @@ rattachement d'une mairie.
   personnel communal). Un compte rattaché par `ContactInstitution` **sans** que
   `User.institution` soit posé utilise donc normalement l'application, sauf les vues
   `*-vue-mairie` / `*-vue-secteur` qui lui répondent *« Aucune commune associée à votre
-  institution : contactez un administrateur »*. Observé en production les 25 et 26/10/2026 :
-  75 échecs pour un agent, sur ses quatre sessions, jusqu'à ce qu'il cesse de revenir — et la
-  réparation tentée (ajouter un second `ContactInstitution`) ne touchait pas la cause. Ajouter
-  un rattachement **doit** poser `User.institution` quand il est vide, ou mieux, le scoping
-  doit passer par `ContactInstitution` comme le reste.
+  institution : contactez un administrateur »* — message doublement cruel, puisque
+  l'administrateur venait de le rattacher et que son geste n'y changeait rien. Observé en
+  production les 25 et 26/10/2026 : 75 échecs pour un agent, sur ses quatre sessions, jusqu'à
+  ce qu'il cesse de revenir.
+  - **La cause** : `ContactInstitutionViewSet.perform_create` — le chemin « ajouter un
+    contact » de l'administration, donc le plus utilisé — créait la ligne sans appeler
+    `grant_institution_and_demo_access`. Celle-ci est le point unique qui pose
+    `User.institution`, ajoute la personne à l'équipe de l'institution, lui ouvre la zone de
+    démonstration et lui envoie l'accès à la messagerie d'équipe. Son commentaire affirmait
+    être appelée par tous les chemins de rattachement : c'était faux, et c'est ce qui a rendu
+    le trou invisible. **Tout nouveau chemin de rattachement doit l'appeler**, et
+    `tests/institutions/test_contact_institution_rattachement.py` le vérifie au lieu de
+    l'affirmer — y compris l'invariant « un `ContactInstitution` actif implique un
+    `User.institution` renseigné ».
+  - **Les comptes d'avant** : `manage.py backfill_rattachement_institution` (avec `--dry-run`
+    d'abord) les reprend. Il choisit, parmi les rattachements actifs, celui dont l'institution
+    est encore en service puis celui où la personne est contact principal — le rattachement
+    vivant plutôt qu'un vestige. 4 comptes concernés au 27/10/2026.
+  - Reste à faire : le scoping territorial devrait passer par `ContactInstitution` comme le
+    reste de l'application, au lieu de dépendre d'un raccourci qu'il faut penser à poser.
 - **Deux institutions peuvent désigner la même collectivité**, et c'est la création qui en est
   responsable : `find_or_create_institution_from_annuaire`
   (`institution_attachment.py`) fait son `get_or_create` sur le **seul nom**, sans recouper le
