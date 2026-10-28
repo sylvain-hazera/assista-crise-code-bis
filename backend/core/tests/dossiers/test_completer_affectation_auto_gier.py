@@ -200,6 +200,42 @@ class TestEquipes:
 
 
 @pytest.mark.django_db
+class TestDesignationDeLaCrise:
+    def test_une_crise_renommee_est_quand_meme_trouvee(self, catalogue, crise, equipes):
+        """Constaté le 28/10/2026 : la crise réelle s'appelait « démo inondation vallée du gier
+        et pilat ». Chercher le nom littéral du générateur échouait alors qu'elle était là."""
+        Crisis.objects.filter(pk=crise.pk).update(
+            name="démo inondation vallée du gier et pilat")
+        demande = _demande(crise, "Nettoyage / déblaiement")
+
+        call_command("completer_affectation_auto_gier")
+
+        assert Dossier.objects.filter(demande=demande).exists()
+
+    def test_plusieurs_crises_candidates_refuse_de_choisir(self, catalogue, crise, equipes):
+        from django.core.management.base import CommandError
+
+        Crisis.objects.create(
+            name="Autre essai Gier", type=TypeCrise.INONDATION,
+            location=POINT, environment=Environment.DEMO,
+        )
+
+        with pytest.raises(CommandError, match="préciser --crise"):
+            call_command("completer_affectation_auto_gier")
+
+    def test_le_nom_exact_leve_l_ambiguite(self, catalogue, crise, equipes):
+        Crisis.objects.create(
+            name="Autre essai Gier", type=TypeCrise.INONDATION,
+            location=POINT, environment=Environment.DEMO,
+        )
+        demande = _demande(crise, "Nettoyage / déblaiement")
+
+        call_command("completer_affectation_auto_gier", crise=crise.name)
+
+        assert Dossier.objects.get(demande=demande).crise_id == crise.id
+
+
+@pytest.mark.django_db
 class TestIntervenant:
     @pytest.fixture
     def fred(self, db):
@@ -237,6 +273,38 @@ class TestIntervenant:
 
         assert Dossier.objects.get(demande=demande).statut == (
             Dossier.Statut.EN_ATTENTE_DISTRIBUTION)
+
+    def test_le_role_demo_est_pose_car_c_est_lui_qui_ouvre_les_menus(
+            self, catalogue, crise, equipes, fred):
+        """En zone de démonstration, `AuthService.getEffectiveRole` lit `demo_role` et jamais
+        `type` : sans lui, un compte institutionnel en production n'ouvre aucun menu en démo."""
+        assert fred.demo_role is None
+
+        call_command("completer_affectation_auto_gier", intervenant="Fred Bouchet")
+
+        fred.refresh_from_db()
+        assert fred.demo_role == UserRole.REGULATEUR
+
+    def test_un_role_demo_institutionnel_n_est_jamais_abaisse(
+            self, catalogue, crise, equipes, fred):
+        fred.demo_role = UserRole.LOCAL_AUTHORITY
+        fred.save(update_fields=["demo_role"])
+
+        call_command("completer_affectation_auto_gier", intervenant="Fred Bouchet")
+
+        fred.refresh_from_db()
+        assert fred.demo_role == UserRole.LOCAL_AUTHORITY
+
+    def test_le_role_de_production_n_est_pas_touche(self, catalogue, crise, equipes, fred):
+        """Relever `type` donnerait des droits réels sur des données réelles pour les besoins
+        d'une démonstration."""
+        fred.type = UserRole.SIMPLE_USER
+        fred.save(update_fields=["type"])
+
+        call_command("completer_affectation_auto_gier", intervenant="Fred Bouchet")
+
+        fred.refresh_from_db()
+        assert fred.type == UserRole.SIMPLE_USER
 
     def test_est_participant_des_dossiers_rattrapes(self, catalogue, crise, equipes, fred):
         """C'est ce lien, et non le rôle du compte, qui fait apparaître un dossier dans
@@ -304,5 +372,5 @@ class TestRattrapage:
     def test_crise_absente_echoue_clairement(self, catalogue, db):
         from django.core.management.base import CommandError
 
-        with pytest.raises(CommandError, match="introuvable"):
+        with pytest.raises(CommandError, match="Aucune crise DEMO"):
             call_command("completer_affectation_auto_gier")

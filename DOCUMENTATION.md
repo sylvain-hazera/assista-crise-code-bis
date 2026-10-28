@@ -168,6 +168,12 @@ docker compose exec backend python manage.py completer_affectation_auto_gier --s
 docker compose exec backend python manage.py completer_affectation_auto_gier --intervenant "Prenom Nom"
 ```
 
+La crise est retrouvée par son nom contenant « Gier » (accents et casse ignorés), parce qu'elle
+est souvent renommée après génération ; `--crise "nom exact"` tranche s'il y en a plusieurs.
+`--intervenant` pose aussi `User.demo_role` (`--role-demo`, REGULATEUR par défaut) : en zone de
+démonstration c'est **ce** champ que lit `AuthService.getEffectiveRole`, jamais `type`, et sans
+lui aucun menu ne s'ouvre. `type` n'est jamais modifié — c'est le rôle en production.
+
 Elle pose les correspondances thème → besoin → compétence manquantes (aucun type de signalement
 n'en avait), crée les `AffectationCompetence` — seule table lue par le matching, `Team.competences`
 ne servant qu'à l'affichage —, déclare la zone de la crise sur chaque équipe, rend une personne

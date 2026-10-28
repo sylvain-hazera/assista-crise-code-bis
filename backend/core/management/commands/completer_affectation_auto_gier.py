@@ -37,6 +37,7 @@ Usage :
 `--simulation` fait tout le travail dans une transaction annulée à la fin : le rapport décrit
 donc des écritures réelles, pas une estimation parallèle qui pourrait divergir du code exécuté.
 """
+import unicodedata
 import uuid
 
 from django.core.management.base import BaseCommand, CommandError
@@ -44,7 +45,6 @@ from django.db import transaction
 
 from core.crypto_fields import blind_index
 from core.management.commands.generate_crise_gier_pilat import (
-    CRISIS_NAME,
     EQUIPE_HEBERGEMENT,
     EQUIPE_LOGISTIQUE,
     EQUIPE_TRANSPORT,
@@ -118,6 +118,22 @@ EQUIPE_COMPETENCES = {
 }
 
 
+# Rôles qui donnent accès aux entrées « institutionnel » du menu (admin-sidebar.component.ts,
+# isInstitutionalEffective). SIMPLE_USER en est volontairement absent : il n'ouvrirait aucun menu.
+ROLES_DEMO = [
+    UserRole.REGULATEUR, UserRole.ORGANIZED_RESCUE,
+    UserRole.LOCAL_AUTHORITY, UserRole.ADMINISTRATOR,
+]
+
+# Fragment de nom recherché, accents et casse retirés (voir _trouver_crise).
+MOTIF_CRISE = "gier"
+
+
+def _sans_accent(texte):
+    sans = unicodedata.normalize("NFD", texte or "")
+    return "".join(c for c in sans if not unicodedata.combining(c)).lower()
+
+
 class Annulation(Exception):
     """Sort de la transaction en --simulation sans rien laisser en base."""
 
@@ -130,6 +146,18 @@ class Command(BaseCommand):
             "--intervenant", default=None,
             help="Personne à rendre intervenante sur les trois équipes et régulatrice sur leurs "
                  "thèmes. Email, ou « Prénom Nom » si l'email n'est pas connu.",
+        )
+        parser.add_argument(
+            "--crise", default=None,
+            help="Nom exact de la crise à traiter. Par défaut, la commande cherche la crise "
+                 "DEMO dont le nom contient « Gier » — la crise réelle a pu être renommée "
+                 "depuis sa génération.",
+        )
+        parser.add_argument(
+            "--role-demo", default=UserRole.REGULATEUR, choices=ROLES_DEMO,
+            help="Rôle appliqué à l'intervenant EN ZONE DE DÉMONSTRATION (User.demo_role). "
+                 "C'est lui, et non `type`, qui décide des entrées du menu quand on navigue "
+                 "en démo. Jamais abaissé s'il est déjà institutionnel.",
         )
         parser.add_argument(
             "--notifier", action="store_true",
@@ -148,28 +176,50 @@ class Command(BaseCommand):
         self.notifier = options["notifier"]
         try:
             with transaction.atomic():
-                self._executer(options.get("intervenant"))
+                self._executer(options)
                 if self.simulation:
                     raise Annulation
         except Annulation:
             self.stdout.write(self.style.WARNING(
                 "\n--simulation : transaction annulée, rien n'a été écrit."))
 
-    def _executer(self, intervenant_ref):
-        crise = Crisis.objects.filter(
-            name=CRISIS_NAME, environment=Environment.DEMO).first()
-        if crise is None:
-            raise CommandError(
-                f"Crise démo « {CRISIS_NAME} » introuvable — lancer d'abord "
-                f"generate_crise_gier_pilat."
-            )
+    def _executer(self, options):
+        crise = self._trouver_crise(options.get("crise"))
         nb_communes = len(crise.zone_communes or [])
         self._titre(f"Crise : {crise.name} — {nb_communes} commune(s) dans la zone")
 
         self._correspondances(crise)
         equipes = self._equipes(crise)
-        self._intervenant(intervenant_ref, crise, equipes)
+        self._intervenant(
+            options.get("intervenant"), options["role_demo"], crise, equipes)
         self._rattrapage(crise)
+
+    def _trouver_crise(self, nom_exact):
+        """La crise réelle a été renommée depuis sa génération (« démo inondation vallée du
+        gier et pilat » au 28/10/2026) : chercher sur le nom littéral du générateur échouait
+        alors que la crise était bien là. On retient donc toute crise DEMO dont le nom contient
+        « gier », casse et accents ignorés, et on refuse de choisir s'il y en a plusieurs."""
+        if nom_exact:
+            crise = Crisis.objects.filter(name=nom_exact, environment=Environment.DEMO).first()
+            if crise is None:
+                raise CommandError(f"Aucune crise DEMO nommée « {nom_exact} ».")
+            return crise
+
+        candidates = [
+            c for c in Crisis.objects.filter(environment=Environment.DEMO)
+            if MOTIF_CRISE in _sans_accent(c.name)
+        ]
+        if not candidates:
+            raise CommandError(
+                f"Aucune crise DEMO dont le nom contienne « {MOTIF_CRISE} » — lancer "
+                f"generate_crise_gier_pilat, ou désigner la crise avec --crise « nom exact »."
+            )
+        if len(candidates) > 1:
+            noms = "\n  - ".join(sorted(c.name for c in candidates))
+            raise CommandError(
+                f"Plusieurs crises DEMO correspondent, préciser --crise :\n  - {noms}"
+            )
+        return candidates[0]
 
     # ── Rapport ───────────────────────────────────────────────────────────
     def _titre(self, texte):
@@ -286,7 +336,7 @@ class Command(BaseCommand):
             candidats = candidats.filter(first_name__istartswith=morceaux[0])
         return candidats.first()
 
-    def _intervenant(self, reference, crise, equipes):
+    def _intervenant(self, reference, role_demo, crise, equipes):
         self._titre("3. Intervenant")
         if not reference:
             self._note("aucun --intervenant fourni : phase ignorée.")
@@ -297,14 +347,23 @@ class Command(BaseCommand):
             self._alerte(f"Personne « {reference} » introuvable — phase ignorée.")
             return
         self._ok(f"{personne.first_name} {personne.last_name} — rôle {personne.type}")
-        # Les entrées du menu d'administration dépendent du RÔLE du compte, pas de
-        # l'appartenance à une équipe (voir admin-nav.config.ts, `visibilite`) : être
-        # intervenant fait apparaître les dossiers dans « Mes interventions », pas les menus.
+
+        # Deux leviers distincts, et les confondre fait tourner en rond : l'appartenance à une
+        # équipe fait apparaître le CONTENU (ses interventions, ses dossiers), le RÔLE décide
+        # des entrées du MENU. Et en zone de démonstration, le rôle qui compte est `demo_role`,
+        # jamais `type` (AuthService.getEffectiveRole) : un compte parfaitement institutionnel
+        # en production n'ouvre aucun menu en démo tant que `demo_role` est vide.
+        if personne.demo_role in ROLES_DEMO:
+            self._note(f"rôle démo déjà institutionnel ({personne.demo_role}) — inchangé")
+        else:
+            ancien = personne.demo_role or "aucun"
+            personne.demo_role = role_demo
+            personne.save(update_fields=["demo_role"])
+            self._note(f"rôle démo {ancien} -> {role_demo} (ouvre les menus en zone démo)")
+        # `type` n'est volontairement PAS touché : c'est le rôle du compte en PRODUCTION, et le
+        # relever pour les besoins d'une démo donnerait des droits réels sur des données réelles.
         if personne.type == UserRole.SIMPLE_USER:
-            self._alerte(
-                "Compte UTIL_SIMPLE : il verra ses interventions, mais aucun menu "
-                "d'administration tant que son rôle n'est pas relevé."
-            )
+            self._note("rôle de production laissé à UTIL_SIMPLE (hors démo, rien ne change).")
 
         role_regulateur = RoleOperationnel.objects.filter(code="REGULATEUR").first()
         if role_regulateur is None:
