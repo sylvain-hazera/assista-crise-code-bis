@@ -11,9 +11,11 @@ export type GroupeNavId = 'permanent' | 'crise' | 'post-critique' | 'preparation
  * - `sysadmin` : administrateur PROD réel ;
  * - `validation-comptes` : rôle effectif admin ou autorité locale ;
  * - `autorite-locale` : collectivités territoriales (isAutoriteLocaleCommunale) ;
- * - `registre-vulnerables` : champ serveur `acces_registre_vulnerables`. */
+ * - `registre-vulnerables` : champ serveur `acces_registre_vulnerables` ;
+ * - `membres-association` : champ serveur `acces_membres_association`. */
 export type VisibiliteNav =
-  'institutionnel' | 'tous' | 'sysadmin' | 'validation-comptes' | 'autorite-locale' | 'registre-vulnerables';
+  'institutionnel' | 'tous' | 'sysadmin' | 'validation-comptes' | 'autorite-locale'
+  | 'registre-vulnerables' | 'membres-association';
 
 export interface NavItem {
   icon: string;
@@ -85,10 +87,11 @@ export const NAV_ITEMS: NavItem[] = [
   { icon: 'domain', label: 'Sites sensibles', route: '/admin/sites-sensibles', groupe: 'preparation' },
   { icon: 'category', label: 'Compétences', route: '/admin/competences', groupe: 'preparation' },
   // Associations agréées de sécurité civile : annuaire des membres, circuit de recrutement,
-  // qualifications avec échéances, disponibilités à quinze jours. Visible à tout rôle
-  // institutionnel : « être au bureau » est un attribut du rattachement et non un rôle de
-  // compte, donc invérifiable depuis le menu — la page le dit elle-même à qui n'y a pas accès.
-  { icon: 'badge', label: 'Membres association', route: '/admin/membres-association', groupe: 'preparation' },
+  // qualifications avec échéances, disponibilités à quinze jours. Champ serveur
+  // `acces_membres_association` : « être au bureau » est un attribut du rattachement et non un
+  // rôle de compte, donc invérifiable depuis le menu. Une institution non associative ne voit
+  // pas l'entrée.
+  { icon: 'badge', label: 'Membres association', route: '/admin/membres-association', groupe: 'preparation', visibilite: 'membres-association' },
   // RCSC/RESPONSABLE d'une mairie ou délégation active (core/vulnerabilites.py).
   { icon: 'accessible', label: 'Personnes vulnérables', route: '/admin/personnes-vulnerables', groupe: 'preparation', visibilite: 'registre-vulnerables' },
   // Qui tient le registre, designe nominativement par le maire. Visible a toute collectivite

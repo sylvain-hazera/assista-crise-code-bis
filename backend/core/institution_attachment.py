@@ -404,6 +404,12 @@ def _nom_comparable(valeur):
     return ' '.join(texte.lower().split())
 
 
+#: Code de l'InstitutionType des associations agréées de sécurité civile. Comparé en
+#: insensible à la casse partout : les lignes de catalogue existent en « AASC » comme en
+#: « aasc » selon la façon dont elles ont été créées.
+CODE_TYPE_AASC = "aasc"
+
+
 def trouver_aasc(nom_declare):
     """L'AASC déjà enregistrée qui correspond au nom déclaré, ou None.
 
@@ -414,7 +420,7 @@ def trouver_aasc(nom_declare):
     cible = _nom_comparable(nom_declare)
     if not cible:
         return None
-    for institution in Institution.objects.filter(type__code__iexact='aasc', actif=True):
+    for institution in Institution.objects.filter(type__code__iexact=CODE_TYPE_AASC, actif=True):
         if _nom_comparable(institution.nom) == cible:
             return institution
     return None

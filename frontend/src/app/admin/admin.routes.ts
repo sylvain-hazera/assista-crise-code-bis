@@ -1,5 +1,5 @@
 import { Routes } from '@angular/router';
-import { sysAdminGuard, institutionalEffectiveGuard, accountValidationGuard, autoriteLocaleGuard, vulnerabilitesGuard } from '../core/guards/admin.guard';
+import { sysAdminGuard, institutionalEffectiveGuard, accountValidationGuard, autoriteLocaleGuard, vulnerabilitesGuard, membresAssociationGuard } from '../core/guards/admin.guard';
 import { AccesRefuseComponent } from './acces-refuse/acces-refuse.component';
 
 export const ADMIN_ROUTES: Routes = [
@@ -42,10 +42,10 @@ export const ADMIN_ROUTES: Routes = [
   { path: 'sites-sensibles', loadComponent: () => import('./sites-sensibles/sites-sensibles.component').then(m => m.SitesSensiblesComponent), canActivate: [institutionalEffectiveGuard] },
   { path: 'competences', loadComponent: () => import('./competences/competences.component').then(m => m.CompetencesComponent), canActivate: [institutionalEffectiveGuard] },
   // Gestion des membres d'une association agréée de sécurité civile : annuaire, recrutement,
-  // qualifications, disponibilités. La page se ferme d'elle-même à qui n'est au bureau d'aucune
-  // association (le serveur l'impose aussi) — pas de garde dédiée, il n'y a pas de rôle
-  // « bureau » global, c'est un attribut du rattachement.
-  { path: 'membres-association', loadComponent: () => import('./membres-association/membres-association.component').then(m => m.MembresAssociationComponent), canActivate: [institutionalEffectiveGuard] },
+  // qualifications, disponibilités. Gardee par `acces_membres_association` (champ serveur) :
+  // une institution non associative ne doit pas voir cette page. Se fermer d'elle-meme ne
+  // suffisait pas -- une mairie la trouvait cassee plutot qu'absente.
+  { path: 'membres-association', loadComponent: () => import('./membres-association/membres-association.component').then(m => m.MembresAssociationComponent), canActivate: [institutionalEffectiveGuard, membresAssociationGuard] },
   { path: 'personnes-vulnerables', loadComponent: () => import('./personnes-vulnerables/personnes-vulnerables.component').then(m => m.PersonnesVulnerablesComponent), canActivate: [institutionalEffectiveGuard, vulnerabilitesGuard] },
   // Designation nominative (art. R. 121-7 du CASF) : garde `autoriteLocaleGuard` et non
   // `vulnerabilitesGuard` -- designer n'est pas acceder. Un maire dont personne n'est encore

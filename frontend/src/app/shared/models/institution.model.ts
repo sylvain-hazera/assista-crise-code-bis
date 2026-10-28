@@ -13,6 +13,7 @@ export interface Institution {
   nom: string;
   type: string | null;           // UUID de l'InstitutionType
   type_libelle?: string | null;  // résolu côté backend, lecture seule
+  type_code?: string | null;     // résolu côté backend — à tester plutôt que le libellé
   description?: string | null;
   telephone?: string | null;
   email?: string | null;

@@ -17,6 +17,11 @@ import { environment } from '../../../environments/environment';
 
 type Onglet = 'membres' | 'candidatures' | 'disponibilites' | 'liens';
 
+/** Code de l'InstitutionType des AASC -- compare en insensible a la casse, comme cote serveur
+ * (institution_attachment.CODE_TYPE_AASC) : les lignes de catalogue existent en « AASC »
+ * comme en « aasc » selon la facon dont elles ont ete creees. */
+const CODE_TYPE_AASC = 'aasc';
+
 /**
  * Gestion des membres d'une association agréée de sécurité civile : annuaire, recrutement,
  * qualifications et disponibilités.
@@ -129,13 +134,26 @@ export class MembresAssociationComponent implements OnInit {
         // association dont le bureau a perdu ses accès. Ne rien lui proposer ici fermait la
         // page à celui-là même qui en a le droit — constaté en essayant la page le 28/10/2026.
         this.estAdministrateur = moi?.type === 'ADMIN';
+        // Deux filtres qui s'appliquent a TOUT LE MONDE, administrateur compris :
+        //
+        // - `actif` : une institution fusionnee est conservee comme pierre tombale
+        //   (actif=False, nom suffixe « [fusionnee dans ...] », voir la commande
+        //   fusionner_institutions). La proposer revenait a offrir de gerer les membres d'une
+        //   association qui n'existe plus -- constate le 28/10/2026 sur Chateauneuf-du-Faou.
+        // - `type_code === aasc` : cette page ne parle que d'associations agreees de securite
+        //   civile. Une mairie n'a rien a y faire, et un administrateur n'a pas davantage de
+        //   raison de voir des mairies dans un selecteur d'associations.
+        const associations = liste.filter(
+          i => i.id && i.actif !== false
+            && (i.type_code || '').toLowerCase() === CODE_TYPE_AASC);
+
         if (this.estAdministrateur) {
-          this.mesInstitutions = liste.filter(i => i.id);
+          this.mesInstitutions = associations;
         } else {
           const auBureau = contacts.filter(
             c => c.utilisateur === moi?.id && c.actif && c.membre_bureau);
           const ids = new Set(auBureau.map(c => c.institution));
-          this.mesInstitutions = liste.filter(i => i.id && ids.has(i.id));
+          this.mesInstitutions = associations.filter(i => ids.has(i.id!));
         }
         this.institutionChoisie = this.mesInstitutions[0]?.id ?? null;
         this.chargement = false;

@@ -8,6 +8,7 @@ import { NAV_ITEMS } from '../admin-nav.config';
 import { ADMIN_ROUTES } from '../../../admin/admin.routes';
 import {
   accountValidationGuard, institutionalEffectiveGuard, sysAdminGuard, vulnerabilitesGuard, autoriteLocaleGuard,
+  membresAssociationGuard,
 } from '../../../core/guards/admin.guard';
 
 describe('AdminSidebarComponent', () => {
@@ -78,6 +79,7 @@ describe('AdminSidebarComponent', () => {
       'validation-comptes': accountValidationGuard,
       'autorite-locale': autoriteLocaleGuard,
       'registre-vulnerables': vulnerabilitesGuard,
+      'membres-association': membresAssociationGuard,
     };
     const routeDe = (navRoute: string) =>
       ADMIN_ROUTES.find(r => `/admin/${r.path}` === navRoute);

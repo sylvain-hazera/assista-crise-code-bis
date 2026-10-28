@@ -75,6 +75,8 @@ export class AdminSidebarComponent {
       case 'registre-vulnerables':
         // Champ calculé côté serveur, jamais recalculé ici.
         return !!this.authService.getCurrentUser()?.acces_registre_vulnerables;
+      case 'membres-association':
+        return !!this.authService.getCurrentUser()?.acces_membres_association;
       case 'institutionnel':
         return this.authService.isInstitutionalEffective();
     }

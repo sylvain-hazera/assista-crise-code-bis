@@ -73,6 +73,59 @@ describe('MembresAssociationComponent', () => {
     http.verify();
   });
 
+  describe('le sélecteur d\'associations', () => {
+    /** Le composant charge contacts + institutions + catalogue dans un forkJoin : on répond
+     * aux trois, sinon rien n'est calculé. */
+    function repondreAuChargement(institutions: unknown[], contacts: unknown[] = []): void {
+      http.match(r => r.url.includes('/contacts-institutions'))
+        .forEach(r => r.flush(contacts));
+      // InstitutionService.getAll() attend une enveloppe paginee qu'il reduit lui-meme
+      // (expand/reduce sur `next`) : lui rendre un tableau brut produit [undefined].
+      http.match(r => /\/institutions\/?($|\?)/.test(r.url))
+        .forEach(r => r.flush({ results: institutions, next: null }));
+      http.match(r => r.url.includes('/qualifications'))
+        .forEach(r => r.flush([]));
+    }
+
+    const asso = (p: Record<string, unknown>) => ({
+      id: 'a1', nom: 'AASC', type: 't1', type_code: 'AASC', actif: true, ...p,
+    });
+
+    it('écarte une association fusionnée', () => {
+      // Une institution fusionnée est conservée comme pierre tombale (actif=false, nom suffixé
+      // « [fusionnée dans ...] »). La proposer revenait à offrir de gérer les membres d'une
+      // association qui n'existe plus — constaté sur Châteauneuf-du-Faou le 28/10/2026.
+      composant.ngOnInit();
+      repondreAuChargement([
+        asso({ id: 'vivante', nom: 'AASC vivante' }),
+        asso({ id: 'morte', nom: 'AASC [fusionnee dans ...]', actif: false }),
+      ]);
+
+      expect(composant.mesInstitutions.map(i => i.id)).toEqual(['vivante']);
+    });
+
+    it('écarte ce qui n\'est pas une association', () => {
+      // Un administrateur voit toutes les institutions, mais cette page ne parle que d'AASC :
+      // une mairie n'a aucune raison d'apparaître dans un sélecteur d'associations.
+      composant.ngOnInit();
+      repondreAuChargement([
+        asso({ id: 'aasc' }),
+        asso({ id: 'mairie', nom: 'Mairie X', type_code: 'MAIRIE' }),
+      ]);
+
+      expect(composant.mesInstitutions.map(i => i.id)).toEqual(['aasc']);
+    });
+
+    it('reconnaît le code du type quelle que soit sa casse', () => {
+      // Les lignes de catalogue existent en « AASC » comme en « aasc » selon la façon dont
+      // elles ont été créées — vérifié en base le 28/10/2026, les deux coexistent.
+      composant.ngOnInit();
+      repondreAuChargement([asso({ id: 'minuscule', type_code: 'aasc' })]);
+
+      expect(composant.mesInstitutions.map(i => i.id)).toEqual(['minuscule']);
+    });
+  });
+
   describe('les trois états d\'une disponibilité', () => {
     it('distingue un refus d\'un silence', () => {
       expect(composant.etatJour(true)).toBe('oui');

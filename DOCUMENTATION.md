@@ -391,6 +391,17 @@ rattachement d'une mairie.
   `core/vulnerabilites.py` ; **aucune donnée de santé** dans `TypeVulnerabilite` ni dans
   `DeclarationSecurite` (RGPD art. 9) : ne pas ajouter de champ médical ou de notes libres
   sans accord du porteur.
+- **Accès à la page « Membres association »** (`UserSerializer.acces_membres_association`,
+  28/10/2026) : administrateur, compte rattaché à une AASC, **ou membre du bureau d'une AASC
+  même rattaché ailleurs** — un agent de mairie peut être au bureau de l'association locale, et
+  le critère du seul rattachement le priverait de la page dont il a la charge. C'est ce
+  troisième cas qui interdit de calculer la visibilité côté client : « être au bureau » est un
+  attribut du rattachement, pas du compte. Avant, l'entrée était ouverte à tout rôle
+  institutionnel et la page se fermait d'elle-même, ce qui la faisait paraître **cassée** à une
+  mairie plutôt qu'absente. Le sélecteur d'associations écarte par ailleurs les institutions
+  `actif=False` (une fusionnée est conservée comme pierre tombale) et tout ce qui n'est pas du
+  type `aasc` — comparé **sans casse** : les lignes de catalogue existent réellement en
+  « AASC » et en « aasc » (constante partagée `institution_attachment.CODE_TYPE_AASC`).
 - **Les trois gestes d'ajout, partout les mêmes** (chantier du 28/10/2026,
   `shared/components/common/bloc-ajout/`) : **à la main** (`+`), **par fichier**, **par
   invitation email**. Avant, les trois existaient mais dispersés — le `+` sur la page, le

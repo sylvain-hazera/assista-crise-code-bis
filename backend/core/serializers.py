@@ -274,6 +274,7 @@ class UserSerializer(serializers.ModelSerializer):
     needs_institution_setup = serializers.SerializerMethodField()
     reserve_a_verifier = serializers.SerializerMethodField()
     acces_registre_vulnerables = serializers.SerializerMethodField()
+    acces_membres_association = serializers.SerializerMethodField()
     ma_zone = serializers.SerializerMethodField()
     # photo est write_only : l'image passe par l'action preview, qui vérifie les droits à chaque
     # appel.
@@ -344,6 +345,39 @@ class UserSerializer(serializers.ModelSerializer):
         # Candidature à la réserve non encore traitée : bannière « à vérifier ».
         return bool(obj.souhaite_rejoindre_reserve and not obj.reserve_verifiee)
 
+    def get_acces_membres_association(self, obj):
+        """Qui voit la page « Membres association » -- affichage du menu et garde de route.
+
+        Demande du 28/10/2026 : « une institution non asso ne doit pas voir cette page ». La
+        page s'y fermait d'elle-même mais restait visible de tous les rôles institutionnels, ce
+        qui la faisait paraître cassée à une mairie plutôt qu'absente.
+
+        Calculé serveur parce qu'aucun des trois critères n'est vérifiable côté navigateur :
+
+        1. **L'administrateur**, qui doit pouvoir débloquer une association dont le bureau a
+           perdu ses accès (voir recrutement_association.peut_instruire).
+        2. **Un compte rattaché à une AASC** : c'est le cas courant.
+        3. **Un membre du bureau d'une AASC**, même si son propre compte est rattaché ailleurs
+           -- un agent de mairie peut très bien être au bureau de l'association locale, et le
+           critère du seul rattachement le priverait de la page dont il a la charge.
+        """
+        # Import local : institution_attachment importe deja des serializers ailleurs, un
+        # import en tete de module fermerait le cycle.
+        from .institution_attachment import CODE_TYPE_AASC
+
+        if obj.type == UserRole.ADMINISTRATOR:
+            return True
+
+        institution = getattr(obj, 'institution', None)
+        if institution is not None and institution.type_id and institution.actif:
+            if (institution.type.code or '').lower() == CODE_TYPE_AASC:
+                return True
+
+        return ContactInstitution.objects.filter(
+            utilisateur=obj, actif=True, membre_bureau=True,
+            institution__actif=True, institution__type__code__iexact=CODE_TYPE_AASC,
+        ).exists()
+
     def get_acces_registre_vulnerables(self, obj):
         # Affichage du menu seulement ; l'accès réel est contrôlé par core/vulnerabilites.py.
         #
@@ -376,7 +410,7 @@ class UserSerializer(serializers.ModelSerializer):
                   'institution_nom', 'institution_id', 'institution_type_code',
                   'needs_institution_setup', 'ma_zone',
                   'souhaite_rejoindre_reserve', 'reserve_verifiee', 'reserve_a_verifier',
-                  'acces_registre_vulnerables']
+                  'acces_registre_vulnerables', 'acces_membres_association']
         extra_kwargs = {
             'password': {'write_only': True},
             'first_name': {'required': False},
@@ -2543,6 +2577,14 @@ class InstitutionSerializer(
 
     type_libelle = serializers.CharField(
         source="type.libelle",
+        read_only=True,
+        default=None,
+    )
+
+    # Le libellé est fait pour être lu, le code pour être testé : une page qui doit distinguer
+    # une association d'une mairie ne doit pas comparer des libellés traduisibles.
+    type_code = serializers.CharField(
+        source="type.code",
         read_only=True,
         default=None,
     )

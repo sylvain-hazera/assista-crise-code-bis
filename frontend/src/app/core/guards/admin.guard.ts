@@ -84,6 +84,26 @@ export const autoriteLocaleGuard: CanActivateFn = (route, state) => {
   );
 };
 
+/** Membres association : champ serveur `acces_membres_association`.
+ *
+ * Les trois critères (administrateur, compte rattaché à une AASC, membre du bureau d'une AASC
+ * même rattaché ailleurs) sont invérifiables côté navigateur — le dernier surtout, qui est un
+ * attribut du rattachement et non du compte. Avant le 28/10/2026 la page était ouverte à tout
+ * rôle institutionnel et se fermait d'elle-même : elle paraissait cassée à une mairie plutôt
+ * qu'absente. */
+export const membresAssociationGuard: CanActivateFn = (route, state) => {
+  const authService = inject(AuthService);
+  const router = inject(Router);
+
+  if (!authService.getToken()) {
+    return router.parseUrl('/accueil');
+  }
+  return authService.fetchMe().pipe(
+    map(() => authService.getCurrentUser()?.acces_membres_association ? true : router.parseUrl('/admin/acces-refuse')),
+    catchError(() => of(router.parseUrl('/admin/acces-refuse'))),
+  );
+};
+
 /** Registre des personnes vulnérables : champ serveur `acces_registre_vulnerables`, qui reflète
  * depuis le 28/10/2026 la DÉSIGNATION nominative (HabilitationRegistreVulnerables) et non plus
  * l'appartenance à la RCSC. Volontairement vrai avant que l'engagement au secret ne soit signé,
