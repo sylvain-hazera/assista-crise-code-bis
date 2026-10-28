@@ -82,7 +82,7 @@ def _institution_commune_or_400(request):
         return Response(
             {"error": f"« {institution.nom} » n'a pas de commune propre : choisissez la "
                       f"collectivité que vous souhaitez consulter.",
-             "communes_disponibles": sorted(disponibles),
+             "communes_disponibles": _nommer(disponibles),
              "choix_requis": "commune"},
             status=status.HTTP_400_BAD_REQUEST,
         )
@@ -95,6 +95,24 @@ def _institution_commune_or_400(request):
          "communes_disponibles": [],
          "choix_requis": "commune"},
         status=status.HTTP_400_BAD_REQUEST,
+    )
+
+
+def _nommer(codes) -> list:
+    """Les communes d'un refus, avec leur nom, triées par nom.
+
+    Un sélecteur qui n'affiche que des codes INSEE est illisible : personne ne sait que 29026
+    est Châteauneuf-du-Faou. Une seule requête sur le référentiel, et seulement sur le chemin
+    du refus — un code absent du référentiel reste proposé sous son code plutôt que d'être
+    escamoté, sans quoi un droit réel deviendrait inaccessible."""
+    from .models import Commune
+
+    noms = dict(
+        Commune.objects.filter(code__in=list(codes)).values_list("code", "nom")
+    )
+    return sorted(
+        ({"code": c, "nom": noms.get(c) or c} for c in codes),
+        key=lambda commune: (commune["nom"] or "").lower(),
     )
 
 
@@ -446,3 +464,53 @@ def filter_queryset_to_viewer_zone(request, queryset, resolver=None, champ_par_n
     if perimetre is None:
         return queryset.none()
     return apply_perimetre(queryset, perimetre, resolver=resolver, champ_par_niveau=champ_par_niveau)
+
+
+def communes_delegables(request, crise) -> list:
+    """Communes de `crise` que l'appelant a le droit d'accorder à une autre institution.
+
+    Règle posée par Sylvain le 28/10/2026 : **« je ne donne pas les droits sur une commune sur
+    laquelle je n'ai pas les droits »**. Un conseil départemental, dont le périmètre couvre
+    toute la crise, peut donc l'accorder en entier ; une commune ne peut accorder qu'elle-même.
+
+    C'est l'intersection de la zone de la crise et du périmètre du donneur — le même résolveur
+    gouverne ainsi la lecture ET la délégation, ce qui garantit qu'ils ne peuvent pas diverger.
+    Un administrateur n'est pas exempté : il n'est pas responsable de traitement et n'a pas de
+    territoire à accorder (voir BASE-LEGALE-REGISTRE-VULNERABLES.md § 5 pour le même principe
+    appliqué au registre).
+
+    Rend des dictionnaires {code, nom} triés par nom : la liste alimente des cases à cocher, et
+    un code INSEE nu n'est pas lisible."""
+    de_la_crise = [c for c in (crise.zone_communes or []) if c]
+    if not de_la_crise:
+        return []
+
+    perimetre = viewer_perimetre(request)
+    if perimetre is None:
+        return []
+
+    autorisees = set()
+    departements = []
+    for niveau, code in perimetre:
+        if niveau == "national":
+            autorisees.update(de_la_crise)
+            break
+        if niveau == "commune":
+            autorisees.add(code)
+        else:
+            champ = SECTEUR_CHAMP_PAR_NIVEAU.get(niveau)
+            if champ:
+                departements.append((champ, code))
+
+    if departements:
+        # Une seule requête pour tous les niveaux supérieurs, restreinte aux communes de la
+        # crise : on ne déplie jamais un département entier, seulement ce que la crise touche.
+        from .models import Commune
+        filtre = Q(**{departements[0][0]: departements[0][1]})
+        for champ, code in departements[1:]:
+            filtre |= Q(**{champ: code})
+        autorisees.update(
+            Commune.objects.filter(filtre, code__in=de_la_crise).values_list("code", flat=True)
+        )
+
+    return _nommer(autorisees & set(de_la_crise))

@@ -22,6 +22,7 @@ from django.test import RequestFactory
 from django.utils import timezone
 
 from core.models import (
+    Commune,
     Competence,
     Crisis,
     DelegationCompetence,
@@ -302,11 +303,29 @@ class TestChoixDeLaCollectivite:
         user = _compte(create_user, aasc, "aasc-choix@perim.fr")
         _accepter(crise, aasc, communes=[COMMUNE_B, COMMUNE_C])
 
+        Commune.objects.update_or_create(code=COMMUNE_B, defaults={"nom": "Beuzec"})
+        Commune.objects.update_or_create(code=COMMUNE_C, defaults={"nom": "Argol"})
+
         reponse = _institution_commune_or_400(_requete(user))
 
         assert reponse.status_code == 400
-        assert reponse.data["communes_disponibles"] == [COMMUNE_B, COMMUNE_C]
+        # Nommées et triées par nom : un sélecteur de codes INSEE est illisible, personne ne
+        # sait que 29026 est Châteauneuf-du-Faou.
+        assert reponse.data["communes_disponibles"] == [
+            {"code": COMMUNE_C, "nom": "Argol"},
+            {"code": COMMUNE_B, "nom": "Beuzec"},
+        ]
         assert reponse.data["choix_requis"] == "commune"
+
+    def test_une_commune_absente_du_referentiel_reste_proposee(self, create_user, aasc, crise):
+        """Sous son code, plutôt qu'escamotée : sans quoi un droit réel deviendrait
+        inaccessible."""
+        user = _compte(create_user, aasc, "aasc-inconnue@perim.fr")
+        _accepter(crise, aasc, communes=["99999"])
+
+        reponse = _institution_commune_or_400(_requete(user))
+
+        assert reponse.data["communes_disponibles"] == [{"code": "99999", "nom": "99999"}]
 
     def test_sans_aucun_droit_le_refus_le_dit(self, create_user, aasc):
         user = _compte(create_user, aasc, "aasc-sans-droit@perim.fr")
@@ -382,3 +401,73 @@ class TestCoutDuCalcul:
         implication.save(update_fields=["actif"])
 
         assert viewer_perimetre(_requete(user)) is None
+
+
+@pytest.mark.django_db
+class TestZoneDelegable:
+    """« Je ne donne pas les droits sur une commune sur laquelle je n'ai pas les droits. »
+
+    Règle posée par Sylvain le 28/10/2026. Un conseil départemental couvre toute la crise et
+    peut l'accorder en entier ; une commune ne peut accorder qu'elle-même. C'est l'intersection
+    de la zone de la crise et du périmètre du donneur — le même résolveur gouverne la lecture
+    et la délégation, ce qui les empêche de diverger."""
+
+    def test_une_commune_ne_peut_accorder_que_la_sienne(self, create_user, mairie, crise):
+        user = _compte(create_user, mairie, "mairie-donne@perim.fr", "AUT_LOCALE")
+        Commune.objects.update_or_create(code=COMMUNE_A, defaults={"nom": "Asson"})
+
+        from core.zone_scoping import communes_delegables
+        delegables = communes_delegables(_requete(user), crise)
+
+        assert [c["code"] for c in delegables] == [COMMUNE_A]
+
+    def test_un_echelon_departemental_peut_accorder_toute_la_crise(
+        self, create_user, type_mairie, crise
+    ):
+        """Le cas du conseil départemental : son périmètre couvre les trois communes."""
+        cd = Institution.objects.create(
+            nom="Conseil departemental perimetre", type=type_mairie, commune_code=COMMUNE_A)
+        user = _compte(create_user, cd, "cd-donne@perim.fr", "AUT_LOCALE")
+        # Son périmètre vient d'une convention départementale, pas de sa commune d'adresse.
+        _convention(cd, cd, departements=["29"])
+        for code in (COMMUNE_A, COMMUNE_B, COMMUNE_C):
+            Commune.objects.update_or_create(
+                code=code, defaults={"nom": f"Commune {code}", "departement_code": "29"})
+
+        from core.zone_scoping import communes_delegables
+        delegables = communes_delegables(_requete(user), crise)
+
+        assert {c["code"] for c in delegables} == {COMMUNE_A, COMMUNE_B, COMMUNE_C}
+
+    def test_un_departement_ne_deborde_pas_hors_de_la_crise(
+        self, create_user, type_mairie, crise
+    ):
+        """Un département conventionné n'est jamais déplié en entier : seules les communes que
+        la crise touche sont proposables."""
+        cd = Institution.objects.create(
+            nom="CD hors crise", type=type_mairie, commune_code=COMMUNE_A)
+        user = _compte(create_user, cd, "cd-hors@perim.fr", "AUT_LOCALE")
+        _convention(cd, cd, departements=["29"])
+        for code in (COMMUNE_A, COMMUNE_B, COMMUNE_C, "29999"):
+            Commune.objects.update_or_create(
+                code=code, defaults={"nom": f"Commune {code}", "departement_code": "29"})
+
+        from core.zone_scoping import communes_delegables
+        delegables = communes_delegables(_requete(user), crise)
+
+        assert "29999" not in {c["code"] for c in delegables}
+
+    def test_sans_perimetre_on_n_accorde_rien(self, create_user, aasc, crise):
+        user = _compte(create_user, aasc, "aasc-donne-rien@perim.fr")
+
+        from core.zone_scoping import communes_delegables
+        assert communes_delegables(_requete(user), crise) == []
+
+    def test_une_crise_sans_commune_n_offre_rien(self, create_user, mairie):
+        user = _compte(create_user, mairie, "mairie-crise-vide@perim.fr", "AUT_LOCALE")
+        vide = Crisis.objects.create(
+            name="Crise sans zone", type="INCENDIE", location="POINT (-3.98 48.19)",
+            zone_communes=[])
+
+        from core.zone_scoping import communes_delegables
+        assert communes_delegables(_requete(user), vide) == []

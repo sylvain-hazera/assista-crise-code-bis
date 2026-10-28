@@ -1,0 +1,68 @@
+<div class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="titre-zone">
+  <div class="modal">
+
+    <header class="modal-header">
+      <h2 id="titre-zone">Accepter {{ implication.institution_nom }}</h2>
+      <button type="button" class="fermer" (click)="fermee.emit()" aria-label="Fermer">×</button>
+    </header>
+
+    <div class="modal-body">
+      @if (chargement) {
+        <p class="chargement">Chargement de ce que vous pouvez accorder…</p>
+      } @else {
+
+        <p class="aide">
+          <span class="material-icons">shield</span>
+          Vous n'accordez que des communes sur lesquelles vous avez vous-même des droits.
+          L'institution verra les demandes, offres, dossiers et équipes de la zone cochée,
+          pour cette crise, et l'accès se referme à la clôture.
+        </p>
+
+        @if (zone?.couvre_toute_la_crise) {
+          <label class="ligne ligne-globale">
+            <input type="checkbox" [checked]="touteLaCrise" (change)="basculerToutLeCrise()"/>
+            <span>
+              <strong>Toute la zone de la crise</strong>
+              <small>Reste juste si la crise s'étend à d'autres communes par la suite.</small>
+            </span>
+          </label>
+        }
+
+        @if (zone?.communes?.length) {
+          <fieldset class="communes" [disabled]="touteLaCrise">
+            <legend>Communes</legend>
+            @for (commune of zone?.communes; track commune.code) {
+              <label class="ligne">
+                <input type="checkbox" [checked]="estCochee(commune.code)"
+                       (change)="basculer(commune.code)"/>
+                <span>{{ commune.nom }} <small>{{ commune.code }}</small></span>
+              </label>
+            }
+          </fieldset>
+        } @else {
+          <p class="vide">
+            Vous n'avez de droits sur aucune commune de cette crise : vous ne pouvez donc rien
+            accorder ici. C'est à la collectivité concernée de le faire.
+          </p>
+        }
+
+        @if (errorMessage) {
+          <div class="toast toast-err">
+            <span class="material-icons">error_outline</span> {{ errorMessage }}
+          </div>
+        }
+      }
+    </div>
+
+    <footer class="modal-footer">
+      <p class="resume">Vous accordez : <strong>{{ resume }}</strong></p>
+      <div class="actions">
+        <button type="button" class="btn-secondary" (click)="fermee.emit()">Annuler</button>
+        <button type="button" class="btn-primary" [disabled]="!peutValider" (click)="accepter()">
+          {{ enregistrement ? 'Enregistrement…' : 'Accepter' }}
+        </button>
+      </div>
+    </footer>
+
+  </div>
+</div>

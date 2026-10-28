@@ -36,11 +36,30 @@ export class ImplicationService {
     return this.http.delete<void>(`${this.apiUrl}/${id}/`);
   }
 
-  valider(id: string): Observable<ImplicationInstitution> {
-    return this.http.post<ImplicationInstitution>(`${this.apiUrl}/${id}/valider/`, {});
+  /** `communes` limite l'acceptation à une partie de la zone de la crise. Omis = toute la
+   * zone. Le serveur refuse toute commune hors du périmètre du donneur : on ne donne pas de
+   * droits sur une commune dont on n'a pas soi-même les droits. */
+  valider(id: string, communes?: string[]): Observable<ImplicationInstitution> {
+    const corps = communes ? { communes } : {};
+    return this.http.post<ImplicationInstitution>(`${this.apiUrl}/${id}/valider/`, corps);
+  }
+
+  /** Ce que l'appelant a le droit d'accorder sur cette crise — calculé par le serveur et
+   * jamais déduit ici : la liste EST la règle d'accès. */
+  zoneDelegable(id: string): Observable<ZoneDelegable> {
+    return this.http.get<ZoneDelegable>(`${this.apiUrl}/${id}/zone-delegable/`);
   }
 
   refuser(id: string): Observable<ImplicationInstitution> {
     return this.http.post<ImplicationInstitution>(`${this.apiUrl}/${id}/refuser/`, {});
   }
+}
+
+/** Communes qu'une collectivité peut accorder à une institution sur une crise donnée. */
+export interface ZoneDelegable {
+  communes: { code: string; nom: string }[];
+  /** Vrai seulement si l'appelant couvre toute la zone de la crise (un conseil départemental,
+   * typiquement) — c'est ce qui autorise le raccourci « toute la crise ». */
+  couvre_toute_la_crise: boolean;
+  deja_accordees: string[];
 }

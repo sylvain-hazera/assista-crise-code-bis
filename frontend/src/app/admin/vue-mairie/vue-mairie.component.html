@@ -23,6 +23,32 @@
       (ajoutManuel)="allerSaisirPersonnel()"
       (ajoute)="loadAll()">
     </app-bloc-ajout>
+    <!-- Une institution sans territoire propre (association agréée) doit dire quelle
+         collectivité elle consulte. Le serveur nomme les communes accordées dans son refus. -->
+    @if (choixCollectiviteRequis && communesDisponibles.length) {
+      <div class="choix-collectivite">
+        <span class="material-icons">location_city</span>
+        <div>
+          <strong>Quelle collectivité souhaitez-vous consulter ?</strong>
+          <p>Vous n'avez pas de territoire propre : ces communes vous ont accordé des droits.</p>
+          <div class="choix-liste">
+            @for (commune of communesDisponibles; track commune.code) {
+              <button type="button" class="btn-commune"
+                      (click)="choisirCollectivite(commune.code)">
+                {{ commune.nom }}
+              </button>
+            }
+          </div>
+        </div>
+      </div>
+    } @else if (collectiviteConsultee) {
+      <p class="collectivite-active">
+        <span class="material-icons">location_city</span>
+        Vous consultez <strong>{{ nomCollectiviteConsultee }}</strong>
+        <button type="button" class="lien" (click)="changerDeCollectivite()">changer</button>
+      </p>
+    }
+
     <p class="subtitle">Demandes et signalements de votre commune</p>
     @if (maZoneNom) {
       <p class="ma-zone">

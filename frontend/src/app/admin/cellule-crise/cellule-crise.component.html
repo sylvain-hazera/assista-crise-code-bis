@@ -455,3 +455,13 @@
     </div>
   }
 </div>
+
+<!-- Accepter une institution, c'est lui ouvrir un territoire : la zone se choisit, elle ne se
+     déduit pas (voir ZoneAcceptationModalComponent). -->
+@if (implicationAAccepter) {
+  <app-zone-acceptation-modal
+    [implication]="implicationAAccepter"
+    (acceptee)="onImplicationAcceptee()"
+    (fermee)="implicationAAccepter = null">
+  </app-zone-acceptation-modal>
+}

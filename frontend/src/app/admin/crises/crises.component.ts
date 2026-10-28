@@ -30,6 +30,7 @@ import { MinimapComponent } from '../../shared/components/common/minimap/minimap
 import { TagSearchInputComponent } from '../../shared/components/common/tag-search-input/tag-search-input.component';
 import { PointModalComponent } from './point-modal/point-modal.component';
 import { composeZoneSecteurs, toMultiPolygonWkt } from '../../shared/utils/crisis-zone-secteurs.util';
+import { ZoneAcceptationModalComponent } from '../../shared/components/common/zone-acceptation-modal/zone-acceptation-modal.component';
 
 type ResponsableMode = 'moi' | 'contact' | 'email';
 
@@ -38,7 +39,7 @@ type ModalView = 'none' | 'detail';
 @Component({
   selector: 'app-crises',
   standalone: true,
-  imports: [CommonModule, FormsModule, ReactiveFormsModule, RouterLink, ZoneMapComponent, MinimapComponent, TagSearchInputComponent, PointModalComponent],
+  imports: [CommonModule, FormsModule, ReactiveFormsModule, RouterLink, ZoneMapComponent, MinimapComponent, TagSearchInputComponent, PointModalComponent, ZoneAcceptationModalComponent],
   templateUrl: './crises.component.html',
   styleUrls: ['./crises.component.scss']
 })
@@ -689,11 +690,19 @@ export class CrisesComponent implements OnInit {
     });
   }
 
+  /** Même fenêtre que depuis la cellule de crise : accepter une institution, c'est lui ouvrir
+   * un territoire, et ce territoire se choisit. Deux écrans valident, un seul geste. */
+  implicationAAccepter: ImplicationInstitution | null = null;
+
   validerImplication(implication: ImplicationInstitution): void {
-    this.implicationService.valider(implication.id).subscribe({
-      next: () => { this.reloadImplications(); this.showSuccess(`Déclaration de ${implication.institution_nom} validée.`); },
-      error: () => this.showError('Impossible de valider cette déclaration.'),
-    });
+    this.implicationAAccepter = implication;
+  }
+
+  onImplicationAcceptee(): void {
+    const nom = this.implicationAAccepter?.institution_nom;
+    this.implicationAAccepter = null;
+    this.reloadImplications();
+    this.showSuccess(`Déclaration de ${nom} validée.`);
   }
 
   refuserImplication(implication: ImplicationInstitution): void {

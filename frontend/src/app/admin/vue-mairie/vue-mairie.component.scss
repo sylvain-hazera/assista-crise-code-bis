@@ -230,3 +230,63 @@
   animation: shimmer 1.4s ease infinite;
 }
 @keyframes shimmer { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
+
+// Choix de la collectivité consultée : réservé aux institutions sans territoire propre (voir
+// CollectiviteConsulteeService). Présenté comme un contenu de page et non comme une erreur —
+// ce n'est pas une panne, c'est une question.
+.choix-collectivite {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  margin: 1rem 0;
+  padding: 1.1rem 1.25rem;
+  background: #f4f8ff;
+  border: 1px solid #cfdcf0;
+  border-radius: 8px;
+  max-width: 70ch;
+
+  > .material-icons { font-size: 1.7rem; color: #3a6ea5; flex-shrink: 0; }
+  strong { display: block; margin-bottom: .2rem; }
+  p { margin: 0 0 .75rem; font-size: .88rem; color: #555; }
+}
+
+.choix-liste {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+}
+
+.btn-commune {
+  padding: .45rem .85rem;
+  border: 1px solid #3a6ea5;
+  border-radius: 6px;
+  background: #fff;
+  color: #1f4b7a;
+  font-size: .9rem;
+  font-family: inherit;
+  cursor: pointer;
+
+  &:hover { background: #3a6ea5; color: #fff; }
+}
+
+.collectivite-active {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  margin: .5rem 0 0;
+  font-size: .88rem;
+  color: #555;
+
+  .material-icons { font-size: 1.05rem; color: #3a6ea5; }
+
+  .lien {
+    border: none;
+    background: none;
+    padding: 0;
+    color: #3a6ea5;
+    font-size: .88rem;
+    font-family: inherit;
+    text-decoration: underline;
+    cursor: pointer;
+  }
+}

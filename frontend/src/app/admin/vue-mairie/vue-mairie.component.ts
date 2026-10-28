@@ -17,6 +17,8 @@ import { AuthService } from '../../auth/services/auth.service';
 import { ImplicationService } from '../../services/implication.service';
 import { BlocAjoutComponent, ChampInvitation } from '../../shared/components/common/bloc-ajout/bloc-ajout.component';
 import { environment } from '../../../environments/environment';
+import { CollectiviteConsulteeService } from '../../core/collectivite-consultee.service';
+import { messageErreurServeur } from '../../shared/utils/message-erreur';
 
 import { Request } from '../../shared/models/request.model';
 import { Information } from '../../shared/models/information.model';
@@ -133,6 +135,7 @@ export class VueMairieComponent implements OnInit {
     private authService: AuthService,
     private implicationService: ImplicationService,
     private router: Router,
+    private collectiviteService: CollectiviteConsulteeService,
   ) {}
 
   ngOnInit(): void {
@@ -253,10 +256,48 @@ export class VueMairieComponent implements OnInit {
         this.isLoading = false;
       },
       error: (err) => {
-        this.errorMessage = err?.error?.error || "Impossible de charger la vue de votre collectivité.";
+        // Le serveur réclame de choisir une collectivité (cas d'une association agréée, qui
+        // n'a pas de territoire propre) : il NOMME les communes accordées dans son refus, ce
+        // qui permet d'afficher le sélecteur sans aller-retour supplémentaire.
+        if (err?.error?.choix_requis === 'commune') {
+          this.communesDisponibles = err.error.communes_disponibles || [];
+          this.choixCollectiviteRequis = true;
+          this.errorMessage = this.communesDisponibles.length
+            ? '' : (err.error.error || '');
+          this.isLoading = false;
+          return;
+        }
+        this.errorMessage = messageErreurServeur(
+          err, "Impossible de charger la vue de votre collectivité.");
         this.isLoading = false;
       },
     });
+  }
+
+  /** Communes que l'utilisateur peut consulter, nommées par le serveur. */
+  communesDisponibles: { code: string; nom: string }[] = [];
+  choixCollectiviteRequis = false;
+
+  get collectiviteConsultee(): string | null {
+    return this.collectiviteService.communeChoisie;
+  }
+
+  get nomCollectiviteConsultee(): string | null {
+    const code = this.collectiviteConsultee;
+    if (!code) return null;
+    return this.communesDisponibles.find(c => c.code === code)?.nom ?? code;
+  }
+
+  choisirCollectivite(communeCode: string): void {
+    if (!communeCode) return;
+    this.collectiviteService.choisir(communeCode);
+    this.choixCollectiviteRequis = false;
+    // L'intercepteur ajoutera `?commune=` : rien d'autre à transporter.
+    this.loadAll();
+  }
+
+  changerDeCollectivite(): void {
+    this.choixCollectiviteRequis = true;
   }
 
   // "Voir toute la France (partiel)" : chargé à la demande (pas dans loadAll ci-dessus), pour

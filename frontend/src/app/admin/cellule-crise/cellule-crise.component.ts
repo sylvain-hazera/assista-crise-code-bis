@@ -31,6 +31,7 @@ import { dureeDepuis } from '../../shared/utils/duree.util';
 import { AVEC_COORDONNEES } from '../../services/coordonnees';
 import { RequestService } from '../../services/request.service';
 import { InformationService } from '../../services/information.service';
+import { ZoneAcceptationModalComponent } from '../../shared/components/common/zone-acceptation-modal/zone-acceptation-modal.component';
 
 /** Code couleur et libellés de la page Signalements (reporting.component.scss). */
 export type GenreFiche = 'demande' | 'signalement' | 'offre';
@@ -51,7 +52,7 @@ interface EquipeAvecResume {
 @Component({
   selector: 'app-cellule-crise',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink, MinimapComponent, MatrixSalonChatComponent],
+  imports: [CommonModule, FormsModule, RouterLink, MinimapComponent, MatrixSalonChatComponent, ZoneAcceptationModalComponent],
   templateUrl: './cellule-crise.component.html',
   styleUrl: './cellule-crise.component.scss',
 })
@@ -477,11 +478,17 @@ export class CelluleCriseComponent implements OnInit, OnDestroy {
     this.dossierService.affecterEquipe(dossier.id, dossier.equipe).subscribe(() => this.chargerCoordination());
   }
 
+  /** Ouvre la fenêtre de choix de zone au lieu de valider sèchement : accepter une
+   * institution, c'est lui ouvrir un territoire, et ce territoire se choisit. */
+  implicationAAccepter: ImplicationInstitution | null = null;
+
   validerImplication(implication: ImplicationInstitution): void {
-    this.implicationService.valider(implication.id).subscribe({
-      next: () => this.chargerCoordination(),
-      error: err => alert(this.messageErreur(err, 'Impossible de valider cette institution.')),
-    });
+    this.implicationAAccepter = implication;
+  }
+
+  onImplicationAcceptee(): void {
+    this.implicationAAccepter = null;
+    this.chargerCoordination();
   }
 
   refuserImplication(implication: ImplicationInstitution): void {

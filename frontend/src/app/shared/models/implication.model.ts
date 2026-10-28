@@ -6,6 +6,9 @@ export interface ImplicationInstitution {
   crise: string;
   institution: string;
   institution_nom?: string | null;
+  /** Communes de la crise sur lesquelles l'institution est acceptée. Vide = toute la zone de
+   * la crise (voir ImplicationInstitution.communes cote backend). */
+  communes?: string[];
   crise_nom?: string | null;
   utilisateur: string | null;
   type_implication: TypeImplication;

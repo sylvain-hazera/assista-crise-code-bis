@@ -14854,8 +14854,40 @@ class ImplicationInstitutionViewSet(
             ),
         )
 
+    @action(detail=True, methods=['get'], url_path='zone-delegable')
+    def zone_delegable(self, request, pk=None):
+        """Les communes de la crise que l'appelant peut accorder, pour alimenter les cases à
+        cocher de l'acceptation.
+
+        Servi par le serveur et jamais déduit côté écran : la liste EST la règle d'accès, et un
+        navigateur qui la recalculerait pourrait proposer de donner ce qu'on ne détient pas."""
+        from .vulnerabilites import NOM_COMPETENCE_VULNERABILITES  # noqa: F401  (lisibilité)
+        from .zone_scoping import communes_delegables
+
+        implication = self.get_object()
+        communes = communes_delegables(request, implication.crise)
+        return Response({
+            "communes": communes,
+            # « Toute la crise » n'est proposable qu'à qui la couvre entièrement — un conseil
+            # départemental, typiquement. Une commune ne verra donc pas ce raccourci.
+            "couvre_toute_la_crise": (
+                len(communes) == len([c for c in (implication.crise.zone_communes or []) if c])
+                and len(communes) > 0
+            ),
+            "deja_accordees": implication.communes or [],
+        })
+
     @action(detail=True, methods=['post'])
     def valider(self, request, pk=None):
+        """Accepte une institution comme acteur, **sur une zone choisie**.
+
+        `communes` (facultatif) limite l'acceptation à certaines communes de la crise. Chaque
+        code est vérifié contre `communes_delegables` : on ne donne pas de droits sur une
+        commune dont on n'a pas soi-même les droits. Sans `communes`, l'acceptation vaut pour
+        toute la zone de la crise — comportement d'avant, conservé pour une crise mono-commune
+        où nommer la commune serait une formalité vide."""
+        from .zone_scoping import communes_delegables
+
         implication = self.get_object()
         if implication.statut != StatutImplication.EN_ATTENTE:
             raise ValidationError({"statut": "Cette déclaration n'est pas en attente de validation."})
@@ -14864,8 +14896,24 @@ class ImplicationInstitutionViewSet(
                 "Seul un régulateur d'une autorité locale impliquée sur cette crise peut valider cette déclaration."
             )
 
+        champs = ['statut']
+        demandees = request.data.get('communes')
+        if demandees is not None:
+            if not isinstance(demandees, list):
+                raise ValidationError({"communes": "Liste de codes commune attendue."})
+            demandees = [str(c).strip() for c in demandees if str(c).strip()]
+            autorisees = {c["code"] for c in communes_delegables(request, implication.crise)}
+            refusees = sorted(set(demandees) - autorisees)
+            if refusees:
+                raise PermissionDenied(
+                    "Vous ne pouvez pas accorder de droits sur " + ", ".join(refusees)
+                    + " : votre collectivité n'a pas de droits sur cette ou ces communes."
+                )
+            implication.communes = sorted(set(demandees))
+            champs.append('communes')
+
         implication.statut = StatutImplication.VALIDEE
-        implication.save(update_fields=['statut'])
+        implication.save(update_fields=champs)
         _etendre_zone_crise_pour_implication(implication)
         audit_log(
             request=request,
@@ -14873,7 +14921,14 @@ class ImplicationInstitutionViewSet(
             objet_type="ImplicationInstitution",
             objet_id=implication.id,
             crise=implication.crise,
-            commentaire=f"Déclaration acteur de {implication.institution.nom} validée par {request.user.email}.",
+            commentaire=(
+                f"Déclaration acteur de {implication.institution.nom} validée par "
+                f"{request.user.email}"
+                # La zone accordée dans la trace : « qui a donné quoi, sur quel territoire »
+                # est la question qu'on se pose après coup, pas « qui a validé ».
+                + (f" sur {', '.join(implication.communes)}." if implication.communes
+                   else " sur toute la zone de la crise.")
+            ),
         )
         _notifier_verdict_implication(request, implication, valide=True)
         return Response(self.get_serializer(implication).data)
