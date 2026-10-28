@@ -5036,6 +5036,46 @@ class ContactInstitution(EnvironmentScopedModel):
                   "charge les candidatures.",
     )
 
+    # ── Suivi associatif (voir § 5.12 bis de DOCUMENTATION.md) ─────────────────────────────
+    # `actif` reste la question technique « ce rattachement ouvre-t-il des droits ? ».
+    # `statut` est la question humaine « où en est cette personne dans l'association ? ».
+    # Les deux sont nécessaires et ne se confondent pas : quelqu'un en congé garde ses accès et
+    # son ancienneté mais ne doit pas apparaître dans les disponibilités d'une mobilisation.
+    class StatutMembre(models.TextChoices):
+        ACTIF = "ACTIF", "Actif"
+        CONGE = "CONGE", "En congé"
+        SORTI = "SORTI", "Sorti de l'association"
+
+    statut = models.CharField(
+        max_length=6, choices=StatutMembre.choices, default=StatutMembre.ACTIF,
+    )
+
+    date_adhesion = models.DateField(
+        null=True, blank=True,
+        help_text="Première adhésion à l'association.",
+    )
+
+    # Renouvellement annuel SANS cotisation (décision du 28/10/2026 : l'association n'en
+    # perçoit pas) : la date dit jusqu'à quand l'adhésion court, pas qu'un paiement a été reçu.
+    # Aucun montant n'est stocké, et il ne faut pas en ajouter sans revoir la question : une
+    # gestion financière est un autre métier que la préparation de crise.
+    adhesion_valide_jusquau = models.DateField(
+        null=True, blank=True,
+        help_text="Fin de validité de l'adhésion (renouvellement annuel, sans cotisation).",
+    )
+
+    # DATE SEULE, et c'est une décision explicite du responsable de traitement (28/10/2026).
+    # Ni « apte / inapte », ni restriction, ni le certificat lui-même : ces trois-là révèlent un
+    # état de santé (RGPD art. 9), que le projet s'interdit de stocker — voir § 5.11. Une date
+    # de fin de validité est un fait administratif sur un document : elle permet d'alerter
+    # avant l'échéance sans rien dire de la personne. Ne pas ajouter de champ ici sans reposer
+    # la question au porteur du projet.
+    aptitude_valide_jusquau = models.DateField(
+        null=True, blank=True,
+        help_text="Fin de validité du certificat médical. Date seule : aucune information "
+                  "d'aptitude ni aucun document n'est conservé.",
+    )
+
     class Meta:
 
         constraints = [
@@ -5075,6 +5115,14 @@ class ContactInstitution(EnvironmentScopedModel):
         Jamais de détournement : le raccourci n'est posé que s'il est VIDE, donc un profil
         membre de plusieurs collectivités garde le contexte « Vue Ma Collectivité » qu'il a
         choisi."""
+        # Sorti de l'association ⇒ le rattachement ne doit plus ouvrir de droits. Laisser les
+        # deux divergents produirait un ancien membre qui garde ses accès, ce qu'aucun écran ne
+        # montrerait : `statut` est lisible par le bureau, `actif` par le contrôle d'accès.
+        if self.statut == self.StatutMembre.SORTI:
+            self.actif = False
+            if kwargs.get("update_fields") is not None:
+                kwargs["update_fields"] = list(set(kwargs["update_fields"]) | {"actif"})
+
         super().save(*args, **kwargs)
         if not self.actif or not self.utilisateur_id or not self.institution_id:
             return
@@ -5083,6 +5131,118 @@ class ContactInstitution(EnvironmentScopedModel):
         # pas écraser un contexte déjà choisi.
         User.objects.filter(pk=self.utilisateur_id, institution__isnull=True).update(
             institution_id=self.institution_id)
+
+class Qualification(models.Model):
+    """Catalogue partagé des qualifications d'un intervenant : PSC1, PSE1/2, radio, permis,
+    CACES…
+
+    Distinct de `Competence`, et ce n'est pas un doublon : une compétence dit ce que
+    l'association sait faire et se rattache à une équipe sur une crise
+    (`AffectationCompetence`) ; une qualification est un TITRE détenu par une personne, avec
+    une date d'obtention et surtout une date de péremption. Pour une association agréée de
+    sécurité civile, cette péremption est le cœur du suivi : un PSE1 expiré vaut un PSE1
+    absent, et c'est le genre de chose qu'on découvre le jour de la mobilisation si personne ne
+    l'a suivi.
+
+    Catalogue partagé et extensible comme `Competence` / `RisqueMajeurType` : toute institution
+    ajoute une entrée réutilisable par les autres, et les entrées retirées sont masquées
+    (`actif=False`), jamais supprimées — un titre déjà attribué doit rester lisible."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    nom = models.CharField(max_length=120, unique=True)
+
+    description = models.TextField(blank=True, null=True)
+
+    # Durée de validité habituelle, pour préremplir l'échéance à la saisie. Null = sans
+    # péremption (un permis de conduire, un diplôme). Jamais appliquée de force : c'est la date
+    # portée par le titre réel qui fait foi, pas notre calcul.
+    validite_mois = models.PositiveSmallIntegerField(
+        null=True, blank=True,
+        help_text="Durée de validité en mois, pour préremplir l'échéance. Vide = sans "
+                  "péremption.",
+    )
+
+    actif = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["nom"]
+
+    def __str__(self):
+        return self.nom
+
+
+class QualificationMembre(EnvironmentScopedModel):
+    """Qualification détenue par une personne, avec ses dates.
+
+    Rattachée à l'UTILISATEUR et non à son rattachement associatif : un PSC1 appartient à la
+    personne, pas à l'association. Quelqu'un membre de deux AASC détient un seul PSC1, et le
+    bureau de chacune le voit — sans quoi la même attestation serait saisie deux fois et les
+    deux copies divergeraient."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    utilisateur = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="qualifications",
+    )
+
+    qualification = models.ForeignKey(
+        Qualification, on_delete=models.PROTECT, related_name="detenteurs",
+    )
+
+    date_obtention = models.DateField(null=True, blank=True)
+
+    # Le champ qui justifie tout ce modèle. Null = sans péremption (voir
+    # Qualification.validite_mois).
+    date_expiration = models.DateField(null=True, blank=True)
+
+    organisme = models.CharField(
+        max_length=160, blank=True, null=True,
+        help_text="Organisme ayant délivré le titre.",
+    )
+
+    commentaire = models.TextField(blank=True, null=True)
+
+    # Qui l'a saisie : une qualification affirmée par le bureau n'a pas le même poids qu'une
+    # ligne déclarée par l'intéressé, et il faut pouvoir le distinguer sans interroger les logs.
+    saisie_par = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="qualifications_saisies",
+    )
+
+    date_creation = models.DateTimeField(auto_now_add=True)
+    modifie_le = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["qualification__nom"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["utilisateur", "qualification", "environment"],
+                name="uq_qualification_par_personne",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.qualification} — {self.utilisateur}"
+
+    @property
+    def expiree(self):
+        """Vrai quand le titre est périmé. Un titre sans date d'expiration ne périme jamais."""
+        from django.utils import timezone
+
+        if self.date_expiration is None:
+            return False
+        return self.date_expiration < timezone.localdate()
+
+    def jours_avant_expiration(self):
+        """Jours restants, négatif si déjà périmé, None si sans péremption. Sert l'alerte avant
+        échéance : prévenir après coup ne sert à rien, le titre est déjà invalide."""
+        from django.utils import timezone
+
+        if self.date_expiration is None:
+            return None
+        return (self.date_expiration - timezone.localdate()).days
+
 
 class InstitutionDomaine(EnvironmentScopedModel):
 
