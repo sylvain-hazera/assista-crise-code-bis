@@ -173,7 +173,8 @@ export class MembresAssociationComponent implements OnInit {
     if (this.institutionChoisie) { this.chargerInstitution(); }
   }
 
-  private chargerInstitution(): void {
+  // Public : appelee depuis le template par le bloc d'ajout (AOT refuse un membre prive).
+  chargerInstitution(): void {
     const id = this.institutionChoisie;
     if (!id) { return; }
     this.contactService.getForInstitution(id).subscribe({

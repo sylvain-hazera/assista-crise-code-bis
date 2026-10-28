@@ -525,7 +525,8 @@ export class InstitutionsComponent implements OnInit {
   editionInterlocuteur: Partial<InterlocuteurAlertePCS> = {};
   savingInterlocuteurId: string | null = null;
 
-  private chargerInterlocuteursPCS(): void {
+  // Public : appelee depuis le template par le bloc d'ajout (AOT refuse un membre prive).
+  chargerInterlocuteursPCS(): void {
     this.interlocuteursPCS = [];
     if (!this.selectedInstitution?.id) return;
     this.interlocuteurAlertePCSService.getForInstitution(this.selectedInstitution.id).subscribe(

@@ -604,15 +604,3 @@ h3 { margin: 0; font-size: .9rem; font-weight: 700; display: flex; align-items: 
   position: static; box-shadow: none;
   .panel-titre { margin: .4rem .8rem .2rem; font-size: .72rem; font-weight: 700; color: var(--muted); }
 }
-
-// Renvoi vers l'annuaire plutôt qu'un import dupliqué ici (voir le template) : discret, c'est
-// une indication et pas une action principale.
-.renvoi-import {
-  margin: .5rem 0 1rem;
-  font-size: .82rem;
-  color: #666;
-  line-height: 1.45;
-  max-width: 60ch;
-
-  a { color: #3a6ea5; }
-}
