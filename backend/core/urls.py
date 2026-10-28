@@ -3,6 +3,10 @@ from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenBlacklistView
 from .grafana import GrafanaTokenView
 from .views import (
+    CandidatureAssociationViewSet,
+    InvitationAssociationViewSet,
+    QualificationMembreViewSet,
+    QualificationViewSet,
     ChangePasswordView, PasswordResetRequestView, PasswordResetConfirmView, MyTokenObtainPairView, MyTokenRefreshView, RegisterView, InstitutionValidationView, UserMeView,
     AccountActivationView, MagicLoginView, MaPositionView, PositionsEquipesView,
     UserViewSet, CrisisViewSet, RequestViewSet, 
@@ -233,6 +237,12 @@ router.register(r'rattachements-habitations', RattachementHabitationViewSet)
 router.register(r'modules-degats', ModuleDegatsCriseViewSet)
 router.register(r'pieces-identite-reserve', PieceIdentiteReserveViewSet)
 router.register(r'plans-missions-modeles', PlanMissionModeleViewSet)
+# Associations agréées de sécurité civile : catalogue des titres, titres détenus, liens
+# d'invitation et circuit de recrutement (voir core/recrutement_association.py).
+router.register(r'qualifications', QualificationViewSet)
+router.register(r'qualifications-membres', QualificationMembreViewSet)
+router.register(r'invitations-association', InvitationAssociationViewSet)
+router.register(r'candidatures-association', CandidatureAssociationViewSet)
 
 urlpatterns = [
     path('', include(router.urls)),

@@ -20,6 +20,10 @@ from .zone_scoping import object_in_viewer_zone, object_in_viewer_zone_via_commu
 from .tracabilite import coordonnees_retirees, retirer_coordonnees
 from .validators import validate_convention_file
 from .models import (
+    CandidatureAssociation,
+    InvitationAssociation,
+    Qualification,
+    QualificationMembre,
     Environment,
     SiteSensible,
     StatutSiteSensible,
@@ -2933,13 +2937,154 @@ class ContactInstitutionSerializer(
             return mask_email(obj.utilisateur.email)
         return obj.utilisateur.email
 
+    # Suivi associatif : à ne montrer qu'au bureau de l'institution concernée, et à
+    # l'intéressé lui-même. Ce ViewSet n'a volontairement pas de filtre par institution
+    # (beaucoup d'écrans y lisent les contacts d'autres collectivités pour afficher un nom) :
+    # la restriction doit donc se faire ICI, champ par champ, et pas sur le queryset.
+    #
+    # `aptitude_valide_jusquau` est le champ critique — c'est une date de certificat médical.
+    # Elle est admissible (fait administratif sur un document, aucune information de santé,
+    # voir ContactInstitution) mais elle n'a rien à faire sous les yeux d'un autre membre, et
+    # encore moins d'une autre collectivité. `membre_bureau` reste visible : savoir qui
+    # gouverne une association est une information normale.
+    CHAMPS_SUIVI_ASSOCIATIF = (
+        "statut", "date_adhesion", "adhesion_valide_jusquau", "aptitude_valide_jusquau",
+    )
+
+    def _institutions_que_je_gouverne(self):
+        """Institutions où le lecteur est au bureau. Calculé UNE fois par sérialisation : une
+        requête par ligne de la liste rendrait l'annuaire d'une association inutilisable."""
+        if hasattr(self, "_cache_bureau"):
+            return self._cache_bureau
+        request = self.context.get('request')
+        utilisateur = getattr(request, 'user', None)
+        if utilisateur is None or not getattr(utilisateur, 'is_authenticated', False):
+            self._cache_bureau = set()
+        elif utilisateur.type == UserRole.ADMINISTRATOR:
+            self._cache_bureau = None  # None = toutes
+        else:
+            self._cache_bureau = set(
+                ContactInstitution.objects.filter(
+                    utilisateur=utilisateur, membre_bureau=True, actif=True,
+                ).values_list('institution_id', flat=True)
+            )
+        return self._cache_bureau
+
     def to_representation(self, instance):
         # Un contact réel reste visible en DEMO, email masqué à l'affichage.
         data = super().to_representation(instance)
         request = self.context.get('request')
         if request is not None and get_active_environment(request) == Environment.DEMO:
             data['utilisateur_email'] = mask_email(data.get('utilisateur_email'))
+
+        gouvernees = self._institutions_que_je_gouverne()
+        utilisateur = getattr(request, 'user', None)
+        cest_moi = (utilisateur is not None
+                    and getattr(utilisateur, 'pk', None) == instance.utilisateur_id)
+        if not cest_moi and gouvernees is not None \
+                and instance.institution_id not in gouvernees:
+            for champ in self.CHAMPS_SUIVI_ASSOCIATIF:
+                data.pop(champ, None)
         return data
+
+class QualificationSerializer(serializers.ModelSerializer):
+    """Catalogue des titres (PSE1, radio, permis, CACES…)."""
+
+    class Meta:
+        model = Qualification
+        fields = "__all__"
+
+
+class QualificationMembreSerializer(serializers.ModelSerializer):
+    """Titre détenu par une personne, avec son échéance.
+
+    `jours_avant_expiration` est calculé côté serveur et non dans le navigateur : la date du
+    poste client est réglable, et une qualification qu'on croit valide parce que l'horloge est
+    fausse est exactement le genre d'erreur qu'on découvre le jour de la mobilisation."""
+
+    qualification_nom = serializers.CharField(
+        source="qualification.nom", read_only=True, default=None)
+    utilisateur_nom = serializers.SerializerMethodField()
+    expiree = serializers.BooleanField(read_only=True)
+    jours_avant_expiration = serializers.SerializerMethodField()
+
+    class Meta:
+        model = QualificationMembre
+        fields = "__all__"
+        read_only_fields = ("saisie_par", "date_creation", "modifie_le")
+
+    def get_utilisateur_nom(self, obj):
+        if not obj.utilisateur:
+            return None
+        nom = f"{obj.utilisateur.first_name} {obj.utilisateur.last_name}".strip()
+        return nom or obj.utilisateur.email
+
+    def get_jours_avant_expiration(self, obj):
+        return obj.jours_avant_expiration()
+
+
+class InvitationAssociationSerializer(serializers.ModelSerializer):
+    """Lien d'invitation d'une association.
+
+    Le jeton n'est rendu qu'en écriture-réponse (il est `editable=False` sur le modèle, donc
+    jamais accepté en entrée) : c'est le bureau qui le diffuse, et le serveur qui le fabrique.
+    `utilisable` est calculé côté serveur pour la même raison que les échéances de
+    qualification — une date d'expiration jugée sur l'horloge du navigateur ne vaut rien."""
+
+    institution_nom = serializers.CharField(
+        source="institution.nom", read_only=True, default=None)
+    cree_par_nom = serializers.CharField(
+        source="cree_par.last_name", read_only=True, default=None)
+    utilisable = serializers.BooleanField(read_only=True)
+    nombre_candidatures = serializers.SerializerMethodField()
+
+    class Meta:
+        model = InvitationAssociation
+        fields = "__all__"
+        read_only_fields = ("jeton", "cree_par", "date_creation")
+
+    def get_nombre_candidatures(self, obj):
+        return obj.candidatures.count()
+
+
+class CandidatureAssociationSerializer(serializers.ModelSerializer):
+    """Candidature à une association, telle que le bureau la lit.
+
+    `etape` est en lecture seule : on ne change pas d'étape en modifiant un champ, on le fait
+    par les actions dédiées (prendre-en-charge, verifier, accepter, refuser), qui portent les
+    règles du circuit — garde de droits, sens de la progression, effets de l'acceptation. Un
+    PATCH libre contournerait tout cela en silence."""
+
+    utilisateur_nom = serializers.SerializerMethodField()
+    utilisateur_email = serializers.CharField(
+        source="utilisateur.email", read_only=True, default=None)
+    institution_nom = serializers.CharField(
+        source="institution.nom", read_only=True, default=None)
+    etape_libelle = serializers.CharField(source="get_etape_display", read_only=True)
+    pris_en_charge_par_nom = serializers.CharField(
+        source="pris_en_charge_par.last_name", read_only=True, default=None)
+    invitation_libelle = serializers.CharField(
+        source="invitation.libelle", read_only=True, default=None)
+
+    class Meta:
+        model = CandidatureAssociation
+        fields = "__all__"
+        read_only_fields = (
+            "etape", "pris_en_charge_par", "motif_refus", "date_demande",
+            "date_prise_en_charge", "date_decision", "modifie_le", "invitation",
+        )
+
+    def get_utilisateur_nom(self, obj):
+        if not obj.utilisateur:
+            return None
+        nom = f"{obj.utilisateur.first_name} {obj.utilisateur.last_name}".strip()
+        if nom:
+            return nom
+        request = self.context.get('request')
+        if request is not None and get_active_environment(request) == Environment.DEMO:
+            return mask_email(obj.utilisateur.email)
+        return obj.utilisateur.email
+
 
 class InstitutionDomaineSerializer(
     serializers.ModelSerializer

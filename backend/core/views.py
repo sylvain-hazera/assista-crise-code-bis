@@ -220,6 +220,8 @@ from .models import (
     RisqueMajeurType, RisqueCommunal,
     TypeVulnerabilite, PersonneVulnerable,
     TYPES_COLLECTIVITE_TERRITORIALE,
+    CandidatureAssociation, InvitationAssociation,
+    Qualification, QualificationMembre,
     SecteurRecherche, StatutSecteurRecherche,
     Plan,
     PlanMissionModele,
@@ -445,6 +447,10 @@ def send_crisis_regulateur_invite_email(request, user, crisis, institution):
     )
 
 from .serializers import (
+    CandidatureAssociationSerializer,
+    InvitationAssociationSerializer,
+    QualificationMembreSerializer,
+    QualificationSerializer,
     SiteSensibleSerializer,
     ImportOpenDataSerializer,
     validate_crisis_open,
@@ -14331,16 +14337,71 @@ class ContactInstitutionViewSet(
         ContactInstitutionSerializer
     )
 
+    # `institution` et `utilisateur` sont filtrables : c'est ce qui permet à une page de
+    # demander les contacts d'UNE institution au lieu de tout tirer puis de jeter (voir
+    # get_queryset).
+    filterset_fields = ["institution", "utilisateur", "actif"]
+
     def get_queryset(self):
-        """Même règle à sens unique que InstitutionViewSet.get_queryset (pas
-        EnvironmentScopedViewSetMixin, dont le filtrage strict masquerait les VRAIS contacts
-        d'une institution réelle dès qu'on consulte cette institution en DEMO) : les contacts
-        créés en PROD restent visibles en DEMO, jamais l'inverse. utilisateur_email est masqué
-        à l'affichage en DEMO (voir ContactInstitutionSerializer.to_representation)."""
+        """Qui voit quels contacts.
+
+        Jusqu'au 28/10/2026 : aucune `permission_classes` (donc le défaut `IsAuthenticated`) et
+        un filtre d'environnement seulement. N'importe quel compte authentifié — y compris un
+        citoyen venu déclarer un dégât — pouvait donc lister les contacts de TOUTES les
+        institutions de la plateforme : noms, emails, fonctions. Les cinq pages qui consomment
+        cet endpoint tiraient d'ailleurs la table entière pour n'en afficher qu'une institution.
+
+        Trois cercles, du plus large au plus étroit :
+
+        1. **Administrateur** : tout, comme avant — il arbitre les rattachements et doit voir
+           les institutions dont le bureau a perdu ses accès.
+        2. **Rôle institutionnel AVEC un filtre `?institution=` explicite** : les contacts de
+           cette institution-là. C'est le besoin réel et ponctuel du métier — désigner le
+           responsable d'une institution qu'on déclare actrice sur une crise, ce qui suppose de
+           voir ses contacts sans en être membre. Une question ciblée reste donc permise ; c'est
+           la LISTE EN VRAC qui disparaît, et c'est elle qui était le problème.
+        3. **Tout le monde** : ses propres rattachements, et ceux des institutions où il a un
+           rattachement actif. Un citoyen sans institution ne voit donc que ses propres lignes,
+           c'est-à-dire rien.
+
+        Même règle à sens unique que InstitutionViewSet.get_queryset par ailleurs (pas
+        d'anonymisation : un contact réel reste visible en DEMO, email masqué à l'affichage par
+        le serializer) : les contacts créés en PROD restent visibles en DEMO, jamais l'inverse.
+        """
         qs = self.queryset
         if get_active_environment(self.request) == Environment.DEMO:
-            return qs.filter(environment__in=[Environment.PROD, Environment.DEMO])
-        return qs.filter(environment=Environment.PROD)
+            qs = qs.filter(environment__in=[Environment.PROD, Environment.DEMO])
+        else:
+            qs = qs.filter(environment=Environment.PROD)
+
+        utilisateur = self.request.user
+        role = get_effective_role(self.request)
+        if role == UserRole.ADMINISTRATOR:
+            return qs
+
+        # En DEMO, l'appartenance est levée — exactement comme InstitutionViewSet lève la
+        # restriction de zone (voir TestInstitutionAndContactVisibleAcrossEnvironmentsInDemo) :
+        # une vraie institution doit rester utilisable pour une démonstration même hors du
+        # périmètre du compte, et ses contacts avec elle. Trois raisons de l'accepter ici :
+        # le serializer masque déjà les coordonnées en DEMO, la zone de démonstration n'est
+        # accessible qu'aux comptes institutionnels (demo_role, jamais posé sur un compte
+        # citoyen), et c'est une exigence écrite du projet, pas un oubli. La fuite réelle était
+        # en PROD, et c'est là qu'elle se ferme.
+        if get_active_environment(self.request) == Environment.DEMO \
+                and role in INSTITUTIONAL_TYPES:
+            return qs
+
+        # Une question ciblée sur une institution : permise à un rôle institutionnel, parce que
+        # désigner un homologue fait partie du métier. Le filtre lui-même est appliqué par
+        # DjangoFilterBackend ; on ne fait ici qu'autoriser la portée.
+        institution_demandee = self.request.query_params.get("institution")
+        if institution_demandee and role in INSTITUTIONAL_TYPES:
+            return qs
+
+        miennes = ContactInstitution.objects.filter(
+            utilisateur=utilisateur, actif=True,
+        ).values_list("institution_id", flat=True)
+        return qs.filter(Q(utilisateur=utilisateur) | Q(institution_id__in=miennes))
 
     def _liberer_contact_principal(self, serializer):
         """Un seul contact principal par institution (index unique partiel, migration 0060) :
@@ -14405,6 +14466,227 @@ class ContactInstitutionViewSet(
             commentaire=f"Création contact institution : {contact.utilisateur} pour {contact.institution.nom}",
         )
         self._ouvrir_les_droits(contact)
+
+class QualificationViewSet(TagLikeViewSetMixin, viewsets.ModelViewSet):
+    """Catalogue partagé des titres : PSE1, radio, permis, CACES…
+
+    `TagLikeViewSetMixin` comme Competence : n'importe quelle institution en ajoute un,
+    réutilisable par les autres, et une entrée créée sous une casse différente est réutilisée
+    au lieu de fragmenter le vocabulaire. Pas de suppression dans l'usage courant — une entrée
+    retirée se masque (`actif=False`), un titre déjà attribué doit rester lisible (PROTECT sur
+    QualificationMembre.qualification le garantit de toute façon)."""
+
+    queryset = Qualification.objects.all()
+    serializer_class = QualificationSerializer
+    permission_classes = [IsInstitutionalActor]
+
+
+class QualificationMembreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
+    """Titres détenus par les personnes.
+
+    Qui voit quoi, et c'est le cœur de cette classe : chacun ses propres titres, le bureau
+    ceux des membres de SON institution, l'administrateur tout. Sans ce cadrage, un titre
+    (date d'obtention, organisme) serait lisible par tout compte institutionnel — et une
+    qualification dit quelque chose de précis sur le parcours de quelqu'un."""
+
+    queryset = QualificationMembre.objects.select_related(
+        "qualification", "utilisateur", "saisie_par")
+    serializer_class = QualificationMembreSerializer
+    permission_classes = [IsInstitutionalActor]
+    filterset_fields = ["utilisateur", "qualification"]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        user = self.request.user
+        if get_effective_role(self.request) == UserRole.ADMINISTRATOR:
+            return qs
+        institutions = ContactInstitution.objects.filter(
+            utilisateur=user, membre_bureau=True, actif=True,
+        ).values_list("institution_id", flat=True)
+        membres = ContactInstitution.objects.filter(
+            institution_id__in=institutions, actif=True,
+        ).values_list("utilisateur_id", flat=True)
+        return qs.filter(Q(utilisateur=user) | Q(utilisateur_id__in=membres))
+
+    def perform_create(self, serializer):
+        # Qui a saisi : une qualification affirmée par le bureau n'a pas le même poids qu'une
+        # ligne déclarée par l'intéressé, et il faut pouvoir le distinguer sans fouiller les
+        # journaux.
+        objet = serializer.save(
+            saisie_par=self.request.user,
+            environment=get_active_environment(self.request),
+        )
+        audit_log(
+            request=self.request, action_code="CREATION",
+            objet_type="QualificationMembre", objet_id=objet.id,
+            commentaire=f"Qualification {objet.qualification} enregistree pour "
+                        f"{objet.utilisateur}",
+        )
+
+
+class InvitationAssociationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
+    """Liens d'invitation d'une association — réservés à son bureau.
+
+    Le jeton est fabriqué par le serveur et jamais accepté en entrée : un lien choisi par son
+    créateur serait devinable, et ce lien est la porte du circuit de recrutement."""
+
+    queryset = InvitationAssociation.objects.select_related("institution", "cree_par")
+    serializer_class = InvitationAssociationSerializer
+    permission_classes = [IsInstitutionalActor]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if get_effective_role(self.request) == UserRole.ADMINISTRATOR:
+            return qs
+        return qs.filter(institution_id__in=_institutions_gouvernees(self.request.user))
+
+    def perform_create(self, serializer):
+        from .recrutement_association import peut_instruire
+
+        institution = _resolve_institution_or_400(self.request)
+        if not peut_instruire(self.request.user, institution):
+            raise PermissionDenied(
+                "Seul un membre du bureau de cette association peut créer un lien "
+                "d'invitation."
+            )
+        invitation = serializer.save(
+            institution=institution, cree_par=self.request.user,
+            environment=get_active_environment(self.request),
+        )
+        audit_log(
+            request=self.request, action_code="CREATION",
+            objet_type="InvitationAssociation", objet_id=invitation.id,
+            commentaire=f"Lien d'invitation cree pour {institution.nom}"
+                        f"{f' ({invitation.libelle})' if invitation.libelle else ''}",
+        )
+
+
+class CandidatureAssociationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
+    """Candidatures à une association, et leur instruction par le bureau.
+
+    Les étapes ne se franchissent QUE par les actions dédiées ci-dessous, jamais par un PATCH
+    sur `etape` (read_only dans le serializer) : ce sont elles qui portent les règles du
+    circuit — qui a le droit, dans quel sens il avance, et ce qu'une acceptation déclenche.
+    Un PATCH libre contournerait tout cela en silence, et notamment poserait une candidature
+    « acceptée » sans rattacher personne."""
+
+    queryset = CandidatureAssociation.objects.select_related(
+        "institution", "utilisateur", "pris_en_charge_par", "invitation")
+    serializer_class = CandidatureAssociationSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    filterset_fields = ["institution", "etape"]
+
+    def get_queryset(self):
+        """Le bureau voit les candidatures de son association, chacun voit la sienne.
+
+        Un candidat doit pouvoir suivre son dossier : ne rien lui montrer le laisserait sans
+        nouvelle après avoir demandé à rejoindre, ce qui est la meilleure façon de le perdre."""
+        qs = super().get_queryset()
+        if get_effective_role(self.request) == UserRole.ADMINISTRATOR:
+            return qs
+        return qs.filter(
+            Q(utilisateur=self.request.user)
+            | Q(institution_id__in=_institutions_gouvernees(self.request.user))
+        )
+
+    def perform_create(self, serializer):
+        """Demander à rejoindre une association, sans lien d'invitation (candidature
+        spontanée). N'accorde rien : pose un dossier que le bureau instruira."""
+        from .recrutement_association import demander_a_rejoindre
+
+        institution = serializer.validated_data.get("institution")
+        if institution is None or not institution.actif:
+            raise ValidationError({"institution": "Association inconnue ou hors service."})
+        candidature, creee = demander_a_rejoindre(
+            institution, self.request.user,
+            message=serializer.validated_data.get("message_candidat"),
+        )
+        serializer.instance = candidature
+        if creee:
+            audit_log(
+                request=self.request, action_code="CREATION",
+                objet_type="CandidatureAssociation", objet_id=candidature.id,
+                commentaire=f"Demande de rattachement a {institution.nom}",
+            )
+
+    def _instruire(self, pk, geste, **extra):
+        """Enveloppe commune aux quatre actions : traduit les refus du domaine en réponses HTTP.
+
+        `PermissionError` et `ValueError` sont levées par recrutement_association plutôt que
+        rendues en booléen, pour qu'un appel invalide ne passe pas inaperçu — ici on les
+        retraduit en 403 et 400, avec le message du domaine, qui est écrit pour être lu par
+        l'agent et pas par un développeur."""
+        candidature = self.get_object()
+        try:
+            geste(candidature, self.request.user, request=self.request, **extra)
+        except PermissionError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_403_FORBIDDEN)
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(self.get_serializer(candidature).data)
+
+    @action(detail=True, methods=["post"], url_path="prendre-en-charge")
+    def prendre_en_charge(self, request, pk=None):
+        from .recrutement_association import prendre_en_charge
+
+        return self._instruire(pk, prendre_en_charge)
+
+    @action(detail=True, methods=["post"], url_path="verifier")
+    def verifier(self, request, pk=None):
+        from .recrutement_association import marquer_verifiee
+
+        return self._instruire(pk, marquer_verifiee)
+
+    @action(detail=True, methods=["post"], url_path="accepter")
+    def accepter(self, request, pk=None):
+        from .recrutement_association import accepter
+
+        return self._instruire(pk, accepter)
+
+    @action(detail=True, methods=["post"], url_path="refuser")
+    def refuser(self, request, pk=None):
+        from .recrutement_association import refuser
+
+        return self._instruire(pk, refuser, motif=request.data.get("motif"))
+
+    @action(detail=False, methods=["post"], url_path="rejoindre")
+    def rejoindre(self, request):
+        """Déposer une candidature depuis un lien d'invitation.
+
+        Le jeton ne dit rien de lui-même : il désigne l'association, et la réponse est la même
+        qu'une demande spontanée — une candidature à instruire. Message volontairement unique
+        en cas d'échec : distinguer « jeton inconnu » de « jeton expiré » aiderait à en
+        deviner."""
+        from .recrutement_association import candidature_depuis_invitation
+
+        candidature, creee = candidature_depuis_invitation(
+            (request.data.get("jeton") or "").strip(), request.user,
+            message=request.data.get("message"),
+        )
+        if candidature is None:
+            return Response(
+                {"error": "Ce lien d'invitation n'est pas (ou plus) valide. Demandez-en un "
+                          "nouveau à l'association."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if creee:
+            audit_log(
+                request=request, action_code="CREATION",
+                objet_type="CandidatureAssociation", objet_id=candidature.id,
+                commentaire=f"Demande de rattachement a {candidature.institution.nom} "
+                            f"via lien d'invitation",
+            )
+        return Response(self.get_serializer(candidature).data,
+                        status=status.HTTP_201_CREATED if creee else status.HTTP_200_OK)
+
+
+def _institutions_gouvernees(utilisateur):
+    """Institutions où cette personne est au bureau. Un seul endroit, pour que les trois
+    ViewSets ci-dessus ne divergent pas sur la définition de « mon association »."""
+    return ContactInstitution.objects.filter(
+        utilisateur=utilisateur, membre_bureau=True, actif=True,
+    ).values_list("institution_id", flat=True)
+
 
 class InstitutionDomaineViewSet(
     EnvironmentScopedViewSetMixin, viewsets.ModelViewSet

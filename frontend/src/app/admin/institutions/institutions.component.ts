@@ -214,6 +214,8 @@ export class InstitutionsComponent implements OnInit {
       types: this.institutionTypeService.getAll(),
       roles: this.roleOperationnelService.getAll(),
       users: this.userService.getAll(),
+      // Au chargement, seulement les miens : ceux d'une institution consultée sont
+      // demandés à l'ouverture de son détail (voir openDetail).
       contacts: this.contactService.getAll(),
       domaines: this.domaineService.getAll(),
       competences: this.competenceService.getAll(),
@@ -240,7 +242,11 @@ export class InstitutionsComponent implements OnInit {
   reloadInstitutions(): void { this.institutionService.getAll().subscribe(data => this.institutions = data); }
   reloadTypes(): void { this.institutionTypeService.getAll().subscribe(data => this.types = data); }
   reloadRoles(): void { this.roleOperationnelService.getAll().subscribe(data => this.roles = data); }
-  reloadContacts(): void { this.contactService.getAll().subscribe(data => this.contacts = data); }
+  reloadContacts(): void {
+    const id = this.selectedInstitution?.id;
+    const source = id ? this.contactService.getForInstitution(id) : this.contactService.getAll();
+    source.subscribe(data => this.contacts = data);
+  }
   reloadDomaines(): void { this.domaineService.getAll().subscribe(data => this.domaines = data); }
   reloadAffectationsRoles(): void { this.affectationRoleService.getAll().subscribe(data => this.affectationsRoles = data); }
 
@@ -316,6 +322,10 @@ export class InstitutionsComponent implements OnInit {
 
   openDetail(institution: Institution): void {
     this.selectedInstitution = institution;
+    // Les contacts de CETTE institution, demandés nommément. La page tirait auparavant la
+    // table entière au chargement pour n'en afficher qu'une institution à la fois — et
+    // l'endpoint, ouvert à tout compte authentifié, les rendait toutes lisibles.
+    this.reloadContacts();
     this.detailTab = 'contacts';
     this.showContactForm = false;
     this.showDomaineForm = false;

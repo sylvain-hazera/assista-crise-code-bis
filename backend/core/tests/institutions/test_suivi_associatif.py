@@ -190,3 +190,146 @@ class TestQualifications:
         self._detenir(membre, pse1)
         with pytest.raises(ProtectedError):
             pse1.delete()
+
+
+class TestQuiVoitLeSuiviAssociatif:
+    """Le suivi associatif ne se montre qu'au bureau de l'institution concernée, et à
+    l'intéressé.
+
+    `ContactInstitutionViewSet` n'a volontairement pas de filtre par institution — beaucoup
+    d'écrans y lisent les contacts d'autres collectivités pour afficher un nom — et son
+    serializer expose `fields = "__all__"`. Ajouter des dates d'adhésion et d'aptitude
+    médicale sans restriction les aurait donc rendues lisibles par tout compte authentifié.
+    La restriction est faite champ par champ dans le serializer, puisque c'est là que
+    l'information est décidée."""
+
+    CHAMPS = ["statut", "date_adhesion", "adhesion_valide_jusquau", "aptitude_valide_jusquau"]
+
+    @pytest.fixture
+    def rempli(self, membre):
+        membre.date_adhesion = datetime.date(2022, 3, 1)
+        membre.adhesion_valide_jusquau = datetime.date(2027, 2, 28)
+        membre.aptitude_valide_jusquau = datetime.date(2027, 5, 31)
+        membre.save()
+        return membre
+
+    def _lire(self, lecteur, contact):
+        from django.urls import reverse
+        from rest_framework.test import APIClient
+
+        client = APIClient()
+        client.force_authenticate(user=lecteur)
+        reponse = client.get(reverse("contactinstitution-detail", args=[contact.id]))
+        assert reponse.status_code == 200, reponse.data
+        return reponse.data
+
+    def test_le_bureau_voit_tout(self, rempli, aasc, create_user):
+        bureau = create_user(username="bureau-vue@test.fr", email="bureau-vue@test.fr",
+                             type="AUT_LOCALE", last_name="BUREAU")
+        ContactInstitution.objects.create(
+            institution=aasc, utilisateur=bureau, fonction="Trésorier",
+            membre_bureau=True, actif=True)
+
+        data = self._lire(bureau, rempli)
+
+        for champ in self.CHAMPS:
+            assert champ in data, champ
+        assert data["aptitude_valide_jusquau"] == "2027-05-31"
+
+    def test_un_membre_simple_ne_voit_pas_laptitude_dun_autre(
+            self, rempli, aasc, create_user):
+        """LE test. Un équipier n'a pas à connaître la date de certificat médical de son
+        voisin."""
+        autre = create_user(username="autre-vue@test.fr", email="autre-vue@test.fr",
+                            type="SECOURS", last_name="AUTRE")
+        ContactInstitution.objects.create(
+            institution=aasc, utilisateur=autre, fonction="Équipier", actif=True)
+
+        data = self._lire(autre, rempli)
+
+        for champ in self.CHAMPS:
+            assert champ not in data, champ
+        # Le reste de la fiche reste lisible : ce n'est pas un refus d'accès.
+        assert data["fonction"] == "Équipier"
+
+    def test_un_compte_sans_rapport_ne_voit_meme_pas_la_fiche(self, rempli, create_user):
+        """Depuis le cadrage du 28/10/2026 (voir test_contacts_institution_portee.py), un
+        citoyen n'accède plus du tout aux rattachements d'une institution dont il n'est pas
+        membre : la restriction champ par champ de ce fichier est devenue la seconde ligne de
+        défense, pas la première. On vérifie donc le refus d'accès, qui est plus fort."""
+        from django.urls import reverse
+        from rest_framework.test import APIClient
+
+        citoyen = create_user(username="citoyen-vue@test.fr", email="citoyen-vue@test.fr",
+                              type="UTIL_SIMPLE", last_name="CITOYEN")
+        client = APIClient()
+        client.force_authenticate(user=citoyen)
+
+        reponse = client.get(reverse("contactinstitution-detail", args=[rempli.id]))
+
+        assert reponse.status_code == 404
+
+    def test_chacun_voit_son_propre_suivi(self, rempli):
+        """Savoir quand son certificat expire est la première raison de le lui montrer."""
+        data = self._lire(rempli.utilisateur, rempli)
+
+        assert data["aptitude_valide_jusquau"] == "2027-05-31"
+        assert data["date_adhesion"] == "2022-03-01"
+
+    def test_un_administrateur_voit_tout(self, rempli, create_user):
+        admin = create_user(username="admin-vue@test.fr", email="admin-vue@test.fr",
+                            type="ADMIN", last_name="ADMIN")
+
+        data = self._lire(admin, rempli)
+
+        for champ in self.CHAMPS:
+            assert champ in data, champ
+
+    def test_le_bureau_dune_autre_association_ne_voit_pas_le_suivi(
+            self, rempli, create_user, aasc, db):
+        """Un rôle institutionnel PEUT interroger une autre institution nommément (désigner un
+        homologue sur une crise) : il obtient alors la fiche, mais sans le suivi associatif.
+        C'est exactement le cas où la restriction champ par champ sert encore."""
+        from django.urls import reverse
+        from rest_framework.test import APIClient
+
+        itype, _ = InstitutionType.objects.get_or_create(
+            code="aasc", defaults={"libelle": "AASC"})
+        autre_assoc, _ = Institution.objects.get_or_create(
+            nom="AASC Sans Rapport", defaults={"type": itype, "actif": True})
+        intrus = create_user(username="intrus-vue@test.fr", email="intrus-vue@test.fr",
+                             type="AUT_LOCALE", last_name="INTRUS")
+        ContactInstitution.objects.create(
+            institution=autre_assoc, utilisateur=intrus, fonction="President",
+            membre_bureau=True, actif=True)
+        client = APIClient()
+        client.force_authenticate(user=intrus)
+
+        reponse = client.get(reverse("contactinstitution-list"),
+                             {"institution": str(aasc.id)})
+
+        assert reponse.status_code == 200
+        fiche = next(c for c in reponse.data if str(c["id"]) == str(rempli.id))
+        for champ in self.CHAMPS:
+            assert champ not in fiche, champ
+        # La fonction, elle, reste lisible : c'est ce qui permet de désigner un homologue.
+        assert fiche["fonction"] == "Équipier"
+
+    def test_savoir_qui_gouverne_reste_visible(self, rempli, aasc, create_user):
+        """`membre_bureau` n'est pas restreint par le serializer : pour qui a le droit de voir
+        la fiche, savoir qui dirige l'association est une information normale, contrairement à
+        l'état de son adhésion."""
+        from django.urls import reverse
+        from rest_framework.test import APIClient
+
+        pair = create_user(username="pair-vue@test.fr", email="pair-vue@test.fr",
+                           type="AUT_LOCALE", last_name="PAIR")
+        client = APIClient()
+        client.force_authenticate(user=pair)
+
+        reponse = client.get(reverse("contactinstitution-list"),
+                             {"institution": str(aasc.id)})
+        fiche = next(c for c in reponse.data if str(c["id"]) == str(rempli.id))
+
+        assert "membre_bureau" in fiche
+        assert "aptitude_valide_jusquau" not in fiche

@@ -601,10 +601,18 @@ export class CrisesComponent implements OnInit {
   // ── Déclarer une institution actrice (thèmes + responsable) ────
   onActeurDirectInstitutionChange(id: string): void {
     this.acteurDirectInstitutionId = id || null;
-    this.acteurDirectContacts = this.acteurDirectInstitutionId
-      ? this.allContacts.filter(c => c.institution === this.acteurDirectInstitutionId && c.actif)
-      : [];
     this.responsableContactId = null;
+    this.acteurDirectContacts = [];
+    if (!this.acteurDirectInstitutionId) { return; }
+    // Demandés nommément, et seulement maintenant : on déclare actrice une institution dont on
+    // n'est pas membre, donc ses contacts ne sont pas dans `allContacts`. L'endpoint renvoyait
+    // auparavant la table entière à tout compte authentifié — voir ContactInstitutionService.
+    // Si la réponse est vide (droits insuffisants, ou institution sans contact), le formulaire
+    // garde ses deux autres voies : se désigner soi-même, ou inviter par email.
+    this.contactService.getForInstitution(this.acteurDirectInstitutionId).subscribe({
+      next: (contacts) => this.acteurDirectContacts = contacts.filter(c => c.actif),
+      error: () => this.acteurDirectContacts = [],
+    });
   }
 
   toggleActeurDirectTheme(besoinId: string, checked: boolean): void {

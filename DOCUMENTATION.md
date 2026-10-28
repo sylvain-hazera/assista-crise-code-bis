@@ -478,6 +478,51 @@ rattachement d'une mairie.
   `uq_contact_principal_institution` n'autorise qu'un contact principal par institution, donc
   le drapeau ne peut pas voyager tel quel.
 
+### 5.12 ter Portée de lecture des contacts d'institution
+
+`ContactInstitution` porte des personnes nommées avec leur email et leur fonction, et
+`ContactInstitutionSerializer` expose `fields = "__all__"`. Jusqu'au 28/10/2026 le ViewSet
+n'avait **aucune** `permission_classes` — donc le défaut `IsAuthenticated` — et son queryset ne
+filtrait que par environnement : tout compte authentifié, y compris un citoyen venu déclarer un
+dégât, pouvait lister les contacts de toutes les institutions de la plateforme. Les cinq pages
+qui consomment cet endpoint tiraient d'ailleurs la table entière pour n'afficher qu'une
+institution à la fois.
+
+**Plus grave encore, les écritures l'étaient aussi** : `get_object()` passant par
+`get_queryset()`, n'importe quel compte authentifié pouvait promouvoir, désactiver ou supprimer
+le rattachement de n'importe qui dans n'importe quelle institution — se faire contact principal
+d'une mairie, par exemple. Un test préexistant passait précisément parce que c'était ouvert.
+
+Quatre cercles, du plus large au plus étroit :
+
+| Qui | Voit |
+|---|---|
+| Administrateur | tout — il arbitre les rattachements et débloque une institution dont le bureau a perdu ses accès |
+| Rôle institutionnel **en zone DEMO** | tout, coordonnées masquées par le serializer |
+| Rôle institutionnel **avec `?institution=<id>`** | les contacts de celle-là |
+| Tout le monde | ses rattachements, et ceux des institutions dont il est membre actif |
+
+La distinction qui porte tout : **la question ciblée reste permise, la liste en vrac
+disparaît.** C'est elle qui préserve le seul besoin réellement inter-institutions — déclarer
+une institution actrice sur une crise et désigner son responsable, ce qui suppose de voir ses
+contacts sans en être membre (`crises.component`, `acteurDirectContacts`). Un test vérifie
+qu'un compte non institutionnel n'obtient rien, **même** en ajoutant le paramètre d'URL : sans
+cela la restriction se contournerait d'un `?institution=`.
+
+L'exemption **DEMO** reprend celle d'`InstitutionViewSet` (qui lève sa restriction de zone dans
+cette zone, voir `TestInstitutionAndContactVisibleAcrossEnvironmentsInDemo`) : une vraie
+institution doit rester utilisable pour une démonstration hors du périmètre du compte, et ses
+contacts avec elle. Acceptable parce que le serializer masque les coordonnées en DEMO, et
+parce que la zone de démonstration n'est accessible qu'aux comptes institutionnels (`demo_role`
+n'est jamais posé sur un compte citoyen). La fuite réelle était en PROD.
+
+Côté frontend, deux pages ont changé de façon de faire plutôt que de capacité : la page
+Institutions demande les contacts à l'ouverture du détail d'une institution, la page Crises les
+demande au moment où l'on choisit l'institution à déclarer actrice. `plan-modal` et le
+formulaire public de déclaration sont inchangés — ils filtraient déjà sur leurs propres
+rattachements, et deux tests de non-régression reproduisent leurs filtres côté client pour que
+le cadrage ne leur retire rien.
+
 ### 5.12 bis Associations agréées de sécurité civile (AASC)
 
 Premier partenaire en marque blanche : « Réserve Résilience - Casques Jaunes », semée par la

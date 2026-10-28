@@ -1,4 +1,5 @@
 import hashlib
+import secrets
 import uuid
 import os
 from django.contrib.auth.models import AbstractUser, Group, Permission
@@ -5242,6 +5243,179 @@ class QualificationMembre(EnvironmentScopedModel):
         if self.date_expiration is None:
             return None
         return (self.date_expiration - timezone.localdate()).days
+
+
+def _jeton_invitation():
+    """Jeton d'invitation : 32 octets d'aléa cryptographique, URL-safe.
+
+    `secrets` et non `random` : ce jeton vaut droit d'entrée dans le circuit de recrutement
+    d'une association, un générateur prévisible permettrait de le devenir sans invitation."""
+    return secrets.token_urlsafe(32)
+
+
+class InvitationAssociation(EnvironmentScopedModel):
+    """Lien d'invitation d'une association : qui s'inscrit par là demande à la rejoindre.
+
+    Raison d'être : une AASC recrute avec des adresses personnelles (gmail, hotmail), donc le
+    mécanisme de rattachement par domaine email des mairies (InstitutionDomaine) ne marchera
+    jamais pour elle. Et faire SAISIR le nom de l'association est ce qui fabriquait des
+    associations fantômes (voir attach_secours_user_to_institution). Un lien fait CHOISIR sans
+    rien taper, et laisse une trace de qui a recruté qui.
+
+    Le lien n'accorde rien par lui-même : il pose une candidature, que le bureau instruit
+    (voir CandidatureAssociation). Quelqu'un qui devine un jeton n'obtient donc pas un accès,
+    seulement une demande de plus à examiner."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    institution = models.ForeignKey(
+        "Institution", on_delete=models.CASCADE, related_name="invitations",
+    )
+
+    jeton = models.CharField(max_length=64, unique=True, default=_jeton_invitation,
+                             editable=False)
+
+    libelle = models.CharField(
+        max_length=160, blank=True, null=True,
+        help_text="À quoi sert ce lien (ex: « Forum des associations 2026 ») — permet de "
+                  "savoir d'où viennent les candidatures.",
+    )
+
+    cree_par = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="invitations_creees",
+    )
+
+    # Un lien qui traîne indéfiniment sur un site public finit par être partagé n'importe où :
+    # une échéance est la seule chose qui le referme sans intervention.
+    date_expiration = models.DateField(null=True, blank=True)
+
+    actif = models.BooleanField(default=True)
+
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-date_creation"]
+
+    def __str__(self):
+        return f"Invitation {self.institution} ({self.libelle or self.jeton[:8]})"
+
+    @property
+    def utilisable(self):
+        from django.utils import timezone
+
+        if not self.actif:
+            return False
+        if self.date_expiration and self.date_expiration < timezone.localdate():
+            return False
+        return self.institution.actif
+
+
+class CandidatureAssociation(EnvironmentScopedModel):
+    """Candidature d'une personne à une association, et son instruction par le bureau.
+
+    Le circuit tel que l'association le pratique : demande reçue, prise en charge par quelqu'un
+    du bureau, pièces et qualifications vérifiées, puis acceptée — ou refusée, car un
+    recrutement peut aussi se conclure par un non et l'omettre obligerait à laisser des
+    dossiers ouverts indéfiniment.
+
+    Distinct de l'approbation de compte (`approve_account`), qui est la porte de la
+    PLATEFORME : ici c'est l'association qui décide de ses membres. Accepter une candidature
+    fait les deux d'un geste — le compte est activé et le rattachement posé — parce que
+    demander au bureau de valider deux fois la même personne dans deux écrans différents
+    produirait des comptes acceptés mais non rattachés, ce qu'on a déjà observé."""
+
+    class Etape(models.TextChoices):
+        DEMANDE = "DEMANDE", "Demande reçue"
+        PRISE_EN_CHARGE = "PRISE_EN_CHARGE", "Prise en charge"
+        VERIFICATION = "VERIFICATION", "Pièces et qualifications vérifiées"
+        ACCEPTE = "ACCEPTE", "Accepté"
+        REFUSE = "REFUSE", "Refusé"
+
+    # Ordre du circuit. REFUSE n'y figure pas : il se prononce depuis n'importe quelle étape
+    # non terminale, ce n'est pas une progression.
+    ORDRE_ETAPES = [Etape.DEMANDE, Etape.PRISE_EN_CHARGE, Etape.VERIFICATION, Etape.ACCEPTE]
+    ETAPES_TERMINALES = {Etape.ACCEPTE, Etape.REFUSE}
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    institution = models.ForeignKey(
+        "Institution", on_delete=models.CASCADE, related_name="candidatures",
+    )
+
+    utilisateur = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="candidatures",
+    )
+
+    etape = models.CharField(max_length=16, choices=Etape.choices, default=Etape.DEMANDE)
+
+    # D'où vient la candidature : un lien d'invitation nommé dit quelle action de recrutement a
+    # porté. Null = demande spontanée.
+    invitation = models.ForeignKey(
+        InvitationAssociation, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="candidatures",
+    )
+
+    # Qui instruit le dossier. Nommément, et pas seulement « le bureau » : une candidature dont
+    # personne ne se sent responsable est une candidature qui dort.
+    pris_en_charge_par = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="candidatures_instruites",
+    )
+
+    message_candidat = models.TextField(
+        blank=True, null=True,
+        help_text="Ce que la personne a écrit en demandant à rejoindre l'association.",
+    )
+
+    commentaire_bureau = models.TextField(blank=True, null=True)
+
+    # Dire pourquoi : un refus sans motif se represente à l'identique six mois plus tard.
+    motif_refus = models.TextField(blank=True, null=True)
+
+    date_demande = models.DateTimeField(auto_now_add=True)
+    date_prise_en_charge = models.DateTimeField(null=True, blank=True)
+    date_decision = models.DateTimeField(null=True, blank=True)
+    modifie_le = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-date_demande"]
+        constraints = [
+            # Une seule candidature EN COURS par personne et par association : deux dossiers
+            # ouverts pour la même personne feraient instruire deux fois, et accepter deux
+            # fois. Une candidature refusée n'empêche pas d'en redéposer une plus tard.
+            models.UniqueConstraint(
+                fields=["institution", "utilisateur", "environment"],
+                condition=models.Q(etape__in=["DEMANDE", "PRISE_EN_CHARGE", "VERIFICATION"]),
+                name="uq_candidature_en_cours",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.utilisateur} → {self.institution} ({self.get_etape_display()})"
+
+    @property
+    def terminee(self):
+        return self.etape in self.ETAPES_TERMINALES
+
+    def transition_possible(self, vers):
+        """Le circuit avance, il ne recule pas, et il ne repart pas d'une décision prise.
+
+        Avancer de plusieurs crans d'un coup est permis : un bureau qui connaît la personne ne
+        doit pas être forcé de cliquer trois fois pour dire oui. Reculer ne l'est pas — une
+        étape franchie l'a été par quelqu'un, et la défranchir sans trace réécrirait
+        l'instruction du dossier.
+
+        Sortir d'une étape terminale ne l'est pas non plus : accepter a posé un rattachement et
+        ouvert des accès, les retirer est un autre acte (voir ContactInstitution.statut, qui a
+        « Sorti »), pas un retour en arrière du recrutement."""
+        if self.terminee:
+            return False
+        if vers == self.Etape.REFUSE:
+            return True
+        if vers not in self.ORDRE_ETAPES:
+            return False
+        return self.ORDRE_ETAPES.index(vers) > self.ORDRE_ETAPES.index(self.etape)
 
 
 class InstitutionDomaine(EnvironmentScopedModel):

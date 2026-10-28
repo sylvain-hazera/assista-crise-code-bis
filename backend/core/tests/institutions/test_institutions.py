@@ -546,6 +546,11 @@ class TestContactInstitutionPrincipalUniqueness:
         second = User.objects.create_user(username="p2@mairie.fr", email="p2@mairie.fr", password="Test1234!")
         ancien = ContactInstitution.objects.create(institution=institution, utilisateur=first, contact_principal=True)
         promu = ContactInstitution.objects.create(institution=institution, utilisateur=second, contact_principal=False)
+        # Depuis le 28/10/2026, ContactInstitutionViewSet.get_queryset borne aussi les
+        # ÉCRITURES : avant, tout compte authentifié pouvait promouvoir, désactiver ou
+        # supprimer le rattachement de n'importe qui dans n'importe quelle institution. Le
+        # promoteur doit donc être habilité — ici, membre de l'institution concernée.
+        ContactInstitution.objects.create(institution=institution, utilisateur=admin, actif=True)
 
         response = client.patch(
             reverse('contactinstitution-detail', kwargs={"pk": promu.id}), {"contact_principal": True}, format='json',
