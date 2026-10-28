@@ -174,3 +174,24 @@
   width: 30px;
   height: 30px;
 }
+
+/* Absence de WebGL : un message, pas un cadre vide ni une page blanche. Superposé au conteneur
+   de carte, qui reste en place au cas où un rechargement sur un poste capable réussisse. */
+.carte-indisponible {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .6rem;
+  padding: 1.5rem;
+  background: #f9fafb;
+  color: #374151;
+  font-size: .92rem;
+  line-height: 1.55;
+  text-align: left;
+
+  .material-icons { font-size: 1.6rem; color: #9ca3af; flex: 0 0 auto; }
+  div { max-width: 32rem; }
+}

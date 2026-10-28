@@ -49,13 +49,27 @@ export class ZoneMapComponent implements AfterViewInit, OnChanges, OnDestroy {
     this.initMap();
   }
 
+  /** Vrai quand le navigateur n'a pas pu fournir de contexte WebGL (voir MapComponent, même
+   * garde et même raison). */
+  carteIndisponible = false;
+
   private initMap(): void {
-    this.map = new maplibregl.Map({
-      container: this.mapContainer.nativeElement,
-      style: styleCarte(),
-      center: this.center,
-      zoom: this.zoom,
-    });
+    // Même garde que MapComponent : sans WebGL, le constructeur de MapLibre lève et
+    // l'exception traverse ngAfterViewInit — c'est le FORMULAIRE entier de déclaration de
+    // crise qui ne s'affiche plus, alors que seule la sélection de zone a besoin de la carte.
+    try {
+      this.map = new maplibregl.Map({
+        container: this.mapContainer.nativeElement,
+        style: styleCarte(),
+        center: this.center,
+        zoom: this.zoom,
+      });
+    } catch (erreur) {
+      console.warn('Sélection de zone indisponible : contexte WebGL impossible.', erreur);
+      // Au tour suivant : on est dans ngAfterViewInit, l'écrire tout de suite déclenche NG0100.
+      Promise.resolve().then(() => this.carteIndisponible = true);
+      return;
+    }
 
     this.map.addControl(new maplibregl.NavigationControl(), 'top-right');
 

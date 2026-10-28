@@ -1,6 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
 import { GuideComponent } from './guide.component';
+import { fournisseursDeTest } from '../../testing/test-providers';
 
 describe('GuideComponent', () => {
   let component: GuideComponent;
@@ -8,6 +9,7 @@ describe('GuideComponent', () => {
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
+      providers: fournisseursDeTest(),
       imports: [GuideComponent]
     })
     .compileComponents();

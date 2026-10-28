@@ -52,6 +52,9 @@ export class MembresAssociationComponent implements OnInit {
    * d'une association précise, pas « du bureau » en général. */
   mesInstitutions: Institution[] = [];
   institutionChoisie: string | null = null;
+  /** Un administrateur voit toutes les institutions, pas seulement celles dont il est au
+   * bureau — c'est ce que le serveur lui accorde déjà. */
+  estAdministrateur = false;
 
   membres: ContactInstitution[] = [];
   candidatures: CandidatureAssociation[] = [];
@@ -100,12 +103,21 @@ export class MembresAssociationComponent implements OnInit {
     }).subscribe({
       next: ({ contacts, institutions, catalogue }) => {
         this.catalogue = catalogue.filter(q => q.actif);
-        const auBureau = contacts.filter(
-          c => c.utilisateur === moi?.id && c.actif && c.membre_bureau);
-        const ids = new Set(auBureau.map(c => c.institution));
         const liste = Array.isArray(institutions) ? institutions
           : (institutions as { results?: Institution[] }).results ?? [];
-        this.mesInstitutions = liste.filter(i => i.id && ids.has(i.id));
+        // Un administrateur accède à toutes : le serveur l'y autorise (voir
+        // recrutement_association.peut_instruire) parce qu'il doit pouvoir débloquer une
+        // association dont le bureau a perdu ses accès. Ne rien lui proposer ici fermait la
+        // page à celui-là même qui en a le droit — constaté en essayant la page le 28/10/2026.
+        this.estAdministrateur = moi?.type === 'ADMIN';
+        if (this.estAdministrateur) {
+          this.mesInstitutions = liste.filter(i => i.id);
+        } else {
+          const auBureau = contacts.filter(
+            c => c.utilisateur === moi?.id && c.actif && c.membre_bureau);
+          const ids = new Set(auBureau.map(c => c.institution));
+          this.mesInstitutions = liste.filter(i => i.id && ids.has(i.id));
+        }
         this.institutionChoisie = this.mesInstitutions[0]?.id ?? null;
         this.chargement = false;
         if (this.institutionChoisie) { this.chargerInstitution(); }

@@ -1,6 +1,20 @@
 <div class="map-container">
     <div class="map-frame" #mapContainer style="width: 100%; height: 100%;"></div>
 
+    @if (carteIndisponible) {
+      <!-- Le conteneur reste dans le DOM : MapLibre s'y accroche si la page est rechargée sur
+           un poste capable. Ce bandeau se superpose plutôt que de le remplacer. -->
+      <div class="carte-indisponible">
+        <span class="material-icons">layers_clear</span>
+        <div>
+          <strong>La carte ne peut pas s'afficher sur cet ordinateur.</strong>
+          Elle a besoin de l'accélération graphique (WebGL), que ce navigateur ne fournit pas.
+          Le reste de la page fonctionne normalement&nbsp;: les listes, les fiches et les
+          adresses restent accessibles.
+        </div>
+      </div>
+    }
+
     @if (!layersPanelOpen) {
       <button type="button" class="layer-toggle-fab" (click)="layersPanelOpen = true" title="Afficher les calques">
         <span class="material-icons">layers</span>

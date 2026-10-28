@@ -1,6 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
 import { GlobalMapComponent } from './global-map.component';
+import { fournisseursDeTest } from '../../testing/test-providers';
 
 describe('GlobalMapComponent', () => {
   let component: GlobalMapComponent;
@@ -8,6 +9,7 @@ describe('GlobalMapComponent', () => {
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
+      providers: fournisseursDeTest(),
       imports: [GlobalMapComponent]
     })
     .compileComponents();

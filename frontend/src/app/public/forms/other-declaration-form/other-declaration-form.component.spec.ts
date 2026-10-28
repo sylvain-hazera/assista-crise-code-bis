@@ -1,6 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
 import { OtherDeclarationFormComponent } from './other-declaration-form.component';
+import { fournisseursDeTest } from '../../../testing/test-providers';
 
 describe('OtherDeclarationFormComponent', () => {
   let component: OtherDeclarationFormComponent;
@@ -8,6 +9,7 @@ describe('OtherDeclarationFormComponent', () => {
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
+      providers: fournisseursDeTest(),
       imports: [OtherDeclarationFormComponent]
     })
     .compileComponents();

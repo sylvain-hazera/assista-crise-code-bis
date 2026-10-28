@@ -1,6 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
 import { RequestHelpFormComponent } from './request-help-form.component';
+import { fournisseursDeTest } from '../../../testing/test-providers';
 
 describe('RequestHelpFormComponent', () => {
   let component: RequestHelpFormComponent;
@@ -8,6 +9,7 @@ describe('RequestHelpFormComponent', () => {
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
+      providers: fournisseursDeTest(),
       imports: [RequestHelpFormComponent]
     })
     .compileComponents();

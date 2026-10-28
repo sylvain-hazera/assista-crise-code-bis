@@ -1010,6 +1010,18 @@ Deux notions de rôle coexistent, à ne pas confondre :
 
 ### 6.3 Cartographie (MapLibre)
 
+**MapLibre exige WebGL, et son absence n'est pas théorique** : accélération matérielle
+désactivée, poste ancien, pilote en panne, politique d'entreprise. `MapComponent` et
+`ZoneMapComponent` instanciaient la carte sans garde, si bien que l'exception traversait
+`ngAfterViewInit` et que **la page entière** ne s'affichait plus — pas seulement la carte. Sur
+une plateforme de crise consultée depuis le premier ordinateur disponible, c'est un écran blanc
+au mauvais moment. Les deux composants attrapent désormais l'échec et affichent un message qui
+dit quoi faire ; le reste de la page continue de fonctionner, et le tracé de zone reste
+possible par la liste des communes.
+
+Le drapeau est posé au tour suivant (`Promise.resolve().then(...)`) et non immédiatement : on
+est dans `ngAfterViewInit`, où écrire directement déclenche `NG0100`.
+
 - Trois composants : `MapComponent` (carte générale, clustering), `MinimapComponent` (point en
   lecture seule) et `ZoneMapComponent` (dessin de polygone avec TerraDraw, émis en WKT).
 - **Pièges MapLibre** : la taille du canvas est fixée à l'initialisation (un `ResizeObserver`
@@ -1375,9 +1387,27 @@ docker compose exec backend pytest -o addopts="" --no-cov                    # s
 docker compose exec backend pytest -o addopts="" --no-cov core/tests/mesh/   # un domaine
 docker compose exec backend pytest core/tests/plateforme/test_metrics.py     # un fichier
 docker compose exec backend pytest core/tests/mesh/test_meshcore.py -k canal # tests dont le nom contient « canal »
-cd frontend && npm test                                                      # frontend (Karma)
+scripts/tester-frontend.sh                                                   # frontend (Karma, conteneur jetable)
+scripts/tester-frontend.sh --couverture                                      # idem + rapport de couverture
 ```
 
+- Frontend : Karma + Jasmine, exécutés dans un conteneur jetable
+  (`frontend/Dockerfile.test`). **Le projet avait 68 fichiers de test inexécutables** jusqu'au
+  28/10/2026 : `angular.json` ne référençait pas `karma.conf.js`, donc le lanceur
+  `ChromeHeadlessCI` n'était pas enregistré et la suite ne démarrait pas du tout — personne
+  n'avait donc jamais vu que 29 de ces tests échouaient. `npm test` en local ne marche pas
+  davantage : il n'y a pas de `node_modules`, le frontend n'est construit que par Docker.
+  - **Un socle partagé** : `src/app/testing/test-providers.ts` fournit HTTP (avec le
+    contrôleur de test), un routeur vide et une `ActivatedRoute` factice. Trois lignes
+    répétées dans 68 fichiers deviendraient trois lignes à changer dans 68 fichiers le jour où
+    un fournisseur s'ajoute.
+  - **Pas de seuil de couverture** dans `karma.conf.js`, et c'est délibéré : en poser un à
+    50 % alors que la couverture réelle est de quelques pourcents rendrait la commande
+    inutilisable dès le premier jour, donc personne ne la lancerait. Un plancher se décide
+    quand la couverture est significative, et se relève par cliquet.
+  - **WebGL** : Chromium sans GPU ne crée pas de contexte, même avec SwiftShader. Les
+    composants de carte ne doivent donc pas instancier MapLibre sans garde — ce que le harnais
+    a révélé, et qui était une vraie fragilité (voir § 6.3).
 - Backend : pytest + pytest-django, fixtures partagées dans `backend/conftest.py` (valables
   pour tous les sous-dossiers), base de test clonée depuis `template_postgis`. Configuration
   dans `backend/pytest.ini` (`testpaths = core`, fichiers `test_*.py`) ; les tests sont exclus

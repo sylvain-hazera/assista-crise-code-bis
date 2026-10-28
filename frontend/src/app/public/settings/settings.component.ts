@@ -196,7 +196,15 @@ export class SettingsComponent implements OnInit {
   }
 
   private loadAll(): void {
-    // Toutes les données de l'utilisateur connecté
+    // Toutes ces listes sont filtrées par l'email de l'utilisateur connecté, et quatre d'entre
+    // elles l'affirmaient non nul (`currentUser!`). Il peut l'être — session expirée, profil
+    // pas encore chargé — et la page partait alors en TypeError pendant ngOnInit : écran
+    // blanc, sans message. Un seul garde en amont plutôt que quatre rustines : sans
+    // utilisateur, il n'y a rien à charger, c'est la bonne réponse et pas un cas d'erreur.
+    //
+    // Trouvé par le harnais de test (28/10/2026), jamais vu en usage parce qu'on arrive
+    // normalement ici connecté.
+    if (!this.currentUser?.email) { return; }
     this.loadCrises();
     this.loadOffres();
     this.loadDemandes();

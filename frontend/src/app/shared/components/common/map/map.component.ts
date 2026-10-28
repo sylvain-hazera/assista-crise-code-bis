@@ -1256,13 +1256,36 @@ private addHoverEffect() { // Show convex hull around clusters on hover
     });
   }
 
+  /** Vrai quand le navigateur n'a pas pu fournir de contexte WebGL : le gabarit affiche alors
+   * un message au lieu d'un cadre vide. */
+  carteIndisponible = false;
+
   private initializeMap(): void { // Initialize MapLibre map and add controls
-    this.map = new maplibregl.Map({
-      container: this.mapContainer.nativeElement,
-      style: styleCarte(),
-      center: this.center,
-      zoom: this.zoom
-    });
+    // MapLibre exige WebGL, et son absence n'est pas un cas théorique : accélération
+    // matérielle désactivée, poste ancien, pilote graphique en panne, politique d'entreprise.
+    // Sans ce garde, le constructeur lève et l'exception traverse ngAfterViewInit : la PAGE
+    // ENTIÈRE ne s'affiche pas, pas seulement la carte — sur une plateforme de crise consultée
+    // depuis le premier ordinateur disponible, c'est une page blanche au mauvais moment.
+    //
+    // Révélé par le harnais de test (28/10/2026) : quatre composants embarquant une carte
+    // échouaient tous sur « Failed to initialize WebGL », ce qui était la bonne nouvelle —
+    // le test disait vrai, c'est le composant qui était fragile.
+    try {
+      this.map = new maplibregl.Map({
+        container: this.mapContainer.nativeElement,
+        style: styleCarte(),
+        center: this.center,
+        zoom: this.zoom
+      });
+    } catch (erreur) {
+      console.warn('Carte indisponible : contexte WebGL impossible à créer.', erreur);
+      // Posé au tour suivant, et non tout de suite : on est dans ngAfterViewInit, donc la
+      // détection de changement de ce cycle est déjà passée. L'écrire directement déclenche
+      // NG0100 (« expression a changé après vérification »), qui est une vraie erreur en mode
+      // développement — et un bandeau qui n'apparaît qu'au prochain cycle en production.
+      Promise.resolve().then(() => this.carteIndisponible = true);
+      return;
+    }
 
     this.map.addControl(new maplibregl.NavigationControl(), 'top-right'); // Add zoom and rotation controls to the map
 

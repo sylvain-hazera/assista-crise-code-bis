@@ -1,8 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideHttpClient } from '@angular/common/http';
-import { provideHttpClientTesting } from '@angular/common/http/testing';
 
 import { InstitutionsComponent } from './institutions.component';
+import { fournisseursDeTest } from '../../testing/test-providers';
 
 describe('InstitutionsComponent', () => {
   let component: InstitutionsComponent;
@@ -11,7 +10,7 @@ describe('InstitutionsComponent', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [InstitutionsComponent],
-      providers: [provideHttpClient(), provideHttpClientTesting()]
+      providers: fournisseursDeTest()
     })
     .compileComponents();
 

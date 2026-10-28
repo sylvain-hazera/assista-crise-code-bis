@@ -1,0 +1,31 @@
+# Harnais de test du frontend.
+#
+# Le projet avait tout sauf le moyen de l'exécuter : karma.conf.js définit déjà un lanceur
+# ChromeHeadlessCI avec les bons drapeaux, angular.json a sa cible `test`, package.json son
+# script — mais rien n'installait Chromium, et le Dockerfile de production ne fait qu'un
+# `ng build`. Résultat : aucune page n'avait de test, et on ne pouvait pas en écrire.
+#
+# Même base que le builder de production (node:18-alpine, image épinglée par digest) pour que
+# les tests tournent sur la version de Node qui construit le bundle livré : un test vert sur une
+# autre version ne garantit rien de ce qui part en production.
+FROM node:18-alpine@sha256:8d6421d663b4c28fd3ebc498332f249011d118945588d0a35cb9bc4b8ca09d9e
+
+# Chromium d'Alpine, et non un téléchargement par Puppeteer : la version du paquet suit celle
+# des bibliothèques de l'image, alors qu'un binaire téléchargé casse au premier changement de
+# base avec une erreur illisible (symbole manquant au lancement).
+RUN apk add --no-cache chromium nss freetype harfbuzz ttf-freefont \
+    mesa-gl mesa-dri-gallium mesa-egl
+
+# Lu par karma-chrome-launcher. Sans lui, le lanceur cherche « google-chrome » et échoue sur un
+# « No binary for ChromeHeadless browser on your platform » qui ne dit pas quoi installer.
+ENV CHROME_BIN=/usr/bin/chromium-browser
+
+WORKDIR /app
+COPY package*.json ./
+RUN npm install
+COPY . .
+
+# Un seul passage, pas de veille, et le navigateur sans bac à sable (obligatoire dans un
+# conteneur non privilégié). Le code de sortie est celui de Karma : la commande échoue si un
+# test échoue, ce qui est la seule chose qui compte pour un harnais.
+CMD ["npx", "ng", "test", "--watch=false", "--browsers=ChromeHeadlessCI"]

@@ -1,4 +1,14 @@
 <div class="zone-map-wrapper">
+  @if (carteIndisponible) {
+    <p class="zone-map-indisponible">
+      <span class="material-icons">layers_clear</span>
+      <span>
+        <strong>Le tracé de zone sur carte n'est pas disponible sur cet ordinateur</strong>
+        (accélération graphique absente). Vous pouvez continuer&nbsp;: la zone peut être
+        définie par la liste des communes, sans dessin.
+      </span>
+    </p>
+  }
   <div class="zone-map-toolbar">
     <button type="button" class="btn-secondary sm" (click)="startDrawing()">
       <span class="material-icons">draw</span> Dessiner la zone

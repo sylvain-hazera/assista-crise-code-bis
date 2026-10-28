@@ -39,3 +39,21 @@
   overflow: hidden;
   border: 1px solid #e5e7eb;
 }
+
+/* Sans WebGL, le dessin de zone est impossible — mais le formulaire qui l'héberge, lui, doit
+   rester utilisable : la zone se définit aussi par la liste des communes. */
+.zone-map-indisponible {
+  display: flex;
+  align-items: flex-start;
+  gap: .5rem;
+  margin: 0 0 .75rem;
+  padding: .7rem .9rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #f9fafb;
+  color: #374151;
+  font-size: .88rem;
+  line-height: 1.55;
+
+  .material-icons { font-size: 1.1rem; color: #9ca3af; margin-top: .1rem; }
+}

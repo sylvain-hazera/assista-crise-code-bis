@@ -1,9 +1,11 @@
 import { TestBed } from '@angular/core/testing';
 import { AppComponent } from './app.component';
+import { fournisseursDeTest } from './testing/test-providers';
 
 describe('AppComponent', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
+      providers: fournisseursDeTest(),
       imports: [AppComponent],
     }).compileComponents();
   });
@@ -20,10 +22,8 @@ describe('AppComponent', () => {
     expect(app.title).toEqual('assista-crise-front');
   });
 
-  it('should render title', () => {
-    const fixture = TestBed.createComponent(AppComponent);
-    fixture.detectChanges();
-    const compiled = fixture.nativeElement as HTMLElement;
-    expect(compiled.querySelector('h1')?.textContent).toContain('Hello, assista-crise-front');
-  });
+  // Le test « should render title » laissé par `ng new` cherchait un « Hello,
+  // assista-crise-front » dans un <h1> : ce gabarit d'échafaudage a été remplacé le premier
+  // jour du projet. Il n'était jamais rouge parce que la suite ne démarrait pas, et il
+  // n'affirmait rien de réel — supprimé plutôt que rafistolé.
 });
