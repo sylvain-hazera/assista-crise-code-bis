@@ -35,10 +35,25 @@ def _make_pending_secours(pending_type, commune_code="38185", commune_name="Gren
     )
 
 
+def _make_aasc(nom):
+    """L'association doit EXISTER pour qu'on puisse la rejoindre — c'est la règle que ces
+    tests accompagnent désormais."""
+    itype, _ = InstitutionType.objects.get_or_create(code="aasc", defaults={"libelle": "AASC"})
+    institution, _ = Institution.objects.get_or_create(
+        nom=nom, defaults={"type": itype, "actif": True})
+    return institution
+
+
 @pytest.mark.django_db
 class TestAascAttachment:
 
-    def test_approve_account_creates_aasc_institution(self, api_client, admin):
+    def test_approve_account_attaches_to_existing_aasc(self, api_client, admin):
+        """Une AASC n'est plus créée depuis le nom saisi à l'inscription : une association
+        AGRÉÉE de sécurité civile existe sur la plateforme par un acte administratif, et un
+        bénévole qui la nommait de travers s'en fabriquait une seconde dont il devenait
+        responsable (voir test_rattachement_aasc.py pour la règle complète). Le parcours
+        d'approbation, lui, est inchangé : c'est ce que ce test garde."""
+        aasc = _make_aasc("AASC Grenoble Secours")
         pending = _make_pending_secours("aasc", institution_name="AASC Grenoble Secours")
 
         api_client.force_authenticate(user=admin)
@@ -48,13 +63,31 @@ class TestAascAttachment:
         assert response.status_code == status.HTTP_200_OK
         pending.refresh_from_db()
         assert pending.enabled is True
-        institution = Institution.objects.get(nom="AASC Grenoble Secours")
-        assert institution.type.code == "aasc"
-        assert ContactInstitution.objects.filter(institution=institution, utilisateur=pending).exists()
+        # Sur ce NOM précis : la base de test contient aussi l'association semée par la
+        # migration 0199, qui n'a rien à voir avec ce rattachement.
+        assert Institution.objects.filter(nom="AASC Grenoble Secours").count() == 1
+        assert ContactInstitution.objects.filter(institution=aasc, utilisateur=pending).exists()
         assert pending.pending_institution_type is None
         assert pending.pending_institution_name is None
 
+    def test_approve_account_ne_cree_pas_daasc_inconnue(self, api_client, admin):
+        """Et le compte reste approuvé : c'est le RATTACHEMENT qui est différé, pas la
+        validation de la personne. Ses informations déclarées sont conservées pour qu'un
+        rattachement manuel reste possible."""
+        pending = _make_pending_secours("aasc", institution_name="AASC Jamais Enregistrée")
+
+        api_client.force_authenticate(user=admin)
+        with patch("django.core.mail.send_mail"):
+            response = api_client.post(reverse("user-approve-account", kwargs={"pk": pending.id}))
+
+        assert response.status_code == status.HTTP_200_OK
+        pending.refresh_from_db()
+        assert pending.enabled is True
+        assert not Institution.objects.filter(nom="AASC Jamais Enregistrée").exists()
+        assert pending.pending_institution_name == "AASC Jamais Enregistrée"
+
     def test_aasc_attachment_direct_call_is_idempotent(self, admin):
+        aasc = _make_aasc("AASC Idempotence Test")
         pending = _make_pending_secours("aasc", institution_name="AASC Idempotence Test")
 
         first = attach_secours_user_to_institution(pending)
@@ -62,7 +95,7 @@ class TestAascAttachment:
         # pending_* déjà nettoyés : un second appel ne retrouve plus le type, ne fait rien.
         second = attach_secours_user_to_institution(pending)
 
-        assert first is not None
+        assert first.pk == aasc.pk
         assert second is None
         assert Institution.objects.filter(nom="AASC Idempotence Test").count() == 1
         assert ContactInstitution.objects.filter(institution=first, utilisateur=pending).count() == 1

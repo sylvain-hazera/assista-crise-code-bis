@@ -77,6 +77,9 @@ class TestAttachUserWithRoleGrantsDemoAccess:
 class TestSecoursAttachmentGrantsDemoAccess:
 
     def test_aasc_attachment_grants_institution_and_demo_role(self):
+        # L'association doit exister : elle n'est plus créée depuis le nom déclaré à
+        # l'inscription (voir test_rattachement_aasc.py).
+        _make_institution("AASC Test", type_code="aasc")
         user = _make_user(
             "aasc@test.fr", type="SECOURS", enabled=False,
             pending_institution_type="aasc", pending_institution_name="AASC Test",

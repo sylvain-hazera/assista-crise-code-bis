@@ -478,6 +478,46 @@ rattachement d'une mairie.
   `uq_contact_principal_institution` n'autorise qu'un contact principal par institution, donc
   le drapeau ne peut pas voyager tel quel.
 
+### 5.12 bis Associations agréées de sécurité civile (AASC)
+
+Premier partenaire en marque blanche : « Réserve Résilience - Casques Jaunes », semée par la
+migration 0199 avec son branding et ses deux hostnames (`cj.assista-crise.fr` et
+`app.reserve-resilience.org`, pointé en CNAME par le partenaire). Portée nationale, donc pas de
+`commune_code`.
+
+- **On rejoint une AASC, on ne la fabrique pas en la nommant.** `attach_secours_user_to_institution`
+  faisait un `get_or_create` sur le nom saisi à l'inscription : un bénévole tapant « Casques
+  jaunes » au lieu de « Réserve Résilience - Casques Jaunes » créait une seconde association et
+  s'y retrouvait « Créateur », contact principal **et** responsable. Or une AASC est une
+  association *agréée* : son existence sur la plateforme est un acte administratif, jamais
+  l'effet d'une faute de frappe. `trouver_aasc` compare sur un nom normalisé (casse, accents,
+  espaces) et **ne crée rien** ; sans correspondance, les `pending_*` sont conservés pour un
+  rattachement manuel, comme pour une RCSC dont la mairie n'est pas encore enregistrée.
+- **Un membre tout juste accepté est `INTERVENANT`.** Le défaut d'`assign_default_institution_role`
+  est « RESPONSABLE si l'institution n'a aucune affectation, REGULATEUR sinon » : les deux sont
+  absurdes pour quelqu'un dont la candidature vient d'être acceptée, et le niveau se déduisait
+  du hasard de l'ordre d'inscription. C'est au bureau d'élever ce niveau quand la personne est
+  formée.
+- **`ContactInstitution.membre_bureau`** porte la gouvernance associative : administrer les
+  membres, prendre en charge une candidature, valider les étapes d'un recrutement. Porté par le
+  **rattachement** et non par le compte, délibérément — on est au bureau d'UNE association, la
+  même personne peut être simple membre ailleurs, et les cinq `UserRole` sont globaux. Ce n'est
+  pas non plus un `RoleOperationnel` : ceux-là servent l'opérationnel de crise.
+- **Le bureau valide ses propres candidats, où qu'ils habitent**
+  (`_est_bureau_de_laasc_demandee`). `approve_account` bornait une autorité locale aux comptes
+  de son propre code postal, ce qui rendait le recrutement impossible dès le deuxième village —
+  or une AASC recrute à l'échelle d'un département. L'élargissement est limité à un cas : la
+  candidature à une AASC nommément déclarée, dont le validateur est au bureau. Le contrôle
+  territorial des mairies est inchangé, et un test le vérifie.
+
+Reste à faire, dans cet ordre : le circuit de recrutement (demande à rejoindre, étapes validées
+par le bureau, lien d'invitation), la section RH (annuaire, qualifications avec échéances,
+adhésion sans cotisation, date d'aptitude), puis les disponibilités à 15 jours pour les
+mobilisations. Les qualifications par personne avec échéance n'existent PAS aujourd'hui :
+`Competence` n'a pas de date et `AffectationCompetence` lie une compétence à une équipe sur une
+crise, pas à une personne. Les disponibilités, elles, ont déjà leur socle
+(`DisponibiliteOperationnelle`, pendue à `AffectationRoleOperationnel`).
+
 ### 5.12 Sites sensibles et open data (`core/opendata/`)
 
 Les enjeux du territoire d'une commune (`SiteSensible` : écoles, structures de soins, sites

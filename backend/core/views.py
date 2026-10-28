@@ -1995,10 +1995,17 @@ class UserViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_403_FORBIDDEN
             )
 
-        # Les institutions ne peuvent valider que leur code postal
-        if validator_role == UserRole.LOCAL_AUTHORITY and validator.postal_code != user_to_approve.postal_code:
+        # Les institutions ne peuvent valider que leur code postal — sauf un membre du bureau
+        # de l'association que le candidat demande à rejoindre, qui le valide où qu'il habite.
+        # Une AASC recrute à l'échelle d'un département ou d'une région : exiger le même code
+        # postal que le validateur rendait le recrutement impossible dès le deuxième village,
+        # alors que personne n'est mieux placé que son bureau pour accepter un bénévole.
+        if (validator_role == UserRole.LOCAL_AUTHORITY
+                and validator.postal_code != user_to_approve.postal_code
+                and not _est_bureau_de_laasc_demandee(validator, user_to_approve)):
             return Response(
-                {'error': 'Vous ne pouvez valider que les comptes de votre territoire'},
+                {'error': 'Vous ne pouvez valider que les comptes de votre territoire, ou les '
+                          'candidatures à une association dont vous êtes au bureau.'},
                 status=status.HTTP_403_FORBIDDEN
             )
         
@@ -13978,6 +13985,25 @@ class DeclarationSecuriteViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
         droits institutionnels pour voir celles des autres."""
         declarations = self.get_queryset().filter(declare_par=request.user)
         return Response(self.get_serializer(declarations, many=True).data)
+
+
+def _est_bureau_de_laasc_demandee(validateur, candidat) -> bool:
+    """Le validateur est-il au bureau de l'association que ce candidat demande à rejoindre ?
+
+    Ne contourne PAS le contrôle territorial des mairies : il l'élargit sur un seul cas
+    précis, la candidature à une AASC nommément déclarée à l'inscription. Le lien est vérifié
+    des deux côtés — l'association existe (jamais créée ici, voir trouver_aasc) et le
+    validateur y est au bureau (ContactInstitution.membre_bureau, actif)."""
+    from .institution_attachment import trouver_aasc
+
+    if (candidat.pending_institution_type or '').strip().lower() != 'aasc':
+        return False
+    aasc = trouver_aasc(candidat.pending_institution_name)
+    if aasc is None:
+        return False
+    return ContactInstitution.objects.filter(
+        institution=aasc, utilisateur=validateur, membre_bureau=True, actif=True,
+    ).exists()
 
 
 def _institution_est_autorite_locale(institution) -> bool:

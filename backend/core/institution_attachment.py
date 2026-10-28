@@ -6,6 +6,9 @@ institution réelle sur la seule foi d'un email non vérifié permettrait à qui
 passer pour un employé d'une institution (ex: une mairie, un SDIS) sans jamais recevoir ni
 cliquer sur aucun email.
 """
+import logging
+import unicodedata
+
 from .audit import audit_log, send_mail_logged
 from .branding import branding_for_institution, send_branded_mail
 from .auth_validation import InstitutionEmailValidator
@@ -23,6 +26,8 @@ from .models import (
     User,
     UserRole,
 )
+
+logger = logging.getLogger(__name__)
 from .permissions import get_active_environment
 
 
@@ -389,6 +394,44 @@ def assign_default_institution_role(user, institution=None):
     )
 
 
+def _nom_comparable(valeur):
+    """Nom réduit à ce qui l'identifie : sans casse, sans accents, espaces normalisés.
+
+    « Réserve Résilience - Casques Jaunes » et « reserve resilience -  casques jaunes » sont la
+    même association ; les comparer brutalement en créait deux."""
+    texte = unicodedata.normalize('NFD', (valeur or '').strip())
+    texte = ''.join(c for c in texte if unicodedata.category(c) != 'Mn')
+    return ' '.join(texte.lower().split())
+
+
+def trouver_aasc(nom_declare):
+    """L'AASC déjà enregistrée qui correspond au nom déclaré, ou None.
+
+    Volontairement SANS création (voir attach_secours_user_to_institution). La comparaison
+    normalisée rattrape les variantes de casse, d'accents et d'espaces — pas un nom réellement
+    différent : c'est au lien d'invitation et à la liste des associations de faire CHOISIR
+    l'AASC plutôt que de la faire saisir."""
+    cible = _nom_comparable(nom_declare)
+    if not cible:
+        return None
+    for institution in Institution.objects.filter(type__code__iexact='aasc', actif=True):
+        if _nom_comparable(institution.nom) == cible:
+            return institution
+    return None
+
+
+def _affecter_role(user, institution, role_code):
+    """Affecte un rôle opérationnel PRÉCIS, sans l'heuristique « RESPONSABLE si personne
+    d'autre, REGULATEUR sinon » d'assign_default_institution_role : pour un membre
+    d'association qui vient d'être accepté, ce niveau se décide, il ne se déduit pas du hasard
+    de l'ordre d'inscription."""
+    role, _ = RoleOperationnel.objects.get_or_create(
+        code=role_code, defaults={'libelle': role_code.title()})
+    AffectationRoleOperationnel.objects.get_or_create(
+        utilisateur=user, institution=institution, role=role, competence=None,
+    )
+
+
 def attach_secours_user_to_institution(user, request=None):
     """Rattache un compte SECOURS (Secours organisés) selon la sous-catégorie déclarée à
     l'inscription (`user.pending_institution_type`, posé par UserSerializer.create pour
@@ -418,22 +461,26 @@ def attach_secours_user_to_institution(user, request=None):
     matched_institution = None
 
     if pending_type == 'aasc':
-        aasc_type = InstitutionType.objects.filter(code='aasc').first()
-        if not aasc_type:
-            aasc_type = InstitutionType.objects.create(code='aasc', libelle='AASC')
-        matched_institution, institution_created = Institution.objects.get_or_create(
-            nom=user.pending_institution_name or user.email,
-            defaults={
-                'type': aasc_type, 'email': user.email, 'actif': True,
-                'commune_code': user.pending_commune_code or '',
-                'commune_nom': user.pending_commune_name or '',
-            },
-        )
-        # assign_default_institution_role pose l'affectation opérationnelle (RESPONSABLE en
-        # premier), mais ne crée jamais de ContactInstitution — à faire nous-même, comme
-        # find_or_create_institution_from_annuaire le fait pour le rattachement mairie.
+        # Une AASC n'est PAS créée par la personne qui demande à la rejoindre. Ce bloc faisait
+        # un `get_or_create` sur le nom saisi à l'inscription : un bénévole tapant « Casques
+        # jaunes » au lieu de « Réserve Résilience - Casques Jaunes » fabriquait une seconde
+        # association, s'y retrouvait « Créateur », contact principal ET responsable. Or une
+        # AASC est une association AGRÉÉE de sécurité civile : son existence sur la plateforme
+        # est un acte administratif, jamais l'effet d'une faute de frappe.
+        #
+        # Sans correspondance : on ne rattache rien et on rend None. L'appelant conserve alors
+        # les `pending_*` pour un rattachement manuel (voir approve_account), exactement comme
+        # pour une RCSC dont la mairie n'est pas encore enregistrée.
+        matched_institution = trouver_aasc(user.pending_institution_name)
+        if matched_institution is None:
+            logger.warning(
+                "Compte AASC approuvé sans association correspondante (%r) : rattachement "
+                "manuel nécessaire", user.pending_institution_name,
+            )
+            return None
+
         contact, contact_created = _get_or_create_contact_institution(
-            matched_institution, user, 'Créateur', institution_created,
+            matched_institution, user, 'Membre',
         )
         if contact_created and request is not None:
             audit_log(
@@ -444,7 +491,10 @@ def attach_secours_user_to_institution(user, request=None):
                 commentaire=f"Rattachement AASC de {user.email} à {matched_institution.nom}",
             )
         grant_institution_and_demo_access(user, matched_institution, request)
-        assign_default_institution_role(user, matched_institution)
+        # « Intervenant » et non le défaut REGULATEUR : quelqu'un qui vient d'être accepté
+        # comme membre n'est pas régulateur de crise. C'est au bureau d'élever ce niveau quand
+        # la personne est formée (voir ContactInstitution.membre_bureau).
+        _affecter_role(user, matched_institution, 'INTERVENANT')
 
     elif pending_type == 'rcsc':
         if user.pending_commune_code:

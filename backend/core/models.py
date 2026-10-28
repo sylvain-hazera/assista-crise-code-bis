@@ -5020,6 +5020,22 @@ class ContactInstitution(EnvironmentScopedModel):
         auto_now_add=True
     )
 
+    # Gouvernance de l'institution, et non rôle opérationnel de crise : un membre du bureau
+    # d'une association administre ses membres, prend en charge les candidatures et valide les
+    # étapes d'un recrutement (voir § 5.13 de DOCUMENTATION.md).
+    #
+    # Porté par le RATTACHEMENT et non par le compte, délibérément : on est au bureau d'UNE
+    # association précise. La même personne peut être au bureau des Casques Jaunes et simple
+    # membre d'une autre AASC, et les cinq rôles de compte (UserRole) sont globaux — en ajouter
+    # un sixième obligerait à rejuger toutes les gardes du projet pour une notion qui n'est pas
+    # globale. Ce n'est pas non plus un RoleOperationnel : ceux-là servent l'opérationnel de
+    # crise (Responsable, Régulateur, Correspondant sécurité), pas la gouvernance associative.
+    membre_bureau = models.BooleanField(
+        default=False,
+        help_text="Membre du bureau de cette institution : administre les membres et prend en "
+                  "charge les candidatures.",
+    )
+
     class Meta:
 
         constraints = [
