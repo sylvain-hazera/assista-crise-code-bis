@@ -345,7 +345,21 @@ class StatutImplication(models.TextChoices):
 
 class ImplicationInstitution(EnvironmentScopedModel):
     """Rattachement d'une institution à une crise : impliquée (sa commune est touchée) et/ou
-    acteur opérationnel. Les deux peuvent coexister."""
+    acteur opérationnel. Les deux peuvent coexister.
+
+    **C'est aussi la porte qui ouvre le territoire** à une institution qui n'en a pas (une
+    AASC nationale, typiquement). Règle posée le 28/10/2026 : par défaut les droits valent
+    **pour la crise et commune par commune** — `communes` dit lesquelles, et une liste vide
+    signifie toutes celles de la crise. Chaque mairie accepte ainsi pour son seul territoire
+    sur une crise multi-communes, sans voir ni bloquer les décisions des autres.
+
+    Les droits de longue durée, eux, ne passent pas par ici : c'est l'objet d'une convention,
+    portée par DelegationCompetence (qui a déjà ses `communes`, son `active` et sa `date_fin`).
+    Les deux sources sont réunies par `zone_scoping.communes_accordees`.
+
+    On ne duplique volontairement pas la notion de mandat : le périmètre fin se pose ICI, sur
+    l'implication qui gouverne déjà les droits, plutôt que dans un second modèle qui finirait
+    par diverger de celui-ci."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
@@ -400,6 +414,12 @@ class ImplicationInstitution(EnvironmentScopedModel):
     # ImplicationInstitutionViewSet.valider/refuser).
     statut = models.CharField(
         max_length=20, choices=StatutImplication.choices, default=StatutImplication.VALIDEE,
+    )
+
+    communes = models.JSONField(
+        default=list, blank=True,
+        help_text="Codes INSEE des communes de la crise sur lesquelles cette institution est "
+                  "acceptée. Liste vide = toutes les communes de la crise.",
     )
 
     class Meta:
