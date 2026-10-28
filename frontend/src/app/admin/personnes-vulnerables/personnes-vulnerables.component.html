@@ -1,22 +1,67 @@
 <div class="vulnerables-page">
 
+  <!-- Bandeau permanent : affiché tant que l'écran est ouvert, et non refermable. Un rappel
+       qu'on peut masquer cesse d'être un rappel, et le secret professionnel vaut pendant toute
+       la consultation, pas seulement à la première seconde. Le texte vient du serveur. -->
+  @if (etat?.rappel_bandeau) {
+    <div class="bandeau-secret" role="note">
+      <span class="material-icons">lock</span>
+      <span>{{ etat?.rappel_bandeau }}</span>
+    </div>
+  }
+
   <header class="page-header">
     <div class="header-left">
       <h1><span class="material-icons">accessible</span> Personnes vulnérables</h1>
-      <p class="subtitle">{{ filteredPersonnes.length }} fiche{{ filteredPersonnes.length > 1 ? 's' : '' }}</p>
+      @if (etat?.a_un_titre && etat?.engagement_signe) {
+        <p class="subtitle">{{ filteredPersonnes.length }} fiche{{ filteredPersonnes.length > 1 ? 's' : '' }}</p>
+      }
     </div>
-    <button type="button" class="btn-primary" (click)="openCreateModal()">
-      <span class="material-icons">add</span> Nouvelle fiche
-    </button>
+    @if (peutEcrire) {
+      <button type="button" class="btn-primary" (click)="openCreateModal()">
+        <span class="material-icons">add</span> Nouvelle fiche
+      </button>
+    }
   </header>
 
-  <p class="help-text">
-    <span class="material-icons">info</span>
-    Registre communal des personnes vulnérables (recensement PCS) — catégories fonctionnelles
-    uniquement (besoin d'assistance à l'évacuation, isolement...), jamais une donnée médicale.
-    Accès réservé à la RCSC/au responsable de la mairie, ou à une institution ayant reçu une
-    délégation explicite sur cette commune.
-  </p>
+  @if (sansTitre) {
+    <!-- Dire quoi faire, et pas seulement que c'est refusé : la personne n'a aucun moyen de
+         deviner que l'habilitation est un acte nominatif du maire. -->
+    <div class="encart-refus">
+      <span class="material-icons">how_to_reg</span>
+      <div>
+        <h2>Vous n'êtes pas désigné pour tenir ce registre</h2>
+        <p>
+          L'article R. 121-7 du code de l'action sociale et des familles réserve la tenue du
+          registre communal des personnes vulnérables au maire et aux agents de la commune, du
+          CCAS ou du CIAS <strong>nommément désignés</strong> par lui.
+        </p>
+        <p>
+          Demandez votre habilitation au maire ou à l'un de ses adjoints : il la prononce depuis
+          la page <em>Habilitations registre</em>, et elle vous sera attribuée nominativement.
+        </p>
+      </div>
+    </div>
+  }
+
+  @if (etat?.lecture_seule_administrateur) {
+    <p class="help-text help-admin">
+      <span class="material-icons">visibility</span>
+      Lecture d'exploitation : le registre est tenu par la collectivité, seule responsable de
+      traitement. Vous ne pouvez pas y inscrire, modifier ni radier une personne, et chacune de
+      vos consultations est journalisée.
+    </p>
+  }
+
+  @if (etat?.a_un_titre && etat?.engagement_signe) {
+    <p class="help-text">
+      <span class="material-icons">info</span>
+      Catégories fonctionnelles uniquement (besoin d'assistance à l'évacuation, isolement…),
+      jamais une donnée médicale ni un diagnostic. Finalités autorisées : contact en cas de plan
+      d'alerte, accès aux droits, lutte contre l'isolement — toute réutilisation à des fins
+      électorales ou commerciales est interdite.
+    </p>
+  }
 
   @if (errorMessage) {
     <div class="toast toast-err"><span class="material-icons">error_outline</span> {{ errorMessage }}</div>
@@ -26,7 +71,7 @@
     <div class="loading">Chargement...</div>
   }
 
-  @if (!isLoading) {
+  @if (!isLoading && etat?.a_un_titre && etat?.engagement_signe) {
     <div class="toolbar">
       <div class="search-box">
         <span class="material-icons">search</span>
@@ -60,9 +105,11 @@
               </span>
             </td>
             <td class="actions">
-              <button type="button" class="icon-btn" (click)="radierPersonne(personne, $event)" title="Radier">
-                <span class="material-icons">delete_outline</span>
-              </button>
+              @if (peutEcrire) {
+                <button type="button" class="icon-btn" (click)="radierPersonne(personne, $event)" title="Radier">
+                  <span class="material-icons">delete_outline</span>
+                </button>
+              }
             </td>
           </tr>
         } @empty {
@@ -80,6 +127,13 @@
       (saved)="onSaved()"
       (closed)="closeModal()">
     </app-personne-vulnerable-modal>
+  }
+
+  <!-- En dernier, et sans condition de fermeture : c'est lui qui recouvre tout le reste tant
+       que l'engagement n'est pas pris. -->
+  @if (engagementARemplir && etat) {
+    <app-engagement-secret-modal [etat]="etat" (signe)="onEngagementSigne()">
+    </app-engagement-secret-modal>
   }
 
 </div>

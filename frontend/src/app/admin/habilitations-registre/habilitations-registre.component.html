@@ -1,0 +1,235 @@
+<div class="habilitations-page">
+
+  <header class="page-header">
+    <div class="header-left">
+      <h1><span class="material-icons">how_to_reg</span> Habilitations registre</h1>
+      <p class="subtitle">
+        Personnes désignées pour tenir le registre communal des personnes vulnérables
+        @if (etat?.institution_nom) { — {{ etat?.institution_nom }} }
+      </p>
+    </div>
+    @if (peutDesigner && !formOuvert) {
+      <button type="button" class="btn-primary" (click)="ouvrirForm()">
+        <span class="material-icons">person_add</span> Désigner une personne
+      </button>
+    }
+  </header>
+
+  <p class="help-text">
+    <span class="material-icons">gavel</span>
+    L'article R. 121-7 du code de l'action sociale et des familles réserve la tenue du registre
+    au maire et aux agents de la commune, du CCAS ou du CIAS <strong>nommément désignés</strong>
+    par lui, tenus au secret professionnel. Une appartenance d'équipe ne vaut pas désignation.
+  </p>
+
+  @if (!isLoading && !peutDesigner) {
+    <div class="encart-refus">
+      <span class="material-icons">block</span>
+      <div>
+        <h2>Seule la collectivité désigne</h2>
+        <p>
+          Cette page est réservée aux comptes d'une collectivité territoriale. Un administrateur
+          de la plateforme ne peut pas désigner à la place du maire : il n'est que sous-traitant
+          au sens du RGPD, la commune restant seule responsable de traitement.
+        </p>
+      </div>
+    </div>
+  }
+
+  @if (errorMessage) {
+    <div class="toast toast-err"><span class="material-icons">error_outline</span> {{ errorMessage }}</div>
+  }
+  @if (successMessage) {
+    <div class="toast toast-ok"><span class="material-icons">check_circle_outline</span> {{ successMessage }}</div>
+  }
+
+  @if (isLoading) {
+    <div class="loading">Chargement...</div>
+  }
+
+  @if (formOuvert) {
+    <section class="form-designation">
+      <h2>Nouvelle désignation</h2>
+
+      <div class="champ">
+        <label for="candidat">Personne désignée</label>
+        <select id="candidat" [(ngModel)]="nouvelle.utilisateur" name="candidat">
+          <option value="">— Choisir —</option>
+          @for (candidat of candidatsDisponibles; track candidat.id) {
+            <option [value]="candidat.id">
+              {{ candidat.nom }}{{ candidat.rcsc ? ' · RCSC' : '' }} — {{ candidat.email }}
+            </option>
+          }
+        </select>
+        @if (candidatsDisponibles.length === 0) {
+          <p class="aide">
+            Aucune personne désignable : seuls les comptes rattachés à votre collectivité
+            peuvent l'être. Une institution extérieure accède au registre par une délégation de
+            compétence, pas par une désignation nominative.
+          </p>
+        } @else {
+          <p class="aide">
+            « RCSC » signale les membres de la réserve communale et les responsables désignés.
+            Cette appartenance n'ouvre aucun droit par elle-même : elle les met simplement en
+            tête de liste.
+          </p>
+        }
+      </div>
+
+      <div class="champ">
+        <label for="qualite">Vous désignez en qualité de</label>
+        <select id="qualite" [(ngModel)]="nouvelle.qualite_accordant" name="qualite">
+          <option value="">— Choisir —</option>
+          @for (qualite of QUALITES; track qualite.valeur) {
+            <option [value]="qualite.valeur">{{ qualite.libelle }}</option>
+          }
+        </select>
+      </div>
+
+      @if (autoDesignationInterdite) {
+        <p class="avertissement">
+          <span class="material-icons">warning</span>
+          Un agent ne peut pas se désigner lui-même : l'habilitation doit émaner du maire ou d'un
+          adjoint. C'est tout l'objet de la désignation nominative.
+        </p>
+      }
+
+      <div class="champ">
+        <label for="fonction">Fonction de la personne désignée <span class="facultatif">(facultatif)</span></label>
+        <input id="fonction" type="text" [(ngModel)]="nouvelle.fonction" name="fonction"
+               placeholder="Agent d'accueil du CCAS, responsable du pôle solidarité…"/>
+        <p class="aide">Trace le besoin d'en connaître (art. R. 121-8).</p>
+      </div>
+
+      <div class="champ">
+        <label for="date-fin">Échéance <span class="facultatif">(facultatif)</span></label>
+        <input id="date-fin" type="date" [(ngModel)]="nouvelle.date_fin" name="date-fin"/>
+        <p class="aide">
+          Utile pour un remplacement saisonnier : l'habilitation se referme d'elle-même, sans
+          qu'il faille y penser.
+        </p>
+      </div>
+
+      <!-- L'attestation est nommée mot pour mot. Un simple « OK » qui enregistrerait une
+           attestation sans la formuler serait une signature extorquée. -->
+      <label class="attestation">
+        <input type="checkbox" [(ngModel)]="nouvelle.attestation" name="attestation"/>
+        <span>
+          J'atteste sur l'honneur exercer la qualité déclarée ci-dessus et avoir le droit de
+          désigner cette personne pour la tenue du registre communal des personnes vulnérables.
+          Je sais que cette attestation est enregistrée à mon nom, horodatée, et conservée dans
+          le journal de la plateforme.
+        </span>
+      </label>
+
+      <div class="actions-form">
+        <button type="button" class="btn-secondary" (click)="fermerForm()">Annuler</button>
+        <button type="button" class="btn-primary" [disabled]="!formValide || enregistrement"
+                (click)="designer()">
+          <span class="material-icons">how_to_reg</span>
+          {{ enregistrement ? 'Enregistrement…' : 'Prononcer l\'habilitation' }}
+        </button>
+      </div>
+    </section>
+  }
+
+  @if (!isLoading && peutDesigner) {
+    <h2 class="titre-section">Habilitations en cours ({{ actives.length }})</h2>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Personne</th>
+          <th>Fonction</th>
+          <th>Désignée par</th>
+          <th>Depuis</th>
+          <th>Échéance</th>
+          <th>Engagement au secret</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (habilitation of actives; track habilitation.id) {
+          <tr>
+            <td>
+              <strong>{{ habilitation.utilisateur_nom }}</strong>
+              <span class="email">{{ habilitation.utilisateur_email }}</span>
+            </td>
+            <td>{{ habilitation.fonction || '—' }}</td>
+            <td>
+              {{ habilitation.accordee_par_nom }}
+              <span class="qualite">{{ habilitation.qualite_accordant_libelle }}</span>
+            </td>
+            <td>{{ habilitation.date_octroi | date:'dd/MM/yyyy' }}</td>
+            <td>
+              @if (habilitation.date_fin) {
+                <span [class.echu]="!habilitation.valide">
+                  {{ habilitation.date_fin | date:'dd/MM/yyyy' }}
+                </span>
+              } @else { — }
+            </td>
+            <td>
+              <!-- Une habilitation non contresignée est prononcée mais n'ouvre aucune fiche :
+                   le dire ici évite de croire son équipe opérationnelle à tort. -->
+              @if (habilitation.engagement_signe) {
+                <span class="badge badge-ok">Signé</span>
+              } @else {
+                <span class="badge badge-attente">En attente de signature</span>
+              }
+            </td>
+            <td class="actions">
+              <button type="button" class="icon-btn" (click)="retirer(habilitation)"
+                      title="Retirer l'habilitation">
+                <span class="material-icons">person_remove</span>
+              </button>
+            </td>
+          </tr>
+        } @empty {
+          <tr>
+            <td colspan="7" class="empty">
+              Personne n'est habilité : le registre est fermé à tous. Commencez par vous désigner
+              vous-même si vous êtes le maire ou l'un de ses adjoints.
+            </td>
+          </tr>
+        }
+      </tbody>
+    </table>
+
+    @if (retirees.length > 0) {
+      <h2 class="titre-section">
+        Habilitations retirées ({{ retirees.length }})
+      </h2>
+      <p class="help-text">
+        <span class="material-icons">history</span>
+        Conservées à dessein : c'est ce qui permet d'établir, plus tard, qui avait accès au
+        registre à une date donnée.
+      </p>
+      <table class="data-table table-retirees">
+        <thead>
+          <tr>
+            <th>Personne</th>
+            <th>Désignée par</th>
+            <th>Période</th>
+            <th>Retirée par</th>
+            <th>Motif</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (habilitation of retirees; track habilitation.id) {
+            <tr>
+              <td>{{ habilitation.utilisateur_nom }}</td>
+              <td>{{ habilitation.accordee_par_nom }}</td>
+              <td>
+                {{ habilitation.date_octroi | date:'dd/MM/yyyy' }}
+                →
+                {{ habilitation.date_retrait | date:'dd/MM/yyyy' }}
+              </td>
+              <td>{{ habilitation.retiree_par_nom || '—' }}</td>
+              <td>{{ habilitation.motif_retrait || '—' }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    }
+  }
+
+</div>

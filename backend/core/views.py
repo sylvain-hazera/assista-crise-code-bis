@@ -219,6 +219,8 @@ from .models import (
     InterlocuteurAlertePCS, NotificationAlertePCS, ModeAlertePCS, StatutNotificationPCS, ReponseContactPCS,
     RisqueMajeurType, RisqueCommunal,
     TypeVulnerabilite, PersonneVulnerable,
+    HabilitationRegistreVulnerables, QualiteDesignataire,
+    VERSION_ENGAGEMENT_SECRET_REGISTRE,
     TYPES_COLLECTIVITE_TERRITORIALE,
     CandidatureAssociation, InvitationAssociation,
     Qualification, QualificationMembre,
@@ -547,6 +549,7 @@ from .serializers import (
     RisqueCommunalSerializer,
     TypeVulnerabiliteSerializer,
     PersonneVulnerableSerializer,
+    HabilitationRegistreVulnerablesSerializer,
     SecteurRechercheSerializer,
     PlanSerializer,
     PlanMissionModeleSerializer,
@@ -5952,13 +5955,44 @@ class PersonneVulnerableViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVie
             qs = _filter_actif(self.request, qs)
         return filter_personnes_vulnerables_queryset(self.request, qs)
 
-    def _refuser_si_non_accede(self, commune_code):
-        from .vulnerabilites import institution_accede_commune
-        if not institution_accede_commune(self.request, commune_code):
+    def _refuser_si_administrateur(self):
+        """Écrire au registre est un acte de la collectivité, jamais de l'éditeur.
+
+        Posé en tête de garde, et pas laissé au hasard de la chute des conditions : sans ce
+        garde explicite, un administrateur sans rattachement se faisait renvoyer « aucune
+        institution rattachée à votre compte », ce qui laissait croire à un défaut de
+        configuration alors que c'est un refus de principe."""
+        if get_effective_role(self.request) == UserRole.ADMINISTRATOR:
             raise PermissionDenied(
-                "Vous n'avez pas accès au registre des personnes vulnérables de cette commune "
-                "(réservé à la RCSC/au RESPONSABLE de la mairie, ou à une délégation de "
-                "compétence active)."
+                "Le registre des personnes vulnérables est tenu par la collectivité, seule "
+                "responsable de traitement : l'article R. 121-7 du CASF en réserve la tenue aux "
+                "personnes nommément désignées par le maire. Un administrateur de la plateforme, "
+                "sous-traitant au sens du RGPD, y a une lecture d'exploitation journalisée mais "
+                "n'y inscrit, ne modifie et ne radie personne."
+            )
+
+    def _refuser_si_non_accede(self, commune_code):
+        """Garde d'écriture, avec un refus qui dit LEQUEL des deux actes manque.
+
+        Un 403 unique rendrait la page inexplicable : « vous n'êtes pas désigné, demandez-le au
+        maire » et « il vous reste à signer votre engagement » appellent deux gestes différents,
+        et le second est à un clic de l'utilisateur lui-même."""
+        from .vulnerabilites import designation_en_place, engagement_secret_signe
+
+        self._refuser_si_administrateur()
+        if not designation_en_place(self.request, commune_code):
+            raise PermissionDenied(
+                "Vous n'êtes pas désigné pour tenir le registre des personnes vulnérables de "
+                "cette commune. L'article R. 121-7 du CASF réserve cette tenue aux personnes "
+                "nommément désignées par le maire — demandez votre habilitation à la mairie. "
+                "Un administrateur de la plateforme ne peut pas inscrire à votre place : le "
+                "registre appartient à la collectivité."
+            )
+        if not engagement_secret_signe(self.request.user):
+            raise PermissionDenied(
+                "Vous devez d'abord signer votre engagement au secret professionnel pour "
+                "accéder au registre. Rendez-vous sur la page du registre : l'engagement vous "
+                "sera présenté."
             )
 
     def _institution_declarante_or_400(self):
@@ -5977,6 +6011,9 @@ class PersonneVulnerableViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVie
         return institution
 
     def perform_create(self, serializer):
+        # Le refus de principe AVANT la resolution de l'institution : un administrateur n'a pas
+        # a s'entendre dire qu'il lui manque un rattachement.
+        self._refuser_si_administrateur()
         institution = self._institution_declarante_or_400()
         commune_code = serializer.validated_data.get('commune_code') or institution.commune_code
         self._refuser_si_non_accede(commune_code)
@@ -6009,6 +6046,317 @@ class PersonneVulnerableViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVie
             request=self.request, action_code="SUPPRESSION", objet_type="PersonneVulnerable",
             objet_id=instance.id, commentaire="Radiation personne vulnérable",
         )
+
+
+class HabilitationRegistreVulnerablesViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
+    """Désignations nominatives au registre des personnes vulnérables (art. R. 121-7 du CASF).
+
+    Deux actes y vivent, séparés exprès :
+
+    - **Désigner** (`create`, `retirer`) : acte de la collectivité. Le désignant déclare sa
+      qualité — maire, adjoint, ou agent habilité par le maire — et l'atteste sur l'honneur. La
+      plateforme ne peut pas vérifier qu'un compte est bien celui du maire ; l'attestation est
+      précisément le mécanisme qui fait porter la responsabilité de cette déclaration sur son
+      auteur, nommément et horodatée.
+    - **S'engager** (`signer-engagement`) : acte personnel du désigné, qui s'oblige au secret
+      professionnel. Tant qu'il n'est pas pris, la désignation n'ouvre aucune fiche.
+
+    `mon-etat` est l'unique source de ces informations pour le front : le texte de l'engagement
+    et le rappel du bandeau viennent du serveur et non du code de la page, parce qu'un texte
+    juridique signé doit avoir une version et une seule origine."""
+
+    queryset = HabilitationRegistreVulnerables.objects.select_related(
+        'institution', 'utilisateur', 'accordee_par', 'retiree_par'
+    ).all()
+    serializer_class = HabilitationRegistreVulnerablesSerializer
+    filterset_fields = ['institution', 'utilisateur', 'actif']
+
+    def get_permissions(self):
+        return [IsInstitutionalActor()]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        user = self.request.user
+        if get_effective_role(self.request) == UserRole.ADMINISTRATOR:
+            return qs
+        institution = getattr(user, 'institution', None)
+        # Chacun voit sa propre désignation ; les membres de la collectivité voient celles de
+        # leur collectivité. Savoir qui tient le registre n'est pas une donnée du registre :
+        # c'est l'organisation interne de la mairie, et R. 121-2 lui impose déjà d'informer ses
+        # habitants de l'existence du dispositif.
+        filtre = Q(utilisateur=user)
+        if institution is not None:
+            filtre |= Q(institution=institution)
+        return qs.filter(filtre)
+
+    #: Se désigner soi-même n'est admis qu'au maire et à ses adjoints : eux détiennent la
+    #: compétence, et sans cela une commune qui démarre n'aurait personne pour ouvrir le
+    #: registre (le premier compte de la mairie est celui du maire ou d'un adjoint). Un agent,
+    #: lui, doit avoir été désigné par quelqu'un d'autre — c'est tout l'objet de R. 121-7.
+    QUALITES_AUTO_DESIGNATION = {QualiteDesignataire.MAIRE, QualiteDesignataire.ADJOINT}
+
+    VALEURS_VRAIES = {True, 1, "true", "True", "1", "on", "oui"}
+
+    def _collectivite_du_designant(self):
+        institution = getattr(self.request.user, 'institution', None)
+        if institution is None:
+            raise ValidationError(
+                {"institution": "Aucune collectivité rattachée à votre compte : impossible de "
+                                "désigner pour le registre d'une commune."}
+            )
+        if get_effective_role(self.request) != UserRole.LOCAL_AUTHORITY:
+            raise PermissionDenied(
+                "Seule la collectivité détentrice du registre peut désigner qui le tient "
+                "(art. R. 121-7 du CASF). Un administrateur de la plateforme, qui n'est que "
+                "sous-traitant au sens du RGPD, ne peut pas se substituer au maire."
+            )
+        return institution
+
+    def _qualite_et_attestation(self):
+        qualite = (self.request.data.get('qualite_accordant') or '').strip().upper()
+        if qualite not in QualiteDesignataire.values:
+            raise ValidationError({"qualite_accordant": (
+                "Précisez à quel titre vous désignez : maire, adjoint au maire, ou personnel de "
+                "mairie habilité par le maire à désigner."
+            )})
+        if self.request.data.get('attestation_accordant') not in self.VALEURS_VRAIES:
+            raise ValidationError({"attestation_accordant": (
+                "La désignation suppose que vous certifiiez sur l'honneur votre qualité et "
+                "votre droit de désigner pour le registre communal (art. R. 121-7 du CASF)."
+            )})
+        return qualite
+
+    def perform_create(self, serializer):
+        institution = self._collectivite_du_designant()
+        qualite = self._qualite_et_attestation()
+        designe = serializer.validated_data.get('utilisateur')
+
+        if designe is None:
+            raise ValidationError({"utilisateur": "Indiquez la personne que vous désignez."})
+        # R. 121-7 ne permet de désigner que des agents de la commune, de son CCAS ou de son
+        # CIAS : un compte extérieur passe par une délégation de compétence à son institution,
+        # pas par une désignation individuelle.
+        if designe.institution_id != institution.id:
+            raise ValidationError({"utilisateur": (
+                "Cette personne n'est pas rattachée à votre collectivité. Une institution "
+                "extérieure accède au registre par une délégation de compétence, pas par une "
+                "désignation nominative."
+            )})
+        if designe.id == self.request.user.id and qualite not in self.QUALITES_AUTO_DESIGNATION:
+            raise ValidationError({"utilisateur": (
+                "Un agent ne peut pas se désigner lui-même : l'habilitation doit émaner du "
+                "maire ou d'un adjoint. Demandez-lui de vous désigner."
+            )})
+        if HabilitationRegistreVulnerables.objects.filter(
+            institution=institution, utilisateur=designe, actif=True,
+        ).exists():
+            raise ValidationError({"utilisateur": (
+                "Cette personne est déjà habilitée pour cette collectivité."
+            )})
+
+        habilitation = serializer.save(
+            environment=get_active_environment(self.request),
+            institution=institution,
+            accordee_par=self.request.user,
+            qualite_accordant=qualite,
+            attestation_accordant=True,
+        )
+        audit_log(
+            request=self.request, action_code="HABILITATION_REGISTRE",
+            objet_type="HabilitationRegistreVulnerables", objet_id=habilitation.id,
+            commentaire=(
+                f"Désignation de {designe.username} au registre des personnes vulnérables, "
+                f"attestée sur l'honneur au titre : {habilitation.get_qualite_accordant_display()}"
+            ),
+        )
+
+    def perform_update(self, serializer):
+        # Seuls la fonction et l'échéance se modifient : tout ce qui constate l'acte est en
+        # lecture seule côté sérialiseur, et le retrait a son action dédiée.
+        self._collectivite_du_designant()
+        if serializer.instance.institution_id != getattr(self.request.user, 'institution_id', None):
+            raise PermissionDenied("Cette désignation n'est pas celle de votre collectivité.")
+        habilitation = serializer.save()
+        audit_log(
+            request=self.request, action_code="MODIFICATION",
+            objet_type="HabilitationRegistreVulnerables", objet_id=habilitation.id,
+            commentaire="Modification d'une habilitation au registre des personnes vulnérables",
+        )
+
+    def perform_destroy(self, instance):
+        raise PermissionDenied(
+            "Une habilitation ne se supprime pas : elle se retire, avec son motif, pour qu'on "
+            "puisse toujours établir qui avait accès au registre à une date donnée. Utilisez "
+            "l'action « retirer »."
+        )
+
+    @action(detail=True, methods=['post'], url_path='retirer')
+    def retirer(self, request, pk=None):
+        """Retrait d'une habilitation — jamais une suppression : la trace de qui a été habilité,
+        par qui et jusqu'à quand est ce qui permet de répondre, un an plus tard, à « qui avait
+        accès au registre le jour de la canicule ? »."""
+        habilitation = self.get_object()
+        institution = self._collectivite_du_designant()
+        if habilitation.institution_id != institution.id:
+            raise PermissionDenied("Cette désignation n'est pas celle de votre collectivité.")
+        motif = (request.data.get('motif') or '').strip()
+        if not motif:
+            return Response(
+                {"motif": "Indiquez pourquoi l'habilitation est retirée (départ, changement de "
+                          "fonction, fin de mission...)."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not habilitation.actif:
+            return Response(
+                {"detail": "Cette habilitation est déjà retirée."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        habilitation.actif = False
+        habilitation.retiree_par = request.user
+        habilitation.date_retrait = timezone.now()
+        habilitation.motif_retrait = motif
+        habilitation.save(update_fields=['actif', 'retiree_par', 'date_retrait', 'motif_retrait'])
+        audit_log(
+            request=request, action_code="HABILITATION_REGISTRE",
+            objet_type="HabilitationRegistreVulnerables", objet_id=habilitation.id,
+            commentaire=f"Retrait de l'habilitation de {habilitation.utilisateur.username} : {motif}",
+        )
+        return Response(self.get_serializer(habilitation).data)
+
+    @action(detail=False, methods=['get'], url_path='candidats')
+    def candidats(self, request):
+        """Personnes désignables, dans l'ordre où il est utile de les voir.
+
+        **La source est volontairement `User.institution` (la FK) et non ContactInstitution.**
+        Les deux mécanismes de rattachement coexistent et ne sont pas synchronisés (voir
+        UserViewSet.get_queryset et PersonneVulnerableViewSet._institution_declarante_or_400) ;
+        or c'est la FK qui gouverne TOUT le contrôle d'accès au registre. Proposer des candidats
+        venus de l'autre relation fabriquerait des habilitations mortes : prononcées, affichées
+        comme actives, et n'ouvrant jamais aucune fiche.
+
+        Les membres de la RCSC et les RESPONSABLE remontent en tête : ce sont eux qu'un maire
+        cherche en premier, sans que cette appartenance ouvre quoi que ce soit par elle-même."""
+        from .vulnerabilites import utilisateur_a_acces_rcsc
+
+        institution = self._collectivite_du_designant()
+        deja = set(
+            HabilitationRegistreVulnerables.objects
+            .filter(institution=institution, actif=True)
+            .values_list('utilisateur_id', flat=True)
+        )
+        lignes = []
+        for user in User.objects.filter(institution=institution, is_active=True).order_by(
+            'last_name', 'first_name', 'username',
+        ):
+            lignes.append({
+                "id": str(user.id),
+                "nom": f"{user.first_name} {user.last_name}".strip() or user.username,
+                "email": user.email,
+                "deja_habilite": user.id in deja,
+                "rcsc": utilisateur_a_acces_rcsc(user, institution),
+            })
+        lignes.sort(key=lambda l: (l["deja_habilite"], not l["rcsc"], l["nom"].lower()))
+        return Response(lignes)
+
+    @action(detail=False, methods=['get'], url_path='mon-etat')
+    def mon_etat(self, request):
+        """Tout ce que la page du registre doit savoir avant d'afficher quoi que ce soit :
+        suis-je désigné, me reste-t-il à signer, puis-je désigner, et quels textes afficher."""
+        from .vulnerabilites import (
+            RAPPEL_SECRET_BANDEAU,
+            TEXTE_ENGAGEMENT_SECRET,
+            engagement_secret_signe,
+            habilitation_active,
+        )
+
+        user = request.user
+        institution = getattr(user, 'institution', None)
+        role = get_effective_role(request)
+        habilitation = habilitation_active(user, institution)
+        signe = engagement_secret_signe(user)
+
+        # Un administrateur n'est jamais désigné : il lit pour l'exploitation et le support, et
+        # n'écrit pas (voir core/vulnerabilites.py). On le lui dit explicitement plutôt que de
+        # le laisser buter sur un 403 au premier enregistrement.
+        administrateur = role == UserRole.ADMINISTRATOR
+        a_un_titre = administrateur or habilitation is not None or (
+            institution is not None and _delegation_registre_active(institution)
+        )
+
+        return Response({
+            "institution": str(institution.id) if institution else None,
+            "institution_nom": institution.nom if institution else None,
+            "habilitation": (
+                self.get_serializer(habilitation).data if habilitation else None
+            ),
+            "a_un_titre": a_un_titre,
+            "lecture_seule_administrateur": administrateur,
+            "engagement_signe": signe,
+            "engagement_a_signer": a_un_titre and not signe,
+            "engagement_signe_le": user.engagement_secret_registre_le,
+            "engagement_version_signee": user.engagement_secret_registre_version or None,
+            "engagement_version_courante": VERSION_ENGAGEMENT_SECRET_REGISTRE,
+            "texte_engagement": TEXTE_ENGAGEMENT_SECRET,
+            "rappel_bandeau": RAPPEL_SECRET_BANDEAU,
+            "peut_designer": role == UserRole.LOCAL_AUTHORITY and institution is not None,
+        })
+
+    @action(detail=False, methods=['post'], url_path='signer-engagement')
+    def signer_engagement(self, request):
+        """Signature de l'engagement au secret professionnel, par le désigné lui-même.
+
+        Refusée à qui n'a aucun titre d'accès : une signature qui n'engage personne sur rien
+        encombrerait le journal et laisserait croire à une habilitation."""
+        from .vulnerabilites import engagement_secret_signe, habilitation_active
+
+        user = request.user
+        institution = getattr(user, 'institution', None)
+        administrateur = get_effective_role(request) == UserRole.ADMINISTRATOR
+        a_un_titre = administrateur or habilitation_active(user, institution) is not None or (
+            institution is not None and _delegation_registre_active(institution)
+        )
+        if not a_un_titre:
+            raise PermissionDenied(
+                "Vous n'avez pas de titre d'accès au registre : il n'y a rien à signer. "
+                "Demandez d'abord votre habilitation au maire."
+            )
+        if request.data.get('accepte') not in self.VALEURS_VRAIES:
+            return Response(
+                {"accepte": "L'engagement doit être accepté explicitement."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        user.engagement_secret_registre_le = timezone.now()
+        user.engagement_secret_registre_version = VERSION_ENGAGEMENT_SECRET_REGISTRE
+        user.save(update_fields=[
+            'engagement_secret_registre_le', 'engagement_secret_registre_version',
+        ])
+        audit_log(
+            request=request, action_code="ENGAGEMENT_SECRET", objet_type="User",
+            objet_id=user.id,
+            commentaire=(
+                "Engagement au secret professionnel sur le registre des personnes vulnérables "
+                f"(version {VERSION_ENGAGEMENT_SECRET_REGISTRE})"
+            ),
+        )
+        return Response({
+            "engagement_signe": engagement_secret_signe(user),
+            "engagement_signe_le": user.engagement_secret_registre_le,
+            "engagement_version_signee": user.engagement_secret_registre_version,
+        })
+
+
+def _delegation_registre_active(institution) -> bool:
+    """Une délégation de compétence « Recensement personnes vulnérables » vit-elle sur cette
+    institution ? Sans viser une commune : sert seulement à savoir si la personne a un titre
+    qui justifie de lui faire signer l'engagement."""
+    from .vulnerabilites import NOM_COMPETENCE_VULNERABILITES
+
+    return DelegationCompetence.objects.filter(
+        institution_cible=institution,
+        competence__nom=NOM_COMPETENCE_VULNERABILITES,
+        active=True,
+    ).filter(Q(date_fin__isnull=True) | Q(date_fin__gt=timezone.now())).exists()
 
 
 class NotificationAlertePCSViewSet(EnvironmentScopedViewSetMixin, viewsets.ReadOnlyModelViewSet):

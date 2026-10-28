@@ -391,6 +391,34 @@ rattachement d'une mairie.
   `core/vulnerabilites.py` ; **aucune donnée de santé** dans `TypeVulnerabilite` ni dans
   `DeclarationSecurite` (RGPD art. 9) : ne pas ajouter de champ médical ou de notes libres
   sans accord du porteur.
+- **Habilitation nominative au registre des personnes vulnérables** (art. R. 121-7 du CASF,
+  voir `BASE-LEGALE-REGISTRE-VULNERABLES.md`) : l'accès suppose **deux actes distincts**, et
+  aucun ne vaut sans l'autre.
+  1. La **désignation** par la collectivité (`HabilitationRegistreVulnerables`) : un maire, un
+     adjoint ou un agent habilité désigne quelqu'un en **attestant sur l'honneur** de sa propre
+     qualité (`qualite_accordant`, `attestation_accordant`). La plateforme ne peut pas vérifier
+     qu'un compte est celui du maire : l'attestation est le mécanisme qui fait porter la
+     responsabilité de la déclaration sur son auteur, nommément et horodatée au journal
+     (code d'audit `HABILITATION_REGISTRE`).
+  2. L'**engagement au secret professionnel** du désigné (`User.engagement_secret_registre_le`
+     + `_version`, code d'audit `ENGAGEMENT_SECRET`), présenté en disclaimer bloquant à la
+     première connexion après l'attribution des droits, puis rappelé par un bandeau permanent
+     non refermable. Porté par le compte et non par l'habilitation : l'engagement suit la
+     personne. La version stockée permet de **redemander la signature si le texte change** —
+     un engagement pris sur un autre texte n'engage à rien.
+
+  Trois conséquences à ne pas défaire :
+  - **Appartenir à la RCSC ne donne plus accès au registre** (changement du 28/10/2026).
+    `utilisateur_a_acces_rcsc` ne sert plus qu'à proposer des candidats à la désignation.
+  - **Lecture et écriture ont des gardes différentes.** `filter_personnes_vulnerables_queryset`
+    garde la lecture et laisse ADMINISTRATOR voir (exploitation, journalisée) ;
+    `institution_accede_commune` garde l'écriture et **exclut ADMINISTRATOR** — inscrire est un
+    acte de la collectivité, seule responsable de traitement, la plateforme n'étant que
+    sous-traitante (RGPD art. 28).
+  - **Les textes juridiques sont servis par l'API** (`mon-etat`), jamais recopiés dans le
+    bundle : ce qu'on fait signer doit avoir une version et une seule origine.
+  - Une habilitation **se retire avec un motif, ne se supprime pas** (`perform_destroy` refuse),
+    pour pouvoir établir qui avait accès à une date donnée.
 - **Demandes de mobilisation** (`DemandeMobilisation`) : jamais présentées comme une
   réquisition légale, pouvoir réservé au préfet et au maire.
 - **Plans** : un `Plan` regroupe équipes, points et zones existants ; son activation sur une

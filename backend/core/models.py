@@ -240,6 +240,15 @@ class User(AbstractUser):
         related_name="candidats_reserve",
     )
 
+    # Engagement au secret professionnel sur le registre communal des personnes vulnérables
+    # (art. R. 121-7 du CASF : les personnes qui traitent ces données y sont tenues). Porté par
+    # le compte et non par l'habilitation, parce que l'engagement suit la PERSONNE : un agent
+    # habilité sur deux communes, ou une association délégataire qui n'a pas d'habilitation
+    # nominative, le signent une fois pour toutes. La version stockée permet de redemander la
+    # signature si le texte change -- un engagement pris sur un autre texte n'engage à rien.
+    engagement_secret_registre_le = models.DateTimeField(null=True, blank=True)
+    engagement_secret_registre_version = models.CharField(max_length=20, blank=True, default="")
+
     def save(self, *args, **kwargs):
         self.email_bidx = blind_index(self.email)
         super().save(*args, **kwargs)
@@ -4724,6 +4733,125 @@ class PersonneVulnerable(EnvironmentScopedModel):
 
     def __str__(self):
         return f"Personne vulnérable ({self.commune_code})"
+
+
+class QualiteDesignataire(models.TextChoices):
+    """Qualité de celui qui désigne, telle qu'il la déclare sur l'honneur. La plateforme ne peut
+    pas vérifier qu'un compte est bien celui du maire : c'est précisément l'office de
+    l'attestation sur l'honneur, qui fait porter la responsabilité de la déclaration sur son
+    auteur et la rend opposable."""
+    MAIRE = "MAIRE", "Maire"
+    ADJOINT = "ADJOINT", "Adjoint au maire"
+    AGENT = "AGENT", "Personnel de mairie habilité par le maire à désigner"
+
+
+#: Version du texte d'engagement au secret professionnel. À incrémenter dès que le texte change :
+#: les engagements pris sur une version antérieure seront redemandés (voir
+#: User.engagement_secret_registre_version).
+VERSION_ENGAGEMENT_SECRET_REGISTRE = "2026-10"
+
+
+class HabilitationRegistreVulnerables(EnvironmentScopedModel):
+    """Habilitation nominative à tenir le registre communal des personnes vulnérables.
+
+    Exigée par l'**art. R. 121-7 du CASF** : seuls le maire et les agents des services
+    municipaux, du CCAS et le cas échéant du CIAS **nommément désignés et habilités** peuvent
+    traiter ces données, et ils sont tenus au secret professionnel. Une appartenance d'équipe ne
+    vaut pas désignation nominative -- c'est pourquoi cette table remplace, et ne complète pas,
+    l'ancien critère « membre de la RCSC ou RESPONSABLE » pour la branche mairie (voir
+    core/vulnerabilites.py).
+
+    Deux actes distincts, délibérément séparés :
+
+    1. **La désignation**, portée ici : un maire, un adjoint ou un agent habilité à le faire
+       désigne quelqu'un, en attestant sur l'honneur de sa propre qualité. C'est l'acte de la
+       collectivité, responsable de traitement.
+    2. **L'engagement au secret**, porté par le compte désigné
+       (User.engagement_secret_registre_le) : l'acte personnel du désigné. Une habilitation
+       dont l'engagement n'est pas signé n'ouvre AUCUNE donnée -- elle ouvre seulement l'écran
+       qui fait signer.
+
+    Rien n'est jamais supprimé : une habilitation retirée passe à actif=False avec son motif,
+    de sorte qu'on puisse toujours répondre à « qui avait accès au registre le 14 août ? »."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    institution = models.ForeignKey(
+        "Institution", on_delete=models.CASCADE,
+        related_name="habilitations_registre_vulnerables",
+        help_text="La collectivité détentrice du registre -- c'est elle le responsable de "
+                  "traitement, la plateforme n'étant que sous-traitante (RGPD art. 28).",
+    )
+
+    utilisateur = models.ForeignKey(
+        User, on_delete=models.CASCADE,
+        related_name="habilitations_registre_vulnerables",
+        help_text="Le désigné. Son compte doit être rattaché à l'institution : R. 121-7 ne "
+                  "permet de désigner que des agents de la commune, du CCAS ou du CIAS.",
+    )
+
+    fonction = models.CharField(
+        max_length=150, blank=True,
+        help_text="Fonction au titre de laquelle la personne est désignée (ex: « agent "
+                  "d'accueil du CCAS ») -- trace le besoin d'en connaître de R. 121-8.",
+    )
+
+    accordee_par = models.ForeignKey(
+        User, on_delete=models.PROTECT,
+        related_name="habilitations_registre_accordees",
+        help_text="PROTECT et non SET_NULL : une désignation sans désignant n'est plus une "
+                  "désignation, et l'effacer viderait la preuve de l'habilitation.",
+    )
+    qualite_accordant = models.CharField(
+        max_length=10, choices=QualiteDesignataire.choices,
+    )
+    attestation_accordant = models.BooleanField(
+        default=False,
+        help_text="Attestation sur l'honneur du désignant : il certifie sa qualité et son droit "
+                  "de désigner. Une habilitation sans attestation est refusée à la création.",
+    )
+
+    date_octroi = models.DateTimeField(auto_now_add=True)
+    date_fin = models.DateTimeField(
+        null=True, blank=True,
+        help_text="Échéance facultative -- utile pour un remplacement saisonnier (plan "
+                  "canicule) qui doit se refermer sans qu'on y pense.",
+    )
+
+    actif = models.BooleanField(default=True)
+    retiree_par = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="habilitations_registre_retirees",
+    )
+    date_retrait = models.DateTimeField(null=True, blank=True)
+    motif_retrait = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["-date_octroi"]
+        constraints = [
+            # Une seule habilitation vivante par (personne, collectivité) : deux lignes actives
+            # rendraient indécidable laquelle fait foi, et le retrait de l'une laisserait
+            # l'accès ouvert par l'autre.
+            models.UniqueConstraint(
+                fields=["institution", "utilisateur"],
+                condition=models.Q(actif=True),
+                name="habilitation_registre_unique_active",
+            ),
+        ]
+        indexes = [models.Index(fields=["utilisateur", "actif"])]
+
+    def __str__(self):
+        return f"Habilitation registre {self.utilisateur} ({self.institution})"
+
+    @property
+    def valide(self):
+        """Désignation en cours de validité -- indépendamment de l'engagement au secret, qui
+        est l'acte de l'autre partie."""
+        from django.utils import timezone
+
+        if not self.actif:
+            return False
+        return self.date_fin is None or self.date_fin > timezone.now()
 
 
 class StatutAffectation(models.TextChoices):

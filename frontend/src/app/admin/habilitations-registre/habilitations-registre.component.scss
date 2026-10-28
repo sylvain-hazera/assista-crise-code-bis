@@ -1,0 +1,250 @@
+.habilitations-page {
+  padding: 1.5rem;
+  max-width: 1200px;
+}
+
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+
+  h1 {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    margin: 0;
+    font-size: 1.4rem;
+  }
+
+  .subtitle {
+    margin: .3rem 0 0;
+    color: #666;
+    font-size: .9rem;
+  }
+}
+
+.help-text {
+  display: flex;
+  align-items: flex-start;
+  gap: .5rem;
+  margin: 0 0 1.25rem;
+  padding: .7rem .9rem;
+  background: #f7f9fc;
+  border-left: 3px solid #3a6ea5;
+  border-radius: 4px;
+  font-size: .88rem;
+  line-height: 1.5;
+  max-width: 80ch;
+
+  .material-icons { font-size: 1.1rem; color: #3a6ea5; flex-shrink: 0; }
+}
+
+.encart-refus {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  margin: 1rem 0;
+  padding: 1.25rem;
+  background: #f7f9fc;
+  border: 1px solid #dde4ee;
+  border-radius: 8px;
+  max-width: 70ch;
+
+  > .material-icons { font-size: 1.8rem; color: #8a8a8a; flex-shrink: 0; }
+  h2 { margin: 0 0 .5rem; font-size: 1.05rem; }
+  p { margin: 0; font-size: .92rem; line-height: 1.55; }
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  margin-bottom: 1rem;
+  padding: .6rem .85rem;
+  border-radius: 4px;
+  font-size: .9rem;
+
+  &.toast-err { background: #fdecea; color: #b3261e; }
+  &.toast-ok { background: #e8f5e9; color: #1b5e20; }
+  .material-icons { font-size: 1.1rem; }
+}
+
+.loading { padding: 2rem; color: #666; }
+
+// ── Formulaire de désignation ────────────────────────────────────────────────
+.form-designation {
+  margin-bottom: 2rem;
+  padding: 1.25rem;
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  max-width: 70ch;
+
+  h2 { margin: 0 0 1rem; font-size: 1.1rem; }
+}
+
+.champ {
+  margin-bottom: 1rem;
+
+  label {
+    display: block;
+    margin-bottom: .3rem;
+    font-size: .9rem;
+    font-weight: 600;
+  }
+
+  select, input[type="text"], input[type="date"] {
+    width: 100%;
+    padding: .5rem .6rem;
+    border: 1px solid #cfcfcf;
+    border-radius: 4px;
+    font-size: .95rem;
+    font-family: inherit;
+  }
+
+  .facultatif { font-weight: 400; color: #888; }
+
+  .aide {
+    margin: .35rem 0 0;
+    font-size: .82rem;
+    color: #666;
+    line-height: 1.45;
+  }
+}
+
+.avertissement {
+  display: flex;
+  align-items: flex-start;
+  gap: .5rem;
+  margin: 0 0 1rem;
+  padding: .65rem .8rem;
+  background: #fff4e5;
+  border-left: 3px solid #b26a00;
+  border-radius: 4px;
+  font-size: .88rem;
+  line-height: 1.45;
+  color: #5d4037;
+
+  .material-icons { font-size: 1.1rem; color: #b26a00; flex-shrink: 0; }
+}
+
+// L'attestation est le cœur juridique de l'écran : elle doit se voir comme telle, et non
+// ressembler à une case d'option.
+.attestation {
+  display: flex;
+  align-items: flex-start;
+  gap: .6rem;
+  margin: 1.25rem 0;
+  padding: .9rem;
+  background: #fffaf2;
+  border: 1px solid #ffcc80;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: .9rem;
+  line-height: 1.5;
+
+  input { margin-top: .2rem; flex-shrink: 0; }
+}
+
+.actions-form {
+  display: flex;
+  justify-content: flex-end;
+  gap: .6rem;
+}
+
+.btn-primary, .btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  padding: .55rem 1rem;
+  border-radius: 6px;
+  font-size: .95rem;
+  cursor: pointer;
+  border: none;
+
+  .material-icons { font-size: 1.1rem; }
+}
+
+.btn-primary {
+  background: #2e7d32;
+  color: #fff;
+
+  &:disabled { background: #bdbdbd; cursor: not-allowed; }
+}
+
+.btn-secondary {
+  background: #f0f0f0;
+  color: #333;
+}
+
+// ── Tableaux ─────────────────────────────────────────────────────────────────
+.titre-section {
+  margin: 1.75rem 0 .75rem;
+  font-size: 1.05rem;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+  font-size: .9rem;
+
+  th, td {
+    padding: .6rem .7rem;
+    text-align: left;
+    border-bottom: 1px solid #eee;
+    vertical-align: top;
+  }
+
+  th {
+    background: #fafafa;
+    font-weight: 600;
+    font-size: .82rem;
+    text-transform: uppercase;
+    letter-spacing: .02em;
+    color: #555;
+  }
+
+  .email, .qualite {
+    display: block;
+    font-size: .8rem;
+    color: #777;
+  }
+
+  .empty {
+    padding: 1.5rem;
+    text-align: center;
+    color: #777;
+  }
+
+  .echu { color: #b3261e; font-weight: 600; }
+}
+
+.table-retirees {
+  opacity: .8;
+}
+
+.badge {
+  display: inline-block;
+  padding: .15rem .5rem;
+  border-radius: 10px;
+  font-size: .78rem;
+  background: #eee;
+
+  &.badge-ok { background: #e8f5e9; color: #1b5e20; }
+  &.badge-attente { background: #fff4e5; color: #8a5200; }
+}
+
+.icon-btn {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: #777;
+  padding: .2rem;
+
+  &:hover { color: #b3261e; }
+  .material-icons { font-size: 1.2rem; }
+}

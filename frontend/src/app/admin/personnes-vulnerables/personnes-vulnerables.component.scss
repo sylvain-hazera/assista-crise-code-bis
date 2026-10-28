@@ -146,3 +146,66 @@
 
   &:hover { color: #dc2626; }
 }
+
+// ── Bandeau permanent de rappel du secret professionnel ───────────────────────
+// Non refermable à dessein (voir le template) : un rappel qu'on peut masquer cesse d'en être
+// un. Placé en tête de page et non en position fixe, pour ne pas manger de hauteur sur un
+// écran de poste d'accueil ni recouvrir le tableau au défilement.
+.bandeau-secret {
+  display: flex;
+  align-items: flex-start;
+  gap: .6rem;
+  margin-bottom: 1.25rem;
+  padding: .7rem .9rem;
+  background: #fff4e5;
+  border: 1px solid #ffcc80;
+  border-left: 4px solid #b26a00;
+  border-radius: 4px;
+  font-size: .88rem;
+  line-height: 1.45;
+  color: #5d4037;
+
+  .material-icons {
+    font-size: 1.15rem;
+    color: #b26a00;
+    flex-shrink: 0;
+  }
+}
+
+// Refus d'accès expliqué : ce n'est pas une erreur, c'est l'état normal de qui n'a pas encore
+// été désigné. Traité comme un contenu de page, pas comme un toast.
+.encart-refus {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  margin: 1rem 0;
+  padding: 1.25rem;
+  background: #f7f9fc;
+  border: 1px solid #dde4ee;
+  border-radius: 8px;
+  max-width: 70ch;
+
+  > .material-icons {
+    font-size: 1.8rem;
+    color: #3a6ea5;
+    flex-shrink: 0;
+  }
+
+  h2 {
+    margin: 0 0 .6rem;
+    font-size: 1.05rem;
+  }
+
+  p {
+    margin: 0 0 .6rem;
+    font-size: .92rem;
+    line-height: 1.55;
+  }
+
+  p:last-child { margin-bottom: 0; }
+}
+
+.help-admin {
+  background: #eef4fb;
+  border-left: 3px solid #3a6ea5;
+}

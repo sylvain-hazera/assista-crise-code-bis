@@ -7,7 +7,7 @@ import { UserRole } from '../../../shared/models/user.model';
 import { NAV_ITEMS } from '../admin-nav.config';
 import { ADMIN_ROUTES } from '../../../admin/admin.routes';
 import {
-  accountValidationGuard, institutionalEffectiveGuard, sysAdminGuard, vulnerabilitesGuard, zonesGuard,
+  accountValidationGuard, institutionalEffectiveGuard, sysAdminGuard, vulnerabilitesGuard, autoriteLocaleGuard,
 } from '../../../core/guards/admin.guard';
 
 describe('AdminSidebarComponent', () => {
@@ -76,7 +76,7 @@ describe('AdminSidebarComponent', () => {
       institutionnel: institutionalEffectiveGuard,
       sysadmin: sysAdminGuard,
       'validation-comptes': accountValidationGuard,
-      'autorite-locale': zonesGuard,
+      'autorite-locale': autoriteLocaleGuard,
       'registre-vulnerables': vulnerabilitesGuard,
     };
     const routeDe = (navRoute: string) =>

@@ -64,8 +64,14 @@ export const accountValidationGuard: CanActivateFn = (route, state) => {
   );
 };
 
-/** Zones : mairies/intercommunalités (isAutoriteLocaleCommunale), sinon 403 à l'usage. */
-export const zonesGuard: CanActivateFn = (route, state) => {
+/** Collectivités territoriales (isAutoriteLocaleCommunale), sinon 403 à l'usage.
+ *
+ * S'appelait `zonesGuard` : le nom venait de sa premiere page, mais le critere n'a jamais eu
+ * de rapport avec les zones, et il garde aujourd'hui plusieurs ecrans qui n'en ont pas non
+ * plus. Renomme le 28/10/2026 en ajoutant les habilitations au registre, pour ne pas ecrire
+ * un troisieme garde au corps identique faute d'un nom juste. C'est le garde attendu par le
+ * menu pour la visibilite `autorite-locale` (voir admin-sidebar.component.spec.ts). */
+export const autoriteLocaleGuard: CanActivateFn = (route, state) => {
   const authService = inject(AuthService);
   const router = inject(Router);
 
@@ -78,8 +84,11 @@ export const zonesGuard: CanActivateFn = (route, state) => {
   );
 };
 
-/** Registre des personnes vulnérables : champ serveur `acces_registre_vulnerables` (dépend
- * de l'appartenance à une équipe, non recalculable côté client). */
+/** Registre des personnes vulnérables : champ serveur `acces_registre_vulnerables`, qui reflète
+ * depuis le 28/10/2026 la DÉSIGNATION nominative (HabilitationRegistreVulnerables) et non plus
+ * l'appartenance à la RCSC. Volontairement vrai avant que l'engagement au secret ne soit signé,
+ * puisque c'est la page elle-même qui le fait signer — les fiches restent fermées jusque-là
+ * (core/vulnerabilites.py). Non recalculable côté client. */
 export const vulnerabilitesGuard: CanActivateFn = (route, state) => {
   const authService = inject(AuthService);
   const router = inject(Router);

@@ -91,6 +91,10 @@ export const NAV_ITEMS: NavItem[] = [
   { icon: 'badge', label: 'Membres association', route: '/admin/membres-association', groupe: 'preparation' },
   // RCSC/RESPONSABLE d'une mairie ou délégation active (core/vulnerabilites.py).
   { icon: 'accessible', label: 'Personnes vulnérables', route: '/admin/personnes-vulnerables', groupe: 'preparation', visibilite: 'registre-vulnerables' },
+  // Qui tient le registre, designe nominativement par le maire. Visible a toute collectivite
+  // et NON conditionnee a `registre-vulnerables` : une commune ou personne n'est encore
+  // habilite doit pouvoir atteindre cette page, sinon le dispositif n'a aucune porte d'entree.
+  { icon: 'how_to_reg', label: 'Habilitations registre', route: '/admin/habilitations-registre', groupe: 'preparation', visibilite: 'autorite-locale' },
 
   // ── Communications / Radio ──────────────────────────────────────────
   // Seul cadre transversal. Ces canaux sont généralistes ; en crise, ce sont les canaux

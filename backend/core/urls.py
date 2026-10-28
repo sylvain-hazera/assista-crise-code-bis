@@ -59,6 +59,7 @@ from .views import (
     RisqueMajeurTypeViewSet, RisqueCommunalViewSet,
     SiteSensibleViewSet,
     TypeVulnerabiliteViewSet, PersonneVulnerableViewSet,
+    HabilitationRegistreVulnerablesViewSet,
     PlanViewSet,
     PlanMissionModeleViewSet,
     DashboardStatsView,
@@ -227,6 +228,7 @@ router.register(r'risques-communaux', RisqueCommunalViewSet)
 router.register(r'sites-sensibles', SiteSensibleViewSet)
 router.register(r'types-vulnerabilite', TypeVulnerabiliteViewSet)
 router.register(r'personnes-vulnerables', PersonneVulnerableViewSet)
+router.register(r'habilitations-registre-vulnerables', HabilitationRegistreVulnerablesViewSet)
 router.register(r'notifications-alerte-pcs', NotificationAlertePCSViewSet)
 router.register(r'secteurs-recherche', SecteurRechercheViewSet)
 router.register(r'plans', PlanViewSet)

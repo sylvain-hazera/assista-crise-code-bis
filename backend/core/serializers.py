@@ -21,6 +21,7 @@ from .tracabilite import coordonnees_retirees, retirer_coordonnees
 from .validators import validate_convention_file
 from .models import (
     CandidatureAssociation,
+    HabilitationRegistreVulnerables,
     InvitationAssociation,
     Qualification,
     QualificationMembre,
@@ -345,15 +346,22 @@ class UserSerializer(serializers.ModelSerializer):
 
     def get_acces_registre_vulnerables(self, obj):
         # Affichage du menu seulement ; l'accès réel est contrôlé par core/vulnerabilites.py.
-        from .vulnerabilites import NOM_COMPETENCE_VULNERABILITES, utilisateur_a_acces_rcsc
+        #
+        # Volontairement vrai dès que la DÉSIGNATION existe, sans exiger que l'engagement au
+        # secret soit signé : c'est la page du registre qui fait signer, la masquer rendrait
+        # l'engagement impossible à prendre. Les fiches, elles, restent fermées jusqu'à la
+        # signature (filter_personnes_vulnerables_queryset).
+        from .vulnerabilites import NOM_COMPETENCE_VULNERABILITES, habilitation_active
 
+        # ADMINISTRATOR d'abord, et sans exiger de rattachement : la garde de lecture lui ouvre
+        # tout indépendamment de son institution, le menu doit dire la même chose.
+        if obj.type == UserRole.ADMINISTRATOR:
+            return True
         institution = getattr(obj, 'institution', None)
         if institution is None:
             return False
-        if obj.type == UserRole.ADMINISTRATOR:
-            return True
         if obj.type == UserRole.LOCAL_AUTHORITY:
-            return utilisateur_a_acces_rcsc(obj, institution)
+            return habilitation_active(obj, institution) is not None
         return DelegationCompetence.objects.filter(
             institution_cible=institution,
             competence__nom=NOM_COMPETENCE_VULNERABILITES,
@@ -1279,6 +1287,67 @@ class PersonneVulnerableSerializer(serializers.ModelSerializer):
         if not obj.cree_par:
             return None
         return f"{obj.cree_par.first_name} {obj.cree_par.last_name}".strip() or obj.cree_par.username
+
+
+def _nom_lisible(user):
+    """Prénom + nom, à défaut l'identifiant — un tableau de désignations qui n'afficherait que
+    des UUID ne permettrait pas de relire la liste des habilités, qui est son seul but."""
+    if user is None:
+        return None
+    return f"{user.first_name} {user.last_name}".strip() or user.username
+
+
+class HabilitationRegistreVulnerablesSerializer(serializers.ModelSerializer):
+    """Désignation nominative au registre des personnes vulnérables (art. R. 121-7 du CASF).
+
+    Tout ce qui constate l'acte est en lecture seule : le désignant, sa qualité, son
+    attestation, la date d'octroi, et le retrait. Ils sont posés par la vue à partir de
+    l'appelant authentifié et des champs d'attestation qu'il coche — les accepter en entrée
+    permettrait de fabriquer une désignation au nom de quelqu'un d'autre, c'est-à-dire de faire
+    signer au maire une attestation qu'il n'a pas prise.
+
+    Le retrait passe par l'action dédiée et non par un PATCH sur `actif` : il doit porter un
+    motif et laisser une trace, ce qu'une mise à jour libre du drapeau contournerait."""
+
+    utilisateur_nom = serializers.SerializerMethodField()
+    utilisateur_email = serializers.CharField(
+        source="utilisateur.email", read_only=True, default=None)
+    institution_nom = serializers.CharField(
+        source="institution.nom", read_only=True, default=None)
+    accordee_par_nom = serializers.SerializerMethodField()
+    qualite_accordant_libelle = serializers.CharField(
+        source="get_qualite_accordant_display", read_only=True)
+    retiree_par_nom = serializers.SerializerMethodField()
+    valide = serializers.BooleanField(read_only=True)
+    engagement_signe = serializers.SerializerMethodField()
+
+    class Meta:
+        model = HabilitationRegistreVulnerables
+        fields = "__all__"
+        # `institution` est en lecture seule : elle est toujours celle du designant. L'accepter
+        # en entree permettrait de designer quelqu'un sur le registre d'une AUTRE commune.
+        read_only_fields = (
+            "id", "institution", "accordee_par", "qualite_accordant", "attestation_accordant",
+            "date_octroi", "actif", "retiree_par", "date_retrait", "motif_retrait",
+            "environment",
+        )
+
+    def get_utilisateur_nom(self, obj):
+        return _nom_lisible(obj.utilisateur)
+
+    def get_accordee_par_nom(self, obj):
+        return _nom_lisible(obj.accordee_par)
+
+    def get_retiree_par_nom(self, obj):
+        return _nom_lisible(obj.retiree_par)
+
+    def get_engagement_signe(self, obj):
+        """Le désigné a-t-il signé son engagement au secret ? Affiché dans la liste pour que le
+        maire voie d'un coup d'œil quelles désignations ne sont pas encore effectives — une
+        habilitation non contresignée n'ouvre aucune fiche."""
+        from .vulnerabilites import engagement_secret_signe
+
+        return engagement_secret_signe(obj.utilisateur)
 
 
 class ConfigurationAlerteSismiqueSerializer(serializers.ModelSerializer):

@@ -1,5 +1,5 @@
 import { Routes } from '@angular/router';
-import { sysAdminGuard, institutionalEffectiveGuard, accountValidationGuard, zonesGuard, vulnerabilitesGuard } from '../core/guards/admin.guard';
+import { sysAdminGuard, institutionalEffectiveGuard, accountValidationGuard, autoriteLocaleGuard, vulnerabilitesGuard } from '../core/guards/admin.guard';
 import { AccesRefuseComponent } from './acces-refuse/acces-refuse.component';
 
 export const ADMIN_ROUTES: Routes = [
@@ -36,8 +36,8 @@ export const ADMIN_ROUTES: Routes = [
 
   // ── Préparation ──
   { path: 'equipes', loadComponent: () => import('./teams/teams.component').then(m => m.TeamsComponent), canActivate: [institutionalEffectiveGuard] },
-  { path: 'zones', loadComponent: () => import('./zones/zones.component').then(m => m.ZonesComponent), canActivate: [institutionalEffectiveGuard, zonesGuard] },
-  { path: 'simulation-inondation', loadComponent: () => import('./simulation-inondation/simulation-inondation.component').then(m => m.SimulationInondationComponent), canActivate: [institutionalEffectiveGuard, zonesGuard] },
+  { path: 'zones', loadComponent: () => import('./zones/zones.component').then(m => m.ZonesComponent), canActivate: [institutionalEffectiveGuard, autoriteLocaleGuard] },
+  { path: 'simulation-inondation', loadComponent: () => import('./simulation-inondation/simulation-inondation.component').then(m => m.SimulationInondationComponent), canActivate: [institutionalEffectiveGuard, autoriteLocaleGuard] },
   { path: 'plans', loadComponent: () => import('./plans/plans.component').then(m => m.PlansComponent), canActivate: [institutionalEffectiveGuard] },
   { path: 'sites-sensibles', loadComponent: () => import('./sites-sensibles/sites-sensibles.component').then(m => m.SitesSensiblesComponent), canActivate: [institutionalEffectiveGuard] },
   { path: 'competences', loadComponent: () => import('./competences/competences.component').then(m => m.CompetencesComponent), canActivate: [institutionalEffectiveGuard] },
@@ -47,6 +47,11 @@ export const ADMIN_ROUTES: Routes = [
   // « bureau » global, c'est un attribut du rattachement.
   { path: 'membres-association', loadComponent: () => import('./membres-association/membres-association.component').then(m => m.MembresAssociationComponent), canActivate: [institutionalEffectiveGuard] },
   { path: 'personnes-vulnerables', loadComponent: () => import('./personnes-vulnerables/personnes-vulnerables.component').then(m => m.PersonnesVulnerablesComponent), canActivate: [institutionalEffectiveGuard, vulnerabilitesGuard] },
+  // Designation nominative (art. R. 121-7 du CASF) : garde `autoriteLocaleGuard` et non
+  // `vulnerabilitesGuard` -- designer n'est pas acceder. Un maire dont personne n'est encore
+  // habilite, lui-meme compris, doit pouvoir ouvrir cette page : c'est la seule porte d'entree
+  // du dispositif.
+  { path: 'habilitations-registre', loadComponent: () => import('./habilitations-registre/habilitations-registre.component').then(m => m.HabilitationsRegistreComponent), canActivate: [institutionalEffectiveGuard, autoriteLocaleGuard] },
 
   // ── Communications / Radio ──
   { path: 'meshcore-companions', loadComponent: () => import('./meshcore-companions/meshcore-companions.component').then(m => m.MeshcoreCompanionsComponent), canActivate: [institutionalEffectiveGuard] },
