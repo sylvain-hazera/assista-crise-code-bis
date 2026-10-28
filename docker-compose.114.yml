@@ -347,6 +347,11 @@ services:
       - waf_modsec_logs:/logs/waf-modsec:ro
       - waf_nginx_logs:/logs/waf:ro
       - fail2ban_logs:/logs/fail2ban:ro
+      # Lecture seule de l'API Docker, pour collecter la sortie des conteneurs applicatifs
+      # (voir monitoring/alloy/config.alloy). Sans cela, les journaux du backend et du proxy
+      # disparaissent a chaque redeploiement. Le socket donne un acces large au demon : il est
+      # monte en :ro et Alloy n'ecrit jamais, mais c'est a connaitre.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     networks: [monitoring]
     depends_on: [loki]
 

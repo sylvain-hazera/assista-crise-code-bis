@@ -383,7 +383,59 @@ def envoyer_email_creation_compte(request, user):
             EMAILS_FAILED.labels(kind="registration_pending").inc()
             return False
 
-    return False
+    # Bénévole / citoyen : compte actif immédiatement, donc aucun lien d'activation à envoyer
+    # — mais un accusé de création, oui. Ajouté le 28/10/2026 : jusque-là ce chemin ne
+    # produisait RIEN, et quelqu'un qui s'inscrivait n'avait aucune trace écrite de l'avoir
+    # fait. En crise, c'est l'email qu'on retrouve dans sa boîte trois jours plus tard quand on
+    # ne se souvient plus de l'adresse utilisée.
+    #
+    # Marque blanche : résolu depuis le Host de l'inscription (voir send_institution_account_
+    # email pour la même précaution) et PAS depuis user.institution, qui n'existe pas ici.
+    # Quelqu'un qui s'inscrit sur cj.assista-crise.fr doit recevoir un message signé Réserve
+    # Résilience, pas Assista-Crise.
+    institution_branding = resolve_institution_branding(request)
+    branding = branding_for_institution(institution_branding)
+    login_link = build_magic_link(request, user, "magic-login")
+
+    # La candidature à la réserve est annoncée DANS ce même email plutôt que dans un second :
+    # du point de vue de la personne, s'inscrire et demander à rejoindre sont un seul geste, et
+    # deux messages pour un geste donnent l'impression d'une erreur.
+    mention_reserve = ""
+    if getattr(user, 'souhaite_rejoindre_reserve', False) and user.reserve_institution_id:
+        nom_reserve = (
+            user.reserve_institution.nom_affichage or user.reserve_institution.nom
+        )
+        mention_reserve = (
+            f"\n\nVous avez demandé à rejoindre la réserve « {nom_reserve} ». "
+            "Votre demande a été transmise à son responsable, qui reviendra vers vous. "
+            "Vous n'avez rien d'autre à faire pour l'instant.\n"
+        )
+
+    try:
+        send_branded_mail(
+            request, institution_branding,
+            subject=f"Votre compte {branding.nom_affichage} est créé",
+            message=(
+                f"Bonjour{(' ' + user.first_name) if user.first_name else ''},\n\n"
+                f"Votre compte sur {branding.nom_affichage} a bien été créé et il est "
+                "immédiatement utilisable : aucune validation n'est nécessaire.\n\n"
+                f"Vous reconnecter à tout moment : {login_link}\n"
+                f"Ce lien est valable 7 jours ; au-delà, connectez-vous normalement avec "
+                f"votre adresse et votre mot de passe."
+                f"{mention_reserve}\n"
+                "Si vous n'êtes pas à l'origine de cette inscription, ignorez ce message : "
+                "sans action de votre part, ce compte restera inutilisé.\n\n"
+                "{signature}"
+            ),
+            recipient_list=[user.email],
+            fail_silently=False,
+        )
+        return True
+    except Exception:
+        # Jamais bloquant : le compte est créé et utilisable, l'email n'est qu'un accusé.
+        logger.exception("Échec de l'email de bienvenue (user_id=%s)", user.pk)
+        EMAILS_FAILED.labels(kind="bienvenue").inc()
+        return False
 
 
 def _traiter_acceptation_convention(request, institution, user):
@@ -10690,22 +10742,28 @@ class RegisterView(generics.CreateAPIView):
             commentaire=f"Création de compte : {user.email}",
         )
 
-        # Le lien d'activation part d'ici -- c'est CE chemin que le formulaire public appelle
-        # (voir envoyer_email_creation_compte pour l'historique des deux inscriptions divergentes).
-        envoyer_email_creation_compte(self.request, user)
-
         # Case "Je souhaite rejoindre la réserve" (voir User.souhaite_rejoindre_reserve,
         # Institution.reserve_active) -- résolu depuis le Host de CETTE requête d'inscription,
         # pas depuis une institution déjà connue de l'utilisateur (il n'en a pas encore). Exige
         # reserve_active=True : cocher la case sur le site généraliste assista-crise.fr (qui ne
         # résout aucune institution) ne fait jamais rien, la case n'y est de toute façon pas
         # affichée côté frontend (voir register.component.ts).
+        #
+        # TRAITÉ AVANT L'EMAIL, et c'est l'ordre qui compte : l'email de bienvenue mentionne la
+        # candidature quand il y en a une (voir envoyer_email_creation_compte). Dans l'ordre
+        # inverse — celui d'avant le 28/10/2026 — reserve_institution n'était pas encore posée
+        # au moment de l'envoi, et la personne recevait un accusé muet sur le seul point qui
+        # l'intéressait.
         if user.souhaite_rejoindre_reserve:
             institution = resolve_institution_branding(self.request)
             if institution is not None and institution.reserve_active:
                 user.reserve_institution = institution
                 user.save(update_fields=["reserve_institution"])
                 _notifier_responsable_reserve(user, institution, self.request)
+
+        # Le lien d'activation part d'ici -- c'est CE chemin que le formulaire public appelle
+        # (voir envoyer_email_creation_compte pour l'historique des deux inscriptions divergentes).
+        envoyer_email_creation_compte(self.request, user)
 
 class InstitutionValidationView(generics.GenericAPIView):
     permission_classes = [permissions.AllowAny]

@@ -178,3 +178,79 @@ loki.process "fail2ban" {
 
   forward_to = [loki.write.loki.receiver]
 }
+
+// ------------------------------------------------- Journaux applicatifs des conteneurs Docker
+// Ajouté le 28/10/2026. Jusque-là, Alloy ne lisait que des FICHIERS (WAF, fail2ban) : la sortie
+// des conteneurs n'était nulle part, donc les journaux du backend et du proxy disparaissaient à
+// chaque `docker compose up -d`. Constaté le jour même — des 400 d'inscription à analyser
+// avaient été effacés par un déploiement survenu dix-sept minutes plus tôt. Pour une plateforme
+// de crise, perdre la trace applicative à chaque mise à jour est une limite réelle.
+//
+// MÊME DISCIPLINE QUE LE RESTE DE CE FICHIER : on ne transmet pas aveuglément. Deux garde-fous.
+//
+// 1. Une liste EXPLICITE de conteneurs, et non « tout ce qui tourne ». Grafana, Loki et les
+//    exporters produisent un volume considérable sans jamais rien apprendre sur l'application,
+//    et le jour où un conteneur manipulant des secrets est ajouté à la pile, il ne doit pas se
+//    retrouver collecté par défaut.
+// 2. Les adresses email sont masquées dans la ligne. Une URL de recherche en porte
+//    (`?search=jean@exemple.fr`), et une donnée personnelle n'a rien à faire dans un journal
+//    d'exploitation consultable depuis Grafana — c'est exactement le raisonnement qui a présidé
+//    au filtrage de l'audit ModSecurity plus haut.
+discovery.docker "conteneurs" {
+  host = "unix:///var/run/docker.sock"
+}
+
+discovery.relabel "applicatifs" {
+  targets = discovery.docker.conteneurs.targets
+
+  // Le nom du conteneur arrive préfixé d'un « / » dans l'API Docker.
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+
+  // Liste blanche : voir le garde-fou 1 ci-dessus.
+  rule {
+    source_labels = ["container"]
+    regex         = "ac_(backend|celery_worker|frontend|proxy|matrix_bridge|meshcore_bridge|meshtastic_bridge|synapse)"
+    action        = "keep"
+  }
+
+  rule {
+    target_label = "job"
+    replacement  = "conteneur"
+  }
+}
+
+loki.source.docker "applicatifs" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.applicatifs.output
+  labels     = {"job" = "conteneur"}
+  forward_to = [loki.process.conteneurs.receiver]
+}
+
+loki.process "conteneurs" {
+  // Garde-fou 2 : masquage des adresses email, quelle que soit leur place dans la ligne.
+  stage.replace {
+    // UN SEUL groupe, englobant toute l'adresse. Verifie en production le 28/10/2026, les deux
+    // autres formes etant fausses : avec DEUX groupes (locale et domaine), Alloy remplace
+    // chacun separement et produit « [email masque]@[email masque] » ; SANS groupe, il ne
+    // remplace rien du tout et l'adresse ressort EN CLAIR -- le pire des trois cas, et le plus
+    // silencieux.
+    expression = "([a-zA-Z0-9._%+\\-]+@[a-zA-Z0-9.\\-]+\\.[a-zA-Z]{2,})"
+    replace    = "[email masque]"
+  }
+
+  // Niveau extrait quand la ligne en porte un, pour pouvoir filtrer dans Grafana sans relire
+  // tout le flux. Absent sur une ligne d'accès nginx : la règle ne matche alors pas, et la
+  // ligne passe telle quelle.
+  stage.regex {
+    expression = "(?P<level>DEBUG|INFO|WARNING|ERROR|CRITICAL)"
+  }
+  stage.labels {
+    values = { level = "" }
+  }
+
+  forward_to = [loki.write.loki.receiver]
+}
