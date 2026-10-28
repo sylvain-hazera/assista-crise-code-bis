@@ -979,6 +979,29 @@ Deux notions de rôle coexistent, à ne pas confondre :
     où il trouverait au moins une porte close et une affiche. `crise` étant en `CASCADE`, un
     point sans crise n'est jamais le résidu d'une crise supprimée : l'absence de crise signifie
     bien « préparé », sans ambiguïté, et aucun champ supplémentaire n'est nécessaire.
+- **Membres association** (`membres-association`) : annuaire, recrutement, qualifications et
+  disponibilités d'une association agréée de sécurité civile, en quatre onglets. Quatre vues du
+  même effectif plutôt que quatre pages — un président qui instruit une candidature a besoin de
+  voir dans la foulée ce que la personne apporte et quand elle est libre.
+  - **La page se ferme d'elle-même** à qui n'est au bureau d'aucune association, et le dit
+    plutôt que d'afficher un écran vide. Pas de garde de route dédiée : « être au bureau » est
+    un attribut du **rattachement** (`ContactInstitution.membre_bureau`), pas un rôle de
+    compte, donc invérifiable depuis le menu. Le serveur l'impose de son côté ; cette page ne
+    fait que ne pas proposer ce qui serait refusé.
+  - **Une disponibilité a trois états**, et le troisième compte autant que les deux autres :
+    disponible, indisponible, **non renseigné**. Une case vide n'est pas un refus, c'est un
+    silence — et la grille en affiche le total par jour, ligne « Sans réponse », pour qu'on
+    sache qui relancer. Compter les silences comme des refus, ou comme des présences, donne un
+    effectif imaginaire.
+  - **Une qualification périmée s'affiche à côté du nom**, pas dans un sous-menu : un PSE1
+    expiré vaut un PSE1 absent, et on ne le découvre pas le jour du départ. Même traitement
+    pour l'aptitude échue, et les échéances à moins de 30 jours passent en orange.
+  - **Sortir un membre retire ses accès** (règle tenue au modèle) : l'écran le dit explicitement
+    au moment du changement, sinon le bureau croit n'avoir modifié qu'une étiquette.
+  - L'échéance d'une qualification est préremplie depuis `Qualification.validite_mois`, en
+    **proposition** : c'est la date portée par l'attestation réelle qui fait foi, jamais notre
+    calcul. Et les décisions (titre périmé ou non) viennent du serveur — l'horloge d'un poste
+    client est réglable.
 - **Éléments désactivés** : équipes, offres, demandes et signalements ne sont jamais supprimés
   mais désactivés ; le backend les masque, `?actif=all` les fait réapparaître pour les
   réactiver.

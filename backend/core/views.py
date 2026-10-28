@@ -12291,6 +12291,26 @@ class DelegationCompetenceViewSet(
             )
         )
 
+def _disponibilite_du_jour(declarations, jour):
+    """Disponible, indisponible, ou None quand rien n'a été déclaré pour ce jour.
+
+    None n'est PAS « indisponible » : c'est un silence, et le distinguer est ce qui évite de
+    lancer une mobilisation sur un effectif imaginaire. La déclaration la plus récente
+    l'emporte en cas de recouvrement — quelqu'un qui se dédit a changé d'avis, et c'est son
+    dernier mot qui vaut."""
+    retenue = None
+    for declaration in declarations:
+        debut = declaration.date_debut.date() if declaration.date_debut else None
+        fin = declaration.date_fin.date() if declaration.date_fin else None
+        if debut is not None and jour < debut:
+            continue
+        if fin is not None and jour > fin:
+            continue
+        if retenue is None or (declaration.date_debut or 0) > (retenue.date_debut or 0):
+            retenue = declaration
+    return None if retenue is None else retenue.disponible
+
+
 class DisponibiliteOperationnelleViewSet(
     EnvironmentScopedViewSetMixin, viewsets.ModelViewSet
 ):
@@ -12302,6 +12322,127 @@ class DisponibiliteOperationnelleViewSet(
     serializer_class = (
         DisponibiliteOperationnelleSerializer
     )
+
+    # Fenêtre de la grille de mobilisation. Quinze jours : c'est l'horizon sur lequel une
+    # association se projette pour armer une garde — au-delà, les gens ne savent pas encore, et
+    # une case remplie trop tôt donne une fausse certitude.
+    JOURS_GRILLE = 15
+
+    @action(detail=False, methods=["get"], url_path="grille")
+    def grille(self, request):
+        """Qui est disponible, jour par jour, sur les quinze prochains jours.
+
+        Trois valeurs par case, et la troisième est la plus importante : disponible, indisponible,
+        ou **non renseigné**. Confondre « a dit non » et « n'a pas répondu » est l'erreur qui
+        fait partir une mobilisation avec un effectif imaginaire ; l'écran doit pouvoir montrer
+        les silences.
+
+        Les membres SORTIS n'y figurent pas (ils ne sont plus de l'association) et ceux EN CONGÉ
+        non plus — mais leur nombre est rendu, parce qu'une liste qui omet des gens sans le dire
+        laisse chercher où ils sont passés.
+
+        Contrôle d'accès porté par l'action elle-même : le ViewSet qui l'héberge n'a pas de
+        cadrage par institution (dette constatée le 28/10/2026, voir § 5.12 ter pour le même
+        problème sur les contacts), et il ne faut pas qu'une nouvelle action en hérite. On exige
+        donc d'être membre actif de l'institution interrogée, ou administrateur."""
+        institution_id = request.query_params.get("institution")
+        if not institution_id:
+            return Response({"error": "Paramètre `institution` requis."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        institution = Institution.objects.filter(pk=institution_id).first()
+        if institution is None:
+            return Response({"error": "Institution inconnue."},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        est_admin = get_effective_role(request) == UserRole.ADMINISTRATOR
+        if not est_admin and not ContactInstitution.objects.filter(
+                institution=institution, utilisateur=request.user, actif=True).exists():
+            raise PermissionDenied(
+                "Vous devez être membre de cette institution pour consulter les "
+                "disponibilités de ses membres."
+            )
+
+        try:
+            jours_demandes = int(request.query_params.get("jours", self.JOURS_GRILLE))
+        except (TypeError, ValueError):
+            jours_demandes = self.JOURS_GRILLE
+        # Borné : une grille de six mois n'est pas une grille, c'est un export, et elle ferait
+        # une requête par jour et par membre à l'affichage.
+        nb_jours = max(1, min(jours_demandes, 31))
+
+        debut = timezone.localdate()
+        jours = [debut + datetime.timedelta(days=i) for i in range(nb_jours)]
+        environnement = get_active_environment(request)
+
+        rattachements = ContactInstitution.objects.filter(
+            institution=institution, actif=True,
+        ).exclude(
+            statut__in=[ContactInstitution.StatutMembre.SORTI,
+                        ContactInstitution.StatutMembre.CONGE],
+        ).select_related("utilisateur")
+        en_conge = ContactInstitution.objects.filter(
+            institution=institution, actif=True,
+            statut=ContactInstitution.StatutMembre.CONGE,
+        ).count()
+
+        utilisateurs = [c.utilisateur_id for c in rattachements]
+        # Une seule requête pour toutes les déclarations de la fenêtre, puis assemblage en
+        # mémoire : une requête par membre et par jour ferait 15 × l'effectif.
+        declarations = list(
+            DisponibiliteOperationnelle.objects.filter(
+                affectation__institution=institution,
+                affectation__utilisateur_id__in=utilisateurs,
+                environment=environnement,
+            ).filter(
+                Q(date_fin__isnull=True) | Q(date_fin__date__gte=debut),
+                date_debut__date__lte=jours[-1],
+            ).select_related("affectation")
+        )
+
+        par_utilisateur = {}
+        for declaration in declarations:
+            par_utilisateur.setdefault(
+                declaration.affectation.utilisateur_id, []).append(declaration)
+
+        qualifications_expirees = {}
+        for qualif in QualificationMembre.objects.filter(
+                utilisateur_id__in=utilisateurs, environment=environnement,
+                date_expiration__lt=debut):
+            qualifications_expirees[qualif.utilisateur_id] = \
+                qualifications_expirees.get(qualif.utilisateur_id, 0) + 1
+
+        membres = []
+        for contact in rattachements:
+            siennes = par_utilisateur.get(contact.utilisateur_id, [])
+            membres.append({
+                "utilisateur": contact.utilisateur_id,
+                "nom": (f"{contact.utilisateur.first_name} "
+                        f"{contact.utilisateur.last_name}").strip()
+                       or contact.utilisateur.email,
+                "fonction": contact.fonction,
+                "membre_bureau": contact.membre_bureau,
+                # Deux signaux qui décident d'une mobilisation autant que la disponibilité :
+                # un titre périmé vaut un titre absent, une aptitude échue interdit le terrain.
+                "qualifications_expirees": qualifications_expirees.get(
+                    contact.utilisateur_id, 0),
+                "aptitude_valide_jusquau": contact.aptitude_valide_jusquau,
+                "jours": [
+                    {"date": jour, "disponible": _disponibilite_du_jour(siennes, jour)}
+                    for jour in jours
+                ],
+            })
+        membres.sort(key=lambda m: m["nom"].lower())
+
+        return Response({
+            "institution": institution.id,
+            "institution_nom": institution.nom,
+            "debut": jours[0],
+            "fin": jours[-1],
+            "jours": jours,
+            "membres": membres,
+            # Dit, et non tu : une liste qui omet des gens sans le signaler laisse chercher.
+            "membres_en_conge": en_conge,
+        })
 
     @action(
         detail=True,

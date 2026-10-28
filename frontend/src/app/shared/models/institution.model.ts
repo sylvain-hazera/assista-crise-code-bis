@@ -1,3 +1,5 @@
+import { StatutMembre } from './association.model';
+
 export interface InstitutionType {
   id?: string;
   code: string;
@@ -40,6 +42,19 @@ export interface ContactInstitution {
   // Zone (catalogue Zone de l'institution) couverte par ce contact — préparation PCS/PICS.
   zone?: string | null;
   date_creation?: string;
+  /** Gouvernance de l'institution : administre les membres et instruit les candidatures. Porté
+   * par le rattachement et non par le compte — on est au bureau d'UNE association. Reste
+   * lisible par quiconque voit la fiche : savoir qui dirige est une information normale. */
+  membre_bureau?: boolean;
+  /** Les quatre champs ci-dessous ne sont servis QU'au bureau de l'institution concernée, à
+   * l'intéressé et à un administrateur (ContactInstitutionSerializer.CHAMPS_SUIVI_ASSOCIATIF).
+   * Absents de la réponse sinon — donc `undefined` et non `null` : ne pas les afficher comme
+   * « vide », ce serait affirmer qu'il n'y a rien alors qu'on n'a pas le droit de savoir. */
+  statut?: StatutMembre;
+  date_adhesion?: string | null;
+  adhesion_valide_jusquau?: string | null;
+  /** Date seule, jamais une information d'aptitude ni un document (RGPD art. 9). */
+  aptitude_valide_jusquau?: string | null;
 }
 
 export interface InstitutionDomaine {

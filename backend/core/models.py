@@ -6,6 +6,7 @@ from django.contrib.auth.models import AbstractUser, Group, Permission
 from django.contrib.auth.models import UserManager as DjangoUserManager
 from django.contrib.gis.db import models as gis_models
 from django.core.validators import MinValueValidator, MaxValueValidator
+from django.utils import timezone
 from django.db import models
 from django.contrib.postgres.fields import ArrayField
 from django.contrib.postgres.indexes import GinIndex
@@ -3405,14 +3406,33 @@ class DisponibiliteOperationnelle(
         default=True
     )
 
+    # Début de la PÉRIODE déclarée, et non l'instant de la déclaration : deux choses
+    # différentes, et les confondre rendait le modèle incapable d'exprimer « je suis disponible
+    # le 5 novembre ». `auto_now_add` écrasait systématiquement la valeur par l'heure de
+    # création, si bien qu'on ne pouvait dire que « disponible à partir de maintenant jusqu'à
+    # telle date » — donc aucune grille prospective, alors que c'est exactement ce qu'une
+    # association regarde pour armer une garde (voir DisponibiliteOperationnelleViewSet.grille).
+    #
+    # Corrigé le 28/10/2026 sans risque : la table était vide et aucun écran ne l'alimentait.
+    # Quatre autres modèles partagent cette forme (InstitutionCompetence,
+    # AffectationCompetence, AffectationRoleOperationnel, DelegationCompetence) et ne sont PAS
+    # touchés : pour eux « depuis quand cela vaut » est bien l'instant de création, et ils
+    # portent des données réelles.
     date_debut = models.DateTimeField(
-        auto_now_add=True
+        default=timezone.now,
+        help_text="Début de la période de disponibilité déclarée.",
     )
 
     date_fin = models.DateTimeField(
         null=True,
-        blank=True
+        blank=True,
+        help_text="Fin de la période. Vide = permanence ouverte, sans terme.",
     )
+
+    # Quand la déclaration a été faite. Null sur les lignes antérieures à ce champ : leur
+    # `date_debut` ÉTAIT leur date de création, prétendre la connaître autrement serait
+    # inventer.
+    date_creation = models.DateTimeField(auto_now_add=True, null=True)
 
     commentaire = models.TextField(
         blank=True,

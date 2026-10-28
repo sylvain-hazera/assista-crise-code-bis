@@ -84,6 +84,11 @@ export const NAV_ITEMS: NavItem[] = [
   // national, puis validés un à un par la commune — voir core/opendata/ côté serveur.
   { icon: 'domain', label: 'Sites sensibles', route: '/admin/sites-sensibles', groupe: 'preparation' },
   { icon: 'category', label: 'Compétences', route: '/admin/competences', groupe: 'preparation' },
+  // Associations agréées de sécurité civile : annuaire des membres, circuit de recrutement,
+  // qualifications avec échéances, disponibilités à quinze jours. Visible à tout rôle
+  // institutionnel : « être au bureau » est un attribut du rattachement et non un rôle de
+  // compte, donc invérifiable depuis le menu — la page le dit elle-même à qui n'y a pas accès.
+  { icon: 'badge', label: 'Membres association', route: '/admin/membres-association', groupe: 'preparation' },
   // RCSC/RESPONSABLE d'une mairie ou délégation active (core/vulnerabilites.py).
   { icon: 'accessible', label: 'Personnes vulnérables', route: '/admin/personnes-vulnerables', groupe: 'preparation', visibilite: 'registre-vulnerables' },
 

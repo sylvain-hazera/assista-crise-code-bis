@@ -1,0 +1,501 @@
+<div class="membres-page">
+
+  <header class="page-header">
+    <div class="header-left">
+      <h1><span class="material-icons">badge</span> Membres de l'association</h1>
+      <p class="subtitle">
+        @if (grille || membres.length) {
+          {{ compteActifs }} membre(s) actif(s),
+          {{ compteBureau }} au bureau,
+          {{ candidaturesEnCours.length }} candidature(s) à instruire
+        } @else {
+          Annuaire, recrutement, qualifications et disponibilités
+        }
+      </p>
+    </div>
+    @if (mesInstitutions.length > 1) {
+      <label class="choix-institution">
+        Association
+        <select [ngModel]="institutionChoisie"
+                (ngModelChange)="changerInstitution($event)" name="institution">
+          @for (i of mesInstitutions; track i.id) {
+            <option [ngValue]="i.id">{{ i.nom }}</option>
+          }
+        </select>
+      </label>
+    }
+  </header>
+
+  @if (erreur) {
+    <div class="toast toast-err"><span class="material-icons">error_outline</span> {{ erreur }}</div>
+  }
+  @if (message) {
+    <div class="toast toast-ok"><span class="material-icons">check_circle</span> {{ message }}</div>
+  }
+
+  @if (chargement) {
+    <div class="loading">Chargement…</div>
+  } @else if (!mesInstitutions.length) {
+    <p class="help-text">
+      <span class="material-icons">info</span>
+      <span>
+        Cette page est réservée aux <strong>membres du bureau</strong> d'une association : ce
+        sont eux qui administrent les membres et instruisent les candidatures. Si vous devriez
+        y avoir accès, demandez à un membre du bureau de vous y ajouter.
+      </span>
+    </p>
+  } @else {
+
+    <nav class="onglets">
+      <button type="button" [class.actif]="onglet === 'membres'"
+              (click)="ouvrirOnglet('membres')">
+        <span class="material-icons">groups</span> Annuaire
+      </button>
+      <button type="button" [class.actif]="onglet === 'candidatures'"
+              (click)="ouvrirOnglet('candidatures')">
+        <span class="material-icons">how_to_reg</span> Candidatures
+        @if (candidaturesEnCours.length) {
+          <span class="pastille">{{ candidaturesEnCours.length }}</span>
+        }
+      </button>
+      <button type="button" [class.actif]="onglet === 'disponibilites'"
+              (click)="ouvrirOnglet('disponibilites')">
+        <span class="material-icons">event_available</span> Disponibilités
+      </button>
+      <button type="button" [class.actif]="onglet === 'liens'"
+              (click)="ouvrirOnglet('liens')">
+        <span class="material-icons">link</span> Liens d'invitation
+      </button>
+    </nav>
+
+    <!-- ══ Annuaire ════════════════════════════════════════════════════════ -->
+    @if (onglet === 'membres') {
+      <p class="help-text">
+        <span class="material-icons">info</span>
+        <span>
+          <strong>Un membre sorti perd ses accès</strong> : changer son statut désactive son
+          rattachement, ce n'est pas une simple étiquette. Un membre <strong>en congé</strong>
+          garde ses accès et son ancienneté, mais n'apparaît plus dans les disponibilités d'une
+          mobilisation. Les échéances en orange arrivent dans moins de
+          {{ JOURS_ALERTE }} jours, celles en rouge sont dépassées — et une qualification
+          périmée vaut une qualification absente.
+        </span>
+      </p>
+
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Membre</th>
+            <th>Fonction</th>
+            <th>Statut</th>
+            <th>Bureau</th>
+            <th>Adhésion</th>
+            <th>Aptitude</th>
+            <th>Qualifications</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (m of membresTries; track m.id) {
+            <tr [class.sorti]="m.statut === 'SORTI'">
+              <td>
+                <strong>{{ m.utilisateur_nom || '—' }}</strong>
+                @if (m.contact_principal) {
+                  <span class="marque">contact principal</span>
+                }
+              </td>
+              <td>
+                <input type="text" class="cellule" [ngModel]="m.fonction"
+                       (ngModelChange)="enregistrerChamp(m, 'fonction', $event)"
+                       [name]="'fonction-' + m.id" placeholder="—">
+              </td>
+              <td>
+                <select class="cellule" [ngModel]="m.statut"
+                        (ngModelChange)="changerStatut(m, $event)"
+                        [name]="'statut-' + m.id">
+                  <option value="ACTIF">Actif</option>
+                  <option value="CONGE">En congé</option>
+                  <option value="SORTI">Sorti</option>
+                </select>
+              </td>
+              <td class="centre">
+                <button type="button" class="bascule" [class.on]="m.membre_bureau"
+                        (click)="basculerBureau(m)"
+                        [title]="m.membre_bureau ? 'Retirer du bureau' : 'Ajouter au bureau'">
+                  <span class="material-icons">
+                    {{ m.membre_bureau ? 'verified' : 'remove' }}
+                  </span>
+                </button>
+              </td>
+              <td [class]="'echeance ' + etatEcheance(m.adhesion_valide_jusquau)">
+                <input type="date" class="cellule"
+                       [ngModel]="m.adhesion_valide_jusquau"
+                       (ngModelChange)="enregistrerChamp(m, 'adhesion_valide_jusquau', $event)"
+                       [name]="'adhesion-' + m.id">
+              </td>
+              <td [class]="'echeance ' + etatEcheance(m.aptitude_valide_jusquau)">
+                <input type="date" class="cellule"
+                       [ngModel]="m.aptitude_valide_jusquau"
+                       (ngModelChange)="enregistrerChamp(m, 'aptitude_valide_jusquau', $event)"
+                       [name]="'aptitude-' + m.id"
+                       title="Date de fin de validité du certificat médical. Date seule : aucune information d'aptitude n'est conservée.">
+              </td>
+              <td>
+                @for (q of qualificationsDe(m.utilisateur); track q.id) {
+                  <span class="titre" [class.depasse]="q.expiree"
+                        [class.bientot]="!q.expiree && (q.jours_avant_expiration ?? 999) <= JOURS_ALERTE">
+                    {{ q.qualification_nom }}
+                    @if (q.date_expiration) {
+                      @if (q.expiree) {
+                        — expiré
+                      } @else {
+                        — {{ q.jours_avant_expiration }} j
+                      }
+                    }
+                    <button type="button" class="retirer" (click)="supprimerQualification(q)"
+                            title="Retirer ce titre">×</button>
+                  </span>
+                } @empty {
+                  <span class="vide">aucune</span>
+                }
+              </td>
+              <td class="actions">
+                <button type="button" class="btn-secondary sm" (click)="ouvrirSaisie(m)">
+                  <span class="material-icons">add</span>
+                </button>
+              </td>
+            </tr>
+            @if (membreSelectionne === m.utilisateur) {
+              <tr class="ligne-saisie">
+                <td colspan="8">
+                  <div class="saisie-qualification">
+                    <label>
+                      Titre
+                      <select [(ngModel)]="nouvelleQualification.qualification"
+                              (ngModelChange)="onQualificationChoisie()" name="q-titre">
+                        <option value="">— Choisir —</option>
+                        @for (q of catalogue; track q.id) {
+                          <option [ngValue]="q.id">{{ q.nom }}</option>
+                        }
+                      </select>
+                    </label>
+                    <label>
+                      Obtenu le
+                      <input type="date" [(ngModel)]="nouvelleQualification.date_obtention"
+                             (ngModelChange)="onQualificationChoisie()" name="q-obtention">
+                    </label>
+                    <label>
+                      Expire le
+                      <input type="date" [(ngModel)]="nouvelleQualification.date_expiration"
+                             name="q-expiration">
+                    </label>
+                    <label>
+                      Organisme
+                      <input type="text" [(ngModel)]="nouvelleQualification.organisme"
+                             name="q-organisme" placeholder="Qui a délivré le titre">
+                    </label>
+                    <button type="button" class="btn-primary sm"
+                            [disabled]="!nouvelleQualification.qualification"
+                            (click)="enregistrerQualification()">Enregistrer</button>
+                  </div>
+                  <p class="page-hint">
+                    L'échéance est préremplie depuis la durée habituelle du titre, à titre de
+                    proposition : c'est la date portée par l'attestation réelle qui fait foi.
+                  </p>
+                </td>
+              </tr>
+            }
+          } @empty {
+            <tr><td colspan="8" class="empty">Aucun membre dans cette association.</td></tr>
+          }
+        </tbody>
+      </table>
+    }
+
+    <!-- ══ Candidatures ════════════════════════════════════════════════════ -->
+    @if (onglet === 'candidatures') {
+      <p class="help-text">
+        <span class="material-icons">info</span>
+        <span>
+          Le circuit <strong>avance, il ne recule pas</strong> — une étape franchie l'a été par
+          quelqu'un. Vous pouvez en sauter : si vous connaissez la personne, acceptez
+          directement. <strong>Accepter active le compte et rattache la personne</strong> d'un
+          seul geste : elle devient membre, rejoint l'équipe de l'association et obtient le
+          niveau « intervenant », que vous élèverez quand elle sera formée.
+        </span>
+      </p>
+
+      @for (c of candidaturesEnCours; track c.id) {
+        <article class="candidature">
+          <header>
+            <div>
+              <strong>{{ c.utilisateur_nom || c.utilisateur_email }}</strong>
+              <span class="depuis">demandé le {{ c.date_demande | date:'dd/MM/yyyy' }}</span>
+              @if (c.invitation_libelle) {
+                <span class="marque">via « {{ c.invitation_libelle }} »</span>
+              }
+            </div>
+            @if (c.pris_en_charge_par_nom) {
+              <span class="instructeur">
+                <span class="material-icons">person</span> {{ c.pris_en_charge_par_nom }}
+              </span>
+            }
+          </header>
+
+          <ol class="circuit">
+            @for (e of ETAPES; track e) {
+              <li [class.franchie]="etapeFranchie(c, e)" [class.courante]="c.etape === e">
+                {{ e === 'DEMANDE' ? 'Demande reçue'
+                   : e === 'PRISE_EN_CHARGE' ? 'Prise en charge'
+                   : e === 'VERIFICATION' ? 'Pièces vérifiées' : 'Accepté' }}
+              </li>
+            }
+          </ol>
+
+          @if (c.message_candidat) {
+            <blockquote>{{ c.message_candidat }}</blockquote>
+          }
+
+          <div class="actions-candidature">
+            @if (c.etape === 'DEMANDE') {
+              <button type="button" class="btn-secondary" (click)="prendreEnCharge(c)">
+                Je prends en charge
+              </button>
+            }
+            @if (c.etape === 'DEMANDE' || c.etape === 'PRISE_EN_CHARGE') {
+              <button type="button" class="btn-secondary" (click)="marquerVerifiee(c)">
+                Pièces et qualifications vérifiées
+              </button>
+            }
+            <button type="button" class="btn-primary" (click)="accepter(c)">Accepter</button>
+            <button type="button" class="btn-danger" (click)="ouvrirRefus(c)">Refuser</button>
+          </div>
+
+          @if (refusEnCours?.id === c.id) {
+            <div class="refus">
+              <label>
+                Motif du refus <span class="required">*</span>
+                <textarea [(ngModel)]="refusEnCours!.motif" name="motif" rows="2"
+                          placeholder="Hors zone d'intervention, dossier incomplet…"></textarea>
+              </label>
+              <p class="page-hint">
+                Obligatoire : sans motif, la même candidature revient à l'identique six mois
+                plus tard et personne ne sait pourquoi elle avait été écartée.
+              </p>
+              <div class="refus-actions">
+                <button type="button" class="btn-secondary" (click)="refusEnCours = null">
+                  Annuler
+                </button>
+                <button type="button" class="btn-danger"
+                        [disabled]="!refusEnCours!.motif.trim()"
+                        (click)="confirmerRefus()">Confirmer le refus</button>
+              </div>
+            </div>
+          }
+        </article>
+      } @empty {
+        <p class="empty-bloc">Aucune candidature à instruire.</p>
+      }
+
+      @if (candidaturesCloturees.length) {
+        <h3 class="sous-titre">Dossiers clos</h3>
+        <table class="data-table">
+          <thead>
+            <tr><th>Personne</th><th>Issue</th><th>Le</th><th>Motif</th></tr>
+          </thead>
+          <tbody>
+            @for (c of candidaturesCloturees; track c.id) {
+              <tr>
+                <td>{{ c.utilisateur_nom || c.utilisateur_email }}</td>
+                <td>
+                  <span class="issue" [class.refuse]="c.etape === 'REFUSE'">
+                    {{ c.etape_libelle }}
+                  </span>
+                </td>
+                <td>{{ c.date_decision | date:'dd/MM/yyyy' }}</td>
+                <td>{{ c.motif_refus || '—' }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      }
+    }
+
+    <!-- ══ Disponibilités ══════════════════════════════════════════════════ -->
+    @if (onglet === 'disponibilites') {
+      <p class="help-text">
+        <span class="material-icons">info</span>
+        <span>
+          Trois états, et le troisième compte autant que les deux autres : disponible,
+          indisponible, et <strong>non renseigné</strong>. Une case vide n'est
+          <strong>pas</strong> un refus — c'est quelqu'un qui n'a pas répondu, et c'est lui
+          qu'il faut relancer. Partir en mobilisation en comptant les silences comme des refus,
+          ou comme des présences, donne un effectif imaginaire.
+        </span>
+      </p>
+
+      <div class="barre-grille">
+        <label>
+          Fenêtre
+          <select [(ngModel)]="joursGrille" (ngModelChange)="chargerGrille()" name="jours">
+            <option [ngValue]="7">7 jours</option>
+            <option [ngValue]="15">15 jours</option>
+            <option [ngValue]="31">31 jours</option>
+          </select>
+        </label>
+        <button type="button" class="btn-secondary" (click)="chargerGrille()">
+          <span class="material-icons">refresh</span> Actualiser
+        </button>
+        @if (grille && grille.membres_en_conge) {
+          <span class="note-conges">
+            {{ grille.membres_en_conge }} membre(s) en congé, non listés ici
+          </span>
+        }
+      </div>
+
+      @if (grille) {
+        <div class="grille-defilante">
+          <table class="grille">
+            <thead>
+              <tr>
+                <th class="colonne-nom">Membre</th>
+                @for (j of grille.jours; track j) {
+                  <th [class.week-end]="estWeekEnd(j)">{{ enTeteJour(j) }}</th>
+                }
+              </tr>
+            </thead>
+            <tbody>
+              @for (m of grille.membres; track m.utilisateur) {
+                <tr>
+                  <td class="colonne-nom">
+                    <strong>{{ m.nom }}</strong>
+                    @if (m.membre_bureau) { <span class="marque">bureau</span> }
+                    @if (m.qualifications_expirees) {
+                      <span class="alerte" title="Un titre périmé vaut un titre absent">
+                        <span class="material-icons">warning_amber</span>
+                        {{ m.qualifications_expirees }} titre(s) périmé(s)
+                      </span>
+                    }
+                    @if (etatEcheance(m.aptitude_valide_jusquau) === 'depasse') {
+                      <span class="alerte">
+                        <span class="material-icons">warning_amber</span> aptitude échue
+                      </span>
+                    }
+                  </td>
+                  @for (j of m.jours; track j.date) {
+                    <td [class]="'case ' + etatJour(j.disponible)"
+                        [class.week-end]="estWeekEnd(j.date)"
+                        [title]="j.date + ' — ' + (j.disponible === true ? 'disponible'
+                                 : j.disponible === false ? 'indisponible' : 'non renseigné')">
+                      {{ j.disponible === true ? '✓' : j.disponible === false ? '✗' : '·' }}
+                    </td>
+                  }
+                </tr>
+              } @empty {
+                <tr>
+                  <td [attr.colspan]="grille.jours.length + 1" class="empty">
+                    Aucun membre mobilisable dans cette association.
+                  </td>
+                </tr>
+              }
+            </tbody>
+            @if (grille.membres.length) {
+              <tfoot>
+                <tr>
+                  <td class="colonne-nom">Disponibles</td>
+                  @for (j of grille.jours; track j; let i = $index) {
+                    <td class="total" [class.week-end]="estWeekEnd(j)">
+                      {{ comptePourJour(i, 'oui') }}
+                    </td>
+                  }
+                </tr>
+                <tr class="ligne-silences">
+                  <td class="colonne-nom">Sans réponse</td>
+                  @for (j of grille.jours; track j; let i = $index) {
+                    <td class="total" [class.week-end]="estWeekEnd(j)">
+                      {{ comptePourJour(i, 'silence') }}
+                    </td>
+                  }
+                </tr>
+              </tfoot>
+            }
+          </table>
+        </div>
+        <p class="legende">
+          <span class="case oui">✓</span> disponible
+          <span class="case non">✗</span> indisponible
+          <span class="case silence">·</span> non renseigné
+        </p>
+      }
+    }
+
+    <!-- ══ Liens d'invitation ══════════════════════════════════════════════ -->
+    @if (onglet === 'liens') {
+      <p class="help-text">
+        <span class="material-icons">info</span>
+        <span>
+          Un lien d'invitation <strong>n'accorde aucun accès</strong> : qui s'inscrit par là
+          dépose une candidature, que vous instruisez. Nommez-le pour savoir d'où viennent vos
+          candidatures, et donnez-lui une échéance — un lien qui traîne sur un site public finit
+          par être partagé n'importe où.
+        </span>
+      </p>
+
+      <div class="creer-lien">
+        <label>
+          Intitulé
+          <input type="text" [(ngModel)]="nouveauLien.libelle" name="lien-libelle"
+                 placeholder="Forum des associations 2026">
+        </label>
+        <label>
+          Expire le
+          <input type="date" [(ngModel)]="nouveauLien.date_expiration" name="lien-expiration">
+        </label>
+        <button type="button" class="btn-primary" (click)="creerLien()">
+          <span class="material-icons">add_link</span> Créer un lien
+        </button>
+      </div>
+
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Intitulé</th><th>Lien</th><th>Expire</th><th>Candidatures</th>
+            <th>État</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (l of invitations; track l.id) {
+            <tr [class.inutilisable]="!l.utilisable">
+              <td>{{ l.libelle || '—' }}</td>
+              <td class="lien">
+                <code>{{ lienComplet(l) }}</code>
+                <button type="button" class="btn-secondary sm" (click)="copierLien(l)"
+                        title="Copier le lien">
+                  <span class="material-icons">content_copy</span>
+                </button>
+              </td>
+              <td>{{ l.date_expiration ? (l.date_expiration | date:'dd/MM/yyyy') : 'sans terme' }}</td>
+              <td class="centre">{{ l.nombre_candidatures }}</td>
+              <td>
+                @if (l.utilisable) {
+                  <span class="issue">utilisable</span>
+                } @else {
+                  <span class="issue refuse">hors service</span>
+                }
+              </td>
+              <td class="actions">
+                @if (l.actif) {
+                  <button type="button" class="btn-secondary sm" (click)="desactiverLien(l)">
+                    Désactiver
+                  </button>
+                }
+              </td>
+            </tr>
+          } @empty {
+            <tr><td colspan="6" class="empty">Aucun lien d'invitation.</td></tr>
+          }
+        </tbody>
+      </table>
+    }
+  }
+</div>
