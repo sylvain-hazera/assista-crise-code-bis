@@ -22,6 +22,7 @@ import secrets
 from pathlib import Path
 
 from django.contrib.gis.geos import GEOSGeometry, MultiPoint, MultiPolygon, Point
+from django.core.management import call_command
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
@@ -220,6 +221,17 @@ class Command(BaseCommand):
         parser.add_argument("--total", type=int, default=600, help="Nombre total de points à générer (défaut 600).")
         parser.add_argument("--seed", type=int, default=91142026)
         parser.add_argument("--delete", action="store_true", help="Supprime la crise et toutes ses données au lieu d'en générer.")
+        parser.add_argument(
+            "--intervenant", default=None,
+            help="Personne à rendre intervenante sur les trois équipes (email, ou « Prénom "
+                 "Nom ») — passée à completer_affectation_auto_gier.",
+        )
+        parser.add_argument(
+            "--sans-affectation", action="store_true",
+            help="N'enchaîne pas completer_affectation_auto_gier : la crise est générée sans "
+                 "dossiers ni chaîne d'affectation, utile pour reproduire l'état d'avant le "
+                 "28/10/2026.",
+        )
 
     def handle(self, *args, **options):
         if options["delete"]:
@@ -285,6 +297,18 @@ class Command(BaseCommand):
         centres_accueil = [p for p in points if p.type.code == "HEBERGEMENT"]
         n_decl_created = self._creer_declarations_securite(crisis, centres_accueil, n_declarations)
         self.stdout.write(f"  {n_decl_created} déclarations de sécurité créées.")
+
+        # Les quatre familles ci-dessus sont créées en bulk_create, qui ne passe par aucun
+        # perform_create : sans cette étape, aucune demande ni aucun signalement n'a de dossier,
+        # et la chaîne d'affectation automatique (correspondances, AffectationCompetence,
+        # régulateur disponible) reste incomplète. Déléguée à une commande à part parce qu'elle
+        # doit aussi pouvoir être relancée seule sur une crise déjà générée.
+        if not options["sans_affectation"]:
+            self.stdout.write("")
+            call_command(
+                "completer_affectation_auto_gier",
+                intervenant=options.get("intervenant"),
+            )
 
         grand_total = n_offers_created + n_requests_created + n_info_created + n_decl_created
         self.stdout.write(self.style.SUCCESS(

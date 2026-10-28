@@ -160,6 +160,22 @@ docker compose exec backend python manage.py generate_crise_gier_pilat --total 1
 `generate_crise_gier_pilat` construit une crise réaliste (points opérationnels, équipes, offres,
 demandes, signalements, déclarations de sécurité) et accepte `--delete` pour tout retirer.
 
+Il enchaîne désormais `completer_affectation_auto_gier`, qui rend l'**affectation automatique**
+réellement opérante et peut aussi se relancer seule sur une crise déjà générée :
+
+```bash
+docker compose exec backend python manage.py completer_affectation_auto_gier --simulation
+docker compose exec backend python manage.py completer_affectation_auto_gier --intervenant "Prenom Nom"
+```
+
+Elle pose les correspondances thème → besoin → compétence manquantes (aucun type de signalement
+n'en avait), crée les `AffectationCompetence` — seule table lue par le matching, `Team.competences`
+ne servant qu'à l'affichage —, déclare la zone de la crise sur chaque équipe, rend une personne
+intervenante et régulatrice disponible, puis crée les dossiers des demandes et signalements qui
+n'en avaient pas (le générateur les insère en `bulk_create`, donc hors `perform_create`).
+`--simulation` exécute tout dans une transaction annulée ; `--sans-affectation` sur le générateur
+reproduit l'état antérieur.
+
 **Accès à la base** : `localhost:5432`, base `assista-db`, identifiants `DB_USER` / `DB_PASS`
 du `.env` (DBeaver, pgAdmin…), ou `docker compose exec db psql -U admin -d assista-db`. Les
 colonnes chiffrées y apparaissent illisibles (`gAAAAA…`) : pour lire ou **modifier** des
