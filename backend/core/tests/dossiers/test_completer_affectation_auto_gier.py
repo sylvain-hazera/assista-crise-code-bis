@@ -250,6 +250,21 @@ class TestIntervenant:
 
         assert set(fred.teams.values_list("name", flat=True)) == set(equipes)
 
+    def test_un_prenom_usuel_retrouve_un_prenom_accentue(self, catalogue, crise, equipes, fred):
+        """« Fred » ne préfixe pas « Frédéric » pour la base : la différence tombe sur le
+        troisième caractère. C'est pourtant exactement ce qu'on tape."""
+        fred.first_name = "Frédéric"
+        fred.save(update_fields=["first_name"])
+
+        call_command("completer_affectation_auto_gier", intervenant="Fred Bouchet")
+
+        assert fred.teams.exists()
+
+    def test_retrouve_par_email(self, catalogue, crise, equipes, fred):
+        call_command("completer_affectation_auto_gier", intervenant="fred@exemple.fr")
+
+        assert fred.teams.exists()
+
     def test_devient_regulateur_disponible_sur_les_themes(self, catalogue, crise, equipes, fred):
         """Sans régulateur disponible, le dossier naît EN_ATTENTE_DISTRIBUTION et la file
         /dossiers/ma_file/ reste vide pour tout le monde."""
@@ -323,6 +338,58 @@ class TestIntervenant:
         call_command("completer_affectation_auto_gier", intervenant="Personne Inexistante")
 
         assert Dossier.objects.filter(demande=demande).exists()
+
+
+@pytest.mark.django_db
+class TestCategoriesParentes:
+    def test_une_equipe_couvre_la_categorie_de_sa_specialite(self, catalogue, crise, equipes):
+        """Le catalogue réel relie « Danger imminent » à la CATÉGORIE « Secours & sécurité »,
+        qu'aucune équipe ne porte. Sans remontée au parent, un dossier correctement qualifié
+        n'a aucun candidat."""
+        categorie, _ = Competence.objects.get_or_create(nom="Secours & sécurité")
+        Competence.objects.filter(nom="Secourisme").update(parent=categorie)
+        besoin, _ = Besoin.objects.get_or_create(nom="Danger imminent")
+        BesoinCompetence.objects.filter(besoin=besoin).delete()
+        BesoinCompetence.objects.create(besoin=besoin, competence=categorie)
+        signalement = _signalement(crise, "Danger imminent")
+
+        call_command("completer_affectation_auto_gier")
+
+        dossier = Dossier.objects.get(information=signalement)
+        assert dossier.competence == categorie
+        assert dossier.equipe.name == EQUIPE_TRANSPORT
+
+
+@pytest.mark.django_db
+class TestResuggestion:
+    def test_un_dossier_deja_ouvert_recoit_son_equipe(self, catalogue, crise, equipes):
+        """Le cas réel : tous les dossiers existaient déjà, sans équipe. Leur suggestion n'est
+        calculée qu'à la création — la phase de rattrapage ne les voit même pas."""
+        demande = _demande(crise, "Nettoyage / déblaiement")
+        dossier = Dossier.objects.create(
+            numero="DOS-TEST0001", crise=crise, demande=demande, titre=demande.title,
+            description="Dossier anterieur", statut=Dossier.Statut.EN_ATTENTE_AFFECTATION,
+            competence=Competence.objects.get(nom="Nettoyage et déblaiement"),
+            environment=Environment.DEMO,
+        )
+
+        call_command("completer_affectation_auto_gier")
+
+        dossier.refresh_from_db()
+        assert dossier.equipe.name == EQUIPE_LOGISTIQUE
+
+    def test_une_competence_sans_equipe_est_signalee(self, catalogue, crise, equipes, capsys):
+        orpheline, _ = Competence.objects.get_or_create(nom="Plongée subaquatique")
+        demande = _demande(crise, "Nettoyage / déblaiement")
+        Dossier.objects.create(
+            numero="DOS-TEST0002", crise=crise, demande=demande, titre=demande.title,
+            description="Dossier anterieur", statut=Dossier.Statut.EN_ATTENTE_AFFECTATION,
+            competence=orpheline, environment=Environment.DEMO,
+        )
+
+        call_command("completer_affectation_auto_gier")
+
+        assert "Plongée subaquatique" in capsys.readouterr().out
 
 
 @pytest.mark.django_db

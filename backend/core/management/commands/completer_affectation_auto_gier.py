@@ -50,6 +50,7 @@ from core.management.commands.generate_crise_gier_pilat import (
     EQUIPE_TRANSPORT,
 )
 from core.models import (
+    AffectationCompetence,
     AffectationRoleOperationnel,
     Besoin,
     BesoinCompetence,
@@ -113,7 +114,12 @@ EQUIPE_COMPETENCES = {
         "Accueil",
         "Soutien psychologique",
     ],
-    EQUIPE_LOGISTIQUE: ["Nettoyage et déblaiement", "Logistique"],
+    # « Technique » (groupes électrogènes) et « Élagage / bûcheronnage » (arbres sur la
+    # chaussée) sont les compétences auxquelles le catalogue réel relie ces thèmes, et aucune
+    # équipe ne les portait : leurs dossiers restaient sans candidat.
+    EQUIPE_LOGISTIQUE: [
+        "Nettoyage et déblaiement", "Logistique", "Technique", "Élagage / bûcheronnage",
+    ],
     EQUIPE_TRANSPORT: ["Transport", "Secourisme"],
 }
 
@@ -193,6 +199,7 @@ class Command(BaseCommand):
         self._intervenant(
             options.get("intervenant"), options["role_demo"], crise, equipes)
         self._rattrapage(crise)
+        self._resuggestion(crise)
 
     def _trouver_crise(self, nom_exact):
         """La crise réelle a été renommée depuis sa génération (« démo inondation vallée du
@@ -322,19 +329,60 @@ class Command(BaseCommand):
                 self._note(f"zone déclarée : {len(equipe.communes)} communes")
 
             crees = affecter_competences_aux_crises(equipe)
+            crees += self._affecter_categories_parentes(crise, equipe)
             self._note(f"{crees} affectation(s) de compétence créée(s)")
         return equipes
 
+    def _affecter_categories_parentes(self, crise, equipe):
+        """Une équipe compétente en « Secourisme » l'est aussi pour la catégorie qui le
+        contient, « Secours & sécurité ».
+
+        Le catalogue réel relie plusieurs thèmes à une compétence de REGROUPEMENT
+        (`Competence.parent`) plutôt qu'à une compétence opérationnelle : « Danger imminent »
+        pointe sur « Secours & sécurité », « Groupe électrogène » sur « Technique ». Or
+        `meilleure_equipe_pour_competence` compare des compétences à l'identique. Sans cette
+        remontée, un dossier correctement qualifié n'avait aucun candidat — alors qu'une équipe
+        portant une compétence FILLE de cette catégorie est exactement celle qu'il faut."""
+        crees = 0
+        parents = {
+            competence.parent for competence in equipe.competences.select_related("parent")
+            if competence.parent_id
+        }
+        for parent in parents:
+            _, cree = AffectationCompetence.objects.get_or_create(
+                crise=crise, competence=parent, equipe=equipe,
+                defaults={"active": True, "environment": equipe.environment,
+                          "commentaire": "Catégorie parente d'une spécialité de l'équipe."},
+            )
+            if cree:
+                crees += 1
+                self._note(f"catégorie « {parent.nom} » couverte via une spécialité")
+        return crees
+
     # ── 3. Intervenant / régulateur ───────────────────────────────────────
     def _resoudre_personne(self, reference):
+        """Par email (index aveugle, le champ est chiffré) ou par « Prénom Nom ».
+
+        La comparaison des noms se fait sans accent et en Python : « Fred » ne préfixe pas
+        « Frédéric » pour la base — la différence tombe sur le troisième caractère — et
+        chercher un prénom tronqué est exactement ce qu'on fait quand on ne connaît que
+        l'usage de quelqu'un."""
         if "@" in reference:
-            return User.objects.filter(email_bidx=blind_index(reference.strip().lower())).first()
-        morceaux = reference.split()
-        nom = morceaux[-1]
-        candidats = User.objects.filter(last_name__iexact=nom)
-        if len(morceaux) > 1:
-            candidats = candidats.filter(first_name__istartswith=morceaux[0])
-        return candidats.first()
+            return User.objects.filter(
+                email_bidx=blind_index(reference.strip().lower())).first()
+
+        morceaux = [_sans_accent(m) for m in reference.split() if m]
+        if not morceaux:
+            return None
+        nom, prenom = morceaux[-1], morceaux[0] if len(morceaux) > 1 else None
+        for personne in User.objects.exclude(last_name="").only(
+                "id", "first_name", "last_name", "type", "demo_role"):
+            if _sans_accent(personne.last_name) != nom:
+                continue
+            if prenom and not _sans_accent(personne.first_name).startswith(prenom):
+                continue
+            return personne
+        return None
 
     def _intervenant(self, reference, role_demo, crise, equipes):
         self._titre("3. Intervenant")
@@ -476,6 +524,36 @@ class Command(BaseCommand):
         self._note(f"{comptes['en_attente_distribution']} en attente de distribution (aucun régulateur disponible sur le thème)")
         if not self.notifier:
             self._note("notifications non envoyées (--notifier pour les produire)")
+
+    # ── 5. Suggestion d'équipe sur les dossiers déjà ouverts ──────────────
+    def _resuggestion(self, crise):
+        """Les dossiers antérieurs ne profitent pas des affectations posées plus haut : leur
+        équipe suggérée n'est calculée qu'à leur création (voir `resuggerer_dossiers`, 22/10).
+        Sur une crise déjà peuplée, c'est ici que tout se joue — la phase de rattrapage, elle,
+        ne voit que les lignes sans dossier du tout."""
+        from core.views import STATUTS_DOSSIER_EN_ATTENTE, resuggerer_dossiers
+
+        self._titre("5. Suggestion d'équipe sur les dossiers déjà ouverts")
+        en_attente = Dossier.objects.filter(
+            crise=crise, statut__in=STATUTS_DOSSIER_EN_ATTENTE)
+        competences = Competence.objects.filter(
+            id__in=en_attente.filter(competence__isnull=False)
+            .values_list("competence_id", flat=True).distinct()
+        )
+
+        total = 0
+        for competence in competences:
+            total += resuggerer_dossiers(crise.id, competence.id)
+            if not AffectationCompetence.objects.filter(
+                    crise=crise, competence=competence, active=True).exists():
+                self._alerte(
+                    f"« {competence.nom} » : aucune équipe affectée — ces dossiers resteront "
+                    f"sans suggestion."
+                )
+
+        self._ok(f"{total} dossier(s) ont reçu une équipe suggérée")
+        self._note(f"{en_attente.filter(equipe__isnull=True).count()} dossier(s) en attente restent sans équipe")
+        self._note(f"{en_attente.filter(competence__isnull=True).count()} dossier(s) en attente sans compétence (tri manuel)")
 
     def _participants_sans_notification(self, dossier, equipe):
         """Même peuplement que `populate_dossier_participants_and_notify`, sans la cloche :
