@@ -71,6 +71,29 @@
 
     <!-- ══ Annuaire ════════════════════════════════════════════════════════ -->
     @if (onglet === 'membres') {
+      <!-- L'onglet n'avait AUCUN moyen d'ajouter un membre : une association arrivant avec son
+           tableur devait attendre que chacun clique un lien d'invitation. Les trois gestes
+           usuels (voir BlocAjoutComponent) : le `+` renvoie vers les liens d'invitation, qui
+           sont le bon outil pour un recrutement en nombre ; l'import reprend le fichier des
+           adherents ; l'invitation nominative sert le cas a l'unite. -->
+      <app-bloc-ajout
+        quoi="un membre"
+        libelleManuel="Creer un lien d'invitation"
+        [urlExemple]="urlExemplePersonnel"
+        nomFichierExemple="modele-membres-association.csv"
+        [urlImport]="urlImportPersonnel"
+        routeAssistant="/admin/import-personnel"
+        [urlInvitation]="urlInvitationContact"
+        [champsInvitation]="champsInvitationMembre"
+        [champsInvitationSupplementaires]="{ institution: institutionChoisie || '' }"
+        aideInvitation="Le membre recoit un lien d'activation et complete lui-meme son identite.
+                        Il entre directement dans l'annuaire, sans passer par le circuit de
+                        recrutement : utilisez les candidatures pour quelqu'un qui demande a
+                        rejoindre, et l'invitation pour quelqu'un que vous connaissez deja."
+        (ajoutManuel)="onglet = 'liens'"
+        (ajoute)="chargerInstitution()">
+      </app-bloc-ajout>
+
       <p class="help-text">
         <span class="material-icons">info</span>
         <span>

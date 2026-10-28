@@ -332,6 +332,18 @@
             {{ showInviteForm ? 'Annuler' : "Inviter un nouveau membre" }}
           </button>
 
+          <!-- Pas de bloc d'ajout generique ici, a dessein : le formulaire d'invitation
+               ci-dessus exige un ROLE dans l'equipe, que le bloc generique ne sait pas
+               demander, et une equipe se compose de gens deja presents dans l'annuaire. Un
+               import de fichier serait donc un second chemin vers le meme annuaire. On dit ou
+               il se trouve plutot que de le dupliquer. -->
+          <p class="renvoi-import">
+            Vous avez la liste de vos agents dans un fichier ?
+            <a routerLink="/admin/vue-mairie">Importez-la dans l'annuaire de votre
+            collectivite</a> : les personnes apparaitront ensuite dans les membres proposes
+            ci-dessous.
+          </p>
+
           @if (showInviteForm) {
             <form [formGroup]="inviteForm" (ngSubmit)="submitInvite()" class="invite-member-form">
               @if (inviteError) { <p class="invite-error">{{ inviteError }}</p> }

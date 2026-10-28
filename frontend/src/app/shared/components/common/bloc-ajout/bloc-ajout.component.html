@@ -1,0 +1,165 @@
+<div class="bloc-ajout">
+
+  <div class="gestes">
+    <button type="button" class="geste geste-primaire" (click)="ajoutManuel.emit()">
+      <span class="material-icons">add</span> {{ libelleBoutonManuel }}
+    </button>
+
+    @if (urlImport) {
+      <button type="button" class="geste" [class.actif]="panneau === 'csv'"
+              (click)="ouvrir('csv')">
+        <span class="material-icons">upload_file</span> Importer un fichier
+      </button>
+    } @else if (importImpossible) {
+      <span class="geste-absent" [title]="importImpossible">
+        <span class="material-icons">info</span> Pas d'import ici
+      </span>
+    }
+
+    @if (urlInvitation) {
+      <button type="button" class="geste" [class.actif]="panneau === 'invitation'"
+              (click)="ouvrir('invitation')">
+        <span class="material-icons">mail</span> Inviter par email
+      </button>
+    } @else if (invitationImpossible) {
+      <!-- Dire qu'un geste ne s'applique pas vaut mieux que le laisser manquer : sinon on
+           cherche un bouton qui n'existe pas. -->
+      <span class="geste-absent" [title]="invitationImpossible">
+        <span class="material-icons">info</span> Pas d'invitation ici
+      </span>
+    }
+  </div>
+
+  @if (panneau === 'aucun') {
+    @if (importImpossible && !urlImport) {
+      <p class="note-absence">{{ importImpossible }}</p>
+    }
+    @if (invitationImpossible && !urlInvitation) {
+      <p class="note-absence">{{ invitationImpossible }}</p>
+    }
+  }
+
+  <!-- ═══════════════════ FICHIER ═══════════════════ -->
+  @if (panneau === 'csv') {
+    <div class="panneau">
+      <!-- Le modèle AVANT le sélecteur, dans cet ordre : un bouton d'envoi présenté en premier
+           fait envoyer le fichier qu'on a déjà, dans son format à soi, et l'import échoue. -->
+      @if (urlExemple) {
+        <div class="etape">
+          <span class="num">1</span>
+          <div>
+            <button type="button" class="btn-lien" (click)="telechargerModele()">
+              <span class="material-icons">download</span> Télécharger le modèle
+            </button>
+            <p class="aide">
+              Remplissez-le sans toucher à la première ligne : ce sont ses en-têtes qui
+              permettent d'importer directement, sans étape de correspondance.
+            </p>
+          </div>
+        </div>
+      }
+
+      <div class="etape">
+        <span class="num">{{ urlExemple ? 2 : 1 }}</span>
+        <div>
+          <input type="file" accept=".csv,.xlsx" (change)="onFichierChoisi($event)"/>
+          <button type="button" class="btn-primary sm" [disabled]="!fichier || enCours"
+                  (click)="importer()">
+            {{ enCours ? 'Import en cours…' : 'Importer' }}
+          </button>
+          <p class="aide">Fichier .csv ou .xlsx.</p>
+        </div>
+      </div>
+
+      @if (errorMessage) {
+        <div class="toast toast-err">
+          <span class="material-icons">error_outline</span>
+          <div>
+            {{ errorMessage }}
+            @if (mappingAFaire && routeAssistant) {
+              <p class="recours">
+                <a [routerLink]="routeAssistant" [queryParams]="parametresAssistant">
+                  Associer les colonnes à la main
+                </a>
+                — l'assistant vous montre votre fichier et vous laisse désigner chaque colonne.
+              </p>
+            }
+          </div>
+        </div>
+      }
+
+      @if (successMessage) {
+        <div class="toast toast-ok">
+          <span class="material-icons">check_circle_outline</span> {{ successMessage }}
+        </div>
+      }
+
+      @if (resultat?.erreurs?.length) {
+        <!-- Les lignes en erreur sont listées, jamais résumées en un compte : une ligne
+             rejetée sans sa raison oblige à rejouer tout le fichier pour la retrouver. -->
+        <table class="erreurs">
+          <thead><tr><th>Ligne</th><th>Motif du rejet</th></tr></thead>
+          <tbody>
+            @for (erreur of resultat?.erreurs; track $index) {
+              <tr><td>{{ erreur.ligne }}</td><td>{{ erreur.message }}</td></tr>
+            }
+          </tbody>
+        </table>
+      }
+    </div>
+  }
+
+  <!-- ═══════════════════ INVITATION ═══════════════════ -->
+  @if (panneau === 'invitation') {
+    <div class="panneau">
+      @if (aideInvitation) {
+        <p class="aide aide-haut">
+          <span class="material-icons">info</span> {{ aideInvitation }}
+        </p>
+      }
+
+      @for (champ of champsInvitation; track champ.cle) {
+        <div class="champ">
+          <label [for]="'inv-' + champ.cle">
+            {{ champ.label }}
+            @if (!champ.requis) { <span class="facultatif">(facultatif)</span> }
+          </label>
+
+          @if (champ.type === 'select') {
+            <select [id]="'inv-' + champ.cle" [(ngModel)]="invitation[champ.cle]"
+                    [name]="champ.cle">
+              <option value="">— Choisir —</option>
+              @for (option of champ.options; track option.valeur) {
+                <option [value]="option.valeur">{{ option.libelle }}</option>
+              }
+            </select>
+          } @else {
+            <input [id]="'inv-' + champ.cle" [type]="champ.type || 'text'"
+                   [(ngModel)]="invitation[champ.cle]" [name]="champ.cle"
+                   [placeholder]="champ.placeholder || ''"/>
+          }
+
+          @if (champ.aide) { <p class="aide">{{ champ.aide }}</p> }
+        </div>
+      }
+
+      @if (errorMessage) {
+        <div class="toast toast-err">
+          <span class="material-icons">error_outline</span> {{ errorMessage }}
+        </div>
+      }
+      @if (successMessage) {
+        <div class="toast toast-ok">
+          <span class="material-icons">check_circle_outline</span> {{ successMessage }}
+        </div>
+      }
+
+      <button type="button" class="btn-primary sm" [disabled]="!invitationValide || enCours"
+              (click)="inviter()">
+        <span class="material-icons">send</span>
+        {{ enCours ? 'Envoi…' : 'Envoyer l\'invitation' }}
+      </button>
+    </div>
+  }
+
+</div>

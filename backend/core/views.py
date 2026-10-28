@@ -88,6 +88,13 @@ from .imports import (
     exemple_csv_correspondants_pcs,
     exemple_csv_interlocuteurs_pcs,
     exemple_csv_materiel_point,
+    mapping_depuis_entetes,
+    LABELS_PERSONNEL_COMMUNAL,
+    LABELS_INSTITUTIONS,
+    LABELS_HABITATIONS,
+    LABELS_CORRESPONDANTS_PCS,
+    LABELS_INTERLOCUTEURS_PCS,
+    LABELS_MATERIEL_POINT,
     importer_personnel_communal,
     importer_personnel_communal_saisie,
     importer_institutions,
@@ -2190,6 +2197,40 @@ class UserViewSet(viewsets.ModelViewSet):
         return Response({'message': f"Email de réinitialisation envoyé à {target_user.email}"})
 
 
+def _mapping_import(request, champs, labels, colonnes):
+    """Correspondance {champ_cible: colonne_source} pour un import.
+
+    L'appelant qui fournit une correspondance explicite (`mapping_<champ>`) garde la main : c'est
+    l'assistant en deux etapes, indispensable pour un fichier aux en-tetes maison. Quand il n'en
+    fournit AUCUNE, elle est deduite des en-tetes (imports.mapping_depuis_entetes), ce qui permet
+    au cas de loin le plus frequent -- telecharger le fichier d'exemple, le remplir, le renvoyer
+    -- de passer sans etape de correspondance. L'etape manuelle est le moment ou un import se
+    perd ; la supprimer quand elle n'apprend rien vaut mieux que de la decorer."""
+    explicite = {champ: request.data.get(f"mapping_{champ}") for champ in champs}
+    if any(explicite.values()):
+        return explicite
+    return mapping_depuis_entetes(colonnes, labels)
+
+
+def _refus_mapping(mapping, requis, labels):
+    """Message de refus NOMMANT les colonnes manquantes, ou None si l'import peut partir.
+
+    « Les colonnes Email et Nom doivent etre associees » ne disait pas laquelle manquait, et ne
+    disait pas non plus quoi faire. Ici on nomme ce qui n'a pas ete reconnu et on renvoie vers le
+    fichier d'exemple, qui porte les bons en-tetes par construction."""
+    manquants = [
+        (labels.get(champ) or champ).split("(")[0].strip()
+        for champ in requis if not mapping.get(champ)
+    ]
+    if not manquants:
+        return None
+    return (
+        "Colonne(s) non reconnue(s) dans votre fichier : " + ", ".join(manquants)
+        + ". Telechargez le fichier d'exemple et reprenez ses en-tetes, ou associez les colonnes "
+          "a la main."
+    )
+
+
 class ImportApercuView(APIView):
     """Étape 1 de l'import CSV/XLS (n'importe quel type de liste, voir imports.py) : renvoie les
     en-têtes détectées et un aperçu (10 premières lignes) pour que l'utilisateur associe chaque
@@ -2234,16 +2275,14 @@ class ImportPersonnelCommunalView(APIView):
         fichier = request.FILES.get('fichier')
         if not fichier:
             return Response({"error": "Aucun fichier reçu."}, status=status.HTTP_400_BAD_REQUEST)
-        mapping = {champ: request.data.get(f"mapping_{champ}") for champ in CHAMPS_PERSONNEL_COMMUNAL}
-        if not mapping.get("email") or not mapping.get("nom"):
-            return Response(
-                {"error": "Les colonnes Email et Nom doivent être associées avant de lancer l'import."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
         try:
-            _colonnes, lignes = parse_fichier(fichier)
+            colonnes, lignes = parse_fichier(fichier)
         except ValueError as exc:
             return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        mapping = _mapping_import(request, CHAMPS_PERSONNEL_COMMUNAL, LABELS_PERSONNEL_COMMUNAL, colonnes)
+        refus = _refus_mapping(mapping, ["email", "nom"], LABELS_PERSONNEL_COMMUNAL)
+        if refus:
+            return Response({"error": refus}, status=status.HTTP_400_BAD_REQUEST)
         resultat = importer_personnel_communal(request, institution, lignes, mapping)
         return Response(resultat)
 
@@ -2308,16 +2347,14 @@ class ImportInstitutionsView(APIView):
         fichier = request.FILES.get('fichier')
         if not fichier:
             return Response({"error": "Aucun fichier reçu."}, status=status.HTTP_400_BAD_REQUEST)
-        mapping = {champ: request.data.get(f"mapping_{champ}") for champ in CHAMPS_INSTITUTIONS}
-        if not mapping.get("nom") or not mapping.get("type"):
-            return Response(
-                {"error": "Les colonnes Nom et Type doivent être associées avant de lancer l'import."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
         try:
-            _colonnes, lignes = parse_fichier(fichier)
+            colonnes, lignes = parse_fichier(fichier)
         except ValueError as exc:
             return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        mapping = _mapping_import(request, CHAMPS_INSTITUTIONS, LABELS_INSTITUTIONS, colonnes)
+        refus = _refus_mapping(mapping, ["nom", "type"], LABELS_INSTITUTIONS)
+        if refus:
+            return Response({"error": refus}, status=status.HTTP_400_BAD_REQUEST)
         resultat = importer_institutions(request, lignes, mapping)
         return Response(resultat)
 
@@ -2344,13 +2381,14 @@ class ImportCorrespondantsPCSView(APIView):
         fichier = request.FILES.get('fichier')
         if not fichier:
             return Response({"error": "Aucun fichier reçu."}, status=status.HTTP_400_BAD_REQUEST)
-        mapping = {champ: request.data.get(f"mapping_{champ}") for champ in CHAMPS_CORRESPONDANTS_PCS}
-        if not mapping.get("email") or not mapping.get("nom"):
-            return Response({"error": "Les colonnes Email et Nom doivent être associées avant de lancer l'import."}, status=status.HTTP_400_BAD_REQUEST)
         try:
-            _colonnes, lignes = parse_fichier(fichier)
+            colonnes, lignes = parse_fichier(fichier)
         except ValueError as exc:
             return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        mapping = _mapping_import(request, CHAMPS_CORRESPONDANTS_PCS, LABELS_CORRESPONDANTS_PCS, colonnes)
+        refus = _refus_mapping(mapping, ["email", "nom"], LABELS_CORRESPONDANTS_PCS)
+        if refus:
+            return Response({"error": refus}, status=status.HTTP_400_BAD_REQUEST)
         resultat = importer_correspondants_pcs(request, institution, lignes, mapping)
         return Response(resultat)
 
@@ -2375,13 +2413,14 @@ class ImportInterlocuteursPCSView(APIView):
         fichier = request.FILES.get('fichier')
         if not fichier:
             return Response({"error": "Aucun fichier reçu."}, status=status.HTTP_400_BAD_REQUEST)
-        mapping = {champ: request.data.get(f"mapping_{champ}") for champ in CHAMPS_INTERLOCUTEURS_PCS}
-        if not mapping.get("nom"):
-            return Response({"error": "La colonne Nom doit être associée avant de lancer l'import."}, status=status.HTTP_400_BAD_REQUEST)
         try:
-            _colonnes, lignes = parse_fichier(fichier)
+            colonnes, lignes = parse_fichier(fichier)
         except ValueError as exc:
             return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        mapping = _mapping_import(request, CHAMPS_INTERLOCUTEURS_PCS, LABELS_INTERLOCUTEURS_PCS, colonnes)
+        refus = _refus_mapping(mapping, ["nom"], LABELS_INTERLOCUTEURS_PCS)
+        if refus:
+            return Response({"error": refus}, status=status.HTTP_400_BAD_REQUEST)
         resultat = importer_interlocuteurs_pcs(request, institution, lignes, mapping)
         return Response(resultat)
 
@@ -2412,13 +2451,14 @@ class ImportMaterielPointView(APIView):
         fichier = request.FILES.get('fichier')
         if not fichier:
             return Response({"error": "Aucun fichier reçu."}, status=status.HTTP_400_BAD_REQUEST)
-        mapping = {champ: request.data.get(f"mapping_{champ}") for champ in CHAMPS_MATERIEL_POINT}
-        if not mapping.get("nom_item"):
-            return Response({"error": "La colonne Nom du matériel doit être associée avant de lancer l'import."}, status=status.HTTP_400_BAD_REQUEST)
         try:
-            _colonnes, lignes = parse_fichier(fichier)
+            colonnes, lignes = parse_fichier(fichier)
         except ValueError as exc:
             return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        mapping = _mapping_import(request, CHAMPS_MATERIEL_POINT, LABELS_MATERIEL_POINT, colonnes)
+        refus = _refus_mapping(mapping, ["nom_item"], LABELS_MATERIEL_POINT)
+        if refus:
+            return Response({"error": refus}, status=status.HTTP_400_BAD_REQUEST)
         resultat = importer_materiel_point(request, point, lignes, mapping)
         return Response(resultat)
 
@@ -7267,16 +7307,14 @@ class ImportHabitationsView(APIView):
         fichier = request.FILES.get('fichier')
         if not fichier:
             return Response({"error": "Aucun fichier reçu."}, status=status.HTTP_400_BAD_REQUEST)
-        mapping = {champ: request.data.get(f"mapping_{champ}") for champ in CHAMPS_HABITATIONS}
-        if not mapping.get("adresse"):
-            return Response(
-                {"error": "La colonne Adresse doit être associée avant de lancer l'import."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
         try:
-            _colonnes, lignes = parse_fichier(fichier)
+            colonnes, lignes = parse_fichier(fichier)
         except ValueError as exc:
             return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        mapping = _mapping_import(request, CHAMPS_HABITATIONS, LABELS_HABITATIONS, colonnes)
+        refus = _refus_mapping(mapping, ["adresse"], LABELS_HABITATIONS)
+        if refus:
+            return Response({"error": refus}, status=status.HTTP_400_BAD_REQUEST)
         crise_id = request.data.get('crise')
         crise = Crisis.objects.filter(pk=crise_id).first() if crise_id else None
         zone_id = request.data.get('zone')
@@ -12343,6 +12381,99 @@ class InstitutionViewSet(
             )
         instance.delete()
 
+    @action(detail=False, methods=['post'], url_path='inviter',
+            permission_classes=[IsInstitutionalActor])
+    def inviter(self, request):
+        """Invite une institution à se créer elle-même, par email.
+
+        **C'était le seul des trois gestes qui n'existait nulle part.** On pouvait importer un
+        fichier d'institutions ou en créer une à la main, mais pas écrire à une mairie voisine
+        pour qu'elle vienne. Résultat : l'institution était saisie PAR un tiers, qui ne connaît
+        ni son adresse exacte, ni son type, ni qui en est le référent — et c'est ce qui
+        fabriquait des doublons (voir le chantier de fusion de Châteauneuf-du-Faou).
+
+        Aucun modèle ni jeton nouveau : on crée le compte inactif avec
+        `pending_institution_name`/`pending_institution_type` et on envoie l'email d'activation
+        habituel. Le destinataire active, retrouve le nom et le type préremplis, complète ce que
+        lui seul sait, et devient le premier contact de son institution — tout cela par le
+        chemin d'inscription existant (`creer_mon_institution`, qui le pose
+        `contact_principal=True`). Un jeton de plus aurait été un second chemin d'inscription à
+        maintenir, pour exactement le même résultat.
+
+        Ce qui est refusé, et pourquoi :
+        - une institution de ce nom existe déjà : il n'y a personne à inviter, il faut inviter
+          un CONTACT dans cette institution (voir ContactInstitutionViewSet.inviter) ;
+        - l'adresse appartient à un compte déjà rattaché : même raison.
+        """
+        email = (request.data.get('email') or '').strip().lower()
+        nom = (request.data.get('nom') or '').strip()
+        type_libelle = (request.data.get('type') or '').strip()
+
+        if not email or not nom:
+            return Response(
+                {"error": "L'adresse email et le nom de l'institution sont obligatoires."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        existante = Institution.objects.filter(nom__iexact=nom).first()
+        if existante is not None:
+            return Response(
+                {"error": f"« {existante.nom} » existe déjà sur la plateforme. Pour y ajouter "
+                          f"quelqu'un, invitez un contact dans cette institution plutôt que "
+                          f"l'institution elle-même."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Le type est résolu contre les InstitutionType existants, par libellé et jamais par
+        # code — même règle que importer_institutions : une mairie ne connaît pas les codes
+        # internes, et un type ne se crée pas à la volée (il structure les permissions et le
+        # niveau de secteur).
+        type_institution = None
+        if type_libelle:
+            type_institution = InstitutionType.objects.filter(libelle__iexact=type_libelle).first()
+            if type_institution is None:
+                return Response(
+                    {"error": f"Type d'institution inconnu : « {type_libelle} ». Choisissez-en "
+                              f"un dans la liste, ou laissez le champ vide — le destinataire le "
+                              f"renseignera lui-même."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        user = User.objects.filter(email_bidx=blind_index(email)).first()
+        if user is not None and user.institution_id is not None:
+            return Response(
+                {"error": "Cette adresse est déjà rattachée à une institution sur la "
+                          "plateforme."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if user is None:
+            user = User.objects.create_user(
+                username=email, email=email, password=None,
+                type=UserRole.LOCAL_AUTHORITY, enabled=False, is_active=False,
+                pending_institution_name=nom,
+                pending_institution_type=type_institution.libelle if type_institution else type_libelle or None,
+            )
+        else:
+            # Compte existant mais sans institution : on ne le recrée pas, on lui pose le
+            # prérempli et on relance l'email d'activation.
+            user.pending_institution_name = nom
+            user.pending_institution_type = (
+                type_institution.libelle if type_institution else type_libelle or None
+            )
+            user.save(update_fields=['pending_institution_name', 'pending_institution_type'])
+
+        send_institution_account_email(request, user)
+        audit_log(
+            request=request, action_code="ENVOI_EMAIL", objet_type="Institution",
+            commentaire=f"Invitation de l'institution « {nom} » envoyée à {email}",
+        )
+        return Response(
+            {"detail": f"Invitation envoyée à {email}. La personne créera elle-même "
+                       f"« {nom} » et en deviendra le contact principal."},
+            status=status.HTTP_201_CREATED,
+        )
+
     @action(detail=True, methods=['post'], url_path='provisionner-salons-matrix')
     def provisionner_salons_matrix(self, request, pk=None):
         """Active les deux salons Matrix généraux de l'institution (voir SalonMatrixInstitution)
@@ -14955,6 +15086,88 @@ class ContactInstitutionViewSet(
             commentaire=f"Création contact institution : {contact.utilisateur} pour {contact.institution.nom}",
         )
         self._ouvrir_les_droits(contact)
+
+    @action(detail=False, methods=['post'], url_path='inviter',
+            permission_classes=[IsInstitutionalActor])
+    def inviter(self, request):
+        """Invite une personne à rejoindre l'annuaire d'une institution, par son seul email.
+
+        Troisième geste du triptyque d'ajout (`+` à la main, import de fichier, invitation),
+        qui n'existait jusqu'ici que pour une équipe (TeamViewSet.inviter_membre) et pour un
+        bénévole sur un point. L'annuaire d'une institution, lui, ne pouvait se remplir qu'en
+        saisissant les gens À LEUR PLACE — c'est-à-dire en devinant l'orthographe de leur nom et
+        leur fonction, et sans qu'ils sachent qu'ils ont un compte.
+
+        Même mécanique que l'invitation d'équipe, dont on reprend les deux règles acquises :
+        - un compte existant n'est jamais recréé ; un simple utilisateur est PROMU acteur
+          institutionnel, parce que c'est l'institution elle-même qui se porte garante de lui
+          (beaucoup d'élus s'inscrivent avec une adresse personnelle) ;
+        - jamais de rétrogradation : un compte déjà ADMIN/SECOURS/AUT_LOCALE/REGULATEUR garde
+          son type.
+
+        Prénom et nom sont facultatifs ici, contrairement à l'invitation d'équipe : on invite
+        souvent depuis une adresse seule (`dgs@mairie-x.fr`), et exiger un nom qu'on ne connaît
+        pas conduit à inventer « DGS DGS ». La personne complétera son identité à l'activation,
+        qui est le seul endroit où elle est sûre.
+        """
+        institution_id = request.data.get('institution')
+        institution = Institution.objects.filter(pk=institution_id).first() if institution_id else None
+        if institution is None:
+            return Response({"error": "Institution introuvable."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # On n'invite que chez soi : la même limite que pour une équipe. Un administrateur
+        # arbitre les rattachements et n'est pas concerné.
+        if get_effective_role(request) != UserRole.ADMINISTRATOR and not _appartient_a_institution(
+            request, institution
+        ):
+            return Response(
+                {"error": "Vous ne pouvez inviter que dans une institution dont vous êtes "
+                          "membre."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        email = (request.data.get('email') or '').strip().lower()
+        if not email:
+            return Response({"error": "L'adresse email est obligatoire."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        fonction = (request.data.get('fonction') or '').strip()
+        first_name = (request.data.get('first_name') or '').strip()
+        last_name = (request.data.get('last_name') or '').strip()
+
+        user = User.objects.filter(email_bidx=blind_index(email)).first()
+        invite = False
+        if user is None:
+            user = User.objects.create_user(
+                username=email, email=email, password=None,
+                first_name=first_name, last_name=last_name,
+                type=UserRole.LOCAL_AUTHORITY, institution=institution,
+                enabled=False, is_active=False,
+            )
+            invite = True
+        elif user.type == UserRole.SIMPLE_USER:
+            user.type = UserRole.LOCAL_AUTHORITY
+            user.save(update_fields=['type'])
+
+        contact, cree = _get_or_create_contact_institution(
+            institution, user, fonction or 'Membre')
+        if not cree and not invite:
+            return Response(
+                {"error": f"{email} figure déjà dans l'annuaire de {institution.nom}."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if invite:
+            send_institution_account_email(request, user)
+        audit_log(
+            request=request, action_code="ENVOI_EMAIL", objet_type="ContactInstitution",
+            objet_id=contact.id,
+            commentaire=f"Invitation de {email} dans l'annuaire de {institution.nom}",
+        )
+        return Response(
+            ContactInstitutionSerializer(contact, context=self.get_serializer_context()).data,
+            status=status.HTTP_201_CREATED,
+        )
+
 
 class QualificationViewSet(TagLikeViewSetMixin, viewsets.ModelViewSet):
     """Catalogue partagé des titres : PSE1, radio, permis, CACES…

@@ -391,6 +391,34 @@ rattachement d'une mairie.
   `core/vulnerabilites.py` ; **aucune donnée de santé** dans `TypeVulnerabilite` ni dans
   `DeclarationSecurite` (RGPD art. 9) : ne pas ajouter de champ médical ou de notes libres
   sans accord du porteur.
+- **Les trois gestes d'ajout, partout les mêmes** (chantier du 28/10/2026,
+  `shared/components/common/bloc-ajout/`) : **à la main** (`+`), **par fichier**, **par
+  invitation email**. Avant, les trois existaient mais dispersés — le `+` sur la page, le
+  fichier sur une page d'assistant absente du menu atteignable par un seul lien contextuel,
+  l'invitation sur deux destinations seulement ; aucune n'avait les trois, et *inviter une
+  institution n'existait pas du tout*, de sorte qu'une mairie voisine était toujours saisie par
+  un tiers qui ignore son type et son référent (cause des doublons).
+  - `BlocAjoutComponent` porte les trois gestes, paramétré par URL et non par service : il sert
+    sept destinations, lui passer un service par destination lui ferait connaître chacune. Le
+    `+` **n'ouvre rien**, il émet `ajoutManuel` — les formulaires de saisie restent aux pages,
+    qui en ont de meilleurs qu'un générique.
+  - **Les champs d'invitation sont déclarés par la page hôte** (`ChampInvitation[]`) : inviter
+    une institution demande un nom et un type, un contact une fonction. Un `switch` sur la
+    destination aurait dû connaître la huitième.
+  - **L'import se passe de l'étape de correspondance** quand les en-têtes sont reconnues
+    (`imports.mapping_depuis_entetes` : libellé ou nom technique, casse et accents ignorés,
+    tronqué avant une parenthèse). C'est le cas dès qu'on a téléchargé le modèle. Rien n'est
+    rapproché « au plus proche » : un en-tête inconnu est laissé de côté et le refus **nomme**
+    les colonnes manquantes, l'assistant en deux étapes restant le recours.
+  - **Dire qu'un geste ne s'applique pas** (`invitationImpossible` / `importImpossible`) plutôt
+    que le laisser manquer. Deux cas réels : un interlocuteur PCS est un service extérieur
+    qu'on prévient, pas un compte à créer ; les membres d'une équipe se composent depuis
+    l'annuaire, où l'import a déjà eu lieu.
+  - Côté serveur, deux actions nouvelles : `InstitutionViewSet.inviter` (compte inactif avec
+    `pending_institution_name`/`_type`, le destinataire crée son institution par le chemin
+    d'inscription existant et en devient contact principal — aucun jeton ni modèle de plus) et
+    `ContactInstitutionViewSet.inviter` (annuaire ; prénom/nom facultatifs, un compte existant
+    n'est jamais recréé et un simple utilisateur est promu, jamais rétrogradé).
 - **Habilitation nominative au registre des personnes vulnérables** (art. R. 121-7 du CASF,
   voir `BASE-LEGALE-REGISTRE-VULNERABLES.md`) : l'accès suppose **deux actes distincts**, et
   aucun ne vaut sans l'autre.

@@ -12,6 +12,8 @@ import {
   InvitationAssociation, Qualification, QualificationMembre, StatutMembre,
 } from '../../shared/models/association.model';
 import { ContactInstitution, Institution } from '../../shared/models/institution.model';
+import { BlocAjoutComponent, ChampInvitation } from '../../shared/components/common/bloc-ajout/bloc-ajout.component';
+import { environment } from '../../../environments/environment';
 
 type Onglet = 'membres' | 'candidatures' | 'disponibilites' | 'liens';
 
@@ -38,7 +40,7 @@ type Onglet = 'membres' | 'candidatures' | 'disponibilites' | 'liens';
 @Component({
   selector: 'app-membres-association',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, BlocAjoutComponent],
   templateUrl: './membres-association.component.html',
   styleUrl: './membres-association.component.scss',
 })
@@ -52,6 +54,23 @@ export class MembresAssociationComponent implements OnInit {
    * d'une association précise, pas « du bureau » en général. */
   mesInstitutions: Institution[] = [];
   institutionChoisie: string | null = null;
+
+  // ── Les trois gestes d'ajout (BlocAjoutComponent) ──────────────────────────
+  // L'import de « personnel communal » sert ici tel quel : il cree des comptes rattaches a
+  // l'institution DE L'APPELANT, qui pour un membre du bureau est l'association. Pas besoin
+  // d'un second importeur au vocabulaire identique.
+  readonly urlExemplePersonnel = `${environment.apiUrl}/imports/personnel-communal/exemple/`;
+  readonly urlImportPersonnel = `${environment.apiUrl}/imports/personnel-communal/`;
+  readonly urlInvitationContact = `${environment.apiUrl}/contacts-institutions/inviter/`;
+
+  readonly champsInvitationMembre: ChampInvitation[] = [
+    { cle: 'email', label: 'Adresse email', type: 'email', requis: true,
+      placeholder: 'prenom.nom@exemple.fr' },
+    { cle: 'fonction', label: 'Fonction dans l\'association',
+      placeholder: 'Equipier, chef d\'equipe, tresorier...' },
+    { cle: 'first_name', label: 'Prenom' },
+    { cle: 'last_name', label: 'Nom' },
+  ];
   /** Un administrateur voit toutes les institutions, pas seulement celles dont il est au
    * bureau — c'est ce que le serveur lui accorde déjà. */
   estAdministrateur = false;

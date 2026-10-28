@@ -1,7 +1,7 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { forkJoin } from 'rxjs';
 
 import { RequestService } from '../../services/request.service';
@@ -15,6 +15,8 @@ import { JournalCollectiviteService } from '../../services/journal-collectivite.
 import { UserService } from '../../services/user.service';
 import { AuthService } from '../../auth/services/auth.service';
 import { ImplicationService } from '../../services/implication.service';
+import { BlocAjoutComponent, ChampInvitation } from '../../shared/components/common/bloc-ajout/bloc-ajout.component';
+import { environment } from '../../../environments/environment';
 
 import { Request } from '../../shared/models/request.model';
 import { Information } from '../../shared/models/information.model';
@@ -55,11 +57,31 @@ const OPTIONS_LIMITE: (number | null)[] = [25, 50, 100, 250, 500, null];
 @Component({
   selector: 'app-vue-mairie',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink],
+  imports: [CommonModule, FormsModule, RouterLink, BlocAjoutComponent],
   templateUrl: './vue-mairie.component.html',
   styleUrls: ['./vue-mairie.component.scss'],
 })
 export class VueMairieComponent implements OnInit {
+
+  // ── Les trois gestes d'ajout (BlocAjoutComponent) ──────────────────────────
+  readonly urlExemplePersonnel = `${environment.apiUrl}/imports/personnel-communal/exemple/`;
+  readonly urlImportPersonnel = `${environment.apiUrl}/imports/personnel-communal/`;
+  readonly urlInvitationContact = `${environment.apiUrl}/contacts-institutions/inviter/`;
+
+  readonly champsInvitationContact: ChampInvitation[] = [
+    { cle: 'email', label: 'Adresse email', type: 'email', requis: true,
+      placeholder: 'prenom.nom@mairie-exemple.fr' },
+    { cle: 'fonction', label: 'Fonction', placeholder: 'Maire, 1er adjoint, DGS...' },
+    { cle: 'first_name', label: 'Prenom' },
+    { cle: 'last_name', label: 'Nom' },
+  ];
+
+  /** Le `+` renvoie vers l'assistant de saisie, qui cree des comptes complets ligne par ligne
+   * -- la page n'a pas de formulaire propre pour cela, et en ajouter un en doublon de
+   * l'assistant existant ne servirait qu'a entretenir deux formulaires. */
+  allerSaisirPersonnel(): void {
+    this.router.navigate(['/admin/import-personnel'], { queryParams: { saisie: '1' } });
+  }
 
   demandes: Request[] = [];
   filtreDemande: FiltreDemande = 'total';
@@ -110,6 +132,7 @@ export class VueMairieComponent implements OnInit {
     private userService: UserService,
     private authService: AuthService,
     private implicationService: ImplicationService,
+    private router: Router,
   ) {}
 
   ngOnInit(): void {

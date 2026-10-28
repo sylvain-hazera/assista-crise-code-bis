@@ -1,0 +1,209 @@
+.bloc-ajout {
+  margin-bottom: 1.25rem;
+}
+
+// Les trois gestes sur une ligne, le `+` en premier et plein : c'est celui qu'on veut neuf
+// fois sur dix. Les deux autres au même niveau visuel entre eux, pour qu'aucun ne paraisse
+// secondaire — c'est tout l'objet du chantier.
+.gestes {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  flex-wrap: wrap;
+}
+
+.geste {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  padding: .5rem .85rem;
+  border: 1px solid #d5d5d5;
+  border-radius: 6px;
+  background: #fff;
+  color: #333;
+  font-size: .9rem;
+  font-family: inherit;
+  cursor: pointer;
+
+  &:hover { border-color: #3a6ea5; color: #3a6ea5; }
+  &.actif { border-color: #3a6ea5; background: #f4f8ff; color: #1f4b7a; }
+  .material-icons { font-size: 1.05rem; }
+}
+
+.geste-primaire {
+  background: #2e7d32;
+  border-color: #2e7d32;
+  color: #fff;
+
+  &:hover { background: #276b2a; border-color: #276b2a; color: #fff; }
+}
+
+.geste-absent {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  padding: .5rem .5rem;
+  color: #8a8a8a;
+  font-size: .85rem;
+  cursor: help;
+
+  .material-icons { font-size: 1rem; }
+}
+
+.note-absence {
+  margin: .5rem 0 0;
+  font-size: .82rem;
+  color: #777;
+  max-width: 70ch;
+  line-height: 1.45;
+}
+
+.panneau {
+  margin-top: .85rem;
+  padding: 1rem;
+  background: #fafbfc;
+  border: 1px solid #e4e8ed;
+  border-radius: 8px;
+  max-width: 68ch;
+}
+
+// Numéroter les étapes encode un vrai ordre : télécharger le modèle AVANT d'envoyer son
+// fichier est ce qui évite l'échec, ce n'est pas une décoration.
+.etape {
+  display: flex;
+  align-items: flex-start;
+  gap: .75rem;
+  margin-bottom: 1rem;
+
+  &:last-of-type { margin-bottom: 0; }
+
+  .num {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 50%;
+    background: #3a6ea5;
+    color: #fff;
+    font-size: .8rem;
+    font-weight: 600;
+  }
+
+  input[type="file"] {
+    font-size: .88rem;
+    margin-right: .5rem;
+  }
+}
+
+.champ {
+  margin-bottom: .85rem;
+
+  label {
+    display: block;
+    margin-bottom: .25rem;
+    font-size: .88rem;
+    font-weight: 600;
+  }
+
+  input, select {
+    width: 100%;
+    padding: .45rem .55rem;
+    border: 1px solid #cfcfcf;
+    border-radius: 4px;
+    font-size: .92rem;
+    font-family: inherit;
+  }
+
+  .facultatif { font-weight: 400; color: #999; }
+}
+
+.aide {
+  margin: .3rem 0 0;
+  font-size: .82rem;
+  color: #666;
+  line-height: 1.45;
+
+  &.aide-haut {
+    display: flex;
+    align-items: flex-start;
+    gap: .4rem;
+    margin: 0 0 .85rem;
+    padding: .55rem .7rem;
+    background: #f4f8ff;
+    border-left: 3px solid #3a6ea5;
+    border-radius: 4px;
+  }
+
+  .material-icons { font-size: 1rem; color: #3a6ea5; flex-shrink: 0; }
+}
+
+.btn-lien {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  padding: 0;
+  border: none;
+  background: none;
+  color: #3a6ea5;
+  font-size: .9rem;
+  font-family: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+
+  .material-icons { font-size: 1rem; }
+}
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  padding: .45rem .85rem;
+  border: none;
+  border-radius: 6px;
+  background: #2e7d32;
+  color: #fff;
+  font-size: .9rem;
+  font-family: inherit;
+  cursor: pointer;
+
+  &:disabled { background: #bdbdbd; cursor: not-allowed; }
+  .material-icons { font-size: 1rem; }
+}
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: .5rem;
+  margin: .85rem 0;
+  padding: .6rem .75rem;
+  border-radius: 4px;
+  font-size: .88rem;
+  line-height: 1.45;
+
+  &.toast-err { background: #fdecea; color: #b3261e; }
+  &.toast-ok { background: #e8f5e9; color: #1b5e20; }
+  .material-icons { font-size: 1.05rem; flex-shrink: 0; }
+
+  .recours {
+    margin: .4rem 0 0;
+    a { color: inherit; font-weight: 600; }
+  }
+}
+
+.erreurs {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: .5rem;
+  font-size: .85rem;
+
+  th, td {
+    padding: .35rem .5rem;
+    text-align: left;
+    border-bottom: 1px solid #eee;
+  }
+
+  th { background: #f4f4f4; font-weight: 600; }
+  td:first-child { width: 4rem; font-variant-numeric: tabular-nums; }
+}

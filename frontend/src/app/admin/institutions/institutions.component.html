@@ -5,9 +5,6 @@
       <h1><span class="material-icons">apartment</span> Institutions</h1>
       <p class="subtitle">{{ institutions.length }} institution{{ institutions.length > 1 ? 's' : '' }}</p>
     </div>
-    <a routerLink="/admin/import-institutions" class="btn-secondary sm">
-      <span class="material-icons">upload_file</span> Importer des institutions
-    </a>
   </header>
 
   @if (successMessage) {
@@ -41,10 +38,26 @@
         <span class="material-icons">search</span>
         <input type="text" placeholder="Rechercher une institution…" [(ngModel)]="searchQuery"/>
       </div>
-      <button class="btn-primary" (click)="openCreate()">
-        <span class="material-icons">add</span> Nouvelle institution
-      </button>
     </div>
+
+    <!-- Les trois gestes d'ajout, identiques partout (voir BlocAjoutComponent). Inviter une
+         institution est le geste qui manquait : sans lui, une mairie voisine etait toujours
+         saisie par un tiers, qui ne connait ni son type ni son referent. -->
+    <app-bloc-ajout
+      quoi="une institution"
+      libelleManuel="Nouvelle institution"
+      [urlExemple]="urlExempleInstitutions"
+      nomFichierExemple="modele-institutions.csv"
+      [urlImport]="urlImportInstitutions"
+      routeAssistant="/admin/import-institutions"
+      [urlInvitation]="urlInvitationInstitution"
+      [champsInvitation]="champsInvitationInstitution"
+      aideInvitation="Le destinataire recoit un lien d'activation, retrouve le nom et le type
+                      preremplis, complete ce que lui seul sait (adresse, commune, referent) et
+                      devient le contact principal de son institution."
+      (ajoutManuel)="openCreate()"
+      (ajoute)="reloadInstitutions()">
+    </app-bloc-ajout>
 
     <table class="data-table">
       <thead>
@@ -130,13 +143,30 @@
   @if (!isLoading && activeTab === 'roles') {
 
     <div class="toolbar">
-      <a routerLink="/admin/import-correspondants-pcs" class="btn-secondary sm">
-        <span class="material-icons">upload_file</span> Importer les correspondants PCS
-      </a>
       <button class="btn-primary" (click)="openCreateRole()">
         <span class="material-icons">add</span> Nouveau rôle
       </button>
     </div>
+
+    <!-- Deux objets distincts sur cet onglet, deliberement separes : le bouton ci-dessus cree
+         un ROLE (une entree de catalogue), le bloc ci-dessous ajoute des PERSONNES qui portent
+         ces roles. Les confondre ferait croire qu'importer un fichier cree des roles. -->
+    <app-bloc-ajout
+      quoi="un correspondant PCS"
+      libelleManuel="Ajouter des correspondants"
+      [urlExemple]="urlExempleCorrespondants"
+      nomFichierExemple="modele-correspondants-pcs.csv"
+      [urlImport]="urlImportCorrespondants"
+      routeAssistant="/admin/import-correspondants-pcs"
+      [urlInvitation]="urlInvitationContact"
+      [champsInvitation]="champsInvitationContact"
+      [champsInvitationSupplementaires]="{ institution: monInstitutionId }"
+      aideInvitation="L'invitation cree le compte et le rattache a votre collectivite ; le role
+                      PCS se pose ensuite ici, ou par l'import qui porte le role dans une
+                      colonne."
+      (ajoutManuel)="allerSaisirCorrespondants()"
+      (ajoute)="reloadAffectationsRoles()">
+    </app-bloc-ajout>
 
     <table class="data-table">
       <thead>
@@ -320,9 +350,22 @@
             </table>
 
             @if (!showContactForm) {
-              <button class="btn-secondary sm" (click)="showContactForm = true">
-                <span class="material-icons">person_add</span> Ajouter un contact
-              </button>
+              <app-bloc-ajout
+                quoi="un contact"
+                libelleManuel="Ajouter un contact"
+                [urlExemple]="urlExemplePersonnel"
+                nomFichierExemple="modele-contacts.csv"
+                [urlImport]="urlImportPersonnel"
+                routeAssistant="/admin/import-personnel"
+                [urlInvitation]="urlInvitationContact"
+                [champsInvitation]="champsInvitationContact"
+                [champsInvitationSupplementaires]="{ institution: selectedInstitution?.id || '' }"
+                aideInvitation="La personne recoit un lien d'activation et complete elle-meme son
+                                identite : c'est le seul endroit ou elle est sure. Un compte
+                                existant n'est jamais recree."
+                (ajoutManuel)="showContactForm = true"
+                (ajoute)="reloadContacts()">
+              </app-bloc-ajout>
             } @else {
               <form class="inline-form" [formGroup]="contactForm" (ngSubmit)="submitContact()">
                 <div class="user-search">
@@ -565,10 +608,23 @@
               Interlocuteurs à prévenir quand cette commune déclare une crise (activation du
               PCS/PICS). Un même contact (ex: le SIDPC d'une préfecture) peut être partagé par
               plusieurs communes — recherchez-le avant d'en créer un nouveau.
-              <a routerLink="/admin/import-interlocuteurs-pcs" class="btn-secondary sm">
-                <span class="material-icons">upload_file</span> Importer un fichier
-              </a>
             </p>
+
+            <app-bloc-ajout
+              quoi="un interlocuteur"
+              libelleManuel="Nouvel interlocuteur"
+              [urlExemple]="urlExempleInterlocuteurs"
+              nomFichierExemple="modele-interlocuteurs-pcs.csv"
+              [urlImport]="urlImportInterlocuteurs"
+              routeAssistant="/admin/import-interlocuteurs-pcs"
+              invitationImpossible="Pas d'invitation par email ici : un interlocuteur PCS est un
+                                    service exterieur (prefecture, SDIS, ARS) que l'on previent,
+                                    pas un compte a creer sur votre plateforme. Pour qu'une
+                                    institution rejoigne la plateforme, invitez-la depuis
+                                    l'onglet Institutions."
+              (ajoutManuel)="focusRechercheInterlocuteur()"
+              (ajoute)="chargerInterlocuteursPCS()">
+            </app-bloc-ajout>
 
             <app-tag-search-input
               placeholder="Chercher un interlocuteur existant par organisme (ex: Préfecture Gironde)..."

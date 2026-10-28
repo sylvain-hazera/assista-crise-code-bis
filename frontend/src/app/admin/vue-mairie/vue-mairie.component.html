@@ -3,10 +3,26 @@
   <header class="page-header">
     <div class="header-top">
       <h1><span class="material-icons">apartment</span> Vue Ma Collectivité</h1>
-      <a routerLink="/admin/import-personnel" class="btn-import-personnel">
-        <span class="material-icons">upload_file</span> Importer mon personnel/élus
-      </a>
     </div>
+
+    <!-- Les trois gestes d'ajout, identiques partout (voir BlocAjoutComponent). Le `+` renvoie
+         vers l'assistant de saisie, qui cree des comptes complets ligne par ligne. -->
+    <app-bloc-ajout
+      quoi="mon personnel ou un elu"
+      libelleManuel="Ajouter du personnel ou des elus"
+      [urlExemple]="urlExemplePersonnel"
+      nomFichierExemple="modele-personnel-communal.csv"
+      [urlImport]="urlImportPersonnel"
+      routeAssistant="/admin/import-personnel"
+      [urlInvitation]="urlInvitationContact"
+      [champsInvitation]="champsInvitationContact"
+      [champsInvitationSupplementaires]="{ institution: monInstitutionId || '' }"
+      aideInvitation="La personne recoit un lien d'activation et complete elle-meme son
+                      identite. Un elu deja inscrit avec une adresse personnelle n'est pas
+                      recree : son compte est simplement reconnu comme institutionnel."
+      (ajoutManuel)="allerSaisirPersonnel()"
+      (ajoute)="loadAll()">
+    </app-bloc-ajout>
     <p class="subtitle">Demandes et signalements de votre commune</p>
     @if (maZoneNom) {
       <p class="ma-zone">

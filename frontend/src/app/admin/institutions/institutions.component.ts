@@ -1,6 +1,6 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { FormsModule, ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { forkJoin } from 'rxjs';
 
@@ -10,6 +10,7 @@ import { RoleOperationnelService } from '../../services/role-operationnel.servic
 import { ContactInstitutionService } from '../../services/contact-institution.service';
 import { InstitutionDomaineService } from '../../services/institution-domaine.service';
 import { UserService } from '../../services/user.service';
+import { AuthService } from '../../auth/services/auth.service';
 import { CompetenceService } from '../../services/competence.service';
 import { AffectationRoleOperationnelService } from '../../services/affectation-role-operationnel.service';
 import { LocationService, Commune } from '../../services/location.service';
@@ -25,6 +26,8 @@ import {
 import { RisqueMajeurTypeService, RisqueCommunalService } from '../../services/risque-majeur.service';
 import { RisqueMajeurType, RisqueCommunal, SuggestionGeorisques } from '../../shared/models/risque-majeur.model';
 import { TagSearchInputComponent } from '../../shared/components/common/tag-search-input/tag-search-input.component';
+import { BlocAjoutComponent, ChampInvitation } from '../../shared/components/common/bloc-ajout/bloc-ajout.component';
+import { environment } from '../../../environments/environment';
 import { MatrixSalonChatComponent } from '../teams/matrix-salon-chat/matrix-salon-chat.component';
 
 import {
@@ -46,13 +49,74 @@ type DetailTab = 'contacts' | 'domaines' | 'regulateurs' | 'matrix' | 'alertes' 
 @Component({
   selector: 'app-institutions',
   standalone: true,
-  imports: [CommonModule, FormsModule, ReactiveFormsModule, RouterLink, TagSearchInputComponent, MatrixSalonChatComponent],
+  imports: [CommonModule, FormsModule, ReactiveFormsModule, RouterLink, TagSearchInputComponent, MatrixSalonChatComponent, BlocAjoutComponent],
   templateUrl: './institutions.component.html',
   styleUrls: ['./institutions.component.scss'],
 })
 export class InstitutionsComponent implements OnInit {
 
   activeTab: MainTab = 'institutions';
+
+  // ── Les trois gestes d'ajout (BlocAjoutComponent) ──────────────────────────
+  // URLs plutot que methodes de service : le bloc est generique et sert sept destinations, lui
+  // passer un service par destination reviendrait a lui faire connaitre chacune.
+  readonly urlExempleInstitutions = `${environment.apiUrl}/imports/institutions/exemple/`;
+  readonly urlImportInstitutions = `${environment.apiUrl}/imports/institutions/`;
+  readonly urlInvitationInstitution = `${environment.apiUrl}/institutions/inviter/`;
+  readonly urlExemplePersonnel = `${environment.apiUrl}/imports/personnel-communal/exemple/`;
+  readonly urlImportPersonnel = `${environment.apiUrl}/imports/personnel-communal/`;
+  readonly urlInvitationContact = `${environment.apiUrl}/contacts-institutions/inviter/`;
+
+  readonly urlExempleCorrespondants = `${environment.apiUrl}/imports/correspondants-pcs/exemple/`;
+  readonly urlImportCorrespondants = `${environment.apiUrl}/imports/correspondants-pcs/`;
+  readonly urlExempleInterlocuteurs = `${environment.apiUrl}/imports/interlocuteurs-pcs/exemple/`;
+  readonly urlImportInterlocuteurs = `${environment.apiUrl}/imports/interlocuteurs-pcs/`;
+
+  /** Invitations toujours dans SA collectivite : le serveur l'impose aussi, on evite juste
+   * d'envoyer une requete vouee au 403. */
+  get monInstitutionId(): string {
+    return this.authService.getCurrentUser()?.institution_id || '';
+  }
+
+  /** Le `+` des correspondants renvoie vers l'assistant, qui sait poser le role en meme temps
+   * que le compte -- un formulaire local ne saurait que creer le contact. */
+  allerSaisirCorrespondants(): void {
+    this.router.navigate(['/admin/import-correspondants-pcs']);
+  }
+
+  /** Le `+` de l'annuaire PCS pose le focus sur la recherche juste en dessous : elle cherche
+   * un interlocuteur existant AVANT d'en creer un, ce qui est la regle de cet annuaire (un
+   * meme SIDPC est partage par plusieurs communes). */
+  focusRechercheInterlocuteur(): void {
+    const champ = document.querySelector<HTMLInputElement>('app-tag-search-input input');
+    champ?.focus();
+  }
+
+  readonly champsInvitationContact: ChampInvitation[] = [
+    { cle: 'email', label: 'Adresse email', type: 'email', requis: true,
+      placeholder: 'dgs@mairie-exemple.fr' },
+    { cle: 'fonction', label: 'Fonction', placeholder: 'DGS, secretaire de mairie...' },
+    // Prenom et nom facultatifs a dessein : on invite souvent depuis une adresse de service
+    // seule, et exiger un nom qu'on ne connait pas conduit a inventer « DGS DGS ».
+    { cle: 'first_name', label: 'Prenom' },
+    { cle: 'last_name', label: 'Nom' },
+  ];
+
+  /** Le type est propose depuis les InstitutionType existants, jamais saisi librement : un type
+   * structure les permissions et le niveau de secteur, il ne se cree pas depuis une invitation
+   * (meme regle que importer_institutions). */
+  get champsInvitationInstitution(): ChampInvitation[] {
+    return [
+      { cle: 'email', label: 'Adresse email du destinataire', type: 'email', requis: true,
+        placeholder: 'contact@mairie-voisine.fr' },
+      { cle: 'nom', label: "Nom de l'institution", requis: true,
+        placeholder: 'Mairie de Exemple-sur-Loire' },
+      { cle: 'type', label: "Type d'institution", type: 'select',
+        options: this.types.filter(t => t.actif !== false)
+          .map(t => ({ valeur: t.libelle, libelle: t.libelle })),
+        aide: 'Laissez vide si vous ne savez pas : le destinataire le renseignera.' },
+    ];
+  }
 
   institutions: Institution[] = [];
   types: InstitutionType[] = [];
@@ -113,6 +177,8 @@ export class InstitutionsComponent implements OnInit {
     private interlocuteurAlertePCSService: InterlocuteurAlertePCSService,
     private risqueMajeurTypeService: RisqueMajeurTypeService,
     private risqueCommunalService: RisqueCommunalService,
+    private authService: AuthService,
+    private router: Router,
   ) {}
 
   readonly categoriesInterlocuteurPCS = CATEGORIES_INTERLOCUTEUR_PCS;

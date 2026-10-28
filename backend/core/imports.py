@@ -11,6 +11,7 @@ explicitement n'est jamais lue ni stockée, quelle que soit sa présence dans le
 import codecs
 import csv
 import io
+import unicodedata
 
 import openpyxl
 
@@ -109,6 +110,49 @@ def _parse_xlsx(fichier):
             continue
         lignes.append({colonnes[i]: row[i] if i < len(row) else None for i in range(len(colonnes))})
     return colonnes, lignes
+
+
+def _normaliser_entete(valeur) -> str:
+    """Forme comparable d'un en-tête : sans accent, sans casse, sans espaces superflus, et
+    tronquée avant une parenthèse explicative.
+
+    Les fichiers d'exemple portent le libellé complet en en-tête, parenthèse comprise (« Fonction
+    (ex: Maire, 1er adjoint, DGS, agent technique...) »). Quelqu'un qui le télécharge, le remplit
+    et le renvoie doit être reconnu ; quelqu'un qui a raccourci l'en-tête en « Fonction » aussi,
+    parce que c'est ce que fait n'importe qui en relisant son fichier."""
+    texte = str(valeur or "")
+    coupe = texte.split("(")[0]
+    sans_accent = unicodedata.normalize("NFKD", coupe).encode("ascii", "ignore").decode("ascii")
+    return " ".join(sans_accent.lower().replace("_", " ").split())
+
+
+def mapping_depuis_entetes(colonnes, labels) -> dict:
+    """Correspondance {champ_cible: colonne_source} déduite des seuls en-têtes du fichier.
+
+    Raison d'être : l'étape de correspondance manuelle est le moment où un import se perd. Or
+    dans le cas de loin le plus fréquent — la mairie télécharge le fichier d'exemple, le remplit
+    et le renvoie — les en-têtes sont déjà les bons, et faire remapper six colonnes à la main
+    n'apporte rien qu'une occasion de se tromper. Les en-têtes sont reconnus sur leur libellé
+    (« Prénom ») comme sur le nom technique du champ (« prenom »), la casse et les accents étant
+    ignorés.
+
+    Ne devine rien au-delà : un en-tête non reconnu n'est pas rapproché « au plus proche », il
+    est simplement laissé de côté et l'appelant retombe sur la correspondance manuelle. La liste
+    des champs cibles reste FERMÉE (voir le docstring du module) — aucune colonne hors de
+    `labels` n'est jamais lue."""
+    index = {}
+    for champ, libelle in labels.items():
+        index.setdefault(_normaliser_entete(libelle), champ)
+        index.setdefault(_normaliser_entete(champ), champ)
+
+    mapping = {}
+    for colonne in colonnes:
+        champ = index.get(_normaliser_entete(colonne))
+        # Première colonne reconnue gagne : un fichier qui aurait deux colonnes « Nom » ne doit
+        # pas voir la seconde, souvent vide, écraser la première.
+        if champ and champ not in mapping:
+            mapping[champ] = colonne
+    return mapping
 
 
 def _valeur(ligne, mapping, champ):
