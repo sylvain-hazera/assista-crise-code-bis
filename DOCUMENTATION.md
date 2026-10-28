@@ -391,6 +391,19 @@ rattachement d'une mairie.
   `core/vulnerabilites.py` ; **aucune donnée de santé** dans `TypeVulnerabilite` ni dans
   `DeclarationSecurite` (RGPD art. 9) : ne pas ajouter de champ médical ou de notes libres
   sans accord du porteur.
+- **Messages d'erreur rendus à l'utilisateur** (`shared/utils/message-erreur.ts`) :
+  `HttpErrorResponse.message` est une phrase fabriquée par Angular (« Http failure response for
+  https://…/api/register/: 400 OK ») qui ne dit rien et expose une URL interne. Le message du
+  serveur est dans `error.error` — toujours l'extraire avec `messageErreurServeur(err, repli)`,
+  qui couvre les quatre formes du backend (chaîne brute, `{detail}`, `{error}`,
+  `{champ: [messages]}`) et écarte une page HTML de passerelle en panne.
+- **Unicité du compte à l'inscription** : traitée dans `UserSerializer.validate()` et **non**
+  par le validateur de champ sur `username`, retiré pour cela (`extra_kwargs`). DRF exécute les
+  validateurs de champ AVANT `validate()` : tant qu'il restait, il court-circuitait tout et
+  répondait « A user with that username already exists. », en anglais et sur un champ que le
+  formulaire d'inscription ne montre pas. Le refus porte désormais sur `email`, en français, et
+  dit quoi faire — dont **suivre le lien d'activation** pour un compte créé par invitation et
+  jamais activé, cas devenu fréquent et que se réinscrire ne débloque pas.
 - **Accès à la page « Membres association »** (`UserSerializer.acces_membres_association`,
   28/10/2026) : administrateur, compte rattaché à une AASC, **ou membre du bureau d'une AASC
   même rattaché ailleurs** — un agent de mairie peut être au bureau de l'association locale, et

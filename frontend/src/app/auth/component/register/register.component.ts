@@ -9,6 +9,7 @@ import { LocationService, Department, Commune } from '../../../services/location
 import { InstitutionTypeService } from '../../../services/institution-type.service';
 import { InstitutionType } from '../../../shared/models/institution.model';
 import { BrandingService, Branding } from '../../../services/branding.service';
+import { messageErreurServeur } from '../../../shared/utils/message-erreur';
 
 @Component({
   selector: 'app-register',
@@ -337,7 +338,11 @@ export class RegisterComponent implements OnInit, OnDestroy {
             }
           },
           error: (error) => {
-            this.errorMessage = error.message || 'Une erreur est survenue lors de l\'inscription';
+            // error.message est la phrase fabriquee par Angular (« Http failure response
+            // for .../api/register/: 400 OK »), qui affiche une URL interne et ne dit pas ce
+            // qu'on reproche a la personne. Le vrai message est dans error.error.
+            this.errorMessage = messageErreurServeur(
+              error, 'Une erreur est survenue lors de l\'inscription');
             this.isSubmitting = false;
           },
           complete: () => {

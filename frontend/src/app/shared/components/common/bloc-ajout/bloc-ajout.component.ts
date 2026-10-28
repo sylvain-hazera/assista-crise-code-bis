@@ -4,6 +4,8 @@ import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
 import { RouterLink } from '@angular/router';
 
+import { messageErreurServeur } from '../../../utils/message-erreur';
+
 /** Un champ du formulaire d'invitation, déclaré par la page hôte.
  *
  * Déclaratif plutôt qu'un `switch` sur la destination : inviter une institution demande un nom
@@ -176,8 +178,7 @@ export class BlocAjoutComponent {
       },
       error: (err) => {
         this.enCours = false;
-        const message = err?.error?.error || err?.error?.detail
-          || "L'import a échoué.";
+        const message = messageErreurServeur(err, "L'import a échoué.");
         this.errorMessage = message;
         // Le serveur nomme les colonnes non reconnues : c'est exactement le cas où
         // l'assistant de correspondance sert à quelque chose.
@@ -215,8 +216,8 @@ export class BlocAjoutComponent {
       },
       error: (err) => {
         this.enCours = false;
-        this.errorMessage = err?.error?.error || err?.error?.detail
-          || "L'invitation n'a pas pu être envoyée.";
+        this.errorMessage = messageErreurServeur(
+          err, "L'invitation n'a pas pu être envoyée.");
       },
     });
   }

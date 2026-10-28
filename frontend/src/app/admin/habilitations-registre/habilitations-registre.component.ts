@@ -7,6 +7,7 @@ import {
   HabilitationRegistreService,
 } from '../../services/vulnerabilite.service';
 import { AuthService } from '../../auth/services/auth.service';
+import { messageErreurServeur } from '../../shared/utils/message-erreur';
 import {
   EtatRegistreVulnerables,
   HabilitationRegistre,
@@ -184,8 +185,7 @@ export class HabilitationsRegistreComponent implements OnInit {
       },
       error: (err) => {
         this.enregistrement = false;
-        this.errorMessage = this.premierMessage(err)
-          || "La désignation n'a pas pu être enregistrée.";
+        this.errorMessage = messageErreurServeur(err, "La désignation n'a pas pu être enregistrée.");
       },
     });
   }
@@ -206,23 +206,9 @@ export class HabilitationsRegistreComponent implements OnInit {
         this.successMessage = 'Habilitation retirée.';
         this.charger();
       },
-      error: (err) => this.errorMessage = this.premierMessage(err)
-        || "Le retrait n'a pas pu être enregistré.",
+      error: (err) => this.errorMessage = messageErreurServeur(
+        err, "Le retrait n'a pas pu être enregistré."),
     });
   }
 
-  /** DRF renvoie soit {detail}, soit {champ: [messages]} : on remonte le premier message
-   * lisible plutôt qu'un objet brut, les refus d'ici étant tous explicatifs. */
-  private premierMessage(err: unknown): string | null {
-    const corps = (err as { error?: unknown })?.error;
-    if (!corps) return null;
-    if (typeof corps === 'string') return corps;
-    const objet = corps as Record<string, unknown>;
-    if (typeof objet['detail'] === 'string') return objet['detail'] as string;
-    for (const valeur of Object.values(objet)) {
-      if (Array.isArray(valeur) && typeof valeur[0] === 'string') return valeur[0];
-      if (typeof valeur === 'string') return valeur;
-    }
-    return null;
-  }
 }

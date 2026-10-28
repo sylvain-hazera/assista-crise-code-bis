@@ -19,6 +19,7 @@ from .permissions import (
 from .zone_scoping import object_in_viewer_zone, object_in_viewer_zone_via_commune
 from .tracabilite import coordonnees_retirees, retirer_coordonnees
 from .validators import validate_convention_file
+from .crypto_fields import blind_index
 from .models import (
     CandidatureAssociation,
     HabilitationRegistreVulnerables,
@@ -413,6 +414,13 @@ class UserSerializer(serializers.ModelSerializer):
                   'acces_registre_vulnerables', 'acces_membres_association']
         extra_kwargs = {
             'password': {'write_only': True},
+            # Unicité de `username` retirée du niveau CHAMP pour être traitée dans `validate()`,
+            # où l'on connaît aussi l'email. DRF exécute les validateurs de champ AVANT
+            # `validate()` : tant que celui-ci restait, il court-circuitait tout et répondait
+            # « A user with that username already exists. » -- en anglais, et sur un champ que
+            # le formulaire d'inscription ne montre pas. L'unicité reste garantie en base, et
+            # `validate()` la vérifie explicitement avant d'y arriver.
+            'username': {'validators': []},
             'first_name': {'required': False},
             'last_name': {'required': False},
             'phone_number': {'required': False},
@@ -450,6 +458,31 @@ class UserSerializer(serializers.ModelSerializer):
             email = attrs.get('email')
             user_type = attrs.get('type')
             request = self.context.get('request')
+
+            # Compte deja existant : posé AVANT tout le reste, et rendu en francais sur la clé
+            # `email`. Le refus venait jusqu'ici du validateur d'unicité par défaut sur
+            # `username`, qui répondait « A user with that username already exists. » -- en
+            # anglais, et en nommant un champ que la personne n'a jamais rempli (le formulaire
+            # d'inscription ne demande qu'une adresse). Constaté en production le 28/10/2026 :
+            # quatre tentatives de suite sans que la personne puisse comprendre.
+            #
+            # Le message dit aussi quoi faire, et couvre les DEUX cas : le compte qu'on a oublié
+            # avoir créé, et le compte créé par une invitation et jamais activé -- ce second cas
+            # devient fréquent depuis les invitations par email, et réinscrire n'y change rien.
+            deja_pris = "Un compte existe déjà avec cette adresse. Connectez-vous, ou " \
+                "utilisez « mot de passe oublié » pour en reprendre la main. Si vous avez " \
+                "reçu une invitation, suivez plutôt le lien d'activation qu'elle contient."
+
+            if email and User.objects.filter(email_bidx=blind_index(email)).exists():
+                raise serializers.ValidationError({'email': deja_pris})
+
+            # Le formulaire d'inscription envoie l'email comme identifiant, donc ce cas ne se
+            # distingue du précédent que pour un compte créé à la main avec un identifiant
+            # choisi. On le signale quand même sur `email` : c'est le seul champ que
+            # l'inscription expose, et laisser remonter une IntegrityError serait un 500.
+            username = attrs.get('username')
+            if username and User.objects.filter(username=username).exists():
+                raise serializers.ValidationError({'email': deja_pris})
 
             if user_type == UserRole.ADMINISTRATOR:
                 # ADMIN ne représente pas une institution : pas de domaine email à prouver. Seul un

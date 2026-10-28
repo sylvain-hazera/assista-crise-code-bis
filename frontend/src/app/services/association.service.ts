@@ -19,7 +19,10 @@ export class AssociationService {
   private invitations = `${environment.apiUrl}/invitations-association`;
   private qualifications = `${environment.apiUrl}/qualifications`;
   private qualificationsMembres = `${environment.apiUrl}/qualifications-membres`;
-  private disponibilites = `${environment.apiUrl}/disponibilites-operationnelles`;
+  // Le routeur DRF enregistre ce viewset sous `disponibilites` et non sous le nom du
+  // modele : viser `disponibilites-operationnelles` renvoyait un 404 sur toute la grille,
+  // y compris apres deploiement (constate le 28/10/2026 dans les journaux du proxy).
+  private disponibilites = `${environment.apiUrl}/disponibilites`;
 
   constructor(private http: HttpClient) {}
 
