@@ -7,6 +7,7 @@ import { styleCarte } from '../../shared/utils/carte-style';
 import maplibregl from 'maplibre-gl';
 import type { Feature, FeatureCollection, MultiPolygon, Point, Polygon } from 'geojson';
 
+import { messageErreurServeur } from '../../shared/utils/message-erreur';
 import { pollWhileVisible } from '../../shared/utils/polling.util';
 import { TagSearchInputComponent } from '../../shared/components/common/tag-search-input/tag-search-input.component';
 import { LocationService, Commune } from '../../services/location.service';
@@ -168,7 +169,14 @@ export class SimulationInondationComponent implements AfterViewInit, OnDestroy {
         },
         error: (err) => {
           this.enCours = false;
-          this.erreur = err?.error?.erreur || "Échec de la simulation pour cette commune. Une nouvelle tentative est possible ; contacter le support si le problème persiste.";
+          // `err.error` EST le corps renvoyé par le serveur ; ces vues y écrivent `error`, pas
+          // `erreur` (ce dernier n'existe que dans la réponse 200 d'une tâche en ÉCHEC). Lire
+          // `err.error.erreur` ne trouvait donc jamais rien : un refus d'accès parfaitement
+          // explicite — « Vous n'avez pas accès à cette commune pour cet outil » — s'affichait
+          // comme une panne invitant à réessayer et à contacter le support (constaté le
+          // 29/10/2026 sur Arès et Andernos-les-Bains, hors secteur du demandeur).
+          this.erreur = messageErreurServeur(
+            err, "Échec de la simulation pour cette commune. Une nouvelle tentative est possible ; contacter le support si le problème persiste.");
         },
       });
   }
@@ -199,7 +207,8 @@ export class SimulationInondationComponent implements AfterViewInit, OnDestroy {
         },
         error: (err) => {
           this.adressesEnCours = false;
-          this.adressesErreur = err?.error?.erreur || "Échec du chargement des adresses. Une nouvelle tentative est possible.";
+          this.adressesErreur = messageErreurServeur(
+            err, "Échec du chargement des adresses. Une nouvelle tentative est possible.");
         },
       });
   }
@@ -243,7 +252,8 @@ export class SimulationInondationComponent implements AfterViewInit, OnDestroy {
         },
         error: (err) => {
           this.ruissellementEnCours = false;
-          this.ruissellementErreur = err?.error?.erreur || "Échec du calcul de ruissellement. Une nouvelle tentative est possible.";
+          this.ruissellementErreur = messageErreurServeur(
+            err, "Échec du calcul de ruissellement. Une nouvelle tentative est possible.");
         },
       });
   }
