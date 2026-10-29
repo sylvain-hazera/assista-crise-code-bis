@@ -4,7 +4,7 @@ import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 
 import { environment } from '../../environments/environment';
-import { NiveauObserve, SimulationAdresses, SimulationInondation, SimulationRuissellement } from '../shared/models/simulation-inondation.model';
+import { NiveauObserve, PerimetreSimulation, SimulationAdresses, SimulationInondation, SimulationRuissellement } from '../shared/models/simulation-inondation.model';
 
 @Injectable({ providedIn: 'root' })
 export class SimulationInondationService {
@@ -12,6 +12,14 @@ export class SimulationInondationService {
   private url = `${environment.apiUrl}/simulation-inondation`;
 
   constructor(private http: HttpClient) {}
+
+  /** GET /api/simulation-inondation/perimetre/ — sur quelles communes cet outil est ouvert à
+   * l'utilisateur connecté. Lu une fois à l'ouverture de l'écran, pour borner le sélecteur et
+   * l'annoncer en clair : sans lui, il proposait les 35 000 communes de France et le serveur
+   * en refusait l'essentiel (constaté le 29/10/2026). N'accorde aucun droit. */
+  perimetre(): Observable<PerimetreSimulation> {
+    return this.http.get<PerimetreSimulation>(`${this.url}/perimetre/`);
+  }
 
   /** GET /api/simulation-inondation/<commune_code>/ — calcule (ou relit le cache de) la grille
    * d'altitude et les paliers d'inondation de la commune -- TOUJOURS borné (grille plafonnée),

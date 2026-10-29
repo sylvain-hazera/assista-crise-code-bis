@@ -14,14 +14,19 @@
   </div>
 
   <div class="selecteur-commune">
-    <app-tag-search-input
-      placeholder="Choisir une commune (nom, code postal ou code INSEE)…"
-      labelField="name"
-      subLabelField="codePostal"
-      [searchFn]="communeSearchFn"
-      emptyMessage="Aucune commune ne correspond."
-      (itemSelected)="choisirCommune($event)">
-    </app-tag-search-input>
+    @if (explicationPerimetre) {
+      <p class="perimetre" [class.perimetre-vide]="perimetreVide">{{ explicationPerimetre }}</p>
+    }
+    @if (!perimetreVide) {
+      <app-tag-search-input
+        placeholder="Choisir une commune (nom, code postal ou code INSEE)…"
+        labelField="name"
+        subLabelField="codePostal"
+        [searchFn]="communeSearchFn"
+        emptyMessage="Aucune commune de votre secteur ne correspond."
+        (itemSelected)="choisirCommune($event)">
+      </app-tag-search-input>
+    }
   </div>
 
   @if (communeSelectionnee) {

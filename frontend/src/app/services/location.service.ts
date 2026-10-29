@@ -8,6 +8,14 @@ export interface Department {
   name: string;
 }
 
+/** Borne géographique appliquée à une recherche de communes, telle que la renvoie
+ * `/api/simulation-inondation/perimetre/` : le champ est un filtre de geo.api.gouv.fr
+ * (`code`, `codeEpci`, `codeDepartement`, `codeRegion`), la valeur le code du secteur. */
+export interface FiltreGeo {
+  champ: string;
+  valeur: string;
+}
+
 export interface Commune {
   code: string;
   name: string;
@@ -88,23 +96,28 @@ export class LocationService {
     );
   }
 
-  /** Recherche de communes sur toute la France (autocomplétion) par nom, code postal ou code
-   * INSEE — pas besoin de connaître le département au préalable. Un code à 5 chiffres est
+  /** Recherche de communes (autocomplétion) par nom, code postal ou code
+   * INSEE — pas besoin de connaître le département au préalable. `filtre` borne la recherche à
+   * un secteur (voir FiltreGeo) : sans lui, elle porte sur toute la France. Un code à 5 chiffres est
    * ambigu (ex: "33503" est un code INSEE, "33680" un code postal, tous deux plausibles) : on
    * interroge les deux en parallèle plutôt que de deviner lequel l'utilisateur a saisi. Code
    * INSEE de Corse (2A/2B + 3 chiffres) détecté séparément, non numérique. */
-  searchCommunesByName(query: string): Observable<Commune[]> {
+  searchCommunesByName(query: string, filtre?: FiltreGeo | null): Observable<Commune[]> {
     const q = query.trim();
     if (!q) return of([]);
 
     const fields = 'nom,code,codesPostaux,codeDepartement';
     const toCommunes = (list: any[]) =>
       (list || []).map(c => ({ ...c, name: c.nom, codePostal: c.codesPostaux?.[0] }));
+    // Le filtre est appliqué par geo.api.gouv.fr lui-même (`codeEpci`, `codeDepartement`,
+    // `codeRegion`, `code`) : les communes hors périmètre ne sont jamais proposées, plutôt que
+    // proposées puis refusées par notre API.
+    const restreint = filtre ? `&${filtre.champ}=${encodeURIComponent(filtre.valeur)}` : '';
 
     if (/^\d{5}$/.test(q)) {
       return forkJoin({
-        parCode: this.http.get<any[]>(`${this.API_GEO}/communes?code=${q}&fields=${fields}`),
-        parCodePostal: this.http.get<any[]>(`${this.API_GEO}/communes?codePostal=${q}&fields=${fields}&boost=population&limit=10`),
+        parCode: this.http.get<any[]>(`${this.API_GEO}/communes?code=${q}&fields=${fields}${restreint}`),
+        parCodePostal: this.http.get<any[]>(`${this.API_GEO}/communes?codePostal=${q}&fields=${fields}&boost=population&limit=10${restreint}`),
       }).pipe(
         map(({ parCode, parCodePostal }) => {
           const merged = [...toCommunes(parCode), ...toCommunes(parCodePostal)];
@@ -115,12 +128,12 @@ export class LocationService {
     }
 
     if (/^2[ab][0-9]{3}$/i.test(q)) {
-      return this.http.get<any[]>(`${this.API_GEO}/communes?code=${q.toUpperCase()}&fields=${fields}`)
+      return this.http.get<any[]>(`${this.API_GEO}/communes?code=${q.toUpperCase()}&fields=${fields}${restreint}`)
         .pipe(map(toCommunes));
     }
 
     return this.http.get<any[]>(
-      `${this.API_GEO}/communes?nom=${encodeURIComponent(q)}&fields=${fields}&boost=population&limit=10`
+      `${this.API_GEO}/communes?nom=${encodeURIComponent(q)}&fields=${fields}&boost=population&limit=10${restreint}`
     ).pipe(map(toCommunes));
   }
 

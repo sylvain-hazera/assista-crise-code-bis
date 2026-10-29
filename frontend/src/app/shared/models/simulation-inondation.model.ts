@@ -72,3 +72,21 @@ export interface NiveauObserve {
   date_observation?: string;
   vigilance?: VigilanceCrue;
 }
+
+/** Périmètre de communes ouvert à l'utilisateur pour cet outil
+ * (`GET /api/simulation-inondation/perimetre/`).
+ *
+ * `nationale` : aucune restriction (administration, institution à portée nationale, ou zone de
+ * démonstration). `secteur` : la recherche de communes est bornée à `champ` == `valeur`, deux
+ * valeurs directement utilisables comme filtre geo.api.gouv.fr. `aucune` : l'outil n'est ouvert
+ * à ce compte sur aucune commune.
+ *
+ * Ce périmètre n'accorde rien : il évite de proposer des communes que l'API refusera ensuite,
+ * et permet de dire lesquelles sont ouvertes. L'autorisation reste vérifiée à chaque appel. */
+export interface PerimetreSimulation {
+  portee: 'nationale' | 'secteur' | 'aucune';
+  libelle: string;
+  niveau?: string;
+  champ?: string;
+  valeur?: string;
+}

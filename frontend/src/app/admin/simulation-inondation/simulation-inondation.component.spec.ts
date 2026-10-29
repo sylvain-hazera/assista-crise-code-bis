@@ -35,9 +35,11 @@ describe('SimulationInondationComponent — message d\'erreur du serveur', () =>
   beforeEach(() => {
     simulation = jasmine.createSpyObj<SimulationInondationService>(
       'SimulationInondationService',
-      ['simuler', 'chargerAdresses', 'chargerRuissellement', 'niveauObserve', 'zonesGeorisques'],
+      ['simuler', 'chargerAdresses', 'chargerRuissellement', 'niveauObserve',
+       'zonesGeorisques', 'perimetre'],
     );
     simulation.niveauObserve.and.returnValue(of(null) as never);
+    simulation.perimetre.and.returnValue(of({ portee: 'nationale', libelle: 'France entière' }) as never);
     location = jasmine.createSpyObj<LocationService>(
       'LocationService', ['searchCommunesByName', 'getCommuneContour'],
     );
@@ -65,6 +67,36 @@ describe('SimulationInondationComponent — message d\'erreur du serveur', () =>
 
     expect(c.adressesErreur).toBe("Vous n'avez pas accès à cette commune pour cet outil.");
   }));
+
+  it('borne la recherche de communes au secteur annoncé', () => {
+    const c = composant();
+    c.perimetre = { portee: 'secteur', libelle: 'CC Médullienne', niveau: 'epci',
+                    champ: 'codeEpci', valeur: '243301389' };
+
+    c.communeSearchFn('por');
+
+    expect(location.searchCommunesByName).toHaveBeenCalledWith(
+      'por', { champ: 'codeEpci', valeur: '243301389' });
+    expect(c.explicationPerimetre).toContain('CC Médullienne');
+    expect(c.perimetreVide).toBeFalse();
+  });
+
+  it('ne borne rien tant que le périmètre est inconnu', () => {
+    const c = composant();
+    c.perimetre = null;
+
+    c.communeSearchFn('por');
+
+    expect(location.searchCommunesByName).toHaveBeenCalledWith('por', null);
+  });
+
+  it('annonce explicitement qu\'aucune commune n\'est ouverte', () => {
+    const c = composant();
+    c.perimetre = { portee: 'aucune', libelle: '' };
+
+    expect(c.perimetreVide).toBeTrue();
+    expect(c.explicationPerimetre).toContain('rattachés à une collectivité');
+  });
 
   it('retombe sur un message générique quand le corps est inexploitable', fakeAsync(() => {
     simulation.simuler.and.returnValue(

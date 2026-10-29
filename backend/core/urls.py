@@ -13,7 +13,7 @@ from .views import (
     RecherchePersonneCommentairePhotoViewSet,
     OfferViewSet, OfferPhotoViewSet, RequestPhotoViewSet, DisponibiliteOffreViewSet, InformationViewSet, RecherchePersonnePhotoViewSet,
     BesoinViewSet, RecherchePersonneCommentaireViewSet, RecherchePersonneViewSet,
-    BesoinCompetenceViewSet, BesoinMaterielViewSet, RequestTypeBesoinViewSet, OfferTypeBesoinViewSet, InformationTypeBesoinViewSet, TypesALecouteView, CelluleCriseView, SimulationInondationView, SimulationInondationAdressesView, SimulationRuissellementView, SimulationInondationNiveauObserveView, SimulationInondationGeorisquesView, RequestTypeViewSet, OfferTypeViewSet, InformationTypeViewSet,
+    BesoinCompetenceViewSet, BesoinMaterielViewSet, RequestTypeBesoinViewSet, OfferTypeBesoinViewSet, InformationTypeBesoinViewSet, TypesALecouteView, CelluleCriseView, SimulationInondationView, SimulationInondationAdressesView, SimulationRuissellementView, SimulationInondationNiveauObserveView, SimulationInondationGeorisquesView, SimulationInondationPerimetreView, RequestTypeViewSet, OfferTypeViewSet, InformationTypeViewSet,
     DeleteRequestView, DeleteOfferView, DeleteInformationView, CompetenceViewSet,
     ConfirmerAffectationBenevoleView,
     EngagementRessourcePublicView,
@@ -283,6 +283,8 @@ urlpatterns = [
     path('imports/materiel-point/exemple/', ImportMaterielPointExempleView.as_view(), name='import_materiel_point_exemple'),
     path('types-a-lecoute/', TypesALecouteView.as_view(), name='types_a_lecoute'),
     path('crises/<str:crise_id>/cellule/', CelluleCriseView.as_view(), name='cellule_crise'),
+    # Avant la route à paramètre : « perimetre » serait sinon capté comme un code commune.
+    path('simulation-inondation/perimetre/', SimulationInondationPerimetreView.as_view(), name='simulation_inondation_perimetre'),
     path('simulation-inondation/<str:commune_code>/', SimulationInondationView.as_view(), name='simulation_inondation'),
     path('simulation-inondation/<str:commune_code>/adresses/', SimulationInondationAdressesView.as_view(), name='simulation_inondation_adresses'),
     path('simulation-inondation/<str:commune_code>/ruissellement/', SimulationRuissellementView.as_view(), name='simulation_ruissellement'),

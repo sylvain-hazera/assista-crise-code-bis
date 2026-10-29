@@ -10,9 +10,9 @@ import type { Feature, FeatureCollection, MultiPolygon, Point, Polygon } from 'g
 import { messageErreurServeur } from '../../shared/utils/message-erreur';
 import { pollWhileVisible } from '../../shared/utils/polling.util';
 import { TagSearchInputComponent } from '../../shared/components/common/tag-search-input/tag-search-input.component';
-import { LocationService, Commune } from '../../services/location.service';
+import { LocationService, Commune, FiltreGeo } from '../../services/location.service';
 import { SimulationInondationService } from '../../services/simulation-inondation.service';
-import { AdresseSimulee, NiveauObserve, SimulationAdresses, SimulationInondation, SimulationRuissellement } from '../../shared/models/simulation-inondation.model';
+import { AdresseSimulee, NiveauObserve, PerimetreSimulation, SimulationAdresses, SimulationInondation, SimulationRuissellement } from '../../shared/models/simulation-inondation.model';
 
 const ZONE_SOURCE_ID = 'inondation-zone';
 const ADRESSES_SOURCE_ID = 'inondation-adresses';
@@ -52,7 +52,43 @@ type ColonneTri = 'adresse' | 'altitude' | 'profondeur';
 export class SimulationInondationComponent implements AfterViewInit, OnDestroy {
   @ViewChild('mapContainer', { static: true }) mapContainer!: ElementRef<HTMLDivElement>;
 
-  communeSearchFn = (q: string) => this.locationService.searchCommunesByName(q);
+  /** Périmètre réellement ouvert à l'utilisateur, lu au chargement. Tant qu'il n'est pas connu,
+   * la recherche n'est pas bornée : elle le sera avant que le serveur n'ait à refuser quoi que
+   * ce soit, et le proposer trop large une fraction de seconde vaut mieux que de ne rien
+   * proposer si l'appel échoue. */
+  perimetre: PerimetreSimulation | null = null;
+
+  communeSearchFn = (q: string) =>
+    this.locationService.searchCommunesByName(q, this.filtreGeo);
+
+  /** Le filtre que le sélecteur applique, ou null quand la recherche porte sur toute la France. */
+  private get filtreGeo(): FiltreGeo | null {
+    if (this.perimetre?.portee !== 'secteur' || !this.perimetre.champ || !this.perimetre.valeur) {
+      return null;
+    }
+    return { champ: this.perimetre.champ, valeur: this.perimetre.valeur };
+  }
+
+  /** Phrase affichée au-dessus du sélecteur. Dire « vous pouvez simuler X » est ce qui manquait :
+   * la frontière existait, mais aucun écran ne l'énonçait, et on ne la découvrait qu'en se la
+   * prenant (constaté le 29/10/2026). */
+  get explicationPerimetre(): string {
+    if (!this.perimetre) return '';
+    if (this.perimetre.portee === 'aucune') {
+      return "Cet outil est réservé aux comptes rattachés à une collectivité dont le secteur "
+        + "est renseigné. Aucune commune ne vous est ouverte : contactez l'administrateur de "
+        + "votre institution.";
+    }
+    if (this.perimetre.portee === 'nationale') {
+      return `Toutes les communes vous sont ouvertes (${this.perimetre.libelle}).`;
+    }
+    return `Vous pouvez simuler les communes de ${this.perimetre.libelle}. `
+      + "Les autres ne sont pas proposées : cet outil suit le secteur de votre institution.";
+  }
+
+  get perimetreVide(): boolean {
+    return this.perimetre?.portee === 'aucune';
+  }
 
   communeSelectionnee: Commune | null = null;
   enCours = false;
@@ -103,6 +139,13 @@ export class SimulationInondationComponent implements AfterViewInit, OnDestroy {
     });
     this.map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
     this.map.once('load', () => { this.mapPret = true; });
+
+    this.simulationService.perimetre().subscribe({
+      next: (perimetre) => { this.perimetre = perimetre; },
+      // Périmètre indisponible : la recherche reste nationale et le serveur tranche, comme
+      // avant. Priver quelqu'un de l'outil parce qu'un appel annexe a échoué serait pire.
+      error: () => { this.perimetre = null; },
+    });
 
     this.restaurerDerniereCommune();
   }

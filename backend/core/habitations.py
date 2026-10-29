@@ -98,6 +98,95 @@ def peut_simuler_commune(request, commune_code: str) -> bool:
     return _institution_couvre_commune(institution, commune_code)
 
 
+# Niveau de secteur d'une institution -> champ correspondant chez geo.api.gouv.fr, que le
+# navigateur interroge directement pour sa recherche de communes (LocationService). Exprimer le
+# périmètre comme un COUPLE (champ, valeur) plutôt que comme une liste de codes évite de
+# transporter les 4 300 communes d'une région, et surtout de dépendre de la complétude du
+# référentiel Commune local : la même donnée sert à chercher et à filtrer.
+CHAMP_GEO_PAR_NIVEAU = {
+    "commune": ("code", "commune_code"),
+    "epci": ("codeEpci", "epci_code"),
+    "departement": ("codeDepartement", "departement_code"),
+    "region": ("codeRegion", "region_code"),
+}
+
+
+def perimetre_simulation(request) -> dict:
+    """Périmètre de communes ouvert à l'outil « Simulation d'inondation » pour l'appelant, sous
+    une forme que le sélecteur peut appliquer lui-même.
+
+    Pourquoi : le sélecteur interroge le référentiel national et proposait donc les 35 000
+    communes, dont celles que `peut_simuler_commune` refuse ensuite. Constaté le 29/10/2026 —
+    une personne couvrant Le Porge a ouvert Arès et Andernos-les-Bains et reçu deux refus, sans
+    qu'aucun écran ne lui ait jamais dit sur quoi portaient ses droits.
+
+    `portee` vaut « nationale » (aucune restriction à appliquer), « secteur » (filtrer sur
+    `champ` == `valeur`) ou « aucune » (l'outil ne lui est pas ouvert). Ce périmètre est une
+    aide à la saisie : l'autorisation reste vérifiée à chaque appel par `peut_simuler_commune`,
+    seule source de vérité."""
+    from .models import Environment, UserRole
+    from .permissions import INSTITUTIONAL_TYPES, get_active_environment, get_effective_role
+
+    user = getattr(request, "user", None)
+    if not (user and user.is_authenticated):
+        return {"portee": "aucune", "libelle": ""}
+
+    role = get_effective_role(request)
+    if role == UserRole.ADMINISTRATOR:
+        return {"portee": "nationale", "libelle": "France entière (administration)"}
+    if role not in INSTITUTIONAL_TYPES:
+        return {"portee": "aucune", "libelle": ""}
+    if get_active_environment(request) == Environment.DEMO:
+        return {"portee": "nationale", "libelle": "France entière (zone de démonstration)"}
+
+    institution = getattr(user, "institution", None)
+    if institution is None:
+        return {"portee": "aucune", "libelle": ""}
+
+    niveau = institution.secteur_niveau_effectif or "commune"
+    libelle = institution.secteur_nom or institution.nom
+    if niveau == "national":
+        return {"portee": "nationale", "libelle": libelle}
+
+    champ_geo, champ_institution = CHAMP_GEO_PAR_NIVEAU.get(niveau, CHAMP_GEO_PAR_NIVEAU["commune"])
+    valeur = getattr(institution, champ_institution, None)
+    if not valeur:
+        # Secteur annoncé mais code absent : ne rien restreindre serait rouvrir les 35 000
+        # communes, restreindre sur une valeur vide ne proposerait rien. On dit ce qu'il en est.
+        return {"portee": "aucune", "libelle": libelle, "niveau": niveau}
+
+    return {
+        "portee": "secteur", "niveau": niveau, "champ": champ_geo,
+        "valeur": valeur, "libelle": libelle,
+    }
+
+
+LIBELLE_NIVEAU = {
+    "commune": "la commune", "epci": "l'intercommunalité",
+    "departement": "le département", "region": "la région",
+}
+
+
+def motif_refus_simulation(request, commune_code: str) -> str:
+    """Le refus, formulé avec le périmètre réel de la personne.
+
+    « Vous n'avez pas accès à cette commune pour cet outil » ne disait ni sur quoi portaient ses
+    droits, ni à qui s'adresser pour les étendre : la seule conduite possible était de
+    réessayer."""
+    perimetre = perimetre_simulation(request)
+    if perimetre["portee"] == "aucune":
+        return (
+            "Cet outil est réservé aux comptes rattachés à une collectivité. Le vôtre ne l'est "
+            "pas, ou son secteur n'est pas renseigné."
+        )
+    zone = LIBELLE_NIVEAU.get(perimetre.get("niveau", ""), "le secteur")
+    return (
+        f"Cet outil est limité à {zone} de votre institution : {perimetre['libelle']}. "
+        f"La commune {commune_code} n'en fait pas partie — demandez son rattachement à "
+        f"l'administrateur de votre institution si vous devez la simuler."
+    )
+
+
 def institution_accede_commune(request, commune_code: str, crise=None) -> bool:
     """True si l'institution de l'appelant peut gérer les habitations de `commune_code` --
     ADMINISTRATOR voit toujours tout, une AUT_LOCALE sur sa propre commune, une institution
