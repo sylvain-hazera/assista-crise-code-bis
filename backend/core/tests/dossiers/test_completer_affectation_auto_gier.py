@@ -192,11 +192,40 @@ class TestEquipes:
         assert porteuses.count() == 1
         assert porteuses.first().name == EQUIPE_LOGISTIQUE
 
-    def test_la_zone_de_la_crise_est_declaree_sur_chaque_equipe(self, catalogue, crise, equipes):
+    def test_la_zone_couvre_les_communes_reellement_concernees(self, catalogue, crise, equipes):
+        """`crise.zone_communes` ne déclare que deux communes alors que les demandes sont
+        réparties sur toute la vallée. Déclarer la seule zone de la crise EXCLUT tout le reste
+        (team_zone_specificity renvoie None dès que `communes` est renseigné)."""
+        _demande(crise, "Nettoyage / déblaiement")
+        Request.objects.update(commune_code="42186")  # Rive-de-Gier, hors zone_communes
+
         call_command("completer_affectation_auto_gier")
 
         for equipe in Team.objects.filter(environment=Environment.DEMO):
-            assert equipe.communes == [COMMUNE]
+            assert set(equipe.communes) == {COMMUNE, "42186"}
+            assert equipe.departements == ["42"]
+
+    def test_une_demande_hors_zone_communes_trouve_quand_meme_son_equipe(
+            self, catalogue, crise, equipes):
+        """Le défaut constaté en réel : 288 dossiers exclus, zéro suggestion."""
+        demande = _demande(crise, "Nettoyage / déblaiement")
+        Request.objects.filter(pk=demande.pk).update(commune_code="42186")
+
+        call_command("completer_affectation_auto_gier")
+
+        assert Dossier.objects.get(demande=demande).equipe.name == EQUIPE_LOGISTIQUE
+
+    def test_une_zone_deja_posee_trop_etroite_est_corrigee(self, catalogue, crise, equipes):
+        """Un premier passage a pu écrire une zone trop étroite : relancer doit la réparer,
+        pas la conserver parce qu'elle est non vide."""
+        demande = _demande(crise, "Nettoyage / déblaiement")
+        Request.objects.filter(pk=demande.pk).update(commune_code="42186")
+        Team.objects.filter(environment=Environment.DEMO).update(communes=[COMMUNE])
+
+        call_command("completer_affectation_auto_gier")
+
+        for equipe in Team.objects.filter(environment=Environment.DEMO):
+            assert "42186" in equipe.communes
 
 
 @pytest.mark.django_db

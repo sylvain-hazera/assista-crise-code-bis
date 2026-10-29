@@ -119,6 +119,7 @@ EQUIPE_COMPETENCES = {
     # équipe ne les portait : leurs dossiers restaient sans candidat.
     EQUIPE_LOGISTIQUE: [
         "Nettoyage et déblaiement", "Logistique", "Technique", "Élagage / bûcheronnage",
+        "Pompage",
     ],
     EQUIPE_TRANSPORT: ["Transport", "Secourisme"],
 }
@@ -302,6 +303,7 @@ class Command(BaseCommand):
         from core.views import affecter_competences_aux_crises
 
         self._titre("2. Équipes")
+        communes, departements = self._zone_couverte(crise)
         equipes = []
         for nom_equipe, noms_competences in EQUIPE_COMPETENCES.items():
             equipe = Team.objects.filter(name=nom_equipe, environment=Environment.DEMO).first()
@@ -321,17 +323,42 @@ class Command(BaseCommand):
                 equipe.assigned_crises.add(crise)
                 self._note("rattachée à la crise")
 
-            # Zone explicite : fait passer le score de 0 (repli sur la zone de la crise) à 2,
-            # et rend la couverture lisible sur la fiche équipe au lieu d'être implicite.
-            if not equipe.communes and crise.zone_communes:
-                equipe.communes = list(crise.zone_communes)
-                equipe.save(update_fields=["communes"])
-                self._note(f"zone déclarée : {len(equipe.communes)} communes")
+            if (equipe.communes, equipe.departements) != (communes, departements):
+                equipe.communes, equipe.departements = communes, departements
+                equipe.save(update_fields=["communes", "departements"])
+                self._note(
+                    f"zone déclarée : {len(communes)} commune(s), "
+                    f"département(s) {', '.join(departements) or 'aucun'}"
+                )
 
             crees = affecter_competences_aux_crises(equipe)
             crees += self._affecter_categories_parentes(crise, equipe)
             self._note(f"{crees} affectation(s) de compétence créée(s)")
         return equipes
+
+    def _zone_couverte(self, crise):
+        """Communes et départements que les équipes doivent couvrir.
+
+        Déclarer `Team.communes` ne fait pas qu'affiner le score : dès qu'il est renseigné,
+        `team_zone_specificity` EXCLUT (None) toute demande hors de cette liste, sauf à ce
+        qu'un département la rattrape. Se contenter de `crise.zone_communes` a donc rendu la
+        situation pire qu'avant — la crise réelle n'en déclare que deux, alors que ses demandes
+        sont réparties sur toute la vallée (constaté le 29/10/2026 : 288 dossiers exclus, zéro
+        suggestion). On part donc des communes RÉELLEMENT portées par les demandes et
+        signalements de la crise, et on ajoute les départements correspondants comme filet."""
+        from core.views import department_code_from_commune_code
+
+        communes = {c for c in (crise.zone_communes or []) if c}
+        for modele in (Request, Information):
+            communes |= {
+                code for code in modele.objects.filter(crisis=crise)
+                .values_list("commune_code", flat=True).distinct() if code
+            }
+        departements = {d for d in (crise.zone_departements or []) if d}
+        departements |= {
+            d for d in (department_code_from_commune_code(c) for c in communes) if d
+        }
+        return sorted(communes), sorted(departements)
 
     def _affecter_categories_parentes(self, crise, equipe):
         """Une équipe compétente en « Secourisme » l'est aussi pour la catégorie qui le
@@ -542,17 +569,29 @@ class Command(BaseCommand):
         )
 
         total = 0
+        couvertes = []
         for competence in competences:
             total += resuggerer_dossiers(crise.id, competence.id)
-            if not AffectationCompetence.objects.filter(
+            if AffectationCompetence.objects.filter(
                     crise=crise, competence=competence, active=True).exists():
+                couvertes.append(competence.id)
+            else:
                 self._alerte(
                     f"« {competence.nom} » : aucune équipe affectée — ces dossiers resteront "
                     f"sans suggestion."
                 )
 
         self._ok(f"{total} dossier(s) ont reçu une équipe suggérée")
-        self._note(f"{en_attente.filter(equipe__isnull=True).count()} dossier(s) en attente restent sans équipe")
+        sans_equipe = en_attente.filter(equipe__isnull=True)
+        self._note(f"{sans_equipe.count()} dossier(s) en attente restent sans équipe")
+        # Distinguer les deux raisons de rester sans équipe : sinon un rapport qui annonce
+        # « aucune compétence orpheline » et « 288 sans équipe » n'oriente vers rien.
+        hors_portee = sans_equipe.filter(competence_id__in=couvertes).count()
+        if hors_portee:
+            self._note(
+                f"dont {hors_portee} sur une compétence pourtant couverte : localisation hors "
+                f"de la zone des équipes, ou égalité parfaite entre deux équipes"
+            )
         self._note(f"{en_attente.filter(competence__isnull=True).count()} dossier(s) en attente sans compétence (tri manuel)")
 
     def _participants_sans_notification(self, dossier, equipe):
