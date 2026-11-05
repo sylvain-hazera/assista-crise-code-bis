@@ -29,6 +29,16 @@ x-service: &service
   restart: unless-stopped
   <<: *logging
 
+# Pile de supervision : `always` et non `unless-stopped`. La nuance n'est pas cosmétique --
+# `unless-stopped` ne relance JAMAIS un conteneur arrêté à la main, même après un redémarrage de
+# la machine. ac_prometheus a ainsi été stoppé le 03/11 à 14:16, 1 min 37 avant le reboot de mise
+# à jour du noyau : tout le reste est remonté, lui est resté à terre jusqu'au 05/11 (2 j 8 h de
+# métriques perdues). Une panne de supervision ne se voit pas -- c'est justement le service qui
+# devrait prévenir qui manque -- donc elle ne doit pas pouvoir dépendre d'un geste manuel oublié.
+x-service-supervision: &service-supervision
+  restart: always
+  <<: *logging
+
 services:
   # ------------------------------------------------------------------ point d'entrée public
   waf:
@@ -264,7 +274,7 @@ services:
 
   # ------------------------------------------------------------------ monitoring (voir monitoring/README.md)
   prometheus:
-    <<: *service
+    <<: *service-supervision
     image: assista-crise-prometheus:prod
     build: ./monitoring/prometheus
     container_name: ac_prometheus
@@ -280,7 +290,7 @@ services:
     networks: [monitoring, back]         # back : scrape de backend:8000/metrics
 
   alertmanager:
-    <<: *service
+    <<: *service-supervision
     image: assista-crise-alertmanager:prod
     build: ./monitoring/alertmanager
     container_name: ac_alertmanager
@@ -293,7 +303,7 @@ services:
     networks: [monitoring]
 
   grafana:
-    <<: *service
+    <<: *service-supervision
     image: assista-crise-grafana:prod
     build: ./monitoring/grafana
     container_name: ac_grafana
@@ -325,7 +335,7 @@ services:
 
   # Journaux du WAF et de fail2ban -> pages admin Supervision WAF / Fail2ban (Grafana).
   loki:
-    <<: *service
+    <<: *service-supervision
     image: grafana/loki:3.5.3
     container_name: ac_loki
     command: ['-config.file=/etc/loki/loki.yml']
@@ -335,7 +345,7 @@ services:
     networks: [monitoring]
 
   alloy:
-    <<: *service
+    <<: *service-supervision
     image: grafana/alloy:v1.10.2
     container_name: ac_alloy
     # Lit les journaux (lecture seule) et n'envoie à Loki que des champs choisis : voir
@@ -356,7 +366,7 @@ services:
     depends_on: [loki]
 
   postgres-exporter:
-    <<: *service
+    <<: *service-supervision
     image: prometheuscommunity/postgres-exporter:v0.15.0
     container_name: ac_postgres_exporter
     environment:
@@ -368,7 +378,7 @@ services:
     depends_on: [db]
 
   nginx-exporter:
-    <<: *service
+    <<: *service-supervision
     image: nginx/nginx-prometheus-exporter:1.1.0
     container_name: ac_nginx_exporter
     command: ['--nginx.scrape-uri=http://proxy:8081/stub_status']
@@ -376,7 +386,7 @@ services:
     depends_on: [proxy]
 
   cadvisor:
-    <<: *service
+    <<: *service-supervision
     image: gcr.io/cadvisor/cadvisor:v0.49.1
     container_name: ac_cadvisor
     privileged: true                     # compromis assumé : accès large à l'hôte, port jamais publié
@@ -390,7 +400,7 @@ services:
     networks: [monitoring]
 
   node-exporter:
-    <<: *service
+    <<: *service-supervision
     image: prom/node-exporter:v1.8.2
     container_name: ac_node_exporter
     pid: host
@@ -400,7 +410,7 @@ services:
     networks: [monitoring]
 
   blackbox-exporter:
-    <<: *service
+    <<: *service-supervision
     image: prom/blackbox-exporter:v0.25.0
     container_name: ac_blackbox_exporter
     networks: [monitoring]
