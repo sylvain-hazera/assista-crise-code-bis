@@ -417,7 +417,7 @@
 
   .situation-compteurs {
     margin: 0;
-    color: #64748b;
+    color: var(--ac-text-muted, #64748b);
     font-size: 0.85rem;
   }
 
@@ -429,7 +429,7 @@
   }
 
   .groupe {
-    background: white;
+    background: var(--ac-surface, white);
     border-radius: 8px;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
     padding: 1.1rem 1.35rem 1.25rem;
@@ -442,18 +442,18 @@
     align-items: center;
     gap: 0.35rem 0.7rem;
     padding-bottom: 0.7rem;
-    border-bottom: 2px solid #f1f5f9;
+    border-bottom: 2px solid var(--ac-border, #f1f5f9);
     font-size: 0.9rem;
 
     .icone-groupe { font-size: 20px; color: #d97706; }
   }
   .crise-nom { font-weight: 700; font-size: 1rem; }
-  .crise-lieu { color: #475569; }
-  .crise-depuis { color: #94a3b8; font-size: 0.82rem; }
+  .crise-lieu { color: var(--ac-text-muted, #475569); }
+  .crise-depuis { color: var(--ac-text-subtle, #94a3b8); font-size: 0.82rem; }
 
   .situation-vide {
     margin: 0.7rem 0 0;
-    color: #64748b;
+    color: var(--ac-text-muted, #64748b);
     font-size: 0.88rem;
   }
 
@@ -464,23 +464,23 @@
   }
 
   .etiquette {
-    background: #eff6ff;
-    color: #1d4ed8;
+    background: var(--ac-blue-bg, #eff6ff);
+    color: var(--ac-blue-text, #1d4ed8);
     border-radius: 99px;
     padding: 0.1rem 0.55rem;
     font-size: 0.75rem;
     font-weight: 700;
     white-space: nowrap;
   }
-  .etiquette-secours { background: #fef2f2; color: #b91c1c; }
-  .etiquette-complet { background: #fffbeb; color: #92400e; }
+  .etiquette-secours { background: var(--ac-red-bg, #fef2f2); color: var(--ac-red-text, #b91c1c); }
+  .etiquette-complet { background: var(--ac-amber-bg, #fffbeb); color: var(--ac-orange-text, #92400e); }
 
   .material-icons { font-size: 16px; vertical-align: text-bottom; }
 
   /* ── Centres d'un groupe ── */
   .liste-centres li {
     padding: 0.8rem 0;
-    border-bottom: 1px solid #f1f5f9;
+    border-bottom: 1px solid var(--ac-border, #f1f5f9);
     font-size: 0.9rem;
 
     &:last-child { border-bottom: none; padding-bottom: 0; }
@@ -492,15 +492,15 @@
     gap: 0.45rem;
   }
   .centre-nom { font-weight: 700; }
-  .centre-description { margin: 0.35rem 0 0; color: #475569; }
+  .centre-description { margin: 0.35rem 0 0; color: var(--ac-text-muted, #475569); }
 
   .centre-adresse {
     margin: 0.4rem 0 0;
-    color: #0f172a;
+    color: var(--ac-text, #0f172a);
     font-weight: 600;
 
-    .material-icons { color: #1d4ed8; }
-    .sans-info { color: #92400e; font-weight: 400; }
+    .material-icons { color: var(--ac-blue-text, #1d4ed8); }
+    .sans-info { color: var(--ac-orange-text, #92400e); font-weight: 400; }
   }
 
   .centre-infos {
@@ -508,11 +508,11 @@
     flex-wrap: wrap;
     gap: 0.3rem 1rem;
     margin-top: 0.35rem;
-    color: #475569;
+    color: var(--ac-text-muted, #475569);
     font-size: 0.85rem;
 
     li { display: flex; align-items: center; gap: 0.25rem; }
-    .sur-capacite { color: #94a3b8; }
+    .sur-capacite { color: var(--ac-text-subtle, #94a3b8); }
   }
 
   .btn-itineraire {

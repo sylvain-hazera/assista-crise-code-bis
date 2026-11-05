@@ -157,17 +157,17 @@
   gap: .6rem;
   margin-bottom: 1.25rem;
   padding: .7rem .9rem;
-  background: #fff4e5;
-  border: 1px solid #ffcc80;
+  background: var(--ac-orange-bg, #fff4e5);
+  border: 1px solid var(--ac-orange-border, #ffcc80);
   border-left: 4px solid #b26a00;
   border-radius: 4px;
   font-size: .88rem;
   line-height: 1.45;
-  color: #5d4037;
+  color: var(--ac-red-text, #5d4037);
 
   .material-icons {
     font-size: 1.15rem;
-    color: #b26a00;
+    color: var(--ac-orange-text, #b26a00);
     flex-shrink: 0;
   }
 }
@@ -180,14 +180,14 @@
   gap: 1rem;
   margin: 1rem 0;
   padding: 1.25rem;
-  background: #f7f9fc;
-  border: 1px solid #dde4ee;
+  background: var(--ac-surface-2, #f7f9fc);
+  border: 1px solid var(--ac-border, #dde4ee);
   border-radius: 8px;
   max-width: 70ch;
 
   > .material-icons {
     font-size: 1.8rem;
-    color: #3a6ea5;
+    color: var(--ac-text-muted, #3a6ea5);
     flex-shrink: 0;
   }
 
@@ -206,6 +206,6 @@
 }
 
 .help-admin {
-  background: #eef4fb;
+  background: var(--ac-blue-bg, #eef4fb);
   border-left: 3px solid #3a6ea5;
 }

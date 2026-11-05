@@ -88,7 +88,7 @@
   &:hover::after,
   &:focus-visible::after,
   .redimensionnement > &::after {
-    background: var(--brand-primary);
+    background: var(--brand-primary-lisible, var(--brand-primary));
   }
 
   &:focus-visible { outline: none; }

@@ -88,7 +88,7 @@
     border-radius: 6px;
     border: 1px solid var(--brand-primary);
     background: var(--brand-primary);
-    color: #fff;
+    color: var(--brand-on-primary, #fff);
     cursor: pointer;
     font-size: .85rem;
     &:disabled { opacity: .5; cursor: not-allowed; }

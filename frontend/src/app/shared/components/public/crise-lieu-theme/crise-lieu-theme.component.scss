@@ -67,8 +67,8 @@
   display: flex;
   align-items: flex-start;
   gap: 0.4rem;
-  color: #1e40af;
-  background: #eff6ff;
+  color: var(--ac-blue-text, #1e40af);
+  background: var(--ac-blue-bg, #eff6ff);
   border-radius: 6px;
   padding: 0.6rem 0.8rem;
   font-size: 0.88rem;

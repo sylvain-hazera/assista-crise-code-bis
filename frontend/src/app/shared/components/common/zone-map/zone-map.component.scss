@@ -48,12 +48,12 @@
   gap: .5rem;
   margin: 0 0 .75rem;
   padding: .7rem .9rem;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--ac-border, #e5e7eb);
   border-radius: 6px;
-  background: #f9fafb;
-  color: #374151;
+  background: var(--ac-surface-2, #f9fafb);
+  color: var(--ac-text, #374151);
   font-size: .88rem;
   line-height: 1.55;
 
-  .material-icons { font-size: 1.1rem; color: #9ca3af; margin-top: .1rem; }
+  .material-icons { font-size: 1.1rem; color: var(--ac-text-subtle, #9ca3af); margin-top: .1rem; }
 }

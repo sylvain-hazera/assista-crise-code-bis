@@ -186,12 +186,12 @@
   justify-content: center;
   gap: .6rem;
   padding: 1.5rem;
-  background: #f9fafb;
-  color: #374151;
+  background: var(--ac-surface-2, #f9fafb);
+  color: var(--ac-text, #374151);
   font-size: .92rem;
   line-height: 1.55;
   text-align: left;
 
-  .material-icons { font-size: 1.6rem; color: #9ca3af; flex: 0 0 auto; }
+  .material-icons { font-size: 1.6rem; color: var(--ac-text-subtle, #9ca3af); flex: 0 0 auto; }
   div { max-width: 32rem; }
 }

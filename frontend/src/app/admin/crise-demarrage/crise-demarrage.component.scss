@@ -392,7 +392,7 @@
 
   .adresse-ok {
     display: flex; align-items: center; gap: .3rem;
-    margin: .4rem 0 0; font-size: .82rem; font-weight: 600; color: #166534;
+    margin: .4rem 0 0; font-size: .82rem; font-weight: 600; color: var(--ac-green-text, #166534);
     .material-icons { font-size: 1rem; }
   }
 }
@@ -403,7 +403,7 @@
   border: 1px solid var(--border); border-radius: 10px;
 
   /* Invitation commencée mais incomplète : signalée sans bloquer la frappe. */
-  &.invitation-incomplete { border-color: #fcd34d; background: #fffbeb; }
+  &.invitation-incomplete { border-color: #fcd34d; background: var(--ac-amber-bg, #fffbeb); }
 }
 
 /* Avertissement du bouton « Plus tard » : aligné en haut, le texte faisant plusieurs lignes
@@ -426,8 +426,8 @@
   padding: .7rem .9rem;
   border: 1px solid #fdba74;
   border-radius: 6px;
-  background: #fff7ed;
-  color: #9a3412;
+  background: var(--ac-orange-bg, #fff7ed);
+  color: var(--ac-orange-text, #9a3412);
   font-size: .9rem;
   line-height: 1.5;
 
@@ -443,10 +443,10 @@
   gap: .5rem;
   margin: .5rem 0 1rem;
   padding: .7rem .9rem;
-  border: 1px solid #bbf7d0;
+  border: 1px solid var(--ac-green-border, #bbf7d0);
   border-radius: 6px;
-  background: #f0fdf4;
-  color: #166534;
+  background: var(--ac-green-bg, #f0fdf4);
+  color: var(--ac-green-text, #166534);
   font-size: .9rem;
   line-height: 1.5;
 
@@ -454,8 +454,8 @@
 }
 
 .point-card.deja-en-place {
-  border-color: #bbf7d0;
-  background: #f7fdf9;
+  border-color: var(--ac-green-border, #bbf7d0);
+  background: var(--ac-surface-2, #f7fdf9);
 }
 
 .point-existant {
@@ -466,6 +466,6 @@
   font-size: .92rem;
   line-height: 1.45;
 
-  .material-icons { font-size: 1.05rem; color: #166534; margin-top: .1rem; }
-  small { color: #6b7280; }
+  .material-icons { font-size: 1.05rem; color: var(--ac-green-text, #166534); margin-top: .1rem; }
+  small { color: var(--ac-text-muted, #6b7280); }
 }

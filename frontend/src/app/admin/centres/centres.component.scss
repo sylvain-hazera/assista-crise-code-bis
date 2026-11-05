@@ -142,10 +142,10 @@
 .prepare-avance {
   display: inline-block;
   padding: .1rem .45rem;
-  border: 1px solid #bfdbfe;
+  border: 1px solid var(--ac-blue-border, #bfdbfe);
   border-radius: 999px;
-  background: #eff6ff;
-  color: #1e40af;
+  background: var(--ac-blue-bg, #eff6ff);
+  color: var(--ac-blue-text, #1e40af);
   font-size: .78rem;
   white-space: nowrap;
   cursor: help;

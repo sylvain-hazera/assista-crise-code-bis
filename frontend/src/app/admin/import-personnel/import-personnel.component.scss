@@ -122,7 +122,7 @@
 
 /* ── Saisie à la main (tableau de lignes ajoutées au « + ») ─────────────────── */
 .saisie-table {
-  th .required { color: #b91c1c; }
+  th .required { color: var(--ac-red-text, #b91c1c); }
   td { white-space: normal; vertical-align: middle; }
 
   .form-input {
@@ -136,7 +136,7 @@
   .form-checkbox { width: 1rem; height: 1rem; accent-color: var(--primary); cursor: pointer; }
 
   /* Ligne commencée mais incomplète : signalée sans bloquer la frappe en cours. */
-  .ligne-incomplete .form-input { border-color: #fcd34d; background: #fffbeb; }
+  .ligne-incomplete .form-input { border-color: #fcd34d; background: var(--ac-amber-bg, #fffbeb); }
 
   .btn-ghost.sm {
     display: inline-flex; align-items: center; padding: .3rem; border-radius: 99px;

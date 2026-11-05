@@ -69,8 +69,8 @@
 
 // Annonce du périmètre, au-dessus du sélecteur : une information de cadrage, pas une alerte --
 // sauf quand aucune commune n'est ouverte, où elle remplace le sélecteur.
-.perimetre { color: #475569; font-size: 0.88rem; margin: 0 0 0.5rem; }
-.perimetre-vide { color: #b45309; }
+.perimetre { color: var(--ac-text-muted, #475569); font-size: 0.88rem; margin: 0 0 0.5rem; }
+.perimetre-vide { color: var(--ac-orange-text, #b45309); }
 
 .badge-vigilance {
   display: inline-block;

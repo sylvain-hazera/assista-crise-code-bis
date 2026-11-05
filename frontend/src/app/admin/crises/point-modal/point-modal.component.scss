@@ -236,10 +236,10 @@
     gap: .4rem;
     flex: 1 1 14rem;
     padding: .6rem .8rem;
-    border: 1px solid #d1d5db;
+    border: 1px solid var(--ac-border-strong, #d1d5db);
     border-radius: 6px;
-    background: white;
-    color: #374151;
+    background: var(--ac-surface, white);
+    color: var(--ac-text, #374151);
     font-size: .9rem;
     cursor: pointer;
 
@@ -249,8 +249,8 @@
 
     &.actif {
       border-color: #2563eb;
-      background: #eff6ff;
-      color: #1d4ed8;
+      background: var(--ac-blue-bg, #eff6ff);
+      color: var(--ac-blue-text, #1d4ed8);
       font-weight: 600;
     }
   }
@@ -262,10 +262,10 @@
   gap: .5rem;
   margin: 0 0 1rem;
   padding: .7rem .9rem;
-  border: 1px solid #bfdbfe;
+  border: 1px solid var(--ac-blue-border, #bfdbfe);
   border-radius: 6px;
-  background: #eff6ff;
-  color: #1e40af;
+  background: var(--ac-blue-bg, #eff6ff);
+  color: var(--ac-blue-text, #1e40af);
   font-size: .88rem;
   line-height: 1.5;
 

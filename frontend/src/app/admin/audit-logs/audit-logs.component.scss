@@ -113,16 +113,16 @@
   .material-icons { font-size: 18px; }
   &:disabled { opacity: .45; cursor: not-allowed; }
 }
-.btn-inclure { background: #f0fdf4; color: #166534; border-color: #bbf7d0; &:hover:not(:disabled) { background: #dcfce7; } }
-.btn-exclure { background: #fef2f2; color: #991b1b; border-color: #fecaca; &:hover:not(:disabled) { background: #fee2e2; } }
+.btn-inclure { background: var(--ac-green-bg, #f0fdf4); color: var(--ac-green-text, #166534); border-color: var(--ac-green-border, #bbf7d0); &:hover:not(:disabled) { background: var(--ac-green-bg, #dcfce7); } }
+.btn-exclure { background: var(--ac-red-bg, #fef2f2); color: var(--ac-red-text, #991b1b); border-color: var(--ac-red-border, #fecaca); &:hover:not(:disabled) { background: var(--ac-red-bg, #fee2e2); } }
 
 // Pastilles : vert = inclus, rouge = exclu ; le signe à gauche bascule, la croix retire.
 .pastilles { display: flex; flex-wrap: wrap; gap: .45rem; }
 .pastille {
   display: inline-flex; align-items: center; gap: .35rem; max-width: 100%;
-  background: #f0fdf4; border: 1px solid #bbf7d0; color: #14532d;
+  background: var(--ac-green-bg, #f0fdf4); border: 1px solid var(--ac-green-border, #bbf7d0); color: var(--ac-green-text, #14532d);
   border-radius: 99px; padding: .15rem .3rem .15rem .2rem; font-size: .8rem;
-  &.exclue { background: #fef2f2; border-color: #fecaca; color: #7f1d1d; }
+  &.exclue { background: var(--ac-red-bg, #fef2f2); border-color: var(--ac-red-border, #fecaca); color: var(--ac-red-text, #7f1d1d); }
   button { background: none; border: none; cursor: pointer; color: inherit; display: inline-flex; align-items: center; padding: 0; }
   .pastille-sens {
     width: 1.35rem; height: 1.35rem; justify-content: center; border-radius: 50%;
@@ -141,9 +141,9 @@
 
 .bandeau-fiche {
   display: flex; align-items: flex-start; gap: .65rem;
-  background: #eff6ff; border: 1px solid #bfdbfe; color: #1e3a8a; border-radius: 10px; padding: .75rem 1rem;
+  background: var(--ac-blue-bg, #eff6ff); border: 1px solid var(--ac-blue-border, #bfdbfe); color: var(--ac-blue-text, #1e3a8a); border-radius: 10px; padding: .75rem 1rem;
   div { display: flex; flex-direction: column; gap: .15rem; font-size: .88rem; }
-  span:not(.material-icons) { color: #1e40af; font-size: .82rem; }
+  span:not(.material-icons) { color: var(--ac-blue-text, #1e40af); font-size: .82rem; }
 }
 
 .filter-field {
@@ -188,7 +188,7 @@ tbody tr.row-echec { background: var(--ac-surface-2, #fff7f7); }
   display: flex; flex-direction: column;
   .user-email { font-size: .75rem; color: var(--muted); }
 }
-.institution-ligne { margin-top: .15rem; font-size: .75rem; color: #374151; }
+.institution-ligne { margin-top: .15rem; font-size: .75rem; color: var(--ac-text, #374151); }
 
 .comment-cell {
   max-width: 260px;
@@ -196,7 +196,7 @@ tbody tr.row-echec { background: var(--ac-surface-2, #fff7f7); }
 }
 .recherche-ligne {
   display: flex; align-items: center; gap: .2rem; margin-top: .2rem;
-  font-size: .75rem; color: #92400e; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: .75rem; color: var(--ac-orange-text, #92400e); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   .material-icons { font-size: 14px; }
 }
 
@@ -220,14 +220,14 @@ tbody tr.row-echec { background: var(--ac-surface-2, #fff7f7); }
 
 .badge-systeme {
   margin-left: .3rem; font-size: .65rem; font-weight: 700; text-transform: uppercase; letter-spacing: .3px;
-  background: #e5e7eb; color: #4b5563; border-radius: 4px; padding: .05rem .3rem;
+  background: var(--ac-surface-3, #e5e7eb); color: var(--ac-text-muted, #4b5563); border-radius: 4px; padding: .05rem .3rem;
 }
 
 .perimetre-chip {
   display: inline-block; white-space: nowrap; font-size: .75rem; border-radius: 99px; padding: .15rem .55rem;
   background: var(--bg); border: 1px solid var(--border); color: var(--muted);
-  &.perimetre-general { color: #374151; }
-  &.perimetre-crise { background: #fff7ed; border-color: #fed7aa; color: #9a3412; cursor: pointer; font-family: inherit; }
+  &.perimetre-general { color: var(--ac-text, #374151); }
+  &.perimetre-crise { background: var(--ac-orange-bg, #fff7ed); border-color: var(--ac-orange-border, #fed7aa); color: var(--ac-orange-text, #9a3412); cursor: pointer; font-family: inherit; }
 }
 
 .objet-cell {
@@ -239,7 +239,7 @@ tbody tr.row-echec { background: var(--ac-surface-2, #fff7f7); }
   display: inline-block; margin-top: .25rem; font-size: .72rem; border-radius: 4px; padding: .05rem .4rem;
   background: var(--bg); color: var(--muted);
   // coordonnées effectivement exposées (fiche, liste avec coordonnées, export) : à regarder en premier
-  &.expo-coordonnees { background: #fef3c7; color: #92400e; }
+  &.expo-coordonnees { background: var(--ac-amber-bg, #fef3c7); color: var(--ac-orange-text, #92400e); }
 }
 
 .action-chip {

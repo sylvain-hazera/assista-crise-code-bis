@@ -50,7 +50,7 @@
 
 .badge {
   background: var(--brand-primary);
-  color: #fff;
+  color: var(--brand-on-primary, #fff);
   border-radius: 999px;
   padding: 0.1rem 0.55rem;
   font-size: 0.75rem;
@@ -114,7 +114,7 @@
     background: var(--ac-surface, #fff);
     cursor: pointer;
     font-size: 0.82rem;
-    &.actif { background: var(--brand-primary); color: #fff; border-color: var(--brand-primary); }
+    &.actif { background: var(--brand-primary); color: var(--brand-on-primary, #fff); border-color: var(--brand-primary); }
   }
 }
 
@@ -246,7 +246,7 @@
 /* ── Affecter depuis la cellule : filtre, lot, ligne, message ─────────── */
 .table-dense {
   button:disabled { opacity: 0.45; cursor: default; }
-  tr.coche td { background: #eff6ff; }
+  tr.coche td { background: var(--ac-blue-bg, #eff6ff); }
   .cellule-affecter {
     display: flex;
     gap: 0.35rem;
@@ -263,16 +263,16 @@
   margin: 0.4rem 0;
   font-size: 0.82rem;
   select { font-size: 0.8rem; padding: 0.2rem; margin-left: 0.3rem; }
-  button { font-size: 0.78rem; padding: 0.25rem 0.6rem; border-radius: 6px; border: 1px solid var(--brand-primary); background: var(--brand-primary); color: #fff; cursor: pointer; }
+  button { font-size: 0.78rem; padding: 0.25rem 0.6rem; border-radius: 6px; border: 1px solid var(--brand-primary); background: var(--brand-primary); color: var(--brand-on-primary, #fff); cursor: pointer; }
   button:disabled { opacity: 0.45; cursor: default; }
-  .btn-secondaire { background: #fff; color: var(--brand-primary); }
+  .btn-secondaire { background: var(--ac-surface, #fff); color: var(--brand-primary-lisible, var(--brand-primary)); }
 }
 
 .barre-lot {
   padding: 0.4rem 0.6rem;
   border-radius: 8px;
-  background: #eff6ff;
-  border: 1px solid #bfdbfe;
+  background: var(--ac-blue-bg, #eff6ff);
+  border: 1px solid var(--ac-blue-border, #bfdbfe);
 }
 
 .toast {
@@ -291,8 +291,8 @@
   color: #fff;
   font-size: 0.85rem;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
-  button { background: transparent; border: 1px solid #93c5fd; color: #93c5fd; border-radius: 6px; padding: 0.2rem 0.6rem; cursor: pointer; }
-  .toast-fermer { border: none; font-size: 1.1rem; padding: 0 0.2rem; color: #9ca3af; }
+  button { background: transparent; border: 1px solid var(--ac-blue-border, #93c5fd); color: #93c5fd; border-radius: 6px; padding: 0.2rem 0.6rem; cursor: pointer; }
+  .toast-fermer { border: none; font-size: 1.1rem; padding: 0 0.2rem; color: var(--ac-text-subtle, #9ca3af); }
 }
 
 /* ── Fiches compactes au code couleur de la page Signalements ──────────── */
@@ -308,10 +308,10 @@
 
   .cellule-titre { cursor: pointer; line-height: 1.3; }
   .cellule-titre:hover .titre { text-decoration: underline; }
-  .titre { font-weight: 600; color: #111827; }
-  .sous-titre { display: block; font-size: 0.72rem; color: #6b7280; }
-  .icone-photo { font-size: 14px; color: #9ca3af; vertical-align: -2px; margin-left: 0.25rem; }
-  .deja-affectee { display: inline-block; margin-top: 0.15rem; font-size: 0.7rem; color: #15803d; }
+  .titre { font-weight: 600; color: var(--ac-text, #111827); }
+  .sous-titre { display: block; font-size: 0.72rem; color: var(--ac-text-muted, #6b7280); }
+  .icone-photo { font-size: 14px; color: var(--ac-text-subtle, #9ca3af); vertical-align: -2px; margin-left: 0.25rem; }
+  .deja-affectee { display: inline-block; margin-top: 0.15rem; font-size: 0.7rem; color: var(--ac-green-text, #15803d); }
 
   .genre-badge {
     display: inline-flex; align-items: center; gap: 0.2rem; margin-right: 0.35rem;
@@ -331,9 +331,9 @@
   .apercu-photo img { width: 100%; max-height: 10rem; object-fit: cover; border-radius: 8px; }
   .apercu-description { margin: 0 0 0.4rem; font-size: 0.82rem; white-space: pre-line; }
   dl { display: grid; grid-template-columns: auto 1fr; gap: 0.1rem 0.6rem; margin: 0 0 0.4rem; font-size: 0.76rem; }
-  dt { color: #6b7280; }
+  dt { color: var(--ac-text-muted, #6b7280); }
   dd { margin: 0; }
-  .lien-fiche { font-size: 0.78rem; color: var(--brand-primary); }
+  .lien-fiche { font-size: 0.78rem; color: var(--brand-primary-lisible, var(--brand-primary)); }
   .apercu-carte { min-height: 10rem; border-radius: 8px; overflow: hidden; }
 }
 

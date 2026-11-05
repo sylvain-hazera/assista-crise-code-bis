@@ -240,14 +240,14 @@
   gap: 1rem;
   margin: 1rem 0;
   padding: 1.1rem 1.25rem;
-  background: #f4f8ff;
-  border: 1px solid #cfdcf0;
+  background: var(--ac-blue-bg, #f4f8ff);
+  border: 1px solid var(--ac-blue-border, #cfdcf0);
   border-radius: 8px;
   max-width: 70ch;
 
-  > .material-icons { font-size: 1.7rem; color: #3a6ea5; flex-shrink: 0; }
+  > .material-icons { font-size: 1.7rem; color: var(--ac-text-muted, #3a6ea5); flex-shrink: 0; }
   strong { display: block; margin-bottom: .2rem; }
-  p { margin: 0 0 .75rem; font-size: .88rem; color: #555; }
+  p { margin: 0 0 .75rem; font-size: .88rem; color: var(--ac-text-muted, #555); }
 }
 
 .choix-liste {
@@ -260,8 +260,8 @@
   padding: .45rem .85rem;
   border: 1px solid #3a6ea5;
   border-radius: 6px;
-  background: #fff;
-  color: #1f4b7a;
+  background: var(--ac-surface, #fff);
+  color: var(--ac-blue-text, #1f4b7a);
   font-size: .9rem;
   font-family: inherit;
   cursor: pointer;
@@ -275,15 +275,15 @@
   gap: .4rem;
   margin: .5rem 0 0;
   font-size: .88rem;
-  color: #555;
+  color: var(--ac-text-muted, #555);
 
-  .material-icons { font-size: 1.05rem; color: #3a6ea5; }
+  .material-icons { font-size: 1.05rem; color: var(--ac-text-muted, #3a6ea5); }
 
   .lien {
     border: none;
     background: none;
     padding: 0;
-    color: #3a6ea5;
+    color: var(--ac-text-muted, #3a6ea5);
     font-size: .88rem;
     font-family: inherit;
     text-decoration: underline;

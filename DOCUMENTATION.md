@@ -1238,9 +1238,48 @@ teinte pâle, texte de couleur trop sombre pour un fond sombre) ; il laisse le t
 dont le fond reste clair. Idempotent : à relancer après l'ajout de pages écrites avec des
 couleurs en dur.
 
+#### 6.6.1 Marque blanche et contraste
+
+Une institution choisit sa couleur primaire en la regardant sur un fond blanc. Rien ne
+garantit qu'elle reste lisible sur `--ac-surface` (`#1c1f26`), ni que du blanc passe dessus.
+Le bleu Assista-Crise lui-même ne tient pas : **3.19:1 sur le fond sombre**, sous le seuil AA
+de 4.5:1. Le problème n'est donc pas théorique et ne concerne pas que les marques blanches.
+
+Plutôt que de valider chaque branding à la main — impossible, une institution change sa
+couleur quand elle veut — `BrandingService` dérive au runtime des couleurs sûres via
+`services/contraste.ts` (luminance et rapport de contraste WCAG 2.1), et **les recalcule à
+chaque bascule de thème** :
+
+| Variable | Usage |
+|---|---|
+| `--brand-primary`, `--brand-secondary` | la couleur de la marque, brute : **aplats uniquement** (boutons pleins, badges) |
+| `--brand-primary-lisible`, `--brand-secondary-lisible` | **tout texte, icône, lien ou bordure fine** posé sur une surface — contraste ≥ 4.5:1 garanti dans les deux thèmes |
+| `--brand-on-primary`, `--brand-on-secondary` | le texte posé **sur** un aplat de marque : blanc ou encre (`#111827`) selon la luminance de la marque |
+
+L'ajustement conserve teinte et saturation et ne déplace que la luminosité, par pas de 1 %,
+jusqu'au premier palier conforme : la couleur reste reconnaissable comme celle de la marque.
+Il ne bascule jamais vers le blanc ou le noir purs, qui l'effaceraient. Une couleur déjà
+conforme est renvoyée inchangée.
+
+**Écrire un nouveau style avec la couleur de marque** :
+
+```scss
+// Texte, icône, lien, bordure fine
+color: var(--brand-primary-lisible, var(--brand-primary));
+// Aplat + son texte
+background: var(--brand-primary); color: var(--brand-on-primary, #fff);
+```
+
+Les valeurs de repli de `styles.scss` ne servent qu'au tout premier rendu, avant le passage
+de `BrandingService` ; elles sont écrasées au runtime par la couleur ajustée de l'institution.
+`contraste.spec.ts` vérifie qu'un échantillon de marques plausibles (dont des cas extrêmes :
+or, cyan, noir, blanc) atteint AA sur les deux fonds.
+
 Limites connues : les couleurs écrites dans les templates (`style="…"`) ou dans le TypeScript
 ne sont pas converties ; le fond de carte MapLibre reste clair. Grafana suit le thème
-(`theme=dark` dans l'URL de l'iframe, § 9.3.1).
+(`theme=dark` dans l'URL de l'iframe, § 9.3.1). Le budget d'erreur `anyComponentStyle`
+d'`angular.json` est passé de 24 à 28 ko : la conversion ajoute ~7 % à chaque feuille, ce qui
+faisait dépasser `teams.component.scss`.
 
 ---
 

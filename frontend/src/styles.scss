@@ -11,6 +11,16 @@
   --brand-secondary: #1d4ed8;
   --brand-font-title: Roboto, "Helvetica Neue", sans-serif;
   --brand-font-text: Roboto, "Helvetica Neue", sans-serif;
+
+  // Couleurs dérivées, recalculées par BrandingService à chaque bascule de thème ET à chaque
+  // branding chargé (voir services/contraste.ts). Les valeurs ci-dessous ne servent qu'au tout
+  // premier rendu, avant que le service n'ait tourné.
+  //   *-lisible    : TOUT texte, icône ou bordure fine de marque -- contraste >= 4.5:1 garanti
+  //   --brand-on-* : le texte posé SUR un aplat de marque (blanc ou encre selon la marque)
+  --brand-primary-lisible: #2563eb;     // 5.17:1 sur blanc
+  --brand-secondary-lisible: #1d4ed8;   // 6.70:1 sur blanc
+  --brand-on-primary: #ffffff;
+  --brand-on-secondary: #ffffff;
 }
 
 // ==================== THÈME (mode sombre) ====================
@@ -19,6 +29,13 @@
 // clair garde donc exactement ses couleurs d'origine (valeur de repli). Conversion des anciennes
 // couleurs : frontend/scripts/convertir-couleurs-theme.py (DOCUMENTATION.md, § 6.6).
 html[data-theme='sombre'] {
+  // Repli avant le premier passage de BrandingService : le bleu Assista-Crise par défaut ne
+  // tombe qu'à 3.19:1 sur --ac-surface, sous le seuil AA. Valeurs issues du même calcul que
+  // services/contraste.ts (4.65:1 et 4.58:1). Une institution marque blanche écrase ces deux
+  // variables au runtime avec SA couleur ajustée -- rien n'est figé ici pour elle.
+  --brand-primary-lisible: #5484ef;
+  --brand-secondary-lisible: #5d82e9;
+
   // Neutres. Comme en clair (page gris clair, cartes blanches), la page reste plus foncée que les
   // cartes : surface-2 (fonds de page, survols) sous surface ; surface-3 (pastilles) au-dessus.
   --ac-bg: #101216;
