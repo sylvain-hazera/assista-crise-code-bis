@@ -63,6 +63,9 @@ export const ADMIN_ROUTES: Routes = [
   // ECRITURE (voir TacheAdminMeshtasticViewSet.perform_create), les lectures restant ouvertes
   // aux acteurs institutionnels -- relever une puissance d'emission n'est pas un acte materiel.
   { path: 'meshtastic-administration', loadComponent: () => import('./meshtastic-administration/meshtastic-administration.component').then(m => m.MeshtasticAdministrationComponent), canActivate: [institutionalEffectiveGuard] },
+  // Diagnostic des liaisons radio (core/analyse_liaisons.py) : lecture seule, ouverte aux
+  // acteurs institutionnels comme les autres pages radio.
+  { path: 'diagnostic-radio', loadComponent: () => import('./diagnostic-radio/diagnostic-radio.component').then(m => m.DiagnosticRadioComponent), canActivate: [institutionalEffectiveGuard] },
   { path: 'satellites', loadComponent: () => import('./satellites/satellites.component').then(m => m.SatellitesComponent), canActivate: [institutionalEffectiveGuard] },
 
   // ── Administration ──

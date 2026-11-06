@@ -237,6 +237,50 @@ class IsAdministrator(BasePermission):
         )
 
 
+class EstComptePont(BasePermission):
+    """Lecture des endpoints qui exposent un SECRET mesh en clair.
+
+    Ces endpoints existent parce qu'un pont radio ne peut pas faire autrement : il lui faut le
+    mot de passe MQTT du broker, la clé privée X25519 du companion et les PSK de canal pour
+    parler le protocole (voir meshtastic-bridge/crypto.py). Mais jusqu'au 07/11/2026 ils se
+    contentaient de `IsAuthenticated` : **n'importe quel compte citoyen inscrit pouvait lire ces
+    secrets**, donc se faire passer pour une passerelle de l'institution et déchiffrer son
+    trafic radio.
+
+    Trois familles d'appelants légitimes, et pas une de plus :
+
+    1. le compte de service d'un pont, marqué explicitement (`User.compte_service_pont`, posé
+       par `manage.py marquer_compte_pont`) ;
+    2. le compte de service d'un satellite APPROUVÉ — son pont local lit les mêmes endpoints ;
+    3. un administrateur au sens du rôle **RÉEL**, pour le diagnostic. Pas le rôle effectif : un
+       `demo_role=ADMIN` prêté le temps d'une démonstration ne doit pas donner les clés du
+       réseau radio réel, même raisonnement que core/grafana.py:IsAdministrator.
+
+    Le marquage est volontairement manuel et hors API : un compte qui peut lire tous les secrets
+    radio ne doit pas pouvoir être fabriqué par une requête HTTP."""
+
+    message = (
+        "Cet endpoint expose des secrets radio : il est réservé aux comptes de service des "
+        "ponts (manage.py marquer_compte_pont <email>), aux satellites approuvés et aux "
+        "administrateurs."
+    )
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not (user and user.is_authenticated):
+            return False
+        if getattr(user, 'compte_service_pont', False):
+            return True
+        # Rôle RÉEL, pas le rôle effectif : voir la docstring.
+        if user.type == UserRole.ADMINISTRATOR:
+            return True
+        # Import tardif : models importe permissions indirectement par ailleurs.
+        from .models import Satellite, StatutEnrolementSatellite
+        return Satellite.objects.filter(
+            compte_service=user, statut_enrolement=StatutEnrolementSatellite.APPROUVE,
+        ).exists()
+
+
 def _peut_gerer_stock_point(request, point) -> bool:
     """Admin, responsable du point (champ `responsable` singulier — pas le M2M `responsables`,
     même limite que le contrôle d'origine), ou chef/membre de son équipe. Utilisé à la fois

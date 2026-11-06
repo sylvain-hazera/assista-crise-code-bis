@@ -64,6 +64,7 @@ from .institution_attachment import (
     grant_institution_and_demo_access, _get_or_create_contact_institution,
 )
 from .permissions import (
+    EstComptePont,
     IsInstitutionalActor, IsAdministrator, IsOwnDeclarationOrInstitutional, IsOwnerOrInstitutional,
     IsSelfOrInstitutional, IsInstitutionMemberOrAdministrator, IsOfferOwnerOrInstitutional,
     INSTITUTIONAL_TYPES, user_can_view_photo, DenyInDemo,
@@ -15716,6 +15717,10 @@ class CompagnonMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelView
         if self.action == 'canaux_detectes':
             # Lecture destinée à la page admin (voir meshcore-canaux.component), pas au pont.
             return [IsInstitutionalActor()]
+        # Ces deux actions livrent les clés de canal en clair (cle_partagee_hex) : réservées
+        # aux ponts, pas à tout compte authentifié (voir EstComptePont).
+        if self.action in ('canaux_a_provisionner', 'canaux_pour_decodage_logiciel'):
+            return [EstComptePont()]
         # `rapporter_etat`, `signaler_canaux_detectes`, `canaux_a_liberer`,
         # `rapporter_canal_libere`, `rapporter_batterie`, `traceroutes_a_executer`,
         # `rapporter_traceroute` : appelés par le service-pont (compte de service authentifié,
@@ -17044,6 +17049,10 @@ class CompagnonMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
     def get_permissions(self):
         if self.action in ('create', 'update', 'partial_update', 'destroy'):
             return [IsInstitutionalActor()]
+        # Ces deux actions livrent des SECRETS en clair (mot de passe MQTT, clé privée X25519) :
+        # « authentifié » ne suffit pas, voir EstComptePont.
+        if self.action in ('avec_cle_privee', 'actifs_avec_identifiants'):
+            return [EstComptePont()]
         return [permissions.IsAuthenticated()]
 
     @action(detail=False, methods=['post'], url_path='enregistrer-depuis-satellite')
@@ -17564,6 +17573,9 @@ class CanalMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSe
     def get_permissions(self):
         if self.action in ('create', 'update', 'partial_update', 'destroy'):
             return [IsInstitutionalActor()]
+        # `avec_cle` livre les PSK de canal en clair : réservé aux ponts (voir EstComptePont).
+        if self.action == 'avec_cle':
+            return [EstComptePont()]
         return [permissions.IsAuthenticated()]
 
     def perform_create(self, serializer):

@@ -1,0 +1,221 @@
+<div class="page">
+  <header class="entete">
+    <h1><span class="material-icons">troubleshoot</span> Diagnostic des liaisons radio</h1>
+    <p class="explication">
+      Ce que les mesures disent du réseau : quels relais entendent mal, quelles liaisons ne
+      passent que dans un sens, quels nœuds personne n'entend. Calculé sur les liaisons observées
+      par les passerelles et les rapports de voisinage des nœuds — rien n'est saisi à la main.
+    </p>
+    <p class="explication avertissement-lecture">
+      <strong>À lire avant d'agir.</strong> Chaque conclusion est affichée avec ce qui permet de
+      la juger : l'origine de la preuve, le nombre d'observations, et si la puissance d'émission
+      des nœuds était connue. Une conclusion non corrigée en puissance peut confondre un relais
+      sourd avec un voisin qui émet simplement plus fort — et désigner un relais comme sourd
+      envoie quelqu'un sur un point haut.
+    </p>
+  </header>
+
+  @if (erreur) {
+    <div class="message erreur" role="alert">
+      <span class="material-icons">error_outline</span> {{ erreur }}
+    </div>
+  }
+
+  @if (chargement) {
+    <p class="attente">Calcul en cours… (il relit une semaine d'observations)</p>
+  } @else if (diagnostic) {
+
+    <section class="etat">
+      <h2>
+        État de l'instrumentation
+        <button type="button" class="discret" (click)="calculer()">
+          <span class="material-icons">refresh</span> Recalculer
+        </button>
+      </h2>
+      @if (diagnostic.puissance_connue) {
+        <p class="bon">
+          <span class="material-icons">check_circle</span>
+          Puissance d'émission connue pour <strong>{{ diagnostic.noeuds_puissance_connue }}</strong>
+          nœud(s) : la correction de puissance s'applique à ces liaisons.
+        </p>
+      } @else {
+        <p class="message avertissement">
+          <span class="material-icons">warning_amber</span>
+          <span>
+            <strong>Aucune puissance d'émission connue.</strong> Toutes les conclusions ci-dessous
+            sont <strong>non corrigées</strong> : un nœud qui émet plus fort que ses voisins peut
+            passer pour sourd. Pour corriger, lancer une « lecture de la configuration LoRa » sur
+            chaque nœud d'infrastructure depuis
+            <a routerLink="/admin/meshtastic-administration">Administration Meshtastic</a>.
+          </span>
+        </p>
+      }
+      <p class="note">Calculé le {{ diagnostic.calcule_le | date:'dd/MM/yyyy à HH:mm' }}.</p>
+    </section>
+
+    @if (aucuneConclusion) {
+      <section>
+        <p class="attente">
+          Aucune anomalie détectée. Ce peut être une bonne nouvelle, ou simplement le signe qu'il
+          n'y a pas encore assez d'observations : l'analyse exige au moins 3 réceptions par
+          liaison et ne conclut que sur les nœuds vus dans les dernières 24 h.
+        </p>
+      </section>
+    }
+
+    @if (diagnostic.sourds.length) {
+      <section class="sourds">
+        <h2>Relais sourds <span class="compte">{{ diagnostic.sourds.length }}</span></h2>
+        <p class="explication">
+          Le nœud entend nettement moins bien qu'on ne l'entend. Écart médian sur ses voisins —
+          jamais une mesure isolée — avec au moins deux mesures concordantes dont une réciproque.
+          Causes habituelles : bruit local, connecteur d'antenne, récepteur désensibilisé.
+        </p>
+        <table>
+          <thead>
+            <tr><th>Nœud</th><th>Écart médian</th><th>Voisins</th><th>Concordantes</th><th>Puissance</th><th></th></tr>
+          </thead>
+          <tbody>
+            @for (sourd of diagnostic.sourds; track sourd.node_num) {
+              <tr>
+                <td>{{ sourd.nom }} <span class="num">{{ hexa(sourd.node_num) }}</span></td>
+                <td class="chiffre">{{ sourd.ecart_db }} dB</td>
+                <td class="chiffre">{{ sourd.nb_voisins }}</td>
+                <td class="chiffre">{{ sourd.nb_concordantes }}</td>
+                <td>
+                  @if (sourd.puissance_connue) {
+                    <span class="etiquette bonne">corrigé</span>
+                  } @else {
+                    <span class="etiquette douteuse">non corrigé</span>
+                  }
+                </td>
+                <td>
+                  <button type="button" class="discret" (click)="basculerSourd(sourd.node_num)">
+                    {{ sourdDeplie === sourd.node_num ? 'Masquer' : 'Mesures' }}
+                  </button>
+                </td>
+              </tr>
+              @if (sourdDeplie === sourd.node_num) {
+                <tr class="detail">
+                  <td colspan="6">
+                    <table class="interne">
+                      <thead>
+                        <tr><th>Partenaire</th><th>Il l'entend</th><th>Le partenaire l'entend</th><th>Écart</th><th>Correction</th></tr>
+                      </thead>
+                      <tbody>
+                        @for (mesure of sourd.mesures; track mesure.partenaire) {
+                          <tr>
+                            <td>{{ mesure.nom_partenaire }}</td>
+                            <td class="chiffre">
+                              {{ mesure.entendu_chez_lui !== null ? mesure.entendu_chez_lui + ' dB' : 'jamais rapporté' }}
+                            </td>
+                            <td class="chiffre">{{ mesure.entendu_chez_partenaire }} dB</td>
+                            <td class="chiffre">{{ libelleMesure(mesure) }}</td>
+                            <td class="chiffre">
+                              {{ mesure.puissance_connue ? mesure.correction_db + ' dB' : '—' }}
+                            </td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </td>
+                </tr>
+              }
+            }
+          </tbody>
+        </table>
+      </section>
+    }
+
+    @if (diagnostic.sens_unique.length) {
+      <section class="sens-unique">
+        <h2>Liaisons à sens unique <span class="compte">{{ diagnostic.sens_unique.length }}</span></h2>
+        <p class="explication">
+          Un nœud entend l'autre, mais pas l'inverse. Signalé seulement quand celui qui
+          <em>n'entend pas</em> rapporte bien ce qu'il entend par ailleurs : sans cette
+          précaution, un relais muet ferait passer pour unilatéral tout ce qu'il entend sans le
+          dire. La colonne « preuve » dit d'où vient l'information.
+        </p>
+        <table>
+          <thead>
+            <tr><th>Entend</th><th>N'est pas entendu par</th><th>SNR</th><th>Observations</th><th>Distance</th><th>Preuve</th></tr>
+          </thead>
+          <tbody>
+            @for (cas of diagnostic.sens_unique; track cas.entend + '-' + cas.entendu) {
+              <tr>
+                <td>{{ cas.nom_entend }} <span class="num">{{ hexa(cas.entend) }}</span></td>
+                <td>{{ cas.nom_entendu }} <span class="num">{{ hexa(cas.entendu) }}</span></td>
+                <td class="chiffre">{{ cas.snr !== null ? cas.snr + ' dB' : '—' }}</td>
+                <td class="chiffre">{{ cas.nombre }}</td>
+                <td class="chiffre">{{ cas.distance_km !== null ? cas.distance_km + ' km' : '—' }}</td>
+                <td>
+                  @if (cas.preuve === 'passerelle') {
+                    <span class="etiquette bonne" title="SNR mesuré par une passerelle MQTT">passerelle</span>
+                  } @else {
+                    <span class="etiquette" title="Rapport de voisinage : plafonné à 10 voisins, une absence ne prouve rien si la liste est pleine">voisinage</span>
+                  }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </section>
+    }
+
+    @if (diagnostic.desequilibrees.length) {
+      <section class="desequilibrees">
+        <h2>Liaisons déséquilibrées <span class="compte">{{ diagnostic.desequilibrees.length }}</span></h2>
+        <p class="explication">
+          Plus de 10 dB d'écart entre les deux sens d'une même liaison, <strong>après</strong>
+          retrait de la différence de puissance d'émission quand elle est connue. Ce qui reste est
+          une asymétrie de bruit ou de réception.
+        </p>
+        <table>
+          <thead>
+            <tr><th>Liaison</th><th>Sens fort</th><th>Sens faible</th><th>Écart</th><th>Correction</th><th>Distance</th></tr>
+          </thead>
+          <tbody>
+            @for (cas of diagnostic.desequilibrees; track cas.a + '-' + cas.b) {
+              <tr>
+                <td>{{ cas.nom_a }} ↔ {{ cas.nom_b }}</td>
+                <td class="chiffre">{{ cas.snr_fort }} dB</td>
+                <td class="chiffre">{{ cas.snr_faible }} dB</td>
+                <td class="chiffre">{{ cas.ecart_db }} dB</td>
+                <td class="chiffre">
+                  @if (cas.puissance_connue) {
+                    {{ cas.correction_db }} dB
+                  } @else {
+                    <span class="etiquette douteuse">non corrigé</span>
+                  }
+                </td>
+                <td class="chiffre">{{ cas.distance_km !== null ? cas.distance_km + ' km' : '—' }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </section>
+    }
+
+    @if (diagnostic.inaudibles.length) {
+      <section class="inaudibles">
+        <h2>Nœuds inaudibles <span class="compte">{{ diagnostic.inaudibles.length }}</span></h2>
+        <p class="explication">
+          Ils entendent leurs voisins et le rapportent, mais personne ne les entend. Souvent une
+          antenne branchée en réception seulement, ou une émission en panne.
+        </p>
+        <table>
+          <thead><tr><th>Nœud</th><th>Entend</th><th>Lesquels</th></tr></thead>
+          <tbody>
+            @for (noeud of diagnostic.inaudibles; track noeud.node_num) {
+              <tr>
+                <td>{{ noeud.nom }} <span class="num">{{ hexa(noeud.node_num) }}</span></td>
+                <td class="chiffre">{{ noeud.entend }} voisin(s)</td>
+                <td class="voisins">{{ noeud.voisins.join(', ') }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </section>
+    }
+  }
+</div>

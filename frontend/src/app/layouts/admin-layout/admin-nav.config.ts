@@ -110,6 +110,9 @@ export const NAV_ITEMS: NavItem[] = [
   // TacheAdminMeshtastic). La page explique le prealable qui conditionne tout : la cle publique
   // de la passerelle doit figurer dans security.admin_key du noeud vise.
   { icon: 'settings_remote', label: 'Administration Meshtastic', route: '/admin/meshtastic-administration', groupe: 'communications' },
+  // Ce que les mesures disent du reseau : relais sourds, liaisons a sens unique, desequilibrees,
+  // noeuds inaudibles (backend/core/analyse_liaisons.py).
+  { icon: 'troubleshoot', label: 'Diagnostic radio', route: '/admin/diagnostic-radio', groupe: 'communications' },
   // Boîtiers Raspberry Pi déployés sur site (voir satellite/README.md).
   { icon: 'router', label: 'Satellites', route: '/admin/satellites', groupe: 'communications' },
 

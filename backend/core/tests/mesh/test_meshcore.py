@@ -759,7 +759,10 @@ class TestCanalMeshCoreEquipe:
         autre_equipe = Team.objects.create(name='Équipe canal à faire', institution=institution_a)
         canal_a_faire = CanalMeshCore.objects.create(equipe=autre_equipe, nom='À faire', cle_partagee_hex='bb' * 16)
 
-        bridge_user = create_user(username='bridge-canal1@test.fr', email='bridge-canal1@test.fr', type='UTIL_SIMPLE')
+        # compte_service_pont : cet endpoint livre la clé de canal en clair, il n'est plus
+        # ouvert à tout compte authentifié (core/permissions.py:EstComptePont, 07/11/2026).
+        bridge_user = create_user(username='bridge-canal1@test.fr', email='bridge-canal1@test.fr',
+                                  type='UTIL_SIMPLE', compte_service_pont=True)
         api_client.force_authenticate(user=bridge_user)
         response = api_client.get(reverse('compagnonmeshcore-canaux-a-provisionner', args=[compagnon.id]))
 

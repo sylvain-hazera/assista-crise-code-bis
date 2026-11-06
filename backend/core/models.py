@@ -171,6 +171,20 @@ class User(AbstractUser):
         help_text="Rôle appliqué en zone de démonstration. Null = aucun accès à la démo. "
                    "Réglé manuellement par un administrateur, jamais hérité de `type`.",
     )
+
+    # Compte de service d'un pont radio (meshcore-bridge / meshtastic-bridge). Seuls ces
+    # comptes, les comptes de service de satellite et les administrateurs réels peuvent lire
+    # les endpoints qui exposent un SECRET en clair : mot de passe MQTT, clé privée X25519,
+    # PSK de canal (voir core/permissions.py:EstComptePont). Avant le 07/11/2026, « authentifié »
+    # suffisait : n'importe quel citoyen inscrit pouvait lire ces secrets.
+    #
+    # Se pose à la main, une fois, et jamais depuis l'API :
+    #     manage.py marquer_compte_pont <email>
+    compte_service_pont = models.BooleanField(
+        default=False,
+        help_text="Compte de service d'un pont radio : autorisé à lire les secrets mesh "
+                   "(mot de passe MQTT, clés). À poser avec manage.py marquer_compte_pont.",
+    )
     postal_code = EncryptedTextField(null=True, blank=True)
     enabled = models.BooleanField(default=True)
 

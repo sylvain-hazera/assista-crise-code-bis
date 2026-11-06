@@ -4,7 +4,8 @@ import { Observable } from 'rxjs';
 
 import { environment } from '../../environments/environment';
 import {
-  ConfigurationNoeudMeshtastic, TacheAdminMeshtastic, TypeTacheAdminMeshtastic,
+  ConfigurationNoeudMeshtastic, DiagnosticLiaisons, TacheAdminMeshtastic,
+  TypeTacheAdminMeshtastic,
 } from '../shared/models/administration-meshtastic.model';
 
 /** Administration à distance des nœuds Meshtastic.
@@ -37,5 +38,11 @@ export class AdministrationMeshtasticService {
 
   configurations(): Observable<ConfigurationNoeudMeshtastic[]> {
     return this.http.get<ConfigurationNoeudMeshtastic[]>(`${this.urlConfigurations}/`);
+  }
+
+  /** Diagnostic des liaisons radio. Calcul lourd (il relit une semaine d'observations) et sans
+   * effet de bord : appelé à la demande, jamais en boucle. */
+  diagnostic(): Observable<DiagnosticLiaisons> {
+    return this.http.get<DiagnosticLiaisons>(`${environment.apiUrl}/contacts-meshtastic/analyse-liaisons/`);
   }
 }

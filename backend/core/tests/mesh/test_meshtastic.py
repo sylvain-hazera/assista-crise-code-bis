@@ -32,6 +32,18 @@ def institutional_client(create_user, institution_a):
 
 
 @pytest.fixture
+def pont_client(create_user):
+    """Compte de service d'un pont radio : depuis le 07/11/2026, les endpoints qui livrent un
+    secret en clair (mot de passe MQTT, clé privée, PSK de canal) ne sont plus ouverts à tout
+    compte authentifié -- voir core/permissions.py:EstComptePont."""
+    compte = create_user(username='pont-tastic@service.local', email='pont-tastic@service.local',
+                         type='UTIL_SIMPLE', compte_service_pont=True)
+    client = APIClient()
+    client.force_authenticate(user=compte)
+    return client
+
+
+@pytest.fixture
 def compagnon(institution_a):
     return CompagnonMeshtastic.objects.create(
         nom='Pont Gaulix test', node_num=1234, broker_host='mqtt.gaulix.fr',
@@ -159,8 +171,8 @@ class TestMqttAuth:
 @pytest.mark.django_db
 class TestCompagnonsActifsAvecIdentifiants:
 
-    def test_returns_full_config_for_active_only(self, institutional_client, compagnon):
-        client, _ = institutional_client
+    def test_returns_full_config_for_active_only(self, pont_client, compagnon):
+        client = pont_client
         compagnon.mqtt_password = 'secret'
         compagnon.actif = True
         compagnon.save()
@@ -177,8 +189,8 @@ class TestCompagnonsActifsAvecIdentifiants:
         assert entry['x25519_private_key_hex'] == compagnon.x25519_private_key_hex
         assert 'serie_device' in entry
 
-    def test_empty_when_no_active_companion(self, institutional_client):
-        client, _ = institutional_client
+    def test_empty_when_no_active_companion(self, pont_client):
+        client = pont_client
         CompagnonMeshtastic.objects.create(nom='Inactif', node_num=6789, actif=False)
         response = client.get(reverse('compagnonmeshtastic-actifs-avec-identifiants'))
         assert response.status_code == status.HTTP_200_OK
@@ -188,8 +200,8 @@ class TestCompagnonsActifsAvecIdentifiants:
 @pytest.mark.django_db
 class TestCanauxAvecCleFiltragePartBroker:
 
-    def test_scoped_to_compagnon_plus_shared(self, institutional_client, compagnon):
-        client, _ = institutional_client
+    def test_scoped_to_compagnon_plus_shared(self, pont_client, compagnon):
+        client = pont_client
         autre_compagnon = CompagnonMeshtastic.objects.create(nom='Autre broker', node_num=7777)
         canal_a = CanalMeshtastic.objects.create(nom='Fr_Balise', compagnon=compagnon, actif=True)
         canal_b = CanalMeshtastic.objects.create(nom='LongFast', compagnon=autre_compagnon, actif=True)
@@ -200,8 +212,8 @@ class TestCanauxAvecCleFiltragePartBroker:
         noms = {c['nom'] for c in response.data}
         assert noms == {'Fr_Balise', 'Partage'}
 
-    def test_no_filter_returns_all_active(self, institutional_client, compagnon):
-        client, _ = institutional_client
+    def test_no_filter_returns_all_active(self, pont_client, compagnon):
+        client = pont_client
         CanalMeshtastic.objects.create(nom='Fr_Balise', compagnon=compagnon, actif=True)
         CanalMeshtastic.objects.create(nom='LongFast', compagnon=None, actif=True)
         response = client.get(reverse('canalmeshtastic-avec-cle'))

@@ -89,3 +89,85 @@ export const OPERATIONS_ADMIN_MESHTASTIC: {
     explication: 'Redémarrage logiciel. À éviter sur un relais difficile d’accès si un doute subsiste.',
   },
 ];
+
+/** Diagnostic des liaisons radio (voir backend/core/analyse_liaisons.py, porté d'`asymetrie.js`
+ * de carte-live-meshtastic).
+ *
+ * Chaque conclusion porte de quoi la juger : d'où vient la preuve, combien d'observations, et si
+ * la puissance d'émission était connue. Ce n'est pas du détail d'affichage — désigner un relais
+ * comme sourd envoie quelqu'un sur un point haut, et une conclusion non corrigée en puissance ne
+ * vaut pas la même chose qu'une conclusion corrigée. */
+
+/** « A rapporte ce qu'il entend et n'entend jamais B, alors que B l'entend. » */
+export interface LiaisonSensUnique {
+  /** `passerelle` : SNR mesuré par une passerelle MQTT. `voisinage` : rapport NeighborInfo —
+   * plafonné à 10 voisins, donc une absence ne prouve rien si la liste est pleine. */
+  preuve: 'passerelle' | 'voisinage';
+  entend: number;
+  entendu: number;
+  nom_entend: string;
+  nom_entendu: string;
+  snr: number | null;
+  nombre: number;
+  sources: string[];
+  distance_km: number | null;
+}
+
+/** Plus de 10 dB d'écart entre les deux sens, correction de puissance appliquée. */
+export interface LiaisonDesequilibree {
+  a: number;
+  b: number;
+  nom_a: string;
+  nom_b: string;
+  snr_fort: number;
+  snr_faible: number;
+  ecart_db: number;
+  /** Écart de puissance d'émission retiré du calcul. 0 = puissances inconnues. */
+  correction_db: number;
+  puissance_connue: boolean;
+  distance_km: number | null;
+}
+
+/** Entend ses voisins, mais personne ne l'entend : antenne en réception seulement, ou émission
+ * en panne. */
+export interface NoeudInaudible {
+  node_num: number;
+  nom: string;
+  entend: number;
+  voisins: string[];
+}
+
+export interface MesureRelaisSourd {
+  partenaire: number;
+  nom_partenaire: string;
+  entendu_chez_partenaire: number;
+  /** Null = il ne l'a jamais rapporté : l'écart n'est alors qu'une BORNE BASSE. */
+  entendu_chez_lui: number | null;
+  ecart_db: number;
+  borne: boolean;
+  correction_db: number;
+  puissance_connue: boolean;
+}
+
+export interface RelaisSourd {
+  node_num: number;
+  nom: string;
+  /** Médiane des écarts, pas une mesure isolée. */
+  ecart_db: number;
+  nb_voisins: number;
+  nb_concordantes: number;
+  /** Faux dès qu'un seul voisin a une puissance inconnue : la médiane redevient discutable. */
+  puissance_connue: boolean;
+  mesures: MesureRelaisSourd[];
+}
+
+export interface DiagnosticLiaisons {
+  sens_unique: LiaisonSensUnique[];
+  desequilibrees: LiaisonDesequilibree[];
+  inaudibles: NoeudInaudible[];
+  sourds: RelaisSourd[];
+  /** Vrai dès qu'au moins un nœud a une puissance relevée. */
+  puissance_connue: boolean;
+  noeuds_puissance_connue: number;
+  calcule_le: string;
+}

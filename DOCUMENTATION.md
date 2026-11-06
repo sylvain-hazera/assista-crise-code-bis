@@ -1538,7 +1538,15 @@ conteneur en service, qui lit l'ancien fichier et validerait la version d'avant.
 ### 9.5.1 Diagnostic des liaisons radio
 
 `core/analyse_liaisons.py`, porté de `asymetrie.js` de `carte-live-meshtastic` (GPL-3.0, avec
-l'autorisation de l'auteur). Exposé par `GET /api/contacts-meshtastic/analyse-liaisons/`.
+l'autorisation de l'auteur). Exposé par `GET /api/contacts-meshtastic/analyse-liaisons/` et affiché
+sur **`/admin/diagnostic-radio`** (cadre « Communications / Radio »).
+
+La page affiche chaque conclusion **avec ce qui permet de la juger** — origine de la preuve
+(passerelle ou voisinage), nombre d'observations, et si la puissance d'émission était connue. Ce
+n'est pas de l'ornement : une conclusion non corrigée en puissance est marquée « non corrigé »
+plutôt que présentée comme un fait, parce que désigner un relais comme sourd envoie quelqu'un sur
+un point haut. Le calcul relit une semaine d'observations : il se déclenche au chargement et sur
+bouton, jamais en boucle.
 
 Quatre diagnostics : **liaisons à sens unique** (« B entend A, mais A n'entend jamais B »),
 **liaisons déséquilibrées** (plus de 10 dB d'écart entre les deux sens), **nœuds inaudibles**
@@ -1810,6 +1818,36 @@ lisibles dans un `pg_dump`.
 
   *Auparavant, l'accès de production était anonyme sur un port publié sur toutes les interfaces :
   n'importe qui pouvant joindre la machine pouvait lire et publier.*
+
+- **Secrets mesh exposés par l'API** : les endpoints qui livrent un secret radio **en clair**
+  sont réservés aux comptes de service des ponts depuis le 07/11/2026
+  (`core/permissions.py:EstComptePont`). Il y en a cinq :
+  `compagnons-meshtastic/actifs-avec-identifiants/` (mot de passe MQTT **et** clé privée X25519),
+  `compagnons-meshtastic/{id}/avec-cle-privee/`, `canaux-meshtastic/avec-cle/` (PSK),
+  `compagnons-meshcore/{id}/canaux-a-provisionner/` et `.../canaux-pour-decodage-logiciel/`
+  (clés de canal MeshCore).
+
+  Trois familles d'appelants, et pas une de plus : un compte marqué `compte_service_pont`, le
+  compte de service d'un **satellite approuvé** (autorisé d'office par son enrôlement), et un
+  administrateur au sens du rôle **réel** — pas le rôle effectif, un `demo_role=ADMIN` prêté le
+  temps d'une démonstration ne donne pas les clés du réseau radio.
+
+  Le marquage est volontairement **hors API** — un compte qui lit tous les secrets radio ne doit
+  pas pouvoir être fabriqué par une requête HTTP :
+
+  ```
+  docker exec ac_backend python manage.py marquer_compte_pont <email-du-pont>
+  docker exec ac_backend python manage.py marquer_compte_pont --lister
+  ```
+
+  **À faire au déploiement** : sans ce marquage, les ponts reçoivent 403 et le relais radio
+  s'arrête (ils réessaient, donc l'interruption s'arrête d'elle-même dès le marquage fait).
+  `--lister` avertit explicitement quand aucun compte n'est autorisé.
+
+  *Auparavant, `get_permissions` ne restreignait que create/update/destroy et laissait tout le
+  reste sur `IsAuthenticated` : **n'importe quel compte citoyen inscrit** pouvait lire le mot de
+  passe MQTT du broker de l'institution, les clés privées de ses companions et les PSK de ses
+  canaux — donc se faire passer pour une passerelle et déchiffrer son trafic radio.*
 
 ---
 
