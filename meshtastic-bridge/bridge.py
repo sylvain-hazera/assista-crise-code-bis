@@ -58,6 +58,9 @@ CANAUX_REFRESH_INTERVAL_SECONDS = int(os.environ.get("CANAUX_REFRESH_INTERVAL_SE
 # Détection d'un broker ajouté/modifié/retiré depuis l'admin — voir boucle_reconciliation_compagnons.
 COMPAGNONS_REFRESH_INTERVAL_SECONDS = int(os.environ.get("COMPAGNONS_REFRESH_INTERVAL_SECONDS", "30"))
 CONTACTS_FLUSH_INTERVAL_SECONDS = int(os.environ.get("CONTACTS_FLUSH_INTERVAL_SECONDS", "30"))
+# Liaisons radio observees : meme logique de lot que les contacts. 60 s plutot que 30 : une
+# liaison est une agregation, elle ne perime pas vite.
+LIAISONS_FLUSH_INTERVAL_SECONDS = int(os.environ.get("LIAISONS_FLUSH_INTERVAL_SECONDS", "60"))
 RECONNECT_DELAY_SECONDS = int(os.environ.get("RECONNECT_DELAY_SECONDS", "10"))
 
 # Annonce périodique de notre propre position (Position_APP) — voir boucle_annonce_position.
@@ -240,6 +243,11 @@ class DjangoClient:
             return
         await self._request("POST", f"/compagnons-meshtastic/{compagnon_id}/synchroniser-contacts/", json={"contacts": contacts})
 
+    async def rapporter_liaisons(self, compagnon_id, liaisons):
+        if not liaisons:
+            return
+        await self._request("POST", f"/compagnons-meshtastic/{compagnon_id}/rapporter-liaisons/", json={"liaisons": liaisons})
+
     async def canaux_avec_cle(self, compagnon_id):
         """Filtré par companion : les noms de canal (ex: "Fr_Balise" chez Gaulix, "LongFast"
         ailleurs) sont propres à chaque broker, pas un référentiel global (voir
@@ -342,6 +350,87 @@ async def boucle_rafraichissement_canaux(django, registre, compagnon_id):
         await asyncio.sleep(CANAUX_REFRESH_INTERVAL_SECONDS)
 
 
+class TamponLiaisons:
+    """Accumule les liaisons radio observées, flush périodique par lot — même raison que
+    TamponContacts : un POST par paquet noierait l'API sur un relais actif.
+
+    Une liaison est ORIENTÉE : « ce récepteur a entendu cet émetteur ». On garde le meilleur SNR
+    vu dans la fenêtre, le reste est agrégé côté Django."""
+
+    def __init__(self):
+        self._par_sens = {}
+
+    def observer(self, emetteur, recepteur, source, snr=None, rssi=None):
+        if emetteur == recepteur:
+            return
+        cle = (emetteur, recepteur, source)
+        entree = self._par_sens.get(cle)
+        if entree is None:
+            self._par_sens[cle] = {
+                "emetteur": emetteur, "recepteur": recepteur, "source": source,
+                "snr": snr, "rssi": rssi,
+            }
+            return
+        if snr is not None and (entree["snr"] is None or snr > entree["snr"]):
+            entree["snr"], entree["rssi"] = snr, rssi
+
+    def extraire(self):
+        liaisons = list(self._par_sens.values())
+        self._par_sens.clear()
+        return liaisons
+
+
+async def boucle_flush_liaisons(django, compagnon_id, tampon):
+    while True:
+        await asyncio.sleep(LIAISONS_FLUSH_INTERVAL_SECONDS)
+        liaisons = tampon.extraire()
+        if not liaisons:
+            continue
+        try:
+            await django.rapporter_liaisons(compagnon_id, liaisons)
+            logger.info("Liaisons radio rapportées : %d.", len(liaisons))
+        except Exception:
+            logger.exception("Échec du rapport de liaisons radio.")
+
+
+def _node_num_depuis_gateway_id(gateway_id):
+    """`gateway_id` d'un ServiceEnvelope est de la forme « !aabbccdd » (hexadécimal). Renvoie None
+    sur toute autre forme plutôt que de deviner : une passerelle mal identifiée fabriquerait des
+    liaisons fausses."""
+    texte = (gateway_id or "").strip()
+    if not texte.startswith("!") or len(texte) != 9:
+        return None
+    try:
+        return int(texte[1:], 16)
+    except ValueError:
+        return None
+
+
+def _observer_liaison_rf(tampon, enveloppe, paquet, node_num):
+    """Enregistre « la passerelle a entendu cet émetteur » — mais SEULEMENT si elle l'a entendu
+    DIRECTEMENT.
+
+    C'est la précaution décisive : `rx_snr` est mesuré par la passerelle sur le DERNIER saut. Si
+    le paquet a été relayé, ce SNR ne dit rien de la liaison entre l'émetteur d'origine et la
+    passerelle, et l'enregistrer fabriquerait une liaison directe qui n'existe pas. Meshtastic
+    donne `hop_start` (posé par l'émetteur) et `hop_limit` (décrémenté à chaque saut) : réception
+    directe quand les deux sont égaux. Sans `hop_start` (firmwares anciens), on ne peut pas
+    conclure — on s'abstient.
+
+    Enregistré même quand on ne sait pas déchiffrer le paquet : l'enveloppe suffit à savoir qui a
+    émis et qui a entendu. C'est précieux, ça cartographie aussi les canaux dont on n'a pas la clé."""
+    passerelle = _node_num_depuis_gateway_id(enveloppe.gateway_id)
+    if passerelle is None or passerelle == node_num:
+        return
+    if not paquet.HasField("hop_start") or paquet.hop_start == 0:
+        return
+    if paquet.hop_start != paquet.hop_limit:
+        return      # paquet relayé : le SNR est celui du dernier saut, pas de l'émetteur
+    snr = paquet.rx_snr if paquet.rx_snr else None
+    rssi = paquet.rx_rssi if paquet.rx_rssi else None
+    tampon.observer(node_num, passerelle, "RF", snr=snr, rssi=rssi)
+
+
 class TamponContacts:
     """Accumule les nœuds découverts (NodeInfo/Position) en mémoire, flush périodique vers
     Django par lot — évite un POST HTTP par paquet MQTT reçu, potentiellement très fréquent sur
@@ -386,7 +475,7 @@ async def boucle_flush_contacts(django, compagnon_id, tampon):
             logger.exception("Échec de synchronisation des contacts.")
 
 
-def _traiter_paquet_dechiffre(payload, node_num, to_node, canal_id, canal_nom, tampon, django, compagnon_id, boucle):
+def _traiter_paquet_dechiffre(payload, node_num, to_node, canal_id, canal_nom, tampon, tampon_liaisons, django, compagnon_id, boucle):
     """Décodage du Data protobuf déjà déchiffré — dispatch par portnum. Retourne une coroutine
     à planifier si un appel réseau est nécessaire (log message entrant), sinon None."""
     data = mesh_pb2.Data()
@@ -403,6 +492,20 @@ def _traiter_paquet_dechiffre(payload, node_num, to_node, canal_id, canal_nom, t
         # Adressé à un AUTRE nœud que nous, sur un canal dont on a la clé : on peut le
         # déchiffrer mais ce n'est pas notre conversation — on ne le journalise pas (on
         # n'agrège pas indiscriminément les DM d'autrui).
+        return None
+
+    if data.portnum == portnums_pb2.PortNum.NEIGHBORINFO_APP:
+        # Un nœud publie la liste de ce qu'il entend. Source distincte de RF : elle prouve que ce
+        # nœud RAPPORTE ce qu'il entend, ce dont l'analyse a besoin pour conclure à une liaison à
+        # sens unique (voir core/analyse_liaisons.py). Attention au sens : `neighbors` sont les
+        # nœuds que l'émetteur ENTEND, donc l'émetteur est le RÉCEPTEUR de chaque liaison.
+        voisinage = mesh_pb2.NeighborInfo()
+        voisinage.ParseFromString(data.payload)
+        for voisin in voisinage.neighbors:
+            tampon_liaisons.observer(
+                voisin.node_id, voisinage.node_id or node_num, "VOISINAGE",
+                snr=voisin.snr if voisin.snr else None,
+            )
         return None
 
     if data.portnum == portnums_pb2.PortNum.NODEINFO_APP:
@@ -425,7 +528,7 @@ def _traiter_paquet_dechiffre(payload, node_num, to_node, canal_id, canal_nom, t
     return None
 
 
-def demarrer_mqtt(compagnon, registre, tampon, django, boucle, file_a_planifier, cle_privee_hex):
+def demarrer_mqtt(compagnon, registre, tampon, tampon_liaisons, django, boucle, file_a_planifier, cle_privee_hex):
     """paho-mqtt tourne dans son propre thread (loop_start) — chaque callback poste les
     coroutines réseau à exécuter dans la boucle asyncio principale via
     call_soon_threadsafe, jamais d'appel réseau direct depuis le thread MQTT."""
@@ -463,6 +566,10 @@ def demarrer_mqtt(compagnon, registre, tampon, django, boucle, file_a_planifier,
             packet_id = paquet.id
             canal_id = canal["id"] if canal else None
 
+            # Avant toute tentative de déchiffrement : l'enveloppe dit déjà qui a émis et qui a
+            # entendu. Un canal dont on n'a pas la clé reste ainsi cartographié.
+            _observer_liaison_rf(tampon_liaisons, enveloppe, paquet, node_num)
+
             if paquet.HasField("decoded"):
                 payload = paquet.decoded.SerializeToString()
             elif paquet.pki_encrypted:
@@ -484,7 +591,7 @@ def demarrer_mqtt(compagnon, registre, tampon, django, boucle, file_a_planifier,
                 return  # Canal qu'on ne connaît pas (pas la clé) : rien à faire pour nous.
 
             coro = _traiter_paquet_dechiffre(
-                payload, node_num, to_node, canal_id, canal_nom, tampon, django, {"id": compagnon["id"], "node_num": compagnon["node_num"]}, boucle,
+                payload, node_num, to_node, canal_id, canal_nom, tampon, tampon_liaisons, django, {"id": compagnon["id"], "node_num": compagnon["node_num"]}, boucle,
             )
             if coro is not None:
                 boucle.call_soon_threadsafe(file_a_planifier.put_nowait, coro)
@@ -890,17 +997,19 @@ async def _executer_compagnon_mqtt(django, compagnon):
     registre = RegistreCanaux()
     registre.mettre_a_jour(await django.canaux_avec_cle(compagnon["id"]))
     tampon = TamponContacts()
+    tampon_liaisons = TamponLiaisons()
 
     boucle = asyncio.get_running_loop()
     file_a_planifier = asyncio.Queue()
 
-    mqtt_client = demarrer_mqtt(compagnon, registre, tampon, django, boucle, file_a_planifier, cle_privee_hex)
+    mqtt_client = demarrer_mqtt(compagnon, registre, tampon, tampon_liaisons, django, boucle, file_a_planifier, cle_privee_hex)
 
     try:
         await asyncio.gather(
             boucle_execution_planifiee(file_a_planifier),
             boucle_rafraichissement_canaux(django, registre, compagnon["id"]),
             boucle_flush_contacts(django, compagnon["id"], tampon),
+            boucle_flush_liaisons(django, compagnon["id"], tampon_liaisons),
             boucle_envoi_dm(mqtt_client, compagnon, registre, django, cle_privee_hex),
             boucle_envoi_canaux(mqtt_client, compagnon, registre, django),
             boucle_annonce_position(mqtt_client, compagnon, registre),

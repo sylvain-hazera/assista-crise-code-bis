@@ -76,6 +76,11 @@
           Répéteurs entendus
         </label>
         <label class="layer-toggle-item">
+          <input type="checkbox" [(ngModel)]="layerVisibility.liaisonsRadio" (ngModelChange)="onLayerToggle()">
+          <span class="layer-dot liaisons-radio-dot"></span>
+          Liaisons radio
+        </label>
+        <label class="layer-toggle-item">
           <input type="checkbox" [(ngModel)]="layerVisibility.compagnonsMeshCore" (ngModelChange)="onLayerToggle()">
           <span class="layer-dot compagnons-meshcore-dot"></span>
           Companions MeshCore (test)

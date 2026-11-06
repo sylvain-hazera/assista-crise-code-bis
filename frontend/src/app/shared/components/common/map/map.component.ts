@@ -15,6 +15,7 @@ import { GeolocationService } from '../../../../services/geolocation.service';
 import { PositionEquipeService } from '../../../../services/position-equipe.service';
 import { RelaisMeshCoreService } from '../../../../services/relais-meshcore.service';
 import { ContactMeshCoreService } from '../../../../services/contact-meshcore.service';
+import { LiaisonMeshtasticService } from '../../../../services/liaison-meshtastic.service';
 import { CompagnonMeshCoreService } from '../../../../services/compagnon-meshcore.service';
 import { NoeudMeshUtilisateurService } from '../../../../services/noeud-mesh-utilisateur.service';
 import { NoeudUtilisateurMeshtasticService } from '../../../../services/noeud-utilisateur-meshtastic.service';
@@ -42,6 +43,8 @@ interface LayerVisibility {
   /** Répéteurs et room servers entendus sur l'air (ContactMeshCore) : la vraie carte du réseau,
    * jusqu'ici visible seulement en tableau dans /admin/meshcore-companions. */
   infrastructureEntendue: boolean;
+  /** Liaisons radio mesurées (qui entend qui, et à quel SNR) — LiaisonMeshtastic. */
+  liaisonsRadio: boolean;
 }
 
 // Codes et libellés secourisme/soins (OfferSerializer.offer_type_nom, PointOperationnelSerializer.type_code).
@@ -89,6 +92,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     // Répéteurs MeshCore : masqués et chargés à la demande.
     relaisMeshCore: false,
     infrastructureEntendue: false,   // chargée à la première activation
+    liaisonsRadio: false,            // le calque le plus volumineux : jamais chargé d'office
     // Companions MeshCore : position saisie à la main, facultative.
     compagnonsMeshCore: true,
     // Nœuds personnels MeshCore : position firmware, seulement pendant une mission active
@@ -106,6 +110,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   private teamPositionsGeoJSON: FeatureCollection<Geometry> | null = null;
   private relaisMeshCoreGeoJSON: FeatureCollection<Geometry> | null = null;
   private infrastructureEntendueGeoJSON: FeatureCollection<Geometry> | null = null;
+  private liaisonsRadioGeoJSON: FeatureCollection<Geometry> | null = null;
   private compagnonsMeshCoreGeoJSON: FeatureCollection<Geometry> | null = null;
   private noeudsMeshCoreGeoJSON: FeatureCollection<Geometry> | null = null;
   private noeudsMeshtasticGeoJSON: FeatureCollection<Geometry> | null = null;
@@ -128,6 +133,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
               private pointOperationnelService: PointOperationnelService,
               private relaisMeshCoreService: RelaisMeshCoreService,
               private contactMeshCoreService: ContactMeshCoreService,
+              private liaisonMeshtasticService: LiaisonMeshtasticService,
               private compagnonMeshCoreService: CompagnonMeshCoreService,
               private noeudMeshUtilisateurService: NoeudMeshUtilisateurService,
               private noeudUtilisateurMeshtasticService: NoeudUtilisateurMeshtasticService,
@@ -175,6 +181,10 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
       this.infrastructureEntendueChargee = true;
       this.loadInfrastructureEntendue();
     }
+    if (this.layerVisibility.liaisonsRadio && !this.liaisonsRadioChargees) {
+      this.liaisonsRadioChargees = true;
+      this.loadLiaisonsRadio();
+    }
     this.applyClusterVisibility();
     this.applyLayerVisibility('team-positions-layer', this.layerVisibility.positions);
     this.applyLayerVisibility('team-positions-label', this.layerVisibility.positions);
@@ -188,6 +198,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     this.applyLayerVisibility('noeuds-meshtastic-label', this.layerVisibility.noeudsMeshtastic);
     this.applyLayerVisibility('infrastructure-entendue-layer', this.layerVisibility.infrastructureEntendue);
     this.applyLayerVisibility('infrastructure-entendue-label', this.layerVisibility.infrastructureEntendue);
+    this.applyLayerVisibility('liaisons-radio-layer', this.layerVisibility.liaisonsRadio);
     this.applyLayerVisibility('location-radius', this.layerVisibility.crises);
     this.applyLayerVisibility('personnel-secourisme-layer', this.layerVisibility.personnelSecourisme);
     this.applyLayerVisibility('centres-tous-layer', this.layerVisibility.centresTous);
@@ -389,6 +400,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   private benevolesPompiersCharges = false;
   private relaisMeshCoreCharges = false;
   private infrastructureEntendueChargee = false;
+  private liaisonsRadioChargees = false;
 
   loadBenevolesPompiers(): void {
     this.offerService.vueSecteur().subscribe({
@@ -560,6 +572,78 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     });
     this.map.on('mouseenter', 'relais-meshcore-layer', () => { this.map!.getCanvas().style.cursor = 'pointer'; });
     this.map.on('mouseleave', 'relais-meshcore-layer', () => { this.map!.getCanvas().style.cursor = ''; });
+  }
+
+  /** Liaisons radio MESURÉES : « ce récepteur a entendu cet émetteur, à ce SNR ». Alimentées par
+   * le pont Meshtastic, jamais saisies à la main (voir LiaisonMeshtastic et
+   * core/analyse_liaisons.py). Le serveur ne renvoie que les liaisons dont les deux extrémités
+   * ont une position connue, et borne la fenêtre.
+   *
+   * Chargée à la première activation : sur un réseau départemental, c'est le calque le plus
+   * volumineux. */
+  loadLiaisonsRadio(): void {
+    this.liaisonMeshtasticService.geojson().subscribe({
+      next: (collection) => {
+        this.liaisonsRadioGeoJSON = collection as unknown as FeatureCollection<Geometry>;
+        this.runWhenMapReady(() => this.addOrUpdateLiaisonsRadioLayer());
+      },
+      error: (err) => console.error('Erreur chargement liaisons radio:', err),
+    });
+  }
+
+  private addOrUpdateLiaisonsRadioLayer(): void {
+    if (!this.map || !this.liaisonsRadioGeoJSON) return;
+
+    const existingSource = this.map.getSource('liaisons-radio') as maplibregl.GeoJSONSource | undefined;
+    if (existingSource) {
+      existingSource.setData(this.liaisonsRadioGeoJSON);
+      return;
+    }
+
+    this.map.addSource('liaisons-radio', { type: 'geojson', data: this.liaisonsRadioGeoJSON });
+
+    // `before` EXPLICITE : les traits doivent passer SOUS les points, sinon ils les barrent et on
+    // ne peut plus cliquer dessus. MapLibre empile dans l'ordre d'ajout, et les autres calques
+    // arrivent au gré des réponses HTTP -- d'où la garde getLayer(), MapLibre levant sur un
+    // calque inexistant.
+    const dessous = ['relais-meshcore-layer', 'compagnons-meshcore-layer', 'unclustered-point']
+      .find(id => this.map!.getLayer(id));
+
+    this.map.addLayer({
+      id: 'liaisons-radio-layer',
+      type: 'line',
+      source: 'liaisons-radio',
+      layout: { visibility: this.layerVisibility.liaisonsRadio ? 'visible' : 'none' },
+      paint: {
+        // Couleur par qualité de liaison : un SNR sous -10 dB est à la limite de la démodulation
+        // (seuil LONG_FAST ≈ -17,5 dB), au-dessus de 0 dB la liaison est confortable.
+        // Lisible sur fond clair uniquement : le fond ne suit pas le mode sombre (§ 6.3).
+        'line-color': [
+          'case',
+          ['==', ['get', 'snr'], null], '#9ca3af',
+          ['<', ['get', 'snr'], -10], '#dc2626',
+          ['<', ['get', 'snr'], 0], '#f59e0b',
+          '#16a34a',
+        ],
+        'line-width': ['interpolate', ['linear'], ['get', 'nombre'], 1, 1, 50, 3.5],
+        'line-opacity': 0.65,
+      },
+    }, dessous);
+
+    this.map.on('click', 'liaisons-radio-layer', (e) => {
+      if (!e.features || e.features.length === 0) return;
+      const props = e.features[0].properties || {};
+      const snr = props['snr'] != null ? `${props['snr']} dB` : 'SNR inconnu';
+      const distance = props['distance_km'] != null ? `<br>${props['distance_km']} km` : '';
+      const source = props['source'] === 'VOISINAGE' ? 'voisinage déclaré'
+        : props['source'] === 'TRACEROUTE' ? 'saut de traceroute' : 'reçu par une passerelle';
+      new maplibregl.Popup().setLngLat(e.lngLat)
+        .setHTML(`<strong>Liaison radio</strong><br>${snr} — ${props['nombre']} observation(s)`
+                 + `<br><em>${source}</em>${distance}`)
+        .addTo(this.map!);
+    });
+    this.map.on('mouseenter', 'liaisons-radio-layer', () => { this.map!.getCanvas().style.cursor = 'pointer'; });
+    this.map.on('mouseleave', 'liaisons-radio-layer', () => { this.map!.getCanvas().style.cursor = ''; });
   }
 
   /** Répéteurs et room servers ENTENDUS sur l'air (ContactMeshCore) — la vraie carte du réseau

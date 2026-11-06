@@ -195,7 +195,7 @@ from .models import (
     MaterielCatalogue, ContributionMateriel, StatutMateriel, TypeMateriel, NiveauStock, RegistrePresence, TypePersonneAccueillie, DeclarationSecurite, SituationDeclarant,
     AffectationLogementIntervenant,
     SuiviMaterielEvenement,
-    CompagnonMeshCore, CompteMqtt, NoeudMeshUtilisateur, MessageMeshLog, DirectionMessageMesh, StatutMessageMesh,
+    CompagnonMeshCore, CompteMqtt, SourceLiaisonMeshtastic, LiaisonMeshtastic, NoeudMeshUtilisateur, MessageMeshLog, DirectionMessageMesh, StatutMessageMesh,
     CommandeMeshCore, TypeCommandeMeshCore, StatutCommandeMeshCore,
     TracerouteMeshCore, StatutTraceroute,
     RelaisMeshCore, CanalMeshCore, MessageCanalMeshCore, ContactMeshCore, TypeContactMeshCore,
@@ -559,7 +559,7 @@ from .serializers import (
     DisponibilitePointEquipeSerializer,
     MaterielPointSerializer,
     MaterielCatalogueSerializer,
-    CompagnonMeshCoreSerializer, CompteMqttSerializer,
+    CompagnonMeshCoreSerializer, CompteMqttSerializer, LiaisonMeshtasticSerializer,
     NoeudMeshUtilisateurSerializer,
     MessageMeshLogSerializer,
     CommandeMeshCoreSerializer,
@@ -17178,6 +17178,57 @@ class CompagnonMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
             for c in compagnons
         ])
 
+    @action(detail=True, methods=['post'], url_path='rapporter-liaisons')
+    def rapporter_liaisons(self, request, pk=None):
+        """Le pont rapporte les liaisons radio qu'il a observées : « ce récepteur a entendu cet
+        émetteur, à ce SNR ». Agrégation par (émetteur, récepteur, source) : on garde le MEILLEUR
+        SNR et on incrémente le compteur, plutôt que de journaliser chaque réception — à l'échelle
+        d'un réseau départemental ce serait des millions de lignes pour une information qui ne
+        sert qu'agrégée.
+
+        Payload : {"liaisons": [{"emetteur", "recepteur", "source", "snr", "rssi"}, ...]}.
+        Jamais de tout-ou-rien : une entrée invalide est comptée et ignorée, les autres passent."""
+        compagnon = self.get_object()
+        liaisons = request.data.get('liaisons', [])
+        if not isinstance(liaisons, list):
+            return Response({'detail': "'liaisons' doit être une liste."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        environment = compagnon.environment
+        maintenant = timezone.now()
+        enregistrees, ignorees = 0, 0
+        for brute in liaisons[:5000]:      # borne de sécurité : un pont ne doit pas noyer l'API
+            try:
+                emetteur = int(brute['emetteur'])
+                recepteur = int(brute['recepteur'])
+                source = brute['source']
+            except (KeyError, TypeError, ValueError):
+                ignorees += 1
+                continue
+            if source not in SourceLiaisonMeshtastic.values or emetteur == recepteur:
+                ignorees += 1
+                continue
+            snr = brute.get('snr')
+            rssi = brute.get('rssi')
+            objet, cree = LiaisonMeshtastic.objects.get_or_create(
+                emetteur=emetteur, recepteur=recepteur, source=source, environment=environment,
+                defaults={'snr': snr, 'rssi': rssi, 'dernier_vu': maintenant},
+            )
+            if not cree:
+                champs = ['nombre', 'dernier_vu']
+                objet.nombre = F('nombre') + 1
+                objet.dernier_vu = maintenant
+                # On conserve le MEILLEUR SNR observé : c'est lui qui dit de quoi la liaison est
+                # capable. Une moyenne serait tirée vers le bas par les paquets en limite de
+                # portée, et masquerait une liaison en réalité bonne.
+                if snr is not None and (objet.snr is None or snr > objet.snr):
+                    objet.snr, objet.rssi = snr, rssi
+                    champs += ['snr', 'rssi']
+                objet.save(update_fields=champs)
+            enregistrees += 1
+
+        return Response({'enregistrees': enregistrees, 'ignorees': ignorees})
+
     @action(detail=True, methods=['post'], url_path='synchroniser-contacts')
     def synchroniser_contacts(self, request, pk=None):
         """Le pont appelle ceci avec les nœuds Meshtastic découverts passivement sur MQTT
@@ -17654,6 +17705,86 @@ class ContactMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ReadOnlyM
         if compagnon_id:
             qs = qs.filter(compagnon_id=compagnon_id)
         return qs
+
+    @action(detail=False, methods=['get'], url_path='analyse-liaisons')
+    def analyse_liaisons(self, request):
+        """Liaisons à sens unique, déséquilibrées, nœuds inaudibles et relais sourds — voir
+        core/analyse_liaisons.py, porté de carte-live-meshtastic.
+
+        Diagnostic lourd (il relit une semaine de liaisons) mais sans effet de bord : appelé à la
+        demande depuis l'interface, jamais en boucle."""
+        from .analyse_liaisons import analyser
+        return Response(analyser(get_active_environment(request)))
+
+
+class LiaisonMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ReadOnlyModelViewSet):
+    """Liaisons radio mesurées, alimentées par le pont Meshtastic (rapporter_liaisons).
+
+    Lecture seule par l'API publique : ces lignes sont des OBSERVATIONS, pas de la configuration.
+    Les modifier à la main n'aurait aucun sens."""
+
+    queryset = LiaisonMeshtastic.objects.all()
+    serializer_class = LiaisonMeshtasticSerializer
+    permission_classes = [IsInstitutionalActor]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        recepteur = self.request.query_params.get('recepteur')
+        if recepteur:
+            qs = qs.filter(recepteur=recepteur)
+        depuis_heures = self.request.query_params.get('depuis_heures')
+        if depuis_heures:
+            try:
+                qs = qs.filter(dernier_vu__gte=timezone.now() - datetime.timedelta(
+                    hours=min(int(depuis_heures), 24 * 30)))
+            except (TypeError, ValueError):
+                pass
+        return qs
+
+    @action(detail=False, methods=['get'], url_path='geojson')
+    def geojson(self, request):
+        """Liaisons en LineString, pour la couche de carte. Seules celles dont les DEUX extrémités
+        ont une position connue : une liaison sans géométrie n'a rien à faire sur une carte.
+
+        Fenêtre par défaut de 24 h, bornée à 30 jours : sans borne, un réseau départemental
+        rapatrierait des dizaines de milliers de segments."""
+        from .analyse_liaisons import DISTANCE_MAX_KM, _distance_km
+
+        heures = request.query_params.get('depuis_heures', '24')
+        try:
+            heures = min(max(int(heures), 1), 24 * 30)
+        except (TypeError, ValueError):
+            heures = 24
+        environment = get_active_environment(request)
+
+        positions = {}
+        for contact in ContactMeshtastic.objects.filter(
+            environment=environment, location__isnull=False,
+        ).only('node_num', 'location'):
+            positions.setdefault(contact.node_num, (contact.location.y, contact.location.x))
+
+        traits = []
+        for liaison in LiaisonMeshtastic.objects.filter(
+            environment=environment,
+            dernier_vu__gte=timezone.now() - datetime.timedelta(hours=heures),
+        ):
+            a, b = positions.get(liaison.emetteur), positions.get(liaison.recepteur)
+            if not a or not b:
+                continue
+            distance = _distance_km(a, b)
+            # Même garde que l'analyse : au-delà, c'est une erreur de position, pas une liaison.
+            if distance is not None and distance > DISTANCE_MAX_KM:
+                continue
+            traits.append({
+                "type": "Feature",
+                "geometry": {"type": "LineString", "coordinates": [[a[1], a[0]], [b[1], b[0]]]},
+                "properties": {
+                    "emetteur": liaison.emetteur, "recepteur": liaison.recepteur,
+                    "snr": liaison.snr, "source": liaison.source, "nombre": liaison.nombre,
+                    "distance_km": round(distance, 1) if distance is not None else None,
+                },
+            })
+        return Response({"type": "FeatureCollection", "features": traits})
 
 
 def _haversine_km(lat1, lon1, lat2, lon2):

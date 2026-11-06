@@ -31,7 +31,7 @@ from .views import (
     ContactInstitutionViewSet,
     InstitutionDomaineViewSet,
     CompagnonMeshCoreViewSet, NoeudMeshUtilisateurViewSet, MessageMeshLogViewSet, CommandeMeshCoreViewSet,
-    RelaisMeshCoreViewSet, CanalMeshCoreViewSet, CompteMqttViewSet, MessageCanalMeshCoreViewSet, ContactMeshCoreViewSet,
+    RelaisMeshCoreViewSet, CanalMeshCoreViewSet, CompteMqttViewSet, LiaisonMeshtasticViewSet, MessageCanalMeshCoreViewSet, ContactMeshCoreViewSet,
     TracerouteMeshCoreViewSet, AlerteMeshSOSViewSet,
     CompagnonMeshtasticViewSet, NoeudUtilisateurMeshtasticViewSet, MessageMeshtasticLogViewSet,
     CanalMeshtasticViewSet, MessageCanalMeshtasticViewSet, ContactMeshtasticViewSet,
@@ -136,6 +136,8 @@ router.register(r'relais-meshcore', RelaisMeshCoreViewSet)
 router.register(r'canaux-meshcore', CanalMeshCoreViewSet)
 # Comptes du broker MQTT (administrateurs seulement, voir CompteMqttViewSet).
 router.register(r'comptes-mqtt', CompteMqttViewSet)
+# Liaisons radio mesurees (lecture seule) : voir core/analyse_liaisons.py.
+router.register(r'liaisons-meshtastic', LiaisonMeshtasticViewSet)
 router.register(r'messages-canal-meshcore', MessageCanalMeshCoreViewSet)
 router.register(r'salons-matrix', SalonMatrixEquipeViewSet)
 router.register(r'salons-matrix-institution', SalonMatrixInstitutionViewSet)

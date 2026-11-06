@@ -6336,6 +6336,64 @@ class ContactMeshtastic(EnvironmentScopedModel):
         return f"{self.long_name or self.short_name or format(self.node_num, '08x')}"
 
 
+class SourceLiaisonMeshtastic(models.TextChoices):
+    """D'où vient l'observation d'une liaison. La distinction est essentielle à l'analyse : seuls
+    RF et VOISINAGE prouvent qu'un nœud RAPPORTE ce qu'il entend. Un saut de traceroute ne le
+    prouve pas — un relais qui ne rapporte rien ferait passer pour « à sens unique » tout ce
+    qu'il entend sans le dire (voir core/analyse_liaisons.py)."""
+    RF = "RF", "Reçu par une passerelle MQTT (SNR mesuré)"
+    VOISINAGE = "VOISINAGE", "Déclaré par un rapport de voisinage (NeighborInfo)"
+    TRACEROUTE = "TRACEROUTE", "Saut d'un traceroute"
+
+
+class LiaisonMeshtastic(EnvironmentScopedModel):
+    """Liaison radio ORIENTÉE et mesurée : `recepteur` a entendu `emetteur` directement.
+
+    Agrégée, pas un journal de réceptions : une ligne par (émetteur, récepteur, source), dont on
+    retient le MEILLEUR SNR observé et le nombre d'observations. À l'échelle d'un réseau
+    départemental, conserver chaque réception ferait des millions de lignes pour une information
+    qui ne sert qu'agrégée.
+
+    Le sens compte : une liaison n'est pas symétrique. « B entend A » n'implique pas « A entend
+    B » — c'est précisément ce que l'analyse cherche (relais sourd, liaison déséquilibrée).
+
+    Modèle repris de `carte-live-meshtastic` (table `liens`, GPL-3.0, sauveteur71, avec son
+    autorisation), simplifié : pas de table de réceptions séparée."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    # Numéros de nœud Meshtastic (32 bits), pas des FK : on observe des nœuds qu'on ne connaît pas
+    # forcément encore, et une FK obligerait à créer un ContactMeshtastic pour chaque inconnu.
+    emetteur = models.PositiveBigIntegerField()
+    recepteur = models.PositiveBigIntegerField()
+    source = models.CharField(max_length=10, choices=SourceLiaisonMeshtastic.choices)
+
+    # Meilleur SNR observé dans ce sens, en dB. Null pour une source qui n'en fournit pas
+    # (voisinage sans SNR, saut de traceroute sans mesure).
+    snr = models.FloatField(null=True, blank=True)
+    rssi = models.IntegerField(null=True, blank=True)
+    nombre = models.PositiveIntegerField(default=1)
+
+    premier_vu = models.DateTimeField(auto_now_add=True)
+    dernier_vu = models.DateTimeField()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["emetteur", "recepteur", "source", "environment"],
+                name="uq_liaison_meshtastic_sens_source",
+            ),
+        ]
+        indexes = [
+            # L'analyse lit toujours une fenêtre temporelle, jamais la table entière.
+            models.Index(fields=["-dernier_vu"]),
+            models.Index(fields=["recepteur"]),
+        ]
+
+    def __str__(self):
+        return f"{self.emetteur:08x} -> {self.recepteur:08x} ({self.source}, {self.snr} dB)"
+
+
 class NoeudUtilisateurMeshtastic(EnvironmentScopedModel):
     """Correspondance entre un node_num Meshtastic de terrain et un compte utilisateur
     assista-crise, miroir de NoeudMeshUtilisateur (MeshCore)."""

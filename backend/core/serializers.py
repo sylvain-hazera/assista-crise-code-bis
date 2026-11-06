@@ -58,7 +58,7 @@ from .models import (
     DisponibilitePointEquipe,
     MaterielPoint,
     MaterielCatalogue,
-    CompagnonMeshCore, CompteMqtt,
+    CompagnonMeshCore, CompteMqtt, LiaisonMeshtastic,
     NoeudMeshUtilisateur,
     MessageMeshLog,
     CommandeMeshCore,
@@ -3469,6 +3469,17 @@ class SalonMatrixInstitutionSerializer(serializers.ModelSerializer):
              "nom": f"{m.first_name} {m.last_name}".strip() or m.email}
             for m in queryset
         ]
+
+
+class LiaisonMeshtasticSerializer(serializers.ModelSerializer):
+    """Liaison radio mesurée, orientée : `recepteur` a entendu `emetteur`. Lecture seule."""
+
+    source_libelle = serializers.CharField(source='get_source_display', read_only=True)
+
+    class Meta:
+        model = LiaisonMeshtastic
+        fields = ['id', 'emetteur', 'recepteur', 'source', 'source_libelle', 'snr', 'rssi',
+                  'nombre', 'premier_vu', 'dernier_vu']
 
 
 class CompteMqttSerializer(serializers.ModelSerializer):

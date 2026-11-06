@@ -1135,6 +1135,13 @@ est dans `ngAfterViewInit`, où écrire directement déclenche `NG0100`.
 - **Calques chargés à la demande** : l'annuaire de bénévoles (jusqu'à ~1 300 fiches pour un
   secteur régional), les relais MeshCore et les **répéteurs entendus** ne sont chargés qu'à la
   première activation (performance, minimisation des données de position).
+- **« Liaisons radio »** (06/11/2026) : les liaisons MESURÉES, orientées — « ce récepteur a
+  entendu cet émetteur, à ce SNR » (`LiaisonMeshtastic`, alimentée par le pont Meshtastic). La
+  couleur porte le SNR (rouge sous -10 dB, orange sous 0, vert au-dessus ; gris si inconnu),
+  l'épaisseur le nombre d'observations. Tracée **sous** les points par un `before` explicite,
+  sinon les traits barrent les marqueurs et on ne peut plus cliquer dessus. Calque le plus
+  volumineux du lot : chargé à la première activation seulement, fenêtre de 24 h bornée à 30 jours
+  côté serveur.
 - **« Répéteurs entendus »** (06/11/2026) : les `ContactMeshCore` géolocalisés, c'est-à-dire la
   carte du réseau radio tel qu'il est réellement capté, par opposition aux relais saisis à la
   main. Ces positions n'existaient jusque-là qu'en tableau texte dans
@@ -1527,6 +1534,43 @@ conteneur en service, qui lit l'ancien fichier et validerait la version d'avant.
   `docker compose build prometheus` ;
 - **un service à surveiller** : son exporter dans `docker-compose.yml` (profil `monitoring`), un
   `scrape_config` dans `prometheus.yml`, une alerte sur sa métrique `*_up`.
+
+### 9.5.1 Diagnostic des liaisons radio
+
+`core/analyse_liaisons.py`, porté de `asymetrie.js` de `carte-live-meshtastic` (GPL-3.0, avec
+l'autorisation de l'auteur). Exposé par `GET /api/contacts-meshtastic/analyse-liaisons/`.
+
+Quatre diagnostics : **liaisons à sens unique** (« B entend A, mais A n'entend jamais B »),
+**liaisons déséquilibrées** (plus de 10 dB d'écart entre les deux sens), **nœuds inaudibles**
+(entendent leurs voisins, mais personne ne les entend — antenne en réception seulement, ou
+émission en panne) et **relais sourds** (écart médian de SNR anormal : le nœud entend nettement
+moins bien qu'on ne l'entend).
+
+Ce qui a de la valeur dans ce portage, ce ne sont pas les formules mais les **précautions**, sans
+lesquelles l'analyse produirait des diagnostics faux et crédibles — désigner un relais comme sourd
+envoie quelqu'un sur un point haut :
+
+- on ne conclut « à sens unique » que pour un nœud qui **rapporte** ce qu'il entend (passerelle
+  MQTT ou rapport de voisinage) : un saut de traceroute ne le prouve pas, et un relais muet ferait
+  passer pour unilatéral tout ce qu'il entend sans le dire ;
+- un rapport de voisinage Meshtastic est **plafonné à 10 voisins** : liste pleine, une absence ne
+  prouve rien ;
+- au moins **3 observations** : un paquet isolé peut être un rebond ;
+- au-delà de **120 km**, c'est une erreur de position, pas une liaison directe ;
+- relais sourd : **médiane** sur au moins deux voisins dont une mesure réciproque — une mesure
+  isolée peut venir du partenaire, pas du nœud examiné.
+
+**Limite propre à Assista-Crise** : la puissance d'émission des nœuds est inconnue (elle viendrait
+d'une lecture de configuration à distance, qui n'existe pas encore). La correction de puissance est
+donc nulle, ce qui rend la détection de relais sourd plus bruyante que la sienne — un nœud qui émet
+simplement plus fort que ses voisins peut passer pour sourd. Le champ `puissance_connue` du
+résultat le signale, et l'interface doit le dire.
+
+Côté pont (`meshtastic-bridge/bridge.py`) : une liaison `RF` n'est enregistrée que si la passerelle
+a entendu l'émetteur **directement** (`hop_start == hop_limit`). `rx_snr` est mesuré sur le dernier
+saut : sur un paquet relayé il ne dit rien de la liaison d'origine, et l'enregistrer fabriquerait
+une liaison directe inexistante. L'observation est faite **avant** toute tentative de
+déchiffrement, ce qui cartographie aussi les canaux dont on n'a pas la clé.
 
 ### 9.6 Angles morts de la supervision
 
