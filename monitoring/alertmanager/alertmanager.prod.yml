@@ -30,6 +30,15 @@ receivers:
       # destinataires : ~/.config/assista-crise/monitoring/alertmanager.114.yml (docker-compose.114.yml).
       - to: 'TODO-team-address@example.org'
         send_resolved: true
+  # Dead man's switch, câblé sur .114 le 06/11/2026. L'alerte Watchdog est toujours active (voir
+  # monitoring/prometheus/alerts.yml, groupe « meta ») et la route ci-dessus la renvoie ici chaque
+  # minute. healthchecks.io ne sert donc à rien tant que tout va bien : il alerte quand le
+  # battement S'ARRÊTE. C'est le seul mécanisme capable de signaler l'arrêt de Prometheus lui-même,
+  # puisqu'aucune alerte interne ne peut être évaluée par un Prometheus absent -- c'est ce trou qui
+  # a laissé ac_prometheus à terre du 03/11 au 05/11/2026 sans que rien ne le signale.
+  # send_resolved: false -- Watchdog ne se résout jamais, un ping « resolved » n'aurait aucun sens.
+  # L'URL de ping est un secret (qui la connaît peut envoyer de faux battements) : elle est lue
+  # dans /run/secrets, jamais écrite ici.
   - name: deadmans-switch
     webhook_configs:
       - url_file: '/run/secrets/healthchecks_url'

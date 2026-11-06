@@ -1416,7 +1416,7 @@ Détails opérationnels : [monitoring/README.md](monitoring/README.md).
 | `core/metrics.py` | `assista_help_requests_total`, `assista_offers_total`, `assista_institutions_created_total`, `assista_emails_failed_total`, `assista_requests_by_status`, `assista_offers_by_status`, `assista_active_crises`, `assista_accounts_pending_validation`, `assista_oldest_pending_account_age_seconds` — label `environment` (PROD/DEMO) sur les métriques métier | métier |
 | postgres / nginx / mosquitto exporters | état et charge de chaque service | USE |
 | node-exporter, cAdvisor | hôte et conteneurs | USE |
-| blackbox-exporter | sonde HTTPS de https://assista-crise.fr | boîte noire |
+| blackbox-exporter | sonde HTTPS de `www.assista-crise.fr`, atteinte par l'IP locale + SNI (§ 9.6) | boîte noire |
 
 Gunicorn tournant avec plusieurs workers, les métriques sont agrégées via
 `PROMETHEUS_MULTIPROC_DIR` (sinon chaque scrape lirait un worker au hasard), activé par défaut
@@ -1498,8 +1498,16 @@ Angular (sysadmin)  ── POST /api/monitoring/grafana-token/ ──▶  Django
 
 Prometheus, Alertmanager et Grafana sont construits depuis `monitoring/<nom>/Dockerfile` :
 image officielle + configuration, **validée pendant le build** (une règle invalide fait échouer
-le build). La production n'a donc besoin d'aucun fichier de configuration sur le serveur. En
-dev, l'override construit les mêmes images puis monte les fichiers par-dessus.
+le build). En dev, l'override construit les mêmes images puis monte les fichiers par-dessus.
+
+Deux exceptions sur **.114**, qui monte des fichiers par-dessus l'image : `prometheus.114.yml`
+(depuis le dépôt) et `alertmanager.114.yml` (depuis `~/.config/assista-crise/monitoring/`, parce
+qu'il contient les vrais destinataires, qui n'ont rien à faire dans git). Ce sont des montages de
+**fichier**, pas de dossier : éditer le fichier en crée un nouvel inode et le conteneur continue
+de lire l'ancien. Un `SIGHUP` ne suffit donc pas, il faut **recréer le conteneur**
+(`docker compose -f docker-compose.114.yml up -d --no-deps <service>`) — et valider la
+configuration dans un conteneur jetable monté sur le dossier, pas avec le `promtool`/`amtool` du
+conteneur en service, qui lit l'ancien fichier et validerait la version d'avant.
 
 ### 9.5 Ajouter…
 
@@ -1509,6 +1517,52 @@ dev, l'override construit les mêmes images puis monte les fichiers par-dessus.
   `docker compose build prometheus` ;
 - **un service à surveiller** : son exporter dans `docker-compose.yml` (profil `monitoring`), un
   `scrape_config` dans `prometheus.yml`, une alerte sur sa métrique `*_up`.
+
+### 9.6 Angles morts de la supervision
+
+Trois garde-fous posés le 06/11/2026, après un incident où `ac_prometheus` est resté arrêté
+**2 j 8 h sans que rien ne le signale** — 2 j 8 h de métriques définitivement perdues.
+
+**1. La pile de supervision redémarre toujours** — `restart: always`, ancre
+`x-service-supervision` de `docker-compose.114.yml`, pour les dix services de supervision.
+`unless-stopped` ne relance jamais un conteneur arrêté à la main, *même au redémarrage suivant de
+la machine* : Prometheus avait reçu un SIGTERM 1 min 37 avant le reboot de mise à jour du noyau,
+Docker l'a donc compté comme un arrêt manuel, et les 26 autres conteneurs sont remontés sans lui.
+Les services applicatifs gardent `unless-stopped` — leur panne se voit immédiatement, un arrêt
+volontaire doit y rester volontaire. Celle de la supervision ne se voit pas : c'est précisément le
+service chargé de prévenir qui manque.
+
+**2. Le dead man's switch est câblé** — receveur `deadmans-switch`. Aucune alerte interne ne peut
+signaler l'absence de Prometheus, puisque c'est lui qui les évalue : seule une surveillance
+**externe** du battement en est capable. Côté healthchecks.io, régler **période 5 min, grâce
+15 min** — le défaut est d'un jour, qui retarderait l'alerte d'autant ; on est alors prévenu dans
+les 20 min. L'URL de ping est un secret (qui la connaît peut envoyer de faux battements et faire
+taire le dispositif) : elle vit dans `healthchecks_url.txt`, lue via `/run/secrets`, jamais dans
+git. Droits `644` et non `600` comme les autres secrets montés : le processus tourne en
+`nobody`(65534) alors que le fichier appartient à l'uid 1000 — la barrière est le dossier parent,
+en `drwx------`. Le ping ne transporte que `alertname=Watchdog`, `severity=none`, `environment` et
+un résumé fixe : aucune donnée personnelle ne part chez ce tiers.
+
+**3. La sonde HTTPS est déterministe** — et ne mesure pas ce qu'on croit. Elle cible l'**IP
+locale**, le nom passant par le paramètre `hostname` du prober http, qui fixe l'en-tête Host *et*
+le SNI TLS (sans quoi la sonde échoue : un certificat ne vaut pas pour une IP). Sonder le nom la
+rendait instable : l'apex résout vers l'IP locale par le DNS interne mais vers l'IP publique par
+un résolveur public, et la box ne fait pas de retour en épingle — un TCP de la machine vers sa
+propre IP publique expire, alors que la même connexion vers l'IP locale aboutit instantanément.
+Chaque bascule de résolveur produisait donc un faux `SiteDown`, de sévérité *critical*, pendant
+que le WAF servait des centaines de requêtes. Cause de la bascule : la machine était bi-raccordée
+(Ethernet et WiFi tous deux en `+DefaultRoute`) avec des vues DNS contradictoires, `9.9.9.9`
+figurant en second serveur sur le lien Ethernet ; `systemd-resolved` interrogeait les deux en
+parallèle et gardait la première réponse. Ce repli a été retiré le 06/11/2026, la résolution est
+redevenue cohérente — mais la sonde n'en dépend plus de toute façon.
+
+> **Ce que la sonde ne voit pas.** Elle valide TLS, le certificat, le WAF, le proxy et le
+> frontend — pas la box, pas la redirection de port, pas le FAI. Hébergée sur la machine du site,
+> elle ne *peut pas* mesurer ce que vivent les visiteurs : soit elle résout en interne et ne teste
+> que le chemin interne, soit elle résout en public et exige un hairpinning indisponible. Une
+> vraie disponibilité externe demande un point d'observation **hors du réseau** — par exemple un
+> cron sur une machine tierce qui ne pingue un second check healthchecks.io que si le site
+> répond.
 
 ---
 
