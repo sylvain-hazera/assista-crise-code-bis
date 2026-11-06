@@ -14,6 +14,7 @@ import { Request } from '../../../models/request.model';
 import { GeolocationService } from '../../../../services/geolocation.service';
 import { PositionEquipeService } from '../../../../services/position-equipe.service';
 import { RelaisMeshCoreService } from '../../../../services/relais-meshcore.service';
+import { ContactMeshCoreService } from '../../../../services/contact-meshcore.service';
 import { CompagnonMeshCoreService } from '../../../../services/compagnon-meshcore.service';
 import { NoeudMeshUtilisateurService } from '../../../../services/noeud-mesh-utilisateur.service';
 import { NoeudUtilisateurMeshtasticService } from '../../../../services/noeud-utilisateur-meshtastic.service';
@@ -38,6 +39,9 @@ interface LayerVisibility {
   compagnonsMeshCore: boolean;
   noeudsMeshCore: boolean;
   noeudsMeshtastic: boolean;
+  /** Répéteurs et room servers entendus sur l'air (ContactMeshCore) : la vraie carte du réseau,
+   * jusqu'ici visible seulement en tableau dans /admin/meshcore-companions. */
+  infrastructureEntendue: boolean;
 }
 
 // Codes et libellés secourisme/soins (OfferSerializer.offer_type_nom, PointOperationnelSerializer.type_code).
@@ -84,6 +88,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     benevolesPompiers: false,
     // Répéteurs MeshCore : masqués et chargés à la demande.
     relaisMeshCore: false,
+    infrastructureEntendue: false,   // chargée à la première activation
     // Companions MeshCore : position saisie à la main, facultative.
     compagnonsMeshCore: true,
     // Nœuds personnels MeshCore : position firmware, seulement pendant une mission active
@@ -100,6 +105,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   private informationsGeoJSON: FeatureCollection<Geometry> | null = null;
   private teamPositionsGeoJSON: FeatureCollection<Geometry> | null = null;
   private relaisMeshCoreGeoJSON: FeatureCollection<Geometry> | null = null;
+  private infrastructureEntendueGeoJSON: FeatureCollection<Geometry> | null = null;
   private compagnonsMeshCoreGeoJSON: FeatureCollection<Geometry> | null = null;
   private noeudsMeshCoreGeoJSON: FeatureCollection<Geometry> | null = null;
   private noeudsMeshtasticGeoJSON: FeatureCollection<Geometry> | null = null;
@@ -121,6 +127,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
               private positionEquipeService: PositionEquipeService,
               private pointOperationnelService: PointOperationnelService,
               private relaisMeshCoreService: RelaisMeshCoreService,
+              private contactMeshCoreService: ContactMeshCoreService,
               private compagnonMeshCoreService: CompagnonMeshCoreService,
               private noeudMeshUtilisateurService: NoeudMeshUtilisateurService,
               private noeudUtilisateurMeshtasticService: NoeudUtilisateurMeshtasticService,
@@ -164,6 +171,10 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
       this.relaisMeshCoreCharges = true;
       this.loadRelaisMeshCore();
     }
+    if (this.layerVisibility.infrastructureEntendue && !this.infrastructureEntendueChargee) {
+      this.infrastructureEntendueChargee = true;
+      this.loadInfrastructureEntendue();
+    }
     this.applyClusterVisibility();
     this.applyLayerVisibility('team-positions-layer', this.layerVisibility.positions);
     this.applyLayerVisibility('team-positions-label', this.layerVisibility.positions);
@@ -175,6 +186,8 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     this.applyLayerVisibility('noeuds-meshcore-label', this.layerVisibility.noeudsMeshCore);
     this.applyLayerVisibility('noeuds-meshtastic-layer', this.layerVisibility.noeudsMeshtastic);
     this.applyLayerVisibility('noeuds-meshtastic-label', this.layerVisibility.noeudsMeshtastic);
+    this.applyLayerVisibility('infrastructure-entendue-layer', this.layerVisibility.infrastructureEntendue);
+    this.applyLayerVisibility('infrastructure-entendue-label', this.layerVisibility.infrastructureEntendue);
     this.applyLayerVisibility('location-radius', this.layerVisibility.crises);
     this.applyLayerVisibility('personnel-secourisme-layer', this.layerVisibility.personnelSecourisme);
     this.applyLayerVisibility('centres-tous-layer', this.layerVisibility.centresTous);
@@ -375,6 +388,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   // Chargé une seule fois, à la première activation du calque.
   private benevolesPompiersCharges = false;
   private relaisMeshCoreCharges = false;
+  private infrastructureEntendueChargee = false;
 
   loadBenevolesPompiers(): void {
     this.offerService.vueSecteur().subscribe({
@@ -546,6 +560,103 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     });
     this.map.on('mouseenter', 'relais-meshcore-layer', () => { this.map!.getCanvas().style.cursor = 'pointer'; });
     this.map.on('mouseleave', 'relais-meshcore-layer', () => { this.map!.getCanvas().style.cursor = ''; });
+  }
+
+  /** Répéteurs et room servers ENTENDUS sur l'air (ContactMeshCore) — la vraie carte du réseau
+   * radio, par opposition aux relais saisis à la main. Jusqu'au 06/11/2026 ces positions
+   * n'existaient qu'en tableau texte dans /admin/meshcore-companions.
+   *
+   * Seuls REPEATER et ROOM : un COMPANION peut être le terminal d'une personne (voir
+   * NoeudMeshUtilisateur, qui rattache une clé publique à un compte), et un SENSOR n'est pas
+   * un relais. Même filtrage que la fédération (core/federation_carte_live.py), pour la même
+   * raison.
+   *
+   * Chargée à la première activation, comme l'annuaire bénévoles : un répertoire de contacts
+   * peut être volumineux, et c'est de la donnée de position. */
+  loadInfrastructureEntendue(): void {
+    this.contactMeshCoreService.getAll().subscribe({
+      next: (contacts) => {
+        this.infrastructureEntendueGeoJSON = {
+          type: 'FeatureCollection',
+          features: contacts
+            .filter(c => (c.type_contact === 'REPEATER' || c.type_contact === 'ROOM')
+                      && c.latitude != null && c.longitude != null)
+            .map(c => ({
+              type: 'Feature',
+              geometry: { type: 'Point', coordinates: [Number(c.longitude), Number(c.latitude)] },
+              properties: {
+                nom: c.nom || c.pubkey_hex.slice(0, 8),
+                type_contact: c.type_contact,
+                // `sauts` reste absent plutôt que 0 quand aucun chemin n'est confirmé : afficher
+                // « 0 saut » laisserait croire à une liaison directe.
+                sauts: c.nombre_sauts ?? null,
+                batterie: c.niveau_batterie_pct ?? null,
+              },
+            })),
+        };
+        this.runWhenMapReady(() => this.addOrUpdateInfrastructureEntendueLayer());
+      },
+      error: (err) => console.error('Erreur chargement infrastructure entendue:', err),
+    });
+  }
+
+  private addOrUpdateInfrastructureEntendueLayer(): void {
+    if (!this.map || !this.infrastructureEntendueGeoJSON) return;
+
+    const existingSource = this.map.getSource('infrastructure-entendue') as maplibregl.GeoJSONSource | undefined;
+    if (existingSource) {
+      existingSource.setData(this.infrastructureEntendueGeoJSON);
+      return;
+    }
+
+    this.map.addSource('infrastructure-entendue', { type: 'geojson', data: this.infrastructureEntendueGeoJSON });
+
+    const visibility = this.layerVisibility.infrastructureEntendue ? 'visible' : 'none';
+
+    this.map.addLayer({
+      id: 'infrastructure-entendue-layer',
+      type: 'circle',
+      source: 'infrastructure-entendue',
+      layout: { visibility },
+      paint: {
+        // Violet, distinct des relais saisis (cyan) : entendu sur l'air n'est pas déclaré.
+        // Lisible sur fond clair uniquement — le fond de carte ne suit pas le mode sombre
+        // (DOCUMENTATION.md § 6.3).
+        'circle-color': ['case', ['==', ['get', 'type_contact'], 'ROOM'], '#7e22ce', '#9333ea'],
+        'circle-radius': 5,
+        'circle-stroke-width': 2,
+        'circle-stroke-color': '#fff',
+      },
+    });
+
+    this.map.addLayer({
+      id: 'infrastructure-entendue-label',
+      type: 'symbol',
+      source: 'infrastructure-entendue',
+      layout: {
+        visibility,
+        'text-field': ['get', 'nom'],
+        'text-size': 11,
+        'text-offset': [0, 1.2],
+        'text-anchor': 'top',
+      },
+      paint: { 'text-color': '#6b21a8', 'text-halo-color': '#fff', 'text-halo-width': 1 },
+    });
+
+    this.map.on('click', 'infrastructure-entendue-layer', (e) => {
+      if (!e.features || e.features.length === 0) return;
+      const geometry = e.features[0].geometry as GeoJSON.Point;
+      const coordinates = geometry.coordinates.slice() as [number, number];
+      const props = e.features[0].properties || {};
+      const type = props['type_contact'] === 'ROOM' ? 'Room server' : 'Répéteur';
+      const sauts = props['sauts'] != null ? `<br>${props['sauts']} saut(s) connu(s)` : '';
+      const batterie = props['batterie'] != null ? `<br>Batterie ${props['batterie']} %` : '';
+      new maplibregl.Popup().setLngLat(coordinates)
+        .setHTML(`<strong>${props['nom']}</strong><br>${type} entendu${sauts}${batterie}`)
+        .addTo(this.map!);
+    });
+    this.map.on('mouseenter', 'infrastructure-entendue-layer', () => { this.map!.getCanvas().style.cursor = 'pointer'; });
+    this.map.on('mouseleave', 'infrastructure-entendue-layer', () => { this.map!.getCanvas().style.cursor = ''; });
   }
 
   /** Companions MeshCore avec position renseignée (/admin/meshcore-companions). */

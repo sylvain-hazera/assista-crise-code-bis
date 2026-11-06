@@ -71,6 +71,11 @@
           Relais MeshCore (test)
         </label>
         <label class="layer-toggle-item">
+          <input type="checkbox" [(ngModel)]="layerVisibility.infrastructureEntendue" (ngModelChange)="onLayerToggle()">
+          <span class="layer-dot infrastructure-entendue-dot"></span>
+          Répéteurs entendus
+        </label>
+        <label class="layer-toggle-item">
           <input type="checkbox" [(ngModel)]="layerVisibility.compagnonsMeshCore" (ngModelChange)="onLayerToggle()">
           <span class="layer-dot compagnons-meshcore-dot"></span>
           Companions MeshCore (test)

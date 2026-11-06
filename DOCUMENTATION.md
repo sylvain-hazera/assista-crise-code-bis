@@ -1133,8 +1133,15 @@ est dans `ngAfterViewInit`, où écrire directement déclenche `NG0100`.
 - Demandes, offres et signalements partagent une source clusterisée : les masquer retire leurs
   features de la source, sinon les clusters les compteraient encore.
 - **Calques chargés à la demande** : l'annuaire de bénévoles (jusqu'à ~1 300 fiches pour un
-  secteur régional) et les relais MeshCore ne sont chargés qu'à la première activation
-  (performance, minimisation des données de position).
+  secteur régional), les relais MeshCore et les **répéteurs entendus** ne sont chargés qu'à la
+  première activation (performance, minimisation des données de position).
+- **« Répéteurs entendus »** (06/11/2026) : les `ContactMeshCore` géolocalisés, c'est-à-dire la
+  carte du réseau radio tel qu'il est réellement capté, par opposition aux relais saisis à la
+  main. Ces positions n'existaient jusque-là qu'en tableau texte dans
+  `/admin/meshcore-companions`. Seuls les types **REPEATER** et **ROOM** sont affichés : un
+  COMPANION peut être le terminal d'une personne (`NoeudMeshUtilisateur` rattache une clé
+  publique à un compte), un SENSOR n'est pas un relais. Même filtrage que la fédération
+  (`core/federation_carte_live.py`), pour la même raison.
 - Les positions de nœuds personnels MeshCore/Meshtastic n'apparaissent que pendant une mission
   `EN_COURS` (règle appliquée par le serveur). Pour un visiteur non institutionnel, les
   positions des demandes, offres et signalements sont légèrement bruitées.
