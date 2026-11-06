@@ -69,6 +69,10 @@ export const ADMIN_ROUTES: Routes = [
   { path: 'utilisateurs', loadComponent: () => import('./users/users.component').then(m => m.UsersComponent), canActivate: [sysAdminGuard] },
   { path: 'validations-comptes', loadComponent: () => import('./account-validations/account-validations.component').then(m => m.AccountValidationsComponent), canActivate: [accountValidationGuard] },
   { path: 'monitoring', loadComponent: () => import('./monitoring/monitoring.component').then(m => m.MonitoringComponent), canActivate: [sysAdminGuard] },
+  // Comptes du broker MQTT : le serveur exige le rôle PROD réel ADMIN (plus strict que
+  // sysAdminGuard, qui accepte les quatre rôles institutionnels) — une autorité locale verra
+  // l'entrée et recevra un 403 explicite, comme pour la supervision technique.
+  { path: 'comptes-mqtt', loadComponent: () => import('./comptes-mqtt/comptes-mqtt.component').then(m => m.ComptesMqttComponent), canActivate: [sysAdminGuard] },
   // anciennes pages séparées (20/10), devenues des onglets de la supervision technique
   { path: 'supervision-waf', redirectTo: '/admin/monitoring?onglet=waf' },
   { path: 'fail2ban', redirectTo: '/admin/monitoring?onglet=fail2ban' },

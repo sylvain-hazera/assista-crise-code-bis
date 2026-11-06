@@ -1,0 +1,118 @@
+// Couleurs écrites en var(--ac-…, <couleur du mode clair>) : les --ac-* ne sont définies qu'en
+// mode sombre (styles.scss), le mode clair garde donc ses couleurs d'origine par la valeur de
+// repli. Voir DOCUMENTATION.md § 6.6.
+.page { padding: 20px; max-width: 1100px; }
+
+.entete {
+  h1 {
+    display: flex; align-items: center; gap: 10px;
+    margin: 0 0 8px; font-size: 1.5rem;
+    color: var(--ac-text, #111827);
+    .material-icons { color: var(--brand-primary-lisible, var(--brand-primary)); }
+  }
+  .explication {
+    margin: 0 0 20px; max-width: 70ch; line-height: 1.5;
+    color: var(--ac-text-muted, #4b5563);
+  }
+}
+
+code {
+  padding: 1px 5px; border-radius: 4px; font-size: .9em;
+  background: var(--ac-surface-3, #f3f4f6);
+  color: var(--ac-text, #111827);
+}
+
+.message {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 14px; border-radius: 6px; margin-bottom: 16px;
+  &.erreur {
+    background: var(--ac-red-bg, #fef2f2);
+    color: var(--ac-red-text, #991b1b);
+    border: 1px solid var(--ac-red-border, #fecaca);
+  }
+  &.petit { padding: 6px 10px; font-size: .9rem; }
+}
+
+.attente, .vide { color: var(--ac-text-muted, #6b7280); }
+
+section {
+  margin-bottom: 28px; padding: 18px;
+  border: 1px solid var(--ac-border, #e5e7eb); border-radius: 8px;
+  background: var(--ac-surface, #fff);
+  h2 { margin: 0 0 14px; font-size: 1.1rem; color: var(--ac-text, #111827); }
+}
+
+.champs {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px;
+  margin-bottom: 12px;
+  label.large { grid-column: 1 / -1; }
+}
+
+label {
+  display: flex; flex-direction: column; gap: 5px; font-size: .9rem;
+  color: var(--ac-text, #374151);
+  input, select {
+    padding: 8px 10px; font: inherit; border-radius: 6px;
+    border: 1px solid var(--ac-border-strong, #d1d5db);
+    background: var(--ac-surface, #fff);
+    color: var(--ac-text, #111827);
+  }
+  small { color: var(--ac-text-subtle, #6b7280); }
+}
+
+button {
+  font: inherit; cursor: pointer; border-radius: 6px;
+  &.principal {
+    padding: 9px 18px; border: none;
+    background: var(--brand-primary); color: var(--brand-on-primary, #fff);
+    &:disabled { opacity: .55; cursor: default; }
+  }
+  &.lien {
+    padding: 2px 4px; border: none; background: none; text-decoration: underline;
+    color: var(--brand-primary-lisible, var(--brand-primary));
+  }
+  &.danger-lien { color: var(--ac-red-text, #b91c1c); }
+  &.danger {
+    padding: 4px 10px; border: none;
+    background: var(--ac-red-text, #b91c1c); color: #fff;
+  }
+}
+
+.note { margin: 10px 0 0; font-size: .85rem; color: var(--ac-text-subtle, #6b7280); }
+
+table {
+  width: 100%; border-collapse: collapse;
+  th, td {
+    padding: 9px 10px; text-align: left; vertical-align: top;
+    border-bottom: 1px solid var(--ac-border, #e5e7eb);
+  }
+  th { font-size: .8rem; text-transform: uppercase; letter-spacing: .04em;
+       color: var(--ac-text-muted, #6b7280); }
+  td { color: var(--ac-text, #111827); }
+  tr.inactif { opacity: .55; }
+}
+
+.etiquette {
+  margin-left: 6px; padding: 1px 7px; border-radius: 10px; font-size: .72rem;
+  background: var(--ac-amber-bg, #fef3c7); color: var(--ac-amber-text, #92400e);
+}
+
+.description { display: block; margin-top: 3px; color: var(--ac-text-subtle, #6b7280); }
+
+.motdepasse .secret {
+  // Un mot de passe engendré est long : il doit rester lisible caractère par caractère.
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  user-select: all; word-break: break-all;
+}
+
+.actions { white-space: nowrap; }
+
+.confirmation {
+  display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  font-size: .85rem; color: var(--ac-red-text, #b91c1c);
+}
+
+@media (max-width: 760px) {
+  .page { padding: 12px; }
+  table { display: block; overflow-x: auto; }
+}

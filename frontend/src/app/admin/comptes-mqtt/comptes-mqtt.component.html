@@ -1,0 +1,128 @@
+<div class="page">
+  <header class="entete">
+    <h1><span class="material-icons">router</span> Comptes du broker MQTT</h1>
+    <p class="explication">
+      Un compte par passerelle radio. Le broker n'écoute que sur le réseau local
+      (<code>172.16.1.114:1883</code>) : il n'est pas joignable depuis Internet. La racine de
+      topic doit correspondre au champ « racine des topics » du companion concerné — une racine
+      qui ne correspond pas coupe le flux <strong>sans aucun message d'erreur</strong>.
+    </p>
+  </header>
+
+  @if (erreur) {
+    <div class="message erreur" role="alert">
+      <span class="material-icons">error_outline</span> {{ erreur }}
+    </div>
+  }
+
+  @if (chargement) {
+    <p class="attente">Chargement…</p>
+  } @else {
+
+    <section class="creation">
+      <h2>Ajouter une passerelle</h2>
+      <form (ngSubmit)="creer()">
+        <div class="champs">
+          <label>
+            Nom du compte
+            <input name="nom" [(ngModel)]="nouveau.nom" required
+                   placeholder="passerelle-mairie" autocomplete="off">
+            <small>Lettres, chiffres, point, tiret ou souligné.</small>
+          </label>
+          <label>
+            Rôle
+            <select name="role" [(ngModel)]="nouveau.role">
+              <option value="RADIO">Passerelle ou pont radio</option>
+              <option value="SUPERVISION">Supervision (statistiques du broker)</option>
+            </select>
+          </label>
+          <label>
+            Racine des topics
+            <input name="racine" [(ngModel)]="nouveau.racine_topic" required>
+            <small>Sans joker (« # » ou « + »).</small>
+          </label>
+          <label class="large">
+            Description
+            <input name="description" [(ngModel)]="nouveau.description"
+                   placeholder="Passerelle du toit de la mairie" autocomplete="off">
+          </label>
+        </div>
+        @if (erreurCreation) {
+          <p class="message erreur petit" role="alert">{{ erreurCreation }}</p>
+        }
+        <button type="submit" class="principal" [disabled]="creationEnCours || !nouveau.nom.trim()">
+          {{ creationEnCours ? 'Création…' : 'Créer le compte' }}
+        </button>
+        <p class="note">Le mot de passe est engendré par le serveur et affiché une fois créé.</p>
+      </form>
+    </section>
+
+    <section class="liste">
+      <h2>Comptes existants ({{ comptes.length }})</h2>
+      @if (comptes.length === 0) {
+        <p class="vide">Aucun compte enregistré. Lancez
+          <code>manage.py initialiser_comptes_mqtt</code> pour reprendre ceux du broker.</p>
+      }
+      <table>
+        <thead>
+          <tr>
+            <th>Compte</th><th>Rôle</th><th>Racine</th><th>État</th><th>Mot de passe</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (compte of comptes; track compte.id) {
+            <tr [class.inactif]="!compte.actif">
+              <td>
+                <strong>{{ compte.nom }}</strong>
+                @if (compte.infrastructure) {
+                  <span class="etiquette" title="Nécessaire au broker : non supprimable">infrastructure</span>
+                }
+                @if (compte.description) { <small class="description">{{ compte.description }}</small> }
+              </td>
+              <td>{{ compte.role_libelle }}</td>
+              <td><code>{{ compte.role === 'SUPERVISION' ? '$SYS/#' : compte.racine_topic + '/#' }}</code></td>
+              <td>
+                <button type="button" class="lien" (click)="basculerActif(compte)"
+                        [title]="compte.actif ? 'Désactiver ce compte' : 'Réactiver ce compte'">
+                  {{ compte.actif ? 'Actif' : 'Désactivé' }}
+                </button>
+              </td>
+              <td class="motdepasse">
+                @if (motsDePasseAffiches[compte.id]) {
+                  <code class="secret">{{ motsDePasseAffiches[compte.id] }}</code>
+                  <button type="button" class="lien" (click)="masquerMotDePasse(compte.id)">Masquer</button>
+                } @else {
+                  <button type="button" class="lien" (click)="afficherMotDePasse(compte.id)">
+                    Afficher
+                  </button>
+                }
+              </td>
+              <td class="actions">
+                @if (regenerationDemandee === compte.id) {
+                  <span class="confirmation">
+                    La passerelle sera coupée jusqu'à sa reconfiguration.
+                    <button type="button" class="danger" (click)="regenerer(compte.id)">Confirmer</button>
+                    <button type="button" class="lien" (click)="annulerRegeneration()">Annuler</button>
+                  </span>
+                } @else {
+                  <button type="button" class="lien" (click)="confirmerRegeneration(compte.id)">
+                    Nouveau mot de passe
+                  </button>
+                  @if (!compte.infrastructure) {
+                    <button type="button" class="lien danger-lien" (click)="supprimer(compte)">
+                      Supprimer
+                    </button>
+                  }
+                }
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+      <p class="note">
+        Afficher un mot de passe est inscrit au journal d'audit. Les modifications sont
+        appliquées au broker en quelques secondes, sans coupure des autres comptes.
+      </p>
+    </section>
+  }
+</div>

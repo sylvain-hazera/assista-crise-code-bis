@@ -1647,9 +1647,16 @@ lisibles dans un `pg_dump`.
   `0.0.0.0` : Docker contourne UFW, et un port publié sur `0.0.0.0` serait joignable depuis
   Internet malgré le pare-feu. Seuls les nœuds radio du réseau local y accèdent ; aucune
   redirection sur la box, pas de listener TLS. Le fichier de mots de passe haché est reconstruit
-  à chaque démarrage dans un tmpfs à partir des secrets montés : il n'est ni stocké sur disque,
-  ni versionné. Procédure pour ajouter une passerelle :
-  [mosquitto/README.md](mosquitto/README.md).
+  ni versionné. **Les comptes s'administrent depuis `/admin/comptes-mqtt`** (administrateurs au
+  rôle PROD réel) : Django est la source de vérité, réécrit `passwd` et `acl` dans le volume
+  partagé `ac_mqtt_comptes`, et une boucle dans le conteneur du broker déclenche un rechargement
+  de configuration dans les dix secondes — sans couper les autres comptes. Au premier démarrage,
+  avant que Django n'ait rien écrit, le broker s'amorce depuis ses propres secrets : sa
+  disponibilité ne dépend **jamais** de l'application. Le greffon « dynamic security » de
+  Mosquitto a été écarté pour cette raison précise (il exige un broker en fonctionnement pour
+  créer un compte), d'où la réimplémentation de son format de mot de passe dans
+  `core/mqtt_comptes.py`, figée par un vecteur de référence en test. Procédure pour ajouter une
+  passerelle : [mosquitto/README.md](mosquitto/README.md).
 
   *Auparavant, l'accès de production était anonyme sur un port publié sur toutes les interfaces :
   n'importe qui pouvant joindre la machine pouvait lire et publier.*

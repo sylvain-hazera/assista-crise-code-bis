@@ -59,16 +59,31 @@ qui ne correspond pas coupe le flux **sans message d'erreur**.
 
 #### Ajouter une passerelle radio
 
-1. `create_secret mqtt_<nom>_password 32` dans `scripts/init-secrets.sh`, puis relancer le script
-   (`SECRETS_DIR=~/.config/assista-crise/secrets ./scripts/init-secrets.sh`).
-2. Le secret dans le bloc `secrets:` de `docker-compose.114.yml`, et dans la liste `secrets:` du
-   service `mosquitto`.
-3. Une ligne `mosquitto_passwd -b /tmp/passwd <nom> "$$(cat /run/secrets/mqtt_<nom>_password)" &&`
-   dans la `command` du service.
-4. Un bloc `user <nom>` / `topic readwrite msh/EU_868/#` dans `config/acl.114`.
-5. `docker compose -f docker-compose.114.yml up -d --no-deps --force-recreate mosquitto` — une
-   **recréation** est nécessaire : la configuration est un montage de *fichier*, et l'éditer en
-   crée un nouvel inode que le conteneur en service continue d'ignorer.
+**Depuis l'interface web**, page **Comptes MQTT** (`/admin/comptes-mqtt`, administrateurs
+seulement) : nom du compte, rôle, racine des topics. Le mot de passe est engendré par le serveur
+et affiché une fois le compte créé — à recopier dans la configuration du nœud. Plus rien à
+éditer dans le dépôt, plus de conteneur à recréer : Django réécrit `passwd` et `acl` dans le
+volume partagé `ac_mqtt_comptes`, et une boucle dans le conteneur du broker déclenche un
+rechargement de configuration dans les dix secondes. Les autres comptes ne sont pas coupés.
+
+Le mot de passe reste consultable plus tard (bouton *Afficher* : une passerelle est un boîtier
+sur un toit, pas un compte qu'on recrée d'un clic) — **chaque consultation est inscrite au
+journal d'audit**. Le bouton *Nouveau mot de passe* révoque l'ancien : il demande confirmation,
+parce qu'il coupe la passerelle jusqu'à sa reconfiguration sur place.
+
+**Prérequis, une seule fois** : `docker exec ac_backend python manage.py initialiser_comptes_mqtt`
+enregistre en base les comptes d'amorçage (`exporter`, `pont`, `passerelle1`) depuis les secrets.
+Sans eux, un garde-fou refuse d'écrire les fichiers — sinon la première création depuis le web
+les supprimerait du broker et couperait la supervision et le pont, en silence.
+
+> **Pourquoi pas le greffon « dynamic security » de Mosquitto**, qui existe pourtant dans
+> l'image : avec `-f`, `createClient` et `createRole` renvoient 0 **sans rien faire** — seul un
+> broker en fonctionnement peut créer un compte (vérifié le 06/11/2026). Le broker ne pourrait
+> donc authentifier personne, pas même l'exporteur, tant que Django ne l'a pas amorcé. Ici il
+> s'amorce seul depuis ses secrets au premier démarrage : sa disponibilité ne dépend jamais de
+> l'application. Le format de mot de passe (`$7$` = PBKDF2-SHA512, sel de 64 octets, 1000
+> itérations) est donc réimplémenté dans `backend/core/mqtt_comptes.py`, avec un test qui fige un
+> vecteur de référence produit par le vrai `mosquitto_passwd`.
 
 ### En dev : comptes et mots de passe
 

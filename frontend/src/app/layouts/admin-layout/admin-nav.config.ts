@@ -120,4 +120,6 @@ export const NAV_ITEMS: NavItem[] = [
   { icon: 'how_to_reg', label: 'Validations de comptes', route: '/admin/validations-comptes', groupe: 'administration', visibilite: 'validation-comptes' },
   // Tableaux Grafana ; le jeton n'est délivré qu'aux administrateurs (backend/core/grafana.py).
   { icon: 'monitor_heart', label: 'Supervision technique', route: '/admin/monitoring', groupe: 'administration', visibilite: 'sysadmin' },
+  // Un compte par passerelle radio du site (backend/core/models.py:CompteMqtt).
+  { icon: 'router', label: 'Comptes MQTT', route: '/admin/comptes-mqtt', groupe: 'administration', visibilite: 'sysadmin' },
 ];
