@@ -296,7 +296,7 @@ services:
     container_name: ac_alertmanager
     # Config locale (destinataires = vraies adresses, hors dépôt) : copie de alertmanager.prod.yml.
     command: ['--config.file=/etc/alertmanager/alertmanager.114.yml', '--storage.path=/alertmanager']
-    secrets: [email_password]
+    secrets: [email_password, healthchecks_url]
     volumes:
       - /home/sylvain/.config/assista-crise/monitoring/alertmanager.114.yml:/etc/alertmanager/alertmanager.114.yml:ro
       - alertmanager_data:/alertmanager
@@ -420,6 +420,10 @@ secrets:
   pg_monitoring_password: { file: "${SECRETS_DIR:-/home/sylvain/.config/assista-crise/secrets}/pg_monitoring_password.txt" }
   email_password:         { file: "${SECRETS_DIR:-/home/sylvain/.config/assista-crise/secrets}/email_password.txt" }
   grafana_jwt_public:     { file: "${SECRETS_DIR:-/home/sylvain/.config/assista-crise/secrets}/grafana_jwt_public.pem" }
+  # URL de ping du dead man's switch (healthchecks.io). C'est un secret : qui la connaît peut
+  # envoyer de faux battements et faire taire le seul dispositif capable de signaler l'arrêt de
+  # Prometheus -- donc jamais dans le dépôt, et jamais en clair dans une variable d'environnement.
+  healthchecks_url:       { file: "${SECRETS_DIR:-/home/sylvain/.config/assista-crise/secrets}/healthchecks_url.txt" }
 
 # Réseaux existants (créés à la main avant compose) : jamais recréés -- ac_waf, les sauvegardes et
 # les satellites s'y rattachent par nom.
