@@ -331,6 +331,14 @@ GRAFANA_JWT_PRIVATE_KEY = os.environ.get("GRAFANA_JWT_PRIVATE_KEY", "").replace(
 # amorcés depuis ses secrets. Jamais d'échec bloquant si le dossier manque.
 MQTT_COMPTES_DIR = os.environ.get("MQTT_COMPTES_DIR", "")
 
+# Fédération au format carte-live-meshtastic (core/federation_carte_live.py) : publie les relais
+# d'infrastructure pour que les cartes des départements voisins les affichent. DÉSACTIVÉE par
+# défaut — publier les positions des relais d'un réseau de secours est une décision
+# d'exploitation, pas un défaut technique. L'endpoint répond 503 tant qu'elle n'est pas prise.
+FEDERATION_CARTE_LIVE = os.environ.get("FEDERATION_CARTE_LIVE", "") in ("1", "oui", "true", "True")
+FEDERATION_CARTE_LIVE_NOM = os.environ.get("FEDERATION_CARTE_LIVE_NOM", "")
+FEDERATION_CARTE_LIVE_DEPARTEMENT = os.environ.get("FEDERATION_CARTE_LIVE_DEPARTEMENT", "") or None
+
 # identique dans matrix-bridge et dans la config Synapse (voir core/matrix.py)
 MATRIX_SERVER_NAME = os.environ.get("MATRIX_SERVER_NAME", "matrix.assista-crise.local")
 

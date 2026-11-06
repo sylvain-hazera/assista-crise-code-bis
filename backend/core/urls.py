@@ -63,7 +63,7 @@ from .views import (
     PlanViewSet,
     PlanMissionModeleViewSet,
     DashboardStatsView,
-    MeshLocalDetecterView,
+    MeshLocalDetecterView, FederationCarteLiveView,
     ImportApercuView,
     ImportPersonnelCommunalView,
     SaisiePersonnelCommunalView,
@@ -271,6 +271,9 @@ urlpatterns = [
     path('stats/dashboard/', DashboardStatsView.as_view(), name='dashboard_stats'),
     path('monitoring/grafana-token/', GrafanaTokenView.as_view(), name='grafana_token'),
     path('mesh-local/detecter/', MeshLocalDetecterView.as_view(), name='mesh_local_detecter'),
+    # Fédération carte-live-meshtastic : relais d'infrastructure publiés pour les cartes des
+    # départements voisins. AllowAny par nature du format, désactivée par défaut.
+    path('federation/', FederationCarteLiveView.as_view(), name='federation_carte_live'),
     path('imports/apercu/', ImportApercuView.as_view(), name='import_apercu'),
     path('imports/personnel-communal/', ImportPersonnelCommunalView.as_view(), name='import_personnel_communal'),
     path('imports/personnel-communal/exemple/', ImportPersonnelCommunalExempleView.as_view(), name='import_personnel_communal_exemple'),

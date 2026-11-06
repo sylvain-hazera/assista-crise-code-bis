@@ -16631,6 +16631,30 @@ class RelaisMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet
         )
 
 
+class FederationCarteLiveView(APIView):
+    """Relais d'infrastructure au format de fédération de carte-live-meshtastic.
+
+    `AllowAny` : la fédération fonctionne par récupération anonyme entre instances, c'est le
+    format. Ce que cet endpoint publie est donc volontairement restreint à de l'INFRASTRUCTURE
+    (jamais un companion ni un capteur, qui peuvent être le terminal d'une personne), et il est
+    **désactivé par défaut** — voir core/federation_carte_live.py pour le détail des deux
+    décisions.
+
+    Pas de pagination : le format attend un document unique, et leurs consommateurs plafonnent
+    de toute façon à 500 relais à la lecture."""
+
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        if not getattr(settings, "FEDERATION_CARTE_LIVE", False):
+            return Response(
+                {"detail": "Fédération non activée sur cette instance."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        from .federation_carte_live import construire_payload
+        return Response(construire_payload(get_active_environment(request)))
+
+
 class _EstAdministrateurReel(permissions.BasePermission):
     """Rôle PROD réel, pas le rôle effectif de la zone démo — même choix que
     core/grafana.py:IsAdministrator et pour la même raison : un compte à qui on a prêté un
