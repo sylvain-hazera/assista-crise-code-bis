@@ -58,6 +58,11 @@ export const ADMIN_ROUTES: Routes = [
   { path: 'meshcore-canaux', loadComponent: () => import('./meshcore-canaux/meshcore-canaux.component').then(m => m.MeshcoreCanauxComponent), canActivate: [institutionalEffectiveGuard] },
   { path: 'meshtastic-companions', loadComponent: () => import('./meshtastic-companions/meshtastic-companions.component').then(m => m.MeshtasticCompanionsComponent), canActivate: [institutionalEffectiveGuard] },
   { path: 'meshtastic-canaux', loadComponent: () => import('./meshtastic-canaux/meshtastic-canaux.component').then(m => m.MeshtasticCanauxComponent), canActivate: [institutionalEffectiveGuard] },
+  // Administration a distance des noeuds Meshtastic (AdminMessage par la radio). Garde
+  // institutionnelle pour la page : le serveur exige en plus le role ADMIN REEL pour toute
+  // ECRITURE (voir TacheAdminMeshtasticViewSet.perform_create), les lectures restant ouvertes
+  // aux acteurs institutionnels -- relever une puissance d'emission n'est pas un acte materiel.
+  { path: 'meshtastic-administration', loadComponent: () => import('./meshtastic-administration/meshtastic-administration.component').then(m => m.MeshtasticAdministrationComponent), canActivate: [institutionalEffectiveGuard] },
   { path: 'satellites', loadComponent: () => import('./satellites/satellites.component').then(m => m.SatellitesComponent), canActivate: [institutionalEffectiveGuard] },
 
   // ── Administration ──

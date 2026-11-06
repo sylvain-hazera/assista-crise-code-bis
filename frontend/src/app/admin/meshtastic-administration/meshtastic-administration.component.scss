@@ -1,0 +1,156 @@
+// Couleurs écrites en var(--ac-…, <couleur du mode clair>) : les --ac-* ne sont définies qu'en
+// mode sombre (styles.scss), le mode clair garde donc ses couleurs d'origine par la valeur de
+// repli. Voir DOCUMENTATION.md § 6.6.
+.page { padding: 20px; max-width: 1150px; }
+
+.entete {
+  h1 {
+    display: flex; align-items: center; gap: 10px;
+    margin: 0 0 8px; font-size: 1.5rem;
+    color: var(--ac-text, #111827);
+    .material-icons { color: var(--brand-primary-lisible, var(--brand-primary)); }
+  }
+  .explication {
+    margin: 0 0 20px; max-width: 72ch; line-height: 1.5;
+    color: var(--ac-text-muted, #4b5563);
+  }
+}
+
+code {
+  padding: 1px 5px; border-radius: 4px; font-size: .9em;
+  background: var(--ac-surface-3, #f3f4f6);
+  color: var(--ac-text, #111827);
+}
+
+.message {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 14px; border-radius: 6px; margin: 0 0 16px;
+  &.erreur {
+    background: var(--ac-red-bg, #fef2f2);
+    color: var(--ac-red-text, #991b1b);
+    border: 1px solid var(--ac-red-border, #fecaca);
+  }
+  &.avertissement {
+    background: var(--ac-amber-bg, #fef3c7);
+    color: var(--ac-amber-text, #92400e);
+    border: 1px solid var(--ac-amber-border, #fde68a);
+  }
+}
+
+.attente { color: var(--ac-text-muted, #6b7280); }
+
+section {
+  margin-bottom: 28px; padding: 18px;
+  border: 1px solid var(--ac-border, #e5e7eb); border-radius: 8px;
+  background: var(--ac-surface, #fff);
+  h2 {
+    display: flex; align-items: center; gap: 12px;
+    margin: 0 0 14px; font-size: 1.1rem; color: var(--ac-text, #111827);
+  }
+  .explication {
+    margin: 0 0 14px; max-width: 72ch; line-height: 1.5; font-size: .9rem;
+    color: var(--ac-text-muted, #4b5563);
+  }
+}
+
+.liste-cles {
+  list-style: none; margin: 0; padding: 0;
+  li {
+    padding: 10px 0;
+    border-bottom: 1px solid var(--ac-border, #e5e7eb);
+    &:last-child { border-bottom: none; }
+  }
+  .identite {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    margin-bottom: 5px; color: var(--ac-text, #111827);
+  }
+  .badge {
+    padding: 1px 7px; border-radius: 10px; font-size: .72rem;
+    background: var(--ac-surface-3, #f3f4f6); color: var(--ac-text-muted, #4b5563);
+  }
+  .num { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; font-size: .85rem;
+         color: var(--ac-text-subtle, #6b7280); }
+  // Une clé de 64 caractères se recopie à la main dans une application mobile : elle doit
+  // rester lisible caractère par caractère et se sélectionner d'un seul geste.
+  .cle {
+    display: block; user-select: all; word-break: break-all;
+    font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  }
+  .manquante { font-size: .85rem; color: var(--ac-amber-text, #92400e); }
+}
+
+.champs {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px;
+  margin-bottom: 12px;
+}
+
+label {
+  display: flex; flex-direction: column; gap: 5px; font-size: .9rem;
+  color: var(--ac-text, #374151);
+  input, select {
+    padding: 8px 10px; font: inherit; border-radius: 6px;
+    border: 1px solid var(--ac-border-strong, #d1d5db);
+    background: var(--ac-surface, #fff);
+    color: var(--ac-text, #111827);
+  }
+  small { line-height: 1.4; color: var(--ac-text-subtle, #6b7280); }
+}
+
+button {
+  font: inherit; cursor: pointer; border-radius: 6px;
+  padding: 9px 18px; border: none;
+  background: var(--brand-primary); color: var(--brand-on-primary, #fff);
+  &:disabled { opacity: .55; cursor: default; }
+  &.discret {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 8px; background: none; font-size: .85rem;
+    color: var(--brand-primary-lisible, var(--brand-primary));
+    text-decoration: underline;
+    .material-icons { font-size: 16px; }
+  }
+  &.danger { background: var(--ac-red-text, #b91c1c); color: #fff; }
+}
+
+.confirmation {
+  padding: 12px 14px; border-radius: 6px;
+  background: var(--ac-red-bg, #fef2f2);
+  border: 1px solid var(--ac-red-border, #fecaca);
+  color: var(--ac-red-text, #991b1b);
+  p { margin: 0 0 10px; }
+  .actions { display: flex; gap: 10px; }
+}
+
+table {
+  width: 100%; border-collapse: collapse;
+  th, td {
+    padding: 9px 10px; text-align: left; vertical-align: top;
+    border-bottom: 1px solid var(--ac-border, #e5e7eb);
+  }
+  th { font-size: .8rem; text-transform: uppercase; letter-spacing: .04em;
+       color: var(--ac-text-muted, #6b7280); }
+  td { color: var(--ac-text, #111827); }
+  tr.echec td { background: var(--ac-red-bg, #fef2f2); }
+  tr.detail td { background: var(--ac-surface-2, #f9fafb); }
+  td.inconnue { color: var(--ac-amber-text, #92400e); }
+}
+
+.etat {
+  padding: 1px 8px; border-radius: 10px; font-size: .75rem;
+  background: var(--ac-surface-3, #f3f4f6); color: var(--ac-text-muted, #4b5563);
+  &.TERMINEE { background: var(--ac-green-bg, #ecfdf5); color: var(--ac-green-text, #065f46); }
+  &.ECHEC { background: var(--ac-red-bg, #fef2f2); color: var(--ac-red-text, #991b1b); }
+  &.EN_COURS { background: var(--ac-amber-bg, #fef3c7); color: var(--ac-amber-text, #92400e); }
+}
+
+pre {
+  margin: 0; padding: 10px; border-radius: 6px; overflow-x: auto;
+  background: var(--ac-surface-3, #f3f4f6); color: var(--ac-text, #111827);
+  font-size: .85rem;
+}
+
+.imputation { margin: 8px 0 0; font-size: .85rem; color: var(--ac-text-subtle, #6b7280); }
+
+@media (max-width: 760px) {
+  .page { padding: 12px; }
+  table { display: block; overflow-x: auto; }
+}

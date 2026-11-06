@@ -87,6 +87,54 @@ voir `on_connection` dans `bridge.py`) — la contrainte `unique=True` du modèl
 13/09 — voir plus bas) : la construction `SerialInterface(devPath=...)` et le dispatch sont
 vérifiés par un test isolé (mock), pas encore contre un appareil réel branché en USB.
 
+## `admin_meshtastic.py` — administration à distance des nœuds (06/11/2026)
+
+Lire et modifier la configuration d'un nœud par la radio (`ADMIN_APP`, protobuf
+`AdminMessage`). **Mode TCP ou série uniquement** : c'est le firmware de l'appareil qui chiffre le
+message d'administration, un companion MQTT n'a pas d'appareil. Les tâches viennent de Django
+(`TacheAdminMeshtastic`), sont réclamées par `boucle_taches_admin` toutes les 20 s et exécutées
+une par une dans un thread (`asyncio.to_thread`) : la lib officielle est bloquante et une
+opération attend une réponse radio qui met de quelques secondes à plusieurs minutes.
+
+Trois choses lues dans le firmware (`AdminModule::handleReceivedProtobuf`), que la documentation
+Meshtastic ne dit pas et dont tout dépend :
+
+1. Un message venant d'un autre nœud n'est accepté que s'il est `pki_encrypted` **et** que la clé
+   publique de l'émetteur figure dans l'une des **trois** fentes `config.security.admin_key` de la
+   cible. Sinon : `ADMIN_PUBLIC_KEY_UNAUTHORIZED`. La clé qui compte est celle de l'**appareil**
+   passerelle (`iface.getPublicKey()`, rapportée à Django par `rapporter-cle-publique`), pas
+   l'identité logicielle X25519 du companion.
+2. Il existe une voie historique — canal nommé « admin » avec `admin_channel_enabled`, sans
+   aucune vérification de clé. **On ne l'utilise jamais** : elle donne l'administration de tous
+   les nœuds à quiconque possède la PSK de ce canal. D'où `channelIndex=0` forcé, au lieu du
+   `localNode._getAdminChannelIndex()` de la lib officielle, qui basculerait dessus dès qu'un
+   canal « admin » existe sur la passerelle.
+3. Les lectures sont dispensées de clé de session, les écritures l'exigent. La clé est un jeton
+   de 8 octets glissé dans toute réponse de lecture, valable 300 s et **renouvelé dès qu'une
+   réponse est construite plus de 150 s après la précédente**. Le module construit donc son
+   message d'écriture d'abord (ce qui, pour une puissance, relit la configuration et rapporte une
+   clé au passage), puis écrit ; sur `ADMIN_BAD_SESSION_KEY` il oublie la clé, relit et réessaie
+   **une** fois.
+
+La passerelle elle-même (cible vide) est le seul cas qui ne demande aucun provisionnement : le
+firmware traite le message comme venant du téléphone (`mp.from == 0`). C'est par là qu'il faut
+commencer pour vérifier la chaîne.
+
+`set_config.lora` **remplace tout le bloc** côté firmware : définir la puissance relit la
+configuration et la renvoie entière avec le seul `tx_power` modifié. N'envoyer que `tx_power`
+effacerait la région, et un nœud sans région ne transmet plus du tout. Le firmware redémarre de
+lui-même après ce changement.
+
+Tests : `test_admin_meshtastic.py`, en `unittest` (pas de pytest dans l'image).
+
+```
+docker run --rm -v "$PWD/meshtastic-bridge":/src -w /src \
+  --entrypoint python assista-crise-meshtastic-bridge:prod -m unittest -v test_admin_meshtastic
+```
+
+**Jamais essayé sur du matériel réel** : tout est vérifié contre un faux appareil et contre le
+code du firmware.
+
 ## Recette validée en conditions réelles (13/09)
 
 DM **en clair** (`Fr_BlaBla`, canal sans PSK — pas de chiffrement du tout, voir plus haut
@@ -177,6 +225,8 @@ nœud réel directement) — sinon rien n'est mutualisé.
 | `POLL_INTERVAL_SECONDS` | non (def. 15) | fréquence d'interrogation des messages à envoyer |
 | `CANAUX_REFRESH_INTERVAL_SECONDS` | non (def. 60) | fréquence de rafraîchissement des clés de canal |
 | `CONTACTS_FLUSH_INTERVAL_SECONDS` | non (def. 30) | fréquence d'envoi groupé des nœuds découverts |
+| `LIAISONS_FLUSH_INTERVAL_SECONDS` | non (def. 60) | fréquence d'envoi groupé des liaisons observées |
+| `TACHES_ADMIN_POLL_INTERVAL_SECONDS` | non (def. 20) | fréquence de relève des tâches d'administration |
 | `LOG_LEVEL` | non (def. INFO) | `DEBUG` pour plus de détails |
 
 L'adresse du broker (`mqtt.gaulix.fr`, port 1883 par défaut) et la racine de topic

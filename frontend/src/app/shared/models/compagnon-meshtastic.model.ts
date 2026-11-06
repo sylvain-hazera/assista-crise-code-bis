@@ -1,4 +1,4 @@
-export type MeshtasticConnexionType = 'MQTT' | 'TCP';
+export type MeshtasticConnexionType = 'MQTT' | 'TCP' | 'SERIE';
 
 export interface CompagnonMeshtastic {
   id: string;
@@ -19,6 +19,13 @@ export interface CompagnonMeshtastic {
    * un DM chiffré par clé publique dans les deux sens (PKI, firmware 2.5+). Sans objet en
    * mode TCP (le firmware du vrai appareil gère son propre chiffrement). */
   x25519_public_key_hex?: string;
+
+  /** Clé publique de l'APPAREIL physique (modes TCP/SERIE), rapportée par le pont à la
+   * connexion. À ne pas confondre avec x25519_public_key_hex, qui est l'identité LOGICIELLE
+   * utilisée en mode MQTT : c'est celle-ci, et elle seule, qu'il faut inscrire dans
+   * `security.admin_key` des nœuds qu'on veut administrer à distance. Vide tant que le pont ne
+   * s'est pas connecté, ou si le firmware de l'appareil n'a pas de clé (trop ancien). */
+  cle_publique_appareil_hex?: string;
 
   broker_host: string;
   broker_port: number;

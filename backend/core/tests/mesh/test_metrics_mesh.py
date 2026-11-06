@@ -94,8 +94,55 @@ class TestInfrastructure:
         assert "Nom confidentiel du relais" not in etiquettes
         assert "Passerelle du PC" not in etiquettes
         assert not any("aa" * 32 == e for e in etiquettes)
-        # Seules des valeurs bornées : zone et type de contact.
-        assert etiquettes <= {"PROD", "DEMO", "REPEATER", "ROOM"}
+        # Seules des valeurs bornées : zone, type de contact, statut de tâche d'administration.
+        # Chacune vient d'une énumération -- jamais un numéro de nœud, qui ferait exploser la
+        # cardinalité ET désignerait un appareil précis.
+        from core.models import StatutTacheAdminMeshtastic
+        assert etiquettes <= (
+            {"PROD", "DEMO", "REPEATER", "ROOM"} | set(StatutTacheAdminMeshtastic.values)
+        )
+
+
+@pytest.mark.django_db
+class TestAdministrationDistante:
+    """File d'administration et instrumentation réelle du réseau."""
+
+    def _passerelle(self):
+        from core.models import CompagnonMeshtastic, MeshtasticConnexionType
+        return CompagnonMeshtastic.objects.create(
+            nom="Passerelle", node_num=0x1000, connexion_type=MeshtasticConnexionType.SERIE,
+        )
+
+    def test_tous_les_statuts_sont_emis_meme_a_zero(self):
+        """Sinon une alerte « des tâches échouent » ne pourrait pas se déclencher au PREMIER
+        échec : il n'y aurait aucune série ECHEC à évaluer avant qu'il arrive."""
+        from core.models import StatutTacheAdminMeshtastic, TacheAdminMeshtastic
+        TacheAdminMeshtastic.objects.create(
+            compagnon=self._passerelle(), type_tache="LIRE_METADATA", environment="PROD",
+        )
+        famille = familles()["assista_mesh_taches_admin"]
+        valeurs = {e.labels["statut"]: e.value for e in famille.samples}
+        assert set(valeurs) == set(StatutTacheAdminMeshtastic.values)
+        assert valeurs["EN_ATTENTE"] == 1
+        assert valeurs["ECHEC"] == 0
+
+    def test_la_serie_existe_meme_sans_aucune_tache(self):
+        famille = familles()["assista_mesh_taches_admin"]
+        assert {e.labels["statut"] for e in famille.samples}
+        assert all(e.value == 0 for e in famille.samples)
+
+    def test_compte_les_noeuds_dont_la_puissance_est_vraiment_connue(self):
+        """Métrique qui dit si le réseau est instrumenté : tant qu'elle est basse, l'analyse
+        d'asymétrie ne peut pas corriger l'écart de puissance. `0 dBm` n'est PAS une puissance
+        connue -- le firmware applique alors le maximum de la région."""
+        from core.models import ConfigurationNoeudMeshtastic
+        for num, puissance in ((1, 22), (2, 14), (3, 0), (4, None)):
+            ConfigurationNoeudMeshtastic.objects.create(
+                node_num=num, environment="PROD", puissance_emission_dbm=puissance,
+                date_releve=timezone.now(),
+            )
+        famille = familles()["assista_mesh_noeuds_puissance_connue"]
+        assert {e.labels["environment"]: e.value for e in famille.samples}["PROD"] == 2
 
 
 @pytest.mark.django_db

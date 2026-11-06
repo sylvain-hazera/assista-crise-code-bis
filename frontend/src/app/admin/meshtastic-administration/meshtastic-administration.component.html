@@ -1,0 +1,251 @@
+<div class="page">
+  <header class="entete">
+    <h1><span class="material-icons">settings_remote</span> Administration des nœuds Meshtastic</h1>
+    <p class="explication">
+      Lire ou modifier la configuration d'un nœud <strong>par la radio</strong>. L'opération part
+      de l'appareil passerelle, traverse le mesh, et met de quelques secondes à plusieurs minutes.
+      Elle n'est possible que depuis une passerelle branchée en <strong>TCP ou en série</strong> :
+      c'est le firmware de l'appareil qui chiffre le message d'administration, un companion MQTT
+      n'a pas d'appareil.
+    </p>
+  </header>
+
+  @if (erreur) {
+    <div class="message erreur" role="alert">
+      <span class="material-icons">error_outline</span> {{ erreur }}
+    </div>
+  }
+
+  @if (chargement) {
+    <p class="attente">Chargement…</p>
+  } @else if (!passerelles.length) {
+    <div class="message avertissement" role="status">
+      <span class="material-icons">info_outline</span>
+      Aucune passerelle utilisable : il faut un companion Meshtastic en mode <strong>TCP</strong>
+      ou <strong>série</strong>, c'est-à-dire un vrai appareil relié à une machine qui fait
+      tourner le pont. Les companions MQTT ne peuvent pas administrer.
+    </div>
+  } @else {
+
+    <section class="cles">
+      <h2>Clé à autoriser sur les nœuds à administrer</h2>
+      <p class="explication">
+        Un nœud n'accepte une commande venant d'un autre nœud que si la clé publique de la
+        passerelle figure dans sa liste <code>security.admin_key</code> (trois emplacements au
+        plus). Cela se pose <strong>une fois</strong>, avec l'application Meshtastic officielle,
+        en ayant l'appareil en main. Sans ça, chaque opération échoue avec « clé publique non
+        autorisée » — et c'est bien cette vérification qui empêche n'importe qui de reconfigurer
+        vos relais par radio.
+      </p>
+      <ul class="liste-cles">
+        @for (passerelle of passerelles; track passerelle.id) {
+          <li>
+            <div class="identite">
+              <strong>{{ passerelle.nom }}</strong>
+              <span class="badge">{{ passerelle.connexion_type }}</span>
+              <span class="num">{{ hexa(passerelle.node_num) }}</span>
+            </div>
+            @if (passerelle.cle_publique_appareil_hex) {
+              <code class="cle">{{ passerelle.cle_publique_appareil_hex }}</code>
+            } @else {
+              <span class="manquante">
+                Clé pas encore rapportée : le pont la lit à sa connexion à l'appareil. Si elle
+                reste vide, l'appareil n'a pas de clé publique (firmware trop ancien) et seule
+                la passerelle elle-même pourra être administrée.
+              </span>
+            }
+          </li>
+        }
+      </ul>
+    </section>
+
+    <section class="creation">
+      <h2>Nouvelle opération</h2>
+      <form (ngSubmit)="demanderConfirmation()">
+        <div class="champs">
+          <label>
+            Passerelle
+            <select name="compagnon" [(ngModel)]="nouvelle.compagnon" (ngModelChange)="chargerContacts($event)">
+              @for (passerelle of passerelles; track passerelle.id) {
+                <option [value]="passerelle.id">{{ passerelle.nom }} ({{ passerelle.connexion_type }})</option>
+              }
+            </select>
+            <small>C'est elle qui émettra la commande sur la radio.</small>
+          </label>
+
+          <label>
+            Nœud visé
+            <select name="cible" [(ngModel)]="nouvelle.cible">
+              <option value="">La passerelle elle-même</option>
+              @for (contact of contacts; track contact.id) {
+                <option [value]="contact.node_num">
+                  {{ contact.long_name || contact.short_name || hexa(contact.node_num) }}
+                  — {{ hexa(contact.node_num) }}
+                </option>
+              }
+            </select>
+            <small>
+              La passerelle elle-même ne demande <strong>aucune autorisation préalable</strong> :
+              commencer par elle vérifie que la chaîne fonctionne.
+            </small>
+          </label>
+
+          <label>
+            Opération
+            <select name="type_tache" [(ngModel)]="nouvelle.type_tache">
+              @for (operation of operations; track operation.type) {
+                <option [value]="operation.type">
+                  {{ operation.libelle }}{{ operation.ecriture ? ' — écriture' : '' }}
+                </option>
+              }
+            </select>
+            @if (operationChoisie) {
+              <small>{{ operationChoisie.explication }}</small>
+            }
+          </label>
+
+          @if (nouvelle.type_tache === 'DEFINIR_PUISSANCE') {
+            <label>
+              Puissance (dBm)
+              <input name="puissance" type="number" min="1" max="27"
+                     [(ngModel)]="nouvelle.puissance_dbm">
+              <small>1 à 27 dBm. Le nœud redémarre tout seul après ce changement.</small>
+            </label>
+          }
+
+          @if (nouvelle.type_tache === 'REDEMARRER') {
+            <label>
+              Délai avant redémarrage (s)
+              <input name="delai" type="number" min="1" max="300" [(ngModel)]="nouvelle.delai_s">
+            </label>
+          }
+        </div>
+
+        @if (estEcriture && viseUnNoeudDistant) {
+          <p class="message avertissement">
+            <span class="material-icons">warning_amber</span>
+            Écriture sur un nœud distant : réservée aux administrateurs, et uniquement hors zone
+            de démonstration. Un relais sur un point haut se paie d'un déplacement s'il ne
+            revient pas.
+          </p>
+        }
+
+        @if (erreurEnvoi) {
+          <p class="message erreur" role="alert">{{ erreurEnvoi }}</p>
+        }
+
+        @if (confirmationDemandee) {
+          <div class="confirmation" role="alertdialog">
+            <p>
+              Confirmer <strong>{{ operationChoisie?.libelle }}</strong> sur
+              <strong>{{ nomNoeud(nouvelle.cible === '' ? null : +nouvelle.cible) }}</strong> ?
+            </p>
+            <div class="actions">
+              <button type="button" class="danger" (click)="envoyer()">Confirmer</button>
+              <button type="button" (click)="annulerConfirmation()">Annuler</button>
+            </div>
+          </div>
+        } @else {
+          <button type="submit" [disabled]="envoiEnCours || !nouvelle.compagnon">
+            {{ envoiEnCours ? 'Mise en file…' : 'Mettre en file' }}
+          </button>
+        }
+      </form>
+    </section>
+
+    <section class="file">
+      <h2>
+        Opérations
+        <button type="button" class="discret" (click)="rafraichir()">
+          <span class="material-icons">refresh</span> Rafraîchir
+        </button>
+      </h2>
+      @if (!taches.length) {
+        <p class="attente">Aucune opération pour l'instant.</p>
+      } @else {
+        <table>
+          <thead>
+            <tr>
+              <th>Demandée</th><th>Passerelle</th><th>Cible</th><th>Opération</th>
+              <th>État</th><th>Essais</th><th></th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (tache of taches; track tache.id) {
+              <tr [class.echec]="tache.statut === 'ECHEC'">
+                <td>{{ tache.date_creation | date:'dd/MM HH:mm' }}</td>
+                <td>{{ tache.compagnon_nom }}</td>
+                <td>{{ nomNoeud(tache.node_num_cible) }}</td>
+                <td>{{ tache.type_tache_libelle }}</td>
+                <td><span class="etat" [class]="tache.statut">{{ tache.statut }}</span></td>
+                <td>{{ tache.tentatives }}</td>
+                <td>
+                  @if (tache.reponse || tache.erreur) {
+                    <button type="button" class="discret" (click)="basculerDetail(tache.id)">
+                      {{ tacheDepliee === tache.id ? 'Masquer' : 'Détail' }}
+                    </button>
+                  }
+                </td>
+              </tr>
+              @if (tacheDepliee === tache.id) {
+                <tr class="detail">
+                  <td colspan="7">
+                    @if (tache.erreur) {
+                      <p class="message erreur">{{ tache.erreur }}</p>
+                    }
+                    @if (tache.reponse) {
+                      <pre>{{ reponseLisible(tache) }}</pre>
+                    }
+                    @if (tache.demande_par_email) {
+                      <p class="imputation">Demandée par {{ tache.demande_par_email }}.</p>
+                    }
+                  </td>
+                </tr>
+              }
+            }
+          </tbody>
+        </table>
+      }
+    </section>
+
+    <section class="inventaire">
+      <h2>Configurations relevées</h2>
+      <p class="explication">
+        Alimenté par les lectures ci-dessus. La puissance d'émission sert au
+        <strong>diagnostic des liaisons radio</strong> : sans elle, la détection de relais sourds
+        ne peut pas distinguer un nœud réellement sourd d'un voisin qui émet plus fort.
+      </p>
+      @if (!configurations.length) {
+        <p class="attente">
+          Aucun relevé. Lancer une « lecture de la configuration LoRa » sur chaque nœud
+          d'infrastructure.
+        </p>
+      } @else {
+        <table>
+          <thead>
+            <tr>
+              <th>Nœud</th><th>Puissance</th><th>Région</th><th>Preset</th>
+              <th>Sauts</th><th>Rôle</th><th>Firmware</th><th>Relevé</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (config of configurations; track config.id) {
+              <tr>
+                <td>{{ nomNoeud(config.node_num) }}</td>
+                <td [class.inconnue]="!config.puissance_emission_dbm">
+                  {{ puissanceLisible(config) }}
+                </td>
+                <td>{{ config.region || '—' }}</td>
+                <td>{{ config.modem_preset || '—' }}</td>
+                <td>{{ config.hop_limit ?? '—' }}</td>
+                <td>{{ config.role || '—' }}</td>
+                <td>{{ config.firmware_version || '—' }}</td>
+                <td>{{ config.date_releve | date:'dd/MM HH:mm' }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      }
+    </section>
+  }
+</div>

@@ -59,6 +59,9 @@ from .models import (
     MaterielPoint,
     MaterielCatalogue,
     CompagnonMeshCore, CompteMqtt, LiaisonMeshtastic,
+    TacheAdminMeshtastic, TypeTacheAdminMeshtastic, TACHES_ADMIN_ECRITURE,
+    ConfigurationNoeudMeshtastic, MeshtasticConnexionType,
+    PUISSANCE_MIN_DBM, PUISSANCE_MAX_DBM,
     NoeudMeshUtilisateur,
     MessageMeshLog,
     CommandeMeshCore,
@@ -3480,6 +3483,72 @@ class LiaisonMeshtasticSerializer(serializers.ModelSerializer):
         model = LiaisonMeshtastic
         fields = ['id', 'emetteur', 'recepteur', 'source', 'source_libelle', 'snr', 'rssi',
                   'nombre', 'premier_vu', 'dernier_vu']
+
+
+class ConfigurationNoeudMeshtasticSerializer(serializers.ModelSerializer):
+    """Configuration relevée sur un nœud. Lecture seule : elle n'est écrite que par le rapport
+    d'une tâche d'administration."""
+
+    releve_par_nom = serializers.CharField(source='releve_par.nom', read_only=True, default=None)
+
+    class Meta:
+        model = ConfigurationNoeudMeshtastic
+        fields = ['id', 'node_num', 'puissance_emission_dbm', 'region', 'modem_preset',
+                  'hop_limit', 'role', 'firmware_version', 'hardware_model',
+                  'releve_par', 'releve_par_nom', 'date_releve']
+        read_only_fields = fields
+
+
+class TacheAdminMeshtasticSerializer(serializers.ModelSerializer):
+    """Tâche d'administration à distance. Le client ne choisit que la passerelle, la cible,
+    l'opération et ses paramètres ; tout le reste est écrit par le serveur ou par le pont."""
+
+    compagnon_nom = serializers.CharField(source='compagnon.nom', read_only=True)
+    type_tache_libelle = serializers.CharField(source='get_type_tache_display', read_only=True)
+    est_ecriture = serializers.BooleanField(read_only=True)
+    demande_par_email = serializers.EmailField(source='demande_par.email', read_only=True, default=None)
+
+    class Meta:
+        model = TacheAdminMeshtastic
+        fields = ['id', 'compagnon', 'compagnon_nom', 'node_num_cible', 'type_tache',
+                  'type_tache_libelle', 'est_ecriture', 'parametres', 'statut', 'tentatives',
+                  'reponse', 'erreur', 'demande_par', 'demande_par_email',
+                  'date_creation', 'date_prise', 'date_reponse']
+        read_only_fields = ['statut', 'tentatives', 'reponse', 'erreur', 'demande_par',
+                            'date_creation', 'date_prise', 'date_reponse']
+
+    def validate(self, attrs):
+        compagnon = attrs.get('compagnon')
+        type_tache = attrs.get('type_tache')
+
+        # Refus porté ici plutôt que découvert par le pont 30 s plus tard : une tâche posée sur
+        # un companion MQTT n'aurait aucun exécutant. Voir meshtastic-bridge/admin_meshtastic.py :
+        # l'administration suppose que le firmware d'un VRAI appareil chiffre le message.
+        if compagnon is not None and compagnon.connexion_type not in (
+            MeshtasticConnexionType.TCP, MeshtasticConnexionType.SERIE,
+        ):
+            raise serializers.ValidationError({
+                "compagnon": "L'administration à distance passe par un appareil réel (TCP ou "
+                             "série). Un companion MQTT ne peut pas administrer : c'est le "
+                             "firmware de l'appareil qui chiffre le message d'administration.",
+            })
+
+        if type_tache == TypeTacheAdminMeshtastic.DEFINIR_PUISSANCE:
+            parametres = attrs.get('parametres') or {}
+            try:
+                puissance = int(parametres['puissance_dbm'])
+            except (KeyError, TypeError, ValueError):
+                raise serializers.ValidationError({
+                    "parametres": "puissance_dbm (entier, en dBm) est requis pour cette opération.",
+                })
+            if not PUISSANCE_MIN_DBM <= puissance <= PUISSANCE_MAX_DBM:
+                raise serializers.ValidationError({
+                    "parametres": f"Puissance hors bornes : {puissance} dBm. Autorisé "
+                                  f"{PUISSANCE_MIN_DBM}-{PUISSANCE_MAX_DBM} dBm (plafond de la "
+                                  "bande 869,4-869,65 MHz, 500 mW à 10 % de rapport cyclique).",
+                })
+
+        return attrs
 
 
 class CompteMqttSerializer(serializers.ModelSerializer):

@@ -5,6 +5,6 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY bridge.py crypto.py proxy.py .
+COPY bridge.py crypto.py proxy.py admin_meshtastic.py .
 
 CMD ["python", "-u", "bridge.py"]

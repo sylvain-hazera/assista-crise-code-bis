@@ -106,6 +106,10 @@ export const NAV_ITEMS: NavItem[] = [
   { icon: 'forum', label: 'Canaux MeshCore (test)', route: '/admin/meshcore-canaux', groupe: 'communications' },
   { icon: 'settings_input_antenna', label: 'Companions Meshtastic (test)', route: '/admin/meshtastic-companions', groupe: 'communications' },
   { icon: 'forum', label: 'Canaux Meshtastic (test)', route: '/admin/meshtastic-canaux', groupe: 'communications' },
+  // Lire et modifier la configuration d'un noeud par la radio (backend/core/models.py:
+  // TacheAdminMeshtastic). La page explique le prealable qui conditionne tout : la cle publique
+  // de la passerelle doit figurer dans security.admin_key du noeud vise.
+  { icon: 'settings_remote', label: 'Administration Meshtastic', route: '/admin/meshtastic-administration', groupe: 'communications' },
   // Boîtiers Raspberry Pi déployés sur site (voir satellite/README.md).
   { icon: 'router', label: 'Satellites', route: '/admin/satellites', groupe: 'communications' },
 

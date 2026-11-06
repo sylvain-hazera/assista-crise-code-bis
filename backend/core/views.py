@@ -27,7 +27,7 @@ from urllib.parse import quote
 from django_filters import rest_framework as filters
 from rest_framework.filters import OrderingFilter
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.db import IntegrityError, transaction
+from django.db import DatabaseError, IntegrityError, transaction
 from django.db.models import Q, F, Func, IntegerField, Prefetch, Count, Exists, Max, OuterRef
 from django.db.models.functions import TruncDate
 from dateutil.relativedelta import relativedelta
@@ -203,6 +203,8 @@ from .models import (
     MeshCoreConnexionType, MeshtasticConnexionType,
     CompagnonMeshtastic, NoeudUtilisateurMeshtastic, MessageMeshtasticLog,
     CanalMeshtastic, MessageCanalMeshtastic, ContactMeshtastic,
+    TacheAdminMeshtastic, StatutTacheAdminMeshtastic, TACHES_ADMIN_ECRITURE,
+    TENTATIVES_MAX_TACHE_ADMIN, DELAI_RECLAMATION_TACHE_ADMIN_S, ConfigurationNoeudMeshtastic,
     Satellite, JetonEnrolementSatellite, ProfilSatellite, StatutEnrolementSatellite,
     EvenementSynchronisation, EtatEvenementSynchronisation, ConflitSynchronisation,
     StatutConflitSynchronisation, ModeleSynchronisable,
@@ -560,6 +562,7 @@ from .serializers import (
     MaterielPointSerializer,
     MaterielCatalogueSerializer,
     CompagnonMeshCoreSerializer, CompteMqttSerializer, LiaisonMeshtasticSerializer,
+    TacheAdminMeshtasticSerializer, ConfigurationNoeudMeshtasticSerializer,
     NoeudMeshUtilisateurSerializer,
     MessageMeshLogSerializer,
     CommandeMeshCoreSerializer,
@@ -17130,6 +17133,30 @@ class CompagnonMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
 
         return Response(CompagnonMeshtasticSerializer(compagnon).data)
 
+    @action(detail=True, methods=['post'], url_path='rapporter-cle-publique')
+    def rapporter_cle_publique(self, request, pk=None):
+        """Le pont rapporte la clé publique de l'APPAREIL physique, lue à la connexion.
+
+        Sans elle, l'administration à distance est inutilisable : c'est cette clé-là qu'il faut
+        inscrire dans `security.admin_key` des nœuds à administrer, et elle n'est connue que de
+        l'appareil (elle n'a rien à voir avec l'identité logicielle X25519 du companion, qui ne
+        sert qu'en mode MQTT). La page d'administration l'affiche pour qu'on puisse la recopier.
+
+        Publique par nature : rien à chiffrer, rien à cacher."""
+        compagnon = self.get_object()
+        cle = (request.data.get('cle_publique_hex') or '').strip().lower()
+        # 32 octets en hexadécimal : une clé X25519. On refuse tout le reste plutôt que de
+        # ranger n'importe quoi dans un champ que l'exploitant va recopier à la main.
+        if cle and (len(cle) != 64 or any(c not in '0123456789abcdef' for c in cle)):
+            return Response(
+                {'detail': "cle_publique_hex doit faire 64 caractères hexadécimaux (32 octets)."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if compagnon.cle_publique_appareil_hex != cle:
+            compagnon.cle_publique_appareil_hex = cle
+            compagnon.save(update_fields=['cle_publique_appareil_hex'])
+        return Response({'id': str(compagnon.id), 'cle_publique_appareil_hex': cle})
+
     @action(detail=True, methods=['get'], url_path='avec-cle-privee')
     def avec_cle_privee(self, request, pk=None):
         """Expose la clé privée X25519 EN CLAIR — jamais via la sérialisation normale (voir
@@ -17785,6 +17812,224 @@ class LiaisonMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ReadOnlyM
                 },
             })
         return Response({"type": "FeatureCollection", "features": traits})
+
+
+# Nombre maximal de tâches servies en un seul appel du pont : une administration se fait à la
+# main, pas par rafales, et une passerelle ne doit pas se retrouver avec cent opérations à
+# enchaîner sur la radio.
+LOT_MAX_TACHES_ADMIN = 10
+
+# Champs que le pont est autorisé à écrire dans ConfigurationNoeudMeshtastic. Liste blanche
+# explicite : le rapport d'une tâche ne doit pas pouvoir toucher node_num ou environment.
+CHAMPS_CONFIGURATION_NOEUD = (
+    'puissance_emission_dbm', 'region', 'modem_preset', 'hop_limit', 'role',
+    'firmware_version', 'hardware_model',
+)
+
+
+class TacheAdminMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
+    """File des opérations d'administration à distance sur les nœuds Meshtastic.
+
+    Posée ici, exécutée par le pont de la passerelle choisie (meshtastic-bridge/
+    admin_meshtastic.py), rapportée par `rapporter`. Trois choses à savoir :
+
+    - **Une écriture exige le rôle ADMIN RÉEL et l'environnement PROD.** Reconfigurer ou
+      redémarrer un relais est un acte matériel : un `demo_role` prêté le temps d'une
+      démonstration ne doit pas y donner accès, et une tâche créée en zone DEMO n'aurait de
+      toute façon aucun exécutant.
+    - **Pas de PATCH ni de DELETE.** Le pont rapporte par une action dédiée, qui décide seule du
+      nouveau statut et du réessai ; laisser modifier `statut`/`reponse` librement permettrait
+      de maquiller une opération.
+    - **Le réessai est compté à la PRISE, pas au rapport** : un pont qui meurt en pleine
+      opération ne doit pas pouvoir la reprendre indéfiniment."""
+
+    queryset = TacheAdminMeshtastic.objects.select_related('compagnon', 'demande_par').all()
+    serializer_class = TacheAdminMeshtasticSerializer
+    http_method_names = ['get', 'post', 'head', 'options']
+
+    def get_permissions(self):
+        # prendre/rapporter : appelés par le compte de service du pont, qui n'est pas un acteur
+        # institutionnel -- même principe que CommandeMeshCoreViewSet.
+        if self.action in ('prendre', 'rapporter'):
+            return [permissions.IsAuthenticated()]
+        return [IsInstitutionalActor()]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        compagnon = self.request.query_params.get('compagnon')
+        if compagnon:
+            qs = qs.filter(compagnon_id=compagnon)
+        statut = self.request.query_params.get('statut')
+        if statut:
+            qs = qs.filter(statut=statut)
+        return qs.order_by('-date_creation')
+
+    def perform_create(self, serializer):
+        type_tache = serializer.validated_data['type_tache']
+        if type_tache in TACHES_ADMIN_ECRITURE:
+            # Rôle RÉEL : voir la docstring. Même choix que la supervision technique et les
+            # comptes MQTT (core/grafana.py:IsAdministrator).
+            if self.request.user.type != UserRole.ADMINISTRATOR:
+                raise PermissionDenied(
+                    "Écrire sur un nœud radio (puissance, redémarrage) est réservé aux "
+                    "administrateurs."
+                )
+            if get_active_environment(self.request) != Environment.PROD:
+                raise PermissionDenied(
+                    "Une écriture sur un nœud radio ne se fait pas depuis la zone de "
+                    "démonstration : aucun pont n'exécuterait la tâche."
+                )
+        tache = serializer.save(
+            environment=get_active_environment(self.request),
+            demande_par=self.request.user,
+        )
+        audit_log(
+            request=self.request, action_code="CREATION", objet_type="TacheAdminMeshtastic",
+            objet_id=tache.id,
+            commentaire=(
+                f"Administration Meshtastic : {tache.get_type_tache_display()} sur "
+                f"{'la passerelle ' + tache.compagnon.nom if tache.node_num_cible is None else format(tache.node_num_cible, '08x')}"
+                + (f" (paramètres {tache.parametres})" if tache.parametres else "")
+            ),
+        )
+
+    @action(detail=False, methods=['post'], url_path='prendre')
+    def prendre(self, request):
+        """Le pont réclame les tâches à exécuter pour SA passerelle, et les verrouille.
+
+        Reprend aussi les tâches laissées EN_COURS depuis plus de
+        DELAI_RECLAMATION_TACHE_ADMIN_S : sans ça, un pont redémarré en pleine opération
+        laisserait la tâche bloquée pour toujours. C'est aussi pour cette raison que le compteur
+        de tentatives s'incrémente ici."""
+        compagnon_id = request.data.get('compagnon')
+        if not compagnon_id:
+            return Response({'detail': "'compagnon' est requis."}, status=status.HTTP_400_BAD_REQUEST)
+
+        maintenant = timezone.now()
+        perimee = maintenant - datetime.timedelta(seconds=DELAI_RECLAMATION_TACHE_ADMIN_S)
+
+        # Une tâche reprise encore et encore par un pont qui meurt à chaque fois : seul
+        # `rapporter` sait conclure à l'échec, et dans ce cas il n'est jamais appelé. Sans cette
+        # ligne, la tâche serait reprise indéfiniment, à chaque fois avec une tentative de plus.
+        self.get_queryset().filter(
+            compagnon_id=compagnon_id, statut=StatutTacheAdminMeshtastic.EN_COURS,
+            date_prise__lt=perimee, tentatives__gte=TENTATIVES_MAX_TACHE_ADMIN,
+        ).update(
+            statut=StatutTacheAdminMeshtastic.ECHEC, date_reponse=maintenant,
+            erreur=(
+                f"Reprise {TENTATIVES_MAX_TACHE_ADMIN} fois sans qu'aucun résultat soit "
+                "rapporté : le pont de cette passerelle ne termine pas l'opération."
+            ),
+        )
+
+        candidates = self.get_queryset().filter(
+            compagnon_id=compagnon_id, tentatives__lt=TENTATIVES_MAX_TACHE_ADMIN,
+        ).filter(
+            Q(statut=StatutTacheAdminMeshtastic.EN_ATTENTE)
+            | Q(statut=StatutTacheAdminMeshtastic.EN_COURS, date_prise__lt=perimee)
+        ).order_by('date_creation')
+
+        ids = list(candidates.values_list('id', flat=True)[:LOT_MAX_TACHES_ADMIN])
+        if not ids:
+            return Response([])
+        TacheAdminMeshtastic.objects.filter(id__in=ids).update(
+            statut=StatutTacheAdminMeshtastic.EN_COURS,
+            date_prise=maintenant,
+            tentatives=F('tentatives') + 1,
+        )
+        taches = TacheAdminMeshtastic.objects.filter(id__in=ids).select_related('compagnon')
+        return Response(TacheAdminMeshtasticSerializer(taches, many=True).data)
+
+    @action(detail=True, methods=['post'], url_path='rapporter')
+    def rapporter(self, request, pk=None):
+        """Résultat d'une tâche, rapporté par le pont.
+
+        Un échec ne clôt pas la tâche tant qu'il reste des tentatives : une opération
+        d'administration traverse la radio, et un relais qui dormait n'est pas une opération
+        invalide. Au-delà de TENTATIVES_MAX_TACHE_ADMIN, elle passe en ECHEC et reste visible
+        avec son dernier message -- jamais supprimée silencieusement."""
+        tache = self.get_object()
+        succes = bool(request.data.get('succes'))
+        maintenant = timezone.now()
+
+        if succes:
+            reponse = request.data.get('reponse')
+            tache.statut = StatutTacheAdminMeshtastic.TERMINEE
+            tache.reponse = json.dumps(reponse, ensure_ascii=False, default=str) if reponse is not None else None
+            tache.erreur = None
+            tache.date_reponse = maintenant
+            tache.save(update_fields=['statut', 'reponse', 'erreur', 'date_reponse'])
+            self._enregistrer_configuration(tache, request.data.get('configuration'), maintenant)
+        else:
+            tache.erreur = str(request.data.get('erreur') or "Échec sans message.")[:2000]
+            if tache.tentatives >= TENTATIVES_MAX_TACHE_ADMIN:
+                tache.statut = StatutTacheAdminMeshtastic.ECHEC
+                tache.date_reponse = maintenant
+            else:
+                # Rendue à la file : le prochain passage du pont réessaiera.
+                tache.statut = StatutTacheAdminMeshtastic.EN_ATTENTE
+            tache.save(update_fields=['statut', 'erreur', 'date_reponse'])
+
+        return Response(TacheAdminMeshtasticSerializer(tache).data)
+
+    @staticmethod
+    def _enregistrer_configuration(tache, configuration, maintenant):
+        """Range la partie normalisée du relevé dans ConfigurationNoeudMeshtastic.
+
+        Mise à jour PARTIELLE, volontairement : une lecture de métadonnées ne connaît pas la
+        puissance d'émission, et écraser la puissance relevée la veille par un vide ferait
+        régresser l'analyse d'asymétrie sans que personne s'en aperçoive."""
+        if not isinstance(configuration, dict):
+            return
+        valeurs = {}
+        for champ in CHAMPS_CONFIGURATION_NOEUD:
+            valeur = configuration.get(champ)
+            # 0 est conservé : tx_power = 0 est une valeur que le firmware donne vraiment (il
+            # applique alors le maximum de la région). C'est l'ANALYSE qui l'écarte, pas le
+            # stockage -- sinon on perdrait l'information qu'on a bien interrogé ce nœud.
+            if valeur is None or valeur == '':
+                continue
+            champ_modele = ConfigurationNoeudMeshtastic._meta.get_field(champ)
+            if champ_modele.max_length and isinstance(valeur, str):
+                # Un firmware annonce ce qu'il veut : on tronque plutôt que de perdre tout le
+                # relevé sur une chaîne trop longue.
+                valeur = valeur[:champ_modele.max_length]
+            valeurs[champ] = valeur
+        if not valeurs:
+            return
+
+        node_num = tache.node_num_cible or tache.compagnon.node_num
+        valeurs['date_releve'] = maintenant
+        valeurs['releve_par'] = tache.compagnon
+        try:
+            ConfigurationNoeudMeshtastic.objects.update_or_create(
+                node_num=node_num, environment=tache.environment, defaults=valeurs,
+            )
+        except (ValueError, TypeError, DjangoValidationError, DatabaseError):
+            # La réponse de la tâche est déjà enregistrée : on perd une ligne d'inventaire, pas
+            # le résultat de l'opération. Échouer ici ferait réessayer le pont indéfiniment sur
+            # une tâche déjà terminée.
+            _logger_sync.exception(
+                "Relevé de configuration inexploitable pour le nœud %s (tâche %s).",
+                node_num, tache.id,
+            )
+
+
+class ConfigurationNoeudMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ReadOnlyModelViewSet):
+    """Dernière configuration relevée par nœud. Lecture seule : elle n'est écrite que par le
+    rapport d'une tâche d'administration, jamais à la main -- une valeur saisie serait
+    indiscernable d'une valeur mesurée, et l'analyse d'asymétrie s'appuie dessus."""
+
+    queryset = ConfigurationNoeudMeshtastic.objects.select_related('releve_par').all()
+    serializer_class = ConfigurationNoeudMeshtasticSerializer
+    permission_classes = [IsInstitutionalActor]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        node_num = self.request.query_params.get('node_num')
+        if node_num:
+            qs = qs.filter(node_num=node_num)
+        return qs.order_by('node_num')
 
 
 def _haversine_km(lat1, lon1, lat2, lon2):

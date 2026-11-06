@@ -23,6 +23,7 @@ seul, sans redémarrage du service (demande explicite du 14/09).
 """
 
 import asyncio
+import base64
 import json
 import logging
 import os
@@ -34,6 +35,7 @@ import httpx
 import paho.mqtt.client as mqtt
 from meshtastic.protobuf import mesh_pb2, mqtt_pb2, portnums_pb2
 
+import admin_meshtastic
 import crypto
 
 logger = logging.getLogger("meshtastic-bridge")
@@ -62,6 +64,11 @@ CONTACTS_FLUSH_INTERVAL_SECONDS = int(os.environ.get("CONTACTS_FLUSH_INTERVAL_SE
 # liaison est une agregation, elle ne perime pas vite.
 LIAISONS_FLUSH_INTERVAL_SECONDS = int(os.environ.get("LIAISONS_FLUSH_INTERVAL_SECONDS", "60"))
 RECONNECT_DELAY_SECONDS = int(os.environ.get("RECONNECT_DELAY_SECONDS", "10"))
+
+# Tâches d'administration à distance (admin_meshtastic.py) : relevées plus souvent que les
+# messages, parce qu'un exploitant qui clique attend une réponse, et moins souvent que la radio
+# ne le supporterait -- une opération d'administration n'est jamais massive.
+TACHES_ADMIN_POLL_INTERVAL_SECONDS = int(os.environ.get("TACHES_ADMIN_POLL_INTERVAL_SECONDS", "20"))
 
 # Annonce périodique de notre propre position (Position_APP) — voir boucle_annonce_position.
 # Hypothèse à vérifier : Gaulix semble router les BROADCASTS (diffusion à tout un canal) vers
@@ -247,6 +254,31 @@ class DjangoClient:
         if not liaisons:
             return
         await self._request("POST", f"/compagnons-meshtastic/{compagnon_id}/rapporter-liaisons/", json={"liaisons": liaisons})
+
+    async def taches_admin_a_prendre(self, compagnon_id):
+        """Réclame et verrouille les tâches d'administration de CETTE passerelle (voir
+        TacheAdminMeshtasticViewSet.prendre : le compteur de tentatives s'incrémente ici, pas au
+        rapport, pour qu'un pont qui meurt en pleine opération ne la reprenne pas sans fin)."""
+        response = await self._request("POST", "/taches-admin-meshtastic/prendre/", json={"compagnon": compagnon_id})
+        return response.json()
+
+    async def rapporter_tache_admin(self, tache_id, succes, reponse=None, configuration=None, erreur=None):
+        charge = {"succes": bool(succes)}
+        if reponse is not None:
+            charge["reponse"] = reponse
+        if configuration:
+            charge["configuration"] = configuration
+        if erreur:
+            charge["erreur"] = str(erreur)[:2000]
+        await self._request("POST", f"/taches-admin-meshtastic/{tache_id}/rapporter/", json=charge)
+
+    async def rapporter_cle_publique_appareil(self, compagnon_id, cle_publique_hex):
+        """Clé publique de l'appareil physique, à autoriser dans security.admin_key des nœuds à
+        administrer. Sans elle la page d'administration ne peut rien afficher d'utile."""
+        await self._request(
+            "POST", f"/compagnons-meshtastic/{compagnon_id}/rapporter-cle-publique/",
+            json={"cle_publique_hex": cle_publique_hex},
+        )
 
     async def canaux_avec_cle(self, compagnon_id):
         """Filtré par companion : les noms de canal (ex: "Fr_Balise" chez Gaulix, "LongFast"
@@ -860,6 +892,33 @@ async def demarrer_pour_compagnon(django, compagnon):
         await asyncio.sleep(RECONNECT_DELAY_SECONDS)
 
 
+def _cle_publique_appareil_hex(iface):
+    """Clé publique de l'APPAREIL, en hexadécimal, ou None.
+
+    La lib la restitue telle qu'elle sort de `MessageToDict` : une chaîne base64, pas des
+    octets. C'est cette clé — celle de l'appareil qui émet sur la radio, pas l'identité
+    logicielle X25519 du companion — que les nœuds à administrer doivent porter dans
+    `security.admin_key` (voir admin_meshtastic.py)."""
+    try:
+        brute = iface.getPublicKey()
+    except Exception:
+        logger.debug("Clé publique de l'appareil illisible.", exc_info=True)
+        return None
+    if not brute:
+        return None
+    if isinstance(brute, (bytes, bytearray)):
+        octets = bytes(brute)
+    else:
+        try:
+            octets = base64.b64decode(brute, validate=True)
+        except Exception:
+            logger.warning("Clé publique de l'appareil non décodable (%r).", brute)
+            return None
+    # Une clé X25519 fait 32 octets. Un appareil sans PKI (firmware ancien) n'en a pas du tout :
+    # on ne rapporte rien plutôt qu'une valeur que l'exploitant recopierait pour rien.
+    return octets.hex() if len(octets) == 32 else None
+
+
 async def _executer_compagnon_interface_locale(django, compagnon, construire_interface, libelle_connexion):
     """Factorise TCP et SERIE (voir les deux wrappers ci-dessous) : dans les deux cas un VRAI
     appareil est joint directement via la lib officielle `meshtastic` (TCPInterface ou
@@ -905,6 +964,15 @@ async def _executer_compagnon_interface_locale(django, compagnon, construire_int
         if interface.myInfo is not None:
             node_num["valeur"] = interface.myInfo.my_node_num
         boucle.call_soon_threadsafe(file_a_planifier.put_nowait, django.rapporter_etat(compagnon["id"], "CONNECTE"))
+        # Rapportée à chaque connexion, pas une seule fois : l'appareil branché sur ce companion
+        # peut être remplacé (panne, échange de matériel), et une clé périmée affichée sur la
+        # page d'administration enverrait l'exploitant autoriser la mauvaise clé sur ses nœuds.
+        cle = _cle_publique_appareil_hex(interface)
+        if cle:
+            boucle.call_soon_threadsafe(
+                file_a_planifier.put_nowait,
+                django.rapporter_cle_publique_appareil(compagnon["id"], cle),
+            )
 
     def on_lost(interface):
         boucle.call_soon_threadsafe(file_a_planifier.put_nowait, django.rapporter_etat(compagnon["id"], "DECONNECTE"))
@@ -948,11 +1016,55 @@ async def _executer_compagnon_interface_locale(django, compagnon, construire_int
                 logger.exception("Échec du cycle d'envoi de canal (%s, %s).", libelle_connexion, compagnon["nom"])
             await asyncio.sleep(POLL_INTERVAL_SECONDS)
 
+    async def boucle_taches_admin():
+        """Administration à distance (voir admin_meshtastic.py).
+
+        Les tâches sont exécutées UNE PAR UNE, et dans un thread : la lib officielle est
+        bloquante, et une opération d'administration attend une réponse radio qui met plusieurs
+        secondes à plusieurs minutes. La lancer dans la boucle asyncio gèlerait l'envoi des
+        messages pendant tout ce temps.
+
+        Un échec est rapporté puis oublié : c'est Django qui décide de réessayer ou d'abandonner
+        (TacheAdminMeshtasticViewSet.rapporter), parce que lui seul compte les tentatives."""
+        while True:
+            try:
+                for tache in await django.taches_admin_a_prendre(compagnon["id"]):
+                    try:
+                        reponse, configuration = await asyncio.to_thread(
+                            admin_meshtastic.executer, iface, tache,
+                        )
+                    except admin_meshtastic.ErreurAdmin as erreur:
+                        # Échec attendu et explicable (nœud injoignable, clé non autorisée...) :
+                        # le message part tel quel vers l'interface, il est fait pour être lu.
+                        logger.warning(
+                            "Tâche d'administration %s (%s) en échec : %s",
+                            tache["id"], tache["type_tache"], erreur,
+                        )
+                        await django.rapporter_tache_admin(tache["id"], False, erreur=str(erreur))
+                    except Exception as erreur:
+                        logger.exception("Tâche d'administration %s : erreur interne.", tache["id"])
+                        await django.rapporter_tache_admin(
+                            tache["id"], False, erreur=f"Erreur interne du pont : {erreur}",
+                        )
+                    else:
+                        await django.rapporter_tache_admin(
+                            tache["id"], True, reponse=reponse, configuration=configuration,
+                        )
+                        logger.info(
+                            "Tâche d'administration %s (%s) terminée.", tache["id"], tache["type_tache"],
+                        )
+            except Exception:
+                logger.exception(
+                    "Échec du cycle des tâches d'administration (%s, %s).", libelle_connexion, compagnon["nom"],
+                )
+            await asyncio.sleep(TACHES_ADMIN_POLL_INTERVAL_SECONDS)
+
     try:
         await asyncio.gather(
             boucle_execution_planifiee(file_a_planifier),
             boucle_envoi_dm(),
             boucle_envoi_canaux_locale(),
+            boucle_taches_admin(),
         )
     finally:
         pub.unsubscribe(on_receive, "meshtastic.receive")

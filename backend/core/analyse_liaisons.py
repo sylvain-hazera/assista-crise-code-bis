@@ -26,11 +26,18 @@ ne devine pas :
    Une liaison que X ne rapporte jamais alors que P l'entend fort donne une borne basse : X l'a
    reçue sous son seuil de démodulation.
 
-Limite propre à Assista-Crise : la puissance d'émission des nœuds n'est pas connue (aucun champ ne
-la porte, elle viendrait d'une lecture de configuration à distance qui n'existe pas encore). La
-correction de puissance est donc nulle, ce qui rend la détection de relais sourd plus bruyante que
-la sienne : un nœud qui émet simplement plus fort que ses voisins peut passer pour sourd. Le
-champ `puissance_connue` du résultat le signale, et l'interface doit le dire.
+6. **La correction de puissance n'est appliquée que si elle est connue des DEUX côtés.** La
+   puissance d'émission d'un nœud vient d'une lecture de configuration à distance
+   (`TacheAdminMeshtastic`, type LIRE_CONFIG_LORA) : elle n'existe que pour les nœuds qu'on a
+   effectivement interrogés. Sans elle, l'écart mesuré mélange le bruit du nœud et sa puissance,
+   et un nœud qui émet simplement plus fort que ses voisins peut passer pour sourd. Le résultat
+   porte donc `puissance_connue` globalement, par relais sourd ET par mesure : une conclusion
+   corrigée et une conclusion non corrigée ne valent pas la même chose, et l'interface doit les
+   distinguer.
+
+   Piège à ne pas rater : `tx_power = 0` ne veut PAS dire 0 dBm. Le firmware l'interprète comme
+   « applique le maximum autorisé pour la région » : c'est une puissance inconnue, traitée ici
+   comme absente.
 """
 import datetime
 import math
@@ -39,7 +46,9 @@ from collections import defaultdict
 
 from django.utils import timezone
 
-from .models import ContactMeshtastic, LiaisonMeshtastic, SourceLiaisonMeshtastic
+from .models import (
+    ConfigurationNoeudMeshtastic, ContactMeshtastic, LiaisonMeshtastic, SourceLiaisonMeshtastic,
+)
 
 # Écart de SNR au-delà duquel un nœud est jugé sourd, en dB. Valeur de son implémentation.
 SEUIL_SOURD_DB = 8.0
@@ -56,6 +65,31 @@ DISTANCE_MAX_KM = 120.0
 HEURES_RECENT = 24
 # Nombre d'observations minimal pour conclure.
 OBSERVATIONS_MIN = 3
+
+
+def _puissances(environment):
+    """{node_num: puissance en dBm} pour les nœuds dont on a lu la configuration.
+
+    0 est écarté : le firmware l'interprète comme « maximum de la région », c'est une puissance
+    inconnue et non une puissance nulle (voir ConfigurationNoeudMeshtastic.puissance_emission_dbm)."""
+    return {
+        config.node_num: config.puissance_emission_dbm
+        for config in ConfigurationNoeudMeshtastic.objects.filter(
+            environment=environment, puissance_emission_dbm__isnull=False,
+        ).exclude(puissance_emission_dbm=0).only('node_num', 'puissance_emission_dbm')
+    }
+
+
+def _correction_db(puissances, a, b):
+    """Écart de puissance d'émission entre `a` et `b`, et si on le connaît vraiment.
+
+    `SNR(b entend a) - SNR(a entend b) = (Ptx a - Ptx b) + (bruit a - bruit b)`. Retirer le
+    premier terme isole le second, qui est ce qu'on cherche. Si l'une des deux puissances
+    manque, on ne corrige pas -- une demi-correction serait pire que pas de correction."""
+    pa, pb = puissances.get(a), puissances.get(b)
+    if pa is None or pb is None:
+        return 0.0, False
+    return float(pa - pb), True
 
 
 def _distance_km(a, b):
@@ -91,6 +125,7 @@ def analyser(environment, maintenant=None):
     """Renvoie {sens_unique, desequilibrees, inaudibles, sourds} pour une zone."""
     maintenant = maintenant or timezone.now()
     recent = maintenant - datetime.timedelta(hours=HEURES_RECENT)
+    puissances = _puissances(environment)
 
     noeuds = {}
     for contact in ContactMeshtastic.objects.filter(environment=environment):
@@ -165,15 +200,23 @@ def analyser(environment, maintenant=None):
             })
         else:
             paire = (min(a, b), max(a, b))
+            # Correction de puissance (ajout d'Assista-Crise à son algorithme) : un écart qui
+            # s'explique entièrement par une différence de puissance d'émission connue n'est pas
+            # un déséquilibre à signaler. `correction_db` est renvoyée pour que la conclusion
+            # reste vérifiable.
+            correction, connue = _correction_db(puissances, obs.a, obs.b)
             if (paire not in paires_vues and obs.snr is not None and inverse.snr is not None
-                    and abs(obs.snr - inverse.snr) >= SEUIL_DESEQUILIBRE_DB
+                    and abs(obs.snr - inverse.snr - correction) >= SEUIL_DESEQUILIBRE_DB
                     and inverse.dernier_vu >= recent):
                 paires_vues.add(paire)
-                fort, faible = (obs, inverse) if obs.snr > inverse.snr else (inverse, obs)
+                corrige = obs.snr - inverse.snr - correction
+                fort, faible = (obs, inverse) if corrige > 0 else (inverse, obs)
                 desequilibrees.append({
                     "a": fort.a, "b": fort.b, "nom_a": nom(fort.a), "nom_b": nom(fort.b),
                     "snr_fort": fort.snr, "snr_faible": faible.snr,
-                    "ecart_db": round(fort.snr - faible.snr, 1),
+                    "ecart_db": round(abs(corrige), 1),
+                    "correction_db": round(correction, 1),
+                    "puissance_connue": connue,
                     "distance_km": round(distance, 1) if distance is not None else None,
                 })
 
@@ -191,13 +234,17 @@ def analyser(environment, maintenant=None):
         "sens_unique": sorted(sens_unique, key=lambda x: -x["nombre"])[:100],
         "desequilibrees": sorted(desequilibrees, key=lambda x: -x["ecart_db"])[:100],
         "inaudibles": inaudibles,
-        "sourds": _sourds(sens, rapporteurs, passerelles, recent, actif, nom, trop_loin),
-        "puissance_connue": False,
+        "sourds": _sourds(sens, rapporteurs, passerelles, recent, actif, nom, trop_loin, puissances),
+        # Vrai dès qu'au moins un nœud a une puissance relevée : chaque conclusion porte en plus
+        # son propre `puissance_connue`, parce qu'une correction peut s'appliquer à une paire et
+        # pas à la suivante.
+        "puissance_connue": bool(puissances),
+        "noeuds_puissance_connue": len(puissances),
         "calcule_le": maintenant.isoformat(),
     }
 
 
-def _sourds(sens, rapporteurs, passerelles, recent, actif, nom, trop_loin):
+def _sourds(sens, rapporteurs, passerelles, recent, actif, nom, trop_loin, puissances):
     """Relais sourds : écart médian de SNR anormal entre ce qu'un nœud entend et ce qu'on entend
     de lui. Voir la docstring du module pour l'équation."""
     mesures = defaultdict(list)
@@ -211,14 +258,15 @@ def _sourds(sens, rapporteurs, passerelles, recent, actif, nom, trop_loin):
         if loin:
             continue
         inverse = sens.get((p, x))
-        # Correction de puissance impossible : aucun champ ne porte la puissance d'émission.
-        correction = 0.0
+        # Écart de puissance d'émission entre X et son partenaire, s'il est connu des deux côtés.
+        correction, connue = _correction_db(puissances, x, p)
 
         if inverse is not None and inverse.snr is not None and inverse.dernier_vu >= recent:
             mesures[x].append({
                 "partenaire": p, "nom_partenaire": nom(p),
                 "entendu_chez_partenaire": obs.snr, "entendu_chez_lui": inverse.snr,
                 "ecart_db": round(obs.snr - inverse.snr - correction, 1), "borne": False,
+                "correction_db": round(correction, 1), "puissance_connue": connue,
             })
         elif (x in rapporteurs and actif(p) and obs.nombre >= OBSERVATIONS_MIN
               and (x in passerelles or len(rapporteurs[x]) < PLAFOND_VOISINAGE)):
@@ -230,6 +278,7 @@ def _sourds(sens, rapporteurs, passerelles, recent, actif, nom, trop_loin):
                     "partenaire": p, "nom_partenaire": nom(p),
                     "entendu_chez_partenaire": obs.snr, "entendu_chez_lui": None,
                     "ecart_db": round(borne, 1), "borne": True,
+                    "correction_db": round(correction, 1), "puissance_connue": connue,
                 })
 
     sourds = []
@@ -246,7 +295,9 @@ def _sourds(sens, rapporteurs, passerelles, recent, actif, nom, trop_loin):
         sourds.append({
             "node_num": x, "nom": nom(x), "ecart_db": round(mediane, 1),
             "nb_voisins": len(liste), "nb_concordantes": concordantes,
-            "puissance_connue": False,
+            # Vrai seulement si TOUTES les mesures retenues ont pu être corrigées : il suffit
+            # d'un voisin de puissance inconnue pour que la médiane redevienne discutable.
+            "puissance_connue": all(m["puissance_connue"] for m in liste),
             "mesures": sorted(liste, key=lambda m: -m["ecart_db"])[:8],
         })
     return sorted(sourds, key=lambda s: -s["ecart_db"])

@@ -35,6 +35,7 @@ from .views import (
     TracerouteMeshCoreViewSet, AlerteMeshSOSViewSet,
     CompagnonMeshtasticViewSet, NoeudUtilisateurMeshtasticViewSet, MessageMeshtasticLogViewSet,
     CanalMeshtasticViewSet, MessageCanalMeshtasticViewSet, ContactMeshtasticViewSet,
+    TacheAdminMeshtasticViewSet, ConfigurationNoeudMeshtasticViewSet,
     SatelliteViewSet,
     ConflitSynchronisationViewSet,
     RoleOperationnelViewSet,
@@ -151,6 +152,8 @@ router.register(r'messages-meshtastic', MessageMeshtasticLogViewSet)
 router.register(r'canaux-meshtastic', CanalMeshtasticViewSet)
 router.register(r'messages-canal-meshtastic', MessageCanalMeshtasticViewSet)
 router.register(r'contacts-meshtastic', ContactMeshtasticViewSet)
+router.register(r'taches-admin-meshtastic', TacheAdminMeshtasticViewSet)
+router.register(r'configurations-noeuds-meshtastic', ConfigurationNoeudMeshtasticViewSet)
 
 
 router.register(

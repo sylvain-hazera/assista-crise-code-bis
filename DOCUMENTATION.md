@@ -1560,17 +1560,114 @@ envoie quelqu'un sur un point haut :
 - relais sourd : **médiane** sur au moins deux voisins dont une mesure réciproque — une mesure
   isolée peut venir du partenaire, pas du nœud examiné.
 
-**Limite propre à Assista-Crise** : la puissance d'émission des nœuds est inconnue (elle viendrait
-d'une lecture de configuration à distance, qui n'existe pas encore). La correction de puissance est
-donc nulle, ce qui rend la détection de relais sourd plus bruyante que la sienne — un nœud qui émet
-simplement plus fort que ses voisins peut passer pour sourd. Le champ `puissance_connue` du
-résultat le signale, et l'interface doit le dire.
+**Correction de puissance** (06/11/2026) : la puissance d'émission vient désormais d'une lecture de
+configuration à distance (§ 9.5.2) et alimente `ConfigurationNoeudMeshtastic`. L'écart de SNR est
+alors corrigé de la différence de puissance, qui est exactement ce que l'équation dit :
+`SNR(b entend a) − SNR(a entend b) = (Ptx a − Ptx b) + (bruit a − bruit b)`. Trois règles :
+
+- la correction n'est appliquée que si la puissance est connue **des deux côtés** — une
+  demi-correction serait pire que pas de correction ;
+- le résultat porte `puissance_connue` **globalement, par relais sourd et par mesure** : une
+  conclusion corrigée et une conclusion non corrigée ne valent pas la même chose, et l'interface
+  doit les distinguer ;
+- `tx_power = 0` ne veut **pas** dire 0 dBm : le firmware applique alors le maximum autorisé pour
+  la région, c'est donc une puissance inconnue, traitée comme absente. La confondre avec 0 dBm
+  inventerait un écart de 20 dB qui n'existe pas.
+
+Tant qu'aucun nœud n'a été interrogé, la correction reste nulle et la détection de relais sourd
+plus bruyante que la sienne : un nœud qui émet plus fort que ses voisins peut passer pour sourd.
+La métrique `assista_mesh_noeuds_puissance_connue` dit où on en est.
 
 Côté pont (`meshtastic-bridge/bridge.py`) : une liaison `RF` n'est enregistrée que si la passerelle
 a entendu l'émetteur **directement** (`hop_start == hop_limit`). `rx_snr` est mesuré sur le dernier
 saut : sur un paquet relayé il ne dit rien de la liaison d'origine, et l'enregistrer fabriquerait
 une liaison directe inexistante. L'observation est faite **avant** toute tentative de
 déchiffrement, ce qui cartographie aussi les canaux dont on n'a pas la clé.
+
+### 9.5.2 Administration à distance des nœuds Meshtastic
+
+`/admin/meshtastic-administration`. Modèle `TacheAdminMeshtastic`, exécution dans
+`meshtastic-bridge/admin_meshtastic.py`, API `/api/taches-admin-meshtastic/`.
+
+Lire ou modifier la configuration d'un nœud **par la radio** (portnum `ADMIN_APP`, protobuf
+`AdminMessage`). Opérations : lire la configuration LoRa (puissance, région, preset, sauts), lire
+firmware et modèle, lire la configuration de l'appareil, lire le nom, définir la puissance
+d'émission, redémarrer.
+
+**Ce qui conditionne tout, lu dans le firmware** (`AdminModule::handleReceivedProtobuf`, le
+06/11/2026 ; la documentation Meshtastic ne le dit pas) : un message d'administration venant d'un
+autre nœud n'est accepté que dans deux cas.
+
+1. Il est **chiffré par clé publique** et la clé publique de l'émetteur figure dans l'une des
+   **trois** fentes `config.security.admin_key` du nœud cible (comparaison sur 32 octets). Sinon :
+   `ADMIN_PUBLIC_KEY_UNAUTHORIZED`.
+2. Il arrive sur un **canal nommé « admin »** avec `admin_channel_enabled`, sans aucune
+   vérification de clé. **Cette voie n'est jamais utilisée ici** : elle donnerait l'administration
+   de tous les nœuds à quiconque possède la PSK de ce canal, qui est partagée par construction.
+   D'où `channelIndex=0` forcé dans le pont, au lieu du `_getAdminChannelIndex()` de la lib
+   officielle — qui basculerait sur cette voie faible dès qu'un canal « admin » existe.
+
+Conséquence pratique : **administrer un nœud suppose d'avoir posé la clé publique de l'appareil
+passerelle dans son `security.admin_key`**, une fois, avec l'application Meshtastic officielle, en
+le tenant en main. Ce n'est pas une lacune du code : c'est la seule chose qui empêche n'importe qui
+de reconfigurer vos relais par radio. La clé à recopier est affichée en haut de la page
+(`CompagnonMeshtastic.cle_publique_appareil_hex`, rapportée par le pont à chaque connexion). Elle
+n'a rien à voir avec `x25519_public_key_hex`, qui est l'identité **logicielle** du mode MQTT : le
+firmware compare la clé de l'émetteur **radio**, c'est-à-dire l'appareil.
+
+**Seule exception, et point de départ conseillé** : la passerelle elle-même. Le firmware traite le
+message comme venant du téléphone (`mp.from == 0`) et n'exige ni clé d'administration ni clé de
+session. C'est par là qu'il faut commencer pour vérifier que la chaîne fonctionne.
+
+**Clé de session** : les lectures en sont dispensées (`messageIsRequest`), les écritures l'exigent
+(`checkPassKey`). C'est un jeton de 8 octets qu'un nœud glisse dans toute réponse de lecture,
+valable 300 s et **renouvelé dès qu'une réponse est construite plus de 150 s après la précédente**.
+Le pont construit donc son message d'écriture (ce qui, pour une puissance, relit la configuration
+et rapporte une clé au passage), puis écrit ; sur `ADMIN_BAD_SESSION_KEY` il oublie la clé, relit
+et réessaie **une** fois. Le jeton n'est pas lié au demandeur : il vaut pour qui le détient.
+
+**Ce qui n'est pas proposé, et pourquoi** : `factory_reset`, `nodedb_reset`, `shutdown` et
+`set_channel`. Un répéteur est souvent sur un point haut : une extinction ou une réinitialisation
+à distance se paie d'un déplacement. `set_channel` demanderait en plus de transporter une PSK de
+canal jusqu'à l'appareil, ce que ce chemin ne fait pas.
+
+**Transport** : seules les passerelles **TCP ou série** administrent, parce que c'est le firmware
+de l'appareil qui chiffre le message. L'API refuse d'emblée une tâche posée sur un companion MQTT,
+avec la raison — plutôt que de la laisser échouer silencieusement 30 s plus tard.
+
+**Droits** : les lectures sont ouvertes aux acteurs institutionnels (relever une puissance n'est pas
+un acte matériel) ; les **écritures exigent le rôle ADMIN réel et la zone PROD** — un `demo_role`
+prêté pour une démonstration ne doit pas reconfigurer un relais, et une tâche DEMO n'aurait aucun
+exécutant. Pas de `PATCH` ni de `DELETE` sur la file : le pont rapporte par une action dédiée qui
+décide seule du statut, sinon on pourrait maquiller une opération faite sur un relais.
+
+**Réessais** : le compteur s'incrémente à la **prise**, pas au rapport, et une tâche laissée
+`EN_COURS` plus de 300 s est rendue à la file — un pont qui meurt en pleine opération ne doit ni la
+bloquer pour toujours, ni pouvoir la reprendre sans fin. Trois tentatives, puis `ECHEC` avec son
+dernier message, jamais supprimée. Alerte `MeshTachesAdminEnEchec`, et trois panneaux dans
+l'onglet « Réseau radio » : opérations en échec, nœuds à puissance connue, file par état. Le
+second est celui à regarder : tant qu'il est bas, le diagnostic des liaisons (§ 9.5.1) reste non
+corrigé.
+
+**Chiffrement au repos** : `TacheAdminMeshtastic.reponse` est chiffrée — une configuration lue peut
+contenir la PSK WiFi de l'appareil (`config.network`) ou des clés de canal.
+`ConfigurationNoeudMeshtastic` ne l'est pas : ce sont des caractéristiques radio, aucune donnée
+personnelle, et `puissance_emission_dbm` doit rester comparable en SQL pour l'analyse (§ 9.5.1).
+Un nom de nœud lu par `LIRE_PROPRIETAIRE` reste dans la réponse chiffrée et n'alimente aucune table
+en clair.
+
+**Tests du pont** : `meshtastic-bridge/test_admin_meshtastic.py`, en `unittest` (l'image du pont
+n'embarque pas pytest). À lancer dans l'image du pont :
+
+```
+docker run --rm -v "$PWD/meshtastic-bridge":/src -w /src \
+  --entrypoint python assista-crise-meshtastic-bridge:prod -m unittest test_admin_meshtastic
+```
+
+**Pas couvert** : MeshCore. Son protocole d'administration est peu documenté et l'auteur l'a fait
+marcher par essais — une heure avec lui vaut des jours de reverse engineering. Les seules commandes
+MeshCore disponibles restent `ADVERT` et `FLOOD_ADVERT` (`CommandeMeshCore`), qui ne pilotent pas
+un relais distant mais le companion du pont.
 
 ### 9.6 Angles morts de la supervision
 

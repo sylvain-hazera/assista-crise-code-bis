@@ -6236,6 +6236,16 @@ class CompagnonMeshtastic(EnvironmentScopedModel):
     # Paire X25519 générée à la création ; la clé privée n'est jamais exposée par l'API.
     x25519_private_key_hex = EncryptedTextField(max_length=64, blank=True, editable=False)
 
+    # Clé publique de l'APPAREIL physique (modes TCP/SERIE), rapportée par le pont à la
+    # connexion -- différente de x25519_public_key_hex, qui est l'identité LOGICIELLE utilisée
+    # en mode MQTT. C'est celle-ci qu'il faut poser dans `security.admin_key` des nœuds à
+    # administrer : le firmware vérifie la clé de l'émetteur RADIO, c'est-à-dire l'appareil
+    # passerelle, pas notre identité Django. Publique par nature : aucun chiffrement.
+    cle_publique_appareil_hex = models.CharField(
+        max_length=64, blank=True, editable=False,
+        help_text="Clé publique de l'appareil passerelle, à autoriser dans security.admin_key des nœuds à administrer.",
+    )
+
     derniere_connexion = models.DateTimeField(null=True, blank=True)
     dernier_etat = models.CharField(
         max_length=20, null=True, blank=True,
@@ -6485,6 +6495,192 @@ class MessageCanalMeshtastic(EnvironmentScopedModel):
 
     def __str__(self):
         return f"[{self.canal.nom}] {self.contenu[:40]}"
+
+
+class TypeTacheAdminMeshtastic(models.TextChoices):
+    """Opérations d'administration à distance. Volontairement réduit : chaque entrée est une
+    commande qu'on sait justifier et dont on connaît le coût en cas d'erreur.
+
+    Absents EXPRÈS : `factory_reset`, `nodedb_reset`, `set_channel` et `shutdown`. Un répéteur est
+    souvent sur un point haut : une extinction ou une réinitialisation à distance se paie d'un
+    déplacement, parfois en montagne et en hiver. `set_channel` demanderait en plus de
+    transporter une PSK de canal jusqu'à l'appareil, ce que ce chemin ne fait pas."""
+
+    LIRE_METADATA = "LIRE_METADATA", "Lire la version de firmware et le modèle"
+    LIRE_CONFIG_LORA = "LIRE_CONFIG_LORA", "Lire la configuration LoRa (puissance, région, preset)"
+    LIRE_CONFIG_APPAREIL = "LIRE_CONFIG_APPAREIL", "Lire la configuration de l'appareil (rôle, rediffusion)"
+    LIRE_PROPRIETAIRE = "LIRE_PROPRIETAIRE", "Lire le nom du nœud"
+    DEFINIR_PUISSANCE = "DEFINIR_PUISSANCE", "Définir la puissance d'émission"
+    REDEMARRER = "REDEMARRER", "Redémarrer le nœud"
+
+
+# Opérations d'ÉCRITURE : le firmware exige pour elles une clé de session valide (AdminModule.cpp,
+# `checkPassKey`), les lectures en sont dispensées (`messageIsRequest`). Le pont doit donc
+# obtenir la clé par une lecture juste avant d'écrire -- voir meshtastic-bridge/admin_meshtastic.py.
+TACHES_ADMIN_ECRITURE = frozenset({
+    TypeTacheAdminMeshtastic.DEFINIR_PUISSANCE,
+    TypeTacheAdminMeshtastic.REDEMARRER,
+})
+
+# Puissance d'émission maximale acceptée, en dBm. 27 dBm (500 mW) est le plafond de la bande
+# 869,4-869,65 MHz utilisée par le preset EU_868, sous réserve d'un rapport cyclique de 10 %
+# (décision ERC 70-03, reprise par l'ARCEP). Le firmware ne vérifie PAS cette valeur dans
+# AdminModule (vérifié dans le code le 06/11/2026) : c'est donc ici qu'on la borne, pas ailleurs.
+PUISSANCE_MAX_DBM = 27
+PUISSANCE_MIN_DBM = 1
+
+# Nombre de passages du pont avant d'abandonner une tâche. Une opération d'administration
+# traverse le mesh et peut échouer parce qu'un relais dormait, pas parce qu'elle est mauvaise.
+TENTATIVES_MAX_TACHE_ADMIN = 3
+
+# Au-delà, une tâche laissée EN_COURS est rendue à la file : le pont a redémarré en plein vol.
+# Large à dessein -- une lecture de configuration à travers plusieurs sauts prend des minutes.
+DELAI_RECLAMATION_TACHE_ADMIN_S = 300
+
+
+class StatutTacheAdminMeshtastic(models.TextChoices):
+    EN_ATTENTE = "EN_ATTENTE", "En attente"
+    EN_COURS = "EN_COURS", "En cours"
+    TERMINEE = "TERMINEE", "Terminée"
+    ECHEC = "ECHEC", "Échec"
+
+
+class TacheAdminMeshtastic(EnvironmentScopedModel):
+    """Une opération d'administration à distance sur un nœud Meshtastic, mise en file ici et
+    exécutée par le pont (meshtastic-bridge/admin_meshtastic.py).
+
+    Pourquoi une file et pas un appel synchrone : l'opération traverse la radio. Elle met de
+    quelques secondes à plusieurs minutes, peut ne jamais aboutir si le nœud dort, et c'est le
+    pont -- pas Django -- qui tient la connexion à l'appareil passerelle.
+
+    **Ce qui conditionne tout, côté firmware** (lu dans `AdminModule::handleReceivedProtobuf` le
+    06/11/2026, pas dans la documentation qui ne le dit pas) : un message d'administration venant
+    d'un AUTRE nœud n'est accepté que dans deux cas.
+
+    1. Il est chiffré par clé publique (`pki_encrypted`) et la clé publique de l'émetteur est
+       l'une des TROIS que le nœud cible porte dans `config.security.admin_key` (comparaison
+       octet par octet sur 32 octets). Sinon : `ADMIN_PUBLIC_KEY_UNAUTHORIZED`.
+    2. Il arrive sur un canal nommé « admin » avec `admin_channel_enabled` -- mécanisme
+       historique, sans aucune vérification de clé, que ce projet n'utilise pas : il donne
+       l'administration à quiconque possède la PSK de ce canal.
+
+    Conséquence pratique : **administrer un nœud suppose d'avoir posé au préalable la clé
+    publique de l'appareil passerelle dans `security.admin_key` de ce nœud**, avec l'application
+    Meshtastic officielle, une fois, en le tenant en main. Ce n'est pas un défaut de ce code :
+    c'est la seule chose qui empêche n'importe qui de reconfigurer vos relais par radio. La clé
+    à poser est affichée sur la page d'administration (CompagnonMeshtastic.cle_publique_appareil_hex).
+
+    `reponse` est chiffrée au repos : une configuration lue peut contenir la PSK WiFi de
+    l'appareil (`config.network`) ou des clés de canal (`get_channel_response`), et le projet ne
+    stocke rien de tel en clair."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    # Passerelle qui exécutera la tâche : c'est SON pont qui relève la file, et c'est SA clé
+    # publique d'appareil que le nœud cible doit autoriser.
+    compagnon = models.ForeignKey(
+        CompagnonMeshtastic, on_delete=models.CASCADE, related_name="taches_admin",
+    )
+
+    # Nœud visé. Vide = la passerelle elle-même : le firmware traite alors le message comme
+    # local (`mp.from == 0`) et n'exige NI clé d'administration NI clé de session. C'est le seul
+    # cas qui marche sans aucun provisionnement préalable.
+    node_num_cible = models.PositiveBigIntegerField(
+        null=True, blank=True,
+        help_text="Vide = l'appareil passerelle lui-même (aucune autorisation préalable requise).",
+    )
+
+    type_tache = models.CharField(max_length=24, choices=TypeTacheAdminMeshtastic.choices)
+
+    # Paramètres de l'opération, ex. {"puissance_dbm": 20}. Jamais de secret ici (voir les
+    # opérations volontairement absentes de TypeTacheAdminMeshtastic) : pas de chiffrement.
+    parametres = models.JSONField(null=True, blank=True)
+
+    statut = models.CharField(
+        max_length=12, choices=StatutTacheAdminMeshtastic.choices,
+        default=StatutTacheAdminMeshtastic.EN_ATTENTE,
+    )
+
+    tentatives = models.PositiveSmallIntegerField(default=0)
+
+    # Réponse brute, rendue lisible par le pont puis sérialisée en JSON. Chiffrée : voir docstring.
+    reponse = EncryptedTextField(null=True, blank=True)
+
+    erreur = models.TextField(null=True, blank=True)
+
+    demande_par = models.ForeignKey(
+        "User", on_delete=models.SET_NULL, null=True, blank=True, related_name="taches_admin_meshtastic",
+        help_text="Qui a demandé l'opération — une écriture sur un relais doit être imputable.",
+    )
+
+    date_creation = models.DateTimeField(auto_now_add=True)
+    date_prise = models.DateTimeField(null=True, blank=True, help_text="Quand le pont l'a prise en charge.")
+    date_reponse = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["statut", "compagnon"]),
+            models.Index(fields=["-date_creation"]),
+        ]
+
+    @property
+    def est_ecriture(self):
+        return self.type_tache in TACHES_ADMIN_ECRITURE
+
+    def __str__(self):
+        cible = f"{self.node_num_cible:08x}" if self.node_num_cible else "passerelle"
+        return f"{self.get_type_tache_display()} -> {cible} ({self.statut})"
+
+
+class ConfigurationNoeudMeshtastic(EnvironmentScopedModel):
+    """Dernière configuration relevée sur un nœud par une tâche d'administration.
+
+    Une ligne par nœud, remplacée à chaque relevé : on veut l'état courant du réseau, pas son
+    historique. (Un historique se reconstruirait au besoin depuis les tâches, qui gardent leur
+    réponse.)
+
+    Rien n'est chiffré ici, à la différence de `TacheAdminMeshtastic.reponse` : ce sont des
+    caractéristiques radio, aucune donnée personnelle. Et `puissance_emission_dbm` doit rester
+    un nombre lisible par l'ORM -- `core/analyse_liaisons.py` s'en sert pour corriger l'écart de
+    SNR, et un champ chiffré par Fernet n'est ni comparable ni agrégeable en SQL."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    node_num = models.PositiveBigIntegerField()
+
+    # Le relevé qui compte pour l'analyse d'asymétrie : sans lui, la correction de puissance est
+    # nulle et la détection de relais sourd confond « sourd » et « voisin qui émet plus fort ».
+    # ATTENTION : 0 n'est pas « 0 dBm ». Le firmware interprète tx_power = 0 comme « applique le
+    # maximum autorisé pour la région » (RadioInterface::getTxPower), c'est donc une puissance
+    # INCONNUE de nous. core/analyse_liaisons.py traite 0 comme absent, et l'interface l'affiche
+    # « maximum de la région » et non « 0 dBm ».
+    puissance_emission_dbm = models.SmallIntegerField(
+        null=True, blank=True,
+        help_text="dBm. 0 = le firmware applique le maximum de la région : puissance inconnue.",
+    )
+
+    region = models.CharField(max_length=20, blank=True)
+    modem_preset = models.CharField(max_length=30, blank=True)
+    hop_limit = models.PositiveSmallIntegerField(null=True, blank=True)
+    role = models.CharField(max_length=30, blank=True)
+    firmware_version = models.CharField(max_length=40, blank=True)
+    hardware_model = models.CharField(max_length=40, blank=True)
+
+    releve_par = models.ForeignKey(
+        CompagnonMeshtastic, on_delete=models.SET_NULL, null=True, blank=True, related_name="configurations_relevees",
+    )
+
+    date_releve = models.DateTimeField()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["node_num", "environment"], name="uq_configuration_noeud_meshtastic",
+            ),
+        ]
+
+    def __str__(self):
+        return f"Config {self.node_num:08x} ({self.puissance_emission_dbm} dBm)"
 
 
 class ProfilSatellite(models.TextChoices):

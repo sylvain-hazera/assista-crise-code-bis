@@ -210,3 +210,24 @@ tests:
             exp_annotations:
               summary: "1 heard repeater(s) below 20% battery"
               description: "See /admin/meshcore-companions; a repeater on a mast takes time to reach."
+
+  # La serie ECHEC existe toujours (core/metrics.py emet tous les statuts, meme a zero) : sans
+  # ca, l'alerte ne pourrait pas se declencher au premier echec, faute de serie a evaluer.
+  - name: an admin task is abandoned after its retries
+    interval: 1m
+    input_series:
+      - series: 'assista_mesh_taches_admin{statut="ECHEC",environment="PROD"}'
+        values: '0+0x20 2+0x60'
+      - series: 'assista_mesh_taches_admin{statut="TERMINEE",environment="PROD"}'
+        values: '5+0x80'
+    alert_rule_test:
+      - eval_time: 30m           # en echec depuis ~9 min, « for: 30m » pas atteint
+        alertname: MeshTachesAdminEnEchec
+        exp_alerts: []
+      - eval_time: 60m
+        alertname: MeshTachesAdminEnEchec
+        exp_alerts:
+          - exp_labels: { severity: warning }
+            exp_annotations:
+              summary: "2 Meshtastic admin task(s) abandoned after retries"
+              description: "See /admin/meshtastic-administration: usually the gateway public key is not in the target node's security.admin_key."

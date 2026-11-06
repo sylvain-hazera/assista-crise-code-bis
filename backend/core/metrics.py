@@ -126,6 +126,7 @@ class MeshStateCollector(Collector):
         try:
             yield from self._compagnons()
             yield from self._infrastructure()
+            yield from self._administration()
         except Exception:
             logger.exception("Could not collect mesh metrics")
 
@@ -152,6 +153,49 @@ class MeshStateCollector(Collector):
                       if row["plus_ancien"] else 0)
             silence.add_metric([row["environment"]], ecoule)
         yield silence
+
+    @staticmethod
+    def _administration():
+        """Administration à distance des nœuds Meshtastic : où en est la file, et combien de
+        nœuds ont une puissance d'émission connue.
+
+        Le second compte n'est pas de la curiosité : tant qu'il est bas, l'analyse d'asymétrie
+        ne peut pas corriger l'écart de puissance et sa détection de relais sourds reste
+        bruyante (core/analyse_liaisons.py). C'est la métrique qui dit si le réseau est
+        réellement instrumenté.
+
+        Étiquetage borné aux valeurs d'énumération (statut, environnement) : aucun numéro de
+        nœud, qui ferait exploser la cardinalité ET désignerait un appareil précis."""
+        from .models import (
+            ConfigurationNoeudMeshtastic, StatutTacheAdminMeshtastic, TacheAdminMeshtastic,
+        )
+
+        file = GaugeMetricFamily("assista_mesh_taches_admin",
+                                 "Remote administration tasks by status",
+                                 labels=["statut", "environment"])
+        comptes = {
+            (row["statut"], row["environment"]): row["n"]
+            for row in TacheAdminMeshtastic.objects.values("statut", "environment").annotate(n=Count("pk"))
+        }
+        # Tous les statuts sont émis, même à zéro : une alerte « des tâches échouent » ne peut
+        # pas se déclencher sur une série qui n'apparaît qu'au premier échec.
+        environnements = {cle[1] for cle in comptes} or {"PROD"}
+        for environment in sorted(environnements):
+            for statut in StatutTacheAdminMeshtastic.values:
+                file.add_metric([statut, environment], comptes.get((statut, environment), 0))
+        yield file
+
+        connues = GaugeMetricFamily(
+            "assista_mesh_noeuds_puissance_connue",
+            "Nodes whose transmit power has been read (0 excluded: firmware uses region maximum)",
+            labels=["environment"],
+        )
+        for row in (ConfigurationNoeudMeshtastic.objects
+                    .filter(puissance_emission_dbm__isnull=False)
+                    .exclude(puissance_emission_dbm=0)
+                    .values("environment").annotate(n=Count("pk"))):
+            connues.add_metric([row["environment"]], row["n"])
+        yield connues
 
     @staticmethod
     def _infrastructure():
