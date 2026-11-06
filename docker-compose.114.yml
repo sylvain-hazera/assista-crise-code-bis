@@ -272,6 +272,44 @@ services:
     env_file:
       - { path: "${SECRETS_DIR:-/home/sylvain/.config/assista-crise/secrets}/meshtastic-proxy.env", format: raw }
 
+  # ------------------------------------------------------------------ broker MQTT (voir mosquitto/README.md)
+  # Broker local des passerelles Meshtastic. Absent de .114 jusqu'au 06/11/2026 : les companions
+  # pointaient tous vers un broker tiers (CompagnonMeshtastic.broker_host, défaut mqtt.gaulix.fr).
+  mosquitto:
+    <<: *service
+    # `always` et non `unless-stopped`, par exception parmi les services applicatifs : la panne
+    # d'un broker est MUETTE -- l'absence de trafic radio ne se distingue pas d'un réseau calme,
+    # et personne ne s'en aperçoit avant d'avoir besoin du réseau, c'est-à-dire en crise. Même
+    # raisonnement que pour la pile de supervision (voir x-service-supervision) : un arrêt à la
+    # main ne doit pas survivre à un redémarrage de la machine.
+    restart: always
+    image: eclipse-mosquitto:2.1.2-alpine
+    container_name: ac_mqtt
+    # Publié sur la SEULE IP du LAN, jamais sur 0.0.0.0 : Docker contourne UFW (§ 10.2), un port
+    # publié sur 0.0.0.0 serait joignable depuis Internet malgré le pare-feu. Seuls les nœuds
+    # radio du réseau local atteignent ce port ; aucune redirection sur la box.
+    ports: ["172.16.1.114:1883:1883"]
+    secrets: [mqtt_exporter_password, mqtt_pont_password, mqtt_passerelle1_password]
+    # Le fichier de mots de passe est construit à chaque démarrage dans /tmp (tmpfs : jamais sur
+    # disque) depuis les secrets montés. `mosquitto_passwd -c` pour le premier compte (crée le
+    # fichier), sans `-c` pour les suivants. `$$(` : le `$$` protège le `$` de l'interpolation
+    # Compose, le shell du conteneur reçoit bien `$(cat …)`.
+    command:
+      - sh
+      - -c
+      - >-
+        mosquitto_passwd -c -b /tmp/passwd exporter "$$(cat /run/secrets/mqtt_exporter_password)" &&
+        mosquitto_passwd -b /tmp/passwd pont "$$(cat /run/secrets/mqtt_pont_password)" &&
+        mosquitto_passwd -b /tmp/passwd passerelle1 "$$(cat /run/secrets/mqtt_passerelle1_password)" &&
+        chown mosquitto:mosquitto /tmp/passwd && chmod 0700 /tmp/passwd &&
+        exec mosquitto -c /mosquitto/config/mosquitto.114.conf
+    tmpfs: ["/tmp"]
+    volumes:
+      - ./mosquitto/config/mosquitto.114.conf:/mosquitto/config/mosquitto.114.conf:ro
+      - ./mosquitto/config/acl.114:/mosquitto/config/acl.114:ro
+      - mosquitto_data:/mosquitto/data
+    networks: [back, monitoring]         # back : le pont Meshtastic ; monitoring : l'exporteur
+
   # ------------------------------------------------------------------ monitoring (voir monitoring/README.md)
   prometheus:
     <<: *service-supervision
@@ -385,6 +423,21 @@ services:
     networks: [monitoring, front]
     depends_on: [proxy]
 
+  # Métriques du broker (broker_clients_connected, messages…). Le compte `exporter` ne peut QUE
+  # lire $SYS/# (voir mosquitto/config/acl.114). Ses identifiants arrivent par env_file hors
+  # dépôt : cette image lit MQTT_USER/MQTT_PASS dans l'environnement, elle ne sait pas lire un
+  # fichier de secret.
+  mosquitto-exporter:
+    <<: *service-supervision
+    image: sapcc/mosquitto-exporter:0.8.0
+    container_name: ac_mosquitto_exporter
+    environment:
+      - BROKER_ENDPOINT=tcp://mosquitto:1883
+    env_file:
+      - { path: "${SECRETS_DIR:-/home/sylvain/.config/assista-crise/secrets}/mqtt-exporter.env", format: raw }
+    networks: [monitoring]
+    depends_on: [mosquitto]
+
   cadvisor:
     <<: *service-supervision
     image: gcr.io/cadvisor/cadvisor:v0.49.1
@@ -424,6 +477,11 @@ secrets:
   # envoyer de faux battements et faire taire le seul dispositif capable de signaler l'arrêt de
   # Prometheus -- donc jamais dans le dépôt, et jamais en clair dans une variable d'environnement.
   healthchecks_url:       { file: "${SECRETS_DIR:-/home/sylvain/.config/assista-crise/secrets}/healthchecks_url.txt" }
+  # Comptes du broker MQTT (mosquitto/config/acl.114). Un fichier par compte : révoquer une
+  # passerelle ne doit pas obliger à changer les autres mots de passe.
+  mqtt_exporter_password:    { file: "${SECRETS_DIR:-/home/sylvain/.config/assista-crise/secrets}/mqtt_exporter_password.txt" }
+  mqtt_pont_password:        { file: "${SECRETS_DIR:-/home/sylvain/.config/assista-crise/secrets}/mqtt_pont_password.txt" }
+  mqtt_passerelle1_password: { file: "${SECRETS_DIR:-/home/sylvain/.config/assista-crise/secrets}/mqtt_passerelle1_password.txt" }
 
 # Réseaux existants (créés à la main avant compose) : jamais recréés -- ac_waf, les sauvegardes et
 # les satellites s'y rattachent par nom.
@@ -462,4 +520,5 @@ volumes:
   grafana_data:           { name: ac_grafana_data }
   loki_data:              { name: ac_loki_data }
   alloy_data:             { name: ac_alloy_data }
+  mosquitto_data:         { name: ac_mqtt_data }
   fail2ban_logs:          { name: ac_fail2ban_logs }

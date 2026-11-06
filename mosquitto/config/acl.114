@@ -1,0 +1,29 @@
+# Droits d'accès MQTT de .114 (acl_file de mosquitto.114.conf).
+#
+# Principe : chaque compte reçoit le minimum. Un compte de passerelle radio ne doit pas pouvoir
+# lire les statistiques du broker, et le compte de supervision ne doit rien pouvoir publier.
+#
+# La racine de topic doit correspondre à `CompagnonMeshtastic.topic_racine` du companion
+# concerné. Par défaut, ce champ vaut `Traitement/msh/EU_868` (racine du réseau Gaulix, broker
+# tiers) : pour un companion pointant vers CE broker, mettre `msh/EU_868`, qui est la racine
+# Meshtastic standard en Europe 868 MHz et celle autorisée ci-dessous. Changer la racine sans
+# changer cette liste coupe silencieusement le flux.
+#
+# Ajouter une passerelle : un compte PAR SITE (jamais un compte partagé -- révoquer un site ne
+# doit pas obliger à reconfigurer les autres), son mot de passe dans scripts/init-secrets.sh, le
+# secret correspondant dans docker-compose.114.yml, et un bloc ici. Voir mosquitto/README.md.
+
+# --- Supervision : lecture des seules statistiques du broker ---------------------------------
+user exporter
+topic read $SYS/#
+
+# --- Pont Meshtastic d'Assista-Crise (ac_meshtastic_bridge) ----------------------------------
+# Lit le trafic des passerelles et publie les messages sortants.
+user pont
+topic readwrite msh/EU_868/#
+
+# --- Passerelles radio : un compte par site ---------------------------------------------------
+# readwrite : publication (uplink) et lecture (utile seulement si « Downlink » est activé sur la
+# passerelle, ce qui lui fait réémettre sur la radio ce qui arrive par MQTT).
+user passerelle1
+topic readwrite msh/EU_868/#

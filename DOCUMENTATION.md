@@ -1398,7 +1398,8 @@ par chemin dans le conteneur. Les services de monitoring ont le profil `monitori
 
 - Réseaux : `front` (proxy, frontend, backend, mosquitto), `back`, `db` (base
   isolée : seuls `backend` et `postgres-exporter` le rejoignent), `monitoring`.
-- Ports publiés : 80/443 (proxy), 1883 (MQTT), Grafana sur `127.0.0.1:3000` uniquement.
+- Ports publiés : 80/443 (proxy), 1883 (MQTT) **sur la seule IP du LAN `172.16.1.114`** et non
+  sur `0.0.0.0` (§ 10.2), Grafana sur `127.0.0.1:3000` uniquement.
 - Images de base épinglées par digest dans les Dockerfiles (builds reproductibles) ; les mettre à
   jour régulièrement (`docker buildx imagetools inspect <image>` puis remplacer le `@sha256:…`).
 
@@ -1638,11 +1639,20 @@ lisibles dans un `pg_dump`.
   `DEBUG=False` par défaut, audit des accès (`AuditLog`).
 - **Monitoring** : Prometheus et Alertmanager n'ont pas d'authentification et ne sont jamais
   publiés ; Grafana écoute sur la boucle locale (tunnel SSH).
-- **MQTT** : authentifié **en dev** (`mosquitto/config/mosquitto.dev.conf`, comptes `exporter`
-  et `dev` dont les mots de passe sont dans `.env`). En production, l'accès reste **anonyme**
-  sur le port 1883 publié : n'importe qui peut lire ou publier sur le broker. L'activer exige un
-  compte pour chaque appareil et pont radio — décision d'équipe, procédure dans
+- **MQTT** : authentifié partout depuis le 06/11/2026. En dev,
+  `mosquitto/config/mosquitto.dev.conf` (comptes `exporter` et `dev`, mots de passe dans `.env`).
+  Sur **.114**, `mosquitto/config/mosquitto.114.conf` : `allow_anonymous false`, **liste de
+  droits** (`acl_file`, un compte par usage et par site — voir `mosquitto/config/acl.114`), et
+  surtout **le port 1883 est publié sur la seule IP du LAN** (`172.16.1.114`), jamais sur
+  `0.0.0.0` : Docker contourne UFW, et un port publié sur `0.0.0.0` serait joignable depuis
+  Internet malgré le pare-feu. Seuls les nœuds radio du réseau local y accèdent ; aucune
+  redirection sur la box, pas de listener TLS. Le fichier de mots de passe haché est reconstruit
+  à chaque démarrage dans un tmpfs à partir des secrets montés : il n'est ni stocké sur disque,
+  ni versionné. Procédure pour ajouter une passerelle :
   [mosquitto/README.md](mosquitto/README.md).
+
+  *Auparavant, l'accès de production était anonyme sur un port publié sur toutes les interfaces :
+  n'importe qui pouvant joindre la machine pouvait lire et publier.*
 
 ---
 
@@ -1831,8 +1841,10 @@ Variables CI (protégées et masquées) : `HARBOR_URL`, `HARBOR_PROJECT`, `HARBO
   (`stefy237/…`) alors que la CI et `deploy_harbor.sh` les poussent vers Harbor — choisir un
   registre unique.
 - Ajouter Redis et un worker Celery à la pile Compose (simulation d'inondation en dev).
-- **Authentification MQTT en production** (accès anonyme aujourd'hui, voir § 10.2) : recenser
-  les clients radio, leur créer un compte, puis appliquer la configuration de dev.
+- **Recenser les passerelles radio** et leur créer un compte MQTT chacune : le broker de .114 est
+  authentifié avec liste de droits depuis le 06/11/2026 (§ 10.2), mais un seul compte de
+  passerelle (`passerelle1`) existe pour l'instant. Un compte par site, pour que révoquer un site
+  n'oblige pas à reconfigurer les autres.
 - Métriques métier à venir : messages radio reçus (alerte `MeshSilent`, à partir de
   `MessageMeshLog`) et délai entre une demande et sa prise en charge.
 - Logs centralisés (Loki + Grafana Alloy) : en place sur .114 pour le WAF et fail2ban (20/10/2026) ;

@@ -20,12 +20,55 @@ Le backend Django ne s'y connecte pas directement.
 
 | Fichier | Utilisé | Accès |
 |---|---|---|
-| `config/mosquitto.conf` | production | **anonyme** (en attendant la décision de l'équipe) |
+| `config/mosquitto.114.conf` | **.114** (`docker-compose.114.yml`) | **authentifié + liste de droits** |
 | `config/mosquitto.dev.conf` | dev (`docker-compose.override.yml`) | **authentifié** |
+| `config/mosquitto.conf` | exemple hérité, plus déployé | anonyme — **ne pas utiliser** |
 
 Communs aux deux : un seul listener, MQTT sur le port **1883** (seul port publié),
 persistance dans `data/` (volume, non versionné), journaux sur la sortie standard
 (`docker compose logs mosquitto`).
+
+### Sur .114 : comptes, droits et exposition
+
+Trois comptes, chacun au minimum nécessaire (`config/acl.114`) :
+
+| Compte | Droits | Utilisé par |
+|---|---|---|
+| `exporter` | **lecture** de `$SYS/#` seulement | `mosquitto-exporter` (métriques du broker) |
+| `pont` | lecture/écriture sur `msh/EU_868/#` | `ac_meshtastic_bridge` |
+| `passerelle1` | lecture/écriture sur `msh/EU_868/#` | une passerelle radio (un compte **par site**) |
+
+Vérifié en service : un client anonyme reçoit `Connection Refused: not authorised`, `exporter` ne
+peut rien publier sur la racine radio, et `pont` ne peut pas lire `$SYS/`.
+
+**Exposition.** Un seul listener, en clair, publié sur **`172.16.1.114:1883`** et jamais sur
+`0.0.0.0` — Docker contourne UFW, un port publié sur toutes les interfaces serait joignable
+depuis Internet malgré le pare-feu. Aucune redirection sur la box, aucun listener TLS : seuls les
+nœuds radio du même réseau local atteignent le broker. Ouvrir le broker à des passerelles
+distantes demanderait un listener 8883 avec certificat, et une décision explicite.
+
+**Mots de passe.** Un fichier de secret par compte dans `~/.config/assista-crise/secrets/`
+(`mqtt_*_password.txt`), généré par `scripts/init-secrets.sh` (idempotent : il ne remplace jamais
+une valeur existante). Le fichier de mots de passe **haché** est reconstruit à chaque démarrage du
+conteneur dans un tmpfs (`command` du service) : il n'est jamais écrit sur disque ni versionné.
+
+**La racine de topic doit correspondre** à `CompagnonMeshtastic.topic_racine`. Ce champ vaut par
+défaut `Traitement/msh/EU_868` (racine du réseau Gaulix, broker tiers) : pour un companion qui
+pointe vers CE broker, mettre `msh/EU_868`, la seule racine autorisée par `acl.114`. Une racine
+qui ne correspond pas coupe le flux **sans message d'erreur**.
+
+#### Ajouter une passerelle radio
+
+1. `create_secret mqtt_<nom>_password 32` dans `scripts/init-secrets.sh`, puis relancer le script
+   (`SECRETS_DIR=~/.config/assista-crise/secrets ./scripts/init-secrets.sh`).
+2. Le secret dans le bloc `secrets:` de `docker-compose.114.yml`, et dans la liste `secrets:` du
+   service `mosquitto`.
+3. Une ligne `mosquitto_passwd -b /tmp/passwd <nom> "$$(cat /run/secrets/mqtt_<nom>_password)" &&`
+   dans la `command` du service.
+4. Un bloc `user <nom>` / `topic readwrite msh/EU_868/#` dans `config/acl.114`.
+5. `docker compose -f docker-compose.114.yml up -d --no-deps --force-recreate mosquitto` — une
+   **recréation** est nécessaire : la configuration est un montage de *fichier*, et l'éditer en
+   crée un nouvel inode que le conteneur en service continue d'ignorer.
 
 ### En dev : comptes et mots de passe
 

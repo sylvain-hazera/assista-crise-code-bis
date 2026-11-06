@@ -57,6 +57,22 @@ create_secret() {
 }
 create_secret grafana_admin_password 24
 create_secret pg_monitoring_password 32
+# Comptes du broker MQTT de .114 (mosquitto/config/acl.114). Un fichier par compte : révoquer
+# une passerelle ne doit pas obliger à changer les autres mots de passe. Le fichier de mots de
+# passe haché est reconstruit à chaque démarrage du conteneur, il n'est jamais stocké.
+create_secret mqtt_exporter_password 32
+create_secret mqtt_pont_password 32
+create_secret mqtt_passerelle1_password 32
+# mosquitto-exporter lit MQTT_USER/MQTT_PASS dans son environnement (il ne sait pas lire un
+# fichier de secret) : on lui fabrique son env_file à partir du secret ci-dessus.
+MQTT_EXPORTER_ENV="$SECRETS_DIR/mqtt-exporter.env"
+if [ -s "$MQTT_EXPORTER_ENV" ]; then
+    echo "  kept      $MQTT_EXPORTER_ENV"
+else
+    printf 'MQTT_USER=exporter\nMQTT_PASS=%s\n' "$(cat "$SECRETS_DIR/mqtt_exporter_password.txt")" > "$MQTT_EXPORTER_ENV"
+    echo "  generated $MQTT_EXPORTER_ENV"
+fi
+chmod 600 "$MQTT_EXPORTER_ENV"   # lu par Docker (env_file), pas par le conteneur : 600 suffit
 # Paire de clés des jetons de connexion à Grafana (backend/core/grafana.py) : la publique est un
 # secret de Grafana, la privée est lue par le backend dans GRAFANA_JWT_PRIVATE_KEY.
 JWT_KEY="$SECRETS_DIR/grafana_jwt_private.pem"
