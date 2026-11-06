@@ -1442,6 +1442,7 @@ Principes : alerter sur les **symptômes** ressentis par les utilisateurs, chaqu
 | Infrastructure | `DiskWillFillIn24h` (prédiction), `DiskAlmostFull`, `LowMemory`, `ContainerRestarting`, `DatabaseConnectionsHigh` |
 | Certificats | `TLSCertExpiringSoon`, `TLSCertExpiringCritical` |
 | Métier (PROD uniquement) | `NoHelpRequestDuringActiveCrisis`, `UnprocessedRequestsPilingUp`, `AccountWaitingForValidation` (> 24 h) |
+| Réseau radio | `MeshCompagnonSilencieux`, `MeshPlusAucunCompagnon` (critique : plateforme coupée de la radio), `MeshInfrastructureBatterieFaible` |
 | Méta | `Watchdog` : toujours active, transmise à healthchecks.io qui alerte quand elle **s'arrête** |
 
 Chaque règle est couverte par `alerts_test.yml` (`promtool test rules`).
@@ -1458,6 +1459,7 @@ Chaque règle est couverte par `alerts_test.yml` (`promtool test rules`).
   | Santé du site | `assista-sante` | disponibilité, erreurs 5xx, latence, certificat, alertes |
   | Métriques métier | `assista-metier` | crises actives, demandes, offres, emails en échec |
   | Infrastructure | `assista-infra` | conteneurs, VM, PostgreSQL, MQTT |
+  | Réseau radio | `assista-mesh` | passerelles actives, silence maximal, infrastructure entendue, batteries faibles |
   | WAF | `assista-waf` | refus 403, détections OWASP CRS, types d'attaque, IP, trafic par code HTTP |
   | Fail2ban | `assista-fail2ban` | bans et détections par jail |
 

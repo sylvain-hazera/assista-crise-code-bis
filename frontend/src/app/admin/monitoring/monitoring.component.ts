@@ -20,6 +20,9 @@ export const ONGLETS_SUPERVISION: OngletSupervision[] = [
   { id: 'sante', label: 'Santé du site', icon: 'monitor_heart', uid: 'assista-sante' },
   { id: 'metier', label: 'Métriques métier', icon: 'insights', uid: 'assista-metier' },
   { id: 'infra', label: 'Infrastructure', icon: 'dns', uid: 'assista-infra', conteneurs: true },
+  // État du réseau Meshtastic/MeshCore (core/metrics.py:MeshStateCollector). Aucune série n'y
+  // nomme un nœud : les noms sont chiffrés en base, une étiquette Prometheus ne l'est pas.
+  { id: 'radio', label: 'Réseau radio', icon: 'settings_input_antenna', uid: 'assista-mesh' },
   // journaux du WAF et de fail2ban, lus par Loki : seulement là où Loki tourne (.114)
   { id: 'waf', label: 'WAF', icon: 'shield', uid: 'assista-waf' },
   { id: 'fail2ban', label: 'Fail2ban', icon: 'block', uid: 'assista-fail2ban' },

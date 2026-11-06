@@ -107,6 +107,79 @@ class BusinessStateCollector(Collector):
         yield age
 
 
+class MeshStateCollector(Collector):
+    """État du réseau radio, lu en base (06/11/2026).
+
+    Transposition des alertes de `carte-live-meshtastic` (relais muet, batterie faible,
+    passerelle hors ligne) : elles y sont calculées et affichées par leur propre serveur, ici
+    elles passent par Prometheus et Grafana — « un seul Grafana ».
+
+    Les séries portent le minimum : jamais de clé publique ni de nom de nœud en étiquette. Une
+    étiquette Prometheus finit dans un fichier de métriques non chiffré, lisible par quiconque
+    accède à la supervision, alors que `ContactMeshCore.nom` est un champ chiffré en base. On
+    compte donc, sans nommer."""
+
+    def describe(self):
+        return []
+
+    def collect(self):
+        try:
+            yield from self._compagnons()
+            yield from self._infrastructure()
+        except Exception:
+            logger.exception("Could not collect mesh metrics")
+
+    @staticmethod
+    def _compagnons():
+        """Passerelles : combien sont actives, et depuis combien de temps la plus ancienne n'a
+        pas donné signe de vie. C'est l'équivalent de leur alerte « passerelle hors ligne »."""
+        from .models import CompagnonMeshCore
+
+        actifs = CompagnonMeshCore.objects.filter(actif=True)
+        total = GaugeMetricFamily("assista_mesh_compagnons_actifs",
+                                  "Companions MeshCore marked active", labels=["environment"])
+        for row in actifs.values("environment").annotate(n=Count("pk")):
+            total.add_metric([row["environment"]], row["n"])
+        yield total
+
+        silence = GaugeMetricFamily(
+            "assista_mesh_compagnon_silence_max_secondes",
+            "Time since the least recently seen active companion reported (0 if none)",
+            labels=["environment"],
+        )
+        for row in actifs.values("environment").annotate(plus_ancien=Min("derniere_connexion")):
+            ecoule = ((timezone.now() - row["plus_ancien"]).total_seconds()
+                      if row["plus_ancien"] else 0)
+            silence.add_metric([row["environment"]], ecoule)
+        yield silence
+
+    @staticmethod
+    def _infrastructure():
+        """Répéteurs et room servers entendus, et combien ont une batterie basse. Jamais
+        lesquels : la page /admin/meshcore-companions le dit, une métrique n'a pas à le faire."""
+        from .models import ContactMeshCore, TypeContactMeshCore
+
+        infra = ContactMeshCore.objects.filter(
+            type_contact__in=[TypeContactMeshCore.REPEATER, TypeContactMeshCore.ROOM],
+        )
+        vus = GaugeMetricFamily("assista_mesh_infrastructure_entendue",
+                                "Repeaters and room servers heard on the air",
+                                labels=["type", "environment"])
+        for row in infra.values("type_contact", "environment").annotate(n=Count("pk")):
+            vus.add_metric([row["type_contact"], row["environment"]], row["n"])
+        yield vus
+
+        # Seuil aligné sur le leur (SEUIL_BATTERIE_POURCENT, 20 %) : un répéteur sous 20 %
+        # tiendra quelques jours au mieux, et il est souvent sur un point haut difficile d'accès.
+        faible = GaugeMetricFamily("assista_mesh_infrastructure_batterie_faible",
+                                   "Heard repeaters reporting less than 20% battery",
+                                   labels=["environment"])
+        for row in (infra.filter(niveau_batterie_pct__lt=20)
+                    .values("environment").annotate(n=Count("pk"))):
+            faible.add_metric([row["environment"]], row["n"])
+        yield faible
+
+
 def register():
     """Appelé une fois depuis CoreConfig.ready()."""
     post_save.connect(count_created_request, sender=Request,
@@ -116,6 +189,7 @@ def register():
     post_save.connect(count_created_institution, sender=Institution,
                       dispatch_uid="metrics_count_created_institution")
     REGISTRY.register(BusinessStateCollector())
+    REGISTRY.register(MeshStateCollector())
 
 
 def metrics_view(request):

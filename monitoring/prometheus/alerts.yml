@@ -160,6 +160,44 @@ groups:
           description: "Validate or reject it on /admin/validations-comptes."
 
 
+  # ------------------------------------------------------------------ réseau radio (mesh)
+  # Transposition des alertes de carte-live-meshtastic : elles y sont calculées et affichées par
+  # leur propre serveur, ici elles passent par Prometheus et Grafana -- « un seul Grafana ».
+  # Aucune étiquette ne nomme un nœud : une étiquette finit dans un fichier de métriques non
+  # chiffré, alors que ContactMeshCore.nom est chiffré en base (voir core/metrics.py).
+  - name: mesh
+    rules:
+      - alert: MeshCompagnonSilencieux
+        # 2 h : les companions rapportent leur état régulièrement ; au-delà, la passerelle est
+        # muette et le réseau radio n'est plus relayé vers la plateforme.
+        expr: assista_mesh_compagnon_silence_max_secondes > 2 * 3600
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "A mesh companion has been silent for {{ $value | humanizeDuration }}"
+          description: "Check the gateway and its radio on /admin/meshcore-companions."
+
+      - alert: MeshPlusAucunCompagnon
+        # Plus aucune passerelle active : la plateforme est coupée du réseau radio. Critique --
+        # c'est le moyen de communication de repli quand le reste tombe.
+        expr: sum(assista_mesh_compagnons_actifs) == 0
+        for: 15m
+        labels: { severity: critical }
+        annotations:
+          summary: "No active mesh companion left"
+          description: "The platform is cut off from the radio network: no companion is active."
+
+      - alert: MeshInfrastructureBatterieFaible
+        # Un répéteur sous 20 % est souvent sur un point haut difficile d'accès : prévenir tôt
+        # laisse le temps d'organiser une intervention. Seuil aligné sur le leur.
+        expr: sum(assista_mesh_infrastructure_batterie_faible) > 0
+        for: 1h
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $value }} heard repeater(s) below 20% battery"
+          description: "See /admin/meshcore-companions; a repeater on a mast takes time to reach."
+
+
   # ------------------------------------------------------------------ meta-monitoring
   - name: meta
     rules:

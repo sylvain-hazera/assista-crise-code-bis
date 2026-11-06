@@ -154,3 +154,59 @@ tests:
           - exp_labels: { severity: none }
             exp_annotations:
               summary: "Heartbeat: the alerting pipeline is alive. This alert must ALWAYS be firing."
+
+  # ---- réseau radio (groupe « mesh », ajouté le 06/11/2026) ----
+  - name: a mesh companion stops reporting
+    interval: 1m
+    input_series:
+      # Silence croissant : 1 h, puis au-delà de 2 h.
+      - series: 'assista_mesh_compagnon_silence_max_secondes{environment="PROD"}'
+        values: '3600 3600 7300 7300 7300 7300 7300 7300 7300 7300 7300 7300 7300 7300 7300'
+    alert_rule_test:
+      - eval_time: 2m             # encore sous le seuil : rien
+        alertname: MeshCompagnonSilencieux
+        exp_alerts: []
+      - eval_time: 5m             # au-dessus depuis 3 min, « for: 10m » pas atteint
+        alertname: MeshCompagnonSilencieux
+        exp_alerts: []
+      - eval_time: 14m
+        alertname: MeshCompagnonSilencieux
+        exp_alerts:
+          - exp_labels: { severity: warning, environment: PROD }
+            exp_annotations:
+              summary: "A mesh companion has been silent for 2h 1m 40s"
+              description: "Check the gateway and its radio on /admin/meshcore-companions."
+
+  - name: the platform loses every mesh companion
+    interval: 1m
+    input_series:
+      - series: 'assista_mesh_compagnons_actifs{environment="PROD"}'
+        values: '2 2 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0'
+    alert_rule_test:
+      - eval_time: 5m             # à zéro depuis 3 min, « for: 15m » pas atteint
+        alertname: MeshPlusAucunCompagnon
+        exp_alerts: []
+      - eval_time: 19m
+        alertname: MeshPlusAucunCompagnon
+        exp_alerts:
+          - exp_labels: { severity: critical }
+            exp_annotations:
+              summary: "No active mesh companion left"
+              description: "The platform is cut off from the radio network: no companion is active."
+
+  - name: a heard repeater runs low on battery
+    interval: 1m
+    input_series:
+      - series: 'assista_mesh_infrastructure_batterie_faible{environment="PROD"}'
+        values: '0+0x10 1+0x70'
+    alert_rule_test:
+      - eval_time: 30m            # sous le seuil depuis ~19 min, « for: 1h » pas atteint
+        alertname: MeshInfrastructureBatterieFaible
+        exp_alerts: []
+      - eval_time: 75m
+        alertname: MeshInfrastructureBatterieFaible
+        exp_alerts:
+          - exp_labels: { severity: warning }
+            exp_annotations:
+              summary: "1 heard repeater(s) below 20% battery"
+              description: "See /admin/meshcore-companions; a repeater on a mast takes time to reach."
