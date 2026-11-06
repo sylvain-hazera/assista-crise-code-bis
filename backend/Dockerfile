@@ -31,11 +31,21 @@ RUN groupadd -g 10001 appuser \
     && useradd -u 10001 -g appuser -M -s /usr/sbin/nologin appuser \
     && chown -R appuser:appuser /app \
     # Dossier partagé avec le conteneur du broker MQTT (settings.MQTT_COMPTES_DIR) : Django y
-    # écrit `passwd` et `acl`, le broker les lit. Créé ICI, avec son propriétaire, parce qu'un
-    # volume nommé hérite des droits du chemin tel qu'il existe dans l'image -- sans ça le volume
-    # serait root:root et appuser ne pourrait pas y écrire.
+    # écrit `passwd` et `acl`, le broker les lit. Créé ICI, avec ses droits, parce qu'un volume
+    # nommé hérite de ceux du chemin tel qu'il existe dans l'image -- sans ça le volume serait
+    # root:root et appuser ne pourrait pas y écrire.
+    #
+    # Groupe 1883 (mosquitto) + bit setgid (le « 2 » de 2750) : tout fichier créé dans ce dossier
+    # hérite du groupe 1883, donc le broker peut le lire en 0640 sans que ces empreintes de mots
+    # de passe soient lisibles par tous. Un `group_add` côté broker NE marche pas : Mosquitto
+    # appelle setgroups() en basculant vers son propre utilisateur et abandonne les groupes
+    # supplémentaires que Docker lui avait donnés (constaté le 06/11/2026 : « Unable to open
+    # pwfile », conteneur en boucle de redémarrage). Le gid est écrit en clair, numérique : le
+    # groupe mosquitto n'existe pas dans CETTE image.
     && mkdir -p /var/lib/assista/mqtt \
-    && chown -R appuser:appuser /var/lib/assista
+    && chown -R appuser:appuser /var/lib/assista \
+    && chown appuser:1883 /var/lib/assista/mqtt \
+    && chmod 2750 /var/lib/assista/mqtt
 USER appuser
 
 ENTRYPOINT ["/entrypoint.sh"]

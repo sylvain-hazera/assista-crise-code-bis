@@ -107,3 +107,40 @@ def test_une_panne_de_base_ne_fait_pas_tomber_les_metriques(monkeypatch):
 
     monkeypatch.setattr(MeshStateCollector, "_compagnons", staticmethod(explose))
     assert list(MeshStateCollector().collect()) == []
+
+
+@pytest.mark.django_db
+class TestExpositionEnMultiProcessus:
+    """Le bug du 06/11/2026, et le test qui manquait.
+
+    En production, gunicorn tourne avec plusieurs workers et `PROMETHEUS_MULTIPROC_DIR` : la vue
+    /metrics construit alors un registre NEUF. Un collecteur oublié dans cette branche disparaît
+    donc silencieusement des métriques en production tout en restant visible en dev — c'est
+    arrivé à MeshStateCollector, et les alertes du groupe « mesh » n'auraient jamais pu se
+    déclencher. D'où `COLLECTEURS`, lu par les deux chemins."""
+
+    def test_tous_les_collecteurs_sont_exposes_dans_les_deux_chemins(self):
+        from core import metrics
+
+        # Le registre global : ce que register() installe.
+        noms_globaux = {c.__name__ for c in metrics.COLLECTEURS}
+        assert "MeshStateCollector" in noms_globaux
+        assert "BusinessStateCollector" in noms_globaux
+
+    def test_la_vue_multiprocessus_expose_les_metriques_mesh(self, tmp_path, monkeypatch):
+        """Vérification par le contenu réel de /metrics, pas par introspection : c'est ce que
+        Prometheus lit."""
+        from django.test import RequestFactory
+
+        from core import metrics
+
+        CompagnonMeshCore.objects.create(nom="Passerelle", actif=True)
+        monkeypatch.setenv("PROMETHEUS_MULTIPROC_DIR", str(tmp_path))
+
+        reponse = metrics.metrics_view(RequestFactory().get("/metrics"))
+        corps = reponse.content.decode()
+
+        assert "assista_mesh_compagnons_actifs" in corps
+        assert "assista_mesh_infrastructure_entendue" in corps
+        # Le témoin : les métriques métier doivent toujours être là aussi.
+        assert "assista_active_crises" in corps

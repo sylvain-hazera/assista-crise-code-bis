@@ -180,6 +180,12 @@ class MeshStateCollector(Collector):
         yield faible
 
 
+# Source unique des collecteurs personnalisés : `register()` les met dans le registre global, et
+# `metrics_view` dans le registre neuf du mode multi-processus. Les deux DOIVENT lire la même
+# liste — voir le commentaire de metrics_view.
+COLLECTEURS = (BusinessStateCollector, MeshStateCollector)
+
+
 def register():
     """Appelé une fois depuis CoreConfig.ready()."""
     post_save.connect(count_created_request, sender=Request,
@@ -188,8 +194,8 @@ def register():
                       dispatch_uid="metrics_count_created_offer")
     post_save.connect(count_created_institution, sender=Institution,
                       dispatch_uid="metrics_count_created_institution")
-    REGISTRY.register(BusinessStateCollector())
-    REGISTRY.register(MeshStateCollector())
+    for collecteur in COLLECTEURS:
+        REGISTRY.register(collecteur())
 
 
 def metrics_view(request):
@@ -198,7 +204,12 @@ def metrics_view(request):
     if os.environ.get("PROMETHEUS_MULTIPROC_DIR"):
         registry = CollectorRegistry()
         multiprocess.MultiProcessCollector(registry)
-        registry.register(BusinessStateCollector())
+        # COLLECTEURS et pas une liste écrite ici : ce registre est neuf, donc tout collecteur
+        # oublié disparaît SILENCIEUSEMENT de /metrics en production (gunicorn multi-workers)
+        # tout en restant visible en dev. C'est arrivé le 06/11/2026 avec MeshStateCollector —
+        # les alertes du groupe « mesh » n'auraient jamais pu se déclencher.
+        for collecteur in COLLECTEURS:
+            registry.register(collecteur())
     else:
         registry = REGISTRY
     return HttpResponse(generate_latest(registry), content_type=CONTENT_TYPE_LATEST)

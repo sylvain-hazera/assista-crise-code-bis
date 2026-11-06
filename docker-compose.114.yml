@@ -300,10 +300,12 @@ services:
     # radio du réseau local atteignent ce port ; aucune redirection sur la box.
     ports: ["172.16.1.114:1883:1883"]
     secrets: [mqtt_exporter_password, mqtt_pont_password, mqtt_passerelle1_password]
-    # gid 10001 = appuser du backend, propriétaire des fichiers qu'il écrit dans le volume
-    # partagé. Sans ce groupe supplémentaire, mosquitto (uid 1883) ne pourrait pas les lire --
-    # ils sont en 0640, et des empreintes de mots de passe n'ont pas à être lisibles par tous.
-    group_add: ["10001"]
+    # PAS de `group_add` pour lire le volume partagé : ça ne marcherait pas. Mosquitto appelle
+    # setgroups() en basculant vers son propre utilisateur et abandonne les groupes
+    # supplémentaires que Docker lui donne (constaté le 06/11/2026 : « Unable to open pwfile »,
+    # conteneur en boucle de redémarrage). L'accès passe par le groupe PRIMAIRE 1883 : le dossier
+    # du volume est créé dans l'image du backend en appuser:1883 avec le bit setgid, donc tout
+    # fichier qu'y écrit Django hérite du groupe 1883 et reste lisible en 0640.
     # Au premier démarrage seulement, le broker s'amorce depuis ses propres secrets : il ne
     # dépend donc jamais de l'application pour être utilisable. Ensuite c'est Django qui écrit
     # ces fichiers (/admin/comptes-mqtt), et la boucle de surveillance fait relire le broker dès
