@@ -160,7 +160,18 @@
     left: -250px;
     top: 60px;
     bottom: 0;
-    height: auto;
+    // Hauteur EXPLICITE, et non `height: auto`. Malgré `top` et `bottom`, un `auto` laisse
+    // l'élément se dimensionner sur son contenu : mesuré dans Chrome le 06/11/2026 à 390 px de
+    // large, l'hôte faisait 1532 px au lieu de 697 -- donc aucun défilement malgré
+    // `overflow-y: auto`, et les dernières entrées du menu étaient INATTEIGNABLES (la barre est
+    // en `position: fixed`, elle ne suit pas le défilement de la page). Ajouter `min-height: 0`
+    // sur `.sidebar-nav` ne corrige PAS ce cas : vérifié, l'hôte reste à 1532.
+    // Deux déclarations : `dvh` pour que la barre d'adresse mobile ne rogne pas le bas, `vh` en
+    // repli pour les navigateurs qui l'ignorent.
+    height: calc(100vh - 60px);
+    height: calc(100dvh - 60px);
+    // Arrivé en bout de menu, le geste ne doit pas se propager à la page derrière.
+    overscroll-behavior: contain;
     width: 250px;
     z-index: 999;
     transition: left 0.3s ease;
