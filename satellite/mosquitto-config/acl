@@ -1,0 +1,23 @@
+# Droits d'accès MQTT du satellite (acl_file de mosquitto.conf).
+#
+# Même principe que sur le central (mosquitto/config/acl.114) : chaque compte au minimum
+# nécessaire. Deux comptes suffisent ici, un satellite n'ayant qu'un site.
+#
+# La racine de topic doit correspondre à `CompagnonMeshtastic.topic_racine` du companion rattaché
+# à CE satellite (champ `satellite`). Une racine qui ne correspond pas coupe le flux SANS message
+# d'erreur.
+#
+# Rappel qui s'applique par site : un nœud Meshtastic ne relaie vers MQTT que les canaux qu'il a
+# dans ses 8 emplacements, et seulement s'il a pu les déchiffrer (vérifié dans le firmware :
+# Router.cpp exige DECODE_SUCCESS avant toute publication). Couvrir N canaux distincts demande
+# donc N/7 passerelles sur le site, pas une seule.
+
+# --- Pont local du satellite (meshtastic-bridge du profil gw/full) ----------------------------
+user pont
+topic readwrite msh/EU_868/#
+
+# --- Passerelle radio du site ------------------------------------------------------------------
+# readwrite : publication (uplink) et lecture (utile seulement si « Downlink » est activé sur la
+# passerelle, ce qui lui fait réémettre sur la radio ce qui arrive par MQTT).
+user passerelle
+topic readwrite msh/EU_868/#

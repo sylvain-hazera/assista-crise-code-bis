@@ -71,13 +71,54 @@ désormais correctement mémorisé), `.profil`.
 | `meshcore-proxy` | gw, full | Détient la connexion réelle au nœud MeshCore (USB/série ou TCP), s'annonce en mDNS sur le LAN — voir `meshcore-bridge/proxy.py`. |
 | `meshcore-bridge` | gw, full | Relaie les messages entre le proxy et `assista-crise.fr` (ou le central configuré). Bascule vers l'assista-crise local si le central passe hors-ligne (profil full, voir `meshcore-bridge/README.md`). |
 | `etat-connectivite` | gw, full | Vérifie périodiquement si le central répond, écrit l'état dans un volume partagé (`etat_connectivite.py`) — source de vérité unique pour tout futur composant qui en a besoin (bannière, écran de statut). |
-| `db`, `mosquitto`, `backend`, `frontend` | full | Instance assista-crise locale, identique au déploiement central. **Application web** pour les téléphones et PC du site, sans internet : `http://<IP du satellite>/` (port `WEB_PORT`, 80 par défaut, réseaux privés RFC 1918 uniquement, voir `nginx-satellite.conf`). URL et compte admin local affichés en fin d'installation et par `./installer.sh acces-web`. |
+| `mosquitto` | full | **Broker MQTT local du site**, authentifié, publié sur la seule IP du LAN — voir « Broker MQTT du site » plus bas. Jamais relié au broker du central. |
+| `db`, `backend`, `frontend` | full | Instance assista-crise locale, identique au déploiement central. **Application web** pour les téléphones et PC du site, sans internet : `http://<IP du satellite>/` (port `WEB_PORT`, 80 par défaut, réseaux privés RFC 1918 uniquement, voir `nginx-satellite.conf`). URL et compte admin local affichés en fin d'installation et par `./installer.sh acces-web`. |
 | `telecharger-tuiles` | full | Conteneur one-shot : télécharge le fond de carte du département + limitrophes (PMTiles Protomaps, ~0,5 à 1 Go) et ses polices/pictogrammes, lus directement par l'application (`frontend/src/app/shared/utils/carte-style.ts`). Gardé ensuite ; `--forcer` pour le refaire. |
 | `annoncer-backend-local` | full | Annonce ce backend en mDNS sur le LAN, pour qu'un satellite GW séparé sur le même site le trouve sans IP configurée à la main. |
 | `meshtastic-bridge` | gw, full | Optionnel — pilote un ou plusieurs `CompagnonMeshtastic` (MQTT, TCP ou SERIE) ; voir la note ci-dessous. |
 | `sync-sortant` | full | Pousse périodiquement vers le central les écritures locales en attente — voir "Synchronisation local → central" ci-dessous. |
 | `sync-entrant` | full | Sens inverse : applique localement le rafraîchissement central → local (crises, demandes, dossiers, missions…) et **copie les comptes de l'institution** (hash du mot de passe seulement) : chacun se connecte à l'application locale avec ses identifiants habituels. |
 | `appliquer-config-proxy` | gw, full | Reconfigure `meshcore-proxy` à distance (voir "Reconfiguration distante" ci-dessous), sans action locale/SSH. |
+
+## Broker MQTT du site
+
+Depuis le 06/11/2026, le broker local (`mosquitto-config/mosquitto.conf`) n'est plus réservé aux
+conteneurs : **des nœuds Meshtastic du site peuvent s'y connecter en passerelle MQTT**.
+
+| Compte | Droits | Utilisé par |
+|---|---|---|
+| `pont` | lecture/écriture sur `msh/EU_868/#` | `meshtastic-bridge` du satellite |
+| `passerelle` | lecture/écriture sur `msh/EU_868/#` | le nœud Meshtastic du site configuré en passerelle MQTT |
+
+- **Authentification obligatoire** et liste de droits (`mosquitto-config/acl`), comme sur le
+  central. Testé : un client anonyme reçoit `Connection Refused: not authorised`, et `pont` ne
+  peut rien faire hors de sa racine.
+- **Port publié sur la seule IP du LAN**, `SATELLITE_LAN_IP:1883`, jamais sur `0.0.0.0` : Docker
+  contourne le pare-feu de la machine, et un Pi posé chez une mairie peut se trouver derrière une
+  box qui redirige des ports. L'IP est détectée par `installer.sh` à **chaque** passage (un
+  satellite déménage, change de box : une IP périmée rendrait le broker injoignable sans rien
+  signaler). Sans IP privée détectée, le repli est `127.0.0.1` — volontairement inutilisable
+  depuis le LAN : mieux vaut un nœud qui n'arrive pas à se connecter qu'un broker ouvert à tous.
+- **Mots de passe** dans `.env` (`MQTT_PONT_PASSWORD`, `MQTT_PASSERELLE_PASSWORD`), générés une
+  seule fois par `installer.sh` — les régénérer couperait les nœuds déjà configurés sur place. Le
+  fichier de mots de passe **haché** est reconstruit à chaque démarrage dans un tmpfs : rien n'est
+  écrit sur la carte SD, qui s'use et qu'on peut retirer du Pi.
+- Déclarer le companion correspondant côté application : `CompagnonMeshtastic` en
+  `connexion_type=MQTT`, `broker_host=mosquitto`, `mqtt_username=pont`, et le champ **`satellite`**
+  renseigné (« radio branchée sur CETTE machine »). La racine `topic_racine` doit valoir
+  `msh/EU_868`, seule racine autorisée par la liste de droits — une racine qui ne correspond pas
+  coupe le flux **sans message d'erreur**.
+
+> **Ce broker n'est jamais relié à celui du central** (décision du 06/11/2026). Les échanges
+> satellite ↔ central passent par `sync-sortant` / `sync-entrant`, faits pour les coupures
+> longues. Un pont MQTT demanderait d'exposer le broker du central sur Internet et n'éviterait
+> aucun travail : tout ce qui arrive doit de toute façon être écrit dans les modèles Django pour
+> être exploitable (carte, messages, positions, chiffrement au repos).
+
+> **À retenir, par site** : un nœud Meshtastic ne relaie vers MQTT que les canaux présents dans
+> ses 8 emplacements, et seulement s'il a pu les déchiffrer — `Router.cpp` du firmware exige
+> `DECODE_SUCCESS` avant toute publication. Couvrir N canaux distincts demande donc N/7
+> passerelles sur le site, pas une seule.
 
 ## Nœuds branchés en USB/série
 

@@ -141,6 +141,35 @@ cles_chiffrement() {
     fi
 }
 
+reglages_mqtt() {
+    # Broker MQTT local du site (mosquitto-config/mosquitto.conf) : un mot de passe par compte,
+    # généré une seule fois. Les régénérer couperait les nœuds radio déjà configurés sur place,
+    # donc on ne remplace jamais une valeur existante.
+    if [ -z "$(valeur_env MQTT_PONT_PASSWORD)" ]; then
+        fixer_env MQTT_PONT_PASSWORD "$(secret_aleatoire)"
+    fi
+    if [ -z "$(valeur_env MQTT_PASSERELLE_PASSWORD)" ]; then
+        fixer_env MQTT_PASSERELLE_PASSWORD "$(secret_aleatoire)"
+    fi
+    # IP du LAN sur laquelle publier le port 1883. Réécrite à chaque passage de l'installeur,
+    # contrairement aux mots de passe : un satellite peut changer de réseau (déménagement,
+    # nouvelle box), et une IP périmée rendrait le broker injoignable sans rien signaler.
+    # Si plusieurs IP privées existent, on prend la première -- ips_privees exclut déjà les
+    # réseaux internes de Docker.
+    local ip_lan
+    ip_lan="$(ips_privees | head -n1)"
+    if [ -n "$ip_lan" ]; then
+        fixer_env SATELLITE_LAN_IP "$ip_lan"
+        log "Broker MQTT local publié sur $ip_lan:1883 (comptes « pont » et « passerelle »)."
+    else
+        # Jamais 0.0.0.0 en repli : mieux vaut un broker injoignable qu'un broker ouvert à tous.
+        fixer_env SATELLITE_LAN_IP "127.0.0.1"
+        log "ATTENTION : aucune IP privée détectée, broker MQTT limité à 127.0.0.1." \
+            "Aucun nœud radio du réseau local ne pourra s'y connecter : renseignez" \
+            "SATELLITE_LAN_IP dans .env puis relancez."
+    fi
+}
+
 aligner_mot_de_passe_db() {
     # La base locale garde le mot de passe de sa toute première création (volume
     # postgres_data) : une réinstallation qui régénère DB_PASS faisait échouer le backend
@@ -444,6 +473,7 @@ EOF
     fixer_env VERSION_LOGICIELLE "$(git -C "$REPERTOIRE_SCRIPT" describe --always 2>/dev/null || echo inconnue)"
     if [ "$profil" = "full" ]; then
         cles_chiffrement
+        reglages_mqtt          # broker MQTT local : comptes et IP du LAN (profil full seulement)
         ports_publies
         aligner_mot_de_passe_db
     fi

@@ -228,12 +228,39 @@ services:
     restart: unless-stopped
     profiles: ["full"]
 
+  # Broker MQTT local du site. Des nœuds Meshtastic du LAN peuvent s'y connecter en passerelle
+  # (voir mosquitto-config/mosquitto.conf). JAMAIS relié au broker du central : les échanges
+  # satellite <-> central passent par sync-sortant / sync-entrant.
   mosquitto:
-    image: eclipse-mosquitto
+    image: eclipse-mosquitto:2.1.2-alpine
+    # `always` et non `unless-stopped` : la panne d'un broker est MUETTE, l'absence de trafic
+    # radio ne se distingue pas d'un site calme. Sur un Raspberry Pi posé chez une mairie et
+    # redémarré par une coupure de courant, un arrêt à la main ne doit pas devenir définitif.
+    restart: always
+    # Publié sur la SEULE IP du LAN du satellite, jamais sur 0.0.0.0 : Docker contourne le
+    # pare-feu de la machine, et un Pi chez une mairie peut être derrière une box qui redirige
+    # des ports. SATELLITE_LAN_IP est détectée par installer.sh (fonction ips_privees) ; la
+    # valeur de repli 127.0.0.1 est volontairement inutilisable depuis le LAN -- mieux vaut un
+    # nœud qui n'arrive pas à se connecter qu'un broker ouvert à tous.
+    ports: ["${SATELLITE_LAN_IP:-127.0.0.1}:1883:1883"]
+    # Mots de passe depuis .env (généré par installer.sh) ; le fichier HACHÉ est reconstruit à
+    # chaque démarrage dans /tmp (tmpfs : jamais sur la carte SD, qui finit par s'user et qu'on
+    # peut retirer du Pi). `$$` protège le `$` de l'interpolation Compose.
+    environment:
+      - MQTT_PONT_PASSWORD=${MQTT_PONT_PASSWORD}
+      - MQTT_PASSERELLE_PASSWORD=${MQTT_PASSERELLE_PASSWORD}
+    command:
+      - sh
+      - -c
+      - >-
+        mosquitto_passwd -c -b /tmp/passwd pont "$$MQTT_PONT_PASSWORD" &&
+        mosquitto_passwd -b /tmp/passwd passerelle "$$MQTT_PASSERELLE_PASSWORD" &&
+        chown mosquitto:mosquitto /tmp/passwd && chmod 0700 /tmp/passwd &&
+        exec mosquitto -c /mosquitto/config/mosquitto.conf
+    tmpfs: ["/tmp"]
     volumes:
-      - ./mosquitto-config:/mosquitto/config
+      - ./mosquitto-config:/mosquitto/config:ro
       - mosquitto_data:/mosquitto/data
-    restart: unless-stopped
     profiles: ["full"]
 
   backend:
