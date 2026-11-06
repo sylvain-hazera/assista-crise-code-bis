@@ -77,6 +77,7 @@ désormais correctement mémorisé), `.profil`.
 | `annoncer-backend-local` | full | Annonce ce backend en mDNS sur le LAN, pour qu'un satellite GW séparé sur le même site le trouve sans IP configurée à la main. |
 | `meshtastic-bridge` | gw, full | Optionnel — pilote un ou plusieurs `CompagnonMeshtastic` (MQTT, TCP ou SERIE) ; voir la note ci-dessous. |
 | `sync-sortant` | full | Pousse périodiquement vers le central les écritures locales en attente — voir "Synchronisation local → central" ci-dessous. |
+| `sync-mesh` | full | Récupère du central les messages mesh à émettre sur la radio de ce satellite et lui rapporte ce qui est parti. **Intervalle court (30 s)**, à part de `sync-entrant` : envoyer un message en crise ne peut pas attendre 5 minutes. |
 | `sync-entrant` | full | Sens inverse : applique localement le rafraîchissement central → local (crises, demandes, dossiers, missions…) et **copie les comptes de l'institution** (hash du mot de passe seulement) : chacun se connecte à l'application locale avec ses identifiants habituels. |
 | `appliquer-config-proxy` | gw, full | Reconfigure `meshcore-proxy` à distance (voir "Reconfiguration distante" ci-dessous), sans action locale/SSH. |
 
@@ -234,14 +235,58 @@ python3 annoncer_backend_local.py
 
 ## Synchronisation local → central (profil full uniquement)
 
-Décidée le 2026-09-18, périmètre v1 du sens LOCAL -> CENTRAL (`EvenementSynchronisation`) : le
+Décidée le 2026-09-18, périmètre du sens LOCAL -> CENTRAL (`EvenementSynchronisation`) : le
 travail des acteurs institutionnels sur place pendant une coupure — `Dossier` (+ son fil
-`DossierCommentaire`/`DossierHistorique`), `DeclarationSecurite`, `Mission`, `MessageMeshLog`.
+`DossierCommentaire`/`DossierHistorique`), `DeclarationSecurite`, `Mission`, et depuis le
+06/11/2026 **tout le domaine mesh observé sur place** : `CanalMeshCore`, `CanalMeshtastic`,
+`MessageMeshLog`, `MessageCanalMeshCore`, `MessageMeshtasticLog`, `MessageCanalMeshtastic`,
+`AlerteMeshSOS`. Jusque-là seuls les DM MeshCore remontaient, et un satellite observait donc du
+trafic radio que le central ne voyait jamais. Les canaux en font partie parce qu'un satellite en
+crée localement (le canal « Public » est auto-provisionné dès qu'un companion voit son trafic) :
+sans eux, leurs messages arriveraient au central avec une clé étrangère introuvable. La file étant
+rejouée dans l'ordre de création, un canal précède toujours ses messages.
 PAS `Request`/`Offer`/`Information` dans CE sens (citoyens, alimentés via internet, jamais via
 le LAN privé d'un satellite) — voir `backend/core/sync_outbox.py` pour ajouter un modèle plus
 tard sans redesign. Le sens CENTRAL -> LOCAL (`donnees()`/`sync-entrant`, voir plus bas) couvre
 lui ces trois modèles en plus de Dossier/Mission — une demande soumise par un citoyen au site
 public doit redescendre vers le satellite, même si elle ne remonte jamais.
+
+### Envoyer un message depuis le central vers la radio d'un satellite
+
+Sens descendant **à part**, avec son propre conteneur `sync-mesh` et son propre intervalle
+(`SATELLITE_SYNC_MESH_INTERVALLE_S`, **30 s** par défaut). Deux raisons :
+
+- `sync-entrant` tourne toutes les 300 s : très bien pour rafraîchir des crises et des dossiers,
+  inacceptable pour envoyer un message en crise ;
+- la file montante ne suit que les **créations** (append-only), donc un `EN_ATTENTE -> ENVOYE`
+  n'y remonterait jamais — or un opérateur du central doit savoir si son message est parti.
+
+Enchaînement complet :
+
+```
+central : MessageCanalMeshtastic(SORTANT, EN_ATTENTE) sur un companion dont `satellite` = ce sat
+  -> sync-mesh le récupère (GET  /api/satellites/<id>/mesh-a-emettre/) et le crée à l'identique
+     en local, même uuid, avec le canal qui l'accompagne
+  -> le pont local le voit par l'action habituelle `a-envoyer` et l'émet sur la radio
+  -> le pont met le statut local à ENVOYE
+  -> sync-mesh rapporte ce statut (POST /api/satellites/<id>/mesh-emis/), le central cesse de
+     le proposer
+```
+
+Idempotent de bout en bout : un rapport perdu laisse le message dans la liste du central, qui
+sera recréé en local (déjà présent, donc ignoré) puis rapporté à nouveau.
+
+**Meshtastic seulement** pour l'instant : le rattachement à un satellite passe par
+`CompagnonMeshtastic.satellite`. `CompagnonMeshCore` n'a pas ce champ — l'étendre à MeshCore
+demande d'abord de l'ajouter.
+
+> **Aucun pont MQTT entre le broker du satellite et celui du central** (décision du 06/11/2026).
+> Il faudrait exposer le broker du central sur Internet, et il n'éviterait aucun travail : ce qui
+> arrive doit de toute façon être écrit dans les modèles Django pour être exploitable. Il
+> n'achèterait que la latence, qu'on traite ici par un appel court **initié par le satellite** —
+> rien à exposer, ça traverse le NAT, et ça tolère une liaison médiocre (un satellite peut être à
+> La Réunion). Le risque de boucle radio, lui, ne s'applique pas : les sites sont trop éloignés
+> pour qu'un chemin radio existe entre eux.
 
 - **Côté backend local** (`INSTANCE_SATELLITE_LOCALE=True`, posé automatiquement sur le
   service `backend` du profil full) : chaque écriture pertinente peuple

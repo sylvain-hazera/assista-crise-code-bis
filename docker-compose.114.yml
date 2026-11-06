@@ -128,9 +128,19 @@ services:
     container_name: ac_backend
     env_file:
       - { path: "${SECRETS_DIR:-/home/sylvain/.config/assista-crise/secrets}/backend.env", format: raw }
+    environment:
+      # Dossier où Django écrit les comptes du broker MQTT (core/mqtt_comptes.py). Pas un secret,
+      # donc déclaré ici plutôt que dans backend.env (hors dépôt).
+      - MQTT_COMPTES_DIR=/var/lib/assista/mqtt
+    # Les mêmes secrets que le broker : `manage.py initialiser_comptes_mqtt` enregistre en base
+    # les comptes d'amorçage (exporter, pont, passerelle1). Sans eux, la première création de
+    # compte depuis le web réécrirait les fichiers SANS ces comptes, coupant l'exporteur et le
+    # pont -- un garde-fou dans core/mqtt_comptes.py refuse d'écrire tant qu'ils manquent.
+    secrets: [mqtt_exporter_password, mqtt_pont_password, mqtt_passerelle1_password]
     volumes:
       - media_volume:/app/media
       - matrix_bridge_data:/data          # jeton du bot Matrix, partagé avec matrix-bridge
+      - mqtt_comptes:/var/lib/assista/mqtt   # lu par ac_mqtt (voir le service mosquitto)
     networks: [back, db, front]
     depends_on:
       db: { condition: service_healthy }
@@ -290,24 +300,44 @@ services:
     # radio du réseau local atteignent ce port ; aucune redirection sur la box.
     ports: ["172.16.1.114:1883:1883"]
     secrets: [mqtt_exporter_password, mqtt_pont_password, mqtt_passerelle1_password]
-    # Le fichier de mots de passe est construit à chaque démarrage dans /tmp (tmpfs : jamais sur
-    # disque) depuis les secrets montés. `mosquitto_passwd -c` pour le premier compte (crée le
-    # fichier), sans `-c` pour les suivants. `$$(` : le `$$` protège le `$` de l'interpolation
-    # Compose, le shell du conteneur reçoit bien `$(cat …)`.
+    # gid 10001 = appuser du backend, propriétaire des fichiers qu'il écrit dans le volume
+    # partagé. Sans ce groupe supplémentaire, mosquitto (uid 1883) ne pourrait pas les lire --
+    # ils sont en 0640, et des empreintes de mots de passe n'ont pas à être lisibles par tous.
+    group_add: ["10001"]
+    # Au premier démarrage seulement, le broker s'amorce depuis ses propres secrets : il ne
+    # dépend donc jamais de l'application pour être utilisable. Ensuite c'est Django qui écrit
+    # ces fichiers (/admin/comptes-mqtt), et la boucle de surveillance fait relire le broker dès
+    # qu'ils changent -- `mosquitto_signal -a config-reload` envoie le SIGHUP qui fait relire
+    # password_file et acl_file.
+    # `$$` protège le `$` de l'interpolation Compose : le shell du conteneur reçoit bien `$(…)`.
     command:
       - sh
       - -c
       - >-
-        mosquitto_passwd -c -b /tmp/passwd exporter "$$(cat /run/secrets/mqtt_exporter_password)" &&
-        mosquitto_passwd -b /tmp/passwd pont "$$(cat /run/secrets/mqtt_pont_password)" &&
-        mosquitto_passwd -b /tmp/passwd passerelle1 "$$(cat /run/secrets/mqtt_passerelle1_password)" &&
-        chown mosquitto:mosquitto /tmp/passwd && chmod 0700 /tmp/passwd &&
+        C=/mosquitto/comptes;
+        if [ ! -s "$$C/passwd" ]; then
+          mosquitto_passwd -c -b "$$C/passwd" exporter "$$(cat /run/secrets/mqtt_exporter_password)" &&
+          mosquitto_passwd -b "$$C/passwd" pont "$$(cat /run/secrets/mqtt_pont_password)" &&
+          mosquitto_passwd -b "$$C/passwd" passerelle1 "$$(cat /run/secrets/mqtt_passerelle1_password)" &&
+          cp /mosquitto/config/acl.114 "$$C/acl";
+        fi;
+        chmod 0640 "$$C/passwd" "$$C/acl";
+        (
+          precedent="";
+          while sleep 10; do
+            actuel=$$(stat -c %Y "$$C/passwd" "$$C/acl" 2>/dev/null | tr "\n" "-");
+            if [ -n "$$actuel" ] && [ "$$actuel" != "$$precedent" ]; then
+              precedent="$$actuel";
+              mosquitto_signal -a config-reload 2>/dev/null || true;
+            fi;
+          done
+        ) &
         exec mosquitto -c /mosquitto/config/mosquitto.114.conf
-    tmpfs: ["/tmp"]
     volumes:
       - ./mosquitto/config/mosquitto.114.conf:/mosquitto/config/mosquitto.114.conf:ro
       - ./mosquitto/config/acl.114:/mosquitto/config/acl.114:ro
       - mosquitto_data:/mosquitto/data
+      - mqtt_comptes:/mosquitto/comptes      # écrit par le backend, lu ici
     networks: [back, monitoring]         # back : le pont Meshtastic ; monitoring : l'exporteur
 
   # ------------------------------------------------------------------ monitoring (voir monitoring/README.md)
@@ -521,4 +551,7 @@ volumes:
   loki_data:              { name: ac_loki_data }
   alloy_data:             { name: ac_alloy_data }
   mosquitto_data:         { name: ac_mqtt_data }
+  # Comptes du broker : écrits par le backend (uid 10001), lus par ac_mqtt (uid 1883, qui reçoit
+  # le gid 10001 en groupe supplémentaire). Ne contient que des empreintes, jamais de mot de passe.
+  mqtt_comptes:           { name: ac_mqtt_comptes }
   fail2ban_logs:          { name: ac_fail2ban_logs }

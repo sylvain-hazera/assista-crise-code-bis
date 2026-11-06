@@ -5925,6 +5925,53 @@ class ProvisionCanalMeshCore(models.Model):
         return f"{self.canal_id} sur le slot {self.canal_idx} de {self.compagnon_id}"
 
 
+class RoleCompteMqtt(models.TextChoices):
+    """Les droits viennent du rôle, jamais d'une saisie libre : un champ « topic » libre dans
+    l'interface permettrait de s'accorder `#` en lecture, donc de lire tout le trafic."""
+    RADIO = "RADIO", "Passerelle ou pont radio (lecture/écriture sur sa racine)"
+    SUPERVISION = "SUPERVISION", "Supervision (statistiques du broker seulement)"
+
+
+class CompteMqtt(models.Model):
+    """Compte du broker MQTT, administrable depuis l'interface web.
+
+    Volontairement PAS `EnvironmentScopedModel` (comme ProvisionCanalMeshCore) : il n'y a qu'un
+    broker par machine, un compte n'a pas de version de démonstration.
+
+    Django est la source de vérité ; il réécrit `password_file` et `acl_file` à chaque
+    changement, et le broker les relit (voir core/mqtt_comptes.py pour le pourquoi et le format).
+    Les comptes d'infrastructure amorcés par le conteneur depuis ses secrets (exporter, pont)
+    sont repris ici au premier rendu, sinon la réécriture les supprimerait.
+
+    `mot_de_passe` est conservé chiffré au repos : il faut pouvoir le réafficher pour configurer
+    un nœud radio sur place, des mois après sa création -- une passerelle est un boîtier sur un
+    toit, pas un compte qu'on recrée d'un clic."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    # Jamais renvoyé par l'API en écriture seule : voir CompteMqttSerializer.
+    nom = models.CharField(max_length=63, unique=True)
+    role = models.CharField(max_length=12, choices=RoleCompteMqtt.choices, default=RoleCompteMqtt.RADIO)
+    # Doit correspondre à `CompagnonMeshtastic.topic_racine` du companion concerné : une racine
+    # qui ne correspond pas coupe le flux sans aucun message d'erreur.
+    racine_topic = models.CharField(max_length=100, default="msh/EU_868")
+    mot_de_passe = EncryptedTextField(max_length=128)
+    description = models.CharField(max_length=200, blank=True)
+    # Un compte d'infrastructure (exporter, pont) ne doit pas pouvoir être supprimé depuis le
+    # web : l'exporteur de supervision et le pont en dépendent.
+    infrastructure = models.BooleanField(default=False)
+    actif = models.BooleanField(default=True)
+
+    date_creation = models.DateTimeField(auto_now_add=True)
+    modifie_le = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-infrastructure', 'nom']
+
+    def __str__(self):
+        return f"{self.nom} ({self.get_role_display()})"
+
+
 class CanalMeshCoreDetecte(EnvironmentScopedModel):
     """Canal capté sur l'air mais inconnu du companion (ancienne clé, canal tiers) : signalé en
     lecture seule. Une ligne par (compagnon, chan_hash)."""
@@ -6463,13 +6510,26 @@ class Satellite(EnvironmentScopedModel):
 
 class ModeleSynchronisable(models.TextChoices):
     """Modèles synchronisés satellite -> central : Dossier (et son fil), DeclarationSecurite,
-    Mission, MessageMeshLog. Jamais Request/Offer/Information."""
+    Mission, et tout le domaine mesh observé sur place. Jamais Request/Offer/Information."""
     DOSSIER = "Dossier", "Dossier"
     DOSSIER_COMMENTAIRE = "DossierCommentaire", "Commentaire de dossier"
     DOSSIER_HISTORIQUE = "DossierHistorique", "Historique de dossier"
     DECLARATION_SECURITE = "DeclarationSecurite", "Déclaration de sécurité"
     MISSION = "Mission", "Mission"
-    MESSAGE_MESH_LOG = "MessageMeshLog", "Message mesh"
+    MESSAGE_MESH_LOG = "MessageMeshLog", "Message direct MeshCore"
+    # Domaine mesh élargi le 06/11/2026 : un satellite observe du trafic radio que le central ne
+    # voit pas (il est à l'autre bout du pays, voire à La Réunion), et seuls les DM MeshCore
+    # remontaient. Les canaux figurent dans la liste parce qu'un satellite en crée localement --
+    # le canal « Public » est auto-provisionné dès qu'un companion voit son trafic (voir
+    # CompagnonMeshCoreViewSet.signaler_canaux_detectes) : sans eux, les messages de ce canal
+    # arriveraient au central avec une FK introuvable. La file étant traitée dans l'ordre de
+    # création (`order_by("cree_le")`), le canal précède toujours ses messages.
+    CANAL_MESHCORE = "CanalMeshCore", "Canal MeshCore"
+    CANAL_MESHTASTIC = "CanalMeshtastic", "Canal Meshtastic"
+    MESSAGE_CANAL_MESHCORE = "MessageCanalMeshCore", "Message de canal MeshCore"
+    MESSAGE_MESHTASTIC_LOG = "MessageMeshtasticLog", "Message direct Meshtastic"
+    MESSAGE_CANAL_MESHTASTIC = "MessageCanalMeshtastic", "Message de canal Meshtastic"
+    ALERTE_MESH_SOS = "AlerteMeshSOS", "Alerte SOS mesh"
 
 
 class ActionSynchronisation(models.TextChoices):

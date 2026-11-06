@@ -55,9 +55,45 @@ CHAMPS_PAR_MODELE = {
         "compagnon_id", "direction", "contact_pubkey_hex", "expediteur_id", "equipe_id",
         "contenu", "statut", "erreur", "date_envoi",
     ],
+    # Domaine mesh, ajouté le 06/11/2026 (voir ModeleSynchronisable). `date_creation` n'y figure
+    # jamais : c'est un auto_now_add, il est reposé à l'arrivée et le passer ne servirait à rien.
+    # Les clés de canal (`cle_partagee_hex`, `psk_hex`) voyagent EN CLAIR dans le payload, en
+    # HTTPS : il le faut, le central doit pouvoir décoder le trafic du canal, et il les rechiffre
+    # avec SA clé en base (EncryptedTextField, lot du 06/11). Les companions, eux, existent déjà
+    # côté central avec le même uuid (CompagnonMesh*ViewSet.enregistrer_depuis_satellite), donc
+    # `compagnon_id` est résolvable.
+    "CanalMeshCore": ["institution_id", "crise_id", "equipe_id", "nom", "cle_partagee_hex", "actif"],
+    "CanalMeshtastic": [
+        "institution_id", "crise_id", "equipe_id", "nom", "psk_hex", "compagnon_id",
+        "principal", "actif",
+    ],
+    "MessageCanalMeshCore": [
+        "canal_id", "direction", "expediteur_id", "contact_pubkey_hex", "contenu", "statut", "erreur",
+    ],
+    "MessageMeshtasticLog": [
+        "compagnon_id", "canal_id", "direction", "contact_node_num", "expediteur_id", "equipe_id",
+        "contenu", "statut", "erreur", "date_envoi",
+    ],
+    "MessageCanalMeshtastic": [
+        "canal_id", "direction", "expediteur_id", "compagnon_id", "contact_node_num",
+        "contenu", "statut", "erreur",
+    ],
+    "AlerteMeshSOS": [
+        "protocole", "institution_id", "canal_nom", "expediteur_identifiant", "expediteur_nom",
+        "contenu", "mot_cle_detecte", "notification_envoyee",
+    ],
 }
 
-APPEND_ONLY = {"DossierCommentaire", "DossierHistorique", "DeclarationSecurite", "MessageMeshLog"}
+# APPEND_ONLY ne suit que les CRÉATIONS (voir enregistrer_evenement) : un message observé sur la
+# radio ne se réédite pas. Conséquence à connaître : le passage EN_ATTENTE -> ENVOYE d'un message
+# ne remonte PAS par ce canal. C'est sans effet pour du trafic observé (il naît déjà reçu), mais
+# c'est précisément pourquoi les ordres d'envoi venus du central ont leur propre canal avec
+# accusé de réception (SatelliteViewSet.mesh_a_emettre / mesh_emis) au lieu de passer par ici.
+APPEND_ONLY = {
+    "DossierCommentaire", "DossierHistorique", "DeclarationSecurite", "MessageMeshLog",
+    "CanalMeshCore", "CanalMeshtastic", "MessageCanalMeshCore", "MessageMeshtasticLog",
+    "MessageCanalMeshtastic", "AlerteMeshSOS",
+}
 MUTABLE = {"Dossier", "Mission"}
 MODELES_SYNCHRONISABLES = APPEND_ONLY | MUTABLE
 

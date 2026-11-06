@@ -58,7 +58,7 @@ from .models import (
     DisponibilitePointEquipe,
     MaterielPoint,
     MaterielCatalogue,
-    CompagnonMeshCore,
+    CompagnonMeshCore, CompteMqtt,
     NoeudMeshUtilisateur,
     MessageMeshLog,
     CommandeMeshCore,
@@ -3469,6 +3469,45 @@ class SalonMatrixInstitutionSerializer(serializers.ModelSerializer):
              "nom": f"{m.first_name} {m.last_name}".strip() or m.email}
             for m in queryset
         ]
+
+
+class CompteMqttSerializer(serializers.ModelSerializer):
+    """Compte du broker MQTT. Le mot de passe n'est jamais renvoyé par la liste : il s'affiche à
+    la demande, par une action dédiée et journalisée (CompteMqttViewSet.mot_de_passe) -- un
+    administrateur doit pouvoir le relire pour configurer une passerelle sur un toit, mais pas en
+    laissant le secret traîner dans chaque réponse de liste."""
+
+    role_libelle = serializers.CharField(source='get_role_display', read_only=True)
+
+    class Meta:
+        model = CompteMqtt
+        fields = [
+            'id', 'nom', 'role', 'role_libelle', 'racine_topic', 'mot_de_passe', 'description',
+            'infrastructure', 'actif', 'date_creation', 'modifie_le',
+        ]
+        read_only_fields = ['infrastructure', 'date_creation', 'modifie_le']
+        extra_kwargs = {
+            # required=False : à la création on en génère un si l'appelant n'en fournit pas.
+            'mot_de_passe': {'write_only': True, 'required': False},
+        }
+
+    def validate_nom(self, valeur):
+        from .mqtt_comptes import NomDeCompteInvalide, valider_nom
+        try:
+            return valider_nom(valeur)
+        except NomDeCompteInvalide as exc:
+            raise serializers.ValidationError(str(exc))
+
+    def validate_racine_topic(self, valeur):
+        """Une racine de topic finit dans le fichier de droits : on refuse tout ce qui pourrait y
+        être interprété, et surtout les jokers MQTT — `#` comme racine donnerait accès à tout."""
+        racine = (valeur or "").strip().strip('/')
+        if not re.match(r"^[A-Za-z0-9][A-Za-z0-9/_-]{0,98}$", racine):
+            raise serializers.ValidationError(
+                "Racine de topic invalide : lettres, chiffres, tiret, souligné et « / », sans "
+                "joker (« # » ou « + »)."
+            )
+        return racine
 
 
 class CanalMeshCoreSerializer(serializers.ModelSerializer):

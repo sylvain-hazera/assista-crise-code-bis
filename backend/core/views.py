@@ -195,7 +195,7 @@ from .models import (
     MaterielCatalogue, ContributionMateriel, StatutMateriel, TypeMateriel, NiveauStock, RegistrePresence, TypePersonneAccueillie, DeclarationSecurite, SituationDeclarant,
     AffectationLogementIntervenant,
     SuiviMaterielEvenement,
-    CompagnonMeshCore, NoeudMeshUtilisateur, MessageMeshLog, DirectionMessageMesh, StatutMessageMesh,
+    CompagnonMeshCore, CompteMqtt, NoeudMeshUtilisateur, MessageMeshLog, DirectionMessageMesh, StatutMessageMesh,
     CommandeMeshCore, TypeCommandeMeshCore, StatutCommandeMeshCore,
     TracerouteMeshCore, StatutTraceroute,
     RelaisMeshCore, CanalMeshCore, MessageCanalMeshCore, ContactMeshCore, TypeContactMeshCore,
@@ -559,7 +559,7 @@ from .serializers import (
     DisponibilitePointEquipeSerializer,
     MaterielPointSerializer,
     MaterielCatalogueSerializer,
-    CompagnonMeshCoreSerializer,
+    CompagnonMeshCoreSerializer, CompteMqttSerializer,
     NoeudMeshUtilisateurSerializer,
     MessageMeshLogSerializer,
     CommandeMeshCoreSerializer,
@@ -16631,6 +16631,112 @@ class RelaisMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet
         )
 
 
+class _EstAdministrateurReel(permissions.BasePermission):
+    """Rôle PROD réel, pas le rôle effectif de la zone démo — même choix que
+    core/grafana.py:IsAdministrator et pour la même raison : un compte à qui on a prêté un
+    `demo_role=ADMIN` pour une démonstration ne doit pas pouvoir créer un compte sur le broker
+    radio de production, ni lire le mot de passe d'une passerelle existante."""
+
+    message = "La gestion des comptes MQTT est réservée aux administrateurs."
+
+    def has_permission(self, request, view):
+        user = request.user
+        return bool(user and user.is_authenticated and user.type == UserRole.ADMINISTRATOR)
+
+
+class CompteMqttViewSet(viewsets.ModelViewSet):
+    """Comptes du broker MQTT, administrables depuis /admin/comptes-mqtt.
+
+    Réservé aux administrateurs au sens du rôle RÉEL (pas le rôle effectif de la zone démo, comme
+    pour la supervision technique) : un compte MQTT donne accès au trafic radio de l'institution,
+    ce n'est pas une donnée de démonstration.
+
+    Après chaque écriture, les fichiers lus par le broker sont réécrits (core/mqtt_comptes.py) et
+    celui-ci les relit de lui-même. Si le dossier partagé n'est pas configuré (dev, satellite),
+    l'écriture est simplement sautée : le compte existe en base, le broker garde ses fichiers
+    amorcés. Jamais d'échec bloquant pour autant.
+
+    Pas de pagination ni de filtre de zone : il n'y a qu'un broker par machine et une poignée de
+    comptes."""
+
+    queryset = CompteMqtt.objects.all()
+    serializer_class = CompteMqttSerializer
+    permission_classes = [_EstAdministrateurReel]
+
+    def _appliquer(self):
+        """Réécrit les fichiers du broker. Une erreur d'écriture est journalisée mais ne fait pas
+        échouer la requête : le compte est bien enregistré, et le prochain changement réessaiera.
+        Le contraire laisserait l'appelant croire que rien n'a été fait."""
+        from .mqtt_comptes import ecrire_fichiers
+        try:
+            return ecrire_fichiers()
+        except Exception:
+            _logger_sync.exception("Écriture des fichiers de comptes MQTT impossible")
+            return False
+
+    def perform_create(self, serializer):
+        if not serializer.validated_data.get('mot_de_passe'):
+            # Mot de passe engendré côté serveur plutôt que saisi : il n'a pas à être mémorisable,
+            # il est recopié dans la configuration d'un boîtier.
+            serializer.validated_data['mot_de_passe'] = secrets.token_urlsafe(24)
+        compte = serializer.save()
+        audit_log(
+            request=self.request, action_code="CREATION", objet_type="CompteMqtt",
+            objet_id=str(compte.id), commentaire=f"Compte MQTT « {compte.nom} » ({compte.role}) créé.",
+        )
+        self._appliquer()
+
+    def perform_update(self, serializer):
+        compte = serializer.save()
+        audit_log(
+            request=self.request, action_code="MODIFICATION", objet_type="CompteMqtt",
+            objet_id=str(compte.id), commentaire=f"Compte MQTT « {compte.nom} » modifié.",
+        )
+        self._appliquer()
+
+    def perform_destroy(self, instance):
+        if instance.infrastructure:
+            raise ValidationError(
+                "Ce compte est nécessaire au fonctionnement du broker (supervision ou pont) et "
+                "ne peut pas être supprimé depuis l'interface."
+            )
+        nom = instance.nom
+        audit_log(
+            request=self.request, action_code="SUPPRESSION", objet_type="CompteMqtt",
+            objet_id=str(instance.id), commentaire=f"Compte MQTT « {nom} » supprimé.",
+        )
+        instance.delete()
+        self._appliquer()
+
+    @action(detail=True, methods=['get'], url_path='mot-de-passe')
+    def mot_de_passe(self, request, pk=None):
+        """Révèle le mot de passe, pour pouvoir configurer une passerelle sur place des mois après
+        sa création. Action séparée et JOURNALISÉE : le secret ne traîne pas dans chaque réponse
+        de liste, et toute consultation laisse une trace."""
+        compte = self.get_object()
+        audit_log(
+            request=request, action_code="LECTURE", objet_type="CompteMqtt", objet_id=str(compte.id),
+            commentaire=f"Mot de passe du compte MQTT « {compte.nom} » affiché.",
+        )
+        return Response({"nom": compte.nom, "mot_de_passe": compte.mot_de_passe})
+
+    @action(detail=True, methods=['post'], url_path='regenerer')
+    def regenerer(self, request, pk=None):
+        """Nouveau mot de passe. Coupe la passerelle jusqu'à ce qu'elle soit reconfigurée : c'est
+        le but (révocation), mais l'interface doit le dire clairement."""
+        compte = self.get_object()
+        compte.mot_de_passe = secrets.token_urlsafe(24)
+        compte.save(update_fields=['mot_de_passe', 'modifie_le'])
+        audit_log(
+            request=request, action_code="MODIFICATION", objet_type="CompteMqtt",
+            objet_id=str(compte.id),
+            commentaire=f"Mot de passe du compte MQTT « {compte.nom} » régénéré (la passerelle "
+                        f"doit être reconfigurée).",
+        )
+        self._appliquer()
+        return Response({"nom": compte.nom, "mot_de_passe": compte.mot_de_passe})
+
+
 class CanalMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     """Canaux MeshCore (coordination générale, visibilité large) — voir docstring du modèle."""
 
@@ -17699,14 +17805,18 @@ class SatelliteViewSet(
     def get_permissions(self):
         if self.action in ('enroler', 'recuperer_identifiants'):
             return [AllowAny()]
-        if self.action in ('contact', 'donnees', 'comptes', 'synchroniser'):
+        # mesh_a_emettre / mesh_emis : comme synchroniser, le contrôle d'identité réel est dans
+        # l'action (_exiger_compte_service) — le compte de service d'un satellite est un
+        # UTIL_SIMPLE, IsInstitutionalActor le refuserait avant d'y arriver.
+        if self.action in ('contact', 'donnees', 'comptes', 'synchroniser', 'mesh_a_emettre', 'mesh_emis'):
             return [permissions.IsAuthenticated()]
         if self.action in ('generer_jeton', 'valider', 'revoquer', 'regenerer_identifiants'):
             return [IsInstitutionalActor(), DenyInDemo()]
         return [IsInstitutionalActor()]
 
     def get_queryset(self):
-        if self.action in ('contact', 'donnees', 'comptes', 'synchroniser', 'recuperer_identifiants'):
+        if self.action in ('contact', 'donnees', 'comptes', 'synchroniser', 'recuperer_identifiants',
+                           'mesh_a_emettre', 'mesh_emis'):
             # Le contrôle d'identité se fait dans l'action elle-même (compte_service ==
             # request.user) — le compte de service d'un satellite n'a volontairement aucun
             # ContactInstitution (voir SatelliteViewSet.valider), donc le filtrage par
@@ -18072,6 +18182,117 @@ class SatelliteViewSet(
             _appliquer_evenement_synchronisation(satellite, evenement, request)
             for evenement in request.data.get('evenements', [])
         ]
+        return Response({"resultats": resultats})
+
+    # ---- Ordres d'envoi mesh central -> satellite (06/11/2026) -------------------------------
+    # Pourquoi un canal dédié et pas la synchronisation générique : celle-ci ne descend que des
+    # données citoyennes en lecture (upsert), et sa file montante ne suit que les CRÉATIONS
+    # (APPEND_ONLY, voir core/sync_outbox.py) -- le passage EN_ATTENTE -> ENVOYE n'y remonterait
+    # donc jamais. Or un opérateur du central qui envoie un message vers une radio distante a
+    # besoin de savoir s'il est parti. Ici l'aller et l'accusé sont explicites.
+    #
+    # Pourquoi pas un pont MQTT entre les brokers (décision du 06/11/2026) : il faudrait exposer
+    # le broker du central sur Internet, et il n'éviterait aucun travail -- tout ce qui arrive
+    # doit de toute façon être écrit dans ces modèles pour être exploitable. Il n'achèterait que
+    # la latence, qu'on traite par un appel court (~30 s) initié par le satellite : rien à
+    # exposer, traverse le NAT, tolère une liaison médiocre (un satellite peut être à La Réunion).
+    #
+    # Meshtastic seulement : le rattachement à un satellite passe par CompagnonMeshtastic.satellite,
+    # qui existe. CompagnonMeshCore n'a pas ce champ -- l'étendre à MeshCore demande d'abord de
+    # l'ajouter, ce n'est pas fait ici.
+    _MODELES_MESH_DESCENDANTS = {
+        "MessageMeshtasticLog": [
+            "compagnon_id", "canal_id", "direction", "contact_node_num", "expediteur_id",
+            "equipe_id", "contenu", "statut",
+        ],
+        "MessageCanalMeshtastic": [
+            "canal_id", "direction", "expediteur_id", "compagnon_id", "contact_node_num",
+            "contenu", "statut",
+        ],
+    }
+    _CHAMPS_CANAL_MESHTASTIC = [
+        "institution_id", "crise_id", "equipe_id", "nom", "psk_hex", "compagnon_id",
+        "principal", "actif",
+    ]
+
+    @action(detail=True, methods=['get'], url_path='mesh-a-emettre')
+    def mesh_a_emettre(self, request, pk=None):
+        """Messages mesh que CE satellite doit émettre sur sa radio. Renvoie d'abord les canaux
+        nécessaires puis les messages : le satellite doit créer les canaux en premier, sinon la
+        FK `canal` est introuvable chez lui (il ne reçoit pas les canaux par ailleurs).
+
+        Un message de canal sans companion désigné n'est jamais renvoyé : sans lui on ne sait pas
+        à quel satellite il appartient, et il relève des companions du central."""
+        # Même sérialisation que la file montante (dates en ISO, uuid en str) : une seule règle
+        # pour les deux sens, plutôt qu'un helper de plus.
+        from .sync_outbox import _valeur_serialisable
+
+        satellite = self.get_object()
+        self._exiger_compte_service(request, satellite)
+        satellite.dernier_contact = timezone.now()
+        satellite.save(update_fields=['dernier_contact'])
+
+        messages, canaux = [], {}
+        for nom_modele, champs in self._MODELES_MESH_DESCENDANTS.items():
+            Modele = apps.get_model('core', nom_modele)
+            qs = Modele.objects.filter(
+                direction=DirectionMessageMesh.SORTANT,
+                statut=StatutMessageMesh.EN_ATTENTE,
+                compagnon__satellite=satellite,
+                environment=satellite.environment,
+            ).select_related('canal').order_by('date_creation')
+            for objet in qs:
+                messages.append({
+                    "modele": nom_modele,
+                    "id": str(objet.id),
+                    **{c: _valeur_serialisable(getattr(objet, c)) for c in champs},
+                })
+                if objet.canal_id and objet.canal_id not in canaux:
+                    canaux[objet.canal_id] = {
+                        "id": str(objet.canal_id),
+                        **{c: _valeur_serialisable(getattr(objet.canal, c))
+                           for c in self._CHAMPS_CANAL_MESHTASTIC},
+                    }
+        return Response({"canaux": list(canaux.values()), "messages": messages})
+
+    @action(detail=True, methods=['post'], url_path='mesh-emis')
+    def mesh_emis(self, request, pk=None):
+        """Accusé : le satellite rapporte l'état local des messages qu'il a tenté d'émettre.
+        Payload : {"rapports": [{"modele", "id", "statut", "erreur"}, ...]}.
+
+        Idempotent et sans tout-ou-rien : un rapport invalide n'empêche pas les suivants. Seuls
+        les messages SORTANT des companions de CE satellite sont touchés -- un satellite ne peut
+        pas modifier l'état d'un message qui n'est pas le sien."""
+        satellite = self.get_object()
+        self._exiger_compte_service(request, satellite)
+
+        resultats = []
+        for rapport in request.data.get('rapports', []):
+            nom_modele = (rapport or {}).get('modele')
+            objet_id = (rapport or {}).get('id')
+            statut = (rapport or {}).get('statut')
+            if nom_modele not in self._MODELES_MESH_DESCENDANTS:
+                resultats.append({"id": objet_id, "resultat": "erreur", "detail": "Modèle inattendu."})
+                continue
+            if statut not in StatutMessageMesh.values:
+                resultats.append({"id": objet_id, "resultat": "erreur", "detail": "Statut inconnu."})
+                continue
+            Modele = apps.get_model('core', nom_modele)
+            a_poser = {"statut": statut, "erreur": rapport.get('erreur') or None}
+            # date_envoi n'existe que sur MessageMeshtasticLog (les messages de canal n'en ont
+            # pas) : on ne la pose donc que là, et seulement pour un envoi réellement abouti.
+            if nom_modele == "MessageMeshtasticLog" and statut == StatutMessageMesh.ENVOYE:
+                a_poser["date_envoi"] = timezone.now()
+            try:
+                touches = Modele.objects.filter(
+                    id=objet_id, direction=DirectionMessageMesh.SORTANT,
+                    compagnon__satellite=satellite, environment=satellite.environment,
+                ).update(**a_poser)
+            except (ValueError, ValidationError, DjangoValidationError):
+                # id mal formé : un rapport invalide ne doit pas faire échouer le lot.
+                resultats.append({"id": objet_id, "resultat": "erreur", "detail": "Identifiant invalide."})
+                continue
+            resultats.append({"id": objet_id, "resultat": "applique" if touches else "inconnu"})
         return Response({"resultats": resultats})
 
     @action(detail=False, methods=['get'], url_path='supervision')

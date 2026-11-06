@@ -348,6 +348,36 @@ services:
     restart: unless-stopped
     profiles: ["full"]
 
+  # Ordres d'envoi mesh venus du central (SatelliteViewSet.mesh_a_emettre / mesh_emis). À part de
+  # sync-entrant, et à intervalle COURT : celui-ci tourne toutes les 300 s, très bien pour des
+  # crises et des dossiers, inacceptable pour envoyer un message en crise. Cette commande ne
+  # transporte que des ordres d'envoi, elle est donc assez légère pour 30 s.
+  sync-mesh:
+    build: ../backend
+    command: ["sh", "-c", "while true; do python manage.py synchroniser_mesh; sleep ${SATELLITE_SYNC_MESH_INTERVALLE_S:-30}; done"]
+    environment:
+      - DB_HOST=db
+      - DB_NAME=assista-db
+      - DB_USER=${DB_USER}
+      - DB_PASS=${DB_PASS}
+      - SECRET_KEY=${SECRET_KEY}
+      - FIELD_ENCRYPTION_KEY=${FIELD_ENCRYPTION_KEY}
+      - FIELD_BLIND_INDEX_KEY=${FIELD_BLIND_INDEX_KEY}
+      - SATELLITE_CENTRAL_URL=${CENTRAL_URL:-https://assista-crise.fr}
+      - SATELLITE_ID=${SATELLITE_ID}
+      - SATELLITE_EMAIL=${SATELLITE_EMAIL}
+      - SATELLITE_PASSWORD=${SATELLITE_PASSWORD}
+      # SANS INSTANCE_SATELLITE_LOCALE, comme sync-entrant : ce conteneur ne doit jamais peupler
+      # la file sortante. Le marqueur _synchronisation_entrante de la commande l'empêche déjà,
+      # mais autant ne pas dépendre d'un seul garde-fou.
+    # Pas les migrations de l'image (entrypoint.sh) : le backend les applique, voir sync-sortant.
+    entrypoint: []
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles: ["full"]
+
   # Sens inverse de sync-sortant : applique localement le rafraîchissement central -> local
   # pour Dossier/Mission (voir backend/core/management/commands/synchroniser_entrant.py) — un
   # objet avec une écriture locale encore EN_ATTENTE est ignoré (jamais écrasé silencieusement),

@@ -29,7 +29,13 @@ RUN chmod +x /entrypoint.sh
 # côté hôte séparément.
 RUN groupadd -g 10001 appuser \
     && useradd -u 10001 -g appuser -M -s /usr/sbin/nologin appuser \
-    && chown -R appuser:appuser /app
+    && chown -R appuser:appuser /app \
+    # Dossier partagé avec le conteneur du broker MQTT (settings.MQTT_COMPTES_DIR) : Django y
+    # écrit `passwd` et `acl`, le broker les lit. Créé ICI, avec son propriétaire, parce qu'un
+    # volume nommé hérite des droits du chemin tel qu'il existe dans l'image -- sans ça le volume
+    # serait root:root et appuser ne pourrait pas y écrire.
+    && mkdir -p /var/lib/assista/mqtt \
+    && chown -R appuser:appuser /var/lib/assista
 USER appuser
 
 ENTRYPOINT ["/entrypoint.sh"]

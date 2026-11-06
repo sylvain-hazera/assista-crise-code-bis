@@ -31,7 +31,7 @@ from .views import (
     ContactInstitutionViewSet,
     InstitutionDomaineViewSet,
     CompagnonMeshCoreViewSet, NoeudMeshUtilisateurViewSet, MessageMeshLogViewSet, CommandeMeshCoreViewSet,
-    RelaisMeshCoreViewSet, CanalMeshCoreViewSet, MessageCanalMeshCoreViewSet, ContactMeshCoreViewSet,
+    RelaisMeshCoreViewSet, CanalMeshCoreViewSet, CompteMqttViewSet, MessageCanalMeshCoreViewSet, ContactMeshCoreViewSet,
     TracerouteMeshCoreViewSet, AlerteMeshSOSViewSet,
     CompagnonMeshtasticViewSet, NoeudUtilisateurMeshtasticViewSet, MessageMeshtasticLogViewSet,
     CanalMeshtasticViewSet, MessageCanalMeshtasticViewSet, ContactMeshtasticViewSet,
@@ -134,6 +134,8 @@ router.register(r'satellites', SatelliteViewSet)
 router.register(r'conflits-synchronisation', ConflitSynchronisationViewSet)
 router.register(r'relais-meshcore', RelaisMeshCoreViewSet)
 router.register(r'canaux-meshcore', CanalMeshCoreViewSet)
+# Comptes du broker MQTT (administrateurs seulement, voir CompteMqttViewSet).
+router.register(r'comptes-mqtt', CompteMqttViewSet)
 router.register(r'messages-canal-meshcore', MessageCanalMeshCoreViewSet)
 router.register(r'salons-matrix', SalonMatrixEquipeViewSet)
 router.register(r'salons-matrix-institution', SalonMatrixInstitutionViewSet)

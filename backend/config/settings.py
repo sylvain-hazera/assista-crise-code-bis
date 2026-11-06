@@ -325,6 +325,12 @@ OAUTH2_PROVIDER = {
 # OIDC_RSA_PRIVATE_KEY. Vide : la supervision dans l'admin répond 503, le reste fonctionne.
 GRAFANA_JWT_PRIVATE_KEY = os.environ.get("GRAFANA_JWT_PRIVATE_KEY", "").replace("\\n", "\n")
 
+# Dossier partagé avec le conteneur du broker MQTT, où Django écrit `passwd` et `acl`
+# (core/mqtt_comptes.py). Vide : les comptes restent administrables en base mais rien n'est
+# écrit — c'est le cas en dev et sur un satellite, où le broker garde les fichiers qu'il s'est
+# amorcés depuis ses secrets. Jamais d'échec bloquant si le dossier manque.
+MQTT_COMPTES_DIR = os.environ.get("MQTT_COMPTES_DIR", "")
+
 # identique dans matrix-bridge et dans la config Synapse (voir core/matrix.py)
 MATRIX_SERVER_NAME = os.environ.get("MATRIX_SERVER_NAME", "matrix.assista-crise.local")
 
