@@ -1,7 +1,10 @@
 # Variante .114 (docker-compose.114.yml) de prometheus.yml : identique sauf mosquitto, jamais
 # déployé sur .114 (sa cible serait en permanence DOWN, donc InstanceDown permanente), et
 # loki/alloy, qui n'existent que sur .114.
-# Garder les deux fichiers alignés.
+# Troisième divergence, volontaire : le job blackbox-https sonde ici l'IP locale de la machine
+# avec le nom en SNI (voir le commentaire du job). Cette cible contient une IP propre à .114,
+# elle n'a donc rien à faire dans le fichier générique, qui garde le nom public.
+# Garder les deux fichiers alignés pour tout le reste.
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
@@ -49,12 +52,33 @@ scrape_configs:
   - job_name: cadvisor
     static_configs: [{ targets: ['cadvisor:8080'] }]
 
-  # --- boîte noire : le site public, vu comme un utilisateur
+  # --- boîte noire : toute la pile serveur, vue comme un utilisateur
+  #
+  # La cible est l'IP LOCALE, pas le nom. Le nom est passé en `hostname` : pour le prober http,
+  # ce paramètre fixe à la fois l'en-tête Host et le SNI TLS, donc le certificat valide
+  # normalement (il couvre www.assista-crise.fr). Sans lui la sonde échoue : un certificat ne
+  # vaut pas pour une IP.
+  #
+  # Pourquoi ne pas sonder le nom directement : l'apex résout vers 172.16.1.114 par le DNS
+  # interne (172.16.1.126) mais vers l'IP publique par un résolveur public, et la box ne fait
+  # pas de retour en épingle -- un TCP depuis cette machine vers sa propre IP publique expire,
+  # alors que la même connexion vers 172.16.1.114 aboutit instantanément. Chaque bascule de
+  # résolveur déclenchait donc un faux SiteDown *critique* : le 06/11/2026 à 03h24, 04h34 et
+  # 08h59, pendant que le WAF servait 333 puis 341 requêtes dans ces mêmes fenêtres.
+  #
+  # LIMITE ASSUMÉE : cette sonde valide TLS, le certificat, le WAF, le proxy et le frontend --
+  # pas la box, pas la redirection de port, pas le FAI. Une panne entre Internet et la machine
+  # reste invisible ici. Une vraie mesure de disponibilité externe exige un point d'observation
+  # hors du réseau (cf. DOCUMENTATION.md, « Monitoring »).
   - job_name: blackbox-https
     metrics_path: /probe
-    params: { module: [http_2xx] }
-    static_configs: [{ targets: ['https://assista-crise.fr'] }]
+    params:
+      module: [http_2xx]
+      hostname: [www.assista-crise.fr]
+    static_configs: [{ targets: ['https://172.16.1.114'] }]
     relabel_configs:
       - { source_labels: [__address__], target_label: __param_target }
-      - { source_labels: [__param_target], target_label: instance }
+      # instance porte le nom public, pas l'IP : c'est ce qu'affichent les tableaux de bord et
+      # le résumé de l'alerte SiteDown (« {{ $labels.instance }} is unreachable »).
+      - { target_label: instance, replacement: 'https://www.assista-crise.fr' }
       - { target_label: __address__, replacement: 'blackbox-exporter:9115' }

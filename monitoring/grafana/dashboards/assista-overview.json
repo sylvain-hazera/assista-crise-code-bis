@@ -31,7 +31,7 @@
     {
       "type": "stat",
       "title": "Site public",
-      "description": "Sonde HTTPS externe de assista-crise.fr",
+      "description": "Sonde HTTPS de www.assista-crise.fr : valide TLS, certificat, WAF, proxy et frontend. Depuis la machine elle-meme, donc une panne de box, de redirection de port ou de FAI reste invisible ici.",
       "id": 2,
       "datasource": {
         "type": "prometheus",
