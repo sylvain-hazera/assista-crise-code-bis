@@ -16122,7 +16122,17 @@ class CompagnonMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelView
                 continue
             if chan_hash == hash_public:
                 # Un canal « Public » par radio (comme avant), installé d'usine au slot 0.
-                if not compagnon.provisions_canaux.filter(canal__cle_partagee_hex=CanalMeshCore.SECRET_PUBLIC_PAR_DEFAUT).exists():
+                # Comparaison en Python, PAS en SQL : cle_partagee_hex est chiffrée au repos
+                # (Fernet, non déterministe), donc un `filter(canal__cle_partagee_hex=...)` ne
+                # trouverait jamais rien -- la garde serait toujours vraie et on recréerait un
+                # canal « Public » à CHAQUE appel de cette action. C'est exactement le bug de
+                # réinstallation en boucle décrit par ProvisionCanalMeshCore. Au plus 8 créneaux
+                # par companion : le parcours Python est sans coût.
+                deja_provisionne = any(
+                    p.canal.cle_partagee_hex == CanalMeshCore.SECRET_PUBLIC_PAR_DEFAUT
+                    for p in compagnon.provisions_canaux.select_related('canal')
+                )
+                if not deja_provisionne:
                     with transaction.atomic():
                         public = CanalMeshCore.objects.create(
                             nom="Public", cle_partagee_hex=CanalMeshCore.SECRET_PUBLIC_PAR_DEFAUT, actif=True,

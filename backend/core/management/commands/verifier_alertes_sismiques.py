@@ -437,9 +437,15 @@ class Command(BaseCommand):
         suffit, sans champ de ciblage dédié (MessageCanalMeshCore n'en a pas, contrairement à
         MessageCanalMeshtastic.compagnon). Renvoie (liste des noms de canal touchés,
         environment du premier) -- liste vide/environment None si aucun canal public connu."""
-        canaux_publics = list(
-            CanalMeshCore.objects.filter(cle_partagee_hex=CanalMeshCore.SECRET_PUBLIC_PAR_DEFAUT, actif=True)
-        )
+        # Comparaison en Python et non en SQL : cle_partagee_hex est chiffrée au repos
+        # (EncryptedTextField, Fernet) et Fernet n'est pas déterministe -- deux lignes de même clé
+        # ont deux chiffrés différents, donc `filter(cle_partagee_hex=...)` ne trouverait JAMAIS
+        # rien et les alertes séisme cesseraient d'être diffusées, sans erreur. La table est
+        # minuscule (un canal par companion l'ayant détecté), le filtrage Python est sans coût.
+        canaux_publics = [
+            c for c in CanalMeshCore.objects.filter(actif=True)
+            if c.cle_partagee_hex == CanalMeshCore.SECRET_PUBLIC_PAR_DEFAUT
+        ]
         if not canaux_publics:
             return [], None
 

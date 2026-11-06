@@ -5752,7 +5752,7 @@ class MessageMeshLog(EnvironmentScopedModel):
         "Team", on_delete=models.SET_NULL, null=True, blank=True, related_name="messages_meshcore",
     )
 
-    contenu = models.TextField()
+    contenu = EncryptedTextField()
 
     statut = models.CharField(max_length=12, choices=StatutMessageMesh.choices, default=StatutMessageMesh.EN_ATTENTE)
 
@@ -5873,7 +5873,7 @@ class CanalMeshCore(EnvironmentScopedModel):
     nom = models.CharField(max_length=100)
 
     # Clé de 16 octets, jamais renvoyée par l'API (write_only).
-    cle_partagee_hex = models.CharField(max_length=64, null=True, blank=True)
+    cle_partagee_hex = EncryptedTextField(max_length=64, null=True, blank=True)
 
     actif = models.BooleanField(default=True)
 
@@ -6061,7 +6061,7 @@ class MessageCanalMeshCore(EnvironmentScopedModel):
 
     contact_pubkey_hex = models.CharField(max_length=64, null=True, blank=True)
 
-    contenu = models.TextField()
+    contenu = EncryptedTextField()
 
     statut = models.CharField(max_length=12, choices=StatutMessageMesh.choices, default=StatutMessageMesh.EN_ATTENTE)
 
@@ -6172,7 +6172,7 @@ class CompagnonMeshtastic(EnvironmentScopedModel):
     mqtt_username = models.CharField(max_length=100, blank=True)
     # write_only côté serializer (comme x25519_private_key_hex) — jamais renvoyé en clair par
     # l'API une fois enregistré. Vide = pas d'authentification (cas de certains brokers publics).
-    mqtt_password = models.CharField(max_length=255, blank=True)
+    mqtt_password = EncryptedTextField(max_length=255, blank=True)
     mqtt_use_tls = models.BooleanField(default=False)
 
     # Fermé par défaut : Gaulix ne relaie de façon fiable que le clair ; tant que ce n'est pas
@@ -6187,7 +6187,7 @@ class CompagnonMeshtastic(EnvironmentScopedModel):
     actif = models.BooleanField(default=True)
 
     # Paire X25519 générée à la création ; la clé privée n'est jamais exposée par l'API.
-    x25519_private_key_hex = models.CharField(max_length=64, blank=True, editable=False)
+    x25519_private_key_hex = EncryptedTextField(max_length=64, blank=True, editable=False)
 
     derniere_connexion = models.DateTimeField(null=True, blank=True)
     dernier_etat = models.CharField(
@@ -6241,7 +6241,7 @@ class CanalMeshtastic(EnvironmentScopedModel):
     )
 
     nom = models.CharField(max_length=100)
-    psk_hex = models.CharField(max_length=64, null=True, blank=True)
+    psk_hex = EncryptedTextField(max_length=64, null=True, blank=True)
 
     compagnon = models.ForeignKey(
         CompagnonMeshtastic, on_delete=models.SET_NULL, null=True, blank=True, related_name="canaux",
@@ -6336,7 +6336,7 @@ class MessageMeshtasticLog(EnvironmentScopedModel):
         "Team", on_delete=models.SET_NULL, null=True, blank=True, related_name="messages_meshtastic",
     )
 
-    contenu = models.TextField()
+    contenu = EncryptedTextField()
 
     statut = models.CharField(max_length=12, choices=StatutMessageMesh.choices, default=StatutMessageMesh.EN_ATTENTE)
 
@@ -6370,7 +6370,7 @@ class MessageCanalMeshtastic(EnvironmentScopedModel):
 
     contact_node_num = models.PositiveBigIntegerField(null=True, blank=True)
 
-    contenu = models.TextField()
+    contenu = EncryptedTextField()
 
     statut = models.CharField(max_length=12, choices=StatutMessageMesh.choices, default=StatutMessageMesh.EN_ATTENTE)
 

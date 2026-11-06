@@ -129,6 +129,18 @@ class TestDeuxRadios:
                                 {"hashes": {hash_public: 3}}, format="json")
             assert reponse.status_code == 200, reponse.data
 
-        provisions = ProvisionCanalMeshCore.objects.filter(canal__cle_partagee_hex=CanalMeshCore.SECRET_PUBLIC_PAR_DEFAUT)
+        # Tri en Python et non en SQL : cle_partagee_hex est chiffrée au repos depuis la
+        # migration 0230 et Fernet n'est pas déterministe, donc un
+        # `filter(canal__cle_partagee_hex=...)` ne renverrait jamais rien -- silencieusement.
+        # C'est le même piège que la vue elle-même a dû contourner (voir
+        # CompagnonMeshCoreViewSet.signaler_canaux_detectes) et que
+        # core/tests/securite/test_chiffrement_secrets_mesh.py documente.
+        provisions = [
+            p for p in ProvisionCanalMeshCore.objects.select_related('canal')
+            if p.canal.cle_partagee_hex == CanalMeshCore.SECRET_PUBLIC_PAR_DEFAUT
+        ]
         assert sorted((p.compagnon_id, p.canal_idx) for p in provisions) == sorted([(bureau.id, 0), (radio_loire.id, 0)])
+        # Trois signalements pour deux radios : le troisième ne doit RIEN recréer. C'est cette
+        # assertion qui prouve que la garde anti-doublon de la vue fonctionne encore après le
+        # chiffrement (`nom` n'est pas chiffré, ce filtre-là reste valide).
         assert CanalMeshCore.objects.filter(nom="Public").count() == 2

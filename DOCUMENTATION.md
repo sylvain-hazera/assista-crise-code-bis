@@ -1577,6 +1577,13 @@ enjeux communaux, emails et téléphones des comptes…) sont chiffrées **par l
 texte chiffré. La règle ne souffre pas d'exception « parce que c'est un établissement » : une
 liste d'enjeux finit toujours par contenir l'adresse d'une personne (voir § 5.12).
 
+Depuis le 06/11/2026 (migration `0230`), le même chiffrement couvre aussi des **secrets** qui ne
+sont pas des données personnelles, parce que la règle « rien en clair » vaut pour eux aussi : clés
+partagées des canaux MeshCore (`CanalMeshCore.cle_partagee_hex`), PSK des canaux Meshtastic
+(`CanalMeshtastic.psk_hex`), mot de passe du broker MQTT et clé privée X25519
+(`CompagnonMeshtastic`). Ils n'étaient protégés que par `write_only` côté serializer, donc
+lisibles dans un `pg_dump`.
+
 | Clé | Algorithme | Usage |
 |---|---|---|
 | `FIELD_ENCRYPTION_KEY` | Fernet (réversible) | `EncryptedTextField`, `EncryptedEmailField`, `EncryptedJSONField` |
@@ -1592,6 +1599,19 @@ liste d'enjeux finit toujours par contenir l'adresse d'une personne (voir § 5.1
   (espaces, casse). Aucune recherche partielle (`icontains`) n'est possible sur un champ
   chiffré.
 - Une valeur lue non chiffrée est renvoyée telle quelle (lignes antérieures au chiffrement).
+- **Conséquence à ne jamais oublier : plus aucun `filter()` SQL ne peut porter sur une colonne
+  chiffrée**, et l'échec est *silencieux* — la requête ne lève pas, elle ne renvoie simplement
+  jamais rien. Chiffrer un champ oblige donc à relire tous ses usages. Deux l'ont imposé en
+  `0230`, tous deux comparant à `CanalMeshCore.SECRET_PUBLIC_PAR_DEFAUT` et passés en comparaison
+  Python (tables minuscules, coût nul) : `verifier_alertes_sismiques._diffuser_emcom_meshcore`,
+  où l'échec aurait **arrêté la diffusion des alertes sismiques**, et la garde anti-doublon de
+  `CompagnonMeshCoreViewSet.signaler_canaux_detectes`, où il aurait recréé le canal « Public » à
+  chaque appel. `core/tests/securite/test_chiffrement_secrets_mesh.py` verrouille les deux, et
+  prouve le chiffrement au repos en lisant la colonne en **SQL brut** — un test écrit avec l'ORM
+  passerait même sur une colonne en clair, puisque l'ORM déchiffre à la lecture.
+- Un `search_fields` de l'admin Django sur un champ chiffré ne trouve rien non plus, pour la même
+  raison : `NoeudMeshUtilisateurAdmin` cherche sur `nom_noeud`, chiffré — recherche inopérante,
+  antérieure à `0230`.
 - **Hors périmètre** : géométries (PostGIS doit les lire), `AuditLog`, informations
   publiques d'une institution (nom, marque blanche). La géométrie étant inchiffrable, un objet
   qui désigne une personne n'en porte pas : les coordonnées d'un domicile vont dans un
