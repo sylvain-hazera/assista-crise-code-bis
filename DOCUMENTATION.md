@@ -1252,6 +1252,30 @@ Trois mécanismes :
 En cas de refus sur iOS, le message dit **où** rétablir l'autorisation : sans cela, l'utilisateur
 conclut que l'application est cassée.
 
+Le **suivi de position permanent** suivait la même mauvaise pente, par un autre chemin :
+`SuiviPositionPermanentService` était « actif par défaut, sauf refus mémorisé », en comptant sur
+l'invite du navigateur comme garde-fou. `AppComponent.ngOnInit` appelait donc `watchPosition` à
+**chaque chargement de page et pour tout visiteur**, connecté ou non, site public compris. C'est
+le chemin le plus visible, et il avait été manqué lors du premier correctif. Désormais il faut un
+**consentement explicite** (`suiviPositionPermanentConsenti`, posé par le bouton de l'en-tête ou
+des paramètres) ; les comptes antérieurs ne reprennent le suivi que si la permission est **déjà
+accordée**, ce qui n'invite jamais. Désactiver retire le consentement et pas seulement le suivi,
+sinon le prochain chargement le relancerait.
+
+Enfin, les lectures/écritures de préférence passent par un accès protégé : `localStorage`
+**lève** en navigation privée Safari ou avec le blocage total des cookies, et comme ce service est
+appelé depuis `ngOnInit`, l'exception empêchait l'initialisation de toute l'application pour une
+simple préférence.
+
+**Limite connue, et elle est structurelle** : l'instance locale d'un satellite est servie en
+**HTTP** sur le réseau local (`http://<IP du satellite>/`, voir `satellite/nginx-satellite.conf`).
+`window.isSecureContext` y vaut donc **faux**, et tous les navigateurs — Safari comme les autres —
+refusent la géolocalisation, sans même afficher d'invite. Aucun code ne peut contourner cela :
+dans ce mode, « ma position », le suivi d'intervenant et le géomarquage des photos sont
+indisponibles. C'est précisément le scénario du satellite (téléphones sur site, sans internet),
+donc la limite compte. La lever demanderait un certificat TLS sur le satellite et l'installation
+de son autorité sur les téléphones — pas fait, pas décidé.
+
 ### 6.5.2 Création d'une zone : la carte suit la commune saisie
 
 `ZoneMapComponent` accepte `[communesGeojson]` (contours en calque de référence sous l'outil de
