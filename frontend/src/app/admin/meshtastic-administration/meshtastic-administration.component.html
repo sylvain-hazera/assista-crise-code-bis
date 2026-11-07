@@ -113,6 +113,17 @@
             </label>
           }
 
+          @if (nouvelle.type_tache === 'DEFINIR_MQTT_JSON') {
+            <label class="case">
+              <input name="json" type="checkbox" [(ngModel)]="nouvelle.mqtt_json">
+              Publier le JSON décodé (décocher pour le couper)
+              <small>
+                Le nœud publie alors en clair sur « …/2/json/# », en plus des trames chiffrées.
+                Le broker du site voit donc le texte : à ne jamais activer vers un broker tiers.
+              </small>
+            </label>
+          }
+
           @if (nouvelle.type_tache === 'REDEMARRER') {
             <label>
               Délai avant redémarrage (s)

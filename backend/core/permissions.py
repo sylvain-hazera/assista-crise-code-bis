@@ -319,6 +319,78 @@ def mask_phone(value):
     return f"+33 {digits[0]} {digits[1:3]} {digits[3:5]} {digits[5:7]} {digits[7:9]}"
 
 
+# Prénoms neutres et courants : un pseudonyme doit rester lisible dans un tableau et dans une
+# conversation pendant une démonstration. Le patronyme, lui, est toujours « Démo-XXXX » : on ne
+# fabrique PAS un faux nom de famille crédible, qui pourrait être pris pour une vraie personne
+# (voire coïncider avec l'une).
+PRENOMS_DEMO = (
+    "Alex", "Camille", "Charlie", "Claude", "Dominique", "Eden", "Gabriel", "Jules",
+    "Lou", "Louise", "Maé", "Marie", "Max", "Morgan", "Noa", "Pascal",
+    "Robin", "Sacha", "Sam", "Solal", "Swann", "Thomas", "Yaël", "Zoé",
+)
+
+
+def pseudonyme(user):
+    """(prénom, patronyme) factices mais STABLES pour un utilisateur donné.
+
+    Stable, parce qu'une démonstration doit rester cohérente : la même personne doit porter le
+    même pseudonyme d'une page à l'autre et d'une session à l'autre, sinon on ne peut pas suivre
+    un scénario (« c'est bien le même chef d'équipe que sur l'écran précédent ? »).
+
+    Dérivé de l'identifiant, pas du nom : deux homonymes restent distincts, et le pseudonyme ne
+    permet pas de remonter au nom réel."""
+    graine = str(getattr(user, 'id', None) or getattr(user, 'username', '') or '')
+    digest = hashlib.sha256(graine.encode()).hexdigest()
+    prenom = PRENOMS_DEMO[int(digest[:4], 16) % len(PRENOMS_DEMO)]
+    return prenom, f"Démo-{digest[4:8].upper()}"
+
+
+def est_son_propre_compte(request, user):
+    """Vrai si `user` est l'appelant — seul cas où ses données personnelles restent en clair en
+    zone DEMO (voir nom_affichable)."""
+    appelant = getattr(request, 'user', None) if request is not None else None
+    return bool(
+        appelant is not None and getattr(appelant, 'id', None)
+        and appelant.id == getattr(user, 'id', None)
+    )
+
+
+def nom_affichable(user, request=None):
+    """Nom lisible d'un utilisateur **pour l'affichage**, pseudonymisé en zone DEMO.
+
+    Point de passage unique, ajouté le 07/11/2026. Il y avait jusque-là une soixantaine de
+    `f"{u.first_name} {u.last_name}"` dispersés dans `serializers.py` et `views.py`, et **aucun**
+    ne masquait quoi que ce soit : la zone de démonstration affichait donc les noms des vraies
+    personnes de la production. `User` est en effet partagé entre les deux zones (un seul compte,
+    un `demo_role`), contrairement à tout le contenu, qui est cloisonné par
+    `EnvironmentScopedModel`. Les adresses et téléphones étaient déjà masqués (`mask_email`,
+    `mask_phone`) — les noms, non.
+
+    **Jamais pour le contenu d'un email.** Un message envoyé à une vraie personne doit porter son
+    vrai nom : les `send_mail` de `views.py` lisent volontairement `first_name`/`last_name` en
+    direct, et ne doivent pas passer par ici.
+
+    **L'utilisateur voit toujours son propre nom en clair.** Se masquer à soi-même ne protège
+    personne et rend la démonstration incompréhensible (« qui suis-je ? »).
+
+    **Aucun repli sur l'email ou l'identifiant**, volontairement : la fonction remplace
+    exactement `f"{u.first_name} {u.last_name}".strip()` et rend donc une chaîne VIDE pour un
+    compte sans nom. Les appelants gardent ainsi leur propre repli (`or u.email`), inchangé en
+    production — et en zone DEMO le pseudonyme est toujours non vide, donc ce repli ne s'applique
+    jamais et aucune adresse ne fuit par ce chemin. Un repli interne aurait fait apparaître des
+    emails là où le code renvoyait délibérément None."""
+    if user is None:
+        return None
+    reel = f"{getattr(user, 'first_name', '')} {getattr(user, 'last_name', '')}".strip()
+    if request is None or get_active_environment(request) != Environment.DEMO:
+        return reel
+    if est_son_propre_compte(request, user):
+        return reel
+
+    prenom, patronyme = pseudonyme(user)
+    return f"{prenom} {patronyme}"
+
+
 def strip_masked_fields_in_demo(request, validated_data, fields):
     """Retire `fields` de `validated_data` en zone DEMO — un formulaire d'édition affiche la
     version masquée (mask_email/mask_phone, voir to_representation des serializers concernés)

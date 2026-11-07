@@ -14,6 +14,7 @@ from .geo_lookup import (
 )
 from .permissions import (
     INSTITUTIONAL_TYPES, get_active_environment, effective_role_or_none, mask_email, mask_phone,
+    nom_affichable, pseudonyme, est_son_propre_compte,
     strip_masked_fields_in_demo, _peut_gerer_stock_point,
 )
 from .zone_scoping import object_in_viewer_zone, object_in_viewer_zone_via_commune
@@ -60,6 +61,7 @@ from .models import (
     MaterielCatalogue,
     CompagnonMeshCore, CompteMqtt, LiaisonMeshtastic,
     TacheAdminMeshtastic, TypeTacheAdminMeshtastic, TACHES_ADMIN_ECRITURE,
+    CalibrationRadio, CouvertureRadioSite,
     ConfigurationNoeudMeshtastic, MeshtasticConnexionType,
     PUISSANCE_MIN_DBM, PUISSANCE_MAX_DBM,
     NoeudMeshUtilisateur,
@@ -439,14 +441,27 @@ class UserSerializer(serializers.ModelSerializer):
         }
 
     def to_representation(self, instance):
-        """En zone DEMO, email, téléphone et username (souvent l'email) sont masqués à
-        l'affichage, jamais en base."""
+        """En zone DEMO, email, téléphone, username (souvent l'email) **et nom** sont masqués à
+        l'affichage, jamais en base.
+
+        Le nom a été ajouté le 07/11/2026 : il manquait, et la page Utilisateurs affichait donc
+        en démonstration les prénoms et noms des vraies personnes de la production — `User` est
+        partagé entre les deux zones, contrairement à tout le contenu. Pseudonyme stable, pour
+        qu'un scénario de démonstration reste suivable d'un écran à l'autre (voir
+        core/permissions.py:pseudonyme).
+
+        Sauf sa propre fiche : se masquer à soi-même ne protège personne et rend la zone de
+        démonstration incompréhensible."""
         data = super().to_representation(instance)
         request = self.context.get('request')
         if request is not None and get_active_environment(request) == Environment.DEMO:
             data['email'] = mask_email(data.get('email'))
             data['phone_number'] = mask_phone(data.get('phone_number'))
             data['username'] = mask_email(data.get('username'))
+            if not est_son_propre_compte(request, instance):
+                prenom, patronyme = pseudonyme(instance)
+                data['first_name'] = prenom
+                data['last_name'] = patronyme
         return data
 
     def validate_demo_role(self, value):
@@ -618,7 +633,7 @@ class CrisisSerializer(serializers.ModelSerializer):
     def get_author_nom(self, obj):
         if not obj.author:
             return None
-        return f"{obj.author.first_name} {obj.author.last_name}".strip() or obj.author.username
+        return nom_affichable(obj.author, self.context.get("request")) or obj.author.username
 
     def get_commune(self, obj):
         # Pas de géocodage réseau en liste (coût par ligne) ; seulement sur un retrieve.
@@ -742,7 +757,7 @@ class RequestSerializer(SansIndexAveugleMixin, serializers.ModelSerializer):
     def get_author_nom(self, obj):
         if not obj.author:
             return None
-        full_name = f"{obj.author.first_name} {obj.author.last_name}".strip()
+        full_name = nom_affichable(obj.author, self.context.get("request"))
         return full_name or obj.author.email
 
     def get_has_photo(self, obj):
@@ -906,7 +921,7 @@ class OfferSerializer(SansIndexAveugleMixin, serializers.ModelSerializer):
     def get_author_nom(self, obj):
         if not obj.author:
             return None
-        full_name = f"{obj.author.first_name} {obj.author.last_name}".strip()
+        full_name = nom_affichable(obj.author, self.context.get("request"))
         return full_name or obj.author.email
 
     def get_has_photo(self, obj):
@@ -976,7 +991,7 @@ class OfferMessageSerializer(serializers.ModelSerializer):
     def get_auteur_equipe_nom(self, obj):
         if not obj.auteur_equipe_id:
             return None
-        return f"{obj.auteur_equipe.first_name} {obj.auteur_equipe.last_name}".strip() or obj.auteur_equipe.email
+        return nom_affichable(obj.auteur_equipe, self.context.get("request")) or obj.auteur_equipe.email
 
 
 class DisponibiliteOffreSerializer(serializers.ModelSerializer):
@@ -997,7 +1012,7 @@ class DisponibilitePointEquipeSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
     def get_membre_nom(self, obj):
-        full_name = f"{obj.membre.first_name} {obj.membre.last_name}".strip()
+        full_name = nom_affichable(obj.membre, self.context.get("request"))
         return full_name or obj.membre.email
 
     def validate(self, attrs):
@@ -1030,7 +1045,7 @@ class ContributionMaterielSerializer(serializers.ModelSerializer):
     def get_responsable_nom(self, obj):
         if not obj.responsable:
             return None
-        full_name = f"{obj.responsable.first_name} {obj.responsable.last_name}".strip()
+        full_name = nom_affichable(obj.responsable, self.context.get("request"))
         return full_name or obj.responsable.email
 
     def validate(self, attrs):
@@ -1056,7 +1071,7 @@ class MaterielPointSerializer(serializers.ModelSerializer):
     def get_responsable_nom(self, obj):
         if not obj.responsable:
             return None
-        full_name = f"{obj.responsable.first_name} {obj.responsable.last_name}".strip()
+        full_name = nom_affichable(obj.responsable, self.context.get("request"))
         return full_name or obj.responsable.email
 
     def get_quantite_totale(self, obj):
@@ -1085,7 +1100,7 @@ class RegistrePresenceSerializer(serializers.ModelSerializer):
     def get_enregistre_par_nom(self, obj):
         if not obj.enregistre_par:
             return None
-        full_name = f"{obj.enregistre_par.first_name} {obj.enregistre_par.last_name}".strip()
+        full_name = nom_affichable(obj.enregistre_par, self.context.get("request"))
         return full_name or obj.enregistre_par.email
 
     def validate(self, attrs):
@@ -1110,7 +1125,7 @@ class SuiviMaterielEvenementSerializer(serializers.ModelSerializer):
     def get_cree_par_nom(self, obj):
         if not obj.cree_par:
             return None
-        full_name = f"{obj.cree_par.first_name} {obj.cree_par.last_name}".strip()
+        full_name = nom_affichable(obj.cree_par, self.context.get("request"))
         return full_name or obj.cree_par.email
 
     def validate(self, attrs):
@@ -1144,7 +1159,7 @@ class DeclarationSecuriteSerializer(serializers.ModelSerializer):
     def get_declare_par_nom(self, obj):
         if not obj.declare_par:
             return None
-        full_name = f"{obj.declare_par.first_name} {obj.declare_par.last_name}".strip()
+        full_name = nom_affichable(obj.declare_par, self.context.get("request"))
         return full_name or obj.declare_par.email
 
     # Adresse personnelle : visible des seuls acteurs institutionnels.
@@ -1191,7 +1206,7 @@ class AffectationPointBenevoleSerializer(serializers.ModelSerializer):
         read_only_fields = ['statut', 'token_confirmation', 'date_reponse', 'affecte_par']
 
     def get_benevole_nom(self, obj):
-        full_name = f"{obj.benevole.first_name} {obj.benevole.last_name}".strip()
+        full_name = nom_affichable(obj.benevole, self.context.get("request"))
         return full_name or obj.benevole.email
 
 
@@ -1281,7 +1296,7 @@ class InformationSerializer(SansIndexAveugleMixin, serializers.ModelSerializer):
     def get_author_nom(self, obj):
         if not obj.author:
             return None
-        full_name = f"{obj.author.first_name} {obj.author.last_name}".strip()
+        full_name = nom_affichable(obj.author, self.context.get("request"))
         return full_name or obj.author.email
 
     def get_has_photo(self, obj):
@@ -1356,15 +1371,18 @@ class PersonneVulnerableSerializer(serializers.ModelSerializer):
     def get_cree_par_nom(self, obj):
         if not obj.cree_par:
             return None
-        return f"{obj.cree_par.first_name} {obj.cree_par.last_name}".strip() or obj.cree_par.username
+        return nom_affichable(obj.cree_par, self.context.get("request")) or obj.cree_par.username
 
 
-def _nom_lisible(user):
+def _nom_lisible(user, request=None):
     """Prénom + nom, à défaut l'identifiant — un tableau de désignations qui n'afficherait que
-    des UUID ne permettrait pas de relire la liste des habilités, qui est son seul but."""
+    des UUID ne permettrait pas de relire la liste des habilités, qui est son seul but.
+
+    `request` est nécessaire, pas décoratif : sans elle le nom n'est pas pseudonymisé en zone
+    DEMO (voir core/permissions.py:nom_affichable)."""
     if user is None:
         return None
-    return f"{user.first_name} {user.last_name}".strip() or user.username
+    return nom_affichable(user, request) or user.username
 
 
 class HabilitationRegistreVulnerablesSerializer(serializers.ModelSerializer):
@@ -1403,13 +1421,24 @@ class HabilitationRegistreVulnerablesSerializer(serializers.ModelSerializer):
         )
 
     def get_utilisateur_nom(self, obj):
-        return _nom_lisible(obj.utilisateur)
+        return _nom_lisible(obj.utilisateur, self.context.get("request"))
 
     def get_accordee_par_nom(self, obj):
-        return _nom_lisible(obj.accordee_par)
+        return _nom_lisible(obj.accordee_par, self.context.get("request"))
 
     def get_retiree_par_nom(self, obj):
-        return _nom_lisible(obj.retiree_par)
+        return _nom_lisible(obj.retiree_par, self.context.get("request"))
+
+    def to_representation(self, instance):
+        """Adresses masquées en zone DEMO. Une désignation au registre des personnes vulnérables
+        nomme deux personnes réelles (le désigné et le désignant) : leurs adresses n'ont rien à
+        faire dans une démonstration."""
+        data = super().to_representation(instance)
+        request = self.context.get('request')
+        if request is not None and get_active_environment(request) == Environment.DEMO:
+            if not est_son_propre_compte(request, instance.utilisateur):
+                data['utilisateur_email'] = mask_email(data.get('utilisateur_email'))
+        return data
 
     def get_engagement_signe(self, obj):
         """Le désigné a-t-il signé son engagement au secret ? Affiché dans la liste pour que le
@@ -1442,7 +1471,7 @@ class InterlocuteurAlertePCSSerializer(serializers.ModelSerializer):
     def get_utilisateur_nom(self, obj):
         if not obj.utilisateur:
             return None
-        return f"{obj.utilisateur.first_name} {obj.utilisateur.last_name}".strip()
+        return nom_affichable(obj.utilisateur, self.context.get("request"))
 
     def get_institutions_noms(self, obj):
         return [i.nom for i in obj.institutions.all()]
@@ -1460,7 +1489,7 @@ class NotificationAlertePCSSerializer(serializers.ModelSerializer):
     def get_confirme_par_nom(self, obj):
         if not obj.confirme_par:
             return None
-        return f"{obj.confirme_par.first_name} {obj.confirme_par.last_name}".strip()
+        return nom_affichable(obj.confirme_par, self.context.get("request"))
 
 
 class SecteurRechercheSerializer(serializers.ModelSerializer):
@@ -1644,7 +1673,7 @@ class TeamSerializer(serializers.ModelSerializer):
     def _nom(self, user):
         if not user:
             return None
-        return f"{user.first_name} {user.last_name}".strip() or user.username
+        return nom_affichable(user, self.context.get("request")) or user.username
 
     def get_members_info(self, obj):
         # Noms des coéquipiers seulement (un bénévole n'a pas accès à la liste des utilisateurs).
@@ -1687,7 +1716,7 @@ class DernierePositionUtilisateurSerializer(serializers.ModelSerializer):
         return obj.location.x if obj.location else None
 
     def get_utilisateur_nom(self, obj):
-        return f"{obj.utilisateur.first_name} {obj.utilisateur.last_name}".strip() or obj.utilisateur.username
+        return nom_affichable(obj.utilisateur, self.context.get("request")) or obj.utilisateur.username
 
     def get_team_noms(self, obj):
         # Préfixé par l'institution : la carte mêle des équipes de plusieurs institutions.
@@ -1922,7 +1951,7 @@ class DossierSerializer(serializers.ModelSerializer):
         return [
             {
                 'id': str(r.id),
-                'nom': (f"{r.first_name} {r.last_name}".strip() or r.email),
+                'nom': (nom_affichable(r, self.context.get("request")) or r.email),
                 'email': r.email,
                 'telephone': r.phone_number,
             }
@@ -2037,8 +2066,7 @@ class DocumentSerializer(serializers.ModelSerializer):
             return "Inconnu"
 
         return (
-            f"{obj.auteur.first_name} "
-            f"{obj.auteur.last_name}"
+            nom_affichable(obj.auteur, self.context.get("request"))
         ).strip() or obj.auteur.username
 
     def get_nom_fichier(self, obj):
@@ -2102,8 +2130,7 @@ class DossierCommentaireSerializer(serializers.ModelSerializer):
             return "Inconnu"
 
         return (
-            f"{obj.auteur.first_name} "
-            f"{obj.auteur.last_name}"
+            nom_affichable(obj.auteur, self.context.get("request"))
         ).strip() or obj.auteur.username
 
 
@@ -2122,8 +2149,7 @@ class JournalCollectiviteSerializer(serializers.ModelSerializer):
         if not obj.auteur:
             return "Inconnu"
         return (
-            f"{obj.auteur.first_name} "
-            f"{obj.auteur.last_name}"
+            nom_affichable(obj.auteur, self.context.get("request"))
         ).strip() or obj.auteur.username
 
 
@@ -2141,7 +2167,7 @@ class AuditLogSerializer(serializers.ModelSerializer):
     def get_utilisateur_nom(self, obj):
         if not obj.utilisateur:
             return "Système"
-        return f"{obj.utilisateur.first_name} {obj.utilisateur.last_name}".strip() or obj.utilisateur.username
+        return nom_affichable(obj.utilisateur, self.context.get("request")) or obj.utilisateur.username
 
 
 class AuditLogAdminSerializer(serializers.ModelSerializer):
@@ -2171,7 +2197,19 @@ class AuditLogAdminSerializer(serializers.ModelSerializer):
     def get_utilisateur_nom(self, obj):
         if not obj.utilisateur:
             return "Système / anonyme"
-        return f"{obj.utilisateur.first_name} {obj.utilisateur.last_name}".strip() or obj.utilisateur.username
+        return nom_affichable(obj.utilisateur, self.context.get("request")) or obj.utilisateur.username
+
+    def to_representation(self, instance):
+        """L'email de l'auteur de l'action est masqué en zone DEMO. Les lignes de main courante
+        sont cloisonnées par environnement, mais leur AUTEUR est un compte réel (`User` est
+        partagé entre les deux zones) : sans ce masquage, la main courante de démonstration
+        affichait l'adresse réelle de chaque personne qui y agit."""
+        data = super().to_representation(instance)
+        request = self.context.get('request')
+        if request is not None and get_active_environment(request) == Environment.DEMO:
+            if not est_son_propre_compte(request, instance.utilisateur):
+                data['utilisateur_email'] = mask_email(data.get('utilisateur_email'))
+        return data
 
     def get_objet_type_libelle(self, obj):
         from .main_courante import TYPES_FICHES
@@ -2205,8 +2243,7 @@ class DossierHistoriqueSerializer(serializers.ModelSerializer):
             return "Système"
 
         return (
-            f"{obj.auteur.first_name} "
-            f"{obj.auteur.last_name}"
+            nom_affichable(obj.auteur, self.context.get("request"))
         ).strip() or obj.auteur.username
 
 class NotificationSerializer(serializers.ModelSerializer):
@@ -2242,7 +2279,7 @@ class DemandeMobilisationSerializer(serializers.ModelSerializer):
     def get_emetteur_nom(self, obj):
         if not obj.emetteur_id:
             return None
-        return f"{obj.emetteur.first_name} {obj.emetteur.last_name}".strip() or obj.emetteur.email
+        return nom_affichable(obj.emetteur, self.context.get("request")) or obj.emetteur.email
 
     def get_cible_type(self, obj):
         if obj.cible_utilisateur_id:
@@ -2256,7 +2293,7 @@ class DemandeMobilisationSerializer(serializers.ModelSerializer):
     def get_cible_nom(self, obj):
         if obj.cible_utilisateur_id:
             u = obj.cible_utilisateur
-            return f"{u.first_name} {u.last_name}".strip() or u.email
+            return nom_affichable(u, self.context.get("request")) or u.email
         if obj.cible_institution_id:
             return obj.cible_institution.nom
         if obj.cible_offre_id:
@@ -2491,8 +2528,7 @@ class RecherchePersonneCommentaireSerializer(
     def get_auteur_nom(self, obj):
 
         return (
-            f"{obj.auteur.first_name} "
-            f"{obj.auteur.last_name}"
+            nom_affichable(obj.auteur, self.context.get("request"))
         ).strip() or obj.auteur.username
 
 class RecherchePersonneHistoriqueSerializer(
@@ -2510,8 +2546,7 @@ class RecherchePersonneHistoriqueSerializer(
             return "Système"
 
         return (
-            f"{obj.auteur.first_name} "
-            f"{obj.auteur.last_name}"
+            nom_affichable(obj.auteur, self.context.get("request"))
         ).strip()
 
 class RecherchePersonnePhotoSerializer(
@@ -2563,8 +2598,7 @@ class RecherchePersonnePhotoSerializer(
             return "Inconnu"
 
         return (
-            f"{obj.auteur.first_name} "
-            f"{obj.auteur.last_name}"
+            nom_affichable(obj.auteur, self.context.get("request"))
         ).strip() or obj.auteur.username
 
 
@@ -2867,14 +2901,14 @@ class PointOperationnelSerializer(
     def get_responsable_nom(self, obj):
         if not obj.responsable:
             return None
-        full_name = f"{obj.responsable.first_name} {obj.responsable.last_name}".strip()
+        full_name = nom_affichable(obj.responsable, self.context.get("request"))
         return full_name or obj.responsable.username
 
     def get_responsables_contacts(self, obj):
         return [
             {
                 "id": str(u.id),
-                "nom": (f"{u.first_name} {u.last_name}".strip() or u.username),
+                "nom": (nom_affichable(u, self.context.get("request")) or u.username),
                 "email": u.email,
                 "telephone": u.phone_number,
             }
@@ -2945,7 +2979,7 @@ class PlanSerializer(serializers.ModelSerializer):
 
     def get_contacts_internes_noms(self, obj):
         return [
-            f"{c.utilisateur.first_name} {c.utilisateur.last_name}".strip() or c.utilisateur.username
+            nom_affichable(c.utilisateur, self.context.get("request")) or c.utilisateur.username
             for c in obj.contacts_internes.select_related('utilisateur').all()
         ]
 
@@ -2967,7 +3001,7 @@ class PlanMissionModeleSerializer(serializers.ModelSerializer):
     def get_referent_nom(self, obj):
         if not obj.referent:
             return None
-        full_name = f"{obj.referent.first_name} {obj.referent.last_name}".strip()
+        full_name = nom_affichable(obj.referent, self.context.get("request"))
         return full_name or obj.referent.email
 
 
@@ -3029,7 +3063,7 @@ class ImplicationInstitutionSerializer(
     def get_responsable_nom(self, obj):
         if not obj.responsable:
             return None
-        full_name = f"{obj.responsable.first_name} {obj.responsable.last_name}".strip()
+        full_name = nom_affichable(obj.responsable, self.context.get("request"))
         return full_name or obj.responsable.email
 
     def get_themes_libelles(self, obj):
@@ -3075,7 +3109,7 @@ class ContactInstitutionSerializer(
     def get_utilisateur_nom(self, obj):
         if not obj.utilisateur:
             return None
-        full_name = f"{obj.utilisateur.first_name} {obj.utilisateur.last_name}".strip()
+        full_name = nom_affichable(obj.utilisateur, self.context.get("request"))
         if full_name:
             return full_name
         # Jamais l'email en clair en DEMO.
@@ -3163,7 +3197,7 @@ class QualificationMembreSerializer(serializers.ModelSerializer):
     def get_utilisateur_nom(self, obj):
         if not obj.utilisateur:
             return None
-        nom = f"{obj.utilisateur.first_name} {obj.utilisateur.last_name}".strip()
+        nom = nom_affichable(obj.utilisateur, self.context.get("request"))
         return nom or obj.utilisateur.email
 
     def get_jours_avant_expiration(self, obj):
@@ -3180,8 +3214,9 @@ class InvitationAssociationSerializer(serializers.ModelSerializer):
 
     institution_nom = serializers.CharField(
         source="institution.nom", read_only=True, default=None)
-    cree_par_nom = serializers.CharField(
-        source="cree_par.last_name", read_only=True, default=None)
+    # Méthode et non `source="cree_par.last_name"` : le patronyme brut d'une personne réelle
+    # apparaissait tel quel en zone DEMO (voir core/permissions.py:nom_affichable).
+    cree_par_nom = serializers.SerializerMethodField()
     utilisable = serializers.BooleanField(read_only=True)
     nombre_candidatures = serializers.SerializerMethodField()
 
@@ -3189,6 +3224,9 @@ class InvitationAssociationSerializer(serializers.ModelSerializer):
         model = InvitationAssociation
         fields = "__all__"
         read_only_fields = ("jeton", "cree_par", "date_creation")
+
+    def get_cree_par_nom(self, obj):
+        return nom_affichable(obj.cree_par, self.context.get("request"))
 
     def get_nombre_candidatures(self, obj):
         return obj.candidatures.count()
@@ -3224,7 +3262,7 @@ class CandidatureAssociationSerializer(serializers.ModelSerializer):
     def get_utilisateur_nom(self, obj):
         if not obj.utilisateur:
             return None
-        nom = f"{obj.utilisateur.first_name} {obj.utilisateur.last_name}".strip()
+        nom = nom_affichable(obj.utilisateur, self.context.get("request"))
         if nom:
             return nom
         request = self.context.get('request')
@@ -3302,7 +3340,7 @@ class NoeudMeshUtilisateurSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         if request is not None and get_active_environment(request) == Environment.DEMO:
             return "Nœud de terrain"
-        return f"{obj.utilisateur.first_name} {obj.utilisateur.last_name}".strip() or obj.utilisateur.email
+        return nom_affichable(obj.utilisateur, self.context.get("request")) or obj.utilisateur.email
 
     def to_representation(self, instance):
         """En DEMO, le compte rattaché au nœud est masqué ; pubkey_hex reste pour l'adressage."""
@@ -3331,7 +3369,7 @@ class MessageMeshLogSerializer(serializers.ModelSerializer):
     def get_expediteur_nom(self, obj):
         if not obj.expediteur_id:
             return None
-        return f"{obj.expediteur.first_name} {obj.expediteur.last_name}".strip() or obj.expediteur.email
+        return nom_affichable(obj.expediteur, self.context.get("request")) or obj.expediteur.email
 
 
 class AlerteMeshSOSSerializer(serializers.ModelSerializer):
@@ -3421,7 +3459,7 @@ class SalonMatrixEquipeSerializer(serializers.ModelSerializer):
         regulateur = obj.equipe.regulateur
         if not regulateur:
             return None
-        nom = f"{regulateur.first_name} {regulateur.last_name}".strip() or regulateur.email
+        nom = nom_affichable(regulateur, self.context.get("request")) or regulateur.email
         coordonnees = " / ".join(c for c in [regulateur.email, regulateur.phone_number] if c)
         return f"Régulateur : {nom}" + (f" ({coordonnees})" if coordonnees else "")
 
@@ -3429,7 +3467,7 @@ class SalonMatrixEquipeSerializer(serializers.ModelSerializer):
         from .matrix import matrix_user_id
         return [
             {"id": str(m.id), "matrix_user_id": matrix_user_id(m),
-             "nom": f"{m.first_name} {m.last_name}".strip() or m.email}
+             "nom": nom_affichable(m, self.context.get("request")) or m.email}
             for m in obj.equipe.members.filter(is_active=True)
         ]
 
@@ -3469,7 +3507,7 @@ class SalonMatrixInstitutionSerializer(serializers.ModelSerializer):
 
         return [
             {"id": str(m.id), "matrix_user_id": matrix_user_id(m),
-             "nom": f"{m.first_name} {m.last_name}".strip() or m.email}
+             "nom": nom_affichable(m, self.context.get("request")) or m.email}
             for m in queryset
         ]
 
@@ -3506,7 +3544,9 @@ class TacheAdminMeshtasticSerializer(serializers.ModelSerializer):
     compagnon_nom = serializers.CharField(source='compagnon.nom', read_only=True)
     type_tache_libelle = serializers.CharField(source='get_type_tache_display', read_only=True)
     est_ecriture = serializers.BooleanField(read_only=True)
-    demande_par_email = serializers.EmailField(source='demande_par.email', read_only=True, default=None)
+    # Méthode et non `source` direct : en zone DEMO l'adresse d'une personne réelle doit être
+    # masquée comme partout ailleurs (les lectures d'administration y restent possibles).
+    demande_par_email = serializers.SerializerMethodField()
 
     class Meta:
         model = TacheAdminMeshtastic
@@ -3516,6 +3556,15 @@ class TacheAdminMeshtasticSerializer(serializers.ModelSerializer):
                   'date_creation', 'date_prise', 'date_reponse']
         read_only_fields = ['statut', 'tentatives', 'reponse', 'erreur', 'demande_par',
                             'date_creation', 'date_prise', 'date_reponse']
+
+    def get_demande_par_email(self, obj):
+        if obj.demande_par is None:
+            return None
+        request = self.context.get('request')
+        if request is not None and get_active_environment(request) == Environment.DEMO \
+                and not est_son_propre_compte(request, obj.demande_par):
+            return mask_email(obj.demande_par.email)
+        return obj.demande_par.email
 
     def validate(self, attrs):
         compagnon = attrs.get('compagnon')
@@ -3549,6 +3598,47 @@ class TacheAdminMeshtasticSerializer(serializers.ModelSerializer):
                 })
 
         return attrs
+
+
+class CalibrationRadioSerializer(serializers.ModelSerializer):
+    """Écart mesuré entre le modèle de propagation et les liaisons réelles. Lecture seule : une
+    calibration se calcule, elle ne se saisit pas."""
+
+    class Meta:
+        model = CalibrationRadio
+        fields = ['id', 'preset', 'liaisons_retenues', 'ecart_median_db',
+                  'perte_environnement_db', 'exemples', 'date_calcul']
+        read_only_fields = fields
+
+
+class CouvertureRadioSiteSerializer(serializers.ModelSerializer):
+    """Couverture calculée d'un site.
+
+    `points` est volontairement ABSENT : une couverture en porte quelques milliers, soit des
+    centaines de kilooctets par site. Ils ne servent qu'à la carte, et sont servis par l'action
+    `geojson` à la demande."""
+
+    latitude = serializers.SerializerMethodField()
+    longitude = serializers.SerializerMethodField()
+    nombre_points = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CouvertureRadioSite
+        fields = ['id', 'nom', 'latitude', 'longitude', 'node_num', 'hauteur_antenne_m',
+                  'hauteur_cible_m', 'preset', 'puissance_dbm', 'rayon_max_km', 'nb_rayons',
+                  'pas_m', 'perte_environnement_db', 'calibre', 'surface_estimee_km2',
+                  'points_sans_altitude', 'nombre_points', 'statut', 'erreur',
+                  'date_lancement', 'date_calcul']
+        read_only_fields = fields
+
+    def get_latitude(self, obj):
+        return round(obj.location.y, 6) if obj.location else None
+
+    def get_longitude(self, obj):
+        return round(obj.location.x, 6) if obj.location else None
+
+    def get_nombre_points(self, obj):
+        return len(obj.points or [])
 
 
 class CompteMqttSerializer(serializers.ModelSerializer):
@@ -3707,7 +3797,7 @@ class NoeudUtilisateurMeshtasticSerializer(serializers.ModelSerializer):
         fields = "__all__"
 
     def get_utilisateur_nom(self, obj):
-        return f"{obj.utilisateur.first_name} {obj.utilisateur.last_name}".strip() or obj.utilisateur.email
+        return nom_affichable(obj.utilisateur, self.context.get("request")) or obj.utilisateur.email
 
 
 class MessageMeshtasticLogSerializer(serializers.ModelSerializer):
@@ -3723,7 +3813,7 @@ class MessageMeshtasticLogSerializer(serializers.ModelSerializer):
     def get_expediteur_nom(self, obj):
         if not obj.expediteur_id:
             return None
-        return f"{obj.expediteur.first_name} {obj.expediteur.last_name}".strip() or obj.expediteur.email
+        return nom_affichable(obj.expediteur, self.context.get("request")) or obj.expediteur.email
 
 
 class MessageCanalMeshtasticSerializer(serializers.ModelSerializer):
@@ -3740,7 +3830,7 @@ class MessageCanalMeshtasticSerializer(serializers.ModelSerializer):
     def get_expediteur_nom(self, obj):
         if not obj.expediteur_id:
             return None
-        return f"{obj.expediteur.first_name} {obj.expediteur.last_name}".strip() or obj.expediteur.email
+        return nom_affichable(obj.expediteur, self.context.get("request")) or obj.expediteur.email
 
     def get_node_nom(self, obj):
         if obj.contact_node_num is None:
@@ -3768,7 +3858,7 @@ class MessageCanalMeshCoreSerializer(serializers.ModelSerializer):
     def get_expediteur_nom(self, obj):
         if not obj.expediteur_id:
             return None
-        return f"{obj.expediteur.first_name} {obj.expediteur.last_name}".strip() or obj.expediteur.email
+        return nom_affichable(obj.expediteur, self.context.get("request")) or obj.expediteur.email
 
 
 class SatelliteSerializer(serializers.ModelSerializer):
@@ -3830,7 +3920,7 @@ class HabitationCommentaireSerializer(serializers.ModelSerializer):
     def get_auteur_nom(self, obj):
         if not obj.auteur:
             return "Inconnu"
-        return (f"{obj.auteur.first_name} {obj.auteur.last_name}").strip() or obj.auteur.username
+        return nom_affichable(obj.auteur, self.context.get("request")) or obj.auteur.username
 
 
 class HabitationHistoriqueSerializer(serializers.ModelSerializer):
@@ -3844,7 +3934,7 @@ class HabitationHistoriqueSerializer(serializers.ModelSerializer):
     def get_auteur_nom(self, obj):
         if not obj.auteur:
             return "Système"
-        return (f"{obj.auteur.first_name} {obj.auteur.last_name}").strip() or obj.auteur.username
+        return nom_affichable(obj.auteur, self.context.get("request")) or obj.auteur.username
 
 
 class HabitationSerializer(serializers.ModelSerializer):
@@ -3913,7 +4003,7 @@ class RattachementHabitationSerializer(serializers.ModelSerializer):
     def get_traite_par_nom(self, obj):
         if not obj.traite_par:
             return None
-        return (f"{obj.traite_par.first_name} {obj.traite_par.last_name}").strip() or obj.traite_par.username
+        return nom_affichable(obj.traite_par, self.context.get("request")) or obj.traite_par.username
 
     def get_a_justificatif(self, obj):
         return bool(obj.justificatif)
@@ -4079,7 +4169,7 @@ class SiteSensibleSerializer(serializers.ModelSerializer):
         utilisateur = suivi.valide_par if suivi else None
         if not utilisateur:
             return None
-        return (f"{utilisateur.first_name} {utilisateur.last_name}".strip()
+        return (nom_affichable(utilisateur, self.context.get("request"))
                 or utilisateur.username)
 
     def get_decisions_autres(self, obj):

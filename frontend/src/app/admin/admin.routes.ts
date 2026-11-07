@@ -66,6 +66,10 @@ export const ADMIN_ROUTES: Routes = [
   // Diagnostic des liaisons radio (core/analyse_liaisons.py) : lecture seule, ouverte aux
   // acteurs institutionnels comme les autres pages radio.
   { path: 'diagnostic-radio', loadComponent: () => import('./diagnostic-radio/diagnostic-radio.component').then(m => m.DiagnosticRadioComponent), canActivate: [institutionalEffectiveGuard] },
+  // Planification radio sur le relief (core/relief_radio.py) : bilan de liaison et couverture
+  // d'un site. Lecture et calculs reserves aux acteurs institutionnels (un balayage coute des
+  // milliers d'interrogations a un service public limite en debit).
+  { path: 'couverture-radio', loadComponent: () => import('./couverture-radio/couverture-radio.component').then(m => m.CouvertureRadioComponent), canActivate: [institutionalEffectiveGuard] },
   { path: 'satellites', loadComponent: () => import('./satellites/satellites.component').then(m => m.SatellitesComponent), canActivate: [institutionalEffectiveGuard] },
 
   // ── Administration ──

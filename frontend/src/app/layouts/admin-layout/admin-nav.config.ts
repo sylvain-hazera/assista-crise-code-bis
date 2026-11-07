@@ -113,6 +113,9 @@ export const NAV_ITEMS: NavItem[] = [
   // Ce que les mesures disent du reseau : relais sourds, liaisons a sens unique, desequilibrees,
   // noeuds inaudibles (backend/core/analyse_liaisons.py).
   { icon: 'troubleshoot', label: 'Diagnostic radio', route: '/admin/diagnostic-radio', groupe: 'communications' },
+  // Jusqu'ou porte un site, et est-ce que ca passe entre deux points (backend/core/relief_radio.py,
+  // porte de relief.js de carte-live-meshtastic).
+  { icon: 'cell_tower', label: 'Planification radio', route: '/admin/couverture-radio', groupe: 'communications' },
   // Boîtiers Raspberry Pi déployés sur site (voir satellite/README.md).
   { icon: 'router', label: 'Satellites', route: '/admin/satellites', groupe: 'communications' },
 

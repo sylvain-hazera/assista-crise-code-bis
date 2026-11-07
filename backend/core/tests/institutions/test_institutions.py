@@ -808,10 +808,16 @@ class TestInstitutionAndContactVisibleAcrossEnvironmentsInDemo:
 
 @pytest.mark.django_db
 class TestInstitutionAndContactPiiMaskedInDemo:
-    """Email/téléphone d'une vraie institution, et email de ses vrais contacts, ne doivent
-    jamais apparaître en clair en DEMO (voir InstitutionSerializer/ContactInstitutionSerializer.
-    to_representation) — même politique que UserSerializer (nom laissé en clair, coordonnées
-    masquées)."""
+    """Email/téléphone d'une vraie institution, et email **et nom** de ses vrais contacts, ne
+    doivent jamais apparaître en clair en DEMO (voir InstitutionSerializer/
+    ContactInstitutionSerializer.to_representation).
+
+    **Changement de politique le 07/11/2026.** Jusque-là la règle était « nom laissé en clair,
+    coordonnées masquées », et un test affirmait explicitement que le nom restait visible.
+    L'exploitant a constaté que les pages de démonstration affichaient ainsi les noms de vraies
+    personnes de la production et a demandé l'anonymisation. Le nom est donc désormais
+    pseudonymisé comme le reste (core/permissions.py:nom_affichable), sauf sur sa propre fiche.
+    Une institution, elle, reste nommée : ce n'est pas une personne."""
 
     def test_institution_email_and_telephone_masked_in_demo(self, create_user, db):
         itype, _ = InstitutionType.objects.get_or_create(code="CG_MASK", defaults={"libelle": "Conseil départemental"})
@@ -856,7 +862,7 @@ class TestInstitutionAndContactPiiMaskedInDemo:
         assert institution.telephone == "0470000001"
         assert institution.description == "MAJ démo"
 
-    def test_contact_email_masked_in_demo_nom_stays_visible(self, create_user, db):
+    def test_contact_email_et_nom_masques_en_demo(self, create_user, db):
         itype, _ = InstitutionType.objects.get_or_create(code="CG_MASK_CONTACT", defaults={"libelle": "Conseil départemental"})
         institution = Institution.objects.create(nom="Institution contact mask test", type=itype)
         membre = create_user(username="frederic@loire.fr", email="frederic@loire.fr", type="AUT_LOCALE", first_name="Frédéric", last_name="Bouchet")
@@ -870,4 +876,7 @@ class TestInstitutionAndContactPiiMaskedInDemo:
 
         assert response.data["utilisateur_email"] != "frederic@loire.fr"
         assert response.data["utilisateur_email"].endswith("@zone.demo")
-        assert response.data["utilisateur_nom"] == "Frédéric Bouchet"
+        # Le nom AUSSI, depuis le 07/11/2026 : voir la docstring de la classe. Ce test affirmait
+        # l'inverse jusque-là, et c'est précisément par là que la fuite est passée.
+        assert response.data["utilisateur_nom"] != "Frédéric Bouchet"
+        assert "Démo-" in response.data["utilisateur_nom"]

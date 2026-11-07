@@ -1634,6 +1634,30 @@ Le pont construit donc son message d'écriture (ce qui, pour une puissance, reli
 et rapporte une clé au passage), puis écrit ; sur `ADMIN_BAD_SESSION_KEY` il oublie la clé, relit
 et réessaie **une** fois. Le jeton n'est pas lié au demandeur : il vaut pour qui le détient.
 
+**Publication JSON du MQTT** (demande du 07/11/2026 : « le MQTT de La Réunion doit avoir JSON
+activé »). Deux opérations : `LIRE_CONFIG_MQTT` et `DEFINIR_MQTT_JSON`. Le nœud publie alors, **en
+plus** des trames chiffrées sur `<racine>/2/e/#`, une version **décodée en clair** sur
+`<racine>/2/json/#`. Quatre points à connaître :
+
+- **Sans effet sur ce pont**, qui ne s'abonne qu'à `<racine>/2/e/#` (`bridge.py`) : le JSON ne lui
+  arrive pas et ne peut donc pas perturber son décodage protobuf. Il sert aux outils tiers du site
+  (Node-RED, Home Assistant, un tableau de bord local).
+- **La liste de droits du satellite l'autorise déjà** : `satellite/mosquitto-config/acl` donne
+  `readwrite msh/EU_868/#`, ce qui couvre `2/json/#` comme `2/e/#`. Resserrer cette ligne sur
+  `2/e/#` couperait la publication JSON **sans aucun message d'erreur**.
+- **Le broker voit le texte en clair.** Acceptable sur un broker de site, authentifié et publié
+  sur la seule IP du LAN ; à ne jamais activer vers un broker tiers. À noter avec la règle « rien
+  en clair » : le broker du satellite a `persistence true`, donc un abonné durable hors ligne
+  ferait écrire des messages en file — en clair — dans `/mosquitto/data`. Le pont n'ouvre pas de
+  session durable (paho, `clean_session` par défaut), mais c'est à savoir avant d'ajouter un
+  abonné.
+- **`set_module_config.mqtt` remplace tout le bloc** côté firmware, exactement comme
+  `set_config.lora` : l'opération relit la configuration et la renvoie entière avec le seul
+  `json_enabled` modifié. N'envoyer que ce champ effacerait l'adresse du broker, son compte et son
+  mot de passe — le nœud perdrait son uplink, et il faudrait aller le rebrancher en USB. Un test
+  le verrouille. La lecture, elle, ne remonte **jamais** le mot de passe du broker, seulement le
+  fait qu'il soit défini : la réponse d'une tâche est journalisée.
+
 **Ce qui n'est pas proposé, et pourquoi** : `factory_reset`, `nodedb_reset`, `shutdown` et
 `set_channel`. Un répéteur est souvent sur un point haut : une extinction ou une réinitialisation
 à distance se paie d'un déplacement. `set_channel` demanderait en plus de transporter une PSK de
@@ -1676,6 +1700,72 @@ docker run --rm -v "$PWD/meshtastic-bridge":/src -w /src \
 marcher par essais — une heure avec lui vaut des jours de reverse engineering. Les seules commandes
 MeshCore disponibles restent `ADVERT` et `FLOOD_ADVERT` (`CommandeMeshCore`), qui ne pilotent pas
 un relais distant mais le companion du pont.
+
+### 9.5.3 Planification radio sur le relief
+
+`core/relief_radio.py`, porté de `carte-live/src/relief.js` de `carte-live-meshtastic` (GPL-3.0,
+avec l'autorisation de l'auteur). Page **`/admin/couverture-radio`**, API
+`/api/couvertures-radio/` et `/api/calibrations-radio/`.
+
+Deux outils de nature différente :
+
+- **bilan de liaison** (`analyser-liaison`) : *est-ce que ça passe entre ces deux points ?*
+  Synchrone — un profil de terrain au pas de 100 m, soit un ou deux lots d'altimétrie, quelques
+  secondes. C'est l'outil du quotidien, celui qu'on consulte avant de monter sur un toit.
+- **couverture d'un site** (`calculer`) : *jusqu'où porte ce site ?* Balayage radial, mis en file
+  (Celery) parce qu'un site neuf demande quelques milliers d'interrogations d'altimétrie. Le site
+  n'a pas besoin d'exister : on évalue un point candidat avant d'y installer quoi que ce soit.
+
+**Le modèle** (constantes et formules reprises telles quelles) : terre équivalente `k = 4/3`
+(sans quoi toute liaison de plus d'une quinzaine de kilomètres serait déclarée bloquée à tort),
+affaiblissement en espace libre, plancher de bruit `-174 + 10·log10(BW) + 6`, seuil de
+démodulation par facteur d'étalement, et diffraction par lame de couteau (UIT-R P.526).
+
+Deux résultats contre-intuitifs, tous deux verrouillés par un test parce qu'ils *paraissent* être
+des bogues :
+
+1. **Un terrain parfaitement plat coûte déjà 4 à 6 dB.** À la rasance (`v = 0`) la perte de
+   diffraction vaut 6 dB, pas zéro — c'est le résultat exact de la recommandation. Un modèle qui
+   annoncerait 0 dB serait optimiste sur toutes les liaisons longues.
+2. **L'obstacle déterminant n'est pas le plus haut.** `v = h·√(2D/(λ·d₁·d₂))` dépend autant de la
+   *position* de l'obstacle que de sa hauteur : le rayon de Fresnel se resserre près des
+   extrémités, donc à hauteur égale au-dessus de la visée, un relief modeste proche d'un nœud
+   pénalise plus qu'une colline au milieu. Trier par hauteur — ou par angle de site, comme le mode
+   rapide de son module — désigne parfois le mauvais obstacle, avec cette conséquence absurde :
+   monter l'antenne pouvait faire *diminuer* la couverture calculée.
+
+**La calibration est ce qui sépare une prévision d'une illustration.** Un bilan théorique se
+trompe de 10 à 20 dB en milieu réel (végétation, bâti, antennes désadaptées). `calibrer()` compare
+le modèle aux liaisons **réellement mesurées** (`LiaisonMeshtastic`, § 9.5.1) et retient la
+**médiane** de l'écart — pas la moyenne, qu'une seule liaison aberrante suffirait à fausser.
+Trois précautions reprises de son implémentation : fenêtre de distance 1-80 km, rejet des liaisons
+confortables des deux côtés (le SNR d'un module LoRa plafonne vers +10 dB et n'apprend plus rien),
+et minimum de cinq liaisons. Le résultat est borné à [4, 30] dB : au-delà, c'est autre chose qu'un
+environnement (position fausse, antenne débranchée) et une correction aussi grosse masquerait le
+vrai problème. Tant qu'aucune calibration n'a conclu, `calibre` reste faux et l'interface annonce
+une **indication de relief, pas une prévision**.
+
+**Ce qui n'est pas porté, et pourquoi.** Son module télécharge le modèle numérique de terrain IGN
+RGE ALTI par dalles et le garde sur disque, ce qui lui permet 1080 rayons au pas de 250 m sur tout
+un département, et au-dessus un plan de couverture départemental (`planDepartement`, `planBudget`,
+`simuler`, `optimiserRelais`). Assista-Crise réutilise son client altimétrique existant — l'API
+REST `data.geopf.fr` de `core/inondation.py`, avec sa limite de 2,5 requêtes/s, sa reprise sur 429
+et son parallélisme — plutôt que de rapatrier des gigaoctets de dalles. Conséquence directe et
+assumée : la couverture se calcule **par site** et non en raster départemental. C'est ce dont une
+commune a besoin ; le plan départemental reste chez lui.
+
+**Cache d'altitude** : `PointAltitude`, clé arrondie à 1e-4 degré (~11 m). Le relief ne change
+pas, donc une ligne n'est jamais à rafraîchir, et c'est ce cache qui rend un **recalcul** quasi
+gratuit là où la première passe prend une minute. Volontairement **non cloisonné PROD/DEMO** : le
+relief est le même dans les deux zones, comme les grilles d'inondation.
+
+**Deux détails d'honnêteté du rendu** :
+
+- l'API rend des **points** et non un contour : une couverture radio est trouée (vallées masquées,
+  crêtes qui portent loin), et un contour convexe déclarerait couvert tout ce qu'il englobe — c'est
+  l'erreur qui envoie une équipe dans une zone d'ombre en croyant qu'elle a la radio ;
+- `points_sans_altitude` est exposé : au-delà de 10 % de trous le calcul **échoue** plutôt que de
+  rendre une couverture sous-estimée sans le dire, et en dessous l'interface affiche l'avertissement.
 
 ### 9.6 Angles morts de la supervision
 
@@ -1778,6 +1868,52 @@ lisibles dans un `pg_dump`.
 - En dev, `init-secrets.sh` génère les clés dans `.env`. En production, elles sont injectées
   hors du dépôt (`backend.env` sur la machine) : elles doivent être **sauvegardées ailleurs
   que sur le serveur**.
+
+### 10.1.1 Anonymisation de la zone DEMO
+
+Tout le **contenu** est cloisonné par `EnvironmentScopedModel` : une page de démonstration ne lit
+que des lignes DEMO, engendrées par Faker (`generate_crise_gier_pilat`, `generate_benevoles_*`).
+**`User`, lui, est partagé** entre les deux zones : un compte, un rôle PROD, un `demo_role`. Toute
+page qui nomme une personne nomme donc un compte **réel**, même en démonstration.
+
+Les adresses et téléphones étaient masqués depuis longtemps (`mask_email`, `mask_phone`), mais
+**les noms ne l'étaient nulle part** : une soixantaine de `f"{u.first_name} {u.last_name}"`
+dispersés dans `serializers.py` et `views.py` les composaient à la main. Plusieurs vues rendaient
+en plus l'adresse ou le téléphone en clair (fiche « personne », supervision inter-collectivités,
+main courante, habilitations au registre, invitations d'association). Constaté par l'exploitant le
+07/11/2026.
+
+**Point de passage unique** : `core/permissions.py:nom_affichable(user, request)`. En zone DEMO il
+rend un **pseudonyme stable** (`pseudonyme()` : prénom tiré d'une liste fixe + `Démo-XXXX`, dérivé
+de l'identifiant). Stable, pour qu'un scénario de démonstration reste suivable d'un écran à
+l'autre ; dérivé de l'identifiant et non du nom, pour que deux homonymes restent distincts et
+qu'on ne puisse pas remonter au nom réel. Le patronyme factice est toujours `Démo-XXXX` : on ne
+fabrique pas un faux nom de famille crédible, qui pourrait être pris pour une vraie personne.
+
+Trois règles qui expliquent la forme du code :
+
+- **Aucun repli interne sur l'email.** La fonction remplace exactement
+  `f"{u.first_name} {u.last_name}".strip()` et rend une chaîne vide pour un compte sans nom : les
+  appelants gardent leur propre `or u.email`, inchangé en production. En DEMO le pseudonyme est
+  toujours non vide, donc ce repli ne s'applique jamais et aucune adresse ne fuit par là. Un repli
+  interne aurait fait apparaître des emails là où le code renvoyait délibérément `None`.
+- **Jamais dans le contenu d'un email.** Un message envoyé à une vraie personne doit porter son
+  vrai nom. Les `send_mail` de `views.py` lisent donc `first_name`/`last_name` en direct. Là où un
+  même texte alimentait **à la fois** une notification affichée et un email (créneau bénévole à
+  valider, candidature à la réserve), les deux textes ont été séparés : pseudonyme à l'écran, vrai
+  nom dans la boîte.
+- **Son propre nom reste en clair.** Se masquer à soi-même ne protège personne et rend la zone de
+  démonstration incompréhensible.
+
+Deux lectures directes restent assumées et **déclarées** : la main courante (un journal d'audit ne
+doit pas mentir ; sa consultation globale est réservée au super-admin) et la réplication des
+comptes vers le Django local d'un satellite (un email pseudonymisé y rendrait la connexion
+impossible).
+
+**Garde structurel** : `core/tests/plateforme/test_anonymisation_demo.py` relit `serializers.py` et
+`views.py` et **échoue** sur toute lecture directe de `first_name` non déclarée par un commentaire
+`# nom-reel-assume: <raison>`. Sans lui, la prochaine vue qui composerait un nom à la main
+réintroduirait la fuite en silence — c'est exactement ce qui s'était produit.
 - `SECRET_KEY` signe les JWT, les liens magiques et de réinitialisation : la changer
   déconnecte tout le monde et invalide les liens envoyés (rotation douce :
   `SECRET_KEY_FALLBACKS`). Elle ne chiffre aucune donnée.

@@ -12,7 +12,9 @@ export type TypeTacheAdminMeshtastic =
   | 'LIRE_CONFIG_LORA'
   | 'LIRE_CONFIG_APPAREIL'
   | 'LIRE_PROPRIETAIRE'
+  | 'LIRE_CONFIG_MQTT'
   | 'DEFINIR_PUISSANCE'
+  | 'DEFINIR_MQTT_JSON'
   | 'REDEMARRER';
 
 export type StatutTacheAdminMeshtastic = 'EN_ATTENTE' | 'EN_COURS' | 'TERMINEE' | 'ECHEC';
@@ -78,6 +80,17 @@ export const OPERATIONS_ADMIN_MESHTASTIC: {
   {
     type: 'LIRE_PROPRIETAIRE', libelle: 'Lire le nom du nœud', ecriture: false,
     explication: 'Nom long et nom court déclarés sur l’appareil.',
+  },
+  {
+    type: 'LIRE_CONFIG_MQTT', libelle: 'Lire la configuration MQTT', ecriture: false,
+    explication: "Broker, compte, racine de topic, et si la publication JSON est active. Le mot "
+      + "de passe du broker n'est jamais remonté, seulement le fait qu'il soit défini.",
+  },
+  {
+    type: 'DEFINIR_MQTT_JSON', libelle: 'Activer la publication JSON du MQTT', ecriture: true,
+    explication: "Le nœud publie en plus une version décodée EN CLAIR sur « …/2/json/# ». Utile "
+      + "aux outils tiers du site (Node-RED, tableau de bord) ; sans effet sur ce pont, qui ne "
+      + "lit que « …/2/e/# ». À réserver à un broker de site : le broker voit alors le texte.",
   },
   {
     type: 'DEFINIR_PUISSANCE', libelle: "Définir la puissance d'émission", ecriture: true,

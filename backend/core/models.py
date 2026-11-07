@@ -6524,7 +6524,9 @@ class TypeTacheAdminMeshtastic(models.TextChoices):
     LIRE_CONFIG_LORA = "LIRE_CONFIG_LORA", "Lire la configuration LoRa (puissance, région, preset)"
     LIRE_CONFIG_APPAREIL = "LIRE_CONFIG_APPAREIL", "Lire la configuration de l'appareil (rôle, rediffusion)"
     LIRE_PROPRIETAIRE = "LIRE_PROPRIETAIRE", "Lire le nom du nœud"
+    LIRE_CONFIG_MQTT = "LIRE_CONFIG_MQTT", "Lire la configuration MQTT (broker, JSON)"
     DEFINIR_PUISSANCE = "DEFINIR_PUISSANCE", "Définir la puissance d'émission"
+    DEFINIR_MQTT_JSON = "DEFINIR_MQTT_JSON", "Activer ou couper la publication JSON du MQTT"
     REDEMARRER = "REDEMARRER", "Redémarrer le nœud"
 
 
@@ -6533,6 +6535,7 @@ class TypeTacheAdminMeshtastic(models.TextChoices):
 # obtenir la clé par une lecture juste avant d'écrire -- voir meshtastic-bridge/admin_meshtastic.py.
 TACHES_ADMIN_ECRITURE = frozenset({
     TypeTacheAdminMeshtastic.DEFINIR_PUISSANCE,
+    TypeTacheAdminMeshtastic.DEFINIR_MQTT_JSON,
     TypeTacheAdminMeshtastic.REDEMARRER,
 })
 
@@ -6695,6 +6698,140 @@ class ConfigurationNoeudMeshtastic(EnvironmentScopedModel):
 
     def __str__(self):
         return f"Config {self.node_num:08x} ({self.puissance_emission_dbm} dBm)"
+
+
+class PointAltitude(models.Model):
+    """Altitude d'un point, mise en cache (IGN RGE ALTI).
+
+    **Pas cloisonné PROD/DEMO**, volontairement : le relief est le même dans les deux zones, et
+    `core/inondation.py` partage déjà ses grilles d'altitude entre elles pour la même raison (et
+    pour qu'elles ne divergent pas). Aucune donnée personnelle : une altitude de terrain.
+
+    La clé est arrondie à 1e-4 degré (~11 m) : assez fin pour un profil radio au pas de 100 m,
+    assez grossier pour que deux calculs sur le même site retombent sur les mêmes points — c'est
+    ce qui rend un recalcul de couverture quasi gratuit, alors que l'API IGN est limitée à
+    2,5 requêtes par seconde.
+
+    Clé TEXTUELLE unique « lat,lon » et non deux colonnes séparées : on relit quelques milliers
+    de points d'un coup, et un `filter(cle_lat__in=[...], cle_lon__in=[...])` est un produit
+    cartésien, pas une liste de couples — il ramènerait des dizaines de milliers de lignes sans
+    rapport. Un seul `cle__in` indexé fait le travail exactement.
+
+    Le relief ne change pas : une ligne n'est jamais à rafraîchir."""
+
+    # « 45.4321,4.3900 » — produite par core/relief_radio.py:_cle, jamais à la main.
+    cle = models.CharField(max_length=24, unique=True)
+    altitude_m = models.FloatField()
+
+    class Meta:
+        indexes = [models.Index(fields=["cle"])]
+
+    def __str__(self):
+        return f"{self.cle} : {self.altitude_m} m"
+
+
+class CalibrationRadio(EnvironmentScopedModel):
+    """Écart mesuré entre le modèle de propagation et les liaisons réellement observées.
+
+    C'est ce qui sépare une prévision d'une illustration. Un bilan de liaison théorique se trompe
+    de 10 à 20 dB en milieu réel (végétation, bâti, désadaptation d'antenne) ; on compare donc le
+    modèle aux `LiaisonMeshtastic` mesurées et on en retient la MÉDIANE de l'écart — pas la
+    moyenne, qu'une seule liaison aberrante suffirait à fausser.
+
+    `perte_environnement_db` est nul tant qu'il y a moins de cinq liaisons exploitables : on
+    préfère afficher « non calibré » qu'une correction tirée de deux observations.
+
+    Chaque calcul est conservé (une ligne par passage) : voir dériver la calibration dans le
+    temps est en soi un signal -- un réseau dont l'écart se dégrade a un problème matériel."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    preset = models.CharField(max_length=20)
+    liaisons_retenues = models.PositiveIntegerField(default=0)
+    ecart_median_db = models.FloatField(null=True, blank=True)
+    perte_environnement_db = models.SmallIntegerField(
+        null=True, blank=True,
+        help_text="Déduit de l'écart médian, borné à [4, 30] dB. Vide = pas assez de liaisons.",
+    )
+    # Les quarante liaisons les plus pénalisantes, pour pouvoir vérifier une calibration plutôt
+    # que de la croire. Numéros de nœud et SNR seulement : aucune donnée personnelle.
+    exemples = models.JSONField(null=True, blank=True)
+
+    date_calcul = models.DateTimeField()
+
+    class Meta:
+        indexes = [models.Index(fields=["-date_calcul"])]
+
+    def __str__(self):
+        return f"Calibration radio {self.date_calcul:%d/%m/%Y} ({self.liaisons_retenues} liaisons)"
+
+
+class StatutCouvertureRadio(models.TextChoices):
+    EN_COURS = "EN_COURS", "Calcul en cours"
+    TERMINEE = "TERMINEE", "Terminée"
+    ECHEC = "ECHEC", "Échec"
+
+
+class CouvertureRadioSite(EnvironmentScopedModel):
+    """Couverture calculée d'un site d'émission, sur le relief.
+
+    Conservée parce qu'elle coûte : quelques milliers d'interrogations d'altitude, limitées à
+    2,5 requêtes par seconde. Le cache de points (`PointAltitude`) rend le RECALCUL rapide, mais
+    la première passe sur un site neuf prend de l'ordre d'une minute.
+
+    Un site n'est pas forcément un nœud existant : on calcule aussi des points candidats (un
+    château d'eau, un pylône) pour savoir s'ils vaudraient la peine. D'où une position libre
+    plutôt qu'une clé étrangère obligatoire.
+
+    `calibre` à faux signale une couverture **non calibrée** : c'est alors une indication de
+    relief, pas une prévision, et l'interface doit le dire."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    nom = models.CharField(max_length=120)
+    location = gis_models.PointField(srid=4326)
+    # Nœud correspondant, quand le site en est un : permet de recalculer la couverture d'un
+    # relais existant après un changement de puissance ou d'antenne.
+    node_num = models.PositiveBigIntegerField(null=True, blank=True)
+
+    hauteur_antenne_m = models.FloatField(default=6.0)
+    hauteur_cible_m = models.FloatField(default=2.0)
+    preset = models.CharField(max_length=20, default="LONG_FAST")
+    puissance_dbm = models.FloatField(default=27.0)
+    rayon_max_km = models.FloatField(default=40.0)
+    nb_rayons = models.PositiveIntegerField(default=72)
+    pas_m = models.PositiveIntegerField(default=500)
+
+    perte_environnement_db = models.FloatField()
+    calibre = models.BooleanField(default=False)
+
+    # [[lat, lon, marge_db, distance_m], ...] : les points ATTEINTS seulement. Les autres ne
+    # servent à rien et tripleraient la taille.
+    points = models.JSONField(default=list)
+    surface_estimee_km2 = models.FloatField(null=True, blank=True)
+    points_sans_altitude = models.PositiveIntegerField(
+        default=0,
+        help_text="Points pour lesquels l'IGN n'a rien renvoyé : au-delà de quelques pourcents, "
+                   "la couverture est sous-estimée.",
+    )
+
+    # Le statut vit ici et pas dans un second modèle : une couverture EST son propre état de
+    # tâche (même rôle que TacheSimulationInondation, mais il n'y a qu'un calcul par site, donc
+    # rien à coordonner entre types de tâche). Survit à un changement de page.
+    statut = models.CharField(
+        max_length=12, choices=StatutCouvertureRadio.choices,
+        default=StatutCouvertureRadio.EN_COURS,
+    )
+    erreur = models.TextField(null=True, blank=True)
+
+    date_lancement = models.DateTimeField(auto_now_add=True)
+    date_calcul = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["-date_lancement"]), models.Index(fields=["node_num"])]
+
+    def __str__(self):
+        return f"Couverture {self.nom} ({self.surface_estimee_km2} km²)"
 
 
 class ProfilSatellite(models.TextChoices):

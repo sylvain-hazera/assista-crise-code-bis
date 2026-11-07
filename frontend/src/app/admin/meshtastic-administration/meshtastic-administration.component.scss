@@ -96,6 +96,14 @@ label {
   small { line-height: 1.4; color: var(--ac-text-subtle, #6b7280); }
 }
 
+// Une case à cocher ne se met pas en colonne comme un champ de saisie : la case doit rester
+// devant son libellé, et l'explication sous les deux.
+label.case {
+  display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 4px 8px;
+  input { width: 16px; height: 16px; }
+  small { grid-column: 2; }
+}
+
 button {
   font: inherit; cursor: pointer; border-radius: 6px;
   padding: 9px 18px; border: none;

@@ -33,7 +33,7 @@ Django -- c'est l'appareil qui émet sur la radio, et c'est sa clé que le nœud
 import logging
 import threading
 
-from meshtastic.protobuf import admin_pb2, config_pb2, mesh_pb2, portnums_pb2
+from meshtastic.protobuf import admin_pb2, config_pb2, mesh_pb2, module_config_pb2, portnums_pb2
 
 logger = logging.getLogger(__name__)
 
@@ -47,8 +47,9 @@ TIMEOUT_REPONSE_S = 90
 PUISSANCE_MIN_DBM = 1
 PUISSANCE_MAX_DBM = 27
 
-LECTURES = {"LIRE_METADATA", "LIRE_CONFIG_LORA", "LIRE_CONFIG_APPAREIL", "LIRE_PROPRIETAIRE"}
-ECRITURES = {"DEFINIR_PUISSANCE", "REDEMARRER"}
+LECTURES = {"LIRE_METADATA", "LIRE_CONFIG_LORA", "LIRE_CONFIG_APPAREIL",
+            "LIRE_PROPRIETAIRE", "LIRE_CONFIG_MQTT"}
+ECRITURES = {"DEFINIR_PUISSANCE", "REDEMARRER", "DEFINIR_MQTT_JSON"}
 
 
 class ErreurAdmin(Exception):
@@ -247,6 +248,25 @@ def _config_appareil(message):
     }
 
 
+def _config_mqtt(message):
+    """Configuration du module MQTT. `mot_de_passe_defini` et non le mot de passe : il n'a
+    aucune raison de remonter jusqu'à l'interface, et il ne doit pas finir dans une réponse
+    stockée. L'adresse du broker, elle, est nécessaire au diagnostic."""
+    mqtt = message.get_module_config_response.mqtt
+    return {
+        "active": bool(mqtt.enabled),
+        "adresse": mqtt.address,
+        "utilisateur": mqtt.username,
+        "mot_de_passe_defini": bool(mqtt.password),
+        "chiffrement_active": bool(mqtt.encryption_enabled),
+        "json_active": bool(mqtt.json_enabled),
+        "tls_active": bool(mqtt.tls_enabled),
+        "racine_topic": mqtt.root,
+        "mandataire_vers_client": bool(mqtt.proxy_to_client_enabled),
+        "remontee_carte": bool(mqtt.map_reporting_enabled),
+    }
+
+
 def _proprietaire(message):
     user = message.get_owner_response
     return {
@@ -260,6 +280,12 @@ def _proprietaire(message):
 def _demande_config(type_config):
     message = admin_pb2.AdminMessage()
     message.get_config_request = type_config
+    return message
+
+
+def _demande_module(type_module):
+    message = admin_pb2.AdminMessage()
+    message.get_module_config_request = type_module
     return message
 
 
@@ -317,6 +343,18 @@ def executer(iface, tache):
         # réponse chiffrée et n'alimente pas une table en clair.
         return _proprietaire(_lire(iface, node_num, local, message)), None
 
+    if type_tache == "LIRE_CONFIG_MQTT":
+        donnees = _config_mqtt(_lire(
+            iface, node_num, local,
+            _demande_module(admin_pb2.AdminMessage.ModuleConfigType.MQTT_CONFIG),
+        ))
+        # Pas de `configuration` : rien là-dedans n'est une caractéristique radio rangeable
+        # dans ConfigurationNoeudMeshtastic, et l'adresse du broker n'a pas à être dupliquée.
+        return donnees, None
+
+    if type_tache == "DEFINIR_MQTT_JSON":
+        return _definir_mqtt_json(iface, node_num, local, parametres)
+
     if type_tache == "DEFINIR_PUISSANCE":
         return _definir_puissance(iface, node_num, local, parametres)
 
@@ -370,6 +408,49 @@ def _definir_puissance(iface, node_num, local, parametres):
     return {"puissance_emission_dbm": puissance, "redemarrage_declenche": True}, {
         "puissance_emission_dbm": puissance,
     }
+
+
+def _definir_mqtt_json(iface, node_num, local, parametres):
+    """Active ou désactive la publication JSON du module MQTT (`json_enabled`).
+
+    Le nœud publie alors, EN PLUS des trames chiffrées sur `<racine>/2/e/#`, une version
+    **décodée en clair** sur `<racine>/2/json/#`. C'est utile pour tout ce qui n'est pas ce pont
+    (Node-RED, Home Assistant, un tableau de bord local), et c'est sans effet sur ce pont-ci,
+    qui ne s'abonne qu'à `2/e/#`.
+
+    Deux conséquences à connaître, et c'est pour elles que cette opération existe plutôt qu'un
+    réglage posé à la main :
+
+    1. **Le broker voit le texte en clair.** Acceptable sur un broker de site, authentifié et
+       publié sur la seule IP du LAN ; à ne pas faire sur un broker tiers.
+    2. **`set_module_config.mqtt` REMPLACE tout le bloc** côté firmware, exactement comme
+       `set_config.lora`. On relit donc la configuration et on la renvoie entière avec le seul
+       `json_enabled` modifié : n'envoyer que ce champ effacerait l'adresse du broker, son
+       compte et son mot de passe -- le nœud perdrait son uplink, et il faudrait aller le
+       rebrancher en USB pour le récupérer.
+    """
+    actif = parametres.get("actif", True)
+    if not isinstance(actif, bool):
+        raise ErreurAdmin("Paramètre `actif` attendu : vrai ou faux.")
+
+    def construire():
+        message_lu = _lire(
+            iface, node_num, local,
+            _demande_module(admin_pb2.AdminMessage.ModuleConfigType.MQTT_CONFIG),
+        )
+        mqtt = message_lu.get_module_config_response.mqtt
+        if not mqtt.address and not mqtt.enabled:
+            raise ErreurAdmin(
+                "Le module MQTT de ce nœud est vide (ni adresse ni activation) : on ne réécrit "
+                "pas à l'aveugle une configuration qu'on n'a pas vraiment lue."
+            )
+        message = admin_pb2.AdminMessage()
+        message.set_module_config.mqtt.CopyFrom(mqtt)
+        message.set_module_config.mqtt.json_enabled = actif
+        return message
+
+    _ecrire(iface, node_num, local, construire)
+    return {"json_active": actif}, None
 
 
 def _config_lora_protobuf(iface, node_num, local):

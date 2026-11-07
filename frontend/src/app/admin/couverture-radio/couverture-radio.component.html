@@ -1,0 +1,224 @@
+<div class="page">
+  <header class="entete">
+    <h1><span class="material-icons">cell_tower</span> Planification radio sur le relief</h1>
+    <p class="explication">
+      Deux questions, deux outils : <strong>est-ce que ça passe entre ces deux points ?</strong>
+      (réponse immédiate) et <strong>jusqu'où porte ce site ?</strong> (calcul en file, environ une
+      minute). Le relief vient du modèle de terrain IGN ; le modèle de propagation tient compte de
+      la courbure terrestre et de la diffraction sur les obstacles.
+    </p>
+  </header>
+
+  @if (erreur) {
+    <div class="message erreur" role="alert">
+      <span class="material-icons">error_outline</span> {{ erreur }}
+    </div>
+  }
+
+  <section class="calibration">
+    <h2>
+      Calibration du modèle
+      <button type="button" class="discret" (click)="calibrer()" [disabled]="calibrationEnCours">
+        <span class="material-icons">tune</span>
+        {{ calibrationEnCours ? 'Lancement…' : 'Recalibrer sur les liaisons mesurées' }}
+      </button>
+    </h2>
+    @if (derniereCalibration) {
+      <p class="bon">
+        <span class="material-icons">check_circle</span>
+        <span>
+          Modèle calibré sur <strong>{{ derniereCalibration.liaisons_retenues }}</strong> liaisons
+          réellement mesurées : écart médian {{ derniereCalibration.ecart_median_db }} dB, perte
+          d'environnement retenue
+          <strong>{{ derniereCalibration.perte_environnement_db }} dB</strong>
+          (le {{ derniereCalibration.date_calcul | date:'dd/MM/yyyy à HH:mm' }}).
+        </span>
+      </p>
+    } @else {
+      <p class="message avertissement">
+        <span class="material-icons">warning_amber</span>
+        <span>
+          <strong>Modèle non calibré.</strong> Un bilan théorique se trompe de 10 à 20 dB en
+          milieu réel (végétation, bâti, antennes désadaptées) : tant qu'il n'est pas confronté
+          aux liaisons mesurées, tout ce qui suit est une <strong>indication de relief</strong>,
+          pas une prévision. Il faut au moins cinq liaisons mesurées entre 1 et 80 km — elles
+          arrivent d'elles-mêmes par le pont Meshtastic.
+        </span>
+      </p>
+    }
+  </section>
+
+  <section class="liaison">
+    <h2>Est-ce que ça passe entre deux points ?</h2>
+    <p class="explication">
+      Profil de terrain au pas de 100 m entre les deux positions, courbure terrestre comprise.
+      120 km au plus.
+    </p>
+    <form (ngSubmit)="analyser()">
+      <div class="champs">
+        <label>Latitude A
+          <input name="lat_a" type="number" step="0.00001" [(ngModel)]="liaison.lat_a" required>
+        </label>
+        <label>Longitude A
+          <input name="lon_a" type="number" step="0.00001" [(ngModel)]="liaison.lon_a" required>
+        </label>
+        <label>Hauteur antenne A (m)
+          <input name="ha" type="number" min="0" max="200" [(ngModel)]="liaison.hauteur_a_m">
+        </label>
+        <label>Latitude B
+          <input name="lat_b" type="number" step="0.00001" [(ngModel)]="liaison.lat_b" required>
+        </label>
+        <label>Longitude B
+          <input name="lon_b" type="number" step="0.00001" [(ngModel)]="liaison.lon_b" required>
+        </label>
+        <label>Hauteur antenne B (m)
+          <input name="hb" type="number" min="0" max="200" [(ngModel)]="liaison.hauteur_b_m">
+        </label>
+        <label>Preset
+          <select name="preset_liaison" [(ngModel)]="liaison.preset">
+            @for (p of presets; track p.valeur) {
+              <option [value]="p.valeur">{{ p.libelle }}</option>
+            }
+          </select>
+        </label>
+        <label>Puissance (dBm)
+          <input name="ptx_liaison" type="number" min="1" max="30" [(ngModel)]="liaison.puissance_dbm">
+        </label>
+      </div>
+      @if (erreurBilan) {
+        <p class="message erreur">{{ erreurBilan }}</p>
+      }
+      <button type="submit" [disabled]="bilanEnCours">
+        {{ bilanEnCours ? 'Calcul du profil…' : 'Calculer le bilan' }}
+      </button>
+    </form>
+
+    @if (bilan) {
+      <div class="bilan" [class]="verdict(bilan.marge_db).classe">
+        <p class="verdict">
+          La liaison <strong>{{ verdict(bilan.marge_db).texte }}</strong> :
+          marge de <strong>{{ bilan.marge_db }} dB</strong>
+          sur {{ (bilan.distance_m / 1000) | number:'1.1-1' }} km.
+        </p>
+        <ul>
+          <li>Diffraction : {{ bilan.diffraction_db }} dB</li>
+          @if (bilan.obstacle) {
+            <li>
+              Obstacle déterminant : {{ bilan.obstacle.hauteur_m }} m au-dessus de la ligne de
+              visée, à {{ bilan.obstacle.distance_km }} km du point A
+              <small>
+                (celui de plus grand paramètre de Fresnel, pas le plus haut : un relief modeste
+                près d'une extrémité peut pénaliser plus qu'une colline au milieu)
+              </small>
+            </li>
+          } @else {
+            <li>Aucun obstacle au-dessus de la ligne de visée.</li>
+          }
+          <li>
+            Hypothèses : {{ bilan.parametres.puissance_dbm }} dBm,
+            gains {{ bilan.parametres.gains_dbi }} dBi, pertes {{ bilan.parametres.pertes_db }} dB,
+            marge d'évanouissement {{ bilan.parametres.marge_securite_db }} dB,
+            environnement {{ bilan.parametres.perte_environnement_db }} dB
+            @if (!bilan.parametres.calibre) {
+              <span class="etiquette douteuse">non calibré</span>
+            }
+          </li>
+        </ul>
+      </div>
+    }
+  </section>
+
+  <section class="site">
+    <h2>Jusqu'où porte un site ?</h2>
+    <p class="explication">
+      Balayage radial sur le relief. Le site n'a pas besoin d'exister : on peut évaluer un point
+      candidat (château d'eau, pylône) avant d'aller y monter quoi que ce soit.
+    </p>
+    <form (ngSubmit)="lancerCouverture()">
+      <div class="champs">
+        <label>Nom du site
+          <input name="nom" [(ngModel)]="site.nom" required placeholder="Château d'eau du bourg">
+        </label>
+        <label>Latitude
+          <input name="lat" type="number" step="0.00001" [(ngModel)]="site.latitude" required>
+        </label>
+        <label>Longitude
+          <input name="lon" type="number" step="0.00001" [(ngModel)]="site.longitude" required>
+        </label>
+        <label>Hauteur d'antenne (m)
+          <input name="h" type="number" min="0" max="200" [(ngModel)]="site.hauteur_antenne_m">
+        </label>
+        <label>Rayon étudié (km)
+          <input name="rayon" type="number" min="1" max="80" [(ngModel)]="site.rayon_max_km">
+          <small>Le coût du calcul croît avec le rayon.</small>
+        </label>
+        <label>Preset
+          <select name="preset_site" [(ngModel)]="site.preset">
+            @for (p of presets; track p.valeur) {
+              <option [value]="p.valeur">{{ p.libelle }}</option>
+            }
+          </select>
+        </label>
+      </div>
+      @if (erreurCalcul) {
+        <p class="message erreur">{{ erreurCalcul }}</p>
+      }
+      <button type="submit" [disabled]="calculEnCours">
+        {{ calculEnCours ? 'Mise en file…' : 'Calculer la couverture' }}
+      </button>
+    </form>
+  </section>
+
+  <section class="resultats">
+    <h2>
+      Couvertures calculées
+      @if (calcul_en_file) {
+        <span class="etiquette">un calcul est en cours, la liste se rafraîchit seule</span>
+      }
+    </h2>
+    @if (chargement) {
+      <p class="attente">Chargement…</p>
+    } @else if (!couvertures.length) {
+      <p class="attente">Aucune couverture calculée pour l'instant.</p>
+    } @else {
+      <table>
+        <thead>
+          <tr>
+            <th>Site</th><th>Antenne</th><th>Rayon</th><th>Preset</th>
+            <th>Surface estimée</th><th>Points</th><th>État</th><th>Calculée</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (c of couvertures; track c.id) {
+            <tr [class.echec]="c.statut === 'ECHEC'">
+              <td>
+                {{ c.nom }}
+                <small class="position">{{ c.latitude }}, {{ c.longitude }}</small>
+              </td>
+              <td class="chiffre">{{ c.hauteur_antenne_m }} m</td>
+              <td class="chiffre">{{ c.rayon_max_km }} km</td>
+              <td>{{ c.preset }}</td>
+              <td class="chiffre">
+                {{ c.surface_estimee_km2 !== null ? c.surface_estimee_km2 + ' km²' : '—' }}
+                @if (!c.calibre && c.statut === 'TERMINEE') {
+                  <span class="etiquette douteuse">non calibré</span>
+                }
+                @if (c.points_sans_altitude > 0) {
+                  <small class="trous">
+                    {{ c.points_sans_altitude }} point(s) sans altitude : sous-estimation possible
+                  </small>
+                }
+              </td>
+              <td class="chiffre">{{ c.nombre_points }}</td>
+              <td>
+                <span class="etat" [class]="c.statut">{{ c.statut }}</span>
+                @if (c.erreur) { <small class="trous">{{ c.erreur }}</small> }
+              </td>
+              <td>{{ c.date_calcul ? (c.date_calcul | date:'dd/MM HH:mm') : '—' }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    }
+  </section>
+</div>

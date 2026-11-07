@@ -1,4 +1,4 @@
-"""Tâches Celery -- pour l'instant uniquement la simulation d'inondation (voir core/inondation.py
+"""Tâches Celery -- simulation d'inondation, imports longs, et calculs de propagation radio (voir core/inondation.py
 pour la justification : le calcul peut dépasser largement le timeout gunicorn sur une grande
 commune, jamais exécuté en synchrone dans une requête HTTP).
 
@@ -109,3 +109,43 @@ def importer_sites_sensibles_task(institution_id, source, perimetre, commune_nom
             statut=StatutImportOpenData.ECHEC, erreur=str(exc), date_fin=timezone.now(),
         )
         raise
+
+
+@shared_task(acks_late=True, time_limit=1800, soft_time_limit=1740)
+def calculer_couverture_radio_task(couverture_id: str):
+    """Couverture radio d'un site sur le relief (voir core/relief_radio.py).
+
+    Budget de temps généreux (30 min) pour la même raison que la tâche adresses : le coût ne
+    vient pas du calcul mais de l'API d'altimétrie IGN, limitée à 2,5 requêtes par seconde et
+    partagée avec les simulations d'inondation. Un site neuf de 40 km de rayon demande une
+    trentaine de lots ; un site déjà calculé une fois ne demande presque rien (cache
+    `PointAltitude`).
+
+    Un échec est enregistré SUR la couverture elle-même, avec son message : une couverture
+    manquante sans explication enverrait l'exploitant chercher une panne inexistante."""
+    from .models import CouvertureRadioSite, StatutCouvertureRadio
+    from .relief_radio import calculer_couverture
+
+    couverture = CouvertureRadioSite.objects.filter(id=couverture_id).first()
+    if couverture is None:
+        return
+    try:
+        calculer_couverture(couverture)
+    except Exception as exc:
+        CouvertureRadioSite.objects.filter(id=couverture_id).update(
+            statut=StatutCouvertureRadio.ECHEC, erreur=str(exc)[:2000], date_calcul=timezone.now(),
+        )
+        raise
+
+
+@shared_task(acks_late=True, time_limit=900, soft_time_limit=840)
+def calibrer_radio_task(environment: str):
+    """Compare le modèle de propagation aux liaisons mesurées (voir relief_radio.calibrer).
+
+    Asynchrone parce qu'elle demande un profil de terrain par liaison retenue : quelques dizaines
+    de lots IGN. Le résultat est une ligne de `CalibrationRadio` ; aucune couverture déjà
+    calculée n'est modifiée -- elles portent la perte d'environnement qui était en vigueur au
+    moment de leur calcul, et la fausser après coup rendrait un résultat non reproductible."""
+    from .relief_radio import calibrer
+
+    return calibrer(environment)

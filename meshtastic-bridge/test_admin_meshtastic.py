@@ -14,7 +14,7 @@ n'ont pas besoin de clé de session, les écritures oui, et une clé de session 
 """
 import unittest
 
-from meshtastic.protobuf import admin_pb2, config_pb2, mesh_pb2, portnums_pb2
+from meshtastic.protobuf import admin_pb2, config_pb2, mesh_pb2, module_config_pb2, portnums_pb2
 
 import admin_meshtastic as mod
 
@@ -64,6 +64,16 @@ def reponse_lora(tx_power=22, region=3, hop_limit=3, preset=0):
         lora=config_pb2.Config.LoRaConfig(
             region=region, tx_power=tx_power, hop_limit=hop_limit, modem_preset=preset,
             use_preset=True, tx_enabled=True,
+        ),
+    ))
+
+
+def reponse_mqtt(json_enabled=False, address="172.16.2.10", username="passerelle",
+                 password="secret", root="msh/EU_868", enabled=True):
+    return admin_pb2.AdminMessage(get_module_config_response=module_config_pb2.ModuleConfig(
+        mqtt=module_config_pb2.ModuleConfig.MQTTConfig(
+            enabled=enabled, address=address, username=username, password=password,
+            root=root, json_enabled=json_enabled, encryption_enabled=True,
         ),
     ))
 
@@ -232,6 +242,67 @@ class TestEcritures(unittest.TestCase):
                 "type_tache": "DEFINIR_PUISSANCE", "node_num_cible": 0x2000,
                 "parametres": {"puissance_dbm": 20},
             })
+
+
+class TestMqttJson(unittest.TestCase):
+    """Demande du 07/11/2026 : le MQTT du satellite de La Réunion doit avoir JSON actif."""
+
+    def test_la_lecture_ne_remonte_jamais_le_mot_de_passe_du_broker(self):
+        """Il n'a aucune raison de remonter jusqu'à l'interface, et la réponse d'une tâche est
+        journalisée : on rapporte qu'il est défini, pas sa valeur."""
+        iface = FauxInterface(reponses=[reponse_mqtt(password="tres-secret")])
+        donnees, config = mod.executer(iface, {"type_tache": "LIRE_CONFIG_MQTT"})
+        self.assertTrue(donnees["mot_de_passe_defini"])
+        self.assertNotIn("tres-secret", str(donnees))
+        self.assertEqual(donnees["adresse"], "172.16.2.10")
+        self.assertFalse(donnees["json_active"])
+        self.assertIsNone(config)
+
+    def test_activer_le_json_conserve_tout_le_bloc_mqtt(self):
+        """LE test de cette opération. `set_module_config.mqtt` remplace tout le bloc côté
+        firmware : n'envoyer que json_enabled effacerait l'adresse du broker, son compte et son
+        mot de passe -- le nœud perdrait son uplink et il faudrait aller le rebrancher en USB."""
+        iface = FauxInterface(reponses=[reponse_mqtt(json_enabled=False), "__ACK__"])
+        donnees, _ = mod.executer(iface, {
+            "type_tache": "DEFINIR_MQTT_JSON", "node_num_cible": 0x2000,
+            "parametres": {"actif": True},
+        })
+        ecrit = iface.envois[1]["message"].set_module_config.mqtt
+        self.assertTrue(ecrit.json_enabled)
+        self.assertEqual(ecrit.address, "172.16.2.10")        # conservée
+        self.assertEqual(ecrit.username, "passerelle")        # conservé
+        self.assertEqual(ecrit.password, "secret")            # conservé
+        self.assertEqual(ecrit.root, "msh/EU_868")            # conservée
+        self.assertTrue(ecrit.enabled)
+        self.assertTrue(ecrit.encryption_enabled)
+        self.assertTrue(donnees["json_active"])
+
+    def test_le_json_peut_aussi_etre_coupe(self):
+        iface = FauxInterface(reponses=[reponse_mqtt(json_enabled=True), "__ACK__"])
+        donnees, _ = mod.executer(iface, {
+            "type_tache": "DEFINIR_MQTT_JSON", "node_num_cible": 0x2000,
+            "parametres": {"actif": False},
+        })
+        self.assertFalse(iface.envois[1]["message"].set_module_config.mqtt.json_enabled)
+        self.assertFalse(donnees["json_active"])
+
+    def test_un_module_mqtt_vide_n_est_pas_reecrit(self):
+        iface = FauxInterface(reponses=[reponse_mqtt(address="", enabled=False)])
+        with self.assertRaises(mod.ErreurAdmin):
+            mod.executer(iface, {"type_tache": "DEFINIR_MQTT_JSON", "node_num_cible": 0x2000})
+
+    def test_un_parametre_non_booleen_est_refuse(self):
+        iface = FauxInterface(reponses=[reponse_mqtt()])
+        with self.assertRaises(mod.ErreurAdmin):
+            mod.executer(iface, {"type_tache": "DEFINIR_MQTT_JSON",
+                                 "parametres": {"actif": "oui"}})
+        self.assertEqual(iface.envois, [])
+
+    def test_actif_par_defaut(self):
+        """La demande est d'ACTIVER : sans paramètre, on active."""
+        iface = FauxInterface(reponses=[reponse_mqtt(), "__ACK__"])
+        donnees, _ = mod.executer(iface, {"type_tache": "DEFINIR_MQTT_JSON"})
+        self.assertTrue(donnees["json_active"])
 
 
 class TestDivers(unittest.TestCase):

@@ -55,7 +55,11 @@ export class MeshtasticAdministrationComponent implements OnInit {
     type_tache: TypeTacheAdminMeshtastic;
     puissance_dbm: number;
     delai_s: number;
-  } = { compagnon: '', cible: '', type_tache: 'LIRE_CONFIG_LORA', puissance_dbm: 20, delai_s: 10 };
+    mqtt_json: boolean;
+  } = {
+    compagnon: '', cible: '', type_tache: 'LIRE_CONFIG_LORA', puissance_dbm: 20, delai_s: 10,
+    mqtt_json: true,
+  };
 
   envoiEnCours = false;
   erreurEnvoi: string | null = null;
@@ -159,6 +163,8 @@ export class MeshtasticAdministrationComponent implements OnInit {
       parametres = { puissance_dbm: Number(this.nouvelle.puissance_dbm) };
     } else if (this.nouvelle.type_tache === 'REDEMARRER') {
       parametres = { delai_s: Number(this.nouvelle.delai_s) };
+    } else if (this.nouvelle.type_tache === 'DEFINIR_MQTT_JSON') {
+      parametres = { actif: this.nouvelle.mqtt_json };
     }
 
     this.service.creer({

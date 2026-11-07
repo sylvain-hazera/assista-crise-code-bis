@@ -69,6 +69,7 @@ from .permissions import (
     IsSelfOrInstitutional, IsInstitutionMemberOrAdministrator, IsOfferOwnerOrInstitutional,
     INSTITUTIONAL_TYPES, user_can_view_photo, DenyInDemo,
     get_active_environment, get_effective_role, effective_role_or_none, mask_email, mask_phone,
+    nom_affichable, est_son_propre_compte, pseudonyme,
     send_mail_env_aware, _peut_gerer_stock_point, is_regulateur_aut_locale_de_la_crise,
 )
 from .geo_lookup import (
@@ -205,6 +206,7 @@ from .models import (
     CompagnonMeshtastic, NoeudUtilisateurMeshtastic, MessageMeshtasticLog,
     CanalMeshtastic, MessageCanalMeshtastic, ContactMeshtastic,
     TacheAdminMeshtastic, StatutTacheAdminMeshtastic, TACHES_ADMIN_ECRITURE,
+    CalibrationRadio, CouvertureRadioSite, StatutCouvertureRadio,
     TENTATIVES_MAX_TACHE_ADMIN, DELAI_RECLAMATION_TACHE_ADMIN_S, ConfigurationNoeudMeshtastic,
     Satellite, JetonEnrolementSatellite, ProfilSatellite, StatutEnrolementSatellite,
     EvenementSynchronisation, EtatEvenementSynchronisation, ConflitSynchronisation,
@@ -564,6 +566,7 @@ from .serializers import (
     MaterielCatalogueSerializer,
     CompagnonMeshCoreSerializer, CompteMqttSerializer, LiaisonMeshtasticSerializer,
     TacheAdminMeshtasticSerializer, ConfigurationNoeudMeshtasticSerializer,
+    CalibrationRadioSerializer, CouvertureRadioSiteSerializer,
     NoeudMeshUtilisateurSerializer,
     MessageMeshLogSerializer,
     CommandeMeshCoreSerializer,
@@ -1769,7 +1772,7 @@ class UserViewSet(viewsets.ModelViewSet):
             objet_id=user_to_reactivate.id,
             commentaire=f"Réactivation compte : {user_to_reactivate.email}",
         )
-        return Response(UserSerializer(user_to_reactivate).data)
+        return Response(UserSerializer(user_to_reactivate, context={'request': request}).data)
 
     @action(detail=False, methods=['post'], permission_classes=[AllowAny])
     def register(self, request):
@@ -1794,7 +1797,7 @@ class UserViewSet(viewsets.ModelViewSet):
                 envoyer_email_creation_compte(request, user)
 
                 return Response({
-                    'user': UserSerializer(user).data,
+                    'user': UserSerializer(user, context={'request': request}).data,
                     'message': "Votre compte a été créé. Vérifiez votre boîte mail et cliquez sur le lien d'activation pour finaliser votre inscription.",
                     'requires_validation': False,
                     'requires_email_confirmation': True,
@@ -1845,7 +1848,7 @@ class UserViewSet(viewsets.ModelViewSet):
                 
                 # NE PAS retourner de token si le compte nécessite validation
                 return Response({
-                    'user': UserSerializer(user).data,
+                    'user': UserSerializer(user, context={'request': request}).data,
                     'message': 'Votre demande a été soumise et transmise à l’équipe. Un administrateur la validra prochainement.',
                     'requires_validation': True
                 }, status=status.HTTP_201_CREATED)
@@ -1853,7 +1856,7 @@ class UserViewSet(viewsets.ModelViewSet):
             # Le compte est validé, retourner le token
             refresh = RefreshToken.for_user(user)
             return Response({
-                'user': UserSerializer(user).data,
+                'user': UserSerializer(user, context={'request': request}).data,
                 'token': str(refresh.access_token),
                 'refresh': str(refresh),
                 'message': 'Utilisateur créé avec succès'
@@ -2009,7 +2012,7 @@ class UserViewSet(viewsets.ModelViewSet):
                     )
                 )
                 return Response({
-                    'user': UserSerializer(user).data,
+                    'user': UserSerializer(user, context={'request': request}).data,
                     'token': str(refresh.access_token),
                     'refresh': str(refresh),
                     'message': 'Connexion réussie'
@@ -2143,7 +2146,7 @@ class UserViewSet(viewsets.ModelViewSet):
         
         return Response({
             'message': 'Compte validé avec succès',
-            'user': UserSerializer(user_to_approve).data
+            'user': UserSerializer(user_to_approve, context={'request': request}).data
         })
     
     @action(detail=True, methods=['post'])
@@ -2201,7 +2204,7 @@ class UserViewSet(viewsets.ModelViewSet):
         user_to_reject.save()
         return Response({
             'message': 'Compte rejeté',
-            'user': UserSerializer(user_to_reject).data
+            'user': UserSerializer(user_to_reject, context={'request': request}).data
         })
 
     @action(detail=True, methods=['post'])
@@ -3128,7 +3131,7 @@ class CrisisViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             "points": [
                 {
                     "id": str(p.id), "nom": p.nom, "type_libelle": p.type.libelle if p.type else None,
-                    "responsables_contacts": PointOperationnelSerializer(p).get_responsables_contacts(p),
+                    "responsables_contacts": PointOperationnelSerializer(p, context={'request': request}).get_responsables_contacts(p),
                 }
                 for p in points
             ],
@@ -3256,6 +3259,7 @@ def send_point_volunteer_confirmation_email(request, affectation):
         contact = responsable.email
         if responsable.phone_number:
             contact += f" / {responsable.phone_number}"
+        # nom-reel-assume: corps d'email (send_branded_mail_env_aware ci-dessous)
         lignes.append(f"Responsable du point : {responsable.first_name} {responsable.last_name} ({contact})".strip())
 
     institution = point.equipe.institution if point.equipe else None
@@ -3281,15 +3285,29 @@ def _notify_regulateurs_creneau_a_valider(affectation, request):
         return
 
     institution = point.equipe.institution if point.equipe else None
-    message = (
-        f"{affectation.benevole.first_name} {affectation.benevole.last_name} a confirmé sa "
-        f"disponibilité pour le point « {point.nom} » — validation requise avant confirmation "
-        f"définitive."
+
+    def _message(nom_benevole):
+        return (
+            f"{nom_benevole} a confirmé sa disponibilité pour le point « {point.nom} » — "
+            f"validation requise avant confirmation définitive."
+        )
+
+    # Deux textes et non un seul : la notification est AFFICHÉE dans la zone active (elle doit
+    # donc être pseudonymisée en démonstration), l'email part dans une vraie boîte et doit
+    # porter le vrai nom du bénévole -- sinon son destinataire ne sait pas de qui on parle.
+    message_affiche = _message(
+        nom_affichable(affectation.benevole, request)
+        or affectation.benevole.email    # nom-reel-assume: repli sans nom, jamais atteint en DEMO
     )
+    message_envoye = _message(
+        f"{affectation.benevole.first_name} {affectation.benevole.last_name}".strip()   # nom-reel-assume: corps d'email
+        or affectation.benevole.email
+    )
+    message = message_envoye
     for user in destinataires:
         Notification.objects.create(
             utilisateur=user, titre="Créneau bénévole à valider",
-            message=message, environment=affectation.environment,
+            message=message_affiche, environment=affectation.environment,
         )
         try:
             send_branded_mail_env_aware(
@@ -4602,13 +4620,22 @@ def _notifier_responsable_reserve(candidat, institution, request):
     if responsable is None:
         return
 
-    message = (
-        f"{candidat.first_name} {candidat.last_name} ({candidat.email}) souhaite rejoindre la "
-        f"réserve « {institution.nom_affichage or institution.nom} »."
+    def _message(identite):
+        return (
+            f"{identite} souhaite rejoindre la réserve "
+            f"« {institution.nom_affichage or institution.nom} »."
+        )
+
+    # Même partage que _notifier_creneau_a_valider : la notification est affichée dans la zone
+    # active, l'email part à une vraie personne. En démonstration, ni le nom ni l'adresse du
+    # candidat n'ont à apparaître à l'écran.
+    message_affiche = _message(nom_affichable(candidat, request) or mask_email(candidat.email))
+    message = _message(
+        f"{candidat.first_name} {candidat.last_name} ({candidat.email})"   # nom-reel-assume: corps d'email
     )
     Notification.objects.create(
         utilisateur=responsable, titre="Nouvelle candidature à la réserve",
-        message=message, environment=get_active_environment(request),
+        message=message_affiche, environment=get_active_environment(request),
     )
     try:
         send_branded_mail(
@@ -5286,6 +5313,7 @@ def _prefixe_expediteur_mesh_sortant(user, institution=None) -> str:
     est émis par la plateforme pour son compte plutôt que par une personne précise (ex: `user`
     None/anonyme) -- jamais la mention technique "Mesh" seule."""
     if user is not None and getattr(user, 'is_authenticated', False):
+        # nom-reel-assume: texte émis SUR la radio par la personne elle-même, pas un affichage
         return f"{user.first_name} {user.last_name}".strip() or user.email
     if institution is not None:
         return institution.nom
@@ -6362,7 +6390,7 @@ class HabilitationRegistreVulnerablesViewSet(EnvironmentScopedViewSetMixin, view
         ):
             lignes.append({
                 "id": str(user.id),
-                "nom": f"{user.first_name} {user.last_name}".strip() or user.username,
+                "nom": nom_affichable(user, request) or user.username,
                 "email": user.email,
                 "deja_habilite": user.id in deja,
                 "rcsc": utilisateur_a_acces_rcsc(user, institution),
@@ -7530,7 +7558,7 @@ class PlanViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
                 dossiers_crees.append(_instancier_mission_modele(request, modele, team, crise))
 
         return Response({
-            "crise": CrisisSerializer(crise).data,
+            "crise": CrisisSerializer(crise, context={'request': request}).data,
             "equipes_activees": [str(t.id) for t in equipes_activees],
             "points_actives": [str(p.id) for p in points_actives],
             "dossiers_crees": [str(d.id) for d in dossiers_crees],
@@ -7896,6 +7924,8 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         added = current_member_ids - previous_member_ids
         removed = previous_member_ids - current_member_ids
         if added or removed:
+            # nom-reel-assume: trace de main courante -- un journal d'audit ne doit pas mentir ;
+            # ses lecteurs sont administrateurs (consultation globale réservée au super-admin).
             noms = lambda ids: ", ".join(
                 (f"{u.first_name} {u.last_name}".strip() or u.username)
                 for u in User.objects.filter(id__in=ids)
@@ -8028,7 +8058,7 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
                 ]
                 rows.append({
                     "type": "personne",
-                    "nom": f"{membre.first_name} {membre.last_name}".strip() or membre.email,
+                    "nom": nom_affichable(membre, request) or membre.email,
                     "equipe_id": str(team.id),
                     "equipe_nom": team.name,
                     # Temps d'engagement sans repos (page Cellule de crise), voir
@@ -8784,7 +8814,7 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             commentaire=f"Salon Matrix {'provisionné' if cree else 'déjà actif'} pour l'équipe « {team.name} ».",
         )
 
-        return Response(SalonMatrixEquipeSerializer(salon).data)
+        return Response(SalonMatrixEquipeSerializer(salon, context={'request': request}).data)
 
     def _est_cadre(self, request, team) -> bool:
         """« Cadre » (accord utilisateur du 26/09) : acteur institutionnel au sens large, OU le
@@ -8854,7 +8884,7 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
                 status=status.HTTP_409_CONFLICT,
             )
 
-        nom = f"{request.user.first_name} {request.user.last_name}".strip() or request.user.email
+        nom = nom_affichable(request.user, request) or request.user.email
         if not est_membre:
             _assurer_membre_salon_sans_bloquer(request.user, salon.room_id, nom)
 
@@ -8867,7 +8897,7 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         # Table de correspondance UUID Django -> nom lisible, pour attribuer les messages postés
         # directement depuis Element (pas de préfixe de nom dans leur corps, contrairement aux
         # messages relayés par ce endpoint -- voir envoyer_message_salon).
-        noms = {str(m.id): f"{m.first_name} {m.last_name}".strip() or m.email for m in team.members.all()}
+        noms = {str(m.id): nom_affichable(m, request) or m.email for m in team.members.all()}
         noms[str(request.user.id)] = nom
         messages = lister_messages_salon(salon.room_id)
         for m in messages:
@@ -8883,7 +8913,7 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
                     continue
                 reacteur = User.objects.filter(pk=r['expediteur_id']).first()
                 if reacteur and self._est_cadre_user(reacteur, team):
-                    vus.append(noms.get(r['expediteur_id']) or f"{reacteur.first_name} {reacteur.last_name}".strip() or reacteur.email)
+                    vus.append(noms.get(r['expediteur_id']) or nom_affichable(reacteur, request) or reacteur.email)
             m['vu_par'] = vus
 
         return Response({"messages": messages})
@@ -8910,7 +8940,7 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         if noeud is None:
             return 'Compte externe'
         u = noeud.utilisateur
-        return f"{u.first_name} {u.last_name}".strip() or u.email
+        return nom_affichable(u, self.request) or u.email
 
     @action(detail=True, methods=['get', 'post'], url_path='messagerie-unifiee')
     def messagerie_unifiee(self, request, pk=None):
@@ -8939,7 +8969,7 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             )
 
         environment = get_active_environment(request)
-        nom = f"{request.user.first_name} {request.user.last_name}".strip() or request.user.email
+        nom = nom_affichable(request.user, request) or request.user.email
 
         # Matrix "par défaut" : provisionné à la volée, jamais besoin du bouton manuel
         # (provisionner_salon_matrix reste utilisable séparément, idempotent). room_id reste
@@ -9000,7 +9030,7 @@ class TeamViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
                     statut=StatutMessageMesh.EN_ATTENTE, environment=environment,
                 )
 
-        noms = {str(m.id): f"{m.first_name} {m.last_name}".strip() or m.email for m in team.members.all()}
+        noms = {str(m.id): nom_affichable(m, request) or m.email for m in team.members.all()}
         noms[str(request.user.id)] = nom
 
         resultat = []
@@ -9439,7 +9469,7 @@ class OfferViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             # Marque tout le fil comme lu par l'institution -- alimente la file "Retours
             # externes" de la page Cellule de crise (voir OfferMessage.lu_par_institution).
             offre.messages.filter(lu_par_institution=False).update(lu_par_institution=True)
-            return Response(OfferMessageSerializer(offre.messages.all(), many=True).data)
+            return Response(OfferMessageSerializer(offre.messages.all(), many=True, context={'request': request}).data)
 
         contenu = (request.data.get('contenu') or '').strip()
         if not contenu:
@@ -9474,7 +9504,7 @@ class OfferViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
         except Exception as e:
             print(f"Erreur envoi email message offre : {e}")
 
-        return Response(OfferMessageSerializer(message).data, status=status.HTTP_201_CREATED)
+        return Response(OfferMessageSerializer(message, context={'request': request}).data, status=status.HTTP_201_CREATED)
 
     @action(detail=False, methods=["get"], url_path="retours-externes")
     def retours_externes(self, request):
@@ -9817,7 +9847,7 @@ class OfferViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             except Exception as e:
                 print(f"Erreur envoi email affectation offre à l'équipe : {e}")
 
-        return Response(TeamSerializer(team).data, status=status.HTTP_201_CREATED)
+        return Response(TeamSerializer(team, context={'request': request}).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["post"], url_path="affecter-stock")
     def affecter_stock(self, request, pk=None):
@@ -9881,7 +9911,7 @@ class OfferViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             commentaire=f"Apport reçu : {item.nom} ({quantite} {unite}) fourni par {fournisseur_nom or 'anonyme'}",
         )
 
-        return Response(MaterielPointSerializer(materiel_point).data, status=status.HTTP_201_CREATED)
+        return Response(MaterielPointSerializer(materiel_point, context={'request': request}).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["get"])
     def preview(self, request, pk=None):
@@ -10183,7 +10213,7 @@ class InformationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
                 dossiers_created.append(str(dossier.id))
 
         return Response({
-            "team": TeamSerializer(team).data,
+            "team": TeamSerializer(team, context={'request': request}).data,
             "dossiers_created": dossiers_created,
             "already_assigned": already_assigned,
             "no_crisis": no_crisis,
@@ -10519,7 +10549,7 @@ class OfferReponsePublicView(APIView):
         offre = get_object_or_404(Offer, reponse_token=token)
         return Response({
             "offer": OfferSerializer(offre, context={'request': request}).data,
-            "messages": OfferMessageSerializer(offre.messages.all(), many=True).data,
+            "messages": OfferMessageSerializer(offre.messages.all(), many=True, context={'request': request}).data,
         })
 
     def post(self, request, token):
@@ -10536,7 +10566,7 @@ class OfferReponsePublicView(APIView):
             titre=f"Réponse reçue sur l'offre « {offre.title} »",
             message_texte=f"{offre.first_name_offer} {offre.last_name_offer} a répondu :\n\n« {contenu} »",
         )
-        return Response(OfferMessageSerializer(message).data, status=status.HTTP_201_CREATED)
+        return Response(OfferMessageSerializer(message, context={'request': request}).data, status=status.HTTP_201_CREATED)
 
     def patch(self, request, token):
         # OfferPublicEditSerializer (allow-list), pas OfferSerializer complet (fields='__all__')
@@ -10868,7 +10898,7 @@ class AccountActivationView(generics.GenericAPIView):
 
         refresh = RefreshToken.for_user(user)
         return Response({
-            'user': UserSerializer(user).data,
+            'user': UserSerializer(user, context={'request': request}).data,
             'token': str(refresh.access_token),
             'refresh': str(refresh),
             'message': 'Compte activé avec succès',
@@ -10889,7 +10919,7 @@ class MagicLoginView(generics.GenericAPIView):
 
         refresh = RefreshToken.for_user(user)
         return Response({
-            'user': UserSerializer(user).data,
+            'user': UserSerializer(user, context={'request': request}).data,
             'token': str(refresh.access_token),
             'refresh': str(refresh),
             'message': 'Connexion réussie sans mot de passe'
@@ -11029,7 +11059,7 @@ class MaPositionView(generics.GenericAPIView):
             environment=get_active_environment(request),
             defaults={'location': Point(longitude, latitude, srid=4326)},
         )
-        return Response(DernierePositionUtilisateurSerializer(position).data, status=status.HTTP_200_OK)
+        return Response(DernierePositionUtilisateurSerializer(position, context={'request': request}).data, status=status.HTTP_200_OK)
 
 
 class PositionsEquipesView(generics.ListAPIView):
@@ -11513,7 +11543,7 @@ class AuditLogViewSet(EnvironmentScopedViewSetMixin, viewsets.ReadOnlyModelViewS
             for entry in queryset.iterator(chunk_size=500):
                 utilisateur = entry.utilisateur
                 nom_utilisateur = (
-                    (f"{utilisateur.first_name} {utilisateur.last_name}".strip() or utilisateur.email)
+                    (nom_affichable(utilisateur, request) or utilisateur.email)
                     if utilisateur else "Système / anonyme"
                 )
                 writer.writerow([
@@ -12579,7 +12609,7 @@ class InstitutionViewSet(
             )
             resultats.append(salon)
 
-        return Response(SalonMatrixInstitutionSerializer(resultats, many=True).data)
+        return Response(SalonMatrixInstitutionSerializer(resultats, many=True, context={'request': request}).data)
 
     @action(
         detail=True, methods=['get', 'post'],
@@ -12602,7 +12632,7 @@ class InstitutionViewSet(
                 status=status.HTTP_409_CONFLICT,
             )
 
-        membres_ids = {m['id'] for m in SalonMatrixInstitutionSerializer(salon).data['membres']}
+        membres_ids = {m['id'] for m in SalonMatrixInstitutionSerializer(salon, context={'request': request}).data['membres']}
         est_membre = str(request.user.id) in membres_ids
         if type_salon == TypeSalonInstitution.PERMANENTS and not est_acteur:
             return Response(
@@ -12615,7 +12645,7 @@ class InstitutionViewSet(
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        nom = f"{request.user.first_name} {request.user.last_name}".strip() or request.user.email
+        nom = nom_affichable(request.user, request) or request.user.email
 
         if request.method == 'POST':
             texte = (request.data.get('texte') or '').strip()
@@ -12623,7 +12653,7 @@ class InstitutionViewSet(
                 return Response({"error": "texte requis."}, status=status.HTTP_400_BAD_REQUEST)
             envoyer_message_salon(salon.room_id, request.user, nom, texte)
 
-        noms = {m['id']: m['nom'] for m in SalonMatrixInstitutionSerializer(salon).data['membres']}
+        noms = {m['id']: m['nom'] for m in SalonMatrixInstitutionSerializer(salon, context={'request': request}).data['membres']}
         noms[str(request.user.id)] = nom
         messages = lister_messages_salon(salon.room_id)
         for m in messages:
@@ -12973,9 +13003,7 @@ class DisponibiliteOperationnelleViewSet(
             siennes = par_utilisateur.get(contact.utilisateur_id, [])
             membres.append({
                 "utilisateur": contact.utilisateur_id,
-                "nom": (f"{contact.utilisateur.first_name} "
-                        f"{contact.utilisateur.last_name}").strip()
-                       or contact.utilisateur.email,
+                "nom": nom_affichable(contact.utilisateur, request) or contact.utilisateur.email,
                 "fonction": contact.fonction,
                 "membre_bureau": contact.membre_bureau,
                 # Deux signaux qui décident d'une mobilisation autant que la disponibilité :
@@ -13468,14 +13496,14 @@ class PointOperationnelViewSet(
             "membres": [
                 {
                     "id": str(m.id),
-                    "nom": f"{m.first_name} {m.last_name}".strip() or m.email,
+                    "nom": nom_affichable(m, request) or m.email,
                     "email": m.email,
                     "temps_total_heures": temps_par_membre.get(str(m.id), 0),
                 }
                 for m in membres
             ],
-            "disponibilites": DisponibilitePointEquipeSerializer(disponibilites, many=True).data,
-            "affectations": AffectationPointBenevoleSerializer(affectations, many=True).data,
+            "disponibilites": DisponibilitePointEquipeSerializer(disponibilites, many=True, context={'request': request}).data,
+            "affectations": AffectationPointBenevoleSerializer(affectations, many=True, context={'request': request}).data,
         })
 
     @action(detail=True, methods=["post"], url_path="inviter-benevole")
@@ -13589,7 +13617,7 @@ class PointOperationnelViewSet(
             return Response({"created": [], "errors": errors}, status=status.HTTP_400_BAD_REQUEST)
 
         return Response(
-            {"created": AffectationPointBenevoleSerializer(created, many=True).data, "errors": errors},
+            {"created": AffectationPointBenevoleSerializer(created, many=True, context={'request': request}).data, "errors": errors},
             status=status.HTTP_201_CREATED,
         )
 
@@ -13643,7 +13671,7 @@ class PointOperationnelViewSet(
 
         send_benevole_validation_result_email(request, affectation, decision)
 
-        return Response(AffectationPointBenevoleSerializer(affectation).data)
+        return Response(AffectationPointBenevoleSerializer(affectation, context={'request': request}).data)
 
     @action(detail=True, methods=["get"], url_path="candidats-benevoles")
     def candidats_benevoles(self, request, pk=None):
@@ -13735,7 +13763,7 @@ class PointOperationnelViewSet(
         for item in MaterielCatalogue.objects.all().order_by("nom"):
             materiel = existants.get(item.id)
             if materiel:
-                resultats.append(MaterielPointSerializer(materiel).data)
+                resultats.append(MaterielPointSerializer(materiel, context={'request': request}).data)
             else:
                 resultats.append({
                     "id": None,
@@ -13784,7 +13812,7 @@ class PointOperationnelViewSet(
             return Response({"error": "Aucun des articles sélectionnés n'a été trouvé sur ce point."}, status=status.HTTP_400_BAD_REQUEST)
 
         demandeur = request.user
-        demandeur_nom = f"{demandeur.first_name} {demandeur.last_name}".strip() or demandeur.email
+        demandeur_nom = nom_affichable(demandeur, request) or demandeur.email
 
         titre = f"Demande de transfert depuis « {point_source.nom} » vers « {destination.nom} »"
         corps = (
@@ -13841,7 +13869,7 @@ class PointOperationnelViewSet(
         return Response({
             "equipes_gestion": [equipe_info(t) for t in equipes_gestion],
             "equipes_ravitaillement": [equipe_info(t) for t in point.equipes_ravitaillement.all()],
-            "civils_accueillis": PointOperationnelSerializer(point).get_civils_accueillis(point),
+            "civils_accueillis": PointOperationnelSerializer(point, context={'request': request}).get_civils_accueillis(point),
         })
 
 
@@ -14317,15 +14345,11 @@ class FicheIntervenantView(generics.GenericAPIView):
         )
 
         return Response({
-            "identite": {
-                "id": str(personne.id),
-                "nom": personne.last_name,
-                "prenom": personne.first_name,
-                "email": personne.email,
-                "telephone": personne.phone_number,
-                "type": personne.type,
-                "type_libelle": personne.get_type_display(),
-            },
+            # Fiche nominative complète : nom, prénom, adresse ET téléphone d'une personne
+            # réelle au même endroit. En zone DEMO tout y est pseudonymisé (sauf sa propre
+            # fiche) : `User` est partagé entre les deux zones, donc sans ce masquage cette
+            # page affichait en démonstration les coordonnées de vraies personnes.
+            "identite": _identite_personne_affichable(personne, request),
             "provenance": provenance,
             "competences": competences,
             "creneaux": creneaux,
@@ -14395,7 +14419,7 @@ class FicheMaterielView(generics.GenericAPIView):
                 "lieu_reparation": e.lieu_reparation, "date_reparation": e.date_reparation,
                 "cout_reparation": e.cout_reparation,
                 "cree_par_nom": (
-                    f"{e.cree_par.first_name} {e.cree_par.last_name}".strip() or e.cree_par.email
+                    nom_affichable(e.cree_par, request) or e.cree_par.email
                     if e.cree_par else None
                 ),
                 "date_creation": e.date_creation,
@@ -14506,7 +14530,7 @@ class RegistrePresenceViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewS
             crise=entree.point.crise,
             commentaire=f"Sortie « {entree.get_type_personne_display()} » du point {entree.point.nom}",
         )
-        return Response(RegistrePresenceSerializer(entree).data)
+        return Response(RegistrePresenceSerializer(entree, context={'request': request}).data)
 
 
 class DeclarationSecuriteViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
@@ -16252,6 +16276,7 @@ class NoeudMeshUtilisateurViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelV
                 "pubkey_hex": n.pubkey_hex,
                 "nom_noeud": n.nom_noeud,
                 "utilisateur_nom": "Nœud de terrain" if est_demo else (
+                    # nom-reel-assume: déjà anonymisé par `est_demo` juste avant
                     f"{n.utilisateur.first_name} {n.utilisateur.last_name}".strip() or n.utilisateur.email
                 ),
             }
@@ -16384,6 +16409,7 @@ class NoeudMeshUtilisateurViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelV
                 'noeud_id': str(noeud.id),
                 'utilisateur_id': None if est_demo else str(noeud.utilisateur_id),
                 'utilisateur_nom': "Nœud de terrain" if est_demo else (
+                    # nom-reel-assume: déjà anonymisé par `est_demo` juste avant
                     f"{noeud.utilisateur.first_name} {noeud.utilisateur.last_name}".strip()
                     or noeud.utilisateur.email
                 ),
@@ -16574,7 +16600,7 @@ class MessageMeshLogViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet
         qs = self.get_queryset().filter(direction=DirectionMessageMesh.SORTANT, statut=StatutMessageMesh.EN_ATTENTE)
         if compagnon_id:
             qs = qs.filter(compagnon_id=compagnon_id)
-        return Response(MessageMeshLogSerializer(qs, many=True).data)
+        return Response(MessageMeshLogSerializer(qs, many=True, context={'request': request}).data)
 
 
 class CommandeMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
@@ -17460,7 +17486,7 @@ class NoeudUtilisateurMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.
                 'noeud_id': str(noeud.id),
                 'utilisateur_id': str(noeud.utilisateur_id),
                 'utilisateur_nom': (
-                    f"{noeud.utilisateur.first_name} {noeud.utilisateur.last_name}".strip()
+                    nom_affichable(noeud.utilisateur, request)
                     or noeud.utilisateur.email
                 ),
                 'nom_noeud': noeud.nom_noeud,
@@ -17550,7 +17576,7 @@ class MessageMeshtasticLogViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelV
         qs = self.get_queryset().filter(direction=DirectionMessageMesh.SORTANT, statut=StatutMessageMesh.EN_ATTENTE)
         if compagnon_id:
             qs = qs.filter(compagnon_id=compagnon_id)
-        data = MessageMeshtasticLogSerializer(qs, many=True).data
+        data = MessageMeshtasticLogSerializer(qs, many=True, context={'request': request}).data
         for message in data:
             contact = (
                 ContactMeshtastic.objects.filter(node_num=message['contact_node_num'])
@@ -18044,6 +18070,203 @@ class ConfigurationNoeudMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewset
         return qs.order_by('node_num')
 
 
+class CouvertureRadioSiteViewSet(EnvironmentScopedViewSetMixin, viewsets.ReadOnlyModelViewSet):
+    """Couverture radio calculée sur le relief (voir core/relief_radio.py, porté de
+    `carte-live-meshtastic`).
+
+    Pas de `create` standard : une couverture ne se saisit pas, elle se CALCULE. L'action
+    `calculer` crée la ligne et lance la tâche Celery ; le client réinterroge ensuite la liste,
+    comme pour la simulation d'inondation -- l'état vit en base, donc changer de page puis
+    revenir ne perd rien.
+
+    `analyser-liaison` est au contraire **synchrone** : un profil de terrain coûte un ou deux
+    aller-retours d'altimétrie, l'exploitant attend sa réponse, et c'est l'outil qu'il utilisera
+    le plus (« est-ce que ça passe entre ce point haut et la mairie ? »)."""
+
+    queryset = CouvertureRadioSite.objects.all()
+    serializer_class = CouvertureRadioSiteSerializer
+    permission_classes = [IsInstitutionalActor]
+
+    def get_queryset(self):
+        return super().get_queryset().order_by('-date_lancement')
+
+    @action(detail=False, methods=['post'], url_path='calculer')
+    def calculer(self, request):
+        """Met en file le calcul de la couverture d'un site.
+
+        Les paramètres absents prennent les valeurs par défaut du modèle, et la perte
+        d'environnement vient de la dernière calibration de la zone si elle existe -- sinon la
+        valeur par défaut, et `calibre` reste faux : la couverture est alors une indication de
+        relief, pas une prévision, et l'interface doit le dire."""
+        from .relief_radio import (
+            COUVERTURE_PAS_M_DEFAUT, COUVERTURE_RAYONS_DEFAUT, PRESETS_LORA, parametres_calibres,
+        )
+        from .tasks import calculer_couverture_radio_task
+
+        nom = (request.data.get('nom') or '').strip()
+        if not nom:
+            return Response({'nom': "Un nom de site est requis."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            latitude = float(request.data['latitude'])
+            longitude = float(request.data['longitude'])
+        except (KeyError, TypeError, ValueError):
+            return Response({'detail': "latitude et longitude (décimaux) sont requis."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if not (-90 <= latitude <= 90) or not (-180 <= longitude <= 180):
+            return Response({'detail': "Coordonnées hors bornes."}, status=status.HTTP_400_BAD_REQUEST)
+
+        preset = request.data.get('preset') or 'LONG_FAST'
+        if preset not in PRESETS_LORA:
+            return Response({'preset': f"Preset inconnu. Attendu l'un de : {sorted(PRESETS_LORA)}."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        environment = get_active_environment(request)
+        params = parametres_calibres(environment, preset=preset)
+
+        def nombre(cle, defaut, mini, maxi):
+            try:
+                valeur = float(request.data.get(cle, defaut))
+            except (TypeError, ValueError):
+                return None
+            return valeur if mini <= valeur <= maxi else None
+
+        hauteur = nombre('hauteur_antenne_m', 6.0, 0.0, 200.0)
+        hauteur_cible = nombre('hauteur_cible_m', 2.0, 0.0, 200.0)
+        puissance = nombre('puissance_dbm', 27.0, 1.0, 30.0)
+        rayon = nombre('rayon_max_km', 40.0, 1.0, 80.0)
+        rayons = nombre('nb_rayons', COUVERTURE_RAYONS_DEFAUT, 8, 360)
+        pas = nombre('pas_m', COUVERTURE_PAS_M_DEFAUT, 100, 2000)
+        if None in (hauteur, hauteur_cible, puissance, rayon, rayons, pas):
+            return Response(
+                {'detail': "Un paramètre est hors bornes (hauteur 0-200 m, puissance 1-30 dBm, "
+                           "rayon 1-80 km, 8-360 rayons, pas 100-2000 m)."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        couverture = CouvertureRadioSite.objects.create(
+            environment=environment, nom=nom[:120],
+            location=Point(longitude, latitude, srid=4326),
+            node_num=request.data.get('node_num') or None,
+            hauteur_antenne_m=hauteur, hauteur_cible_m=hauteur_cible, preset=preset,
+            puissance_dbm=puissance, rayon_max_km=rayon,
+            nb_rayons=int(rayons), pas_m=int(pas),
+            perte_environnement_db=params.perte_environnement_db, calibre=params.calibre,
+            statut=StatutCouvertureRadio.EN_COURS,
+        )
+        audit_log(
+            request=request, action_code="CREATION", objet_type="CouvertureRadioSite",
+            objet_id=couverture.id,
+            commentaire=f"Calcul de couverture radio : {nom} ({latitude:.4f}, {longitude:.4f})",
+        )
+        calculer_couverture_radio_task.delay(str(couverture.id))
+        return Response(CouvertureRadioSiteSerializer(couverture).data,
+                        status=status.HTTP_202_ACCEPTED)
+
+    @action(detail=True, methods=['get'], url_path='geojson')
+    def geojson(self, request, pk=None):
+        """Points atteints, en GeoJSON, pour la couche de carte.
+
+        Des POINTS et non un polygone : une couverture radio n'est pas un disque, elle est
+        trouée (vallées masquées, crêtes qui portent loin). Un contour convexe déclarerait
+        couvert tout ce qu'il englobe, y compris les trous -- exactement l'erreur qui envoie une
+        équipe dans une zone d'ombre en croyant qu'elle a la radio."""
+        couverture = self.get_object()
+        return Response({
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "geometry": {"type": "Point", "coordinates": [lon, lat]},
+                    "properties": {"marge_db": marge, "distance_m": distance},
+                }
+                for lat, lon, marge, distance in (couverture.points or [])
+            ],
+            "proprietes": CouvertureRadioSiteSerializer(couverture).data,
+        })
+
+    @action(detail=False, methods=['post'], url_path='analyser-liaison')
+    def analyser_liaison(self, request):
+        """Bilan d'une liaison point à point sur le relief, calculé tout de suite.
+
+        Synchrone, à la différence de la couverture : un profil au pas de 100 m sur 40 km fait
+        400 points, soit deux lots d'altimétrie -- quelques secondes, et le cache de points rend
+        les suivants quasi instantanés."""
+        from .relief_radio import (
+            PRESETS_LORA, altitude_point, altitudes_points, analyser_liaison, points_profil,
+            parametres_calibres,
+        )
+
+        try:
+            a = (float(request.data['lat_a']), float(request.data['lon_a']))
+            b = (float(request.data['lat_b']), float(request.data['lon_b']))
+        except (KeyError, TypeError, ValueError):
+            return Response({'detail': "lat_a, lon_a, lat_b, lon_b (décimaux) sont requis."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        preset = request.data.get('preset') or 'LONG_FAST'
+        if preset not in PRESETS_LORA:
+            return Response({'preset': "Preset inconnu."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            hauteur_a = float(request.data.get('hauteur_a_m', 6.0))
+            hauteur_b = float(request.data.get('hauteur_b_m', 2.0))
+            puissance = float(request.data.get('puissance_dbm', 27.0))
+        except (TypeError, ValueError):
+            return Response({'detail': "Hauteurs et puissance doivent être des nombres."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if not (0 <= hauteur_a <= 200 and 0 <= hauteur_b <= 200 and 1 <= puissance <= 30):
+            return Response({'detail': "Paramètre hors bornes (hauteurs 0-200 m, puissance 1-30 dBm)."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        params = parametres_calibres(
+            get_active_environment(request), preset=preset, puissance_dbm=puissance,
+        )
+        profil = points_profil(a, b)
+        if len(profil) > 1200:
+            return Response(
+                {'detail': "Liaison trop longue pour un profil au pas de 100 m (120 km max)."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        resultat = analyser_liaison(
+            a, b, altitude_point(a), altitude_point(b), altitudes_points(profil), params,
+            hauteur_a=hauteur_a, hauteur_b=hauteur_b,
+        )
+        if resultat is None:
+            return Response(
+                {'detail': "Altitude indisponible à l'une des extrémités : le service "
+                           "d'altimétrie IGN n'a pas répondu, ou le point est hors de France."},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        return Response(resultat)
+
+
+class CalibrationRadioViewSet(EnvironmentScopedViewSetMixin, viewsets.ReadOnlyModelViewSet):
+    """Calibration du modèle de propagation sur les liaisons mesurées.
+
+    Chaque calcul est conservé : voir l'écart dériver dans le temps est en soi un signal (un
+    réseau dont l'écart se dégrade a un problème matériel, pas un problème de modèle)."""
+
+    queryset = CalibrationRadio.objects.all()
+    serializer_class = CalibrationRadioSerializer
+    permission_classes = [IsInstitutionalActor]
+
+    def get_queryset(self):
+        return super().get_queryset().order_by('-date_calcul')
+
+    @action(detail=False, methods=['post'], url_path='calculer')
+    def calculer(self, request):
+        """Lance une calibration. Asynchrone : un profil de terrain par liaison retenue."""
+        from .tasks import calibrer_radio_task
+
+        environment = get_active_environment(request)
+        audit_log(
+            request=request, action_code="CREATION", objet_type="CalibrationRadio",
+            objet_id=None, commentaire="Lancement d'une calibration du modèle de propagation",
+        )
+        calibrer_radio_task.delay(environment)
+        return Response({"statut": "EN_COURS"}, status=status.HTTP_202_ACCEPTED)
+
+
 def _haversine_km(lat1, lon1, lat2, lon2):
     rayon_terre_km = 6371.0
     phi1, phi2 = math.radians(lat1), math.radians(lat2)
@@ -18051,6 +18274,30 @@ def _haversine_km(lat1, lon1, lat2, lon2):
     dlambda = math.radians(lon2 - lon1)
     a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
     return 2 * rayon_terre_km * math.asin(math.sqrt(a))
+
+
+def _identite_personne_affichable(personne, request):
+    """Bloc d'identité d'une personne, pseudonymisé en zone DEMO.
+
+    Le masquage porte sur les trois champs qui identifient : nom, adresse, téléphone. Il ne
+    porte PAS sur le type de compte ni l'identifiant technique, qui ne désignent personne et
+    sans lesquels la fiche n'aurait plus de sens.
+
+    Sa propre fiche reste en clair (voir core/permissions.py:nom_affichable)."""
+    demo = get_active_environment(request) == Environment.DEMO and not est_son_propre_compte(request, personne)
+    if demo:
+        prenom, patronyme = pseudonyme(personne)
+    else:
+        prenom, patronyme = personne.first_name, personne.last_name   # nom-reel-assume: hors DEMO
+    return {
+        "id": str(personne.id),
+        "nom": patronyme,
+        "prenom": prenom,
+        "email": mask_email(personne.email) if demo else personne.email,
+        "telephone": mask_phone(personne.phone_number) if demo else personne.phone_number,
+        "type": personne.type,
+        "type_libelle": personne.get_type_display(),
+    }
 
 
 def _communes_visibles_supervision(request):
@@ -18546,9 +18793,15 @@ class SatelliteViewSet(
             User.objects.filter(institution=institution, is_active=True, enabled=True)
             .exclude(pk=request.user.pk)
         )
+        # EXEMPTÉ du masquage DEMO, volontairement : ce n'est pas un affichage mais une
+        # RÉPLICATION vers l'instance Django locale d'un satellite, qui doit pouvoir
+        # authentifier les mêmes personnes hors ligne. Un email pseudonymisé y rendrait la
+        # connexion impossible. Protégé par _exiger_compte_service (compte de service du
+        # satellite concerné, profil FULL) et journalisé en EXPORT.
         comptes = [
             {
                 "id": str(u.id), "username": u.username, "email": u.email,
+                # nom-reel-assume: réplication vers le Django local d'un satellite (voir ci-dessus)
                 "first_name": u.first_name, "last_name": u.last_name, "type": u.type,
                 "demo_role": u.demo_role,
                 "password": u.password,
@@ -18755,12 +19008,17 @@ class SatelliteViewSet(
                 etat = SatelliteSerializer(satellite).data['etat'] if satellite else None
                 contacts = []
                 if etat != 'ACTIF':
+                    # Coordonnées de personnes réelles (téléphone et adresse d'un contact de
+                    # mairie) : masquées en zone DEMO comme partout ailleurs. Cette liste est
+                    # faite pour joindre une collectivité voisine dont le satellite ne répond
+                    # plus — en démonstration, il n'y a personne à joindre.
+                    demo = get_active_environment(request) == Environment.DEMO
                     contacts = [
                         {
-                            "nom": f"{c.utilisateur.first_name} {c.utilisateur.last_name}".strip() or c.utilisateur.email,
+                            "nom": nom_affichable(c.utilisateur, request) or c.utilisateur.email,
                             "fonction": c.fonction,
-                            "telephone": c.utilisateur.phone_number,
-                            "email": c.utilisateur.email,
+                            "telephone": mask_phone(c.utilisateur.phone_number) if demo else c.utilisateur.phone_number,
+                            "email": mask_email(c.utilisateur.email) if demo else c.utilisateur.email,
                         }
                         for c in ContactInstitution.objects.filter(institution=institution, actif=True)
                         .select_related('utilisateur').order_by('-contact_principal')
@@ -19333,4 +19591,4 @@ class SiteSensibleViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             objet_id=point.id,
             commentaire=f"Point créé depuis le site sensible « {site.nom} » ({site.get_source_display()}).",
         )
-        return Response(PointOperationnelSerializer(point).data, status=status.HTTP_201_CREATED)
+        return Response(PointOperationnelSerializer(point, context={'request': request}).data, status=status.HTTP_201_CREATED)
