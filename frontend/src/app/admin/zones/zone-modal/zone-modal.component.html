@@ -44,7 +44,11 @@
 
       <div class="form-group">
         <label>Zone précise (dessinée), optionnelle</label>
-        <app-zone-map [initialZone]="initialZoneGeojson" (zoneChange)="onZoneChange($event)"></app-zone-map>
+        <app-zone-map
+          [initialZone]="initialZoneGeojson"
+          [communesGeojson]="communesGeojson"
+          [cadrerSur]="cadrerSur"
+          (zoneChange)="onZoneChange($event)"></app-zone-map>
       </div>
 
       @if (errorMessage) {

@@ -1221,6 +1221,52 @@ données déjà chargées. Deux modes superposables : crue de rivière et ruisse
 carrés à la taille réelle des cellules). Le niveau mesuré (Hub'Eau) et la vigilance
 (Vigicrues) ne sont que des repères.
 
+### 6.5.1 Géolocalisation : une seule invite, et seulement sur un geste
+
+Règle du projet depuis le 07/11/2026 : **l'invite de permission de géolocalisation ne part que
+d'un geste explicite de l'utilisateur**, pour une fonctionnalité qu'il vient de demander.
+
+Pourquoi c'est une règle et pas une préférence : sur iOS, un refus est **définitif pour tout le
+site** — Safari ne repropose jamais l'invite, et il faut passer par les Réglages du téléphone.
+Deux appels la déclenchaient depuis `ngOnInit`, sans geste : le champ d'adresse des formulaires
+publics et la carte, tous deux pour un usage purement opportuniste (trier les suggestions
+d'adresse, recentrer la vue). L'utilisateur voyait donc l'invite surgir au chargement d'une page,
+la refusait — réaction normale devant une demande qu'il n'a pas sollicitée — et **tous les usages
+légitimes suivants échouaient ensuite définitivement**, y compris un signalement de terrain
+géolocalisé. Signalé comme « Safari bloque la géoloc ».
+
+Trois mécanismes :
+
+- `GeolocationService.positionSansInvite()` pour tout usage opportuniste : rend la position si
+  elle est déjà connue ou déjà autorisée (`navigator.permissions`), sinon `null`, **sans jamais
+  inviter**. Sans l'API Permissions (Safari < 16) on s'abstient : impossible de savoir si l'appel
+  inviterait, et c'est l'invite non sollicitée qu'on veut éviter.
+- `requestLocation()` reste pour les appels déclenchés par un geste, avec des réglages tenables
+  sur iOS : délai de 20 s (le premier point GPS y demande couramment plus de dix secondes) et
+  acceptation d'un point de moins d'une minute, au lieu d'exiger une mesure neuve.
+- Sur la carte, un **bouton « ma position »** (`maplibregl.GeolocateControl`) remplace le
+  recentrage automatique : l'invite part d'un clic, ce qui est le contexte qu'exige Safari, et
+  l'utilisateur sait pourquoi on la lui demande. `trackUserLocation: false` — un point à la
+  demande, jamais un suivi continu, qui a son propre dispositif explicite.
+
+En cas de refus sur iOS, le message dit **où** rétablir l'autorisation : sans cela, l'utilisateur
+conclut que l'application est cassée.
+
+### 6.5.2 Création d'une zone : la carte suit la commune saisie
+
+`ZoneMapComponent` accepte `[communesGeojson]` (contours en calque de référence sous l'outil de
+dessin) et `[cadrerSur]` (ajustement aux limites d'une géométrie). `[cadrerSur]` et non
+`[center]`/`[zoom]` : un niveau de zoom fixe cadre mal une commune, qui peut faire deux kilomètres
+comme quarante. Le calcul gère le MultiPolygon — une commune insulaire ou discontinue en est un,
+et ne lire que `coordinates[0]` cadrerait sur un seul morceau.
+
+La modale de création de zone ne passait **ni l'un ni l'autre** : saisir une commune laissait donc
+la carte sur la France entière, et on dessinait une zone à main levée sur un fond sans limites
+administratives (bug signalé le 07/11/2026). Elle charge maintenant le contour officiel de chaque
+commune ajoutée (`getCommuneContour`, mis en cache par code INSEE), cadre sur la dernière saisie,
+et affiche l'ensemble en calque. Si l'API géo ne répond pas, seule l'aide visuelle manque : la
+zone reste créable.
+
 ### 6.6 Thème clair / sombre
 
 `ThemeService` (`services/theme.service.ts`) pose `data-theme="clair|sombre"` et

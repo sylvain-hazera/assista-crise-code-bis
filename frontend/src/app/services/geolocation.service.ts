@@ -69,6 +69,54 @@ export class GeolocationService {
     }
   }
 
+  /** Dernière position connue, sans jamais rien demander au navigateur. */
+  positionEnCache(): Coordinates | null {
+    return this.locationSubject.value;
+  }
+
+  /** État de l'autorisation, quand le navigateur sait le dire (`navigator.permissions`,
+   * Safari 16+). `null` = inconnu, ce qui n'est PAS un refus : on ne décide rien dessus. */
+  async etatPermission(): Promise<PermissionState | null> {
+    const permissions = (navigator as any).permissions;
+    if (!permissions?.query) return null;
+    try {
+      const statut = await permissions.query({ name: 'geolocation' as PermissionName });
+      return statut.state as PermissionState;
+    } catch {
+      // Certains navigateurs lèvent sur un nom de permission qu'ils ne connaissent pas.
+      return null;
+    }
+  }
+
+  /** Position pour un usage OPPORTUNISTE (biaiser une recherche d'adresse, centrer une carte
+   * à l'ouverture) : ne déclenche **jamais** l'invite du navigateur. Résout `null` si on ne
+   * sait pas déjà.
+   *
+   * C'est la correction du 07/11/2026, et elle n'est pas cosmétique. Deux appels demandaient la
+   * position depuis `ngOnInit`, sans geste utilisateur : le champ d'adresse des formulaires
+   * publics et la carte. Sur iOS, l'utilisateur voyait donc l'invite de Safari surgir au
+   * CHARGEMENT de la page, sans comprendre pourquoi — et la refusait, ce qui est la réaction
+   * normale. Or Safari mémorise ce refus pour tout le site et **ne repropose plus jamais** :
+   * tous les usages légitimes qui suivent (bouton « utiliser ma position », signalement avec
+   * photo géolocalisée) échouaient alors définitivement. Du point de vue de l'utilisateur,
+   * « Safari bloque la géolocalisation ».
+   *
+   * Règle qui en découle : l'invite ne doit partir que d'un geste explicite, pour une
+   * fonctionnalité que l'utilisateur vient de demander. */
+  async positionSansInvite(): Promise<Coordinates | null> {
+    const connue = this.positionEnCache();
+    if (connue) return connue;
+    if (!navigator.geolocation) return null;
+    // Sans l'API Permissions (Safari < 16), on s'abstient : impossible de savoir si un appel
+    // déclencherait une invite, et une invite non sollicitée est précisément le problème.
+    if ((await this.etatPermission()) !== 'granted') return null;
+    try {
+      return await this.requestLocation();
+    } catch {
+      return null;
+    }
+  }
+
   requestLocation(): Promise<Coordinates> {
     return new Promise((resolve, reject) => {
       if (!navigator.geolocation) {
@@ -92,25 +140,39 @@ export class GeolocationService {
         },
         (error) => {
           let errorMessage = 'Erreur de géolocalisation';
-          
+
           switch (error.code) {
             case error.PERMISSION_DENIED:
-              errorMessage = 'Permission refusée. Veuillez autoriser l\'accès à votre position.';
+              // Sur iOS, Safari ne repropose jamais l'invite après un refus : dire où la
+              // rétablir, sinon le message n'est pas actionnable et l'utilisateur conclut que
+              // l'application est cassée.
+              errorMessage = this.estIOS()
+                ? 'Position refusée pour ce site. Safari ne redemandera pas : '
+                  + 'Réglages > Apps > Safari > Position, puis « Demander » ou « Autoriser », '
+                  + 'et rechargez la page.'
+                : 'Permission refusée. Veuillez autoriser l\'accès à votre position.';
               break;
             case error.POSITION_UNAVAILABLE:
               errorMessage = 'Position indisponible.';
               break;
             case error.TIMEOUT:
-              errorMessage = 'Délai d\'attente dépassé.';
+              errorMessage = 'Délai d\'attente dépassé : le GPS n\'a pas répondu à temps.';
               break;
           }
-          
+
           reject(new Error(errorMessage));
         },
         {
+          // Haute précision conservée : un signalement de terrain doit être posé au bon
+          // endroit. Mais deux réglages assouplis pour iOS, où le PREMIER point GPS demande
+          // couramment plus de dix secondes :
+          //  - délai porté à 20 s, sinon l'appel échoue alors que le téléphone cherchait ;
+          //  - un point de moins d'une minute est accepté (`maximumAge`), au lieu d'exiger une
+          //    mesure neuve à chaque appel — à cette échelle de temps on n'a pas bougé, et ça
+          //    évite de rallumer le GPS pour rien.
           enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 0
+          timeout: 20000,
+          maximumAge: 60000
         }
       );
     });
@@ -118,6 +180,13 @@ export class GeolocationService {
 
   hasPermission(): boolean {
     return this.permissionGranted;
+  }
+
+  /** iOS (iPhone/iPad), y compris iPadOS qui s'annonce « Macintosh » avec un écran tactile. */
+  private estIOS(): boolean {
+    const ua = navigator.userAgent || '';
+    return /iPad|iPhone|iPod/.test(ua)
+      || (/Macintosh/.test(ua) && (navigator as any).maxTouchPoints > 1);
   }
 
   /** Azimut (0-360°, 0=Nord) donné par la boussole du téléphone au moment de l'appel — doit

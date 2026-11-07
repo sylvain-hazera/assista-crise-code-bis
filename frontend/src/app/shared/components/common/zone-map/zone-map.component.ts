@@ -25,6 +25,11 @@ export class ZoneMapComponent implements AfterViewInit, OnChanges, OnDestroy {
   @Input() initialZone: Polygon | null = null;
   /** Contours des communes (calque de référence sous l'outil de dessin). */
   @Input() communesGeojson: FeatureCollection<Polygon | MultiPolygon> | null = null;
+  /** Géométrie sur laquelle CADRER la carte (ajustement aux limites, pas un simple centrage).
+   *
+   * `[center]`/`[zoom]` ne suffisent pas : un niveau de zoom fixe cadre mal une commune, qui
+   * peut faire deux kilomètres comme quarante. On ajuste donc aux limites réelles. */
+  @Input() cadrerSur: Polygon | MultiPolygon | null = null;
 
   @Output() zoneChange = new EventEmitter<string | null>();
 
@@ -43,6 +48,25 @@ export class ZoneMapComponent implements AfterViewInit, OnChanges, OnDestroy {
     if (changes['communesGeojson']) {
       this.syncCommunesLayer();
     }
+    if (changes['cadrerSur'] && this.cadrerSur) {
+      this.cadrer(this.cadrerSur);
+    }
+  }
+
+  /** Ajuste la vue aux limites d'une géométrie. Gère le MultiPolygon : une commune insulaire ou
+   * discontinue en est un, et ne lire que `coordinates[0]` cadrerait sur un seul morceau. */
+  private cadrer(geometrie: Polygon | MultiPolygon): void {
+    if (!this.map) return;
+    const anneaux: number[][][] = geometrie.type === 'Polygon'
+      ? geometrie.coordinates
+      : geometrie.coordinates.flat();
+    const points = anneaux.flat();
+    if (!points.length) return;
+    const bounds = points.reduce(
+      (b, [lng, lat]) => b.extend([lng, lat] as [number, number]),
+      new maplibregl.LngLatBounds(points[0] as [number, number], points[0] as [number, number]),
+    );
+    this.map.fitBounds(bounds, { padding: 40, maxZoom: 14 });
   }
 
   ngAfterViewInit(): void {

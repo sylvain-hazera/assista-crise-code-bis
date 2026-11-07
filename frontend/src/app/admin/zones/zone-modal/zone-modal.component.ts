@@ -2,6 +2,8 @@ import { Component, EventEmitter, Input, OnChanges, Output, SimpleChanges } from
 import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 
+import type { Feature, FeatureCollection, MultiPolygon, Polygon } from 'geojson';
+
 import { ZoneService } from '../../../services/zone.service';
 import { LocationService, Commune } from '../../../services/location.service';
 import { Zone } from '../../../shared/models/zone.model';
@@ -35,6 +37,15 @@ export class ZoneModalComponent implements OnChanges {
   saving = false;
   errorMessage = '';
 
+  /** Contours des communes ajoutées : calque de référence SOUS l'outil de dessin. Sans eux, on
+   * dessine une zone à main levée sur un fond sans limites administratives — même patron que
+   * la carte « Zone d'intervention » des équipes. */
+  communesGeojson: FeatureCollection<Polygon | MultiPolygon> | null = null;
+  /** Dernier contour ajouté : la carte s'y cadre. */
+  cadrerSur: Polygon | MultiPolygon | null = null;
+  /** Contours déjà chargés, par code INSEE — évite de réinterroger l'API géo à chaque ajout. */
+  private contours: Record<string, Polygon | MultiPolygon> = {};
+
   communeSearchFn = (q: string) => this.locationService.searchCommunesByName(q);
 
   constructor(
@@ -66,6 +77,47 @@ export class ZoneModalComponent implements OnChanges {
       });
     });
     this.zonePreciseWkt = this.zone?.zone_precise ?? null;
+    this.contours = {};
+    this.communesGeojson = null;
+    this.cadrerSur = null;
+    // Zone existante : on affiche ses communes, et on cadre sur l'ensemble.
+    this.communes.forEach(code => this.chargerContour(code, this.communes.length === 1));
+  }
+
+  /** Charge le contour officiel d'une commune, l'ajoute au calque, et cadre la carte dessus si
+   * on vient de l'ajouter.
+   *
+   * C'est la correction du bug signalé le 07/11/2026 : en saisissant une commune, la carte ne
+   * bougeait pas. Le composant de carte sait cadrer et afficher des contours depuis le début
+   * (`[cadrerSur]`, `[communesGeojson]`) — cette modale ne lui passait simplement ni l'un ni
+   * l'autre, et laissait donc la vue sur la France entière. */
+  private chargerContour(code: string, cadrer: boolean): void {
+    const connu = this.contours[code];
+    if (connu) {
+      if (cadrer) { this.cadrerSur = connu; }
+      return;
+    }
+    this.locationService.getCommuneContour(code).subscribe({
+      next: c => {
+        if (!c.contour) return;
+        this.contours[code] = c.contour;
+        this.rafraichirCalqueCommunes();
+        if (cadrer) { this.cadrerSur = c.contour; }
+      },
+      // L'API géo peut ne pas répondre : la zone reste modifiable, seule l'aide visuelle
+      // manque. Jamais bloquant pour la création.
+      error: () => {},
+    });
+  }
+
+  private rafraichirCalqueCommunes(): void {
+    const features: Feature<Polygon | MultiPolygon>[] = this.communes
+      .map(code => this.contours[code])
+      .filter((contour): contour is Polygon | MultiPolygon => !!contour)
+      .map(contour => ({ type: 'Feature', properties: {}, geometry: contour }));
+    // Nouvelle référence à chaque fois : ngOnChanges de la carte ne se déclenche que sur un
+    // changement de référence.
+    this.communesGeojson = features.length ? { type: 'FeatureCollection', features } : null;
   }
 
   get isEdit(): boolean {
@@ -81,10 +133,14 @@ export class ZoneModalComponent implements OnChanges {
     this.communeNoms[commune.code] = commune.name;
     if (commune.codePostal) this.communePostaux[commune.code] = commune.codePostal;
     this.communes = [...this.communes, commune.code];
+    // `true` : on cadre sur la commune qu'on vient de saisir — c'est ce que l'utilisateur
+    // attend en la tapant.
+    this.chargerContour(commune.code, true);
   }
 
   removeCommune(code: string): void {
     this.communes = this.communes.filter(c => c !== code);
+    this.rafraichirCalqueCommunes();
   }
 
   onZoneChange(wkt: string | null): void {

@@ -260,10 +260,21 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
       }
     });
 
-    // If no stored location, request geolocation permission and get current position
+    // Recentrage sur la position de l'utilisateur SEULEMENT si elle est déjà connue ou déjà
+    // autorisée : ouvrir une carte ne doit pas déclencher l'invite de permission. Sur iOS,
+    // cette invite surgissait au chargement de la page publique, l'utilisateur la refusait
+    // (réaction normale devant une demande qu'il n'a pas sollicitée), et Safari refusait
+    // ensuite DÉFINITIVEMENT la géolocalisation pour tout le site — y compris pour un
+    // signalement géolocalisé. Voir GeolocationService.positionSansInvite (07/11/2026).
     if (!this.geolocationService.hasPermission()) {
-      this.geolocationService.requestLocation()
+      this.geolocationService.positionSansInvite()
         .then((coords: any) => {
+          if (!coords) {
+            // Position inconnue et pas d'autorisation déjà accordée : même repli que si le GPS
+            // avait échoué, sinon la carte resterait centrée sur la France entière.
+            this.centerOnUserPostalCodeIfAvailable();
+            return;
+          }
           this.center = [coords.longitude, coords.latitude];
           this.zoom = 11;
           
@@ -1483,6 +1494,21 @@ private addHoverEffect() { // Show convex hull around clusters on hover
     }
 
     this.map.addControl(new maplibregl.NavigationControl(), 'top-right'); // Add zoom and rotation controls to the map
+
+    // Bouton « ma position » (07/11/2026). Il remplace le recentrage automatique au chargement,
+    // retiré parce qu'il déclenchait l'invite de permission sans que l'utilisateur l'ait
+    // demandée — et qu'un refus est DÉFINITIF sur iOS (voir
+    // GeolocationService.positionSansInvite). Ici l'invite part d'un clic : c'est le contexte
+    // qu'exige Safari, et l'utilisateur sait pourquoi on la lui demande.
+    //
+    // `trackUserLocation: false` : un point à la demande, jamais un suivi continu — le suivi
+    // de position a son propre dispositif explicite (SuiviPositionPermanentService), activé
+    // par l'utilisateur et visible dans l'en-tête.
+    this.map.addControl(new maplibregl.GeolocateControl({
+      positionOptions: { enableHighAccuracy: true, timeout: 20000, maximumAge: 60000 },
+      trackUserLocation: false,
+      showAccuracyCircle: true,
+    }), 'top-right');
 
     this.map.on('load', () => {
       // If crises, requests, or offers were already loaded before the map was ready, add them to the map now

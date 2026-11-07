@@ -40,12 +40,16 @@ export class AddressPickerComponent implements OnInit {
       this.useMyLocation();
       return;
     }
-    // Demande silencieuse : le navigateur affiche sa propre popup de permission. En cas de
-    // refus/échec on continue simplement sans biais géographique — jamais bloquant, jamais
-    // de préremplissage automatique du champ (l'utilisateur n'est pas forcément chez lui).
-    this.geolocationService.requestLocation()
-      .then(coords => { this.userPosition = { lat: coords.latitude, lon: coords.longitude }; })
-      .catch(() => { /* pas de position disponible : recherche sans biais, comportement normal */ });
+    // Position utilisée seulement SI ON LA CONNAÎT DÉJÀ : jamais d'invite de permission au
+    // chargement du formulaire. Elle ne sert ici qu'à trier les suggestions d'adresse, ce qui
+    // ne justifie pas de dépenser l'unique invite que l'utilisateur verra — sur iOS, un refus
+    // est définitif pour tout le site et casserait ensuite les usages légitimes
+    // (voir GeolocationService.positionSansInvite, corrigé le 07/11/2026).
+    this.geolocationService.positionSansInvite()
+      .then(coords => {
+        if (coords) { this.userPosition = { lat: coords.latitude, lon: coords.longitude }; }
+      })
+      .catch(() => { /* recherche sans biais : comportement normal, jamais bloquant */ });
   }
 
   onQueryChange(): void {
