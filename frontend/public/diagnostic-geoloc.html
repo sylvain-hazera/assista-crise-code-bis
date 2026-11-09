@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Diagnostic géolocalisation</title>
+<!--
+  Page de diagnostic volontairement AUTONOME : pas de framework, pas d'appel réseau, pas de
+  dépendance au bundle Angular. Servie par le site lui-même (frontend/public est copié à la
+  racine), donc exactement la même origine et le même contexte de sécurité que l'application —
+  c'est ce qui la rend concluante, contrairement à un test hébergé ailleurs.
+
+  Elle ne stocke rien et n'envoie rien : elle affiche ce que le navigateur répond, et le code
+  d'erreur exact, qui est la seule chose qui distingue « refusé », « indisponible » et
+  « délai dépassé ».
+-->
+<style>
+  :root { --fond: #f8fafc; --carte: #fff; --texte: #0f172a; --doux: #64748b;
+          --bord: #e2e8f0; --ok: #047857; --ko: #b91c1c; --attention: #b45309; }
+  @media (prefers-color-scheme: dark) {
+    :root { --fond: #0f172a; --carte: #1e293b; --texte: #f1f5f9; --doux: #94a3b8;
+            --bord: #334155; --ok: #34d399; --ko: #f87171; --attention: #fbbf24; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 16px; background: var(--fond); color: var(--texte);
+         font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  p.intro { color: var(--doux); margin: 0 0 20px; }
+  section { background: var(--carte); border: 1px solid var(--bord); border-radius: 10px;
+            padding: 14px; margin-bottom: 14px; }
+  h2 { font-size: 1rem; margin: 0 0 10px; }
+  dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; }
+  dt { color: var(--doux); }
+  dd { margin: 0; font-family: ui-monospace, Menlo, monospace; word-break: break-all; }
+  .ok { color: var(--ok); font-weight: 600; }
+  .ko { color: var(--ko); font-weight: 600; }
+  .attention { color: var(--attention); font-weight: 600; }
+  button { width: 100%; padding: 16px; font: inherit; font-weight: 600; border: none;
+           border-radius: 10px; background: #1d4ed8; color: #fff; cursor: pointer; }
+  button:disabled { opacity: .6; }
+  pre { margin: 12px 0 0; padding: 12px; background: var(--fond); border: 1px solid var(--bord);
+        border-radius: 8px; white-space: pre-wrap; word-break: break-word; font-size: .9rem; }
+  .verdict { margin-top: 12px; padding: 12px; border-radius: 8px; border-left: 4px solid var(--bord); }
+</style>
+</head>
+<body>
+  <h1>Diagnostic géolocalisation</h1>
+  <p class="intro">Ouvre cette page sur le téléphone concerné, puis appuie sur le bouton.</p>
+
+  <section>
+    <h2>1. Contexte de la page</h2>
+    <dl>
+      <dt>Adresse</dt><dd id="url"></dd>
+      <dt>Contexte sécurisé</dt><dd id="secure"></dd>
+      <dt>API géolocalisation</dt><dd id="api"></dd>
+      <dt>État de l'autorisation</dt><dd id="perm">lecture…</dd>
+      <dt>Navigateur</dt><dd id="ua"></dd>
+    </dl>
+    <div id="verdict-contexte"></div>
+  </section>
+
+  <section>
+    <h2>2. Demande de position</h2>
+    <p class="intro" style="margin-bottom:12px">
+      L'appui sur ce bouton est un geste utilisateur : c'est le seul contexte dans lequel Safari
+      accepte d'afficher l'invite.
+    </p>
+    <button id="demander">Demander ma position</button>
+    <pre id="resultat">En attente d'un appui…</pre>
+    <div id="verdict-position"></div>
+  </section>
+
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  function marquer(el, texte, classe) { el.textContent = texte; if (classe) el.className = classe; }
+
+  $('url').textContent = location.protocol + '//' + location.host + location.pathname;
+  $('ua').textContent = navigator.userAgent;
+
+  var secure = window.isSecureContext;
+  marquer($('secure'), secure ? 'oui' : 'NON', secure ? 'ok' : 'ko');
+
+  var disponible = 'geolocation' in navigator;
+  marquer($('api'), disponible ? 'présente' : 'ABSENTE', disponible ? 'ok' : 'ko');
+
+  if (!secure) {
+    $('verdict-contexte').className = 'verdict';
+    $('verdict-contexte').style.borderLeftColor = '#b91c1c';
+    $('verdict-contexte').innerHTML = '<strong>Cause trouvée.</strong> La page n\'est pas dans un '
+      + 'contexte sécurisé (HTTP, ou adresse IP en clair). Tous les navigateurs refusent alors la '
+      + 'géolocalisation <em>sans afficher d\'invite</em>, quel que soit le code. Ouvre le site en '
+      + 'HTTPS par son nom de domaine.';
+  }
+
+  // L'API Permissions n'existe pas sur Safari < 16, et Safari ne conserve pas les accords
+  // comme Chrome : il répond souvent « prompt » même après autorisation. Un « prompt » ici
+  // n'est donc PAS un refus.
+  if (navigator.permissions && navigator.permissions.query) {
+    navigator.permissions.query({ name: 'geolocation' }).then(function (statut) {
+      var libelles = { granted: 'accordée', denied: 'REFUSÉE', prompt: 'à demander' };
+      marquer($('perm'), libelles[statut.state] || statut.state,
+              statut.state === 'denied' ? 'ko' : (statut.state === 'granted' ? 'ok' : 'attention'));
+      if (statut.state === 'denied') {
+        $('verdict-contexte').className = 'verdict';
+        $('verdict-contexte').style.borderLeftColor = '#b91c1c';
+        $('verdict-contexte').innerHTML = '<strong>Autorisation refusée et mémorisée.</strong> '
+          + 'Safari ne la redemandera jamais. Sur iPhone : Réglages → Apps → Safari → Position → '
+          + '« Demander », ET Réglages → Confidentialité et sécurité → Service de localisation → '
+          + 'Safari. Puis recharge cette page.';
+      }
+    }).catch(function () { marquer($('perm'), 'non consultable (normal sur Safari ancien)', 'attention'); });
+  } else {
+    marquer($('perm'), 'API absente (normal sur Safari < 16)', 'attention');
+  }
+
+  $('demander').addEventListener('click', function () {
+    var bouton = this;
+    bouton.disabled = true;
+    var debut = Date.now();
+    $('resultat').textContent = 'Demande envoyée. Si aucune invite n\'apparaît et qu\'une erreur '
+      + 'arrive tout de suite, l\'autorisation est déjà refusée au niveau du système.';
+
+    navigator.geolocation.getCurrentPosition(
+      function (position) {
+        bouton.disabled = false;
+        $('resultat').textContent =
+          'SUCCÈS en ' + ((Date.now() - debut) / 1000).toFixed(1) + ' s\n'
+          + 'latitude : ' + position.coords.latitude.toFixed(5) + '\n'
+          + 'longitude : ' + position.coords.longitude.toFixed(5) + '\n'
+          + 'précision : ' + Math.round(position.coords.accuracy) + ' m';
+        $('verdict-position').className = 'verdict';
+        $('verdict-position').style.borderLeftColor = '#047857';
+        $('verdict-position').innerHTML = '<strong>La géolocalisation fonctionne</strong> sur ce '
+          + 'téléphone et pour ce site. Si l\'application échoue malgré ça, le problème est dans '
+          + 'l\'application, pas dans le navigateur.';
+      },
+      function (erreur) {
+        bouton.disabled = false;
+        var noms = { 1: 'PERMISSION_DENIED', 2: 'POSITION_UNAVAILABLE', 3: 'TIMEOUT' };
+        var explications = {
+          1: 'Refus. Il vient du réglage iOS ou de Safari, pas du code : aucune modification de '
+             + 'l\'application ne peut le lever. Réglages → Apps → Safari → Position, et '
+             + 'Réglages → Confidentialité et sécurité → Service de localisation → Safari.',
+          2: 'Le téléphone n\'a pas réussi à se situer (intérieur de bâtiment, GPS indisponible). '
+             + 'L\'autorisation, elle, est accordée : réessaie près d\'une fenêtre.',
+          3: 'Le délai a expiré avant le premier point GPS. L\'autorisation est accordée : '
+             + 'réessaie, le second essai aboutit presque toujours.'
+        };
+        $('resultat').textContent =
+          'ÉCHEC après ' + ((Date.now() - debut) / 1000).toFixed(1) + ' s\n'
+          + 'code : ' + erreur.code + ' (' + (noms[erreur.code] || '?') + ')\n'
+          + 'message : ' + erreur.message;
+        $('verdict-position').className = 'verdict';
+        $('verdict-position').style.borderLeftColor = erreur.code === 1 ? '#b91c1c' : '#b45309';
+        $('verdict-position').innerHTML = '<strong>' + (noms[erreur.code] || 'Erreur') + '.</strong> '
+          + (explications[erreur.code] || '');
+      },
+      // Mêmes réglages que l'application : 20 s, et un point de moins d'une minute accepté.
+      { enableHighAccuracy: true, timeout: 20000, maximumAge: 60000 }
+    );
+  });
+})();
+</script>
+</body>
+</html>
