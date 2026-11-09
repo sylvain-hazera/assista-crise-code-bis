@@ -6525,6 +6525,9 @@ class TypeTacheAdminMeshtastic(models.TextChoices):
     LIRE_CONFIG_APPAREIL = "LIRE_CONFIG_APPAREIL", "Lire la configuration de l'appareil (rôle, rediffusion)"
     LIRE_PROPRIETAIRE = "LIRE_PROPRIETAIRE", "Lire le nom du nœud"
     LIRE_CONFIG_MQTT = "LIRE_CONFIG_MQTT", "Lire la configuration MQTT (broker, JSON)"
+    LIRE_REGLAGES = "LIRE_REGLAGES", "Lire une section de réglages (radio, appareil, modules)"
+    DEFINIR_REGLAGES = "DEFINIR_REGLAGES", "Modifier des réglages (rôle, preset, sauts, voisinage…)"
+    DEFINIR_NOM = "DEFINIR_NOM", "Renommer le nœud"
     DEFINIR_PUISSANCE = "DEFINIR_PUISSANCE", "Définir la puissance d'émission"
     DEFINIR_MQTT_JSON = "DEFINIR_MQTT_JSON", "Activer ou couper la publication JSON du MQTT"
     REDEMARRER = "REDEMARRER", "Redémarrer le nœud"
@@ -6536,8 +6539,16 @@ class TypeTacheAdminMeshtastic(models.TextChoices):
 TACHES_ADMIN_ECRITURE = frozenset({
     TypeTacheAdminMeshtastic.DEFINIR_PUISSANCE,
     TypeTacheAdminMeshtastic.DEFINIR_MQTT_JSON,
+    TypeTacheAdminMeshtastic.DEFINIR_REGLAGES,
+    TypeTacheAdminMeshtastic.DEFINIR_NOM,
     TypeTacheAdminMeshtastic.REDEMARRER,
 })
+
+# Longueurs imposées par le firmware pour l'identité d'un nœud, en OCTETS et non en caractères :
+# un seul emoji ou deux lettres accentuées suffisent à dépasser le nom court, et le firmware
+# tronquerait en silence.
+NOM_LONG_MAX_OCTETS = 39
+NOM_COURT_MAX_OCTETS = 4
 
 # Puissance d'émission maximale acceptée, en dBm. 27 dBm (500 mW) est le plafond de la bande
 # 869,4-869,65 MHz utilisée par le preset EU_868, sous réserve d'un rapport cyclique de 10 %

@@ -113,6 +113,36 @@
             </label>
           }
 
+          @if (nouvelle.type_tache === 'LIRE_REGLAGES' || nouvelle.type_tache === 'DEFINIR_REGLAGES') {
+            <label>
+              Section
+              <select name="section" [(ngModel)]="sectionChoisie" (ngModelChange)="reinitialiserReglages()">
+                @for (s of sections; track s.cle) {
+                  <option [value]="s.cle">{{ s.libelle }}</option>
+                }
+              </select>
+              @if (sectionCourante?.redemarre) {
+                <small>Le nœud redémarre de lui-même après une modification ici.</small>
+              }
+            </label>
+          }
+
+          @if (nouvelle.type_tache === 'DEFINIR_NOM') {
+            <label>
+              Nom long
+              <input name="nom_long" [(ngModel)]="nom.nom_long" maxlength="60">
+              <small>{{ octets(nom.nom_long) }} / 39 octets</small>
+            </label>
+            <label>
+              Nom court
+              <input name="nom_court" [(ngModel)]="nom.nom_court" maxlength="8">
+              <small>
+                {{ octets(nom.nom_court) }} / 4 <strong>octets</strong> — un emoji ou quatre
+                lettres accentuées dépassent déjà.
+              </small>
+            </label>
+          }
+
           @if (nouvelle.type_tache === 'DEFINIR_MQTT_JSON') {
             <label class="case">
               <input name="json" type="checkbox" [(ngModel)]="nouvelle.mqtt_json">
@@ -131,6 +161,61 @@
             </label>
           }
         </div>
+
+        @if (nouvelle.type_tache === 'DEFINIR_REGLAGES' && sectionCourante) {
+          <div class="reglages">
+            <p class="explication">
+              Cochez les seuls réglages à modifier. Les autres sont <strong>relus sur le nœud et
+              renvoyés inchangés</strong> : le firmware remplace tout le bloc d'un coup, donc
+              envoyer un réglage non coché l'écraserait par la valeur affichée ici.
+            </p>
+            @for (entree of champsSection; track entree.cle) {
+              <div class="reglage" [class.actif]="reglagesModifies[entree.cle].actif">
+                <label class="case">
+                  <input type="checkbox" [name]="'actif_' + entree.cle"
+                         [(ngModel)]="reglagesModifies[entree.cle].actif">
+                  <strong>{{ entree.champ.libelle }}</strong>
+                </label>
+                <div class="valeur">
+                  @if (entree.champ.type === 'booleen') {
+                    <select [name]="'val_' + entree.cle"
+                            [(ngModel)]="reglagesModifies[entree.cle].valeur"
+                            [disabled]="!reglagesModifies[entree.cle].actif">
+                      <option [ngValue]="true">activé</option>
+                      <option [ngValue]="false">désactivé</option>
+                    </select>
+                  } @else if (entree.champ.type === 'enumeration') {
+                    <select [name]="'val_' + entree.cle"
+                            [(ngModel)]="reglagesModifies[entree.cle].valeur"
+                            [disabled]="!reglagesModifies[entree.cle].actif">
+                      @for (v of entree.champ.valeurs; track v) {
+                        <option [ngValue]="v">{{ v }}</option>
+                      }
+                    </select>
+                  } @else {
+                    <input type="number" [name]="'val_' + entree.cle"
+                           [min]="entree.champ.mini ?? null" [max]="entree.champ.maxi ?? null"
+                           [(ngModel)]="reglagesModifies[entree.cle].valeur"
+                           [disabled]="!reglagesModifies[entree.cle].actif">
+                    <small>
+                      {{ entree.champ.mini }} à {{ entree.champ.maxi }}
+                      @if (entree.champ.valeurs_speciales?.length) {
+                        , ou {{ entree.champ.valeurs_speciales?.join(', ') }}
+                      }
+                    </small>
+                  }
+                </div>
+                <small class="aide">{{ entree.champ.aide }}</small>
+              </div>
+            }
+            @if (aucunReglageCoche) {
+              <p class="message avertissement">
+                <span class="material-icons">info_outline</span>
+                Aucun réglage coché : il n'y a rien à envoyer.
+              </p>
+            }
+          </div>
+        }
 
         @if (estEcriture && viseUnNoeudDistant) {
           <p class="message avertissement">
@@ -157,7 +242,9 @@
             </div>
           </div>
         } @else {
-          <button type="submit" [disabled]="envoiEnCours || !nouvelle.compagnon">
+          <button type="submit"
+                  [disabled]="envoiEnCours || !nouvelle.compagnon
+                              || (nouvelle.type_tache === 'DEFINIR_REGLAGES' && aucunReglageCoche)">
             {{ envoiEnCours ? 'Mise en file…' : 'Mettre en file' }}
           </button>
         }

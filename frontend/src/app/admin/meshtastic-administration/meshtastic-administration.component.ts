@@ -9,8 +9,8 @@ import { ContactMeshtasticService } from '../../services/contact-meshtastic.serv
 import { CompagnonMeshtastic } from '../../shared/models/compagnon-meshtastic.model';
 import { ContactMeshtastic } from '../../shared/models/contact-meshtastic.model';
 import {
-  ConfigurationNoeudMeshtastic, OPERATIONS_ADMIN_MESHTASTIC, TacheAdminMeshtastic,
-  TypeTacheAdminMeshtastic,
+  CatalogueReglages, ChampReglage, ConfigurationNoeudMeshtastic, OPERATIONS_ADMIN_MESHTASTIC,
+  SectionReglages, TacheAdminMeshtastic, TypeTacheAdminMeshtastic,
 } from '../../shared/models/administration-meshtastic.model';
 
 /** Administration à distance des nœuds Meshtastic.
@@ -61,6 +61,17 @@ export class MeshtasticAdministrationComponent implements OnInit {
     mqtt_json: true,
   };
 
+  /** Catalogue servi par le serveur : sections, champs, types et bornes. Jamais recopié ici —
+   * ce sont des contraintes du firmware, les dupliquer garantirait qu'elles divergent. */
+  catalogue: CatalogueReglages = {};
+  sectionChoisie = 'lora';
+  /** Réglages cochés par l'exploitant, avec leur valeur. **Seuls ceux-là sont envoyés** : le
+   * firmware remplace tout le bloc, donc le pont relit la section et renvoie les autres
+   * inchangés. Envoyer un champ non coché l'écraserait par la valeur par défaut du formulaire —
+   * sur la section LoRa, cela effacerait la région, et un nœud sans région ne transmet plus. */
+  reglagesModifies: Record<string, { actif: boolean; valeur: unknown }> = {};
+  nom = { nom_long: '', nom_court: '' };
+
   envoiEnCours = false;
   erreurEnvoi: string | null = null;
   /** Tâche dont on affiche la réponse détaillée. */
@@ -76,6 +87,45 @@ export class MeshtasticAdministrationComponent implements OnInit {
 
   ngOnInit(): void {
     this.charger();
+    this.service.catalogueReglages().subscribe({
+      next: (catalogue) => { this.catalogue = catalogue; this.reinitialiserReglages(); },
+      error: () => { /* les lectures et les autres opérations restent utilisables */ },
+    });
+  }
+
+  get sections(): { cle: string; libelle: string }[] {
+    return Object.entries(this.catalogue)
+      .map(([cle, section]) => ({ cle, libelle: section.libelle }));
+  }
+
+  /** Type explicitement optionnel : le catalogue est vide tant que la requête n'a pas répondu,
+   * et la section choisie peut ne pas y figurer. */
+  get sectionCourante(): SectionReglages | undefined {
+    return this.catalogue[this.sectionChoisie];
+  }
+
+  get champsSection(): { cle: string; champ: ChampReglage }[] {
+    const section = this.sectionCourante;
+    return section ? Object.entries(section.champs).map(([cle, champ]) => ({ cle, champ })) : [];
+  }
+
+  /** Remet tous les réglages à « non coché » : changer de section ne doit pas emporter une
+   * coche faite sur la précédente. */
+  reinitialiserReglages(): void {
+    this.reglagesModifies = {};
+    for (const { cle, champ } of this.champsSection) {
+      this.reglagesModifies[cle] = { actif: false, valeur: this.valeurInitiale(champ) };
+    }
+  }
+
+  private valeurInitiale(champ: ChampReglage): unknown {
+    if (champ.type === 'booleen') { return true; }
+    if (champ.type === 'enumeration') { return champ.valeurs?.[0] ?? ''; }
+    return champ.mini ?? 0;
+  }
+
+  get aucunReglageCoche(): boolean {
+    return !Object.values(this.reglagesModifies).some(r => r.actif);
   }
 
   charger(): void {
@@ -159,7 +209,19 @@ export class MeshtasticAdministrationComponent implements OnInit {
     this.erreurEnvoi = null;
 
     let parametres: Record<string, unknown> | null = null;
-    if (this.nouvelle.type_tache === 'DEFINIR_PUISSANCE') {
+    if (this.nouvelle.type_tache === 'LIRE_REGLAGES') {
+      parametres = { section: this.sectionChoisie };
+    } else if (this.nouvelle.type_tache === 'DEFINIR_REGLAGES') {
+      const valeurs: Record<string, unknown> = {};
+      for (const [cle, etat] of Object.entries(this.reglagesModifies)) {
+        if (etat.actif) { valeurs[cle] = etat.valeur; }
+      }
+      parametres = { section: this.sectionChoisie, valeurs };
+    } else if (this.nouvelle.type_tache === 'DEFINIR_NOM') {
+      parametres = {};
+      if (this.nom.nom_long.trim()) { parametres['nom_long'] = this.nom.nom_long.trim(); }
+      if (this.nom.nom_court.trim()) { parametres['nom_court'] = this.nom.nom_court.trim(); }
+    } else if (this.nouvelle.type_tache === 'DEFINIR_PUISSANCE') {
       parametres = { puissance_dbm: Number(this.nouvelle.puissance_dbm) };
     } else if (this.nouvelle.type_tache === 'REDEMARRER') {
       parametres = { delai_s: Number(this.nouvelle.delai_s) };
@@ -179,6 +241,12 @@ export class MeshtasticAdministrationComponent implements OnInit {
         this.erreurEnvoi = this.messageDErreur(e) ?? "Mise en file impossible.";
       },
     });
+  }
+
+  /** Taille en OCTETS d'un nom : c'est la limite du firmware, et quatre lettres accentuées en
+   * font huit. Compter les caractères laisserait le firmware tronquer en silence. */
+  octets(valeur: string): number {
+    return new TextEncoder().encode(valeur).length;
   }
 
   basculerDetail(id: string): void {

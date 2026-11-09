@@ -461,3 +461,145 @@ class TestCorrectionDePuissance:
         self._config(40, 27)
         self._config(50, 14)       # 13 dB d'écart de puissance : il explique tout l'écart de SNR
         assert analyser("PROD")["desequilibrees"] == []
+
+
+@pytest.mark.django_db
+class TestReglagesDeNoeud:
+    """Écritures de configuration : l'équivalent de son `modifier()`.
+
+    Tout est validé AVANT de traverser la radio : Django est le seul point d'entrée, et refuser
+    tout de suite avec un message lisible vaut mieux que laisser l'exploitant attendre trente
+    secondes un échec rapporté par le pont."""
+
+    def test_le_catalogue_sert_de_source_unique_aux_bornes(self, institutionnel):
+        """Les bornes sont des contraintes du firmware : les recopier dans le frontend
+        garantirait qu'elles divergent."""
+        reponse = institutionnel.get(f"{URL_LISTE}reglages/")
+        assert reponse.status_code == 200
+        assert set(reponse.data) >= {"device", "lora", "position", "voisinage", "telemetrie"}
+        lora = reponse.data["lora"]
+        assert lora["redemarre"] is True           # le firmware redémarre sur un changement LoRa
+        assert lora["champs"]["hop_limit"] == {
+            "type": "entier", "libelle": "Nombre de sauts",
+            "aide": lora["champs"]["hop_limit"]["aide"], "mini": 1, "maxi": 7,
+            "valeurs_speciales": [],
+        }
+        assert reponse.data["voisinage"]["module"] is True
+        # 4 h : minimum imposé par le firmware pour un rapport de voisinage sur LoRa.
+        assert reponse.data["voisinage"]["champs"]["update_interval"]["mini"] == 14400
+
+    def test_la_lecture_d_une_section_est_ouverte_aux_institutionnels(self, institutionnel, passerelle):
+        reponse = institutionnel.post(URL_LISTE, {
+            "compagnon": str(passerelle.id), "type_tache": "LIRE_REGLAGES",
+            "parametres": {"section": "voisinage"},
+        }, format="json")
+        assert reponse.status_code == 201
+
+    def test_une_section_inconnue_est_refusee(self, institutionnel, passerelle):
+        reponse = institutionnel.post(URL_LISTE, {
+            "compagnon": str(passerelle.id), "type_tache": "LIRE_REGLAGES",
+            "parametres": {"section": "bluetooth"},
+        }, format="json")
+        assert reponse.status_code == 400
+        assert "section attendue" in str(reponse.data)
+
+    def test_une_ecriture_de_reglages_exige_le_role_administrateur(self, institutionnel, passerelle):
+        reponse = institutionnel.post(URL_LISTE, {
+            "compagnon": str(passerelle.id), "type_tache": "DEFINIR_REGLAGES",
+            "parametres": {"section": "lora", "valeurs": {"hop_limit": 4}},
+        }, format="json")
+        assert reponse.status_code == 403
+
+    def test_un_administrateur_peut_modifier_le_nombre_de_sauts(self, administrateur, passerelle):
+        reponse = administrateur.post(URL_LISTE, {
+            "compagnon": str(passerelle.id), "type_tache": "DEFINIR_REGLAGES",
+            "parametres": {"section": "lora", "valeurs": {"hop_limit": 4, "tx_power": 20}},
+        }, format="json")
+        assert reponse.status_code == 201, reponse.data
+        assert TacheAdminMeshtastic.objects.get().est_ecriture
+
+    @pytest.mark.parametrize("valeurs,extrait", [
+        ({"hop_limit": 9}, "hors bornes"),
+        ({"hop_limit": "trois"}, "entier est attendu"),
+        ({"hop_limit": True}, "entier est attendu"),
+        ({"region": "UNSET"}, "n'est pas acceptée"),
+        ({"region": "US"}, "inconnue"),
+        ({"modem_preset": "SUPER_RAPIDE"}, "inconnue"),
+        ({"tx_power": 30}, "hors bornes"),
+        ({"override_frequency": 868.5}, "non modifiable"),
+        ({"channel_num": 20}, "non modifiable"),
+        ({}, "Aucun réglage"),
+    ])
+    def test_les_valeurs_invalides_sont_refusees_avec_la_raison(self, administrateur, passerelle,
+                                                               valeurs, extrait):
+        """`override_frequency` et `channel_num` sont volontairement hors liste blanche : ils
+        font émettre hors de la bande prévue, ce qui est une infraction réglementaire et n'est
+        pas rattrapable sur un relais inaccessible. Son module les accepte ; nous non."""
+        reponse = administrateur.post(URL_LISTE, {
+            "compagnon": str(passerelle.id), "type_tache": "DEFINIR_REGLAGES",
+            "parametres": {"section": "lora", "valeurs": valeurs},
+        }, format="json")
+        assert reponse.status_code == 400, valeurs
+        assert extrait in str(reponse.data), reponse.data
+
+    def test_le_minimum_de_temps_d_antenne_du_voisinage_est_impose(self, administrateur, passerelle):
+        """4 h entre deux rapports : limite du firmware, pas une préférence. Un rapport de
+        voisinage est volumineux et le diffuser souvent sature le réseau pour tout le monde."""
+        refuse = administrateur.post(URL_LISTE, {
+            "compagnon": str(passerelle.id), "type_tache": "DEFINIR_REGLAGES",
+            "parametres": {"section": "voisinage", "valeurs": {"update_interval": 3600}},
+        }, format="json")
+        assert refuse.status_code == 400
+
+        accepte = administrateur.post(URL_LISTE, {
+            "compagnon": str(passerelle.id), "type_tache": "DEFINIR_REGLAGES",
+            "parametres": {"section": "voisinage", "valeurs": {"update_interval": 14400,
+                                                               "enabled": True}},
+        }, format="json")
+        assert accepte.status_code == 201, accepte.data
+
+    def test_zero_reste_accepte_pour_l_intervalle_de_telemetrie(self, administrateur, passerelle):
+        """0 n'est pas une valeur basse : c'est « valeur par défaut du firmware »."""
+        reponse = administrateur.post(URL_LISTE, {
+            "compagnon": str(passerelle.id), "type_tache": "DEFINIR_REGLAGES",
+            "parametres": {"section": "telemetrie", "valeurs": {"device_update_interval": 0}},
+        }, format="json")
+        assert reponse.status_code == 201, reponse.data
+
+    def test_le_nom_court_est_borne_en_octets_pas_en_caracteres(self, administrateur, passerelle):
+        """Quatre lettres accentuées font huit octets : le firmware tronquerait en silence."""
+        refuse = administrateur.post(URL_LISTE, {
+            "compagnon": str(passerelle.id), "type_tache": "DEFINIR_NOM",
+            "parametres": {"nom_court": "éééé"},
+        }, format="json")
+        assert refuse.status_code == 400
+        assert "octets" in str(refuse.data)
+
+        accepte = administrateur.post(URL_LISTE, {
+            "compagnon": str(passerelle.id), "type_tache": "DEFINIR_NOM",
+            "parametres": {"nom_court": "PILA", "nom_long": "Relais du Pilat"},
+        }, format="json")
+        assert accepte.status_code == 201, accepte.data
+
+    def test_renommer_sans_nom_est_refuse(self, administrateur, passerelle):
+        reponse = administrateur.post(URL_LISTE, {
+            "compagnon": str(passerelle.id), "type_tache": "DEFINIR_NOM", "parametres": {},
+        }, format="json")
+        assert reponse.status_code == 400
+
+    def test_une_ecriture_de_reglages_est_refusee_depuis_la_demo(self, administrateur, passerelle):
+        reponse = administrateur.post(URL_LISTE, {
+            "compagnon": str(passerelle.id), "type_tache": "DEFINIR_REGLAGES",
+            "parametres": {"section": "device", "valeurs": {"role": "ROUTER"}},
+        }, format="json", HTTP_X_ENVIRONMENT="DEMO")
+        assert reponse.status_code == 403
+
+    def test_le_role_et_la_rediffusion_sont_modifiables(self, administrateur, passerelle):
+        """Les deux réglages qui décident si un relais relaie vraiment : un nœud au mauvais rôle
+        est un relais mort, et c'était invisible et incorrigible à distance."""
+        reponse = administrateur.post(URL_LISTE, {
+            "compagnon": str(passerelle.id), "type_tache": "DEFINIR_REGLAGES",
+            "parametres": {"section": "device",
+                           "valeurs": {"role": "ROUTER", "rebroadcast_mode": "ALL"}},
+        }, format="json")
+        assert reponse.status_code == 201, reponse.data

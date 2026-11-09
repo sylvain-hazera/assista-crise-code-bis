@@ -61,6 +61,7 @@ from .models import (
     MaterielCatalogue,
     CompagnonMeshCore, CompteMqtt, LiaisonMeshtastic,
     TacheAdminMeshtastic, TypeTacheAdminMeshtastic, TACHES_ADMIN_ECRITURE,
+    NOM_LONG_MAX_OCTETS, NOM_COURT_MAX_OCTETS,
     CalibrationRadio, CouvertureRadioSite,
     ConfigurationNoeudMeshtastic, MeshtasticConnexionType,
     PUISSANCE_MIN_DBM, PUISSANCE_MAX_DBM,
@@ -3582,6 +3583,13 @@ class TacheAdminMeshtasticSerializer(serializers.ModelSerializer):
                              "firmware de l'appareil qui chiffre le message d'administration.",
             })
 
+        if type_tache in (TypeTacheAdminMeshtastic.LIRE_REGLAGES,
+                          TypeTacheAdminMeshtastic.DEFINIR_REGLAGES):
+            self._valider_reglages(type_tache, attrs.get('parametres') or {})
+
+        if type_tache == TypeTacheAdminMeshtastic.DEFINIR_NOM:
+            self._valider_nom(attrs.get('parametres') or {})
+
         if type_tache == TypeTacheAdminMeshtastic.DEFINIR_PUISSANCE:
             parametres = attrs.get('parametres') or {}
             try:
@@ -3598,6 +3606,50 @@ class TacheAdminMeshtasticSerializer(serializers.ModelSerializer):
                 })
 
         return attrs
+
+    @staticmethod
+    def _valider_reglages(type_tache, parametres):
+        """Section et valeurs validées ICI, avant que quoi que ce soit ne traverse la radio.
+
+        Django est le seul point par lequel une demande peut entrer : refuser tout de suite avec
+        un message lisible vaut mieux que laisser l'exploitant attendre trente secondes un échec
+        rapporté par le pont. Voir core/mesh_reglages.py pour la liste blanche des champs."""
+        from .mesh_reglages import SECTIONS, ReglageInvalide, valider_reglages
+
+        section = parametres.get('section')
+        if section not in SECTIONS:
+            raise serializers.ValidationError({
+                "parametres": f"section attendue parmi : {', '.join(sorted(SECTIONS))}.",
+            })
+        if type_tache == TypeTacheAdminMeshtastic.LIRE_REGLAGES:
+            return
+        try:
+            valider_reglages(section, parametres.get('valeurs'))
+        except ReglageInvalide as erreur:
+            raise serializers.ValidationError({"parametres": str(erreur)}) from erreur
+
+    @staticmethod
+    def _valider_nom(parametres):
+        """Longueurs mesurées en OCTETS : c'est la limite du firmware, et un nom court de quatre
+        lettres accentuées la dépasse déjà."""
+        nom_long = parametres.get('nom_long')
+        nom_court = parametres.get('nom_court')
+        if not nom_long and not nom_court:
+            raise serializers.ValidationError({
+                "parametres": "nom_long et/ou nom_court sont requis.",
+            })
+        for valeur, maxi, libelle in (
+            (nom_long, NOM_LONG_MAX_OCTETS, "Le nom long"),
+            (nom_court, NOM_COURT_MAX_OCTETS, "Le nom court"),
+        ):
+            if valeur is None:
+                continue
+            octets = len(str(valeur).encode('utf-8'))
+            if octets > maxi:
+                raise serializers.ValidationError({
+                    "parametres": f"{libelle} dépasse {maxi} octets (« {valeur} » en fait "
+                                  f"{octets} : les accents et émojis comptent double ou plus).",
+                })
 
 
 class CalibrationRadioSerializer(serializers.ModelSerializer):

@@ -13,9 +13,40 @@ export type TypeTacheAdminMeshtastic =
   | 'LIRE_CONFIG_APPAREIL'
   | 'LIRE_PROPRIETAIRE'
   | 'LIRE_CONFIG_MQTT'
+  | 'LIRE_REGLAGES'
+  | 'DEFINIR_REGLAGES'
+  | 'DEFINIR_NOM'
   | 'DEFINIR_PUISSANCE'
   | 'DEFINIR_MQTT_JSON'
   | 'REDEMARRER';
+
+/** Catalogue des réglages modifiables, servi par
+ * `GET /api/taches-admin-meshtastic/reglages/`.
+ *
+ * Servi et non recopié ici : les bornes sont des contraintes du firmware (nombre de sauts 1-7,
+ * intervalle de voisinage au moins 4 h), et les dupliquer dans deux langages garantit qu'elles
+ * divergeront. Le serveur revalide de toute façon. */
+export interface ChampReglage {
+  type: 'entier' | 'booleen' | 'enumeration' | 'inconnu';
+  libelle: string;
+  aide: string;
+  mini?: number;
+  maxi?: number;
+  /** Valeurs acceptées hors de l'intervalle, avec leur sens propre (0 = défaut du firmware). */
+  valeurs_speciales?: number[];
+  valeurs?: string[];
+}
+
+export interface SectionReglages {
+  libelle: string;
+  /** Vrai = module (`set_module_config`) et non section de configuration. */
+  module: boolean;
+  /** Vrai = le firmware redémarre le nœud de lui-même après un changement ici. */
+  redemarre: boolean;
+  champs: Record<string, ChampReglage>;
+}
+
+export type CatalogueReglages = Record<string, SectionReglages>;
 
 export type StatutTacheAdminMeshtastic = 'EN_ATTENTE' | 'EN_COURS' | 'TERMINEE' | 'ECHEC';
 
@@ -80,6 +111,22 @@ export const OPERATIONS_ADMIN_MESHTASTIC: {
   {
     type: 'LIRE_PROPRIETAIRE', libelle: 'Lire le nom du nœud', ecriture: false,
     explication: 'Nom long et nom court déclarés sur l’appareil.',
+  },
+  {
+    type: 'LIRE_REGLAGES', libelle: 'Lire une section de réglages', ecriture: false,
+    explication: "Tous les réglages d'une section : radio, appareil, position, module Voisinage "
+      + 'ou Télémétrie. À faire avant toute modification, pour voir ce qui est en place.',
+  },
+  {
+    type: 'DEFINIR_REGLAGES', libelle: 'Modifier des réglages', ecriture: true,
+    explication: "Rôle, mode de rediffusion, preset, nombre de sauts, module Voisinage… "
+      + "Seuls les réglages que vous cochez sont envoyés : les autres sont relus sur le nœud et "
+      + 'renvoyés inchangés, car le firmware remplace tout le bloc.',
+  },
+  {
+    type: 'DEFINIR_NOM', libelle: 'Renommer le nœud', ecriture: true,
+    explication: 'Nom long (39 octets au plus) et nom court (4 octets) — en octets, pas en '
+      + 'caractères : un emoji ou quatre lettres accentuées dépassent déjà.',
   },
   {
     type: 'LIRE_CONFIG_MQTT', libelle: 'Lire la configuration MQTT', ecriture: false,

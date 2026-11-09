@@ -4,7 +4,7 @@ import { Observable } from 'rxjs';
 
 import { environment } from '../../environments/environment';
 import {
-  ConfigurationNoeudMeshtastic, DiagnosticLiaisons, TacheAdminMeshtastic,
+  CatalogueReglages, ConfigurationNoeudMeshtastic, DiagnosticLiaisons, TacheAdminMeshtastic,
   TypeTacheAdminMeshtastic,
 } from '../shared/models/administration-meshtastic.model';
 
@@ -34,6 +34,11 @@ export class AdministrationMeshtasticService {
     parametres?: Record<string, unknown> | null;
   }): Observable<TacheAdminMeshtastic> {
     return this.http.post<TacheAdminMeshtastic>(`${this.url}/`, data);
+  }
+
+  /** Sections, champs, types et bornes des réglages modifiables. */
+  catalogueReglages(): Observable<CatalogueReglages> {
+    return this.http.get<CatalogueReglages>(`${this.url}/reglages/`);
   }
 
   configurations(): Observable<ConfigurationNoeudMeshtastic[]> {

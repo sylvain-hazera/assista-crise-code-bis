@@ -1728,8 +1728,41 @@ plus** des trames chiffrées sur `<racine>/2/e/#`, une version **décodée en cl
   le verrouille. La lecture, elle, ne remonte **jamais** le mot de passe du broker, seulement le
   fait qu'il soit défini : la réponse d'une tâche est journalisée.
 
-**Ce qui n'est pas proposé, et pourquoi** : `factory_reset`, `nodedb_reset`, `shutdown` et
-`set_channel`. Un répéteur est souvent sur un point haut : une extinction ou une réinitialisation
+**Réglages de configuration** (09/11/2026) : `LIRE_REGLAGES` et `DEFINIR_REGLAGES` couvrent cinq
+sections — appareil (rôle, mode de rediffusion, annonce d'identité), radio LoRa (région, preset,
+nombre de sauts, puissance, émission, gain RX, remontée MQTT), position (diffusion, position fixe,
+GPS), module **Voisinage** et module **Télémétrie**. `DEFINIR_NOM` renomme le nœud.
+
+La liste blanche des champs, avec leurs types et bornes, vit dans `core/mesh_reglages.py` et est
+**servie** à l'interface par `GET /api/taches-admin-meshtastic/reglages/` : les bornes sont des
+contraintes du firmware, les recopier dans le frontend garantirait qu'elles divergent. Le serveur
+revalide à la création, et le pont revalide les deux minima de temps d'antenne — un pont peut
+tourner contre un Django plus ancien.
+
+Trois choses à savoir, chacune verrouillée par un test :
+
+- **Seuls les réglages explicitement cochés sont envoyés.** `set_config` et `set_module_config`
+  remplacent **tout le bloc** côté firmware : le pont relit la section, applique les seuls champs
+  demandés, et renvoie l'ensemble. Envoyer un champ non voulu l'écraserait — sur la section LoRa
+  cela effacerait la région, et **un nœud sans région ne transmet plus du tout**. Même piège que
+  pour la puissance et le JSON MQTT ; c'est le piège central de toute l'opération.
+- **Le module Voisinage est ce qui rend le diagnostic des liaisons voyant.** Sans lui, un nœud ne
+  dit jamais qui il entend, et l'analyse d'asymétrie (§ 9.5.1) ne voit que ce que les passerelles
+  reçoivent — jamais ce que les relais entendent. Son intervalle est au minimum de **4 h** :
+  limite du firmware, pas une préférence, un rapport de voisinage étant volumineux.
+- **Les noms se mesurent en OCTETS** : 39 pour le nom long, **4** pour le nom court. Quatre
+  lettres accentuées en font huit, un emoji en consomme quatre à lui seul. Compter les caractères
+  laisserait le firmware tronquer en silence.
+
+**Ce qui n'est pas proposé, et pourquoi** : `override_frequency` et `channel_num` (ils font émettre
+hors de la bande prévue — une erreur est une infraction réglementaire et n'est pas rattrapable sur
+un relais inaccessible ; son module les accepte, nous non), `packet_signature_policy` (touche à
+l'authentification des paquets), la quasi-totalité du module Télémétrie (capteurs
+d'environnement, qualité d'air, santé : rien n'en est utilisé ici, et trente champs inutiles
+n'ajoutent que de la surface d'erreur), les GPIO de la section position (une mauvaise broche rend
+le GPS muet et seul quelqu'un qui a l'appareil en main peut corriger), les régions hors Europe
+(poser par erreur une région d'un autre continent rend le relais muet jusqu'à une intervention sur
+place), ainsi que `factory_reset`, `nodedb_reset`, `shutdown` et `set_channel`. Un répéteur est souvent sur un point haut : une extinction ou une réinitialisation
 à distance se paie d'un déplacement. `set_channel` demanderait en plus de transporter une PSK de
 canal jusqu'à l'appareil, ce que ce chemin ne fait pas.
 

@@ -162,3 +162,29 @@ pre {
   .page { padding: 12px; }
   table { display: block; overflow-x: auto; }
 }
+
+// Éditeur de réglages : une ligne par champ, avec sa coche « modifier ». La coche n'est pas un
+// ornement — elle décide de ce qui part sur la radio, puisque le firmware remplace tout le bloc
+// et que le pont relit puis renvoie les champs non cochés inchangés.
+.reglages {
+  margin: 4px 0 14px;
+  .reglage {
+    display: grid; grid-template-columns: minmax(180px, 1fr) minmax(140px, 220px);
+    gap: 4px 14px; align-items: start;
+    padding: 10px 0; border-bottom: 1px solid var(--ac-border, #e5e7eb);
+    opacity: .62;
+    &.actif { opacity: 1; }
+    &:last-of-type { border-bottom: none; }
+  }
+  label.case {
+    display: flex; align-items: center; gap: 8px; margin: 0;
+    input { width: 16px; height: 16px; }
+  }
+  .valeur { display: flex; flex-direction: column; gap: 3px; }
+  .aide { grid-column: 1 / -1; font-size: .82rem; line-height: 1.4;
+          color: var(--ac-text-subtle, #6b7280); }
+}
+
+@media (max-width: 620px) {
+  .reglages .reglage { grid-template-columns: 1fr; }
+}

@@ -31,6 +31,28 @@ describe('MeshtasticAdministrationComponent', () => {
   const urlCompagnons = `${environment.apiUrl}/compagnons-meshtastic`;
   const urlConfigs = `${environment.apiUrl}/configurations-noeuds-meshtastic`;
   const urlContacts = `${environment.apiUrl}/contacts-meshtastic`;
+  const urlReglages = `${urlTaches}/reglages/`;
+
+  /** Catalogue minimal, dans la forme exacte que sert le serveur. */
+  const CATALOGUE = {
+    lora: {
+      libelle: 'Radio LoRa', module: false, redemarre: true,
+      champs: {
+        hop_limit: { type: 'entier', libelle: 'Nombre de sauts', aide: 'x', mini: 1, maxi: 7,
+                     valeurs_speciales: [] },
+        region: { type: 'enumeration', libelle: 'Région', aide: 'x', valeurs: ['EU_868', 'EU_433'] },
+        tx_enabled: { type: 'booleen', libelle: 'Émission activée', aide: 'x' },
+      },
+    },
+    voisinage: {
+      libelle: 'Module Voisinage', module: true, redemarre: false,
+      champs: {
+        enabled: { type: 'booleen', libelle: 'Module activé', aide: 'x' },
+        update_interval: { type: 'entier', libelle: 'Intervalle', aide: 'x',
+                           mini: 14400, maxi: 604800, valeurs_speciales: [] },
+      },
+    },
+  } as any;
 
   beforeEach(() => {
     TestBed.configureTestingModule({
@@ -53,6 +75,7 @@ describe('MeshtasticAdministrationComponent', () => {
     }
     http.expectOne(`${urlTaches}/`).flush([UNE_TACHE]);
     http.expectOne(`${urlConfigs}/`).flush([]);
+    http.expectOne(urlReglages).flush(CATALOGUE);
     return fixture.componentInstance;
   }
 
@@ -147,5 +170,155 @@ describe('MeshtasticAdministrationComponent', () => {
     const composant = demarrer([compagnon({ connexion_type: 'MQTT' })]);
     expect(composant.passerelles.length).toBe(0);
     expect(composant.nouvelle.compagnon).toBe('');
+  });
+});
+
+describe('MeshtasticAdministrationComponent — éditeur de réglages', () => {
+  let http: HttpTestingController;
+  const urlTaches = `${environment.apiUrl}/taches-admin-meshtastic`;
+  const urlReglages = `${urlTaches}/reglages/`;
+
+  const CATALOGUE = {
+    lora: {
+      libelle: 'Radio LoRa', module: false, redemarre: true,
+      champs: {
+        hop_limit: { type: 'entier', libelle: 'Nombre de sauts', aide: 'x', mini: 1, maxi: 7,
+                     valeurs_speciales: [] },
+        region: { type: 'enumeration', libelle: 'Région', aide: 'x', valeurs: ['EU_868', 'EU_433'] },
+        tx_enabled: { type: 'booleen', libelle: 'Émission activée', aide: 'x' },
+      },
+    },
+    voisinage: {
+      libelle: 'Module Voisinage', module: true, redemarre: false,
+      champs: {
+        enabled: { type: 'booleen', libelle: 'Module activé', aide: 'x' },
+        update_interval: { type: 'entier', libelle: 'Intervalle', aide: 'x',
+                           mini: 14400, maxi: 604800, valeurs_speciales: [] },
+      },
+    },
+  } as any;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      imports: [MeshtasticAdministrationComponent],
+      providers: [provideHttpClient(), provideHttpClientTesting()],
+    });
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => http.verify());
+
+  function demarrer() {
+    const fixture = TestBed.createComponent(MeshtasticAdministrationComponent);
+    fixture.detectChanges();
+    http.expectOne(`${environment.apiUrl}/compagnons-meshtastic/`).flush([{
+      id: 'p1', nom: 'Passerelle', connexion_type: 'SERIE', node_num: 1,
+      broker_host: '', broker_port: 1883, topic_racine: 'x', mqtt_use_tls: false,
+      principal: false, actif: true, chiffrement_supporte: false,
+    }]);
+    http.expectOne(r => r.url === `${environment.apiUrl}/contacts-meshtastic/`).flush([]);
+    http.expectOne(`${urlTaches}/`).flush([]);
+    http.expectOne(`${environment.apiUrl}/configurations-noeuds-meshtastic/`).flush([]);
+    http.expectOne(urlReglages).flush(CATALOGUE);
+    return fixture;
+  }
+
+  it('n’envoie QUE les réglages cochés', () => {
+    // LE point de correction : le firmware remplace tout le bloc, et le pont relit puis renvoie
+    // les champs non cochés inchangés. Envoyer un champ non coché l'écraserait par la valeur
+    // affichée dans le formulaire — sur la section LoRa, cela effacerait la région.
+    const composant = demarrer().componentInstance;
+    composant.nouvelle.type_tache = 'DEFINIR_REGLAGES';
+    composant.sectionChoisie = 'lora';
+    composant.reinitialiserReglages();
+    composant.reglagesModifies['hop_limit'] = { actif: true, valeur: 5 };
+
+    composant.envoyer();
+    const requete = http.expectOne(`${urlTaches}/`);
+    expect(requete.request.body.parametres).toEqual({ section: 'lora', valeurs: { hop_limit: 5 } });
+    requete.flush({});
+    http.expectOne(`${urlTaches}/`).flush([]);
+    http.expectOne(`${environment.apiUrl}/configurations-noeuds-meshtastic/`).flush([]);
+  });
+
+  it('refuse d’envoyer quand rien n’est coché', () => {
+    const composant = demarrer().componentInstance;
+    composant.nouvelle.type_tache = 'DEFINIR_REGLAGES';
+    composant.reinitialiserReglages();
+    expect(composant.aucunReglageCoche).toBeTrue();
+  });
+
+  it('changer de section n’emporte pas les coches de la précédente', () => {
+    const composant = demarrer().componentInstance;
+    composant.sectionChoisie = 'lora';
+    composant.reinitialiserReglages();
+    composant.reglagesModifies['hop_limit'].actif = true;
+
+    composant.sectionChoisie = 'voisinage';
+    composant.reinitialiserReglages();
+    expect(composant.aucunReglageCoche).toBeTrue();
+    expect(Object.keys(composant.reglagesModifies).sort()).toEqual(['enabled', 'update_interval']);
+  });
+
+  it('propose les bornes du serveur, jamais recopiées ici', () => {
+    // 4 h pour le voisinage : contrainte du firmware. Si elle était dupliquée dans le frontend,
+    // elle divergerait au premier changement côté serveur.
+    const composant = demarrer().componentInstance;
+    composant.sectionChoisie = 'voisinage';
+    const champ = composant.champsSection.find(c => c.cle === 'update_interval');
+    expect(champ?.champ.mini).toBe(14400);
+  });
+
+  it('annonce que la section LoRa fait redémarrer le nœud', () => {
+    const composant = demarrer().componentInstance;
+    composant.sectionChoisie = 'lora';
+    expect(composant.sectionCourante?.redemarre).toBeTrue();
+    composant.sectionChoisie = 'voisinage';
+    expect(composant.sectionCourante?.redemarre).toBeFalse();
+  });
+
+  it('une lecture de section n’envoie que la section', () => {
+    const composant = demarrer().componentInstance;
+    composant.nouvelle.type_tache = 'LIRE_REGLAGES';
+    composant.sectionChoisie = 'voisinage';
+    composant.envoyer();
+    const requete = http.expectOne(`${urlTaches}/`);
+    expect(requete.request.body.parametres).toEqual({ section: 'voisinage' });
+    requete.flush({});
+    http.expectOne(`${urlTaches}/`).flush([]);
+    http.expectOne(`${environment.apiUrl}/configurations-noeuds-meshtastic/`).flush([]);
+  });
+
+  it('compte le nom court en OCTETS, pas en caractères', () => {
+    // Quatre lettres accentuées font huit octets : le firmware tronquerait en silence.
+    const composant = demarrer().componentInstance;
+    expect(composant.octets('PILA')).toBe(4);
+    expect(composant.octets('éééé')).toBe(8);
+    // Un émoji simple fait exactement 4 octets : il consomme TOUT le budget du nom court.
+    expect(composant.octets('🛰')).toBe(4);
+    // Avec son sélecteur de variation, il le dépasse.
+    expect(composant.octets('🛰️')).toBeGreaterThan(4);
+  });
+
+  it('n’envoie pas un nom vide', () => {
+    const composant = demarrer().componentInstance;
+    composant.nouvelle.type_tache = 'DEFINIR_NOM';
+    composant.nom = { nom_long: '  ', nom_court: '' };
+    composant.envoyer();
+    const requete = http.expectOne(`${urlTaches}/`);
+    expect(requete.request.body.parametres).toEqual({});
+    requete.flush(null, { status: 400, statusText: 'Bad Request' });
+  });
+
+  it('reste utilisable si le catalogue ne répond pas', () => {
+    // Les lectures et les autres opérations ne dépendent pas du catalogue.
+    const fixture = TestBed.createComponent(MeshtasticAdministrationComponent);
+    fixture.detectChanges();
+    http.expectOne(`${environment.apiUrl}/compagnons-meshtastic/`).flush([]);
+    http.expectOne(`${urlTaches}/`).flush([]);
+    http.expectOne(`${environment.apiUrl}/configurations-noeuds-meshtastic/`).flush([]);
+    http.expectOne(urlReglages).flush(null, { status: 503, statusText: 'Unavailable' });
+    expect(fixture.componentInstance.sections).toEqual([]);
+    expect(fixture.componentInstance.erreur).toBeNull();
   });
 });

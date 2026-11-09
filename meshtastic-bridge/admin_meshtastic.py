@@ -33,6 +33,7 @@ Django -- c'est l'appareil qui émet sur la radio, et c'est sa clé que le nœud
 import logging
 import threading
 
+from google.protobuf import json_format
 from meshtastic.protobuf import admin_pb2, config_pb2, mesh_pb2, module_config_pb2, portnums_pb2
 
 logger = logging.getLogger(__name__)
@@ -48,8 +49,40 @@ PUISSANCE_MIN_DBM = 1
 PUISSANCE_MAX_DBM = 27
 
 LECTURES = {"LIRE_METADATA", "LIRE_CONFIG_LORA", "LIRE_CONFIG_APPAREIL",
-            "LIRE_PROPRIETAIRE", "LIRE_CONFIG_MQTT"}
-ECRITURES = {"DEFINIR_PUISSANCE", "REDEMARRER", "DEFINIR_MQTT_JSON"}
+            "LIRE_PROPRIETAIRE", "LIRE_CONFIG_MQTT", "LIRE_REGLAGES"}
+ECRITURES = {"DEFINIR_PUISSANCE", "REDEMARRER", "DEFINIR_MQTT_JSON", "DEFINIR_REGLAGES",
+             "DEFINIR_NOM"}
+
+# Sections de configuration et modules accessibles par les opérations génériques `LIRE_REGLAGES`
+# et `DEFINIR_REGLAGES`. La liste blanche des CHAMPS, elle, vit côté Django
+# (core/mesh_reglages.py) : c'est le seul point par lequel une demande peut entrer, donc le bon
+# endroit pour refuser tout de suite avec un message lisible. Ici on ne garde que ce qui demande
+# de connaître les protobufs.
+SECTIONS_CONFIG = {
+    "device": admin_pb2.AdminMessage.ConfigType.DEVICE_CONFIG,
+    "lora": admin_pb2.AdminMessage.ConfigType.LORA_CONFIG,
+    "position": admin_pb2.AdminMessage.ConfigType.POSITION_CONFIG,
+}
+SECTIONS_MODULE = {
+    "voisinage": admin_pb2.AdminMessage.ModuleConfigType.NEIGHBORINFO_CONFIG,
+    "telemetrie": admin_pb2.AdminMessage.ModuleConfigType.TELEMETRY_CONFIG,
+}
+# Nom du champ protobuf correspondant, dans Config / ModuleConfig.
+CHAMP_PROTOBUF = {
+    "device": "device", "lora": "lora", "position": "position",
+    "voisinage": "neighbor_info", "telemetrie": "telemetry",
+}
+
+# Minima imposés par le FIRMWARE, revalidés ici bien que Django les vérifie déjà : un pont peut
+# tourner contre un Django plus ancien, et ce ne sont pas des préférences mais des limites de
+# temps d'antenne. Un rapport de voisinage est volumineux ; le diffuser plus souvent sature le
+# réseau pour tout le monde.
+MINIMA_FIRMWARE = {
+    ("voisinage", "update_interval"): 14400,
+    ("telemetrie", "device_update_interval"): 900,
+}
+# Valeurs acceptées en dessous du minimum, avec leur sens propre.
+EXCEPTIONS_MINIMA = {("telemetrie", "device_update_interval"): {0}}
 
 
 class ErreurAdmin(Exception):
@@ -337,8 +370,7 @@ def executer(iface, tache):
         return donnees, {"role": donnees["role"]}
 
     if type_tache == "LIRE_PROPRIETAIRE":
-        message = admin_pb2.AdminMessage()
-        message.get_owner_request = True
+        message = _message_proprietaire()
         # Pas de `configuration` : un nom de nœud est une donnée nominative, elle reste dans la
         # réponse chiffrée et n'alimente pas une table en clair.
         return _proprietaire(_lire(iface, node_num, local, message)), None
@@ -351,6 +383,15 @@ def executer(iface, tache):
         # Pas de `configuration` : rien là-dedans n'est une caractéristique radio rangeable
         # dans ConfigurationNoeudMeshtastic, et l'adresse du broker n'a pas à être dupliquée.
         return donnees, None
+
+    if type_tache == "LIRE_REGLAGES":
+        return _lire_reglages(iface, node_num, local, parametres), None
+
+    if type_tache == "DEFINIR_REGLAGES":
+        return _definir_reglages(iface, node_num, local, parametres)
+
+    if type_tache == "DEFINIR_NOM":
+        return _definir_nom(iface, node_num, local, parametres)
 
     if type_tache == "DEFINIR_MQTT_JSON":
         return _definir_mqtt_json(iface, node_num, local, parametres)
@@ -451,6 +492,147 @@ def _definir_mqtt_json(iface, node_num, local, parametres):
 
     _ecrire(iface, node_num, local, construire)
     return {"json_active": actif}, None
+
+
+def _section_connue(section):
+    if section in SECTIONS_CONFIG or section in SECTIONS_MODULE:
+        return
+    attendues = ", ".join(sorted(set(SECTIONS_CONFIG) | set(SECTIONS_MODULE)))
+    raise ErreurAdmin(f"Section « {section} » inconnue de ce pont. Attendu : {attendues}.")
+
+
+def _lire_section(iface, node_num, local, section):
+    """Protobuf de la section (ou du module) demandée, tel que le nœud le renvoie."""
+    _section_connue(section)
+    if section in SECTIONS_CONFIG:
+        message = _lire(iface, node_num, local, _demande_config(SECTIONS_CONFIG[section]))
+        conteneur = message.get_config_response
+    else:
+        message = _lire(iface, node_num, local, _demande_module(SECTIONS_MODULE[section]))
+        conteneur = message.get_module_config_response
+    return getattr(conteneur, CHAMP_PROTOBUF[section])
+
+
+def _lire_reglages(iface, node_num, local, parametres):
+    """Tous les réglages d'une section, en clair.
+
+    `always_print_fields_with_no_presence` : un booléen à faux ou un intervalle à zéro sont des
+    informations — les omettre laisserait croire que le champ n'existe pas, alors qu'il est
+    simplement désactivé."""
+    section = parametres.get("section")
+    donnees = json_format.MessageToDict(
+        _lire_section(iface, node_num, local, section),
+        preserving_proto_field_name=True,
+        always_print_fields_with_no_presence=True,
+    )
+    return {"section": section, "reglages": donnees}
+
+
+def _verifier_minima(section, valeurs):
+    for champ, valeur in valeurs.items():
+        minimum = MINIMA_FIRMWARE.get((section, champ))
+        if minimum is None:
+            continue
+        if valeur in EXCEPTIONS_MINIMA.get((section, champ), set()):
+            continue
+        if isinstance(valeur, int) and valeur < minimum:
+            raise ErreurAdmin(
+                f"{section}.{champ} : {valeur} s est sous le minimum imposé par le firmware "
+                f"({minimum} s). Le firmware refuserait ou écraserait la valeur."
+            )
+
+
+def _definir_reglages(iface, node_num, local, parametres):
+    """Écrit un ensemble de réglages dans une section, en lecture-modification-écriture.
+
+    **`set_config` et `set_module_config` remplacent tout le bloc** côté firmware : on relit donc
+    la section, on y applique les seuls champs demandés, et on renvoie l'ensemble. N'envoyer que
+    les champs modifiés remettrait tous les autres à zéro — sur la section LoRa cela effacerait la
+    région, et un nœud sans région **ne transmet plus du tout**. C'est la même raison que pour la
+    puissance et pour le JSON MQTT, et c'est le piège central de toute cette opération.
+
+    Les valeurs arrivent déjà validées par Django (core/mesh_reglages.py) ; ici on vérifie que le
+    champ existe bien dans le protobuf — un nom inconnu lèverait au moment du `setattr`, et une
+    exception brute n'apprendrait rien à l'exploitant — et on revérifie les deux minima du
+    firmware."""
+    section = parametres.get("section")
+    valeurs = parametres.get("valeurs")
+    _section_connue(section)
+    if not isinstance(valeurs, dict) or not valeurs:
+        raise ErreurAdmin("Aucun réglage à modifier.")
+    _verifier_minima(section, valeurs)
+
+    def construire():
+        actuel = _lire_section(iface, node_num, local, section)
+        if not actuel.ByteSize() and section == "lora":
+            raise ErreurAdmin(
+                "Configuration LoRa lue vide : on ne réécrit pas à l'aveugle une section qu'on "
+                "n'a pas vraiment lue."
+            )
+        message = admin_pb2.AdminMessage()
+        cible = (message.set_config if section in SECTIONS_CONFIG
+                 else message.set_module_config)
+        bloc = getattr(cible, CHAMP_PROTOBUF[section])
+        bloc.CopyFrom(actuel)
+        for champ, valeur in valeurs.items():
+            if champ not in {f.name for f in bloc.DESCRIPTOR.fields}:
+                raise ErreurAdmin(
+                    f"Le firmware de ce nœud ne connaît pas le réglage « {champ} » dans "
+                    f"« {section} »."
+                )
+            try:
+                setattr(bloc, champ, valeur)
+            except (ValueError, TypeError) as erreur:
+                # Typiquement un nom d'énumération que CE firmware ne connaît pas : plus ancien
+                # ou plus récent que nos protobufs.
+                raise ErreurAdmin(f"{section}.{champ} : valeur refusée par le protobuf ({erreur}).")
+        return message
+
+    _ecrire(iface, node_num, local, construire)
+    # `redemarrage_declenche` : le firmware redémarre de lui-même après un changement de section
+    # LoRa (région, preset, bande, puissance). À dire, sinon l'exploitant croit le nœud perdu.
+    return {"section": section, "reglages": valeurs,
+            "redemarrage_declenche": section == "lora"}, None
+
+
+def _definir_nom(iface, node_num, local, parametres):
+    """Nom long et nom court du nœud (`set_owner`).
+
+    Le nom court est limité à **4 octets** par le firmware, pas 4 caractères : un seul emoji ou
+    deux lettres accentuées suffisent à dépasser. On mesure donc en octets, sinon le firmware
+    tronque en silence et l'exploitant voit un nom coupé sans comprendre."""
+    long_nom = parametres.get("nom_long")
+    court = parametres.get("nom_court")
+    if not long_nom and not court:
+        raise ErreurAdmin("nom_long et/ou nom_court sont requis.")
+    if long_nom is not None and len(str(long_nom).encode("utf-8")) > 39:
+        raise ErreurAdmin("Le nom long dépasse 39 octets.")
+    if court is not None and len(str(court).encode("utf-8")) > 4:
+        raise ErreurAdmin(
+            f"Le nom court dépasse 4 octets (« {court} » en fait "
+            f"{len(str(court).encode('utf-8'))} : les accents et émojis comptent double ou plus)."
+        )
+
+    def construire():
+        # Lecture-modification-écriture là aussi : `set_owner` remplace le User entier, donc
+        # écrire le seul nom court effacerait le nom long et la clé publique annoncée.
+        actuel = _lire(iface, node_num, local, _message_proprietaire()).get_owner_response
+        message = admin_pb2.AdminMessage()
+        message.set_owner.CopyFrom(actuel)
+        if long_nom is not None:
+            message.set_owner.long_name = str(long_nom)
+        if court is not None:
+            message.set_owner.short_name = str(court)
+        return message
+
+    _ecrire(iface, node_num, local, construire)
+    return {"nom_long": long_nom, "nom_court": court}, None
+
+
+def _message_proprietaire():
+    message = admin_pb2.AdminMessage()
+    message.get_owner_request = True
+    return message
 
 
 def _config_lora_protobuf(iface, node_num, local):

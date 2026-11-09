@@ -17931,6 +17931,18 @@ class TacheAdminMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelV
             ),
         )
 
+    @action(detail=False, methods=['get'], url_path='reglages')
+    def reglages(self, request):
+        """Catalogue des réglages modifiables : sections, champs, types, bornes et aide.
+
+        Servi plutôt que recopié dans le frontend : les bornes sont des contraintes du firmware
+        (nombre de sauts 1-7, intervalle de voisinage au moins 4 h), et les dupliquer dans deux
+        langages garantit qu'elles divergeront. L'interface construit son formulaire à partir de
+        ceci ; le serveur revalide de toute façon à la création."""
+        from .mesh_reglages import catalogue
+
+        return Response(catalogue())
+
     @action(detail=False, methods=['post'], url_path='prendre')
     def prendre(self, request):
         """Le pont réclame les tâches à exécuter pour SA passerelle, et les verrouille.

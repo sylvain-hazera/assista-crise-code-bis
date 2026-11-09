@@ -16,6 +16,7 @@ import unittest
 
 from meshtastic.protobuf import admin_pb2, config_pb2, mesh_pb2, module_config_pb2, portnums_pb2
 
+
 import admin_meshtastic as mod
 
 
@@ -303,6 +304,166 @@ class TestMqttJson(unittest.TestCase):
         iface = FauxInterface(reponses=[reponse_mqtt(), "__ACK__"])
         donnees, _ = mod.executer(iface, {"type_tache": "DEFINIR_MQTT_JSON"})
         self.assertTrue(donnees["json_active"])
+
+
+def reponse_section(section, **champs):
+    """Reponse de lecture pour une section de configuration ou un module."""
+    if section in ("device", "lora", "position"):
+        bloc = {"device": config_pb2.Config.DeviceConfig,
+                "lora": config_pb2.Config.LoRaConfig,
+                "position": config_pb2.Config.PositionConfig}[section](**champs)
+        return admin_pb2.AdminMessage(get_config_response=config_pb2.Config(**{section: bloc}))
+    nom = {"voisinage": "neighbor_info", "telemetrie": "telemetry"}[section]
+    classe = {"voisinage": module_config_pb2.ModuleConfig.NeighborInfoConfig,
+              "telemetrie": module_config_pb2.ModuleConfig.TelemetryConfig}[section]
+    return admin_pb2.AdminMessage(
+        get_module_config_response=module_config_pb2.ModuleConfig(**{nom: classe(**champs)}),
+    )
+
+
+class TestReglagesGeneriques(unittest.TestCase):
+    """Ecritures de configuration : l'equivalent de son `modifier()`."""
+
+    def test_la_lecture_rend_tous_les_champs_meme_a_zero(self):
+        """Un booleen a faux ou un intervalle a zero sont des informations : les omettre
+        laisserait croire que le champ n'existe pas alors qu'il est desactive."""
+        iface = FauxInterface(reponses=[reponse_section("voisinage", enabled=False)])
+        donnees, _ = mod.executer(iface, {
+            "type_tache": "LIRE_REGLAGES", "parametres": {"section": "voisinage"},
+        })
+        self.assertEqual(donnees["section"], "voisinage")
+        self.assertIn("enabled", donnees["reglages"])
+        self.assertFalse(donnees["reglages"]["enabled"])
+        self.assertIn("update_interval", donnees["reglages"])
+
+    def test_l_ecriture_conserve_les_champs_non_modifies(self):
+        """LE piege central : set_config remplace TOUT le bloc. Modifier le seul nombre de sauts
+        ne doit pas effacer la region -- un noeud sans region ne transmet plus du tout."""
+        iface = FauxInterface(reponses=[
+            reponse_section("lora", region=3, modem_preset=0, tx_power=22, hop_limit=3),
+            "__ACK__",
+        ])
+        donnees, _ = mod.executer(iface, {
+            "type_tache": "DEFINIR_REGLAGES", "node_num_cible": 0x2000,
+            "parametres": {"section": "lora", "valeurs": {"hop_limit": 5}},
+        })
+        ecrit = iface.envois[1]["message"].set_config.lora
+        self.assertEqual(ecrit.hop_limit, 5)
+        self.assertEqual(ecrit.region, 3)          # conservee
+        self.assertEqual(ecrit.tx_power, 22)       # conservee
+        self.assertTrue(donnees["redemarrage_declenche"])   # le firmware redemarre sur LoRa
+
+    def test_un_module_passe_par_set_module_config(self):
+        iface = FauxInterface(reponses=[
+            reponse_section("voisinage", enabled=False, update_interval=14400), "__ACK__",
+        ])
+        donnees, _ = mod.executer(iface, {
+            "type_tache": "DEFINIR_REGLAGES", "node_num_cible": 0x2000,
+            "parametres": {"section": "voisinage", "valeurs": {"enabled": True}},
+        })
+        ecrit = iface.envois[1]["message"].set_module_config.neighbor_info
+        self.assertTrue(ecrit.enabled)
+        self.assertEqual(ecrit.update_interval, 14400)      # conserve
+        self.assertFalse(donnees["redemarrage_declenche"])  # pas de redemarrage hors LoRa
+
+    def test_le_minimum_de_temps_d_antenne_du_firmware_est_revalide(self):
+        """Django le verifie deja, mais un pont peut tourner contre un Django plus ancien -- et
+        ce n'est pas une preference, c'est une limite de temps d'antenne."""
+        iface = FauxInterface(reponses=[reponse_section("voisinage")])
+        with self.assertRaises(mod.ErreurAdmin) as cas:
+            mod.executer(iface, {
+                "type_tache": "DEFINIR_REGLAGES", "node_num_cible": 0x2000,
+                "parametres": {"section": "voisinage", "valeurs": {"update_interval": 3600}},
+            })
+        self.assertIn("firmware", str(cas.exception))
+        self.assertEqual(iface.envois, [])
+
+    def test_zero_reste_accepte_pour_la_telemetrie(self):
+        """0 n'est pas une valeur basse, c'est « valeur par defaut du firmware »."""
+        iface = FauxInterface(reponses=[reponse_section("telemetrie"), "__ACK__"])
+        mod.executer(iface, {
+            "type_tache": "DEFINIR_REGLAGES", "node_num_cible": 0x2000,
+            "parametres": {"section": "telemetrie", "valeurs": {"device_update_interval": 0}},
+        })
+        self.assertEqual(iface.envois[1]["message"].set_module_config.telemetry.device_update_interval, 0)
+
+    def test_une_section_inconnue_est_refusee_sans_rien_envoyer(self):
+        iface = FauxInterface()
+        with self.assertRaises(mod.ErreurAdmin):
+            mod.executer(iface, {"type_tache": "LIRE_REGLAGES",
+                                 "parametres": {"section": "bluetooth"}})
+        self.assertEqual(iface.envois, [])
+
+    def test_un_champ_inconnu_du_firmware_donne_un_message_lisible(self):
+        """Plutot qu'une exception brute de protobuf, qui n'apprend rien a l'exploitant."""
+        iface = FauxInterface(reponses=[reponse_section("lora", region=3)])
+        with self.assertRaises(mod.ErreurAdmin) as cas:
+            mod.executer(iface, {
+                "type_tache": "DEFINIR_REGLAGES", "node_num_cible": 0x2000,
+                "parametres": {"section": "lora", "valeurs": {"champ_invente": 1}},
+            })
+        self.assertIn("ne connait pas", str(cas.exception).replace("î", "i"))
+
+    def test_aucun_reglage_est_une_erreur_d_appel(self):
+        iface = FauxInterface()
+        with self.assertRaises(mod.ErreurAdmin):
+            mod.executer(iface, {"type_tache": "DEFINIR_REGLAGES",
+                                 "parametres": {"section": "lora", "valeurs": {}}})
+        self.assertEqual(iface.envois, [])
+
+    def test_une_section_lora_vide_n_est_pas_reecrite(self):
+        iface = FauxInterface(reponses=[reponse_section("lora")])
+        with self.assertRaises(mod.ErreurAdmin):
+            mod.executer(iface, {
+                "type_tache": "DEFINIR_REGLAGES", "node_num_cible": 0x2000,
+                "parametres": {"section": "lora", "valeurs": {"hop_limit": 4}},
+            })
+
+
+class TestNomDuNoeud(unittest.TestCase):
+
+    def test_le_nom_est_ecrit_sans_effacer_le_reste(self):
+        """set_owner remplace le User entier : ecrire le seul nom court effacerait le nom long
+        et la cle publique annoncee."""
+        iface = FauxInterface(reponses=[
+            admin_pb2.AdminMessage(get_owner_response=mesh_pb2.User(
+                id="!1a2b3c4d", long_name="Relais Pilat", short_name="PIL",
+                public_key=b"\x01" * 32,
+            )),
+            "__ACK__",
+        ])
+        mod.executer(iface, {
+            "type_tache": "DEFINIR_NOM", "node_num_cible": 0x2000,
+            "parametres": {"nom_long": "Relais Crêt de la Perdrix"},
+        })
+        ecrit = iface.envois[1]["message"].set_owner
+        self.assertEqual(ecrit.long_name, "Relais Crêt de la Perdrix")
+        self.assertEqual(ecrit.short_name, "PIL")            # conserve
+        self.assertEqual(ecrit.id, "!1a2b3c4d")              # conserve
+        self.assertEqual(len(ecrit.public_key), 32)          # conservee
+
+    def test_le_nom_court_est_mesure_en_OCTETS(self):
+        """4 octets et non 4 caracteres : un emoji ou deux lettres accentuees suffisent a
+        depasser, et le firmware tronquerait en silence."""
+        iface = FauxInterface()
+        with self.assertRaises(mod.ErreurAdmin) as cas:
+            mod.executer(iface, {"type_tache": "DEFINIR_NOM", "node_num_cible": 0x2000,
+                                 "parametres": {"nom_court": "éééé"}})
+        self.assertIn("octets", str(cas.exception))
+        self.assertEqual(iface.envois, [])
+
+    def test_quatre_caracteres_ascii_passent(self):
+        iface = FauxInterface(reponses=[
+            admin_pb2.AdminMessage(get_owner_response=mesh_pb2.User(long_name="X")), "__ACK__",
+        ])
+        mod.executer(iface, {"type_tache": "DEFINIR_NOM", "node_num_cible": 0x2000,
+                             "parametres": {"nom_court": "PILA"}})
+        self.assertEqual(iface.envois[1]["message"].set_owner.short_name, "PILA")
+
+    def test_sans_nom_c_est_une_erreur_d_appel(self):
+        iface = FauxInterface()
+        with self.assertRaises(mod.ErreurAdmin):
+            mod.executer(iface, {"type_tache": "DEFINIR_NOM", "parametres": {}})
 
 
 class TestDivers(unittest.TestCase):
