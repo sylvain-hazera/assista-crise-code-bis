@@ -17781,6 +17781,23 @@ class ContactMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ReadOnlyM
         from .analyse_liaisons import analyser
         return Response(analyser(get_active_environment(request)))
 
+    @action(detail=False, methods=['get'], url_path='routage')
+    def routage(self, request):
+        """« Quelle passerelle a entendu ce nœud, et par où passer pour le joindre ? » — voir
+        core/routage_meshtastic.py, qui explique pourquoi ce sont deux questions distinctes.
+
+        Action de liste et non de détail : la question se pose pour toutes les lignes du tableau
+        à la fois, et le graphe des liaisons se construit en une passe. `?node_num=` restreint la
+        réponse à un nœud sans changer ce coût."""
+        from .routage_meshtastic import router
+        node_num = request.query_params.get('node_num')
+        if node_num is not None:
+            try:
+                node_num = int(node_num)
+            except ValueError:
+                return Response({'detail': "node_num doit être un entier."}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(router(get_active_environment(request), node_num=node_num))
+
 
 class LiaisonMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ReadOnlyModelViewSet):
     """Liaisons radio mesurées, alimentées par le pont Meshtastic (rapporter_liaisons).

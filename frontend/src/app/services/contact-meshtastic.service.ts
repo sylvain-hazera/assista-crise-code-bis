@@ -4,6 +4,7 @@ import { Observable } from 'rxjs';
 
 import { environment } from '../../environments/environment';
 import { ContactMeshtastic } from '../shared/models/contact-meshtastic.model';
+import { RoutageMeshtastic } from '../shared/models/routage-meshtastic.model';
 
 /** Répertoire de nœuds découverts passivement sur MQTT — lecture seule (voir
  * ContactMeshtasticViewSet). */
@@ -16,5 +17,12 @@ export class ContactMeshtasticService {
 
   getAll(compagnonId?: string): Observable<ContactMeshtastic[]> {
     return this.http.get<ContactMeshtastic[]>(`${this.url}/`, { params: compagnonId ? { compagnon: compagnonId } : {} });
+  }
+
+  /** « Quelle passerelle a entendu ce nœud, et par où passer pour le joindre ? » Un seul appel
+   * pour tout le tableau : le graphe des liaisons se construit en une passe côté serveur, un
+   * appel par ligne serait un N+1 à l'échelle d'un réseau départemental. */
+  routage(): Observable<RoutageMeshtastic> {
+    return this.http.get<RoutageMeshtastic>(`${this.url}/routage/`);
   }
 }

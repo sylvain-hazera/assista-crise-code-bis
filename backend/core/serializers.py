@@ -3838,7 +3838,14 @@ class ContactMeshtasticSerializer(serializers.ModelSerializer):
         return obj.location.x if obj.location else None
 
     def get_deja_associe(self, obj):
-        return NoeudUtilisateurMeshtastic.objects.filter(node_num=obj.node_num).exists()
+        # Une seule requête pour toute la liste, mémorisée dans le contexte : le tableau
+        # d'administration affiche désormais TOUS les nœuds détectés, et un `.exists()` par
+        # ligne faisait autant de requêtes que de nœuds du réseau.
+        associes = self.context.get('_node_nums_associes')
+        if associes is None:
+            associes = set(NoeudUtilisateurMeshtastic.objects.values_list('node_num', flat=True))
+            self.context['_node_nums_associes'] = associes
+        return obj.node_num in associes
 
 
 class NoeudUtilisateurMeshtasticSerializer(serializers.ModelSerializer):

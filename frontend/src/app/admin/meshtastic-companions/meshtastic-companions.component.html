@@ -79,23 +79,42 @@
 @if (loading) {
   <p>Chargement…</p>
 } @else {
+  <div class="barre-recherche">
+    <input type="search" class="form-input" placeholder="Rechercher dans toutes les colonnes…"
+           aria-label="Rechercher une connexion MQTT" [(ngModel)]="triCompagnons.recherche">
+    @if (triCompagnons.filtreActif) {
+      <button type="button" class="btn-secondary sm" (click)="triCompagnons.reinitialiser()">Effacer</button>
+      <span class="compteur">{{ compagnonsAffiches.length }} / {{ companions.length }}</span>
+    }
+  </div>
   <div class="table-wrapper">
     <table class="data-table">
       <thead>
         <tr>
-          <th>Nom</th>
-          <th>node_num</th>
-          <th>Broker</th>
-          <th>Chiffrement</th>
-          <th>Clé publique X25519</th>
-          <th>Statut</th>
-          <th>Dernière connexion</th>
-          <th>ID</th>
+          <th appThTri [table]="triCompagnons" cle="nom" libelle="Nom"></th>
+          <th appThTri [table]="triCompagnons" cle="node_num" libelle="node_num"></th>
+          <th appThTri [table]="triCompagnons" cle="broker" libelle="Broker"></th>
+          <th appThTri [table]="triCompagnons" cle="chiffrement" libelle="Chiffrement"></th>
+          <th appThTri [table]="triCompagnons" cle="cle" libelle="Clé publique X25519"></th>
+          <th appThTri [table]="triCompagnons" cle="statut" libelle="Statut"></th>
+          <th appThTri [table]="triCompagnons" cle="connexion" libelle="Dernière connexion"></th>
+          <th appThTri [table]="triCompagnons" cle="id" libelle="ID"></th>
+          <th></th>
+        </tr>
+        <tr class="ligne-filtres">
+          <th appThFiltre [table]="triCompagnons" cle="nom" libelle="le nom"></th>
+          <th appThFiltre [table]="triCompagnons" cle="node_num" libelle="le node_num"></th>
+          <th appThFiltre [table]="triCompagnons" cle="broker" libelle="le broker"></th>
+          <th appThFiltre [table]="triCompagnons" cle="chiffrement" libelle="le chiffrement"></th>
+          <th appThFiltre [table]="triCompagnons" cle="cle" libelle="la clé publique"></th>
+          <th appThFiltre [table]="triCompagnons" cle="statut" libelle="le statut"></th>
+          <th appThFiltre [table]="triCompagnons" cle="connexion" libelle="la dernière connexion"></th>
+          <th appThFiltre [table]="triCompagnons" cle="id" libelle="l\'identifiant"></th>
           <th></th>
         </tr>
       </thead>
       <tbody>
-        @for (c of companions; track c.id) {
+        @for (c of compagnonsAffiches; track c.id) {
           @if (editingCompanionId === c.id) {
             <tr class="edit-row">
               <td><input type="text" class="form-input form-input-sm" [(ngModel)]="editNom"></td>
@@ -162,7 +181,9 @@
             </tr>
           }
         } @empty {
-          <tr><td colspan="9" class="empty">Aucun companion déclaré pour l'instant.</td></tr>
+          <tr><td colspan="9" class="empty">
+            {{ triCompagnons.filtreActif ? 'Aucune connexion ne correspond au filtre.' : 'Aucun companion déclaré pour l\'instant.' }}
+          </td></tr>
         }
       </tbody>
     </table>
@@ -200,13 +221,37 @@
   </button>
 </div>
 
+<div class="barre-recherche">
+  <input type="search" class="form-input" placeholder="Rechercher un canal…"
+         aria-label="Rechercher un canal" [(ngModel)]="triCanaux.recherche">
+  @if (triCanaux.filtreActif) {
+    <button type="button" class="btn-secondary sm" (click)="triCanaux.reinitialiser()">Effacer</button>
+    <span class="compteur">{{ canauxAffiches.length }} / {{ canaux.length }}</span>
+  }
+</div>
+
 <div class="table-wrapper">
   <table class="data-table">
     <thead>
-      <tr><th>Nom</th><th>Broker</th><th>Chiffré</th><th>Principal</th><th>Actif</th><th></th></tr>
+      <tr>
+        <th appThTri [table]="triCanaux" cle="nom" libelle="Nom"></th>
+        <th appThTri [table]="triCanaux" cle="broker" libelle="Broker"></th>
+        <th appThTri [table]="triCanaux" cle="chiffre" libelle="Chiffré"></th>
+        <th appThTri [table]="triCanaux" cle="principal" libelle="Principal"></th>
+        <th appThTri [table]="triCanaux" cle="actif" libelle="Actif"></th>
+        <th></th>
+      </tr>
+      <tr class="ligne-filtres">
+        <th appThFiltre [table]="triCanaux" cle="nom" libelle="le nom"></th>
+        <th appThFiltre [table]="triCanaux" cle="broker" libelle="le broker"></th>
+        <th appThFiltre [table]="triCanaux" cle="chiffre" libelle="le chiffrement"></th>
+        <th appThFiltre [table]="triCanaux" cle="principal" libelle="le canal principal"></th>
+        <th appThFiltre [table]="triCanaux" cle="actif" libelle="l\'activité"></th>
+        <th></th>
+      </tr>
     </thead>
     <tbody>
-      @for (c of canaux; track c.id) {
+      @for (c of canauxAffiches; track c.id) {
         <tr>
           <td>{{ c.nom }}</td>
           <td>{{ c.compagnon_nom || 'Tous les brokers' }}</td>
@@ -216,7 +261,9 @@
           <td><button type="button" class="btn-danger-sm" (click)="supprimerCanal(c)">Supprimer</button></td>
         </tr>
       } @empty {
-        <tr><td colspan="6" class="empty">Aucun canal déclaré pour l'instant.</td></tr>
+        <tr><td colspan="6" class="empty">
+          {{ triCanaux.filtreActif ? 'Aucun canal ne correspond au filtre.' : 'Aucun canal déclaré pour l\'instant.' }}
+        </td></tr>
       }
     </tbody>
   </table>
@@ -228,39 +275,149 @@
   envoyé un message, et d'afficher sa position sur la carte pendant une mission active.
 </p>
 
-@if (contactsDisponibles.length > 0) {
-  <div class="table-wrapper">
-    <h3>Nœuds détectés, pas encore attribués</h3>
-    <table class="data-table">
-      <thead>
-        <tr><th>Nom annoncé</th><th>node_num</th><th>Clé publique</th><th>Dernier contact</th><th>Attribuer à…</th><th></th></tr>
-      </thead>
-      <tbody>
-        @for (c of contactsDisponibles; track c.id) {
-          <tr>
-            <td>{{ c.long_name || c.short_name || '—' }}</td>
-            <td class="mono">{{ nodeNumHex(c.node_num) }}</td>
-            <td>{{ c.public_key_hex ? 'Oui (PKI possible)' : 'Non (PSK canal seulement)' }}</td>
-            <td>{{ c.dernier_advert ? (c.dernier_advert | date:'short') : '—' }}</td>
-            <td>
-              <select [(ngModel)]="attributionsParContact[c.id]">
+<h3>Nœuds détectés sur le réseau, et par où les joindre</h3>
+<p class="page-hint">
+  Deux questions distinctes, qu'il ne faut pas confondre : <strong>quelle passerelle a entendu ce
+  nœud</strong> est une observation (une passerelle MQTT a reçu un de ses paquets sans relais
+  intermédiaire) ; <strong>par où l'atteindre</strong> n'en découle pas. Le broker cloisonne — il
+  faut émettre par le companion qui l'a vu, publier ailleurs ne l'atteint pas. La passerelle qui
+  l'entend n'est pas forcément la nôtre : sur un broker partagé son réglage de descente nous est
+  inconnu. Et une liaison est orientée : « elle l'entend » n'implique pas « il l'entend ».
+  @if (routage) {
+    Fenêtre d'observation : {{ routage.fenetre_jours }} jours ; hop_limit par défaut
+    {{ routage.hop_limit_defaut }} (maximum {{ routage.hop_limit_max }}).
+  }
+</p>
+
+<div class="barre-recherche">
+  <input type="search" class="form-input" placeholder="Rechercher un nœud détecté…"
+         aria-label="Rechercher un nœud détecté" [(ngModel)]="triContacts.recherche">
+  @if (triContacts.filtreActif) {
+    <button type="button" class="btn-secondary sm" (click)="triContacts.reinitialiser()">Effacer</button>
+    <span class="compteur">{{ contactsAffiches.length }} / {{ contacts.length }}</span>
+  }
+  <button type="button" class="btn-secondary sm" [disabled]="routageEnCours" (click)="chargerRoutage()">
+    {{ routageEnCours ? 'Calcul du routage…' : 'Recalculer le routage' }}
+  </button>
+</div>
+@if (routageErreur) {
+  <p class="error-message">{{ routageErreur }}</p>
+}
+
+<div class="table-wrapper">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th appThTri [table]="triContacts" cle="nom" libelle="Nom annoncé"></th>
+        <th appThTri [table]="triContacts" cle="node_num" libelle="node_num"></th>
+        <th appThTri [table]="triContacts" cle="materiel" libelle="Matériel"></th>
+        <th appThTri [table]="triContacts" cle="cle" libelle="Clé publique"></th>
+        <th appThTri [table]="triContacts" cle="passerelles" libelle="Entendu par"></th>
+        <th appThTri [table]="triContacts" cle="sauts" libelle="Sauts"></th>
+        <th appThTri [table]="triContacts" cle="joindre" libelle="Pour le joindre"></th>
+        <th appThTri [table]="triContacts" cle="contact" libelle="Dernier contact"></th>
+        <th appThTri [table]="triContacts" cle="attribue" libelle="Attribué"></th>
+        <th></th>
+      </tr>
+      <tr class="ligne-filtres">
+        <th appThFiltre [table]="triContacts" cle="nom" libelle="le nom annoncé"></th>
+        <th appThFiltre [table]="triContacts" cle="node_num" libelle="le node_num"></th>
+        <th appThFiltre [table]="triContacts" cle="materiel" libelle="le matériel"></th>
+        <th appThFiltre [table]="triContacts" cle="cle" libelle="la clé publique"></th>
+        <th appThFiltre [table]="triContacts" cle="passerelles" libelle="la passerelle"></th>
+        <th appThFiltre [table]="triContacts" cle="sauts" libelle="le nombre de sauts"></th>
+        <th appThFiltre [table]="triContacts" cle="joindre" libelle="le companion"></th>
+        <th appThFiltre [table]="triContacts" cle="contact" libelle="le dernier contact"></th>
+        <th appThFiltre [table]="triContacts" cle="attribue" libelle="l\'attribution"></th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      @for (c of contactsAffiches; track c.id) {
+        <tr>
+          <td>{{ c.long_name || c.short_name || '—' }}</td>
+          <td class="mono">{{ nodeNumHex(c.node_num) }}</td>
+          <td>{{ c.hardware_model || '—' }}</td>
+          <td>{{ c.public_key_hex ? 'Oui (PKI possible)' : 'Non (PSK canal seulement)' }}</td>
+          <td>
+            @if (route(c); as r) {
+              @if (r.passerelles.length) {
+                @for (p of r.passerelles; track p.node_num) {
+                  <span class="passerelle" [class.passerelle-tiers]="!p.nous"
+                        [title]="(p.nous ? 'Notre passerelle' : 'Passerelle d\'un tiers : sa descente n\'est pas garantie')
+                                 + (p.snr !== null ? ' — SNR ' + p.snr + ' dB' : '') + ' — ' + p.nombre + ' observation(s)'">
+                    {{ p.nom }}@if (p.snr !== null) { <span class="snr">{{ p.snr }} dB</span> }
+                  </span>
+                }
+              } @else {
+                <span class="statut statut-inconnu">aucune</span>
+              }
+            } @else { — }
+          </td>
+          <td>
+            @if (route(c); as r) {
+              @if (r.sauts === null) {
+                <span class="statut statut-erreur" title="Aucune passerelle ne l'a entendu : rien ne permet d'affirmer qu'on peut l'atteindre">hors de portée</span>
+              } @else {
+                <span class="statut" [ngClass]="r.hop_limit_suffisant ? 'statut-ok' : 'statut-erreur'">
+                  {{ r.sauts === 1 ? 'direct' : r.sauts + ' sauts' }}
+                </span>
+                @if (!r.retour_prouve) {
+                  <span class="avert" title="Le sens retour n'a jamais été observé : on l'entend, rien ne prouve qu'il nous entende">sens retour non prouvé</span>
+                }
+              }
+            } @else { — }
+          </td>
+          <td>
+            @if (route(c); as r) {
+              <span class="companion-cible">{{ r.compagnon_nom || '—' }}</span>
+              @if (r.relais_obligatoire) {
+                <span class="avert" title="Tout passe par ce relais : point de panne unique">via {{ r.relais_obligatoire.nom }}</span>
+              }
+              <details class="detail-routage">
+                <summary>pourquoi</summary>
+                <p class="raison">{{ r.raison }}</p>
+                @if (r.chemin.length) {
+                  <ol class="chemin">
+                    @for (etape of r.chemin; track $index) {
+                      <li>
+                        {{ etape.nom_de }} → {{ etape.nom_vers }}
+                        @if (etape.snr !== null) { <span class="snr">{{ etape.snr }} dB</span> }
+                        <span class="source">{{ etape.sources.join(', ') }}</span>
+                        @if (!etape.retour_prouve) { <span class="avert">retour non observé</span> }
+                      </li>
+                    }
+                  </ol>
+                }
+              </details>
+            } @else { — }
+          </td>
+          <td>{{ c.dernier_advert ? (c.dernier_advert | date:'short') : '—' }}</td>
+          <td>{{ c.deja_associe ? 'Oui' : 'Non' }}</td>
+          <td>
+            @if (!c.deja_associe) {
+              <select [(ngModel)]="attributionsParContact[c.id]" aria-label="Attribuer ce nœud à un utilisateur">
                 <option value="">— Utilisateur —</option>
                 @for (u of utilisateurs; track u.id) {
                   <option [value]="u.id">{{ u.first_name }} {{ u.last_name }} ({{ u.email }})</option>
                 }
               </select>
-            </td>
-            <td>
-              <button type="button" class="btn-primary sm" [disabled]="!attributionsParContact[c.id] || attribuingContactId === c.id" (click)="attribuerContact(c)">
+              <button type="button" class="btn-primary sm"
+                      [disabled]="!attributionsParContact[c.id] || attribuingContactId === c.id"
+                      (click)="attribuerContact(c)">
                 Attribuer
               </button>
-            </td>
-          </tr>
-        }
-      </tbody>
-    </table>
-  </div>
-}
+            }
+          </td>
+        </tr>
+      } @empty {
+        <tr><td colspan="10" class="empty">
+          {{ triContacts.filtreActif ? 'Aucun nœud ne correspond au filtre.' : 'Aucun nœud détecté pour l\'instant.' }}
+        </td></tr>
+      }
+    </tbody>
+  </table>
+</div>
 
 <details class="create-panel manual-fallback">
   <summary>Associer manuellement (nœud jamais détecté)</summary>
@@ -281,13 +438,35 @@
   </button>
 </details>
 
+<div class="barre-recherche">
+  <input type="search" class="form-input" placeholder="Rechercher un nœud attribué…"
+         aria-label="Rechercher un nœud attribué" [(ngModel)]="triNoeuds.recherche">
+  @if (triNoeuds.filtreActif) {
+    <button type="button" class="btn-secondary sm" (click)="triNoeuds.reinitialiser()">Effacer</button>
+    <span class="compteur">{{ noeudsAffiches.length }} / {{ noeuds.length }}</span>
+  }
+</div>
+
 <div class="table-wrapper">
   <table class="data-table">
     <thead>
-      <tr><th>Utilisateur</th><th>Nom du nœud</th><th>node_num</th><th>Actif</th><th></th></tr>
+      <tr>
+        <th appThTri [table]="triNoeuds" cle="utilisateur" libelle="Utilisateur"></th>
+        <th appThTri [table]="triNoeuds" cle="nom_noeud" libelle="Nom du nœud"></th>
+        <th appThTri [table]="triNoeuds" cle="node_num" libelle="node_num"></th>
+        <th appThTri [table]="triNoeuds" cle="actif" libelle="Actif"></th>
+        <th></th>
+      </tr>
+      <tr class="ligne-filtres">
+        <th appThFiltre [table]="triNoeuds" cle="utilisateur" libelle="l\'utilisateur"></th>
+        <th appThFiltre [table]="triNoeuds" cle="nom_noeud" libelle="le nom du nœud"></th>
+        <th appThFiltre [table]="triNoeuds" cle="node_num" libelle="le node_num"></th>
+        <th appThFiltre [table]="triNoeuds" cle="actif" libelle="l\'activité"></th>
+        <th></th>
+      </tr>
     </thead>
     <tbody>
-      @for (n of noeuds; track n.id) {
+      @for (n of noeudsAffiches; track n.id) {
         <tr>
           <td>{{ n.utilisateur_nom }}</td>
           <td>{{ n.nom_noeud || '—' }}</td>
@@ -296,7 +475,9 @@
           <td><button type="button" class="btn-danger-sm" (click)="supprimerNoeud(n)">Retirer</button></td>
         </tr>
       } @empty {
-        <tr><td colspan="5" class="empty">Aucun nœud associé pour l'instant.</td></tr>
+        <tr><td colspan="5" class="empty">
+          {{ triNoeuds.filtreActif ? 'Aucun nœud ne correspond au filtre.' : 'Aucun nœud associé pour l\'instant.' }}
+        </td></tr>
       }
     </tbody>
   </table>

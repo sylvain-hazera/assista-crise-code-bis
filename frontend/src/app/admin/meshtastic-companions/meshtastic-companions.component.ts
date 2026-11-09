@@ -13,6 +13,9 @@ import { CanalMeshtastic } from '../../shared/models/canal-meshtastic.model';
 import { ContactMeshtastic } from '../../shared/models/contact-meshtastic.model';
 import { NoeudUtilisateurMeshtastic } from '../../shared/models/noeud-utilisateur-meshtastic.model';
 import { User } from '../../shared/models/user.model';
+import { RouteMeshtastic, RoutageMeshtastic } from '../../shared/models/routage-meshtastic.model';
+import { TableTriFiltre } from '../../shared/utils/table-tri-filtre';
+import { ThFiltreComponent, ThTriComponent } from '../../shared/components/common/table-tri/table-tri.components';
 
 /** Page de paramétrage Meshtastic : déclarer une identité de nœud logicielle (companion, sans
  * matériel — voir meshtastic-bridge/README.md), des canaux (PSK partagée), et associer les
@@ -22,7 +25,7 @@ import { User } from '../../shared/models/user.model';
 @Component({
   selector: 'app-meshtastic-companions',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, ThTriComponent, ThFiltreComponent],
   templateUrl: './meshtastic-companions.component.html',
   styleUrl: './meshtastic-companions.component.scss',
 })
@@ -85,6 +88,60 @@ export class MeshtasticCompanionsComponent implements OnInit {
 
   contacts: ContactMeshtastic[] = [];
 
+  /** Routage : par quelle passerelle chaque nœud a été entendu, et par où l'atteindre. Chargé en
+   * un appel pour tout le tableau (voir ContactMeshtasticService.routage). */
+  routage: RoutageMeshtastic | null = null;
+  routesParNoeud = new Map<number, RouteMeshtastic>();
+  routageEnCours = false;
+  routageErreur = '';
+
+  /** Tri et filtrage des quatre tableaux de la page. Un objet par tableau, déclaré ici : les
+   * accesseurs disent ce qu'une colonne vaut pour le tri (nombre, date, booléen) et ce qu'elle
+   * vaut pour le filtre (le texte lu à l'écran) — voir shared/utils/table-tri-filtre.ts. */
+  triCompagnons = new TableTriFiltre<CompagnonMeshtastic>({
+    nom: { valeur: c => c.nom },
+    node_num: { valeur: c => c.node_num, texte: c => this.nodeNumHex(c.node_num) },
+    broker: { valeur: c => this.brokerTexte(c), texte: c => this.brokerTexte(c) },
+    chiffrement: { valeur: c => c.chiffrement_supporte, texte: c => c.chiffrement_supporte ? 'Supporté' : 'Clair forcé' },
+    cle: { valeur: c => c.x25519_public_key_hex || null, texte: c => c.x25519_public_key_hex || '' },
+    statut: { valeur: c => c.dernier_etat || null, texte: c => c.dernier_etat || 'jamais connecté' },
+    // Date de tri réelle, pas la chaîne affichée : « 09/11 » et « 10/01 » ne se trient pas
+    // dans le bon ordre en texte.
+    connexion: { valeur: c => this.date(c.derniere_connexion), texte: c => this.dateTexte(c.derniere_connexion) },
+    id: { valeur: c => c.id },
+  }, 'nom');
+
+  triCanaux = new TableTriFiltre<CanalMeshtastic>({
+    nom: { valeur: c => c.nom },
+    broker: { valeur: c => c.compagnon_nom || 'Tous les brokers' },
+    chiffre: { valeur: c => !!c.psk_hex, texte: c => c.psk_hex ? 'Oui' : 'Non' },
+    principal: { valeur: c => !!c.principal, texte: c => c.principal ? 'Oui' : 'Non' },
+    actif: { valeur: c => !!c.actif, texte: c => c.actif ? 'Oui' : 'Non' },
+  }, 'nom');
+
+  triContacts = new TableTriFiltre<ContactMeshtastic>({
+    nom: { valeur: c => c.long_name || c.short_name || null, texte: c => c.long_name || c.short_name || '' },
+    node_num: { valeur: c => c.node_num, texte: c => this.nodeNumHex(c.node_num) },
+    materiel: { valeur: c => c.hardware_model || null, texte: c => c.hardware_model || '' },
+    cle: { valeur: c => !!c.public_key_hex, texte: c => c.public_key_hex ? 'Oui (PKI possible)' : 'Non (PSK canal seulement)' },
+    passerelles: { valeur: c => this.passerellesTexte(c), texte: c => this.passerellesTexte(c) },
+    // Les nœuds qu'aucune passerelle n'entend ont `sauts` à null : ils finissent en dernier dans
+    // les deux sens de tri, parce que « inatteignable » n'est pas « à zéro saut ».
+    sauts: { valeur: c => this.routesParNoeud.get(c.node_num)?.sauts ?? null,
+             texte: c => this.sautsTexte(c) },
+    joindre: { valeur: c => this.routesParNoeud.get(c.node_num)?.compagnon_nom || null,
+               texte: c => this.routesParNoeud.get(c.node_num)?.raison || '' },
+    contact: { valeur: c => this.date(c.dernier_advert), texte: c => this.dateTexte(c.dernier_advert) },
+    attribue: { valeur: c => c.deja_associe, texte: c => c.deja_associe ? 'Oui' : 'Non' },
+  }, 'contact', -1);
+
+  triNoeuds = new TableTriFiltre<NoeudUtilisateurMeshtastic>({
+    utilisateur: { valeur: n => n.utilisateur_nom || null, texte: n => n.utilisateur_nom || '' },
+    nom_noeud: { valeur: n => n.nom_noeud || null, texte: n => n.nom_noeud || '' },
+    node_num: { valeur: n => n.node_num, texte: n => this.nodeNumHex(n.node_num) },
+    actif: { valeur: n => !!n.actif, texte: n => n.actif ? 'Oui' : 'Non' },
+  }, 'utilisateur');
+
   constructor(
     private service: CompagnonMeshtasticService,
     private detecterService: MeshLocalDetecterService,
@@ -99,6 +156,7 @@ export class MeshtasticCompanionsComponent implements OnInit {
     this.loadCanaux();
     this.loadNoeuds();
     this.loadContacts();
+    this.chargerRoutage();
     this.userService.getAll().subscribe(data => { this.utilisateurs = data; });
   }
 
@@ -106,9 +164,71 @@ export class MeshtasticCompanionsComponent implements OnInit {
     this.contactService.getAll().subscribe(data => { this.contacts = data; });
   }
 
-  /** Contacts pas encore associés à un compte — alimente le sélecteur d'attribution rapide. */
-  get contactsDisponibles(): ContactMeshtastic[] {
-    return this.contacts.filter(c => !c.deja_associe);
+  /** Relu à la demande : le calcul relit une semaine de liaisons, donc jamais en boucle. */
+  chargerRoutage(): void {
+    this.routageEnCours = true;
+    this.routageErreur = '';
+    this.contactService.routage().subscribe({
+      next: resultat => {
+        this.routage = resultat;
+        this.routesParNoeud = new Map(resultat.routes.map(r => [r.node_num, r]));
+        this.routageEnCours = false;
+      },
+      error: () => {
+        this.routageEnCours = false;
+        this.routageErreur = 'Impossible de calculer le routage des nœuds.';
+      },
+    });
+  }
+
+  route(contact: ContactMeshtastic): RouteMeshtastic | undefined {
+    return this.routesParNoeud.get(contact.node_num);
+  }
+
+  /** Tableaux affichés : filtrés et triés. */
+  get compagnonsAffiches(): CompagnonMeshtastic[] {
+    return this.triCompagnons.appliquer(this.companions);
+  }
+
+  get canauxAffiches(): CanalMeshtastic[] {
+    return this.triCanaux.appliquer(this.canaux);
+  }
+
+  /** TOUS les nœuds détectés, attribués ou non — la colonne « Attribué » est filtrable. Avant,
+   * la page ne montrait que les non attribués : les autres devenaient invisibles, routage
+   * compris, alors que ce sont justement ceux qu'on cherche à joindre. */
+  get contactsAffiches(): ContactMeshtastic[] {
+    return this.triContacts.appliquer(this.contacts);
+  }
+
+  get noeudsAffiches(): NoeudUtilisateurMeshtastic[] {
+    return this.triNoeuds.appliquer(this.noeuds);
+  }
+
+  brokerTexte(c: CompagnonMeshtastic): string {
+    if (c.connexion_type === 'TCP') return `${c.tcp_host}:${c.tcp_port}`;
+    return `${c.broker_host}:${c.broker_port}`;
+  }
+
+  passerellesTexte(c: ContactMeshtastic): string {
+    const route = this.routesParNoeud.get(c.node_num);
+    if (!route || !route.passerelles.length) return '';
+    return route.passerelles.map(p => p.nom).join(', ');
+  }
+
+  sautsTexte(c: ContactMeshtastic): string {
+    const sauts = this.routesParNoeud.get(c.node_num)?.sauts;
+    if (sauts === null || sauts === undefined) return 'hors de portée';
+    return sauts === 1 ? 'direct' : `${sauts} sauts`;
+  }
+
+  /** Date de tri ; null quand elle manque, pour que le vide reste en dernier. */
+  date(valeur: string | null | undefined): Date | null {
+    return valeur ? new Date(valeur) : null;
+  }
+
+  dateTexte(valeur: string | null | undefined): string {
+    return valeur ? new Date(valeur).toLocaleString('fr-FR') : '';
   }
 
   load(): void {

@@ -156,3 +156,81 @@
     &:disabled { opacity: .5; cursor: not-allowed; }
   }
 }
+
+/* ---------------------------------------------------- tri, filtrage, routage des nœuds */
+
+.barre-recherche {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  flex-wrap: wrap;
+  margin-bottom: .6rem;
+
+  .form-input { max-width: 22rem; }
+  .compteur { color: var(--ac-text-muted, #6b7280); font-size: .8rem; }
+}
+
+.data-table {
+  /* En-tête de tri : le survol doit montrer que la colonne est cliquable, sans la déguiser en
+     bouton — le pointeur et l'indicateur sont portés par le composant th[appThTri]. */
+  .th-triable:hover { color: var(--ac-text, #111827); }
+  .th-triable:focus-visible { outline: 2px solid var(--brand-primary-lisible, #2563eb); outline-offset: -2px; }
+
+  /* Deuxième ligne d'en-tête : les champs de filtre. Pas de texte en capitales ici, ce sont des
+     champs de saisie et non des libellés. */
+  .ligne-filtres th {
+    text-transform: none;
+    letter-spacing: normal;
+    border-bottom: 2px solid var(--ac-border-strong, #d1d5db);
+  }
+
+  .passerelle {
+    display: inline-block;
+    padding: .15rem .5rem;
+    margin: 0 .25rem .2rem 0;
+    border-radius: 4px;
+    font-size: .8rem;
+    background: var(--ac-teal-bg, #ccfbf1);
+    color: var(--ac-teal-text, #0f766e);
+    border: 1px solid var(--ac-teal-border, #99f6e4);
+
+    /* Passerelle d'un tiers : on la voit, on ne maîtrise pas sa descente. Distinguée à l'œil
+       parce que c'est la différence entre « joignable » et « on l'entend, c'est tout ». */
+    &.passerelle-tiers {
+      background: var(--ac-surface-2, #f3f4f6);
+      color: var(--ac-text-muted, #6b7280);
+      border-color: var(--ac-border, #e5e7eb);
+      border-style: dashed;
+    }
+  }
+
+  .snr { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: .75rem; opacity: .85; }
+
+  .avert {
+    display: inline-block;
+    margin-left: .3rem;
+    padding: .1rem .4rem;
+    border-radius: 4px;
+    font-size: .72rem;
+    background: var(--ac-amber-bg, #fef3c7);
+    color: var(--ac-orange-text, #92400e);
+  }
+
+  .companion-cible { font-weight: 600; }
+
+  .detail-routage {
+    margin-top: .2rem;
+
+    summary { cursor: pointer; font-size: .75rem; color: var(--ac-text-muted, #6b7280); }
+    .raison { margin: .4rem 0; font-size: .8rem; max-width: 48ch; }
+
+    .chemin {
+      margin: .3rem 0 0;
+      padding-left: 1.2rem;
+      font-size: .78rem;
+
+      li { margin-bottom: .2rem; }
+      .source { margin-left: .3rem; color: var(--ac-text-subtle, #9ca3af); font-size: .7rem; }
+    }
+  }
+}

@@ -223,7 +223,7 @@ docker compose down -v                                 # arrêt + SUPPRESSION de
 | `oidc.py`, `matrix.py` | SSO OIDC pour Synapse, correspondance utilisateur ↔ Matrix |
 | `geo_lookup.py`, `geo_reference.py` | géocodage et référentiel des communes |
 | `inondation.py`, `ruissellement.py`, `hydrometrie.py`, `tasks.py` | simulation d'inondation (tâche Celery) |
-| `routage_mesh.py`, `sync_outbox.py` | routage MeshCore, synchronisation satellite → central |
+| `routage_mesh.py`, `routage_meshtastic.py`, `sync_outbox.py` | routage MeshCore, routage Meshtastic (§ 9.5.2), synchronisation satellite → central |
 | `imports.py`, `export.py` | import CSV/XLS (personnel, institutions, habitations), exports |
 | `metrics.py` | métriques Prometheus métier (voir § 9) |
 | `crypto_fields.py`, `file_crypto.py` | chiffrement des colonnes et des fichiers sensibles (§ 10.1) |
@@ -1637,6 +1637,64 @@ envoie quelqu'un sur un point haut :
 - au-delà de **120 km**, c'est une erreur de position, pas une liaison directe ;
 - relais sourd : **médiane** sur au moins deux voisins dont une mesure réciproque — une mesure
   isolée peut venir du partenaire, pas du nœud examiné.
+
+### 9.5.2 Routage Meshtastic : par où joindre un nœud
+
+`core/routage_meshtastic.py`, exposé par `GET /api/contacts-meshtastic/routage/` et affiché dans
+le tableau « Nœuds détectés » de **`/admin/meshtastic-companions`**. Équivalent Meshtastic de
+`routage_mesh.py` (MeshCore), dont il reprend le principe : jamais un choix opaque, le résultat
+porte toujours une `raison` lisible, affichée telle quelle.
+
+**Deux questions, et il ne faut pas les confondre.** « Quelle passerelle a entendu ce nœud ? » est
+une observation : une passerelle MQTT a reçu un de ses paquets *sans relais intermédiaire*
+(`hop_start == hop_limit`, voir `_observer_liaison_rf` dans le pont). « Par où l'atteindre ? » ne
+s'en déduit pas, pour trois raisons :
+
+- **le broker cloisonne** : il faut émettre par le companion qui a vu le nœud
+  (`ContactMeshtastic.compagnon`, le plus récent quand plusieurs l'ont vu) ; publier sur un autre
+  broker, c'est publier dans un autre réseau ;
+- **la passerelle qui entend n'est pas forcément la nôtre** : sur un broker partagé (Gaulix) la
+  plupart appartiennent à des tiers. On voit alors le nœud sans maîtriser le dernier saut — la
+  descente dépend du `downlink_enabled` de cette passerelle, qu'on ne peut pas lire chez
+  quelqu'un d'autre. Le tableau distingue donc les passerelles « à nous » des autres (trait
+  pointillé) ;
+- **une liaison est orientée** : « elle l'entend » n'implique pas « il l'entend ». Chaque saut
+  porte `retour_prouve` ; un chemin dont le retour n'est pas observé sert à écouter, pas
+  forcément à parler.
+
+Le nombre de sauts est la conclusion la plus actionnable : `hop_limit` vaut **3 par défaut**
+(maximum 7) et décroît à chaque relais. Un nœud à 4 sauts est hors d'atteinte sans relever cette
+limite, et le paquet est abandonné en route **sans erreur** pour l'émetteur. Un relais unique sur
+le chemin est signalé comme point de panne unique.
+
+Un `null` en nombre de sauts signifie « aucune passerelle ne l'a entendu en 7 jours », pas « à
+zéro saut » : ces nœuds sont affichés « hors de portée » et restent en dernier dans les deux sens
+de tri (voir `shared/utils/table-tri-filtre.ts`). Un saut de traceroute compte comme chemin — il
+prouve un saut radio direct — mais son récepteur n'est **pas** compté comme passerelle : un relais
+traversé ne publie pas forcément sur MQTT.
+
+Non fait, et c'est un choix : l'envoi d'un DM Meshtastic exige toujours un `compagnon` explicite.
+Le routage *renseigne* l'opérateur, il ne sélectionne pas encore le companion à sa place comme le
+fait MeshCore — se tromper enverrait le message sur le mauvais broker, où il n'arriverait jamais.
+
+### 9.5.3 Tri et filtrage des tableaux
+
+`frontend/src/app/shared/utils/table-tri-filtre.ts` et les deux composants
+`th[appThTri]` / `th[appThFiltre]` (`shared/components/common/table-tri/`). Sélecteurs
+d'**attribut** sur `th` : un élément `<app-…>` placé dans un `<tr>` est sorti du tableau par le
+navigateur et la mise en page est détruite.
+
+Trois décisions verrouillées par des tests :
+
+- **les valeurs inconnues restent en dernier dans les deux sens** — un `null` trié comme valeur
+  minimale ferait passer « jamais entendu » pour « le plus récent » ;
+- **comparaison insensible à la casse et aux accents** : en français, filtrer « elysee » doit
+  trouver « Élysée », et `<` sur des chaînes place les lettres accentuées après `z` ;
+- **le tri porte sur la valeur, le filtre sur le texte affiché** : une date se trie
+  chronologiquement mais se filtre comme elle est lue ; un booléen se filtre en tapant « oui ».
+
+Filtres de colonne et recherche globale se **cumulent** (ET). Le clic sur un en-tête fait
+croissant → décroissant → ordre du serveur, qui a souvent un sens.
 
 **Correction de puissance** (06/11/2026) : la puissance d'émission vient désormais d'une lecture de
 configuration à distance (§ 9.5.2) et alimente `ConfigurationNoeudMeshtastic`. L'écart de SNR est
