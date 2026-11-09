@@ -35,23 +35,47 @@ describe('MeshtasticAdministrationComponent', () => {
 
   /** Catalogue minimal, dans la forme exacte que sert le serveur. */
   const CATALOGUE = {
-    lora: {
-      libelle: 'Radio LoRa', module: false, redemarre: true,
-      champs: {
-        hop_limit: { type: 'entier', libelle: 'Nombre de sauts', aide: 'x', mini: 1, maxi: 7,
-                     valeurs_speciales: [] },
-        region: { type: 'enumeration', libelle: 'Région', aide: 'x', valeurs: ['EU_868', 'EU_433'] },
-        tx_enabled: { type: 'booleen', libelle: 'Émission activée', aide: 'x' },
+    sections: {
+      lora: {
+        libelle: 'Radio LoRa', module: false, redemarre: true, reglementaire: true,
+        champs: {
+          hop_limit: { type: 'entier', libelle: 'Nombre de sauts', aide: 'x', mini: 1, maxi: 7,
+                       valeurs_speciales: [], reglementaire: false, avertissement: '' },
+          region: { type: 'enumeration', libelle: 'Région', aide: 'x',
+                    valeurs: ['EU_868', 'EU_433', 'US'], reglementaire: true,
+                    avertissement: 'cadre francais',
+                    avertissements_par_valeur: {
+                      EU_868: '869.4 a 869.65 MHz, 27 dBm. La Reunion : a verifier.',
+                      US: '902.0 a 928.0 MHz, 30 dBm.',
+                    } },
+          tx_power: { type: 'entier', libelle: 'Puissance', aide: 'x', mini: 1, maxi: 36,
+                      valeurs_speciales: [], reglementaire: true, avertissement: 'is_licensed' },
+          override_frequency: { type: 'reel', libelle: 'Fréquence imposée', aide: 'x',
+                                mini: 400, maxi: 1000, valeurs_speciales: [0],
+                                reglementaire: true, avertissement: 'hors bande' },
+          frequency_offset: { type: 'reel', libelle: 'Décalage', aide: 'x', mini: -10, maxi: 10,
+                              valeurs_speciales: [], reglementaire: true, avertissement: 'en MHz' },
+          tx_enabled: { type: 'booleen', libelle: 'Émission activée', aide: 'x',
+                        reglementaire: false, avertissement: "l'appareil en main" },
+        },
+      },
+      voisinage: {
+        libelle: 'Module Voisinage', module: true, redemarre: false, reglementaire: false,
+        champs: {
+          enabled: { type: 'booleen', libelle: 'Module activé', aide: 'x',
+                     reglementaire: false, avertissement: '' },
+          update_interval: { type: 'entier', libelle: 'Intervalle', aide: 'x',
+                             mini: 14400, maxi: 604800, valeurs_speciales: [],
+                             reglementaire: false, avertissement: '' },
+        },
       },
     },
-    voisinage: {
-      libelle: 'Module Voisinage', module: true, redemarre: false,
-      champs: {
-        enabled: { type: 'booleen', libelle: 'Module activé', aide: 'x' },
-        update_interval: { type: 'entier', libelle: 'Intervalle', aide: 'x',
-                           mini: 14400, maxi: 604800, valeurs_speciales: [] },
-      },
+    avertissement_france: "Le TNRBF s'applique en outre-mer sous reserve de dispositions particulieres.",
+    regions_firmware: {
+      EU_868: { debut_mhz: 869.4, fin_mhz: 869.65, rapport_cyclique_pct: 10, puissance_max_dbm: 27 },
     },
+    regions_sans_table_firmware: ['EU_874'],
+    regions_radioamateur: ['ITU1_2M'],
   } as any;
 
   beforeEach(() => {
@@ -179,23 +203,47 @@ describe('MeshtasticAdministrationComponent — éditeur de réglages', () => {
   const urlReglages = `${urlTaches}/reglages/`;
 
   const CATALOGUE = {
-    lora: {
-      libelle: 'Radio LoRa', module: false, redemarre: true,
-      champs: {
-        hop_limit: { type: 'entier', libelle: 'Nombre de sauts', aide: 'x', mini: 1, maxi: 7,
-                     valeurs_speciales: [] },
-        region: { type: 'enumeration', libelle: 'Région', aide: 'x', valeurs: ['EU_868', 'EU_433'] },
-        tx_enabled: { type: 'booleen', libelle: 'Émission activée', aide: 'x' },
+    sections: {
+      lora: {
+        libelle: 'Radio LoRa', module: false, redemarre: true, reglementaire: true,
+        champs: {
+          hop_limit: { type: 'entier', libelle: 'Nombre de sauts', aide: 'x', mini: 1, maxi: 7,
+                       valeurs_speciales: [], reglementaire: false, avertissement: '' },
+          region: { type: 'enumeration', libelle: 'Région', aide: 'x',
+                    valeurs: ['EU_868', 'EU_433', 'US'], reglementaire: true,
+                    avertissement: 'cadre francais',
+                    avertissements_par_valeur: {
+                      EU_868: '869.4 a 869.65 MHz, 27 dBm. La Reunion : a verifier.',
+                      US: '902.0 a 928.0 MHz, 30 dBm.',
+                    } },
+          tx_power: { type: 'entier', libelle: 'Puissance', aide: 'x', mini: 1, maxi: 36,
+                      valeurs_speciales: [], reglementaire: true, avertissement: 'is_licensed' },
+          override_frequency: { type: 'reel', libelle: 'Fréquence imposée', aide: 'x',
+                                mini: 400, maxi: 1000, valeurs_speciales: [0],
+                                reglementaire: true, avertissement: 'hors bande' },
+          frequency_offset: { type: 'reel', libelle: 'Décalage', aide: 'x', mini: -10, maxi: 10,
+                              valeurs_speciales: [], reglementaire: true, avertissement: 'en MHz' },
+          tx_enabled: { type: 'booleen', libelle: 'Émission activée', aide: 'x',
+                        reglementaire: false, avertissement: "l'appareil en main" },
+        },
+      },
+      voisinage: {
+        libelle: 'Module Voisinage', module: true, redemarre: false, reglementaire: false,
+        champs: {
+          enabled: { type: 'booleen', libelle: 'Module activé', aide: 'x',
+                     reglementaire: false, avertissement: '' },
+          update_interval: { type: 'entier', libelle: 'Intervalle', aide: 'x',
+                             mini: 14400, maxi: 604800, valeurs_speciales: [],
+                             reglementaire: false, avertissement: '' },
+        },
       },
     },
-    voisinage: {
-      libelle: 'Module Voisinage', module: true, redemarre: false,
-      champs: {
-        enabled: { type: 'booleen', libelle: 'Module activé', aide: 'x' },
-        update_interval: { type: 'entier', libelle: 'Intervalle', aide: 'x',
-                           mini: 14400, maxi: 604800, valeurs_speciales: [] },
-      },
+    avertissement_france: "Le TNRBF s'applique en outre-mer sous reserve de dispositions particulieres.",
+    regions_firmware: {
+      EU_868: { debut_mhz: 869.4, fin_mhz: 869.65, rapport_cyclique_pct: 10, puissance_max_dbm: 27 },
     },
+    regions_sans_table_firmware: ['EU_874'],
+    regions_radioamateur: ['ITU1_2M'],
   } as any;
 
   beforeEach(() => {
@@ -267,6 +315,93 @@ describe('MeshtasticAdministrationComponent — éditeur de réglages', () => {
     composant.sectionChoisie = 'voisinage';
     const champ = composant.champsSection.find(c => c.cle === 'update_interval');
     expect(champ?.champ.mini).toBe(14400);
+  });
+
+  it('exige une confirmation réglementaire quand un réglage réglementé est coché', () => {
+    // Le but n'est pas d'interdire : l'exploitant peut poser la fréquence qu'il veut. Le but est
+    // que ce soit délibéré, nominatif et journalisé — 868 MHz n'est pas la même bande partout.
+    const composant = demarrer().componentInstance;
+    composant.nouvelle.type_tache = 'DEFINIR_REGLAGES';
+    composant.sectionChoisie = 'lora';
+    composant.reinitialiserReglages();
+    composant.reglagesModifies['override_frequency'] = { actif: true, valeur: 869.525 };
+
+    expect(composant.confirmationReglementaireRequise).toBeTrue();
+    expect(composant.confirmationReglementaireManquante).toBeTrue();
+    composant.confirmationReglementaire = true;
+    expect(composant.confirmationReglementaireManquante).toBeFalse();
+  });
+
+  it("n'exige rien pour un réglage anodin", () => {
+    // Sinon la case devient un réflexe, et une case cochée par réflexe ne protège de rien.
+    const composant = demarrer().componentInstance;
+    composant.nouvelle.type_tache = 'DEFINIR_REGLAGES';
+    composant.sectionChoisie = 'lora';
+    composant.reinitialiserReglages();
+    composant.reglagesModifies['hop_limit'].actif = true;
+    expect(composant.confirmationReglementaireRequise).toBeFalse();
+  });
+
+  it('transporte la confirmation avec la tâche', () => {
+    const composant = demarrer().componentInstance;
+    composant.nouvelle.type_tache = 'DEFINIR_REGLAGES';
+    composant.sectionChoisie = 'lora';
+    composant.reinitialiserReglages();
+    composant.reglagesModifies['tx_power'] = { actif: true, valeur: 30 };
+    composant.confirmationReglementaire = true;
+
+    composant.envoyer();
+    const requete = http.expectOne(`${urlTaches}/`);
+    expect(requete.request.body.parametres).toEqual({
+      section: 'lora', valeurs: { tx_power: 30 }, confirmation_reglementaire: true,
+    });
+    requete.flush({});
+    http.expectOne(`${urlTaches}/`).flush([]);
+    http.expectOne(`${environment.apiUrl}/configurations-noeuds-meshtastic/`).flush([]);
+  });
+
+  it('la confirmation ne survit pas à un changement de section', () => {
+    const composant = demarrer().componentInstance;
+    composant.sectionChoisie = 'lora';
+    composant.reinitialiserReglages();
+    composant.confirmationReglementaire = true;
+    composant.sectionChoisie = 'voisinage';
+    composant.reinitialiserReglages();
+    expect(composant.confirmationReglementaire).toBeFalse();
+  });
+
+  it('affiche l’avertissement propre à la région choisie, pas un texte générique', () => {
+    // C'est tout l'objet de la demande : un avertissement identique partout n'est pas lu.
+    const composant = demarrer().componentInstance;
+    composant.sectionChoisie = 'lora';
+    composant.reinitialiserReglages();
+    const champ = composant.champsSection.find(c => c.cle === 'region')!.champ;
+
+    composant.reglagesModifies['region'].valeur = 'EU_868';
+    expect(composant.avertissementValeur('region', champ)).toContain('La Reunion');
+    composant.reglagesModifies['region'].valeur = 'US';
+    expect(composant.avertissementValeur('region', champ)).toContain('902.0');
+  });
+
+  it('exige la confirmation au-dessus du plafond servi par le serveur', () => {
+    const composant = demarrer().componentInstance;
+    composant.nouvelle.type_tache = 'DEFINIR_PUISSANCE';
+    expect(composant.plafondBandeFrDbm).toBe(27);     // lu dans la table du firmware, pas recopié
+    composant.nouvelle.puissance_dbm = 27;
+    expect(composant.confirmationReglementaireRequise).toBeFalse();
+    composant.nouvelle.puissance_dbm = 30;
+    expect(composant.confirmationReglementaireRequise).toBeTrue();
+  });
+
+  it('propose zéro comme valeur initiale d’un champ où zéro désactive', () => {
+    // Partir du minimum donnerait -10 MHz de décalage de fréquence comme valeur proposée, c'est
+    // à dire exactement celle qu'il ne faut pas suggérer.
+    const composant = demarrer().componentInstance;
+    composant.sectionChoisie = 'lora';
+    composant.reinitialiserReglages();
+    expect(composant.reglagesModifies['override_frequency'].valeur).toBe(0);
+    expect(composant.reglagesModifies['frequency_offset'].valeur).toBe(0);
+    expect(composant.reglagesModifies['hop_limit'].valeur).toBe(1);   // 0 hors bornes ici
   });
 
   it('annonce que la section LoRa fait redémarrer le nœud', () => {

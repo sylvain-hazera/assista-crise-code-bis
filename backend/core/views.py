@@ -17938,12 +17938,19 @@ class TacheAdminMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelV
             environment=get_active_environment(self.request),
             demande_par=self.request.user,
         )
+        # La confirmation réglementaire est signalée en clair et en tête du commentaire : c'est
+        # ce qu'on cherchera dans le journal si l'ANFR ou l'exploitant pose la question, et
+        # l'enfouir dans le dictionnaire de paramètres la rendrait introuvable.
+        reglementaire = ""
+        if isinstance(tache.parametres, dict) and tache.parametres.get('confirmation_reglementaire'):
+            reglementaire = " [CONFIRMATION REGLEMENTAIRE donnee par le demandeur]"
         audit_log(
             request=self.request, action_code="CREATION", objet_type="TacheAdminMeshtastic",
             objet_id=tache.id,
             commentaire=(
                 f"Administration Meshtastic : {tache.get_type_tache_display()} sur "
                 f"{'la passerelle ' + tache.compagnon.nom if tache.node_num_cible is None else format(tache.node_num_cible, '08x')}"
+                + reglementaire
                 + (f" (paramètres {tache.parametres})" if tache.parametres else "")
             ),
         )

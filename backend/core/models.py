@@ -6550,11 +6550,18 @@ TACHES_ADMIN_ECRITURE = frozenset({
 NOM_LONG_MAX_OCTETS = 39
 NOM_COURT_MAX_OCTETS = 4
 
-# Puissance d'émission maximale acceptée, en dBm. 27 dBm (500 mW) est le plafond de la bande
-# 869,4-869,65 MHz utilisée par le preset EU_868, sous réserve d'un rapport cyclique de 10 %
-# (décision ERC 70-03, reprise par l'ARCEP). Le firmware ne vérifie PAS cette valeur dans
-# AdminModule (vérifié dans le code le 06/11/2026) : c'est donc ici qu'on la borne, pas ailleurs.
+# Puissance d'émission, en dBm. 27 dBm (500 mW) est le plafond de la bande 869,4-869,65 MHz
+# utilisée par la région EU_868, sous réserve d'un rapport cyclique de 10 % (décision ERC 70-03,
+# reprise par l'ARCEP). Le firmware ne vérifie PAS cette valeur dans AdminModule (vérifié dans le
+# code le 06/11/2026) : c'est donc ici qu'on la borne, pas ailleurs.
+#
+# Deux plafonds, une seule règle (révision du 09/11/2026) : jusqu'à PUISSANCE_MAX_DBM la demande
+# passe seule ; au-delà, jusqu'à PUISSANCE_MAX_ABSOLUE_DBM, elle exige la confirmation
+# réglementaire explicite, comme les autres réglages qui décident de ce qui part dans l'air (voir
+# core/mesh_reglages.py). 36 dBm est le plafond de la région la plus permissive de la table du
+# firmware (NZ_865) : c'est une borne de cohérence, pas une autorisation.
 PUISSANCE_MAX_DBM = 27
+PUISSANCE_MAX_ABSOLUE_DBM = 36
 PUISSANCE_MIN_DBM = 1
 
 # Nombre de passages du pont avant d'abandonner une tâche. Une opération d'administration

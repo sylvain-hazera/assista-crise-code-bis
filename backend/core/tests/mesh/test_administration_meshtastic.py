@@ -476,17 +476,18 @@ class TestReglagesDeNoeud:
         garantirait qu'elles divergent."""
         reponse = institutionnel.get(f"{URL_LISTE}reglages/")
         assert reponse.status_code == 200
-        assert set(reponse.data) >= {"device", "lora", "position", "voisinage", "telemetrie"}
-        lora = reponse.data["lora"]
+        sections = reponse.data["sections"]
+        assert set(sections) >= {"device", "lora", "position", "voisinage", "telemetrie"}
+        lora = sections["lora"]
         assert lora["redemarre"] is True           # le firmware redémarre sur un changement LoRa
         assert lora["champs"]["hop_limit"] == {
             "type": "entier", "libelle": "Nombre de sauts",
             "aide": lora["champs"]["hop_limit"]["aide"], "mini": 1, "maxi": 7,
-            "valeurs_speciales": [],
+            "valeurs_speciales": [], "reglementaire": False, "avertissement": "",
         }
-        assert reponse.data["voisinage"]["module"] is True
+        assert sections["voisinage"]["module"] is True
         # 4 h : minimum imposé par le firmware pour un rapport de voisinage sur LoRa.
-        assert reponse.data["voisinage"]["champs"]["update_interval"]["mini"] == 14400
+        assert sections["voisinage"]["champs"]["update_interval"]["mini"] == 14400
 
     def test_la_lecture_d_une_section_est_ouverte_aux_institutionnels(self, institutionnel, passerelle):
         reponse = institutionnel.post(URL_LISTE, {
@@ -511,9 +512,11 @@ class TestReglagesDeNoeud:
         assert reponse.status_code == 403
 
     def test_un_administrateur_peut_modifier_le_nombre_de_sauts(self, administrateur, passerelle):
+        """`hop_limit` seul : il change la portée, pas la bande ni la puissance — donc pas de
+        confirmation réglementaire. `tx_power` en exigerait une (voir TestReglagesReglementes)."""
         reponse = administrateur.post(URL_LISTE, {
             "compagnon": str(passerelle.id), "type_tache": "DEFINIR_REGLAGES",
-            "parametres": {"section": "lora", "valeurs": {"hop_limit": 4, "tx_power": 20}},
+            "parametres": {"section": "lora", "valeurs": {"hop_limit": 4}},
         }, format="json")
         assert reponse.status_code == 201, reponse.data
         assert TacheAdminMeshtastic.objects.get().est_ecriture
@@ -523,18 +526,26 @@ class TestReglagesDeNoeud:
         ({"hop_limit": "trois"}, "entier est attendu"),
         ({"hop_limit": True}, "entier est attendu"),
         ({"region": "UNSET"}, "n'est pas acceptée"),
-        ({"region": "US"}, "inconnue"),
         ({"modem_preset": "SUPER_RAPIDE"}, "inconnue"),
-        ({"tx_power": 30}, "hors bornes"),
-        ({"override_frequency": 868.5}, "non modifiable"),
-        ({"channel_num": 20}, "non modifiable"),
+        ({"region": "ATLANTIDE"}, "inconnue"),
+        ({"tx_power": 40}, "hors bornes"),
+        ({"override_frequency": 1200.0}, "hors bornes"),
+        ({"channel_num": 500}, "hors bornes"),
+        # Valides, mais refusées faute de confirmation réglementaire (TestReglagesReglementes).
+        ({"region": "US"}, "contrainte réglementaire"),
+        ({"tx_power": 30}, "contrainte réglementaire"),
+        ({"override_frequency": 868.5}, "contrainte réglementaire"),
+        ({"channel_num": 20}, "contrainte réglementaire"),
         ({}, "Aucun réglage"),
     ])
     def test_les_valeurs_invalides_sont_refusees_avec_la_raison(self, administrateur, passerelle,
                                                                valeurs, extrait):
-        """`override_frequency` et `channel_num` sont volontairement hors liste blanche : ils
-        font émettre hors de la bande prévue, ce qui est une infraction réglementaire et n'est
-        pas rattrapable sur un relais inaccessible. Son module les accepte ; nous non."""
+        """**Politique inversée le 09/11/2026, à la demande de l'exploitant.** `override_frequency`,
+        `channel_num`, `tx_power` au-dessus de 27 dBm et les régions hors Europe étaient hors
+        liste blanche, refusés par principe. Ils sont désormais modifiables : 868 MHz ne désigne
+        pas la même bande ni les mêmes conditions en métropole et à La Réunion, et trancher à sa
+        place l'empêchait de faire ce que sa situation autorise. Ce qui reste refusé ici, c'est
+        une valeur qu'aucune région n'accepterait, ou une demande non confirmée."""
         reponse = administrateur.post(URL_LISTE, {
             "compagnon": str(passerelle.id), "type_tache": "DEFINIR_REGLAGES",
             "parametres": {"section": "lora", "valeurs": valeurs},
@@ -603,3 +614,206 @@ class TestReglagesDeNoeud:
                            "valeurs": {"role": "ROUTER", "rebroadcast_mode": "ALL"}},
         }, format="json")
         assert reponse.status_code == 201, reponse.data
+
+
+@pytest.mark.django_db
+class TestReglagesReglementes:
+    """Réglages qui décident de ce qui part dans l'air : fréquence, numéro de canal, décalage,
+    rapport cyclique, puissance, région.
+
+    Ils sont EXPOSÉS (décision du 09/11/2026) : 868 MHz ne désigne pas la même bande ni les mêmes
+    conditions en métropole et à La Réunion, et un outil qui tranche à la place de l'exploitant
+    l'empêche de faire ce que sa situation autorise. Ce qui est verrouillé ici, ce n'est donc pas
+    l'interdiction — c'est que la demande soit DÉLIBÉRÉE et TRAÇABLE : confirmation explicite,
+    nominative, au journal d'audit. Et que l'avertissement affiché dise la vérité du firmware,
+    pas une généralité."""
+
+    def _ecrire(self, client, passerelle, valeurs, confirmer=False):
+        parametres = {"section": "lora", "valeurs": valeurs}
+        if confirmer:
+            parametres["confirmation_reglementaire"] = True
+        return client.post(URL_LISTE, {
+            "compagnon": str(passerelle.id), "type_tache": "DEFINIR_REGLAGES",
+            "parametres": parametres,
+        }, format="json")
+
+    @pytest.mark.parametrize("valeurs", [
+        {"override_frequency": 869.525},
+        {"channel_num": 3},
+        {"frequency_offset": 0.002},
+        {"override_duty_cycle": True},
+        {"region": "US"},
+        {"tx_power": 30},
+    ])
+    def test_un_reglage_reglemente_est_refuse_sans_confirmation(self, administrateur, passerelle, valeurs):
+        reponse = self._ecrire(administrateur, passerelle, valeurs)
+        assert reponse.status_code == 400
+        assert "contrainte réglementaire" in str(reponse.data)
+        assert TacheAdminMeshtastic.objects.count() == 0
+
+    @pytest.mark.parametrize("valeurs", [
+        {"override_frequency": 869.525},
+        {"channel_num": 3},
+        {"frequency_offset": 0.002},
+        {"override_duty_cycle": True},
+        {"region": "US"},
+        {"tx_power": 30},
+    ])
+    def test_le_meme_reglage_passe_avec_la_confirmation(self, administrateur, passerelle, valeurs):
+        """Le but n'est pas d'interdire : c'est de rendre l'acte délibéré."""
+        reponse = self._ecrire(administrateur, passerelle, valeurs, confirmer=True)
+        assert reponse.status_code == 201, reponse.data
+        assert TacheAdminMeshtastic.objects.get().parametres["confirmation_reglementaire"] is True
+
+    def test_la_confirmation_est_lisible_dans_le_journal_d_audit(self, administrateur, passerelle):
+        """C'est ce qu'on cherchera si la question est posée : enfouie dans le dictionnaire de
+        paramètres, elle serait introuvable."""
+        from core.models import AuditLog
+        self._ecrire(administrateur, passerelle, {"override_duty_cycle": True}, confirmer=True)
+        journal = AuditLog.objects.filter(objet_type="TacheAdminMeshtastic").latest('date_action')
+        assert "CONFIRMATION REGLEMENTAIRE" in journal.commentaire
+
+    def test_un_reglage_anodin_n_exige_aucune_confirmation(self, administrateur, passerelle):
+        """Sinon la case devient un réflexe, et une case cochée par réflexe ne protège de rien."""
+        reponse = self._ecrire(administrateur, passerelle, {"hop_limit": 5})
+        assert reponse.status_code == 201, reponse.data
+
+    def test_un_melange_exige_la_confirmation_a_cause_du_seul_champ_reglemente(self, administrateur, passerelle):
+        reponse = self._ecrire(administrateur, passerelle, {"hop_limit": 5, "tx_power": 30})
+        assert reponse.status_code == 400
+        assert "tx_power" in str(reponse.data)
+
+    def test_la_fraction_de_mhz_est_conservee(self, administrateur, passerelle):
+        """Un décalage de quartz se compte en kHz : arrondir 0,002 MHz à l'entier le rendrait
+        inutilisable, et arrondir une fréquence déplacerait le nœud hors du réseau."""
+        self._ecrire(administrateur, passerelle, {"override_frequency": 869.525}, confirmer=True)
+        assert TacheAdminMeshtastic.objects.get().parametres["valeurs"]["override_frequency"] == 869.525
+
+    @pytest.mark.parametrize("valeurs", [
+        {"override_frequency": 1200.0},       # hors 400-1000 MHz
+        {"override_frequency": True},         # un booléen n'est pas une fréquence
+        {"frequency_offset": 50.0},           # 50 MHz de décalage n'a aucun sens
+        {"channel_num": 500},                 # aucune région n'a 500 créneaux
+        {"tx_power": 40},                     # au-dessus de toute région du firmware
+        {"region": "ATLANTIDE"},
+    ])
+    def test_une_valeur_absurde_reste_refusee_meme_confirmee(self, administrateur, passerelle, valeurs):
+        """La confirmation lève la contrainte réglementaire, pas les bornes : elle dit « j'assume
+        la conformité », pas « accepte n'importe quoi »."""
+        reponse = self._ecrire(administrateur, passerelle, valeurs, confirmer=True)
+        assert reponse.status_code == 400
+
+    def test_zero_desactive_la_frequence_imposee(self, administrateur, passerelle):
+        """0 est hors de l'intervalle 400-1000 et pourtant accepté : c'est la valeur « le nœud
+        suit le plan de canaux de sa région »."""
+        reponse = self._ecrire(administrateur, passerelle, {"override_frequency": 0}, confirmer=True)
+        assert reponse.status_code == 201, reponse.data
+
+    def test_la_puissance_dediee_passe_seule_sous_le_plafond_francais(self, administrateur, passerelle):
+        reponse = administrateur.post(URL_LISTE, {
+            "compagnon": str(passerelle.id), "type_tache": "DEFINIR_PUISSANCE",
+            "parametres": {"puissance_dbm": 27},
+        }, format="json")
+        assert reponse.status_code == 201, reponse.data
+
+    def test_la_puissance_dediee_au_dessus_de_27_dbm_exige_la_confirmation(self, administrateur, passerelle):
+        """27 dBm (500 mW) est le plafond que le firmware applique à EU_868. Au-dessus, certaines
+        régions l'autorisent et le firmware ne borne plus un propriétaire « licencié » : c'est
+        donc possible, mais pas par inadvertance."""
+        refus = administrateur.post(URL_LISTE, {
+            "compagnon": str(passerelle.id), "type_tache": "DEFINIR_PUISSANCE",
+            "parametres": {"puissance_dbm": 30},
+        }, format="json")
+        assert refus.status_code == 400
+        assert "confirmation_reglementaire" in str(refus.data)
+
+        accord = administrateur.post(URL_LISTE, {
+            "compagnon": str(passerelle.id), "type_tache": "DEFINIR_PUISSANCE",
+            "parametres": {"puissance_dbm": 30, "confirmation_reglementaire": True},
+        }, format="json")
+        assert accord.status_code == 201, accord.data
+
+
+@pytest.mark.django_db
+class TestAvertissementsDuCatalogue:
+    """L'avertissement doit dire la vérité du FIRMWARE, et être propre à la zone choisie.
+
+    Un avertissement identique partout n'est pas lu. Celui d'une région dit la bande, la
+    puissance et le rapport cyclique que l'appareil appliquera réellement — valeurs recopiées de
+    la table RDEF de `src/mesh/RadioInterface.cpp`, pas de la documentation publique, qui ne les
+    donne pas."""
+
+    def _catalogue(self, client):
+        reponse = client.get(f"{URL_LISTE}reglages/")
+        assert reponse.status_code == 200
+        return reponse.data
+
+    def test_chaque_region_porte_son_propre_avertissement(self, institutionnel):
+        catalogue = self._catalogue(institutionnel)
+        region = catalogue["sections"]["lora"]["champs"]["region"]
+        assert region["reglementaire"] is True
+        avertissements = region["avertissements_par_valeur"]
+        # Au moins les régions européennes et une région lointaine, chacune avec SON texte.
+        assert avertissements["EU_868"] != avertissements["US"]
+        assert "869.4" in avertissements["EU_868"] and "869.65" in avertissements["EU_868"]
+        assert "27 dBm" in avertissements["EU_868"]
+        assert "902.0" in avertissements["US"]
+
+    def test_l_avertissement_europeen_dit_que_l_outre_mer_n_est_pas_automatique(self, institutionnel):
+        """C'est le point de départ de toute cette reprise : la bande de 868 MHz n'est pas la
+        même affaire en métropole et à La Réunion."""
+        catalogue = self._catalogue(institutionnel)
+        texte = catalogue["sections"]["lora"]["champs"]["region"]["avertissements_par_valeur"]["EU_868"]
+        assert "La Réunion" in texte
+        assert "chapitre 7" in texte
+        assert catalogue["avertissement_france"] in texte
+
+    def test_une_region_absente_de_la_table_du_firmware_est_signalee(self, institutionnel):
+        """Sept régions existent dans le protobuf sans entrée dans la table du firmware : les
+        poser peut rendre le nœud muet, et il faudra l'appareil en main."""
+        catalogue = self._catalogue(institutionnel)
+        assert "EU_874" in catalogue["regions_sans_table_firmware"]
+        texte = catalogue["sections"]["lora"]["champs"]["region"]["avertissements_par_valeur"]["EU_874"]
+        assert "muet" in texte
+
+    def test_une_region_radioamateur_rappelle_la_licence(self, institutionnel):
+        catalogue = self._catalogue(institutionnel)
+        assert "ITU1_2M" in catalogue["regions_radioamateur"]
+        texte = catalogue["sections"]["lora"]["champs"]["region"]["avertissements_par_valeur"]["ITU1_2M"]
+        assert "licence" in texte
+        assert "tiers" in texte
+
+    def test_le_rapport_cyclique_dit_que_le_firmware_est_deja_plus_strict_que_la_loi(self, institutionnel):
+        """Fait non évident, vérifié dans AirTime::isTxAllowedAirUtil : le limiteur s'arrête à la
+        MOITIÉ du rapport cyclique de la région, soit 5 % en EU_868. Le désactiver ne « revient
+        pas à la limite légale », il supprime toute limite côté appareil."""
+        champ = self._catalogue(institutionnel)["sections"]["lora"]["champs"]["override_duty_cycle"]
+        assert champ["reglementaire"] is True
+        assert "5 %" in champ["avertissement"]
+        assert "fenêtre glissante d'une heure" in champ["avertissement"]
+
+    def test_la_puissance_dit_que_le_plafond_du_firmware_n_est_pas_une_garantie(self, institutionnel):
+        """`is_licensed` sur le propriétaire fait sauter le plafond de région : annoncer un
+        garde-fou qui n'en est pas un serait pire que de ne rien annoncer."""
+        champ = self._catalogue(institutionnel)["sections"]["lora"]["champs"]["tx_power"]
+        assert "is_licensed" in champ["avertissement"]
+
+    def test_la_table_des_regions_du_firmware_est_servie(self, institutionnel):
+        """Servie plutôt que recopiée dans le frontend : le plafond affiché par l'interface vient
+        de là, une constante dupliquée finirait par mentir."""
+        regions = self._catalogue(institutionnel)["regions_firmware"]
+        assert regions["EU_868"] == {
+            "debut_mhz": 869.4, "fin_mhz": 869.65,
+            "rapport_cyclique_pct": 10, "puissance_max_dbm": 27,
+        }
+
+    def test_la_section_lora_est_marquee_reglementaire(self, institutionnel):
+        sections = self._catalogue(institutionnel)["sections"]
+        assert sections["lora"]["reglementaire"] is True
+        assert sections["voisinage"]["reglementaire"] is False
+
+    def test_un_reglage_irreversible_est_signale_meme_sans_enjeu_legal(self, institutionnel):
+        """Couper l'émission n'est pas illégal — c'est juste sans retour à distance."""
+        champ = self._catalogue(institutionnel)["sections"]["lora"]["champs"]["tx_enabled"]
+        assert champ["reglementaire"] is False
+        assert "l'appareil en main" in champ["avertissement"]

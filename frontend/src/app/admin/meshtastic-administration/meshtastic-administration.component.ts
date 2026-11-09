@@ -61,9 +61,11 @@ export class MeshtasticAdministrationComponent implements OnInit {
     mqtt_json: true,
   };
 
-  /** Catalogue servi par le serveur : sections, champs, types et bornes. Jamais recopié ici —
-   * ce sont des contraintes du firmware, les dupliquer garantirait qu'elles divergent. */
-  catalogue: CatalogueReglages = {};
+  /** Catalogue servi par le serveur : sections, champs, types, bornes et avertissements
+   * réglementaires. Jamais recopié ici — ce sont des contraintes du firmware et un texte
+   * juridique, les dupliquer garantirait qu'ils divergent. Null tant que la requête n'a pas
+   * répondu. */
+  catalogue: CatalogueReglages | null = null;
   sectionChoisie = 'lora';
   /** Réglages cochés par l'exploitant, avec leur valeur. **Seuls ceux-là sont envoyés** : le
    * firmware remplace tout le bloc, donc le pont relit la section et renvoie les autres
@@ -78,6 +80,11 @@ export class MeshtasticAdministrationComponent implements OnInit {
   tacheDepliee: string | null = null;
   /** Écriture en attente de confirmation : on ne reconfigure pas un relais sur un clic. */
   confirmationDemandee = false;
+  /** Confirmation SÉPARÉE pour les réglages qui décident de ce qui part dans l'air (bande,
+   * puissance, rapport cyclique). Distincte de `confirmationDemandee` à dessein : l'une dit
+   * « oui, je veux bien reconfigurer ce relais », l'autre « oui, j'assume que l'émission reste
+   * conforme là où ce nœud est exploité ». Elle part avec la tâche et reste au journal d'audit. */
+  confirmationReglementaire = false;
 
   constructor(
     private service: AdministrationMeshtasticService,
@@ -93,15 +100,59 @@ export class MeshtasticAdministrationComponent implements OnInit {
     });
   }
 
-  get sections(): { cle: string; libelle: string }[] {
-    return Object.entries(this.catalogue)
-      .map(([cle, section]) => ({ cle, libelle: section.libelle }));
+  get sections(): { cle: string; libelle: string; reglementaire: boolean }[] {
+    return Object.entries(this.catalogue?.sections ?? {})
+      .map(([cle, section]) => ({ cle, libelle: section.libelle, reglementaire: section.reglementaire }));
   }
 
   /** Type explicitement optionnel : le catalogue est vide tant que la requête n'a pas répondu,
    * et la section choisie peut ne pas y figurer. */
   get sectionCourante(): SectionReglages | undefined {
-    return this.catalogue[this.sectionChoisie];
+    return this.catalogue?.sections?.[this.sectionChoisie];
+  }
+
+  get avertissementFrance(): string {
+    return this.catalogue?.avertissement_france ?? '';
+  }
+
+  /** Avertissement propre à la valeur choisie — pour la région, c'est lui qui dit la bande, la
+   * puissance et le rapport cyclique que le firmware appliquera réellement. C'est ce qui rend
+   * l'alerte adaptée au territoire au lieu d'être la même partout. */
+  avertissementValeur(cle: string, champ: ChampReglage): string {
+    const valeur = this.reglagesModifies[cle]?.valeur;
+    if (!champ.avertissements_par_valeur || typeof valeur !== 'string') { return ''; }
+    return champ.avertissements_par_valeur[valeur] ?? '';
+  }
+
+  /** Réglages réglementés effectivement COCHÉS : seuls ceux-là exigent la confirmation. Cocher
+   * « intervalle de voisinage » ne doit pas réclamer une confirmation réglementaire. */
+  get reglagesReglementairesCoches(): { cle: string; champ: ChampReglage }[] {
+    return this.champsSection.filter(
+      ({ cle, champ }) => champ.reglementaire && this.reglagesModifies[cle]?.actif);
+  }
+
+  /** Vrai quand la tâche en préparation touche à l'émission : réglages réglementés cochés, ou
+   * puissance au-dessus du plafond de la bande française. Le serveur applique la même règle et
+   * refuse sans la confirmation — l'interface la pose simplement avant l'aller-retour. */
+  get confirmationReglementaireRequise(): boolean {
+    if (this.nouvelle.type_tache === 'DEFINIR_REGLAGES') {
+      return this.reglagesReglementairesCoches.length > 0;
+    }
+    if (this.nouvelle.type_tache === 'DEFINIR_PUISSANCE') {
+      return Number(this.nouvelle.puissance_dbm) > this.plafondBandeFrDbm;
+    }
+    return false;
+  }
+
+  /** Plafond de la bande française, lu dans la table des régions du FIRMWARE servie par le
+   * serveur (EU_868) plutôt que recopié ici : une constante dupliquée finirait par mentir. 27 en
+   * repli, uniquement le temps que le catalogue arrive. */
+  get plafondBandeFrDbm(): number {
+    return this.catalogue?.regions_firmware?.['EU_868']?.puissance_max_dbm ?? 27;
+  }
+
+  get confirmationReglementaireManquante(): boolean {
+    return this.confirmationReglementaireRequise && !this.confirmationReglementaire;
   }
 
   get champsSection(): { cle: string; champ: ChampReglage }[] {
@@ -113,6 +164,9 @@ export class MeshtasticAdministrationComponent implements OnInit {
    * coche faite sur la précédente. */
   reinitialiserReglages(): void {
     this.reglagesModifies = {};
+    // La confirmation réglementaire ne survit pas à un changement de section : elle portait sur
+    // les champs précédents, pas sur ceux-ci.
+    this.confirmationReglementaire = false;
     for (const { cle, champ } of this.champsSection) {
       this.reglagesModifies[cle] = { actif: false, valeur: this.valeurInitiale(champ) };
     }
@@ -121,7 +175,14 @@ export class MeshtasticAdministrationComponent implements OnInit {
   private valeurInitiale(champ: ChampReglage): unknown {
     if (champ.type === 'booleen') { return true; }
     if (champ.type === 'enumeration') { return champ.valeurs?.[0] ?? ''; }
-    return champ.mini ?? 0;
+    // Zéro d'abord quand il est acceptable : pour une fréquence imposée ou un intervalle de
+    // télémétrie, 0 signifie « désactivé / défaut du firmware », c'est-à-dire le réglage qui ne
+    // change rien. Partir du minimum donnerait -10 MHz de décalage de fréquence comme valeur
+    // proposée, ce qui est exactement la valeur à ne pas suggérer.
+    const mini = champ.mini ?? 0;
+    const maxi = champ.maxi ?? 0;
+    if (champ.valeurs_speciales?.includes(0) || (mini <= 0 && 0 <= maxi)) { return 0; }
+    return mini;
   }
 
   get aucunReglageCoche(): boolean {
@@ -217,12 +278,14 @@ export class MeshtasticAdministrationComponent implements OnInit {
         if (etat.actif) { valeurs[cle] = etat.valeur; }
       }
       parametres = { section: this.sectionChoisie, valeurs };
+      if (this.confirmationReglementaire) { parametres['confirmation_reglementaire'] = true; }
     } else if (this.nouvelle.type_tache === 'DEFINIR_NOM') {
       parametres = {};
       if (this.nom.nom_long.trim()) { parametres['nom_long'] = this.nom.nom_long.trim(); }
       if (this.nom.nom_court.trim()) { parametres['nom_court'] = this.nom.nom_court.trim(); }
     } else if (this.nouvelle.type_tache === 'DEFINIR_PUISSANCE') {
       parametres = { puissance_dbm: Number(this.nouvelle.puissance_dbm) };
+      if (this.confirmationReglementaire) { parametres['confirmation_reglementaire'] = true; }
     } else if (this.nouvelle.type_tache === 'REDEMARRER') {
       parametres = { delai_s: Number(this.nouvelle.delai_s) };
     } else if (this.nouvelle.type_tache === 'DEFINIR_MQTT_JSON') {

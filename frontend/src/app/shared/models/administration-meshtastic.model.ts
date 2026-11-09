@@ -27,7 +27,7 @@ export type TypeTacheAdminMeshtastic =
  * intervalle de voisinage au moins 4 h), et les dupliquer dans deux langages garantit qu'elles
  * divergeront. Le serveur revalide de toute façon. */
 export interface ChampReglage {
-  type: 'entier' | 'booleen' | 'enumeration' | 'inconnu';
+  type: 'entier' | 'reel' | 'booleen' | 'enumeration' | 'inconnu';
   libelle: string;
   aide: string;
   mini?: number;
@@ -35,6 +35,15 @@ export interface ChampReglage {
   /** Valeurs acceptées hors de l'intervalle, avec leur sens propre (0 = défaut du firmware). */
   valeurs_speciales?: number[];
   valeurs?: string[];
+  /** Ce réglage décide de ce qui part dans l'air (bande, puissance, occupation du temps
+   * d'antenne). Son écriture exige une confirmation explicite, nominative et journalisée. */
+  reglementaire: boolean;
+  /** Texte à afficher à côté du champ, jamais enfoui dans une documentation. */
+  avertissement: string;
+  /** Avertissement propre à chaque valeur : c'est ce qui rend l'alerte adaptée à la zone
+   * géographique au lieu d'être la même partout (868 MHz n'est pas la même bande en métropole
+   * et outre-mer). L'interface affiche celui de la valeur choisie. */
+  avertissements_par_valeur?: Record<string, string>;
 }
 
 export interface SectionReglages {
@@ -43,10 +52,27 @@ export interface SectionReglages {
   module: boolean;
   /** Vrai = le firmware redémarre le nœud de lui-même après un changement ici. */
   redemarre: boolean;
+  /** Vrai dès qu'un champ de la section est sous contrainte réglementaire. */
+  reglementaire: boolean;
   champs: Record<string, ChampReglage>;
 }
 
-export type CatalogueReglages = Record<string, SectionReglages>;
+export interface RegionFirmware {
+  debut_mhz: number;
+  fin_mhz: number;
+  rapport_cyclique_pct: number;
+  puissance_max_dbm: number;
+}
+
+/** `GET /api/taches-admin-meshtastic/reglages/`. Le texte réglementaire et la table des régions
+ * du firmware viennent du serveur : les recopier ici garantirait qu'ils divergent. */
+export interface CatalogueReglages {
+  sections: Record<string, SectionReglages>;
+  avertissement_france: string;
+  regions_firmware: Record<string, RegionFirmware>;
+  regions_sans_table_firmware: string[];
+  regions_radioamateur: string[];
+}
 
 export type StatutTacheAdminMeshtastic = 'EN_ATTENTE' | 'EN_COURS' | 'TERMINEE' | 'ECHEC';
 

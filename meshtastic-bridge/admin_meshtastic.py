@@ -42,11 +42,16 @@ logger = logging.getLogger(__name__)
 # plusieurs sauts, un relais occupé, et le firmware réessaie lui-même (want_ack).
 TIMEOUT_REPONSE_S = 90
 
-# Même bornes que côté Django (core/models.py:PUISSANCE_MAX_DBM) : 27 dBm est le plafond de la
-# bande 869,4-869,65 MHz du preset EU_868. Revérifié ici parce qu'un pont peut servir une base
-# plus ancienne que lui.
+# Borne de cohérence, revérifiée ici parce qu'un pont peut servir une base plus ancienne que lui.
+# 36 dBm est le plafond de la région la plus permissive de la table du firmware (NZ_865) : au-delà,
+# aucune région n'accepterait la valeur, c'est forcément une erreur de saisie.
+#
+# Ce n'est PAS le plafond réglementaire. Celui de la bande française 869,4-869,65 MHz est 27 dBm
+# (500 mW), et c'est Django qui porte cette règle : au-dessus de 27 dBm il exige une confirmation
+# réglementaire explicite, nominative et journalisée (core/mesh_reglages.py,
+# core/models.py:PUISSANCE_MAX_DBM). Le pont ne peut pas la porter : il ne sait pas qui demande.
 PUISSANCE_MIN_DBM = 1
-PUISSANCE_MAX_DBM = 27
+PUISSANCE_MAX_DBM = 36
 
 LECTURES = {"LIRE_METADATA", "LIRE_CONFIG_LORA", "LIRE_CONFIG_APPAREIL",
             "LIRE_PROPRIETAIRE", "LIRE_CONFIG_MQTT", "LIRE_REGLAGES"}

@@ -183,6 +183,50 @@ pre {
   .valeur { display: flex; flex-direction: column; gap: 3px; }
   .aide { grid-column: 1 / -1; font-size: .82rem; line-height: 1.4;
           color: var(--ac-text-subtle, #6b7280); }
+
+  /* Avertissement réglementaire : il occupe toute la largeur et il est coloré, parce qu'un texte
+     qui dit « ceci peut vous mettre en infraction » n'a pas sa place en gris pâle sous le champ.
+     Lu au moment d'agir ou jamais lu. */
+  .avertissement-reglementaire, .avertissement-valeur {
+    grid-column: 1 / -1;
+    display: flex; align-items: flex-start; gap: 8px;
+    margin: 6px 0 0; padding: 8px 10px;
+    border-radius: 6px; font-size: .82rem; line-height: 1.45;
+
+    .material-icons { font-size: 18px; flex: none; }
+  }
+  .avertissement-reglementaire {
+    background: var(--ac-amber-bg, #fef3c7);
+    color: var(--ac-amber-text, #92400e);
+    border: 1px solid var(--ac-amber-border, #fde68a);
+  }
+  /* Avertissement propre à la valeur choisie (la région) : distinct du précédent, parce qu'il
+     dit ce que le firmware fera RÉELLEMENT, pas ce que la loi exige. */
+  .avertissement-valeur {
+    background: var(--ac-blue-bg, #eff6ff);
+    color: var(--ac-blue-text, #1e40af);
+    border: 1px solid var(--ac-blue-border, #bfdbfe);
+  }
+}
+
+.bloc-reglementaire {
+  margin: 0 0 16px; padding: 12px 14px;
+  border: 2px solid var(--ac-amber-border, #fcd34d); border-radius: 8px;
+  background: var(--ac-surface-2, #fffbeb);
+
+  .message { margin-bottom: 10px; }
+  .material-icons { font-size: 18px; flex: none; }
+
+  .liste-reglementaire {
+    margin: 0 0 10px; padding-left: 20px; font-size: .88rem;
+  }
+
+  label.case {
+    display: flex; align-items: flex-start; gap: 8px; margin: 0;
+    font-weight: 600;
+    input { width: 16px; height: 16px; margin-top: 2px; flex: none; }
+    small { display: block; font-weight: 400; color: var(--ac-text-subtle, #6b7280); }
+  }
 }
 
 @media (max-width: 620px) {

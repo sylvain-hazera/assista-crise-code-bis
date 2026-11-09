@@ -64,7 +64,7 @@ from .models import (
     NOM_LONG_MAX_OCTETS, NOM_COURT_MAX_OCTETS,
     CalibrationRadio, CouvertureRadioSite,
     ConfigurationNoeudMeshtastic, MeshtasticConnexionType,
-    PUISSANCE_MIN_DBM, PUISSANCE_MAX_DBM,
+    PUISSANCE_MIN_DBM, PUISSANCE_MAX_DBM, PUISSANCE_MAX_ABSOLUE_DBM,
     NoeudMeshUtilisateur,
     MessageMeshLog,
     CommandeMeshCore,
@@ -3598,11 +3598,22 @@ class TacheAdminMeshtasticSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({
                     "parametres": "puissance_dbm (entier, en dBm) est requis pour cette opération.",
                 })
-            if not PUISSANCE_MIN_DBM <= puissance <= PUISSANCE_MAX_DBM:
+            if not PUISSANCE_MIN_DBM <= puissance <= PUISSANCE_MAX_ABSOLUE_DBM:
                 raise serializers.ValidationError({
                     "parametres": f"Puissance hors bornes : {puissance} dBm. Autorisé "
-                                  f"{PUISSANCE_MIN_DBM}-{PUISSANCE_MAX_DBM} dBm (plafond de la "
-                                  "bande 869,4-869,65 MHz, 500 mW à 10 % de rapport cyclique).",
+                                  f"{PUISSANCE_MIN_DBM}-{PUISSANCE_MAX_ABSOLUE_DBM} dBm.",
+                })
+            # Au-dessus du plafond de la bande française : possible, mais pas par inadvertance.
+            # Même règle que les autres réglages réglementés (core/mesh_reglages.py).
+            if puissance > PUISSANCE_MAX_DBM and not parametres.get('confirmation_reglementaire'):
+                from .mesh_reglages import AVERTISSEMENT_FRANCE
+                raise serializers.ValidationError({
+                    "parametres": f"{puissance} dBm dépasse {PUISSANCE_MAX_DBM} dBm (500 mW), le "
+                                  "plafond que le firmware applique à la bande 869,4-869,65 MHz. "
+                                  "C'est possible — certaines régions du firmware l'autorisent, "
+                                  "et le plafond ne s'applique pas à un propriétaire marqué "
+                                  "« licencié » — mais il faut le confirmer explicitement "
+                                  "(`confirmation_reglementaire: true`). " + AVERTISSEMENT_FRANCE,
                 })
 
         return attrs
@@ -3624,7 +3635,13 @@ class TacheAdminMeshtasticSerializer(serializers.ModelSerializer):
         if type_tache == TypeTacheAdminMeshtastic.LIRE_REGLAGES:
             return
         try:
-            valider_reglages(section, parametres.get('valeurs'))
+            valider_reglages(
+                section, parametres.get('valeurs'),
+                # Les réglages qui décident de la bande, de la puissance ou de l'occupation du
+                # temps d'antenne sont modifiables, mais pas par inadvertance : la confirmation
+                # reste dans les paramètres de la tâche, donc au journal d'audit.
+                confirmation_reglementaire=bool(parametres.get('confirmation_reglementaire')),
+            )
         except ReglageInvalide as erreur:
             raise serializers.ValidationError({"parametres": str(erreur)}) from erreur
 

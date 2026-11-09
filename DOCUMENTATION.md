@@ -1788,8 +1788,10 @@ plus** des trames chiffrées sur `<racine>/2/e/#`, une version **décodée en cl
 
 **Réglages de configuration** (09/11/2026) : `LIRE_REGLAGES` et `DEFINIR_REGLAGES` couvrent cinq
 sections — appareil (rôle, mode de rediffusion, annonce d'identité), radio LoRa (région, preset,
-nombre de sauts, puissance, émission, gain RX, remontée MQTT), position (diffusion, position fixe,
-GPS), module **Voisinage** et module **Télémétrie**. `DEFINIR_NOM` renomme le nœud.
+nombre de sauts, puissance, émission, gain RX, remontée MQTT, **fréquence imposée, numéro de
+canal, décalage de fréquence et rapport cyclique** — voir « Réglages sous contrainte
+réglementaire » plus bas), position (diffusion, position fixe, GPS), module **Voisinage** et
+module **Télémétrie**. `DEFINIR_NOM` renomme le nœud.
 
 La liste blanche des champs, avec leurs types et bornes, vit dans `core/mesh_reglages.py` et est
 **servie** à l'interface par `GET /api/taches-admin-meshtastic/reglages/` : les bornes sont des
@@ -1812,17 +1814,81 @@ Trois choses à savoir, chacune verrouillée par un test :
   lettres accentuées en font huit, un emoji en consomme quatre à lui seul. Compter les caractères
   laisserait le firmware tronquer en silence.
 
-**Ce qui n'est pas proposé, et pourquoi** : `override_frequency` et `channel_num` (ils font émettre
-hors de la bande prévue — une erreur est une infraction réglementaire et n'est pas rattrapable sur
-un relais inaccessible ; son module les accepte, nous non), `packet_signature_policy` (touche à
-l'authentification des paquets), la quasi-totalité du module Télémétrie (capteurs
-d'environnement, qualité d'air, santé : rien n'en est utilisé ici, et trente champs inutiles
-n'ajoutent que de la surface d'erreur), les GPIO de la section position (une mauvaise broche rend
-le GPS muet et seul quelqu'un qui a l'appareil en main peut corriger), les régions hors Europe
-(poser par erreur une région d'un autre continent rend le relais muet jusqu'à une intervention sur
-place), ainsi que `factory_reset`, `nodedb_reset`, `shutdown` et `set_channel`. Un répéteur est souvent sur un point haut : une extinction ou une réinitialisation
-à distance se paie d'un déplacement. `set_channel` demanderait en plus de transporter une PSK de
-canal jusqu'à l'appareil, ce que ce chemin ne fait pas.
+#### Réglages sous contrainte réglementaire
+
+**Politique inversée le 09/11/2026, à la demande de l'exploitant.** `override_frequency`,
+`channel_num`, `frequency_offset`, `override_duty_cycle`, les trente-quatre régions du firmware et
+la puissance au-delà de 27 dBm étaient refusés par principe. Ils sont désormais **modifiables,
+avec un avertissement adapté à la zone**. Son argument, et il est juste : *« 868 MHz n'est
+peut-être pas la même plage en France et à La Réunion »*. Trancher à sa place l'empêchait de faire
+ce que sa situation autorise.
+
+Ce qui est verrouillé n'est donc plus l'interdiction, mais le fait que l'acte soit **délibéré et
+traçable** : ces champs portent `reglementaire=True`, leur écriture exige
+`confirmation_reglementaire: true`, et la confirmation est écrite **en clair et en tête** du
+commentaire d'audit (`[CONFIRMATION REGLEMENTAIRE donnee par le demandeur]`) — enfouie dans le
+dictionnaire de paramètres, elle serait introuvable le jour où la question est posée. Ce n'est pas
+un garde-fou technique : rien n'empêche techniquement une valeur illégale. C'est une chaîne de
+responsabilité, nominative et horodatée.
+
+**L'avertissement dit la vérité du firmware avant d'invoquer la loi**, parce qu'un texte identique
+partout n'est pas lu. Chaque région porte le sien, construit depuis `TABLE_REGIONS_FIRMWARE` —
+les macros `RDEF` de `src/mesh/RadioInterface.cpp`, lues le 09/11/2026 ; la documentation publique
+ne donne pas ces valeurs. Quatre constats non évidents en sont ressortis :
+
+- **EU_868 chez Meshtastic, c'est 869,4-869,65 MHz, 27 dBm, rapport cyclique 10** — une tranche de
+  250 kHz, pas toute la bande SRD. Avec 250 kHz de largeur de bande, elle ne contient qu'**un seul
+  créneau**.
+- **Le limiteur de rapport cyclique du firmware est déjà deux fois plus strict que la règle.**
+  `AirTime::isTxAllowedAirUtil()` s'arrête à la **moitié** du rapport cyclique de la région
+  (`polite_duty_cycle_percent = 50`), soit **5 % effectifs** en EU_868, mesurés sur une fenêtre
+  glissante d'une heure en soixante paniers d'une minute. Cocher `override_duty_cycle` ne « revient
+  pas à la limite légale » : cela **supprime toute limite côté appareil**.
+- **Le plafond de puissance n'est pas une garantie.** `applyModemConfig()` et `limitPower()` ne
+  ramènent la puissance au plafond de la région que si le propriétaire n'est **pas** marqué
+  « licencié » (`devicestate.owner.is_licensed`). Annoncer un garde-fou qui n'en est pas un serait
+  pire que de ne rien annoncer.
+- **Sept régions du protobuf n'ont aucune entrée dans la table du firmware** (`EU_866`, `EU_874`,
+  `EU_917`, `EU_N_868`, `ITU1_2M`, `ITU2_2M`, `ITU3_2M`) : les poser peut laisser le nœud **muet**,
+  et il faudra l'appareil en main. Les trois `ITU*_2M` sont de surcroît des bandes du **service
+  amateur** — licence obligatoire, et le service amateur interdit le trafic pour le compte de
+  tiers, donc l'usage opérationnel.
+
+Le cadre français, lui, est rappelé sans être inventé : vérifié le 09/11/2026, le TNRBF de l'ANFR
+s'applique en outre-mer **« sous réserve de dispositions particulières »**, regroupées dans son
+chapitre 7. Aucune condition propre à La Réunion pour 863-870 MHz n'a été trouvée dans cette
+recherche — ce qui ne veut pas dire qu'il n'y en a pas, mais qu'il faut la vérifier au chapitre 7
+et dans la table SRD de l'ANFR, à défaut auprès du délégué régional. Le texte est servi une seule
+fois par le catalogue (`avertissement_france`) ; le recopier dans le frontend garantirait qu'il
+divergerait.
+
+Deux plafonds de puissance, une seule règle : jusqu'à `PUISSANCE_MAX_DBM` (27 dBm, 500 mW) la
+demande passe seule ; au-delà et jusqu'à `PUISSANCE_MAX_ABSOLUE_DBM` (36 dBm, plafond de la région
+la plus permissive du firmware) elle exige la confirmation. Le pont, lui, borne à 36 dBm sans
+rejuger la conformité : **il ne sait pas qui demande**, il ne peut donc pas porter cette règle.
+
+**Ce qui reste non proposé, et pourquoi** :
+
+- `bandwidth`, `spread_factor`, `coding_rate` (réglages radio manuels, actifs seulement avec
+  `use_preset=False`). Refus de **deviner**, pas refus de principe : vérifié le 09/11/2026 dans
+  `applyModemConfig()`, `bandwidth` ne stocke pas des kHz mais un **code** converti par
+  `bwCodeToKHz()`, dont la table est dans un fichier non lu ; et dans la branche sans preset,
+  `spread_factor` et `coding_rate` sont recopiés **sans aucun contrôle de bornes**. Une valeur
+  fausse ne rend pas le nœud illégal, elle le rend invisible pour tout le réseau — et personne ne
+  saura pourquoi. À exposer le jour où la table des codes aura été lue.
+- `packet_signature_policy` (authentification des paquets, à traiter avec le propriétaire du
+  réseau), la quasi-totalité du module Télémétrie (capteurs d'environnement, qualité d'air,
+  santé : rien n'en est utilisé ici, et trente champs inutiles n'ajoutent que de la surface
+  d'erreur), les GPIO de la section position (une mauvaise broche rend le GPS muet et seul
+  quelqu'un qui a l'appareil en main peut corriger).
+- `factory_reset`, `nodedb_reset`, `shutdown` et `set_channel`. Un répéteur est souvent sur un
+  point haut : une extinction ou une réinitialisation à distance se paie d'un déplacement.
+  `set_channel` demanderait en plus de transporter une PSK de canal jusqu'à l'appareil, ce que ce
+  chemin ne fait pas.
+
+À noter que `tx_enabled` n'est pas réglementé mais porte quand même un avertissement : le mettre à
+faux coupe le seul chemin par lequel on pourrait rallumer le nœud. C'est le réglage le plus
+irréversible de la page, et il n'a rien d'illégal.
 
 **Transport** : seules les passerelles **TCP ou série** administrent, parce que c'est le firmware
 de l'appareil qui chiffre le message. L'API refuse d'emblée une tâche posée sur un companion MQTT,

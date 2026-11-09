@@ -216,7 +216,12 @@ class TestEcritures(unittest.TestCase):
         self.assertTrue(donnees["redemarrage_declenche"])
 
     def test_une_puissance_hors_bornes_n_est_meme_pas_envoyee(self):
-        for puissance in (0, 28, -1, 100):
+        """28 dBm n'est plus hors bornes depuis le 09/11/2026 : le pont accepte jusqu'à 36 dBm,
+        plafond de la région la plus permissive du firmware. C'est Django qui porte la règle
+        réglementaire (confirmation explicite au-dessus de 27 dBm) — le pont ne sait pas qui
+        demande, il ne peut donc pas la porter. Ce qui reste refusé ici, c'est une valeur
+        qu'aucune région n'accepterait."""
+        for puissance in (0, 37, -1, 100):
             iface = FauxInterface(reponses=[reponse_lora()])
             with self.assertRaises(mod.ErreurAdmin):
                 mod.executer(iface, {
@@ -352,6 +357,42 @@ class TestReglagesGeneriques(unittest.TestCase):
         self.assertEqual(ecrit.region, 3)          # conservee
         self.assertEqual(ecrit.tx_power, 22)       # conservee
         self.assertTrue(donnees["redemarrage_declenche"])   # le firmware redemarre sur LoRa
+
+    def test_une_frequence_imposee_est_ecrite_en_flottant(self):
+        """`override_frequency` et `frequency_offset` sont des float dans le protobuf, en MHz.
+        Les arrondir deplacerait le noeud de centaines de kHz, hors du reseau : on verifie donc
+        que la fraction traverse le pont intacte."""
+        iface = FauxInterface(reponses=[
+            reponse_section("lora", region=3, modem_preset=0, tx_power=22, hop_limit=3),
+            "__ACK__",
+        ])
+        mod.executer(iface, {
+            "type_tache": "DEFINIR_REGLAGES", "node_num_cible": 0x2000,
+            "parametres": {"section": "lora", "valeurs": {
+                "override_frequency": 869.525, "frequency_offset": 0.002,
+                "channel_num": 1, "override_duty_cycle": True,
+            }},
+        })
+        ecrit = iface.envois[1]["message"].set_config.lora
+        self.assertAlmostEqual(ecrit.override_frequency, 869.525, places=3)
+        self.assertAlmostEqual(ecrit.frequency_offset, 0.002, places=5)
+        self.assertEqual(ecrit.channel_num, 1)
+        self.assertTrue(ecrit.override_duty_cycle)
+        self.assertEqual(ecrit.region, 3)          # conservee, comme pour tout le reste du bloc
+
+    def test_une_puissance_au_dessus_du_plafond_francais_traverse_le_pont(self):
+        """Le pont ne porte PAS la regle reglementaire : il ne sait pas qui demande. Django exige
+        la confirmation explicite au-dessus de 27 dBm ; si la tache arrive ici, elle a ete
+        confirmee, et le pont n'a pas a la rejuger."""
+        iface = FauxInterface(reponses=[
+            reponse_section("lora", region=3, modem_preset=0, tx_power=22, hop_limit=3),
+            "__ACK__",
+        ])
+        mod.executer(iface, {
+            "type_tache": "DEFINIR_PUISSANCE", "node_num_cible": 0x2000,
+            "parametres": {"puissance_dbm": 30},
+        })
+        self.assertEqual(iface.envois[1]["message"].set_config.lora.tx_power, 30)
 
     def test_un_module_passe_par_set_module_config(self):
         iface = FauxInterface(reponses=[

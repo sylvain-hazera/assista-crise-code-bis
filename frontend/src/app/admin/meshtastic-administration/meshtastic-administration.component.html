@@ -107,9 +107,13 @@
           @if (nouvelle.type_tache === 'DEFINIR_PUISSANCE') {
             <label>
               Puissance (dBm)
-              <input name="puissance" type="number" min="1" max="27"
+              <input name="puissance" type="number" min="1" max="36"
                      [(ngModel)]="nouvelle.puissance_dbm">
-              <small>1 à 27 dBm. Le nœud redémarre tout seul après ce changement.</small>
+              <small>
+                Le nœud redémarre tout seul après ce changement.
+                Au-delà de {{ plafondBandeFrDbm }} dBm (plafond que le firmware applique à la
+                bande 869,4-869,65 MHz), une confirmation réglementaire est exigée.
+              </small>
             </label>
           }
 
@@ -118,7 +122,7 @@
               Section
               <select name="section" [(ngModel)]="sectionChoisie" (ngModelChange)="reinitialiserReglages()">
                 @for (s of sections; track s.cle) {
-                  <option [value]="s.cle">{{ s.libelle }}</option>
+                  <option [value]="s.cle">{{ s.libelle }}{{ s.reglementaire ? ' ⚠' : '' }}</option>
                 }
               </select>
               @if (sectionCourante?.redemarre) {
@@ -193,8 +197,11 @@
                       }
                     </select>
                   } @else {
+                    <!-- `step` indispensable sur un champ réel : sans lui un input numérique
+                         vaut step=1 et refuse 869,5 — une fréquence ne serait pas saisissable. -->
                     <input type="number" [name]="'val_' + entree.cle"
                            [min]="entree.champ.mini ?? null" [max]="entree.champ.maxi ?? null"
+                           [step]="entree.champ.type === 'reel' ? 'any' : 1"
                            [(ngModel)]="reglagesModifies[entree.cle].valeur"
                            [disabled]="!reglagesModifies[entree.cle].actif">
                     <small>
@@ -206,6 +213,18 @@
                   }
                 </div>
                 <small class="aide">{{ entree.champ.aide }}</small>
+                @if (entree.champ.avertissement) {
+                  <p class="avertissement-reglementaire">
+                    <span class="material-icons">gavel</span>
+                    <span>{{ entree.champ.avertissement }}</span>
+                  </p>
+                }
+                @if (avertissementValeur(entree.cle, entree.champ); as texte) {
+                  <p class="avertissement-valeur">
+                    <span class="material-icons">place</span>
+                    <span>{{ texte }}</span>
+                  </p>
+                }
               </div>
             }
             @if (aucunReglageCoche) {
@@ -226,6 +245,31 @@
           </p>
         }
 
+        @if (confirmationReglementaireRequise) {
+          <div class="bloc-reglementaire">
+            <p class="message avertissement">
+              <span class="material-icons">gavel</span>
+              <span>{{ avertissementFrance }}</span>
+            </p>
+            @if (reglagesReglementairesCoches.length) {
+              <ul class="liste-reglementaire">
+                @for (entree of reglagesReglementairesCoches; track entree.cle) {
+                  <li><strong>{{ entree.champ.libelle }}</strong></li>
+                }
+              </ul>
+            }
+            <label class="case">
+              <input name="confirmation_reglementaire" type="checkbox"
+                     [(ngModel)]="confirmationReglementaire">
+              Je confirme assumer la conformité de cette émission là où ce nœud est exploité.
+              <small>
+                Cette confirmation part avec l'opération et reste au journal d'audit, à votre nom
+                et horodatée.
+              </small>
+            </label>
+          </div>
+        }
+
         @if (erreurEnvoi) {
           <p class="message erreur" role="alert">{{ erreurEnvoi }}</p>
         }
@@ -244,6 +288,7 @@
         } @else {
           <button type="submit"
                   [disabled]="envoiEnCours || !nouvelle.compagnon
+                              || confirmationReglementaireManquante
                               || (nouvelle.type_tache === 'DEFINIR_REGLAGES' && aucunReglageCoche)">
             {{ envoiEnCours ? 'Mise en file…' : 'Mettre en file' }}
           </button>
