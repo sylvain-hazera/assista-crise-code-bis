@@ -66,12 +66,17 @@
        FAUSSE sur tout autre broker. Le pont s'abonnait alors a un topic hors ACL, ce qui donnait
        une connexion parfaite et zero paquet. -->
   <p class="page-hint">
-    <strong>La racine de topic est propre au broker</strong>, et une valeur fausse ne produit
-    aucune erreur visible côté nœud : la connexion réussit, l'abonnement ne reçoit jamais rien.
-    Racines connues : <code>Traitement/msh/EU_868</code> (Gaulix) et <code>msh/EU_868</code>
-    (réseau citoyen de La Réunion, <code>mqtt-mt.meteor-oi.re</code>). En cas de doute,
-    vérifiez-la auprès de l'exploitant du broker — le pont signale désormais un abonnement
-    refusé et passe le companion en erreur, mais un topic valide et vide reste silencieux.
+    <strong>La racine seule</strong>, sans <code>/2/e/#</code> : le pont ajoute lui-même ce
+    suffixe. Toute la documentation des réseaux Meshtastic montre le chemin d'abonnement
+    complet (<code>msh/EU_868/2/e/#</code>), qui donnerait ici une racine doublée — le serveur
+    le corrige tout seul, mais autant le savoir. Racines connues :
+    <code>Traitement/msh/EU_868</code> (Gaulix) et <code>msh/EU_868</code> (réseau citoyen de
+    La Réunion, <code>mqtt-mt.meteor-oi.re</code>).
+    <br>
+    Une racine fausse ne produit <strong>aucune erreur côté nœud</strong> : la connexion
+    réussit et l'abonnement ne reçoit jamais rien. Le pont signale maintenant un abonnement
+    refusé par le broker et passe le companion en erreur, mais une racine valide et vide reste
+    silencieuse.
   </p>
   <label class="checkbox-row">
     <input type="checkbox" [(ngModel)]="nouveauChiffrementSupporte">

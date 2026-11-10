@@ -24,7 +24,9 @@ from .crypto_fields import blind_index
 from .models import (
     CandidatureAssociation,
     DemandeAccesRadio,
+    MoyenAdminRadio,
     RattachementNoeudRadio,
+    StatutPreuveRadio,
     NiveauAccesRadio,
     StatutDemandeAccesRadio,
     HabilitationRegistreVulnerables,
@@ -3860,6 +3862,43 @@ class CompagnonMeshtasticSerializer(serializers.ModelSerializer):
         exclude = ['x25519_private_key_hex']
         extra_kwargs = {'mqtt_password': {'write_only': True}}
 
+    # Segments que le pont ajoute lui-même pour s'abonner : `<racine>/2/e/#`. Les voir dans la
+    # racine est une erreur de saisie et non une racine exotique -- aucun broker Meshtastic
+    # n'a de racine qui contienne le numéro de version du protocole.
+    _SUFFIXES_D_ABONNEMENT = ('/#', '/2/e', '/2/e/#')
+
+    def validate_topic_racine(self, valeur):
+        """Normalise la racine de topic, et refuse ce qui ne se devine pas.
+
+        Pourquoi ce n'est pas un simple champ texte (constaté le 10/11/2026) : toute la
+        documentation des réseaux Meshtastic montre le **chemin d'abonnement complet**
+        (`msh/EU_868/2/e/#`), alors que ce champ attend la **racine seule** -- le pont ajoute
+        `/2/e/#`. Coller le chemin complet donnait `msh/EU_868/2/e/#/2/e/#`, qui ne correspond
+        à rien, et le symptôme était une connexion réussie sans jamais un paquet.
+
+        On normalise plutôt que d'alerter parce que l'intention est sans ambiguïté : une racine
+        qui finit par le suffixe d'abonnement est toujours un copier-coller. En revanche un
+        joker AILLEURS n'est pas rattrapable par devinette, donc refusé avec la raison."""
+        valeur = (valeur or '').strip().strip('/')
+        change = True
+        while change:
+            change = False
+            for suffixe in self._SUFFIXES_D_ABONNEMENT:
+                if valeur.endswith(suffixe):
+                    valeur = valeur[: -len(suffixe)].rstrip('/')
+                    change = True
+        if not valeur:
+            raise serializers.ValidationError(
+                "Racine de topic requise (ex. « msh/EU_868 », ou « Traitement/msh/EU_868 » "
+                "pour Gaulix). Le pont ajoute lui-même « /2/e/# »."
+            )
+        if '#' in valeur or '+' in valeur:
+            raise serializers.ValidationError(
+                "Une racine de topic ne contient pas de joker (« # » ou « + ») : donnez le "
+                "préfixe seul, le pont ajoute « /2/e/# »."
+            )
+        return valeur
+
 
 class CanalMeshtasticSerializer(serializers.ModelSerializer):
     institution_nom = serializers.CharField(source='institution.nom', read_only=True, default=None)
@@ -4438,23 +4477,45 @@ class DemandeAccesRadioSerializer(serializers.ModelSerializer):
 
 
 class RattachementNoeudRadioSerializer(serializers.ModelSerializer):
-    """« Ce nœud est à nous » — qui répond d'un répéteur que personne ne porte.
+    """« Ce nœud est à nous » — le formulaire par lequel on réclame un répéteur.
 
-    `rattache_par` et `environment` sont posés par la vue. Les cibles (`institution`,
-    `utilisateur`) sont écrites par le client mais **vérifiées par la vue** : un rattachement
-    ouvre un droit d'écriture, on ne rattache donc qu'à soi ou à une de ses institutions (voir
-    RattachementNoeudRadioViewSet)."""
+    Une identité (`node_num` Meshtastic **ou** `pubkey_hex` MeshCore), une cible
+    (`institution` **ou** `utilisateur`), et pour MeshCore un moyen d'administration : le mot de
+    passe du répéteur, ou la clé publique de notre companion inscrite dans son ACL.
+
+    `rattache_par` et `environment` sont posés par la vue ; `statut_preuve`,
+    `date_verification` et `erreur_verification` ne sont écrits que par la vérification, jamais
+    par le corps d'une requête — sinon un rattachement se déclarerait vérifié tout seul, ce qui
+    est précisément ce que la preuve existe pour empêcher.
+
+    Le mot de passe est `write_only` : il part vers le serveur, il n'en revient jamais. Les
+    ponts le lisent par l'endpoint dédié, réservé à `EstComptePont`."""
 
     institution_nom = serializers.CharField(source="institution.nom", read_only=True)
     utilisateur_nom = serializers.SerializerMethodField()
     responsable = serializers.SerializerMethodField()
+    protocole = serializers.SerializerMethodField()
+    moyen_admin_libelle = serializers.CharField(source="get_moyen_admin_display", read_only=True)
+    statut_preuve_libelle = serializers.CharField(source="get_statut_preuve_display", read_only=True)
+    preuve_faite = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = RattachementNoeudRadio
-        fields = ['id', 'node_num', 'institution', 'institution_nom',
-                  'utilisateur', 'utilisateur_nom', 'responsable',
-                  'libelle', 'note', 'rattache_par', 'date_rattachement']
-        read_only_fields = ['rattache_par', 'date_rattachement']
+        fields = ['id', 'node_num', 'pubkey_hex', 'protocole',
+                  'institution', 'institution_nom', 'utilisateur', 'utilisateur_nom',
+                  'responsable', 'libelle', 'note',
+                  'moyen_admin', 'moyen_admin_libelle', 'mot_de_passe', 'compagnon_meshcore',
+                  'statut_preuve', 'statut_preuve_libelle', 'preuve_faite',
+                  'date_verification', 'erreur_verification',
+                  'rattache_par', 'date_rattachement']
+        read_only_fields = ['rattache_par', 'date_rattachement', 'statut_preuve',
+                            'date_verification', 'erreur_verification']
+        extra_kwargs = {'mot_de_passe': {'write_only': True}}
+
+    def get_protocole(self, obj):
+        """Déduit, jamais stocké : l'identité renseignée le dit sans ambiguïté, et un champ de
+        plus pourrait contredire les deux autres."""
+        return 'MESHTASTIC' if obj.node_num is not None else 'MESHCORE'
 
     def get_utilisateur_nom(self, obj):
         if not obj.utilisateur_id:
@@ -4469,13 +4530,31 @@ class RattachementNoeudRadioSerializer(serializers.ModelSerializer):
         return self.get_utilisateur_nom(obj)
 
     def validate_node_num(self, valeur):
-        if valeur is None or valeur <= 0:
+        if valeur is not None and valeur <= 0:
             raise serializers.ValidationError("node_num attendu : un entier positif.")
         return valeur
 
+    def validate_pubkey_hex(self, valeur):
+        valeur = (valeur or '').strip().lower()
+        if not valeur:
+            return ''
+        # 32 octets Ed25519. Une clé tronquée est le piège courant : les interfaces MeshCore
+        # affichent souvent un préfixe de 6 ou 12 caractères, qui ne sert à rien ici.
+        if len(valeur) != 64 or any(c not in '0123456789abcdef' for c in valeur):
+            raise serializers.ValidationError(
+                "Clé publique attendue : 64 caractères hexadécimaux (32 octets). Un préfixe "
+                "affiché par une application ne suffit pas."
+            )
+        return valeur
+
+    def _valeur(self, attrs, champ, defaut=None):
+        if champ in attrs:
+            return attrs[champ]
+        return getattr(self.instance, champ, defaut)
+
     def validate(self, attrs):
-        institution = attrs.get('institution', getattr(self.instance, 'institution', None))
-        utilisateur = attrs.get('utilisateur', getattr(self.instance, 'utilisateur', None))
+        institution = self._valeur(attrs, 'institution')
+        utilisateur = self._valeur(attrs, 'utilisateur')
         if institution is None and utilisateur is None:
             raise serializers.ValidationError(
                 "Rattachez ce nœud à une institution ou à un compte : un rattachement qui ne "
@@ -4485,5 +4564,43 @@ class RattachementNoeudRadioSerializer(serializers.ModelSerializer):
             # Refusé plutôt qu'arbitré en silence : « qui en répond ? » doit avoir UNE réponse.
             raise serializers.ValidationError(
                 "Une seule cible : une institution, ou un compte."
+            )
+
+        node_num = self._valeur(attrs, 'node_num')
+        pubkey = self._valeur(attrs, 'pubkey_hex', '')
+        if (node_num is None) == (not pubkey):
+            raise serializers.ValidationError(
+                "Une identité et une seule : le node_num du nœud Meshtastic, ou la clé "
+                "publique du nœud MeshCore."
+            )
+
+        moyen = self._valeur(attrs, 'moyen_admin', MoyenAdminRadio.AUCUN)
+        mot_de_passe = self._valeur(attrs, 'mot_de_passe', '')
+        compagnon = self._valeur(attrs, 'compagnon_meshcore')
+
+        if node_num is not None and moyen != MoyenAdminRadio.AUCUN:
+            # Sur Meshtastic l'autorisation est la clé publique de la passerelle posée dans
+            # security.admin_key : ni un mot de passe, ni une ACL. Accepter l'un des deux ici
+            # ferait croire à une autorisation qui n'existe pas.
+            raise serializers.ValidationError(
+                "Un nœud Meshtastic ne s'administre ni par mot de passe ni par ACL : la clé "
+                "publique de la passerelle doit figurer dans son security.admin_key."
+            )
+
+        if moyen == MoyenAdminRadio.MOT_DE_PASSE and not (mot_de_passe or '').strip():
+            raise serializers.ValidationError(
+                "Mot de passe d'administration requis pour ce moyen."
+            )
+        if moyen == MoyenAdminRadio.ACL and (mot_de_passe or '').strip():
+            raise serializers.ValidationError(
+                "La voie ACL n'utilise pas de mot de passe : le répéteur reconnaît la clé "
+                "publique du companion. Laissez le mot de passe vide."
+            )
+        if moyen != MoyenAdminRadio.AUCUN and compagnon is None:
+            # C'est ce companion qui ouvre la session, et c'est SA clé que l'ACL doit contenir.
+            # Sans lui, la vérification n'a pas d'émetteur et la tâche n'aurait pas d'exécutant.
+            raise serializers.ValidationError(
+                "Companion MeshCore requis : c'est lui qui ouvrira la session, et c'est sa clé "
+                "publique que l'ACL du répéteur doit contenir."
             )
         return attrs

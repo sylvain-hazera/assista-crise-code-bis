@@ -2271,8 +2271,52 @@ Poule et œuf assumé : sans aucun matériel on n'a pas accès au domaine radio,
 quoi s'y rattacher un premier nœud. `/admin/radio` est la porte d'entrée — un administrateur
 rattache, ou accorde le droit.
 
-Meshtastic seulement : MeshCore n'a pas encore d'administration à distance, et ses répéteurs
-déclarés portent déjà une institution (`RelaisMeshCore.institution`).
+#### Réclamer un répéteur MeshCore : la preuve remplace la déclaration
+
+Ajouté le 10/11/2026, et c'est une **différence de nature** avec Meshtastic.
+
+Sur Meshtastic, un rattachement est une déclaration que seul le firmware démentira : la clé
+publique de la passerelle doit figurer dans `security.admin_key` du nœud, ce qu'on ne peut ni
+lire ni vérifier à distance. Sur MeshCore, les deux moyens d'administrer un répéteur sont
+**vérifiables** — ils viennent du firmware, `examples/simple_repeater/MyMesh.cpp:92-104` : un
+mot de passe vide fait vérifier que l'émetteur figure dans l'**ACL** du répéteur, sinon le mot
+de passe est comparé à celui de l'administrateur puis à celui de l'invité.
+
+Réclamer un répéteur, c'est donc remplir un formulaire avec l'un des deux moyens
+(`MoyenAdminRadio`) :
+
+| Moyen | Ce qu'on fournit | Comment ça se vérifie |
+|---|---|---|
+| `MOT_DE_PASSE` | le mot de passe d'administration du répéteur | `send_login` |
+| `ACL` | rien — la clé publique de notre companion est déjà dans son ACL | `req_status` |
+| `AUCUN` | cas Meshtastic : l'autorisation est sur l'appareil | invérifiable à distance |
+
+`statut_preuve` porte le résultat, et **un rattachement MeshCore non vérifié n'ouvre aucune
+écriture** (`peut_administrer_noeud_meshcore`). Ce n'est pas un excès de prudence : contrairement
+à Meshtastic, il n'y a ici **aucun filet côté firmware** — quiconque a le mot de passe peut
+écrire. La vérification n'est donc pas un confort, c'est la condition.
+
+Trois conséquences de conception :
+
+- **une identité et une seule** par ligne : `node_num` (Meshtastic, entier 32 bits) ou
+  `pubkey_hex` (MeshCore, Ed25519). Aucun champ commun n'existe, et en fabriquer un casserait la
+  jointure avec `NoeudUtilisateurMeshtastic` d'un côté et `ContactMeshCore` de l'autre.
+  Contrainte en base, plus l'unicité conditionnelle de chacun des deux ;
+- **le mot de passe est stocké chiffré** (`EncryptedTextField`, `write_only`). Il faut le stocker
+  parce qu'une tâche d'administration est exécutée par le pont des minutes plus tard, parfois
+  après un réessai : demander le mot de passe à chaque opération supposerait un humain présent
+  au moment de l'exécution. Un test vérifie **en SQL brut** qu'il n'est pas en clair ;
+- **le companion est obligatoire** dès qu'un moyen est déclaré : c'est lui qui ouvre la session,
+  et c'est *sa* clé publique que l'ACL doit contenir. Il doit appartenir à l'institution du
+  demandeur, sinon on emprunterait la passerelle d'autrui pour ouvrir une session en son nom.
+
+**Pas encore fait** : la tâche de vérification elle-même (l'équivalent MeshCore de
+`TacheAdminMeshtastic`). Tant qu'elle n'existe pas, `statut_preuve` reste `NON_VERIFIE` et les
+écritures MeshCore sont refusées — le défaut sûr.
+
+Meshtastic : les répéteurs déclarés à la main portent par ailleurs déjà une institution
+(`RelaisMeshCore.institution`), qui reste le chemin pour un relais qu'on ne compte pas
+administrer.
 
 **Tests** : `backend/core/tests/mesh/test_acces_radio.py` (63), plus deux tests de
 `test_administration_meshtastic.py` qui disaient l'inverse avant le 10/11/2026 (toute écriture

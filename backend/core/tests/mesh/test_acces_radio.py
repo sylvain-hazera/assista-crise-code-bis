@@ -810,3 +810,240 @@ class TestRattachementDesRepeteurs:
         # pas même de quoi s'y rattacher un premier nœud. C'est la page /admin/radio qui sert
         # de porte d'entrée (un administrateur rattache, ou accorde le droit).
         assert reponse.status_code == 403
+
+
+@pytest.mark.django_db
+class TestRacineDeTopic:
+    """La racine de topic d'une passerelle MQTT.
+
+    Toute la documentation des réseaux Meshtastic montre le **chemin d'abonnement complet**
+    (`msh/EU_868/2/e/#`), alors que ce champ attend la **racine seule** : le pont ajoute
+    `/2/e/#`. Coller le chemin complet donnait `msh/EU_868/2/e/#/2/e/#`, et le symptôme était
+    une connexion réussie sans jamais un paquet — constaté en production le 10/11/2026.
+    """
+
+    URL = "/api/compagnons-meshtastic/"
+
+    @pytest.fixture
+    def client_admin(self, create_user):
+        return _client(_utilisateur(create_user, "admin-topic@x.fr", "ADMIN"))
+
+    def _creer(self, client, racine, node_num=0xAB01):
+        return client.post(self.URL, {
+            "nom": "Passerelle topic", "node_num": node_num,
+            "connexion_type": "MQTT", "broker_host": "mqtt-mt.exemple.re",
+            "topic_racine": racine,
+        }, format="json")
+
+    @pytest.mark.parametrize("saisi", [
+        "msh/EU_868/2/e/#",
+        "msh/EU_868/2/e",
+        "msh/EU_868/#",
+        "msh/EU_868/",
+        "  msh/EU_868  ",
+        "/msh/EU_868/2/e/#/",
+    ])
+    def test_le_chemin_d_abonnement_colle_est_ramene_a_la_racine(self, client_admin, saisi):
+        reponse = self._creer(client_admin, saisi)
+        assert reponse.status_code == 201, reponse.data
+        assert reponse.data["topic_racine"] == "msh/EU_868"
+
+    def test_la_racine_de_gaulix_passe_telle_quelle(self, client_admin):
+        """Le défaut historique du modèle ne doit pas être abîmé par la normalisation."""
+        reponse = self._creer(client_admin, "Traitement/msh/EU_868")
+        assert reponse.status_code == 201
+        assert reponse.data["topic_racine"] == "Traitement/msh/EU_868"
+
+    def test_un_joker_au_milieu_est_refuse_avec_la_raison(self, client_admin):
+        """Pas rattrapable par devinette : on refuse en disant quoi faire, plutôt que de
+        fabriquer une racine qui ne correspondrait à rien."""
+        reponse = self._creer(client_admin, "msh/+/2/e")
+        assert reponse.status_code == 400
+        assert "joker" in str(reponse.data).lower()
+
+    def test_une_racine_vide_est_refusee(self, client_admin):
+        """Sans racine, le pont s'abonnerait à « /2/e/# » : un topic qui n'existe sur aucun
+        broker, et le même silence qu'on vient de corriger."""
+        reponse = self._creer(client_admin, "/#")
+        assert reponse.status_code == 400
+        assert "racine" in str(reponse.data).lower()
+
+
+@pytest.mark.django_db
+class TestReclamationRepeteurMeshCore:
+    """« Il faut peut-être simplement remplir un formulaire quand on réclame un répéteur : soit
+    login / mot de passe, soit le répéteur contient la clé de xxx » (10/11/2026).
+
+    Ce que MeshCore change par rapport à Meshtastic : **les deux moyens sont vérifiables**. Un
+    mot de passe d'administration se teste avec `send_login`, une entrée d'ACL avec
+    `req_status`. Le droit d'écrire ne s'accorde donc pas sur déclaration — et il n'y a ici
+    aucun filet côté firmware, contrairement à `security.admin_key` sur Meshtastic.
+    """
+
+    URL = "/api/rattachements-noeuds-radio/"
+    CLE = "ab" * 32
+
+    @pytest.fixture
+    def compagnon_meshcore(self, institution):
+        from core.models import CompagnonMeshCore, MeshCoreConnexionType
+
+        return CompagnonMeshCore.objects.create(
+            nom="Companion mairie", institution=institution,
+            connexion_type=MeshCoreConnexionType.TCP, tcp_host="172.16.1.50",
+        )
+
+    @pytest.fixture
+    def agent(self, create_user, institution, compagnon_meshcore):
+        utilisateur = _utilisateur(create_user, "agent-meshcore@x.fr", "SECOURS", institution)
+        NoeudUtilisateurMeshtastic.objects.create(utilisateur=utilisateur, node_num=0x7001)
+        return utilisateur
+
+    def test_reclamer_par_mot_de_passe(self, agent, institution, compagnon_meshcore):
+        reponse = _client(agent).post(self.URL, {
+            "pubkey_hex": self.CLE, "institution": str(institution.id),
+            "libelle": "Repeteur du piton", "moyen_admin": "MOT_DE_PASSE",
+            "mot_de_passe": "secret-du-repeteur",
+            "compagnon_meshcore": str(compagnon_meshcore.id),
+        }, format="json")
+        assert reponse.status_code == 201, reponse.data
+        assert reponse.data["protocole"] == "MESHCORE"
+        # Le mot de passe part, il ne revient jamais.
+        assert "mot_de_passe" not in reponse.data
+        # Et il n'ouvre encore AUCUNE écriture : la preuve n'est pas faite.
+        assert reponse.data["statut_preuve"] == "NON_VERIFIE"
+        assert reponse.data["preuve_faite"] is False
+        from core.acces_radio import peut_administrer_noeud_meshcore
+        assert peut_administrer_noeud_meshcore(agent, self.CLE) is False
+
+    def test_reclamer_par_acl(self, agent, institution, compagnon_meshcore):
+        """« Le répéteur contient la clé de xxx » : pas de mot de passe, c'est la clé publique du
+        companion que l'ACL reconnaît (firmware : un mot de passe vide fait vérifier l'ACL)."""
+        reponse = _client(agent).post(self.URL, {
+            "pubkey_hex": self.CLE, "institution": str(institution.id),
+            "moyen_admin": "ACL", "compagnon_meshcore": str(compagnon_meshcore.id),
+        }, format="json")
+        assert reponse.status_code == 201, reponse.data
+        assert reponse.data["moyen_admin"] == "ACL"
+
+    def test_un_mot_de_passe_avec_la_voie_acl_est_refuse(self, agent, institution,
+                                                         compagnon_meshcore):
+        """Les deux à la fois ne décrivent aucun mécanisme du firmware."""
+        reponse = _client(agent).post(self.URL, {
+            "pubkey_hex": self.CLE, "institution": str(institution.id),
+            "moyen_admin": "ACL", "mot_de_passe": "pourquoi",
+            "compagnon_meshcore": str(compagnon_meshcore.id),
+        }, format="json")
+        assert reponse.status_code == 400
+        assert "acl" in str(reponse.data).lower()
+
+    def test_la_voie_mot_de_passe_exige_un_mot_de_passe(self, agent, institution,
+                                                        compagnon_meshcore):
+        reponse = _client(agent).post(self.URL, {
+            "pubkey_hex": self.CLE, "institution": str(institution.id),
+            "moyen_admin": "MOT_DE_PASSE", "compagnon_meshcore": str(compagnon_meshcore.id),
+        }, format="json")
+        assert reponse.status_code == 400
+
+    def test_un_moyen_sans_companion_est_refuse(self, agent, institution):
+        """Sans companion, la vérification n'a pas d'émetteur : c'est lui qui ouvre la session,
+        et c'est sa clé que l'ACL doit contenir."""
+        reponse = _client(agent).post(self.URL, {
+            "pubkey_hex": self.CLE, "institution": str(institution.id),
+            "moyen_admin": "MOT_DE_PASSE", "mot_de_passe": "x",
+        }, format="json")
+        assert reponse.status_code == 400
+        assert "companion" in str(reponse.data).lower()
+
+    def test_le_companion_d_une_autre_institution_est_refuse(self, create_user, institution,
+                                                             autre_institution, agent):
+        """Sinon on emprunterait la passerelle d'autrui pour ouvrir une session en son nom."""
+        from core.models import CompagnonMeshCore, MeshCoreConnexionType
+
+        etranger = CompagnonMeshCore.objects.create(
+            nom="Companion voisin", institution=autre_institution,
+            connexion_type=MeshCoreConnexionType.TCP, tcp_host="172.16.9.9",
+        )
+        reponse = _client(agent).post(self.URL, {
+            "pubkey_hex": self.CLE, "institution": str(institution.id),
+            "moyen_admin": "ACL", "compagnon_meshcore": str(etranger.id),
+        }, format="json")
+        assert reponse.status_code == 403
+
+    def test_une_cle_tronquee_est_refusee(self, agent, institution, compagnon_meshcore):
+        """Piège courant : les applications MeshCore affichent un préfixe de 6 ou 12
+        caractères, qui ne désigne pas un nœud de façon unique."""
+        reponse = _client(agent).post(self.URL, {
+            "pubkey_hex": "ab12cd", "institution": str(institution.id),
+            "moyen_admin": "ACL", "compagnon_meshcore": str(compagnon_meshcore.id),
+        }, format="json")
+        assert reponse.status_code == 400
+        assert "64" in str(reponse.data)
+
+    def test_deux_identites_a_la_fois_sont_refusees(self, agent, institution):
+        reponse = _client(agent).post(self.URL, {
+            "node_num": 0x7010, "pubkey_hex": self.CLE,
+            "institution": str(institution.id),
+        }, format="json")
+        assert reponse.status_code == 400
+        assert "une identité et une seule" in str(reponse.data).lower()
+
+    def test_aucune_identite_est_refusee(self, agent, institution):
+        reponse = _client(agent).post(self.URL, {"institution": str(institution.id)},
+                                      format="json")
+        assert reponse.status_code == 400
+
+    def test_un_noeud_meshtastic_ne_s_administre_pas_par_mot_de_passe(self, agent, institution,
+                                                                      compagnon_meshcore):
+        """Accepter un mot de passe sur un nœud Meshtastic ferait croire à une autorisation qui
+        n'existe pas : là, c'est `security.admin_key` qui fait foi."""
+        reponse = _client(agent).post(self.URL, {
+            "node_num": 0x7011, "institution": str(institution.id),
+            "moyen_admin": "MOT_DE_PASSE", "mot_de_passe": "x",
+            "compagnon_meshcore": str(compagnon_meshcore.id),
+        }, format="json")
+        assert reponse.status_code == 400
+        assert "admin_key" in str(reponse.data)
+
+    def test_la_preuve_faite_ouvre_l_ecriture(self, agent, institution, compagnon_meshcore):
+        from core.acces_radio import peut_administrer_noeud_meshcore
+        from core.models import MoyenAdminRadio, RattachementNoeudRadio, StatutPreuveRadio
+
+        rattachement = RattachementNoeudRadio.objects.create(
+            pubkey_hex=self.CLE, institution=institution,
+            moyen_admin=MoyenAdminRadio.MOT_DE_PASSE, mot_de_passe="secret",
+            compagnon_meshcore=compagnon_meshcore,
+        )
+        assert peut_administrer_noeud_meshcore(agent, self.CLE) is False
+
+        rattachement.statut_preuve = StatutPreuveRadio.VERIFIEE
+        rattachement.save(update_fields=["statut_preuve"])
+        assert peut_administrer_noeud_meshcore(agent, self.CLE) is True
+
+    def test_un_administrateur_passe_sans_preuve(self, create_user, institution):
+        """Le recours : une institution qui a perdu la main sur son propre matériel."""
+        from core.acces_radio import peut_administrer_noeud_meshcore
+
+        admin = _utilisateur(create_user, "admin-meshcore@x.fr", "ADMIN")
+        assert peut_administrer_noeud_meshcore(admin, self.CLE) is True
+
+    def test_le_mot_de_passe_n_est_pas_stocke_en_clair(self, agent, institution,
+                                                       compagnon_meshcore):
+        """« On ne stocke rien en clair. » Vérifié en SQL brut, pas par l'ORM, qui déchiffre."""
+        from django.db import connection
+        from core.models import RattachementNoeudRadio
+
+        _client(agent).post(self.URL, {
+            "pubkey_hex": self.CLE, "institution": str(institution.id),
+            "moyen_admin": "MOT_DE_PASSE", "mot_de_passe": "mot-de-passe-tres-reconnaissable",
+            "compagnon_meshcore": str(compagnon_meshcore.id),
+        }, format="json")
+        rattachement = RattachementNoeudRadio.objects.get(pubkey_hex=self.CLE)
+        assert rattachement.mot_de_passe == "mot-de-passe-tres-reconnaissable"
+
+        with connection.cursor() as curseur:
+            curseur.execute(
+                "SELECT mot_de_passe FROM core_rattachementnoeudradio WHERE id = %s",
+                [str(rattachement.id)],
+            )
+            brut = curseur.fetchone()[0]
+        assert "mot-de-passe-tres-reconnaissable" not in (brut or "")

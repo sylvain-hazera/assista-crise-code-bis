@@ -37,6 +37,7 @@ from .models import (
     NoeudUtilisateurMeshtastic,
     RattachementNoeudRadio,
     StatutDemandeAccesRadio,
+    StatutPreuveRadio,
     UserRole,
 )
 
@@ -138,6 +139,32 @@ def rattachements_de(user, ids=None):
     return RattachementNoeudRadio.objects.filter(
         conditions, environment=Environment.PROD,
     )
+
+
+def peut_administrer_noeud_meshcore(user, pubkey_hex):
+    """« Ce compte peut-il ÉCRIRE sur ce répéteur MeshCore ? »
+
+    Deux différences avec Meshtastic, et elles vont dans le sens de la prudence :
+
+    1. **La preuve est exigée.** Un mot de passe d'administration se teste, une entrée d'ACL se
+       teste : le droit ne s'accorde donc pas sur déclaration. Un rattachement dont
+       `statut_preuve` n'est pas VERIFIEE n'ouvre rien, même à son propriétaire déclaré.
+    2. **Il n'y a pas de filet côté firmware.** Sur Meshtastic, un rattachement abusif se heurte
+       à `security.admin_key` et l'appareil refuse. Ici, quiconque a le mot de passe peut
+       écrire -- c'est la raison pour laquelle la vérification n'est pas un confort mais la
+       condition.
+
+    L'administrateur de la plateforme garde le passage : c'est le recours quand une institution
+    a perdu la main sur son propre matériel."""
+    niveau = niveau_acces_radio(user)
+    if niveau == NiveauAccesRadio.ADMINISTRATEUR:
+        return True
+    if niveau == NiveauAccesRadio.AUCUN or not pubkey_hex:
+        return False
+    return rattachements_de(user).filter(
+        pubkey_hex=(pubkey_hex or '').strip().lower(),
+        statut_preuve=StatutPreuveRadio.VERIFIEE,
+    ).exists()
 
 
 def _institution_possede_du_materiel(user):

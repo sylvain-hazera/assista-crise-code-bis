@@ -25,8 +25,12 @@ export class RattachementNoeudRadioService {
   /** `institution` ou `utilisateur`, jamais les deux : « qui en répond ? » doit avoir une
    * seule réponse. */
   rattacher(donnees: {
-    node_num: number; institution?: string | null; utilisateur?: string | null;
+    /** Une identité et une seule : `node_num` (Meshtastic) ou `pubkey_hex` (MeshCore). */
+    node_num?: number | null; pubkey_hex?: string;
+    institution?: string | null; utilisateur?: string | null;
     libelle?: string; note?: string;
+    /** MeshCore seulement : par quoi on l'administre, et par quel companion. */
+    moyen_admin?: string; mot_de_passe?: string; compagnon_meshcore?: string | null;
   }): Observable<RattachementNoeudRadio> {
     return this.http.post<RattachementNoeudRadio>(`${this.url}/`, donnees);
   }

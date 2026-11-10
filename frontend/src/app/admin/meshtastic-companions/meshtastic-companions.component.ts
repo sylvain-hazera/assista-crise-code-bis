@@ -179,7 +179,15 @@ export class MeshtasticCompanionsComponent implements OnInit {
   chargerRattachements(): void {
     this.rattachementService.getAll().subscribe({
       next: (rattachements) => {
-        this.rattachementsParNoeud = new Map(rattachements.map(r => [r.node_num, r]));
+        // Indexé par node_num, donc MESHTASTIC seulement : depuis le 10/11/2026 la même table
+        // porte aussi les répéteurs MeshCore, identifiés par clé publique et sans node_num.
+        // Les laisser passer donnerait une clé `null` dans la Map, qui ne correspondrait à
+        // aucune ligne de ce tableau.
+        this.rattachementsParNoeud = new Map(
+          rattachements
+            .filter((r): r is RattachementNoeudRadio & { node_num: number } => r.node_num !== null)
+            .map(r => [r.node_num, r]),
+        );
       },
       // Silencieux : un compte sans accès radio n'a pas à voir une erreur pour une colonne.
       error: () => { this.rattachementsParNoeud = new Map(); },

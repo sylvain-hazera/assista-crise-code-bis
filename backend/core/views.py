@@ -19815,7 +19815,13 @@ class RattachementNoeudRadioViewSet(EnvironmentScopedViewSetMixin, viewsets.Mode
        Un rattachement abusif permet donc d'essayer, pas de reconfigurer : l'appareil refuse.
 
     Et `destroy` est volontairement ouvert aux mêmes personnes : une commune qui s'est trompée
-    de nœud doit pouvoir se corriger sans écrire à l'administrateur."""
+    de nœud doit pouvoir se corriger sans écrire à l'administrateur.
+
+    **MeshCore ajoute une preuve** (10/11/2026) : réclamer un répéteur MeshCore, c'est déclarer
+    par quoi on l'administre -- son mot de passe, ou la clé publique de notre companion inscrite
+    dans son ACL. Les deux se vérifient à distance, donc le droit d'écrire n'est ouvert qu'une
+    fois la vérification faite (`statut_preuve`). Tant qu'elle ne l'est pas, le rattachement dit
+    seulement qui prétend répondre du nœud."""
 
     queryset = RattachementNoeudRadio.objects.select_related(
         'institution', 'utilisateur', 'rattache_par',
@@ -19833,10 +19839,26 @@ class RattachementNoeudRadioViewSet(EnvironmentScopedViewSetMixin, viewsets.Mode
         node_num = self.request.query_params.get('node_num')
         if node_num:
             qs = qs.filter(node_num=node_num)
-        return qs.order_by('libelle', 'node_num')
+        pubkey = self.request.query_params.get('pubkey_hex')
+        if pubkey:
+            qs = qs.filter(pubkey_hex=pubkey.strip().lower())
+        return qs.order_by('libelle', 'node_num', 'pubkey_hex')
 
     def _verifier_cible(self, serializer):
         from .acces_radio import institutions_de
+
+        # Le companion qui servira à administrer doit être l'un des nôtres, sinon on
+        # emprunterait la passerelle d'une autre institution pour ouvrir une session -- et
+        # c'est SA clé publique que l'ACL du répéteur reconnaîtrait, pas la nôtre.
+        compagnon = serializer.validated_data.get('compagnon_meshcore')
+        if compagnon is not None and not self._est_administrateur(self.request):
+            from .acces_radio import institutions_de as _institutions
+
+            if compagnon.institution_id is None or compagnon.institution_id not in _institutions(self.request.user):
+                raise PermissionDenied(
+                    "Ce companion n'est pas rattaché à votre institution : il ne peut pas "
+                    "servir à ouvrir une session d'administration en votre nom."
+                )
 
         if self._est_administrateur(self.request):
             return
@@ -19858,12 +19880,14 @@ class RattachementNoeudRadioViewSet(EnvironmentScopedViewSetMixin, viewsets.Mode
             environment=get_active_environment(self.request),
             rattache_par=self.request.user,
         )
+        identite = (format(rattachement.node_num, '08x') if rattachement.node_num is not None
+                    else rattachement.pubkey_hex[:12])
         audit_log(
             request=self.request, action_code="CREATION", objet_type="RattachementNoeudRadio",
             objet_id=rattachement.id,
-            commentaire=f"Noeud {rattachement.node_num:08x} rattache a "
+            commentaire=f"Noeud {identite} rattache a "
                         f"{rattachement.institution.nom if rattachement.institution_id else rattachement.utilisateur.email}"
-                        f" ({rattachement.libelle or 'sans libelle'}).",
+                        f" ({rattachement.libelle or 'sans libelle'}, moyen {rattachement.moyen_admin}).",
         )
 
     def perform_update(self, serializer):
@@ -19872,7 +19896,9 @@ class RattachementNoeudRadioViewSet(EnvironmentScopedViewSetMixin, viewsets.Mode
         audit_log(
             request=self.request, action_code="MODIFICATION",
             objet_type="RattachementNoeudRadio", objet_id=rattachement.id,
-            commentaire=f"Rattachement du noeud {rattachement.node_num:08x} modifie.",
+            commentaire=f"Rattachement du noeud "
+                        f"{format(rattachement.node_num, '08x') if rattachement.node_num is not None else rattachement.pubkey_hex[:12]}"
+                        f" modifie.",
         )
 
     def perform_destroy(self, instance):
@@ -19893,6 +19919,8 @@ class RattachementNoeudRadioViewSet(EnvironmentScopedViewSetMixin, viewsets.Mode
         audit_log(
             request=self.request, action_code="SUPPRESSION",
             objet_type="RattachementNoeudRadio", objet_id=instance.id,
-            commentaire=f"Rattachement du noeud {instance.node_num:08x} retire.",
+            commentaire=f"Rattachement du noeud "
+                        f"{format(instance.node_num, '08x') if instance.node_num is not None else instance.pubkey_hex[:12]}"
+                        f" retire.",
         )
         instance.delete()

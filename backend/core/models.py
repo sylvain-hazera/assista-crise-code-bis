@@ -6876,6 +6876,41 @@ class NiveauAccesRadio(models.TextChoices):
     ADMINISTRATEUR = "ADMINISTRATEUR", "Administration radio complète"
 
 
+class MoyenAdminRadio(models.TextChoices):
+    """Par quoi on est autorisé à administrer un nœud — c'est-à-dire ce qu'on remplit en le
+    réclamant (demande du 10/11/2026 : « soit login / mot de passe, soit le répéteur contient la
+    clé de xxx »).
+
+    Les deux moyens viennent du firmware MeshCore, pas de nous
+    (`examples/simple_repeater/MyMesh.cpp:92-104`) : un mot de passe vide fait vérifier que
+    l'émetteur figure dans l'**ACL** du répéteur, sinon le mot de passe est comparé à celui de
+    l'administrateur, puis à celui de l'invité.
+
+    `AUCUN` est le cas d'un rattachement Meshtastic : l'autorisation n'y est pas un mot de passe
+    mais la clé publique de la passerelle posée dans `security.admin_key` du nœud, qu'on ne peut
+    ni lire ni vérifier à distance (voir TacheAdminMeshtastic)."""
+
+    AUCUN = "AUCUN", "Aucun (Meshtastic : clé d'administration posée sur l'appareil)"
+    MOT_DE_PASSE = "MOT_DE_PASSE", "Mot de passe d'administration du répéteur"
+    ACL = "ACL", "Clé publique de notre companion inscrite dans l'ACL du répéteur"
+
+
+class StatutPreuveRadio(models.TextChoices):
+    """Où en est la démonstration qu'on contrôle vraiment ce nœud.
+
+    Ce qui rend MeshCore différent : la preuve est **faisable**. Un mot de passe se teste avec
+    `send_login`, une entrée d'ACL avec `req_status` — tous deux exposés par la bibliothèque
+    `meshcore`. On n'accorde donc pas le droit d'écrire sur déclaration ; on le vérifie.
+
+    `NON_VERIFIE` n'est pas un échec : c'est l'état d'un rattachement Meshtastic, où il n'y a
+    rien à vérifier à distance, et celui d'un rattachement MeshCore qui vient d'être créé."""
+
+    NON_VERIFIE = "NON_VERIFIE", "Pas encore vérifiée"
+    EN_ATTENTE = "EN_ATTENTE", "Vérification en file"
+    VERIFIEE = "VERIFIEE", "Contrôle démontré"
+    ECHEC = "ECHEC", "Vérification refusée par le nœud"
+
+
 class RattachementNoeudRadio(EnvironmentScopedModel):
     """« Ce nœud est à nous » — pour le matériel que personne ne porte.
 
@@ -6901,15 +6936,29 @@ class RattachementNoeudRadio(EnvironmentScopedModel):
     ce qui autorise à laisser un exploitant rattacher lui-même son matériel au lieu de réserver
     le geste à un administrateur, qui ne saurait pas de toute façon à qui appartient quoi.
 
-    Meshtastic seulement : MeshCore n'a pas encore d'administration à distance, et ses répéteurs
-    déclarés portent déjà une institution (`RelaisMeshCore.institution`)."""
+    **MeshCore change la nature de la preuve** (10/11/2026). Sur Meshtastic, le rattachement est
+    une déclaration que seul le firmware démentira. Sur MeshCore, les deux moyens d'administrer
+    un répéteur sont *vérifiables à distance* : un mot de passe d'administration se teste avec
+    `send_login`, une entrée d'ACL se teste avec `req_status`. Le droit ne s'accorde donc pas sur
+    déclaration : on réclame le répéteur, on prouve qu'on le contrôle, et `statut_preuve` porte
+    le résultat. Un rattachement MeshCore non vérifié n'ouvre aucune écriture."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
+    # Une identité, et une seule, selon le protocole. Meshtastic identifie par un entier 32
+    # bits, MeshCore par une clé publique Ed25519 : aucun champ commun n'existe, et en
+    # fabriquer un (« identifiant » texte) rendrait impossible la jointure avec
+    # NoeudUtilisateurMeshtastic d'un côté et ContactMeshCore de l'autre.
     node_num = models.PositiveBigIntegerField(
-        unique=True,
-        help_text="Nœud visé. Unique : deux responsables pour un même appareil ne veut rien "
-                  "dire, et c'est ce qui rend les conflits visibles plutôt que silencieux.",
+        null=True, blank=True,
+        help_text="Nœud Meshtastic visé. Unique : deux responsables pour un même appareil ne "
+                  "veut rien dire, et c'est ce qui rend les conflits visibles plutôt que "
+                  "silencieux.",
+    )
+
+    pubkey_hex = models.CharField(
+        max_length=64, blank=True,
+        help_text="Clé publique du nœud MeshCore visé (Ed25519, 64 caractères hexadécimaux).",
     )
 
     institution = models.ForeignKey(
@@ -6930,6 +6979,35 @@ class RattachementNoeudRadio(EnvironmentScopedModel):
     )
     note = models.TextField(blank=True)
 
+    # ── Comment on administre ce nœud, et la preuve qu'on le peut ──────────────
+    moyen_admin = models.CharField(
+        max_length=14, choices=MoyenAdminRadio.choices, default=MoyenAdminRadio.AUCUN,
+    )
+
+    # Mot de passe d'administration du répéteur MeshCore. Chiffré au repos : c'est la clé de
+    # l'appareil, et le projet ne stocke rien de tel en clair. Jamais renvoyé par l'API
+    # (write_only), et servi au seul pont (EstComptePont) comme les autres secrets radio.
+    #
+    # Pourquoi le stocker du tout : une tâche d'administration est mise en file et exécutée par
+    # le pont des minutes plus tard, parfois après un réessai. Demander le mot de passe à chaque
+    # opération supposerait qu'un humain soit là au moment de l'exécution, ce qui n'est pas le
+    # cas. L'alternative -- le porter dans la ligne de tâche -- l'étalerait dans la file.
+    mot_de_passe = EncryptedTextField(max_length=64, blank=True)
+
+    # Par quel companion on parle à ce nœud. Nécessaire dans les deux cas : c'est ce companion
+    # qui ouvre la session (mot de passe), et c'est SA clé publique qui doit figurer dans l'ACL
+    # du répéteur (voie ACL).
+    compagnon_meshcore = models.ForeignKey(
+        CompagnonMeshCore, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="noeuds_administres",
+    )
+
+    statut_preuve = models.CharField(
+        max_length=12, choices=StatutPreuveRadio.choices, default=StatutPreuveRadio.NON_VERIFIE,
+    )
+    date_verification = models.DateTimeField(null=True, blank=True)
+    erreur_verification = models.TextField(blank=True)
+
     rattache_par = models.ForeignKey(
         "User", on_delete=models.SET_NULL, null=True, blank=True,
         related_name="rattachements_noeuds_radio_poses",
@@ -6938,23 +7016,58 @@ class RattachementNoeudRadio(EnvironmentScopedModel):
     )
     date_rattachement = models.DateTimeField(auto_now_add=True)
 
+    @property
+    def preuve_faite(self):
+        """Vrai quand le contrôle du nœud a été démontré.
+
+        Un rattachement Meshtastic n'a rien à prouver : le firmware refusera de lui-même si la
+        clé d'administration n'est pas posée (voir la docstring de la classe). Un rattachement
+        MeshCore, lui, n'ouvre l'écriture qu'une fois la session ou l'ACL vérifiée."""
+        if self.pubkey_hex:
+            return self.statut_preuve == StatutPreuveRadio.VERIFIEE
+        return True
+
     class Meta:
         constraints = [
             models.CheckConstraint(
                 condition=models.Q(institution__isnull=False) | models.Q(utilisateur__isnull=False),
                 name="ck_rattachement_noeud_radio_une_cible",
             ),
+            # Une identité et une seule : un node_num Meshtastic OU une clé publique MeshCore.
+            # Les deux à la fois ne désignent pas un appareil, et aucune des deux n'en désigne
+            # aucun -- dans les deux cas la ligne ne ferait que bloquer un identifiant.
+            models.CheckConstraint(
+                condition=(
+                    models.Q(node_num__isnull=False) & models.Q(pubkey_hex="")
+                    | models.Q(node_num__isnull=True) & ~models.Q(pubkey_hex="")
+                ),
+                name="ck_rattachement_noeud_radio_une_identite",
+            ),
+            # L'unicité du node_num était portée par le champ ; elle devient conditionnelle,
+            # puisqu'une ligne MeshCore le laisse vide et que NULL n'entre pas dans un index
+            # unique de la même façon selon les bases.
+            models.UniqueConstraint(
+                fields=["node_num"], condition=models.Q(node_num__isnull=False),
+                name="uq_rattachement_noeud_radio_node_num",
+            ),
+            models.UniqueConstraint(
+                fields=["pubkey_hex"], condition=~models.Q(pubkey_hex=""),
+                name="uq_rattachement_noeud_radio_pubkey",
+            ),
         ]
         indexes = [
             models.Index(fields=["institution"]),
             models.Index(fields=["utilisateur"]),
+            models.Index(fields=["pubkey_hex"]),
         ]
 
     def __str__(self):
         cible = self.institution.nom if self.institution_id else (
             self.utilisateur.email if self.utilisateur_id else "?"
         )
-        return f"{self.libelle or format(self.node_num, '08x')} — {cible}"
+        identite = (format(self.node_num, '08x') if self.node_num is not None
+                    else self.pubkey_hex[:12])
+        return f"{self.libelle or identite} — {cible}"
 
 
 class StatutDemandeAccesRadio(models.TextChoices):
