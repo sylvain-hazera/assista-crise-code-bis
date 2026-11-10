@@ -60,6 +60,10 @@ POLL_INTERVAL_SECONDS = int(os.environ.get("POLL_INTERVAL_SECONDS", "15"))
 CANAUX_REFRESH_INTERVAL_SECONDS = int(os.environ.get("CANAUX_REFRESH_INTERVAL_SECONDS", "60"))
 # Détection d'un broker ajouté/modifié/retiré depuis l'admin — voir boucle_reconciliation_compagnons.
 COMPAGNONS_REFRESH_INTERVAL_SECONDS = int(os.environ.get("COMPAGNONS_REFRESH_INTERVAL_SECONDS", "30"))
+# Fenêtre du bilan de réception. Dix minutes : assez long pour qu'un réseau calme ne crie pas
+# à chaque minute, assez court pour qu'on voie l'effet d'un changement de configuration sans
+# attendre.
+STATISTIQUES_RECEPTION_INTERVALLE_S = int(os.environ.get("STATISTIQUES_RECEPTION_INTERVALLE_S", "600"))
 CONTACTS_FLUSH_INTERVAL_SECONDS = int(os.environ.get("CONTACTS_FLUSH_INTERVAL_SECONDS", "30"))
 # Liaisons radio observees : meme logique de lot que les contacts. 60 s plutot que 30 : une
 # liaison est une agregation, elle ne perime pas vite.
@@ -595,6 +599,53 @@ def _traiter_paquet_dechiffre(payload, node_num, to_node, canal_id, canal_nom, t
     return None
 
 
+class CompteursReception:
+    """Ce que ce companion a RÉELLEMENT reçu sur MQTT, et ce qu'il en a fait.
+
+    Dernier angle mort de la famille des silences (10/11/2026) : avec un abonnement accepté sur
+    le bon topic, l'absence de contacts et de liaisons ne prouvait toujours pas qu'aucun paquet
+    n'arrivait. Un contact exige de savoir déchiffrer ; une liaison exige que le paquet ait été
+    relayé par une passerelle autre que son émetteur. Un réseau réel mais fermé à nos clés, et
+    un réseau vide, produisaient donc les mêmes journaux : rien.
+
+    Ce compteur distingue les deux, et c'est la seule chose qui permette de répondre à « est-ce
+    que je vois passer des nœuds sur ce broker ? » sans ouvrir un client MQTT à la main."""
+
+    def __init__(self):
+        self.recus = 0
+        self.canal_inconnu = 0
+        self.illisibles = 0
+        self.erreurs = 0
+
+    def extraire(self):
+        valeurs = (self.recus, self.canal_inconnu, self.illisibles, self.erreurs)
+        self.recus = self.canal_inconnu = self.illisibles = self.erreurs = 0
+        return valeurs
+
+
+async def boucle_statistiques_reception(compteurs, nom_compagnon, topic):
+    """Une ligne par fenêtre, **même à zéro** : c'est le zéro qui est l'information.
+
+    Journalisée en avertissement quand rien n'arrive, parce qu'un companion connecté, abonné et
+    muet est un symptôme — mauvaise racine de topic, ACL qui laisse passer l'abonnement mais pas
+    le trafic, ou réseau réellement sans passerelle qui publie."""
+    while True:
+        await asyncio.sleep(STATISTIQUES_RECEPTION_INTERVALLE_S)
+        recus, canal_inconnu, illisibles, erreurs = compteurs.extraire()
+        minutes = STATISTIQUES_RECEPTION_INTERVALLE_S // 60
+        if recus == 0:
+            logger.warning(
+                "[%s] AUCUN paquet reçu en %d min sur %s. Vérifier la racine de topic du "
+                "companion et le droit du compte MQTT.", nom_compagnon, minutes, topic,
+            )
+        else:
+            logger.info(
+                "[%s] %d paquets reçus en %d min sur %s : %d sur un canal inconnu, "
+                "%d indéchiffrables, %d en erreur.",
+                nom_compagnon, recus, minutes, topic, canal_inconnu, illisibles, erreurs,
+            )
+
+
 def echec_abonnement(codes):
     """Message d'échec si le broker a REFUSÉ l'abonnement, sinon None.
 
@@ -620,6 +671,7 @@ def demarrer_mqtt(compagnon, registre, tampon, tampon_liaisons, django, boucle, 
 
     # mid -> topic : le rappel d'abonnement ne reçoit qu'un identifiant de message.
     topics_par_mid = {}
+    compteurs = CompteursReception()
 
     def on_connect(client, userdata, flags, reason_code, properties=None):
         if reason_code == 0:
@@ -674,6 +726,7 @@ def demarrer_mqtt(compagnon, registre, tampon, tampon_liaisons, django, boucle, 
         )
 
     def on_message(client, userdata, msg):
+        compteurs.recus += 1
         try:
             enveloppe = mqtt_pb2.ServiceEnvelope()
             enveloppe.ParseFromString(msg.payload)
@@ -708,7 +761,11 @@ def demarrer_mqtt(compagnon, registre, tampon, tampon_liaisons, django, boucle, 
             elif canal is not None and paquet.HasField("encrypted") and paquet.encrypted:
                 payload = crypto.dechiffrer(canal["psk"], packet_id, node_num, bytes(paquet.encrypted))
             else:
-                return  # Canal qu'on ne connaît pas (pas la clé) : rien à faire pour nous.
+                # Canal qu'on ne connaît pas (pas la clé) : rien à faire pour nous -- mais le
+                # paquet EST arrivé, et c'est ce que le bilan de réception doit distinguer d'un
+                # réseau vide.
+                compteurs.canal_inconnu += 1
+                return
 
             coro = _traiter_paquet_dechiffre(
                 payload, node_num, to_node, canal_id, canal_nom, tampon, tampon_liaisons, django,
@@ -717,12 +774,14 @@ def demarrer_mqtt(compagnon, registre, tampon, tampon_liaisons, django, boucle, 
             if coro is not None:
                 boucle.call_soon_threadsafe(file_a_planifier.put_nowait, coro)
         except DecodeError:
+            compteurs.illisibles += 1
             # Déchiffré avec NOTRE PSK, mais le résultat n'est pas un `Data` : quelqu'un
             # d'autre utilise le même NOM de canal avec une autre clé. C'est du bruit normal
             # sur un broker partagé (149 fois en production le 10/11/2026), pas une erreur de
             # chez nous -- et une trace complète par paquet enterrait les vraies erreurs.
             logger.debug("Paquet indéchiffrable sur le canal '%s' (autre clé).", canal_nom)
         except Exception:
+            compteurs.erreurs += 1
             logger.exception("Échec de traitement d'un message MQTT entrant.")
 
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
@@ -736,7 +795,7 @@ def demarrer_mqtt(compagnon, registre, tampon, tampon_liaisons, django, boucle, 
         client.tls_set()
     client.connect(compagnon["broker_host"], compagnon["broker_port"], keepalive=60)
     client.loop_start()
-    return client
+    return client, compteurs
 
 
 async def boucle_execution_planifiee(file_a_planifier):
@@ -1210,7 +1269,7 @@ async def _executer_compagnon_mqtt(django, compagnon):
     boucle = asyncio.get_running_loop()
     file_a_planifier = asyncio.Queue()
 
-    mqtt_client = demarrer_mqtt(compagnon, registre, tampon, tampon_liaisons, django, boucle, file_a_planifier, cle_privee_hex)
+    mqtt_client, compteurs = demarrer_mqtt(compagnon, registre, tampon, tampon_liaisons, django, boucle, file_a_planifier, cle_privee_hex)
 
     try:
         await asyncio.gather(
@@ -1218,6 +1277,10 @@ async def _executer_compagnon_mqtt(django, compagnon):
             boucle_rafraichissement_canaux(django, registre, compagnon["id"]),
             boucle_flush_contacts(django, compagnon["id"], tampon, compagnon.get("nom", "?")),
             boucle_flush_liaisons(django, compagnon["id"], tampon_liaisons, compagnon.get("nom", "?")),
+            boucle_statistiques_reception(
+                compteurs, compagnon.get("nom", "?"),
+                f"{compagnon['topic_racine']}/2/e/#",
+            ),
             boucle_envoi_dm(mqtt_client, compagnon, registre, django, cle_privee_hex),
             boucle_envoi_canaux(mqtt_client, compagnon, registre, django),
             boucle_annonce_position(mqtt_client, compagnon, registre),

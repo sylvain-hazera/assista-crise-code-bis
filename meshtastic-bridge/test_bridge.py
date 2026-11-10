@@ -197,5 +197,28 @@ class TestEchecAbonnement(unittest.TestCase):
         self.assertIsNone(bridge.echec_abonnement(None))
 
 
+class TestCompteursReception(unittest.TestCase):
+    """Le dernier angle mort de la famille des silences : avec un abonnement accepté sur le bon
+    topic, l'absence de contacts et de liaisons ne prouvait toujours pas qu'aucun paquet
+    n'arrivait. Un contact exige de savoir déchiffrer, une liaison exige un relais
+    intermédiaire — un réseau fermé à nos clés et un réseau vide produisaient les mêmes
+    journaux."""
+
+    def test_l_extraction_rend_les_compteurs_et_les_remet_a_zero(self):
+        """Remis à zéro à la lecture : chaque ligne de bilan porte SA fenêtre, pas un cumul
+        depuis le démarrage, sinon on ne verrait jamais l'effet d'un changement."""
+        compteurs = bridge.CompteursReception()
+        compteurs.recus = 12
+        compteurs.canal_inconnu = 5
+        compteurs.illisibles = 2
+        compteurs.erreurs = 1
+
+        self.assertEqual(compteurs.extraire(), (12, 5, 2, 1))
+        self.assertEqual(compteurs.extraire(), (0, 0, 0, 0))
+
+    def test_un_compteur_neuf_est_a_zero(self):
+        self.assertEqual(bridge.CompteursReception().extraire(), (0, 0, 0, 0))
+
+
 if __name__ == "__main__":
     unittest.main()

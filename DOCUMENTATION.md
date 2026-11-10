@@ -1950,8 +1950,8 @@ docker run --rm -v "$PWD/meshtastic-bridge":/src -w /src \
 
 #### Trois défauts d'ingestion trouvés dans les journaux du pont (10/11/2026)
 
-Relever les journaux du pont en service a montré **1 348 paquets MQTT abandonnés**. Quatre
-défauts, et ce qu'ils coûtaient :
+Relever les journaux du pont en service a montré **1 348 paquets MQTT abandonnés**. Cinq
+défauts, tous silencieux, et ce qu'ils coûtaient :
 
 1. **`HasField("hop_start")` sur un scalaire proto3** (1 201 fois). `hop_start` n'a pas de
    présence (vérifié sur la lib déployée :
@@ -1981,9 +1981,18 @@ défauts, et ce qu'ils coûtaient :
    pour être testable — les rappels paho sont des fonctions imbriquées).
 
 `bridge.py` n'avait **aucun** test, et c'est ce qui a laissé passer le premier défaut :
-`meshtastic-bridge/test_bridge.py` en ajoute quatorze, qui construisent de **vrais**
+`meshtastic-bridge/test_bridge.py` en ajoute seize, qui construisent de **vrais**
 messages protobuf et de vrais codes de retour paho. Un faux objet avec un `HasField` complaisant aurait laissé passer exactement ce
 défaut-là.
+
+5. **Un companion connecté, abonné et muet restait indiscernable d'un réseau calme.** Un
+   contact exige de savoir déchiffrer ; une liaison exige que le paquet ait été relayé par une
+   passerelle *autre* que son émetteur. Un réseau réel mais fermé à nos clés et un réseau vide
+   produisaient donc les mêmes journaux : rien. `CompteursReception` +
+   `boucle_statistiques_reception` publient une ligne par fenêtre de dix minutes, **y compris à
+   zéro** — et c'est le zéro qui est l'information, journalisé en avertissement :
+   `[<nom>] AUCUN paquet reçu en 10 min sur <topic>`. Sinon : combien reçus, combien sur un
+   canal inconnu, combien indéchiffrables.
 
 Le topic d'abonnement est désormais journalisé à la connexion (`<racine>/2/e/#`) : c'est la
 seule chose qui permette de vérifier le paramétrage d'une passerelle sans lire la base — une
