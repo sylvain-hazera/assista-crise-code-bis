@@ -3,6 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 
 import { environment } from '../../environments/environment';
+import { CandidatNoeudMeshtastic } from '../shared/models/candidat-noeud-radio.model';
 import { NoeudUtilisateurMeshtastic } from '../shared/models/noeud-utilisateur-meshtastic.model';
 import { PositionNoeudMissionMeshtastic } from '../shared/models/position-noeud-mission-meshtastic.model';
 
@@ -30,6 +31,14 @@ export class NoeudUtilisateurMeshtasticService {
 
   delete(id: string): Observable<void> {
     return this.http.delete<void>(`${this.url}/${id}/`);
+  }
+
+  /** GET /api/noeuds-meshtastic/candidats/ — nœuds entendus par nos passerelles, pour que
+   * l'utilisateur reconnaisse le sien au lieu de recopier sa clé à la main. Ouvert à tout
+   * compte connecté : c'est la porte d'entrée du droit radio, elle ne peut pas être derrière
+   * ce droit. */
+  candidats(): Observable<CandidatNoeudMeshtastic[]> {
+    return this.http.get<CandidatNoeudMeshtastic[]>(`${this.url}/candidats/`);
   }
 
   /** GET /api/noeuds-meshtastic/mes-noeuds/ — mes propres nœuds réclamés. */

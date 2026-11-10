@@ -815,6 +815,18 @@
   font-size: 0.85em;
 }
 
+// Explication sous un champ : elle dit d'où vient la liste et comment en sortir. Le bouton
+// « mon nœud n'est pas dans la liste » vit dedans, parce qu'il n'a de sens qu'à côté du champ
+// qu'il remplace.
+.field-hint {
+  color: var(--ac-text-muted, #666);
+  font-size: 0.85rem;
+  max-width: 68ch;
+  margin: 0.4rem 0 0;
+
+  .btn-link { margin-left: 0.4rem; }
+}
+
 .btn-danger-sm {
   padding: 0.35rem 0.8rem;
   border-radius: 6px;

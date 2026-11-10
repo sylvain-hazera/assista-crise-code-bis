@@ -4,6 +4,7 @@ from rest_framework_simplejwt.views import TokenBlacklistView
 from .grafana import GrafanaTokenView
 from .views import (
     DemandeAccesRadioViewSet,
+    NoeudPublicMeshCoreViewSet,
     RattachementNoeudRadioViewSet,
     SourceObservateurMeshCoreViewSet,
     TacheAdminMeshCoreViewSet,
@@ -170,6 +171,8 @@ router.register(r'rattachements-noeuds-radio', RattachementNoeudRadioViewSet)
 router.register(r'taches-admin-meshcore', TacheAdminMeshCoreViewSet)
 # Brokers ou des observateurs MeshCore republient ce qu'ils entendent.
 router.register(r'sources-observateurs-meshcore', SourceObservateurMeshCoreViewSet)
+# Cartographie du reseau MeshCore public, importee d'une instance CoreScope.
+router.register(r'noeuds-publics-meshcore', NoeudPublicMeshCoreViewSet)
 
 
 router.register(

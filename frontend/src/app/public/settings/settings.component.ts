@@ -23,6 +23,7 @@ import { NoeudUtilisateurMeshtasticService } from '../../services/noeud-utilisat
 import { CompagnonMeshtasticService } from '../../services/compagnon-meshtastic.service';
 import { NoeudMeshUtilisateur } from '../../shared/models/noeud-mesh-utilisateur.model';
 import { NoeudUtilisateurMeshtastic, ReclamerMeshtasticBrokerRequis } from '../../shared/models/noeud-utilisateur-meshtastic.model';
+import { CandidatNoeudMeshCore, CandidatNoeudMeshtastic } from '../../shared/models/candidat-noeud-radio.model';
 import { SuiviPositionPermanentService } from '../../services/suivi-position-permanent.service';
 import { PieceIdentiteReserveService } from '../../services/piece-identite-reserve.service';
 import { PieceIdentiteReserve } from '../../shared/models/piece-identite-reserve.model';
@@ -95,6 +96,16 @@ export class SettingsComponent implements OnInit {
   isLoadingRadio = false;
   // Réclamer/Libérer sont refusés en zone DEMO : message affiché près du bouton.
   isDemoZone = false;
+
+  /** Nœuds entendus par nos passerelles, proposés au choix. Chargés avec la page : recopier
+   * 64 caractères hexadécimaux à la main était la seule façon de se rattacher jusqu'au
+   * 11/11/2026, et une faute de frappe rattache un nœud qui n'est pas le sien. */
+  candidatsMeshCore: CandidatNoeudMeshCore[] = [];
+  candidatsMeshtastic: CandidatNoeudMeshtastic[] = [];
+  /** Vrai quand l'utilisateur préfère saisir la clé à la main : son appareil n'a peut-être
+   * jamais été entendu par une de nos passerelles, et dans ce cas aucune liste ne l'aura. */
+  saisieManuelleMeshCore = false;
+  saisieManuelleMeshtastic = false;
 
   reclamerMeshCorePubkey = '';
   reclamerMeshCoreNom = '';
@@ -212,6 +223,7 @@ export class SettingsComponent implements OnInit {
     this.loadInformations();
     this.loadDossiers();
     this.loadMesNoeuds();
+    this.loadCandidats();
   }
 
   // ── Radio (MeshCore / Meshtastic) ───────────────────────────────
@@ -225,6 +237,46 @@ export class SettingsComponent implements OnInit {
     this.noeudMeshtasticService.mesNoeuds().subscribe({
       next: list => { this.mesNoeudsMeshtastic = list; },
     });
+  }
+
+  /** Les nœuds entendus, pour reconnaître le sien au lieu de recopier une clé.
+   *
+   * Un échec est silencieux et non signalé : la liste est une COMMODITÉ, la saisie manuelle
+   * reste disponible. Une erreur rouge sur une aide facultative ferait croire que le
+   * rattachement est cassé alors qu'il marche. */
+  private loadCandidats(): void {
+    this.noeudMeshCoreService.candidats().subscribe({
+      next: list => { this.candidatsMeshCore = list; },
+      error: () => { this.candidatsMeshCore = []; this.saisieManuelleMeshCore = true; },
+    });
+    this.noeudMeshtasticService.candidats().subscribe({
+      next: list => { this.candidatsMeshtastic = list; },
+      error: () => { this.candidatsMeshtastic = []; this.saisieManuelleMeshtastic = true; },
+    });
+  }
+
+  /** Ceux qu'on peut effectivement réclamer : les nœuds déjà pris par quelqu'un d'autre
+   * restent affichés (voir le gabarit) mais ne sont pas proposés au choix. */
+  get candidatsMeshCoreLibres(): CandidatNoeudMeshCore[] {
+    return this.candidatsMeshCore.filter(c => !c.deja_associe);
+  }
+
+  get candidatsMeshtasticLibres(): CandidatNoeudMeshtastic[] {
+    return this.candidatsMeshtastic.filter(c => !c.deja_associe);
+  }
+
+  /** Choix dans la liste : on remplit la clé ET le nom annoncé par l'appareil, qui est presque
+   * toujours le bon libellé — l'utilisateur peut encore le changer. */
+  choisirCandidatMeshCore(candidat: CandidatNoeudMeshCore): void {
+    this.reclamerMeshCorePubkey = candidat.pubkey_hex;
+    if (!this.reclamerMeshCoreNom.trim()) this.reclamerMeshCoreNom = candidat.nom;
+  }
+
+  choisirCandidatMeshtastic(candidat: CandidatNoeudMeshtastic): void {
+    this.reclamerMeshtasticNodeNum = candidat.node_num;
+    if (!this.reclamerMeshtasticNom.trim()) {
+      this.reclamerMeshtasticNom = candidat.long_name || candidat.short_name || '';
+    }
   }
 
   get formReclamerMeshCoreValide(): boolean {
@@ -241,6 +293,7 @@ export class SettingsComponent implements OnInit {
         this.reclamerMeshCoreNom = '';
         this.reclamerMeshCoreEnCours = false;
         this.loadMesNoeuds();
+        this.loadCandidats();
       },
       error: err => {
         this.reclamerMeshCoreErreur = err.error?.detail || 'Impossible de réclamer ce nœud.';
@@ -281,6 +334,7 @@ export class SettingsComponent implements OnInit {
         this.meshtasticBrokerChoisi = '';
         this.reclamerMeshtasticEnCours = false;
         this.loadMesNoeuds();
+        this.loadCandidats();
       },
       error: err => {
         const body = err.error as ReclamerMeshtasticBrokerRequis | { detail?: string };

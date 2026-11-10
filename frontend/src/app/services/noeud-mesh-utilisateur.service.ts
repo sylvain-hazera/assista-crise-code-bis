@@ -3,6 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 
 import { environment } from '../../environments/environment';
+import { CandidatNoeudMeshCore } from '../shared/models/candidat-noeud-radio.model';
 import { NoeudMeshUtilisateur } from '../shared/models/noeud-mesh-utilisateur.model';
 import { PositionNoeudMission } from '../shared/models/position-noeud-mission.model';
 
@@ -39,6 +40,14 @@ export class NoeudMeshUtilisateurService {
 
   delete(id: string): Observable<void> {
     return this.http.delete<void>(`${this.url}/${id}/`);
+  }
+
+  /** GET /api/noeuds-meshcore/candidats/ — nœuds entendus par nos passerelles, pour que
+   * l'utilisateur reconnaisse le sien au lieu de recopier sa clé à la main. Ouvert à tout
+   * compte connecté : c'est la porte d'entrée du droit radio, elle ne peut pas être derrière
+   * ce droit. */
+  candidats(): Observable<CandidatNoeudMeshCore[]> {
+    return this.http.get<CandidatNoeudMeshCore[]>(`${this.url}/candidats/`);
   }
 
   /** GET /api/noeuds-meshcore/mes-noeuds/ — mes propres nœuds réclamés (page Paramètres du

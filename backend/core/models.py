@@ -7186,6 +7186,82 @@ class SourceObservateurMeshCore(EnvironmentScopedModel):
         return f"{self.nom} ({self.broker_host}:{self.broker_port})"
 
 
+class NoeudPublicMeshCore(EnvironmentScopedModel):
+    """Nœud du réseau MeshCore public, importé depuis une instance CoreScope.
+
+    **Ce n'est pas une observation à nous.** `ContactMeshCore` dit « notre companion a entendu
+    ce nœud » ; cette table dit « telle instance tierce le connaît ». Les confondre ferait
+    entrer des nœuds qu'on n'a jamais entendus dans notre diagnostic de liaisons, et nos
+    conclusions porteraient sur un réseau qu'on n'observe pas.
+
+    **Répéteurs et rooms seulement.** Un `companion` est l'appareil personnel de quelqu'un et sa
+    position est très souvent son domicile : importer les 707 companions que l'instance connaît
+    reviendrait à importer 707 adresses de personnes qui n'ont rien demandé à Assista-Crise. Un
+    répéteur, lui, est de l'infrastructure — un point haut, un pylône. C'est le même filtrage
+    que la carte applique déjà à `ContactMeshCore`, et que la fédération applique à ses relais
+    (`core/federation_carte_live.py`), pour la même raison.
+
+    **La convention `🚫` est honorée** : un opérateur qui ne veut pas être affiché renomme son
+    nœud avec ce préfixe, et les instances CoreScope le retirent de leurs réponses. Si l'une
+    nous le servait quand même, on ne l'enregistre pas — republier ce que quelqu'un a demandé à
+    cacher serait pire que de ne pas l'avoir.
+
+    **Les données appartiennent à l'exploitant de l'instance**, pas à la licence du code
+    (CoreScope est en GPL-3.0, ce qui ne dit rien de ce que son instance sert). Un import
+    suppose son accord ; `instance` garde donc l'origine de chaque ligne, pour qu'on sache
+    toujours à qui demander et quoi retirer.
+
+    Les scores sont repris tels quels et non recalculés : ils viennent de ce que l'instance a
+    réellement observé, sur un volume qu'on n'a pas. `coverage_score` est de la couverture
+    **constatée**, pas un calcul de relief — c'est mieux, et c'est gratuit."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    instance = models.CharField(
+        max_length=255,
+        help_text="Instance d'origine, ex. « https://meshstats.serveurperso.in ».",
+    )
+    pubkey_hex = models.CharField(max_length=64)
+
+    nom = models.CharField(max_length=100, blank=True)
+    role = models.CharField(max_length=20, help_text="repeater ou room ; jamais companion.")
+
+    location = gis_models.PointField(srid=4326, null=True, blank=True)
+
+    premier_vu = models.DateTimeField(null=True, blank=True)
+    dernier_vu = models.DateTimeField(null=True, blank=True)
+    relais_actif = models.BooleanField(default=False)
+    relais_24h = models.PositiveIntegerField(default=0)
+
+    # Scores de l'instance, repris tels quels (0 à 1 pour les quatre premiers).
+    score_couverture = models.FloatField(null=True, blank=True)
+    score_redondance = models.FloatField(null=True, blank=True)
+    score_pont = models.FloatField(null=True, blank=True)
+    score_utilite = models.FloatField(null=True, blank=True)
+    note_utilite = models.CharField(max_length=4, blank=True)
+
+    # Taille du préfixe de hash que ce nœud utilise dans les chemins. À 1 octet, ses sauts sont
+    # inexploitables comme preuve de topologie (256 valeurs) : voir core/resolution_prefixes.py.
+    taille_hash = models.PositiveSmallIntegerField(null=True, blank=True)
+
+    date_import = models.DateTimeField()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["instance", "pubkey_hex", "environment"],
+                name="uq_noeud_public_meshcore",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["role"]),
+            models.Index(fields=["-dernier_vu"]),
+        ]
+
+    def __str__(self):
+        return f"{self.nom or self.pubkey_hex[:12]} ({self.role})"
+
+
 class MoyenAdminRadio(models.TextChoices):
     """Par quoi on est autorisé à administrer un nœud — c'est-à-dire ce qu'on remplit en le
     réclamant (demande du 10/11/2026 : « soit login / mot de passe, soit le répéteur contient la

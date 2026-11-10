@@ -25,6 +25,7 @@ from .models import (
     CandidatureAssociation,
     DemandeAccesRadio,
     MoyenAdminRadio,
+    NoeudPublicMeshCore,
     RattachementNoeudRadio,
     StatutPreuveRadio,
     SourceObservateurMeshCore,
@@ -4750,3 +4751,26 @@ class SourceObservateurMeshCoreSerializer(serializers.ModelSerializer):
                 "Filtre sans joker : il ne capterait qu'un seul topic exact. Ajoutez « /# »."
             )
         return valeur
+
+
+class NoeudPublicMeshCoreSerializer(serializers.ModelSerializer):
+    """Nœud du réseau MeshCore public (voir NoeudPublicMeshCore).
+
+    `instance` est servi : savoir d'où vient une ligne est ce qui permet de répondre à « qui
+    dois-je prévenir si cette donnée doit disparaître ? »."""
+
+    latitude = serializers.SerializerMethodField()
+    longitude = serializers.SerializerMethodField()
+
+    class Meta:
+        model = NoeudPublicMeshCore
+        fields = ['id', 'instance', 'pubkey_hex', 'nom', 'role', 'latitude', 'longitude',
+                  'premier_vu', 'dernier_vu', 'relais_actif', 'relais_24h',
+                  'score_couverture', 'score_redondance', 'score_pont', 'score_utilite',
+                  'note_utilite', 'taille_hash', 'date_import']
+
+    def get_latitude(self, obj):
+        return obj.location.y if obj.location else None
+
+    def get_longitude(self, obj):
+        return obj.location.x if obj.location else None

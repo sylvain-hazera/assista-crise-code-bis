@@ -168,6 +168,7 @@ def extract_exif_metadata(filepath):
 from .crypto_fields import blind_index
 from .models import (
     DemandeAccesRadio,
+    NoeudPublicMeshCore,
     RattachementNoeudRadio,
     SourceObservateurMeshCore,
     TacheAdminMeshCore,
@@ -523,6 +524,7 @@ def send_crisis_regulateur_invite_email(request, user, crisis, institution):
 
 from .serializers import (
     DemandeAccesRadioSerializer,
+    NoeudPublicMeshCoreSerializer,
     RattachementNoeudRadioSerializer,
     SourceObservateurMeshCoreSerializer,
     TacheAdminMeshCoreSerializer,
@@ -16314,6 +16316,52 @@ class NoeudMeshUtilisateurViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelV
         noeuds = self.get_queryset().filter(utilisateur=request.user)
         return Response(NoeudMeshUtilisateurSerializer(noeuds, many=True, context={'request': request}).data)
 
+    @action(detail=False, methods=['get'], url_path='candidats',
+            permission_classes=[permissions.IsAuthenticated])
+    def candidats(self, request):
+        """Companions ENTENDUS par nos passerelles, pour que l'utilisateur reconnaisse le sien.
+
+        **Ouvert à tout compte connecté, et c'est voulu.** Rattacher son nœud est la PORTE
+        D'ENTRÉE du droit radio (`core/acces_radio.py` : porter un nœud actif ouvre le niveau
+        opérateur). Mettre la liste de découverte derrière ce droit serait un cercle : il
+        faudrait le droit pour trouver la clé qui donne le droit. Jusqu'au 11/11/2026 la
+        conséquence était qu'il fallait recopier 64 caractères hexadécimaux à la main — et une
+        faute de frappe rattache un nœud qui n'est pas le sien.
+
+        La charge est **minimale** : de quoi reconnaître son appareil, rien de plus. Ni position,
+        ni batterie, ni voisinage — la position d'un companion est très souvent un domicile, et
+        reconnaître « c'est le mien » n'en a aucun besoin. C'est la raison pour laquelle cette
+        action vit ici et n'est pas un assouplissement de `ContactMeshCoreViewSet`, qui sert tout
+        l'état du réseau et reste réservé au domaine radio.
+
+        **Les COMPANIONS seulement.** Un répéteur ne se réclame pas ici : il passe par
+        `RattachementNoeudRadio`, qui exige une preuve (mot de passe ou appartenance à l'ACL),
+        parce qu'un répéteur est une infrastructure dont d'autres dépendent.
+
+        Un nœud déjà rattaché est listé comme pris, SANS nommer son titulaire : savoir qu'une clé
+        est prise suffit à comprendre pourquoi on ne peut pas la réclamer."""
+        pris = dict(NoeudMeshUtilisateur.objects.values_list('pubkey_hex', 'utilisateur_id'))
+        contacts = ContactMeshCore.objects.filter(
+            type_contact=TypeContactMeshCore.COMPANION,
+        ).order_by('-dernier_advert')
+        vus = {}
+        for contact in contacts:
+            # Un même companion est entendu par plusieurs passerelles : une ligne par clé, la
+            # plus récemment entendue. Deux fois le même appareil dans une liste de choix est
+            # une invitation à se tromper.
+            if contact.pubkey_hex in vus:
+                continue
+            vus[contact.pubkey_hex] = {
+                "pubkey_hex": contact.pubkey_hex,
+                "nom": contact.nom or "",
+                "dernier_advert": contact.dernier_advert,
+                "deja_associe": contact.pubkey_hex in pris,
+                # Distingué de `deja_associe` : « pris » et « pris par vous » n'appellent pas la
+                # même action — le second se libère (`liberer`), le premier non.
+                "a_moi": pris.get(contact.pubkey_hex) == request.user.id,
+            }
+        return Response(list(vus.values()))
+
     @action(detail=False, methods=['post'], url_path='reclamer')
     def reclamer(self, request):
         """Auto-service : n'importe quel utilisateur authentifié réclame SON PROPRE nœud
@@ -17387,6 +17435,44 @@ class NoeudUtilisateurMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.
         """Auto-service (page Paramètres du compte) : mes propres nœuds Meshtastic réclamés."""
         noeuds = self.get_queryset().filter(utilisateur=request.user)
         return Response(NoeudUtilisateurMeshtasticSerializer(noeuds, many=True, context={'request': request}).data)
+
+    @action(detail=False, methods=['get'], url_path='candidats',
+            permission_classes=[permissions.IsAuthenticated])
+    def candidats(self, request):
+        """Nœuds Meshtastic entendus, pour que l'utilisateur reconnaisse le sien.
+
+        Miroir exact de `NoeudMeshUtilisateurViewSet.candidats` — même raisonnement, et il est
+        écrit là-bas : la liste est ouverte à tout compte connecté parce que rattacher son nœud
+        est ce qui OUVRE le droit radio, et la charge est réduite à de quoi reconnaître son
+        appareil (ni position, ni télémétrie).
+
+        Une différence avec MeshCore : le companion qui a entendu le nœud est nommé, parce que
+        `reclamer` a besoin de savoir par quel broker passer quand plusieurs l'ont entendu (voir
+        sa docstring) ; l'interface peut ainsi proposer le bon d'emblée au lieu de renvoyer
+        l'utilisateur à un second choix."""
+        pris = dict(NoeudUtilisateurMeshtastic.objects.values_list('node_num', 'utilisateur_id'))
+        contacts = ContactMeshtastic.objects.select_related('compagnon').order_by('-dernier_advert')
+        vus = {}
+        for contact in contacts:
+            # Une ligne par node_num, la plus récemment entendue : le même appareil deux fois
+            # dans une liste de choix est une invitation à se tromper.
+            if contact.node_num in vus:
+                continue
+            vus[contact.node_num] = {
+                "node_num": contact.node_num,
+                # Le node_num en hexadécimal : c'est sous cette forme que l'appareil l'affiche,
+                # et un entier décimal n'est reconnaissable par personne.
+                "node_id": f"!{contact.node_num:08x}",
+                "long_name": contact.long_name or "",
+                "short_name": contact.short_name or "",
+                "hardware_model": contact.hardware_model or "",
+                "compagnon_id": str(contact.compagnon_id),
+                "compagnon_nom": contact.compagnon.nom,
+                "dernier_advert": contact.dernier_advert,
+                "deja_associe": contact.node_num in pris,
+                "a_moi": pris.get(contact.node_num) == request.user.id,
+            }
+        return Response(list(vus.values()))
 
     @action(detail=False, methods=['post'], url_path='reclamer')
     def reclamer(self, request):
@@ -20343,3 +20429,90 @@ class SourceObservateurMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.M
             source.derniere_connexion = timezone.now()
         source.save(update_fields=['dernier_etat', 'derniere_erreur', 'derniere_connexion'])
         return Response(SourceObservateurMeshCoreSerializer(source).data)
+
+
+class NoeudPublicMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ReadOnlyModelViewSet):
+    """Cartographie du réseau MeshCore public, importée d'une instance CoreScope.
+
+    Lecture seule : ces lignes ne se saisissent pas, elles s'importent
+    (`manage.py importer_cartographie_meshcore`). Les modifier à la main créerait une
+    divergence avec l'instance d'origine que rien ne signalerait.
+
+    Par construction, la table ne contient que des **répéteurs et des rooms** — jamais de
+    companion, dont la position est souvent un domicile (voir la docstring du modèle)."""
+
+    queryset = NoeudPublicMeshCore.objects.all()
+    serializer_class = NoeudPublicMeshCoreSerializer
+    permission_classes = [PeutAccederRadio]
+
+    def get_queryset(self):
+        qs = super().get_queryset().exclude(location__isnull=True)
+        role = self.request.query_params.get('role')
+        if role:
+            qs = qs.filter(role=role)
+        if self.request.query_params.get('actifs') == '1':
+            qs = qs.filter(relais_actif=True)
+        return qs.order_by('-score_utilite', 'nom')
+
+    @action(detail=False, methods=['get'], url_path='geojson')
+    def geojson(self, request):
+        """Points prêts pour la carte, avec de quoi les colorer.
+
+        On sert le score d'utilité tel que l'instance l'a calculé, et non une note de notre
+        cru : il vient d'un volume d'observations qu'on n'a pas. C'est de la couverture
+        **constatée**, pas un calcul de relief -- et les deux ne répondent pas à la même
+        question (voir § planification radio)."""
+        points = []
+        for noeud in self.get_queryset():
+            points.append({
+                "type": "Feature",
+                "geometry": {"type": "Point",
+                             "coordinates": [noeud.location.x, noeud.location.y]},
+                "properties": {
+                    "pubkey": noeud.pubkey_hex,
+                    "nom": noeud.nom or noeud.pubkey_hex[:12],
+                    "role": noeud.role,
+                    "actif": noeud.relais_actif,
+                    "relais_24h": noeud.relais_24h,
+                    "utilite": noeud.score_utilite,
+                    "note": noeud.note_utilite,
+                    "couverture": noeud.score_couverture,
+                    "redondance": noeud.score_redondance,
+                    "pont": noeud.score_pont,
+                    # Exposée parce qu'elle décide de ce qu'on peut conclure des chemins de ce
+                    # nœud : à 1 octet, ses sauts ne sont pas une preuve de topologie.
+                    "taille_hash": noeud.taille_hash,
+                    "dernier_vu": noeud.dernier_vu.isoformat() if noeud.dernier_vu else None,
+                },
+            })
+        return Response({"type": "FeatureCollection", "features": points})
+
+    @action(detail=False, methods=['get'], url_path='resume')
+    def resume(self, request):
+        """De quoi dire à l'écran ce que vaut cette cartographie : d'où elle vient, quand, et
+        ce qu'elle contient. Une carte sans sa provenance ni sa date se lit comme un fait."""
+        from django.db.models import Count, Max, Min
+
+        qs = self.get_queryset()
+        par_role = {
+            ligne['role']: ligne['nombre']
+            for ligne in qs.values('role').annotate(nombre=Count('id'))
+        }
+        agregats = qs.aggregate(
+            importe_le=Max('date_import'), plus_ancien=Min('dernier_vu'),
+            plus_recent=Max('dernier_vu'),
+        )
+        par_hash = {
+            str(ligne['taille_hash']): ligne['nombre']
+            for ligne in qs.values('taille_hash').annotate(nombre=Count('id'))
+            if ligne['taille_hash']
+        }
+        return Response({
+            "instances": sorted(set(qs.values_list('instance', flat=True))),
+            "total": qs.count(),
+            "par_role": par_role,
+            "actifs": qs.filter(relais_actif=True).count(),
+            "par_taille_hash": par_hash,
+            "importe_le": agregats['importe_le'],
+            "vu_entre": [agregats['plus_ancien'], agregats['plus_recent']],
+        })

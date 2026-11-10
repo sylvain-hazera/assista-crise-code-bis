@@ -13,6 +13,8 @@ import { ContactMeshtasticService } from '../../services/contact-meshtastic.serv
 import { LiaisonMeshtasticService } from '../../services/liaison-meshtastic.service';
 import { CouvertureRadioService } from '../../services/couverture-radio.service';
 import { CouvertureRadioSite } from '../../shared/models/couverture-radio.model';
+import { NoeudPublicMeshCoreService } from '../../services/noeud-public-meshcore.service';
+import { ResumeCartographiePublique } from '../../shared/models/noeud-public-meshcore.model';
 
 interface CalquesRadio {
   passerelles: boolean;
@@ -21,6 +23,7 @@ interface CalquesRadio {
   noeudsMeshtastic: boolean;
   liaisons: boolean;
   couverture: boolean;
+  reseauPublic: boolean;
 }
 
 /** La carte du réseau radio : l'infrastructure, ce qu'elle entend, et jusqu'où ça porte.
@@ -63,6 +66,7 @@ export class CarteRadioComponent implements OnInit, AfterViewInit, OnDestroy {
     // Chargés à la première activation : voir la docstring de la classe.
     liaisons: false,
     couverture: false,
+    reseauPublic: false,
   };
 
   /** Couvertures calculées et terminées, pour le sélecteur. */
@@ -73,7 +77,7 @@ export class CarteRadioComponent implements OnInit, AfterViewInit, OnDestroy {
    * qu'il n'y a rien, ou parce que le chargement a échoué. */
   comptes: Record<keyof CalquesRadio, number | null> = {
     passerelles: null, relais: null, repeteursEntendus: null,
-    noeudsMeshtastic: null, liaisons: null, couverture: null,
+    noeudsMeshtastic: null, liaisons: null, couverture: null, reseauPublic: null,
   };
   erreurs: string[] = [];
 
@@ -83,13 +87,18 @@ export class CarteRadioComponent implements OnInit, AfterViewInit, OnDestroy {
 
   private donnees: Partial<Record<keyof CalquesRadio, FeatureCollection<Geometry>>> = {};
   private liaisonsChargees = false;
+  private reseauPublicCharge = false;
+
+  /** Provenance et date de la cartographie importée, affichées à côté de la carte. */
+  resumePublic: ResumeCartographiePublique | null = null;
 
   constructor(private relaisService: RelaisMeshCoreService,
               private compagnonService: CompagnonMeshCoreService,
               private contactMeshCoreService: ContactMeshCoreService,
               private contactMeshtasticService: ContactMeshtasticService,
               private liaisonService: LiaisonMeshtasticService,
-              private couvertureService: CouvertureRadioService) {}
+              private couvertureService: CouvertureRadioService,
+              private noeudPublicService: NoeudPublicMeshCoreService) {}
 
   ngOnInit(): void {
     this.chargerPasserelles();
@@ -97,6 +106,9 @@ export class CarteRadioComponent implements OnInit, AfterViewInit, OnDestroy {
     this.chargerRepeteursEntendus();
     this.chargerNoeudsMeshtastic();
     this.chargerListeCouvertures();
+    // Le résumé seul, pas les points : il dit si la carte publique a quelque chose à montrer
+    // et de quand elle date, pour quelques centaines d'octets.
+    this.chargerResumePublic();
   }
 
   ngAfterViewInit(): void {
@@ -275,6 +287,36 @@ export class CarteRadioComponent implements OnInit, AfterViewInit, OnDestroy {
     });
   }
 
+  /** Résumé seul (quelques centaines d'octets) : il dit de quand datent les points et combien
+   * il y en a, sans rapatrier les milliers de nœuds. */
+  private chargerResumePublic(): void {
+    this.noeudPublicService.resume().subscribe({
+      next: (resume) => { this.resumePublic = resume; },
+      error: () => { this.resumePublic = null; },
+    });
+  }
+
+  /** Réseau MeshCore PUBLIC : les répéteurs et rooms d'une instance CoreScope tierce.
+   *
+   * Ce ne sont pas nos nœuds et nous ne les administrons pas : c'est le voisinage radio, ce qui
+   * existe autour de nous et sur quoi on peut compter — ou pas. Les companions en sont absents
+   * par construction côté serveur (l'appareil personnel de quelqu'un, souvent à son domicile).
+   *
+   * Plusieurs milliers de points : chargés à la première activation, jamais au démarrage. */
+  private chargerReseauPublic(): void {
+    this.noeudPublicService.geojson().subscribe({
+      next: (collection) => {
+        const donnees = collection as unknown as FeatureCollection<Geometry>;
+        this.donnees.reseauPublic = donnees;
+        this.comptes.reseauPublic = donnees.features.length;
+        this.quandCartePrete(() => this.poserCalqueReseauPublic());
+      },
+      error: () => this.signaler(
+        'Réseau public indisponible. La table est peut-être vide : la cartographie s\'importe '
+        + 'par « manage.py importer_cartographie_meshcore ».'),
+    });
+  }
+
   // ── Calques ───────────────────────────────────────────────────────────────
 
   /** Points + libellés + infobulle, pour les quatre calques de même forme. Les paramètres
@@ -385,6 +427,76 @@ export class CarteRadioComponent implements OnInit, AfterViewInit, OnDestroy {
     });
   }
 
+  /** Le réseau public, coloré par l'utilité du nœud TELLE QUE L'INSTANCE LA CALCULE.
+   *
+   * On reprend son score au lieu d'en inventer un : il vient d'un volume d'observations que nous
+   * n'avons pas. Le rayon suit le nombre de relayages sur 24 h — un répéteur qui ne relaie rien
+   * est un point, pas un appui.
+   *
+   * Pas de libellés sur ce calque : à 2500 points, MapLibre en masque la plupart et ceux qui
+   * restent se lisent comme une sélection alors qu'ils ne sont qu'un hasard de placement. */
+  private poserCalqueReseauPublic(): void {
+    if (!this.carte || !this.donnees.reseauPublic) return;
+    const source = this.carte.getSource('reseauPublic') as maplibregl.GeoJSONSource | undefined;
+    if (source) {
+      source.setData(this.donnees.reseauPublic);
+      return;
+    }
+    this.carte.addSource('reseauPublic', { type: 'geojson', data: this.donnees.reseauPublic });
+
+    // Sous NOS points : ce sont les nœuds des autres, ils ne doivent pas masquer les nôtres.
+    const dessous = ['liaisons-traits', 'passerelles-points', 'relais-points',
+                     'repeteursEntendus-points'].find(id => this.carte!.getLayer(id));
+
+    this.carte.addLayer({
+      id: 'reseauPublic-points',
+      type: 'circle',
+      source: 'reseauPublic',
+      layout: { visibility: this.calques.reseauPublic ? 'visible' : 'none' },
+      paint: {
+        // Gris pour un nœud qui ne relaie plus : l'absence d'utilité n'est pas une mauvaise
+        // note, c'est une information différente.
+        'circle-color': [
+          'case',
+          ['!', ['get', 'actif']], '#9ca3af',
+          ['==', ['get', 'utilite'], null], '#9ca3af',
+          ['>=', ['get', 'utilite'], 0.7], '#15803d',
+          ['>=', ['get', 'utilite'], 0.4], '#65a30d',
+          ['>=', ['get', 'utilite'], 0.2], '#f59e0b',
+          '#dc2626',
+        ],
+        'circle-radius': ['interpolate', ['linear'], ['get', 'relais_24h'], 0, 3, 200, 8],
+        'circle-stroke-width': 1,
+        'circle-stroke-color': '#fff',
+        'circle-opacity': 0.8,
+      },
+    }, dessous);
+
+    this.carte.on('click', 'reseauPublic-points', (e) => {
+      if (!e.features?.length) return;
+      const p = e.features[0].properties || {};
+      const geometrie = e.features[0].geometry as GeoJSON.Point;
+      const role = p['role'] === 'room' ? 'Room server' : 'Répéteur';
+      const utilite = p['utilite'] != null
+        ? `utilité ${Number(p['utilite']).toFixed(2)}${p['note'] ? ` (${p['note']})` : ''}`
+        : 'utilité non calculée';
+      // La taille de préfixe est dite ici parce qu'elle décide de ce qu'on peut conclure des
+      // chemins de ce nœud : à un octet, 256 valeurs possibles, aucune preuve de topologie.
+      const prefixe = p['taille_hash'] === 1
+        ? '<br><em>préfixe d\'un octet : ses sauts ne prouvent pas de topologie</em>'
+        : p['taille_hash'] != null ? `<br>préfixe de ${p['taille_hash']} octets` : '';
+      const vu = p['dernier_vu'] ? `<br>vu le ${new Date(p['dernier_vu']).toLocaleString('fr-FR')}` : '';
+      new maplibregl.Popup()
+        .setLngLat(geometrie.coordinates.slice() as [number, number])
+        .setHTML(`<strong>${p['nom']}</strong><br>${role} public — ${utilite}`
+                 + `<br>${p['relais_24h'] ?? 0} relayage(s) sur 24 h`
+                 + (p['actif'] ? '' : '<br><em>ne relaie plus</em>') + prefixe + vu)
+        .addTo(this.carte!);
+    });
+    this.carte.on('mouseenter', 'reseauPublic-points', () => { this.carte!.getCanvas().style.cursor = 'pointer'; });
+    this.carte.on('mouseleave', 'reseauPublic-points', () => { this.carte!.getCanvas().style.cursor = ''; });
+  }
+
   private poserCalqueCouverture(): void {
     if (!this.carte || !this.donnees.couverture) return;
     const source = this.carte.getSource('couverture') as maplibregl.GeoJSONSource | undefined;
@@ -425,6 +537,10 @@ export class CarteRadioComponent implements OnInit, AfterViewInit, OnDestroy {
       this.liaisonsChargees = true;
       this.chargerLiaisons();
     }
+    if (this.calques.reseauPublic && !this.reseauPublicCharge) {
+      this.reseauPublicCharge = true;
+      this.chargerReseauPublic();
+    }
     if (this.calques.couverture && !this.donnees.couverture) {
       this.chargerCouverture();
       return;
@@ -439,6 +555,7 @@ export class CarteRadioComponent implements OnInit, AfterViewInit, OnDestroy {
     this.appliquer('noeudsMeshtastic-label', this.calques.noeudsMeshtastic);
     this.appliquer('liaisons-traits', this.calques.liaisons);
     this.appliquer('couverture-points', this.calques.couverture);
+    this.appliquer('reseauPublic-points', this.calques.reseauPublic);
   }
 
   /** Changement de couverture choisie : on remplace la source plutôt que d'empiler un calque

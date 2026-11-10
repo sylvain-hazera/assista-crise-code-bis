@@ -76,6 +76,35 @@
         </p>
 
         <label class="calque">
+          <input type="checkbox" [(ngModel)]="calques.reseauPublic" (ngModelChange)="basculerCalque()">
+          <span class="pastille public"></span>
+          <span class="libelle">Réseau public</span>
+          <span class="compte">{{ comptes.reseauPublic ?? resumePublic?.total ?? '—' }}</span>
+        </label>
+        @if (resumePublic && resumePublic.total) {
+          <p class="note">
+            {{ resumePublic.total }} répéteurs et rooms importés de
+            <span class="instance">{{ resumePublic.instances.join(', ') }}</span>,
+            dont {{ resumePublic.actifs }} qui relaient encore.
+            @if (resumePublic.importe_le) {
+              Import du {{ resumePublic.importe_le | date:'dd/MM/yyyy à HH:mm' }}.
+            }
+            Ce ne sont pas nos nœuds : c'est le voisinage radio, l'état d'une instance tierce
+            à l'instant de l'import.
+            @if (resumePublic.par_taille_hash['1']) {
+              <br>{{ resumePublic.par_taille_hash['1'] }} d'entre eux n'annoncent qu'un octet de
+              préfixe — 256 valeurs possibles : leurs sauts ne prouvent aucune topologie.
+            }
+          </p>
+        } @else {
+          <p class="note">
+            Aucun nœud public importé. La cartographie se récupère d'une instance CoreScope par
+            <code>manage.py importer_cartographie_meshcore --instance &lt;url&gt;</code> ; les
+            companions en sont exclus par construction, leur position étant souvent un domicile.
+          </p>
+        }
+
+        <label class="calque">
           <input type="checkbox" [(ngModel)]="calques.couverture" (ngModelChange)="basculerCalque()"
                  [disabled]="!couvertureChoisie">
           <span class="pastille couverture"></span>

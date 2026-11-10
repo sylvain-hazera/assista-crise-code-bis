@@ -624,10 +624,48 @@
 
           <!-- MESHCORE -->
           <h3 class="radio-zone-title">MeshCore</h3>
-          <div class="form-group">
-            <label for="meshcorePubkey" class="form-label">Clé publique de mon nœud</label>
-            <input type="text" id="meshcorePubkey" class="form-input" placeholder="Clé publique (hex)" [(ngModel)]="reclamerMeshCorePubkey">
-          </div>
+
+          @if (candidatsMeshCore.length && !saisieManuelleMeshCore) {
+            <div class="form-group">
+              <label for="meshcoreCandidat" class="form-label">Mon nœud, parmi ceux entendus</label>
+              <select id="meshcoreCandidat" class="form-input" [ngModel]="reclamerMeshCorePubkey"
+                      (ngModelChange)="reclamerMeshCorePubkey = $event">
+                <option value="">— Choisir mon boîtier —</option>
+                @for (c of candidatsMeshCoreLibres; track c.pubkey_hex) {
+                  <option [value]="c.pubkey_hex">
+                    {{ c.nom || c.pubkey_hex.slice(0, 12) + '…' }}
+                    @if (c.dernier_advert) { — vu le {{ c.dernier_advert | date:'dd/MM à HH:mm' }} }
+                  </option>
+                }
+              </select>
+              <p class="field-hint">
+                {{ candidatsMeshCoreLibres.length }} boîtier(s) entendu(s) par nos passerelles et
+                non encore rattaché(s).
+                @if (candidatsMeshCore.length > candidatsMeshCoreLibres.length) {
+                  {{ candidatsMeshCore.length - candidatsMeshCoreLibres.length }} autre(s) sont
+                  déjà rattaché(s) à un compte et ne sont donc pas proposés.
+                }
+                <button type="button" class="btn-link" (click)="saisieManuelleMeshCore = true">
+                  Mon nœud n'est pas dans la liste
+                </button>
+              </p>
+            </div>
+          } @else {
+            <div class="form-group">
+              <label for="meshcorePubkey" class="form-label">Clé publique de mon nœud</label>
+              <input type="text" id="meshcorePubkey" class="form-input" placeholder="Clé publique (hex)" [(ngModel)]="reclamerMeshCorePubkey">
+              <p class="field-hint">
+                @if (candidatsMeshCore.length) {
+                  <button type="button" class="btn-link" (click)="saisieManuelleMeshCore = false">
+                    Revenir à la liste des boîtiers entendus
+                  </button>
+                } @else {
+                  Aucun boîtier MeshCore entendu par nos passerelles pour l'instant : la clé se
+                  lit sur l'appareil ou dans son application compagnon.
+                }
+              </p>
+            </div>
+          }
           <div class="form-group">
             <label for="meshcoreNom" class="form-label">Nom (optionnel)</label>
             <input type="text" id="meshcoreNom" class="form-input" placeholder="ex: Talkie de terrain" [(ngModel)]="reclamerMeshCoreNom">
@@ -668,10 +706,43 @@
 
           <!-- MESHTASTIC -->
           <h3 class="radio-zone-title">Meshtastic</h3>
-          <div class="form-group">
-            <label for="meshtasticNodeNum" class="form-label">Identifiant de mon nœud (node_num)</label>
-            <input type="number" id="meshtasticNodeNum" class="form-input" placeholder="ex: 3735928559" [(ngModel)]="reclamerMeshtasticNodeNum">
-          </div>
+          @if (candidatsMeshtastic.length && !saisieManuelleMeshtastic) {
+            <div class="form-group">
+              <label for="meshtasticCandidat" class="form-label">Mon nœud, parmi ceux entendus</label>
+              <select id="meshtasticCandidat" class="form-input" [ngModel]="reclamerMeshtasticNodeNum"
+                      (ngModelChange)="reclamerMeshtasticNodeNum = $event">
+                <option [ngValue]="null">— Choisir mon boîtier —</option>
+                @for (c of candidatsMeshtasticLibres; track c.node_num) {
+                  <option [ngValue]="c.node_num">
+                    {{ c.long_name || c.short_name || c.node_id }} ({{ c.node_id }})
+                    — entendu par {{ c.compagnon_nom }}
+                  </option>
+                }
+              </select>
+              <p class="field-hint">
+                L'identifiant affiché est celui que l'appareil montre lui-même, sous la forme
+                <span class="mono">!a1b2c3d4</span>.
+                <button type="button" class="btn-link" (click)="saisieManuelleMeshtastic = true">
+                  Mon nœud n'est pas dans la liste
+                </button>
+              </p>
+            </div>
+          } @else {
+            <div class="form-group">
+              <label for="meshtasticNodeNum" class="form-label">Identifiant de mon nœud (node_num)</label>
+              <input type="number" id="meshtasticNodeNum" class="form-input" placeholder="ex: 3735928559" [(ngModel)]="reclamerMeshtasticNodeNum">
+              <p class="field-hint">
+                @if (candidatsMeshtastic.length) {
+                  <button type="button" class="btn-link" (click)="saisieManuelleMeshtastic = false">
+                    Revenir à la liste des boîtiers entendus
+                  </button>
+                } @else {
+                  Aucun nœud Meshtastic entendu pour l'instant. Le node_num est l'identifiant
+                  <span class="mono">!a1b2c3d4</span> de l'appareil, converti en décimal.
+                }
+              </p>
+            </div>
+          }
           <div class="form-group">
             <label for="meshtasticNom" class="form-label">Nom (optionnel)</label>
             <input type="text" id="meshtasticNom" class="form-input" placeholder="ex: Talkie de terrain" [(ngModel)]="reclamerMeshtasticNom">

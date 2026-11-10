@@ -2350,6 +2350,49 @@ CoreScope, qui servirait d'oracle sur de vraies trames.
 `CommandeMeshCore` reste par ailleurs la file du companion LOCAL (`ADVERT`, `FLOOD_ADVERT`) :
 elle ne pilote pas un relais distant, et ces deux files ne se recouvrent pas.
 
+#### Cartographie du réseau MeshCore public
+
+`manage.py importer_cartographie_meshcore --instance <url>` importe les répéteurs et room
+servers d'une instance CoreScope (`GET /api/nodes`) dans `NoeudPublicMeshCore`. L'instance de
+référence au 11/11/2026 est `meshstats.serveurperso.in` : 2436 répéteurs, 129 rooms,
+707 companions, 5 capteurs.
+
+Ce n'est pas notre réseau et nous ne l'administrons pas : c'est le **voisinage radio**, ce qui
+existe autour d'une commune et sur quoi on peut compter — ou pas. Affiché sur
+`/admin/carte-radio`, calque « Réseau public », chargé à la première activation.
+
+Quatre décisions :
+
+- **les companions ne sont pas importés** (`ROLES = ("repeater", "room")`). Un companion est
+  l'appareil personnel de quelqu'un, et sa position est très souvent son domicile. L'instance
+  les sert ; nous n'en republions aucun. Un test verrouille cette liste, parce que « avoir plus
+  de points sur la carte » est une tentation permanente ;
+- **un nom préfixé 🚫 est un refus d'affichage**, honoré de notre côté aussi. CoreScope les
+  retire déjà de ses réponses ; on le refait, pour qu'une instance mal configurée ne nous fasse
+  pas republier ce que son opérateur a demandé à cacher ;
+- **les scores sont repris, pas recalculés.** `coverage_score`, `redundancy_score`,
+  `bridge_score`, `usefulness_score` viennent d'un volume d'observations que nous n'avons pas.
+  C'est de la couverture **constatée** : elle ne remplace pas le calcul de relief de
+  `core/relief_radio.py`, qui répond à la question inverse (« jusqu'où porterait un site qu'on
+  n'a pas encore installé ? ») ;
+- **la taille de préfixe est importée et affichée.** Elle décide de ce qu'on peut conclure des
+  chemins d'un nœud : à un octet — 308 nœuds sur les 1809 qui annoncent une taille, soit 17 % —
+  un préfixe n'a que 256 valeurs et les sauts de ce nœud ne prouvent aucune topologie (voir
+  `core/resolution_prefixes.py`). Une carte qui la cache laisse croire le contraire.
+
+Deux pièges relevés en écrivant l'import :
+
+- la pagination suit **`has_more`**, et non `total` : l'instance renvoie dans `total` la taille
+  de la **page**. S'y fier aurait arrêté l'import à 200 nœuds, sans rien dire ;
+- l'en-tête `User-Agent` est générique. C'est le service de quelqu'un d'autre : il n'a pas à
+  savoir quelle commune regarde sa carte.
+
+L'import est idempotent (`update_or_create` sur instance + clé + environnement) et ne supprime
+rien : un nœud que l'instance ne sert plus garde sa dernière date vue. `--compter` dit ce qu'un
+import contiendrait sans rien écrire. Le résumé servi par
+`/api/noeuds-publics-meshcore/resume/` est affiché à côté de la carte, parce qu'une carte sans
+sa provenance ni sa date se lit comme un fait.
+
 ### 9.5.3 Planification radio sur le relief
 
 `core/relief_radio.py`, porté de `carte-live/src/relief.js` de `carte-live-meshtastic` (GPL-3.0,
@@ -2593,6 +2636,52 @@ d'autrui :
 Poule et œuf assumé : sans aucun matériel on n'a pas accès au domaine radio, donc pas même de
 quoi s'y rattacher un premier nœud. `/admin/radio` est la porte d'entrée — un administrateur
 rattache, ou accorde le droit.
+
+#### Rattacher SON nœud : la liste de découverte ne peut pas être derrière le droit radio
+
+Les nœuds personnels existent des deux côtés et de façon symétrique, et c'est l'utilisateur
+lui-même qui se les rattache depuis `/parametres`, onglet Radio :
+
+| Protocole | Modèle | Clé | Endpoints |
+|---|---|---|---|
+| MeshCore | `NoeudMeshUtilisateur` | `pubkey_hex` (Ed25519) | `/api/noeuds-meshcore/` : `candidats`, `mes-noeuds`, `reclamer`, `liberer`, `messageables`, `positions-en-mission` |
+| Meshtastic | `NoeudUtilisateurMeshtastic` | `node_num` | `/api/noeuds-meshtastic/` : idem, `messageables` en moins (le choix du destinataire passe par l'endpoint d'équipe) |
+
+C'est ce rattachement qui fait qu'un message venu du mesh est attribué à une personne
+(`MessageMeshLog.expediteur`, résolu par ces deux modèles) et que les équipes peuvent discuter
+par radio **à travers l'application**. Il ne faut donc pas confondre ces companions-là avec ceux
+de la cartographie publique ci-dessus, qui sont les appareils d'inconnus sur une instance tierce
+et ne sont **jamais** importés.
+
+**Correction du 11/11/2026.** Le passage des endpoints radio derrière `PeutAccederRadio` avait
+créé un cercle : porter un nœud actif est ce qui OUVRE le droit radio
+(`core/acces_radio.py`), mais trouver la clé de son nœud demandait `/api/contacts-meshcore/`,
+désormais réservé au domaine radio. Un utilisateur qui venait de brancher un boîtier devait donc
+recopier **64 caractères hexadécimaux** à la main — et une faute de frappe rattache un nœud qui
+n'est pas le sien.
+
+D'où `candidats` sur les **vues de rattachement**, et non un assouplissement de
+`ContactMeshCoreViewSet` :
+
+- **ouvert à tout compte connecté** (`IsAuthenticated`), parce que c'est la porte d'entrée du
+  droit et qu'une porte ne peut pas être derrière la serrure qu'elle ouvre ;
+- **charge minimale** : clé ou `node_num`, nom annoncé, date de dernière écoute, et deux
+  drapeaux. Ni position, ni batterie, ni voisinage — la position d'un companion est très souvent
+  un domicile, et reconnaître « c'est le mien » n'en a aucun besoin. C'est le prix de
+  l'ouverture, et c'est pour cela que l'action ne réutilise pas le sérialiseur complet ;
+- **companions seulement** côté MeshCore. Un répéteur est une infrastructure dont d'autres
+  dépendent : il passe par `RattachementNoeudRadio` et sa preuve (section suivante), jamais par
+  une liste à cocher ;
+- **`deja_associe` sans nommer le titulaire**, et `a_moi` distingué : savoir qu'une clé est prise
+  suffit à comprendre pourquoi on ne peut pas la réclamer ; dire par qui révélerait quel appareil
+  appartient à quelle personne. « Pris » et « pris par vous » n'appellent d'ailleurs pas la même
+  action — le second se libère ;
+- **une ligne par clé**, la plus récemment entendue : un même appareil est vu par plusieurs
+  passerelles, et le proposer deux fois dans une liste de choix est une invitation à se tromper.
+
+La saisie manuelle reste disponible et le restera : un appareil qu'aucune de nos passerelles n'a
+jamais entendu n'est dans aucune liste. Côté Meshtastic, l'identifiant est affiché sous la forme
+`!a1b2c3d4` — celle que l'appareil montre lui-même — alors que l'API attend l'entier.
 
 #### Réclamer un répéteur MeshCore : la preuve remplace la déclaration
 
