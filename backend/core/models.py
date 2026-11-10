@@ -7015,6 +7015,115 @@ class TacheAdminMeshCore(EnvironmentScopedModel):
         return f"{self.get_type_tache_display()} -> {self.pubkey_cible[:12]} ({self.statut})"
 
 
+class LiaisonMeshCore(EnvironmentScopedModel):
+    """Liaison radio ORIENTÉE et observée côté MeshCore : `recepteur` a entendu `emetteur`.
+
+    Jumelle de `LiaisonMeshtastic`, et le raisonnement est le même (voir sa docstring et
+    `core/analyse_liaisons.py`) : une ligne par sens, agrégée, parce qu'à l'échelle d'un réseau
+    départemental conserver chaque réception ferait des millions de lignes pour une information
+    qui ne sert qu'agrégée.
+
+    **Ce qui diffère, et qui est la difficulté propre à MeshCore** : l'émetteur n'est connu que
+    par un **préfixe** de sa clé publique. `req_neighbours` rend `pubkey_prefix_length` octets
+    par voisin, 4 par défaut — pas les 32 de la clé. On stocke donc le préfixe tel qu'il est
+    venu, avec sa longueur, et la résolution vers un nœud connu est une opération séparée qui
+    peut être ambiguë. Inventer une clé complète à partir d'un préfixe serait fabriquer une
+    liaison qui n'existe pas.
+
+    Le récepteur, lui, est connu entièrement : c'est le répéteur qu'on a interrogé."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    emetteur_prefixe_hex = models.CharField(
+        max_length=64,
+        help_text="Préfixe de la clé publique du voisin entendu, tel que le répéteur l'a rendu.",
+    )
+    prefixe_octets = models.PositiveSmallIntegerField(
+        default=4,
+        help_text="Longueur du préfixe, en octets. 4 par défaut (pubkey_prefix_length). Deux "
+                  "préfixes de longueurs différentes ne se comparent pas.",
+    )
+
+    recepteur_pubkey_hex = models.CharField(
+        max_length=64,
+        help_text="Clé publique COMPLÈTE du répéteur interrogé : c'est nous qui l'avons choisi.",
+    )
+
+    source = models.CharField(
+        max_length=10, choices=SourceLiaisonMeshtastic.choices,
+        default=SourceLiaisonMeshtastic.VOISINAGE,
+        help_text="Mêmes sources que côté Meshtastic : un rapport de voisinage ne prouve pas "
+                  "la même chose qu'une réception directe.",
+    )
+
+    snr = models.FloatField(null=True, blank=True)
+    nombre = models.PositiveIntegerField(default=1)
+
+    premier_vu = models.DateTimeField(auto_now_add=True)
+    dernier_vu = models.DateTimeField()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["emetteur_prefixe_hex", "recepteur_pubkey_hex", "source", "environment"],
+                name="uq_liaison_meshcore_sens_source",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["-dernier_vu"]),
+            models.Index(fields=["recepteur_pubkey_hex"]),
+        ]
+
+    def __str__(self):
+        return f"{self.emetteur_prefixe_hex} -> {self.recepteur_pubkey_hex[:12]} ({self.source})"
+
+
+class ReleveVoisinageMeshCore(EnvironmentScopedModel):
+    """Dernier relevé de voisinage d'un répéteur : combien il en déclare, combien on en a reçu.
+
+    Une ligne par répéteur, remplacée à chaque relevé — même choix que
+    `ConfigurationNoeudMeshtastic` : on veut l'état courant du réseau, pas son historique.
+
+    **Pourquoi cette table existe du tout.** L'analyse d'asymétrie a besoin de savoir si
+    l'absence d'un voisin dans la liste est une PREUVE d'absence. Côté Meshtastic elle ne l'est
+    jamais : le rapport de voisinage y est plafonné à 10 sans que rien ne le dise. Côté
+    MeshCore, la réponse porte `neighbours_count` (le total chez le répéteur) et
+    `results_count` (ce que contient cette page) : on peut donc SAVOIR, et c'est une
+    information qu'il serait dommage de jeter."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    pubkey_hex = models.CharField(max_length=64)
+
+    total_annonce = models.PositiveIntegerField(
+        help_text="`neighbours_count` : ce que le répéteur dit avoir de voisins.",
+    )
+    recus = models.PositiveIntegerField(
+        help_text="`results_count` cumulé des pages reçues.",
+    )
+    prefixe_octets = models.PositiveSmallIntegerField(default=4)
+
+    date_releve = models.DateTimeField()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["pubkey_hex", "environment"], name="uq_releve_voisinage_meshcore_noeud",
+            ),
+        ]
+
+    @property
+    def complet(self):
+        """Vrai quand on a reçu tout ce que le répéteur annonce.
+
+        À faux, une absence ne prouve rien — exactement la précaution n° 3 de
+        `analyse_liaisons.py`, mais ici fondée sur un décompte et non sur une supposition."""
+        return self.recus >= self.total_annonce
+
+    def __str__(self):
+        return f"{self.pubkey_hex[:12]} : {self.recus}/{self.total_annonce} voisins"
+
+
 class MoyenAdminRadio(models.TextChoices):
     """Par quoi on est autorisé à administrer un nœud — c'est-à-dire ce qu'on remplit en le
     réclamant (demande du 10/11/2026 : « soit login / mot de passe, soit le répéteur contient la

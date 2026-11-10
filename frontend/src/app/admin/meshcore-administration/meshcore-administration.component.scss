@@ -1,0 +1,151 @@
+// Couleurs en var(--ac-…, <couleur du mode clair>) : les --ac-* ne sont définies qu'en mode
+// sombre (styles.scss). Voir DOCUMENTATION.md § 6.6.
+.page { padding: 20px; max-width: 1150px; }
+
+.entete {
+  h1 {
+    display: flex; align-items: center; gap: 10px;
+    margin: 0 0 8px; font-size: 1.5rem;
+    color: var(--ac-text, #111827);
+    .material-icons { color: var(--brand-primary-lisible, var(--brand-primary)); }
+  }
+  // L'avertissement de lecture conditionne la confiance à accorder aux opérations : il doit se
+  // distinguer du texte courant sans crier.
+  .avertissement-lecture {
+    padding: 10px 14px; border-radius: 6px; margin-bottom: 20px;
+    border-left: 3px solid var(--ac-amber-text, #b45309);
+    background: var(--ac-surface-2, #f9fafb);
+  }
+}
+
+.explication {
+  margin: 0 0 12px; max-width: 78ch; line-height: 1.5;
+  color: var(--ac-text-muted, #4b5563);
+  a { color: var(--brand-primary-lisible, var(--brand-primary)); font-weight: 600; }
+  code {
+    padding: 1px 4px; border-radius: 3px; font-size: .9em;
+    background: var(--ac-surface-2, #f3f4f6);
+  }
+}
+
+.message {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 10px 14px; border-radius: 6px; margin: 0 0 12px;
+  line-height: 1.5;
+  &.erreur {
+    background: var(--ac-red-bg, #fef2f2);
+    color: var(--ac-red-text, #991b1b);
+    border: 1px solid var(--ac-red-border, #fecaca);
+  }
+  &.avertissement {
+    background: var(--ac-amber-bg, #fef3c7);
+    color: var(--ac-amber-text, #92400e);
+    border: 1px solid var(--ac-amber-border, #fde68a);
+  }
+}
+
+.attente { color: var(--ac-text-muted, #6b7280); line-height: 1.5; max-width: 78ch; }
+
+section {
+  margin-bottom: 26px; padding: 18px;
+  border: 1px solid var(--ac-border, #e5e7eb); border-radius: 8px;
+  background: var(--ac-surface, #fff);
+
+  h2 {
+    display: flex; align-items: center; gap: 10px;
+    margin: 0 0 12px; font-size: 1.1rem; color: var(--ac-text, #111827);
+    .material-icons { font-size: 22px; color: var(--ac-text-subtle, #6b7280); }
+    button { margin-left: auto; }
+  }
+}
+
+.champ {
+  display: block; margin-bottom: 14px; max-width: 62ch;
+  > span { display: block; margin-bottom: 4px; font-weight: 600; color: var(--ac-text, #111827); }
+  input, select {
+    width: 100%; padding: 8px 10px; font: inherit;
+    border: 1px solid var(--ac-border, #d1d5db); border-radius: 6px;
+    background: var(--ac-surface, #fff); color: var(--ac-text, #111827);
+  }
+  small {
+    display: block; margin-top: 4px; line-height: 1.45;
+    color: var(--ac-text-muted, #6b7280);
+  }
+}
+
+.ligne {
+  display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 12px;
+  label {
+    flex: 1 1 130px; min-width: 110px;
+    > span { display: block; margin-bottom: 4px; font-size: .88rem; font-weight: 600; color: var(--ac-text, #111827); }
+    input {
+      width: 100%; padding: 7px 9px; font: inherit;
+      border: 1px solid var(--ac-border, #d1d5db); border-radius: 6px;
+      background: var(--ac-surface, #fff); color: var(--ac-text, #111827);
+    }
+  }
+}
+
+// L'essai radio est le geste le plus engageant de la page, et aussi le seul réversible : le
+// cadre dit les deux.
+.bloc-radio {
+  margin-bottom: 12px; padding: 12px 14px; border-radius: 6px;
+  background: var(--ac-surface-2, #f9fafb);
+  border-left: 3px solid var(--ac-green-text, #15803d);
+  p { margin: 0 0 10px; line-height: 1.5; color: var(--ac-text-muted, #4b5563); }
+}
+
+button {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 14px; font: inherit; border-radius: 6px; cursor: pointer;
+  .material-icons { font-size: 18px; }
+
+  &.principal { border: none; color: #fff; background: var(--brand-primary-lisible, var(--brand-primary)); }
+  &.discret {
+    padding: 4px 8px; font-size: .88rem;
+    border: 1px solid var(--ac-border, #d1d5db);
+    background: var(--ac-surface, #fff); color: var(--ac-text-muted, #4b5563);
+    &.danger { color: var(--ac-red-text, #991b1b); }
+  }
+  &:disabled { opacity: .6; cursor: default; }
+}
+
+.table-wrapper { overflow-x: auto; }
+
+.data-table {
+  width: 100%; border-collapse: collapse; font-size: .92rem;
+  th, td {
+    padding: 8px 10px; text-align: left;
+    border-bottom: 1px solid var(--ac-border, #e5e7eb);
+    color: var(--ac-text, #111827);
+  }
+  th { font-weight: 600; color: var(--ac-text-muted, #4b5563); white-space: nowrap; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .85rem; }
+
+  .ligne-detail td {
+    background: var(--ac-surface-2, #f9fafb);
+    pre {
+      margin: 0; padding: 10px; overflow-x: auto;
+      font-size: .82rem; line-height: 1.45;
+      background: var(--ac-surface, #fff);
+      border: 1px solid var(--ac-border, #e5e7eb); border-radius: 6px;
+      color: var(--ac-text, #111827);
+    }
+    .erreur-tache { margin: 0 0 8px; color: var(--ac-red-text, #991b1b); line-height: 1.5; }
+  }
+}
+
+.statut {
+  display: inline-block; padding: 2px 8px; border-radius: 999px;
+  font-size: .8rem; font-weight: 600;
+  background: var(--ac-surface-2, #f3f4f6); color: var(--ac-text-muted, #4b5563);
+
+  &.statut-ok { background: var(--ac-green-bg, #dcfce7); color: var(--ac-green-text, #15803d); }
+  &.statut-attente { background: var(--ac-amber-bg, #fef3c7); color: var(--ac-amber-text, #92400e); }
+  &.statut-erreur { background: var(--ac-red-bg, #fef2f2); color: var(--ac-red-text, #991b1b); }
+}
+
+.avert {
+  margin-left: 6px; font-size: .8rem; cursor: help;
+  color: var(--ac-amber-text, #b45309); text-decoration: underline dotted;
+}

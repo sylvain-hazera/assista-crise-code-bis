@@ -1,0 +1,329 @@
+<div class="page">
+  <header class="entete">
+    <h1><span class="material-icons">settings_remote</span> Administration MeshCore</h1>
+    <p class="explication">
+      Lire et régler un répéteur <strong>par la radio</strong>, sans se déplacer. Trois gestes,
+      dans cet ordre : réclamer le répéteur en disant par quoi on l'administre, prouver qu'on le
+      contrôle, puis opérer.
+    </p>
+    <p class="explication avertissement-lecture">
+      <strong>À lire avant d'agir.</strong> Contrairement à Meshtastic, il n'y a ici
+      <strong>aucun filet côté firmware</strong> : qui a le mot de passe écrit. C'est pourquoi
+      une écriture exige une preuve de contrôle faite. En revanche le firmware interdit
+      lui-même à distance ce qui pourrait rendre un répéteur injoignable — effacer sa
+      configuration, changer sa fréquence de façon permanente, changer sa clé privée. Pour tout
+      essai radio, prenez <em>Essayer des paramètres radio</em> : ils reviennent seuls au bout
+      du délai.
+    </p>
+  </header>
+
+  @if (erreur) {
+    <div class="message erreur" role="alert">
+      <span class="material-icons">error_outline</span> {{ erreur }}
+    </div>
+  }
+
+  <!-- ── 1. Les répéteurs réclamés ─────────────────────────────────────── -->
+  <section>
+    <h2>
+      <span class="material-icons">router</span> Répéteurs réclamés
+      <button type="button" class="discret" (click)="charger()">
+        <span class="material-icons">refresh</span> Actualiser
+      </button>
+    </h2>
+
+    @if (chargement) {
+      <p class="attente">Lecture…</p>
+    } @else if (!rattachements.length) {
+      <p class="attente">
+        Aucun répéteur réclamé. Le formulaire ci-dessous est la porte d'entrée : sans
+        rattachement, un répéteur n'est administrable que par un administrateur de la plateforme
+        — personne n'en répond.
+      </p>
+    } @else {
+      <div class="table-wrapper">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Répéteur</th>
+              <th>Clé publique</th>
+              <th>Responsable</th>
+              <th>Moyen</th>
+              <th>Preuve</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (r of rattachements; track r.id) {
+              <tr>
+                <td>{{ libelleRattachement(r) }}</td>
+                <td class="mono">{{ r.pubkey_hex.slice(0, 16) }}…</td>
+                <td>{{ r.responsable || '—' }}</td>
+                <td>{{ r.moyen_admin_libelle || r.moyen_admin }}</td>
+                <td>
+                  <span class="statut" [ngClass]="{
+                    'statut-ok': r.statut_preuve === 'VERIFIEE',
+                    'statut-attente': r.statut_preuve === 'EN_ATTENTE',
+                    'statut-erreur': r.statut_preuve === 'ECHEC'
+                  }">{{ r.statut_preuve_libelle || r.statut_preuve }}</span>
+                  @if (r.erreur_verification) {
+                    <span class="avert" [title]="r.erreur_verification">pourquoi</span>
+                  }
+                </td>
+                <td>
+                  <button type="button" class="discret" (click)="verifier(r)">Vérifier</button>
+                  <button type="button" class="discret danger" (click)="detacher(r)">Détacher</button>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      <p class="explication">
+        La vérification est <strong>rejouable</strong>, et il faut la rejouer : un répéteur qui
+        dormait, un mot de passe changé par son exploitant, et la preuve d'hier ne vaut plus.
+      </p>
+    }
+  </section>
+
+  <!-- ── 2. Réclamer ───────────────────────────────────────────────────── -->
+  <section>
+    <h2><span class="material-icons">how_to_reg</span> Réclamer un répéteur</h2>
+    <p class="explication">
+      Deux moyens, et ils viennent du firmware : son <strong>mot de passe d'administration</strong>,
+      ou le fait que <strong>la clé publique de notre companion figure dans son ACL</strong> —
+      ce qui suppose de l'avoir posée en tenant l'appareil en main, une fois.
+    </p>
+
+    <label class="champ">
+      <span>Clé publique du répéteur</span>
+      <input type="text" [(ngModel)]="reclamation.pubkey_hex" name="pubkey"
+             placeholder="64 caractères hexadécimaux" autocomplete="off">
+      <small>Le préfixe affiché par une application ne suffit pas : il faut la clé entière.</small>
+    </label>
+
+    <label class="champ">
+      <span>Comment on l'appelle</span>
+      <input type="text" [(ngModel)]="reclamation.libelle" name="libelle"
+             placeholder="ex. répéteur du château d'eau">
+      <small>Le nom annoncé par le firmware ne dit pas où il est.</small>
+    </label>
+
+    <label class="champ">
+      <span>Moyen d'administration</span>
+      <select [(ngModel)]="reclamation.moyen_admin" name="moyen">
+        <option value="MOT_DE_PASSE">Mot de passe d'administration</option>
+        <option value="ACL">Notre companion est dans son ACL</option>
+      </select>
+    </label>
+
+    @if (reclamation.moyen_admin === 'MOT_DE_PASSE') {
+      <label class="champ">
+        <span>Mot de passe d'administration</span>
+        <input type="password" [(ngModel)]="reclamation.mot_de_passe" name="mdp"
+               autocomplete="new-password">
+        <small>
+          Conservé <strong>chiffré</strong> et jamais renvoyé par l'API. Il faut le conserver :
+          une opération est exécutée par le pont quelques minutes plus tard, parfois après un
+          réessai, et personne n'est devant l'écran à ce moment-là.
+        </small>
+      </label>
+    }
+
+    <label class="champ">
+      <span>Companion qui l'administrera</span>
+      <select [(ngModel)]="reclamation.compagnon_meshcore" name="companion">
+        <option value="">— choisir —</option>
+        @for (c of companions; track c.id) {
+          <option [value]="c.id">{{ c.nom }}</option>
+        }
+      </select>
+      <small>C'est lui qui ouvrira la session, et c'est sa clé publique que l'ACL doit contenir.</small>
+    </label>
+
+    @if (erreurReclamation) {
+      <div class="message erreur" role="alert">
+        <span class="material-icons">error_outline</span> {{ erreurReclamation }}
+      </div>
+    }
+
+    <button type="button" class="principal"
+            [disabled]="!reclamation.pubkey_hex.trim() || !reclamation.compagnon_meshcore || envoiReclamation"
+            (click)="reclamer()">
+      <span class="material-icons">add</span>
+      {{ envoiReclamation ? 'Envoi…' : 'Réclamer ce répéteur' }}
+    </button>
+  </section>
+
+  <!-- ── 3. Opérer ─────────────────────────────────────────────────────── -->
+  <section>
+    <h2><span class="material-icons">play_circle</span> Lancer une opération</h2>
+
+    @if (!rattachements.length) {
+      <p class="attente">Réclamez d'abord un répéteur.</p>
+    } @else {
+      <label class="champ">
+        <span>Répéteur</span>
+        <select [(ngModel)]="operation.rattachement" name="cible">
+          <option value="">— choisir —</option>
+          @for (r of rattachements; track r.id) {
+            <option [value]="r.id">
+              {{ libelleRattachement(r) }}
+              @if (!r.preuve_faite) { (preuve non faite) }
+            </option>
+          }
+        </select>
+      </label>
+
+      <label class="champ">
+        <span>Opération</span>
+        <select [(ngModel)]="operation.type" name="operation">
+          @for (o of operations; track o.type) {
+            <option [value]="o.type">{{ o.libelle }}@if (o.ecriture) { — écriture }</option>
+          }
+        </select>
+        @if (operationChoisie) { <small>{{ operationChoisie.aide }}</small> }
+      </label>
+
+      @if (operation.type === 'RADIO_TEMPORAIRE') {
+        <div class="bloc-radio">
+          <p>
+            <strong>Essai réversible.</strong> Le répéteur revient de lui-même à ses réglages au
+            bout du délai : c'est ce qui rend cet essai sûr, et c'est pourquoi le délai est
+            obligatoire. Bornes imposées par le firmware.
+          </p>
+          <div class="ligne">
+            <label><span>Fréquence (MHz)</span>
+              <input type="number" step="any" min="150" max="2500"
+                     [(ngModel)]="operation.frequence_mhz" name="freq"></label>
+            <label><span>Bande (kHz)</span>
+              <input type="number" step="any" min="7" max="500"
+                     [(ngModel)]="operation.bande_khz" name="bw"></label>
+            <label><span>Étalement</span>
+              <input type="number" min="5" max="12"
+                     [(ngModel)]="operation.facteur_etalement" name="sf"></label>
+            <label><span>Codage</span>
+              <input type="number" min="5" max="8"
+                     [(ngModel)]="operation.taux_codage" name="cr"></label>
+            <label><span>Retour après (min)</span>
+              <input type="number" min="1" [(ngModel)]="operation.minutes" name="min"></label>
+          </div>
+        </div>
+      }
+
+      @if (operation.type === 'DEFINIR_REGLAGE') {
+        <div class="ligne">
+          <label class="champ"><span>Clé</span>
+            <input type="text" [(ngModel)]="operation.cle" name="cle"
+                   placeholder="ex. advert.interval"></label>
+          <label class="champ"><span>Valeur</span>
+            <input type="text" [(ngModel)]="operation.valeur" name="valeur"></label>
+        </div>
+        <p class="explication">
+          Réglage <strong>durable</strong>. Les clés qui changent l'identité du nœud
+          (<code>prv.key</code>, <code>public.key</code>) ou transportent un secret
+          (<code>password</code>, <code>guest.password</code>) sont refusées par le serveur, avec
+          leur motif.
+        </p>
+      }
+
+      @if (ecritureImpossible) {
+        <div class="message avertissement" role="alert">
+          <span class="material-icons">warning_amber</span>
+          <span>
+            Cette opération <strong>écrit</strong> sur le répéteur, et sa preuve de contrôle
+            n'est pas faite. Lancez <em>Vérifier</em> sur ce répéteur d'abord — sinon le serveur
+            refusera.
+          </span>
+        </div>
+      }
+
+      @if (erreurOperation) {
+        <div class="message erreur" role="alert">
+          <span class="material-icons">error_outline</span> {{ erreurOperation }}
+        </div>
+      }
+
+      <button type="button" class="principal"
+              [disabled]="!operation.rattachement || envoiOperation || ecritureImpossible"
+              (click)="lancer()">
+        <span class="material-icons">send</span>
+        {{ envoiOperation ? 'Mise en file…' : 'Mettre en file' }}
+      </button>
+      <p class="explication">
+        L'opération traverse la radio : elle met de quelques secondes à plusieurs minutes, et
+        elle est réessayée si le répéteur ne répond pas. Le résultat apparaît ci-dessous.
+      </p>
+    }
+  </section>
+
+  <!-- ── 4. La file ────────────────────────────────────────────────────── -->
+  <section>
+    <h2>
+      <span class="material-icons">list_alt</span> Opérations
+      <button type="button" class="discret" (click)="rafraichirTaches()">
+        <span class="material-icons">refresh</span> Actualiser
+      </button>
+    </h2>
+
+    @if (!taches.length) {
+      <p class="attente">Aucune opération.</p>
+    } @else {
+      <div class="table-wrapper">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Répéteur</th>
+              <th>Opération</th>
+              <th>Statut</th>
+              <th>Tentatives</th>
+              <th>Demandée</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (t of taches; track t.id) {
+              <tr>
+                <td>{{ nomRattachementPour(t.pubkey_cible) }}</td>
+                <td>{{ t.type_tache_libelle || t.type_tache }}</td>
+                <td>
+                  <span class="statut" [ngClass]="{
+                    'statut-ok': t.statut === 'TERMINEE',
+                    'statut-attente': t.statut === 'EN_ATTENTE' || t.statut === 'EN_COURS',
+                    'statut-erreur': t.statut === 'ECHEC'
+                  }">{{ t.statut }}</span>
+                </td>
+                <td>{{ t.tentatives }}</td>
+                <td>{{ t.date_creation | date:'dd/MM HH:mm' }}</td>
+                <td>
+                  @if (t.reponse || t.erreur) {
+                    <button type="button" class="discret" (click)="basculerTache(t.id)">
+                      {{ tacheDepliee === t.id ? 'masquer' : 'résultat' }}
+                    </button>
+                  }
+                </td>
+              </tr>
+              @if (tacheDepliee === t.id) {
+                <tr class="ligne-detail">
+                  <td colspan="6">
+                    @if (t.erreur) { <p class="erreur-tache">{{ t.erreur }}</p> }
+                    @if (t.reponse) { <pre>{{ reponseLisible(t) }}</pre> }
+                  </td>
+                </tr>
+              }
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+    <p class="explication">
+      Les réponses sont <strong>chiffrées au repos</strong> : un relevé de statut peut contenir
+      la configuration du répéteur, et certaines réponses du firmware réaffichent des secrets.
+    </p>
+  </section>
+
+  <p class="explication">
+    Pour savoir à quel titre vous avez l'accès radio et sur quoi il porte, voir
+    <a routerLink="/admin/radio">Accueil radio</a>.
+  </p>
+</div>

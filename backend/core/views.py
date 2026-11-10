@@ -17008,6 +17008,20 @@ class ContactMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ReadOnlyMod
     serializer_class = ContactMeshCoreSerializer
     permission_classes = [PeutAccederRadio]
 
+    @action(detail=False, methods=['get'], url_path='analyse-liaisons')
+    def analyse_liaisons(self, request):
+        """Diagnostic des liaisons MeshCore : relais sourds, liaisons à sens unique, nœuds
+        inaudibles — le même raisonnement que côté Meshtastic, sur les mêmes seuils (voir
+        core/analyse_liaisons.py).
+
+        Alimenté par les relevés de voisinage (`LIRE_VOISINS`), pas par une écoute passive :
+        c'est le répéteur lui-même qui dit ce qu'il entend. Le résultat porte en plus
+        `liaisons_ecartees` — un préfixe de clé de 4 octets ne désigne pas toujours un seul
+        nœud, et une liaison dont on ne sait pas de qui elle parle est écartée plutôt que
+        devinée."""
+        from .analyse_liaisons import analyser_meshcore
+        return Response(analyser_meshcore(get_active_environment(request)))
+
     def get_queryset(self):
         qs = super().get_queryset()
         compagnon_id = self.request.query_params.get('compagnon')
@@ -20169,6 +20183,9 @@ class TacheAdminMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVie
                 tache.statut = StatutTacheAdminMeshtastic.EN_ATTENTE
             tache.save(update_fields=['statut', 'erreur', 'date_reponse'])
 
+        if succes and tache.type_tache == TypeTacheAdminMeshCore.LIRE_VOISINS:
+            self._enregistrer_voisinage(tache, request.data.get('reponse'), maintenant)
+
         if tache.type_tache == TypeTacheAdminMeshCore.VERIFIER_ACCES:
             if succes:
                 nouveau, erreur = StatutPreuveRadio.VERIFIEE, ""
@@ -20183,3 +20200,82 @@ class TacheAdminMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVie
                 )
 
         return Response(TacheAdminMeshCoreSerializer(tache).data)
+
+    @staticmethod
+    def _enregistrer_voisinage(tache, reponse, maintenant):
+        """Range un relevé de voisinage en liaisons orientées, et note s'il est complet.
+
+        Forme de la réponse, lue dans le parseur de la bibliothèque (`meshcore/reader.py`,
+        branche `BinaryReqType.NEIGHBOURS`) et non devinée :
+        `{neighbours_count, results_count, pubkey_prefix_length, neighbours: [{pubkey, secs_ago, snr}]}`.
+        `pubkey` est un **préfixe** de `pubkey_prefix_length` octets (4 par défaut), et `snr`
+        est déjà en dB.
+
+        Deux précautions :
+
+        - **le sens.** `neighbours` est ce que le répéteur ENTEND : il est donc le RÉCEPTEUR de
+          chaque liaison, et le voisin l'émetteur. L'inverser retournerait toutes les
+          conclusions de l'analyse d'asymétrie ;
+        - **la complétude.** `neighbours_count` est le total chez le répéteur, `results_count`
+          ce que contient cette page. On enregistre les deux : sans eux, l'absence d'un voisin
+          serait prise pour une preuve alors que la page était simplement pleine."""
+        from .models import LiaisonMeshCore, ReleveVoisinageMeshCore, SourceLiaisonMeshtastic
+
+        if not isinstance(reponse, dict):
+            return
+        voisins = reponse.get('neighbours')
+        if not isinstance(voisins, list):
+            return
+
+        longueur = reponse.get('pubkey_prefix_length') or 4
+        try:
+            longueur = max(1, min(32, int(longueur)))
+        except (TypeError, ValueError):
+            longueur = 4
+
+        enregistres = 0
+        for voisin in voisins:
+            if not isinstance(voisin, dict):
+                continue
+            prefixe = str(voisin.get('pubkey') or '').strip().lower()
+            if not prefixe:
+                continue
+            snr = voisin.get('snr')
+            try:
+                snr = float(snr) if snr is not None else None
+            except (TypeError, ValueError):
+                snr = None
+
+            ligne, cree = LiaisonMeshCore.objects.get_or_create(
+                emetteur_prefixe_hex=prefixe,
+                recepteur_pubkey_hex=tache.pubkey_cible,
+                source=SourceLiaisonMeshtastic.VOISINAGE,
+                environment=tache.environment,
+                defaults={'snr': snr, 'prefixe_octets': longueur, 'dernier_vu': maintenant},
+            )
+            if not cree:
+                # On retient le MEILLEUR SNR observé, comme côté Meshtastic : une mesure basse
+                # peut venir d'une interférence passagère, la meilleure dit ce dont la liaison
+                # est capable.
+                if snr is not None and (ligne.snr is None or snr > ligne.snr):
+                    ligne.snr = snr
+                ligne.nombre += 1
+                ligne.prefixe_octets = longueur
+                ligne.dernier_vu = maintenant
+                ligne.save(update_fields=['snr', 'nombre', 'prefixe_octets', 'dernier_vu'])
+            enregistres += 1
+
+        try:
+            total = int(reponse.get('neighbours_count'))
+        except (TypeError, ValueError):
+            total = enregistres
+        try:
+            recus = int(reponse.get('results_count'))
+        except (TypeError, ValueError):
+            recus = enregistres
+
+        ReleveVoisinageMeshCore.objects.update_or_create(
+            pubkey_hex=tache.pubkey_cible, environment=tache.environment,
+            defaults={'total_annonce': max(total, 0), 'recus': max(recus, 0),
+                      'prefixe_octets': longueur, 'date_releve': maintenant},
+        )

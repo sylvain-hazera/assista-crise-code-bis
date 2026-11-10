@@ -68,6 +68,11 @@ export const ADMIN_ROUTES: Routes = [
   // un noeud n'y avait acces a aucun. Les deux sont renvoyes vers /admin/radio.
   { path: 'meshcore-companions', loadComponent: () => import('./meshcore-companions/meshcore-companions.component').then(m => m.MeshcoreCompanionsComponent), canActivate: [radioGuard] },
   { path: 'meshcore-canaux', loadComponent: () => import('./meshcore-canaux/meshcore-canaux.component').then(m => m.MeshcoreCanauxComponent), canActivate: [radioGuard] },
+  // Administration a distance des repeteurs MeshCore (login + CLI par la radio). Le serveur
+  // exige en plus une PREUVE de controle sur le noeud vise pour toute ecriture : il n'existe
+  // pas d'equivalent de security.admin_key cote MeshCore, qui a le mot de passe ecrit (voir
+  // TacheAdminMeshCoreViewSet et core/acces_radio.py).
+  { path: 'meshcore-administration', loadComponent: () => import('./meshcore-administration/meshcore-administration.component').then(m => m.MeshcoreAdministrationComponent), canActivate: [radioGuard] },
   { path: 'meshtastic-companions', loadComponent: () => import('./meshtastic-companions/meshtastic-companions.component').then(m => m.MeshtasticCompanionsComponent), canActivate: [radioGuard] },
   { path: 'meshtastic-canaux', loadComponent: () => import('./meshtastic-canaux/meshtastic-canaux.component').then(m => m.MeshtasticCanauxComponent), canActivate: [radioGuard] },
   // Administration a distance des noeuds Meshtastic (AdminMessage par la radio). Le serveur

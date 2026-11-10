@@ -316,3 +316,162 @@ class TestApiLectureEtGeojson:
         assert reponse.status_code == 200, reponse.data
         assert [c["entendu"] for c in reponse.data["sens_unique"]] == [10]
         assert reponse.data["puissance_connue"] is False
+
+
+# ── Le même raisonnement, appliqué à MeshCore ────────────────────────────────
+
+CLE_P = "aa" + "01" * 31      # la « passerelle » : celle qui rapporte
+CLE_X = "bb" + "02" * 31
+CLE_Y = "bb" + "03" * 31      # même PREMIER octet que CLE_X : collision sur 1 octet,
+                              # mais pas sur 2 — c'est ce qui permet de tester les deux cas.
+CLE_Z = "cc" + "04" * 31
+
+
+@pytest.fixture
+def noeud_meshcore(db):
+    """Nœud MeshCore vu récemment, avec position."""
+    from core.models import CompagnonMeshCore, ContactMeshCore, MeshCoreConnexionType
+
+    compagnon = CompagnonMeshCore.objects.create(
+        nom="Companion analyse", connexion_type=MeshCoreConnexionType.TCP, tcp_host="10.0.0.1",
+    )
+
+    def _creer(cle, nom=None, lat=-21.0, lon=55.5, vu_il_y_a_heures=1):
+        return ContactMeshCore.objects.create(
+            compagnon=compagnon, pubkey_hex=cle, nom=nom or cle[:8],
+            location=Point(lon, lat, srid=4326),
+            dernier_advert=timezone.now() - datetime.timedelta(hours=vu_il_y_a_heures),
+        )
+    return _creer
+
+
+def _liaison_meshcore(prefixe, recepteur, snr=5.0, nombre=5, octets=1):
+    from core.models import LiaisonMeshCore, SourceLiaisonMeshtastic as Source
+
+    return LiaisonMeshCore.objects.create(
+        emetteur_prefixe_hex=prefixe, prefixe_octets=octets, recepteur_pubkey_hex=recepteur,
+        source=Source.VOISINAGE, snr=snr, nombre=nombre, dernier_vu=timezone.now(),
+    )
+
+
+def _releve(cle, total, recus):
+    from core.models import ReleveVoisinageMeshCore
+
+    return ReleveVoisinageMeshCore.objects.create(
+        pubkey_hex=cle, total_annonce=total, recus=recus, date_releve=timezone.now(),
+    )
+
+
+@pytest.mark.django_db
+class TestAnalyseMeshCore:
+    """Le cœur de l'analyse est partagé : ces tests ne revérifient pas les seuils, ils
+    verrouillent ce que MeshCore fait DIFFÉREMMENT."""
+
+    def _scene_sens_unique(self, noeud_meshcore):
+        """X rapporte (il entend Z), P entend X, mais X ne mentionne jamais P.
+
+        Le sens est le piège de ce module : `_Sens(a, b)` signifie « b a entendu a », et la
+        conclusion « à sens unique » porte sur **A**, celui qui rapporte sans mentionner B.
+        C'est donc la complétude du relevé de **X** qui décide, pas celle de P."""
+        noeud_meshcore(CLE_P, "Passerelle")
+        noeud_meshcore(CLE_X, "Lointain")
+        noeud_meshcore(CLE_Z, "Temoin")
+        _liaison_meshcore(CLE_X[:2], CLE_P)      # P a entendu X
+        _liaison_meshcore(CLE_Z[:2], CLE_X)      # X a entendu Z -> X rapporte
+
+    def test_une_absence_ne_prouve_rien_tant_que_le_releve_est_incomplet(self, noeud_meshcore):
+        """Sans relevé complet, on ne conclut pas « à sens unique » : la liste des voisins de X
+        pouvait simplement s'arrêter avant P."""
+        from core.analyse_liaisons import analyser_meshcore
+
+        self._scene_sens_unique(noeud_meshcore)
+        _releve(CLE_X, total=20, recus=3)        # page partielle
+
+        resultat = analyser_meshcore("PROD")
+        assert resultat["sens_unique"] == []
+
+    def test_un_releve_complet_permet_de_conclure(self, noeud_meshcore):
+        """C'est l'apport de MeshCore : il annonce son total, donc une absence PEUT être une
+        preuve — ce qui n'est jamais le cas côté Meshtastic, dont le rapport est plafonné à 10
+        sans le dire."""
+        from core.analyse_liaisons import analyser_meshcore
+
+        self._scene_sens_unique(noeud_meshcore)
+        _releve(CLE_X, total=1, recus=1)
+
+        resultat = analyser_meshcore("PROD")
+        conclusions = [c for c in resultat["sens_unique"] if c["entendu"] == CLE_X]
+        assert len(conclusions) == 1
+        # « P entend X, X ne l'entend pas » : X est le côté sourd.
+        assert conclusions[0]["entend"] == CLE_P
+        assert conclusions[0]["nom_entend"] == "Passerelle"
+
+    def test_un_prefixe_ambigu_est_ecarte_et_compte(self, noeud_meshcore):
+        """Deux nœuds partagent le premier octet : on ne sait pas de qui parle la liaison.
+        Conclure reviendrait à inventer, et une liaison fausse envoie quelqu'un sur un point
+        haut."""
+        from core.analyse_liaisons import analyser_meshcore
+
+        noeud_meshcore(CLE_P, "Passerelle")
+        noeud_meshcore(CLE_X, "X")
+        noeud_meshcore(CLE_Y, "Y")
+        _liaison_meshcore("bb", CLE_P)     # préfixe d'un octet : CLE_X et CLE_Y commencent par bb
+
+        resultat = analyser_meshcore("PROD")
+        assert resultat["sens_unique"] == []
+        assert resultat["liaisons_ecartees"]["prefixe_ambigu"] == 1
+
+    def test_un_prefixe_inconnu_est_ecarte_et_compte(self, noeud_meshcore):
+        from core.analyse_liaisons import analyser_meshcore
+
+        noeud_meshcore(CLE_P, "Passerelle")
+        _liaison_meshcore("ff", CLE_P)
+        _releve(CLE_P, total=1, recus=1)
+
+        resultat = analyser_meshcore("PROD")
+        assert resultat["liaisons_ecartees"]["prefixe_inconnu"] == 1
+
+    def test_un_prefixe_plus_long_leve_l_ambiguite(self, noeud_meshcore):
+        """Deux octets suffisent ici à distinguer CLE_X de CLE_Y : c'est exactement ce que
+        `pubkey_prefix_length` achète."""
+        from core.analyse_liaisons import analyser_meshcore
+
+        noeud_meshcore(CLE_P, "Passerelle")
+        noeud_meshcore(CLE_X, "X")
+        noeud_meshcore(CLE_Y, "Y")
+        noeud_meshcore(CLE_Z, "Temoin")
+        _liaison_meshcore(CLE_X[:4], CLE_P, octets=2)
+        _liaison_meshcore(CLE_Z[:2], CLE_X)
+        _releve(CLE_X, total=1, recus=1)
+
+        resultat = analyser_meshcore("PROD")
+        # Deux octets suffisent à distinguer CLE_X de CLE_Y : rien n'est écarté, et la
+        # conclusion devient possible.
+        assert resultat["liaisons_ecartees"]["prefixe_ambigu"] == 0
+        assert [c["entendu"] for c in resultat["sens_unique"]] == [CLE_X]
+
+    def test_l_identite_rendue_est_la_cle_publique(self, noeud_meshcore):
+        """Le frontend Meshtastic lit `node_num` ; MeshCore n'en a pas, et fabriquer un entier
+        à partir d'une clé serait une identité inventée."""
+        from core.analyse_liaisons import analyser_meshcore
+
+        noeud_meshcore(CLE_P, "Passerelle")
+        noeud_meshcore(CLE_Z, "Temoin")
+        _liaison_meshcore(CLE_Z[:2], CLE_P)
+        _releve(CLE_P, total=1, recus=1)
+
+        resultat = analyser_meshcore("PROD")
+        for inaudible in resultat["inaudibles"]:
+            assert "pubkey" in inaudible and "node_num" not in inaudible
+
+    def test_le_diagnostic_meshtastic_n_est_pas_pollue(self, noeud_meshcore, noeud, liaison):
+        """Les deux réseaux sont analysés séparément : une liaison MeshCore ne doit jamais
+        apparaître dans le diagnostic Meshtastic, et réciproquement."""
+        noeud_meshcore(CLE_P, "Passerelle")
+        noeud_meshcore(CLE_X, "X")
+        _liaison_meshcore(CLE_X[:2], CLE_P)
+        _releve(CLE_P, total=1, recus=1)
+
+        resultat = analyser("PROD")   # Meshtastic
+        assert resultat["sens_unique"] == []
+        assert "liaisons_ecartees" not in resultat

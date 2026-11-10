@@ -225,6 +225,7 @@ docker compose down -v                                 # arrêt + SUPPRESSION de
 | `inondation.py`, `ruissellement.py`, `hydrometrie.py`, `tasks.py` | simulation d'inondation (tâche Celery) |
 | `routage_mesh.py`, `routage_meshtastic.py`, `sync_outbox.py` | routage MeshCore, routage Meshtastic (§ 9.5.2), synchronisation satellite → central |
 | `acces_radio.py` | qui a accès au domaine radio, et à quel niveau : le droit intermédiaire « opérateur » (§ 9.5.5) |
+| `decodeur_meshcore.py`, `resolution_prefixes.py` | format des trames MeshCore, et résolution d'un saut vers un nœud (portés de CoreScope) |
 | modèle `RattachementNoeudRadio` | qui répond d'un répéteur que personne ne porte (§ 9.5.6) |
 | `imports.py`, `export.py` | import CSV/XLS (personnel, institutions, habitations), exports |
 | `metrics.py` | métriques Prometheus métier (voir § 9) |
@@ -2143,12 +2144,157 @@ les rattachements, donc ceux des autres institutions.
 le pont peut redémarrer entre deux tâches, et une session qu'on croit ouverte produit un échec
 silencieux bien plus coûteux qu'une connexion de trop.
 
-**Tests** : `backend/core/tests/mesh/test_acces_radio.py` (103) et
-`meshcore-bridge/test_admin_meshcore.py` (18, avec un faux companion).
+#### Le voisinage MeshCore, et ce qu'une absence prouve
 
-**Pas encore fait** : le décodage de trames MeshCore (lots 3 et 4 : décodeur porté de CoreScope,
-puis modèle de confiance des préfixes de hash), l'écran de réclamation sur
-`/admin/meshcore-companions`, et l'entrée de `LIRE_VOISINS` dans `analyse_liaisons.py`.
+`LIRE_VOISINS` est l'opération la plus utile de la file : elle donne la carte des liaisons sans
+attendre le décodeur de trames. Son résultat est rangé par `_enregistrer_voisinage` en
+`LiaisonMeshCore` (liaisons orientées) et `ReleveVoisinageMeshCore` (un relevé par répéteur,
+remplacé à chaque lecture).
+
+La forme de la réponse vient du **parseur de la bibliothèque** (`meshcore/reader.py`, branche
+`BinaryReqType.NEIGHBOURS`), et non d'une supposition :
+
+```
+{neighbours_count, results_count, pubkey_prefix_length,
+ neighbours: [{pubkey, secs_ago, snr}]}
+```
+
+Trois points qui comptent :
+
+- **le sens.** `neighbours` est ce que le répéteur ENTEND : il est donc le **récepteur** de
+  chaque liaison, le voisin en est l'émetteur. L'inverser retournerait toutes les conclusions
+  de l'analyse d'asymétrie ;
+- **l'émetteur n'est connu que par un préfixe** de `pubkey_prefix_length` octets, 4 par défaut —
+  pas les 32 de la clé. On le stocke tel quel **avec sa longueur** : deux préfixes de longueurs
+  différentes ne se comparent pas, et fabriquer une clé complète à partir d'un préfixe
+  fabriquerait une liaison qui n'existe pas. C'est le même problème que celui que CoreScope
+  traite par désambiguïsation (§ ci-dessus), rencontré ici avant même le décodeur ;
+- **la complétude est CONNUE.** `neighbours_count` est le total chez le répéteur,
+  `results_count` ce que contient la page. C'est une différence nette avec Meshtastic, dont le
+  rapport de voisinage est plafonné à 10 **sans le dire** — là-bas une absence ne prouve jamais
+  rien, ici elle peut prouver quelque chose quand `ReleveVoisinageMeshCore.complet` est vrai.
+
+Le meilleur SNR observé est retenu, comme côté Meshtastic : une mesure basse peut venir d'une
+interférence passagère, la meilleure dit ce dont la liaison est capable.
+
+Une réponse d'une forme inattendue n'enregistre **rien** plutôt que d'enregistrer au mieux :
+une liaison fausse envoie quelqu'un sur un point haut.
+
+#### L'écran
+
+`/admin/meshcore-administration`, dans le sous-cadre MeshCore du menu. Trois gestes dans
+l'ordre où ils se font : réclamer, prouver, opérer. La page refuse une écriture **avant le
+clic** quand la preuve n'est pas faite, plutôt que de la laisser découvrir par un 403 trois
+minutes plus tard, et chaque opération affiche ce qu'elle coûte en cas d'erreur.
+
+**Tests** : `backend/core/tests/mesh/test_acces_radio.py` (111),
+`meshcore-bridge/test_admin_meshcore.py` (18, avec un faux companion) et
+`meshcore-administration.component.spec.ts` (10).
+
+#### Deux protocoles, un seul raisonnement d'analyse
+
+`analyse_liaisons.py` portait six précautions écrites pour Meshtastic. Les dupliquer pour
+MeshCore aurait garanti qu'une des deux copies finisse par en perdre une : le module a donc été
+**extrait** (10/11/2026). Le cœur (`_analyser`) ne connaît que des identités opaques ; ce qui
+dépend du protocole vit dans une *source* (`_SourceMeshtastic`, `_SourceMeshCore`). Les 25 tests
+d'origine passent sans modification — c'est ce qui prouve que l'extraction est fidèle.
+
+Deux choses seulement diffèrent entre les protocoles, et la source les porte :
+
+| | Meshtastic | MeshCore |
+|---|---|---|
+| Identité | entier 32 bits (`node_num`) | clé publique Ed25519 (`pubkey`) |
+| Une absence prouve-t-elle quelque chose ? | **jamais au-delà de 10 voisins** : le rapport est plafonné sans le dire | **oui quand le relevé est complet** (`neighbours_count` annoncé) |
+
+Le second point est un gain net pour MeshCore : là où l'analyse Meshtastic doit s'abstenir dès
+qu'un nœud déclare 10 voisins, elle peut conclure ici sur un décompte.
+
+`analyser_meshcore()` rend en plus `liaisons_ecartees` : un diagnostic calculé sur une partie
+des liaisons seulement doit le dire. Les liaisons dont le préfixe d'émetteur est **ambigu** ou
+**inconnu** sont écartées — conclure « à sens unique » sans savoir de qui l'on parle reviendrait
+à inventer une liaison, et une liaison fausse envoie quelqu'un sur un point haut. Endpoint :
+`GET /api/contacts-meshcore/analyse-liaisons/`.
+
+#### Décodage des trames MeshCore
+
+`core/decodeur_meshcore.py`, porté de CoreScope (commit `1577b57d`, 09/11/2026). Format :
+
+```
+octet 0      en-tête : bits 1-0 route, 5-2 charge, 7-6 version
+[4 octets]   codes de transport, sur les routes TRANSPORT_* seulement
+1 octet      chemin : bits 7-6 (taille de hash − 1), bits 5-0 nombre de sauts
+n octets     les sauts
+reste        la charge (184 octets au plus)
+```
+
+Faits vérifiés dans le firmware, pas dans une documentation :
+
+- **un « hash » de chemin est un PRÉFIXE de la clé publique**, pas un condensé. Le firmware
+  l'écrit : « hash is just prefix of pub_key » (`src/Identity.h:20`). Chercher un SHA-256
+  n'aurait rien donné ;
+- **`taille_hash == 4` est réservée** et refusée quel que soit le nombre de sauts
+  (`src/Packet.cpp:13-18`) : un `0xC0` sur le fil est par définition malformé ;
+- bornes `MAX_PATH_SIZE = 64` et `MAX_PACKET_PAYLOAD = 184` (`src/MeshCore.h:19,21`) ;
+- un advert est `clé (32) + horodatage (4 LE) + signature Ed25519 (64) + données`, et la
+  signature porte sur `clé + horodatage + données`. Les positions sont des entiers **signés**
+  au millionième de degré — les lire en non signé placerait tout l'hémisphère sud en Sibérie ;
+- un canal se déchiffre avec `SHA-256(nom)[:16]`, un MAC HMAC-SHA256 **tronqué à 2 octets** sur
+  un secret de `clé + 16 octets nuls`, en **AES-128-ECB**. Rater l'un des trois fait échouer en
+  silence.
+
+Le décodeur **lève** plutôt que de décoder au mieux : une trame à moitié comprise produit des
+liaisons et des positions fausses. Les charges exotiques (MULTIPART imbriqué, CONTROL/DISCOVER,
+RAW_CUSTOM) sont reconnues par leur type et rendues brutes — CoreScope y traite des cas repérés
+au fil de ses propres incidents, que nous ne pouvons pas rejouer.
+
+#### Résoudre un saut vers un nœud, et savoir quand on ne peut pas
+
+`core/resolution_prefixes.py`, porté de `docs/HASH-PREFIX-DISAMBIGUATION.md` de CoreScope.
+
+Un préfixe d'un octet n'a que **256 valeurs** : au-delà d'une vingtaine de nœuds les collisions
+sont certaines, et CoreScope a mesuré sur un réseau réel que **56 % des sauts observés** portent
+un préfixe d'un seul octet. Un saut mal résolu ne donne pas une donnée floue : il donne un trait
+faux sur la carte.
+
+Trois certitudes, qui ne valent pas la même chose :
+
+- **`unique`** — un seul nœud connu porte ce préfixe. C'est une résolution ;
+- **`deduit`** — plusieurs candidats, départagés par la géographie en deux passes (avant, puis
+  arrière pour ce qui reste — sans la seconde, un chemin dont le premier saut est ambigu ne se
+  résoudrait jamais). **C'est une hypothèse** : bonne pour tracer un itinéraire, jamais comme
+  preuve de topologie ;
+- **`ambigu` / `inconnu`** — on ne tranche pas.
+
+Un saut à plus de 200 km de ses deux voisins résolus est marqué `invraisemblable` (distinct du
+seuil de 120 km de `analyse_liaisons`, qui juge une portée RF et non la cohérence d'un
+itinéraire). Seul `unique` alimente le diagnostic. Le seuil de confiance
+(`MIN_OCTETS_HASH_DEFAUT = 1`) reprend leur défaut et leur raisonnement : exiger 2 d'emblée
+ferait disparaître la moitié du graphe sans que rien ne l'explique à l'écran.
+
+#### MeshCore n'a pas de MQTT, et ce que ça implique
+
+Constaté sur du matériel réel le 10/11/2026, puis vérifié dans le firmware — cela **corrige** ce
+que ce document envisageait (« ingestion MQTT MeshCore ») :
+
+- **un companion n'a pas de CLI de configuration.** Le jeu `get`/`set` (`bridge.*`,
+  `tempradio`, `role`…) vient de `src/helpers/CommonCLI.cpp`, inclus par les seuls firmwares
+  d'infrastructure : `simple_repeater`, `simple_room_server`, `simple_sensor`. Le firmware
+  companion n'en reprend que des structures (`examples/companion_radio/NodePrefs.h:126`,
+  « COPIED from CommonCLI (for now) ») et répond `ERR_CODE_UNSUPPORTED_CMD`
+  (`examples/companion_radio/MyMesh.cpp:135`) à tout `get`. **La file d'administration vise donc
+  les répéteurs, et c'est le bon périmètre** ;
+- **MeshCore n'a aucun module MQTT.** Pas d'équivalent du module MQTT de Meshtastic. Le plus
+  proche, `bridge.*`, n'existe que sur le firmware répéteur et c'est un pont de **paquets**
+  entre segments de maillage (`bridge.sendPacket`, « bridge needs WiFi radio »,
+  `simple_repeater/MyMesh.cpp:1337`), pas un client MQTT ;
+- **donc ce qui publie sur `meshcore/<iata>/<pubkey>/…` chez CoreScope n'est pas le firmware,
+  c'est un *observateur*** : un logiciel attaché à un nœud, qui republie ce qu'il entend.
+  Autrement dit **notre pont est déjà un observateur**. Rejoindre cet écosystème consisterait à
+  publier, pas à ingérer — et c'est un choix d'exposition, pas une fonction manquante.
+
+**Pas encore fait** : brancher le décodeur sur une source de trames (le pont ne remonte
+aujourd'hui que des événements déjà décodés par la bibliothèque), et la comparaison systématique
+avec `POST /api/decode` d'une instance CoreScope, qui servirait d'oracle.
 `CommandeMeshCore` reste par ailleurs la file du companion LOCAL (`ADVERT`, `FLOOD_ADVERT`) :
 elle ne pilote pas un relais distant, et ces deux files ne se recouvrent pas.
 

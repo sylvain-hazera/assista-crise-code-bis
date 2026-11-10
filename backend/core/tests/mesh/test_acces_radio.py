@@ -1253,3 +1253,157 @@ class TestFileAdminMeshCore:
         assert client.patch(f"{self.URL_TACHES}{tache.id}/", {"statut": "TERMINEE"},
                             format="json").status_code == 405
         assert client.delete(f"{self.URL_TACHES}{tache.id}/").status_code == 405
+
+
+@pytest.mark.django_db
+class TestVoisinageMeshCore:
+    """Le relevé de voisinage d'un répéteur, rangé en liaisons orientées.
+
+    La forme de la réponse vient du parseur de la bibliothèque (`meshcore/reader.py`, branche
+    `BinaryReqType.NEIGHBOURS`), pas d'une supposition :
+    `{neighbours_count, results_count, pubkey_prefix_length, neighbours: [{pubkey, secs_ago, snr}]}`.
+
+    Deux choses s'y jouent :
+
+    - **le sens.** `neighbours` est ce que le répéteur ENTEND : il est le RÉCEPTEUR de chaque
+      liaison. L'inverser retournerait toutes les conclusions de l'analyse d'asymétrie ;
+    - **la complétude.** MeshCore dit son total, contrairement à Meshtastic dont le rapport est
+      plafonné à 10 sans le dire. Une absence peut donc être une preuve — à condition de savoir
+      si la page était pleine.
+    """
+
+    URL_TACHES = "/api/taches-admin-meshcore/"
+    CLE = "ef" * 32
+
+    @pytest.fixture
+    def compagnon(self, institution):
+        from core.models import CompagnonMeshCore, MeshCoreConnexionType
+
+        return CompagnonMeshCore.objects.create(
+            nom="Companion voisinage", institution=institution,
+            connexion_type=MeshCoreConnexionType.TCP, tcp_host="172.16.1.70",
+        )
+
+    @pytest.fixture
+    def agent(self, create_user, institution, compagnon):
+        utilisateur = _utilisateur(create_user, "agent-voisinage@x.fr", "SECOURS", institution)
+        NoeudUtilisateurMeshtastic.objects.create(utilisateur=utilisateur, node_num=0x9001)
+        return utilisateur
+
+    def _tache_terminee(self, agent, compagnon, reponse):
+        from core.models import TacheAdminMeshCore, TypeTacheAdminMeshCore
+
+        tache = TacheAdminMeshCore.objects.create(
+            compagnon=compagnon, pubkey_cible=self.CLE,
+            type_tache=TypeTacheAdminMeshCore.LIRE_VOISINS, demande_par=agent,
+        )
+        _client(agent).post(f"{self.URL_TACHES}{tache.id}/rapporter/",
+                            {"succes": True, "reponse": reponse}, format="json")
+        return tache
+
+    def test_un_releve_devient_des_liaisons_orientees(self, agent, compagnon):
+        from core.models import LiaisonMeshCore, SourceLiaisonMeshtastic
+
+        self._tache_terminee(agent, compagnon, {
+            "neighbours_count": 2, "results_count": 2, "pubkey_prefix_length": 4,
+            "neighbours": [
+                {"pubkey": "aabbccdd", "secs_ago": 30, "snr": 7.5},
+                {"pubkey": "11223344", "secs_ago": 90, "snr": -3.25},
+            ],
+        })
+
+        liaisons = {l.emetteur_prefixe_hex: l for l in LiaisonMeshCore.objects.all()}
+        assert set(liaisons) == {"aabbccdd", "11223344"}
+        # Le répéteur interrogé est le RÉCEPTEUR : c'est lui qui entend.
+        assert all(l.recepteur_pubkey_hex == self.CLE for l in liaisons.values())
+        assert all(l.source == SourceLiaisonMeshtastic.VOISINAGE for l in liaisons.values())
+        assert liaisons["aabbccdd"].snr == 7.5
+        assert liaisons["aabbccdd"].prefixe_octets == 4
+
+    def test_un_second_releve_agrege_et_retient_le_meilleur_snr(self, agent, compagnon):
+        """Une mesure basse peut venir d'une interférence passagère ; la meilleure dit ce dont
+        la liaison est capable. Même choix que côté Meshtastic."""
+        from core.models import LiaisonMeshCore
+
+        for snr in (2.0, 9.0, 4.0):
+            self._tache_terminee(agent, compagnon, {
+                "neighbours_count": 1, "results_count": 1, "pubkey_prefix_length": 4,
+                "neighbours": [{"pubkey": "aabbccdd", "secs_ago": 10, "snr": snr}],
+            })
+
+        liaison = LiaisonMeshCore.objects.get()
+        assert liaison.snr == 9.0
+        assert liaison.nombre == 3
+
+    def test_la_completude_est_enregistree(self, agent, compagnon):
+        from core.models import ReleveVoisinageMeshCore
+
+        self._tache_terminee(agent, compagnon, {
+            "neighbours_count": 12, "results_count": 5, "pubkey_prefix_length": 4,
+            "neighbours": [{"pubkey": f"0000000{i}", "secs_ago": 5, "snr": 1.0} for i in range(5)],
+        })
+
+        releve = ReleveVoisinageMeshCore.objects.get()
+        assert releve.total_annonce == 12
+        assert releve.recus == 5
+        # Une absence ne prouve rien tant qu'on n'a pas tout reçu.
+        assert releve.complet is False
+
+    def test_un_releve_complet_le_dit(self, agent, compagnon):
+        from core.models import ReleveVoisinageMeshCore
+
+        self._tache_terminee(agent, compagnon, {
+            "neighbours_count": 2, "results_count": 2, "pubkey_prefix_length": 4,
+            "neighbours": [{"pubkey": "aabbccdd", "secs_ago": 5, "snr": 1.0},
+                           {"pubkey": "11223344", "secs_ago": 5, "snr": 2.0}],
+        })
+        assert ReleveVoisinageMeshCore.objects.get().complet is True
+
+    def test_le_releve_est_remplace_et_non_empile(self, agent, compagnon):
+        """Un relevé par répéteur : on veut l'état courant du réseau, pas son historique."""
+        from core.models import ReleveVoisinageMeshCore
+
+        self._tache_terminee(agent, compagnon, {
+            "neighbours_count": 9, "results_count": 1, "pubkey_prefix_length": 4,
+            "neighbours": [{"pubkey": "aabbccdd", "secs_ago": 5, "snr": 1.0}],
+        })
+        self._tache_terminee(agent, compagnon, {
+            "neighbours_count": 3, "results_count": 3, "pubkey_prefix_length": 4,
+            "neighbours": [{"pubkey": "aabbccdd", "secs_ago": 5, "snr": 1.0}],
+        })
+
+        assert ReleveVoisinageMeshCore.objects.count() == 1
+        assert ReleveVoisinageMeshCore.objects.get().total_annonce == 3
+
+    def test_une_longueur_de_prefixe_autre_que_4_est_conservee(self, agent, compagnon):
+        """Deux préfixes de longueurs différentes ne se comparent pas : il faut savoir laquelle
+        on a reçue."""
+        from core.models import LiaisonMeshCore
+
+        self._tache_terminee(agent, compagnon, {
+            "neighbours_count": 1, "results_count": 1, "pubkey_prefix_length": 8,
+            "neighbours": [{"pubkey": "aabbccdd11223344", "secs_ago": 5, "snr": 1.0}],
+        })
+        assert LiaisonMeshCore.objects.get().prefixe_octets == 8
+
+    def test_une_reponse_inattendue_ne_fabrique_rien(self, agent, compagnon):
+        """Mieux vaut ne rien enregistrer qu'enregistrer une liaison inventée : une liaison
+        fausse envoie quelqu'un sur un point haut."""
+        from core.models import LiaisonMeshCore, ReleveVoisinageMeshCore
+
+        for reponse in ["pas un dict", {"autre": "chose"}, {"neighbours": "pas une liste"},
+                        {"neighbours": [{"sans": "pubkey"}, "pas un dict"]}]:
+            self._tache_terminee(agent, compagnon, reponse)
+
+        assert LiaisonMeshCore.objects.count() == 0
+
+    def test_un_echec_n_enregistre_aucun_voisinage(self, agent, compagnon):
+        from core.models import LiaisonMeshCore, TacheAdminMeshCore, TypeTacheAdminMeshCore
+
+        tache = TacheAdminMeshCore.objects.create(
+            compagnon=compagnon, pubkey_cible=self.CLE,
+            type_tache=TypeTacheAdminMeshCore.LIRE_VOISINS, demande_par=agent,
+        )
+        _client(agent).post(f"{self.URL_TACHES}{tache.id}/rapporter/",
+                            {"succes": False, "erreur": "pas de reponse"}, format="json")
+        assert LiaisonMeshCore.objects.count() == 0

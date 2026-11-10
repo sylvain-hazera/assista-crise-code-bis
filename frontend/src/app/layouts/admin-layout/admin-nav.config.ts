@@ -151,6 +151,10 @@ export const NAV_ITEMS: NavItem[] = [
   // Sous-cadre MeshCore
   { icon: 'settings_input_antenna', label: 'Companions MeshCore (test)', route: '/admin/meshcore-companions', groupe: 'communications', sousGroupe: 'meshcore', visibilite: 'radio' },
   { icon: 'forum', label: 'Canaux MeshCore (test)', route: '/admin/meshcore-canaux', groupe: 'communications', sousGroupe: 'meshcore', visibilite: 'radio' },
+  // Reclamer un repeteur, prouver qu'on le controle, puis l'administrer par la radio
+  // (backend/core/models.py : TacheAdminMeshCore). La page dit ce qui la distingue de son
+  // equivalent Meshtastic : aucun filet cote firmware, donc une preuve exigee avant d'ecrire.
+  { icon: 'settings_remote', label: 'Administration MeshCore', route: '/admin/meshcore-administration', groupe: 'communications', sousGroupe: 'meshcore', visibilite: 'radio' },
 
   // Sous-cadre Meshtastic
   { icon: 'settings_input_antenna', label: 'Companions Meshtastic (test)', route: '/admin/meshtastic-companions', groupe: 'communications', sousGroupe: 'meshtastic', visibilite: 'radio' },

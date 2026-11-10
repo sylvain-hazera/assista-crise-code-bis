@@ -38,6 +38,24 @@ ne devine pas :
    Piège à ne pas rater : `tx_power = 0` ne veut PAS dire 0 dBm. Le firmware l'interprète comme
    « applique le maximum autorisé pour la région » : c'est une puissance inconnue, traitée ici
    comme absente.
+
+**Deux protocoles, un seul raisonnement** (10/11/2026). Le cœur (`_analyser`) ne connaît que des
+identités opaques et des liaisons ; ce qui dépend du protocole est rassemblé dans une *source*
+(`_SourceMeshtastic`, `_SourceMeshCore`). Ce n'est pas de l'abstraction gratuite : les six
+précautions ci-dessus sont l'actif du module, et les dupliquer pour MeshCore aurait garanti
+qu'une des deux copies finisse par en perdre une.
+
+Ce que les deux protocoles ne partagent PAS, et que la source porte :
+
+- **la preuve d'une absence.** Meshtastic plafonne son rapport de voisinage à 10 **sans le
+  dire** : une absence n'y prouve jamais rien au-delà. MeshCore annonce son total
+  (`neighbours_count`), donc l'absence PEUT être une preuve — voir
+  `ReleveVoisinageMeshCore.complet` ;
+- **l'identité.** Meshtastic désigne un nœud par un entier 32 bits ; MeshCore par une clé
+  publique Ed25519, dont un rapport de voisinage ne donne qu'un **préfixe de 4 octets**. La
+  source MeshCore résout ces préfixes et **écarte** ce qu'elle ne peut pas résoudre de façon
+  certaine : conclure « à sens unique » sur un préfixe ambigu reviendrait à inventer une
+  liaison, et une liaison fausse envoie quelqu'un sur un point haut.
 """
 import datetime
 import math
@@ -47,7 +65,8 @@ from collections import defaultdict
 from django.utils import timezone
 
 from .models import (
-    ConfigurationNoeudMeshtastic, ContactMeshtastic, LiaisonMeshtastic, SourceLiaisonMeshtastic,
+    ConfigurationNoeudMeshtastic, ContactMeshCore, ContactMeshtastic, LiaisonMeshCore,
+    LiaisonMeshtastic, ReleveVoisinageMeshCore, SourceLiaisonMeshtastic,
 )
 
 # Écart de SNR au-delà duquel un nœud est jugé sourd, en dB. Valeur de son implémentation.
@@ -65,19 +84,6 @@ DISTANCE_MAX_KM = 120.0
 HEURES_RECENT = 24
 # Nombre d'observations minimal pour conclure.
 OBSERVATIONS_MIN = 3
-
-
-def _puissances(environment):
-    """{node_num: puissance en dBm} pour les nœuds dont on a lu la configuration.
-
-    0 est écarté : le firmware l'interprète comme « maximum de la région », c'est une puissance
-    inconnue et non une puissance nulle (voir ConfigurationNoeudMeshtastic.puissance_emission_dbm)."""
-    return {
-        config.node_num: config.puissance_emission_dbm
-        for config in ConfigurationNoeudMeshtastic.objects.filter(
-            environment=environment, puissance_emission_dbm__isnull=False,
-        ).exclude(puissance_emission_dbm=0).only('node_num', 'puissance_emission_dbm')
-    }
 
 
 def _correction_db(puissances, a, b):
@@ -121,26 +127,216 @@ class _Sens:
         self.sources.add(liaison.source)
 
 
+class _Source:
+    """Ce que le cœur de l'analyse a besoin de savoir, et rien de plus.
+
+    Une sous-classe par protocole. Tout ce qui est ici dépend du protocole ; tout ce qui est
+    dans `_analyser` n'en dépend pas."""
+
+    #: Nom de la clé d'identité dans le résultat : le frontend Meshtastic lit `node_num`.
+    cle_identite = "node_num"
+
+    def __init__(self, environment):
+        self.environment = environment
+
+    def noeuds(self):
+        """{identité: objet} des nœuds connus."""
+        raise NotImplementedError
+
+    def liaisons(self, depuis):
+        """Liaisons observées depuis `depuis`, avec `.emetteur .recepteur .source .snr
+        .nombre .dernier_vu`."""
+        raise NotImplementedError
+
+    def puissances(self):
+        """{identité: dBm} pour les nœuds dont la puissance d'émission est connue."""
+        return {}
+
+    def nom(self, identite, noeud):
+        raise NotImplementedError
+
+    def actif(self, noeud, recent):
+        raise NotImplementedError
+
+    def position(self, noeud):
+        return None
+
+    def absence_est_preuve(self, identite, nombre_rapporte, est_passerelle):
+        """« Si ce nœud ne rapporte pas X, est-ce une preuve qu'il ne l'entend pas ? »"""
+        raise NotImplementedError
+
+
+class _SourceMeshtastic(_Source):
+    """Meshtastic : identités entières, puissance relevée par administration à distance."""
+
+    cle_identite = "node_num"
+
+    def noeuds(self):
+        connus = {}
+        for contact in ContactMeshtastic.objects.filter(environment=self.environment):
+            # Un même node_num peut être vu par plusieurs companions : on garde le plus récent.
+            connu = connus.get(contact.node_num)
+            if connu is None or (contact.dernier_advert
+                                 and contact.dernier_advert > (connu.dernier_advert or contact.dernier_advert)):
+                connus[contact.node_num] = contact
+        return connus
+
+    def liaisons(self, depuis):
+        return LiaisonMeshtastic.objects.filter(
+            environment=self.environment, dernier_vu__gte=depuis,
+        )
+
+    def puissances(self):
+        """0 est écarté : le firmware l'interprète comme « maximum de la région », c'est une
+        puissance inconnue et non une puissance nulle."""
+        return {
+            config.node_num: config.puissance_emission_dbm
+            for config in ConfigurationNoeudMeshtastic.objects.filter(
+                environment=self.environment, puissance_emission_dbm__isnull=False,
+            ).exclude(puissance_emission_dbm=0).only('node_num', 'puissance_emission_dbm')
+        }
+
+    def nom(self, identite, noeud):
+        if noeud and (noeud.long_name or noeud.short_name):
+            return noeud.long_name or noeud.short_name
+        return f"!{identite:08x}"
+
+    def actif(self, noeud, recent):
+        return bool(noeud and noeud.dernier_advert and noeud.dernier_advert >= recent)
+
+    def position(self, noeud):
+        if noeud and noeud.location:
+            return (noeud.location.y, noeud.location.x)
+        return None
+
+    def absence_est_preuve(self, identite, nombre_rapporte, est_passerelle):
+        # Un rapport de voisinage Meshtastic ne porte que 10 voisins, et rien ne dit qu'il
+        # était plein : au-delà, une absence ne prouve rien.
+        return est_passerelle or nombre_rapporte < PLAFOND_VOISINAGE
+
+
+class _SourceMeshCore(_Source):
+    """MeshCore : identités par clé publique, et des voisins connus par PRÉFIXE.
+
+    Deux différences portées ici, et nulle part ailleurs :
+
+    1. **La résolution des préfixes.** `LiaisonMeshCore.emetteur_prefixe_hex` fait 4 octets par
+       défaut. On ne garde une liaison que si son préfixe désigne **un seul** nœud connu. Les
+       autres sont comptées dans `ecartees` et n'entrent pas dans l'analyse : conclure « à sens
+       unique » sur un préfixe ambigu, c'est affirmer qu'un retour n'existe pas alors qu'on ne
+       sait même pas de qui on parle.
+    2. **L'absence peut être une preuve**, quand le relevé de voisinage était complet.
+    """
+
+    cle_identite = "pubkey"
+
+    def __init__(self, environment):
+        super().__init__(environment)
+        self.ecartees_ambigues = 0
+        self.ecartees_inconnues = 0
+        self._par_prefixe = defaultdict(list)
+        self._releves = {}
+
+    def noeuds(self):
+        connus = {}
+        for contact in ContactMeshCore.objects.filter(environment=self.environment):
+            cle = (contact.pubkey_hex or '').lower()
+            if not cle:
+                continue
+            connu = connus.get(cle)
+            if connu is None or (contact.dernier_advert
+                                 and contact.dernier_advert > (connu.dernier_advert or contact.dernier_advert)):
+                connus[cle] = contact
+        self._par_prefixe.clear()
+        for cle in connus:
+            # Indexé par toutes les longueurs de préfixe utiles : un relevé peut en rendre 4,
+            # un autre 8, et ils ne se comparent pas entre eux.
+            for octets in range(1, 17):
+                self._par_prefixe[cle[:octets * 2]].append(cle)
+        self._releves = {
+            releve.pubkey_hex.lower(): releve.complet
+            for releve in ReleveVoisinageMeshCore.objects.filter(environment=self.environment)
+        }
+        return connus
+
+    def _resoudre(self, prefixe):
+        """Un préfixe vers UNE clé complète, ou None s'il est ambigu ou inconnu."""
+        candidats = self._par_prefixe.get((prefixe or '').lower())
+        if not candidats:
+            self.ecartees_inconnues += 1
+            return None
+        if len(candidats) > 1:
+            self.ecartees_ambigues += 1
+            return None
+        return candidats[0]
+
+    def liaisons(self, depuis):
+        resolues = []
+        for liaison in LiaisonMeshCore.objects.filter(
+            environment=self.environment, dernier_vu__gte=depuis,
+        ):
+            emetteur = self._resoudre(liaison.emetteur_prefixe_hex)
+            if emetteur is None:
+                continue
+            liaison.emetteur = emetteur
+            liaison.recepteur = (liaison.recepteur_pubkey_hex or '').lower()
+            resolues.append(liaison)
+        return resolues
+
+    def nom(self, identite, noeud):
+        if noeud and noeud.nom:
+            return noeud.nom
+        return identite[:12]
+
+    def actif(self, noeud, recent):
+        return bool(noeud and noeud.dernier_advert and noeud.dernier_advert >= recent)
+
+    def position(self, noeud):
+        if noeud and noeud.location:
+            return (noeud.location.y, noeud.location.x)
+        return None
+
+    def absence_est_preuve(self, identite, nombre_rapporte, est_passerelle):
+        # MeshCore annonce son total de voisins : on SAIT si la liste était complète, au lieu
+        # de supposer comme côté Meshtastic.
+        return est_passerelle or self._releves.get(identite, False)
+
+
 def analyser(environment, maintenant=None):
-    """Renvoie {sens_unique, desequilibrees, inaudibles, sourds} pour une zone."""
+    """Analyse du réseau Meshtastic. Signature inchangée : c'est l'entrée de l'API."""
+    return _analyser(_SourceMeshtastic(environment), maintenant)
+
+
+def analyser_meshcore(environment, maintenant=None):
+    """Analyse du réseau MeshCore.
+
+    Le résultat porte en plus `liaisons_ecartees`, parce qu'un diagnostic calculé sur une partie
+    des liaisons seulement doit le dire : un réseau où la moitié des préfixes sont ambigus ne
+    donne pas des conclusions de même valeur."""
+    source = _SourceMeshCore(environment)
+    resultat = _analyser(source, maintenant)
+    resultat["liaisons_ecartees"] = {
+        "prefixe_ambigu": source.ecartees_ambigues,
+        "prefixe_inconnu": source.ecartees_inconnues,
+    }
+    return resultat
+
+
+def _analyser(source, maintenant=None):
+    """Renvoie {sens_unique, desequilibrees, inaudibles, sourds} pour une zone.
+
+    Ne connaît aucun protocole : les identités sont opaques, et tout ce qui en dépend est
+    demandé à `source`."""
     maintenant = maintenant or timezone.now()
     recent = maintenant - datetime.timedelta(hours=HEURES_RECENT)
-    puissances = _puissances(environment)
-
-    noeuds = {}
-    for contact in ContactMeshtastic.objects.filter(environment=environment):
-        # Un même node_num peut être vu par plusieurs companions : on garde le plus récent.
-        connu = noeuds.get(contact.node_num)
-        if connu is None or (contact.dernier_advert and contact.dernier_advert > (connu.dernier_advert or contact.dernier_advert)):
-            noeuds[contact.node_num] = contact
+    puissances = source.puissances()
+    noeuds = source.noeuds()
 
     sens = {}
     # Nœuds qui RAPPORTENT ce qu'ils entendent (RF ou voisinage) depuis 24 h -> émetteurs entendus.
     rapporteurs = defaultdict(set)
     passerelles = set()
-    for liaison in LiaisonMeshtastic.objects.filter(
-        environment=environment, dernier_vu__gte=maintenant - datetime.timedelta(days=7),
-    ):
+    for liaison in source.liaisons(maintenant - datetime.timedelta(days=7)):
         if liaison.emetteur == liaison.recepteur:
             continue
         cle = (liaison.emetteur, liaison.recepteur)
@@ -153,20 +349,17 @@ def analyser(environment, maintenant=None):
             passerelles.add(liaison.recepteur)
 
     def actif(num):
-        contact = noeuds.get(num)
-        return bool(contact and contact.dernier_advert and contact.dernier_advert >= recent)
+        return source.actif(noeuds.get(num), recent)
 
     def nom(num):
-        contact = noeuds.get(num)
-        if contact and (contact.long_name or contact.short_name):
-            return contact.long_name or contact.short_name
-        return f"!{num:08x}"
+        return source.nom(num, noeuds.get(num))
 
     def position(num):
-        contact = noeuds.get(num)
-        if contact and contact.location:
-            return (contact.location.y, contact.location.x)
-        return None
+        return source.position(noeuds.get(num))
+
+    def absence_prouve(num):
+        """« Si ce nœud ne rapporte pas X, est-ce une preuve qu'il ne l'entend pas ? »"""
+        return source.absence_est_preuve(num, len(rapporteurs[num]), num in passerelles)
 
     def trop_loin(a, b):
         d = _distance_km(position(a), position(b))
@@ -188,8 +381,9 @@ def analyser(environment, maintenant=None):
             # A rapporte ce qu'il entend et B émet : A devrait l'entendre.
             if a not in rapporteurs or not actif(b):
                 continue
-            # Voisinage plein : l'absence de B n'est pas une preuve.
-            if a not in passerelles and len(rapporteurs[a]) >= PLAFOND_VOISINAGE:
+            # L'absence de B dans ce que A rapporte doit être une PREUVE, pas un effet de
+            # bord d'une liste tronquée (voir _Source.absence_est_preuve).
+            if not absence_prouve(a):
                 continue
             sens_unique.append({
                 "preuve": "passerelle" if a in passerelles else "voisinage",
@@ -224,7 +418,7 @@ def analyser(environment, maintenant=None):
     # réception seulement, ou une émission en panne.
     entendus = {obs.a for obs in sens.values()}
     inaudibles = [
-        {"node_num": num, "nom": nom(num), "entend": len(emetteurs),
+        {source.cle_identite: num, "nom": nom(num), "entend": len(emetteurs),
          "voisins": [nom(x) for x in sorted(emetteurs)[:8]]}
         for num, emetteurs in rapporteurs.items()
         if len(emetteurs) >= 2 and num not in entendus and actif(num)
@@ -234,7 +428,8 @@ def analyser(environment, maintenant=None):
         "sens_unique": sorted(sens_unique, key=lambda x: -x["nombre"])[:100],
         "desequilibrees": sorted(desequilibrees, key=lambda x: -x["ecart_db"])[:100],
         "inaudibles": inaudibles,
-        "sourds": _sourds(sens, rapporteurs, passerelles, recent, actif, nom, trop_loin, puissances),
+        "sourds": _sourds(sens, recent, actif, nom, trop_loin, puissances, absence_prouve,
+                          source.cle_identite),
         # Vrai dès qu'au moins un nœud a une puissance relevée : chaque conclusion porte en plus
         # son propre `puissance_connue`, parce qu'une correction peut s'appliquer à une paire et
         # pas à la suivante.
@@ -244,7 +439,7 @@ def analyser(environment, maintenant=None):
     }
 
 
-def _sourds(sens, rapporteurs, passerelles, recent, actif, nom, trop_loin, puissances):
+def _sourds(sens, recent, actif, nom, trop_loin, puissances, absence_prouve, cle_identite):
     """Relais sourds : écart médian de SNR anormal entre ce qu'un nœud entend et ce qu'on entend
     de lui. Voir la docstring du module pour l'équation."""
     mesures = defaultdict(list)
@@ -268,8 +463,7 @@ def _sourds(sens, rapporteurs, passerelles, recent, actif, nom, trop_loin, puiss
                 "ecart_db": round(obs.snr - inverse.snr - correction, 1), "borne": False,
                 "correction_db": round(correction, 1), "puissance_connue": connue,
             })
-        elif (x in rapporteurs and actif(p) and obs.nombre >= OBSERVATIONS_MIN
-              and (x in passerelles or len(rapporteurs[x]) < PLAFOND_VOISINAGE)):
+        elif actif(p) and obs.nombre >= OBSERVATIONS_MIN and absence_prouve(x):
             # X rapporte ce qu'il entend mais jamais P, alors que P l'entend : X l'a reçu sous son
             # seuil de démodulation. Ça ne donne qu'une BORNE BASSE de son écart.
             borne = obs.snr - SEUIL_DEMODULATION_DB - correction
@@ -293,7 +487,7 @@ def _sourds(sens, rapporteurs, passerelles, recent, actif, nom, trop_loin, puiss
         if mediane < SEUIL_SOURD_DB or concordantes < 2:
             continue
         sourds.append({
-            "node_num": x, "nom": nom(x), "ecart_db": round(mediane, 1),
+            cle_identite: x, "nom": nom(x), "ecart_db": round(mediane, 1),
             "nb_voisins": len(liste), "nb_concordantes": concordantes,
             # Vrai seulement si TOUTES les mesures retenues ont pu être corrigées : il suffit
             # d'un voisin de puissance inconnue pour que la médiane redevienne discutable.
