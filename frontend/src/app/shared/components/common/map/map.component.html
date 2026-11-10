@@ -66,26 +66,6 @@
           Positions équipes
         </label>
         <label class="layer-toggle-item">
-          <input type="checkbox" [(ngModel)]="layerVisibility.relaisMeshCore" (ngModelChange)="onLayerToggle()">
-          <span class="layer-dot relais-meshcore-dot"></span>
-          Relais MeshCore (test)
-        </label>
-        <label class="layer-toggle-item">
-          <input type="checkbox" [(ngModel)]="layerVisibility.infrastructureEntendue" (ngModelChange)="onLayerToggle()">
-          <span class="layer-dot infrastructure-entendue-dot"></span>
-          Répéteurs entendus
-        </label>
-        <label class="layer-toggle-item">
-          <input type="checkbox" [(ngModel)]="layerVisibility.liaisonsRadio" (ngModelChange)="onLayerToggle()">
-          <span class="layer-dot liaisons-radio-dot"></span>
-          Liaisons radio
-        </label>
-        <label class="layer-toggle-item">
-          <input type="checkbox" [(ngModel)]="layerVisibility.compagnonsMeshCore" (ngModelChange)="onLayerToggle()">
-          <span class="layer-dot compagnons-meshcore-dot"></span>
-          Companions MeshCore (test)
-        </label>
-        <label class="layer-toggle-item">
           <input type="checkbox" [(ngModel)]="layerVisibility.noeudsMeshCore" (ngModelChange)="onLayerToggle()">
           <span class="layer-dot noeuds-meshcore-dot"></span>
           Nœuds personnels MeshCore (test)
@@ -95,6 +75,13 @@
           <span class="layer-dot noeuds-meshtastic-dot"></span>
           Nœuds personnels Meshtastic (test)
         </label>
+        <!-- Le reste du reseau radio a quitte cette carte le 10/11/2026 : relais, passerelles,
+             repeteurs entendus, liaisons mesurees et couverture calculee sont sur /admin/carte-radio.
+             Le lien est indispensable -- sans lui, les calques ont simplement l'air d'avoir disparu. -->
+        <a routerLink="/admin/carte-radio" class="layer-toggle-lien">
+          <span class="material-icons">travel_explore</span>
+          Tout le réseau radio (carte dédiée)
+        </a>
         <label class="layer-toggle-item">
           <input type="checkbox" [(ngModel)]="layerVisibility.personnelSecourisme" (ngModelChange)="onLayerToggle()">
           <span class="layer-dot personnel-dot"></span>

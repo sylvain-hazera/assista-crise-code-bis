@@ -1,5 +1,5 @@
 import { Routes } from '@angular/router';
-import { sysAdminGuard, institutionalEffectiveGuard, accountValidationGuard, autoriteLocaleGuard, vulnerabilitesGuard, membresAssociationGuard } from '../core/guards/admin.guard';
+import { sysAdminGuard, institutionalEffectiveGuard, accountValidationGuard, autoriteLocaleGuard, vulnerabilitesGuard, membresAssociationGuard, radioGuard } from '../core/guards/admin.guard';
 import { AccesRefuseComponent } from './acces-refuse/acces-refuse.component';
 
 export const ADMIN_ROUTES: Routes = [
@@ -54,22 +54,35 @@ export const ADMIN_ROUTES: Routes = [
   { path: 'habilitations-registre', loadComponent: () => import('./habilitations-registre/habilitations-registre.component').then(m => m.HabilitationsRegistreComponent), canActivate: [institutionalEffectiveGuard, autoriteLocaleGuard] },
 
   // ── Communications / Radio ──
-  { path: 'meshcore-companions', loadComponent: () => import('./meshcore-companions/meshcore-companions.component').then(m => m.MeshcoreCompanionsComponent), canActivate: [institutionalEffectiveGuard] },
-  { path: 'meshcore-canaux', loadComponent: () => import('./meshcore-canaux/meshcore-canaux.component').then(m => m.MeshcoreCanauxComponent), canActivate: [institutionalEffectiveGuard] },
-  { path: 'meshtastic-companions', loadComponent: () => import('./meshtastic-companions/meshtastic-companions.component').then(m => m.MeshtasticCompanionsComponent), canActivate: [institutionalEffectiveGuard] },
-  { path: 'meshtastic-canaux', loadComponent: () => import('./meshtastic-canaux/meshtastic-canaux.component').then(m => m.MeshtasticCanauxComponent), canActivate: [institutionalEffectiveGuard] },
-  // Administration a distance des noeuds Meshtastic (AdminMessage par la radio). Garde
-  // institutionnelle pour la page : le serveur exige en plus le role ADMIN REEL pour toute
-  // ECRITURE (voir TacheAdminMeshtasticViewSet.perform_create), les lectures restant ouvertes
-  // aux acteurs institutionnels -- relever une puissance d'emission n'est pas un acte materiel.
-  { path: 'meshtastic-administration', loadComponent: () => import('./meshtastic-administration/meshtastic-administration.component').then(m => m.MeshtasticAdministrationComponent), canActivate: [institutionalEffectiveGuard] },
-  // Diagnostic des liaisons radio (core/analyse_liaisons.py) : lecture seule, ouverte aux
-  // acteurs institutionnels comme les autres pages radio.
-  { path: 'diagnostic-radio', loadComponent: () => import('./diagnostic-radio/diagnostic-radio.component').then(m => m.DiagnosticRadioComponent), canActivate: [institutionalEffectiveGuard] },
+  // Porte d'entree du domaine, et SEULE page radio sans garde `radioGuard` : c'est elle qui
+  // explique ce qu'il faut et permet de demander le droit. La garder fermee fermerait la porte.
+  // Ouverte a tout compte entrant dans /admin -- y compris un porteur de noeud non
+  // institutionnel, que `canEnterAdminArea` admet depuis le 10/11/2026 pour cette raison.
+  { path: 'radio', loadComponent: () => import('./radio/radio.component').then(m => m.RadioComponent) },
+  // Toute la carte du reseau radio. Separee de /admin/carte, qui ne garde du mesh que les
+  // positions des intervenants en mission (demande du 10/11/2026).
+  { path: 'carte-radio', loadComponent: () => import('./carte-radio/carte-radio.component').then(m => m.CarteRadioComponent), canActivate: [radioGuard] },
+  // Les pages ci-dessous passent de `institutionalEffectiveGuard` a `radioGuard` : le critere
+  // n'est plus « etre une institution » mais « avoir affaire a de la radio ». Une commune sans
+  // aucun materiel y voyait huit ecrans qui ne pouvaient rien lui dire ; un benevole qui porte
+  // un noeud n'y avait acces a aucun. Les deux sont renvoyes vers /admin/radio.
+  { path: 'meshcore-companions', loadComponent: () => import('./meshcore-companions/meshcore-companions.component').then(m => m.MeshcoreCompanionsComponent), canActivate: [radioGuard] },
+  { path: 'meshcore-canaux', loadComponent: () => import('./meshcore-canaux/meshcore-canaux.component').then(m => m.MeshcoreCanauxComponent), canActivate: [radioGuard] },
+  { path: 'meshtastic-companions', loadComponent: () => import('./meshtastic-companions/meshtastic-companions.component').then(m => m.MeshtasticCompanionsComponent), canActivate: [radioGuard] },
+  { path: 'meshtastic-canaux', loadComponent: () => import('./meshtastic-canaux/meshtastic-canaux.component').then(m => m.MeshtasticCanauxComponent), canActivate: [radioGuard] },
+  // Administration a distance des noeuds Meshtastic (AdminMessage par la radio). Le serveur
+  // exige en plus le droit SUR LE NOEUD VISE pour toute ECRITURE : son propre noeud pour un
+  // operateur, n'importe lequel pour un administrateur, la passerelle pour lui seul (voir
+  // TacheAdminMeshtasticViewSet.perform_create et core/acces_radio.py).
+  { path: 'meshtastic-administration', loadComponent: () => import('./meshtastic-administration/meshtastic-administration.component').then(m => m.MeshtasticAdministrationComponent), canActivate: [radioGuard] },
+  // Diagnostic des liaisons radio (core/analyse_liaisons.py) : lecture seule.
+  { path: 'diagnostic-radio', loadComponent: () => import('./diagnostic-radio/diagnostic-radio.component').then(m => m.DiagnosticRadioComponent), canActivate: [radioGuard] },
   // Planification radio sur le relief (core/relief_radio.py) : bilan de liaison et couverture
-  // d'un site. Lecture et calculs reserves aux acteurs institutionnels (un balayage coute des
-  // milliers d'interrogations a un service public limite en debit).
-  { path: 'couverture-radio', loadComponent: () => import('./couverture-radio/couverture-radio.component').then(m => m.CouvertureRadioComponent), canActivate: [institutionalEffectiveGuard] },
+  // d'un site. Les calculs restent couteux (un balayage coute des milliers d'interrogations a
+  // un service public limite en debit), d'ou un droit radio exige et pas seulement un compte.
+  { path: 'couverture-radio', loadComponent: () => import('./couverture-radio/couverture-radio.component').then(m => m.CouvertureRadioComponent), canActivate: [radioGuard] },
+  // Un satellite est une machine, pas un poste radio : il heberge aussi la synchronisation et
+  // les sauvegardes. Garde institutionnelle, comme avant.
   { path: 'satellites', loadComponent: () => import('./satellites/satellites.component').then(m => m.SatellitesComponent), canActivate: [institutionalEffectiveGuard] },
 
   // ── Administration ──

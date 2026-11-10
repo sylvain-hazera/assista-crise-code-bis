@@ -3,6 +3,7 @@ from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenBlacklistView
 from .grafana import GrafanaTokenView
 from .views import (
+    DemandeAccesRadioViewSet,
     CandidatureAssociationViewSet,
     InvitationAssociationViewSet,
     QualificationMembreViewSet,
@@ -157,6 +158,9 @@ router.register(r'taches-admin-meshtastic', TacheAdminMeshtasticViewSet)
 router.register(r'configurations-noeuds-meshtastic', ConfigurationNoeudMeshtasticViewSet)
 router.register(r'couvertures-radio', CouvertureRadioSiteViewSet)
 router.register(r'calibrations-radio', CalibrationRadioViewSet)
+# Droit d'acces au domaine radio : demande, instruction, et « ou j'en suis »
+# (core/acces_radio.py).
+router.register(r'demandes-acces-radio', DemandeAccesRadioViewSet)
 
 
 router.register(

@@ -1,0 +1,101 @@
+// Couleurs en var(--ac-…, <couleur du mode clair>) : les --ac-* ne sont définies qu'en mode
+// sombre (styles.scss). Le FOND DE CARTE reste clair dans les deux modes (namedFlavor('light')
+// codé en dur) : les couleurs des calques sont donc choisies pour un fond clair uniquement.
+.page-carte {
+  position: relative;
+  height: calc(100vh - 64px);
+  min-height: 420px;
+}
+
+.carte {
+  position: absolute;
+  inset: 0;
+}
+
+.indisponible {
+  position: absolute; inset: 16px auto auto 16px; z-index: 3;
+  display: flex; gap: 12px; max-width: 46ch;
+  padding: 14px 16px; border-radius: 8px;
+  background: var(--ac-amber-bg, #fef3c7);
+  color: var(--ac-amber-text, #92400e);
+  border: 1px solid var(--ac-amber-border, #fde68a);
+
+  p { margin: 4px 0 0; line-height: 1.5; }
+  a { color: inherit; font-weight: 600; }
+}
+
+.panneau {
+  position: absolute; top: 12px; left: 12px; z-index: 2;
+  display: flex; align-items: flex-start; gap: 6px;
+
+  .bascule {
+    display: flex; align-items: center; justify-content: center;
+    width: 36px; height: 36px; border-radius: 6px; cursor: pointer;
+    border: 1px solid var(--ac-border, #e5e7eb);
+    background: var(--ac-surface, #fff);
+    color: var(--ac-text-muted, #4b5563);
+    order: 2;
+  }
+
+  .contenu {
+    order: 1;
+    width: 290px; max-height: calc(100vh - 140px); overflow-y: auto;
+    padding: 14px; border-radius: 8px;
+    background: var(--ac-surface, #fff);
+    border: 1px solid var(--ac-border, #e5e7eb);
+    box-shadow: 0 2px 12px rgb(0 0 0 / 12%);
+
+    h2 {
+      margin: 0 0 6px; font-size: 1rem;
+      color: var(--ac-text, #111827);
+    }
+  }
+}
+
+.note {
+  margin: 6px 0 12px; font-size: 0.8rem; line-height: 1.45;
+  color: var(--ac-text-muted, #6b7280);
+  a { color: var(--brand-primary-lisible, var(--brand-primary)); font-weight: 600; }
+}
+
+.erreurs {
+  margin-bottom: 10px;
+  p {
+    display: flex; align-items: center; gap: 6px;
+    margin: 0 0 4px; font-size: 0.82rem; line-height: 1.4;
+    color: var(--ac-red-text, #991b1b);
+    .material-icons { font-size: 16px; }
+  }
+}
+
+.calque {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 0; cursor: pointer;
+  font-size: 0.9rem; color: var(--ac-text, #111827);
+
+  .libelle { flex: 1; }
+  .compte {
+    font-variant-numeric: tabular-nums;
+    font-size: 0.8rem; color: var(--ac-text-muted, #6b7280);
+  }
+  input:disabled ~ .libelle { color: var(--ac-text-subtle, #9ca3af); }
+}
+
+// Mêmes couleurs que les calques de la carte, pour que la légende soit la carte.
+.pastille {
+  width: 12px; height: 12px; border-radius: 50%; flex: none;
+  border: 2px solid #fff; box-shadow: 0 0 0 1px rgb(0 0 0 / 15%);
+
+  &.passerelles { background: #ea580c; }
+  &.relais { background: #0891b2; }
+  &.repeteurs { background: #9333ea; }
+  &.meshtastic { background: #2563eb; }
+  &.liaisons { background: linear-gradient(90deg, #dc2626, #f59e0b, #16a34a); border-radius: 2px; }
+  &.couverture { background: #15803d; }
+}
+
+.choix {
+  width: 100%; padding: 6px 8px; font: inherit; font-size: 0.88rem;
+  border: 1px solid var(--ac-border, #d1d5db); border-radius: 6px;
+  background: var(--ac-surface, #fff); color: var(--ac-text, #111827);
+}

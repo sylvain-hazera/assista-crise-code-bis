@@ -1,6 +1,7 @@
 import { Component, OnInit, OnDestroy, AfterViewInit, Input, ViewChild, ElementRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { styleCarte } from '../../../utils/carte-style';
 import maplibregl from 'maplibre-gl';
 import * as turf from '@turf/turf';
@@ -13,10 +14,6 @@ import { RequestService } from '../../../../services/request.service';
 import { Request } from '../../../models/request.model';
 import { GeolocationService } from '../../../../services/geolocation.service';
 import { PositionEquipeService } from '../../../../services/position-equipe.service';
-import { RelaisMeshCoreService } from '../../../../services/relais-meshcore.service';
-import { ContactMeshCoreService } from '../../../../services/contact-meshcore.service';
-import { LiaisonMeshtasticService } from '../../../../services/liaison-meshtastic.service';
-import { CompagnonMeshCoreService } from '../../../../services/compagnon-meshcore.service';
 import { NoeudMeshUtilisateurService } from '../../../../services/noeud-mesh-utilisateur.service';
 import { NoeudUtilisateurMeshtasticService } from '../../../../services/noeud-utilisateur-meshtastic.service';
 import { PointOperationnelService } from '../../../../services/point-operationnel.service';
@@ -36,15 +33,12 @@ interface LayerVisibility {
   centresHebergement: boolean;
   postesSecours: boolean;
   benevolesPompiers: boolean;
-  relaisMeshCore: boolean;
-  compagnonsMeshCore: boolean;
+  /** Nœuds personnels des intervenants, et eux seuls : position firmware remontée pendant une
+   * mission active. Tout le RESTE du réseau radio (relais, passerelles, répéteurs entendus,
+   * liaisons mesurées, couverture calculée) a quitté cette carte le 10/11/2026 pour
+   * /admin/carte-radio — voir CarteRadioComponent pour le pourquoi. */
   noeudsMeshCore: boolean;
   noeudsMeshtastic: boolean;
-  /** Répéteurs et room servers entendus sur l'air (ContactMeshCore) : la vraie carte du réseau,
-   * jusqu'ici visible seulement en tableau dans /admin/meshcore-companions. */
-  infrastructureEntendue: boolean;
-  /** Liaisons radio mesurées (qui entend qui, et à quel SNR) — LiaisonMeshtastic. */
-  liaisonsRadio: boolean;
 }
 
 // Codes et libellés secourisme/soins (OfferSerializer.offer_type_nom, PointOperationnelSerializer.type_code).
@@ -56,7 +50,7 @@ const POSTE_SECOURS_ICON_ID = 'poste-secours-icon';
 @Component({
   selector: 'app-map',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, RouterLink],
   templateUrl: './map.component.html',
   styleUrl: './map.component.scss'
 })
@@ -74,7 +68,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   // Positions d'équipe : institutionnels seulement (case non rendue sinon).
   isInstitutional = false;
 
-  // Panneau des calques replié par défaut (jusqu'à 9 entrées, gênant sur mobile).
+  // Panneau des calques replié par défaut (gênant sur mobile une fois déplié).
   layersPanelOpen = false;
 
   layerVisibility: LayerVisibility = {
@@ -89,12 +83,6 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     postesSecours: true,
     // Annuaire de bénévoles : masqué et chargé à la demande (voir DOCUMENTATION.md, § 6.3).
     benevolesPompiers: false,
-    // Répéteurs MeshCore : masqués et chargés à la demande.
-    relaisMeshCore: false,
-    infrastructureEntendue: false,   // chargée à la première activation
-    liaisonsRadio: false,            // le calque le plus volumineux : jamais chargé d'office
-    // Companions MeshCore : position saisie à la main, facultative.
-    compagnonsMeshCore: true,
     // Nœuds personnels MeshCore : position firmware, seulement pendant une mission active
     // (bridge.py, boucle_positions_missions).
     noeudsMeshCore: true,
@@ -108,10 +96,6 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   private proposalGeoJSON: FeatureCollection<Geometry> | null = null;
   private informationsGeoJSON: FeatureCollection<Geometry> | null = null;
   private teamPositionsGeoJSON: FeatureCollection<Geometry> | null = null;
-  private relaisMeshCoreGeoJSON: FeatureCollection<Geometry> | null = null;
-  private infrastructureEntendueGeoJSON: FeatureCollection<Geometry> | null = null;
-  private liaisonsRadioGeoJSON: FeatureCollection<Geometry> | null = null;
-  private compagnonsMeshCoreGeoJSON: FeatureCollection<Geometry> | null = null;
   private noeudsMeshCoreGeoJSON: FeatureCollection<Geometry> | null = null;
   private noeudsMeshtasticGeoJSON: FeatureCollection<Geometry> | null = null;
   private personnelSecourismeGeoJSON: FeatureCollection<Geometry> | null = null;
@@ -131,10 +115,6 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
               private geolocationService: GeolocationService,
               private positionEquipeService: PositionEquipeService,
               private pointOperationnelService: PointOperationnelService,
-              private relaisMeshCoreService: RelaisMeshCoreService,
-              private contactMeshCoreService: ContactMeshCoreService,
-              private liaisonMeshtasticService: LiaisonMeshtasticService,
-              private compagnonMeshCoreService: CompagnonMeshCoreService,
               private noeudMeshUtilisateurService: NoeudMeshUtilisateurService,
               private noeudUtilisateurMeshtasticService: NoeudUtilisateurMeshtasticService,
               private authService: AuthService) {}
@@ -159,8 +139,6 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     // Centres d'accueil et postes de secours : publics (PointOperationnelViewSet.carte_publique).
     this.loadCentresPublics();
     if (this.isInstitutional) {
-      // Relais MeshCore chargés à la demande (onLayerToggle/loadRelaisMeshCore).
-      this.loadCompagnonsMeshCore();
       this.loadNoeudsMeshCore();
       this.loadNoeudsMeshtastic();
     }
@@ -173,32 +151,13 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
       this.benevolesPompiersCharges = true;
       this.loadBenevolesPompiers();
     }
-    if (this.layerVisibility.relaisMeshCore && !this.relaisMeshCoreCharges) {
-      this.relaisMeshCoreCharges = true;
-      this.loadRelaisMeshCore();
-    }
-    if (this.layerVisibility.infrastructureEntendue && !this.infrastructureEntendueChargee) {
-      this.infrastructureEntendueChargee = true;
-      this.loadInfrastructureEntendue();
-    }
-    if (this.layerVisibility.liaisonsRadio && !this.liaisonsRadioChargees) {
-      this.liaisonsRadioChargees = true;
-      this.loadLiaisonsRadio();
-    }
     this.applyClusterVisibility();
     this.applyLayerVisibility('team-positions-layer', this.layerVisibility.positions);
     this.applyLayerVisibility('team-positions-label', this.layerVisibility.positions);
-    this.applyLayerVisibility('relais-meshcore-layer', this.layerVisibility.relaisMeshCore);
-    this.applyLayerVisibility('relais-meshcore-label', this.layerVisibility.relaisMeshCore);
-    this.applyLayerVisibility('compagnons-meshcore-layer', this.layerVisibility.compagnonsMeshCore);
-    this.applyLayerVisibility('compagnons-meshcore-label', this.layerVisibility.compagnonsMeshCore);
     this.applyLayerVisibility('noeuds-meshcore-layer', this.layerVisibility.noeudsMeshCore);
     this.applyLayerVisibility('noeuds-meshcore-label', this.layerVisibility.noeudsMeshCore);
     this.applyLayerVisibility('noeuds-meshtastic-layer', this.layerVisibility.noeudsMeshtastic);
     this.applyLayerVisibility('noeuds-meshtastic-label', this.layerVisibility.noeudsMeshtastic);
-    this.applyLayerVisibility('infrastructure-entendue-layer', this.layerVisibility.infrastructureEntendue);
-    this.applyLayerVisibility('infrastructure-entendue-label', this.layerVisibility.infrastructureEntendue);
-    this.applyLayerVisibility('liaisons-radio-layer', this.layerVisibility.liaisonsRadio);
     this.applyLayerVisibility('location-radius', this.layerVisibility.crises);
     this.applyLayerVisibility('personnel-secourisme-layer', this.layerVisibility.personnelSecourisme);
     this.applyLayerVisibility('centres-tous-layer', this.layerVisibility.centresTous);
@@ -409,9 +368,6 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   benevolesPompiersError: string | null = null;
   // Chargé une seule fois, à la première activation du calque.
   private benevolesPompiersCharges = false;
-  private relaisMeshCoreCharges = false;
-  private infrastructureEntendueChargee = false;
-  private liaisonsRadioChargees = false;
 
   loadBenevolesPompiers(): void {
     this.offerService.vueSecteur().subscribe({
@@ -512,317 +468,6 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
 
     this.map.on('mouseenter', 'team-positions-layer', () => { this.map!.getCanvas().style.cursor = 'pointer'; });
     this.map.on('mouseleave', 'team-positions-layer', () => { this.map!.getCanvas().style.cursor = ''; });
-  }
-
-  /** Relais MeshCore : position saisie dans /admin/meshcore-companions, pas de temps réel. */
-  loadRelaisMeshCore(): void {
-    this.relaisMeshCoreService.getAll().subscribe({
-      next: (relais) => {
-        this.relaisMeshCoreGeoJSON = {
-          type: 'FeatureCollection',
-          features: relais
-            .filter(r => r.actif && r.latitude != null && r.longitude != null)
-            .map(r => ({
-              type: 'Feature',
-              geometry: { type: 'Point', coordinates: [Number(r.longitude), Number(r.latitude)] },
-              properties: { nom: r.nom },
-            })),
-        };
-        this.runWhenMapReady(() => this.addOrUpdateRelaisMeshCoreLayer());
-      },
-      error: (err) => console.error('Erreur chargement relais MeshCore:', err),
-    });
-  }
-
-  private addOrUpdateRelaisMeshCoreLayer(): void {
-    if (!this.map || !this.relaisMeshCoreGeoJSON) return;
-
-    const existingSource = this.map.getSource('relais-meshcore') as maplibregl.GeoJSONSource | undefined;
-    if (existingSource) {
-      existingSource.setData(this.relaisMeshCoreGeoJSON);
-      return;
-    }
-
-    this.map.addSource('relais-meshcore', { type: 'geojson', data: this.relaisMeshCoreGeoJSON });
-
-    const visibility = this.layerVisibility.relaisMeshCore ? 'visible' : 'none';
-
-    this.map.addLayer({
-      id: 'relais-meshcore-layer',
-      type: 'circle',
-      source: 'relais-meshcore',
-      layout: { visibility },
-      paint: {
-        'circle-color': '#0891b2',
-        'circle-radius': 6,
-        'circle-stroke-width': 2,
-        'circle-stroke-color': '#fff',
-      },
-    });
-
-    this.map.addLayer({
-      id: 'relais-meshcore-label',
-      type: 'symbol',
-      source: 'relais-meshcore',
-      layout: {
-        visibility,
-        'text-field': ['get', 'nom'],
-        'text-size': 11,
-        'text-offset': [0, 1.2],
-        'text-anchor': 'top',
-      },
-      paint: { 'text-color': '#0e7490', 'text-halo-color': '#fff', 'text-halo-width': 1 },
-    });
-
-    this.map.on('click', 'relais-meshcore-layer', (e) => {
-      if (!e.features || e.features.length === 0) return;
-      const geometry = e.features[0].geometry as GeoJSON.Point;
-      const coordinates = geometry.coordinates.slice() as [number, number];
-      const nom = e.features[0].properties?.['nom'] || 'Relais';
-      new maplibregl.Popup().setLngLat(coordinates).setHTML(`<strong>${nom}</strong><br>Relais MeshCore`).addTo(this.map!);
-    });
-    this.map.on('mouseenter', 'relais-meshcore-layer', () => { this.map!.getCanvas().style.cursor = 'pointer'; });
-    this.map.on('mouseleave', 'relais-meshcore-layer', () => { this.map!.getCanvas().style.cursor = ''; });
-  }
-
-  /** Liaisons radio MESURÉES : « ce récepteur a entendu cet émetteur, à ce SNR ». Alimentées par
-   * le pont Meshtastic, jamais saisies à la main (voir LiaisonMeshtastic et
-   * core/analyse_liaisons.py). Le serveur ne renvoie que les liaisons dont les deux extrémités
-   * ont une position connue, et borne la fenêtre.
-   *
-   * Chargée à la première activation : sur un réseau départemental, c'est le calque le plus
-   * volumineux. */
-  loadLiaisonsRadio(): void {
-    this.liaisonMeshtasticService.geojson().subscribe({
-      next: (collection) => {
-        this.liaisonsRadioGeoJSON = collection as unknown as FeatureCollection<Geometry>;
-        this.runWhenMapReady(() => this.addOrUpdateLiaisonsRadioLayer());
-      },
-      error: (err) => console.error('Erreur chargement liaisons radio:', err),
-    });
-  }
-
-  private addOrUpdateLiaisonsRadioLayer(): void {
-    if (!this.map || !this.liaisonsRadioGeoJSON) return;
-
-    const existingSource = this.map.getSource('liaisons-radio') as maplibregl.GeoJSONSource | undefined;
-    if (existingSource) {
-      existingSource.setData(this.liaisonsRadioGeoJSON);
-      return;
-    }
-
-    this.map.addSource('liaisons-radio', { type: 'geojson', data: this.liaisonsRadioGeoJSON });
-
-    // `before` EXPLICITE : les traits doivent passer SOUS les points, sinon ils les barrent et on
-    // ne peut plus cliquer dessus. MapLibre empile dans l'ordre d'ajout, et les autres calques
-    // arrivent au gré des réponses HTTP -- d'où la garde getLayer(), MapLibre levant sur un
-    // calque inexistant.
-    const dessous = ['relais-meshcore-layer', 'compagnons-meshcore-layer', 'unclustered-point']
-      .find(id => this.map!.getLayer(id));
-
-    this.map.addLayer({
-      id: 'liaisons-radio-layer',
-      type: 'line',
-      source: 'liaisons-radio',
-      layout: { visibility: this.layerVisibility.liaisonsRadio ? 'visible' : 'none' },
-      paint: {
-        // Couleur par qualité de liaison : un SNR sous -10 dB est à la limite de la démodulation
-        // (seuil LONG_FAST ≈ -17,5 dB), au-dessus de 0 dB la liaison est confortable.
-        // Lisible sur fond clair uniquement : le fond ne suit pas le mode sombre (§ 6.3).
-        'line-color': [
-          'case',
-          ['==', ['get', 'snr'], null], '#9ca3af',
-          ['<', ['get', 'snr'], -10], '#dc2626',
-          ['<', ['get', 'snr'], 0], '#f59e0b',
-          '#16a34a',
-        ],
-        'line-width': ['interpolate', ['linear'], ['get', 'nombre'], 1, 1, 50, 3.5],
-        'line-opacity': 0.65,
-      },
-    }, dessous);
-
-    this.map.on('click', 'liaisons-radio-layer', (e) => {
-      if (!e.features || e.features.length === 0) return;
-      const props = e.features[0].properties || {};
-      const snr = props['snr'] != null ? `${props['snr']} dB` : 'SNR inconnu';
-      const distance = props['distance_km'] != null ? `<br>${props['distance_km']} km` : '';
-      const source = props['source'] === 'VOISINAGE' ? 'voisinage déclaré'
-        : props['source'] === 'TRACEROUTE' ? 'saut de traceroute' : 'reçu par une passerelle';
-      new maplibregl.Popup().setLngLat(e.lngLat)
-        .setHTML(`<strong>Liaison radio</strong><br>${snr} — ${props['nombre']} observation(s)`
-                 + `<br><em>${source}</em>${distance}`)
-        .addTo(this.map!);
-    });
-    this.map.on('mouseenter', 'liaisons-radio-layer', () => { this.map!.getCanvas().style.cursor = 'pointer'; });
-    this.map.on('mouseleave', 'liaisons-radio-layer', () => { this.map!.getCanvas().style.cursor = ''; });
-  }
-
-  /** Répéteurs et room servers ENTENDUS sur l'air (ContactMeshCore) — la vraie carte du réseau
-   * radio, par opposition aux relais saisis à la main. Jusqu'au 06/11/2026 ces positions
-   * n'existaient qu'en tableau texte dans /admin/meshcore-companions.
-   *
-   * Seuls REPEATER et ROOM : un COMPANION peut être le terminal d'une personne (voir
-   * NoeudMeshUtilisateur, qui rattache une clé publique à un compte), et un SENSOR n'est pas
-   * un relais. Même filtrage que la fédération (core/federation_carte_live.py), pour la même
-   * raison.
-   *
-   * Chargée à la première activation, comme l'annuaire bénévoles : un répertoire de contacts
-   * peut être volumineux, et c'est de la donnée de position. */
-  loadInfrastructureEntendue(): void {
-    this.contactMeshCoreService.getAll().subscribe({
-      next: (contacts) => {
-        this.infrastructureEntendueGeoJSON = {
-          type: 'FeatureCollection',
-          features: contacts
-            .filter(c => (c.type_contact === 'REPEATER' || c.type_contact === 'ROOM')
-                      && c.latitude != null && c.longitude != null)
-            .map(c => ({
-              type: 'Feature',
-              geometry: { type: 'Point', coordinates: [Number(c.longitude), Number(c.latitude)] },
-              properties: {
-                nom: c.nom || c.pubkey_hex.slice(0, 8),
-                type_contact: c.type_contact,
-                // `sauts` reste absent plutôt que 0 quand aucun chemin n'est confirmé : afficher
-                // « 0 saut » laisserait croire à une liaison directe.
-                sauts: c.nombre_sauts ?? null,
-                batterie: c.niveau_batterie_pct ?? null,
-              },
-            })),
-        };
-        this.runWhenMapReady(() => this.addOrUpdateInfrastructureEntendueLayer());
-      },
-      error: (err) => console.error('Erreur chargement infrastructure entendue:', err),
-    });
-  }
-
-  private addOrUpdateInfrastructureEntendueLayer(): void {
-    if (!this.map || !this.infrastructureEntendueGeoJSON) return;
-
-    const existingSource = this.map.getSource('infrastructure-entendue') as maplibregl.GeoJSONSource | undefined;
-    if (existingSource) {
-      existingSource.setData(this.infrastructureEntendueGeoJSON);
-      return;
-    }
-
-    this.map.addSource('infrastructure-entendue', { type: 'geojson', data: this.infrastructureEntendueGeoJSON });
-
-    const visibility = this.layerVisibility.infrastructureEntendue ? 'visible' : 'none';
-
-    this.map.addLayer({
-      id: 'infrastructure-entendue-layer',
-      type: 'circle',
-      source: 'infrastructure-entendue',
-      layout: { visibility },
-      paint: {
-        // Violet, distinct des relais saisis (cyan) : entendu sur l'air n'est pas déclaré.
-        // Lisible sur fond clair uniquement — le fond de carte ne suit pas le mode sombre
-        // (DOCUMENTATION.md § 6.3).
-        'circle-color': ['case', ['==', ['get', 'type_contact'], 'ROOM'], '#7e22ce', '#9333ea'],
-        'circle-radius': 5,
-        'circle-stroke-width': 2,
-        'circle-stroke-color': '#fff',
-      },
-    });
-
-    this.map.addLayer({
-      id: 'infrastructure-entendue-label',
-      type: 'symbol',
-      source: 'infrastructure-entendue',
-      layout: {
-        visibility,
-        'text-field': ['get', 'nom'],
-        'text-size': 11,
-        'text-offset': [0, 1.2],
-        'text-anchor': 'top',
-      },
-      paint: { 'text-color': '#6b21a8', 'text-halo-color': '#fff', 'text-halo-width': 1 },
-    });
-
-    this.map.on('click', 'infrastructure-entendue-layer', (e) => {
-      if (!e.features || e.features.length === 0) return;
-      const geometry = e.features[0].geometry as GeoJSON.Point;
-      const coordinates = geometry.coordinates.slice() as [number, number];
-      const props = e.features[0].properties || {};
-      const type = props['type_contact'] === 'ROOM' ? 'Room server' : 'Répéteur';
-      const sauts = props['sauts'] != null ? `<br>${props['sauts']} saut(s) connu(s)` : '';
-      const batterie = props['batterie'] != null ? `<br>Batterie ${props['batterie']} %` : '';
-      new maplibregl.Popup().setLngLat(coordinates)
-        .setHTML(`<strong>${props['nom']}</strong><br>${type} entendu${sauts}${batterie}`)
-        .addTo(this.map!);
-    });
-    this.map.on('mouseenter', 'infrastructure-entendue-layer', () => { this.map!.getCanvas().style.cursor = 'pointer'; });
-    this.map.on('mouseleave', 'infrastructure-entendue-layer', () => { this.map!.getCanvas().style.cursor = ''; });
-  }
-
-  /** Companions MeshCore avec position renseignée (/admin/meshcore-companions). */
-  loadCompagnonsMeshCore(): void {
-    this.compagnonMeshCoreService.getAll().subscribe({
-      next: (compagnons) => {
-        this.compagnonsMeshCoreGeoJSON = {
-          type: 'FeatureCollection',
-          features: compagnons
-            .filter(c => c.actif && c.latitude != null && c.longitude != null)
-            .map(c => ({
-              type: 'Feature',
-              geometry: { type: 'Point', coordinates: [Number(c.longitude), Number(c.latitude)] },
-              properties: { nom: c.nom },
-            })),
-        };
-        this.runWhenMapReady(() => this.addOrUpdateCompagnonsMeshCoreLayer());
-      },
-      error: (err) => console.error('Erreur chargement companions MeshCore:', err),
-    });
-  }
-
-  private addOrUpdateCompagnonsMeshCoreLayer(): void {
-    if (!this.map || !this.compagnonsMeshCoreGeoJSON) return;
-
-    const existingSource = this.map.getSource('compagnons-meshcore') as maplibregl.GeoJSONSource | undefined;
-    if (existingSource) {
-      existingSource.setData(this.compagnonsMeshCoreGeoJSON);
-      return;
-    }
-
-    this.map.addSource('compagnons-meshcore', { type: 'geojson', data: this.compagnonsMeshCoreGeoJSON });
-
-    const visibility = this.layerVisibility.compagnonsMeshCore ? 'visible' : 'none';
-
-    this.map.addLayer({
-      id: 'compagnons-meshcore-layer',
-      type: 'circle',
-      source: 'compagnons-meshcore',
-      layout: { visibility },
-      paint: {
-        'circle-color': '#ea580c',
-        'circle-radius': 7,
-        'circle-stroke-width': 2,
-        'circle-stroke-color': '#fff',
-      },
-    });
-
-    this.map.addLayer({
-      id: 'compagnons-meshcore-label',
-      type: 'symbol',
-      source: 'compagnons-meshcore',
-      layout: {
-        visibility,
-        'text-field': ['get', 'nom'],
-        'text-size': 11,
-        'text-offset': [0, 1.2],
-        'text-anchor': 'top',
-      },
-      paint: { 'text-color': '#c2410c', 'text-halo-color': '#fff', 'text-halo-width': 1 },
-    });
-
-    this.map.on('click', 'compagnons-meshcore-layer', (e) => {
-      if (!e.features || e.features.length === 0) return;
-      const geometry = e.features[0].geometry as GeoJSON.Point;
-      const coordinates = geometry.coordinates.slice() as [number, number];
-      const nom = e.features[0].properties?.['nom'] || 'Companion';
-      new maplibregl.Popup().setLngLat(coordinates).setHTML(`<strong>${nom}</strong><br>Companion MeshCore`).addTo(this.map!);
-    });
-    this.map.on('mouseenter', 'compagnons-meshcore-layer', () => { this.map!.getCanvas().style.cursor = 'pointer'; });
-    this.map.on('mouseleave', 'compagnons-meshcore-layer', () => { this.map!.getCanvas().style.cursor = ''; });
   }
 
   /** Nœuds personnels MeshCore : seulement pendant une mission EN_COURS de l'équipe du porteur

@@ -23,6 +23,9 @@ from .validators import validate_convention_file
 from .crypto_fields import blind_index
 from .models import (
     CandidatureAssociation,
+    DemandeAccesRadio,
+    NiveauAccesRadio,
+    StatutDemandeAccesRadio,
     HabilitationRegistreVulnerables,
     InvitationAssociation,
     Qualification,
@@ -282,6 +285,8 @@ class UserSerializer(serializers.ModelSerializer):
     reserve_a_verifier = serializers.SerializerMethodField()
     acces_registre_vulnerables = serializers.SerializerMethodField()
     acces_membres_association = serializers.SerializerMethodField()
+    acces_radio = serializers.SerializerMethodField()
+    niveau_acces_radio = serializers.SerializerMethodField()
     ma_zone = serializers.SerializerMethodField()
     # photo est write_only : l'image passe par l'action preview, qui vérifie les droits à chaque
     # appel.
@@ -385,6 +390,40 @@ class UserSerializer(serializers.ModelSerializer):
             institution__actif=True, institution__type__code__iexact=CODE_TYPE_AASC,
         ).exists()
 
+    def _niveau_radio(self, obj):
+        """Niveau d'accès radio, calculé pour le SEUL compte de la requête.
+
+        Volontairement `None` pour les autres : le calcul coûte quatre requêtes (nœuds
+        personnels des deux protocoles, passerelles de l'institution, droits accordés) et
+        `UserSerializer` sert aussi la liste de /admin/utilisateurs, où ce serait un N+1 pour
+        une information dont cette page ne fait rien. La vue administrative des droits radio est
+        /api/demandes-acces-radio/, qui les lit en une requête."""
+        requete = self.context.get('request')
+        if requete is None or not getattr(requete.user, 'is_authenticated', False):
+            return None
+        if requete.user.id != obj.id:
+            return None
+        cache = getattr(obj, '_niveau_radio_cache', 'unset')
+        if cache == 'unset':
+            from .acces_radio import niveau_acces_radio
+            cache = niveau_acces_radio(obj)
+            obj._niveau_radio_cache = cache
+        return cache
+
+    def get_niveau_acces_radio(self, obj):
+        return self._niveau_radio(obj)
+
+    def get_acces_radio(self, obj):
+        """Affichage du menu Radio et garde de route (radioGuard).
+
+        Vrai dès qu'un niveau est ouvert. Le menu reste visible SANS ce droit -- c'est la page
+        /admin/radio qui explique ce qu'il faut et permet de le demander ; la masquer
+        supprimerait la porte d'entrée, comme pour « Habilitations registre »."""
+        niveau = self._niveau_radio(obj)
+        if niveau is None:
+            return None
+        return niveau != NiveauAccesRadio.AUCUN
+
     def get_acces_registre_vulnerables(self, obj):
         # Affichage du menu seulement ; l'accès réel est contrôlé par core/vulnerabilites.py.
         #
@@ -417,7 +456,8 @@ class UserSerializer(serializers.ModelSerializer):
                   'institution_nom', 'institution_id', 'institution_type_code',
                   'needs_institution_setup', 'ma_zone',
                   'souhaite_rejoindre_reserve', 'reserve_verifiee', 'reserve_a_verifier',
-                  'acces_registre_vulnerables', 'acces_membres_association']
+                  'acces_registre_vulnerables', 'acces_membres_association',
+                  'acces_radio', 'niveau_acces_radio']
         extra_kwargs = {
             'password': {'write_only': True},
             # Unicité de `username` retirée du niveau CHAMP pour être traitée dans `validate()`,
@@ -4319,3 +4359,78 @@ class ImportOpenDataSerializer(serializers.ModelSerializer):
         model = ImportOpenData
         fields = ['id', 'source', 'source_libelle', 'statut', 'resultat', 'erreur',
                   'date_lancement', 'date_fin']
+
+
+class DemandeAccesRadioSerializer(serializers.ModelSerializer):
+    """Demande d'accès au domaine radio, et sa décision (voir core/acces_radio.py).
+
+    Le demandeur n'écrit que `niveau_demande` et `motif` : `statut`, `niveau_accorde`,
+    `instruite_par` et les dates sont posés par l'action `instruire`, jamais par le corps de la
+    requête -- sinon une demande s'accorderait elle-même en PATCHant son propre statut."""
+
+    utilisateur_nom = serializers.SerializerMethodField()
+    utilisateur_email = serializers.SerializerMethodField()
+    instruite_par_nom = serializers.SerializerMethodField()
+    niveau_demande_libelle = serializers.CharField(source="get_niveau_demande_display", read_only=True)
+    statut_libelle = serializers.CharField(source="get_statut_display", read_only=True)
+
+    class Meta:
+        model = DemandeAccesRadio
+        fields = ['id', 'utilisateur', 'utilisateur_nom', 'utilisateur_email',
+                  'niveau_demande', 'niveau_demande_libelle', 'motif',
+                  'statut', 'statut_libelle', 'niveau_accorde',
+                  'instruite_par', 'instruite_par_nom', 'commentaire_decision',
+                  'date_demande', 'date_decision']
+        read_only_fields = ['utilisateur', 'statut', 'niveau_accorde', 'instruite_par',
+                            'commentaire_decision', 'date_demande', 'date_decision']
+
+    def _nom(self, utilisateur):
+        """Nom pseudonymisé en zone DEMO — `nom_affichable` est le point de passage unique du
+        projet, et composer le nom à la main ici rouvrirait exactement la fuite qu'il a fermée
+        (un test structurel le vérifie : test_anonymisation_demo.py)."""
+        if utilisateur is None:
+            return None
+        return nom_affichable(utilisateur, self.context.get('request')) or utilisateur.email
+
+    def get_utilisateur_nom(self, obj):
+        return self._nom(obj.utilisateur)
+
+    def get_utilisateur_email(self, obj):
+        """L'instructeur doit pouvoir identifier le demandeur sans ambiguïté : deux bénévoles
+        peuvent porter le même nom. Masquée en zone DEMO comme partout ailleurs — une vraie
+        adresse n'a pas à apparaître pendant une démonstration, et un droit radio ne s'accorde
+        pas depuis la démonstration de toute façon."""
+        requete = self.context.get('request')
+        if requete is not None and get_active_environment(requete) == Environment.DEMO:
+            return mask_email(obj.utilisateur.email)
+        return obj.utilisateur.email
+
+    def get_instruite_par_nom(self, obj):
+        return self._nom(obj.instruite_par)
+
+    def validate_niveau_demande(self, valeur):
+        if valeur == NiveauAccesRadio.AUCUN:
+            raise serializers.ValidationError(
+                "Demander « aucun accès » n'a pas de sens : choisissez opérateur ou "
+                "administration complète."
+            )
+        return valeur
+
+    def validate_motif(self, valeur):
+        # La seule pièce du dossier : une demande vide est ininstruisible, et l'instructeur ne
+        # peut pas inventer le matériel que la personne détient.
+        if not (valeur or "").strip():
+            raise serializers.ValidationError(
+                "Décrivez le matériel que vous détenez ou exploitez, et l'usage prévu."
+            )
+        return valeur
+
+    def validate(self, attrs):
+        utilisateur = self.context['request'].user
+        if DemandeAccesRadio.objects.filter(
+            utilisateur=utilisateur, statut=StatutDemandeAccesRadio.EN_ATTENTE,
+        ).exists():
+            raise serializers.ValidationError(
+                "Vous avez déjà une demande en attente d'instruction."
+            )
+        return attrs

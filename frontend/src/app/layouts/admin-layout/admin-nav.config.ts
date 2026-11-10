@@ -12,17 +12,36 @@ export type GroupeNavId = 'permanent' | 'crise' | 'post-critique' | 'preparation
  * - `validation-comptes` : rôle effectif admin ou autorité locale ;
  * - `autorite-locale` : collectivités territoriales (isAutoriteLocaleCommunale) ;
  * - `registre-vulnerables` : champ serveur `acces_registre_vulnerables` ;
- * - `membres-association` : champ serveur `acces_membres_association`. */
+ * - `membres-association` : champ serveur `acces_membres_association` ;
+ * - `radio` : champ serveur `acces_radio` (nœud personnel, passerelle de l'institution, ou
+ *   droit accordé — voir backend/core/acces_radio.py). L'entrée « Accueil radio » reste en
+ *   `tous` : c'est elle qui explique ce qu'il faut et permet de le demander. */
 export type VisibiliteNav =
   'institutionnel' | 'tous' | 'sysadmin' | 'validation-comptes' | 'autorite-locale'
-  | 'registre-vulnerables' | 'membres-association';
+  | 'registre-vulnerables' | 'membres-association' | 'radio';
+
+/** Second niveau de replis, à l'intérieur d'un cadre. N'existe que là où un même cadre
+ * contient deux familles d'écrans qui ne se mélangent jamais : MeshCore et Meshtastic sont
+ * deux protocoles radio distincts, avec leurs propres companions et leurs propres canaux, et
+ * les sept entrées à plat se lisaient comme une liste de doublons. */
+export type SousGroupeNavId = 'meshcore' | 'meshtastic';
 
 export interface NavItem {
   icon: string;
   label: string;
   route: string;
   groupe: GroupeNavId;
+  /** Absent = entrée affichée directement dans le cadre, avant les sous-cadres. */
+  sousGroupe?: SousGroupeNavId;
   visibilite?: VisibiliteNav;
+}
+
+export interface SousGroupeNav {
+  id: SousGroupeNavId;
+  /** Cadre parent : un sous-cadre n'existe jamais seul. */
+  groupe: Exclude<GroupeNavId, 'permanent'>;
+  label: string;
+  icon: string;
 }
 
 export interface GroupeNav {
@@ -38,6 +57,12 @@ export const GROUPES_NAV: GroupeNav[] = [
   { id: 'preparation', label: 'Préparation', icon: 'event_available' },
   { id: 'communications', label: 'Communications / Radio', icon: 'settings_input_antenna' },
   { id: 'administration', label: 'Administration', icon: 'admin_panel_settings' },
+];
+
+/** Ordre d'affichage des sous-cadres, à l'intérieur de leur cadre. */
+export const SOUS_GROUPES_NAV: SousGroupeNav[] = [
+  { id: 'meshcore', groupe: 'communications', label: 'MeshCore', icon: 'hub' },
+  { id: 'meshtastic', groupe: 'communications', label: 'Meshtastic', icon: 'lan' },
 ];
 
 export const NAV_ITEMS: NavItem[] = [
@@ -100,24 +125,40 @@ export const NAV_ITEMS: NavItem[] = [
   { icon: 'how_to_reg', label: 'Habilitations registre', route: '/admin/habilitations-registre', groupe: 'preparation', visibilite: 'autorite-locale' },
 
   // ── Communications / Radio ──────────────────────────────────────────
-  // Seul cadre transversal. Ces canaux sont généralistes ; en crise, ce sont les canaux
-  // d'équipe qui servent.
-  { icon: 'settings_input_antenna', label: 'Companions MeshCore (test)', route: '/admin/meshcore-companions', groupe: 'communications' },
-  { icon: 'forum', label: 'Canaux MeshCore (test)', route: '/admin/meshcore-canaux', groupe: 'communications' },
-  { icon: 'settings_input_antenna', label: 'Companions Meshtastic (test)', route: '/admin/meshtastic-companions', groupe: 'communications' },
-  { icon: 'forum', label: 'Canaux Meshtastic (test)', route: '/admin/meshtastic-canaux', groupe: 'communications' },
+  // Seul cadre transversal, et le seul à deux niveaux : MeshCore et Meshtastic sont deux
+  // protocoles sans rien en commun, leurs écrans sont donc dans deux sous-cadres.
+  //
+  // « Accueil radio » est en `tous` et NON en `radio` : une institution sans aucune radio doit
+  // pouvoir ouvrir cette page, apprendre ce qu'il lui faut (un nœud, ou une passerelle) et
+  // demander le droit. La masquer supprimerait la porte d'entrée du domaine -- même
+  // raisonnement que « Habilitations registre ». C'est aussi là que `radioGuard` renvoie.
+  { icon: 'settings_input_antenna', label: 'Accueil radio', route: '/admin/radio', groupe: 'communications', visibilite: 'tous' },
+  // Toute la carte du réseau radio : relais, passerelles, répéteurs entendus, liaisons
+  // mesurées, couverture calculée. Séparée de /admin/carte, qui ne garde du mesh que les
+  // positions des intervenants en mission (demande du 10/11/2026).
+  { icon: 'travel_explore', label: 'Carte radio', route: '/admin/carte-radio', groupe: 'communications', visibilite: 'radio' },
+  // Ce que les mesures disent du reseau : relais sourds, liaisons a sens unique, desequilibrees,
+  // noeuds inaudibles (backend/core/analyse_liaisons.py).
+  { icon: 'troubleshoot', label: 'Diagnostic radio', route: '/admin/diagnostic-radio', groupe: 'communications', visibilite: 'radio' },
+  // Jusqu'ou porte un site, et est-ce que ca passe entre deux points (backend/core/relief_radio.py,
+  // porte de relief.js de carte-live-meshtastic).
+  { icon: 'cell_tower', label: 'Planification radio', route: '/admin/couverture-radio', groupe: 'communications', visibilite: 'radio' },
+  // Boîtiers Raspberry Pi déployés sur site (voir satellite/README.md). Reste institutionnel :
+  // un satellite est une machine, pas un poste radio -- il héberge aussi la synchronisation et
+  // les sauvegardes.
+  { icon: 'router', label: 'Satellites', route: '/admin/satellites', groupe: 'communications' },
+
+  // Sous-cadre MeshCore
+  { icon: 'settings_input_antenna', label: 'Companions MeshCore (test)', route: '/admin/meshcore-companions', groupe: 'communications', sousGroupe: 'meshcore', visibilite: 'radio' },
+  { icon: 'forum', label: 'Canaux MeshCore (test)', route: '/admin/meshcore-canaux', groupe: 'communications', sousGroupe: 'meshcore', visibilite: 'radio' },
+
+  // Sous-cadre Meshtastic
+  { icon: 'settings_input_antenna', label: 'Companions Meshtastic (test)', route: '/admin/meshtastic-companions', groupe: 'communications', sousGroupe: 'meshtastic', visibilite: 'radio' },
+  { icon: 'forum', label: 'Canaux Meshtastic (test)', route: '/admin/meshtastic-canaux', groupe: 'communications', sousGroupe: 'meshtastic', visibilite: 'radio' },
   // Lire et modifier la configuration d'un noeud par la radio (backend/core/models.py:
   // TacheAdminMeshtastic). La page explique le prealable qui conditionne tout : la cle publique
   // de la passerelle doit figurer dans security.admin_key du noeud vise.
-  { icon: 'settings_remote', label: 'Administration Meshtastic', route: '/admin/meshtastic-administration', groupe: 'communications' },
-  // Ce que les mesures disent du reseau : relais sourds, liaisons a sens unique, desequilibrees,
-  // noeuds inaudibles (backend/core/analyse_liaisons.py).
-  { icon: 'troubleshoot', label: 'Diagnostic radio', route: '/admin/diagnostic-radio', groupe: 'communications' },
-  // Jusqu'ou porte un site, et est-ce que ca passe entre deux points (backend/core/relief_radio.py,
-  // porte de relief.js de carte-live-meshtastic).
-  { icon: 'cell_tower', label: 'Planification radio', route: '/admin/couverture-radio', groupe: 'communications' },
-  // Boîtiers Raspberry Pi déployés sur site (voir satellite/README.md).
-  { icon: 'router', label: 'Satellites', route: '/admin/satellites', groupe: 'communications' },
+  { icon: 'settings_remote', label: 'Administration Meshtastic', route: '/admin/meshtastic-administration', groupe: 'communications', sousGroupe: 'meshtastic', visibilite: 'radio' },
 
   // ── Administration ──────────────────────────────────────────────────
   { icon: 'apartment', label: 'Institutions', route: '/admin/institutions', groupe: 'administration' },

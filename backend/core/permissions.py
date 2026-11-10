@@ -432,3 +432,31 @@ def user_can_view_photo(request, obj, *, author_field='author', teams_field=None
         return True
 
     return False
+
+
+class PeutAccederRadio(BasePermission):
+    """Accès au domaine radio : un acteur institutionnel, ou un opérateur radio.
+
+    Remplace `IsInstitutionalActor` sur les endpoints radio, et c'est un ÉLARGISSEMENT, pas un
+    verrou : le propriétaire d'un nœud personnel n'a aucune raison d'être institutionnel pour
+    lire l'état du réseau sur lequel son matériel émet, régler ce matériel et simuler une
+    couverture. C'était jusqu'au 10/11/2026 la seule chose qui lui manquait.
+
+    Le filtrage de ce que chacun VOIT reste celui des endpoints (zone, institution, secrets
+    réservés aux ponts par EstComptePont). Cette permission ne dit que « cette personne a
+    affaire au domaine radio »."""
+
+    message = (
+        "Le domaine radio est réservé aux acteurs institutionnels et aux opérateurs radio "
+        "(voir /admin/radio pour demander le droit)."
+    )
+
+    def has_permission(self, request, view):
+        from .acces_radio import a_acces_radio
+
+        user = request.user
+        if not (user and user.is_authenticated):
+            return False
+        if get_effective_role(request) in INSTITUTIONAL_TYPES:
+            return True
+        return a_acces_radio(user)

@@ -87,6 +87,24 @@
   }
 }
 
+// Sortie vers la carte radio : une ligne de panneau, pas un calque -- elle ne porte pas de case
+// a cocher et doit se lire comme un depart, non comme une couche de plus.
+.layer-toggle-lien {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 5px 0 3px;
+  border-top: 1px solid var(--ac-border, #e5e7eb);
+  white-space: nowrap;
+  text-decoration: none;
+  font-weight: 600;
+  color: var(--brand-primary-lisible, var(--brand-primary));
+
+  .material-icons { font-size: 16px; }
+  &:hover { text-decoration: underline; }
+}
+
 .layer-warning-icon {
   font-size: 15px !important;
   color: #d97706;
@@ -105,11 +123,7 @@
 .offers-dot { background: #11b4da; }
 .informations-dot { background: #00ff00; }
 .positions-dot { background: #9c27b0; }
-.relais-meshcore-dot { background: #0891b2; }
-.infrastructure-entendue-dot { background: #9333ea; }
 // Dégradé rouge → vert comme les traits : la pastille annonce que la couleur porte le SNR.
-.liaisons-radio-dot { background: linear-gradient(90deg, #dc2626, #f59e0b, #16a34a); }
-.compagnons-meshcore-dot { background: #ea580c; }
 .noeuds-meshcore-dot { background: #16a34a; }
 .noeuds-meshtastic-dot { background: #2563eb; }
 .personnel-dot { background: #f59e0b; }

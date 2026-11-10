@@ -2,9 +2,13 @@ import { Component, EventEmitter, HostBinding, Input, Output } from '@angular/co
 import { RouterLink, RouterLinkActive } from '@angular/router';
 import { AuthService } from '../../../auth/services/auth.service';
 import { UserRole } from '../../../shared/models/user.model';
-import { GROUPES_NAV, GroupeNav, GroupeNavId, NAV_ITEMS, NavItem } from '../admin-nav.config';
+import {
+  GROUPES_NAV, GroupeNav, GroupeNavId, NAV_ITEMS, NavItem,
+  SOUS_GROUPES_NAV, SousGroupeNav, SousGroupeNavId,
+} from '../admin-nav.config';
 
 const CLE_STOCKAGE_GROUPES = 'admin-sidebar-groupes-ouverts';
+const CLE_STOCKAGE_SOUS_GROUPES = 'admin-sidebar-sous-groupes-ouverts';
 
 /** Menu latéral de l'administration. Placement et affichage mobile : admin-layout.
  * Entrées et droits d'affichage : admin-nav.config.ts. */
@@ -30,21 +34,62 @@ export class AdminSidebarComponent {
   @Output() deconnexion = new EventEmitter<void>();
 
   readonly groupesNav: GroupeNav[] = GROUPES_NAV;
+  readonly sousGroupesNav: SousGroupeNav[] = SOUS_GROUPES_NAV;
 
   /** État replié/déplié par cadre, préférence locale (localStorage). « Crise en cours » déplié par défaut. */
   groupesOuverts: Partial<Record<GroupeNavId, boolean>> = { crise: true };
+
+  /** Idem pour les sous-cadres, dans une clé séparée : un sous-cadre et son cadre portent des
+   * identifiants de types différents, les mélanger dans le même objet rendrait le typage
+   * faux dès qu'un futur sous-cadre porterait le nom d'un cadre. */
+  sousGroupesOuverts: Partial<Record<SousGroupeNavId, boolean>> = {};
 
   constructor(private authService: AuthService) {
     try {
       const sauvegarde = localStorage.getItem(CLE_STOCKAGE_GROUPES);
       if (sauvegarde) this.groupesOuverts = JSON.parse(sauvegarde);
+      const sauvegardeSous = localStorage.getItem(CLE_STOCKAGE_SOUS_GROUPES);
+      if (sauvegardeSous) this.sousGroupesOuverts = JSON.parse(sauvegardeSous);
     } catch {
       // localStorage indisponible : repli silencieux sur le défaut.
     }
   }
 
+  /** TOUTES les entrées visibles du cadre, sous-cadres compris. Sert au mode réduit (qui
+   * affiche tout à plat, faute de pouvoir replier sans libellé) et à savoir si le cadre a
+   * quelque chose à montrer. */
   itemsDuGroupe(id: GroupeNavId): NavItem[] {
     return NAV_ITEMS.filter(item => item.groupe === id && this.isNavItemVisible(item));
+  }
+
+  /** Entrées affichées directement dans le cadre, avant les sous-cadres. */
+  itemsDirectsDuGroupe(id: GroupeNavId): NavItem[] {
+    return this.itemsDuGroupe(id).filter(item => !item.sousGroupe);
+  }
+
+  itemsDuSousGroupe(id: SousGroupeNavId): NavItem[] {
+    return NAV_ITEMS.filter(item => item.sousGroupe === id && this.isNavItemVisible(item));
+  }
+
+  /** Sous-cadres du cadre qui ont au moins une entrée visible : un sous-cadre vide ne doit pas
+   * laisser un repli qui ne contient rien. */
+  sousGroupesDuGroupe(id: GroupeNavId): SousGroupeNav[] {
+    return SOUS_GROUPES_NAV.filter(
+      sous => sous.groupe === id && this.itemsDuSousGroupe(sous.id).length > 0,
+    );
+  }
+
+  estSousGroupeOuvert(id: SousGroupeNavId): boolean {
+    return !!this.sousGroupesOuverts[id];
+  }
+
+  toggleSousGroupe(id: SousGroupeNavId): void {
+    this.sousGroupesOuverts = { ...this.sousGroupesOuverts, [id]: !this.sousGroupesOuverts[id] };
+    try {
+      localStorage.setItem(CLE_STOCKAGE_SOUS_GROUPES, JSON.stringify(this.sousGroupesOuverts));
+    } catch {
+      // localStorage indisponible : l'état reste en mémoire pour la session.
+    }
   }
 
   get itemsPermanents(): NavItem[] {
@@ -82,6 +127,10 @@ export class AdminSidebarComponent {
         return !!this.authService.getCurrentUser()?.acces_registre_vulnerables;
       case 'membres-association':
         return !!this.authService.getCurrentUser()?.acces_membres_association;
+      case 'radio':
+        // Champ serveur : il dépend du matériel enregistré et des droits accordés, aucun des
+        // deux n'étant connu du navigateur (backend/core/acces_radio.py).
+        return !!this.authService.getCurrentUser()?.acces_radio;
       case 'institutionnel':
         return this.authService.isInstitutionalEffective();
     }

@@ -1,0 +1,221 @@
+<div class="page">
+  <header class="entete">
+    <h1><span class="material-icons">settings_input_antenna</span> Radio</h1>
+    <p class="explication">
+      Le réseau radio du territoire : des nœuds portés par les intervenants, des passerelles qui
+      relient ce réseau à la plateforme, et des répéteurs sur les points hauts. Il fonctionne
+      sans Internet et sans opérateur téléphonique — c'est ce qui reste quand le reste tombe.
+    </p>
+  </header>
+
+  @if (erreur) {
+    <div class="message erreur" role="alert">
+      <span class="material-icons">error_outline</span> {{ erreur }}
+    </div>
+  }
+
+  @if (chargement) {
+    <p class="attente">Lecture de votre niveau d'accès…</p>
+  } @else if (etat) {
+
+    <section class="mon-acces" [class.ouvert]="aAcces">
+      <h2>
+        <span class="material-icons">{{ aAcces ? 'verified_user' : 'lock' }}</span>
+        {{ etat.niveau_libelle }}
+      </h2>
+
+      @if (etat.motifs.length) {
+        <p class="explication">À quel titre :</p>
+        <ul class="motifs">
+          @for (motif of etat.motifs; track motif) {
+            <li><span class="material-icons">check</span> {{ motif }}</li>
+          }
+        </ul>
+      }
+
+      @if (aAcces) {
+        @if (peutAdministrerLInfrastructure) {
+          <p class="explication">
+            Vous pouvez reconfigurer n'importe quel nœud, <strong>passerelles comprises</strong>.
+            Une passerelle mal réglée rend tout un réseau muet, et un nœud qui n'émet plus ne
+            peut plus recevoir l'ordre inverse : il faut aller le chercher à la main.
+          </p>
+        } @else {
+          <p class="explication">
+            Vous pouvez lire tout le réseau, lancer des simulations de couverture, et
+            reconfigurer <strong>vos propres nœuds</strong>. Les passerelles, qui sont
+            l'infrastructure commune, restent réservées aux administrateurs.
+          </p>
+        }
+      } @else {
+        <p class="explication">
+          Les écrans radio ne vous sont pas encore ouverts. Ce n'est pas une sanction : ils ne
+          vous diraient rien, puisqu'ils décrivent du matériel. Il y a deux manières d'y entrer.
+        </p>
+        <ul class="titres">
+          @for (titre of etat.titres_possibles; track titre) {
+            <li><span class="material-icons">arrow_right</span> {{ titre }}</li>
+          }
+        </ul>
+        <p class="explication">
+          Si vous n'avez ni l'un ni l'autre, il vous faut <strong>un nœud</strong> (un petit
+          boîtier LoRa, porté sur le terrain) ou <strong>une passerelle</strong> (le même
+          boîtier, posé à un point fixe et relié à la plateforme). À défaut, un administrateur
+          peut vous accorder le droit nominativement — c'est l'objet du formulaire ci-dessous.
+        </p>
+      }
+    </section>
+
+    @if (aAcces) {
+      <section class="sommaire">
+        <h2><span class="material-icons">explore</span> Les écrans radio</h2>
+        <div class="cartes">
+          <a routerLink="/admin/carte-radio" class="carte">
+            <span class="material-icons">travel_explore</span>
+            <strong>Carte radio</strong>
+            <span>Relais, passerelles, répéteurs entendus, liaisons mesurées, couverture calculée.</span>
+          </a>
+          <a routerLink="/admin/diagnostic-radio" class="carte">
+            <span class="material-icons">troubleshoot</span>
+            <strong>Diagnostic radio</strong>
+            <span>Relais sourds, liaisons à sens unique, nœuds que personne n'entend.</span>
+          </a>
+          <a routerLink="/admin/couverture-radio" class="carte">
+            <span class="material-icons">cell_tower</span>
+            <strong>Planification radio</strong>
+            <span>Jusqu'où porte un site, et est-ce que ça passe entre deux points.</span>
+          </a>
+          <a routerLink="/admin/meshtastic-companions" class="carte">
+            <span class="material-icons">lan</span>
+            <strong>Meshtastic</strong>
+            <span>Companions, canaux, et administration à distance des nœuds.</span>
+          </a>
+          <a routerLink="/admin/meshcore-companions" class="carte">
+            <span class="material-icons">hub</span>
+            <strong>MeshCore</strong>
+            <span>Companions et canaux du second protocole.</span>
+          </a>
+        </div>
+        <p class="explication">
+          Les positions des intervenants en mission restent sur la
+          <a routerLink="/admin/carte">carte générale</a> : c'est là qu'on les lit, à côté des
+          demandes et des centres. Tout le reste du réseau radio est sur la carte radio.
+        </p>
+      </section>
+    }
+
+    <!-- Visible tant qu'on n'a pas l'administration complete : c'est aussi par la qu'un
+         operateur demande la main sur l'infrastructure. Un administrateur complet, lui, n'a plus
+         rien a demander. -->
+    @if (!peutAdministrerLInfrastructure) {
+      <section class="demande">
+        <h2>
+          <span class="material-icons">how_to_reg</span>
+          {{ aAcces ? "Demander l'administration complète" : "Demander l'accès radio" }}
+        </h2>
+        @if (aAcces) {
+          <p class="explication">
+            Vous avez déjà l'accès opérateur. Cette demande ne sert qu'à obtenir
+            l'administration complète, <strong>passerelles comprises</strong> — ce qui engage
+            l'infrastructure de tout le réseau, pas seulement votre matériel.
+          </p>
+        }
+
+        @if (etat.demande) {
+          <div class="suivi" [class.attente]="etat.demande.statut === 'EN_ATTENTE'">
+            <p>
+              <strong>Votre demande du {{ etat.demande.date_demande | date:'dd/MM/yyyy' }}</strong>
+              — {{ etat.demande.statut_libelle }}
+              @if (etat.demande.niveau_accorde) {
+                ({{ etat.demande.niveau_accorde === 'ADMINISTRATEUR' ? 'administration complète' : 'opérateur' }})
+              }
+            </p>
+            @if (etat.demande.commentaire_decision) {
+              <p class="commentaire">« {{ etat.demande.commentaire_decision }} »</p>
+            }
+          </div>
+        }
+
+        @if (demandeEnAttente) {
+          <p class="explication">
+            Elle est en attente d'instruction par un administrateur. Une seule demande à la fois :
+            en déposer une seconde ne la ferait pas traiter plus vite.
+          </p>
+        } @else {
+          <p class="explication">
+            Dites ce que vous détenez ou exploitez comme matériel radio, et ce que vous voulez en
+            faire. C'est la seule pièce du dossier — l'administrateur ne peut pas deviner votre
+            matériel.
+          </p>
+          <label class="champ">
+            <span>Niveau demandé</span>
+            <select [(ngModel)]="niveauDemande" name="niveau">
+              <option value="OPERATEUR">Opérateur — lire le réseau, simuler, régler mes propres nœuds</option>
+              <option value="ADMINISTRATEUR">Administration complète — y compris les passerelles</option>
+            </select>
+          </label>
+          <label class="champ">
+            <span>Matériel détenu et usage prévu</span>
+            <textarea [(ngModel)]="motif" name="motif" rows="4"
+                      placeholder="Ex. : je porte un nœud Meshtastic T-Beam en intervention pour l'équipe de Saint-Pierre, et j'exploite le répéteur du château d'eau."></textarea>
+          </label>
+          @if (erreurEnvoi) {
+            <div class="message erreur" role="alert">
+              <span class="material-icons">error_outline</span> {{ erreurEnvoi }}
+            </div>
+          }
+          <button type="button" class="principal" [disabled]="!motif.trim() || envoi"
+                  (click)="envoyerDemande()">
+            <span class="material-icons">send</span>
+            {{ envoi ? 'Envoi…' : 'Envoyer la demande' }}
+          </button>
+        }
+      </section>
+    }
+
+    @if (estAdministrateur) {
+      <section class="instruction">
+        <h2>
+          <span class="material-icons">gavel</span>
+          Demandes à instruire
+          <span class="compte">{{ demandes.length }}</span>
+        </h2>
+        @if (!demandes.length) {
+          <p class="attente">Aucune demande en attente.</p>
+        } @else {
+          @for (demande of demandes; track demande.id) {
+            <article class="dossier">
+              <header>
+                <strong>{{ demande.utilisateur_nom || demande.utilisateur_email }}</strong>
+                <span class="email">{{ demande.utilisateur_email }}</span>
+                <span class="date">{{ demande.date_demande | date:'dd/MM/yyyy HH:mm' }}</span>
+              </header>
+              <p class="motif-demande">{{ demande.motif }}</p>
+              <p class="explication">Demandé : {{ demande.niveau_demande_libelle }}</p>
+              <div class="decision">
+                <label class="champ en-ligne">
+                  <span>Accorder</span>
+                  <select [(ngModel)]="niveauxAccordes[demande.id]" [name]="'niveau-' + demande.id">
+                    <option value="OPERATEUR">Opérateur</option>
+                    <option value="ADMINISTRATEUR">Administration complète</option>
+                  </select>
+                </label>
+                <input type="text" [(ngModel)]="commentaires[demande.id]"
+                       [name]="'commentaire-' + demande.id"
+                       placeholder="Commentaire (visible par le demandeur)">
+                <button type="button" class="principal" [disabled]="instructionEnCours === demande.id"
+                        (click)="instruire(demande, 'ACCORDEE')">
+                  <span class="material-icons">check</span> Accorder
+                </button>
+                <button type="button" class="discret" [disabled]="instructionEnCours === demande.id"
+                        (click)="instruire(demande, 'REFUSEE')">
+                  <span class="material-icons">close</span> Refuser
+                </button>
+              </div>
+            </article>
+          }
+        }
+      </section>
+    }
+  }
+</div>

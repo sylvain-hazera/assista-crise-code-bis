@@ -224,6 +224,7 @@ docker compose down -v                                 # arrêt + SUPPRESSION de
 | `geo_lookup.py`, `geo_reference.py` | géocodage et référentiel des communes |
 | `inondation.py`, `ruissellement.py`, `hydrometrie.py`, `tasks.py` | simulation d'inondation (tâche Celery) |
 | `routage_mesh.py`, `routage_meshtastic.py`, `sync_outbox.py` | routage MeshCore, routage Meshtastic (§ 9.5.2), synchronisation satellite → central |
+| `acces_radio.py` | qui a accès au domaine radio, et à quel niveau : le droit intermédiaire « opérateur » (§ 9.5.5) |
 | `imports.py`, `export.py` | import CSV/XLS (personnel, institutions, habitations), exports |
 | `metrics.py` | métriques Prometheus métier (voir § 9) |
 | `crypto_fields.py`, `file_crypto.py` | chiffrement des colonnes et des fichiers sensibles (§ 10.1) |
@@ -1133,22 +1134,12 @@ est dans `ngAfterViewInit`, où écrire directement déclenche `NG0100`.
 - Demandes, offres et signalements partagent une source clusterisée : les masquer retire leurs
   features de la source, sinon les clusters les compteraient encore.
 - **Calques chargés à la demande** : l'annuaire de bénévoles (jusqu'à ~1 300 fiches pour un
-  secteur régional), les relais MeshCore et les **répéteurs entendus** ne sont chargés qu'à la
-  première activation (performance, minimisation des données de position).
-- **« Liaisons radio »** (06/11/2026) : les liaisons MESURÉES, orientées — « ce récepteur a
-  entendu cet émetteur, à ce SNR » (`LiaisonMeshtastic`, alimentée par le pont Meshtastic). La
-  couleur porte le SNR (rouge sous -10 dB, orange sous 0, vert au-dessus ; gris si inconnu),
-  l'épaisseur le nombre d'observations. Tracée **sous** les points par un `before` explicite,
-  sinon les traits barrent les marqueurs et on ne peut plus cliquer dessus. Calque le plus
-  volumineux du lot : chargé à la première activation seulement, fenêtre de 24 h bornée à 30 jours
-  côté serveur.
-- **« Répéteurs entendus »** (06/11/2026) : les `ContactMeshCore` géolocalisés, c'est-à-dire la
-  carte du réseau radio tel qu'il est réellement capté, par opposition aux relais saisis à la
-  main. Ces positions n'existaient jusque-là qu'en tableau texte dans
-  `/admin/meshcore-companions`. Seuls les types **REPEATER** et **ROOM** sont affichés : un
-  COMPANION peut être le terminal d'une personne (`NoeudMeshUtilisateur` rattache une clé
-  publique à un compte), un SENSOR n'est pas un relais. Même filtrage que la fédération
-  (`core/federation_carte_live.py`), pour la même raison.
+  secteur régional) n'est chargé qu'à la première activation (performance, minimisation des
+  données de position). Même motif sur la carte radio, pour les liaisons et la couverture.
+- **Les calques radio ont quitté cette carte le 10/11/2026** pour `/admin/carte-radio` (§ 9.5.4) :
+  relais déclarés, passerelles, répéteurs entendus, liaisons mesurées, couverture calculée. Il
+  n'en reste que les positions de nœuds personnels des intervenants, et le panneau porte un lien
+  vers la carte radio — sans quoi les calques retirés auraient eu l'air d'avoir disparu.
 - Les positions de nœuds personnels MeshCore/Meshtastic n'apparaissent que pendant une mission
   `EN_COURS` (règle appliquée par le serveur). Pour un visiteur non institutionnel, les
   positions des demandes, offres et signalements sont légèrement bruitées.
@@ -1175,10 +1166,23 @@ préférence locale (`localStorage`).
 
 `visibilite` décide qui voit l'entrée : `institutionnel` (défaut, rôle effectif, § 6.1),
 `tous` (ex. « Mes interventions », route publique pour un chef d'équipe non institutionnel),
-`sysadmin`, `validation-comptes`, `autorite-locale`, `registre-vulnerables`. Masquer une entrée
-ne protège rien : la route doit avoir la garde correspondante. Un test de la spec de
-`admin-sidebar` vérifie que chaque entrée `/admin/...` pointe vers une route existante et que
-cette route porte la garde associée à sa `visibilite`.
+`sysadmin`, `validation-comptes`, `autorite-locale`, `registre-vulnerables`,
+`membres-association`, `radio` (§ 9.5.5). Masquer une entrée ne protège rien : la route doit
+avoir la garde correspondante. Un test de la spec de `admin-sidebar` vérifie que chaque entrée
+`/admin/...` pointe vers une route existante et que cette route porte la garde associée à sa
+`visibilite`.
+
+**Sous-cadres (second niveau).** `SOUS_GROUPES_NAV` + `NavItem.sousGroupe` ajoutent un niveau de
+repli *à l'intérieur* d'un cadre ; une entrée sans `sousGroupe` reste affichée directement dans
+le cadre, **avant** les sous-cadres. Le seul usage à ce jour est le cadre Radio, qui porte un
+sous-cadre MeshCore et un sous-cadre Meshtastic : deux protocoles sans rien en commun, dont les
+sept écrans à plat se lisaient comme une liste de doublons. Un sous-cadre sans entrée visible
+n'est pas rendu, et le mode réduit (icônes seules) affiche tout à plat — on ne peut pas replier
+sans libellé. L'état est une préférence locale séparée
+(`admin-sidebar-sous-groupes-ouverts`) : mélanger les deux objets rendrait le typage faux dès
+qu'un sous-cadre porterait le nom d'un cadre. Trois tests de la spec verrouillent l'invariant
+qui casse en silence : une entrée dont le `groupe` ne correspond pas au cadre de son sous-cadre
+disparaît du menu.
 
 La cloche interroge un résumé léger toutes les 20 s (`pollWhileVisible`) et ne recharge la
 liste que s'il a changé. L'en-tête arbitre ses deux listes déroulantes (notifications, menu
@@ -1894,11 +1898,15 @@ irréversible de la page, et il n'a rien d'illégal.
 de l'appareil qui chiffre le message. L'API refuse d'emblée une tâche posée sur un companion MQTT,
 avec la raison — plutôt que de la laisser échouer silencieusement 30 s plus tard.
 
-**Droits** : les lectures sont ouvertes aux acteurs institutionnels (relever une puissance n'est pas
-un acte matériel) ; les **écritures exigent le rôle ADMIN réel et la zone PROD** — un `demo_role`
-prêté pour une démonstration ne doit pas reconfigurer un relais, et une tâche DEMO n'aurait aucun
-exécutant. Pas de `PATCH` ni de `DELETE` sur la file : le pont rapporte par une action dédiée qui
-décide seule du statut, sinon on pourrait maquiller une opération faite sur un relais.
+**Droits** (révisés le 10/11/2026, § 9.5.5) : les lectures sont ouvertes à qui a un accès radio
+(acteur institutionnel ou opérateur) — relever une puissance n'est pas un acte matériel, et c'est
+la seule façon pour un porteur de savoir ce que son nœud fait. Les **écritures exigent la zone
+PROD et le droit sur le nœud visé** : son propre nœud pour un opérateur, n'importe lequel pour un
+administrateur, **la passerelle pour lui seul**. Le rôle administrateur reste pris au sens réel —
+un `demo_role` prêté pour une démonstration ne reconfigure pas un relais, et une tâche DEMO
+n'aurait aucun exécutant. Pas de `PATCH` ni de `DELETE` sur la file : le pont rapporte par une
+action dédiée qui décide seule du statut, sinon on pourrait maquiller une opération faite sur un
+relais.
 
 **Réessais** : le compteur s'incrémente à la **prise**, pas au rapport, et une tâche laissée
 `EN_COURS` plus de 300 s est rendue à la file — un pont qui meurt en pleine opération ne doit ni la
@@ -1993,6 +2001,113 @@ relief est le même dans les deux zones, comme les grilles d'inondation.
   l'erreur qui envoie une équipe dans une zone d'ombre en croyant qu'elle a la radio ;
 - `points_sans_altitude` est exposé : au-delà de 10 % de trous le calcul **échoue** plutôt que de
   rendre une couverture sous-estimée sans le dire, et en dessous l'interface affiche l'avertissement.
+
+### 9.5.4 Deux cartes : la carte de crise et la carte radio
+
+Jusqu'au 10/11/2026, `/admin/carte` portait six calques radio en plus des calques de crise. Ils
+en sont partis, sauf un. Le découpage n'est pas esthétique, il suit la question posée :
+
+| Carte | Question | Calques mesh |
+|---|---|---|
+| `/admin/carte` | *où en est la crise ?* | **seulement** les positions des intervenants en mission portant leur nœud personnel (`NoeudMeshUtilisateur`, `NoeudUtilisateurMeshtastic`, via `positions_en_mission`) |
+| `/admin/carte-radio` | *dans quel état est le réseau radio ?* | passerelles, relais déclarés, répéteurs entendus, nœuds Meshtastic détectés, liaisons mesurées, couverture calculée |
+
+Les positions des intervenants restent sur la carte de crise parce qu'elles appartiennent à la
+**conduite d'opération** : on les lit à côté des demandes, des centres et des équipes, pas à
+côté d'un bilan de liaison. Tout le reste appartient à l'**exploitation du réseau**.
+
+Le panneau de calques de la carte de crise porte un lien explicite vers la carte radio. Sans
+lui, les calques retirés auraient simplement eu l'air d'avoir disparu.
+
+`CarteRadioComponent` reprend les cinq pièges de `MapComponent` (§ 6.3) : garde WebGL (sinon
+l'exception du constructeur traverse `ngAfterViewInit` et c'est la **page** qui reste blanche),
+`before` explicite pour que les traits de liaison passent **sous** les points, garde `getLayer()`
+avant tout `before` ou changement de visibilité, couleurs lisibles **sur fond clair seulement**
+(le fond ne suit pas le mode sombre), et chargement différé des deux calques coûteux (liaisons
+mesurées, couverture). Les compteurs affichés par calque ne sont pas décoratifs : une carte vide
+ne dit pas si elle est vide parce qu'il n'y a rien, ou parce que le chargement a échoué — les
+erreurs de chargement sont donc affichées, calque par calque.
+
+### 9.5.5 Qui a accès à la radio : le droit intermédiaire
+
+`core/acces_radio.py`, modèle `DemandeAccesRadio`, page **`/admin/radio`**, API
+`/api/demandes-acces-radio/`. Garde Angular `radioGuard`, visibilité de menu `radio`, champs
+servis `acces_radio` et `niveau_acces_radio` (`UserSerializer`).
+
+**Le problème corrigé.** Avant le 10/11/2026, les écrans radio étaient ouverts à tout acteur
+institutionnel et toute écriture sur un nœud exigeait le rôle ADMINISTRATOR réel. Les deux
+extrémités étaient fausses : une commune sans aucun matériel radio voyait huit pages qui ne
+pouvaient rien lui dire, et le bénévole qui porte un nœud ne pouvait pas régler son propre
+appareil.
+
+**Trois niveaux** (`NiveauAccesRadio`), et ce qui les sépare est **qui subit l'erreur** :
+
+| Niveau | Lecture du réseau, simulations | Écriture sur ses propres nœuds | Écriture sur la passerelle et les nœuds d'autrui |
+|---|---|---|---|
+| `AUCUN` | non | non | non |
+| `OPERATEUR` | oui | oui | non |
+| `ADMINISTRATEUR` | oui | oui | oui |
+
+**Ce qui ouvre le droit**, dans l'ordre où `niveau_acces_radio` l'évalue :
+
+1. rôle ADMINISTRATOR **réel** → `ADMINISTRATEUR` (pas le rôle effectif : un `demo_role` prêté
+   le temps d'une démonstration ne donne pas la main sur du matériel qui émet) ;
+2. une `DemandeAccesRadio` accordée au niveau `ADMINISTRATEUR` ;
+3. **posséder un nœud personnel actif**, ou **appartenir à une institution qui exploite une
+   passerelle active** → `OPERATEUR`. C'est le point important : le droit vient du matériel
+   avant de venir d'une décision, et personne n'a à demander l'autorisation de régler son
+   propre appareil ;
+4. sinon, le niveau accordé par une demande (`OPERATEUR`), ou `AUCUN`.
+
+Le calcul ne porte que sur les données de la zone **PROD** : la démonstration ne contient aucun
+matériel réel, et un nœud de démonstration qui ouvrirait le droit donnerait la main sur les
+vrais appareils.
+
+**Deux conséquences d'exploitation à connaître** :
+
+- une passerelle dont le champ `institution` est **vide** n'ouvre aucun droit — « quelqu'un,
+  quelque part, a une passerelle » n'est pas un titre à administrer un réseau. Renseigner
+  l'institution des companions existants est donc ce qui rend le menu radio visible aux agents
+  de cette collectivité ; à défaut, le droit s'accorde nominativement ;
+- `canEnterAdminArea()` admet désormais `acces_radio`, sans quoi un porteur de nœud non
+  institutionnel n'entrerait pas dans `/admin` du tout. Il n'y gagne rien d'autre : chaque
+  autre page garde sa propre garde et le renvoie vers `/admin/acces-refuse`.
+
+**La passerelle n'est pas un nœud comme les autres** (`peut_administrer_noeud`). Un opérateur
+écrit sur ses propres nœuds, jamais sur la passerelle : elle porte tout un réseau, une région
+ou un rapport cyclique faux la rend muette, et **le nœud qui n'émet plus ne peut plus recevoir
+l'ordre inverse** — il faut aller le chercher à la main, souvent sur un point haut.
+
+**La porte d'entrée.** « Accueil radio » est la seule entrée du cadre Radio en `visibilite:
+'tous'`, et `/admin/radio` la seule route radio sans `radioGuard` : c'est elle qui dit ce qu'il
+faut (un nœud, ou une passerelle), affiche **à quel titre** le droit est ouvert quand il l'est
+— donc ce qu'on perdrait en désactivant son nœud — et porte le formulaire de demande.
+`radioGuard` y renvoie au lieu de `/admin/acces-refuse` : « refusé » est exact et inutile, la
+personne a besoin de savoir ce qui lui manque. Même raisonnement que « Habilitations registre »
+(§ 5.11) : masquer la page supprimerait la porte d'entrée du dispositif.
+
+**La demande et le droit sont une seule ligne**, parce que le droit EST la demande instruite.
+Rien n'est supprimé : un droit retiré passe en `RETIREE` avec son motif, de sorte que « qui
+avait ce droit en novembre ? » reste une question à laquelle on peut répondre. La décision passe
+par l'action `instruire` (administrateur **réel** seulement), jamais par un PATCH — sinon un
+demandeur s'accorderait le droit en modifiant son propre statut. `niveau_accorde` peut être
+inférieur au niveau demandé : c'est une décision, pas un refus, et il est **obligatoire** à
+l'octroi (jamais déduit du niveau demandé en silence).
+
+**Permission serveur** : `PeutAccederRadio` (`core/permissions.py`) remplace
+`IsInstitutionalActor` sur les endpoints radio en lecture (contacts, traceroutes, liaisons,
+configurations, couvertures, calibrations) et sur la file d'administration. C'est un
+**élargissement** : l'acteur institutionnel garde son accès, l'opérateur radio non institutionnel
+l'obtient. Le filtrage de ce que chacun voit reste celui des endpoints (zone, institution,
+secrets réservés aux ponts par `EstComptePont`, § 10.2).
+
+**`acces_radio` n'est calculé que pour le compte de la requête**, et vaut `null` pour les
+autres : le calcul coûte quatre requêtes et `UserSerializer` sert aussi la liste de
+`/admin/utilisateurs`, où ce serait un N+1 pour une information dont cette page ne fait rien. La
+vue administrative des droits est `/api/demandes-acces-radio/`.
+
+**Tests** : `backend/core/tests/mesh/test_acces_radio.py` (38), plus la spec de
+`admin-sidebar`, `radio.component.spec.ts` et `carte-radio.component.spec.ts`.
 
 ### 9.6 Angles morts de la supervision
 

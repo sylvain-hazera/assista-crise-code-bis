@@ -65,6 +65,7 @@ from .institution_attachment import (
 )
 from .permissions import (
     EstComptePont,
+    PeutAccederRadio,
     IsInstitutionalActor, IsAdministrator, IsOwnDeclarationOrInstitutional, IsOwnerOrInstitutional,
     IsSelfOrInstitutional, IsInstitutionMemberOrAdministrator, IsOfferOwnerOrInstitutional,
     INSTITUTIONAL_TYPES, user_can_view_photo, DenyInDemo,
@@ -166,6 +167,9 @@ def extract_exif_metadata(filepath):
 
 from .crypto_fields import blind_index
 from .models import (
+    DemandeAccesRadio,
+    NiveauAccesRadio,
+    StatutDemandeAccesRadio,
     Environment,
     SiteSensible,
     ImportOpenData,
@@ -513,6 +517,7 @@ def send_crisis_regulateur_invite_email(request, user, crisis, institution):
     )
 
 from .serializers import (
+    DemandeAccesRadioSerializer,
     CandidatureAssociationSerializer,
     InvitationAssociationSerializer,
     QualificationMembreSerializer,
@@ -16995,7 +17000,7 @@ class ContactMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ReadOnlyMod
 
     queryset = ContactMeshCore.objects.select_related('compagnon').all()
     serializer_class = ContactMeshCoreSerializer
-    permission_classes = [IsInstitutionalActor]
+    permission_classes = [PeutAccederRadio]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -17054,7 +17059,7 @@ class TracerouteMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ReadOnly
 
     queryset = TracerouteMeshCore.objects.select_related('compagnon').all()
     serializer_class = TracerouteMeshCoreSerializer
-    permission_classes = [IsInstitutionalActor]
+    permission_classes = [PeutAccederRadio]
 
     def get_queryset(self):
         qs = super().get_queryset().order_by('-date_creation')
@@ -17762,7 +17767,7 @@ class ContactMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ReadOnlyM
 
     queryset = ContactMeshtastic.objects.select_related('compagnon').all()
     serializer_class = ContactMeshtasticSerializer
-    permission_classes = [IsInstitutionalActor]
+    permission_classes = [PeutAccederRadio]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -17807,7 +17812,7 @@ class LiaisonMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ReadOnlyM
 
     queryset = LiaisonMeshtastic.objects.all()
     serializer_class = LiaisonMeshtasticSerializer
-    permission_classes = [IsInstitutionalActor]
+    permission_classes = [PeutAccederRadio]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -17888,10 +17893,12 @@ class TacheAdminMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelV
     Posée ici, exécutée par le pont de la passerelle choisie (meshtastic-bridge/
     admin_meshtastic.py), rapportée par `rapporter`. Trois choses à savoir :
 
-    - **Une écriture exige le rôle ADMIN RÉEL et l'environnement PROD.** Reconfigurer ou
-      redémarrer un relais est un acte matériel : un `demo_role` prêté le temps d'une
-      démonstration ne doit pas y donner accès, et une tâche créée en zone DEMO n'aurait de
-      toute façon aucun exécutant.
+    - **Une écriture exige l'environnement PROD et le droit sur le nœud visé.** Reconfigurer
+      ou redémarrer un relais est un acte matériel : une tâche créée en zone DEMO n'aurait
+      aucun exécutant, et un `demo_role` prêté le temps d'une démonstration ne donne pas la
+      main sur du matériel qui émet. Le droit, lui, depuis le 10/11/2026 : le propriétaire
+      d'un nœud personnel écrit sur SON nœud, la passerelle reste administrateur réel (voir
+      core/acces_radio.py, peut_administrer_noeud).
     - **Pas de PATCH ni de DELETE.** Le pont rapporte par une action dédiée, qui décide seule du
       nouveau statut et du réessai ; laisser modifier `statut`/`reponse` librement permettrait
       de maquiller une opération.
@@ -17907,7 +17914,7 @@ class TacheAdminMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelV
         # institutionnel -- même principe que CommandeMeshCoreViewSet.
         if self.action in ('prendre', 'rapporter'):
             return [permissions.IsAuthenticated()]
-        return [IsInstitutionalActor()]
+        return [PeutAccederRadio()]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -17922,12 +17929,23 @@ class TacheAdminMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelV
     def perform_create(self, serializer):
         type_tache = serializer.validated_data['type_tache']
         if type_tache in TACHES_ADMIN_ECRITURE:
-            # Rôle RÉEL : voir la docstring. Même choix que la supervision technique et les
-            # comptes MQTT (core/grafana.py:IsAdministrator).
-            if self.request.user.type != UserRole.ADMINISTRATOR:
+            # Depuis le 10/11/2026, l'écriture n'est plus réservée aux administrateurs : le
+            # propriétaire d'un nœud personnel règle SON matériel (core/acces_radio.py,
+            # peut_administrer_noeud). La passerelle, elle, reste administrateur -- c'est de
+            # l'infrastructure partagée, et un nœud rendu muet par une mauvaise région ne peut
+            # plus recevoir l'ordre inverse.
+            #
+            # Le rôle administrateur est pris au sens RÉEL, comme avant : un `demo_role` prêté
+            # le temps d'une démonstration ne donne pas la main sur du matériel qui émet.
+            from .acces_radio import peut_administrer_noeud
+
+            node_num_cible = serializer.validated_data.get('node_num_cible')
+            if not peut_administrer_noeud(self.request.user, node_num_cible):
                 raise PermissionDenied(
-                    "Écrire sur un nœud radio (puissance, redémarrage) est réservé aux "
-                    "administrateurs."
+                    "Écrire sur la passerelle est réservé aux administrateurs."
+                    if node_num_cible is None else
+                    "Vous ne pouvez reconfigurer que vos propres nœuds. Associez ce nœud à "
+                    "votre compte, ou demandez l'administration radio complète (/admin/radio)."
                 )
             if get_active_environment(self.request) != Environment.PROD:
                 raise PermissionDenied(
@@ -18096,7 +18114,7 @@ class ConfigurationNoeudMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewset
 
     queryset = ConfigurationNoeudMeshtastic.objects.select_related('releve_par').all()
     serializer_class = ConfigurationNoeudMeshtasticSerializer
-    permission_classes = [IsInstitutionalActor]
+    permission_classes = [PeutAccederRadio]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -18121,7 +18139,7 @@ class CouvertureRadioSiteViewSet(EnvironmentScopedViewSetMixin, viewsets.ReadOnl
 
     queryset = CouvertureRadioSite.objects.all()
     serializer_class = CouvertureRadioSiteSerializer
-    permission_classes = [IsInstitutionalActor]
+    permission_classes = [PeutAccederRadio]
 
     def get_queryset(self):
         return super().get_queryset().order_by('-date_lancement')
@@ -18284,7 +18302,7 @@ class CalibrationRadioViewSet(EnvironmentScopedViewSetMixin, viewsets.ReadOnlyMo
 
     queryset = CalibrationRadio.objects.all()
     serializer_class = CalibrationRadioSerializer
-    permission_classes = [IsInstitutionalActor]
+    permission_classes = [PeutAccederRadio]
 
     def get_queryset(self):
         return super().get_queryset().order_by('-date_calcul')
@@ -19628,3 +19646,120 @@ class SiteSensibleViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
             commentaire=f"Point créé depuis le site sensible « {site.nom} » ({site.get_source_display()}).",
         )
         return Response(PointOperationnelSerializer(point, context={'request': request}).data, status=status.HTTP_201_CREATED)
+
+
+class DemandeAccesRadioViewSet(viewsets.ModelViewSet):
+    """Demandes d'accès au domaine radio, et octroi du droit (voir core/acces_radio.py).
+
+    Pas d'`EnvironmentScopedViewSetMixin` : le droit n'est pas une donnée de contenu, il porte
+    sur du matériel qui n'existe pas en zone de démonstration (voir DemandeAccesRadio).
+
+    Trois choses à savoir :
+
+    - **Créer une demande est ouvert à tout compte authentifié**, y compris non
+      institutionnel. C'est la porte d'entrée : un bénévole qui porte un nœud n'est pas une
+      institution, et une commune qui n'a pas encore de radio doit pouvoir la demander.
+    - **Chacun ne voit que ses demandes**, sauf l'administrateur qui voit tout : le motif
+      déclare du matériel détenu et un rattachement, ce n'est pas public.
+    - **Pas de PATCH.** La décision passe par `instruire`, qui pose seule statut, niveau
+      accordé, instructeur et date -- sinon un demandeur s'accorderait le droit en modifiant
+      son propre statut."""
+
+    queryset = DemandeAccesRadio.objects.select_related('utilisateur', 'instruite_par').all()
+    serializer_class = DemandeAccesRadioSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    http_method_names = ['get', 'post', 'head', 'options']
+
+    def _est_administrateur(self, request):
+        # Rôle RÉEL : accorder la main sur du matériel qui émet n'est pas un geste de
+        # démonstration (même raisonnement que permissions.EstComptePont).
+        return request.user.type == UserRole.ADMINISTRATOR
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if not self._est_administrateur(self.request):
+            qs = qs.filter(utilisateur=self.request.user)
+        statut = self.request.query_params.get('statut')
+        if statut:
+            qs = qs.filter(statut=statut)
+        return qs.order_by('-date_demande')
+
+    def perform_create(self, serializer):
+        demande = serializer.save(utilisateur=self.request.user)
+        audit_log(
+            request=self.request, action_code="CREATION", objet_type="DemandeAccesRadio",
+            objet_id=demande.id,
+            commentaire=f"Demande d'acces radio ({demande.niveau_demande}).",
+        )
+
+    @action(detail=False, methods=['get'], url_path='mon-acces')
+    def mon_acces(self, request):
+        """« Qu'est-ce que j'ai le droit de faire en radio, et pourquoi ? »
+
+        Sert la page /admin/radio, y compris -- et surtout -- quand la réponse est « rien » :
+        c'est là que se trouvent l'explication et le bouton de demande. D'où l'absence de toute
+        restriction d'accès au-delà de l'authentification."""
+        from .acces_radio import etat_acces_radio
+
+        etat = etat_acces_radio(request.user)
+        demande = etat.pop('demande')
+        etat['demande'] = (
+            DemandeAccesRadioSerializer(demande, context={'request': request}).data
+            if demande is not None else None
+        )
+        # Ce que l'interface doit pouvoir dire sans le réinventer : les deux titres qui ouvrent
+        # le droit sans demande.
+        etat['titres_possibles'] = [
+            "Rattacher un nœud personnel à votre compte (page « Companions », bouton "
+            "« Associer ce nœud à un compte »).",
+            "Déclarer la passerelle de votre institution et la rattacher à celle-ci.",
+        ]
+        return Response(etat)
+
+    @action(detail=True, methods=['post'], url_path='instruire')
+    def instruire(self, request, pk=None):
+        """Accorde, refuse ou retire le droit. Administrateur réel uniquement.
+
+        `niveau_accorde` peut être inférieur au niveau demandé : accorder OPERATEUR à qui
+        demandait l'administration complète est une décision, pas un refus. Le niveau n'est
+        jamais déduit du niveau demandé en silence -- il est obligatoire à l'octroi."""
+        if not self._est_administrateur(request):
+            raise PermissionDenied(
+                "Accorder un accès radio est réservé aux administrateurs de la plateforme."
+            )
+        demande = self.get_object()
+        decision = request.data.get('decision')
+        if decision not in (StatutDemandeAccesRadio.ACCORDEE, StatutDemandeAccesRadio.REFUSEE,
+                            StatutDemandeAccesRadio.RETIREE):
+            return Response(
+                {"decision": "Décision attendue : ACCORDEE, REFUSEE ou RETIREE."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        niveau = request.data.get('niveau_accorde')
+        if decision == StatutDemandeAccesRadio.ACCORDEE:
+            if niveau not in (NiveauAccesRadio.OPERATEUR, NiveauAccesRadio.ADMINISTRATEUR):
+                return Response(
+                    {"niveau_accorde": "Niveau attendu : OPERATEUR ou ADMINISTRATEUR."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            demande.niveau_accorde = niveau
+        else:
+            # Un refus ou un retrait n'ouvre rien : le niveau est effacé, pas conservé « pour
+            # mémoire » -- acces_radio.py ne lit que les demandes ACCORDEE, mais une ligne
+            # refusée qui garde un niveau se lit comme un droit.
+            demande.niveau_accorde = None
+
+        demande.statut = decision
+        demande.instruite_par = request.user
+        demande.commentaire_decision = (request.data.get('commentaire') or '').strip()
+        demande.date_decision = timezone.now()
+        demande.save()
+
+        audit_log(
+            request=request, action_code="MODIFICATION", objet_type="DemandeAccesRadio",
+            objet_id=demande.id,
+            commentaire=f"Acces radio {decision} pour {demande.utilisateur.email}"
+                        f" (niveau {demande.niveau_accorde or 'aucun'}).",
+        )
+        return Response(DemandeAccesRadioSerializer(demande, context={'request': request}).data)

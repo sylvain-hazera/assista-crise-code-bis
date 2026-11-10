@@ -226,9 +226,15 @@ export class AuthService {
     return code === 'MAIRIE' || code === 'EPCI' || code === 'CG' || code === 'CR';
   }
 
-  /** Utilisé par adminGuard : un compte avec un simple accès démo n'entre dans /admin qu'en zone DEMO. */
+  /** Utilisé par adminGuard : un compte avec un simple accès démo n'entre dans /admin qu'en zone DEMO.
+   *
+   * Depuis le 10/11/2026, `acces_radio` ouvre aussi la porte : le porteur d'un nœud personnel
+   * n'est pas forcément institutionnel, et il doit pouvoir atteindre /admin/radio et les écrans
+   * radio pour régler son propre matériel. Il n'y gagne rien d'autre — chaque autre page garde
+   * sa propre garde et le renvoie vers /admin/acces-refuse. */
   canEnterAdminArea(): boolean {
     if (this.isAdmin()) return true;
+    if (this.getCurrentUser()?.acces_radio) return true;
     return this.canAccessDemo() && this.getEnvironment() === 'DEMO';
   }
 

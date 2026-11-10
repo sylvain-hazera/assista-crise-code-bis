@@ -122,3 +122,23 @@ export const vulnerabilitesGuard: CanActivateFn = (route, state) => {
   );
 };
 
+
+/** Domaine radio : champ serveur `acces_radio` (nœud personnel actif, passerelle de
+ * l'institution, ou droit accordé — voir backend/core/acces_radio.py).
+ *
+ * Seul garde du projet à ne PAS renvoyer vers `/admin/acces-refuse` : il renvoie vers
+ * `/admin/radio`, qui dit ce qu'il faut (un nœud, ou une passerelle) et permet de demander le
+ * droit. « Accès refusé » serait exact et inutile — la personne a besoin de savoir ce qui lui
+ * manque, pas qu'il lui manque quelque chose. */
+export const radioGuard: CanActivateFn = (route, state) => {
+  const authService = inject(AuthService);
+  const router = inject(Router);
+
+  if (!authService.getToken()) {
+    return router.parseUrl('/accueil');
+  }
+  return authService.fetchMe().pipe(
+    map(() => authService.getCurrentUser()?.acces_radio ? true : router.parseUrl('/admin/radio')),
+    catchError(() => of(router.parseUrl('/admin/radio'))),
+  );
+};

@@ -1,0 +1,110 @@
+<div class="page-carte">
+  @if (carteIndisponible) {
+    <div class="indisponible" role="alert">
+      <span class="material-icons">map</span>
+      <div>
+        <strong>Carte indisponible sur ce poste.</strong>
+        <p>
+          L'affichage cartographique a besoin de WebGL, que ce navigateur n'a pas pu fournir
+          (accélération matérielle désactivée, pilote graphique, ou politique de l'entreprise).
+          Les mêmes données restent lisibles en tableau dans
+          <a routerLink="/admin/meshtastic-companions">Companions Meshtastic</a> et
+          <a routerLink="/admin/diagnostic-radio">Diagnostic radio</a>.
+        </p>
+      </div>
+    </div>
+  }
+
+  <div #conteneurCarte class="carte"></div>
+
+  <div class="panneau" [class.replie]="!panneauOuvert">
+    <button type="button" class="bascule" (click)="panneauOuvert = !panneauOuvert"
+            [attr.aria-expanded]="panneauOuvert"
+            [title]="panneauOuvert ? 'Replier le panneau' : 'Afficher les calques'">
+      <span class="material-icons">{{ panneauOuvert ? 'chevron_right' : 'layers' }}</span>
+    </button>
+
+    @if (panneauOuvert) {
+      <div class="contenu">
+        <h2>Réseau radio</h2>
+        <p class="note">
+          L'infrastructure, ce qu'elle entend, et jusqu'où ça porte. Les positions des
+          intervenants en mission sont sur la <a routerLink="/admin/carte">carte générale</a>.
+        </p>
+
+        @if (erreurs.length) {
+          <div class="erreurs" role="alert">
+            @for (message of erreurs; track message) {
+              <p><span class="material-icons">error_outline</span> {{ message }}</p>
+            }
+          </div>
+        }
+
+        <label class="calque">
+          <input type="checkbox" [(ngModel)]="calques.passerelles" (ngModelChange)="basculerCalque()">
+          <span class="pastille passerelles"></span>
+          <span class="libelle">Passerelles</span>
+          <span class="compte">{{ comptes.passerelles ?? '—' }}</span>
+        </label>
+        <label class="calque">
+          <input type="checkbox" [(ngModel)]="calques.relais" (ngModelChange)="basculerCalque()">
+          <span class="pastille relais"></span>
+          <span class="libelle">Relais déclarés</span>
+          <span class="compte">{{ comptes.relais ?? '—' }}</span>
+        </label>
+        <label class="calque">
+          <input type="checkbox" [(ngModel)]="calques.repeteursEntendus" (ngModelChange)="basculerCalque()">
+          <span class="pastille repeteurs"></span>
+          <span class="libelle">Répéteurs entendus</span>
+          <span class="compte">{{ comptes.repeteursEntendus ?? '—' }}</span>
+        </label>
+        <label class="calque">
+          <input type="checkbox" [(ngModel)]="calques.noeudsMeshtastic" (ngModelChange)="basculerCalque()">
+          <span class="pastille meshtastic"></span>
+          <span class="libelle">Nœuds Meshtastic</span>
+          <span class="compte">{{ comptes.noeudsMeshtastic ?? '—' }}</span>
+        </label>
+        <label class="calque">
+          <input type="checkbox" [(ngModel)]="calques.liaisons" (ngModelChange)="basculerCalque()">
+          <span class="pastille liaisons"></span>
+          <span class="libelle">Liaisons mesurées</span>
+          <span class="compte">{{ comptes.liaisons ?? '—' }}</span>
+        </label>
+        <p class="note">
+          Les liaisons sont chargées à la première activation : c'est le calque le plus
+          volumineux à l'échelle d'un département.
+        </p>
+
+        <label class="calque">
+          <input type="checkbox" [(ngModel)]="calques.couverture" (ngModelChange)="basculerCalque()"
+                 [disabled]="!couvertureChoisie">
+          <span class="pastille couverture"></span>
+          <span class="libelle">Couverture calculée</span>
+          <span class="compte">{{ comptes.couverture ?? '—' }}</span>
+        </label>
+        @if (couvertures.length) {
+          <select [(ngModel)]="couvertureChoisie" (ngModelChange)="changerCouverture()" class="choix">
+            <option [ngValue]="null">— choisir un site calculé —</option>
+            @for (couverture of couvertures; track couverture.id) {
+              <option [ngValue]="couverture.id">
+                {{ couverture.nom }}
+                @if (!couverture.calibre) { (non calibrée) }
+              </option>
+            }
+          </select>
+          <p class="note">
+            Des points, et non un contour : une couverture radio est trouée, un contour
+            déclarerait couvert ce qu'il englobe. Une couverture « non calibrée » est une
+            indication de relief, pas une prévision — voir
+            <a routerLink="/admin/couverture-radio">Planification radio</a>.
+          </p>
+        } @else {
+          <p class="note">
+            Aucune couverture calculée pour l'instant. Elles se lancent depuis
+            <a routerLink="/admin/couverture-radio">Planification radio</a>.
+          </p>
+        }
+      </div>
+    }
+  </div>
+</div>

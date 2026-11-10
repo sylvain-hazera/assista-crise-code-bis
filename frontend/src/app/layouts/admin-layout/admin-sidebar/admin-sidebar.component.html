@@ -51,7 +51,7 @@
           </button>
           @if (estGroupeOuvert(groupe.id)) {
             <div class="nav-groupe-items">
-              @for (item of itemsDuGroupe(groupe.id); track item.route) {
+              @for (item of itemsDirectsDuGroupe(groupe.id); track item.route) {
                 <a
                   [routerLink]="item.route"
                   routerLinkActive="active"
@@ -61,6 +61,35 @@
                   <span class="material-icons">{{ item.icon }}</span>
                   <span class="nav-label">{{ item.label }}</span>
                 </a>
+              }
+              <!-- Second niveau : un sous-cadre par protocole radio (MeshCore, Meshtastic). -->
+              @for (sous of sousGroupesDuGroupe(groupe.id); track sous.id) {
+                <div class="nav-sous-groupe" [class.ouvert]="estSousGroupeOuvert(sous.id)">
+                  <button
+                    type="button"
+                    class="nav-sous-groupe-header"
+                    [attr.aria-expanded]="estSousGroupeOuvert(sous.id)"
+                    (click)="toggleSousGroupe(sous.id)">
+                    <span class="material-icons">{{ sous.icon }}</span>
+                    <span class="nav-label">{{ sous.label }}</span>
+                    <span class="material-icons chevron">{{ estSousGroupeOuvert(sous.id) ? 'expand_less' : 'expand_more' }}</span>
+                  </button>
+                  @if (estSousGroupeOuvert(sous.id)) {
+                    <div class="nav-sous-groupe-items">
+                      @for (item of itemsDuSousGroupe(sous.id); track item.route) {
+                        <a
+                          [routerLink]="item.route"
+                          routerLinkActive="active"
+                          class="nav-item nav-item-sous nav-item-sous-sous"
+                          [title]="item.label"
+                          (click)="navigation.emit()">
+                          <span class="material-icons">{{ item.icon }}</span>
+                          <span class="nav-label">{{ item.label }}</span>
+                        </a>
+                      }
+                    </div>
+                  }
+                </div>
               }
             </div>
           }

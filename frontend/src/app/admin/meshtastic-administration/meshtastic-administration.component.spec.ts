@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { provideRouter } from '@angular/router';
 
 import { MeshtasticAdministrationComponent } from './meshtastic-administration.component';
 import { environment } from '../../../environments/environment';
@@ -81,7 +82,7 @@ describe('MeshtasticAdministrationComponent', () => {
   beforeEach(() => {
     TestBed.configureTestingModule({
       imports: [MeshtasticAdministrationComponent],
-      providers: [provideHttpClient(), provideHttpClientTesting()],
+      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([])],
     });
     http = TestBed.inject(HttpTestingController);
   });
@@ -249,7 +250,7 @@ describe('MeshtasticAdministrationComponent — éditeur de réglages', () => {
   beforeEach(() => {
     TestBed.configureTestingModule({
       imports: [MeshtasticAdministrationComponent],
-      providers: [provideHttpClient(), provideHttpClientTesting()],
+      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([])],
     });
     http = TestBed.inject(HttpTestingController);
   });

@@ -4,11 +4,11 @@ import { CanActivateFn, provideRouter } from '@angular/router';
 import { AdminSidebarComponent } from './admin-sidebar.component';
 import { AuthService } from '../../../auth/services/auth.service';
 import { UserRole } from '../../../shared/models/user.model';
-import { NAV_ITEMS } from '../admin-nav.config';
+import { GROUPES_NAV, NAV_ITEMS, SOUS_GROUPES_NAV } from '../admin-nav.config';
 import { ADMIN_ROUTES } from '../../../admin/admin.routes';
 import {
   accountValidationGuard, institutionalEffectiveGuard, sysAdminGuard, vulnerabilitesGuard, autoriteLocaleGuard,
-  membresAssociationGuard,
+  membresAssociationGuard, radioGuard,
 } from '../../../core/guards/admin.guard';
 
 describe('AdminSidebarComponent', () => {
@@ -48,9 +48,72 @@ describe('AdminSidebarComponent', () => {
     expect(new Set(routes).size).toBe(routes.length);
   });
 
-  it('un compte non institutionnel ne voit que « Mes interventions »', () => {
+  it('un compte sans aucun droit ne voit que les deux portes d\'entrée', () => {
+    // « Accueil radio » est volontairement visible de tous : c'est elle qui explique ce qu'il
+    // faut pour avoir la radio et permet de le demander. La masquer fermerait la porte.
     const visibles = NAV_ITEMS.filter(i => component.isNavItemVisible(i)).map(i => i.label);
-    expect(visibles).toEqual(['Mes interventions']);
+    expect(visibles).toEqual(['Mes interventions', 'Accueil radio']);
+  });
+
+  it('les pages radio suivent `acces_radio`, pas le rôle', () => {
+    // Un institutionnel SANS matériel radio ne voit aucune page radio : elles ne lui diraient
+    // rien, et il est renvoyé vers « Accueil radio » s'il force l'URL (radioGuard).
+    auth.isInstitutionalEffective.and.returnValue(true);
+    expect(component.isNavItemVisible(item('Carte radio'))).toBeFalse();
+    expect(component.isNavItemVisible(item('Companions Meshtastic (test)'))).toBeFalse();
+    expect(component.isNavItemVisible(item('Accueil radio'))).toBeTrue();
+
+    // Un porteur de nœud NON institutionnel les voit toutes : c'est le droit intermédiaire.
+    auth.isInstitutionalEffective.and.returnValue(false);
+    auth.getCurrentUser.and.returnValue({ acces_radio: true } as any);
+    expect(component.isNavItemVisible(item('Carte radio'))).toBeTrue();
+    expect(component.isNavItemVisible(item('Administration Meshtastic'))).toBeTrue();
+    // Mais rien d'autre : un satellite est une machine, pas un poste radio.
+    expect(component.isNavItemVisible(item('Satellites'))).toBeFalse();
+    expect(component.isNavItemVisible(item('Signalements'))).toBeFalse();
+  });
+
+  describe('sous-cadres du menu', () => {
+    beforeEach(() => {
+      auth.isInstitutionalEffective.and.returnValue(true);
+      auth.getCurrentUser.and.returnValue({ acces_radio: true } as any);
+    });
+
+    it('les entrées d\'un sous-cadre ne sont pas répétées dans le cadre', () => {
+      const directes = component.itemsDirectsDuGroupe('communications').map(i => i.label);
+      const dansSousCadre = [
+        ...component.itemsDuSousGroupe('meshcore'),
+        ...component.itemsDuSousGroupe('meshtastic'),
+      ].map(i => i.label);
+
+      expect(directes).toContain('Accueil radio');
+      expect(dansSousCadre).toContain('Canaux MeshCore (test)');
+      expect(directes.filter(l => dansSousCadre.includes(l))).toEqual([]);
+      // Le mode réduit affiche tout à plat : la somme des deux doit couvrir le cadre entier.
+      expect(directes.length + dansSousCadre.length)
+        .toBe(component.itemsDuGroupe('communications').length);
+    });
+
+    it('un sous-cadre sans entrée visible n\'est pas affiché', () => {
+      auth.getCurrentUser.and.returnValue(null);   // plus de droit radio
+      expect(component.sousGroupesDuGroupe('communications')).toEqual([]);
+    });
+
+    it('chaque sous-cadre appartient à un cadre qui existe', () => {
+      const cadres = GROUPES_NAV.map(g => g.id);
+      const orphelins = SOUS_GROUPES_NAV.filter(s => !cadres.includes(s.groupe)).map(s => s.id);
+      expect(orphelins).toEqual([]);
+    });
+
+    it('chaque entrée à sous-cadre déclare le cadre de ce sous-cadre', () => {
+      // Sinon l'entrée disparaît : elle n'est ni directe dans son cadre, ni dans le cadre où
+      // son sous-cadre est rendu.
+      const incoherentes = NAV_ITEMS
+        .filter(i => i.sousGroupe)
+        .filter(i => SOUS_GROUPES_NAV.find(s => s.id === i.sousGroupe)?.groupe !== i.groupe)
+        .map(i => i.route);
+      expect(incoherentes).toEqual([]);
+    });
   });
 
   it('un institutionnel voit les entrées par défaut, pas celles des admins', () => {
@@ -80,6 +143,7 @@ describe('AdminSidebarComponent', () => {
       'autorite-locale': autoriteLocaleGuard,
       'registre-vulnerables': vulnerabilitesGuard,
       'membres-association': membresAssociationGuard,
+      radio: radioGuard,
     };
     const routeDe = (navRoute: string) =>
       ADMIN_ROUTES.find(r => `/admin/${r.path}` === navRoute);

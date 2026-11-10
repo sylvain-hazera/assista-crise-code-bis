@@ -6852,6 +6852,110 @@ class CouvertureRadioSite(EnvironmentScopedModel):
         return f"Couverture {self.nom} ({self.surface_estimee_km2} km²)"
 
 
+class NiveauAccesRadio(models.TextChoices):
+    """Trois niveaux, et pas un de plus : ce qui les sépare est QUI subit l'erreur.
+
+    - `AUCUN` : le menu Radio reste visible, mais toute page y renvoie vers /admin/radio, qui
+      explique ce qu'il faut (un nœud, ou une passerelle) et permet de demander le droit. Ne
+      pas afficher le menu du tout avait été écarté : une commune qui n'a pas encore de radio
+      doit pouvoir découvrir qu'elle existe et la demander, sinon le dispositif n'a aucune
+      porte d'entrée -- même raisonnement que « Habilitations registre ».
+    - `OPERATEUR` : le droit intermédiaire. Lecture de tout le réseau, simulations de
+      couverture, et administration **de ses propres nœuds seulement** (voir
+      `peut_administrer_noeud`). C'est le niveau du propriétaire d'un nœud personnel : il n'a
+      aucune raison d'être institutionnel pour régler son matériel, et aucune raison de pouvoir
+      reconfigurer celui des autres.
+    - `ADMINISTRATEUR` : en plus, l'administration de la passerelle et de n'importe quel nœud.
+      Reconfigurer une passerelle est un acte sur de l'infrastructure partagée : une puissance
+      ou une fréquence fausse rend tout un réseau sourd, et l'erreur n'est pas rattrapable à
+      distance."""
+
+    AUCUN = "AUCUN", "Aucun accès radio"
+    OPERATEUR = "OPERATEUR", "Opérateur radio (ses propres nœuds)"
+    ADMINISTRATEUR = "ADMINISTRATEUR", "Administration radio complète"
+
+
+class StatutDemandeAccesRadio(models.TextChoices):
+    EN_ATTENTE = "EN_ATTENTE", "En attente d'instruction"
+    ACCORDEE = "ACCORDEE", "Accordée"
+    REFUSEE = "REFUSEE", "Refusée"
+    RETIREE = "RETIREE", "Retirée"
+
+
+class DemandeAccesRadio(models.Model):
+    """Demande d'accès au domaine radio, et le droit lui-même quand elle est accordée.
+
+    Une seule table pour les deux parce que le droit EST la demande instruite : séparer
+    « demande » et « habilitation » obligerait à les garder cohérentes, et la question à
+    laquelle il faut pouvoir répondre est « qui a obtenu ce droit, quand, accordé par qui, et
+    au vu de quoi ? » -- c'est exactement une demande avec sa décision.
+
+    Rien n'est jamais supprimé : un droit retiré passe en `RETIREE` avec son motif. Un retrait
+    par effacement de ligne ferait disparaître la trace de ce qu'on avait accordé.
+
+    **Pas un `EnvironmentScopedModel`, contrairement au reste du domaine radio.** Un droit radio
+    porte sur du matériel réel, qui n'existe pas dans la zone de démonstration : le scoper
+    aurait créé un droit DEMO sans objet, et obligé chaque lecture du niveau d'accès à connaître
+    la zone de la requête. Le niveau se calcule donc sur les seules données PROD (voir
+    core/acces_radio.py).
+
+    Le niveau n'est **pas** le seul chemin vers le droit : posséder un nœud personnel actif
+    l'ouvre aussi, sans demande. Cette table sert aux cas que le matériel ne prouve pas --
+    typiquement l'agent d'une commune qui exploite la passerelle de la collectivité, ou
+    l'opérateur à qui on confie la configuration de l'infrastructure."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    utilisateur = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="demandes_acces_radio",
+        help_text="Le demandeur. Pas forcément un compte institutionnel : un bénévole qui "
+                  "porte un nœud a besoin de le régler.",
+    )
+
+    niveau_demande = models.CharField(
+        max_length=14, choices=NiveauAccesRadio.choices, default=NiveauAccesRadio.OPERATEUR,
+    )
+
+    # Ce que le demandeur déclare : matériel détenu, rattachement, usage prévu. C'est la seule
+    # information dont dispose l'instructeur, elle est donc obligatoire à la création.
+    motif = models.TextField(
+        help_text="Ce que le demandeur détient ou exploite comme matériel radio, et pour quoi "
+                  "faire -- la seule pièce du dossier.",
+    )
+
+    statut = models.CharField(
+        max_length=12, choices=StatutDemandeAccesRadio.choices,
+        default=StatutDemandeAccesRadio.EN_ATTENTE,
+    )
+
+    niveau_accorde = models.CharField(
+        max_length=14, choices=NiveauAccesRadio.choices, null=True, blank=True,
+        help_text="Renseigné à l'octroi. Peut être inférieur au niveau demandé : accorder "
+                  "OPERATEUR à qui demandait l'administration complète est une réponse "
+                  "légitime, pas un refus.",
+    )
+
+    instruite_par = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="demandes_acces_radio_instruites",
+        help_text="SET_NULL et non PROTECT : le droit reste valide si le compte instructeur "
+                  "est supprimé, contrairement à une désignation nominative.",
+    )
+    commentaire_decision = models.TextField(blank=True)
+
+    date_demande = models.DateTimeField(auto_now_add=True)
+    date_decision = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["utilisateur", "statut"]),
+            models.Index(fields=["-date_demande"]),
+        ]
+
+    def __str__(self):
+        return f"{self.utilisateur.email} — {self.statut} ({self.niveau_accorde or self.niveau_demande})"
+
+
 class ProfilSatellite(models.TextChoices):
     GW = "GW", "Passerelle uniquement"
     FULL = "FULL", "Suite complète"

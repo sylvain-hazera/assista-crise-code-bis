@@ -2,6 +2,7 @@ import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpErrorResponse } from '@angular/common/http';
+import { RouterLink } from '@angular/router';
 
 import { AdministrationMeshtasticService } from '../../services/administration-meshtastic.service';
 import { CompagnonMeshtasticService } from '../../services/compagnon-meshtastic.service';
@@ -32,7 +33,7 @@ import {
 @Component({
   selector: 'app-meshtastic-administration',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, RouterLink],
   templateUrl: './meshtastic-administration.component.html',
   styleUrl: './meshtastic-administration.component.scss',
 })
