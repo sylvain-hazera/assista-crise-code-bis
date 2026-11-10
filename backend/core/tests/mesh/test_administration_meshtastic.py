@@ -98,9 +98,34 @@ class TestCreationDesTaches:
         assert tache.node_num_cible is None       # la passerelle elle-même par défaut
         assert tache.demande_par is not None      # imputable
 
-    def test_une_ecriture_est_refusee_a_un_institutionnel(self, institutionnel, passerelle):
-        """Rôle ADMIN RÉEL exigé : reconfigurer un relais est un acte matériel."""
+    def test_une_ecriture_est_acceptee_de_l_institution_qui_a_deploye_la_passerelle(
+            self, institutionnel, passerelle):
+        """**Ce test disait l'inverse jusqu'au 10/11/2026** : toute écriture exigeait alors le
+        rôle ADMIN réel. Changé sur demande explicite -- une passerelle est de la responsabilité
+        de l'institution qui l'a déployée, c'est elle qui ira la rechercher si un réglage la
+        rend muette, et faire dépendre son réglage d'un administrateur de plateforme n'ajoutait
+        aucune sécurité : il ne sait pas où elle est.
+
+        Ce qui n'a pas changé : l'écriture reste refusée à qui n'est PAS de cette institution
+        (voir test_acces_radio.py), et elle reste refusée en zone DEMO."""
         reponse = institutionnel.post(URL_LISTE, {
+            "compagnon": str(passerelle.id), "type_tache": "DEFINIR_PUISSANCE",
+            "parametres": {"puissance_dbm": 20},
+        }, format="json")
+        assert reponse.status_code == 201, reponse.data
+        assert TacheAdminMeshtastic.objects.get().est_ecriture
+
+    def test_une_ecriture_est_refusee_a_un_institutionnel_sans_lien_avec_la_passerelle(
+            self, create_user, passerelle):
+        """Le rôle institutionnel ne suffit pas : il faut répondre de CE matériel. Une mairie
+        voisine n'a rien à régler sur la passerelle d'une autre."""
+        ailleurs, _ = InstitutionType.objects.get_or_create(
+            code="MAIRIE", defaults={"libelle": "Mairie"},
+        )
+        autre = Institution.objects.create(nom="Mairie sans radio", type=ailleurs)
+        client = _client(create_user, "SECOURS", autre, "secours-sans-radio@x.fr")
+
+        reponse = client.post(URL_LISTE, {
             "compagnon": str(passerelle.id), "type_tache": "DEFINIR_PUISSANCE",
             "parametres": {"puissance_dbm": 20},
         }, format="json")
@@ -504,8 +529,18 @@ class TestReglagesDeNoeud:
         assert reponse.status_code == 400
         assert "section attendue" in str(reponse.data)
 
-    def test_une_ecriture_de_reglages_exige_le_role_administrateur(self, institutionnel, passerelle):
-        reponse = institutionnel.post(URL_LISTE, {
+    def test_une_ecriture_de_reglages_exige_de_repondre_du_materiel(self, create_user, passerelle):
+        """**Ce test exigeait le rôle administrateur jusqu'au 10/11/2026.** Le critère n'est plus
+        le grade mais la propriété : l'institution qui a déployé cette passerelle écrit dessus
+        (voir le test de TestCreationDesTaches), une autre non. C'est cette seconde moitié qui
+        est vérifiée ici."""
+        itype, _ = InstitutionType.objects.get_or_create(
+            code="MAIRIE", defaults={"libelle": "Mairie"},
+        )
+        autre = Institution.objects.create(nom="Mairie etrangere aux reglages", type=itype)
+        client = _client(create_user, "SECOURS", autre, "secours-reglages-etranger@x.fr")
+
+        reponse = client.post(URL_LISTE, {
             "compagnon": str(passerelle.id), "type_tache": "DEFINIR_REGLAGES",
             "parametres": {"section": "lora", "valeurs": {"hop_limit": 4}},
         }, format="json")

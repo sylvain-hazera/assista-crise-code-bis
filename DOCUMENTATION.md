@@ -2042,21 +2042,56 @@ appareil.
 
 **Trois niveaux** (`NiveauAccesRadio`), et ce qui les sépare est **qui subit l'erreur** :
 
-| Niveau | Lecture du réseau, simulations | Écriture sur ses propres nœuds | Écriture sur la passerelle et les nœuds d'autrui |
+| Niveau | Lecture du réseau, simulations | Écriture sur son matériel et celui de son institution (passerelle comprise) | Écriture sur le matériel d'autrui |
 |---|---|---|---|
 | `AUCUN` | non | non | non |
 | `OPERATEUR` | oui | oui | non |
 | `ADMINISTRATEUR` | oui | oui | oui |
+
+**L'écriture suit la PROPRIÉTÉ du matériel, pas le grade** (`peut_administrer_noeud`, précisé le
+10/11/2026 à la demande explicite de l'exploitant). Trois périmètres, un seul principe — on
+répond du matériel dont on est responsable :
+
+1. ses propres nœuds personnels ;
+2. le matériel de son institution : les nœuds de ses membres, et **les passerelles qu'elle a
+   déployées**. Une passerelle est de la responsabilité de l'institution qui est allée la poser
+   et qui ira la rechercher si un réglage la rend muette ; faire dépendre son réglage d'un
+   administrateur de plateforme n'ajoutait aucune sécurité — il ne sait pas où elle est ;
+3. `ADMINISTRATEUR` écrit partout. C'est le **recours** : une institution qui a perdu la main
+   sur son matériel, ou une passerelle sans institution renseignée, dont personne ne répond.
+
+**`ADMINISTRATEUR` n'est jamais la réponse à « je veux administrer ma passerelle »** (garde-fou
+posé le 10/11/2026 : *« l'administrateur d'une passerelle est admin de SA passerelle et de SES
+nœuds »*). L'exploitant d'une passerelle en est administrateur **par le rattachement de ce
+matériel à son institution**, au niveau opérateur — pas par un droit réseau. Trois mesures le
+font tenir :
+
+- l'action `instruire` **refuse** d'accorder `ADMINISTRATEUR` sans `confirmation_portee_reseau`,
+  et le message de refus explique la bonne manœuvre (rattacher, puis `OPERATEUR`) ;
+- l'interface propose **toujours `OPERATEUR` par défaut**, même sur une demande
+  d'administration complète : pré-remplir le niveau demandé rendait possible d'accorder le
+  réseau entier d'un seul clic ;
+- le journal d'audit porte `[PORTEE RESEAU ENTIER]` en clair, pour qu'on puisse répondre un jour
+  à « qui pouvait toucher au matériel d'autrui ? ».
+
+Côté demandeur, choisir « administration complète » affiche que ce n'est probablement pas ce
+qu'il lui faut.
+
+`node_num_cible` vide désigne **la passerelle qui exécutera la tâche** : le droit se lit alors
+sur `compagnon.institution`, et non sur un node_num. Sans companion, la réponse est non — une
+écriture sur « la passerelle » sans savoir laquelle n'est pas vérifiable.
 
 **Ce qui ouvre le droit**, dans l'ordre où `niveau_acces_radio` l'évalue :
 
 1. rôle ADMINISTRATOR **réel** → `ADMINISTRATEUR` (pas le rôle effectif : un `demo_role` prêté
    le temps d'une démonstration ne donne pas la main sur du matériel qui émet) ;
 2. une `DemandeAccesRadio` accordée au niveau `ADMINISTRATEUR` ;
-3. **posséder un nœud personnel actif**, ou **appartenir à une institution qui exploite une
-   passerelle active** → `OPERATEUR`. C'est le point important : le droit vient du matériel
-   avant de venir d'une décision, et personne n'a à demander l'autorisation de régler son
-   propre appareil ;
+3. **posséder un nœud personnel actif**, ou **appartenir à une institution qui exploite du
+   matériel radio** — une passerelle active, ou le nœud d'un de ses membres → `OPERATEUR`.
+   C'est le point important : le droit vient du matériel avant de venir d'une décision, et
+   personne n'a à demander l'autorisation de régler son propre appareil. Le nœud compte autant
+   que la passerelle : une commune dont trois agents portent un nœud *a* un réseau radio, même
+   sans passerelle ;
 4. sinon, le niveau accordé par une demande (`OPERATEUR`), ou `AUCUN`.
 
 Le calcul ne porte que sur les données de la zone **PROD** : la démonstration ne contient aucun
@@ -2065,18 +2100,21 @@ vrais appareils.
 
 **Deux conséquences d'exploitation à connaître** :
 
-- une passerelle dont le champ `institution` est **vide** n'ouvre aucun droit — « quelqu'un,
-  quelque part, a une passerelle » n'est pas un titre à administrer un réseau. Renseigner
-  l'institution des companions existants est donc ce qui rend le menu radio visible aux agents
-  de cette collectivité ; à défaut, le droit s'accorde nominativement ;
+- une passerelle dont le champ `institution` est **vide** n'ouvre aucun droit et n'appartient à
+  personne au sens de ce module — « quelqu'un, quelque part, a une passerelle » n'est pas un
+  titre à administrer un réseau. Renseigner l'institution des companions existants est donc ce
+  qui donne à une collectivité la main sur son propre matériel, menu compris ; à défaut, seul
+  l'administrateur de la plateforme peut la régler ;
 - `canEnterAdminArea()` admet désormais `acces_radio`, sans quoi un porteur de nœud non
   institutionnel n'entrerait pas dans `/admin` du tout. Il n'y gagne rien d'autre : chaque
   autre page garde sa propre garde et le renvoie vers `/admin/acces-refuse`.
 
-**La passerelle n'est pas un nœud comme les autres** (`peut_administrer_noeud`). Un opérateur
-écrit sur ses propres nœuds, jamais sur la passerelle : elle porte tout un réseau, une région
-ou un rapport cyclique faux la rend muette, et **le nœud qui n'émet plus ne peut plus recevoir
-l'ordre inverse** — il faut aller le chercher à la main, souvent sur un point haut.
+**Ce que l'erreur coûte**, et qui est la raison pour laquelle le périmètre est étroit : une
+région ou un rapport cyclique faux rend un nœud muet, et **le nœud qui n'émet plus ne peut plus
+recevoir l'ordre inverse** — il faut aller le chercher à la main, souvent sur un point haut.
+C'est aussi pourquoi `mon-acces` rend un `perimetre_ecriture` **rédigé par le serveur** : la
+règle est déjà difficile à tenir à un endroit, la recopier dans l'interface garantirait qu'elle
+divergerait, et une interface qui promet une écriture refusée se découvre par un 403.
 
 **La porte d'entrée.** « Accueil radio » est la seule entrée du cadre Radio en `visibilite:
 'tous'`, et `/admin/radio` la seule route radio sans `radioGuard` : c'est elle qui dit ce qu'il
@@ -2106,7 +2144,9 @@ autres : le calcul coûte quatre requêtes et `UserSerializer` sert aussi la lis
 `/admin/utilisateurs`, où ce serait un N+1 pour une information dont cette page ne fait rien. La
 vue administrative des droits est `/api/demandes-acces-radio/`.
 
-**Tests** : `backend/core/tests/mesh/test_acces_radio.py` (38), plus la spec de
+**Tests** : `backend/core/tests/mesh/test_acces_radio.py` (51), plus deux tests de
+`test_administration_meshtastic.py` qui disaient l'inverse avant le 10/11/2026 (toute écriture
+exigeait le rôle ADMIN réel) et portent le changement dans leur docstring, la spec de
 `admin-sidebar`, `radio.component.spec.ts` et `carte-radio.component.spec.ts`.
 
 ### 9.6 Angles morts de la supervision

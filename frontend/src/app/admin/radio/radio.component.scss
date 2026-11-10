@@ -68,6 +68,8 @@ section {
   }
 }
 .titres li .material-icons { color: var(--ac-text-subtle, #6b7280); }
+// Le perimetre d'ecriture n'est pas un titre de plus : c'est ce qu'on peut casser.
+.perimetre li .material-icons { color: var(--ac-amber-text, #b45309); }
 
 .cartes {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -130,6 +132,19 @@ button {
   &.attente { border-left-color: var(--ac-amber-text, #b45309); }
   p { margin: 0 0 4px; line-height: 1.5; color: var(--ac-text, #111827); }
   .commentaire { font-style: italic; color: var(--ac-text-muted, #4b5563); }
+}
+
+// Accorder la portee reseau est le seul geste de cette page qui engage le materiel d'un tiers :
+// il se distingue du reste sans crier.
+.bloc-portee {
+  margin: 0 0 10px; padding: 10px 14px; border-radius: 6px;
+  background: var(--ac-amber-bg, #fef3c7);
+  color: var(--ac-amber-text, #92400e);
+  border: 1px solid var(--ac-amber-border, #fde68a);
+
+  p { margin: 0 0 8px; line-height: 1.5; }
+  label { display: flex; align-items: flex-start; gap: 8px; line-height: 1.4; cursor: pointer; }
+  input[type="checkbox"] { margin: 3px 0 0; }
 }
 
 .dossier {

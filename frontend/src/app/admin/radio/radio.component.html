@@ -34,19 +34,21 @@
       }
 
       @if (aAcces) {
-        @if (peutAdministrerLInfrastructure) {
-          <p class="explication">
-            Vous pouvez reconfigurer n'importe quel nœud, <strong>passerelles comprises</strong>.
-            Une passerelle mal réglée rend tout un réseau muet, et un nœud qui n'émet plus ne
-            peut plus recevoir l'ordre inverse : il faut aller le chercher à la main.
-          </p>
-        } @else {
-          <p class="explication">
-            Vous pouvez lire tout le réseau, lancer des simulations de couverture, et
-            reconfigurer <strong>vos propres nœuds</strong>. Les passerelles, qui sont
-            l'infrastructure commune, restent réservées aux administrateurs.
-          </p>
-        }
+        <p class="explication">
+          Vous pouvez lire tout le réseau et lancer des simulations de couverture. Pour
+          l'écriture — changer un réglage, redémarrer un nœud — le droit suit la
+          <strong>propriété du matériel</strong> :
+        </p>
+        <ul class="motifs perimetre">
+          @for (portee of etat.perimetre_ecriture; track portee) {
+            <li><span class="material-icons">edit</span> {{ portee }}</li>
+          }
+        </ul>
+        <p class="explication">
+          Un réglage faux — une région, un rapport cyclique — rend un nœud muet, et
+          <strong>un nœud qui n'émet plus ne peut plus recevoir l'ordre inverse</strong> : il
+          faut aller le chercher à la main.
+        </p>
       } @else {
         <p class="explication">
           Les écrans radio ne vous sont pas encore ouverts. Ce n'est pas une sanction : ils ne
@@ -115,9 +117,11 @@
         </h2>
         @if (aAcces) {
           <p class="explication">
-            Vous avez déjà l'accès opérateur. Cette demande ne sert qu'à obtenir
-            l'administration complète, <strong>passerelles comprises</strong> — ce qui engage
-            l'infrastructure de tout le réseau, pas seulement votre matériel.
+            Vous avez déjà l'accès opérateur, donc la main sur votre matériel et celui de votre
+            institution. Cette demande ne sert qu'à obtenir l'administration
+            <strong>du matériel des autres</strong> : les passerelles sans institution
+            renseignée, et celles d'une institution qui aurait perdu la main sur la sienne.
+            C'est un recours, pas le régime normal.
           </p>
         }
 
@@ -150,10 +154,19 @@
           <label class="champ">
             <span>Niveau demandé</span>
             <select [(ngModel)]="niveauDemande" name="niveau">
-              <option value="OPERATEUR">Opérateur — lire le réseau, simuler, régler mes propres nœuds</option>
-              <option value="ADMINISTRATEUR">Administration complète — y compris les passerelles</option>
+              <option value="OPERATEUR">Opérateur — lire le réseau, simuler, régler mon matériel et celui de mon institution</option>
+              <option value="ADMINISTRATEUR">Administration complète — y compris le matériel des autres institutions</option>
             </select>
           </label>
+          @if (niveauDemande === 'ADMINISTRATEUR') {
+            <p class="explication">
+              <strong>Ce n'est probablement pas ce qu'il vous faut.</strong> Pour administrer
+              <em>votre</em> passerelle et <em>vos</em> nœuds, il suffit qu'ils soient rattachés
+              à votre institution : vous en êtes alors administrateur de plein droit, au niveau
+              opérateur. L'administration complète porte sur le matériel <em>des autres</em>, et
+              ne s'accorde que pour un dépannage.
+            </p>
+          }
           <label class="champ">
             <span>Matériel détenu et usage prévu</span>
             <textarea [(ngModel)]="motif" name="motif" rows="4"
@@ -196,10 +209,32 @@
                 <label class="champ en-ligne">
                   <span>Accorder</span>
                   <select [(ngModel)]="niveauxAccordes[demande.id]" [name]="'niveau-' + demande.id">
-                    <option value="OPERATEUR">Opérateur</option>
-                    <option value="ADMINISTRATEUR">Administration complète</option>
+                    <option value="OPERATEUR">Opérateur — son matériel et celui de son institution</option>
+                    <option value="ADMINISTRATEUR">Administration complète — tout le réseau</option>
                   </select>
                 </label>
+              </div>
+              @if (niveauxAccordes[demande.id] === 'ADMINISTRATEUR') {
+                <!-- Garde-fou demande le 10/11/2026 : « l'administrateur d'une passerelle est
+                     admin de SA passerelle et de SES noeuds ». Accorder ADMINISTRATEUR a
+                     quelqu'un qui veut gerer son propre materiel est une erreur de niveau, pas
+                     un service rendu -- et le serveur refuse sans cette confirmation. -->
+                <div class="bloc-portee">
+                  <p>
+                    <strong>Ce niveau porte sur tout le réseau</strong>, y compris le matériel
+                    d'autres institutions. Ce n'est <strong>pas</strong> la façon de donner à
+                    quelqu'un la main sur sa propre passerelle : pour ça, rattachez ce matériel à
+                    son institution et accordez <em>Opérateur</em> — il en sera alors
+                    administrateur de plein droit.
+                  </p>
+                  <label>
+                    <input type="checkbox" [(ngModel)]="porteeReseauConfirmee[demande.id]"
+                           [name]="'portee-' + demande.id">
+                    Je confirme vouloir donner la main sur le matériel des autres institutions.
+                  </label>
+                </div>
+              }
+              <div class="decision">
                 <input type="text" [(ngModel)]="commentaires[demande.id]"
                        [name]="'commentaire-' + demande.id"
                        placeholder="Commentaire (visible par le demandeur)">

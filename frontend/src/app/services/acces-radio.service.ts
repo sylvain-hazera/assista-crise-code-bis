@@ -36,11 +36,17 @@ export class AccesRadioService {
   }
 
   /** Accorde, refuse ou retire. `niveau` est obligatoire pour ACCORDEE et peut être inférieur
-   * au niveau demandé : c'est une décision, pas un refus. */
+   * au niveau demandé : c'est une décision, pas un refus.
+   *
+   * `porteeReseau` est exigé par le serveur pour accorder ADMINISTRATEUR, qui donne la main sur
+   * le matériel des AUTRES institutions. Ce n'est jamais la bonne réponse à « je veux
+   * administrer ma passerelle » : pour ça, le matériel se rattache à l'institution du demandeur
+   * et OPERATEUR suffit. */
   instruire(id: string, decision: StatutDemandeAccesRadio, niveau: NiveauAccesRadio | null,
-            commentaire: string): Observable<DemandeAccesRadio> {
+            commentaire: string, porteeReseau = false): Observable<DemandeAccesRadio> {
     return this.http.post<DemandeAccesRadio>(`${this.url}/${id}/instruire/`, {
       decision, niveau_accorde: niveau, commentaire,
+      confirmation_portee_reseau: porteeReseau,
     });
   }
 }

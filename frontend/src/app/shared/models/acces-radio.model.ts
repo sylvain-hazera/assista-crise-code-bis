@@ -32,7 +32,14 @@ export interface EtatAccesRadio {
   niveau: NiveauAccesRadio;
   niveau_libelle: string;
   motifs: string[];
+  /** Sur QUOI le droit porte, en toutes lettres. Construit par le serveur et non ici : la règle
+   * de périmètre (ses nœuds, ceux de son institution, la passerelle déployée par elle) est
+   * déjà difficile à tenir à un endroit, et une interface qui promet une écriture que le
+   * serveur refuse se découvre par un 403. */
+  perimetre_ecriture: string[];
   nombre_noeuds_personnels: number;
+  nombre_noeuds_institution: number;
+  nombre_passerelles_institution: number;
   demande: DemandeAccesRadio | null;
   titres_possibles: string[];
 }

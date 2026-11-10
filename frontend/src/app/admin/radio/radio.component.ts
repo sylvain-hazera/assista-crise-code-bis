@@ -47,6 +47,8 @@ export class RadioComponent implements OnInit {
   demandes: DemandeAccesRadio[] = [];
   commentaires: Record<string, string> = {};
   niveauxAccordes: Record<string, NiveauAccesRadio> = {};
+  /** Confirmation de la portée réseau, exigée par le serveur pour accorder ADMINISTRATEUR. */
+  porteeReseauConfirmee: Record<string, boolean> = {};
   instructionEnCours: string | null = null;
 
   constructor(private service: AccesRadioService, private auth: AuthService) {}
@@ -97,9 +99,13 @@ export class RadioComponent implements OnInit {
       next: (demandes) => {
         this.demandes = demandes;
         for (const demande of demandes) {
-          // Le niveau proposé par défaut est celui demandé : l'instructeur l'abaisse s'il le
-          // juge, il ne doit pas avoir à le ressaisir dans le cas courant.
-          this.niveauxAccordes[demande.id] = demande.niveau_demande;
+          // Le niveau proposé par défaut est TOUJOURS opérateur, même quand la demande porte
+          // sur l'administration complète. Celle-ci donne la main sur le matériel des autres
+          // institutions, et ce n'est jamais la réponse à « je veux administrer ma passerelle »
+          // : pour ça, on rattache le matériel à l'institution du demandeur. Pré-remplir le
+          // niveau demandé rendait l'accord du réseau entier possible d'un seul clic.
+          this.niveauxAccordes[demande.id] = 'OPERATEUR';
+          this.porteeReseauConfirmee[demande.id] = false;
         }
       },
       // Pas de message : un échec ici ne doit pas masquer la page à l'administrateur, qui vient
@@ -131,7 +137,10 @@ export class RadioComponent implements OnInit {
     if (this.instructionEnCours) return;
     this.instructionEnCours = demande.id;
     const niveau = decision === 'ACCORDEE' ? (this.niveauxAccordes[demande.id] ?? 'OPERATEUR') : null;
-    this.service.instruire(demande.id, decision, niveau, this.commentaires[demande.id] ?? '').subscribe({
+    this.service.instruire(
+      demande.id, decision, niveau, this.commentaires[demande.id] ?? '',
+      !!this.porteeReseauConfirmee[demande.id],
+    ).subscribe({
       next: () => {
         this.instructionEnCours = null;
         this.charger();

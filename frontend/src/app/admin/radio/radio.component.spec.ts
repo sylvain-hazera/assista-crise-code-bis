@@ -13,7 +13,10 @@ const SANS_ACCES: EtatAccesRadio = {
   niveau: 'AUCUN',
   niveau_libelle: 'Aucun accès radio',
   motifs: [],
+  perimetre_ecriture: [],
   nombre_noeuds_personnels: 0,
+  nombre_noeuds_institution: 0,
+  nombre_passerelles_institution: 0,
   demande: null,
   titres_possibles: ['Rattacher un nœud personnel à votre compte.'],
 };
@@ -21,8 +24,16 @@ const SANS_ACCES: EtatAccesRadio = {
 const OPERATEUR: EtatAccesRadio = {
   niveau: 'OPERATEUR',
   niveau_libelle: 'Opérateur radio (ses propres nœuds)',
-  motifs: ['1 nœud personnel actif rattaché à ce compte.'],
+  motifs: ['1 nœud personnel actif rattaché à ce compte.',
+           'Votre institution exploite 1 passerelle active.'],
+  // Rédigé par le serveur, jamais recomposé ici : voir EtatAccesRadio.
+  perimetre_ecriture: [
+    'Vos propres nœuds.',
+    'Les nœuds et les passerelles de Mairie de Saint-Pierre.',
+  ],
   nombre_noeuds_personnels: 1,
+  nombre_noeuds_institution: 1,
+  nombre_passerelles_institution: 1,
   demande: null,
   titres_possibles: [],
 };
@@ -74,9 +85,10 @@ describe('RadioComponent', () => {
     expect(fixture.componentInstance.aAcces).toBeTrue();
     expect(texte).toContain('1 nœud personnel actif');
     expect(texte).toContain('Diagnostic radio');
-    // Un opérateur n'administre PAS les passerelles : la page doit le dire, pas le laisser
-    // découvrir par un 403.
-    expect(texte).toContain('vos propres nœuds');
+    // Le périmètre d'écriture est affiché tel que le serveur le rédige : une interface qui
+    // promet une écriture refusée se découvre par un 403.
+    expect(texte).toContain('Vos propres nœuds.');
+    expect(texte).toContain('Les nœuds et les passerelles de Mairie de Saint-Pierre.');
   });
 
   it('un motif vide n\'est pas envoyé', () => {
@@ -100,6 +112,21 @@ describe('RadioComponent', () => {
     // Le serveur seul sait si le droit vient de s'ouvrir par un autre titre entre-temps.
     http.expectOne(urlMonAcces).flush(OPERATEUR);
     expect(fixture.componentInstance.aAcces).toBeTrue();
+  });
+
+  it('un opérateur ne redemande pas ce qu\'il a déjà', () => {
+    // Le seul niveau qu'il lui reste à demander est l'administration du matériel des autres.
+    const fixture = demarrer(OPERATEUR);
+    expect(fixture.componentInstance.niveauDemande).toBe('ADMINISTRATEUR');
+  });
+
+  it('demander l\'administration complète affiche que ce n\'est pas la bonne porte', () => {
+    // « L'administrateur d'une passerelle est admin de SA passerelle et de SES nœuds » : pour
+    // son propre matériel, c'est le rattachement qui donne le droit, pas une demande.
+    const fixture = demarrer(SANS_ACCES);
+    fixture.componentInstance.niveauDemande = 'ADMINISTRATEUR';
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain("Ce n'est probablement pas ce qu'il vous faut");
   });
 
   it('le message du serveur est affiché tel quel', () => {
@@ -132,13 +159,19 @@ describe('RadioComponent', () => {
     }]);
     fixture.detectChanges();
 
-    // Le niveau proposé par défaut est celui demandé : l'instructeur l'abaisse s'il le juge.
-    expect(fixture.componentInstance.niveauxAccordes['d1']).toBe('ADMINISTRATEUR');
+    // Le niveau proposé par défaut est TOUJOURS opérateur, même sur une demande
+    // d'administration complète : celle-ci donne la main sur le matériel des AUTRES
+    // institutions, et la pré-remplir rendait possible d'accorder le réseau entier d'un clic.
+    expect(fixture.componentInstance.niveauxAccordes['d1']).toBe('OPERATEUR');
+    expect(fixture.componentInstance.porteeReseauConfirmee['d1']).toBeFalse();
 
     fixture.componentInstance.instruire(fixture.componentInstance.demandes[0], 'REFUSEE');
     const instruction = http.expectOne(`${environment.apiUrl}/demandes-acces-radio/d1/instruire/`);
     // Un refus n'accorde aucun niveau, même pas celui demandé.
-    expect(instruction.request.body).toEqual({ decision: 'REFUSEE', niveau_accorde: null, commentaire: '' });
+    expect(instruction.request.body).toEqual({
+      decision: 'REFUSEE', niveau_accorde: null, commentaire: '',
+      confirmation_portee_reseau: false,
+    });
     instruction.flush({});
 
     http.expectOne(urlMonAcces).flush(OPERATEUR);

@@ -17893,12 +17893,12 @@ class TacheAdminMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelV
     Posée ici, exécutée par le pont de la passerelle choisie (meshtastic-bridge/
     admin_meshtastic.py), rapportée par `rapporter`. Trois choses à savoir :
 
-    - **Une écriture exige l'environnement PROD et le droit sur le nœud visé.** Reconfigurer
-      ou redémarrer un relais est un acte matériel : une tâche créée en zone DEMO n'aurait
-      aucun exécutant, et un `demo_role` prêté le temps d'une démonstration ne donne pas la
-      main sur du matériel qui émet. Le droit, lui, depuis le 10/11/2026 : le propriétaire
-      d'un nœud personnel écrit sur SON nœud, la passerelle reste administrateur réel (voir
-      core/acces_radio.py, peut_administrer_noeud).
+    - **Une écriture exige l'environnement PROD et le droit sur le matériel visé.**
+      Reconfigurer ou redémarrer un relais est un acte matériel : une tâche créée en zone DEMO
+      n'aurait aucun exécutant, et un `demo_role` prêté le temps d'une démonstration ne donne
+      pas la main sur du matériel qui émet. Le droit suit la propriété depuis le 10/11/2026 :
+      ses propres nœuds, ceux de son institution, et la passerelle déployée par son institution
+      (voir core/acces_radio.py, peut_administrer_noeud).
     - **Pas de PATCH ni de DELETE.** Le pont rapporte par une action dédiée, qui décide seule du
       nouveau statut et du réessai ; laisser modifier `statut`/`reponse` librement permettrait
       de maquiller une opération.
@@ -17929,23 +17929,27 @@ class TacheAdminMeshtasticViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelV
     def perform_create(self, serializer):
         type_tache = serializer.validated_data['type_tache']
         if type_tache in TACHES_ADMIN_ECRITURE:
-            # Depuis le 10/11/2026, l'écriture n'est plus réservée aux administrateurs : le
-            # propriétaire d'un nœud personnel règle SON matériel (core/acces_radio.py,
-            # peut_administrer_noeud). La passerelle, elle, reste administrateur -- c'est de
-            # l'infrastructure partagée, et un nœud rendu muet par une mauvaise région ne peut
-            # plus recevoir l'ordre inverse.
+            # Depuis le 10/11/2026, l'écriture n'est plus réservée aux administrateurs : elle
+            # suit la PROPRIÉTÉ du matériel (core/acces_radio.py, peut_administrer_noeud). Ses
+            # propres nœuds, les nœuds de son institution, et la passerelle que son institution
+            # a déployée -- c'est elle qui est allée la poser et qui ira la rechercher si un
+            # réglage la rend muette.
             #
             # Le rôle administrateur est pris au sens RÉEL, comme avant : un `demo_role` prêté
             # le temps d'une démonstration ne donne pas la main sur du matériel qui émet.
             from .acces_radio import peut_administrer_noeud
 
             node_num_cible = serializer.validated_data.get('node_num_cible')
-            if not peut_administrer_noeud(self.request.user, node_num_cible):
+            compagnon = serializer.validated_data.get('compagnon')
+            if not peut_administrer_noeud(self.request.user, node_num_cible, compagnon):
                 raise PermissionDenied(
-                    "Écrire sur la passerelle est réservé aux administrateurs."
+                    "Cette passerelle n'est pas rattachée à votre institution : son réglage "
+                    "relève de l'institution qui l'a déployée, ou d'un administrateur de la "
+                    "plateforme."
                     if node_num_cible is None else
-                    "Vous ne pouvez reconfigurer que vos propres nœuds. Associez ce nœud à "
-                    "votre compte, ou demandez l'administration radio complète (/admin/radio)."
+                    "Ce nœud n'est ni l'un des vôtres ni l'un de ceux de votre institution. "
+                    "Associez-le à un compte de votre institution, ou demandez "
+                    "l'administration radio complète (/admin/radio)."
                 )
             if get_active_environment(self.request) != Environment.PROD:
                 raise PermissionDenied(
@@ -19707,12 +19711,15 @@ class DemandeAccesRadioViewSet(viewsets.ModelViewSet):
             DemandeAccesRadioSerializer(demande, context={'request': request}).data
             if demande is not None else None
         )
-        # Ce que l'interface doit pouvoir dire sans le réinventer : les deux titres qui ouvrent
-        # le droit sans demande.
+        # Ce que l'interface doit pouvoir dire sans le réinventer : les titres qui ouvrent le
+        # droit sans aucune demande.
         etat['titres_possibles'] = [
             "Rattacher un nœud personnel à votre compte (page « Companions », bouton "
             "« Associer ce nœud à un compte »).",
-            "Déclarer la passerelle de votre institution et la rattacher à celle-ci.",
+            "Rattacher à votre institution le nœud de l'un de ses membres : une institution a "
+            "les droits sur ses nœuds.",
+            "Déclarer la passerelle de votre institution et la rattacher à celle-ci — c'est "
+            "aussi ce qui vous en donne le réglage.",
         ]
         return Response(etat)
 
@@ -19743,6 +19750,23 @@ class DemandeAccesRadioViewSet(viewsets.ModelViewSet):
                     {"niveau_accorde": "Niveau attendu : OPERATEUR ou ADMINISTRATEUR."},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
+            # ADMINISTRATEUR porte sur le RÉSEAU ENTIER, pas sur le matériel du demandeur. Ce
+            # n'est donc jamais la bonne réponse à « je veux administrer ma passerelle » :
+            # l'exploitant d'une passerelle est administrateur DE SA passerelle et DE SES
+            # nœuds, ce que `peut_administrer_noeud` lui donne déjà par le rattachement à son
+            # institution. La confirmation explicite existe pour qu'on ne puisse pas accorder
+            # le réseau entier d'un clic, en croyant répondre à cette demande-là.
+            if (niveau == NiveauAccesRadio.ADMINISTRATEUR
+                    and not request.data.get('confirmation_portee_reseau')):
+                return Response(
+                    {"niveau_accorde":
+                        "ADMINISTRATEUR donne la main sur TOUT le réseau, y compris le "
+                        "matériel d'autres institutions. Pour qu'une personne administre SA "
+                        "passerelle et SES nœuds, rattachez ce matériel à son institution et "
+                        "accordez OPERATEUR. Si la portée réseau est bien l'intention, "
+                        "renvoyez `confirmation_portee_reseau`."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
             demande.niveau_accorde = niveau
         else:
             # Un refus ou un retrait n'ouvre rien : le niveau est effacé, pas conservé « pour
@@ -19756,10 +19780,14 @@ class DemandeAccesRadioViewSet(viewsets.ModelViewSet):
         demande.date_decision = timezone.now()
         demande.save()
 
+        # La portée réseau est signalée en clair et en tête : c'est ce qu'on cherchera dans le
+        # journal le jour où l'on se demandera qui pouvait toucher au matériel d'autrui.
+        portee = (" [PORTEE RESEAU ENTIER]"
+                  if demande.niveau_accorde == NiveauAccesRadio.ADMINISTRATEUR else "")
         audit_log(
             request=request, action_code="MODIFICATION", objet_type="DemandeAccesRadio",
             objet_id=demande.id,
             commentaire=f"Acces radio {decision} pour {demande.utilisateur.email}"
-                        f" (niveau {demande.niveau_accorde or 'aucun'}).",
+                        f" (niveau {demande.niveau_accorde or 'aucun'}){portee}.",
         )
         return Response(DemandeAccesRadioSerializer(demande, context={'request': request}).data)

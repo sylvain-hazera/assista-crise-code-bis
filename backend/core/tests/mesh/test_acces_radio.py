@@ -5,9 +5,11 @@ Trois décisions sont verrouillées ici, parce qu'elles ne se devinent pas à la
 1. **Le droit vient du MATÉRIEL avant de venir d'une décision.** Porter un nœud personnel actif
    ouvre le niveau opérateur sans demander la permission à personne : c'est le propriétaire qui
    règle son appareil. Une demande nominative sert aux cas que le matériel ne prouve pas.
-2. **La passerelle n'est pas un nœud comme les autres.** Un opérateur écrit sur ses propres
-   nœuds, jamais sur la passerelle : elle porte tout un réseau, et un nœud rendu muet par une
-   mauvaise région ne peut plus recevoir l'ordre inverse.
+2. **Le droit d'écrire suit la PROPRIÉTÉ du matériel**, pas un grade (précisé le 10/11/2026).
+   Un particulier répond de ses nœuds ; une institution répond des nœuds de ses membres et des
+   passerelles qu'elle a déployées — passerelle comprise, c'est elle qui ira la rechercher si un
+   réglage la rend muette. Personne ne répond du matériel d'un autre, sauf l'administrateur de
+   la plateforme, qui est le recours.
 3. **Le rôle administrateur est pris au sens RÉEL.** Un `demo_role` prêté le temps d'une
    démonstration ne donne pas la main sur du matériel qui émet, et un nœud de la zone DEMO
    n'ouvre aucun droit — il n'existe pas physiquement.
@@ -79,6 +81,16 @@ class TestNiveauDAcces:
             utilisateur=porteur, node_num=0xAA03, environment=Environment.DEMO,
         )
         assert niveau_acces_radio(porteur) == NiveauAccesRadio.AUCUN
+
+    def test_une_institution_qui_n_a_que_des_noeuds_a_l_acces(self, create_user, institution):
+        """Une commune dont trois agents portent un nœud *a* un réseau radio, même sans
+        passerelle : elle doit pouvoir le voir et le régler."""
+        agent = _utilisateur(create_user, "agent-sans-passerelle@x.fr", "SECOURS", institution)
+        assert niveau_acces_radio(agent) == NiveauAccesRadio.AUCUN
+
+        porteur = _utilisateur(create_user, "porteur-de-l-equipe@x.fr", "SECOURS", institution)
+        NoeudUtilisateurMeshtastic.objects.create(utilisateur=porteur, node_num=0xB020)
+        assert niveau_acces_radio(agent) == NiveauAccesRadio.OPERATEUR
 
     def test_une_passerelle_de_l_institution_ouvre_le_niveau_operateur(self, create_user, institution):
         agent = _utilisateur(create_user, "agent-radio@x.fr", "SECOURS", institution)
@@ -168,16 +180,76 @@ class TestDroitSurUnNoeud:
         NoeudUtilisateurMeshtastic.objects.create(utilisateur=voisin, node_num=0xC003)
         assert peut_administrer_noeud(porteur, 0xC003) is False
 
-    def test_un_operateur_n_ecrit_pas_sur_la_passerelle(self, create_user, institution):
-        """Infrastructure partagée : une région ou un rapport cyclique faux la rend muette, et
-        il faut alors aller la chercher à la main."""
+    def test_une_institution_regle_la_passerelle_qu_elle_a_deployee(self, create_user, institution):
+        """Règle du 10/11/2026 : la passerelle est de la responsabilité de l'institution qui l'a
+        posée. Faire dépendre son réglage d'un administrateur de plateforme n'ajoute aucune
+        sécurité -- il ne sait même pas où elle est."""
         agent = _utilisateur(create_user, "agent-passerelle@x.fr", "SECOURS", institution)
-        CompagnonMeshtastic.objects.create(
+        passerelle = CompagnonMeshtastic.objects.create(
             nom="Passerelle", node_num=0xB004, institution=institution,
             connexion_type=MeshtasticConnexionType.SERIE, serie_device="/dev/ttyACM3",
         )
         assert niveau_acces_radio(agent) == NiveauAccesRadio.OPERATEUR
+        # Comme exécutante de la tâche (node_num_cible vide)...
+        assert peut_administrer_noeud(agent, None, passerelle) is True
+        # ... et visée par son node_num, ce qui est le même matériel.
+        assert peut_administrer_noeud(agent, 0xB004) is True
+
+    def test_une_institution_ne_regle_pas_la_passerelle_d_une_autre(self, create_user,
+                                                                    institution,
+                                                                    autre_institution):
+        """Le voisin ne répond pas de ce matériel, et il ne saura pas qu'il l'a cassé."""
+        agent = _utilisateur(create_user, "agent-voisin-passerelle@x.fr", "SECOURS", autre_institution)
+        NoeudUtilisateurMeshtastic.objects.create(utilisateur=agent, node_num=0xB010)
+        passerelle = CompagnonMeshtastic.objects.create(
+            nom="Passerelle d'a cote", node_num=0xB005, institution=institution,
+            connexion_type=MeshtasticConnexionType.SERIE, serie_device="/dev/ttyACM6",
+        )
+        assert niveau_acces_radio(agent) == NiveauAccesRadio.OPERATEUR
+        assert peut_administrer_noeud(agent, None, passerelle) is False
+        assert peut_administrer_noeud(agent, 0xB005) is False
+
+    def test_une_passerelle_sans_institution_reste_a_l_administrateur(self, create_user):
+        """Personne n'en répond : c'est précisément le cas où le recours sert."""
+        porteur = _utilisateur(create_user, "porteur-sans-inst@x.fr")
+        NoeudUtilisateurMeshtastic.objects.create(utilisateur=porteur, node_num=0xB011)
+        passerelle = CompagnonMeshtastic.objects.create(
+            nom="Passerelle centrale", node_num=0xB006, institution=None,
+            connexion_type=MeshtasticConnexionType.SERIE, serie_device="/dev/ttyACM7",
+        )
+        assert peut_administrer_noeud(porteur, None, passerelle) is False
+
+    def test_une_ecriture_sur_la_passerelle_sans_savoir_laquelle_est_refusee(self, create_user,
+                                                                            institution):
+        """Sans le companion, le droit n'est pas vérifiable : on refuse plutôt que de supposer."""
+        agent = _utilisateur(create_user, "agent-sans-compagnon@x.fr", "SECOURS", institution)
+        CompagnonMeshtastic.objects.create(
+            nom="Passerelle", node_num=0xB007, institution=institution,
+            connexion_type=MeshtasticConnexionType.SERIE, serie_device="/dev/ttyACM8",
+        )
         assert peut_administrer_noeud(agent, None) is False
+
+    def test_une_institution_regle_le_noeud_de_ses_membres(self, create_user, institution):
+        """« Les institutions qui ont des nœuds doivent avoir les droits dessus. » Le nœud remis
+        par une collectivité à un agent n'est pas sa propriété privée, et l'agent parti en
+        congés ne doit pas emporter avec lui la possibilité de le reconfigurer."""
+        porteur = _utilisateur(create_user, "porteur-de-la-mairie@x.fr", "SECOURS", institution)
+        NoeudUtilisateurMeshtastic.objects.create(utilisateur=porteur, node_num=0xB008)
+        collegue = _utilisateur(create_user, "collegue-mairie@x.fr", "SECOURS", institution)
+
+        assert niveau_acces_radio(collegue) == NiveauAccesRadio.OPERATEUR
+        assert peut_administrer_noeud(collegue, 0xB008) is True
+
+    def test_un_noeud_sans_rapport_reste_hors_de_portee(self, create_user, institution,
+                                                        autre_institution):
+        porteur = _utilisateur(create_user, "porteur-ailleurs@x.fr", "SECOURS", autre_institution)
+        NoeudUtilisateurMeshtastic.objects.create(utilisateur=porteur, node_num=0xB009)
+        agent = _utilisateur(create_user, "agent-curieux@x.fr", "SECOURS", institution)
+        CompagnonMeshtastic.objects.create(
+            nom="Passerelle", node_num=0xB00A, institution=institution,
+            connexion_type=MeshtasticConnexionType.SERIE, serie_device="/dev/ttyACM9",
+        )
+        assert peut_administrer_noeud(agent, 0xB009) is False
 
     def test_un_administrateur_ecrit_partout_passerelle_comprise(self, create_user):
         admin = _utilisateur(create_user, "admin-ecriture@x.fr", "ADMIN")
@@ -221,10 +293,15 @@ class TestEcritureParLAPI:
             "type_tache": "DEFINIR_PUISSANCE", "parametres": {"puissance_dbm": 20},
         }, format="json")
         assert reponse.status_code == 403
-        assert "vos propres" in str(reponse.data).lower()
+        # Le message dit les DEUX périmètres possibles : sinon le porteur croit qu'il lui
+        # manque un droit alors qu'il lui manque un rattachement.
+        assert "ni l'un des vôtres ni l'un de ceux de votre institution" in str(reponse.data)
         assert TacheAdminMeshtastic.objects.count() == 0
 
-    def test_un_porteur_ne_reconfigure_pas_la_passerelle(self, create_user, passerelle):
+    def test_un_porteur_etranger_a_l_institution_ne_regle_pas_sa_passerelle(self, create_user,
+                                                                            passerelle):
+        """Le porteur n'appartient pas à l'institution qui a déployé cette passerelle : il n'en
+        répond pas, et il ne saura pas qu'il l'a rendue muette."""
         porteur = _utilisateur(create_user, "porteur-api-3@x.fr")
         NoeudUtilisateurMeshtastic.objects.create(utilisateur=porteur, node_num=0xD013)
 
@@ -233,7 +310,22 @@ class TestEcritureParLAPI:
             "parametres": {"puissance_dbm": 20},
         }, format="json")
         assert reponse.status_code == 403
-        assert "administrateurs" in str(reponse.data).lower()
+        assert "institution" in str(reponse.data).lower()
+
+    def test_un_agent_de_l_institution_regle_sa_passerelle(self, create_user, institution,
+                                                           passerelle):
+        """Le cas normal demandé le 10/11/2026 : la collectivité règle son propre matériel sans
+        passer par un administrateur de plateforme."""
+        agent = _utilisateur(create_user, "agent-api@x.fr", "SECOURS", institution)
+
+        reponse = _client(agent).post(URL_TACHES, {
+            "compagnon": str(passerelle.id), "type_tache": "DEFINIR_PUISSANCE",
+            "parametres": {"puissance_dbm": 20},
+        }, format="json")
+        assert reponse.status_code == 201, reponse.data
+        tache = TacheAdminMeshtastic.objects.get()
+        assert tache.node_num_cible is None       # la passerelle elle-même
+        assert tache.demande_par == agent         # et l'acte reste imputable
 
     def test_un_porteur_peut_lire_la_configuration(self, create_user, passerelle):
         """Une lecture reste une lecture : relever une puissance n'est pas un acte matériel.
@@ -347,6 +439,54 @@ class TestDemandeEtInstruction:
         assert demande.date_decision is not None
         assert niveau_acces_radio(demandeur) == NiveauAccesRadio.OPERATEUR
 
+    def test_accorder_la_portee_reseau_exige_une_confirmation(self, create_user):
+        """« L'administrateur d'une passerelle est admin de SA passerelle et de SES nœuds »
+        (10/11/2026). ADMINISTRATEUR ne répond pas à ce besoin-là : il donne la main sur le
+        matériel des AUTRES institutions. Pour que quelqu'un administre son propre matériel, on
+        le rattache à son institution et OPERATEUR suffit.
+
+        La confirmation existe pour qu'on ne puisse pas accorder le réseau entier d'un clic en
+        croyant répondre à « je veux gérer ma passerelle »."""
+        demandeur = _utilisateur(create_user, "demandeur-portee@x.fr")
+        demande = DemandeAccesRadio.objects.create(
+            utilisateur=demandeur, motif="Je veux administrer ma passerelle.",
+            niveau_demande=NiveauAccesRadio.ADMINISTRATEUR,
+        )
+        admin = _utilisateur(create_user, "admin-portee@x.fr", "ADMIN")
+        client = _client(admin)
+
+        reponse = client.post(f"{URL_DEMANDES}{demande.id}/instruire/", {
+            "decision": "ACCORDEE", "niveau_accorde": "ADMINISTRATEUR",
+        }, format="json")
+        assert reponse.status_code == 400
+        assert "tout le réseau" in str(reponse.data).lower()
+        demande.refresh_from_db()
+        assert demande.statut == StatutDemandeAccesRadio.EN_ATTENTE
+        assert niveau_acces_radio(demandeur) == NiveauAccesRadio.AUCUN
+
+        # OPERATEUR, en revanche, s'accorde sans cérémonie : il ne porte que sur le matériel du
+        # demandeur et celui de son institution.
+        reponse = client.post(f"{URL_DEMANDES}{demande.id}/instruire/", {
+            "decision": "ACCORDEE", "niveau_accorde": "OPERATEUR",
+        }, format="json")
+        assert reponse.status_code == 200
+        assert niveau_acces_radio(demandeur) == NiveauAccesRadio.OPERATEUR
+
+    def test_la_portee_reseau_s_accorde_quand_c_est_l_intention(self, create_user):
+        demandeur = _utilisateur(create_user, "demandeur-portee-2@x.fr")
+        demande = DemandeAccesRadio.objects.create(
+            utilisateur=demandeur, motif="Je depanne les passerelles sans institution.",
+            niveau_demande=NiveauAccesRadio.ADMINISTRATEUR,
+        )
+        admin = _utilisateur(create_user, "admin-portee-2@x.fr", "ADMIN")
+
+        reponse = _client(admin).post(f"{URL_DEMANDES}{demande.id}/instruire/", {
+            "decision": "ACCORDEE", "niveau_accorde": "ADMINISTRATEUR",
+            "confirmation_portee_reseau": True,
+        }, format="json")
+        assert reponse.status_code == 200
+        assert niveau_acces_radio(demandeur) == NiveauAccesRadio.ADMINISTRATEUR
+
     def test_un_refus_n_accorde_aucun_niveau(self, create_user):
         """Une ligne refusée qui garderait un niveau se relit comme un droit."""
         demandeur = _utilisateur(create_user, "demandeur-10@x.fr")
@@ -399,8 +539,11 @@ class TestMonAcces:
         assert reponse.status_code == 200
         assert reponse.data["niveau"] == NiveauAccesRadio.AUCUN
         assert reponse.data["motifs"] == []
-        # Ce qu'il faut pour entrer, servi par le serveur et non réinventé par l'interface.
-        assert len(reponse.data["titres_possibles"]) == 2
+        # Ce qu'il faut pour entrer, servi par le serveur et non réinventé par l'interface :
+        # son propre nœud, le nœud d'un membre de son institution, la passerelle de celle-ci.
+        assert len(reponse.data["titres_possibles"]) == 3
+        # Aucun périmètre d'écriture tant qu'il n'y a aucun droit : il n'y a rien à annoncer.
+        assert reponse.data["perimetre_ecriture"] == []
 
     def test_mon_acces_dit_a_quel_titre(self, create_user):
         """Un compte qui a l'accès doit savoir à quel titre, donc ce qu'il perdrait en
@@ -412,6 +555,43 @@ class TestMonAcces:
         assert reponse.data["niveau"] == NiveauAccesRadio.OPERATEUR
         assert reponse.data["nombre_noeuds_personnels"] == 1
         assert any("nœud personnel" in motif for motif in reponse.data["motifs"])
+
+    def test_mon_acces_annonce_le_perimetre_d_ecriture(self, create_user, institution):
+        """Le périmètre est rédigé par le serveur : la règle est déjà difficile à tenir à un
+        endroit, et une interface qui promet une écriture que le serveur refuse se découvre par
+        un 403."""
+        agent = _utilisateur(create_user, "mon-acces-perimetre@x.fr", "SECOURS", institution)
+        NoeudUtilisateurMeshtastic.objects.create(utilisateur=agent, node_num=0xE010)
+        CompagnonMeshtastic.objects.create(
+            nom="Passerelle", node_num=0xE011, institution=institution,
+            connexion_type=MeshtasticConnexionType.SERIE, serie_device="/dev/ttyACMA",
+        )
+
+        reponse = _client(agent).get(URL_MON_ACCES)
+        portees = " ".join(reponse.data["perimetre_ecriture"])
+        assert "Vos propres nœuds" in portees
+        assert institution.nom in portees
+        # Et la responsabilité est dite, parce que c'est elle qui ira rechercher la passerelle.
+        assert "responsabilité de l'institution qui l'a déployée" in portees
+        assert reponse.data["nombre_passerelles_institution"] == 1
+
+    def test_un_administrateur_voit_que_son_perimetre_est_le_reseau_entier(self, create_user):
+        admin = _utilisateur(create_user, "mon-acces-admin@x.fr", "ADMIN")
+        reponse = _client(admin).get(URL_MON_ACCES)
+        portees = " ".join(reponse.data["perimetre_ecriture"])
+        assert "passerelles comprises" in portees
+
+    def test_un_droit_accorde_sans_materiel_le_dit(self, create_user):
+        """Cas ingrat : le droit est ouvert, mais aucune écriture n'aboutira. Mieux vaut
+        l'annoncer que de le laisser découvrir par un 403."""
+        beneficiaire = _utilisateur(create_user, "mon-acces-sans-materiel@x.fr")
+        DemandeAccesRadio.objects.create(
+            utilisateur=beneficiaire, motif="Je recois mon materiel la semaine prochaine.",
+            statut=StatutDemandeAccesRadio.ACCORDEE, niveau_accorde=NiveauAccesRadio.OPERATEUR,
+        )
+        reponse = _client(beneficiaire).get(URL_MON_ACCES)
+        portees = " ".join(reponse.data["perimetre_ecriture"])
+        assert "Aucun matériel ne vous est rattaché" in portees
 
     def test_mon_acces_rend_la_derniere_demande(self, create_user):
         demandeur = _utilisateur(create_user, "mon-acces-3@x.fr")

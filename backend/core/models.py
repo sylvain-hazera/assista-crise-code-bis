@@ -6861,14 +6861,15 @@ class NiveauAccesRadio(models.TextChoices):
       doit pouvoir découvrir qu'elle existe et la demander, sinon le dispositif n'a aucune
       porte d'entrée -- même raisonnement que « Habilitations registre ».
     - `OPERATEUR` : le droit intermédiaire. Lecture de tout le réseau, simulations de
-      couverture, et administration **de ses propres nœuds seulement** (voir
-      `peut_administrer_noeud`). C'est le niveau du propriétaire d'un nœud personnel : il n'a
-      aucune raison d'être institutionnel pour régler son matériel, et aucune raison de pouvoir
-      reconfigurer celui des autres.
-    - `ADMINISTRATEUR` : en plus, l'administration de la passerelle et de n'importe quel nœud.
-      Reconfigurer une passerelle est un acte sur de l'infrastructure partagée : une puissance
-      ou une fréquence fausse rend tout un réseau sourd, et l'erreur n'est pas rattrapable à
-      distance."""
+      couverture, et administration **du matériel dont on répond** : ses propres nœuds, et ceux
+      de son institution — **passerelle de l'institution comprise** (voir
+      `peut_administrer_noeud`). Un particulier qui porte un nœud n'a aucune raison d'être
+      institutionnel pour le régler ; une collectivité qui a déployé une passerelle n'a aucune
+      raison de demander à quiconque l'autorisation de la régler, c'est elle qui ira la
+      rechercher si un réglage la rend muette.
+    - `ADMINISTRATEUR` : en plus, n'importe quel nœud et n'importe quelle passerelle, y compris
+      celle d'une institution qui aurait perdu la main sur son propre matériel, ou une
+      passerelle sans institution renseignée. C'est le recours, pas le régime normal."""
 
     AUCUN = "AUCUN", "Aucun accès radio"
     OPERATEUR = "OPERATEUR", "Opérateur radio (ses propres nœuds)"
