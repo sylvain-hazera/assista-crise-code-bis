@@ -169,6 +169,7 @@ from .crypto_fields import blind_index
 from .models import (
     DemandeAccesRadio,
     RattachementNoeudRadio,
+    SourceObservateurMeshCore,
     TacheAdminMeshCore,
     TypeTacheAdminMeshCore,
     TACHES_ADMIN_MESHCORE_ECRITURE,
@@ -523,6 +524,7 @@ def send_crisis_regulateur_invite_email(request, user, crisis, institution):
 from .serializers import (
     DemandeAccesRadioSerializer,
     RattachementNoeudRadioSerializer,
+    SourceObservateurMeshCoreSerializer,
     TacheAdminMeshCoreSerializer,
     CandidatureAssociationSerializer,
     InvitationAssociationSerializer,
@@ -20279,3 +20281,65 @@ class TacheAdminMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVie
             defaults={'total_annonce': max(total, 0), 'recus': max(recus, 0),
                       'prefixe_octets': longueur, 'date_releve': maintenant},
         )
+
+
+class SourceObservateurMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
+    """Brokers où des observateurs MeshCore republient ce qu'ils entendent.
+
+    Déclarés en base et non en variable d'environnement : il y a plusieurs brokers (deux
+    « analyzer » publics intégrés au firmware observateur, plus les brokers privés), chacun a
+    ses identifiants, et un exploitant peut n'ouvrir la lecture que sur un préfixe. En ajouter
+    un ne doit pas demander de redéployer le pont.
+
+    `avec-identifiants` livre le mot de passe en clair : réservé aux comptes de pont, comme les
+    autres secrets radio (voir EstComptePont)."""
+
+    queryset = SourceObservateurMeshCore.objects.select_related('institution').all()
+    serializer_class = SourceObservateurMeshCoreSerializer
+
+    def get_permissions(self):
+        if self.action == 'avec_identifiants':
+            return [EstComptePont()]
+        if self.action in ('create', 'update', 'partial_update', 'destroy'):
+            # Déclarer un broker tiers engage une connexion sortante permanente depuis le pont :
+            # c'est un acte d'exploitation, pas une opération radio courante.
+            return [_EstAdministrateurReel()]
+        return [PeutAccederRadio()]
+
+    def get_queryset(self):
+        return super().get_queryset().order_by('nom')
+
+    @action(detail=False, methods=['get'], url_path='avec-identifiants')
+    def avec_identifiants(self, request):
+        """Les sources actives, mot de passe compris, pour le pont."""
+        sources = self.get_queryset().filter(actif=True)
+        return Response([
+            {
+                'id': str(source.id),
+                'nom': source.nom,
+                'broker_host': source.broker_host,
+                'broker_port': source.broker_port,
+                'mqtt_username': source.mqtt_username,
+                'mqtt_password': source.mqtt_password,
+                'mqtt_use_tls': source.mqtt_use_tls,
+                'filtre_topic': source.filtre_topic,
+            }
+            for source in sources
+        ])
+
+    @action(detail=True, methods=['post'], url_path='rapporter-etat')
+    def rapporter_etat(self, request, pk=None):
+        """État de la connexion, rapporté par le pont.
+
+        Sans lui, un abonnement refusé serait de nouveau silencieux — c'est exactement la
+        panne qu'on a mis une journée à voir côté Meshtastic le 10/11/2026."""
+        source = self.get_object()
+        etat = (request.data.get('etat') or '').strip()[:20]
+        if not etat:
+            return Response({'detail': "'etat' est requis."}, status=status.HTTP_400_BAD_REQUEST)
+        source.dernier_etat = etat
+        source.derniere_erreur = (request.data.get('erreur') or '')[:2000] or None
+        if etat == 'CONNECTE':
+            source.derniere_connexion = timezone.now()
+        source.save(update_fields=['dernier_etat', 'derniere_erreur', 'derniere_connexion'])
+        return Response(SourceObservateurMeshCoreSerializer(source).data)

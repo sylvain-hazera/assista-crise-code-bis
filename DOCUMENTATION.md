@@ -226,6 +226,7 @@ docker compose down -v                                 # arrêt + SUPPRESSION de
 | `routage_mesh.py`, `routage_meshtastic.py`, `sync_outbox.py` | routage MeshCore, routage Meshtastic (§ 9.5.2), synchronisation satellite → central |
 | `acces_radio.py` | qui a accès au domaine radio, et à quel niveau : le droit intermédiaire « opérateur » (§ 9.5.5) |
 | `decodeur_meshcore.py`, `resolution_prefixes.py` | format des trames MeshCore, et résolution d'un saut vers un nœud (portés de CoreScope) |
+| `ingestion_observateurs_meshcore.py` | trames publiées par les observateurs MeshCore sur MQTT -> liaisons |
 | modèle `RattachementNoeudRadio` | qui répond d'un répéteur que personne ne porte (§ 9.5.6) |
 | `imports.py`, `export.py` | import CSV/XLS (personnel, institutions, habitations), exports |
 | `metrics.py` | métriques Prometheus métier (voir § 9) |
@@ -2292,9 +2293,60 @@ que ce document envisageait (« ingestion MQTT MeshCore ») :
   Autrement dit **notre pont est déjà un observateur**. Rejoindre cet écosystème consisterait à
   publier, pas à ingérer — et c'est un choix d'exposition, pas une fonction manquante.
 
-**Pas encore fait** : brancher le décodeur sur une source de trames (le pont ne remonte
-aujourd'hui que des événements déjà décodés par la bibliothèque), et la comparaison systématique
-avec `POST /api/decode` d'une instance CoreScope, qui servirait d'oracle.
+#### Ingestion des observateurs MeshCore
+
+C'est la source de trames qui manquait au décodeur. Un **observateur** est un répéteur ou un
+room server dont le firmware a reçu un client MQTT — pas MeshCore : vérifié, le firmware
+officiel n'a aucun `mqtt`. Les binaires `heltec_v4_repeater_observer_mqtt` et
+`heltec_v4_room_server_observer_mqtt` (v1.16) sont des forks du répéteur.
+
+**Le contrat**, établi des deux côtés — gabarits de topic relevés dans les chaînes du binaire,
+forme de la charge lue dans `cmd/ingestor/db.go:2546` de CoreScope :
+
+```
+meshcore/<iata>/<cle_observateur>/packets   {"raw": "<trame hex>", "SNR": .., "RSSI": ..,
+                                             "origin": .., "timestamp": ..}
+meshcore/<iata>/<cle_observateur>/raw       la trame brute
+meshcore/<iata>/<cle_observateur>/status    {"battery_mv":.., "noise_floor":.., "last_snr":..,
+                                             "recv":.., "flood_tx":.., "rx_air_secs":..}
+meshcore/<iata>/<cle_observateur>/neighbors
+```
+
+Le champ `raw` ferme la boucle : c'est exactement l'entrée de `decodeur_meshcore.decoder_paquet`.
+
+Seize clés de configuration côté firmware observateur : `mqtt.server`, `port`, `username`,
+`password`, `iata`, `origin`, `owner`, `email`, `interval`, plus quatre interrupteurs par flux
+(`mqtt.raw`, `mqtt.packets`, `mqtt.status`, `mqtt.tx`). Deux serveurs sont intégrés par défaut
+(`mqtt.analyzer.eu`, `mqtt.analyzer.us`, authentification par jeton JWT) ; un broker privé se
+déclare à la place.
+
+**Chez nous** : `SourceObservateurMeshCore` (un broker par ligne, identifiants chiffrés, filtre
+d'abonnement), `/api/sources-observateurs-meshcore/` (déclaration réservée à l'administrateur
+réel — engager une connexion sortante permanente est un acte d'exploitation), et
+`manage.py ingerer_observateurs_meshcore`, processus long qui s'abonne, décode et écrit.
+
+Trois décisions :
+
+- **une commande Django, pas une boucle du pont.** L'ingestion ne concerne pas notre companion :
+  elle consomme un broker tiers et écrit des liaisons. Passer par le pont imposerait un
+  aller-retour HTTP **par paquet** vers l'API — des centaines par minute sur un broker régional ;
+- **une liaison n'est tirée que d'un ADVERT**, et seulement si sa **signature Ed25519 est
+  valide**. Hors advert, l'en-tête MeshCore ne porte aucun expéditeur (il est dans la charge
+  chiffrée) : en déduire une liaison supposerait de savoir qui a émis. Et un advert non signé
+  peut porter la clé d'autrui, ce qui attribuerait la liaison au mauvais nœud. Gain au passage :
+  l'émetteur d'un advert est une clé **complète**, donc ces liaisons échappent au problème
+  d'ambiguïté des préfixes ;
+- **l'horodatage de l'observateur n'est pas utilisé.** CoreScope l'a appris à ses frais (leur
+  ticket #1370 : des observateurs à l'horloge fausse estampillaient 18 h 42 une réception réelle
+  de 1 h 42). On garde l'heure d'ingestion.
+
+Le filtre d'abonnement est validé à l'enregistrement (racine `meshcore/`, joker obligatoire) et
+le SUBACK est lu : un abonnement refusé passe la source en `ERREUR` au lieu de la laisser
+affichée « connectée ». Même garde que celle ajoutée au pont Meshtastic le même jour, pour la
+même raison.
+
+**Pas encore fait** : la comparaison systématique avec `POST /api/decode` d'une instance
+CoreScope, qui servirait d'oracle sur de vraies trames.
 `CommandeMeshCore` reste par ailleurs la file du companion LOCAL (`ADVERT`, `FLOOD_ADVERT`) :
 elle ne pilote pas un relais distant, et ces deux files ne se recouvrent pas.
 

@@ -7124,6 +7124,68 @@ class ReleveVoisinageMeshCore(EnvironmentScopedModel):
         return f"{self.pubkey_hex[:12]} : {self.recus}/{self.total_annonce} voisins"
 
 
+class SourceObservateurMeshCore(EnvironmentScopedModel):
+    """Un broker MQTT où des **observateurs** MeshCore republient ce qu'ils entendent.
+
+    Un observateur est un répéteur ou un room server dont le firmware a reçu un client MQTT
+    (`heltec_v4_repeater_observer_mqtt` et consorts). Ce n'est pas MeshCore : le firmware
+    officiel ne contient aucun `mqtt`. Ils publient sur
+    `meshcore/<iata>/<cle_observateur>/{packets,raw,status,neighbors}`, et le champ `raw` d'un
+    message `packets` porte la trame hexadécimale — l'entrée de `core/decodeur_meshcore.py`.
+
+    **Pourquoi une table plutôt qu'une variable d'environnement** : il y a plusieurs brokers
+    (deux « analyzer » publics intégrés au firmware, plus les brokers privés), un exploitant
+    peut n'ouvrir la lecture que sur un préfixe, et chacun a ses identifiants. Les déclarer en
+    base permet d'en ajouter un sans redéployer le pont — même raisonnement que
+    `CompagnonMeshtastic` pour les brokers Meshtastic.
+
+    Le mot de passe est chiffré au repos, et servi au seul pont (`EstComptePont`) : c'est un
+    identifiant d'accès à un service tiers, et le projet ne stocke rien de tel en clair."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    nom = models.CharField(max_length=100)
+
+    institution = models.ForeignKey(
+        "Institution", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="sources_observateurs_meshcore",
+    )
+
+    broker_host = models.CharField(max_length=255)
+    broker_port = models.PositiveIntegerField(default=1883)
+    mqtt_username = models.CharField(max_length=100, blank=True)
+    mqtt_password = EncryptedTextField(max_length=255, blank=True)
+    mqtt_use_tls = models.BooleanField(default=False)
+
+    # Filtre d'abonnement. Par défaut tout l'écosystème ; un exploitant qui ne nous ouvre qu'une
+    # région donnera plutôt `meshcore/BOD/#`. Normalisé à l'enregistrement (voir le serializer)
+    # parce qu'un filtre faux donne une connexion parfaite et zéro paquet -- la leçon du
+    # 10/11/2026 côté Meshtastic.
+    filtre_topic = models.CharField(
+        max_length=200, default="meshcore/#",
+        help_text="Filtre d'abonnement MQTT, ex. « meshcore/# » ou « meshcore/BOD/# ».",
+    )
+
+    actif = models.BooleanField(default=True)
+
+    derniere_connexion = models.DateTimeField(null=True, blank=True)
+    dernier_etat = models.CharField(max_length=20, null=True, blank=True)
+    derniere_erreur = models.TextField(null=True, blank=True)
+
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["broker_host", "broker_port", "filtre_topic", "environment"],
+                name="uq_source_observateur_meshcore",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.nom} ({self.broker_host}:{self.broker_port})"
+
+
 class MoyenAdminRadio(models.TextChoices):
     """Par quoi on est autorisé à administrer un nœud — c'est-à-dire ce qu'on remplit en le
     réclamant (demande du 10/11/2026 : « soit login / mot de passe, soit le répéteur contient la

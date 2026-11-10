@@ -27,6 +27,7 @@ from .models import (
     MoyenAdminRadio,
     RattachementNoeudRadio,
     StatutPreuveRadio,
+    SourceObservateurMeshCore,
     TacheAdminMeshCore,
     TypeTacheAdminMeshCore,
     NiveauAccesRadio,
@@ -4704,3 +4705,48 @@ class TacheAdminMeshCoreSerializer(serializers.ModelSerializer):
 
         return attrs
 
+
+
+class SourceObservateurMeshCoreSerializer(serializers.ModelSerializer):
+    """Broker d'observateurs MeshCore (voir SourceObservateurMeshCore).
+
+    Le mot de passe est `write_only` : il part vers le serveur, il n'en revient pas. Les ponts
+    le lisent par l'endpoint réservé à `EstComptePont`, comme les autres secrets radio."""
+
+    institution_nom = serializers.CharField(source="institution.nom", read_only=True, default=None)
+
+    class Meta:
+        model = SourceObservateurMeshCore
+        fields = ['id', 'nom', 'institution', 'institution_nom', 'broker_host', 'broker_port',
+                  'mqtt_username', 'mqtt_password', 'mqtt_use_tls', 'filtre_topic', 'actif',
+                  'derniere_connexion', 'dernier_etat', 'derniere_erreur', 'date_creation']
+        read_only_fields = ['derniere_connexion', 'dernier_etat', 'derniere_erreur',
+                            'date_creation']
+        extra_kwargs = {
+            'mqtt_password': {'write_only': True},
+            # `allow_blank` pour que ce soit NOTRE validateur qui réponde : le refus
+            # générique de DRF (« This field may not be blank ») ne dit pas quoi saisir, et
+            # c'est précisément un champ qu'on ne devine pas.
+            'filtre_topic': {'allow_blank': True},
+        }
+
+    def validate_filtre_topic(self, valeur):
+        """Un filtre faux donne une connexion parfaite et zéro paquet — la panne la plus
+        coûteuse à diagnostiquer, constatée le 10/11/2026 côté Meshtastic.
+
+        On exige donc qu'il commence par la racine de l'écosystème et qu'il porte un joker :
+        un filtre sans joker ne capterait qu'un unique topic exact, ce qui n'est jamais ce
+        qu'on veut ici."""
+        valeur = (valeur or '').strip()
+        if not valeur:
+            raise serializers.ValidationError("Filtre d'abonnement requis, ex. « meshcore/# ».")
+        if not valeur.startswith("meshcore/"):
+            raise serializers.ValidationError(
+                "Les observateurs publient sous « meshcore/… » : un filtre ailleurs ne "
+                "recevrait rien."
+            )
+        if "#" not in valeur and "+" not in valeur:
+            raise serializers.ValidationError(
+                "Filtre sans joker : il ne capterait qu'un seul topic exact. Ajoutez « /# »."
+            )
+        return valeur

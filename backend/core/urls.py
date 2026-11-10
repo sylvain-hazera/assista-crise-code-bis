@@ -5,6 +5,7 @@ from .grafana import GrafanaTokenView
 from .views import (
     DemandeAccesRadioViewSet,
     RattachementNoeudRadioViewSet,
+    SourceObservateurMeshCoreViewSet,
     TacheAdminMeshCoreViewSet,
     CandidatureAssociationViewSet,
     InvitationAssociationViewSet,
@@ -167,6 +168,8 @@ router.register(r'demandes-acces-radio', DemandeAccesRadioViewSet)
 router.register(r'rattachements-noeuds-radio', RattachementNoeudRadioViewSet)
 # File d'administration a distance des repeteurs MeshCore (voir TacheAdminMeshCore).
 router.register(r'taches-admin-meshcore', TacheAdminMeshCoreViewSet)
+# Brokers ou des observateurs MeshCore republient ce qu'ils entendent.
+router.register(r'sources-observateurs-meshcore', SourceObservateurMeshCoreViewSet)
 
 
 router.register(
