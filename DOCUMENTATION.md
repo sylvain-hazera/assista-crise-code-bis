@@ -1934,8 +1934,8 @@ docker run --rm -v "$PWD/meshtastic-bridge":/src -w /src \
 
 #### Trois défauts d'ingestion trouvés dans les journaux du pont (10/11/2026)
 
-Relever les journaux du pont en service a montré **1 348 paquets MQTT abandonnés**. Les trois
-causes, et ce qu'elles coûtaient :
+Relever les journaux du pont en service a montré **1 348 paquets MQTT abandonnés**. Quatre
+défauts, et ce qu'ils coûtaient :
 
 1. **`HasField("hop_start")` sur un scalaire proto3** (1 201 fois). `hop_start` n'a pas de
    présence (vérifié sur la lib déployée :
@@ -1955,15 +1955,58 @@ causes, et ce qu'elles coûtaient :
    autre clé. C'est du bruit normal sur un broker partagé, pas une erreur de chez nous — une
    trace complète par paquet enterrait les vraies erreurs. Descendu en `debug`.
 
+4. **Un abonnement REFUSÉ par le broker était totalement silencieux** : le pont n'avait aucun
+   `on_subscribe`. Il journalisait « Connecté au broker », rapportait l'état `CONNECTE`, et plus
+   rien n'arrivait jamais — indiscernable d'un réseau calme. Or un refus d'ACL est le cas
+   **normal** sur un broker communautaire, dont le compte n'a souvent le droit de lire qu'un
+   préfixe précis : le broker de La Réunion répond `SUBACK 128` à un abonnement sur `#`. Le pont
+   lit désormais le SUBACK, nomme le topic refusé et sa raison, et rapporte le companion en
+   `ERREUR` au lieu de le laisser affiché « connecté » (`echec_abonnement`, extraite du rappel
+   pour être testable — les rappels paho sont des fonctions imbriquées).
+
 `bridge.py` n'avait **aucun** test, et c'est ce qui a laissé passer le premier défaut :
-`meshtastic-bridge/test_bridge.py` en ajoute dix, qui construisent de **vrais** messages
-protobuf. Un faux objet avec un `HasField` complaisant aurait laissé passer exactement ce
+`meshtastic-bridge/test_bridge.py` en ajoute quatorze, qui construisent de **vrais**
+messages protobuf et de vrais codes de retour paho. Un faux objet avec un `HasField` complaisant aurait laissé passer exactement ce
 défaut-là.
 
 Le topic d'abonnement est désormais journalisé à la connexion (`<racine>/2/e/#`) : c'est la
 seule chose qui permette de vérifier le paramétrage d'une passerelle sans lire la base — une
 racine fausse donne une connexion parfaitement réussie et zéro paquet, indiscernable d'un réseau
 calme.
+
+#### Paramètres du réseau citoyen de La Réunion (relevés le 10/11/2026)
+
+Source : <https://www.meteor-oi.re/index.php/projets/reseau-lora-citoyen-mesh-la-reunion/utiliser-le-reseau/>.
+Recopiés ici parce qu'ils conditionnent le paramétrage d'un `CompagnonMeshtastic` et qu'une
+valeur fausse donne un silence indiscernable d'un réseau calme.
+
+| | Valeur |
+|---|---|
+| Broker | `mqtt-mt.meteor-oi.re`, sans TLS |
+| **Racine de topic** | **`msh/EU_868`** (donc abonnement `msh/EU_868/2/e/#`) |
+| Canaux | 0 `Fr_Balise`, 1 `Fr_EMCOM`, 2 `Fr_BlaBla` |
+| Relayés vers MQTT | `Fr_Balise` et `Fr_EMCOM` seulement — `Fr_BlaBla` a uplink **et** downlink désactivés |
+| LoRa | EU_868, preset **LongModerate** (la page écrit « ne pas mettre LongFast »), fréquence forcée **869,4625 MHz**, slot 1, 27 dBm, `hop_limit` 7 à titre temporaire |
+| Rôle | CLIENT, réémission LOCAL_ONLY |
+| Sortie JSON | demandée ; « sans effet pour les puces nRF52 (T114) » |
+| Compte | `lora974-P<numéro>`, envoyé par courriel ; identifiants supplémentaires par MeshForge (« devenir passerelle MQTT ») |
+
+Deux conséquences pour ce projet :
+
+- **les PSK des canaux ne sont pas publiées** : elles viennent du QR code officiel de Gaulix.
+  Sans elles, le pont reçoit les paquets sans pouvoir les décoder — mais enregistre quand même
+  les **liaisons RF**, qui s'observent sur l'enveloppe, avant tout déchiffrement. C'est
+  précisément ce que le défaut `hop_start` empêchait ;
+- `Fr_BlaBla` porte le même nom sur Gaulix et à La Réunion (canaux français communs, même QR
+  code). Le nom d'un canal ne permet donc **pas** d'attribuer un message à un broker ; ce qui
+  les distingue ici est que La Réunion n'en fait pas d'uplink. D'où la journalisation du nom du
+  companion sur chaque message.
+
+La fréquence recommandée (869,4625 MHz) tombe dans la tranche `EU_868` du firmware
+(869,4-869,65 MHz, § 9.5.2) et la puissance recommandée (27 dBm) est exactement le plafond de
+cette région. Ce n'est pas une source réglementaire — c'est une page communautaire — mais c'est
+un indice de plus que la bande utilisée outre-mer est la même qu'en métropole, question laissée
+ouverte faute de disposition particulière trouvée dans le TNRBF.
 
 #### Publication JSON du MQTT : ce que ça fait, et ce que ça ne fait pas
 

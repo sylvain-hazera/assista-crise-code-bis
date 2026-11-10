@@ -595,10 +595,31 @@ def _traiter_paquet_dechiffre(payload, node_num, to_node, canal_id, canal_nom, t
     return None
 
 
+def echec_abonnement(codes):
+    """Message d'échec si le broker a REFUSÉ l'abonnement, sinon None.
+
+    Pourquoi cette fonction existe (10/11/2026) : le pont n'avait aucun `on_subscribe`, donc un
+    abonnement refusé était **totalement silencieux**. On journalisait « Connecté au broker », on
+    rapportait l'état CONNECTE, et plus rien n'arrivait jamais -- indiscernable d'un réseau
+    calme. Or un refus d'ACL est le cas NORMAL sur un broker communautaire : le compte n'a
+    souvent le droit de lire qu'un préfixe précis. Constaté sur le broker de La Réunion, qui
+    répond « All subscription requests were denied » à un abonnement sur `#`.
+
+    Extraite plutôt qu'écrite dans le rappel pour être testable : les rappels paho sont des
+    fonctions imbriquées, inatteignables depuis un test."""
+    refuses = [code for code in (codes or []) if getattr(code, "is_failure", False)]
+    if not refuses:
+        return None
+    return ", ".join(str(code) for code in refuses)
+
+
 def demarrer_mqtt(compagnon, registre, tampon, tampon_liaisons, django, boucle, file_a_planifier, cle_privee_hex):
     """paho-mqtt tourne dans son propre thread (loop_start) — chaque callback poste les
     coroutines réseau à exécuter dans la boucle asyncio principale via
     call_soon_threadsafe, jamais d'appel réseau direct depuis le thread MQTT."""
+
+    # mid -> topic : le rappel d'abonnement ne reçoit qu'un identifiant de message.
+    topics_par_mid = {}
 
     def on_connect(client, userdata, flags, reason_code, properties=None):
         if reason_code == 0:
@@ -612,7 +633,8 @@ def demarrer_mqtt(compagnon, registre, tampon, tampon_liaisons, django, boucle, 
                 compagnon["broker_host"], compagnon["broker_port"], compagnon.get("nom", "?"),
                 topic,
             )
-            client.subscribe(topic)
+            _, mid = client.subscribe(topic)
+            topics_par_mid[mid] = topic
             boucle.call_soon_threadsafe(
                 file_a_planifier.put_nowait, django.rapporter_etat(compagnon["id"], "CONNECTE"),
             )
@@ -622,6 +644,28 @@ def demarrer_mqtt(compagnon, registre, tampon, tampon_liaisons, django, boucle, 
                 file_a_planifier.put_nowait,
                 django.rapporter_etat(compagnon["id"], "ERREUR", erreur=str(reason_code)),
             )
+
+    def on_subscribe(client, userdata, mid, reason_code_list, properties=None):
+        topic = topics_par_mid.pop(mid, "?")
+        raison = echec_abonnement(reason_code_list)
+        if raison is None:
+            logger.info("Abonnement accepté : %s.", topic)
+            return
+        # Rapporté comme une ERREUR de companion, pas seulement journalisé : un pont connecté
+        # mais sans abonnement ne recevra jamais rien, et l'interface doit le dire au lieu
+        # d'afficher « connecté ».
+        logger.error(
+            "Abonnement REFUSÉ par le broker pour '%s' sur %s : %s. Vérifier le droit du compte "
+            "MQTT et la racine de topic du companion.",
+            compagnon.get("nom", "?"), topic, raison,
+        )
+        boucle.call_soon_threadsafe(
+            file_a_planifier.put_nowait,
+            django.rapporter_etat(
+                compagnon["id"], "ERREUR",
+                erreur=f"Abonnement refusé sur {topic} ({raison})",
+            ),
+        )
 
     def on_disconnect(client, userdata, flags, reason_code, properties=None):
         logger.warning("Déconnecté du broker MQTT : %s", reason_code)
@@ -683,6 +727,7 @@ def demarrer_mqtt(compagnon, registre, tampon, tampon_liaisons, django, boucle, 
 
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
     client.on_connect = on_connect
+    client.on_subscribe = on_subscribe
     client.on_disconnect = on_disconnect
     client.on_message = on_message
     if compagnon.get("mqtt_username"):

@@ -162,5 +162,40 @@ class TestMessagesDeCanal(unittest.TestCase):
         self.assertEqual(django.dm_entrant, [("c1", None, EMETTEUR, "bonjour")])
 
 
+class TestEchecAbonnement(unittest.TestCase):
+    """Un abonnement REFUSÉ par le broker était totalement silencieux : on journalisait
+    « Connecté », on rapportait CONNECTE, et plus rien n'arrivait jamais — indiscernable d'un
+    réseau calme. Or c'est le cas NORMAL sur un broker communautaire, dont l'ACL ne laisse lire
+    qu'un préfixe. Constaté le 10/11/2026 sur le broker de La Réunion, qui répond `SUBACK 128`
+    à un abonnement sur `#`."""
+
+    def _code(self, identifiant):
+        from paho.mqtt.packettypes import PacketTypes
+        from paho.mqtt.reasoncodes import ReasonCode
+
+        return ReasonCode(PacketTypes.SUBACK, identifier=identifiant)
+
+    def test_un_abonnement_accorde_ne_signale_rien(self):
+        # 0, 1, 2 sont les QoS accordés, pas des erreurs.
+        for identifiant in (0, 1, 2):
+            self.assertIsNone(bridge.echec_abonnement([self._code(identifiant)]))
+
+    def test_un_refus_est_signale_avec_sa_raison(self):
+        # 128 est ce que renvoie un broker MQTT 3.1.1 qui refuse ; 135 est le « not authorized »
+        # explicite de MQTT 5.
+        self.assertEqual(bridge.echec_abonnement([self._code(128)]), "Unspecified error")
+        self.assertEqual(bridge.echec_abonnement([self._code(135)]), "Not authorized")
+
+    def test_un_refus_parmi_plusieurs_topics_suffit(self):
+        raison = bridge.echec_abonnement([self._code(0), self._code(135)])
+        self.assertEqual(raison, "Not authorized")
+
+    def test_une_liste_vide_ou_absente_ne_signale_rien(self):
+        """Ne jamais fabriquer une erreur faute d'information : un faux « refusé » enverrait
+        chercher un problème d'ACL qui n'existe pas."""
+        self.assertIsNone(bridge.echec_abonnement([]))
+        self.assertIsNone(bridge.echec_abonnement(None))
+
+
 if __name__ == "__main__":
     unittest.main()
