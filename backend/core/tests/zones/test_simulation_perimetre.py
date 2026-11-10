@@ -127,3 +127,84 @@ class TestMotifDuRefus:
 
         assert reponse.status_code == 403
         assert "rattachés à une collectivité" in reponse.data["error"]
+
+
+@pytest.mark.django_db
+class TestDenormalisationDuSecteur:
+    """`Institution.save()` dénormalise epci/département/région depuis la commune.
+
+    Ce test existe parce que ce fichier échouait par intermittence (10/11/2026) : la
+    dénormalisation **écrasait** un `epci_code` fourni explicitement, y compris quand elle
+    n'avait rien à mettre à la place. `commune_secteur_codes` passe par `_resolve_commune`, qui
+    interroge `geo.api.gouv.fr` avec un budget d'appels et une temporisation ; budget épuisé ou
+    service lent, elle rend des codes vides. Le test posait un EPCI, `save()` le jetait, et le
+    périmètre tombait à « aucune » — donc `KeyError: 'champ'`, à des centaines de tests de la
+    cause.
+
+    La perte dépassait le test : une institution dont on connaissait le rattachement le perdait
+    silencieusement au premier enregistrement fait pendant une indisponibilité du service.
+    """
+
+    def _institution_brute(self, **codes):
+        itype, _ = InstitutionType.objects.get_or_create(
+            code="MAIRIE_DENORM", defaults={"libelle": "Mairie"})
+        return Institution(nom="Mairie denormalisation", type=itype, **codes)
+
+    def test_une_resolution_qui_echoue_ne_perd_pas_le_rattachement_connu(self, monkeypatch):
+        # `Institution.save()` importe `commune_secteur_codes` à l'appel, pas au chargement du
+        # module : remplacer l'attribut du module suffit, et c'est ce qui rend ce test possible
+        # sans toucher au réseau.
+        from core import geo_lookup
+
+        # Résolution indisponible : c'est exactement ce que rend `commune_secteur_codes` quand
+        # le budget d'appels est épuisé.
+        monkeypatch.setattr(
+            geo_lookup, "commune_secteur_codes",
+            lambda code: {"epci_code": None, "departement_code": None, "region_code": None},
+        )
+
+        institution = self._institution_brute(
+            commune_code=LE_PORGE, epci_code=EPCI_MEDULLIENNE,
+            departement_code="33", region_code="75",
+        )
+        institution.save()
+        institution.refresh_from_db()
+
+        assert institution.epci_code == EPCI_MEDULLIENNE
+        assert institution.departement_code == "33"
+        assert institution.region_code == "75"
+
+    def test_une_resolution_qui_aboutit_fait_foi(self, monkeypatch):
+        """La commune reste la source de vérité : un code calculé non vide gagne, même contre
+        une valeur posée à la main. Sinon une institution rattachée au mauvais EPCI y resterait."""
+        from core import geo_lookup
+
+        monkeypatch.setattr(
+            geo_lookup, "commune_secteur_codes",
+            lambda code: {"epci_code": EPCI_COBAN, "departement_code": "33",
+                          "region_code": "75"},
+        )
+
+        institution = self._institution_brute(
+            commune_code=LE_PORGE, epci_code=EPCI_MEDULLIENNE,
+        )
+        institution.save()
+        institution.refresh_from_db()
+
+        assert institution.epci_code == EPCI_COBAN
+
+    def test_un_premier_enregistrement_remplit_depuis_la_commune(self, monkeypatch):
+        from core import geo_lookup
+
+        monkeypatch.setattr(
+            geo_lookup, "commune_secteur_codes",
+            lambda code: {"epci_code": EPCI_COBAN, "departement_code": "33",
+                          "region_code": "75"},
+        )
+
+        institution = self._institution_brute(commune_code=LE_PORGE)
+        institution.save()
+        institution.refresh_from_db()
+
+        assert institution.epci_code == EPCI_COBAN
+        assert institution.departement_code == "33"

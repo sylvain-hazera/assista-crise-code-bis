@@ -314,6 +314,22 @@ l'écriture** : sur `Institution` par `save()`, sur `Request`, `Offer` et `Decla
 `commune_code` : les niveaux supérieurs passent par le référentiel `Commune`
 (`object_in_viewer_zone_via_commune`).
 
+**Une résolution qui échoue ne vaut pas une résolution vide** (corrigé le 10/11/2026).
+`Institution.save()` recalcule les trois codes depuis `commune_code` via
+`commune_secteur_codes`, qui passe par `_resolve_commune` — laquelle interroge
+**`geo.api.gouv.fr`** avec un budget d'appels et une temporisation. Budget épuisé ou service
+indisponible, elle rend des codes vides, et les recopier **effaçait un rattachement qu'on
+connaissait**. La règle est donc : le code calculé gagne quand il existe, sinon on garde ce
+qu'on a ; la commune reste la source de vérité, et un code non vide l'emporte toujours, y
+compris sur une valeur posée à la main — sans quoi une institution rattachée au mauvais EPCI y
+resterait.
+
+Le symptôme était un test instable à des centaines de tests de sa cause
+(`test_simulation_perimetre.py` : l'`epci_code` posé par le test était jeté par `save()`, le
+périmètre tombait à « aucune », et l'assertion levait `KeyError: 'champ'`). La perte dépassait
+le test : toute institution enregistrée pendant une indisponibilité du service perdait son
+secteur en silence. Trois tests verrouillent la règle, dont celui qui reproduit la panne.
+
 | Fonction | Usage |
 |---|---|
 | `filter_queryset_to_viewer_zone` | `get_queryset` : réduit à la zone de l'appelant, **vide** si elle est inconnue (jamais tout ouvrir par défaut) ; `resolver` pour une ressource sans code propre (ex. `Team` via son institution) |
@@ -2022,10 +2038,63 @@ une version décodée en clair sur `<racine>/2/json/#`. Deux conséquences :
 C'est un réglage **du nœud**, poussé par la radio — pas un champ de la déclaration d'une
 passerelle, et c'est pourquoi il n'apparaît pas dans ce formulaire.
 
-**Pas couvert** : MeshCore. Son protocole d'administration est peu documenté et l'auteur l'a fait
-marcher par essais — une heure avec lui vaut des jours de reverse engineering. Les seules commandes
-MeshCore disponibles restent `ADVERT` et `FLOOD_ADVERT` (`CommandeMeshCore`), qui ne pilotent pas
-un relais distant mais le companion du pont.
+#### MeshCore : l'administration est à portée, et l'analyse a une référence
+
+Relevé le 10/11/2026, et il corrige ce que ce document disait avant.
+
+**L'administration à distance MeshCore n'est pas un protocole à reverse-engineerer.** La
+bibliothèque `meshcore` que le pont utilise déjà expose 104 méthodes, dont `send_login`,
+`send_cmd`, `send_statusreq`, `req_status`, `req_telemetry`, `req_neighbours`, `req_regions`,
+`req_acl`, `reboot`, `send_advert`, `send_trace`, `send_path_discovery`.
+
+Quatre constats lus dans le firmware (`meshcore-dev/MeshCore`), pas dans de la documentation :
+
+1. **Le firmware interdit lui-même à distance** (garde `sender_timestamp == 0`,
+   `src/helpers/CommonCLI.cpp`) : `erase` (l. 280), **`set freq`** (l. 607, donc le changement de
+   fréquence *permanent*), `set prv.key` (l. 711, « from serial command line only »), et
+   `log`/`stats-*` (l. 472-479). Le scénario qui a dicté toute notre prudence côté Meshtastic —
+   un nœud rendu muet et injoignable — est donc **déjà fermé**.
+2. **`tempradio <freq> <bw> <sf> <cr> <timeout_minutes>`** (l. 252-266) applique des paramètres
+   radio **temporairement**, avec un délai obligatoire, bornes vérifiées par le firmware
+   (freq 150-2500 MHz, bw 7-500 kHz, sf 5-12, cr 5-8). C'est l'essai radio qui se rattrape tout
+   seul, et c'est ce qui manquait sur Meshtastic : toute modification radio doit passer par là
+   d'abord.
+3. **Deux niveaux d'authentification** (`examples/simple_repeater/MyMesh.cpp:92-104`) : mot de
+   passe vide → vérification de l'**ACL** ; sinon comparaison au mot de passe administrateur
+   puis invité. Voir § 9.5.6 pour ce que ça donne côté réclamation.
+4. **La commande `password` réaffiche le nouveau mot de passe dans sa réponse** (l. 272,
+   commentaire du firmware : « echo back just to let admin know for sure!! »). La réponse d'une
+   tâche doit donc être chiffrée au repos, comme `TacheAdminMeshtastic.reponse`.
+
+**À exclure de la liste blanche**, pour les mêmes raisons que `factory_reset` et `set_channel`
+côté Meshtastic : `poweroff`, `shutdown`, `start ota` (un déplacement), `set prv.key` /
+`set public.key` (changent l'identité du nœud), `password` / `set guest.password` (transportent
+un secret et le réaffichent).
+
+**Pour l'analyse : CoreScope** (<https://github.com/Kpa-clawbot/CoreScope>, GPL-3.0, compatible
+avec notre AGPL-3.0 comme `carte-live-meshtastic`). Même décision : on ne le déploie pas, on
+porte ses algorithmes. Ce qu'il a et qu'on ne trouve pas ailleurs : un décodeur de trames
+MeshCore complet (`cmd/ingestor/decoder.go`, 1 237 lignes, avec ses références au firmware), la
+validation de signature Ed25519 des adverts, et surtout le **modèle de confiance des préfixes de
+hash** — un saut de chemin MeshCore est un hash tronqué de clé publique
+(`hash_size = (pathByte>>6)+1`, souvent **1 octet, soit 256 valeurs**), donc les collisions sont
+inévitables au-delà d'une vingtaine de nœuds. C'est l'équivalent MeshCore de notre garde
+`hop_start == hop_limit` : ce qui décide si une liaison affichée est réelle.
+
+Son API de lecture est ouverte (~45 endpoints, la clé ne garde que l'administratif), et
+**`POST /api/decode`** accepte une trame brute : c'est un oracle de référence pour valider le
+portage du décodeur, sans toucher à aucune donnée tierce.
+
+Si un import depuis une instance publique est envisagé : **répéteurs et rooms seulement**. Un
+companion est l'appareil personnel de quelqu'un et sa position est souvent son domicile — c'est
+le même filtrage que la carte applique déjà à `ContactMeshCore`, pour la même raison. La
+convention `🚫` par laquelle un opérateur demande à ne pas être affiché doit être honorée, et
+les données appartiennent à l'exploitant de l'instance, pas à la licence du code.
+
+**Pas encore fait côté Assista-Crise** : le décodage de trames MeshCore, et la file de tâches
+d'administration. Les seules commandes MeshCore disponibles restent `ADVERT` et `FLOOD_ADVERT`
+(`CommandeMeshCore`), qui ne pilotent pas un relais distant mais le companion du pont. La
+réclamation d'un répéteur existe en revanche déjà (§ 9.5.6) et attend sa vérification.
 
 ### 9.5.3 Planification radio sur le relief
 

@@ -1257,10 +1257,27 @@ class Institution(EnvironmentScopedModel):
             from .geo_lookup import commune_from_code, commune_secteur_codes, epci_nom_from_code
             from .geo_reference import DEPARTEMENTS, REGIONS, SECTEUR_NIVEAU_PAR_TYPE_INSTITUTION
 
+            # Les trois codes sont DÉNORMALISÉS depuis la commune (voir
+            # commune_secteur_codes) : la commune fait foi, et on ne rejoint pas `Commune` à
+            # chaque lecture.
+            #
+            # Mais une résolution qui ÉCHOUE ne vaut pas une résolution vide. `_resolve_commune`
+            # interroge geo.api.gouv.fr avec un budget d'appels et une temporisation : quand le
+            # budget est épuisé ou le service indisponible, elle rend des codes vides. Les
+            # recopier tels quels effaçait un rattachement qu'on connaissait — perte silencieuse
+            # d'information, et cause de l'échec intermittent de
+            # test_un_niveau_epci_borne_sur_l_intercommunalite (10/11/2026) : le test posait un
+            # `epci_code`, `save()` le jetait, et le périmètre tombait à « aucune ».
+            #
+            # Donc : la valeur calculée gagne quand elle existe, sinon on garde ce qu'on a. Une
+            # commune française appartient toujours à un EPCI depuis 2017, et un changement
+            # d'EPCI donne un code non vide : le cas « résolu, et réellement sans EPCI » que
+            # cette règle ne distingue pas n'existe pas en pratique.
             secteur = commune_secteur_codes(self.commune_code)
-            self.epci_code = secteur.get("epci_code")
-            self.departement_code = secteur.get("departement_code")
-            self.region_code = secteur.get("region_code")
+            for champ in ("epci_code", "departement_code", "region_code"):
+                calcule = secteur.get(champ)
+                if calcule or not getattr(self, champ, None):
+                    setattr(self, champ, calcule)
 
             type_code = (self.type.code or "").upper() if self.type_id else ""
             niveau = self.secteur_override or SECTEUR_NIVEAU_PAR_TYPE_INSTITUTION.get(type_code, "commune")
