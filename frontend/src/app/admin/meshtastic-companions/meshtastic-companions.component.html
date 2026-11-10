@@ -289,6 +289,18 @@
   }
 </p>
 
+<p class="page-hint">
+  <strong>Responsable</strong> dit qui répond de ce nœud, et c'est ce qui donne le droit de le
+  <em>régler</em>. Un répéteur n'est le nœud personnel de personne : sans rattachement, seul un
+  administrateur de la plateforme peut y écrire. Rattacher ne suffit pas à pouvoir le
+  reconfigurer — le firmware exige en plus que la clé publique de la passerelle figure dans son
+  <code>security.admin_key</code>, ce qui suppose de l'avoir eu en main.
+</p>
+
+@if (rattachementErreur) {
+  <div class="error-message" role="alert">{{ rattachementErreur }}</div>
+}
+
 <div class="barre-recherche">
   <input type="search" class="form-input" placeholder="Rechercher un nœud détecté…"
          aria-label="Rechercher un nœud détecté" [(ngModel)]="triContacts.recherche">
@@ -317,6 +329,7 @@
         <th appThTri [table]="triContacts" cle="joindre" libelle="Pour le joindre"></th>
         <th appThTri [table]="triContacts" cle="contact" libelle="Dernier contact"></th>
         <th appThTri [table]="triContacts" cle="attribue" libelle="Attribué"></th>
+        <th appThTri [table]="triContacts" cle="responsable" libelle="Responsable"></th>
         <th></th>
       </tr>
       <tr class="ligne-filtres">
@@ -329,6 +342,7 @@
         <th appThFiltre [table]="triContacts" cle="joindre" libelle="le companion"></th>
         <th appThFiltre [table]="triContacts" cle="contact" libelle="le dernier contact"></th>
         <th appThFiltre [table]="triContacts" cle="attribue" libelle="l\'attribution"></th>
+        <th appThFiltre [table]="triContacts" cle="responsable" libelle="le responsable"></th>
         <th></th>
       </tr>
     </thead>
@@ -394,6 +408,27 @@
           </td>
           <td>{{ c.dernier_advert ? (c.dernier_advert | date:'short') : '—' }}</td>
           <td>{{ c.deja_associe ? 'Oui' : 'Non' }}</td>
+          <!-- Qui repond de ce noeud. Un repeteur n'est le noeud personnel de personne : sans
+               rattachement, seul un administrateur de la plateforme peut le regler. -->
+          <td>
+            @if (responsable(c.node_num); as resp) {
+              <span class="statut statut-ok">{{ resp }}</span>
+              <button type="button" class="lien-discret" (click)="detacher(c.node_num)"
+                      title="Retirer ce rattachement">détacher</button>
+            } @else {
+              <input type="text" class="libelle-rattachement"
+                     [(ngModel)]="libellesParContact[c.id]"
+                     [name]="'libelle-' + c.id"
+                     placeholder="ex. répéteur du château d'eau"
+                     aria-label="Libellé du nœud à rattacher">
+              <button type="button" class="lien-discret" (click)="rattacher(c)"
+                      [title]="monInstitutionId
+                               ? 'Déclarer que votre institution répond de ce nœud'
+                               : 'Déclarer que vous répondez de ce nœud'">
+                rattacher
+              </button>
+            }
+          </td>
           <td>
             @if (!c.deja_associe) {
               <select [(ngModel)]="attributionsParContact[c.id]" aria-label="Attribuer ce nœud à un utilisateur">

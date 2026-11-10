@@ -234,3 +234,30 @@
     }
   }
 }
+
+// Rattachement d'un repeteur, dans la colonne « Responsable » : une action de tableau, pas un
+// formulaire -- elle doit tenir sur une ligne de cellule sans l'elargir.
+.libelle-rattachement {
+  width: 100%;
+  min-width: 140px;
+  padding: 4px 6px;
+  font: inherit;
+  font-size: .85rem;
+  border: 1px solid var(--ac-border, #d1d5db);
+  border-radius: 4px;
+  background: var(--ac-surface, #fff);
+  color: var(--ac-text, #111827);
+}
+
+.lien-discret {
+  padding: 2px 4px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: .85rem;
+  text-decoration: underline;
+  color: var(--brand-primary-lisible, var(--brand-primary));
+
+  &:hover { text-decoration: none; }
+}

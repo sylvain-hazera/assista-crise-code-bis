@@ -6876,6 +6876,87 @@ class NiveauAccesRadio(models.TextChoices):
     ADMINISTRATEUR = "ADMINISTRATEUR", "Administration radio complète"
 
 
+class RattachementNoeudRadio(EnvironmentScopedModel):
+    """« Ce nœud est à nous » — pour le matériel que personne ne porte.
+
+    Comble le trou laissé par la règle du 10/11/2026 (le droit d'écrire suit la propriété) : un
+    répéteur sur un château d'eau n'est le nœud personnel de personne, donc il n'était réglable
+    que par un administrateur de la plateforme. Il fallait pouvoir le rattacher à une
+    institution ou à un compte.
+
+    **Pourquoi un modèle de plus, et pas un champ sur `NoeudUtilisateurMeshtastic` :** celui-là
+    répond à une autre question. Il dit « ce nœud EST cette personne », et c'est de lui que le
+    pont tire l'expéditeur d'un message reçu. Y rendre `utilisateur` facultatif pour y loger un
+    répéteur aurait fait porter deux sens au même champ, et cassé la résolution d'expéditeur.
+    Ici on ne dit pas qui est le nœud, on dit **qui en répond**.
+
+    Les deux cibles sont facultatives mais il en faut au moins une (contrainte en base) : un
+    rattachement qui ne rattache à rien ne protège ni n'autorise personne, il ne ferait que
+    bloquer le `node_num` pour les autres.
+
+    **Ce qu'un rattachement ne donne PAS.** Il ouvre le droit dans *notre* API ; le firmware,
+    lui, continue d'exiger que la clé publique de la passerelle figure dans `security.admin_key`
+    du nœud visé — ce qui suppose de l'avoir eu en main. Un rattachement abusif ne permet donc
+    pas de reconfigurer le matériel d'autrui ; il permet d'essayer, et l'appareil refuse. C'est
+    ce qui autorise à laisser un exploitant rattacher lui-même son matériel au lieu de réserver
+    le geste à un administrateur, qui ne saurait pas de toute façon à qui appartient quoi.
+
+    Meshtastic seulement : MeshCore n'a pas encore d'administration à distance, et ses répéteurs
+    déclarés portent déjà une institution (`RelaisMeshCore.institution`)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    node_num = models.PositiveBigIntegerField(
+        unique=True,
+        help_text="Nœud visé. Unique : deux responsables pour un même appareil ne veut rien "
+                  "dire, et c'est ce qui rend les conflits visibles plutôt que silencieux.",
+    )
+
+    institution = models.ForeignKey(
+        "Institution", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="noeuds_radio_rattaches",
+    )
+    utilisateur = models.ForeignKey(
+        "User", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="noeuds_radio_rattaches",
+        help_text="Pour un répéteur qui appartient à une personne (un radioamateur qui en a "
+                  "posé un chez lui) et non à une collectivité.",
+    )
+
+    libelle = models.CharField(
+        max_length=100, blank=True,
+        help_text="Comment on l'appelle sur le terrain, ex. « répéteur du château d'eau » — "
+                  "le nom annoncé par le firmware ne dit pas toujours où il est.",
+    )
+    note = models.TextField(blank=True)
+
+    rattache_par = models.ForeignKey(
+        "User", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="rattachements_noeuds_radio_poses",
+        help_text="Qui l'a rattaché — un rattachement ouvre un droit d'écriture, il doit être "
+                  "imputable.",
+    )
+    date_rattachement = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(institution__isnull=False) | models.Q(utilisateur__isnull=False),
+                name="ck_rattachement_noeud_radio_une_cible",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["institution"]),
+            models.Index(fields=["utilisateur"]),
+        ]
+
+    def __str__(self):
+        cible = self.institution.nom if self.institution_id else (
+            self.utilisateur.email if self.utilisateur_id else "?"
+        )
+        return f"{self.libelle or format(self.node_num, '08x')} — {cible}"
+
+
 class StatutDemandeAccesRadio(models.TextChoices):
     EN_ATTENTE = "EN_ATTENTE", "En attente d'instruction"
     ACCORDEE = "ACCORDEE", "Accordée"

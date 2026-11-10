@@ -4,6 +4,7 @@ from rest_framework_simplejwt.views import TokenBlacklistView
 from .grafana import GrafanaTokenView
 from .views import (
     DemandeAccesRadioViewSet,
+    RattachementNoeudRadioViewSet,
     CandidatureAssociationViewSet,
     InvitationAssociationViewSet,
     QualificationMembreViewSet,
@@ -161,6 +162,8 @@ router.register(r'calibrations-radio', CalibrationRadioViewSet)
 # Droit d'acces au domaine radio : demande, instruction, et « ou j'en suis »
 # (core/acces_radio.py).
 router.register(r'demandes-acces-radio', DemandeAccesRadioViewSet)
+# « Ce noeud est a nous » : rattachement d'un repeteur a une institution ou a un compte.
+router.register(r'rattachements-noeuds-radio', RattachementNoeudRadioViewSet)
 
 
 router.register(

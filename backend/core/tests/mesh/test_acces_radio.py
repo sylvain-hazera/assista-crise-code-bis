@@ -663,3 +663,150 @@ class TestChampServiAuMenu:
         autres = [l for l in lignes if l["email"] != "admin-profil-radio@x.fr"]
         assert autres, "la liste doit contenir au moins un autre compte"
         assert all(l["acces_radio"] is None for l in autres)
+
+
+@pytest.mark.django_db
+class TestRattachementDesRepeteurs:
+    """« Il faut pouvoir les rattacher à un compte ou une institution » (10/11/2026).
+
+    Avant cette table, un répéteur sur un point haut n'était le nœud personnel de personne,
+    donc seul un administrateur de la plateforme pouvait le régler — alors que c'est la commune
+    qui est allée l'installer."""
+
+    URL = "/api/rattachements-noeuds-radio/"
+
+    def test_un_repeteur_rattache_a_l_institution_devient_reglable_par_elle(self, create_user,
+                                                                            institution):
+        from core.models import RattachementNoeudRadio
+
+        agent = _utilisateur(create_user, "agent-repeteur@x.fr", "SECOURS", institution)
+        NoeudUtilisateurMeshtastic.objects.create(utilisateur=agent, node_num=0xF100)
+        assert peut_administrer_noeud(agent, 0xF200) is False
+
+        RattachementNoeudRadio.objects.create(
+            node_num=0xF200, institution=institution, libelle="Repeteur du chateau d'eau",
+        )
+        assert peut_administrer_noeud(agent, 0xF200) is True
+
+    def test_un_rattachement_au_compte_suffit_sans_institution(self, create_user):
+        """Le radioamateur qui a posé un répéteur chez lui n'a pas d'institution."""
+        from core.models import RattachementNoeudRadio
+
+        particulier = _utilisateur(create_user, "radioamateur@x.fr")
+        assert niveau_acces_radio(particulier) == NiveauAccesRadio.AUCUN
+
+        RattachementNoeudRadio.objects.create(
+            node_num=0xF201, utilisateur=particulier, libelle="Repeteur du toit",
+        )
+        assert niveau_acces_radio(particulier) == NiveauAccesRadio.OPERATEUR
+        assert peut_administrer_noeud(particulier, 0xF201) is True
+
+    def test_le_rattachement_d_une_autre_institution_n_ouvre_rien(self, create_user, institution,
+                                                                  autre_institution):
+        from core.models import RattachementNoeudRadio
+
+        agent = _utilisateur(create_user, "agent-voisin-repeteur@x.fr", "SECOURS", autre_institution)
+        NoeudUtilisateurMeshtastic.objects.create(utilisateur=agent, node_num=0xF101)
+        RattachementNoeudRadio.objects.create(node_num=0xF202, institution=institution)
+        assert peut_administrer_noeud(agent, 0xF202) is False
+
+    def test_on_ne_rattache_qu_a_soi_ou_a_son_institution(self, create_user, institution,
+                                                          autre_institution):
+        """Rattacher un nœud à autrui lui donnerait un droit d'écriture dessus."""
+        agent = _utilisateur(create_user, "agent-rattache@x.fr", "SECOURS", institution)
+        client = _client(agent)
+
+        reponse = client.post(self.URL, {
+            "node_num": 0xF203, "institution": str(autre_institution.id),
+        }, format="json")
+        assert reponse.status_code == 403
+
+        reponse = client.post(self.URL, {
+            "node_num": 0xF203, "institution": str(institution.id), "libelle": "Le notre",
+        }, format="json")
+        assert reponse.status_code == 201, reponse.data
+
+    def test_un_noeud_deja_rattache_ne_se_vole_pas(self, create_user, institution,
+                                                   autre_institution):
+        """L'unicité rend le conflit visible et arbitrable, au lieu de le régler au dernier
+        arrivé."""
+        from core.models import RattachementNoeudRadio
+
+        RattachementNoeudRadio.objects.create(node_num=0xF204, institution=institution)
+        agent = _utilisateur(create_user, "agent-voleur@x.fr", "SECOURS", autre_institution)
+        NoeudUtilisateurMeshtastic.objects.create(utilisateur=agent, node_num=0xF102)
+
+        reponse = _client(agent).post(self.URL, {
+            "node_num": 0xF204, "institution": str(autre_institution.id),
+        }, format="json")
+        assert reponse.status_code == 400
+
+    def test_on_ne_detache_pas_le_noeud_d_un_autre(self, create_user, institution,
+                                                   autre_institution):
+        """Sinon l'unicité ne protège plus rien : on libère, puis on s'attribue."""
+        from core.models import RattachementNoeudRadio
+
+        rattachement = RattachementNoeudRadio.objects.create(
+            node_num=0xF205, institution=institution,
+        )
+        agent = _utilisateur(create_user, "agent-detacheur@x.fr", "SECOURS", autre_institution)
+        NoeudUtilisateurMeshtastic.objects.create(utilisateur=agent, node_num=0xF103)
+
+        reponse = _client(agent).delete(f"{self.URL}{rattachement.id}/")
+        assert reponse.status_code == 403
+        assert RattachementNoeudRadio.objects.filter(id=rattachement.id).exists()
+
+    def test_une_institution_corrige_son_propre_rattachement(self, create_user, institution):
+        from core.models import RattachementNoeudRadio
+
+        rattachement = RattachementNoeudRadio.objects.create(
+            node_num=0xF206, institution=institution,
+        )
+        agent = _utilisateur(create_user, "agent-correcteur@x.fr", "SECOURS", institution)
+
+        reponse = _client(agent).delete(f"{self.URL}{rattachement.id}/")
+        assert reponse.status_code == 204
+        assert not RattachementNoeudRadio.objects.filter(id=rattachement.id).exists()
+
+    def test_un_rattachement_sans_cible_est_refuse(self, create_user, institution):
+        agent = _utilisateur(create_user, "agent-sans-cible@x.fr", "SECOURS", institution)
+        reponse = _client(agent).post(self.URL, {"node_num": 0xF207}, format="json")
+        assert reponse.status_code == 400
+
+    def test_deux_cibles_a_la_fois_sont_refusees(self, create_user, institution):
+        """« Qui en répond ? » doit avoir UNE réponse."""
+        agent = _utilisateur(create_user, "agent-deux-cibles@x.fr", "SECOURS", institution)
+        reponse = _client(agent).post(self.URL, {
+            "node_num": 0xF208, "institution": str(institution.id), "utilisateur": str(agent.id),
+        }, format="json")
+        assert reponse.status_code == 400
+
+    def test_un_administrateur_rattache_pour_le_compte_d_autrui(self, create_user, institution):
+        """Le recours : une commune qui ne peut pas le faire elle-même."""
+        admin = _utilisateur(create_user, "admin-rattachement@x.fr", "ADMIN")
+        reponse = _client(admin).post(self.URL, {
+            "node_num": 0xF209, "institution": str(institution.id), "libelle": "Pose par l'admin",
+        }, format="json")
+        assert reponse.status_code == 201
+
+    def test_le_responsable_est_servi_en_un_seul_libelle(self, create_user, institution):
+        """L'interface n'a pas à savoir laquelle des deux cibles est renseignée."""
+        from core.models import RattachementNoeudRadio
+
+        RattachementNoeudRadio.objects.create(
+            node_num=0xF20A, institution=institution, libelle="Pylone",
+        )
+        agent = _utilisateur(create_user, "agent-lecture-rattachement@x.fr", "SECOURS", institution)
+        reponse = _client(agent).get(self.URL)
+        assert reponse.status_code == 200
+        assert reponse.data[0]["responsable"] == institution.nom
+
+    def test_un_compte_sans_acces_radio_ne_rattache_rien(self, create_user):
+        citoyen = _utilisateur(create_user, "citoyen-rattachement@x.fr")
+        reponse = _client(citoyen).post(self.URL, {
+            "node_num": 0xF20B, "utilisateur": str(citoyen.id),
+        }, format="json")
+        # Poule et oeuf assumé : sans aucun matériel, on n'a pas accès au domaine radio, donc
+        # pas même de quoi s'y rattacher un premier nœud. C'est la page /admin/radio qui sert
+        # de porte d'entrée (un administrateur rattache, ou accorde le droit).
+        assert reponse.status_code == 403

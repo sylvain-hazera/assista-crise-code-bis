@@ -33,6 +33,7 @@ import time
 
 import httpx
 import paho.mqtt.client as mqtt
+from google.protobuf.message import DecodeError
 from meshtastic.protobuf import mesh_pb2, mqtt_pb2, portnums_pb2
 
 import admin_meshtastic
@@ -412,7 +413,11 @@ class TamponLiaisons:
         return liaisons
 
 
-async def boucle_flush_liaisons(django, compagnon_id, tampon):
+async def boucle_flush_liaisons(django, compagnon_id, tampon, nom_compagnon="?"):
+    """Le NOM du companion est journalisé, pas seulement son identifiant : avec plusieurs
+    brokers (métropole et La Réunion), « qui produit quoi » n'était pas lisible dans les
+    journaux, et il fallait recouper des UUID à la main pour répondre à « est-ce que je vois
+    passer des nœuds sur ce broker-là ? ». Demandé le 10/11/2026."""
     while True:
         await asyncio.sleep(LIAISONS_FLUSH_INTERVAL_SECONDS)
         liaisons = tampon.extraire()
@@ -420,9 +425,9 @@ async def boucle_flush_liaisons(django, compagnon_id, tampon):
             continue
         try:
             await django.rapporter_liaisons(compagnon_id, liaisons)
-            logger.info("Liaisons radio rapportées : %d.", len(liaisons))
+            logger.info("[%s] Liaisons radio rapportées : %d.", nom_compagnon, len(liaisons))
         except Exception:
-            logger.exception("Échec du rapport de liaisons radio.")
+            logger.exception("Échec du rapport de liaisons radio (%s).", nom_compagnon)
 
 
 def _node_num_depuis_gateway_id(gateway_id):
@@ -450,12 +455,22 @@ def _observer_liaison_rf(tampon, enveloppe, paquet, node_num):
     conclure — on s'abstient.
 
     Enregistré même quand on ne sait pas déchiffrer le paquet : l'enveloppe suffit à savoir qui a
-    émis et qui a entendu. C'est précieux, ça cartographie aussi les canaux dont on n'a pas la clé."""
+    émis et qui a entendu. C'est précieux, ça cartographie aussi les canaux dont on n'a pas la clé.
+
+    **Ne jamais appeler `HasField` sur `hop_start`.** C'est un scalaire proto3 sans présence
+    (vérifié sur la lib déployée : `MeshPacket.DESCRIPTOR.fields_by_name['hop_start']
+    .has_presence is False`), donc `HasField` lève `ValueError` -- et comme cette fonction est
+    appelée en TÊTE de `on_message`, l'exception faisait abandonner le paquet ENTIER : ni
+    message, ni position, ni contact, ni liaison. Observé en production le 10/11/2026, 1 201
+    fois. Seuls les paquets dont la passerelle est l'émetteur lui-même y échappaient, parce
+    qu'ils sortent à la garde précédente -- ce qui explique que le pont paraissait fonctionner.
+    Le défaut absent valait déjà 0 : la valeur par défaut d'un scalaire proto3 dit exactement
+    « firmware qui ne renseigne pas ce champ », qui est le cas qu'on voulait détecter."""
     passerelle = _node_num_depuis_gateway_id(enveloppe.gateway_id)
     if passerelle is None or passerelle == node_num:
         return
-    if not paquet.HasField("hop_start") or paquet.hop_start == 0:
-        return
+    if not paquet.hop_start:
+        return      # firmware ancien : on ne peut pas savoir si la réception est directe
     if paquet.hop_start != paquet.hop_limit:
         return      # paquet relayé : le SNR est celui du dernier saut, pas de l'émetteur
     snr = paquet.rx_snr if paquet.rx_snr else None
@@ -494,17 +509,24 @@ class TamponContacts:
         return contacts
 
 
-async def boucle_flush_contacts(django, compagnon_id, tampon):
+async def boucle_flush_contacts(django, compagnon_id, tampon, nom_compagnon="?"):
+    """Voir boucle_flush_liaisons pour le nom. Le décompte des nœuds POSITIONNÉS est séparé
+    parce que c'est une question distincte et souvent posée : un nœud peut être vu sans jamais
+    annoncer sa position (NodeInfo sans Position), et il ne sera alors sur aucune carte."""
     while True:
         await asyncio.sleep(CONTACTS_FLUSH_INTERVAL_SECONDS)
         contacts = tampon.extraire()
         if not contacts:
             continue
+        positionnes = sum(1 for c in contacts if c.get("latitude") is not None)
         try:
             await django.synchroniser_contacts(compagnon_id, contacts)
-            logger.info("Contacts Meshtastic synchronisés : %d.", len(contacts))
+            logger.info(
+                "[%s] Contacts Meshtastic synchronisés : %d, dont %d positionné(s).",
+                nom_compagnon, len(contacts), positionnes,
+            )
         except Exception:
-            logger.exception("Échec de synchronisation des contacts.")
+            logger.exception("Échec de synchronisation des contacts (%s).", nom_compagnon)
 
 
 def _traiter_paquet_dechiffre(payload, node_num, to_node, canal_id, canal_nom, tampon, tampon_liaisons, django, compagnon_id, boucle):
@@ -516,10 +538,23 @@ def _traiter_paquet_dechiffre(payload, node_num, to_node, canal_id, canal_nom, t
     if data.portnum == portnums_pb2.PortNum.TEXT_MESSAGE_APP:
         contenu = data.payload.decode("utf-8", errors="replace")
         if to_node == compagnon_id["node_num"]:
-            logger.info("DM Meshtastic reçu de %08x : %s", node_num, contenu)
+            logger.info("[%s] DM Meshtastic reçu de %08x : %s",
+                        compagnon_id.get("nom", "?"), node_num, contenu)
             return django.logger_dm_entrant(compagnon_id["id"], canal_id, node_num, contenu)
         if to_node == BROADCAST_NUM:
-            logger.info("Message de canal '%s' reçu de %08x : %s", canal_nom, node_num, contenu)
+            if canal_id is None:
+                # Paquet arrivé EN CLAIR sur un canal qu'on ne connaît pas : il est lisible,
+                # mais il n'appartient à aucun canal de chez nous. Le journaliser revenait à
+                # POSTer `canal: null`, que l'API refuse -- 14 erreurs 400 avec trace en
+                # production le 10/11/2026. La branche chiffrée avait déjà cette garde
+                # (« canal qu'on ne connaît pas : rien à faire pour nous »), la branche en clair
+                # ne l'avait pas.
+                logger.debug(
+                    "Message de canal '%s' ignoré : canal inconnu de ce companion.", canal_nom,
+                )
+                return None
+            logger.info("[%s] Message de canal '%s' reçu de %08x : %s",
+                        compagnon_id.get("nom", "?"), canal_nom, node_num, contenu)
             return django.logger_canal_entrant(canal_id, node_num, contenu)
         # Adressé à un AUTRE nœud que nous, sur un canal dont on a la clé : on peut le
         # déchiffrer mais ce n'est pas notre conversation — on ne le journalise pas (on
@@ -567,8 +602,17 @@ def demarrer_mqtt(compagnon, registre, tampon, tampon_liaisons, django, boucle, 
 
     def on_connect(client, userdata, flags, reason_code, properties=None):
         if reason_code == 0:
-            logger.info("Connecté au broker MQTT %s:%s.", compagnon["broker_host"], compagnon["broker_port"])
-            client.subscribe(f"{compagnon['topic_racine']}/2/e/#")
+            # Le topic est journalisé parce que c'est la SEULE chose qui permette de vérifier un
+            # paramétrage de passerelle sans lire la base : une racine de topic fausse donne une
+            # connexion parfaitement réussie et zéro paquet, ce qui est indiscernable d'un réseau
+            # calme. Demandé le 10/11/2026 (« est-ce que je suis bien paramétré ? »).
+            topic = f"{compagnon['topic_racine']}/2/e/#"
+            logger.info(
+                "Connecté au broker MQTT %s:%s pour '%s' — abonnement à %s.",
+                compagnon["broker_host"], compagnon["broker_port"], compagnon.get("nom", "?"),
+                topic,
+            )
+            client.subscribe(topic)
             boucle.call_soon_threadsafe(
                 file_a_planifier.put_nowait, django.rapporter_etat(compagnon["id"], "CONNECTE"),
             )
@@ -623,10 +667,17 @@ def demarrer_mqtt(compagnon, registre, tampon, tampon_liaisons, django, boucle, 
                 return  # Canal qu'on ne connaît pas (pas la clé) : rien à faire pour nous.
 
             coro = _traiter_paquet_dechiffre(
-                payload, node_num, to_node, canal_id, canal_nom, tampon, tampon_liaisons, django, {"id": compagnon["id"], "node_num": compagnon["node_num"]}, boucle,
+                payload, node_num, to_node, canal_id, canal_nom, tampon, tampon_liaisons, django,
+                {"id": compagnon["id"], "node_num": compagnon["node_num"], "nom": compagnon.get("nom", "?")}, boucle,
             )
             if coro is not None:
                 boucle.call_soon_threadsafe(file_a_planifier.put_nowait, coro)
+        except DecodeError:
+            # Déchiffré avec NOTRE PSK, mais le résultat n'est pas un `Data` : quelqu'un
+            # d'autre utilise le même NOM de canal avec une autre clé. C'est du bruit normal
+            # sur un broker partagé (149 fois en production le 10/11/2026), pas une erreur de
+            # chez nous -- et une trace complète par paquet enterrait les vraies erreurs.
+            logger.debug("Paquet indéchiffrable sur le canal '%s' (autre clé).", canal_nom)
         except Exception:
             logger.exception("Échec de traitement d'un message MQTT entrant.")
 
@@ -1120,8 +1171,8 @@ async def _executer_compagnon_mqtt(django, compagnon):
         await asyncio.gather(
             boucle_execution_planifiee(file_a_planifier),
             boucle_rafraichissement_canaux(django, registre, compagnon["id"]),
-            boucle_flush_contacts(django, compagnon["id"], tampon),
-            boucle_flush_liaisons(django, compagnon["id"], tampon_liaisons),
+            boucle_flush_contacts(django, compagnon["id"], tampon, compagnon.get("nom", "?")),
+            boucle_flush_liaisons(django, compagnon["id"], tampon_liaisons, compagnon.get("nom", "?")),
             boucle_envoi_dm(mqtt_client, compagnon, registre, django, cle_privee_hex),
             boucle_envoi_canaux(mqtt_client, compagnon, registre, django),
             boucle_annonce_position(mqtt_client, compagnon, registre),

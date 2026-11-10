@@ -66,7 +66,8 @@ describe('MeshtasticCompanionsComponent', () => {
 
   afterEach(() => http.verify());
 
-  function demarrer(contacts: any[] = CONTACTS, routage: RoutageMeshtastic = ROUTAGE) {
+  function demarrer(contacts: any[] = CONTACTS, routage: RoutageMeshtastic = ROUTAGE,
+                    rattachements: any[] = []) {
     const fixture = TestBed.createComponent(MeshtasticCompanionsComponent);
     fixture.detectChanges();
     http.expectOne(`${API}/compagnons-meshtastic/`).flush([]);
@@ -74,10 +75,87 @@ describe('MeshtasticCompanionsComponent', () => {
     http.expectOne(`${API}/noeuds-meshtastic/`).flush([]);
     http.expectOne(`${API}/contacts-meshtastic/`).flush(contacts);
     http.expectOne(`${API}/contacts-meshtastic/routage/`).flush(routage);
+    http.expectOne(`${API}/rattachements-noeuds-radio/`).flush(rattachements);
     http.expectOne(r => r.url === `${API}/users/`).flush([]);
     fixture.detectChanges();
     return fixture;
   }
+
+  describe('rattachement des répéteurs', () => {
+    const RATTACHEMENT = {
+      id: 'r1', node_num: 0x3333, institution: 'i1', institution_nom: 'Mairie',
+      utilisateur: null, responsable: 'Mairie de Saint-Pierre', libelle: 'Château d\'eau',
+      note: '',
+    };
+
+    it('affiche qui répond du nœud, et propose de rattacher les autres', () => {
+      const fixture = demarrer(CONTACTS, ROUTAGE, [RATTACHEMENT]);
+      const texte = fixture.nativeElement.textContent as string;
+
+      expect(fixture.componentInstance.responsable(0x3333)).toBe('Mairie de Saint-Pierre');
+      expect(texte).toContain('Mairie de Saint-Pierre');
+      // Les nœuds sans responsable gardent le bouton : c'est la seule façon d'en désigner un.
+      expect(fixture.componentInstance.responsable(0x1111)).toBeNull();
+      expect(texte).toContain('rattacher');
+    });
+
+    it('rattache à l\'institution du compte quand il en a une, et relit ensuite', () => {
+      const fixture = demarrer();
+      // `institution_id` est servi par le profil : le composant ne le devine pas.
+      localStorage.setItem('current_user', JSON.stringify({ id: 'u1', institution_id: 'i1' }));
+
+      fixture.componentInstance.libellesParContact['a'] = 'Répéteur du pylône';
+      fixture.componentInstance.rattacher(CONTACTS[0] as any);
+
+      const envoi = http.expectOne(`${API}/rattachements-noeuds-radio/`);
+      expect(envoi.request.method).toBe('POST');
+      expect(envoi.request.body).toEqual({
+        node_num: 0x1111, institution: 'i1', utilisateur: null, libelle: 'Répéteur du pylône',
+      });
+      envoi.flush({});
+
+      // Relecture : le serveur seul sait ce qu'il a enregistré, et si un conflit d'unicité a
+      // été arbitré entre-temps.
+      http.expectOne(`${API}/rattachements-noeuds-radio/`).flush([RATTACHEMENT]);
+      localStorage.removeItem('current_user');
+    });
+
+    it('rattache au compte lui-même quand il n\'a pas d\'institution', () => {
+      const fixture = demarrer();
+      localStorage.setItem('current_user', JSON.stringify({ id: 'u1' }));
+
+      fixture.componentInstance.rattacher(CONTACTS[0] as any);
+      const envoi = http.expectOne(`${API}/rattachements-noeuds-radio/`);
+      expect(envoi.request.body.institution).toBeNull();
+      expect(envoi.request.body.utilisateur).toBe('u1');
+      envoi.flush({});
+      http.expectOne(`${API}/rattachements-noeuds-radio/`).flush([]);
+      localStorage.removeItem('current_user');
+    });
+
+    it('affiche la raison du serveur quand le nœud est déjà rattaché', () => {
+      const fixture = demarrer();
+      localStorage.setItem('current_user', JSON.stringify({ id: 'u1', institution_id: 'i1' }));
+
+      fixture.componentInstance.rattacher(CONTACTS[0] as any);
+      http.expectOne(`${API}/rattachements-noeuds-radio/`).flush(
+        { node_num: ['Ce champ doit être unique.'] },
+        { status: 400, statusText: 'Bad Request' },
+      );
+      expect(fixture.componentInstance.rattachementErreur).toContain('unique');
+      localStorage.removeItem('current_user');
+    });
+
+    it('une colonne de plus reste triable et filtrable, comme toutes les autres', () => {
+      // Exigence posée pour cette page : tri ET filtrage sur toutes les colonnes.
+      const fixture = demarrer(CONTACTS, ROUTAGE, [RATTACHEMENT]);
+      const tri = fixture.componentInstance.triContacts;
+      tri.basculer('responsable');
+      expect(tri.cle).toBe('responsable');
+      tri.filtres['responsable'] = 'saint-pierre';
+      expect(fixture.componentInstance.contactsAffiches.map(c => c.node_num)).toEqual([0x3333]);
+    });
+  });
 
   function lignes(fixture: any, table = 2): HTMLElement[] {
     // Les tableaux de la page dans l'ordre : companions, canaux, nœuds détectés, nœuds attribués.
@@ -187,6 +265,7 @@ describe('MeshtasticCompanionsComponent', () => {
     http.expectOne(`${API}/contacts-meshtastic/`).flush(CONTACTS);
     http.expectOne(`${API}/contacts-meshtastic/routage/`)
       .flush({ detail: 'boum' }, { status: 500, statusText: 'Server Error' });
+    http.expectOne(`${API}/rattachements-noeuds-radio/`).flush([]);
     http.expectOne(r => r.url === `${API}/users/`).flush([]);
     fixture.detectChanges();
     expect(fixture.componentInstance.routageErreur).toBeTruthy();

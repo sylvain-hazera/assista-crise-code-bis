@@ -24,6 +24,7 @@ from .crypto_fields import blind_index
 from .models import (
     CandidatureAssociation,
     DemandeAccesRadio,
+    RattachementNoeudRadio,
     NiveauAccesRadio,
     StatutDemandeAccesRadio,
     HabilitationRegistreVulnerables,
@@ -4432,5 +4433,57 @@ class DemandeAccesRadioSerializer(serializers.ModelSerializer):
         ).exists():
             raise serializers.ValidationError(
                 "Vous avez déjà une demande en attente d'instruction."
+            )
+        return attrs
+
+
+class RattachementNoeudRadioSerializer(serializers.ModelSerializer):
+    """« Ce nœud est à nous » — qui répond d'un répéteur que personne ne porte.
+
+    `rattache_par` et `environment` sont posés par la vue. Les cibles (`institution`,
+    `utilisateur`) sont écrites par le client mais **vérifiées par la vue** : un rattachement
+    ouvre un droit d'écriture, on ne rattache donc qu'à soi ou à une de ses institutions (voir
+    RattachementNoeudRadioViewSet)."""
+
+    institution_nom = serializers.CharField(source="institution.nom", read_only=True)
+    utilisateur_nom = serializers.SerializerMethodField()
+    responsable = serializers.SerializerMethodField()
+
+    class Meta:
+        model = RattachementNoeudRadio
+        fields = ['id', 'node_num', 'institution', 'institution_nom',
+                  'utilisateur', 'utilisateur_nom', 'responsable',
+                  'libelle', 'note', 'rattache_par', 'date_rattachement']
+        read_only_fields = ['rattache_par', 'date_rattachement']
+
+    def get_utilisateur_nom(self, obj):
+        if not obj.utilisateur_id:
+            return None
+        return nom_affichable(obj.utilisateur, self.context.get('request')) or obj.utilisateur.email
+
+    def get_responsable(self, obj):
+        """Un seul libellé pour l'affichage : l'interface n'a pas à savoir laquelle des deux
+        cibles est renseignée pour écrire « responsable : X »."""
+        if obj.institution_id:
+            return obj.institution.nom
+        return self.get_utilisateur_nom(obj)
+
+    def validate_node_num(self, valeur):
+        if valeur is None or valeur <= 0:
+            raise serializers.ValidationError("node_num attendu : un entier positif.")
+        return valeur
+
+    def validate(self, attrs):
+        institution = attrs.get('institution', getattr(self.instance, 'institution', None))
+        utilisateur = attrs.get('utilisateur', getattr(self.instance, 'utilisateur', None))
+        if institution is None and utilisateur is None:
+            raise serializers.ValidationError(
+                "Rattachez ce nœud à une institution ou à un compte : un rattachement qui ne "
+                "rattache à rien n'autorise personne et bloque le nœud pour les autres."
+            )
+        if institution is not None and utilisateur is not None:
+            # Refusé plutôt qu'arbitré en silence : « qui en répond ? » doit avoir UNE réponse.
+            raise serializers.ValidationError(
+                "Une seule cible : une institution, ou un compte."
             )
         return attrs

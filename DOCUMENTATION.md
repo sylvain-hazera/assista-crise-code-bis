@@ -225,6 +225,7 @@ docker compose down -v                                 # arrêt + SUPPRESSION de
 | `inondation.py`, `ruissellement.py`, `hydrometrie.py`, `tasks.py` | simulation d'inondation (tâche Celery) |
 | `routage_mesh.py`, `routage_meshtastic.py`, `sync_outbox.py` | routage MeshCore, routage Meshtastic (§ 9.5.2), synchronisation satellite → central |
 | `acces_radio.py` | qui a accès au domaine radio, et à quel niveau : le droit intermédiaire « opérateur » (§ 9.5.5) |
+| modèle `RattachementNoeudRadio` | qui répond d'un répéteur que personne ne porte (§ 9.5.6) |
 | `imports.py`, `export.py` | import CSV/XLS (personnel, institutions, habitations), exports |
 | `metrics.py` | métriques Prometheus métier (voir § 9) |
 | `crypto_fields.py`, `file_crypto.py` | chiffrement des colonnes et des fichiers sensibles (§ 10.1) |
@@ -1931,6 +1932,53 @@ docker run --rm -v "$PWD/meshtastic-bridge":/src -w /src \
   --entrypoint python assista-crise-meshtastic-bridge:prod -m unittest test_admin_meshtastic
 ```
 
+#### Trois défauts d'ingestion trouvés dans les journaux du pont (10/11/2026)
+
+Relever les journaux du pont en service a montré **1 348 paquets MQTT abandonnés**. Les trois
+causes, et ce qu'elles coûtaient :
+
+1. **`HasField("hop_start")` sur un scalaire proto3** (1 201 fois). `hop_start` n'a pas de
+   présence (vérifié sur la lib déployée :
+   `MeshPacket.DESCRIPTOR.fields_by_name['hop_start'].has_presence is False`), donc `HasField`
+   lève `ValueError`. Comme `_observer_liaison_rf` est appelée **en tête** de `on_message`,
+   l'exception faisait abandonner le paquet **entier** : ni message, ni position, ni contact, ni
+   liaison. Aucune liaison RF n'a donc jamais pu être enregistrée. Seuls les paquets dont la
+   passerelle est l'émetteur lui-même y échappaient — ils sortent à la garde précédente — ce qui
+   explique que le pont *paraissait* fonctionner. Le défaut absent valait déjà 0, qui signifie
+   exactement « firmware qui ne renseigne pas ce champ » : la garde se réduit à `if not
+   paquet.hop_start`.
+2. **Message de canal en clair sur un canal inconnu** (14 fois). Il était journalisé avec
+   `canal: null`, que l'API refuse — 400 avec trace. La branche *chiffrée* avait déjà la garde
+   « canal qu'on ne connaît pas : rien à faire pour nous », la branche *en clair* ne l'avait pas.
+3. **`DecodeError` « Wire format was corrupt »** (149 fois). Déchiffré avec notre PSK mais le
+   résultat n'est pas un `Data` : quelqu'un d'autre utilise le même **nom** de canal avec une
+   autre clé. C'est du bruit normal sur un broker partagé, pas une erreur de chez nous — une
+   trace complète par paquet enterrait les vraies erreurs. Descendu en `debug`.
+
+`bridge.py` n'avait **aucun** test, et c'est ce qui a laissé passer le premier défaut :
+`meshtastic-bridge/test_bridge.py` en ajoute dix, qui construisent de **vrais** messages
+protobuf. Un faux objet avec un `HasField` complaisant aurait laissé passer exactement ce
+défaut-là.
+
+Le topic d'abonnement est désormais journalisé à la connexion (`<racine>/2/e/#`) : c'est la
+seule chose qui permette de vérifier le paramétrage d'une passerelle sans lire la base — une
+racine fausse donne une connexion parfaitement réussie et zéro paquet, indiscernable d'un réseau
+calme.
+
+#### Publication JSON du MQTT : ce que ça fait, et ce que ça ne fait pas
+
+`DEFINIR_MQTT_JSON` fait publier au nœud, **en plus** des trames chiffrées sur `<racine>/2/e/#`,
+une version décodée en clair sur `<racine>/2/json/#`. Deux conséquences :
+
+- **ce pont ne s'en sert pas** : il ne s'abonne qu'à `2/e/#` et décode le protobuf lui-même.
+  Activer le JSON ne change donc rien pour Assista-Crise ; c'est utile aux outils tiers
+  (Node-RED, Home Assistant, un tableau de bord local) ;
+- **le broker voit le texte en clair.** Acceptable sur un broker de site authentifié et publié
+  sur la seule IP du LAN ; à éviter sur un broker tiers.
+
+C'est un réglage **du nœud**, poussé par la radio — pas un champ de la déclaration d'une
+passerelle, et c'est pourquoi il n'apparaît pas dans ce formulaire.
+
 **Pas couvert** : MeshCore. Son protocole d'administration est peu documenté et l'auteur l'a fait
 marcher par essais — une heure avec lui vaut des jours de reverse engineering. Les seules commandes
 MeshCore disponibles restent `ADVERT` et `FLOOD_ADVERT` (`CommandeMeshCore`), qui ne pilotent pas
@@ -2144,7 +2192,46 @@ autres : le calcul coûte quatre requêtes et `UserSerializer` sert aussi la lis
 `/admin/utilisateurs`, où ce serait un N+1 pour une information dont cette page ne fait rien. La
 vue administrative des droits est `/api/demandes-acces-radio/`.
 
-**Tests** : `backend/core/tests/mesh/test_acces_radio.py` (51), plus deux tests de
+### 9.5.6 Rattacher un répéteur : « ce nœud est à nous »
+
+`RattachementNoeudRadio`, API `/api/rattachements-noeuds-radio/`, colonne « Responsable » du
+tableau des nœuds détectés de `/admin/meshtastic-companions`.
+
+Trou laissé par la règle de propriété (§ 9.5.5) et comblé le 10/11/2026 : **un répéteur n'est le
+nœud personnel de personne**, donc il n'était réglable que par un administrateur de la
+plateforme — alors que c'est la commune qui est allée l'installer.
+
+**Pourquoi un modèle de plus, et pas un champ sur `NoeudUtilisateurMeshtastic`** : celui-là
+répond à une autre question. Il dit « ce nœud EST cette personne », et c'est de lui que le pont
+tire l'expéditeur d'un message reçu. Y rendre `utilisateur` facultatif pour loger un répéteur
+aurait fait porter deux sens au même champ et cassé la résolution d'expéditeur. Ici on ne dit
+pas qui est le nœud, on dit **qui en répond**.
+
+Une cible et une seule : une institution **ou** un compte (contrainte en base pour « au moins
+une », validation du serializer pour « pas les deux »). Le compte sert au radioamateur qui a
+posé un répéteur chez lui et n'a aucune institution.
+
+**Ce n'est pas réservé aux administrateurs**, et c'est délibéré : un administrateur de
+plateforme ne sait pas à qui appartient quoi. Trois choses empêchent de s'approprier le matériel
+d'autrui :
+
+1. **on ne rattache qu'à soi** ou à une de ses propres institutions (`_verifier_cible`), et on
+   ne détache que ce dont on répond — sinon on libérerait le nœud d'un autre pour se
+   l'attribuer, et l'unicité ne protégerait plus rien ;
+2. **`node_num` est unique** : un nœud déjà rattaché ne l'est pas deux fois, le conflit est
+   visible et s'arbitre au lieu de se régler au dernier arrivé ;
+3. **le firmware reste le dernier mot.** Écrire exige que la clé publique de la passerelle
+   figure dans `security.admin_key` du nœud, ce qui suppose de l'avoir eu en main. Un
+   rattachement abusif permet d'essayer, pas de reconfigurer : l'appareil refuse.
+
+Poule et œuf assumé : sans aucun matériel on n'a pas accès au domaine radio, donc pas même de
+quoi s'y rattacher un premier nœud. `/admin/radio` est la porte d'entrée — un administrateur
+rattache, ou accorde le droit.
+
+Meshtastic seulement : MeshCore n'a pas encore d'administration à distance, et ses répéteurs
+déclarés portent déjà une institution (`RelaisMeshCore.institution`).
+
+**Tests** : `backend/core/tests/mesh/test_acces_radio.py` (63), plus deux tests de
 `test_administration_meshtastic.py` qui disaient l'inverse avant le 10/11/2026 (toute écriture
 exigeait le rôle ADMIN réel) et portent le changement dans leur docstring, la spec de
 `admin-sidebar`, `radio.component.spec.ts` et `carte-radio.component.spec.ts`.

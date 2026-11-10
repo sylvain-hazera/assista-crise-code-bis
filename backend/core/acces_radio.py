@@ -35,6 +35,7 @@ from .models import (
     NiveauAccesRadio,
     NoeudMeshUtilisateur,
     NoeudUtilisateurMeshtastic,
+    RattachementNoeudRadio,
     StatutDemandeAccesRadio,
     UserRole,
 )
@@ -123,6 +124,22 @@ def noeuds_de_mes_institutions(user, ids=None):
     ).distinct()
 
 
+def rattachements_de(user, ids=None):
+    """Nœuds explicitement rattachés au compte ou à ses institutions (RattachementNoeudRadio).
+
+    Troisième source de propriété, après le nœud personnel et la passerelle, et la seule qui
+    couvre le matériel que **personne ne porte** : un répéteur sur un point haut. Sans elle, un
+    répéteur n'appartenait à personne et seul un administrateur de la plateforme pouvait le
+    régler -- alors que c'est la commune qui est allée l'installer."""
+    ids = institutions_de(user) if ids is None else ids
+    conditions = Q(utilisateur=user)
+    if ids:
+        conditions |= Q(institution_id__in=ids)
+    return RattachementNoeudRadio.objects.filter(
+        conditions, environment=Environment.PROD,
+    )
+
+
 def _institution_possede_du_materiel(user):
     """Une institution du compte exploite-t-elle de la radio ? Passerelle OU nœud d'un membre.
 
@@ -137,6 +154,9 @@ def _institution_possede_du_materiel(user):
         meshtastic.exists()
         or meshcore.exists()
         or noeuds_de_mes_institutions(user, ids).exists()
+        or RattachementNoeudRadio.objects.filter(
+            institution_id__in=ids, environment=Environment.PROD,
+        ).exists()
     )
 
 
@@ -167,7 +187,10 @@ def niveau_acces_radio(user):
     if accorde == NiveauAccesRadio.ADMINISTRATEUR:
         return NiveauAccesRadio.ADMINISTRATEUR
 
-    if _possede_un_noeud(user) or _institution_possede_du_materiel(user):
+    if (_possede_un_noeud(user)
+            or RattachementNoeudRadio.objects.filter(
+                utilisateur=user, environment=Environment.PROD).exists()
+            or _institution_possede_du_materiel(user)):
         return NiveauAccesRadio.OPERATEUR
     return accorde
 
@@ -215,6 +238,12 @@ def peut_administrer_noeud(user, node_num_cible, compagnon=None):
     if meshtastic.filter(node_num=node_num_cible).exists():
         return True
 
+    # Rattachement explicite : le répéteur qui n'est le nœud personnel de personne. Testé avant
+    # les institutions parce qu'il couvre aussi le cas d'un compte SANS institution (un
+    # radioamateur qui a posé un répéteur chez lui).
+    if rattachements_de(user, ids).filter(node_num=node_num_cible).exists():
+        return True
+
     if not ids:
         return False
     if noeuds_de_mes_institutions(user, ids).filter(node_num=node_num_cible).exists():
@@ -257,6 +286,8 @@ def etat_acces_radio(user):
     nombre_passerelles = passerelles_mt.count() + passerelles_mc.count()
     noeuds_institution = noeuds_de_mes_institutions(user, ids)
     nombre_noeuds_institution = noeuds_institution.count()
+    rattachements = rattachements_de(user, ids)
+    nombre_rattachements = rattachements.count()
     noms_institutions = list(
         Institution.objects.filter(id__in=ids, actif=True).values_list('nom', flat=True)
     ) if ids else []
@@ -274,6 +305,13 @@ def etat_acces_radio(user):
             else f"{nombre_noeuds_institution} nœuds rattachés aux membres de votre institution."
         )
 
+    if nombre_rattachements:
+        motifs.append(
+            "1 nœud d'infrastructure rattaché (répéteur, relais)."
+            if nombre_rattachements == 1
+            else f"{nombre_rattachements} nœuds d'infrastructure rattachés (répéteurs, relais)."
+        )
+
     accorde = _niveau_accorde(user)
     if accorde != NiveauAccesRadio.AUCUN:
         motifs.append(f"Droit accordé nominativement : {NiveauAccesRadio(accorde).label}.")
@@ -286,6 +324,10 @@ def etat_acces_radio(user):
     elif niveau == NiveauAccesRadio.OPERATEUR:
         if nombre_noeuds:
             perimetre.append("Vos propres nœuds.")
+        if nombre_rattachements:
+            perimetre.append(
+                f"Les {nombre_rattachements} nœud(s) d'infrastructure qui vous sont rattachés."
+            )
         if noms_institutions and (nombre_passerelles or nombre_noeuds_institution):
             portee = "Les nœuds et les passerelles de " + ", ".join(sorted(noms_institutions)) + "."
             perimetre.append(portee)
@@ -315,5 +357,6 @@ def etat_acces_radio(user):
         "nombre_noeuds_personnels": nombre_noeuds,
         "nombre_noeuds_institution": nombre_noeuds_institution,
         "nombre_passerelles_institution": nombre_passerelles,
+        "nombre_noeuds_rattaches": nombre_rattachements,
         "demande": derniere,
     }

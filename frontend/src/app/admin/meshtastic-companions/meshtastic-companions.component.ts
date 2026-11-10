@@ -8,12 +8,15 @@ import { CanalMeshtasticService } from '../../services/canal-meshtastic.service'
 import { ContactMeshtasticService } from '../../services/contact-meshtastic.service';
 import { NoeudUtilisateurMeshtasticService } from '../../services/noeud-utilisateur-meshtastic.service';
 import { UserService } from '../../services/user.service';
+import { RattachementNoeudRadioService } from '../../services/rattachement-noeud-radio.service';
+import { AuthService } from '../../auth/services/auth.service';
 import { CompagnonMeshtastic } from '../../shared/models/compagnon-meshtastic.model';
 import { CanalMeshtastic } from '../../shared/models/canal-meshtastic.model';
 import { ContactMeshtastic } from '../../shared/models/contact-meshtastic.model';
 import { NoeudUtilisateurMeshtastic } from '../../shared/models/noeud-utilisateur-meshtastic.model';
 import { User } from '../../shared/models/user.model';
 import { RouteMeshtastic, RoutageMeshtastic } from '../../shared/models/routage-meshtastic.model';
+import { RattachementNoeudRadio } from '../../shared/models/rattachement-noeud-radio.model';
 import { TableTriFiltre } from '../../shared/utils/table-tri-filtre';
 import { ThFiltreComponent, ThTriComponent } from '../../shared/components/common/table-tri/table-tri.components';
 
@@ -133,6 +136,8 @@ export class MeshtasticCompanionsComponent implements OnInit {
                texte: c => this.routesParNoeud.get(c.node_num)?.raison || '' },
     contact: { valeur: c => this.date(c.dernier_advert), texte: c => this.dateTexte(c.dernier_advert) },
     attribue: { valeur: c => c.deja_associe, texte: c => c.deja_associe ? 'Oui' : 'Non' },
+    responsable: { valeur: c => this.responsable(c.node_num) || null,
+                   texte: c => this.responsable(c.node_num) || '' },
   }, 'contact', -1);
 
   triNoeuds = new TableTriFiltre<NoeudUtilisateurMeshtastic>({
@@ -149,6 +154,8 @@ export class MeshtasticCompanionsComponent implements OnInit {
     private contactService: ContactMeshtasticService,
     private noeudService: NoeudUtilisateurMeshtasticService,
     private userService: UserService,
+    private rattachementService: RattachementNoeudRadioService,
+    private auth: AuthService,
   ) {}
 
   ngOnInit(): void {
@@ -157,7 +164,81 @@ export class MeshtasticCompanionsComponent implements OnInit {
     this.loadNoeuds();
     this.loadContacts();
     this.chargerRoutage();
+    this.chargerRattachements();
     this.userService.getAll().subscribe(data => { this.utilisateurs = data; });
+  }
+
+  /** Qui répond de chaque nœud d'infrastructure (RattachementNoeudRadio). Indexé par node_num :
+   * c'est la clé que porte le tableau, et le serveur garantit l'unicité. */
+  rattachementsParNoeud = new Map<number, RattachementNoeudRadio>();
+  rattachementErreur = '';
+  /** Libellé saisi avant rattachement, par contact : « répéteur du château d'eau » en dit plus
+   * que le nom annoncé par le firmware, qui ne dit pas où il est. */
+  libellesParContact: Record<string, string> = {};
+
+  chargerRattachements(): void {
+    this.rattachementService.getAll().subscribe({
+      next: (rattachements) => {
+        this.rattachementsParNoeud = new Map(rattachements.map(r => [r.node_num, r]));
+      },
+      // Silencieux : un compte sans accès radio n'a pas à voir une erreur pour une colonne.
+      error: () => { this.rattachementsParNoeud = new Map(); },
+    });
+  }
+
+  responsable(nodeNum: number): string | null {
+    return this.rattachementsParNoeud.get(nodeNum)?.responsable ?? null;
+  }
+
+  /** Vrai quand le compte peut rattacher à une institution : sinon le rattachement se fait à
+   * son propre compte (cas du radioamateur qui a posé un répéteur chez lui). */
+  get monInstitutionId(): string | null {
+    return this.auth.getCurrentUser()?.institution_id ?? null;
+  }
+
+  rattacher(contact: ContactMeshtastic): void {
+    this.rattachementErreur = '';
+    const institution = this.monInstitutionId;
+    this.rattachementService.rattacher({
+      node_num: contact.node_num,
+      // Une seule cible : l'institution si le compte en a une, sinon le compte lui-même.
+      institution: institution,
+      utilisateur: institution ? null : (this.auth.getCurrentUser()?.id ?? null),
+      libelle: (this.libellesParContact[contact.id] || '').trim(),
+    }).subscribe({
+      next: () => {
+        this.libellesParContact[contact.id] = '';
+        // On relit : le serveur seul sait ce qu'il a réellement enregistré (et si un conflit
+        // d'unicité a été arbitré entre-temps).
+        this.chargerRattachements();
+      },
+      error: (e) => {
+        this.rattachementErreur = this.messageRattachement(e);
+      },
+    });
+  }
+
+  detacher(nodeNum: number): void {
+    const rattachement = this.rattachementsParNoeud.get(nodeNum);
+    if (!rattachement) return;
+    this.rattachementErreur = '';
+    this.rattachementService.detacher(rattachement.id).subscribe({
+      next: () => this.chargerRattachements(),
+      error: (e) => { this.rattachementErreur = this.messageRattachement(e); },
+    });
+  }
+
+  /** Le message du serveur quand il y en a un : il dit la vraie raison (nœud déjà rattaché,
+   * institution qui n'est pas la vôtre), qu'un texte générique effacerait. */
+  private messageRattachement(e: any): string {
+    const corps = e?.error;
+    if (typeof corps === 'string') return corps;
+    if (corps && typeof corps === 'object') {
+      const premier = Object.values(corps)[0];
+      if (Array.isArray(premier) && premier.length) return String(premier[0]);
+      if (typeof premier === 'string') return premier;
+    }
+    return 'Le rattachement a échoué.';
   }
 
   loadContacts(): void {

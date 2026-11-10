@@ -168,6 +168,7 @@ def extract_exif_metadata(filepath):
 from .crypto_fields import blind_index
 from .models import (
     DemandeAccesRadio,
+    RattachementNoeudRadio,
     NiveauAccesRadio,
     StatutDemandeAccesRadio,
     Environment,
@@ -518,6 +519,7 @@ def send_crisis_regulateur_invite_email(request, user, crisis, institution):
 
 from .serializers import (
     DemandeAccesRadioSerializer,
+    RattachementNoeudRadioSerializer,
     CandidatureAssociationSerializer,
     InvitationAssociationSerializer,
     QualificationMembreSerializer,
@@ -19791,3 +19793,106 @@ class DemandeAccesRadioViewSet(viewsets.ModelViewSet):
                         f" (niveau {demande.niveau_accorde or 'aucun'}){portee}.",
         )
         return Response(DemandeAccesRadioSerializer(demande, context={'request': request}).data)
+
+
+class RattachementNoeudRadioViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
+    """« Ce nœud est à nous » : rattacher un répéteur à une institution ou à un compte.
+
+    Pourquoi ce n'est pas réservé aux administrateurs de la plateforme : un administrateur ne
+    sait pas à qui appartient quoi. C'est la commune qui est allée installer le répéteur, c'est
+    elle qui sait. Elle le rattache donc elle-même, et le geste est imputable
+    (`rattache_par`) et journalisé.
+
+    **Ce qui empêche de s'approprier le matériel d'autrui**, dans l'ordre où ça s'applique :
+
+    1. **On ne rattache qu'à soi** ou à une de ses propres institutions. Un administrateur réel
+       peut rattacher à n'importe qui -- c'est le recours quand une commune ne peut pas le
+       faire elle-même.
+    2. **`node_num` est unique.** Un nœud déjà rattaché ne peut pas l'être une seconde fois :
+       le conflit est visible et s'arbitre, au lieu de se régler au dernier arrivé.
+    3. **Le firmware reste le dernier mot.** Écrire sur un nœud exige que la clé publique de la
+       passerelle figure dans son `security.admin_key`, ce qui suppose de l'avoir eu en main.
+       Un rattachement abusif permet donc d'essayer, pas de reconfigurer : l'appareil refuse.
+
+    Et `destroy` est volontairement ouvert aux mêmes personnes : une commune qui s'est trompée
+    de nœud doit pouvoir se corriger sans écrire à l'administrateur."""
+
+    queryset = RattachementNoeudRadio.objects.select_related(
+        'institution', 'utilisateur', 'rattache_par',
+    ).all()
+    serializer_class = RattachementNoeudRadioSerializer
+    permission_classes = [PeutAccederRadio]
+
+    def _est_administrateur(self, request):
+        return request.user.type == UserRole.ADMINISTRATOR
+
+    def get_queryset(self):
+        # Lecture ouverte à tout accès radio : savoir QUI répond d'un répéteur est précisément
+        # ce qui manquait pour exploiter un réseau à plusieurs institutions.
+        qs = super().get_queryset()
+        node_num = self.request.query_params.get('node_num')
+        if node_num:
+            qs = qs.filter(node_num=node_num)
+        return qs.order_by('libelle', 'node_num')
+
+    def _verifier_cible(self, serializer):
+        from .acces_radio import institutions_de
+
+        if self._est_administrateur(self.request):
+            return
+        institution = serializer.validated_data.get('institution')
+        utilisateur = serializer.validated_data.get('utilisateur')
+        if utilisateur is not None and utilisateur != self.request.user:
+            raise PermissionDenied(
+                "Vous ne pouvez rattacher un nœud qu'à vous-même ou à une de vos institutions."
+            )
+        if institution is not None and institution.id not in institutions_de(self.request.user):
+            raise PermissionDenied(
+                "Cette institution n'est pas la vôtre : rattacher un nœud à autrui lui "
+                "donnerait un droit d'écriture dessus."
+            )
+
+    def perform_create(self, serializer):
+        self._verifier_cible(serializer)
+        rattachement = serializer.save(
+            environment=get_active_environment(self.request),
+            rattache_par=self.request.user,
+        )
+        audit_log(
+            request=self.request, action_code="CREATION", objet_type="RattachementNoeudRadio",
+            objet_id=rattachement.id,
+            commentaire=f"Noeud {rattachement.node_num:08x} rattache a "
+                        f"{rattachement.institution.nom if rattachement.institution_id else rattachement.utilisateur.email}"
+                        f" ({rattachement.libelle or 'sans libelle'}).",
+        )
+
+    def perform_update(self, serializer):
+        self._verifier_cible(serializer)
+        rattachement = serializer.save()
+        audit_log(
+            request=self.request, action_code="MODIFICATION",
+            objet_type="RattachementNoeudRadio", objet_id=rattachement.id,
+            commentaire=f"Rattachement du noeud {rattachement.node_num:08x} modifie.",
+        )
+
+    def perform_destroy(self, instance):
+        # Même règle qu'à la création : on ne détache que ce dont on répond. Sinon un opérateur
+        # pourrait libérer le nœud d'une autre institution puis se l'attribuer, la contrainte
+        # d'unicité ne protégeant plus rien.
+        from .acces_radio import institutions_de
+
+        if not self._est_administrateur(self.request):
+            sien = instance.utilisateur_id == self.request.user.id
+            sienne = (instance.institution_id is not None
+                      and instance.institution_id in institutions_de(self.request.user))
+            if not (sien or sienne):
+                raise PermissionDenied(
+                    "Ce nœud est rattaché à quelqu'un d'autre. Un administrateur de la "
+                    "plateforme peut arbitrer."
+                )
+        audit_log(
+            request=self.request, action_code="SUPPRESSION",
+            objet_type="RattachementNoeudRadio", objet_id=instance.id,
+            commentaire=f"Rattachement du noeud {instance.node_num:08x} retire.",
+        )
+        instance.delete()
