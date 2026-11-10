@@ -27,6 +27,8 @@ import sys
 import httpx
 from meshcore import EventType, MeshCore
 
+import admin_meshcore
+
 logger = logging.getLogger("meshcore-bridge")
 
 DJANGO_API_URL = os.environ["DJANGO_API_URL"]
@@ -53,6 +55,9 @@ SERIE_DEVICE = os.environ.get("MESHCORE_SERIE_DEVICE")
 BLE_ADRESSE = os.environ.get("MESHCORE_BLE_ADRESSE")
 
 POLL_INTERVAL_SECONDS = int(os.environ.get("POLL_INTERVAL_SECONDS", "15"))
+# Les tâches d'administration sont rares et lentes : on ne les réclame pas au même rythme que
+# les messages. Vingt secondes suffisent, et évitent de marteler l'API pour une file vide.
+TACHES_ADMIN_POLL_INTERVAL_SECONDS = int(os.environ.get("TACHES_ADMIN_POLL_INTERVAL_SECONDS", "20"))
 RECONNECT_DELAY_SECONDS = int(os.environ.get("RECONNECT_DELAY_SECONDS", "10"))
 # Nombre de tentatives d'envoi d'un DM avant abandon (voir boucle_envoi/send_msg_with_retry) —
 # un réseau maillé multi-saut perd couramment un premier essai, d'où plusieurs tentatives par
@@ -399,6 +404,28 @@ class DjangoClient:
             payload["erreur"] = erreur
         await self._request("PATCH", f"/commandes-meshcore/{commande_id}/", json=payload)
 
+    async def taches_admin_a_executer(self, compagnon_id):
+        """Réclame et VERROUILLE les tâches d'administration de ce companion.
+
+        POST et non GET : l'appel prend les tâches, il ne les consulte pas. Le compteur de
+        tentatives s'incrémente ici, pour qu'un pont qui meurt en pleine opération ne reprenne
+        pas la même indéfiniment (voir TacheAdminMeshCoreViewSet.prendre).
+
+        La réponse porte le mot de passe du répéteur quand il en faut un : c'est le seul
+        endroit où ce secret sort, et vers le seul compte qui va s'en servir."""
+        response = await self._request(
+            "POST", "/taches-admin-meshcore/prendre/", json={"compagnon": compagnon_id},
+        )
+        return response.json()
+
+    async def rapporter_tache_admin(self, tache_id, succes, reponse=None, erreur=None):
+        charge = {"succes": bool(succes)}
+        if reponse is not None:
+            charge["reponse"] = reponse
+        if erreur:
+            charge["erreur"] = erreur
+        await self._request("POST", f"/taches-admin-meshcore/{tache_id}/rapporter/", json=charge)
+
     async def aclose(self):
         await self._client.aclose()
 
@@ -563,6 +590,44 @@ async def boucle_envoi(meshcore, django, compagnon_id):
         except Exception:
             logger.exception("Échec de récupération des messages en attente auprès de l'API.")
         await asyncio.sleep(POLL_INTERVAL_SECONDS)
+
+
+async def boucle_taches_admin(meshcore, django, compagnon_id):
+    """Administration à distance des répéteurs : prend, exécute, rapporte.
+
+    Séquentielle à dessein. Deux opérations en parallèle sur la même radio se marcheraient
+    dessus — une session ouverte sur un répéteur, une commande envoyée à un autre — et le
+    protocole n'a aucun moyen de les démêler. Le débit n'est pas l'enjeu : une poignée
+    d'opérations par jour, chacune de quelques secondes à quelques minutes.
+
+    Un échec ne décide de rien ici : il est rapporté, et c'est l'API qui tranche entre réessai
+    et abandon définitif (voir TacheAdminMeshCoreViewSet.rapporter). Le pont ne connaît ni le
+    nombre de tentatives restantes ni l'état du rattachement."""
+    while True:
+        try:
+            taches = await django.taches_admin_a_executer(compagnon_id)
+            for tache in taches:
+                reponse, erreur = await admin_meshcore.executer_tache(meshcore, tache)
+                try:
+                    await django.rapporter_tache_admin(
+                        tache["id"], succes=erreur is None, reponse=reponse, erreur=erreur,
+                    )
+                except Exception:
+                    # Le rapport a échoué, pas l'opération : la tâche sera reprise à
+                    # expiration de son verrou, et l'opération rejouée. Acceptable pour une
+                    # lecture ; pour une écriture, c'est le prix d'un réseau qui coupe au
+                    # mauvais moment.
+                    logger.exception("Échec du rapport de la tâche d'administration %s.", tache["id"])
+                else:
+                    if erreur is None:
+                        logger.info("Tâche %s exécutée sur %s.",
+                                    tache["type_tache"], tache["pubkey_cible"][:12])
+                    else:
+                        logger.warning("Tâche %s en échec sur %s : %s",
+                                       tache["type_tache"], tache["pubkey_cible"][:12], erreur)
+        except Exception:
+            logger.exception("Échec du cycle d'administration à distance.")
+        await asyncio.sleep(TACHES_ADMIN_POLL_INTERVAL_SECONDS)
 
 
 async def boucle_commandes(meshcore, django, compagnon_id):
@@ -1029,6 +1094,7 @@ async def executer_une_session(django):
     tache_nettoyage_canaux = asyncio.create_task(boucle_nettoyage_canaux(meshcore, django, COMPAGNON_ID))
     tache_batterie_compagnon = asyncio.create_task(boucle_batterie_compagnon(meshcore, django, COMPAGNON_ID))
     tache_traceroutes = asyncio.create_task(boucle_traceroutes(meshcore, django, COMPAGNON_ID))
+    tache_admin = asyncio.create_task(boucle_taches_admin(meshcore, django, COMPAGNON_ID))
     try:
         await deconnecte.wait()
     finally:
@@ -1043,6 +1109,7 @@ async def executer_une_session(django):
         tache_nettoyage_canaux.cancel()
         tache_batterie_compagnon.cancel()
         tache_traceroutes.cancel()
+        tache_admin.cancel()
         try:
             await django.rapporter_etat(COMPAGNON_ID, "DECONNECTE")
         except Exception:

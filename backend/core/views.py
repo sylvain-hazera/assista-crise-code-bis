@@ -169,6 +169,9 @@ from .crypto_fields import blind_index
 from .models import (
     DemandeAccesRadio,
     RattachementNoeudRadio,
+    TacheAdminMeshCore,
+    TypeTacheAdminMeshCore,
+    TACHES_ADMIN_MESHCORE_ECRITURE,
     NiveauAccesRadio,
     StatutDemandeAccesRadio,
     Environment,
@@ -520,6 +523,7 @@ def send_crisis_regulateur_invite_email(request, user, crisis, institution):
 from .serializers import (
     DemandeAccesRadioSerializer,
     RattachementNoeudRadioSerializer,
+    TacheAdminMeshCoreSerializer,
     CandidatureAssociationSerializer,
     InvitationAssociationSerializer,
     QualificationMembreSerializer,
@@ -19901,6 +19905,69 @@ class RattachementNoeudRadioViewSet(EnvironmentScopedViewSetMixin, viewsets.Mode
                         f" modifie.",
         )
 
+    @action(detail=True, methods=['post'], url_path='verifier')
+    def verifier(self, request, pk=None):
+        """Met en file la preuve : « est-ce qu'on contrôle vraiment ce répéteur ? »
+
+        C'est la seule tâche d'écriture-adjacente qu'on peut poser SANS preuve préalable, pour
+        la raison évidente qu'elle est la preuve. Elle reste réservée à qui peut modifier le
+        rattachement -- son propriétaire déclaré, ou un administrateur -- sinon n'importe quel
+        opérateur ferait tester le mot de passe d'autrui.
+
+        Rejouable : un répéteur qui dormait, un mot de passe changé par son exploitant, et la
+        preuve d'hier ne vaut plus. Relancer la vérification remet simplement le rattachement
+        en attente."""
+        from .acces_radio import institutions_de
+        from .models import MoyenAdminRadio, StatutPreuveRadio
+
+        rattachement = self.get_object()
+        if not self._est_administrateur(request):
+            sien = rattachement.utilisateur_id == request.user.id
+            sienne = (rattachement.institution_id is not None
+                      and rattachement.institution_id in institutions_de(request.user))
+            if not (sien or sienne):
+                raise PermissionDenied(
+                    "Ce nœud est rattaché à quelqu'un d'autre : vous ne pouvez pas faire "
+                    "tester son accès."
+                )
+
+        if not rattachement.pubkey_hex:
+            return Response(
+                {"detail": "La vérification ne vaut que pour un nœud MeshCore : sur Meshtastic "
+                           "l'autorisation est posée sur l'appareil et ne se teste pas à "
+                           "distance."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if rattachement.moyen_admin == MoyenAdminRadio.AUCUN or rattachement.compagnon_meshcore_id is None:
+            return Response(
+                {"detail": "Déclarez d'abord par quoi vous administrez ce répéteur (mot de "
+                           "passe, ou clé de votre companion dans son ACL) et par quel "
+                           "companion."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        tache = TacheAdminMeshCore.objects.create(
+            environment=get_active_environment(request),
+            compagnon=rattachement.compagnon_meshcore,
+            pubkey_cible=rattachement.pubkey_hex,
+            type_tache=TypeTacheAdminMeshCore.VERIFIER_ACCES,
+            demande_par=request.user,
+        )
+        rattachement.statut_preuve = StatutPreuveRadio.EN_ATTENTE
+        rattachement.erreur_verification = ""
+        rattachement.save(update_fields=['statut_preuve', 'erreur_verification'])
+
+        audit_log(
+            request=request, action_code="CREATION", objet_type="TacheAdminMeshCore",
+            objet_id=tache.id,
+            commentaire=f"Verification d'acces au repeteur {rattachement.pubkey_hex[:12]} "
+                        f"(moyen {rattachement.moyen_admin}).",
+        )
+        return Response(
+            RattachementNoeudRadioSerializer(rattachement, context={'request': request}).data,
+            status=status.HTTP_202_ACCEPTED,
+        )
+
     def perform_destroy(self, instance):
         # Même règle qu'à la création : on ne détache que ce dont on répond. Sinon un opérateur
         # pourrait libérer le nœud d'une autre institution puis se l'attribuer, la contrainte
@@ -19924,3 +19991,195 @@ class RattachementNoeudRadioViewSet(EnvironmentScopedViewSetMixin, viewsets.Mode
                         f" retire.",
         )
         instance.delete()
+
+
+class TacheAdminMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
+    """File des opérations d'administration à distance sur les répéteurs MeshCore.
+
+    Jumelle de `TacheAdminMeshtasticViewSet` : posée ici, exécutée par le pont du companion
+    choisi, rapportée par `rapporter`. Le mécanisme est volontairement identique (prise avec
+    verrou, réessai compté à la PRISE, pas de PATCH ni de DELETE) — deux mécaniques différentes
+    pour le même besoin ne feraient que diverger.
+
+    **Ce qui lui est propre**, et qui vient du firmware MeshCore :
+
+    - **Une écriture exige une preuve de contrôle faite** sur ce nœud
+      (`RattachementNoeudRadio.statut_preuve`). Sur Meshtastic, le firmware refusait de
+      lui-même si la clé d'administration n'était pas posée ; ici, qui a le mot de passe écrit.
+      La vérification n'est donc pas un confort, c'est la condition.
+    - **`VERIFIER_ACCES` est l'exception** : c'est la tâche qui FAIT la preuve, elle ne peut
+      donc pas l'exiger. Elle reste réservée à qui peut modifier le rattachement — son
+      propriétaire déclaré, ou un administrateur.
+    - Les lectures (`LIRE_*`) sont ouvertes à qui a un accès radio : relever un statut ou une
+      liste de voisins n'est pas un acte matériel, et c'est ce qui alimente le diagnostic."""
+
+    queryset = TacheAdminMeshCore.objects.select_related('compagnon', 'demande_par').all()
+    serializer_class = TacheAdminMeshCoreSerializer
+    http_method_names = ['get', 'post', 'head', 'options']
+
+    def get_permissions(self):
+        # prendre/rapporter : appelés par le compte de service du pont, qui n'est pas un acteur
+        # institutionnel -- même principe que CommandeMeshCoreViewSet.
+        if self.action in ('prendre', 'rapporter'):
+            return [permissions.IsAuthenticated()]
+        return [PeutAccederRadio()]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        compagnon = self.request.query_params.get('compagnon')
+        if compagnon:
+            qs = qs.filter(compagnon_id=compagnon)
+        pubkey = self.request.query_params.get('pubkey_cible')
+        if pubkey:
+            qs = qs.filter(pubkey_cible=pubkey.strip().lower())
+        statut = self.request.query_params.get('statut')
+        if statut:
+            qs = qs.filter(statut=statut)
+        return qs.order_by('-date_creation')
+
+    def perform_create(self, serializer):
+        from .acces_radio import peut_administrer_noeud_meshcore
+
+        type_tache = serializer.validated_data['type_tache']
+        pubkey = serializer.validated_data['pubkey_cible']
+
+        if type_tache in TACHES_ADMIN_MESHCORE_ECRITURE:
+            if get_active_environment(self.request) != Environment.PROD:
+                raise PermissionDenied(
+                    "Une écriture sur un nœud radio ne se fait pas depuis la zone de "
+                    "démonstration : aucun pont n'exécuterait la tâche."
+                )
+            if not peut_administrer_noeud_meshcore(self.request.user, pubkey):
+                raise PermissionDenied(
+                    "Ce répéteur n'est pas rattaché à vous avec une preuve de contrôle faite. "
+                    "Réclamez-le depuis /admin/radio (mot de passe d'administration, ou clé de "
+                    "votre companion dans son ACL), puis lancez la vérification."
+                )
+
+        tache = serializer.save(
+            environment=get_active_environment(self.request),
+            demande_par=self.request.user,
+        )
+        audit_log(
+            request=self.request, action_code="CREATION", objet_type="TacheAdminMeshCore",
+            objet_id=tache.id,
+            commentaire=f"Administration MeshCore : {tache.get_type_tache_display()} sur "
+                        f"{tache.pubkey_cible[:12]}"
+                        + (f" (parametres {tache.parametres})" if tache.parametres else ""),
+        )
+
+    @action(detail=False, methods=['post'], url_path='prendre')
+    def prendre(self, request):
+        """Le pont réclame les tâches à exécuter pour SON companion, et les verrouille.
+
+        Reprend aussi les tâches laissées EN_COURS depuis plus de
+        DELAI_RECLAMATION_TACHE_ADMIN_S : sans ça, un pont redémarré en pleine opération
+        laisserait la tâche bloquée pour toujours. Le compteur de tentatives s'incrémente à la
+        PRISE pour la même raison -- un pont qui meurt à chaque fois ne doit pas reprendre la
+        même tâche indéfiniment."""
+        compagnon_id = request.data.get('compagnon')
+        if not compagnon_id:
+            return Response({'detail': "'compagnon' est requis."}, status=status.HTTP_400_BAD_REQUEST)
+
+        maintenant = timezone.now()
+        perimee = maintenant - datetime.timedelta(seconds=DELAI_RECLAMATION_TACHE_ADMIN_S)
+
+        self.get_queryset().filter(
+            compagnon_id=compagnon_id, statut=StatutTacheAdminMeshtastic.EN_COURS,
+            date_prise__lt=perimee, tentatives__gte=TENTATIVES_MAX_TACHE_ADMIN,
+        ).update(
+            statut=StatutTacheAdminMeshtastic.ECHEC, date_reponse=maintenant,
+            erreur=(
+                f"Reprise {TENTATIVES_MAX_TACHE_ADMIN} fois sans qu'aucun résultat soit "
+                "rapporté : le pont de ce companion ne termine pas l'opération."
+            ),
+        )
+
+        candidates = self.get_queryset().filter(
+            compagnon_id=compagnon_id, tentatives__lt=TENTATIVES_MAX_TACHE_ADMIN,
+        ).filter(
+            Q(statut=StatutTacheAdminMeshtastic.EN_ATTENTE)
+            | Q(statut=StatutTacheAdminMeshtastic.EN_COURS, date_prise__lt=perimee)
+        ).order_by('date_creation')
+
+        ids = list(candidates.values_list('id', flat=True)[:LOT_MAX_TACHES_ADMIN])
+        if not ids:
+            return Response([])
+        TacheAdminMeshCore.objects.filter(id__in=ids).update(
+            statut=StatutTacheAdminMeshtastic.EN_COURS,
+            date_prise=maintenant,
+            tentatives=F('tentatives') + 1,
+        )
+        taches = TacheAdminMeshCore.objects.filter(id__in=ids).select_related('compagnon')
+        return Response(self._avec_identifiants(taches))
+
+    def _avec_identifiants(self, taches):
+        """Les tâches servies au pont portent le mot de passe du répéteur quand il en faut un.
+
+        C'est le seul endroit où ce secret sort, et seulement vers le compte qui va s'en servir
+        dans la seconde -- le pont vient de verrouiller ces tâches pour SON companion. Le
+        chercher lui-même l'obligerait à lire tout le rattachement, et donc ceux des autres."""
+        from .models import MoyenAdminRadio, RattachementNoeudRadio
+
+        donnees = TacheAdminMeshCoreSerializer(taches, many=True).data
+        rattachements = {
+            r.pubkey_hex: r for r in RattachementNoeudRadio.objects.filter(
+                pubkey_hex__in=[t.pubkey_cible for t in taches],
+            )
+        }
+        for ligne, tache in zip(donnees, taches):
+            rattachement = rattachements.get(tache.pubkey_cible)
+            ligne['moyen_admin'] = rattachement.moyen_admin if rattachement else MoyenAdminRadio.AUCUN
+            ligne['mot_de_passe'] = (
+                rattachement.mot_de_passe
+                if rattachement and rattachement.moyen_admin == MoyenAdminRadio.MOT_DE_PASSE
+                else ""
+            )
+        return donnees
+
+    @action(detail=True, methods=['post'], url_path='rapporter')
+    def rapporter(self, request, pk=None):
+        """Résultat d'une tâche, rapporté par le pont.
+
+        Un échec ne clôt pas la tâche tant qu'il reste des tentatives : l'opération traverse la
+        radio, et un répéteur qui n'a pas répondu n'est pas une opération invalide.
+
+        **Cas particulier de `VERIFIER_ACCES`** : son résultat est la preuve elle-même, donc il
+        est recopié dans le rattachement. Un échec DÉFINITIF seulement -- tant qu'il reste des
+        tentatives, on ne déclare pas le contrôle perdu sur un répéteur qui dormait."""
+        from .models import RattachementNoeudRadio, StatutPreuveRadio
+
+        tache = self.get_object()
+        succes = bool(request.data.get('succes'))
+        maintenant = timezone.now()
+
+        if succes:
+            reponse = request.data.get('reponse')
+            tache.statut = StatutTacheAdminMeshtastic.TERMINEE
+            tache.reponse = json.dumps(reponse, ensure_ascii=False, default=str) if reponse is not None else None
+            tache.erreur = None
+            tache.date_reponse = maintenant
+            tache.save(update_fields=['statut', 'reponse', 'erreur', 'date_reponse'])
+        else:
+            tache.erreur = str(request.data.get('erreur') or "Échec sans message.")[:2000]
+            if tache.tentatives >= TENTATIVES_MAX_TACHE_ADMIN:
+                tache.statut = StatutTacheAdminMeshtastic.ECHEC
+                tache.date_reponse = maintenant
+            else:
+                tache.statut = StatutTacheAdminMeshtastic.EN_ATTENTE
+            tache.save(update_fields=['statut', 'erreur', 'date_reponse'])
+
+        if tache.type_tache == TypeTacheAdminMeshCore.VERIFIER_ACCES:
+            if succes:
+                nouveau, erreur = StatutPreuveRadio.VERIFIEE, ""
+            elif tache.statut == StatutTacheAdminMeshtastic.ECHEC:
+                nouveau, erreur = StatutPreuveRadio.ECHEC, tache.erreur
+            else:
+                nouveau = None
+            if nouveau is not None:
+                RattachementNoeudRadio.objects.filter(pubkey_hex=tache.pubkey_cible).update(
+                    statut_preuve=nouveau, date_verification=maintenant,
+                    erreur_verification=erreur or "",
+                )
+
+        return Response(TacheAdminMeshCoreSerializer(tache).data)

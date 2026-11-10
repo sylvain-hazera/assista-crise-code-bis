@@ -6893,6 +6893,128 @@ class NiveauAccesRadio(models.TextChoices):
     ADMINISTRATEUR = "ADMINISTRATEUR", "Administration radio complète"
 
 
+class TypeTacheAdminMeshCore(models.TextChoices):
+    """Opérations d'administration à distance sur un répéteur MeshCore.
+
+    Volontairement réduit, comme son équivalent Meshtastic. Ce qui en est **absent exprès** :
+
+    - `poweroff`, `shutdown`, `start ota` : un répéteur est souvent sur un point haut, et ces
+      trois-là se paient d'un déplacement ;
+    - `set prv.key`, `set public.key` : elles changent l'IDENTITÉ du nœud ;
+    - `password`, `set guest.password` : elles transportent un secret — et le firmware
+      **réaffiche le nouveau mot de passe dans sa réponse** (`CommonCLI.cpp` l. 272 :
+      « echo back just to let admin know for sure!! »).
+
+    Trois autres sont absentes parce que **le firmware les refuse déjà à distance** (garde
+    `sender_timestamp == 0`) : `erase`, `set freq` et `log`/`stats-*`. C'est ce qui rend
+    MeshCore plus sûr à administrer que Meshtastic : on ne peut pas, par radio, rendre un
+    répéteur définitivement sourd.
+
+    `VERIFIER_ACCES` n'est pas une opération d'exploitation : c'est la **preuve** qu'on contrôle
+    le nœud, exigée avant toute écriture (voir RattachementNoeudRadio)."""
+
+    VERIFIER_ACCES = "VERIFIER_ACCES", "Vérifier qu'on peut administrer ce nœud"
+    LIRE_STATUT = "LIRE_STATUT", "Lire le statut du répéteur"
+    LIRE_VOISINS = "LIRE_VOISINS", "Lire la liste des voisins entendus"
+    LIRE_REGIONS = "LIRE_REGIONS", "Lire les portées déclarées"
+    LIRE_TELEMETRIE = "LIRE_TELEMETRIE", "Lire la télémétrie"
+    RADIO_TEMPORAIRE = "RADIO_TEMPORAIRE", "Essayer des paramètres radio, avec retour automatique"
+    DEFINIR_REGLAGE = "DEFINIR_REGLAGE", "Modifier un réglage (set)"
+    ANNONCER = "ANNONCER", "Déclencher une annonce (advert)"
+    REDEMARRER = "REDEMARRER", "Redémarrer le répéteur"
+
+
+# Opérations qui ÉCRIVENT sur le nœud : elles exigent le droit sur ce nœud précis, la zone
+# PROD, et pour un nœud MeshCore une preuve de contrôle faite (voir acces_radio.py).
+TACHES_ADMIN_MESHCORE_ECRITURE = frozenset({
+    TypeTacheAdminMeshCore.RADIO_TEMPORAIRE,
+    TypeTacheAdminMeshCore.DEFINIR_REGLAGE,
+    TypeTacheAdminMeshCore.ANNONCER,
+    TypeTacheAdminMeshCore.REDEMARRER,
+})
+
+
+class TacheAdminMeshCore(EnvironmentScopedModel):
+    """Une opération d'administration à distance sur un répéteur MeshCore, mise en file ici et
+    exécutée par le pont (`meshcore-bridge/`).
+
+    Même forme que `TacheAdminMeshtastic`, et pour les mêmes raisons : l'opération traverse la
+    radio, elle met de quelques secondes à plusieurs minutes, et c'est le pont — pas Django —
+    qui tient la connexion au companion.
+
+    **Ce qui diffère de Meshtastic, et c'est l'essentiel :**
+
+    1. **L'autorisation est un mot de passe ou une ACL, pas une clé posée sur l'appareil.** Les
+       deux se testent (`send_login`, `req_status`), donc le droit d'écrire est subordonné à
+       une preuve faite — voir `RattachementNoeudRadio.statut_preuve`. Sur Meshtastic, le
+       firmware refusait de lui-même ; ici **il n'y a aucun filet** : qui a le mot de passe
+       écrit.
+    2. **Le firmware interdit déjà à distance** ce qui pourrait rendre le nœud injoignable
+       (`erase`, `set freq`, `set prv.key`). Le risque résiduel d'une écriture est donc plus
+       faible, et `RADIO_TEMPORAIRE` (`tempradio`) le réduit encore : les paramètres reviennent
+       seuls au bout du délai.
+
+    `reponse` est chiffrée au repos : un relevé de statut peut contenir la configuration du
+    répéteur, et certaines réponses du firmware réaffichent des secrets."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    # Companion qui exécutera : c'est lui qui ouvre la session, et c'est SA clé publique que
+    # l'ACL du répéteur doit contenir.
+    compagnon = models.ForeignKey(
+        CompagnonMeshCore, on_delete=models.CASCADE, related_name="taches_admin",
+    )
+
+    pubkey_cible = models.CharField(
+        max_length=64,
+        help_text="Clé publique du répéteur visé. Jamais vide, contrairement à Meshtastic : "
+                  "le companion local se pilote par CommandeMeshCore, pas par cette file.",
+    )
+
+    type_tache = models.CharField(max_length=18, choices=TypeTacheAdminMeshCore.choices)
+
+    # Paramètres, ex. {"cle": "advert.interval", "valeur": "240"} ou les cinq champs de
+    # tempradio. Jamais de secret ici : les commandes qui en transportent sont absentes de
+    # TypeTacheAdminMeshCore.
+    parametres = models.JSONField(null=True, blank=True)
+
+    statut = models.CharField(
+        max_length=12, choices=StatutTacheAdminMeshtastic.choices,
+        default=StatutTacheAdminMeshtastic.EN_ATTENTE,
+        help_text="Mêmes états que la file Meshtastic : en avoir deux jeux pour une mécanique "
+                  "identique ne ferait que créer des divergences.",
+    )
+
+    tentatives = models.PositiveSmallIntegerField(default=0)
+
+    reponse = EncryptedTextField(null=True, blank=True)
+    erreur = models.TextField(null=True, blank=True)
+
+    demande_par = models.ForeignKey(
+        "User", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="taches_admin_meshcore",
+        help_text="Qui a demandé l'opération — une écriture sur un relais doit être imputable.",
+    )
+
+    date_creation = models.DateTimeField(auto_now_add=True)
+    date_prise = models.DateTimeField(null=True, blank=True)
+    date_reponse = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["statut", "compagnon"]),
+            models.Index(fields=["-date_creation"]),
+            models.Index(fields=["pubkey_cible"]),
+        ]
+
+    @property
+    def est_ecriture(self):
+        return self.type_tache in TACHES_ADMIN_MESHCORE_ECRITURE
+
+    def __str__(self):
+        return f"{self.get_type_tache_display()} -> {self.pubkey_cible[:12]} ({self.statut})"
+
+
 class MoyenAdminRadio(models.TextChoices):
     """Par quoi on est autorisé à administrer un nœud — c'est-à-dire ce qu'on remplit en le
     réclamant (demande du 10/11/2026 : « soit login / mot de passe, soit le répéteur contient la

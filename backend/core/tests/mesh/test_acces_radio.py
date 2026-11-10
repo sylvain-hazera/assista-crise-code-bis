@@ -1047,3 +1047,209 @@ class TestReclamationRepeteurMeshCore:
             )
             brut = curseur.fetchone()[0]
         assert "mot-de-passe-tres-reconnaissable" not in (brut or "")
+
+
+@pytest.mark.django_db
+class TestFileAdminMeshCore:
+    """La file qui rend la réclamation vivante : elle porte la preuve, puis les opérations.
+
+    Ce qui est verrouillé ici tient au firmware MeshCore, lu le 10/11/2026 :
+
+    - `tempradio` impose un **délai de retour strictement positif** (`CommonCLI.cpp` l. 261) —
+      c'est ce qui fait qu'un essai radio raté se rattrape tout seul, et la raison pour
+      laquelle cette commande est la voie recommandée ;
+    - `prv.key`, `public.key`, `password` et `guest.password` sont refusés : les deux premiers
+      changent l'identité du nœud, les deux autres transportent un secret que le firmware
+      **réaffiche dans sa réponse** (l. 272).
+    """
+
+    URL_TACHES = "/api/taches-admin-meshcore/"
+    URL_RATTACHEMENTS = "/api/rattachements-noeuds-radio/"
+    CLE = "cd" * 32
+
+    @pytest.fixture
+    def compagnon(self, institution):
+        from core.models import CompagnonMeshCore, MeshCoreConnexionType
+
+        return CompagnonMeshCore.objects.create(
+            nom="Companion file", institution=institution,
+            connexion_type=MeshCoreConnexionType.TCP, tcp_host="172.16.1.60",
+        )
+
+    @pytest.fixture
+    def agent(self, create_user, institution, compagnon):
+        utilisateur = _utilisateur(create_user, "agent-file-mc@x.fr", "SECOURS", institution)
+        NoeudUtilisateurMeshtastic.objects.create(utilisateur=utilisateur, node_num=0x8001)
+        return utilisateur
+
+    @pytest.fixture
+    def rattachement(self, institution, compagnon):
+        from core.models import MoyenAdminRadio, RattachementNoeudRadio
+
+        return RattachementNoeudRadio.objects.create(
+            pubkey_hex=self.CLE, institution=institution, libelle="Repeteur du piton",
+            moyen_admin=MoyenAdminRadio.MOT_DE_PASSE, mot_de_passe="secret-repeteur",
+            compagnon_meshcore=compagnon,
+        )
+
+    def test_la_verification_met_la_preuve_en_file(self, agent, rattachement):
+        from core.models import StatutPreuveRadio, TacheAdminMeshCore, TypeTacheAdminMeshCore
+
+        reponse = _client(agent).post(f"{self.URL_RATTACHEMENTS}{rattachement.id}/verifier/")
+        assert reponse.status_code == 202, reponse.data
+
+        tache = TacheAdminMeshCore.objects.get()
+        assert tache.type_tache == TypeTacheAdminMeshCore.VERIFIER_ACCES
+        assert tache.pubkey_cible == self.CLE
+        assert tache.demande_par == agent
+        rattachement.refresh_from_db()
+        assert rattachement.statut_preuve == StatutPreuveRadio.EN_ATTENTE
+
+    def test_on_ne_fait_pas_tester_l_acces_du_repeteur_d_un_autre(self, create_user,
+                                                                  autre_institution,
+                                                                  rattachement):
+        voisin = _utilisateur(create_user, "voisin-file-mc@x.fr", "SECOURS", autre_institution)
+        NoeudUtilisateurMeshtastic.objects.create(utilisateur=voisin, node_num=0x8002)
+
+        reponse = _client(voisin).post(f"{self.URL_RATTACHEMENTS}{rattachement.id}/verifier/")
+        assert reponse.status_code == 403
+
+    def test_un_rattachement_meshtastic_n_a_rien_a_verifier(self, agent, institution):
+        from core.models import RattachementNoeudRadio
+
+        rattachement = RattachementNoeudRadio.objects.create(
+            node_num=0x8010, institution=institution,
+        )
+        reponse = _client(agent).post(f"{self.URL_RATTACHEMENTS}{rattachement.id}/verifier/")
+        assert reponse.status_code == 400
+        assert "appareil" in str(reponse.data).lower()
+
+    def test_le_rapport_de_verification_ouvre_l_ecriture(self, agent, rattachement, compagnon,
+                                                          create_user):
+        from core.acces_radio import peut_administrer_noeud_meshcore
+        from core.models import StatutPreuveRadio
+
+        _client(agent).post(f"{self.URL_RATTACHEMENTS}{rattachement.id}/verifier/")
+        pont = _client(_utilisateur(create_user, "pont-mc@x.fr"))
+        prises = pont.post(f"{self.URL_TACHES}prendre/", {"compagnon": str(compagnon.id)},
+                           format="json")
+        assert prises.status_code == 200
+        assert len(prises.data) == 1
+        # Le pont reçoit le mot de passe : c'est lui qui va ouvrir la session, et le chercher
+        # lui-même l'obligerait à lire tous les rattachements.
+        assert prises.data[0]["mot_de_passe"] == "secret-repeteur"
+        assert prises.data[0]["moyen_admin"] == "MOT_DE_PASSE"
+
+        tache_id = prises.data[0]["id"]
+        rapport = pont.post(f"{self.URL_TACHES}{tache_id}/rapporter/",
+                            {"succes": True, "reponse": {"statut": "ok"}}, format="json")
+        assert rapport.status_code == 200
+
+        rattachement.refresh_from_db()
+        assert rattachement.statut_preuve == StatutPreuveRadio.VERIFIEE
+        assert rattachement.date_verification is not None
+        assert peut_administrer_noeud_meshcore(agent, self.CLE) is True
+
+    def test_un_echec_non_definitif_ne_declare_pas_le_controle_perdu(self, agent, rattachement,
+                                                                     compagnon, create_user):
+        """Un répéteur qui dormait n'est pas un mot de passe faux : tant qu'il reste des
+        tentatives, la tâche retourne en file et la preuve reste « en attente »."""
+        from core.models import StatutPreuveRadio
+
+        _client(agent).post(f"{self.URL_RATTACHEMENTS}{rattachement.id}/verifier/")
+        pont = _client(_utilisateur(create_user, "pont-mc-2@x.fr"))
+        prises = pont.post(f"{self.URL_TACHES}prendre/", {"compagnon": str(compagnon.id)},
+                           format="json")
+        tache_id = prises.data[0]["id"]
+
+        pont.post(f"{self.URL_TACHES}{tache_id}/rapporter/",
+                  {"succes": False, "erreur": "pas de reponse"}, format="json")
+        rattachement.refresh_from_db()
+        assert rattachement.statut_preuve == StatutPreuveRadio.EN_ATTENTE
+
+    def test_un_echec_definitif_marque_la_preuve_en_echec(self, agent, rattachement, compagnon,
+                                                          create_user):
+        from core.models import StatutPreuveRadio, TacheAdminMeshCore, TENTATIVES_MAX_TACHE_ADMIN
+
+        _client(agent).post(f"{self.URL_RATTACHEMENTS}{rattachement.id}/verifier/")
+        tache = TacheAdminMeshCore.objects.get()
+        tache.tentatives = TENTATIVES_MAX_TACHE_ADMIN
+        tache.save(update_fields=["tentatives"])
+
+        pont = _client(_utilisateur(create_user, "pont-mc-3@x.fr"))
+        pont.post(f"{self.URL_TACHES}{tache.id}/rapporter/",
+                  {"succes": False, "erreur": "mot de passe refuse"}, format="json")
+
+        rattachement.refresh_from_db()
+        assert rattachement.statut_preuve == StatutPreuveRadio.ECHEC
+        assert "refuse" in rattachement.erreur_verification
+
+    def test_une_ecriture_sans_preuve_est_refusee(self, agent, rattachement, compagnon):
+        """Sans filet côté firmware, la preuve est la condition — pas un confort."""
+        reponse = _client(agent).post(self.URL_TACHES, {
+            "compagnon": str(compagnon.id), "pubkey_cible": self.CLE,
+            "type_tache": "REDEMARRER",
+        }, format="json")
+        assert reponse.status_code == 403
+        assert "preuve de contrôle" in str(reponse.data)
+
+    def test_une_lecture_reste_ouverte(self, agent, rattachement, compagnon):
+        """Relever un statut ou une liste de voisins n'est pas un acte matériel, et c'est ce
+        qui alimente le diagnostic."""
+        reponse = _client(agent).post(self.URL_TACHES, {
+            "compagnon": str(compagnon.id), "pubkey_cible": self.CLE,
+            "type_tache": "LIRE_VOISINS",
+        }, format="json")
+        assert reponse.status_code == 201, reponse.data
+
+    def test_un_essai_radio_sans_delai_de_retour_est_refuse(self, agent, compagnon):
+        """Le firmware l'exige, et c'est tout l'intérêt de la commande : sans délai, un essai
+        raté ne se rattrape pas tout seul."""
+        reponse = _client(agent).post(self.URL_TACHES, {
+            "compagnon": str(compagnon.id), "pubkey_cible": self.CLE,
+            "type_tache": "RADIO_TEMPORAIRE",
+            "parametres": {"frequence_mhz": 869.525, "bande_khz": 250, "facteur_etalement": 11,
+                           "taux_codage": 5, "minutes": 0},
+        }, format="json")
+        assert reponse.status_code == 400
+        assert "délai de retour" in str(reponse.data).lower()
+
+    @pytest.mark.parametrize("champ,valeur", [
+        ("frequence_mhz", 3000),      # au-dela de 2500
+        ("bande_khz", 1000),          # au-dela de 500
+        ("facteur_etalement", 13),    # au-dela de 12
+        ("taux_codage", 9),           # au-dela de 8
+    ])
+    def test_les_bornes_du_firmware_sont_refusees_avant_la_radio(self, agent, compagnon,
+                                                                  champ, valeur):
+        """Refusées ici plutôt que par un aller-retour radio qui répondrait « Error, invalid
+        params » trois minutes plus tard."""
+        parametres = {"frequence_mhz": 869.525, "bande_khz": 250, "facteur_etalement": 11,
+                      "taux_codage": 5, "minutes": 10}
+        parametres[champ] = valeur
+        reponse = _client(agent).post(self.URL_TACHES, {
+            "compagnon": str(compagnon.id), "pubkey_cible": self.CLE,
+            "type_tache": "RADIO_TEMPORAIRE", "parametres": parametres,
+        }, format="json")
+        assert reponse.status_code == 400
+        assert champ in str(reponse.data)
+
+    @pytest.mark.parametrize("cle", ["prv.key", "public.key", "password", "guest.password"])
+    def test_les_reglages_interdits_sont_refuses_avec_leur_raison(self, agent, compagnon, cle):
+        reponse = _client(agent).post(self.URL_TACHES, {
+            "compagnon": str(compagnon.id), "pubkey_cible": self.CLE,
+            "type_tache": "DEFINIR_REGLAGE", "parametres": {"cle": cle, "valeur": "x"},
+        }, format="json")
+        assert reponse.status_code == 400
+        # Un refus sans motif se contourne par une autre voie au lieu d'être compris.
+        assert "identité" in str(reponse.data) or "secret" in str(reponse.data)
+
+    def test_pas_de_suppression_ni_de_modification(self, agent, compagnon, rattachement):
+        from core.models import TacheAdminMeshCore
+
+        _client(agent).post(f"{self.URL_RATTACHEMENTS}{rattachement.id}/verifier/")
+        tache = TacheAdminMeshCore.objects.get()
+        client = _client(agent)
+        assert client.patch(f"{self.URL_TACHES}{tache.id}/", {"statut": "TERMINEE"},
+                            format="json").status_code == 405
+        assert client.delete(f"{self.URL_TACHES}{tache.id}/").status_code == 405

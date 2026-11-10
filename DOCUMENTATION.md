@@ -2100,10 +2100,57 @@ le même filtrage que la carte applique déjà à `ContactMeshCore`, pour la mê
 convention `🚫` par laquelle un opérateur demande à ne pas être affiché doit être honorée, et
 les données appartiennent à l'exploitant de l'instance, pas à la licence du code.
 
-**Pas encore fait côté Assista-Crise** : le décodage de trames MeshCore, et la file de tâches
-d'administration. Les seules commandes MeshCore disponibles restent `ADVERT` et `FLOOD_ADVERT`
-(`CommandeMeshCore`), qui ne pilotent pas un relais distant mais le companion du pont. La
-réclamation d'un répéteur existe en revanche déjà (§ 9.5.6) et attend sa vérification.
+#### La file d'administration MeshCore
+
+`TacheAdminMeshCore`, API `/api/taches-admin-meshcore/`, exécution dans
+`meshcore-bridge/admin_meshcore.py`. Jumelle de la file Meshtastic, et **volontairement
+identique dans sa mécanique** : prise avec verrou, réessai compté à la prise, pas de `PATCH` ni
+de `DELETE`, réponse chiffrée au repos. Deux mécaniques différentes pour le même besoin ne
+feraient que diverger.
+
+| Type | Ce que le pont appelle | Écriture |
+|---|---|---|
+| `VERIFIER_ACCES` | `send_login_sync` (mot de passe) ou `req_status_sync` (ACL) | — c'est la preuve |
+| `LIRE_STATUT` / `LIRE_VOISINS` / `LIRE_REGIONS` / `LIRE_TELEMETRIE` | `req_*_sync` | non |
+| `RADIO_TEMPORAIRE` | `send_cmd` → `tempradio f bw sf cr minutes` | oui |
+| `DEFINIR_REGLAGE` | `send_cmd` → `set <clé> <valeur>` | oui |
+| `ANNONCER` / `REDEMARRER` | `send_cmd` → `advert` / `reboot` | oui |
+
+**Une écriture exige une preuve de contrôle faite** (§ 9.5.6) et la zone PROD.
+`VERIFIER_ACCES` est l'exception évidente — c'est elle qui fait la preuve — et reste réservée à
+qui peut modifier le rattachement. Les lectures sont ouvertes à tout accès radio : relever un
+statut ou une liste de voisins n'est pas un acte matériel, et `LIRE_VOISINS` est l'entrée de
+`analyse_liaisons.py` pour MeshCore.
+
+**Ce qui est refusé, et pourquoi** : `prv.key` et `public.key` (changent l'identité du nœud),
+`password` et `guest.password` (transportent un secret que le firmware **réaffiche dans sa
+réponse**). Le motif du refus est renvoyé en clair — un refus sans motif se contourne par une
+autre voie au lieu d'être compris. `poweroff`, `shutdown` et `start ota` sont simplement absents
+du catalogue : un répéteur est souvent sur un point haut.
+
+**`tempradio` est la voie recommandée pour tout ce qui touche la radio.** Son délai de retour
+est obligatoire et strictement positif, vérifié **deux fois** — par l'API et par le pont. Ce
+n'est pas de la redondance inutile : c'est la garde qui fait qu'un essai raté se rattrape tout
+seul, et elle ne doit dépendre d'aucun appelant. Les bornes recopiées dans le serializer sont
+celles du firmware (`CommonCLI.cpp` l. 261), citées pour qu'on sache d'où elles viennent ; elles
+évitent un aller-retour radio de trois minutes pour se faire répondre « Error, invalid params ».
+
+**Le mot de passe du répéteur voyage avec la tâche**, servi par `prendre` au seul pont qui vient
+de la verrouiller pour son companion. Le laisser le chercher lui-même l'obligerait à lire tous
+les rattachements, donc ceux des autres institutions.
+
+**La session est rouverte à chaque opération**, jamais mémorisée : une session MeshCore expire,
+le pont peut redémarrer entre deux tâches, et une session qu'on croit ouverte produit un échec
+silencieux bien plus coûteux qu'une connexion de trop.
+
+**Tests** : `backend/core/tests/mesh/test_acces_radio.py` (103) et
+`meshcore-bridge/test_admin_meshcore.py` (18, avec un faux companion).
+
+**Pas encore fait** : le décodage de trames MeshCore (lots 3 et 4 : décodeur porté de CoreScope,
+puis modèle de confiance des préfixes de hash), l'écran de réclamation sur
+`/admin/meshcore-companions`, et l'entrée de `LIRE_VOISINS` dans `analyse_liaisons.py`.
+`CommandeMeshCore` reste par ailleurs la file du companion LOCAL (`ADVERT`, `FLOOD_ADVERT`) :
+elle ne pilote pas un relais distant, et ces deux files ne se recouvrent pas.
 
 ### 9.5.3 Planification radio sur le relief
 

@@ -5,6 +5,7 @@ from .grafana import GrafanaTokenView
 from .views import (
     DemandeAccesRadioViewSet,
     RattachementNoeudRadioViewSet,
+    TacheAdminMeshCoreViewSet,
     CandidatureAssociationViewSet,
     InvitationAssociationViewSet,
     QualificationMembreViewSet,
@@ -164,6 +165,8 @@ router.register(r'calibrations-radio', CalibrationRadioViewSet)
 router.register(r'demandes-acces-radio', DemandeAccesRadioViewSet)
 # « Ce noeud est a nous » : rattachement d'un repeteur a une institution ou a un compte.
 router.register(r'rattachements-noeuds-radio', RattachementNoeudRadioViewSet)
+# File d'administration a distance des repeteurs MeshCore (voir TacheAdminMeshCore).
+router.register(r'taches-admin-meshcore', TacheAdminMeshCoreViewSet)
 
 
 router.register(

@@ -27,6 +27,8 @@ from .models import (
     MoyenAdminRadio,
     RattachementNoeudRadio,
     StatutPreuveRadio,
+    TacheAdminMeshCore,
+    TypeTacheAdminMeshCore,
     NiveauAccesRadio,
     StatutDemandeAccesRadio,
     HabilitationRegistreVulnerables,
@@ -4604,3 +4606,101 @@ class RattachementNoeudRadioSerializer(serializers.ModelSerializer):
                 "publique que l'ACL du répéteur doit contenir."
             )
         return attrs
+
+
+# Réglages que le serveur refuse de poser, avec la raison — affichée telle quelle, parce qu'un
+# refus sans motif se contourne par une autre voie au lieu d'être compris.
+MOTIF_REGLAGE_INTERDIT = {
+    'prv.key': "Change l'identité du nœud : son trafic passé devient indéchiffrable et ses "
+               "correspondants ne le reconnaissent plus. Le firmware la refuse d'ailleurs à "
+               "distance.",
+    'public.key': "Change l'identité du nœud.",
+    'guest.password': "Transporte un secret, et le firmware le réaffiche dans sa réponse.",
+    'password': "Transporte un secret, et le firmware le réaffiche dans sa réponse.",
+}
+REGLAGES_MESHCORE_INTERDITS = frozenset(MOTIF_REGLAGE_INTERDIT)
+
+
+class TacheAdminMeshCoreSerializer(serializers.ModelSerializer):
+    """Une opération d'administration MeshCore en file (voir TacheAdminMeshCore).
+
+    Le serveur valide ici **la forme** des paramètres ; le droit d'écrire sur ce nœud précis est
+    vérifié par la vue, et la preuve de contrôle par `acces_radio.peut_administrer_noeud_meshcore`.
+
+    Les bornes de `RADIO_TEMPORAIRE` sont celles du firmware, pas les nôtres
+    (`CommonCLI.cpp` l. 261) : les recopier ici évite un aller-retour radio pour se faire
+    répondre « Error, invalid params » — et les dupliquer dans deux langages est accepté parce
+    que la source est citée et que le firmware les refusera de toute façon."""
+
+    compagnon_nom = serializers.CharField(source='compagnon.nom', read_only=True)
+    type_tache_libelle = serializers.CharField(source='get_type_tache_display', read_only=True)
+    est_ecriture = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = TacheAdminMeshCore
+        fields = ['id', 'compagnon', 'compagnon_nom', 'pubkey_cible', 'type_tache',
+                  'type_tache_libelle', 'parametres', 'statut', 'tentatives', 'reponse',
+                  'erreur', 'est_ecriture', 'demande_par',
+                  'date_creation', 'date_prise', 'date_reponse']
+        read_only_fields = ['statut', 'tentatives', 'reponse', 'erreur', 'demande_par',
+                            'date_creation', 'date_prise', 'date_reponse']
+
+    # Bornes du firmware, `CommonCLI.cpp` l. 261 : freq 150-2500 MHz, bw 7-500 kHz, sf 5-12,
+    # cr 5-8, et un délai de retour STRICTEMENT positif.
+    BORNES_TEMPRADIO = {
+        'frequence_mhz': (150.0, 2500.0),
+        'bande_khz': (7.0, 500.0),
+        'facteur_etalement': (5, 12),
+        'taux_codage': (5, 8),
+    }
+
+    def validate_pubkey_cible(self, valeur):
+        valeur = (valeur or '').strip().lower()
+        if len(valeur) != 64 or any(c not in '0123456789abcdef' for c in valeur):
+            raise serializers.ValidationError(
+                "Clé publique attendue : 64 caractères hexadécimaux (32 octets)."
+            )
+        return valeur
+
+    def _valider_radio_temporaire(self, parametres):
+        for champ, (mini, maxi) in self.BORNES_TEMPRADIO.items():
+            if champ not in parametres:
+                raise serializers.ValidationError({champ: "Paramètre requis."})
+            try:
+                valeur = float(parametres[champ])
+            except (TypeError, ValueError):
+                raise serializers.ValidationError({champ: "Nombre attendu."})
+            if not (mini <= valeur <= maxi):
+                raise serializers.ValidationError(
+                    {champ: f"Hors des bornes du firmware : {mini} à {maxi}."}
+                )
+        try:
+            minutes = int(parametres.get('minutes'))
+        except (TypeError, ValueError):
+            minutes = 0
+        if minutes <= 0:
+            # Le firmware l'exige, et c'est ce qui fait tout l'intérêt de la commande : sans
+            # délai de retour, un essai radio raté ne se rattrape pas tout seul.
+            raise serializers.ValidationError({
+                'minutes': "Délai de retour obligatoire et strictement positif : c'est lui qui "
+                           "ramène le nœud à ses paramètres précédents si l'essai échoue."
+            })
+
+    def validate(self, attrs):
+        type_tache = attrs.get('type_tache', getattr(self.instance, 'type_tache', None))
+        parametres = attrs.get('parametres') or {}
+
+        if type_tache == TypeTacheAdminMeshCore.RADIO_TEMPORAIRE:
+            self._valider_radio_temporaire(parametres)
+
+        elif type_tache == TypeTacheAdminMeshCore.DEFINIR_REGLAGE:
+            cle = (parametres.get('cle') or '').strip()
+            if not cle:
+                raise serializers.ValidationError({'cle': "Clé de réglage requise."})
+            if cle in REGLAGES_MESHCORE_INTERDITS:
+                raise serializers.ValidationError({'cle': MOTIF_REGLAGE_INTERDIT[cle]})
+            if 'valeur' not in parametres:
+                raise serializers.ValidationError({'valeur': "Valeur requise."})
+
+        return attrs
+
