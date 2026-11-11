@@ -1,0 +1,518 @@
+<div class="campagnes-page">
+
+  <header class="page-header">
+    <div>
+      <h1><span class="material-icons">campaign</span> Campagnes de disponibilité</h1>
+      <p class="subtitle">
+        Demander à ses bénévoles de confirmer leurs disponibilités sur une période à venir.
+      </p>
+    </div>
+    @if (mesInstitutions.length > 1) {
+      <label class="choix-institution">
+        Association
+        <select [ngModel]="institutionChoisie"
+                (ngModelChange)="changerInstitution($event)" name="institution">
+          @for (i of mesInstitutions; track i.id) {
+            <option [ngValue]="i.id">{{ i.nom }}</option>
+          }
+        </select>
+      </label>
+    }
+  </header>
+
+  @if (erreur) {
+    <div class="toast toast-err"><span class="material-icons">error_outline</span> {{ erreur }}</div>
+  }
+  @if (message) {
+    <div class="toast toast-ok"><span class="material-icons">check_circle</span> {{ message }}</div>
+  }
+
+  @if (chargement) {
+    <div class="loading">Chargement…</div>
+  } @else if (!mesInstitutions.length) {
+    <p class="help-text">
+      <span class="material-icons">info</span>
+      <span>
+        Cette page est réservée aux associations. Lancer une campagne demande d'être
+        <strong>au bureau</strong>, ou d'<strong>encadrer l'équipe visée</strong> — un
+        coordinateur départemental peut solliciter son département sans passer par le national.
+      </span>
+    </p>
+  } @else {
+
+    <nav class="onglets">
+      <button type="button" [class.actif]="onglet === 'liste'" (click)="onglet = 'liste'">
+        <span class="material-icons">list</span> Campagnes
+      </button>
+      <button type="button" [class.actif]="onglet === 'composer'" (click)="nouvelle()">
+        <span class="material-icons">edit_note</span> Nouvelle campagne
+      </button>
+      @if (campagne && campagne.statut !== 'BROUILLON') {
+        <button type="button" [class.actif]="onglet === 'suivi'"
+                (click)="onglet = 'suivi'; chargerSuivi()">
+          <span class="material-icons">insights</span> Suivi
+        </button>
+      }
+    </nav>
+
+    <!-- ══ Liste ═══════════════════════════════════════════════════════════ -->
+    @if (onglet === 'liste') {
+      @for (c of campagnes; track c.id) {
+        <article class="campagne" [class.brouillon]="c.statut === 'BROUILLON'">
+          <header>
+            <div>
+              <strong>{{ c.intitule }}</strong>
+              <span class="marque">{{ c.motif_libelle }}</span>
+              <span class="marque statut">{{ c.statut_libelle }}</span>
+            </div>
+            <button type="button" class="btn-secondary sm" (click)="reprendre(c)">
+              {{ c.statut === 'BROUILLON' ? 'Reprendre' : 'Voir le suivi' }}
+            </button>
+          </header>
+          <p class="periode">
+            Du {{ c.periode_debut | date:'dd/MM/yyyy' }}
+            au {{ c.periode_fin | date:'dd/MM/yyyy' }}
+            ({{ c.nombre_de_jours }} jour(s))
+            @if (c.equipe_nom) { — {{ c.equipe_nom }} }
+          </p>
+          @if (c.suivi) {
+            <ul class="chiffres">
+              <li><strong>{{ c.suivi.cibles }}</strong> ciblé(s)</li>
+              <li><strong>{{ c.suivi.ont_repondu }}</strong> réponse(s)</li>
+              <li class="dispo"><strong>{{ c.suivi.disponibles }}</strong> disponible(s)</li>
+              @if (c.suivi.sans_reponse) {
+                <li class="attente"><strong>{{ c.suivi.sans_reponse }}</strong> sans réponse</li>
+              }
+              @if (c.suivi.injoignables) {
+                <li class="echec"><strong>{{ c.suivi.injoignables }}</strong> injoignable(s)</li>
+              }
+            </ul>
+          }
+        </article>
+      } @empty {
+        <p class="empty-bloc">
+          Aucune campagne. La première se compose en trois temps : le motif et la période, puis
+          les critères — avec le <strong>nombre de bénévoles retenus</strong> avant d'écrire à
+          qui que ce soit —, puis l'envoi.
+        </p>
+      }
+    }
+
+    <!-- ══ Composer ════════════════════════════════════════════════════════ -->
+    @if (onglet === 'composer') {
+
+      <section class="bloc">
+        <h2>1. Pourquoi, et quand</h2>
+
+        <div class="champs">
+          <label class="large">
+            <span>Intitulé <span class="required">*</span></span>
+            <input type="text" name="intitule" [(ngModel)]="saisie.intitule"
+                   placeholder="Vigilance orange — crues de la Garonne">
+            <small>Pour vous retrouver dans vos campagnes. Jamais envoyé tel quel.</small>
+          </label>
+
+          <label>
+            <span>Motif <span class="required">*</span></span>
+            <select name="motif" [(ngModel)]="saisie.motif">
+              @for (m of MOTIFS; track m.valeur) {
+                <option [value]="m.valeur">{{ m.libelle }}</option>
+              }
+            </select>
+            <small>{{ aideMotif }}</small>
+          </label>
+
+          <label>
+            <span>Du <span class="required">*</span></span>
+            <input type="date" name="debut" [(ngModel)]="saisie.periode_debut">
+          </label>
+          <label>
+            <span>Au <span class="required">*</span></span>
+            <input type="date" name="fin" [(ngModel)]="saisie.periode_fin">
+          </label>
+        </div>
+
+        @if (periodeIncoherente) {
+          <p class="page-hint alerte-texte">
+            La fin de période précède son début.
+          </p>
+        } @else if (nombreDeJours) {
+          <p class="page-hint">
+            <strong>{{ nombreDeJours }} jour(s)</strong> à couvrir. Cette période part en base,
+            pas seulement dans le texte du mail : c'est elle que le bénévole verra, et elle qui
+            servira à constituer les équipes.
+          </p>
+        }
+
+        <label class="large">
+          <span>Le « pourquoi », tel qu'il sera lu</span>
+          <textarea name="texte" rows="4" [(ngModel)]="saisie.texte"
+                    placeholder="Météo-France annonce une vigilance orange crues à partir de jeudi. Nous préparons un dispositif d'accueil avec la préfecture."></textarea>
+          <small>
+            Inséré dans le message. Écrivez ce que vous diriez au téléphone : c'est ce qui
+            décide quelqu'un à répondre.
+          </small>
+        </label>
+
+        <div class="creneaux-choix">
+          <span class="etiquette">Créneaux interrogés</span>
+          @for (c of CRENEAUX; track c.creneau) {
+            <label class="case-inline">
+              <input type="checkbox" [checked]="creneauCoche(c.creneau)"
+                     (change)="basculerCreneau(c.creneau)">
+              <span>{{ c.libelle }}</span>
+            </label>
+          }
+          <small>
+            Tout décoché = les quatre. Interroger sur la nuit quand elle ne sert pas fait
+            répondre à côté.
+          </small>
+        </div>
+      </section>
+
+      <section class="bloc">
+        <h2>2. Qui</h2>
+
+        <div class="champs">
+          <label>
+            <span>Étendue</span>
+            <select name="echelon" [(ngModel)]="saisie.echelon">
+              @for (e of ECHELONS; track e.valeur) {
+                <option [value]="e.valeur">{{ e.libelle }}</option>
+              }
+            </select>
+          </label>
+
+          @if (demandeUnTerritoire) {
+            <label>
+              <span>Code du territoire <span class="required">*</span></span>
+              <input type="text" name="territoire" [(ngModel)]="saisie.territoire_code"
+                     placeholder="33, 75, ZD-SUD-OUEST…">
+              <small>Code INSEE, ou identifiant de zone de défense.</small>
+            </label>
+          }
+
+          @if (demandeUneCrise) {
+            <label>
+              <span>Crise <span class="required">*</span></span>
+              <select name="crise" [(ngModel)]="saisie.crise">
+                <option [ngValue]="null">Choisir…</option>
+                @for (c of crises; track c.id) {
+                  <option [ngValue]="c.id">{{ c.name }}</option>
+                }
+              </select>
+            </label>
+            <label>
+              <span>Rayon (km) <span class="required">*</span></span>
+              <input type="number" name="rayon" min="1" [(ngModel)]="saisie.rayon_km">
+            </label>
+          }
+
+          <label>
+            <span>Limiter à une équipe</span>
+            <select name="equipe" [(ngModel)]="saisie.equipe">
+              <option [ngValue]="null">Toute l'association</option>
+              @for (e of equipes; track e.id) {
+                <option [ngValue]="e.id">{{ e.name }}</option>
+              }
+            </select>
+            <small>L'équipe et toutes celles en dessous.</small>
+          </label>
+        </div>
+
+        <div class="selections">
+          <div class="selection">
+            <span class="etiquette">Compétences — au moins une</span>
+            <div class="pastilles">
+              @for (c of competences; track c.id) {
+                <button type="button" class="pastille-choix"
+                        [class.on]="estSelectionne('competences', c.id)"
+                        (click)="basculerDansLaListe('competences', c.id)">
+                  {{ c.nom }}
+                </button>
+              } @empty {
+                <span class="vide-inline">Aucune compétence au catalogue.</span>
+              }
+            </div>
+            <small>
+              « Ou » et non « et » : demander électricien ET infirmier ne décrit personne.
+            </small>
+          </div>
+
+          <div class="selection">
+            <span class="etiquette">Titres exigés — tous</span>
+            <div class="pastilles">
+              @for (q of qualifications; track q.id) {
+                <button type="button" class="pastille-choix"
+                        [class.on]="estSelectionne('qualifications', q.id)"
+                        (click)="basculerDansLaListe('qualifications', q.id)">
+                  {{ q.nom }}
+                </button>
+              } @empty {
+                <span class="vide-inline">Aucun titre au catalogue.</span>
+              }
+            </div>
+            <small>
+              Permis, diplômes : ceux-là se cumulent. Un permis C n'est pas interchangeable
+              avec un PSE1.
+            </small>
+          </div>
+        </div>
+
+        <label class="case">
+          <input type="checkbox" name="ajour" [(ngModel)]="saisie.titres_a_jour">
+          <span>
+            Exiger des titres <strong>à jour</strong>
+            <em>
+              vérifiés par l'encadrement, non périmés, et aptitude médicale valide. Un PSE1
+              déclaré mais jamais contrôlé ne vaut pas un PSE1.
+            </em>
+          </span>
+        </label>
+      </section>
+
+      <section class="bloc">
+        <h2>3. Tours de garde</h2>
+        <p class="page-hint">
+          Pour que personne ne reste mobilisé toute la période. Laissez l'effectif à zéro pour
+          seulement recueillir des disponibilités, sans armer de tours.
+        </p>
+
+        <div class="champs">
+          <label>
+            <span>Durée d'un tour (jours)</span>
+            <input type="number" name="duree" min="1" max="31"
+                   [(ngModel)]="saisie.duree_rotation_jours">
+          </label>
+          <label>
+            <span>Repos minimum (jours)</span>
+            <input type="number" name="repos" min="0" max="31"
+                   [(ngModel)]="saisie.repos_min_jours">
+          </label>
+          <label>
+            <span>Personnes par créneau</span>
+            <input type="number" name="effectif" min="0" max="999"
+                   [(ngModel)]="saisie.effectif_cible">
+          </label>
+        </div>
+
+        @if (nombreDeTours) {
+          <p class="page-hint">
+            La période donnera <strong>{{ nombreDeTours }} tour(s)</strong> de
+            {{ saisie.duree_rotation_jours }} jour(s).
+          </p>
+        }
+      </section>
+
+      <div class="actions-composer">
+        <button type="button" class="btn-secondary" (click)="onglet = 'liste'">Annuler</button>
+        <button type="button" class="btn-primary" [disabled]="!peutEnregistrer || enCours"
+                (click)="enregistrer()">
+          {{ enCours ? 'Enregistrement…' : 'Enregistrer le brouillon' }}
+        </button>
+      </div>
+
+      @if (campagne) {
+        <section class="bloc verification">
+          <h2>Vérifier la cible avant d'envoyer</h2>
+          <p class="page-hint">
+            On ne peut pas « dé-écrire » à des centaines de personnes. Ce bouton fige la liste
+            et vous dit <strong>combien</strong> — sans envoyer quoi que ce soit.
+          </p>
+          <button type="button" class="btn-secondary" [disabled]="enCours"
+                  (click)="verifierLaCible()">
+            <span class="material-icons">group</span> Compter les bénévoles retenus
+          </button>
+
+          @if (apercu) {
+            <div class="apercu">
+              <p class="total">
+                <strong>{{ apercu.total }}</strong> bénévole(s) retenu(s)
+              </p>
+              @if (apercu.total === 0) {
+                <p class="page-hint alerte-texte">
+                  Personne ne correspond. Élargissez l'étendue, ou retirez un titre exigé.
+                </p>
+              } @else {
+                <p class="noms">
+                  {{ apercu.noms.join(', ') }}@if (apercu.tronque) { … }
+                </p>
+                <button type="button" class="btn-primary" [disabled]="enCours"
+                        (click)="envoyer()">
+                  <span class="material-icons">send</span>
+                  Envoyer à {{ apercu.total }} bénévole(s)
+                </button>
+                <p class="page-hint">
+                  Le texte vous sera présenté <strong>une seule fois</strong> pour relecture,
+                  générique, avant de partir personnalisé à chacun.
+                </p>
+              }
+            </div>
+          }
+        </section>
+      }
+    }
+
+    <!-- ══ Suivi ═══════════════════════════════════════════════════════════ -->
+    @if (onglet === 'suivi' && campagne) {
+      <section class="bloc">
+        <div class="entete-suivi">
+          <div>
+            <h2>{{ campagne.intitule }}</h2>
+            <p class="page-hint">
+              {{ campagne.motif_libelle }} — du
+              {{ campagne.periode_debut | date:'dd/MM/yyyy' }} au
+              {{ campagne.periode_fin | date:'dd/MM/yyyy' }}
+            </p>
+          </div>
+          <div class="actions-suivi">
+            @if (campagne.statut === 'ENVOYEE') {
+              <button type="button" class="btn-secondary" [disabled]="enCours"
+                      (click)="relancer()">
+                <span class="material-icons">replay</span> Relancer les silencieux
+              </button>
+              <button type="button" class="btn-secondary" (click)="cloturer()">Clôturer</button>
+            }
+          </div>
+        </div>
+
+        @if (campagne.suivi) {
+          <ul class="chiffres gros">
+            <li><strong>{{ campagne.suivi.cibles }}</strong> ciblé(s)</li>
+            <li><strong>{{ campagne.suivi.contactes }}</strong> contacté(s)</li>
+            <li class="dispo"><strong>{{ campagne.suivi.disponibles }}</strong> disponible(s)</li>
+            <li class="attente"><strong>{{ campagne.suivi.sans_reponse }}</strong> sans réponse</li>
+            @if (campagne.suivi.injoignables) {
+              <li class="echec"><strong>{{ campagne.suivi.injoignables }}</strong> injoignable(s)</li>
+            }
+          </ul>
+          <p class="page-hint">
+            « Sans réponse » ne compte pas ceux qui ont répondu « aucune disponibilité » : les
+            confondre ferait relancer quelqu'un qui a déjà répondu non.
+          </p>
+        }
+      </section>
+
+      @if (couverture) {
+        <section class="bloc">
+          <h2>Couverture de la période</h2>
+          <p class="page-hint">
+            Combien de personnes déclarées, par jour et par créneau. C'est le seul chiffre qui
+            dise si la garde est armée : 80 % de réponses ne valent rien si tout le monde est
+            libre le même jour.
+          </p>
+          <div class="grille-defilante">
+            <table class="grille">
+              <thead>
+                <tr>
+                  <th class="colonne-nom">Créneau</th>
+                  @for (j of couverture.jours; track j.date) {
+                    <th>{{ enTeteJour(j.date) }}</th>
+                  }
+                </tr>
+              </thead>
+              <tbody>
+                @for (c of couverture.creneaux; track c) {
+                  <tr>
+                    <th class="colonne-nom">{{ libelleCreneau(c) }}</th>
+                    @for (j of couverture.jours; track j.date) {
+                      <td class="total"
+                          [class.vide]="!j.creneaux[c]">{{ j.creneaux[c] }}</td>
+                    }
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </section>
+      }
+
+      <section class="bloc">
+        <div class="entete-suivi">
+          <h2>Tours de garde</h2>
+          <button type="button" class="btn-secondary" [disabled]="enCours"
+                  (click)="genererRotations()">
+            <span class="material-icons">auto_awesome</span>
+            {{ rotations.length ? 'Régénérer' : 'Générer les tours' }}
+          </button>
+        </div>
+        <p class="page-hint">
+          Les propositions s'appuient sur ce que les bénévoles ont déclaré, en répartissant la
+          charge et en respectant le repos. <strong>Rien n'est acquis</strong> : c'est vous qui
+          confirmez. Une régénération garde ce que vous avez déjà confirmé.
+        </p>
+
+        @if (manques.length) {
+          <div class="manques">
+            <p><span class="material-icons">warning_amber</span> Sous-effectif :</p>
+            <ul>
+              @for (m of manques; track m.rotation + m.creneau) {
+                <li>
+                  Tour {{ m.rotation }}, {{ libelleCreneau(m.creneau) }} :
+                  {{ m.trouves }} sur {{ m.attendus }}
+                </li>
+              }
+            </ul>
+          </div>
+        }
+
+        @for (r of rotations; track r.id) {
+          <article class="rotation">
+            <header>
+              <strong>Tour {{ r.numero }}</strong>
+              <span>{{ r.date_debut | date:'dd/MM' }} → {{ r.date_fin | date:'dd/MM' }}</span>
+            </header>
+            @if (!r.affectations.length) {
+              <p class="vide-inline">Aucune proposition.</p>
+            } @else {
+              <ul class="affectations">
+                @for (a of r.affectations; track a.id) {
+                  <li [class]="a.statut.toLowerCase()">
+                    <span class="nom">{{ a.nom }}</span>
+                    <span class="marque">{{ libelleCreneau(a.creneau) }}</span>
+                    <span class="motif">{{ a.motif }}</span>
+                    @if (a.statut === 'PROPOSEE') {
+                      <button type="button" class="btn-primary sm"
+                              (click)="decider(a.id, 'CONFIRMEE')">Confirmer</button>
+                      <button type="button" class="btn-danger sm"
+                              (click)="decider(a.id, 'RETIREE')">Retirer</button>
+                    } @else {
+                      <span class="etat">{{ a.statut_libelle }}</span>
+                    }
+                  </li>
+                }
+              </ul>
+            }
+          </article>
+        }
+      </section>
+
+      <section class="bloc">
+        <h2>Qui a répondu</h2>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Bénévole</th><th>État</th><th>Créneaux déclarés</th><th>Contacté le</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (c of cibles; track c.id) {
+              <tr>
+                <td>{{ c.nom }}</td>
+                <td>
+                  <span class="marque" [class.attente]="c.etat === 'CONTACTE'"
+                        [class.echec]="c.etat === 'INJOIGNABLE'">{{ c.etat_libelle }}</span>
+                  @if (c.erreur) { <span class="motif">{{ c.erreur }}</span> }
+                </td>
+                <td>{{ c.creneaux_declares }}</td>
+                <td>{{ c.date_envoi ? (c.date_envoi | date:'dd/MM HH:mm') : '—' }}</td>
+              </tr>
+            } @empty {
+              <tr><td colspan="4" class="empty">Aucune cible.</td></tr>
+            }
+          </tbody>
+        </table>
+      </section>
+    }
+  }
+</div>

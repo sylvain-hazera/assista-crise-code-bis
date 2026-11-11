@@ -8389,3 +8389,311 @@ class ConflitSynchronisation(EnvironmentScopedModel):
     def __str__(self):
         return f"Conflit {self.modele} {self.objet_id} ({self.statut})"
 
+
+
+# ══════════════════════════════════════════════════════════════════════════════════════════════
+# CAMPAGNES DE DISPONIBILITÉ
+#
+# Demande de Sylvain du 11/11/2026 : une association doit pouvoir solliciter en masse ses
+# bénévoles pour une période à venir, sur critères, et que la PÉRIODE ENTRE EN BASE — « et pas
+# seulement un texte libre dans le mail » — pour constituer les équipes en avance.
+# ══════════════════════════════════════════════════════════════════════════════════════════════
+
+
+class MotifCampagne(models.TextChoices):
+    """Pourquoi on solliciter ses bénévoles. **Typé et non libre**, et c'est le cœur du sujet.
+
+    Un texte libre ne permet ni de trier les campagnes passées, ni d'adapter le ton du message,
+    ni de savoir plus tard si l'association a été sollicitée pour une crise qui n'est jamais
+    arrivée. Les trois valeurs sont celles que Sylvain a nommées, et elles ne décrivent pas la
+    même urgence : on ne demande pas la même chose avant, pendant et après."""
+
+    CRISE_A_VENIR = "CRISE_A_VENIR", "Crise à venir (prévisions, vigilance)"
+    CRISE_EN_COURS = "CRISE_EN_COURS", "Crise en cours"
+    RETABLISSEMENT = "RETABLISSEMENT", "Rétablissement à long terme"
+    EXERCICE = "EXERCICE", "Exercice ou formation"
+
+
+class StatutCampagne(models.TextChoices):
+    BROUILLON = "BROUILLON", "Brouillon"
+    ENVOYEE = "ENVOYEE", "Envoyée"
+    CLOTUREE = "CLOTUREE", "Clôturée"
+
+
+class EchelonCiblage(models.TextChoices):
+    """Étendue géographique de la sollicitation.
+
+    `RAYON_CRISE` exige une crise rattachée : c'est le seul critère qui ne se déduit pas des
+    codes de secteur du bénévole mais d'une distance réelle."""
+
+    NATIONAL = "NATIONAL", "National"
+    ZONE_DEFENSE = "ZONE_DEFENSE", "Zone de défense"
+    REGION = "REGION", "Région"
+    DEPARTEMENT = "DEPARTEMENT", "Département"
+    COMMUNE = "COMMUNE", "Commune"
+    RAYON_CRISE = "RAYON_CRISE", "Rayon autour de la crise"
+
+
+class CampagneDisponibilite(EnvironmentScopedModel):
+    """Sollicitation de masse : « êtes-vous disponible du X au Y ? ».
+
+    **La période est une donnée, pas une phrase.** C'est la demande explicite de Sylvain : un
+    mail qui dit « du 12 au 26 janvier » dans son corps ne permet pas de constituer les équipes
+    en avance, parce que rien en base ne sait de quoi il parle. Ici, `periode_debut` et
+    `periode_fin` bornent la grille que le bénévole voit, les créneaux qu'il déclare, et les
+    rotations qu'on en tire.
+
+    Les réponses, elles, ne créent **aucun** nouveau stockage de disponibilité : elles vont dans
+    `DisponibiliteOffre`, le moteur unique que lit la constitution d'équipe. Une campagne est un
+    moyen de faire remplir ce moteur, pas une source parallèle.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    institution = models.ForeignKey(
+        "Institution", on_delete=models.CASCADE, related_name="campagnes_disponibilite",
+    )
+    cree_par = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="campagnes_disponibilite_creees",
+    )
+
+    intitule = models.CharField(
+        max_length=200,
+        help_text="Ce que l'association verra dans sa liste de campagnes. Jamais envoyé tel "
+                   "quel au bénévole : le message a son propre texte.",
+    )
+    motif = models.CharField(max_length=20, choices=MotifCampagne.choices)
+
+    # Texte d'explication, écrit par l'association et inséré dans le message. Chiffré : il
+    # décrit une situation opérationnelle, parfois avant qu'elle soit publique (une vigilance
+    # météo attendue, un dispositif préfectoral en préparation).
+    texte = EncryptedTextField(
+        blank=True,
+        help_text="Le « pourquoi », écrit par l'association. Inséré dans le message à la place "
+                   "du placeholder [TEXTE].",
+    )
+
+    crise = models.ForeignKey(
+        "Crisis", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="campagnes_disponibilite",
+        help_text="Obligatoire pour un ciblage par rayon : c'est son point qui sert de centre.",
+    )
+
+    periode_debut = models.DateField()
+    periode_fin = models.DateField()
+
+    #: Créneaux sur lesquels on interroge. Vide = les quatre. Une permanence de nuit ne se
+    #: demande pas en cochant « disponible » tout court, et interroger sur les quatre quand
+    #: trois ne servent pas fait répondre à côté.
+    creneaux = ArrayField(
+        models.CharField(max_length=10, choices=Creneau.choices),
+        blank=True, default=list,
+    )
+
+    # ── Critères de ciblage, figés à la création ────────────────────────────────────────────
+    # Figés et non recalculés : la liste des destinataires doit rester celle à qui on a
+    # réellement écrit. Un bénévole qui obtient son PSE1 la semaine suivante n'a pas reçu le
+    # message, et prétendre le contraire dans le suivi serait un mensonge.
+    echelon = models.CharField(
+        max_length=15, choices=EchelonCiblage.choices, default=EchelonCiblage.NATIONAL,
+    )
+    #: Code du territoire visé selon l'échelon (code INSEE de commune/département/région, ou
+    #: identifiant de zone de défense « ZD-SUD »). Vide pour NATIONAL et RAYON_CRISE.
+    territoire_code = models.CharField(max_length=20, blank=True)
+    rayon_km = models.PositiveIntegerField(
+        null=True, blank=True,
+        help_text="RAYON_CRISE uniquement : distance au point de la crise.",
+    )
+
+    competences = models.ManyToManyField(
+        "Competence", blank=True, related_name="campagnes_disponibilite",
+        help_text="Le bénévole doit déclarer AU MOINS UNE de ces compétences. Vide = toutes.",
+    )
+    qualifications = models.ManyToManyField(
+        "Qualification", blank=True, related_name="campagnes_disponibilite",
+        help_text="Titres exigés : permis, diplômes. Le bénévole doit les avoir TOUS.",
+    )
+    #: Exige que les titres exigés soient vérifiés par l'encadrement et non périmés, et que
+    #: l'aptitude du membre soit valide. C'est le « à jour » demandé : un PSE1 déclaré mais
+    #: jamais contrôlé, ou expiré, ne vaut pas un PSE1.
+    titres_a_jour = models.BooleanField(default=True)
+
+    equipe = models.ForeignKey(
+        "Team", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="campagnes_disponibilite",
+        help_text="Limite la sollicitation à cette équipe et à toutes celles en dessous.",
+    )
+
+    # ── Rotations ───────────────────────────────────────────────────────────────────────────
+    duree_rotation_jours = models.PositiveSmallIntegerField(
+        default=3,
+        help_text="Longueur d'un tour de garde. Les rotations découpent la période par "
+                   "tranches de cette durée.",
+    )
+    repos_min_jours = models.PositiveSmallIntegerField(
+        default=2,
+        help_text="Repos minimum entre deux tours pour une même personne.",
+    )
+    effectif_cible = models.PositiveSmallIntegerField(
+        default=0,
+        help_text="Combien de personnes par créneau et par rotation. 0 = pas de génération "
+                   "de tours de garde, on se contente de recueillir les disponibilités.",
+    )
+
+    statut = models.CharField(
+        max_length=12, choices=StatutCampagne.choices, default=StatutCampagne.BROUILLON,
+    )
+    date_creation = models.DateTimeField(auto_now_add=True)
+    date_envoi = models.DateTimeField(null=True, blank=True)
+    date_cloture = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-date_creation"]
+        constraints = [
+            # `condition` et non `check` : ce dernier est déprécié depuis Django 5.1 et
+            # disparaît en 6.0. Autant ne pas semer un avertissement dans toute la suite.
+            models.CheckConstraint(
+                condition=models.Q(periode_fin__gte=models.F("periode_debut")),
+                name="ck_campagne_periode_coherente",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.intitule} ({self.periode_debut} → {self.periode_fin})"
+
+    @property
+    def creneaux_effectifs(self):
+        """Les créneaux interrogés, la liste vide valant « les quatre »."""
+        return list(self.creneaux) if self.creneaux else list(Creneau.values)
+
+    @property
+    def nombre_de_jours(self):
+        return (self.periode_fin - self.periode_debut).days + 1
+
+
+class EtatCible(models.TextChoices):
+    A_CONTACTER = "A_CONTACTER", "À contacter"
+    CONTACTE = "CONTACTE", "Contacté"
+    A_REPONDU = "A_REPONDU", "A répondu"
+    INJOIGNABLE = "INJOIGNABLE", "Envoi impossible"
+
+
+class CibleCampagne(EnvironmentScopedModel):
+    """Un bénévole retenu par les critères d'une campagne, et ce qu'il en a fait.
+
+    **Pourquoi matérialiser la cible** plutôt que rejouer les critères à la lecture : les
+    critères évoluent (un titre obtenu, un déménagement), et le suivi doit rester celui des gens
+    à qui on a **réellement** écrit. Sans cette table, « 12 sans réponse » changerait de sens
+    d'un jour à l'autre, et relancer les silencieux deviendrait impossible.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    campagne = models.ForeignKey(
+        CampagneDisponibilite, on_delete=models.CASCADE, related_name="cibles",
+    )
+    utilisateur = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="cibles_campagne",
+    )
+    #: La ressource du bénévole au moment du ciblage : c'est elle qui porte les créneaux.
+    ressource = models.ForeignKey(
+        "Offer", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="cibles_campagne",
+    )
+
+    etat = models.CharField(
+        max_length=12, choices=EtatCible.choices, default=EtatCible.A_CONTACTER,
+    )
+    date_envoi = models.DateTimeField(null=True, blank=True)
+    date_reponse = models.DateTimeField(null=True, blank=True)
+    #: Combien de créneaux la personne a déclarés DANS la période, au moment de sa réponse.
+    #: Zéro est une réponse : « je ne suis pas disponible » n'est pas un silence, et les
+    #: confondre ferait relancer quelqu'un qui a déjà répondu non.
+    creneaux_declares = models.PositiveSmallIntegerField(default=0)
+    erreur = models.CharField(max_length=255, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["campagne", "utilisateur"], name="uq_cible_campagne_utilisateur",
+            ),
+        ]
+        ordering = ["utilisateur__last_name", "utilisateur__first_name"]
+
+    def __str__(self):
+        return f"{self.utilisateur.email} — {self.campagne.intitule} ({self.etat})"
+
+
+class RotationCampagne(EnvironmentScopedModel):
+    """Un tour de garde : une tranche de la période, à armer.
+
+    Découpée mécaniquement par `duree_rotation_jours` : c'est ce qui empêche qu'un bénévole
+    reste mobilisé toute la période, demande explicite de Sylvain."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    campagne = models.ForeignKey(
+        CampagneDisponibilite, on_delete=models.CASCADE, related_name="rotations",
+    )
+    numero = models.PositiveSmallIntegerField()
+    date_debut = models.DateField()
+    date_fin = models.DateField()
+
+    class Meta:
+        ordering = ["campagne", "numero"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["campagne", "numero"], name="uq_rotation_campagne_numero",
+            ),
+        ]
+
+    def __str__(self):
+        return f"Rotation {self.numero} ({self.date_debut} → {self.date_fin})"
+
+
+class StatutAffectationRotation(models.TextChoices):
+    PROPOSEE = "PROPOSEE", "Proposée par le planificateur"
+    CONFIRMEE = "CONFIRMEE", "Confirmée par l'encadrement"
+    RETIREE = "RETIREE", "Retirée"
+
+
+class AffectationRotation(EnvironmentScopedModel):
+    """Qui tient quel créneau de quel tour de garde.
+
+    `PROPOSEE` par défaut : le planificateur **propose**, l'encadrement tranche. Une affectation
+    générée automatiquement et présentée comme acquise ferait partir une garde sur un calcul que
+    personne n'a relu — et le planificateur ne connaît ni les brouilles, ni les trajets, ni ce
+    qui s'est dit au téléphone.
+
+    Une régénération efface les `PROPOSEE` et **garde les `CONFIRMEE`** : sinon chaque
+    recalcul détruirait les décisions prises."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    rotation = models.ForeignKey(
+        RotationCampagne, on_delete=models.CASCADE, related_name="affectations",
+    )
+    utilisateur = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="affectations_rotation",
+    )
+    creneau = models.CharField(max_length=10, choices=Creneau.choices)
+    statut = models.CharField(
+        max_length=10, choices=StatutAffectationRotation.choices,
+        default=StatutAffectationRotation.PROPOSEE,
+    )
+    #: Pourquoi le planificateur a retenu cette personne. Affiché tel quel : une proposition
+    #: qu'on ne peut pas expliquer ne se relit pas, elle se subit.
+    motif = models.CharField(max_length=255, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["rotation", "utilisateur", "creneau"],
+                name="uq_affectation_rotation",
+            ),
+        ]
+        ordering = ["rotation", "creneau"]
+
+    def __str__(self):
+        return f"{self.utilisateur.email} — {self.rotation} ({self.creneau})"

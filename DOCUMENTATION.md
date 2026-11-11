@@ -1195,6 +1195,116 @@ Trois choix qui tiennent à l'échelle réelle (125 équipes pour les Casques Ja
   absent (autre institution, ou désactivé) devient racine plutôt que de disparaître sans que
   rien ne le dise. Les deux sont tenus par un test.
 
+#### Campagnes de disponibilité : solliciter en masse, sur critères
+
+Demande de Sylvain du 11/11/2026. Le point qui commande toute la conception est celui-ci :
+« **Date de la période demandée — et pas seulement un texte libre dans le mail** — pour le faire
+rentrer en bdd pour constituer les équipes en avance. »
+
+Modèles (migration `0256`) : `CampagneDisponibilite`, `CibleCampagne`, `RotationCampagne`,
+`AffectationRotation`. Page `/admin/campagnes-disponibilite`, dans la rubrique **Mon
+association**.
+
+**Aucun de ces modèles ne stocke de disponibilité.** Les réponses vont dans
+`DisponibiliteOffre`, le moteur unique que lit la constitution d'équipe. Une campagne est un
+moyen de faire remplir ce moteur, jamais une source parallèle — c'est la leçon du double moteur
+corrigé le même jour.
+
+**Le ciblage ne réinvente rien** (`core/ciblage_benevoles.py`), et c'est ce qui le rend court :
+
+| Critère | D'où il vient |
+|---|---|
+| compétences | `Offer.competences`, porté par la ressource du bénévole |
+| permis, diplômes | `QualificationMembre.qualification`, et ils se **cumulent** |
+| « à jour » | `statut=VERIFIEE` + `date_expiration` + `ContactInstitution.aptitude_valide_jusquau` |
+| commune / département / région | les codes dénormalisés de la ressource |
+| zone de défense | `core/zones_defense.py` |
+| X km de la crise | PostGIS, `Distance` sur `Crisis.location` |
+| branche de l'arborescence | `Team.equipe_parente`, descendu par `visibilite_membres` |
+
+Trois pièges, chacun tenu par un test :
+
+- **Un critère inapplicable est une ERREUR** (`CritereInapplicable`), jamais un silence.
+  Demander « à 30 km de la crise » sans crise rattachée ne doit pas rendre tout le monde : on
+  écrirait à 400 personnes en croyant en viser 30, et ça ne se défait pas.
+- **Les titres se cumulent par un COMPTE distinct**, pas par des `filter()` enchaînés : deux
+  `filter()` sur la même relation inverse se satisfont de deux lignes différentes, donc
+  quelqu'un qui a le permis deux fois passerait pour quelqu'un qui a le permis **et** le PSE1 —
+  et partirait sans le titre requis.
+- **`departements_de_zone` rend des couples `(code, libellé)`**, pas des codes. Les passer à un
+  `__in` ne lève pas, ne filtre rien, et rend zéro ligne. Rencontré en écrivant le module.
+
+Les **compétences sont un « ou »**, les **titres un « et »** : demander « électricien ET
+infirmier » ne décrit personne, alors qu'un permis C n'est pas interchangeable avec un PSE1.
+
+**Trois temps, et pas un bouton.** Composer (motif typé, période, texte) → `apercu`, qui fige la
+liste et rend le **nombre** sans écrire à personne → envoyer. « 87 bénévoles retenus » est la
+seule chose qui permette de s'apercevoir qu'un critère ne filtre pas ce qu'on croyait.
+
+**L'envoi passe par `send_modele_mail`** (modèle `CAMPAGNE_DISPONIBILITE`), donc par la
+relecture avant envoi et ses **lots** : un texte générique validé **une fois** pour 87
+destinataires, chacun repersonnalisé à l'envoi. Écrire un second chemin d'envoi aurait fait
+exactement ce que la fenêtre de relecture existe pour empêcher.
+
+Le lien du message est un lien magique avec `next=/ma-fiche-benevole?campagne=<id>` : la grille
+s'ouvre **sur la période demandée**, avec le motif rappelé. Sans ce paramètre, le bénévole
+arriverait sur ses quinze prochains jours et répondrait à une autre question. Le `next` est
+restreint aux chemins internes dans `MagicLoginComponent` comme dans `ActivateAccountComponent` :
+un lien qui vaut identité pendant sept jours et circule par email ne doit pas pouvoir servir de
+redirection ouverte.
+
+**Répondre, c'est remplir sa grille.** Il n'y a pas de bouton « j'ai répondu » : un geste de
+confirmation oublié ferait relancer quelqu'un qui a fait ce qu'on lui demandait. Et **zéro
+créneau est une réponse** — « je ne suis pas disponible » n'est pas un silence ; `relancer` ne
+touche donc que les `CONTACTE`.
+
+**Qui peut lancer** : le bureau pour toute l'association, l'encadrement pour **sa** branche.
+Sinon la coordination nationale est le seul goulot pour une crise départementale, et une
+sollicitation qui doit partir dans l'heure attend une validation à Paris. Un encadrant ne peut
+pas lancer une campagne sans équipe : elle viserait des gens dont il n'a pas la charge.
+
+#### Tours de garde : la règle de répartition
+
+`core/rotations_campagne.py`. La période est découpée par `duree_rotation_jours` (la dernière
+tranche peut être plus courte — refuser le dernier jour laisserait un trou de garde), et chaque
+`(tour, créneau)` cherche `effectif_cible` personnes. `effectif_cible = 0` crée les tranches
+sans affecter personne : on recueille des disponibilités sans armer de garde.
+
+La règle est ordonnée, et chaque niveau répond à une objection :
+
+1. **seulement ceux qui se sont déclarés** sur ce créneau — une garde armée avec quelqu'un qui
+   n'a rien promis n'est pas armée ;
+2. **le moins de jours déjà posés**, avec `repos_min_jours` entre deux tours : c'est la raison
+   d'être des rotations, sans quoi le planificateur reprendrait les mêmes du premier au dernier
+   jour ;
+3. **le moins de créneaux déjà posés**, pour l'équité ;
+4. **le plus proche de la crise**, quand la campagne en nomme une ;
+5. **l'ordre alphabétique**, pour que deux exécutions donnent le même plan — un planificateur
+   qui rebrasse les noms à chaque recalcul ne se relit pas.
+
+Deux garde-fous qui rendent la génération automatique acceptable :
+
+- **tout sort en `PROPOSEE`.** Le calcul ignore les trajets réels, les brouilles et ce qui s'est
+  dit au téléphone ; l'encadrement confirme. Une régénération **garde les `CONFIRMEE`**, sinon
+  chaque recalcul détruirait les décisions prises.
+- **le sous-effectif est dit**, nommément (`manques`). Une grille qui paraît complète parce
+  qu'on a caché les trous est pire que pas de grille.
+
+Chaque proposition porte son `motif` en clair (« disponible, 3 jours déjà posés, à 12 km de la
+crise ») : une proposition qu'on ne peut pas expliquer ne se relit pas, elle se subit.
+
+#### La rubrique « Mon association » dans le menu
+
+Demande du 11/11/2026 : « ramener tout ce qui est association dans une rubrique association ».
+Nouveau cadre `association` dans `GROUPES_NAV`, entre « Préparation » et « Communications », qui
+porte **Membres** et **Campagnes de disponibilité**. Elles étaient dispersées dans
+« Préparation », entre les sites sensibles et les personnes vulnérables — un président
+d'association devait les y chercher parmi des écrans de collectivité qui ne le concernent pas.
+
+Le cadre entier disparaît pour une mairie sans rien de spécial à écrire : toutes ses entrées
+portent `visibilite: 'membres-association'`, et le menu masque déjà un cadre dont aucune entrée
+n'est visible.
+
 ### 5.12 Sites sensibles et open data (`core/opendata/`)
 
 Les enjeux du territoire d'une commune (`SiteSensible` : écoles, structures de soins, sites

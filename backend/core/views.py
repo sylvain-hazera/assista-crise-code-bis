@@ -170,6 +170,13 @@ def extract_exif_metadata(filepath):
 
 from .crypto_fields import blind_index
 from .models import (
+    AffectationRotation,
+    CampagneDisponibilite,
+    CibleCampagne,
+    EtatCible,
+    RotationCampagne,
+    StatutAffectationRotation,
+    StatutCampagne,
     DemandeAccesRadio,
     NoeudPublicMeshCore,
     RattachementNoeudRadio,
@@ -607,6 +614,10 @@ def send_crisis_regulateur_invite_email(request, user, crisis, institution):
     )
 
 from .serializers import (
+    AffectationRotationSerializer,
+    CampagneDisponibiliteSerializer,
+    CibleCampagneSerializer,
+    RotationCampagneSerializer,
     DemandeAccesRadioSerializer,
     BrouillonEnvoiSerializer,
     ConfigurationEnvoiInstitutionSerializer,
@@ -16104,6 +16115,246 @@ class QualificationMembreViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelVi
         })
 
 
+class CampagneDisponibiliteViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
+    """Campagnes de disponibilité d'une association.
+
+    Le cycle est volontairement en trois temps, et pas en un bouton : **composer** (brouillon),
+    **vérifier la cible** (`apercu`, qui donne le nombre avant d'écrire à qui que ce soit), puis
+    **envoyer**. Écrire à quatre cents personnes au nom d'une association ne doit pas pouvoir se
+    faire d'un clic depuis un formulaire qu'on vient de remplir.
+
+    Qui peut lancer : le bureau pour toute l'association, l'encadrement pour SA branche (voir
+    `campagnes_disponibilite.peut_lancer_campagne`).
+    """
+
+    queryset = CampagneDisponibilite.objects.select_related(
+        "institution", "crise", "equipe", "cree_par",
+    ).prefetch_related("cibles", "competences", "qualifications")
+    serializer_class = CampagneDisponibiliteSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        """Les campagnes des institutions dont l'appelant est membre actif.
+
+        Pas `IsInstitutionalActor` : un encadrant d'association est `UTIL_SIMPLE` ou `SECOURS`
+        selon qu'on l'a déjà promu, et le filtrer sur le type de compte fermerait la page à
+        ceux-là même qui lancent les campagnes."""
+        qs = super().get_queryset()
+        if get_effective_role(self.request) == UserRole.ADMINISTRATOR:
+            return qs
+        institutions = ContactInstitution.objects.filter(
+            utilisateur=self.request.user, actif=True,
+        ).values_list("institution_id", flat=True)
+        return qs.filter(institution_id__in=list(institutions))
+
+    def _verifier_le_droit(self, institution, equipe):
+        from .campagnes_disponibilite import peut_lancer_campagne
+
+        if not peut_lancer_campagne(self.request.user, institution, equipe):
+            raise PermissionDenied(
+                "Lancer une campagne demande d'être au bureau de l'association, ou "
+                "d'encadrer l'équipe visée."
+            )
+
+    def perform_create(self, serializer):
+        institution = serializer.validated_data["institution"]
+        self._verifier_le_droit(institution, serializer.validated_data.get("equipe"))
+        campagne = serializer.save(
+            cree_par=self.request.user,
+            environment=get_active_environment(self.request),
+        )
+        audit_log(
+            request=self.request, action_code="CREATION",
+            objet_type="CampagneDisponibilite", objet_id=campagne.id,
+            commentaire=f"Campagne « {campagne.intitule} » créée "
+                        f"({campagne.periode_debut} → {campagne.periode_fin})",
+        )
+
+    def perform_update(self, serializer):
+        campagne = self.get_object()
+        self._verifier_le_droit(campagne.institution, campagne.equipe)
+        if campagne.statut != StatutCampagne.BROUILLON:
+            # Les critères et la période d'une campagne envoyée ne se modifient pas : les gens
+            # ont reçu un message qui annonce une période précise, et changer la période
+            # ferait répondre à une question que personne n'a posée.
+            raise ValidationError(
+                "Une campagne déjà envoyée ne se modifie plus. Clôturez-la et créez-en une "
+                "autre."
+            )
+        serializer.save()
+
+    @action(detail=True, methods=["post"])
+    def apercu(self, request, pk=None):
+        """Combien de bénévoles les critères retiennent, et un échantillon de noms.
+
+        **Avant tout envoi, et c'est le point** : « 87 bénévoles retenus » est la seule chose
+        qui permet de s'apercevoir qu'un critère ne filtre pas ce qu'on croyait. Un ciblage
+        qu'on découvre à l'arrivée du premier mail est un ciblage qu'on ne peut plus corriger.
+        """
+        from .campagnes_disponibilite import constituer_les_cibles
+        from .ciblage_benevoles import CritereInapplicable
+
+        campagne = self.get_object()
+        self._verifier_le_droit(campagne.institution, campagne.equipe)
+        try:
+            bilan = constituer_les_cibles(campagne)
+        except CritereInapplicable as erreur:
+            # Nommé, jamais silencieux : un critère sans effet ÉLARGIT la cible.
+            return Response({"error": str(erreur)}, status=status.HTTP_400_BAD_REQUEST)
+
+        cibles = CibleCampagne.objects.filter(campagne=campagne).select_related("utilisateur")
+        return Response({
+            **bilan,
+            "cibles": CibleCampagneSerializer(
+                cibles[:50], many=True, context={"request": request}).data,
+            "tronque": bilan["total"] > 50,
+        })
+
+    @action(detail=True, methods=["post"])
+    def envoyer(self, request, pk=None):
+        """Écrit aux cibles restant à contacter.
+
+        Sert aussi de relance : seules les cibles en `A_CONTACTER` reçoivent, donc rappuyer
+        n'écrit pas deux fois aux mêmes. Pour relancer les silencieux, voir `relancer`."""
+        from .campagnes_disponibilite import constituer_les_cibles, envoyer_campagne
+        from .ciblage_benevoles import CritereInapplicable
+
+        campagne = self.get_object()
+        self._verifier_le_droit(campagne.institution, campagne.equipe)
+        if campagne.statut == StatutCampagne.CLOTUREE:
+            return Response({"error": "Cette campagne est clôturée."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            constituer_les_cibles(campagne)
+        except CritereInapplicable as erreur:
+            return Response({"error": str(erreur)}, status=status.HTTP_400_BAD_REQUEST)
+
+        bilan = envoyer_campagne(campagne, request)
+        audit_log(
+            request=request, action_code="ENVOI_MASSE",
+            objet_type="CampagneDisponibilite", objet_id=campagne.id,
+            commentaire=f"Campagne « {campagne.intitule} » : {bilan['envoyes']} message(s) "
+                        f"envoyé(s), {bilan['echecs']} échec(s)",
+        )
+        return Response({
+            **bilan,
+            "campagne": self.get_serializer(campagne).data,
+        })
+
+    @action(detail=True, methods=["post"])
+    def relancer(self, request, pk=None):
+        """Remet en « à contacter » ceux qui n'ont rien répondu, puis renvoie.
+
+        Ceux qui ont répondu « aucune disponibilité » ne sont PAS relancés : ils ont répondu.
+        Les relancer est le meilleur moyen de ne plus être lu."""
+        from .campagnes_disponibilite import envoyer_campagne
+
+        campagne = self.get_object()
+        self._verifier_le_droit(campagne.institution, campagne.equipe)
+        remis = CibleCampagne.objects.filter(
+            campagne=campagne, etat=EtatCible.CONTACTE,
+        ).update(etat=EtatCible.A_CONTACTER)
+        bilan = envoyer_campagne(campagne, request)
+        audit_log(
+            request=request, action_code="ENVOI_MASSE",
+            objet_type="CampagneDisponibilite", objet_id=campagne.id,
+            commentaire=f"Relance de « {campagne.intitule} » : {remis} silencieux, "
+                        f"{bilan['envoyes']} message(s) envoyé(s)",
+        )
+        return Response({**bilan, "relances": remis})
+
+    @action(detail=True, methods=["get"])
+    def cibles(self, request, pk=None):
+        campagne = self.get_object()
+        cibles = CibleCampagne.objects.filter(campagne=campagne).select_related("utilisateur")
+        return Response(CibleCampagneSerializer(
+            cibles, many=True, context={"request": request}).data)
+
+    @action(detail=True, methods=["get"])
+    def couverture(self, request, pk=None):
+        """Combien de personnes déclarées par jour et par créneau.
+
+        Le seul chiffre qui dise si la garde est armée : un taux de réponse de 80 % ne dit rien
+        si tous les répondants sont disponibles le même jour."""
+        from .campagnes_disponibilite import couverture
+
+        return Response(couverture(self.get_object()))
+
+    @action(detail=True, methods=["post", "get"], url_path="rotations")
+    def rotations(self, request, pk=None):
+        """GET : les tours de garde. POST : les (re)générer.
+
+        La régénération garde les affectations confirmées — sinon chaque recalcul détruirait
+        les décisions de l'encadrement."""
+        from .rotations_campagne import generer_rotations
+
+        campagne = self.get_object()
+        if request.method == "POST":
+            self._verifier_le_droit(campagne.institution, campagne.equipe)
+            bilan = generer_rotations(campagne)
+            audit_log(
+                request=request, action_code="MODIFICATION",
+                objet_type="CampagneDisponibilite", objet_id=campagne.id,
+                commentaire=f"Rotations générées : {bilan['rotations']} tour(s), "
+                            f"{bilan['proposees']} proposition(s), "
+                            f"{len(bilan['manques'])} créneau(x) en sous-effectif",
+            )
+        else:
+            bilan = None
+
+        rotations = RotationCampagne.objects.filter(campagne=campagne).prefetch_related(
+            "affectations__utilisateur")
+        return Response({
+            "bilan": bilan,
+            "rotations": RotationCampagneSerializer(
+                rotations, many=True, context={"request": request}).data,
+        })
+
+    @action(detail=True, methods=["post"], url_path="confirmer-affectation")
+    def confirmer_affectation(self, request, pk=None):
+        """L'encadrement tranche sur une proposition : confirmer ou retirer.
+
+        C'est le geste qui manquait pour que la génération automatique soit acceptable : une
+        affectation calculée et présentée comme acquise ferait partir une garde sur un calcul
+        que personne n'a relu."""
+        campagne = self.get_object()
+        self._verifier_le_droit(campagne.institution, campagne.equipe)
+
+        affectation = AffectationRotation.objects.filter(
+            pk=request.data.get("affectation"), rotation__campagne=campagne,
+        ).first()
+        if affectation is None:
+            return Response({"error": "Affectation inconnue pour cette campagne."},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        decision = (request.data.get("decision") or "").upper()
+        if decision not in (StatutAffectationRotation.CONFIRMEE,
+                            StatutAffectationRotation.RETIREE):
+            return Response({"error": "Décision attendue : CONFIRMEE ou RETIREE."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        affectation.statut = decision
+        affectation.save(update_fields=["statut"])
+        audit_log(
+            request=request, action_code="MODIFICATION",
+            objet_type="AffectationRotation", objet_id=affectation.id,
+            commentaire=f"Affectation {decision.lower()} sur la rotation "
+                        f"{affectation.rotation.numero} ({affectation.creneau})",
+        )
+        return Response(AffectationRotationSerializer(
+            affectation, context={"request": request}).data)
+
+    @action(detail=True, methods=["post"])
+    def cloturer(self, request, pk=None):
+        campagne = self.get_object()
+        self._verifier_le_droit(campagne.institution, campagne.equipe)
+        campagne.statut = StatutCampagne.CLOTUREE
+        campagne.date_cloture = timezone.now()
+        campagne.save(update_fields=["statut", "date_cloture"])
+        return Response(self.get_serializer(campagne).data)
+
+
 class InvitationAssociationViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
     """Liens d'invitation d'une association — réservés à son bureau.
 
@@ -21680,6 +21931,31 @@ class MesDisponibilitesView(generics.GenericAPIView):
     #: Les écrans citoyens plus anciens en affichent 8 ; ils ne sont pas touchés.
     JOURS = 15
 
+    def _campagne_demandee(self, request):
+        """La campagne passée en paramètre, SI l'appelant en est bien une cible.
+
+        Le contrôle n'est pas cosmétique : sans lui, n'importe qui pourrait lire l'intitulé, le
+        motif et le texte d'une campagne — donc une information opérationnelle parfois
+        antérieure à sa publication (une vigilance attendue, un dispositif en préparation) —
+        en devinant un identifiant."""
+        identifiant = request.query_params.get("campagne")
+        if not identifiant:
+            # En POST, l'écran la passe dans le corps : `?campagne=` n'y est pas forcément
+            # recopié, et perdre le rattachement ferait passer la réponse pour spontanée.
+            donnees = getattr(request, "data", None) or {}
+            identifiant = donnees.get("campagne") if hasattr(donnees, "get") else None
+        if not identifiant:
+            return None
+        # Un identifiant mal formé ne doit pas lever : la déclaration de créneau, elle, est
+        # valide et doit aboutir.
+        try:
+            uuid.UUID(str(identifiant))
+        except (TypeError, ValueError):
+            return None
+        return CampagneDisponibilite.objects.filter(
+            pk=identifiant, cibles__utilisateur=request.user,
+        ).select_related("institution").first()
+
     def _mes_ressources(self, request):
         """Les offres « Bénévolat » internes dont l'appelant est l'auteur.
 
@@ -21712,14 +21988,27 @@ class MesDisponibilitesView(generics.GenericAPIView):
             # d'afficher une grille vide inexpliquée.
             return Response({"ressources": [], "jours": [], "creneaux": CRENEAUX_ORDONNES})
 
-        try:
-            nb_jours = int(request.query_params.get("jours", self.JOURS))
-        except (TypeError, ValueError):
-            nb_jours = self.JOURS
-        nb_jours = max(1, min(nb_jours, 31))
-
-        debut = timezone.localdate()
-        jours = [debut + datetime.timedelta(days=i) for i in range(nb_jours)]
+        # Une campagne impose SA période : c'est la question posée, et le bénévole doit y
+        # répondre sans avoir à chercher les bonnes dates. Sans ce paramètre, il arriverait sur
+        # ses quinze prochains jours et répondrait à autre chose (voir
+        # campagnes_disponibilite.envoyer_campagne, qui pose `?campagne=` dans le lien).
+        campagne = self._campagne_demandee(request)
+        if campagne is not None:
+            jours = [
+                campagne.periode_debut + datetime.timedelta(days=i)
+                for i in range((campagne.periode_fin - campagne.periode_debut).days + 1)
+            ]
+            # Bornée comme la grille ordinaire : une campagne de six mois ne s'affiche pas en
+            # une page, et un tableau qu'on ne peut pas lire ne se remplit pas.
+            jours = jours[:31]
+        else:
+            try:
+                nb_jours = int(request.query_params.get("jours", self.JOURS))
+            except (TypeError, ValueError):
+                nb_jours = self.JOURS
+            nb_jours = max(1, min(nb_jours, 31))
+            debut = timezone.localdate()
+            jours = [debut + datetime.timedelta(days=i) for i in range(nb_jours)]
 
         # Une requête pour toute la fenêtre, puis assemblage en mémoire : une requête par jour
         # et par créneau ferait 60 allers-retours pour afficher un écran.
@@ -21736,6 +22025,22 @@ class MesDisponibilitesView(generics.GenericAPIView):
                  "institution_nom": o.institution.nom if o.institution else None}
                 for o in ressources
             ],
+            # L'écran rappelle POURQUOI on lui demande ça : une grille de dates sans son motif
+            # est une corvée, la même grille avec « vigilance orange annoncée » est une
+            # demande à laquelle on répond.
+            "campagne": None if campagne is None else {
+                "id": campagne.id,
+                "intitule": campagne.intitule,
+                "motif": campagne.motif,
+                "motif_libelle": campagne.get_motif_display(),
+                "texte": campagne.texte,
+                "institution_nom": campagne.institution.nom,
+                "periode_debut": campagne.periode_debut,
+                "periode_fin": campagne.periode_fin,
+                "creneaux": campagne.creneaux_effectifs,
+                "duree_rotation_jours": campagne.duree_rotation_jours,
+                "repos_min_jours": campagne.repos_min_jours,
+            },
             "creneaux": CRENEAUX_ORDONNES,
             "jours": [
                 {
@@ -21798,6 +22103,15 @@ class MesDisponibilitesView(generics.GenericAPIView):
                 f"{'disponible' if disponible else 'indisponible'}"
             ),
         )
+
+        # Répondre à une campagne, c'est remplir sa grille : il n'y a pas de bouton
+        # « j'ai répondu » à cliquer en plus, et il n'en faut pas — un geste de confirmation
+        # oublié ferait relancer quelqu'un qui a déjà fait ce qu'on lui demandait.
+        campagne = self._campagne_demandee(request)
+        if campagne is not None:
+            from .campagnes_disponibilite import enregistrer_la_reponse
+
+            enregistrer_la_reponse(campagne, request.user)
 
         return Response({
             "date": jour,

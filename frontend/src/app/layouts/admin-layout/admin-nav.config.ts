@@ -3,7 +3,7 @@
 
 /** `permanent` : toujours visible en haut. Les autres valeurs sont les cadres repliables, groupés
  * par moment d'usage dans le cycle d'une crise. */
-export type GroupeNavId = 'permanent' | 'crise' | 'post-critique' | 'preparation' | 'communications' | 'administration';
+export type GroupeNavId = 'permanent' | 'crise' | 'post-critique' | 'preparation' | 'association' | 'communications' | 'administration';
 
 /** Qui voit l'entrée (les gardes de route protègent aussi l'URL) :
  * - `institutionnel` (défaut) : rôle effectif institutionnel ;
@@ -55,6 +55,13 @@ export const GROUPES_NAV: GroupeNav[] = [
   { id: 'crise', label: 'Crise en cours', icon: 'emergency' },
   { id: 'post-critique', label: 'Post-critique — gestion à long terme', icon: 'history' },
   { id: 'preparation', label: 'Préparation', icon: 'event_available' },
+  // Cadre propre à la vie associative, demandé le 11/11/2026 : « ramener tout ce qui est
+  // association dans une rubrique association ». Ses entrées étaient dispersées dans
+  // « Préparation », entre les sites sensibles et les personnes vulnérables — un président
+  // d'association devait les y chercher parmi des écrans de collectivité qui ne le concernent
+  // pas. Le cadre entier disparaît pour une mairie : toutes ses entrées portent
+  // `membres-association`, et un cadre sans entrée visible n'est pas affiché.
+  { id: 'association', label: 'Mon association', icon: 'diversity_3' },
   { id: 'communications', label: 'Communications / Radio', icon: 'settings_input_antenna' },
   { id: 'administration', label: 'Administration', icon: 'admin_panel_settings' },
 ];
@@ -116,7 +123,6 @@ export const NAV_ITEMS: NavItem[] = [
   // `acces_membres_association` : « être au bureau » est un attribut du rattachement et non un
   // rôle de compte, donc invérifiable depuis le menu. Une institution non associative ne voit
   // pas l'entrée.
-  { icon: 'badge', label: 'Membres association', route: '/admin/membres-association', groupe: 'preparation', visibilite: 'membres-association' },
   // RCSC/RESPONSABLE d'une mairie ou délégation active (core/vulnerabilites.py).
   { icon: 'accessible', label: 'Personnes vulnérables', route: '/admin/personnes-vulnerables', groupe: 'preparation', visibilite: 'registre-vulnerables' },
   // Qui tient le registre, designe nominativement par le maire. Visible a toute collectivite
@@ -165,6 +171,10 @@ export const NAV_ITEMS: NavItem[] = [
   { icon: 'settings_remote', label: 'Administration Meshtastic', route: '/admin/meshtastic-administration', groupe: 'communications', sousGroupe: 'meshtastic', visibilite: 'radio' },
 
   // ── Administration ──────────────────────────────────────────────────
+  // ── Mon association ───────────────────────────────────────────────
+  { icon: 'badge', label: 'Membres', route: '/admin/membres-association', groupe: 'association', visibilite: 'membres-association' },
+  { icon: 'campaign', label: 'Campagnes de disponibilité', route: '/admin/campagnes-disponibilite', groupe: 'association', visibilite: 'membres-association' },
+
   { icon: 'apartment', label: 'Institutions', route: '/admin/institutions', groupe: 'administration' },
   // Messages retenus avant envoi (voir backend/core/brouillons_envoi.py). La fenetre de
   // relecture s'ouvre d'elle-meme apres l'action ; cette page retrouve ce qui a ete manque.

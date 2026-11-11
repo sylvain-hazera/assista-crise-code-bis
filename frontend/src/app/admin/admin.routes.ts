@@ -45,6 +45,10 @@ export const ADMIN_ROUTES: Routes = [
   // qualifications, disponibilités. Gardee par `acces_membres_association` (champ serveur) :
   // une institution non associative ne doit pas voir cette page. Se fermer d'elle-meme ne
   // suffisait pas -- une mairie la trouvait cassee plutot qu'absente.
+  // Campagnes de disponibilite : solliciter en masse ses benevoles sur une periode. Memes
+  // gardes que « Membres » -- c'est la meme rubrique et le meme public, et le serveur tranche
+  // ensuite qui peut LANCER (bureau, ou encadrement sur sa branche).
+  { path: 'campagnes-disponibilite', loadComponent: () => import('./campagnes-disponibilite/campagnes-disponibilite.component').then(m => m.CampagnesDisponibiliteComponent), canActivate: [institutionalEffectiveGuard, membresAssociationGuard] },
   { path: 'membres-association', loadComponent: () => import('./membres-association/membres-association.component').then(m => m.MembresAssociationComponent), canActivate: [institutionalEffectiveGuard, membresAssociationGuard] },
   { path: 'personnes-vulnerables', loadComponent: () => import('./personnes-vulnerables/personnes-vulnerables.component').then(m => m.PersonnesVulnerablesComponent), canActivate: [institutionalEffectiveGuard, vulnerabilitesGuard] },
   // Designation nominative (art. R. 121-7 du CASF) : garde `autoriteLocaleGuard` et non

@@ -34,8 +34,16 @@ export class MagicLoginComponent implements OnInit {
     this.authService.magicLogin(uidb64, token).subscribe({
       next: () => {
         this.state = 'success';
-        const next = this.route.snapshot.queryParamMap.get('next') || '/accueil';
-        this.router.navigateByUrl(next);
+        // `next` porté par le lien : c'est ainsi qu'une campagne de disponibilité emmène le
+        // bénévole sur la grille de SA période (voir campagnes_disponibilite).
+        //
+        // Restreint aux chemins INTERNES, comme à l'activation : un lien magique circule par
+        // email et vaut identité pendant sept jours. Un `next` absolu en ferait une
+        // redirection ouverte avec la caution du domaine. « //ailleurs » est une URL de
+        // protocole relatif, pas un chemin local.
+        const demande = this.route.snapshot.queryParamMap.get('next');
+        const interne = !!demande && demande.startsWith('/') && !demande.startsWith('//');
+        this.router.navigateByUrl(interne ? demande! : '/accueil');
       },
       error: (error) => {
         this.state = 'error';

@@ -5,6 +5,7 @@ from .grafana import GrafanaTokenView
 from .views import (
     BrouillonEnvoiViewSet,
     DefinirMonMotDePasseView,
+    CampagneDisponibiliteViewSet,
     MaFicheBenevoleView,
     MesDisponibilitesView,
     DemandeAccesRadioViewSet,
@@ -278,6 +279,9 @@ router.register(r'plans-missions-modeles', PlanMissionModeleViewSet)
 router.register(r'qualifications', QualificationViewSet)
 router.register(r'qualifications-membres', QualificationMembreViewSet)
 router.register(r'invitations-association', InvitationAssociationViewSet)
+# Campagnes de disponibilite : solliciter en masse ses benevoles sur une periode (voir
+# CampagneDisponibiliteViewSet).
+router.register(r'campagnes-disponibilite', CampagneDisponibiliteViewSet)
 router.register(r'candidatures-association', CandidatureAssociationViewSet)
 
 urlpatterns = [

@@ -22,6 +22,12 @@ from .tracabilite import coordonnees_retirees, retirer_coordonnees
 from .validators import validate_convention_file
 from .crypto_fields import blind_index
 from .models import (
+    AffectationRotation,
+    CampagneDisponibilite,
+    CibleCampagne,
+    EchelonCiblage,
+    EtatCible,
+    RotationCampagne,
     Creneau,
     CandidatureAssociation,
     DemandeAccesRadio,
@@ -5245,3 +5251,130 @@ class MotDePasseChoisiSerializer(serializers.Serializer):
     import n'en a pas, et en exiger un l'empêcherait d'en choisir un (voir la vue)."""
 
     nouveau_mot_de_passe = serializers.CharField(write_only=True)
+
+
+class CampagneDisponibiliteSerializer(serializers.ModelSerializer):
+    """Campagne de disponibilité (voir `CampagneDisponibilite`).
+
+    Deux partis pris :
+
+    - **le statut et les dates d'envoi sont en lecture seule.** Une campagne ne devient
+      « envoyée » qu'en envoyant : un `PATCH` qui pose le statut ferait croire que des gens ont
+      été prévenus.
+    - **les compteurs de suivi sont calculés ici**, parce que l'écran les affiche sur chaque
+      ligne de liste. Comptés en Python sur un `prefetch_related('cibles')` par la vue, pour ne
+      pas faire quatre requêtes par campagne.
+    """
+
+    motif_libelle = serializers.CharField(source='get_motif_display', read_only=True)
+    statut_libelle = serializers.CharField(source='get_statut_display', read_only=True)
+    echelon_libelle = serializers.CharField(source='get_echelon_display', read_only=True)
+    crise_nom = serializers.CharField(source='crise.name', read_only=True, default=None)
+    equipe_nom = serializers.CharField(source='equipe.name', read_only=True, default=None)
+    cree_par_nom = serializers.SerializerMethodField()
+    nombre_de_jours = serializers.IntegerField(read_only=True)
+    suivi = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CampagneDisponibilite
+        fields = ['id', 'institution', 'intitule', 'motif', 'motif_libelle', 'texte',
+                  'crise', 'crise_nom', 'periode_debut', 'periode_fin', 'nombre_de_jours',
+                  'creneaux', 'echelon', 'echelon_libelle', 'territoire_code', 'rayon_km',
+                  'competences', 'qualifications', 'titres_a_jour', 'equipe', 'equipe_nom',
+                  'duree_rotation_jours', 'repos_min_jours', 'effectif_cible',
+                  'statut', 'statut_libelle', 'cree_par', 'cree_par_nom',
+                  'date_creation', 'date_envoi', 'date_cloture', 'suivi']
+        read_only_fields = ['id', 'statut', 'cree_par', 'date_creation', 'date_envoi',
+                            'date_cloture']
+
+    def get_cree_par_nom(self, obj):
+        if obj.cree_par is None:
+            return None
+        return nom_affichable(obj.cree_par, self.context.get('request'))
+
+    def get_suivi(self, obj):
+        """Où en est la campagne, en quatre nombres.
+
+        `sans_reponse` compte les contactés qui n'ont rien dit — et non ceux qui ont répondu
+        « aucune disponibilité ». Les confondre ferait relancer quelqu'un qui a déjà répondu
+        non, ce qui est le meilleur moyen de ne plus être lu."""
+        cibles = list(obj.cibles.all())
+        return {
+            "cibles": len(cibles),
+            "contactes": sum(1 for c in cibles if c.etat != EtatCible.A_CONTACTER),
+            "ont_repondu": sum(1 for c in cibles if c.etat == EtatCible.A_REPONDU),
+            "sans_reponse": sum(1 for c in cibles if c.etat == EtatCible.CONTACTE),
+            "injoignables": sum(1 for c in cibles if c.etat == EtatCible.INJOIGNABLE),
+            "disponibles": sum(1 for c in cibles
+                               if c.etat == EtatCible.A_REPONDU and c.creneaux_declares > 0),
+        }
+
+    def validate(self, attrs):
+        debut = attrs.get('periode_debut',
+                          getattr(self.instance, 'periode_debut', None))
+        fin = attrs.get('periode_fin', getattr(self.instance, 'periode_fin', None))
+        if debut and fin and fin < debut:
+            raise serializers.ValidationError(
+                {"periode_fin": "La fin de période ne peut pas précéder son début."})
+
+        echelon = attrs.get('echelon', getattr(self.instance, 'echelon', None))
+        crise = attrs.get('crise', getattr(self.instance, 'crise', None))
+        rayon = attrs.get('rayon_km', getattr(self.instance, 'rayon_km', None))
+        # Refusé à la saisie plutôt que découvert à l'envoi : un rayon sans crise ne filtre
+        # rien, donc la campagne partirait à toute l'association en croyant viser trente
+        # personnes.
+        if echelon == EchelonCiblage.RAYON_CRISE:
+            if crise is None:
+                raise serializers.ValidationError(
+                    {"crise": "Un ciblage par rayon demande une crise rattachée."})
+            if not rayon:
+                raise serializers.ValidationError(
+                    {"rayon_km": "Un ciblage par rayon demande une distance en km."})
+        elif echelon in (EchelonCiblage.COMMUNE, EchelonCiblage.DEPARTEMENT,
+                         EchelonCiblage.REGION, EchelonCiblage.ZONE_DEFENSE):
+            if not attrs.get('territoire_code',
+                             getattr(self.instance, 'territoire_code', '')):
+                raise serializers.ValidationError(
+                    {"territoire_code": "Précisez le territoire visé pour cet échelon."})
+        return attrs
+
+
+class CibleCampagneSerializer(serializers.ModelSerializer):
+    """Une cible et son état. Le nom passe par `nom_affichable` (anonymisation DEMO)."""
+
+    nom = serializers.SerializerMethodField()
+    etat_libelle = serializers.CharField(source='get_etat_display', read_only=True)
+
+    class Meta:
+        model = CibleCampagne
+        fields = ['id', 'campagne', 'utilisateur', 'nom', 'etat', 'etat_libelle',
+                  'date_envoi', 'date_reponse', 'creneaux_declares', 'erreur']
+        read_only_fields = fields
+
+    def get_nom(self, obj):
+        return nom_affichable(obj.utilisateur, self.context.get('request')) \
+            or obj.utilisateur.email
+
+
+class AffectationRotationSerializer(serializers.ModelSerializer):
+    nom = serializers.SerializerMethodField()
+    statut_libelle = serializers.CharField(source='get_statut_display', read_only=True)
+
+    class Meta:
+        model = AffectationRotation
+        fields = ['id', 'rotation', 'utilisateur', 'nom', 'creneau', 'statut',
+                  'statut_libelle', 'motif']
+        read_only_fields = ['id', 'rotation', 'utilisateur', 'nom', 'creneau', 'motif']
+
+    def get_nom(self, obj):
+        return nom_affichable(obj.utilisateur, self.context.get('request')) \
+            or obj.utilisateur.email
+
+
+class RotationCampagneSerializer(serializers.ModelSerializer):
+    affectations = AffectationRotationSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = RotationCampagne
+        fields = ['id', 'campagne', 'numero', 'date_debut', 'date_fin', 'affectations']
+        read_only_fields = fields

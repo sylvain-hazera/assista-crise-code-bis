@@ -348,6 +348,33 @@ CATALOGUE = {m.cle: m for m in [
         relisible=True,
     ),
 
+    ModeleDefaut(
+        cle="CAMPAGNE_DISPONIBILITE",
+        libelle="Appel à disponibilités sur une période",
+        quand="Quand une association sollicite ses bénévoles pour une période à venir "
+              "(campagne de disponibilité). Part à tous les bénévoles retenus par les "
+              "critères, en un seul texte relu une fois.",
+        sujet="[INSTITUTION] — disponibilités du [PERIODE]",
+        corps=(
+            "Bonjour [PRENOM],\n\n"
+            "[MOTIF]\n\n"
+            "[TEXTE]\n\n"
+            "Nous avons besoin de savoir sur quels créneaux vous seriez disponible "
+            "du [PERIODE].\n\n"
+            "Indiquez-les ici : [LIEN_DISPONIBILITES]\n\n"
+            "[ROTATION]\n\n"
+            "Répondre « aucune disponibilité » est une réponse utile : cela nous évite de "
+            "vous relancer, et nous dit sur qui compter.\n\n"
+            "[SIGNATURE]"
+        ),
+        placeholders=("PRENOM", "INSTITUTION", "MOTIF", "TEXTE", "PERIODE", "ROTATION",
+                      "LIEN_DISPONIBILITES", "SIGNATURE"),
+        # Relisible, et c'est tout l'intérêt : le texte part à des centaines de personnes et
+        # c'est un tiers qui l'écrit. La fenêtre de relecture le montre UNE fois, générique,
+        # pour tout le lot (voir core/brouillons_envoi.py).
+        relisible=True,
+    ),
+
     # ── Dossiers et demandes ────────────────────────────────────────────────────────────────
     ModeleDefaut(
         cle="DOSSIER_CLOTURE",
