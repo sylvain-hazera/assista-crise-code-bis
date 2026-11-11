@@ -187,3 +187,43 @@ def send_branded_mail_env_aware(request, institution, subject, message, recipien
         recipient_list = [request.user.email]
         subject = f"[DEMO] {subject}"
     return send_branded_mail(request, institution, subject, message, recipient_list, **kwargs)
+
+
+def send_modele_mail(request, institution, cle, valeurs, recipient_list, **kwargs):
+    """Envoie un message du catalogue, avec le texte de l'institution s'il existe.
+
+    Enveloppe de `send_branded_mail` qui ajoute la seule chose que celle-ci ne fait pas :
+    résoudre le modèle. Le reste du chemin est inchangé — relecture avant envoi, API de
+    l'institution, repli SMTP, journalisation.
+
+    `valeurs` est un dictionnaire `{PLACEHOLDER: valeur}`. `[SIGNATURE]` est fourni d'office,
+    depuis le branding : les appelants n'ont pas à le connaître, et c'est le seul placeholder
+    qui ne dépend pas de l'appel.
+
+    **Rendu avec `pour_envoi=True`**, donc les liens sont résolus ici. C'est voulu et ce n'est
+    pas une fuite : la capture du brouillon qui a lieu ensuite les masque par valeur, puisque
+    `build_magic_link` les a déclarés (voir core/brouillons_envoi.py). Rendre sans les liens
+    produirait un mail qui dit « cliquez sur [LIEN_ACTIVATION] ».
+
+    Retombe sur rien si la clé est inconnue (renvoie None) : l'appelant garde alors son texte en
+    dur. C'est ce qui permet de migrer les 48 points d'envoi par lots plutôt qu'en un commit où
+    la casse serait silencieuse.
+    """
+    from .brouillons_envoi import resoudre_modele
+    from .modeles_messages import rendre
+
+    sujet_modele, corps_modele, _ = resoudre_modele(institution, cle)
+    if sujet_modele is None and corps_modele is None:
+        return None
+
+    branding = get_mail_branding(institution)
+    toutes = {
+        "SIGNATURE": f"Cordialement,\n{branding['signature']}",
+        "INSTITUTION": branding["nom_expediteur"],
+        **valeurs,
+    }
+    sujet = rendre(sujet_modele, toutes, pour_envoi=True)
+    corps = rendre(corps_modele, toutes, pour_envoi=True)
+
+    return send_branded_mail(request, institution, subject=sujet, message=corps,
+                             recipient_list=recipient_list, **kwargs)

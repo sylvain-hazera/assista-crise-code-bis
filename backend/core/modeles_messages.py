@@ -215,14 +215,16 @@ CATALOGUE = {m.cle: m for m in [
         cle="COMPTE_VALIDE",
         libelle="Compte validé",
         quand="Quand un administrateur ou une mairie valide un compte en attente.",
-        sujet="Votre compte [INSTITUTION] est validé",
+        # Texte repris MOT POUR MOT de ce qui partait avant la migration vers les modèles :
+        # une institution qui ne personnalise pas ne doit voir AUCUN changement.
+        sujet="Votre compte a été validé !",
         corps=(
             "Bonjour [PRENOM] [NOM],\n\n"
-            "Votre compte a été validé. Vous pouvez dès maintenant vous connecter : "
-            "[LIEN_CONNEXION]\n\n"
+            "Bonne nouvelle ! Votre compte ([TYPE_COMPTE]) a été validé.\n"
+            "Vous pouvez maintenant vous connecter et accéder à toutes les fonctionnalités.\n\n"
             "[SIGNATURE]"
         ),
-        placeholders=("PRENOM", "NOM", "INSTITUTION", "LIEN_CONNEXION", "SIGNATURE"),
+        placeholders=("PRENOM", "NOM", "TYPE_COMPTE", "SIGNATURE"),
         # Un tiers valide : la fenêtre a du sens, et le lien reste masqué pour lui.
         relisible=True,
     ),
@@ -247,16 +249,20 @@ CATALOGUE = {m.cle: m for m in [
         cle="MOT_DE_PASSE_OUBLIE",
         libelle="Réinitialisation de mot de passe (demandée par la personne)",
         quand="Quand quelqu'un utilise « mot de passe oublié ».",
+        # Texte repris MOT POUR MOT de PasswordResetRequestView.
         sujet="Réinitialisation de votre mot de passe [INSTITUTION]",
         corps=(
-            "Bonjour,\n\n"
-            "Vous avez demandé la réinitialisation de votre mot de passe sur [INSTITUTION].\n\n"
-            "Cliquez sur ce lien pour en choisir un nouveau : [LIEN_REINITIALISATION]\n\n"
-            "Ce lien est valable 7 jours. Si vous n'êtes pas à l'origine de cette demande, "
-            "ignorez ce message.\n\n"
+            "Bonjour [PRENOM] [NOM],\n\n"
+            "Vous avez demandé la réinitialisation du mot de passe de votre compte "
+            "[INSTITUTION].\n\n"
+            "Pour choisir un nouveau mot de passe, cliquez sur le lien suivant :\n"
+            "[LIEN_REINITIALISATION]\n\n"
+            "Ce lien est valable 7 jours et ne peut être utilisé qu'une seule fois. Si vous "
+            "n'êtes pas à l'origine de cette demande, vous pouvez ignorer cet email : votre "
+            "mot de passe actuel reste valable.\n\n"
             "[SIGNATURE]"
         ),
-        placeholders=("INSTITUTION", "LIEN_REINITIALISATION", "SIGNATURE"),
+        placeholders=("PRENOM", "NOM", "INSTITUTION", "LIEN_REINITIALISATION", "SIGNATURE"),
         relisible=False,
     ),
     ModeleDefaut(

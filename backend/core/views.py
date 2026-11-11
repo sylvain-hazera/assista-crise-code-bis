@@ -267,7 +267,10 @@ from .models import (
     InstitutionWebDomaine,
     PieceIdentiteReserve,
 )
-from .branding import resolve_institution_branding, branding_for_institution, send_branded_mail, send_branded_mail_env_aware
+from .branding import (
+    resolve_institution_branding, branding_for_institution, send_branded_mail,
+    send_branded_mail_env_aware, send_modele_mail,
+)
 
 
 MAGIC_LINK_SALT = "assista-crise-magic-link"
@@ -419,18 +422,15 @@ def envoyer_email_creation_compte(request, user):
             # l'accusé citoyen juste en dessous, et pas depuis user.institution qui n'est pas
             # encore rattachée à ce stade.
             institution_branding = resolve_institution_branding(request)
-            branding = branding_for_institution(institution_branding)
-            send_branded_mail(
-                request, institution_branding,
-                subject="Compte créé - En attente de validation",
-                message=(
-                    f"Bonjour {user.first_name} {user.last_name},\n\n"
-                    f"Votre compte ({user.get_type_display()}) sur {branding.nom_affichage} a "
-                    "bien été créé.\n"
-                    "Cependant, il est en attente de validation par un administrateur.\n"
-                    "Vous recevrez un email dès que votre compte sera validé.\n\n"
-                    "{signature}"
-                ),
+            send_modele_mail(
+                request, institution_branding, "COMPTE_EN_ATTENTE_VALIDATION",
+                {
+                # nom-reel-assume: le message est adressé au TITULAIRE du compte. Un
+                # pseudonyme lui enverrait un courrier au nom de quelqu'un d'autre.
+                    "PRENOM": user.first_name,
+                    "NOM": user.last_name,
+                    "TYPE_COMPTE": user.get_type_display(),
+                },
                 recipient_list=[user.email],
                 fail_silently=False,
             )
@@ -2188,15 +2188,17 @@ class UserViewSet(viewsets.ModelViewSet):
         # Envoyer email de confirmation (branding : voir matched_institution ci-dessus --
         # None hors branche SECOURS, retombe alors sur Assista-Crise par défaut)
         try:
-            send_branded_mail(
-                request, matched_institution,
-                subject="Votre compte a été validé !",
-                message=(
-                    f"Bonjour {user_to_approve.first_name} {user_to_approve.last_name},\n\n"
-                    f"Bonne nouvelle ! Votre compte ({user_to_approve.get_type_display()}) a été validé.\n"
-                    "Vous pouvez maintenant vous connecter et accéder à toutes les fonctionnalités.\n\n"
-                    "{signature}"
-                ),
+            # Passe par le catalogue de modèles (core/modeles_messages.py) : l'institution
+            # peut réécrire ce texte, et le défaut est le texte d'origine mot pour mot.
+            send_modele_mail(
+                request, matched_institution, "COMPTE_VALIDE",
+                {
+                # nom-reel-assume: le message est adressé au TITULAIRE du compte. Un
+                # pseudonyme lui enverrait un courrier au nom de quelqu'un d'autre.
+                    "PRENOM": user_to_approve.first_name,
+                    "NOM": user_to_approve.last_name,
+                    "TYPE_COMPTE": user_to_approve.get_type_display(),
+                },
                 recipient_list=[user_to_approve.email],
                 fail_silently=False,
             )
@@ -2241,17 +2243,16 @@ class UserViewSet(viewsets.ModelViewSet):
             getattr(user_to_reject, 'institution', None) or resolve_institution_branding(request)
         )
         try:
-            send_branded_mail(
-                request, institution_rejet,
-                subject="Votre demande de compte a été refusée",
-                message=(
-                    f"Bonjour {user_to_reject.first_name} {user_to_reject.last_name},\n\n"
-                    f"Nous sommes désolés de vous informer que votre demande de compte "
-                    f"({user_to_reject.get_type_display()}) n'a pas été acceptée.\n\n"
-                    f"Raison : {reason}\n\n"
-                    "Pour plus d'informations, vous pouvez nous contacter.\n\n"
-                    "{signature}"
-                ),
+            send_modele_mail(
+                request, institution_rejet, "COMPTE_REFUSE",
+                {
+                # nom-reel-assume: le message est adressé au TITULAIRE du compte. Un
+                # pseudonyme lui enverrait un courrier au nom de quelqu'un d'autre.
+                    "PRENOM": user_to_reject.first_name,
+                    "NOM": user_to_reject.last_name,
+                    "TYPE_COMPTE": user_to_reject.get_type_display(),
+                    "MOTIF": reason,
+                },
                 recipient_list=[user_to_reject.email],
                 fail_silently=False,
             )
@@ -11130,21 +11131,20 @@ class PasswordResetRequestView(generics.GenericAPIView):
             reset_link = build_magic_link(request, user, "reset-password")
             # Même raisonnement que UserViewSet.send_password_reset : user.institution est une
             # FK réelle déjà rattachée, pas de résolution spéculative.
-            branding = branding_for_institution(user.institution)
-            message = (
-                f"Bonjour {user.first_name} {user.last_name},\n\n"
-                f"Vous avez demandé la réinitialisation du mot de passe de votre compte "
-                f"{branding.nom_affichage}.\n\n"
-                f"Pour choisir un nouveau mot de passe, cliquez sur le lien suivant :\n{reset_link}\n\n"
-                "Ce lien est valable 7 jours et ne peut être utilisé qu'une seule fois. Si vous "
-                "n'êtes pas à l'origine de cette demande, vous pouvez ignorer cet email : votre "
-                "mot de passe actuel reste valable.\n\n"
-                "{signature}"
-            )
-            send_branded_mail_env_aware(
-                request, user.institution,
-                subject=f"Réinitialisation de votre mot de passe {branding.nom_affichage}",
-                message=message,
+            #
+            # `send_modele_mail` et non sa variante `_env_aware` : ce message est un email de
+            # CYCLE DE VIE de compte, hors du périmètre du redirect DEMO (voir la docstring de
+            # send_mail_env_aware) — rediriger un lien de réinitialisation vers le compte qui
+            # consulte la démonstration le priverait de son propre lien.
+            send_modele_mail(
+                request, user.institution, "MOT_DE_PASSE_OUBLIE",
+                {
+                # nom-reel-assume: le message est adressé au TITULAIRE du compte. Un
+                # pseudonyme lui enverrait un courrier au nom de quelqu'un d'autre.
+                    "PRENOM": user.first_name,
+                    "NOM": user.last_name,
+                    "LIEN_REINITIALISATION": reset_link,
+                },
                 recipient_list=[user.email],
                 fail_silently=False,
             )
