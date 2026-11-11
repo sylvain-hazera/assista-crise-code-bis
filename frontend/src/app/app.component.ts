@@ -4,12 +4,14 @@ import { CommonModule } from '@angular/common';
 import { SuiviPositionPermanentService } from './services/suivi-position-permanent.service';
 import { BrandingService } from './services/branding.service';
 import { ThemeService } from './services/theme.service';
+import { RelectureEnvoiComponent } from './shared/components/common/relecture-envoi/relecture-envoi.component';
 
 @Component({
   selector: 'app-root',
   imports: [
     RouterOutlet,
-    CommonModule
+    CommonModule,
+    RelectureEnvoiComponent,
   ],
   templateUrl: './app.component.html',
   styleUrl: './app.component.scss'

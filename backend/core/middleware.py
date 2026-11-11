@@ -259,3 +259,34 @@ class NoCacheApiMiddleware:
                 vary_parts.append('X-Environment')
             response['Vary'] = ', '.join(vary_parts)
         return response
+
+
+class BrouillonsEnvoiMiddleware:
+    """Annonce en en-tête de réponse les brouillons retenus pour relecture pendant la requête.
+
+    Raison d'être : permettre à l'interface d'ouvrir la fenêtre de relecture **sans qu'aucun des
+    25 endpoints concernés ne change de contrat**. `send_branded_mail` dépose les identifiants
+    sur la requête (voir core/brouillons_envoi.py), ce middleware les pose en en-tête, et un
+    intercepteur HTTP côté Angular ouvre la fenêtre. Sans cela, il faudrait ajouter un champ à
+    25 réponses d'API, ou faire interroger la liste des brouillons après chaque action.
+
+    Même motif que `AuditTraceMiddleware`, qui lit déjà ce que `audit_log` dépose sur la requête.
+
+    N'échoue JAMAIS la réponse : une exception ici casserait l'action qui vient de réussir, pour
+    une commodité d'affichage. Le brouillon reste de toute façon dans la liste à relire.
+    """
+
+    EN_TETE = "X-Brouillons-Envoi"
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        response = self.get_response(request)
+        try:
+            identifiants = getattr(request, '_brouillons_envoi', None)
+            if identifiants:
+                response[self.EN_TETE] = ",".join(identifiants)
+        except Exception:
+            logger.debug("En-tête des brouillons d'envoi non posé.", exc_info=True)
+        return response

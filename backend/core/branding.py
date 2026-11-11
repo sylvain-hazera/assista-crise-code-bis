@@ -115,11 +115,29 @@ def send_branded_mail(request, institution, subject, message, recipient_list, **
     main courante dans les deux cas : `send_mail_logged` pour le SMTP, un `audit_log` explicite
     pour l'API, qui ne passe pas par Django."""
     from .audit import audit_log, send_mail_logged
+    from .brouillons_envoi import capturer, doit_etre_relu
     from .envoi_institution import envoyer_email_pour_institution
 
     branding = get_mail_branding(institution)
     message_final = message.replace("{signature}", f"Cordialement,\n{branding['signature']}")
     reply_to = [branding["reply_to"]] if branding["reply_to"] else None
+
+    # RELECTURE AVANT ENVOI : capturé en brouillon au lieu de partir, quand l'institution l'a
+    # activée et que le message va vers un TIERS (voir core/brouillons_envoi.py). Placé ici et
+    # non dans les 25 endpoints concernés : aucun n'a eu à changer de contrat.
+    if doit_etre_relu(request, institution, list(recipient_list)):
+        brouillon = capturer(request, institution, subject, message_final,
+                             list(recipient_list), reply_to=branding["reply_to"])
+        audit_log(
+            request=request, action_code="ENVOI_EMAIL", objet_type="BrouillonEnvoi",
+            objet_id=brouillon.id,
+            commentaire=f'"{subject}" retenu pour relecture avant envoi à '
+                        f'{", ".join(recipient_list)}',
+            succes=True,
+        )
+        # 1 : même convention de retour que django.core.mail.send_mail. L'appelant a fait son
+        # travail, et le message partira — après relecture, ou au bout du délai.
+        return 1
 
     envoye, detail = envoyer_email_pour_institution(
         request, institution, subject, message_final, list(recipient_list),

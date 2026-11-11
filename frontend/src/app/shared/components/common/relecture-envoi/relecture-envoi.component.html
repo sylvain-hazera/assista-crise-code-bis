@@ -1,0 +1,97 @@
+@if (brouillon(); as b) {
+  <div class="voile" role="dialog" aria-modal="true" aria-labelledby="titre-relecture">
+    <div class="fenetre">
+      <header>
+        <h2 id="titre-relecture">
+          <span class="material-icons">{{ b.canal === 'SMS' ? 'sms' : 'drafts' }}</span>
+          Relire avant envoi
+        </h2>
+        <p class="sous-titre">
+          Au nom de <strong>{{ b.institution_nom }}</strong>, à
+          {{ b.destinataires.length }} destinataire{{ b.destinataires.length > 1 ? 's' : '' }} :
+          {{ b.destinataires.join(', ') }}
+        </p>
+      </header>
+
+      <div class="corps">
+        @if (erreur()) {
+          <div class="alerte erreur"><span class="material-icons">warning</span> {{ erreur() }}</div>
+        }
+
+        @if (b.canal !== 'SMS') {
+          <label>
+            Objet
+            <input type="text" [ngModel]="sujet()" (ngModelChange)="sujet.set($event)">
+          </label>
+        }
+
+        <label>
+          Message
+          <textarea rows="14" [ngModel]="corps()" (ngModelChange)="corps.set($event)"></textarea>
+        </label>
+
+        @if (segments(); as s) {
+          <p class="compteur" [class.alerte-douce]="s.segments > 1">
+            {{ corps().length }} caractères —
+            {{ s.segments }} segment{{ s.segments > 1 ? 's' : '' }} facturé{{ s.segments > 1 ? 's' : '' }},
+            {{ s.restants }} caractères restants
+            @if (s.segments > 1) { (un SMS de plus de 160 caractères est facturé par segment) }
+          </p>
+        }
+
+        @if (liensPerdus().length) {
+          <!-- Avertissement et non blocage : il peut y avoir une raison de retirer un lien,
+               mais pas par accident. -->
+          <div class="alerte erreur">
+            <span class="material-icons">link_off</span>
+            Lien retiré du message : {{ liensPerdus().join(', ') }}. Le destinataire ne pourra
+            pas agir.
+          </div>
+        }
+
+        <p class="note">
+          <span class="material-icons">lock</span>
+          Les <strong>[LIEN_1]</strong> et suivants sont remplacés par les vraies adresses au
+          moment de l'envoi. Elles ne sont pas affichées ici : un lien de connexion permet
+          d'agir à la place de son destinataire. Laissez-les en place.
+        </p>
+      </div>
+
+      @if (demandeAbandon()) {
+        <div class="corps bloc-abandon">
+          <label>
+            Pourquoi ce message ne part pas
+            <input type="text" [ngModel]="motifAbandon()" (ngModelChange)="motifAbandon.set($event)"
+                   placeholder="ex : prévenu par téléphone">
+          </label>
+          <p class="note">
+            L'action a déjà eu lieu — le compte est validé, le dossier est clôturé. Abandonner
+            le message ne la défait pas : le motif permet de savoir plus tard pourquoi personne
+            n'a été prévenu.
+          </p>
+        </div>
+      }
+
+      <footer>
+        @if (!demandeAbandon()) {
+          <button type="button" class="lien" (click)="reporter()">
+            Plus tard
+          </button>
+          <button type="button" class="lien danger" (click)="demandeAbandon.set(true)">
+            Ne pas envoyer
+          </button>
+          <button type="button" class="principal" [disabled]="enCours()" (click)="envoyer()">
+            <span class="material-icons">send</span>
+            {{ enCours() ? 'Envoi…' : 'Envoyer' }}
+          </button>
+        } @else {
+          <button type="button" class="lien" (click)="demandeAbandon.set(false)">Revenir</button>
+          <button type="button" class="principal danger" [disabled]="enCours()"
+                  (click)="abandonner()">
+            Confirmer l'abandon
+          </button>
+        }
+      </footer>
+    </div>
+  </div>
+}

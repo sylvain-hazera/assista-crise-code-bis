@@ -137,6 +137,9 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'core.middleware.NoCacheApiMiddleware',
     'core.middleware.AuditTraceMiddleware',
+    # Annonce les brouillons retenus pour relecture (voir core/brouillons_envoi.py). Après
+    # l'authentification, puisque la décision de relire dépend de request.user.
+    'core.middleware.BrouillonsEnvoiMiddleware',
     'core.middleware.GeoResolutionBudgetMiddleware',
     'django_prometheus.middleware.PrometheusAfterMiddleware',    # doit rester en dernier
 ]
@@ -254,6 +257,15 @@ CORS_ALLOW_HEADERS = [
     'x-csrftoken',
     'x-requested-with',
     'x-environment',  # zone PROD/DEMO, ajoutée à chaque requête par l'intercepteur Angular
+]
+
+# En-têtes de RÉPONSE que le navigateur autorise le JavaScript à lire. Sans cette liste, un
+# en-tête personnalisé arrive bien mais reste invisible à `response.headers.get(...)` : la
+# requête réussit, et la fonctionnalité ne marche pas sans qu'aucune erreur n'apparaisse.
+# `X-Brouillons-Envoi` annonce les messages retenus pour relecture (voir
+# core/brouillons_envoi.py et BrouillonsEnvoiMiddleware).
+CORS_EXPOSE_HEADERS = [
+    'X-Brouillons-Envoi',
 ]
 
 REST_FRAMEWORK = {

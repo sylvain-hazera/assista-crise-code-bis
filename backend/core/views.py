@@ -232,7 +232,9 @@ from .models import (
     EngagementRessource, StatutEngagementRessource,
     Status,
     DernierePositionUtilisateur,
+    BrouillonEnvoi,
     ConfigurationEnvoiInstitution,
+    ModeleMessage,
     SalonMatrixEquipe,
     TypeSalonEquipe,
     SalonMatrixInstitution,
@@ -280,6 +282,16 @@ FRONTEND_MAGIC_LINK_PATHS = {
 
 
 def build_magic_link(request, user, action: str, next_url: str = None) -> str:
+    """Lien porteur d'identité : qui l'a peut agir comme `user` pendant 7 jours.
+
+    **Chaque lien produit est déclaré sur la requête** (`_liens_magiques`) depuis le
+    11/11/2026. C'est ce qui permet à la fenêtre de relecture de masquer les liens par VALEUR et
+    non par motif : un lien est masqué parce qu'on sait l'avoir créé, pas parce qu'il ressemble
+    à une URL de lien magique. Reconnaître par motif laisserait passer la première forme
+    d'URL à laquelle on n'aurait pas pensé — et un lien manqué, c'est un compte pris en main par
+    quelqu'un d'autre (voir core/brouillons_envoi.py).
+
+    Même motif que `audit_log`, qui dépose déjà sa ligne sur la requête."""
     uidb64 = urlsafe_base64_encode(force_bytes(str(user.pk)))
     token = MAGIC_LINK_SIGNER.sign(uidb64)
 
@@ -291,10 +303,30 @@ def build_magic_link(request, user, action: str, next_url: str = None) -> str:
         url = f"{frontend_url}/{frontend_path}/{uidb64}/{token}"
         if next_url:
             url += f"?next={quote(next_url, safe='')}"
-        return url
+        return _declarer_lien_magique(request, url)
 
     base_url = settings.SERVER_URL.rstrip('/')
-    return f"{base_url}/api/{action}/{uidb64}/{token}/"
+    return _declarer_lien_magique(request, f"{base_url}/api/{action}/{uidb64}/{token}/")
+
+
+def _declarer_lien_magique(request, url):
+    """Mémorise le lien sur la requête et le renvoie tel quel.
+
+    Jamais bloquant : si la requête n'accepte pas l'attribut (objet factice dans un test, appel
+    sans requête), on rend le lien quand même. Un lien non déclaré n'est pas masqué dans un
+    brouillon — c'est pourquoi un test vérifie que TOUS les chemins de `build_magic_link`
+    passent par ici, plutôt que de compter sur la relecture du code."""
+    try:
+        if request is not None:
+            liens = getattr(request, '_liens_magiques', None)
+            if liens is None:
+                liens = []
+                request._liens_magiques = liens
+            if url not in liens:
+                liens.append(url)
+    except Exception:
+        logger.debug("Lien magique non déclaré sur la requête (masquage indisponible).")
+    return url
 
 
 def get_user_from_magic_link(uidb64: str, token: str):
@@ -534,7 +566,9 @@ def send_crisis_regulateur_invite_email(request, user, crisis, institution):
 
 from .serializers import (
     DemandeAccesRadioSerializer,
+    BrouillonEnvoiSerializer,
     ConfigurationEnvoiInstitutionSerializer,
+    ModeleMessageSerializer,
     NoeudPublicMeshCoreSerializer,
     RattachementNoeudRadioSerializer,
     SourceObservateurMeshCoreSerializer,
@@ -20680,3 +20714,181 @@ class NoeudPublicMeshCoreViewSet(EnvironmentScopedViewSetMixin, viewsets.ReadOnl
             "importe_le": agregats['importe_le'],
             "vu_entre": [agregats['plus_ancien'], agregats['plus_recent']],
         })
+
+
+class BrouillonEnvoiViewSet(EnvironmentScopedViewSetMixin, viewsets.ReadOnlyModelViewSet):
+    """Messages retenus pour relecture avant envoi (voir core/brouillons_envoi.py).
+
+    Lecture seule par le routeur : un brouillon se crée en déclenchant l'action qui l'a produit,
+    jamais à la main. Il se traite par `envoyer` ou `abandonner`.
+
+    **Visible par qui ?** Les membres actifs de l'institution concernée, et l'administrateur de
+    la plateforme. Pas seulement l'auteur : la relecture est un geste d'équipe — celui qui a
+    validé un compte à 18 h ne doit pas être le seul à pouvoir faire partir le message.
+
+    Le corps servi porte `[LIEN_1]`, `[LIEN_2]`… et jamais les vraies URL ; voir
+    BrouillonEnvoiSerializer."""
+
+    queryset = BrouillonEnvoi.objects.select_related('institution', 'cree_par').all()
+    serializer_class = BrouillonEnvoiSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if get_effective_role(self.request) == UserRole.ADMINISTRATOR:
+            pass
+        else:
+            mes_institutions = ContactInstitution.objects.filter(
+                utilisateur=self.request.user, actif=True,
+            ).values_list('institution_id', flat=True)
+            qs = qs.filter(institution_id__in=mes_institutions)
+        statut = self.request.query_params.get('statut')
+        if statut:
+            qs = qs.filter(statut=statut)
+        return qs
+
+    def _accessible(self, brouillon):
+        return self.get_queryset().filter(pk=brouillon.pk).exists()
+
+    @action(detail=True, methods=['post'])
+    def envoyer(self, request, pk=None):
+        """Envoie le brouillon, éventuellement réécrit.
+
+        `sujet` et `corps` sont optionnels : absents, le texte capturé part tel quel. Les vrais
+        liens sont restaurés ici et nulle part ailleurs."""
+        from .brouillons_envoi import envoyer_brouillon
+
+        brouillon = self.get_object()
+        if not self._accessible(brouillon):
+            return Response({"error": "Brouillon inaccessible."},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        sujet = request.data.get('sujet')
+        corps = request.data.get('corps')
+        if corps is not None and not str(corps).strip():
+            return Response({"error": "Le corps du message ne peut pas être vide."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        ok, motif = envoyer_brouillon(request, brouillon, sujet=sujet, corps=corps)
+        if not ok:
+            return Response({"error": motif}, status=status.HTTP_400_BAD_REQUEST)
+
+        audit_log(
+            request=request, action_code="ENVOI_EMAIL", objet_type="BrouillonEnvoi",
+            objet_id=brouillon.id,
+            commentaire=f'Brouillon relu et envoyé'
+                        f'{" (texte modifié)" if brouillon.modifie_par_relecteur else ""}.',
+            succes=True,
+        )
+        return Response(self.get_serializer(brouillon).data)
+
+    @action(detail=True, methods=['post'])
+    def abandonner(self, request, pk=None):
+        """N'envoie pas ce message.
+
+        L'action qui l'a produit a DÉJÀ eu lieu — le compte est validé, le dossier est clôturé.
+        Abandonner le message ne la défait pas : c'est pourquoi le motif est demandé et
+        journalisé, pour qu'on sache plus tard pourquoi personne n'a été prévenu."""
+        brouillon = self.get_object()
+        if not self._accessible(brouillon):
+            return Response({"error": "Brouillon inaccessible."},
+                            status=status.HTTP_403_FORBIDDEN)
+        if brouillon.statut != BrouillonEnvoi.Statut.A_RELIRE:
+            return Response({"error": "Ce brouillon est déjà traité."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        motif = (request.data.get('motif') or '').strip()
+        if not motif:
+            return Response({"error": "Un motif est requis : l'action qui a produit ce message "
+                                      "a déjà eu lieu, et personne ne sera prévenu."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        brouillon.statut = BrouillonEnvoi.Statut.ABANDONNE
+        brouillon.date_traitement = timezone.now()
+        brouillon.traite_par = request.user
+        brouillon.erreur = ""
+        brouillon.save(update_fields=['statut', 'date_traitement', 'traite_par', 'erreur'])
+
+        audit_log(
+            request=request, action_code="SUPPRESSION", objet_type="BrouillonEnvoi",
+            objet_id=brouillon.id,
+            commentaire=f"Message abandonné sans être envoyé : {motif}",
+        )
+        return Response(self.get_serializer(brouillon).data)
+
+
+class ModeleMessageViewSet(EnvironmentScopedViewSetMixin, viewsets.ModelViewSet):
+    """Textes réécrits par une institution (voir core/modeles_messages.py).
+
+    **Réservé au bureau** de l'institution, comme les identifiants d'envoi : réécrire ce qui
+    part au nom de l'association est du même ordre que décider par quel compte ça part.
+
+    `catalogue` sert la liste des messages personnalisables avec leurs placeholders et leur
+    texte par défaut — c'est ce qui permet à l'écran de montrer ce qu'on réécrit, et de revenir
+    au défaut."""
+
+    queryset = ModeleMessage.objects.select_related('institution').all()
+    serializer_class = ModeleMessageSerializer
+
+    def _institutions_du_bureau(self):
+        if get_effective_role(self.request) == UserRole.ADMINISTRATOR:
+            return None  # aucune restriction
+        return list(ContactInstitution.objects.filter(
+            utilisateur=self.request.user, membre_bureau=True, actif=True,
+        ).values_list('institution_id', flat=True))
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        institutions = self._institutions_du_bureau()
+        if institutions is not None:
+            qs = qs.filter(institution_id__in=institutions)
+        institution = self.request.query_params.get('institution')
+        if institution:
+            qs = qs.filter(institution_id=institution)
+        return qs
+
+    def perform_create(self, serializer):
+        institution_id = self.request.data.get('institution')
+        institutions = self._institutions_du_bureau()
+        if institutions is not None and str(institution_id) not in {str(i) for i in institutions}:
+            raise PermissionDenied(
+                "Seul le bureau d'une institution peut réécrire ses messages.")
+        modele = serializer.save(modifie_par=self.request.user,
+                                 environment=get_active_environment(self.request))
+        audit_log(
+            request=self.request, action_code="CREATION", objet_type="ModeleMessage",
+            objet_id=modele.id,
+            commentaire=f"Message « {modele.cle} » réécrit pour « {modele.institution.nom} ».",
+        )
+
+    def perform_update(self, serializer):
+        modele = serializer.save(modifie_par=self.request.user)
+        audit_log(
+            request=self.request, action_code="MODIFICATION", objet_type="ModeleMessage",
+            objet_id=modele.id,
+            commentaire=f"Message « {modele.cle} » modifié pour « {modele.institution.nom} ».",
+        )
+
+    @action(detail=False, methods=['get'])
+    def catalogue(self, request):
+        """Les messages personnalisables : texte par défaut, champs disponibles, et quand ils
+        partent.
+
+        `quand` est servi parce qu'une institution qui réécrit un texte doit savoir à quel
+        moment il est envoyé et à qui — sinon elle réécrit à l'aveugle."""
+        from .modeles_messages import est_secret, modeles_personnalisables
+
+        return Response([
+            {
+                "cle": m.cle,
+                "libelle": m.libelle,
+                "quand": m.quand,
+                "canal": m.canal,
+                "relisible": m.relisible,
+                "sujet_defaut": m.sujet,
+                "corps_defaut": m.corps,
+                "placeholders": [
+                    {"nom": nom, "lien": est_secret(nom)} for nom in m.placeholders
+                ],
+            }
+            for m in modeles_personnalisables()
+        ])

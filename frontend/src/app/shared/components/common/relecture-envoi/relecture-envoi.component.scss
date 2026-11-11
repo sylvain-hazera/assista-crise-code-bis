@@ -1,0 +1,121 @@
+// Fenêtre de relecture avant envoi. Couleurs explicites et non héritées d'un thème : la fenêtre
+// s'ouvre par-dessus n'importe quel écran de l'application, y compris la carte, et doit rester
+// lisible partout.
+.voile {
+  position: fixed; inset: 0; z-index: 1200;
+  display: flex; align-items: center; justify-content: center;
+  padding: 1rem;
+  background: rgb(15 23 42 / 55%);
+}
+
+.fenetre {
+  width: 100%; max-width: 640px; max-height: 90vh;
+  display: flex; flex-direction: column;
+  background: var(--ac-surface, #fff); color: var(--ac-text, #111827);
+  border-radius: 12px; box-shadow: 0 20px 50px rgb(0 0 0 / 30%);
+  overflow: hidden;
+}
+
+header {
+  padding: 1rem 1.25rem .75rem;
+  border-bottom: 1px solid var(--ac-border, #e5e7eb);
+
+  h2 {
+    display: flex; align-items: center; gap: .5rem;
+    margin: 0; font-size: 1.05rem;
+    .material-icons { font-size: 20px; color: var(--primary, #2563eb); }
+  }
+
+  .sous-titre {
+    margin: .35rem 0 0; font-size: .85rem;
+    color: var(--ac-text-muted, #6b7280);
+    // Une longue liste de destinataires ne doit pas pousser la fenêtre hors de l'écran.
+    overflow-wrap: anywhere;
+  }
+}
+
+.corps {
+  padding: 1rem 1.25rem;
+  overflow-y: auto;
+
+  label {
+    display: block; font-size: .85rem; font-weight: 600;
+    margin-bottom: .9rem;
+  }
+
+  input, textarea {
+    width: 100%; margin-top: .3rem; padding: .5rem .6rem;
+    font: inherit; font-weight: 400;
+    border: 1px solid var(--ac-border, #d1d5db); border-radius: 6px;
+    background: var(--ac-surface, #fff); color: var(--ac-text, #111827);
+  }
+
+  // Le message part en texte brut : l'éditer dans une police à pas fixe montre exactement ce
+  // que le destinataire verra, retours à la ligne compris.
+  textarea {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: .85rem; line-height: 1.5; resize: vertical;
+  }
+}
+
+.bloc-abandon { border-top: 1px solid var(--ac-border, #e5e7eb); }
+
+.alerte {
+  display: flex; align-items: flex-start; gap: .5rem;
+  font-size: .85rem; padding: .6rem .75rem; border-radius: 8px;
+  margin-bottom: .9rem;
+
+  .material-icons { font-size: 18px; flex: none; }
+
+  &.erreur { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
+}
+
+.note {
+  display: flex; align-items: flex-start; gap: .5rem;
+  margin: 0; font-size: .8rem; color: var(--ac-text-muted, #6b7280);
+  .material-icons { font-size: 16px; flex: none; margin-top: .1rem; }
+}
+
+.compteur {
+  margin: -.5rem 0 .9rem; font-size: .8rem;
+  color: var(--ac-text-muted, #6b7280);
+  &.alerte-douce { color: #b45309; font-weight: 600; }
+}
+
+footer {
+  display: flex; align-items: center; gap: .5rem;
+  padding: .75rem 1.25rem;
+  border-top: 1px solid var(--ac-border, #e5e7eb);
+  background: var(--ac-surface-2, #f8fafc);
+
+  // « Plus tard » et « Ne pas envoyer » à gauche, « Envoyer » à droite : le geste le plus
+  // courant est le dernier et le plus visible.
+  .principal { margin-left: auto; }
+}
+
+button {
+  font: inherit; font-size: .9rem; cursor: pointer;
+  display: inline-flex; align-items: center; gap: .35rem;
+  border-radius: 8px; padding: .5rem .9rem;
+
+  .material-icons { font-size: 18px; }
+
+  &.lien {
+    background: none; border: none; font-weight: 600;
+    color: var(--ac-text-muted, #6b7280);
+    &:hover { text-decoration: underline; }
+    &.danger { color: #b91c1c; }
+  }
+
+  &.principal {
+    background: var(--primary, #2563eb); border: 1px solid var(--primary, #2563eb);
+    color: #fff; font-weight: 600;
+    &.danger { background: #b91c1c; border-color: #b91c1c; }
+    &:disabled { opacity: .6; cursor: default; }
+  }
+}
+
+@media (max-width: 560px) {
+  .fenetre { max-height: 96vh; }
+  footer { flex-wrap: wrap; .principal { margin-left: 0; width: 100%; justify-content: center; } }
+}

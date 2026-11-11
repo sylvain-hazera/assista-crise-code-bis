@@ -3,7 +3,9 @@ from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenBlacklistView
 from .grafana import GrafanaTokenView
 from .views import (
+    BrouillonEnvoiViewSet,
     DemandeAccesRadioViewSet,
+    ModeleMessageViewSet,
     NoeudPublicMeshCoreViewSet,
     RattachementNoeudRadioViewSet,
     SourceObservateurMeshCoreViewSet,
@@ -173,6 +175,9 @@ router.register(r'taches-admin-meshcore', TacheAdminMeshCoreViewSet)
 router.register(r'sources-observateurs-meshcore', SourceObservateurMeshCoreViewSet)
 # Cartographie du reseau MeshCore public, importee d'une instance CoreScope.
 router.register(r'noeuds-publics-meshcore', NoeudPublicMeshCoreViewSet)
+# Relecture avant envoi, et textes reecrits par une institution.
+router.register(r'brouillons-envoi', BrouillonEnvoiViewSet)
+router.register(r'modeles-messages', ModeleMessageViewSet)
 
 
 router.register(

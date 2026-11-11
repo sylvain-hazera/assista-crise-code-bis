@@ -1388,6 +1388,17 @@ class ConfigurationEnvoiInstitution(EnvironmentScopedModel):
                    "70 caractères maximum (limite Brevo).",
     )
 
+    # Relecture avant envoi : quand un membre de l'institution déclenche un message vers un
+    # TIERS, le message est capturé en brouillon au lieu de partir, et l'interface ouvre une
+    # fenêtre de relecture (voir core/brouillons_envoi.py). N'affecte jamais les messages qu'une
+    # personne s'envoie à elle-même en s'inscrivant, ni ceux sans humain derrière.
+    relecture_avant_envoi = models.BooleanField(
+        default=False,
+        help_text="Ouvre une fenêtre de relecture quand un membre écrit à un tiers au nom de "
+                   "l'institution. L'action, elle, a déjà eu lieu : un brouillon jamais relu "
+                   "part automatiquement au bout de 24 h.",
+    )
+
     # ── SMS ──────────────────────────────────────────────────────────────────
     # `fournisseur_sms` est une chaîne et non un choix figé : le registre des fournisseurs
     # vit dans core/envoi_sms.py, et ajouter un opérateur ne doit pas demander une migration.
@@ -1426,6 +1437,118 @@ class ConfigurationEnvoiInstitution(EnvironmentScopedModel):
 
     def __str__(self):
         return f"Configuration d'envoi de {self.institution.nom}"
+
+
+class ModeleMessage(EnvironmentScopedModel):
+    """Texte d'un message réécrit par une institution (voir core/modeles_messages.py).
+
+    Une ligne par (institution, clé de modèle) : absente = le texte par défaut du catalogue
+    s'applique. C'est ce qui fait que RIEN ne change pour une institution qui ne personnalise
+    pas — et qu'ajouter un modèle au catalogue n'oblige personne à le réécrire.
+
+    `cle` est une chaîne et non un choix figé : le catalogue vit dans le code, et y ajouter un
+    message ne doit pas demander une migration."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    institution = models.ForeignKey(
+        "Institution", on_delete=models.CASCADE, related_name="modeles_messages",
+    )
+
+    cle = models.CharField(max_length=60)
+
+    # Vide = garder le défaut du catalogue pour ce champ seulement. Une institution qui veut
+    # changer le corps sans toucher au sujet ne doit pas avoir à recopier le sujet.
+    sujet = models.TextField(blank=True)
+    corps = models.TextField(blank=True)
+
+    actif = models.BooleanField(
+        default=True,
+        help_text="Faux = revenir au texte par défaut sans perdre la version réécrite.",
+    )
+
+    modifie_par = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="modeles_messages_modifies",
+    )
+    date_creation = models.DateTimeField(auto_now_add=True)
+    date_modification = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['institution', 'cle'],
+                                    name='unique_modele_message_institution_cle'),
+        ]
+
+    def __str__(self):
+        return f"Modèle « {self.cle} » de {self.institution.nom}"
+
+
+class BrouillonEnvoi(EnvironmentScopedModel):
+    """Message capturé en attente de relecture (voir core/brouillons_envoi.py).
+
+    **Les liens magiques y sont masqués.** `corps` contient `[LIEN_1]`, `[LIEN_2]`… et
+    `liens_masques` porte la correspondance vers les vraies URL, **chiffrée** : ce sont des
+    porteurs d'identité, et le client ne doit jamais les voir. Le relecteur n'est pas forcément
+    le titulaire du compte concerné — cas réel, un administrateur qui déclenche une
+    réinitialisation de mot de passe pour quelqu'un d'autre.
+
+    L'action qui a produit ce message a DÉJÀ eu lieu : seul le message attend. D'où le délai
+    au-delà duquel il part quand même."""
+
+    class Canal(models.TextChoices):
+        EMAIL = "EMAIL", "Email"
+        SMS = "SMS", "SMS"
+
+    class Statut(models.TextChoices):
+        A_RELIRE = "A_RELIRE", "À relire"
+        ENVOYE = "ENVOYE", "Envoyé"
+        ABANDONNE = "ABANDONNE", "Abandonné"
+        # Parti au-delà du délai sans avoir été relu : distinct d'ENVOYE pour qu'on puisse
+        # mesurer si la relecture sert vraiment ou si elle est systématiquement oubliée.
+        EXPEDIE_SANS_RELECTURE = "EXPEDIE_AUTO", "Expédié sans relecture (délai dépassé)"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    institution = models.ForeignKey(
+        "Institution", on_delete=models.CASCADE, related_name="brouillons_envoi",
+    )
+    cree_par = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="brouillons_envoi_crees",
+    )
+
+    canal = models.CharField(max_length=6, choices=Canal.choices, default=Canal.EMAIL)
+    statut = models.CharField(max_length=14, choices=Statut.choices, default=Statut.A_RELIRE)
+
+    # Chiffrés : un message peut contenir un nom, une adresse, un motif de refus.
+    sujet = EncryptedTextField(blank=True)
+    corps = EncryptedTextField()
+    # Liste d'adresses. Chiffrée pour la même raison que les autres adresses du projet.
+    destinataires = EncryptedJSONField(default=list)
+    reply_to = EncryptedTextField(blank=True)
+
+    # JSON {placeholder: url}. JAMAIS servi par l'API — voir le sérialiseur.
+    liens_masques = EncryptedTextField(blank=True)
+
+    # Ce que le relecteur a changé, si quelque chose : utile pour savoir si les modèles par
+    # défaut sont bons, ou systématiquement réécrits au même endroit.
+    modifie_par_relecteur = models.BooleanField(default=False)
+
+    date_creation = models.DateTimeField(auto_now_add=True)
+    date_traitement = models.DateTimeField(null=True, blank=True)
+    traite_par = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="brouillons_envoi_traites",
+    )
+    erreur = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["-date_creation"]
+        indexes = [models.Index(fields=["statut", "date_creation"])]
+
+    def __str__(self):
+        return f"[{self.statut}] {self.canal} — {self.sujet[:40]}"
 
 
 class InstitutionWebDomaine(EnvironmentScopedModel):

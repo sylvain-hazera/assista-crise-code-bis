@@ -91,7 +91,9 @@ from .models import (
     CanalMeshCore,
     CanalMeshCoreDetecte,
     MessageCanalMeshCore,
+    BrouillonEnvoi,
     ConfigurationEnvoiInstitution,
+    ModeleMessage,
     SalonMatrixEquipe,
     TypeSalonEquipe,
     SalonMatrixInstitution,
@@ -5002,4 +5004,104 @@ class ConfigurationEnvoiInstitutionSerializer(serializers.ModelSerializer):
             )
         if manquants:
             raise serializers.ValidationError(manquants)
+        return attrs
+
+
+class BrouillonEnvoiSerializer(serializers.ModelSerializer):
+    """Message en attente de relecture (voir BrouillonEnvoi).
+
+    **`liens_masques` n'est JAMAIS servi**, et c'est l'essentiel de ce sérialiseur. Le corps
+    contient `[LIEN_1]`, `[LIEN_2]`… et la correspondance vers les vraies URL reste côté
+    serveur : ce sont des porteurs d'identité, et le relecteur n'est pas forcément le titulaire
+    du compte concerné — un administrateur qui déclenche une réinitialisation de mot de passe
+    pour quelqu'un d'autre en est le cas réel.
+
+    Les destinataires sont servis : savoir à qui l'on écrit fait partie de la relecture."""
+
+    institution_nom = serializers.CharField(source='institution.nom', read_only=True)
+    cree_par_nom = serializers.SerializerMethodField()
+    statut_libelle = serializers.CharField(source='get_statut_display', read_only=True)
+    # Nombre de segments facturés, pour un brouillon SMS.
+    segments = serializers.SerializerMethodField()
+
+    class Meta:
+        model = BrouillonEnvoi
+        fields = ['id', 'institution', 'institution_nom', 'cree_par_nom', 'canal',
+                  'statut', 'statut_libelle', 'sujet', 'corps', 'destinataires',
+                  'segments', 'modifie_par_relecteur', 'erreur',
+                  'date_creation', 'date_traitement']
+        read_only_fields = fields
+
+    def get_cree_par_nom(self, obj):
+        if not obj.cree_par:
+            return None
+        return nom_affichable(obj.cree_par, self.context.get("request")) or obj.cree_par.email
+
+    def get_segments(self, obj):
+        from .modeles_messages import CanalMessage, segments_sms
+
+        if obj.canal != CanalMessage.SMS:
+            return None
+        return segments_sms(obj.corps)
+
+
+class ModeleMessageSerializer(serializers.ModelSerializer):
+    """Texte réécrit par une institution (voir ModeleMessage).
+
+    `sujet`/`corps` vides = garder le défaut du catalogue pour CE champ. C'est pourquoi les deux
+    acceptent le vide : une institution qui ne veut changer que le corps ne doit pas avoir à
+    recopier le sujet."""
+
+    class Meta:
+        model = ModeleMessage
+        fields = ['id', 'institution', 'cle', 'sujet', 'corps', 'actif',
+                  'date_modification']
+        read_only_fields = ['id', 'institution', 'date_modification']
+        extra_kwargs = {
+            'sujet': {'required': False, 'allow_blank': True},
+            'corps': {'required': False, 'allow_blank': True},
+        }
+
+    def validate(self, attrs):
+        """Refuse un placeholder inconnu du modèle, et tout placeholder de LIEN ajouté à la
+        main.
+
+        Le premier parce qu'un `[PRENOMM]` mal tapé partirait tel quel dans le mail — visible,
+        mais seulement après l'envoi. Le second parce qu'un placeholder de lien n'est résolu
+        qu'à partir des valeurs que le code fournit : en inventer un donnerait un mail qui dit
+        « cliquez sur [LIEN_MIRACLE] ». Et surtout, laisser réécrire les liens ouvrirait la porte
+        à remplacer un lien légitime par un autre."""
+        from .modeles_messages import est_secret, modele as modele_defaut, placeholders_du_texte
+
+        cle = attrs.get('cle') or getattr(self.instance, 'cle', None)
+        defaut = modele_defaut(cle)
+        if defaut is None:
+            raise serializers.ValidationError(
+                {'cle': f"Modèle inconnu : « {cle} »."})
+        if not defaut.personnalisable:
+            raise serializers.ValidationError(
+                {'cle': "Ce message est interne à la plateforme et n'est pas personnalisable."})
+
+        autorises = set(defaut.placeholders)
+        for champ in ('sujet', 'corps'):
+            texte = attrs.get(champ)
+            if not texte:
+                continue
+            employes = set(placeholders_du_texte(texte))
+            inconnus = employes - autorises
+            if inconnus:
+                raise serializers.ValidationError({champ: (
+                    "Champs inconnus pour ce message : "
+                    + ", ".join(f"[{n}]" for n in sorted(inconnus))
+                    + ". Disponibles : "
+                    + ", ".join(f"[{n}]" for n in sorted(autorises))
+                    + ". Pour écrire des crochets littéraux, doublez-les : [[texte]]."
+                )})
+            # Un lien que le code ne fournit pas pour ce message resterait affiché tel quel.
+            liens_en_trop = {n for n in employes if est_secret(n)} - autorises
+            if liens_en_trop:
+                raise serializers.ValidationError({champ: (
+                    "Les liens ne peuvent pas être ajoutés à la main : "
+                    + ", ".join(f"[{n}]" for n in sorted(liens_en_trop))
+                )})
         return attrs

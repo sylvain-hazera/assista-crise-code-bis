@@ -1,1 +1,7 @@
 <router-outlet />
+
+<!-- Fenêtre de relecture avant envoi, montée UNE FOIS ici et pas par page : un message peut
+     être retenu par n'importe quelle action, et la placer dans chacun des 25 écrans concernés
+     demanderait de la poser 25 fois — le vingt-sixième l'oublierait. Elle ne s'affiche que
+     quand le serveur a annoncé un brouillon (voir brouillonsEnvoiInterceptor). -->
+<app-relecture-envoi />
